@@ -1,0 +1,179 @@
+use binrw::io::Cursor;
+use binrw::{binrw, BinRead, BinWrite};
+use thiserror::Error;
+
+use crate::v1::message::{Command, Data, Header, Message, Parameter};
+use crate::v1::session::{Capabilities, SecurityMode};
+
+const DIALECTS: [Dialect; 1] = [Dialect::NTLM012];
+
+#[binrw]
+#[brw(little, magic = 2u8)]
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum Dialect {
+    #[brw(magic = b"NT LM 0.12\x00")]
+    NTLM012,
+}
+
+impl Message {
+    /// Construct a negotiate message
+    ///
+    /// The negotiate message is used to negotiate the SMB dialect that will be used for the
+    /// remainder of the session. The negotiate message is sent by the client and the server
+    /// responds with a negotiate response message.
+    ///
+    /// # Example
+    /// ```
+    /// # use binrw::io::Cursor;
+    /// # use client::v1::message::Message;
+    /// // Must have the BinWrite trait in scope
+    /// use binrw::BinWrite;
+    /// # fn main() {
+    /// // Build the buffer
+    /// let mut buffer = Cursor::new(Vec::new());
+    ///
+    /// // Construct a negotiate message
+    /// let message = Message::negotiate();
+    ///
+    /// // Write the message to the buffer
+    /// message.write(&mut buffer).unwrap();
+    /// # }
+    pub fn negotiate() -> Self {
+        // Construct the negotiate message header
+        let mut header = Header::default();
+        header.command = Command::Negotiate;
+
+        // Construct the negotiate message data.
+        // For each supported SMB dialect push that as part of the data field
+        let mut data = Cursor::new(Vec::new());
+        for dialect in DIALECTS.iter() {
+            dialect
+                .write(&mut data)
+                .expect("Memory error while writing dialect!");
+        }
+
+        // Construct the negotiate message
+        Message::new(
+            header,
+            Parameter::default(),
+            Data::new(Some(data.into_inner())),
+        )
+    }
+}
+
+#[binrw]
+#[brw(little)]
+pub struct NegotiateResponse {
+    #[br(map = |x: u16| DIALECTS[x as usize])]
+    pub dialect: Dialect,
+    pub security_mode: SecurityMode,
+    pub max_mpx_count: u16,
+    pub max_vcs: u16,
+    pub max_buffer_size: u32,
+    pub max_raw_size: u32,
+    pub session_key: u32,
+    pub capabilities: Capabilities,
+    pub system_time: u64,
+    pub time_zone: u16,
+    pub challenge_length: u8,
+}
+
+impl TryFrom<Message> for NegotiateResponse {
+    type Error = NegotiateError;
+
+    fn try_from(message: Message) -> Result<Self, Self::Error> {
+        // Validate the header
+        if message.header.command != Command::Negotiate {
+            return Err(NegotiateError::Header);
+        }
+
+        if message.data.data.is_some() {
+            return Err(NegotiateError::Data);
+        }
+
+        // Validate the parameter
+        match message.parameter.param {
+            Some(p) => {
+                let mut params = Cursor::new(p);
+                NegotiateResponse::read(&mut params).map_err(|_| NegotiateError::Parameter)
+            }
+            None => Err(NegotiateError::Parameter),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum NegotiateError {
+    #[error("Header error")]
+    Header,
+
+    #[error("Parameter error")]
+    Parameter,
+
+    #[error("Data error")]
+    Data,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::v1::message::{Command, Status};
+
+    use binrw::io::Cursor;
+    use binrw::BinWrite;
+
+    #[test]
+    fn parse_negotiate_response() {
+        let header = Vec::from([
+            0xff, 0x53, 0x4d, 0x42, 0x72, 0x00, 0x00, 0x00, 0x00, 0x18, 0x43, 0xc8, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfe, 0xff,
+            0x00, 0x00, 0x01, 0x00,
+        ]);
+        let param = Vec::from([
+            0x11, 0x00, 0x00, 0x03, 0x32, 0x00, 0x01, 0x00, 0x04, 0x41, 0x00, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x19, 0x1e, 0x00, 0x00, 0xfd, 0xf3, 0x80, 0x80, 0x80, 0x4d, 0x8e, 0xd1,
+            0xfa, 0x20, 0xce, 0x01, 0x00, 0x00, 0x00,
+        ]);
+        let data = Vec::from([
+            0x3a, 0x00, 0x68, 0x6d, 0x6e, 0x68, 0x64, 0x2d, 0x74, 0x69, 0x31, 0x6b, 0x6c, 0x73,
+            0x00, 0x00, 0x00, 0x00, 0x60, 0x28, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02,
+            0xa0, 0x1e, 0x30, 0x1c, 0xa0, 0x0e, 0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04,
+            0x01, 0x82, 0x37, 0x02, 0x02, 0x0a, 0xa3, 0x0a, 0x30, 0x08, 0xa0, 0x06, 0x1b, 0x04,
+            0x4e, 0x4f, 0x4e, 0x45,
+        ]);
+        let buffer = [&header[..], &param[..], &data[..]].concat();
+        let details = Message::parse_negotiate_response(buffer.as_slice()).unwrap();
+        assert_eq!(details.dialect, Dialect::NTLM012);
+    }
+
+    #[test]
+    fn negotiation() {
+        let message = Message::negotiate();
+        // Ensure that we are sending the negotiate command
+        assert_eq!(message.header.command, Command::Negotiate);
+
+        // This should be a successful message
+        assert_eq!(message.header.status, Status::Success);
+
+        // Ensure we are sending a zero size parameter field
+        assert_eq!(message.parameter.size, 0);
+
+        // When writing the parameter field ensure that only one byte is written and that it is a
+        // zero
+        let mut buffer = Cursor::new(Vec::new());
+        message.parameter.write(&mut buffer).unwrap();
+        let buffer = buffer.into_inner();
+        assert_eq!(buffer.len(), 1);
+        assert_eq!(buffer[0], 0);
+
+        // Ensure that we are sending a data field of the correct size
+        assert_eq!(message.data.size, 12);
+
+        // Ensure that we are sending the correct data
+        let mut buffer = Cursor::new(Vec::new());
+        message.data.write(&mut buffer).unwrap();
+        let buffer = buffer.into_inner();
+        assert_eq!(buffer.len(), 14);
+        assert_eq!(&buffer[2..], b"\x02NT LM 0.12\x00");
+    }
+}
