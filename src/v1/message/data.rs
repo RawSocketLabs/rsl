@@ -20,6 +20,11 @@ impl Data {
             data,
         }
     }
+
+    pub fn encapsulate(&mut self, data: &[u8]) {
+        self.size = data.len() as u16;
+        self.data = Some(data.to_vec());
+    }
 }
 
 impl Default for Data {

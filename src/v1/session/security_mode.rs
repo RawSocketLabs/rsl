@@ -1,20 +1,16 @@
-use binrw::{binrw, BinRead, BinWrite};
+use binrw::binrw;
 use modular_bitfield::prelude::*;
 
 #[bitfield]
-#[derive(BinRead, BinWrite, Clone, Copy, Debug, PartialEq)]
+#[binrw]
 #[brw(little)]
 #[br(map = Self::from_bytes)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SecurityMode {
-    #[allow(dead_code)]
     pub user_mode: bool,
-    #[allow(dead_code)]
     pub encrypt_passwords: bool,
-    #[allow(dead_code)]
     pub signing_enabled: bool,
-    #[allow(dead_code)]
     pub signing_required: bool,
-    #[allow(dead_code)]
     pub reserved: B4,
 }

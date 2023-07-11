@@ -21,6 +21,11 @@ impl Parameter {
             param,
         }
     }
+
+    pub fn encapsulate(&mut self, param: &[u8]) {
+        self.size = (param.len() / 2) as u8;
+        self.param = Some(param.to_vec());
+    }
 }
 
 impl Default for Parameter {
