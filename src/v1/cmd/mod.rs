@@ -1,3 +1,3 @@
 mod negotiate;
 
-pub use negotiate::{NegotiateError, NegotiateResponse};
+pub use negotiate::{NegotiateError, NegotiateRequest, NegotiateResponse};

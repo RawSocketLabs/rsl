@@ -1,4 +1,4 @@
-use binrw::{binrw, BinRead, BinWrite};
+use binrw::binrw;
 use modular_bitfield::prelude::*;
 use thiserror::Error;
 
@@ -179,6 +179,12 @@ pub enum Command {
     NoAndXCommand = 0xFF,
 }
 
+impl Default for Command {
+    fn default() -> Self {
+        Command::Invalid
+    }
+}
+
 impl TryFrom<u8> for Command {
     type Error = HeaderError;
 
@@ -255,10 +261,11 @@ impl TryFrom<u8> for Command {
 }
 
 #[bitfield]
-#[derive(BinRead, BinWrite, Clone, Copy, Debug, PartialEq)]
+#[binrw]
 #[brw(little)]
 #[br(map = Self::from_bytes)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flags {
     #[allow(dead_code)]
     lock_and_read_ok: bool,
@@ -279,10 +286,11 @@ pub struct Flags {
 }
 
 #[bitfield]
-#[derive(BinRead, BinWrite, Clone, Copy, Debug, PartialEq)]
+#[binrw]
 #[brw(little)]
 #[br(map = Self::from_bytes)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flags2 {
     #[allow(dead_code)]
     long_names: bool,
@@ -388,6 +396,7 @@ impl Default for Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use binrw::BinRead;
     use std::io::Cursor;
 
     #[test]

@@ -11,6 +11,7 @@ use crate::v1::message::{Command, Data, Header, Parameter, Status};
 pub struct Message {
     pub header: Header,
     pub parameter: Parameter,
+    #[br(args(header.command))]
     pub data: Data,
 }
 
@@ -117,4 +118,19 @@ impl TryFrom<&[u8]> for Message {
 pub enum MessageError {
     #[error("generic")]
     Generic,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::path::Path;
+
+    #[test]
+    fn test_message() {
+        let mut path = Path::new("/tmp/hello.txt");
+        let mut file = File::create(&path).unwrap();
+        let message = Message::default();
+        message.write(&mut file).unwrap();
+    }
 }

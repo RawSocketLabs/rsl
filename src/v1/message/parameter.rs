@@ -1,5 +1,4 @@
-use binrw::{binrw, BinRead, BinWrite};
-use modular_bitfield::prelude::*;
+use binrw::binrw;
 
 #[binrw]
 #[brw(little)]

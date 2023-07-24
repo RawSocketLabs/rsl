@@ -3,11 +3,8 @@ mod header;
 mod message;
 mod parameter;
 
-pub use data::Data;
-pub use header::Command;
-pub use header::Header;
-pub use header::HeaderError;
-pub use header::Status;
+pub use data::{Data, DataLength, DataType};
 pub use header::SMB_SUPPORTED_DIALECTS;
+pub use header::{Command, Header, HeaderError, Status};
 pub use message::Message;
 pub use parameter::Parameter;
