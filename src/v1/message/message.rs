@@ -2,7 +2,7 @@ use binrw::io::Cursor;
 use binrw::{binrw, BinRead, BinWrite};
 use thiserror::Error;
 
-use crate::v1::cmd::*;
+use crate::v1::message::cmd::*;
 use crate::v1::message::{Command, Data, Header, Parameter, Status};
 
 #[binrw]

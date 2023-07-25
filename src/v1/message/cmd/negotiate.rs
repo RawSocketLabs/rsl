@@ -2,8 +2,8 @@ use binrw::io::Cursor;
 use binrw::{binrw, BinRead};
 use thiserror::Error;
 
+use crate::v1::message::session::{Capabilities, SecurityMode};
 use crate::v1::message::{Command, Data, DataLength, DataType, Header, Message, Parameter};
-use crate::v1::session::{Capabilities, SecurityMode};
 
 const DIALECTS: [Dialect; 1] = [Dialect::NTLM012];
 

@@ -1,3 +1,2 @@
-pub mod cmd;
+pub mod client;
 pub mod message;
-pub mod session;

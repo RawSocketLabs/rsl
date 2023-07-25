@@ -1,6 +1,6 @@
 use binrw::binrw;
 
-use crate::v1::cmd::*;
+use crate::v1::message::cmd::*;
 use crate::v1::message::header::Command;
 
 #[binrw]
