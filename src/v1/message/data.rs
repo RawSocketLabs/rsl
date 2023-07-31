@@ -53,6 +53,12 @@ impl DataType {
     }
 }
 
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unspecified(Vec::new())
+    }
+}
+
 pub trait DataLength {
     fn len(&self) -> u16;
 }

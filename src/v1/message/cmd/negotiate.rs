@@ -15,6 +15,12 @@ pub enum Dialect {
     NTLM012,
 }
 
+impl Default for Dialect {
+    fn default() -> Self {
+        Dialect::NTLM012
+    }
+}
+
 impl DataLength for Dialect {
     fn len(&self) -> u16 {
         match self {
@@ -111,6 +117,24 @@ pub struct NegotiateResponse {
     pub challenge_length: u8,
 }
 
+impl Default for NegotiateResponse {
+    fn default() -> Self {
+        Self {
+            dialect: Dialect::default(),
+            security_mode: SecurityMode::default(),
+            max_mpx_count: 0,
+            max_vcs: 0,
+            max_buffer_size: 0,
+            max_raw_size: 0,
+            session_key: 0,
+            capabilities: Capabilities::default(),
+            system_time: 0,
+            time_zone: 0,
+            challenge_length: 0,
+        }
+    }
+}
+
 impl TryFrom<Message> for NegotiateResponse {
     type Error = NegotiateError;
 
@@ -154,6 +178,12 @@ pub enum NegotiateError {
 
     #[error("Write error")]
     Write,
+}
+
+impl Default for NegotiateError {
+    fn default() -> Self {
+        NegotiateError::Header
+    }
 }
 
 #[cfg(test)]

@@ -50,6 +50,12 @@ pub enum AndXCommand {
     Final = 0xFF,
 }
 
+impl Default for AndXCommand {
+    fn default() -> Self {
+        Self::Final
+    }
+}
+
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +63,16 @@ pub struct AndX {
     pub command: AndXCommand,
     pub reserved: u8,
     pub offset: u16,
+}
+
+impl Default for AndX {
+    fn default() -> Self {
+        Self {
+            command: AndXCommand::Final,
+            reserved: 0,
+            offset: 0,
+        }
+    }
 }
 
 #[cfg(test)]

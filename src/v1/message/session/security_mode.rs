@@ -14,3 +14,9 @@ pub struct SecurityMode {
     pub signing_required: bool,
     pub reserved: B4,
 }
+
+impl Default for SecurityMode {
+    fn default() -> Self {
+        Self::from_bytes([0; 1])
+    }
+}

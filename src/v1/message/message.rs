@@ -15,6 +15,15 @@ pub struct Message {
     pub data: Data,
 }
 
+impl Default for Message {
+    fn default() -> Self {
+        let header = Header::default();
+        let parameter = Parameter::default();
+        let data = Data::default();
+        Message::new(header, parameter, data)
+    }
+}
+
 impl Message {
     /// Create a new message.
     ///
@@ -74,26 +83,6 @@ impl Message {
     }
 }
 
-impl Default for Message {
-    fn default() -> Self {
-        let header = Header::default();
-        let parameter = Parameter::default();
-        let data = Data::default();
-        Message::new(header, parameter, data)
-    }
-}
-
-pub enum Response {
-    Negotiate(NegotiateResponse),
-    Unknown(Message),
-    Error(String),
-}
-
-pub enum ResponseError {
-    Negotiate(NegotiateError),
-    Unknown(MessageError),
-}
-
 impl TryInto<Vec<u8>> for Message {
     type Error = binrw::Error;
 
@@ -114,10 +103,39 @@ impl TryFrom<&[u8]> for Message {
     }
 }
 
+pub enum Response {
+    Negotiate(NegotiateResponse),
+    Unknown(Message),
+    Error(String),
+}
+
+impl Default for Response {
+    fn default() -> Self {
+        Response::Error("Unknown error".to_string())
+    }
+}
+
+pub enum ResponseError {
+    Negotiate(NegotiateError),
+    Unknown(MessageError),
+}
+
+impl Default for ResponseError {
+    fn default() -> Self {
+        ResponseError::Unknown(MessageError::Generic)
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum MessageError {
     #[error("generic")]
     Generic,
+}
+
+impl Default for MessageError {
+    fn default() -> Self {
+        MessageError::Generic
+    }
 }
 
 #[cfg(test)]

@@ -33,3 +33,9 @@ pub struct Capabilities {
     pub r5: B1,
     pub extend_security: bool,
 }
+
+impl Default for Capabilities {
+    fn default() -> Self {
+        Self::from_bytes([0; 4])
+    }
+}

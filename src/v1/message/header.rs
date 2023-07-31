@@ -285,6 +285,14 @@ pub struct Flags {
     reply: bool,
 }
 
+impl Default for Flags {
+    fn default() -> Self {
+        Self::new()
+            .with_case_insensitive(true)
+            .with_canonicalized_pathnames(true)
+    }
+}
+
 #[bitfield]
 #[binrw]
 #[brw(little)]
@@ -322,14 +330,6 @@ pub struct Flags2 {
     unicode: bool,
 }
 
-impl Default for Flags {
-    fn default() -> Self {
-        Self::new()
-            .with_case_insensitive(true)
-            .with_canonicalized_pathnames(true)
-    }
-}
-
 impl Default for Flags2 {
     fn default() -> Self {
         Self::new()
@@ -350,6 +350,12 @@ pub enum Status {
     Success = 0x00000000,
     MoreProcessingRequired = 0xc0000016,
     Invalid = 0x00010002,
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Status::Invalid
+    }
 }
 
 impl TryFrom<u32> for Status {
