@@ -2,9 +2,9 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, TcpStream};
 
 use binrw::BinRead;
-use binrw::{io::Cursor, io::NoSeek, BinWrite};
+use binrw::{io::BufReader, io::Cursor, io::NoSeek, BinWrite};
 
-use crate::v1::message::Header;
+use crate::v1::message::cmd::NegotiateResponse;
 use crate::v1::message::Message;
 
 pub struct Client {
@@ -28,20 +28,25 @@ impl Client {
 
     pub fn connect(&mut self, share: &str) {
         self.tcp_connect();
+        let stream = self.get_stream();
         println!("{share}");
+        stream.write_all(&vec![0x00, 0x00, 0x00, 0x61]).unwrap();
         let mut buffer = Cursor::new(Vec::new());
-        buffer.write(&vec![0x00, 0x00, 0x00, 0x2F]).unwrap();
         Message::negotiate().write(&mut buffer).unwrap();
-        self.stream
-            .as_mut()
-            .unwrap()
-            .write_all(&buffer.into_inner())
-            .unwrap();
+        stream.write_all(&buffer.into_inner()).unwrap();
         println!("Negotiate Message Sent");
-        let mut buf = [0; 36];
-        self.stream.as_mut().unwrap().read(&mut buf).unwrap();
-        let header = Header::read(&mut Cursor::new(&buf[4..])).unwrap();
-        println!("{:#?}", header);
+
+        let mut buffer = [0u8; 4];
+        stream.read_exact(&mut buffer).unwrap();
+
+        let mut reader = BufReader::new(stream);
+        let message: NegotiateResponse = Message::read(&mut reader).unwrap().try_into().unwrap();
+
+        println!("{:#?}", message);
+    }
+
+    fn get_stream(&mut self) -> &mut NoSeek<TcpStream> {
+        self.stream.as_mut().unwrap()
     }
 
     fn tcp_connect(&mut self) {

@@ -5,14 +5,36 @@ use thiserror::Error;
 use crate::v1::message::session::{Capabilities, SecurityMode};
 use crate::v1::message::{Command, Data, DataLength, DataType, Header, Message, Parameter};
 
-const DIALECTS: [Dialect; 1] = [Dialect::NTLM012];
-
 #[binrw]
 #[brw(little, magic = 2u8)]
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Dialect {
+    #[brw(magic = b"PC NETWORK PROGRAM 1.0\x00")]
+    PCNETWORKPROGRAM10,
+
+    #[brw(magic = b"NT LANMAN 1.0\x00")]
+    LANMAN10,
+
     #[brw(magic = b"NT LM 0.12\x00")]
     NTLM012,
+
+    #[brw(magic = b"LANMAN2.1\x00")]
+    LANMAN21,
+}
+
+impl Dialect {
+    pub fn all_dialects() -> Vec<Dialect> {
+        vec![
+            Dialect::PCNETWORKPROGRAM10,
+            Dialect::LANMAN10,
+            Dialect::NTLM012,
+            Dialect::LANMAN21,
+        ]
+    }
+
+    pub fn from_index(dialects: &[Dialect], idx: u16) -> Dialect {
+        dialects[idx as usize]
+    }
 }
 
 impl Default for Dialect {
@@ -22,9 +44,14 @@ impl Default for Dialect {
 }
 
 impl DataLength for Dialect {
+    /// The length of the dialect in bytes including the prefix 2u8 magic number
+    /// and the null terminator
     fn len(&self) -> u16 {
         match self {
-            Dialect::NTLM012 => 0x0c,
+            Dialect::PCNETWORKPROGRAM10 => 0x18,
+            Dialect::LANMAN10 => 0x0F,
+            Dialect::NTLM012 => 0x0C,
+            Dialect::LANMAN21 => 0x0B,
         }
     }
 }
@@ -85,7 +112,7 @@ impl NegotiateRequest {
 
 impl Default for NegotiateRequest {
     fn default() -> Self {
-        Self::new(&DIALECTS)
+        Self::new(&Dialect::all_dialects())
     }
 }
 
@@ -103,7 +130,7 @@ impl DataLength for NegotiateRequest {
 #[brw(little)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct NegotiateResponse {
-    #[br(map = |x: u16| DIALECTS[x as usize])]
+    #[br(map = |x: u16| Dialect::from_index(&Dialect::all_dialects(), x))]
     pub dialect: Dialect,
     pub security_mode: SecurityMode,
     pub max_mpx_count: u16,
@@ -144,9 +171,9 @@ impl TryFrom<Message> for NegotiateResponse {
             return Err(NegotiateError::Header);
         }
 
-        if message.data.data.is_some() {
-            return Err(NegotiateError::Data);
-        }
+        // if message.data.data.is_some() {
+        //     return Err(NegotiateError::Data);
+        // }
 
         // Validate the parameter
         match message.parameter.param {
