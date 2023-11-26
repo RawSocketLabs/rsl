@@ -27,25 +27,51 @@ impl Client {
     }
 
     pub fn connect(&mut self, share: &str) {
+        // TODO: Make a stream split method. Should return a writer and a reader
         self.tcp_connect();
-        let stream = self.get_stream();
-        println!("{share}");
+        let stream = self.stream();
+
+        // Create a message buffer
+        //let mut message = Cursor::new(Vec::new());
+        //Message::negotiate().write(&mut message).unwrap();
+
+        // Create a netbios buffer
+        //let mut header = Cursor::new(Vec::new());
+        //NetbiosHeader::header(message).write(&mut header).unwrap();
+
+        //// Write the netbios header and message to the stream
+        //stream.write_all(&header.into_inner()).unwrap();
+        //stream.write_all(&message.into_inner()).unwrap();
+
+        //// Read the response
+        //let mut reader = BufReader::new(stream);
+        //let netbios: NetbiosMessage = NetbiosMessage::read(&mut reader).unwrap();
+        //let response: NegotiateResponse = Message::from(netbios.message).try_into().unwrap();
+
+        // TODO: Fix this to be wrapped in a netbios message
         stream.write_all(&vec![0x00, 0x00, 0x00, 0x61]).unwrap();
+
+        // TODO: Use a persistent write buffer
+        // NOTE: Need to figure out a good way to do a buffer that
+        // does not continually grow
         let mut buffer = Cursor::new(Vec::new());
         Message::negotiate().write(&mut buffer).unwrap();
-        stream.write_all(&buffer.into_inner()).unwrap();
-        println!("Negotiate Message Sent");
+        println!("MESSAGE SIZE: {}", buffer.get_ref().len());
 
+        stream.write_all(&buffer.into_inner()).unwrap();
+
+        // Accept the netbios header
         let mut buffer = [0u8; 4];
         stream.read_exact(&mut buffer).unwrap();
 
+        // Accept the negotiate response
         let mut reader = BufReader::new(stream);
         let message: NegotiateResponse = Message::read(&mut reader).unwrap().try_into().unwrap();
 
         println!("{:#?}", message);
     }
 
-    fn get_stream(&mut self) -> &mut NoSeek<TcpStream> {
+    fn stream(&mut self) -> &mut NoSeek<TcpStream> {
         self.stream.as_mut().unwrap()
     }
 
