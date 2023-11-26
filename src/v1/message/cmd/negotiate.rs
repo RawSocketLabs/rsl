@@ -5,6 +5,43 @@ use thiserror::Error;
 use crate::v1::message::session::{Capabilities, SecurityMode};
 use crate::v1::message::{Command, Data, DataLength, DataType, Header, Message, Parameter};
 
+impl Message {
+    /// Construct a negotiate message
+    ///
+    /// The negotiate message is used to negotiate the SMB dialect that will be used for the
+    /// remainder of the session. The negotiate message is sent by the client and the server
+    /// responds with a negotiate response message.
+    ///
+    /// # Example
+    /// ```
+    /// # use binrw::io::Cursor;
+    /// # use client::v1::message::Message;
+    /// // Must have the BinWrite trait in scope
+    /// use binrw::BinWrite;
+    /// # fn main() {
+    /// // Build the buffer
+    /// let mut buffer = Cursor::new(Vec::new());
+    ///
+    /// // Construct a negotiate message
+    /// let negotiation_message = Message::negotiate();
+    ///
+    /// // Write the message to the buffer
+    /// negotiation_message.write(&mut buffer).unwrap();
+    /// # }
+    pub fn negotiate() -> Self {
+        // Construct the negotiate message header
+        let mut header = Header::default();
+        header.command = Command::Negotiate;
+
+        // Construct the negotiate message data.
+        // For each supported SMB dialect push that as part of the data field
+        let data = DataType::NegotiateRequest(NegotiateRequest::default());
+
+        // Construct the negotiate message
+        Message::new(header, Parameter::default(), Data::new(Some(data)))
+    }
+}
+
 #[binrw]
 #[brw(little, magic = 2u8)]
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -53,43 +90,6 @@ impl DataLength for Dialect {
             Dialect::NTLM012 => 0x0C,
             Dialect::LANMAN21 => 0x0B,
         }
-    }
-}
-
-impl Message {
-    /// Construct a negotiate message
-    ///
-    /// The negotiate message is used to negotiate the SMB dialect that will be used for the
-    /// remainder of the session. The negotiate message is sent by the client and the server
-    /// responds with a negotiate response message.
-    ///
-    /// # Example
-    /// ```
-    /// # use binrw::io::Cursor;
-    /// # use client::v1::message::Message;
-    /// // Must have the BinWrite trait in scope
-    /// use binrw::BinWrite;
-    /// # fn main() {
-    /// // Build the buffer
-    /// let mut buffer = Cursor::new(Vec::new());
-    ///
-    /// // Construct a negotiate message
-    /// let negotiation_message = Message::negotiate();
-    ///
-    /// // Write the message to the buffer
-    /// negotiation_message.write(&mut buffer).unwrap();
-    /// # }
-    pub fn negotiate() -> Self {
-        // Construct the negotiate message header
-        let mut header = Header::default();
-        header.command = Command::Negotiate;
-
-        // Construct the negotiate message data.
-        // For each supported SMB dialect push that as part of the data field
-        let data = DataType::NegotiateRequest(NegotiateRequest::default());
-
-        // Construct the negotiate message
-        Message::new(header, Parameter::default(), Data::new(Some(data)))
     }
 }
 
