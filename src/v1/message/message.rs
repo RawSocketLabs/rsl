@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_message() {
-        let mut path = Path::new("/tmp/hello.txt");
+        let path = Path::new("/tmp/hello.txt");
         let mut file = File::create(&path).unwrap();
         let message = Message::default();
         message.write(&mut file).unwrap();

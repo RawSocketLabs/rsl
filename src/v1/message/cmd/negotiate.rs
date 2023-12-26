@@ -240,7 +240,7 @@ mod tests {
             0x01, 0x82, 0x37, 0x02, 0x02, 0x0a, 0xa3, 0x0a, 0x30, 0x08, 0xa0, 0x06, 0x1b, 0x04,
             0x4e, 0x4f, 0x4e, 0x45,
         ]);
-        let buffer = [&header[..], &param[..], &data[..]].concat();
+        let _buffer = [&header[..], &param[..], &data[..]].concat();
         //let negotiate_response: NegotiateResponse = Message::try_from(buffer.as_slice()).unwrap();
         //assert_eq!(details.dialect, Dialect::NTLM012);
     }

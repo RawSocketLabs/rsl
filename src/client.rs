@@ -26,7 +26,7 @@ impl Client {
         }
     }
 
-    pub fn connect(&mut self, share: &str) {
+    pub fn connect(&mut self, _share: &str) {
         // TODO: Make a stream split method. Should return a writer and a reader
         self.tcp_connect();
         let stream = self.stream();
