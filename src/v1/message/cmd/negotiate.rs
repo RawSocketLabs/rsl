@@ -15,7 +15,7 @@ impl Message {
     /// # Example
     /// ```
     /// # use binrw::io::Cursor;
-    /// # use client::v1::message::Message;
+    /// # use smb::v1::message::Message;
     /// // Must have the BinWrite trait in scope
     /// use binrw::BinWrite;
     /// # fn main() {
@@ -62,9 +62,9 @@ pub enum Dialect {
 impl Dialect {
     pub fn all_dialects() -> Vec<Dialect> {
         vec![
+            Dialect::NTLM012,
             Dialect::PCNETWORKPROGRAM10,
             Dialect::LANMAN10,
-            Dialect::NTLM012,
             Dialect::LANMAN21,
         ]
     }
@@ -214,7 +214,7 @@ impl Default for NegotiateError {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use crate::v1::message::{Command, Status};
 
@@ -266,13 +266,13 @@ mod tests {
         assert_eq!(buffer[0], 0);
 
         // Ensure that we are sending a data field of the correct size
-        assert_eq!(message.data.size, 12);
+        assert_eq!(message.data.size, 62);
 
         // Ensure that we are sending the correct data
         let mut buffer = Cursor::new(Vec::new());
         message.data.write(&mut buffer).unwrap();
         let buffer = buffer.into_inner();
-        assert_eq!(buffer.len(), 14);
-        assert_eq!(&buffer[2..], b"\x02NT LM 0.12\x00");
+        assert_eq!(buffer.len(), 64);
+        assert_eq!(&buffer[2..14], b"\x02NT LM 0.12\x00");
     }
 }

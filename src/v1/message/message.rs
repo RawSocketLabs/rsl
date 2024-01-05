@@ -34,7 +34,7 @@ impl Message {
     /// ## Write to a buffer
     /// ```
     /// # use binrw::io::Cursor;
-    /// # use client::v1::message::{Data, Header, Message, Parameter};
+    /// # use smb::v1::message::{Data, Header, Message, Parameter};
     /// // Must have the BinWrite trait in scope from binrw
     /// use binrw::BinWrite;
     /// # fn main () {
@@ -139,7 +139,7 @@ impl Default for MessageError {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use std::fs::File;
     use std::path::Path;

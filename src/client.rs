@@ -7,7 +7,7 @@ use binrw::BinWrite;
 use binrw::{io::BufReader, io::Cursor, io::NoSeek};
 
 // Protocol Crates
-use nbt::nbt::*;
+use nbt::session::{Flags, PacketType, SessionBuilder};
 use nbt::BinWrite as NbtBinWrite;
 
 // Internal
@@ -118,7 +118,7 @@ pub enum Version {
 }
 
 #[cfg(test)]
-mod tests {
+mod integration {
     use super::*;
 
     #[test]

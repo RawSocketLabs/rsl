@@ -76,7 +76,7 @@ impl Default for AndX {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use binrw::io::Cursor;
     use binrw::BinWrite;

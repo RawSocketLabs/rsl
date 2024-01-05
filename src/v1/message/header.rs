@@ -94,6 +94,7 @@ pub enum HeaderError {
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Command {
     /// Create a new directory.
+    // #[brw(magic = 0x00u8)]
     CreateDirectory = 0x00,
     /// Delete an empty directory.
     DeleteDirectory = 0x01,
@@ -177,6 +178,8 @@ pub enum Command {
     WriteBulkData = 0xDA,
     Invalid = 0xFE,
     NoAndXCommand = 0xFF,
+    // Add custom version -- can this remove TryFrom?
+    // Custom(u8)
 }
 
 impl Default for Command {
@@ -400,7 +403,7 @@ impl Default for Signature {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use binrw::BinRead;
     use std::io::Cursor;

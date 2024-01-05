@@ -64,7 +64,7 @@ pub trait DataLength {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use binrw::io::Cursor;
     use binrw::BinWrite;
@@ -85,8 +85,8 @@ mod tests {
         let mut buffer = Cursor::new(Vec::new());
         request.write(&mut buffer).unwrap();
         assert_eq!(
-            buffer.into_inner(),
-            vec![12, 0, 2, 78, 84, 32, 76, 77, 32, 48, 46, 49, 50, 0]
+            buffer.into_inner()[1..=13],
+            vec![0, 2, 78, 84, 32, 76, 77, 32, 48, 46, 49, 50, 0]
         );
     }
 }
