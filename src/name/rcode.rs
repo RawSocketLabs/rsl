@@ -46,8 +46,14 @@ impl From<Query> for RValue {
 impl From<Query> for RError {
     /// Converts a Query to an RError.
     fn from(query: Query) -> Self {
-        let rvalue: RValue = query.into();
-        rvalue.into()
+        match query {
+            Query::Success => Self::Success,
+            Query::FormatError => Self::FormatError,
+            Query::ServerFailure => Self::ServerFailure,
+            Query::NameError => Self::NameError,
+            Query::UnsupportedRequest => Self::UnsupportedRequest,
+            Query::Refused => Self::Refused,
+        }
     }
 }
 
@@ -84,8 +90,13 @@ impl From<Release> for RValue {
 impl From<Release> for RError {
     /// Maps a Release to an RError.
     fn from(release: Release) -> Self {
-        let rvalue: RValue = release.into();
-        rvalue.into()
+        match release {
+            Release::Success => Self::Success,
+            Release::FormatError => Self::FormatError,
+            Release::ServerFailure => Self::ServerFailure,
+            Release::Refused => Self::Refused,
+            Release::ActiveError => Self::ActiveError,
+        }
     }
 }
 
@@ -126,8 +137,15 @@ impl From<Registration> for RValue {
 impl From<Registration> for RError {
     /// Maps a Registration to an RError.
     fn from(registration: Registration) -> Self {
-        let rvalue: RValue = registration.into();
-        rvalue.into()
+        match registration {
+            Registration::Success => Self::Success,
+            Registration::FormatError => Self::FormatError,
+            Registration::ServerFailure => Self::ServerFailure,
+            Registration::UnsupportedRequest => Self::UnsupportedRequest,
+            Registration::Refused => Self::Refused,
+            Registration::ActiveError => Self::ActiveError,
+            Registration::ConflictError => Self::ConflictError,
+        }
     }
 }
 
