@@ -3,6 +3,7 @@ use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 use thiserror::Error;
 
+/// Header for a NetBIOS Name Service (NBNS) packet.
 #[binrw]
 #[brw(big)]
 #[derive(Builder)]
@@ -26,6 +27,16 @@ pub struct Header {
     pub additional: u16,
 }
 
+/// Bitfield representation of opcode, flags, and rcode.
+///
+/// This private struct is utilized because bitfields take up space
+/// in increments of 8 bits. By collapsing down the 3 fields we essentially get
+/// a 16 bit bitfield.
+///
+/// The structure is used for effectively reading and writing and does bloat the size
+/// of the header by 2 bytes, however for ease of use this appears worthwhile.
+///
+/// The struct is only used internally and is not exposed to the user.
 #[bitfield]
 #[derive(BinWrite, BinRead, Clone, Copy, Debug, Default)]
 #[br(map = Self::from_bytes)]
@@ -39,6 +50,8 @@ struct State {
     rcode: RValue,
 }
 
+/// Encodes the operation being performed, and indicates whether the message
+/// is a request or a response.
 #[bitfield(filled = false)]
 #[derive(BitfieldSpecifier, Debug, Clone, Copy)]
 pub struct OpCode {
@@ -70,9 +83,11 @@ pub enum Op {
     Custom15 = 15,
 }
 
+/// Available flags for a NetBIOS Name Service (NBNS) packet.
 #[bitfield(filled = false)]
 #[derive(BitfieldSpecifier, Debug, Clone, Copy)]
 pub struct Flags {
+    /// Indicates if the response is authoritative.
     pub authoritative: bool,
     pub truncated: bool,
     pub recursion_desired: bool,
@@ -81,14 +96,21 @@ pub struct Flags {
     pub broadcast: bool,
 }
 
+/// Indicates the result of a request.
 #[derive(Debug, Clone, Copy)]
 pub enum RCode {
+    /// Contains all valid responses to a query.
     Query(Query),
+    /// Contains all valid responses to a release.
     Release(Release),
+    /// Contains all valid responses to a registration.
     Registration(Registration),
+    /// Contains a custom response code which covers the entire 4 bit range.
     Custom(RValue),
 }
 
+/// The underlying response value. This value can be mapped to an RCode which is aware of the
+/// operation being performed.
 #[derive(BitfieldSpecifier, Debug, Clone, Copy)]
 #[bits = 4]
 pub enum RValue {
@@ -110,7 +132,14 @@ pub enum RValue {
     Fifteen = 15,
 }
 
+impl From<RValue> for u8 {
+    fn from(r: RValue) -> Self {
+        r.into()
+    }
+}
+
 impl RCode {
+    /// Maps a response code to a query response code.
     pub fn query(code: RValue) -> Self {
         match code {
             RValue::Zero => Self::Query(Query::Success),
@@ -123,6 +152,7 @@ impl RCode {
         }
     }
 
+    /// Maps a response code to a release response code.
     pub fn release(code: RValue) -> Self {
         match code {
             RValue::Zero => Self::Release(Release::Success),
@@ -134,6 +164,7 @@ impl RCode {
         }
     }
 
+    /// Maps a response code to a registration response code.
     pub fn registration(code: RValue) -> Self {
         match code {
             RValue::Zero => Self::Registration(Registration::Success),
@@ -149,6 +180,7 @@ impl RCode {
 }
 
 impl RCode {
+    /// Returns the apporpriate response code for the given state.
     fn from_state(state: State) -> Self {
         match (state.opcode().op(), state.rcode()) {
             (Op::Query, rcode) => Self::query(rcode),
@@ -160,6 +192,7 @@ impl RCode {
 }
 
 impl From<RCode> for RValue {
+    /// Converts an RCode to an RValue.
     fn from(rtype: RCode) -> Self {
         match rtype {
             RCode::Query(query) => query.into(),
@@ -188,8 +221,28 @@ pub enum RError {
     ActiveError,
     #[error("Conflict: Name is owned by another node.")]
     ConflictError,
+    #[error("Unknown: Unknown error code {0}")]
+    Unknown(u8),
 }
 
+impl From<RValue> for RError {
+    /// Converts an RValue to an RError.
+    fn from(rvalue: RValue) -> Self {
+        match rvalue {
+            RValue::Zero => Self::Success,
+            RValue::One => Self::FormatError,
+            RValue::Two => Self::ServerFailure,
+            RValue::Three => Self::NameError,
+            RValue::Four => Self::UnsupportedRequest,
+            RValue::Five => Self::Refused,
+            RValue::Six => Self::ActiveError,
+            RValue::Seven => Self::ConflictError,
+            r => Self::Unknown(r.into()),
+        }
+    }
+}
+
+/// The valid response codes for a query.
 #[derive(Debug, Clone, Copy)]
 pub enum Query {
     Success = 0,
@@ -201,6 +254,7 @@ pub enum Query {
 }
 
 impl From<Query> for RValue {
+    /// Converts a Query to an RValue.
     fn from(query: Query) -> Self {
         match query {
             Query::Success => Self::Zero,
@@ -214,24 +268,20 @@ impl From<Query> for RValue {
 }
 
 impl From<Query> for RError {
+    /// Converts a Query to an RError.
     fn from(query: Query) -> Self {
-        match query {
-            Query::Success => Self::Success,
-            Query::FormatError => Self::FormatError,
-            Query::ServerFailure => Self::ServerFailure,
-            Query::NameError => Self::NameError,
-            Query::UnsupportedRequest => Self::UnsupportedRequest,
-            Query::Refused => Self::Refused,
-        }
+        query.into()
     }
 }
 
 impl From<Query> for RCode {
+    /// Converts a Query to an RCode.
     fn from(query: Query) -> Self {
         Self::Query(query)
     }
 }
 
+/// The valid response codes for a release.
 #[derive(Debug, Clone, Copy)]
 pub enum Release {
     Success = 0,
@@ -242,6 +292,7 @@ pub enum Release {
 }
 
 impl From<Release> for RValue {
+    /// Maps a Release to an RValue.
     fn from(release: Release) -> Self {
         match release {
             Release::Success => Self::Zero,
@@ -254,23 +305,20 @@ impl From<Release> for RValue {
 }
 
 impl From<Release> for RError {
+    /// Maps a Release to an RError.
     fn from(release: Release) -> Self {
-        match release {
-            Release::Success => Self::Success,
-            Release::FormatError => Self::FormatError,
-            Release::ServerFailure => Self::ServerFailure,
-            Release::Refused => Self::Refused,
-            Release::ActiveError => Self::ActiveError,
-        }
+        release.into()
     }
 }
 
 impl From<Release> for RCode {
+    /// Maps a Release to an RCode.
     fn from(release: Release) -> Self {
         Self::Release(release)
     }
 }
 
+/// The valid response codes for a registration.
 #[derive(Debug, Clone, Copy)]
 pub enum Registration {
     Success = 0,
@@ -283,6 +331,7 @@ pub enum Registration {
 }
 
 impl From<Registration> for RValue {
+    /// Maps a Registration to an RValue.
     fn from(registration: Registration) -> Self {
         match registration {
             Registration::Success => Self::Zero,
@@ -297,16 +346,9 @@ impl From<Registration> for RValue {
 }
 
 impl From<Registration> for RError {
+    /// Maps a Registration to an RError.
     fn from(registration: Registration) -> Self {
-        match registration {
-            Registration::Success => Self::Success,
-            Registration::FormatError => Self::FormatError,
-            Registration::ServerFailure => Self::ServerFailure,
-            Registration::UnsupportedRequest => Self::UnsupportedRequest,
-            Registration::Refused => Self::Refused,
-            Registration::ActiveError => Self::ActiveError,
-            Registration::ConflictError => Self::ConflictError,
-        }
+        registration.into()
     }
 }
 
@@ -317,7 +359,7 @@ impl From<Registration> for RCode {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
     use binrw::io::Cursor;
 
