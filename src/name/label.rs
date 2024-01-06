@@ -1,19 +1,41 @@
 use binrw::{binrw, io::Cursor, BinRead, BinResult, BinWrite};
 use modular_bitfield::prelude::*;
 
+/// A DNS Label, used in NetBIOS for questions and resources records.
+///
+/// A label can be one of several types of labels, which are defined by the first byte of the label.
+///
+/// The first byte is split into two parts, the first 6 bits are used to define the length of the
+/// label, and the last 2 bits are used to define the type of label.
+///
+/// Two of the possible label types are defined by the RFC
+/// - NetBIOS Name Label
+/// - Pointer Label
+///
+/// The other two label types are reserved for future use. These labels are represented by the
+/// `Custom` variant of the `LabelType` enum.
 #[binrw]
 #[brw(big)]
 #[derive(Clone, Debug)]
 pub struct Label {
+    /// The first byte of the label, which defines the label type.
+    ///
+    /// This byte is read twice during parsing, once to determine the label type, and again to
+    /// construct the type of label that was determined during the first read.
     #[bw(ignore)]
     #[br(restore_position, temp)]
     pub(crate) check: FirstLabelByte,
 
+    /// The type of label that was determined by the first byte.
+    ///
+    /// The first byte is read and used to determine the underlying type of label, which is then
+    /// read and parsed into the appropriate type.
     #[br(args(check))]
     pub ltype: LabelType,
 }
 
 impl Label {
+    /// Convert a label into a vector of bytes.
     pub fn into_bytes(self) -> Vec<u8> {
         let mut buffer = Cursor::new(Vec::new());
         self.write(&mut buffer).unwrap();
@@ -21,6 +43,7 @@ impl Label {
     }
 
     // TODO: Determine if these methods should be here or in From/Into blocks?
+    // TODO: Should this instead be from stream/cursor?
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut cursor = Cursor::new(bytes);
         Self::read(&mut cursor).unwrap()
@@ -49,6 +72,10 @@ impl TryFrom<Label> for PointerLabel {
     }
 }
 
+/// The first byte of a label is used to determine the type of label.
+///
+/// The first 6 bits of the label are indeterminate because we do not yet know the type of label.
+/// The last 2 bits are used to determine the type of label.
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug, Default)]
 pub struct FirstLabelByte {
@@ -56,21 +83,52 @@ pub struct FirstLabelByte {
     pub marker: Marker,
 }
 
+/// The types of labels.
+///
+/// There are two defined label types, and two reserved label types. The two defined label types
+/// are NetBIOS Name Labels and Pointer Labels. The two reserved label types are reserved for future
+/// use.
+///
+/// In this crate, the two reserved label types are represented by the `Custom` variant. Since the
+/// reserved labels have no defined way of being parsed by the RFC this crate simply stores the
+/// first byte of a label that uses the reserved components and will stop parsing a list of labels
+/// upon encountering a reserved label.
 #[derive(BinRead, BinWrite, Clone, Debug)]
 #[br(big, import(check: FirstLabelByte))]
 #[bw(big)]
 pub enum LabelType {
+    /// A NetBIOS Name Label.
+    ///
+    /// A NetBIOS Name Label has a length encoded in the first 6 bits of the first byte. This is
+    /// used to read the rest of the label.
     #[br(pre_assert(check.marker() == Marker::NetbiosName))]
     Name(NameLabel),
 
+    /// A Pointer Label.
+    ///
+    /// A Pointer Label is used to point to another label. The pointer label marked by the first
+    /// two bits and is followed by a 14-bit offset to the label that it points to.
     #[br(pre_assert(check.marker() == Marker::StringPtr))]
     Pointer(PointerLabel),
 
-    // TODO: We don't know how to parse these...
+    /// A reserved label type.
+    ///
+    /// This label type is reserved for future use. This crate will simply store the first byte of
+    /// the label and stop parsing a list of labels upon encountering a reserved label.
     #[br(pre_assert(check.marker() == Marker::ReservedOne || check.marker() == Marker::ReservedTwo))]
     Custom(FirstLabelByte),
 }
 
+/// A NetBIOS Name Label.
+///
+/// A NetBIOS Name Label is marked by the first two bits of the first byte being set to `0b11`. The
+/// remaining 6 bits are used to determine the length of the label.
+///
+/// The `NameInfo` struct is used to store the first byte of the label, which contains the marker
+/// and length information.
+///
+/// The `name` field is used to store the rest of the label. The length set in the label is how
+/// many bytes are read into the `name` field.
 #[binrw]
 #[brw(big)]
 #[derive(Clone, Debug)]
@@ -108,8 +166,7 @@ impl NameLabel {
 impl From<NameLabel> for Label {
     fn from(name_label: NameLabel) -> Self {
         Self {
-            check: FirstLabelByte::new(),
-            ltype: LType::Name(name_label),
+            ltype: LabelType::Name(name_label),
         }
     }
 }
@@ -136,6 +193,10 @@ impl TryFrom<&[u8]> for NameInfo {
     }
 }
 
+/// A Pointer Label.
+///
+/// A Pointer Label is marked by the first two bits of the first byte being set to `0b11`. The
+/// remaining 14 bits are used to determine the offset to the label that it points to.
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug)]
 pub struct PointerLabel {
@@ -143,15 +204,28 @@ pub struct PointerLabel {
     pub marker: Marker,
 }
 
+/// The values of the 2 bits that determine the type of label.
 #[derive(BitfieldSpecifier, PartialEq, Eq, Clone, Copy, Debug)]
 #[bits = 2]
 pub enum Marker {
+    /// Indicates the label is a NetBIOS Name Label.
     NetbiosName = 0x00,
+
+    /// Reserved for future use. This maps to a custom label while using this crate.
     ReservedOne = 0x01,
+
+    /// Reserved for future use. This maps to a custom label while using this crate.
     ReservedTwo = 0x02,
+
+    /// Indicates the label is a Pointer Label.
     StringPtr = 0x03,
 }
 
+/// A custom label parser.
+///
+/// This parser will read a list of labels until it encounters either:
+/// - A label with a length of `0`.
+/// - A custom label type. A custom label is any label that has a [Marker](crate::name::Marker) of `ReservedOne` or `ReservedTwo`.
 #[binrw::parser(reader, endian)]
 pub fn parse_labels() -> BinResult<Vec<Label>> {
     let mut vec = Vec::new();

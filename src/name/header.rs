@@ -1,14 +1,24 @@
 use binrw::{binrw, io::Cursor, BinRead, BinWrite};
 use derive_builder::Builder;
 
-use crate::name::{Flags, OpCode, RCode, State};
+use crate::name::{Flags, OpCode, Question, RCode, Resource, State};
 
 /// Header for a NetBIOS Name Service (NBNS) packet.
 #[binrw]
 #[brw(big)]
 #[derive(Builder)]
+// TODO: Come up with a good convention for building unchecked? build
 // #[builder(build_fn(skip))]
 pub struct Header {
+    /// Ensure the NBT name header follows certain soundness checks. Defaults to `true`.
+    ///
+    /// - When set to `true`, the builder will ensure the header follows soundness checks defined by the RFC.
+    /// - When set to `false`, the builder will not ensure the header follows these checks and may result in undefined behavior when being sent/parsed.
+    /// Something here
+    #[brw(ignore)]
+    #[builder(default)]
+    check_soundness: bool,
+
     /// The transaction ID of the request/response. The builder requires this field to be set.
     pub transacition_id: u16,
 
@@ -47,6 +57,21 @@ pub struct Header {
     /// The number of additional records in the request/response. Defaults to `0` if not set by builder.
     #[builder(default)]
     pub additional: u16,
+
+    /// The questions in the request/response.
+    #[br(count = questions)]
+    pub questions_entries: Vec<Question>,
+    ///// The answers in the request/response.
+    //#[br(count = answers)]
+    //pub answers_records: Vec<Resource>,
+
+    ///// The authority records in the request/response.
+    //#[br(count = authorities)]
+    //pub authorities_records: Vec<Resource>,
+
+    ///// The additional records in the request/response.
+    //#[br(count = additional)]
+    //pub additional_records: Vec<Resource>,
 }
 
 impl Header {
