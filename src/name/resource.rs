@@ -8,14 +8,14 @@ use crate::name::Label;
 
 pub struct Resource {
     pub name: Vec<Label>,
-    pub rtype: RType,
-    pub rclass: RClass,
+    pub rtype: ResourceType,
+    pub rclass: ResourceClass,
     pub ttl: u32,
     pub length: u16,
 }
 
 #[repr(u16)]
-pub enum RType {
+pub enum ResourceType {
     A = 0x0001,
     NS = 0x0002,
     NULL = 0x000A,
@@ -25,7 +25,7 @@ pub enum RType {
 }
 
 #[repr(u16)]
-pub enum RClass {
+pub enum ResourceClass {
     Internet = 0x0001,
     Unknown(u16),
 }
