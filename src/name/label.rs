@@ -1,12 +1,10 @@
 use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 
 #[binrw]
 #[brw(big)]
-#[derive(Builder, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Label {
-    #[builder(setter(skip))]
     #[br(restore_position)]
     #[bw(ignore)]
     pub(crate) check: FirstByte,
@@ -53,31 +51,39 @@ pub enum LType {
 
 #[binrw]
 #[brw(big)]
-#[derive(Builder, Clone, Debug)]
-#[builder(build_fn(skip))]
+#[derive(Clone, Debug)]
 pub struct NameLabel {
-    #[builder(setter(skip))]
     pub info: NameInfo,
 
     #[br(count = info.length(), if(info.length() > 0))]
-    #[builder(setter(into))]
     pub name: Vec<u8>,
 }
 
-impl NameLabelBuilder {
-    pub fn build(&self) -> Result<NameLabel, Box<dyn std::error::Error>> {
-        let name = self.name.clone().unwrap();
+impl NameLabel {
+    pub fn new(name: String) -> Result<NameLabel, Box<dyn std::error::Error>> {
         let info = NameInfo::try_from_name(&name)?;
+        let name = name.into_bytes();
         Ok(NameLabel { info, name })
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        let mut buffer = Cursor::new(Vec::new());
+        self.write(&mut buffer).unwrap();
+        buffer.into_inner()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut cursor = Cursor::new(bytes);
+        Self::read(&mut cursor).unwrap()
     }
 }
 
 impl From<NameLabel> for Label {
     fn from(name_label: NameLabel) -> Self {
-        LabelBuilder::default()
-            .ltype(LType::Name(name_label))
-            .build()
-            .unwrap()
+        Self {
+            check: FirstByte::new(),
+            ltype: LType::Name(name_label),
+        }
     }
 }
 
@@ -122,10 +128,7 @@ mod unit {
 
     #[test]
     fn label() {
-        let label = NameLabelBuilder::default()
-            .name("TESTLABEL")
-            .build()
-            .unwrap();
+        let label = NameLabel::new("TESTLABEL".into()).unwrap();
 
         assert_eq!(label.info.marker(), Marker::NetbiosName);
         assert_eq!(label.info.length(), 0x09);
@@ -134,10 +137,7 @@ mod unit {
 
     #[test]
     fn label_bytes() {
-        let name_label = NameLabelBuilder::default()
-            .name("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY")
-            .build()
-            .unwrap();
+        let name_label = NameLabel::new("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY".into()).unwrap();
 
         let label: Label = name_label.into();
         let bytes = label.into_bytes();

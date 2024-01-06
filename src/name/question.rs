@@ -64,27 +64,17 @@ pub enum QClass {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use crate::name::NameLabelBuilder;
+    use crate::name::NameLabel;
 
     #[test]
     fn question() {
         let question = QuestionBuilder::default()
             .name(vec![
-                NameLabelBuilder::default()
-                    .name("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY")
-                    .build()
+                NameLabel::new("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY".into())
                     .unwrap()
                     .into(),
-                NameLabelBuilder::default()
-                    .name("NETBIOS")
-                    .build()
-                    .unwrap()
-                    .into(),
-                NameLabelBuilder::default()
-                    .name("COM")
-                    .build()
-                    .unwrap()
-                    .into(),
+                NameLabel::new("NETBIOS".into()).unwrap().into(),
+                NameLabel::new("COM".into()).unwrap().into(),
             ])
             .qtype(QType::NBSTAT)
             .class(QClass::Custom(45))
