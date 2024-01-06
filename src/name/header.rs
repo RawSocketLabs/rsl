@@ -14,7 +14,6 @@ pub struct Header {
     ///
     /// - When set to `true`, the builder will ensure the header follows soundness checks defined by the RFC.
     /// - When set to `false`, the builder will not ensure the header follows these checks and may result in undefined behavior when being sent/parsed.
-    /// Something here
     #[brw(ignore)]
     #[builder(default)]
     check_soundness: bool,
@@ -60,6 +59,7 @@ pub struct Header {
 
     /// The questions in the request/response.
     #[br(count = questions)]
+    #[builder(default)]
     pub questions_entries: Vec<Question>,
     ///// The answers in the request/response.
     //#[br(count = answers)]
