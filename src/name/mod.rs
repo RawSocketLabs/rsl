@@ -32,13 +32,19 @@ fn main() {
 mod error;
 mod flags;
 mod header;
+mod label;
 mod opcode;
+mod question;
 mod rcode;
+mod resource;
 mod state;
 
 pub use error::*;
 pub use flags::*;
 pub use header::*;
+pub use label::*;
 pub use opcode::*;
+pub use question::*;
 pub use rcode::*;
+pub use resource::*;
 use state::*;
