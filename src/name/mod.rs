@@ -19,6 +19,7 @@ fn main() {
        .opcode(OpCode::new().with_op(Op::Query).with_response(false))
        .flags(Flags::new())
        .rcode(Query::Success.into())
+       .check_soundness(false)
        .build()
        .unwrap();
 
