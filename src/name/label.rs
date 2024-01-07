@@ -204,6 +204,25 @@ pub struct PointerLabel {
     pub marker: Marker,
 }
 
+impl PointerLabel {
+    pub fn from_offset(offset: u16) -> Result<Self, ()> {
+        if offset > 0x3FFF {
+            return Err(());
+        }
+        Ok(Self::new()
+            .with_marker(Marker::StringPtr)
+            .with_offset(offset))
+    }
+}
+
+impl From<PointerLabel> for Label {
+    fn from(pointer_label: PointerLabel) -> Self {
+        Self {
+            ltype: LabelType::Pointer(pointer_label),
+        }
+    }
+}
+
 /// The values of the 2 bits that determine the type of label.
 #[derive(BitfieldSpecifier, PartialEq, Eq, Clone, Copy, Debug)]
 #[bits = 2]

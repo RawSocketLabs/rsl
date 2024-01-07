@@ -61,17 +61,18 @@ pub struct Header {
     #[br(count = questions)]
     #[builder(default)]
     pub questions_entries: Vec<Question>,
-    ///// The answers in the request/response.
-    //#[br(count = answers)]
-    //pub answers_records: Vec<Resource>,
 
-    ///// The authority records in the request/response.
-    //#[br(count = authorities)]
-    //pub authorities_records: Vec<Resource>,
+    /// The answers in the request/response.
+    #[br(count = answers)]
+    pub answers_records: Vec<Resource>,
 
-    ///// The additional records in the request/response.
-    //#[br(count = additional)]
-    //pub additional_records: Vec<Resource>,
+    /// The authority records in the request/response.
+    #[br(count = authorities)]
+    pub authorities_records: Vec<Resource>,
+
+    /// The additional records in the request/response.
+    #[br(count = additional)]
+    pub additional_records: Vec<Resource>,
 }
 
 impl Header {

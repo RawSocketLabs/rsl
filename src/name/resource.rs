@@ -1,65 +1,119 @@
+use std::net::IpAddr;
+
 use binrw::{binrw, BinRead, BinWrite};
 use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 
 use crate::name::{parse_labels, Label};
 
+/// A NetBIOS resource record.
 #[binrw]
-#[derive(Debug, Clone, Builder)]
+#[derive(Builder, Debug, Clone)]
 pub struct Resource {
+    /// The name of the resource which is a sequence of labels.
     #[br(parse_with = parse_labels)]
     pub name: Vec<Label>,
+
+    /// The type of the resource.
     pub rtype: ResourceType,
+
+    /// The class of the resource.
     pub rclass: ResourceClass,
+
+    /// The time to live of the resource.
     pub ttl: u32,
+
+    /// The length of the resource data.
     pub length: u16,
-    #[br(args(rtype))]
+
+    /// The resource data.
+    #[br(args(rtype, length))]
     pub data: ResourceData,
 }
 
+/// The types of NetBIOS resources.
 #[repr(u16)]
 #[derive(BinRead, BinWrite, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceType {
+    /// An A record maps to an IPv4 address
     #[brw(magic = 0x0001u16)]
     A = 0x0001,
+
+    /// A NS record
     #[brw(magic = 0x0002u16)]
     NS = 0x0002,
+
+    /// A Null record is utilized for WACK responses.
     #[brw(magic = 0x000Au16)]
     NULL = 0x000A,
+
+    /// A NB record maps a full record to a NetBIOS name.
     #[brw(magic = 0x0020u16)]
     NB = 0x0020,
+
+    /// A NBSTAT record maps a NetBIOS name to a full record.
     #[brw(magic = 0x0021u16)]
     NBSTAT = 0x0021,
-    Unknown(u16),
+
+    /// A custom resource type.
+    Custom(u16),
 }
 
+/// The classes of NetBIOS resources.
 #[repr(u16)]
 #[derive(BinRead, BinWrite, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceClass {
+    /// An Internet resource.
     #[brw(magic = 0x0001u16)]
     Internet = 0x0001,
-    Unknown(u16),
+
+    /// An custom resource class.
+    CUstom(u16),
 }
 
+/// The data of a NetBIOS resource.
+///
+/// The data of a NetBIOS resource depends on the type of the resource.
 #[binrw]
-#[br(import(rtype: ResourceType))]
+#[br(import(rtype: ResourceType, len: u16))]
 #[derive(Debug, Clone)]
 pub enum ResourceData {
+    /// A record contains a NetBIOS address and flags.
     #[br(pre_assert(rtype == ResourceType::NB))]
-    Record(Record),
+    Record(#[br(args(len))] Record),
+
+    /// A status contains a list of names and statistics.
     #[br(pre_assert(rtype == ResourceType::NBSTAT))]
     Status(Status),
+
+    /// A null resource contains no data.
     #[br(pre_assert(rtype == ResourceType::A || rtype == ResourceType::NS))]
     Redirect(),
+
+    /// A null resource contains no data.
     #[br(pre_assert(rtype == ResourceType::NBSTAT))]
     Acknowledgement(),
 }
 
 #[binrw]
+#[br(import(len: u16))]
 #[derive(Debug, Clone)]
 pub struct Record {
     pub flags: NBFlags,
+    #[br(args(len))]
     pub address: NBAddress,
+}
+
+impl Record {
+    pub fn new(flags: NBFlags, address: NBAddress) -> Self {
+        Self { flags, address }
+    }
+}
+
+impl From<Record> for ResourceData {
+    fn from(record: Record) -> Self {
+        Self::Record(record)
+    }
 }
 
 #[binrw]
@@ -114,9 +168,24 @@ pub enum NodeType {
 }
 
 #[binrw]
+#[br(import(len: u16))]
 #[derive(Debug, Clone)]
 pub struct NBAddress {
-    pub address: [u8; 4],
+    #[br(count = len - 2)]
+    pub address: Vec<u8>,
+}
+
+impl NBAddress {
+    pub fn new(address: IpAddr) -> Self {
+        match address {
+            IpAddr::V4(v4_addr) => Self {
+                address: v4_addr.octets().to_vec(),
+            },
+            IpAddr::V6(v6_addr) => Self {
+                address: v6_addr.octets().to_vec(),
+            },
+        }
+    }
 }
 
 #[binrw]
