@@ -1,4 +1,4 @@
-use binrw::{binrw, io::Cursor, BinRead, BinResult, BinWrite};
+use binrw::binrw;
 use derive_builder::Builder;
 
 use crate::name::{parse_labels, Label};
@@ -39,6 +39,8 @@ pub enum QuestionClass {
 #[cfg(test)]
 mod unit {
     use super::*;
+    use binrw::{io::Cursor, BinRead, BinWrite};
+
     use crate::name::NameLabel;
 
     #[test]

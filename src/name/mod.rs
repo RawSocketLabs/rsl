@@ -30,6 +30,8 @@ fn main() {
 ```
 */
 
+mod client;
+mod defined;
 mod error;
 mod flags;
 mod header;
@@ -40,6 +42,8 @@ mod rcode;
 mod resource;
 mod state;
 
+pub use client::*;
+pub use defined::*;
 pub use error::*;
 pub use flags::*;
 pub use header::*;

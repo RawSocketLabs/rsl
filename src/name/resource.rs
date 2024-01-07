@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use binrw::{binrw, BinRead, BinWrite};
 use derive_builder::Builder;
 use modular_bitfield::prelude::*;
