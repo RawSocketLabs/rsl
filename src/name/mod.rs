@@ -15,7 +15,7 @@ use nbt::name::{HeaderBuilder, Op, OpCode, Flags, RCode, Query};
 
 fn main() {
     let header = HeaderBuilder::default()
-       .transacition_id(0x1234)
+       .transaction_id(0x1234)
        .opcode(OpCode::new().with_op(Op::Query).with_response(false))
        .flags(Flags::new())
        .rcode(Query::Success.into())
@@ -31,7 +31,6 @@ fn main() {
 */
 
 mod client;
-mod defined;
 mod error;
 mod flags;
 mod header;
@@ -39,11 +38,12 @@ mod label;
 mod opcode;
 mod question;
 mod rcode;
+mod request;
 mod resource;
+mod response;
 mod state;
 
 pub use client::*;
-pub use defined::*;
 pub use error::*;
 pub use flags::*;
 pub use header::*;
@@ -51,5 +51,7 @@ pub use label::*;
 pub use opcode::*;
 pub use question::*;
 pub use rcode::*;
+pub use request::*;
 pub use resource::*;
+pub use response::*;
 use state::*;

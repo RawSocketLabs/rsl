@@ -19,7 +19,7 @@ pub struct Header {
     check_soundness: bool,
 
     /// The transaction ID of the request/response. The builder requires this field to be set.
-    pub transacition_id: u16,
+    pub transaction_id: u16,
 
     /// Private field used for calculating the opcode, flags, and rcode.
     #[builder(setter(skip))]
@@ -64,14 +64,17 @@ pub struct Header {
 
     /// The answers in the request/response.
     #[br(count = answers)]
+    #[builder(default)]
     pub answers_records: Vec<Resource>,
 
     /// The authority records in the request/response.
     #[br(count = authorities)]
+    #[builder(default)]
     pub authorities_records: Vec<Resource>,
 
     /// The additional records in the request/response.
     #[br(count = additional)]
+    #[builder(default)]
     pub additional_records: Vec<Resource>,
 }
 
@@ -82,7 +85,7 @@ impl Header {
     /// ```
     /// # use nbt::name::{HeaderBuilder, OpCode, Op, Query, Flags};
     /// let header = HeaderBuilder::default()
-    ///     .transacition_id(0x0001)
+    ///     .transaction_id(0x0001)
     ///     .opcode(OpCode::new().with_op(Op::Query).with_response(false))
     ///     .flags(Flags::new())
     ///     .rcode(Query::Success.into())
@@ -111,14 +114,11 @@ mod unit {
     #[test]
     fn builder() {
         let header = HeaderBuilder::default()
-            .transacition_id(0)
+            .transaction_id(0)
             .opcode(OpCode::new().with_op(Op::Registration))
             .flags(Flags::new().with_authoritative(true))
             .rcode(Query::NameError.into())
             .questions(0x0001)
-            .answers(0x0000)
-            .authorities(0x0000)
-            .additional(0x0000)
             .build()
             .unwrap();
 
