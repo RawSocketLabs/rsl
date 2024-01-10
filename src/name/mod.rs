@@ -10,22 +10,20 @@ field in the header.
 A simple example of constructing a header and writing it to a vector is as follows:
 
 ```
-use binrw::{BinRead, BinWrite, io::Cursor};
-use nbt::name::{HeaderBuilder, Op, OpCode, Flags, RCode, Query};
+use nbt::{RequestBuilder, RequestOp};
 
 fn main() {
-    let header = HeaderBuilder::default()
-       .transaction_id(0x1234)
-       .opcode(OpCode::new().with_op(Op::Query).with_response(false))
-       .flags(Flags::new())
-       .rcode(Query::Success.into())
-       .check_soundness(false)
-       .build()
-       .unwrap();
+    // Create a new request and get its transactino id.
+    let (transaction_id, request) = RequestBuilder::default()
+        .name("testname.test.local".into())
+        .op(RequestOp::Register)
+        .build()
+        .unwrap()
+        .generate()
+        .unwrap();
 
-    let mut buffer = Cursor::new(Vec::new());
-    header.write(&mut buffer).unwrap();
-    println!("{:?}", buffer.into_inner());
+    // Print out the request bytes.
+    println!("{:?}", request.as_bytes());
 }
 ```
 */

@@ -39,7 +39,7 @@ impl Response {
         let opcode = OpCode::new().with_response(true).with_op(Op::Registration);
 
         // Set the flags depending on the type of operation being set.
-        let mut hflags = Flags::new().with_broadcast(true);
+        let mut hflags = HeaderFlags::new().with_broadcast(true);
 
         // Create the response header
         let header = HeaderBuilder::default()

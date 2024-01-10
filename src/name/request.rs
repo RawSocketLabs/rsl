@@ -3,8 +3,8 @@ use rand::Rng;
 
 use crate::name::{
     Flags, Header, HeaderBuilder, NBAddress, NBFlags, NameLabel, Op, OpCode, PointerLabel, Query,
-    QuestionBuilder, QuestionClass, QuestionType, RCode, Record, Registration, Release,
-    ResourceBuilder, ResourceClass, ResourceType,
+    QuestionBuilder, QuestionClass, QuestionType, Record, ResourceBuilder, ResourceClass,
+    ResourceType,
 };
 
 /// The set of defined request operations supported in the RFC.
@@ -297,7 +297,7 @@ impl Request {
             .unwrap();
 
         // Set the flags depending on the type of operation being set.
-        let mut hflags = Flags::new();
+        let mut hflags = HeaderFlags::new();
         let mut opcode = OpCode::new();
 
         // Set the opcode and flags based on the requested operation.

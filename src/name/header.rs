@@ -116,7 +116,7 @@ mod unit {
         let header = HeaderBuilder::default()
             .transaction_id(0)
             .opcode(OpCode::new().with_op(Op::Registration))
-            .flags(Flags::new().with_authoritative(true))
+            .flags(HeaderFlags::new().with_authoritative(true))
             .rcode(Query::NameError.into())
             .questions(0x0001)
             .build()
