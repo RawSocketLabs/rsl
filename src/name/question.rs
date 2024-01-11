@@ -1,7 +1,7 @@
 use binrw::binrw;
 use derive_builder::Builder;
 
-use crate::name::{parse_labels, Label};
+use crate::name::label::{parse_labels, Label};
 
 #[binrw]
 #[brw(big)]

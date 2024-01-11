@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::name::RValue;
+use crate::name::codes::RValue;
 
 /// The common response codes and defintions that can be mapped to from a specific RValue.
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,25 +69,25 @@ impl From<RValue> for RError {
 mod unit {
     use super::*;
 
-    use crate::name::{Query, Registration, Release};
+    use crate::name::{QueryCode, RegistrationCode, ReleaseCode};
 
     #[test]
     fn query_error() {
-        let error: RError = Query::ServerFailure.into();
+        let error: RError = QueryCode::ServerFailure.into();
 
         assert_eq!(error, RError::ServerFailure);
     }
 
     #[test]
     fn release_error() {
-        let error: RError = Release::Refused.into();
+        let error: RError = ReleaseCode::Refused.into();
 
         assert_eq!(error, RError::Refused);
     }
 
     #[test]
     fn registration_error() {
-        let error: RError = Registration::ConflictError.into();
+        let error: RError = RegistrationCode::ConflictError.into();
 
         assert_eq!(error, RError::ConflictError);
     }

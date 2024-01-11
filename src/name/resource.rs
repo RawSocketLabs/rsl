@@ -4,7 +4,7 @@ use binrw::{binrw, BinRead, BinWrite};
 use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 
-use crate::name::{parse_labels, Label};
+use crate::name::label::{parse_labels, Label};
 
 /// A NetBIOS resource record.
 #[binrw]
@@ -99,13 +99,13 @@ pub enum ResourceData {
 #[br(import(len: u16))]
 #[derive(Debug, Clone)]
 pub struct Record {
-    pub flags: NBFlags,
+    pub flags: RecordFlags,
     #[br(args(len))]
-    pub address: NBAddress,
+    pub address: RecordAddress,
 }
 
 impl Record {
-    pub fn new(flags: NBFlags, address: NBAddress) -> Self {
+    pub fn new(flags: RecordFlags, address: RecordAddress) -> Self {
         Self { flags, address }
     }
 }
@@ -152,7 +152,7 @@ pub struct Statistics {
 
 #[bitfield]
 #[derive(BinRead, BinWrite, Debug, Clone, Copy)]
-pub struct NBFlags {
+pub struct RecordFlags {
     pub group: bool,
     pub owner: NodeType,
     pub reserved: B13,
@@ -170,12 +170,12 @@ pub enum NodeType {
 #[binrw]
 #[br(import(len: u16))]
 #[derive(Debug, Clone)]
-pub struct NBAddress {
+pub struct RecordAddress {
     #[br(count = len - 2)]
     pub address: Vec<u8>,
 }
 
-impl NBAddress {
+impl RecordAddress {
     pub fn new(address: IpAddr) -> Self {
         match address {
             IpAddr::V4(v4_addr) => Self {

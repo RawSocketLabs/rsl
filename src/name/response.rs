@@ -1,19 +1,17 @@
 use derive_builder::Builder;
-use rand::Rng;
 
-use crate::name::{
-    Flags, Header, HeaderBuilder, NBAddress, NBFlags, NameLabel, Op, OpCode, PointerLabel, Query,
-    QuestionBuilder, QuestionClass, QuestionType, RCode, Record, Registration, Release,
-    ResourceBuilder, ResourceClass, ResourceType,
-};
+use crate::name::codes::{Op, OpCode, QueryCode, RCode};
+use crate::name::header::{Flags, Header, HeaderBuilder};
+use crate::name::label::NameLabel;
+use crate::name::resource::{Record, RecordAddress, RecordFlags};
 
 #[derive(Builder, Debug, Clone)]
 pub struct Response {
     pub id: u16,
     pub name: String,
     pub ttl: Option<u32>,
-    pub flags: Option<NBFlags>,
-    pub address: Option<NBAddress>,
+    pub flags: Option<RecordFlags>,
+    pub address: Option<RecordAddress>,
     pub rcode: RCode,
     #[builder(default = "false")]
     pub end_node_challenge: bool,
@@ -25,10 +23,10 @@ impl Response {
         let name = NameLabel::new(self.name).map_err(|_| ())?;
 
         // Set the flags and the address
-        let flags = self.flags.unwrap_or(NBFlags::new().with_group(false));
+        let flags = self.flags.unwrap_or(RecordFlags::new().with_group(false));
         let address = self
             .address
-            .unwrap_or(NBAddress::new("192.168.1.2".parse().unwrap()));
+            .unwrap_or(RecordAddress::new("192.168.1.2".parse().unwrap()));
 
         // Create the record
         let record = Record::new(flags, address);
@@ -39,7 +37,7 @@ impl Response {
         let opcode = OpCode::new().with_response(true).with_op(Op::Registration);
 
         // Set the flags depending on the type of operation being set.
-        let mut hflags = HeaderFlags::new().with_broadcast(true);
+        let mut hflags = Flags::new().with_broadcast(true);
 
         // Create the response header
         let header = HeaderBuilder::default()
@@ -47,11 +45,11 @@ impl Response {
             .opcode(opcode)
             .flags(hflags)
             // TODO: Into would be a good call here in the builder
-            .rcode(Query::Success.into())
+            .rcode(QueryCode::Success.into())
             .questions(1)
             .additional(1)
-            .questions_entries(vec![question])
-            .additional_records(vec![resource])
+            //.questions_entries(vec![question])
+            //.additional_records(vec![resource])
             .build()
             .unwrap();
 

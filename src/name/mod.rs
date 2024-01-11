@@ -28,28 +28,23 @@ fn main() {
 ```
 */
 
-mod client;
 mod error;
-mod flags;
-mod header;
-mod label;
-mod opcode;
-mod question;
-mod rcode;
+pub mod header;
+pub mod label;
+pub mod question;
 mod request;
-mod resource;
+pub mod resource;
 mod response;
 mod state;
 
-pub use client::*;
+mod opcode;
+mod rcode;
+pub mod codes {
+    pub use super::opcode::*;
+    pub use super::rcode::*;
+}
+
 pub use error::*;
-pub use flags::*;
-pub use header::*;
-pub use label::*;
-pub use opcode::*;
-pub use question::*;
-pub use rcode::*;
 pub use request::*;
-pub use resource::*;
 pub use response::*;
 use state::*;

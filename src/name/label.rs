@@ -24,7 +24,7 @@ pub struct Label {
     /// construct the type of label that was determined during the first read.
     #[bw(ignore)]
     #[br(restore_position, temp)]
-    pub(crate) check: FirstLabelByte,
+    pub(crate) check: LabelFirstByte,
 
     /// The type of label that was determined by the first byte.
     ///
@@ -78,7 +78,7 @@ impl TryFrom<Label> for PointerLabel {
 /// The last 2 bits are used to determine the type of label.
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug, Default)]
-pub struct FirstLabelByte {
+pub struct LabelFirstByte {
     pub indeterminate: B6,
     pub marker: Marker,
 }
@@ -94,7 +94,7 @@ pub struct FirstLabelByte {
 /// first byte of a label that uses the reserved components and will stop parsing a list of labels
 /// upon encountering a reserved label.
 #[derive(BinRead, BinWrite, Clone, Debug)]
-#[br(big, import(check: FirstLabelByte))]
+#[br(big, import(check: LabelFirstByte))]
 #[bw(big)]
 pub enum LabelType {
     /// A NetBIOS Name Label.
@@ -116,7 +116,7 @@ pub enum LabelType {
     /// This label type is reserved for future use. This crate will simply store the first byte of
     /// the label and stop parsing a list of labels upon encountering a reserved label.
     #[br(pre_assert(check.marker() == Marker::ReservedOne || check.marker() == Marker::ReservedTwo))]
-    Custom(FirstLabelByte),
+    Custom(LabelFirstByte),
 }
 
 /// A NetBIOS Name Label.
@@ -244,7 +244,7 @@ pub enum Marker {
 ///
 /// This parser will read a list of labels until it encounters either:
 /// - A label with a length of `0`.
-/// - A custom label type. A custom label is any label that has a [Marker](crate::name::Marker) of `ReservedOne` or `ReservedTwo`.
+/// - A custom label type. A custom label is any label that has a [Marker](crate::name::label::Marker) of `ReservedOne` or `ReservedTwo`.
 #[binrw::parser(reader, endian)]
 pub fn parse_labels() -> BinResult<Vec<Label>> {
     let mut vec = Vec::new();
@@ -268,6 +268,70 @@ pub fn parse_labels() -> BinResult<Vec<Label>> {
     }
 
     Ok(vec)
+}
+
+/// Converts a netbios name into a first level encoded name.
+///
+/// # Arguments
+/// * `name` - The netbios name to encode. ex: 'Workstation001'
+pub fn first_level_encode(name: &str) -> Result<Vec<u8>, ()> {
+    let length = name.len();
+
+    let padded = match length {
+        0 => return Err(()),
+        1..=16 => format!("{:16}", name),
+        _ => return Err(()),
+    };
+
+    let mut vec = Vec::new();
+    for c in padded.chars() {
+        let v = c as u8;
+        vec.push(0x41 + (v >> 4));
+        vec.push(0x41 + (v & 15));
+    }
+
+    Ok(vec)
+}
+
+/// Convert a first level fully qualified domain name into a second level encoded list of labels.
+///
+/// This function should only be utilized after the first level encoding name has been joined with
+/// the scope identifier. The scope identifier is the domain that the name is a part of the netbios
+/// name.
+///
+/// To go from a human readable name to a list of labels, use the
+/// [encode](crate::name::label::encode) function instead.
+///
+/// # Arguments
+/// * `name` - The fully qualified netbios name to encode. ex: 'FHGPHCGLHDHEGBHEGJGPGODADADBCACA.test.local'
+pub fn second_level_econde(name: &str) -> Result<Vec<Label>, ()> {
+    // Could check here to make sure the first part of the domain matches the shape of a first
+    // level encoded name. it wouln't be perfect however it could provide some level of validation
+    // that might be worth while.
+    let mut labels = Vec::new();
+
+    for label in name.split('.') {
+        let label = NameLabel::new(label.into()).unwrap();
+        labels.push(label.into());
+    }
+
+    Ok(labels)
+}
+
+/// Convert a fully qualified netbios name into a list of labels.
+///
+/// # Arguments
+/// * `name` - The fully qualified netbios name to encode. ex: 'Workstation001.test.local'
+pub fn encode(name: &str) -> Result<Vec<Label>, ()> {
+    Ok(second_level_econde(name)?)
+}
+
+pub fn decode(name: &[Label]) -> Result<String, ()> {
+    let mut string = String::new();
+
+    for label in name {}
+
+    Ok(string)
 }
 
 #[cfg(test)]

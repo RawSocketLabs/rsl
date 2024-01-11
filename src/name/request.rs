@@ -1,10 +1,12 @@
 use derive_builder::Builder;
 use rand::Rng;
 
-use crate::name::{
-    Flags, Header, HeaderBuilder, NBAddress, NBFlags, NameLabel, Op, OpCode, PointerLabel, Query,
-    QuestionBuilder, QuestionClass, QuestionType, Record, ResourceBuilder, ResourceClass,
-    ResourceType,
+use crate::name::codes::{Op, OpCode, QueryCode};
+use crate::name::header::{Flags, Header, HeaderBuilder};
+use crate::name::label::{NameLabel, PointerLabel};
+use crate::name::question::{QuestionBuilder, QuestionClass, QuestionType};
+use crate::name::resource::{
+    Record, RecordAddress, RecordFlags, ResourceBuilder, ResourceClass, ResourceType,
 };
 
 /// The set of defined request operations supported in the RFC.
@@ -13,8 +15,8 @@ pub enum RequestOp {
     /// Overwrite the existing name.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Registration](crate::name::Op::Registration)
-    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::Flags::broadcast))
+    /// - **OpCode:** [Registration](crate::name::codes::Op::Registration)
+    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::header::Flags::broadcast))
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -54,8 +56,8 @@ pub enum RequestOp {
     /// Query for the given name.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Query](crate::name::Op::Query)
-    /// - **Flags:** [Recursion Desired](crate::name::Flags::recursion_desired)
+    /// - **OpCode:** [Query](crate::name::codes::Op::Query)
+    /// - **Flags:** [Recursion Desired](crate::name::header::Flags::recursion_desired)
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -82,8 +84,8 @@ pub enum RequestOp {
     /// Refresh the current name.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Refresh](crate::name::Op::Refresh)
-    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::Flags::broadcast))])
+    /// - **OpCode:** [Refresh](crate::name::codes::Op::Refresh)
+    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::header::Flags::broadcast))])
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -123,8 +125,8 @@ pub enum RequestOp {
     /// Register a new name.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Registration](crate::name::Op::Registration)
-    /// - **Flags:** [Recursion Desired](crate::name::Flags::recursion_desired)
+    /// - **OpCode:** [Registration](crate::name::codes::Op::Registration)
+    /// - **Flags:** [Recursion Desired](crate::name::header::Flags::recursion_desired)
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -164,8 +166,8 @@ pub enum RequestOp {
     /// Release the current name.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Release](crate::name::Op::Release)
-    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::Flags::broadcast))])
+    /// - **OpCode:** [Release](crate::name::codes::Op::Release)
+    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::header::Flags::broadcast))])
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -205,9 +207,9 @@ pub enum RequestOp {
     /// Get the status of the current named node.
     ///
     /// # Key Features:
-    /// - **OpCode:** [Query](crate::name::Op::Query)
-    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::Flags::broadcast))])
-    /// - **Question Type:** [NBSTAT](crate::name::QuestionType::NBSTAT)
+    /// - **OpCode:** [Query](crate::name::codes::Op::Query)
+    /// - **Flags:** `None` (Optional: [Broadcast](crate::name::header::Flags::broadcast))
+    /// - **Question Type:** [NBSTAT](crate::name::question::QuestionType::NBSTAT)
     ///
     /// # Diagram:
     /// The generated packet will have the following form:
@@ -245,10 +247,10 @@ pub struct Request {
     pub ttl: Option<u32>,
 
     /// The flags for the requested operation.
-    pub flags: Option<NBFlags>,
+    pub flags: Option<RecordFlags>,
 
     /// The address for the requested operation.
-    pub address: Option<NBAddress>,
+    pub address: Option<RecordAddress>,
 }
 
 impl Request {
@@ -275,10 +277,10 @@ impl Request {
 
         // Use the provided values or use the default values
         let ttl = self.ttl.unwrap_or(3600);
-        let flags = self.flags.unwrap_or(NBFlags::new().with_group(false));
+        let flags = self.flags.unwrap_or(RecordFlags::new().with_group(false));
         let address = self
             .address
-            .unwrap_or(NBAddress::new("192.168.1.2".parse().unwrap()));
+            .unwrap_or(RecordAddress::new("192.168.1.2".parse().unwrap()));
 
         // Create a record
         let record = Record::new(flags, address);
@@ -297,7 +299,7 @@ impl Request {
             .unwrap();
 
         // Set the flags depending on the type of operation being set.
-        let mut hflags = HeaderFlags::new();
+        let mut hflags = Flags::new();
         let mut opcode = OpCode::new();
 
         // Set the opcode and flags based on the requested operation.
@@ -340,7 +342,7 @@ impl Request {
             .opcode(opcode)
             .flags(hflags)
             // TODO: Into would be a good call here in the builder
-            .rcode(Query::Success.into())
+            .rcode(QueryCode::Success.into())
             .questions(1)
             .additional(1)
             .questions_entries(vec![question])

@@ -14,7 +14,7 @@ use modular_bitfield::prelude::*;
 /// Where `R` is used to indicate whether this is a request or a response, and
 /// the `OPCODE` is the operation being performed.
 ///
-/// In this library the [Op](crate::name::Op) enum is used to interact with the operation. The RFC defined opcodes are as follows:
+/// In this library the [Op](crate::name::codes::Op) enum is used to interact with the operation. The RFC defined opcodes are as follows:
 ///
 /// | Opcode | Name | Description |
 /// |------|----|-----------|
@@ -23,6 +23,8 @@ use modular_bitfield::prelude::*;
 /// | 6 | Release | Indicates a release. |
 /// | 7 | WACK | Indicates a WACK. |
 /// | 8 | Refresh | Indicates a refresh. |
+/// | 9 | AltRefresh | Alternate value for refresh (due to typo/conflict in RFC - see section 4.2.1.1 and section 4.2.4 for further details). |
+/// | 15 | MultiHomedRegistration | Indicates a multi-homed registration - added after RFC 1002. |
 ///
 #[bitfield(filled = false)]
 #[derive(BitfieldSpecifier, Debug, Clone, Copy)]
@@ -53,19 +55,24 @@ pub enum Op {
     /// Indicates a refresh.
     Refresh = 8,
 
+    /// Alternate value for refresh (due to typo/conflict in RFC - see section 4.2.1.1 and section
+    /// 4.2.4 for further details).
+    AltRefresh = 9,
+
+    /// Indicates a multi-homed registration.
+    MultiHomedRegistration = 15,
+
     // The following are not part of the RFC, but are available to the consumer
     // of this library for custom use.
     Custom1 = 1,
     Custom2 = 2,
     Custom3 = 3,
     Custom4 = 4,
-    Custom9 = 9,
     Custom10 = 10,
     Custom11 = 11,
     Custom12 = 12,
     Custom13 = 13,
     Custom14 = 14,
-    Custom15 = 15,
 }
 
 #[cfg(test)]

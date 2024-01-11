@@ -1,7 +1,8 @@
 use binrw::{BinRead, BinWrite};
 use modular_bitfield::prelude::*;
 
-use crate::name::{Flags, OpCode, RValue};
+use crate::name::codes::{OpCode, RValue};
+use crate::name::header::Flags;
 
 /// Bitfield representation of opcode, flags, and rcode.
 ///
