@@ -293,14 +293,29 @@ pub fn first_level_encode(name: &str) -> Result<Vec<u8>, ()> {
     Ok(vec)
 }
 
+/// converts a first level encode name into a netbios name.
+///
+/// # Arguments
+/// * `name` - The first level encoded name to decode as bytes. ex: 'FHGPHCGLHDHEGBHEGJGPGODADADBCACA'
+pub fn first_level_decode(name: &[u8]) -> Result<String, ()> {
+    let mut bytes = Vec::new();
+
+    for c in name.chunks(2) {
+        let mut v = (c[0] - 0x41) << 4;
+        v += c[1] - 0x41;
+        bytes.push(v);
+    }
+
+    Ok(String::from_utf8(bytes).unwrap())
+}
+
 /// Convert a first level fully qualified domain name into a second level encoded list of labels.
 ///
 /// This function should only be utilized after the first level encoding name has been joined with
 /// the scope identifier. The scope identifier is the domain that the name is a part of the netbios
 /// name.
 ///
-/// To go from a human readable name to a list of labels, use the
-/// [encode](crate::name::label::encode) function instead.
+/// To go from a human readable name to a list of labels, use the [encode] function instead.
 ///
 /// # Arguments
 /// * `name` - The fully qualified netbios name to encode. ex: 'FHGPHCGLHDHEGBHEGJGPGODADADBCACA.test.local'
@@ -318,20 +333,30 @@ pub fn second_level_econde(name: &str) -> Result<Vec<Label>, ()> {
     Ok(labels)
 }
 
+pub fn decode(name: &[NameLabel]) -> Result<String, ()> {
+    let mut bytes = Vec::new();
+
+    for (idx, label) in name.iter().enumerate() {
+        match idx {
+            0 => {
+                bytes.append(&mut first_level_decode(&label.name).unwrap().into_bytes());
+            }
+            _ => {
+                bytes.push(b'.');
+                bytes.append(&mut label.name.clone());
+            }
+        }
+    }
+
+    Ok(String::from_utf8(bytes).unwrap())
+}
+
 /// Convert a fully qualified netbios name into a list of labels.
 ///
 /// # Arguments
 /// * `name` - The fully qualified netbios name to encode. ex: 'Workstation001.test.local'
 pub fn encode(name: &str) -> Result<Vec<Label>, ()> {
     Ok(second_level_econde(name)?)
-}
-
-pub fn decode(name: &[Label]) -> Result<String, ()> {
-    let mut string = String::new();
-
-    for label in name {}
-
-    Ok(string)
 }
 
 #[cfg(test)]
