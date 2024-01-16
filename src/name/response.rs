@@ -20,7 +20,7 @@ pub struct Response {
 impl Response {
     pub fn response(self) -> Result<Header, ()> {
         // Attempt to create the name label
-        let name = NameLabel::new(self.name).map_err(|_| ())?;
+        let _name = NameLabel::new(self.name).map_err(|_| ())?;
 
         // Set the flags and the address
         let flags = self.flags.unwrap_or(RecordFlags::new().with_group(false));
@@ -29,7 +29,7 @@ impl Response {
             .unwrap_or(RecordAddress::new("192.168.1.2".parse().unwrap()));
 
         // Create the record
-        let record = Record::new(flags, address);
+        let _record = Record::new(flags, address);
 
         // Create the resource
 
@@ -37,7 +37,7 @@ impl Response {
         let opcode = OpCode::new().with_response(true).with_op(Op::Registration);
 
         // Set the flags depending on the type of operation being set.
-        let mut hflags = Flags::new().with_broadcast(true);
+        let hflags = Flags::new().with_broadcast(true);
 
         // Create the response header
         let header = HeaderBuilder::default()

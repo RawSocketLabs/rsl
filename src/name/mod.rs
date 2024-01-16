@@ -10,13 +10,16 @@ field in the header.
 A simple example of constructing a header and writing it to a vector is as follows:
 
 ```
-use nbt::{RequestBuilder, RequestOp};
+use nbt::name::{RequestBuilder, RequestOp};
 
 fn main() {
     // Create a new request and get its transactino id.
     let (transaction_id, request) = RequestBuilder::default()
         .name("testname.test.local".into())
         .op(RequestOp::Register)
+        .ttl(None)
+        .flags(None)
+        .address(None)
         .build()
         .unwrap()
         .generate()
@@ -30,7 +33,12 @@ fn main() {
 
 mod error;
 pub mod header;
+
 pub mod label;
+mod name;
+pub mod names {
+    pub use super::name::*;
+}
 pub mod question;
 mod request;
 pub mod resource;

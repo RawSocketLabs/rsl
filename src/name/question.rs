@@ -41,7 +41,7 @@ mod unit {
     use super::*;
     use binrw::{io::Cursor, BinRead, BinWrite};
 
-    use crate::name::NameLabel;
+    use crate::name::label::NameLabel;
 
     #[test]
     fn question() {

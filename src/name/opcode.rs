@@ -59,11 +59,7 @@ pub enum Op {
     /// 4.2.4 for further details).
     AltRefresh = 9,
 
-    /// Indicates a multi-homed registration.
-    MultiHomedRegistration = 15,
-
-    // The following are not part of the RFC, but are available to the consumer
-    // of this library for custom use.
+    // The following are not part of the RFC, but are available to the consumer of this library for custom use.
     Custom1 = 1,
     Custom2 = 2,
     Custom3 = 3,
@@ -73,6 +69,13 @@ pub enum Op {
     Custom12 = 12,
     Custom13 = 13,
     Custom14 = 14,
+
+    #[cfg(not(feature = "nbte"))]
+    Custom15 = 15,
+
+    #[cfg(feature = "nbte")]
+    /// Indicates a multi-homed registration.
+    MultiHomedRegistration = 15,
 }
 
 #[cfg(test)]
@@ -86,5 +89,25 @@ mod unit {
         opcode.set_op(Op::Custom3);
 
         assert_eq!(opcode.op(), Op::Custom3);
+    }
+
+    #[test]
+    #[cfg(feature = "nbte")]
+    fn multi_homed() {
+        let mut opcode = OpCode::new();
+
+        opcode.set_op(Op::MultiHomedRegistration);
+
+        assert_eq!(opcode.op(), Op::MultiHomedRegistration);
+    }
+
+    #[test]
+    #[cfg(not(feature = "nbte"))]
+    fn opcode15() {
+        let mut opcode = OpCode::new();
+
+        opcode.set_op(Op::Custom15);
+
+        assert_eq!(opcode.op(), Op::Custom15);
     }
 }

@@ -3,6 +3,7 @@ use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 
 use crate::name::codes::RCode;
+use crate::name::label::NameLabel;
 use crate::name::opcode::OpCode;
 use crate::name::question::Question;
 use crate::name::resource::Resource;
@@ -84,16 +85,23 @@ pub struct Header {
 }
 
 impl Header {
+    pub fn resolve_labels_to_name_labels(&mut self) -> Vec<NameLabel> {
+        let names = Vec::new();
+        names
+    }
+
     /// Convert the header to a byte vector.
     ///
     /// # Example
     /// ```
-    /// # use nbt::name::{HeaderBuilder, OpCode, Op, Query, Flags};
+    /// # use nbt::name::header::{HeaderBuilder, Flags};
+    /// # use nbt::name::codes::{OpCode, Op, QueryCode};
+    ///
     /// let header = HeaderBuilder::default()
     ///     .transaction_id(0x0001)
     ///     .opcode(OpCode::new().with_op(Op::Query).with_response(false))
     ///     .flags(Flags::new())
-    ///     .rcode(Query::Success.into())
+    ///     .rcode(QueryCode::Success.into())
     ///     .build().unwrap();
     /// let bytes = header.as_bytes();
     /// ```
@@ -156,7 +164,7 @@ mod unit {
     use binrw::{io::Cursor, BinWrite};
     use modular_bitfield::prelude::B2;
 
-    use crate::name::{Op, OpCode, QueryCode};
+    use crate::name::codes::{Op, OpCode, QueryCode};
 
     #[test]
     fn flags() {
@@ -177,7 +185,7 @@ mod unit {
         let header = HeaderBuilder::default()
             .transaction_id(0)
             .opcode(OpCode::new().with_op(Op::Registration))
-            .flags(HeaderFlags::new().with_authoritative(true))
+            .flags(Flags::new().with_authoritative(true))
             .rcode(QueryCode::NameError.into())
             .questions(0x0001)
             .build()

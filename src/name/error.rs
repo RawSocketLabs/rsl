@@ -65,11 +65,28 @@ impl From<RValue> for RError {
     }
 }
 
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncodingError {
+    /// The name provided must contain at least one character.
+    #[error("An empty name was proviced. Names must be at least one character long.")]
+    EmptyName,
+
+    /// The name is too long to be encoded as a NetBIOS name.
+    #[error("The name is too long to be encoded as a NetBIOS name.")]
+    NameTooLong,
+
+    #[error("The name contains an invalid character: {0}.")]
+    InvalidCharacter(char),
+
+    #[error("The scope id did not contain exactly two portions split by a period.")]
+    InvalidScopeId,
+}
+
 #[cfg(test)]
 mod unit {
     use super::*;
 
-    use crate::name::{QueryCode, RegistrationCode, ReleaseCode};
+    use crate::name::codes::{QueryCode, RegistrationCode, ReleaseCode};
 
     #[test]
     fn query_error() {

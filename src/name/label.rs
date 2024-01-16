@@ -171,10 +171,18 @@ impl From<NameLabel> for Label {
     }
 }
 
+/// The NameInfo struct is used to store the first byte of a NetBIOS Name Label.
+///
+/// In this case the type of label should always be [Marker::NetbiosName].
+///
+/// The remaining 6 bits of the first byte are used to determine the length of the label.
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug, Default)]
 pub struct NameInfo {
+    /// The length of the label.
     pub length: B6,
+
+    /// The type of label.
     pub marker: Marker,
 }
 
@@ -268,95 +276,6 @@ pub fn parse_labels() -> BinResult<Vec<Label>> {
     }
 
     Ok(vec)
-}
-
-/// Converts a netbios name into a first level encoded name.
-///
-/// # Arguments
-/// * `name` - The netbios name to encode. ex: 'Workstation001'
-pub fn first_level_encode(name: &str) -> Result<Vec<u8>, ()> {
-    let length = name.len();
-
-    let padded = match length {
-        0 => return Err(()),
-        1..=16 => format!("{:16}", name),
-        _ => return Err(()),
-    };
-
-    let mut vec = Vec::new();
-    for c in padded.chars() {
-        let v = c as u8;
-        vec.push(0x41 + (v >> 4));
-        vec.push(0x41 + (v & 15));
-    }
-
-    Ok(vec)
-}
-
-/// converts a first level encode name into a netbios name.
-///
-/// # Arguments
-/// * `name` - The first level encoded name to decode as bytes. ex: 'FHGPHCGLHDHEGBHEGJGPGODADADBCACA'
-pub fn first_level_decode(name: &[u8]) -> Result<String, ()> {
-    let mut bytes = Vec::new();
-
-    for c in name.chunks(2) {
-        let mut v = (c[0] - 0x41) << 4;
-        v += c[1] - 0x41;
-        bytes.push(v);
-    }
-
-    Ok(String::from_utf8(bytes).unwrap())
-}
-
-/// Convert a first level fully qualified domain name into a second level encoded list of labels.
-///
-/// This function should only be utilized after the first level encoding name has been joined with
-/// the scope identifier. The scope identifier is the domain that the name is a part of the netbios
-/// name.
-///
-/// To go from a human readable name to a list of labels, use the [encode] function instead.
-///
-/// # Arguments
-/// * `name` - The fully qualified netbios name to encode. ex: 'FHGPHCGLHDHEGBHEGJGPGODADADBCACA.test.local'
-pub fn second_level_econde(name: &str) -> Result<Vec<Label>, ()> {
-    // Could check here to make sure the first part of the domain matches the shape of a first
-    // level encoded name. it wouln't be perfect however it could provide some level of validation
-    // that might be worth while.
-    let mut labels = Vec::new();
-
-    for label in name.split('.') {
-        let label = NameLabel::new(label.into()).unwrap();
-        labels.push(label.into());
-    }
-
-    Ok(labels)
-}
-
-pub fn decode(name: &[NameLabel]) -> Result<String, ()> {
-    let mut bytes = Vec::new();
-
-    for (idx, label) in name.iter().enumerate() {
-        match idx {
-            0 => {
-                bytes.append(&mut first_level_decode(&label.name).unwrap().into_bytes());
-            }
-            _ => {
-                bytes.push(b'.');
-                bytes.append(&mut label.name.clone());
-            }
-        }
-    }
-
-    Ok(String::from_utf8(bytes).unwrap())
-}
-
-/// Convert a fully qualified netbios name into a list of labels.
-///
-/// # Arguments
-/// * `name` - The fully qualified netbios name to encode. ex: 'Workstation001.test.local'
-pub fn encode(name: &str) -> Result<Vec<Label>, ()> {
-    Ok(second_level_econde(name)?)
 }
 
 #[cfg(test)]
