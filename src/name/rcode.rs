@@ -1,4 +1,4 @@
-use modular_bitfield::prelude::*;
+use modular_bitfield_msb::prelude::*;
 
 use crate::name::codes::Op;
 use crate::name::{RError, State};

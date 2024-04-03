@@ -33,7 +33,7 @@ impl Name {
     pub fn encode(&self) -> Result<Vec<Label>, EncodingError> {
         match (self.check_soundness, self.ntype, &self.scope) {
             (true, t, s) => {
-                let (name, scope) = check_soundness(&self.name, t, &s)?;
+                let (name, scope) = check_validity(&self.name, t, &s)?;
 
                 let encoded_name = first_level_encode(&name)?;
 
@@ -79,7 +79,7 @@ impl Name {
     }
 }
 
-fn check_soundness(
+fn check_validity(
     name: &str,
     ntype: Option<NameType>,
     scope: &Option<String>,

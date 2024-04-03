@@ -9,6 +9,8 @@ use crate::name::resource::{
     Record, RecordAddress, RecordFlags, ResourceBuilder, ResourceClass, ResourceType,
 };
 
+use super::RequestGenerationError;
+
 /// The set of defined request operations supported in the RFC.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestOp {
@@ -244,24 +246,27 @@ pub struct Request {
     pub op: RequestOp,
 
     /// The time to live for the requested operation.
+    #[builder(default)]
     pub ttl: Option<u32>,
 
     /// The flags for the requested operation.
+    #[builder(default)]
     pub flags: Option<RecordFlags>,
 
     /// The address for the requested operation.
+    #[builder(default)]
     pub address: Option<RecordAddress>,
 }
 
 impl Request {
     /// Generate a transaction id and header for an request operation as defined in the RFC.
-    pub fn generate(self) -> Result<(u16, Header), ()> {
+    pub fn generate(self) -> Result<(u16, Header), RequestGenerationError> {
         // Randomly generate a unique transaction id.
         let mut rng = rand::thread_rng();
         let id = rng.gen_range(0..=65_535);
 
         // Attempt to create the name label
-        let name = NameLabel::new(self.name).map_err(|_| ())?;
+        let name = NameLabel::new(self.name).map_err(|_| RequestGenerationError::NameError)?;
 
         // Set the question to the name we want to register.
         let question_type = match self.op {

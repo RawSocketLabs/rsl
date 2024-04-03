@@ -82,6 +82,40 @@ pub enum EncodingError {
     InvalidScopeId,
 }
 
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestGenerationError {
+    // TODO: Make this a transparent error?
+    #[error("Name error!")]
+    NameError,
+
+    #[error("Question error!")]
+    QuestionError,
+
+    #[error("Resource error!")]
+    ResourceError,
+
+    #[error("Header error!")]
+    HeaderError,
+}
+
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum HeaderBuildError {
+    #[error("The transaction id must be between 0 and 65535.")]
+    TransactionId,
+
+    #[error("The opcode must be between 0 and 15.")]
+    OpCode,
+
+    #[error("The flags must be between 0 and 255.")]
+    Flags,
+
+    #[error("The rcode must be between 0 and 15.")]
+    RCode,
+
+    #[error("Uninitailized field: {0}")]
+    UninitializedField(String),
+}
+
 #[cfg(test)]
 mod unit {
     use super::*;
