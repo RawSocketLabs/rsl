@@ -276,12 +276,13 @@ mod unit {
     #[test]
     fn state() {
         let bytes = vec![
-            0x24, 0x17, 170, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x24, 0x17, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         let header = Header::from_bytes(&bytes).unwrap();
 
         println!("{:?}", header.opcode);
         println!("{:?}", header.flags);
+        println!("{:?}", header.rcode);
 
         assert_eq!(header.transaction_id, 0x2417);
         assert_eq!(header.opcode.op(), Op::Query);
