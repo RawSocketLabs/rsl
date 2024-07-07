@@ -94,7 +94,6 @@ pub enum HeaderError {
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Command {
     /// Create a new directory.
-    // #[brw(magic = 0x00u8)]
     CreateDirectory = 0x00,
     /// Delete an empty directory.
     DeleteDirectory = 0x01,
