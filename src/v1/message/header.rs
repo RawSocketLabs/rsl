@@ -95,20 +95,28 @@ pub enum HeaderError {
 pub enum Command {
     /// Create a new directory.
     CreateDirectory = 0x00,
+
     /// Delete an empty directory.
     DeleteDirectory = 0x01,
+
     /// Open a file.
     Open = 0x02,
+
     /// Create or open a file.
     Create = 0x03,
+
     /// Close a file.
     Close = 0x04,
+
     /// Flush data for a file, or all files associated with a client, PID pair.
     Flush = 0x05,
+
     /// Delete a file.
     Delete = 0x06,
+
     /// Rename a file or set of files .
     Rename = 0x07,
+
     /// Query information about a file.
     QueryInformation = 0x08,
     SetInformation = 0x09,
