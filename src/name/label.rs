@@ -79,8 +79,8 @@ impl TryFrom<Label> for PointerLabel {
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug, Default)]
 pub struct LabelFirstByte {
-    pub indeterminate: B6,
     pub marker: Marker,
+    pub indeterminate: B6,
 }
 
 /// The types of labels.
@@ -179,11 +179,11 @@ impl From<NameLabel> for Label {
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug, Default)]
 pub struct NameInfo {
-    /// The length of the label.
-    pub length: B6,
-
     /// The type of label.
     pub marker: Marker,
+
+    /// The length of the label.
+    pub length: B6,
 }
 
 impl TryFrom<&[u8]> for NameInfo {
@@ -208,8 +208,8 @@ impl TryFrom<&[u8]> for NameInfo {
 #[bitfield]
 #[derive(BinRead, Clone, Copy, BinWrite, Debug)]
 pub struct PointerLabel {
-    pub offset: B14,
     pub marker: Marker,
+    pub offset: B14,
 }
 
 impl PointerLabel {
