@@ -1,79 +1,82 @@
-use strum_macros::{Display, EnumString, IntoStaticStr};
+use binrw::binrw;
 
-#[derive(Debug, Clone, Copy, PartialEq, Display, EnumString, IntoStaticStr)]
+#[binrw]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Encryption {
-    #[strum(serialize = "3des-cbc")]
+    #[brw(magic = b"edes-cbc")]
     TripleDesCbc,
 
-    #[strum(serialize = "blowfish-cbc")]
+    #[brw(magic = b"blowfish-cbc")]
     BlowfishCbc,
 
-    #[strum(serialize = "twofish256-cbc")]
+    #[brw(magic = b"twofish256-cbc")]
     Twofish256Cbc,
 
-    #[strum(serialize = "twofish-cbc")]
+    #[brw(magic = b"twofish-cbc")]
     TwofishCbc,
 
-    #[strum(serialize = "twofish192-cbc")]
+    #[brw(magic = b"twofish192-cbc")]
     Twofish192Cbc,
 
-    #[strum(serialize = "twofish128-cbc")]
+    #[brw(magic = b"twofish128-cbc")]
     Twofish128Cbc,
 
-    #[strum(serialize = "aes256-cbc")]
+    #[brw(magic = b"aes256-cbc")]
     Aes256Cbc,
 
-    #[strum(serialize = "aes192-cbc")]
+    #[brw(magic = b"aes192-cbc")]
     Aes192Cbc,
 
-    #[strum(serialize = "aes128-cbc")]
+    #[brw(magic = b"aes128-cbc")]
     Aes128Cbc,
 
-    #[strum(serialize = "serpent256-cbc")]
+    #[brw(magic = b"serpent256-cbc")]
     Serpent256Cbc,
 
-    #[strum(serialize = "serpent192-cbc")]
+    #[brw(magic = b"serpent192-cbc")]
     Serpent192Cbc,
 
-    #[strum(serialize = "serpent128-cbc")]
+    #[brw(magic = b"serpent128-cbc")]
     Serpent128Cbc,
 
-    #[strum(serialize = "arcfour")]
+    #[brw(magic = b"arcfour")]
     Arcfour,
 
-    #[strum(serialize = "idea-cbc")]
+    #[brw(magic = b"idea-cbc")]
     IdeaCbc,
 
-    #[strum(serialize = "cast128-cbc")]
+    #[brw(magic = b"cast128-cbc")]
     Cast128Cbc,
 
-    #[strum(serialize = "none")]
+    #[brw(magic = b"none")]
     NoEncryption,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Display, EnumString, IntoStaticStr)]
+#[binrw]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Hmac {
-    #[strum(serialize = "hmac-sha1")]
+    #[brw(magic = b"hmac-sha1")]
     Sha1,
 
-    #[strum(serialize = "hmac-sha1-96")]
+    #[brw(magic = b"hmac-sha1-96")]
     Sha1_96,
 
-    #[strum(serialize = "hmac-md5")]
+    #[brw(magic = b"hmac-md5")]
     Md5,
 
-    #[strum(serialize = "hmac-md5-96")]
+    #[brw(magic = b"hmac-md5-96")]
     Md5_96,
 
-    #[strum(serialize = "none")]
+    #[brw(magic = b"none")]
     NoHmac,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Display, EnumString, IntoStaticStr)]
+#[binrw]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Exchange {
-    #[strum(serialize = "diffie-hellman-group1-sha1")]
+    #[brw(magic = b"diffie-hellman-group1-sha1")]
     DiffieHellmanGroup1Sha1,
 
-    #[strum(serialize = "diffie-hellman-group14-sha1")]
+    #[brw(magic = b"diffie-hellman-group14-sha1")]
     DiffieHellmanGroup14Sha1,
 }

@@ -1,14 +1,9 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+mod encrypt;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub struct Header {
+    pub total_length: u32,
+    pub padding_length: u8,
+    pub payload: Vec<u8>,
+    pub padding_data: Vec<u8>,
+    pub mac: Vec<u8>,
 }
