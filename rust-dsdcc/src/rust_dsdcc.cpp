@@ -1,16 +1,12 @@
 #include "rust_dsdcc.h"
 
-Decoder::Decoder() : inner_(std::make_unique<DSDcc::DSDDecoder>()) {
-  inner_->setDecodeMode(DSDcc::DSDDecoder::DSDDecodeDMR, true);
-  inner_->setDecodeMode(DSDcc::DSDDecoder::DSDDecodeNXDN48, false);
-  inner_->setDecodeMode(DSDcc::DSDDecoder::DSDDecodeNXDN96, false);
+namespace rust_dsdcc {
+
+DSDDecoder::DSDDecoder() : dsddecoder(std::make_unique<::DSDcc::DSDDecoder>()) {}
+DSDDecoder::~DSDDecoder() {}
+
+void DSDDecoder::run(int16_t sample) const { dsddecoder->run(sample); }
+std::unique_ptr<::rust_dsdcc::DSDDecoder> create_dsddecoder() {
+  return std::make_unique<DSDDecoder>();
 }
-
-void Decoder::run(int16_t sample) { inner_->run(sample); }
-
-const std::string &Decoder::get_frame_type_text() {
-  const char *cstr = inner_->getFrameTypeText();
-  return cstr ? std::string(cstr) : std::string();
-}
-
-std::unique_ptr<Decoder> new_decoder() { return std::make_unique<Decoder>(); }
+} // namespace rust_dsdcc
