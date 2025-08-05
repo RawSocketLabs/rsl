@@ -20,7 +20,7 @@ public:
   void setQuiet() const;
   void setDecodeMode(rust_dsdcc::DSDDecodeMode mode, bool on) const;
 
-  std::unique_ptr<::DSDcc::DSDDecoder> dsddecoder;
+  const std::unique_ptr<::DSDcc::DSDDecoder> dsddecoder;
 };
 
 std::unique_ptr<::rust_dsdcc::DSDDecoder> create_dsddecoder();

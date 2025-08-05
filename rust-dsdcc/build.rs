@@ -9,9 +9,4 @@ fn main() {
     println!("cargo:rerun-if-changed=src/rust_dsdcc.cc");
     println!("cargo:rerun-if-changed=src/rust_dsdcc.h");
     println!("cargo:rustc-link-lib=dsdcc");
-    println!("cargo:rustc-link-search=native=/usr/local/lib/");
-
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        println!("cargo:rustc-link-arg=-W1,-rpath,@loader_path/../lib")
-    }
 }

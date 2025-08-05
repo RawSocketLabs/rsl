@@ -5,7 +5,7 @@ mod ffi {
         DSDDecodeDMR,
         DSDDecodeNXDN48,
         DSDDecodeNXDN96,
-}
+    }
 
     unsafe extern "C++" {
         include!("rust_dsdcc.h");
