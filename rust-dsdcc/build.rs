@@ -6,7 +6,7 @@ fn main() {
         .flag_if_supported("-std=c++17")
         .compile("rust_dsdcc");
 
-    println!("cargo:rerun-if-changed=src/rust_dsdcc.cc");
+    println!("cargo:rerun-if-changed=src/rust_dsdcc.cpp");
     println!("cargo:rerun-if-changed=src/rust_dsdcc.h");
     println!("cargo:rustc-link-lib=dsdcc");
 }

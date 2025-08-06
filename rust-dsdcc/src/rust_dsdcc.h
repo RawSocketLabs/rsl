@@ -5,12 +5,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace rust_dsdcc {
-  enum DSDDecodeMode {
-    DSDDecodeDMR,
-    DSDDecodeNXDN48,
-    DSDDecodeNXDN96,
-  };
+typedef DSDcc::DSDDecoder::DSDDecodeMode DSDDecodeMode;
 
 class DSDDecoder {
 public:
@@ -18,11 +13,9 @@ public:
   ~DSDDecoder();
   void run(short sample) const;
   void setQuiet() const;
-  void setDecodeMode(rust_dsdcc::DSDDecodeMode mode, bool on) const;
-
+  void setDecodeMode(DSDDecodeMode mode, bool on) const;
+  
   const std::unique_ptr<::DSDcc::DSDDecoder> dsddecoder;
 };
 
-std::unique_ptr<::rust_dsdcc::DSDDecoder> create_dsddecoder();
-
-} // namespace rust_dsdcc
+std::unique_ptr<::DSDDecoder> create_dsddecoder();

@@ -1,10 +1,18 @@
-#[cxx::bridge(namespace = "rust_dsdcc")]
-mod ffi {
+#[cxx::bridge()]
+pub mod ffi {
     #[repr(u32)]
-    enum DSDDecodeMode {
-        DSDDecodeDMR,
+    pub enum DSDDecodeMode {
+        DSDDecodeAuto,
+        DSDDecodeNone,
+        DSDDecodeP25P1,
+        DSDDecodeDStar,
         DSDDecodeNXDN48,
         DSDDecodeNXDN96,
+        DSDDecodeProVoice,
+        DSDDecodeDMR,
+        DSDDecodeX2TDMA,
+        DSDDecodeDPMR,
+        DSDDecodeYSF,
     }
 
     unsafe extern "C++" {
@@ -25,11 +33,6 @@ pub struct DSDDecoder {
     internal: cxx::UniquePtr<ffi::DSDDecoder>,
 }
 
-pub enum DSDDecodeMode {
-    DSDDecodeDMR,
-    DSDDecodeNXDN48,
-    DSDDecodeNXDN96,
-}
 
 impl DSDDecoder {
     pub fn new() -> Self {
@@ -46,12 +49,7 @@ impl DSDDecoder {
         self.internal.setQuiet();
     }
 
-    pub fn set_decode_mode(&self, mode: DSDDecodeMode, on: bool) {
-        let mode = match mode {
-            DSDDecodeMode::DSDDecodeDMR => ffi::DSDDecodeMode::DSDDecodeDMR,
-            DSDDecodeMode::DSDDecodeNXDN48 => ffi::DSDDecodeMode::DSDDecodeNXDN48,
-            DSDDecodeMode::DSDDecodeNXDN96 => ffi::DSDDecodeMode::DSDDecodeNXDN96,
-        };
+    pub fn set_decode_mode(&self, mode: ffi::DSDDecodeMode, on: bool) {
         self.internal.setDecodeMode(mode, on);
     }
 }
