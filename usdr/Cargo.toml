@@ -1,0 +1,11 @@
+[package]
+name = "usdr-lib-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cxx = "1.0.194"
+num-complex = "0.4.6"
+
+[build-dependencies]
+cxx-build = "1.0.194"
