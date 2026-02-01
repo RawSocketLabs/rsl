@@ -34,25 +34,6 @@ pub use ffi::UsdrDevice;
 use std::pin::Pin;
 use num_complex::Complex;
 
-/// IQ sample in ci16 format (complex int16)
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(C)]
-pub struct IQSample {
-    pub i: i16,
-    pub q: i16,
-}
-
-impl IQSample {
-    /// Size of an IQSample in bytes
-    pub const SIZE: usize = 4; // 2 bytes for i + 2 bytes for q
-
-    /// Convert an IQSample to its byte representation
-    pub fn to_bytes(&self) -> [u8; 4] {
-        let i_bytes = self.i.to_le_bytes();
-        let q_bytes = self.q.to_le_bytes();
-        [i_bytes[0], i_bytes[1], q_bytes[0], q_bytes[1]]
-    }
-}
 
 /// Convert a slice of IQSamples to a Vec of bytes (safe, no unsafe code)
 pub fn samples_to_bytes(samples: &[Complex<i16>]) -> Vec<u8> {
@@ -179,7 +160,7 @@ pub fn open_device(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Device, IQSample, samples_to_bytes};
+    use crate::{Device, samples_to_bytes};
     use std::fs::File;
     use std::io::Write;
     use std::time::{Duration, Instant};

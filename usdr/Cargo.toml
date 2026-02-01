@@ -1,5 +1,5 @@
 [package]
-name = "usdr-lib-rs"
+name = "usdr"
 version = "0.1.0"
 edition = "2024"
 
