@@ -20,7 +20,8 @@ UsdrDevice::UsdrDevice(const std::string& device_string,
 {
 
   unsigned chmsk = 0x1u;
-  unsigned rates[1] = { samplerate_rx };
+  // rates must be an array of 4: [rx_rate, tx_rate, adc_rate, dac_rate]
+  unsigned rates[4] = { samplerate_rx, 0, 0, 0 };
 
   usdrlog_setlevel(nullptr, loglevel);
   usdrlog_enablecolorize(nullptr);
