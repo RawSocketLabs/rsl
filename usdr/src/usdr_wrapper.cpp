@@ -1,5 +1,5 @@
 #include "usdr_wrapper.hpp"
-#include "usdr-lib-rs/src/lib.rs.h"
+#include "usdr/src/lib.rs.h"
 
 #include <stdexcept>
 #include <utility>
