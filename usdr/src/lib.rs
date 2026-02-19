@@ -12,7 +12,7 @@ mod ffi {
             loglevel: i32,
             samplerate_rx: u32,
             samples_per_packet: u32,
-        ) -> UniquePtr<UsdrDevice>;
+        ) -> Result<UniquePtr<UsdrDevice>>;
 
         fn start(self: Pin<&mut UsdrDevice>);
         fn stop(self: Pin<&mut UsdrDevice>);
@@ -81,7 +81,7 @@ impl Device {
         sr_rx: u32,
         spp: u32,
     ) -> Result<Self, UsdrError> {
-        let inner = open_device(device, loglevel, sr_rx, spp);
+        let inner = open_device(device, loglevel, sr_rx, spp).map_err(|_| UsdrError::NullDevice)?;
         if inner.is_null() {
             return Err(UsdrError::NullDevice);
         }
@@ -147,7 +147,7 @@ pub fn open_device(
     loglevel: i32,
     sr_rx: u32,
     spp: u32,
-) -> UniquePtr<UsdrDevice> {
+) -> Result<UniquePtr<UsdrDevice>, cxx::Exception> {
     cxx::let_cxx_string!(device_cxx = device);
     ffi::make_usdr_device(
         &device_cxx,
