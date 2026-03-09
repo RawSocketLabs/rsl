@@ -4,9 +4,7 @@
 #include <memory>
 #include <string>
 
-// This is your C API header
 extern "C" {
-//#include "simpleapi.h"
 #include "usdr_logging.h"
 #include "dm_dev.h"
 #include "dm_rate.h"
@@ -30,10 +28,10 @@ public:
 
   ~UsdrDevice();
 
+  void init();
   void start();
   void stop();
 
-  // Frequency / BW
   void set_rx_freq(uint32_t hz);
   void set_rx_bandwidth(uint32_t hz);
 
@@ -45,6 +43,11 @@ public:
 
 private:
   sdr_data_t dev_{};
+  std::string device_string_;
+  uint32_t samplerate_rx_;
+  uint32_t samples_per_packet_;
+  uint32_t rx_freq_{0};
+  uint32_t rx_bandwidth_{0};
 };
 
 std::unique_ptr<UsdrDevice> make_usdr_device(

@@ -31,16 +31,15 @@ mod ffi {
 }
 
 pub use ffi::UsdrDevice;
-use std::pin::Pin;
 use num_complex::Complex;
+use std::pin::Pin;
 
-
-/// Convert a slice of IQSamples to a Vec of bytes (safe, no unsafe code)
+/// Convert a slice of IQ samples to a Vec of bytes
 pub fn samples_to_bytes(samples: &[Complex<i16>]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(samples.len() * 2);
+    let mut bytes = Vec::with_capacity(samples.len() * 4);
     for sample in samples {
-        bytes.extend_from_slice(sample.re.to_le_bytes().as_slice());
-        bytes.extend_from_slice(sample.im.to_le_bytes().as_slice());
+        bytes.extend_from_slice(&sample.re.to_le_bytes());
+        bytes.extend_from_slice(&sample.im.to_le_bytes());
     }
     bytes
 }
@@ -67,14 +66,14 @@ impl std::fmt::Display for UsdrError {
 
 impl std::error::Error for UsdrError {}
 
-/// Safe wrapper around UsdrDevice that provides safe methods for receiving data
+/// Safe wrapper around UsdrDevice
 pub struct Device {
     inner: UniquePtr<UsdrDevice>,
     bytes_per_sample: u32,
 }
 
 impl Device {
-    /// Create a new SafeUsdrDevice by opening a device
+    /// Create a new Device by opening a USDR device
     pub fn open(
         device: &str,
         loglevel: i32,
@@ -96,52 +95,48 @@ impl Device {
 
     /// Start streaming
     pub fn start(&mut self) {
-        self.inner.as_mut().unwrap().start();
+        self.inner.as_mut().expect("Device is null").start();
     }
 
     /// Stop streaming
     pub fn stop(&mut self) {
-        self.inner.as_mut().unwrap().stop();
+        self.inner.as_mut().expect("Device is null").stop();
     }
 
     /// Set RX frequency in Hz
     pub fn set_rx_freq(&mut self, hz: u32) {
-        self.inner.as_mut().unwrap().set_rx_freq(hz);
+        self.inner.as_mut().expect("Device is null").set_rx_freq(hz);
     }
 
-    /// Receive IQ samples into a slice (safe API)
+    /// Receive IQ samples into a slice
     ///
-    /// This method receives `samples.len()` IQ samples into the provided buffer.
     /// Each sample is 4 bytes (2 bytes I + 2 bytes Q for ci16 format).
     pub fn receive(&mut self, samples: &mut [Complex<i16>]) -> Result<usize, UsdrError> {
         let num_samples = samples.len() as u32;
-
-        // Safety: IQSample is repr(C) and matches the ci16 layout (i16, i16)
-        // We're passing a valid mutable pointer to properly sized memory
         let ptr = samples.as_mut_ptr() as *mut u8;
 
         unsafe {
-            self.inner.as_mut().unwrap().receive_data(
-                ptr,
-                std::ptr::null_mut(),
-                num_samples,
-            );
+            self.inner
+                .as_mut()
+                .expect("Device is null")
+                .receive_data(ptr, std::ptr::null_mut(), num_samples);
         }
 
         Ok(samples.len())
     }
 
-    /// Get mutable access to the underlying device (for advanced operations)
+    /// Get mutable access to the underlying device
     pub fn inner_mut(&mut self) -> Pin<&mut UsdrDevice> {
-        self.inner.as_mut().unwrap()
+        self.inner.as_mut().expect("Device is null")
     }
 
     /// Get immutable access to the underlying device
     pub fn inner(&self) -> &UsdrDevice {
-        self.inner.as_ref().unwrap()
+        self.inner.as_ref().expect("Device is null")
     }
 }
 
+/// Open a USDR device and return the raw UniquePtr
 pub fn open_device(
     device: &str,
     loglevel: i32,
@@ -149,26 +144,18 @@ pub fn open_device(
     spp: u32,
 ) -> Result<UniquePtr<UsdrDevice>, cxx::Exception> {
     cxx::let_cxx_string!(device_cxx = device);
-    ffi::make_usdr_device(
-        &device_cxx,
-        loglevel,
-        sr_rx,
-        spp,
-    )
+    ffi::make_usdr_device(&device_cxx, loglevel, sr_rx, spp)
 }
-
 
 #[cfg(test)]
 mod tests {
-    use crate::{Device, samples_to_bytes};
+    use super::*;
     use std::fs::File;
     use std::io::Write;
     use std::time::{Duration, Instant};
-    use num_complex::Complex;
 
     #[test]
     fn test_receive_samples() {
-        // Open device with safe wrapper
         let mut device = Device::open(
             "",           // device string (empty = auto-detect)
             3,            // loglevel
@@ -178,18 +165,14 @@ mod tests {
 
         println!("RX bytes per sample: {}", device.rx_bytes_per_sample());
 
-        // Start streaming
         device.start();
         device.set_rx_freq(104_100_000);
 
-        // Allocate buffer for receiving samples using safe IQSample type
         let num_samples: usize = 1024;
         let mut samples: Vec<Complex<i16>> = vec![Complex::default(); num_samples];
 
-        // Open output file
-        let mut output_file = File::create("/tmp/out").expect("Failed to create output file /tmp/out");
+        let mut output_file = File::create("/tmp/out").expect("Failed to create output file");
 
-        // Capture for 10 seconds
         let capture_duration = Duration::from_secs(10);
         let start_time = Instant::now();
         let mut total_samples: u64 = 0;
@@ -198,10 +181,8 @@ mod tests {
         println!("Starting 10 second capture to /tmp/out...");
 
         while start_time.elapsed() < capture_duration {
-            // Receive samples using safe API
             device.receive(&mut samples).expect("Failed to receive samples");
 
-            // Write raw IQ data to file using safe conversion
             let bytes = samples_to_bytes(&samples);
             output_file.write_all(&bytes).expect("Failed to write to output file");
 
@@ -209,10 +190,7 @@ mod tests {
             total_bytes += bytes.len() as u64;
         }
 
-        // Flush and close file
         output_file.flush().expect("Failed to flush output file");
-
-        // Stop streaming
         device.stop();
 
         let elapsed = start_time.elapsed();
@@ -221,9 +199,7 @@ mod tests {
         println!("  Total samples: {}", total_samples);
         println!("  Total bytes: {} ({:.2} MB)", total_bytes, total_bytes as f64 / 1_000_000.0);
         println!("  Effective sample rate: {:.2} Hz", total_samples as f64 / elapsed.as_secs_f64());
-        println!("  Output file: /tmp/out");
 
-        // Basic sanity check
         assert!(total_samples > 0, "Expected to receive some samples");
         assert!(total_bytes > 0, "Expected to write some data");
     }
