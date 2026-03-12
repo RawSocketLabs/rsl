@@ -10,11 +10,10 @@ mod ffi {
         fn make_usdr_device(
             device_string: &CxxString,
             loglevel: i32,
-            samplerate_rx: u32,
             samples_per_packet: u32,
         ) -> Result<UniquePtr<UsdrDevice>>;
 
-        fn start(self: Pin<&mut UsdrDevice>);
+        fn start(self: Pin<&mut UsdrDevice>, rate: u32);
         fn stop(self: Pin<&mut UsdrDevice>);
         fn set_rx_freq(self: Pin<&mut UsdrDevice>, hz: u32);
         fn set_rx_bandwidth(self: Pin<&mut UsdrDevice>, hz: u32);
@@ -77,10 +76,9 @@ impl Device {
     pub fn open(
         device: &str,
         loglevel: i32,
-        sr_rx: u32,
         spp: u32,
     ) -> Result<Self, UsdrError> {
-        let inner = open_device(device, loglevel, sr_rx, spp).map_err(|_| UsdrError::NullDevice)?;
+        let inner = open_device(device, loglevel, spp).map_err(|_| UsdrError::NullDevice)?;
         if inner.is_null() {
             return Err(UsdrError::NullDevice);
         }
@@ -94,8 +92,8 @@ impl Device {
     }
 
     /// Start streaming
-    pub fn start(&mut self) {
-        self.inner.as_mut().expect("Device is null").start();
+    pub fn start(&mut self, rate: u32) {
+        self.inner.as_mut().expect("Device is null").start(rate);
     }
 
     /// Stop streaming
@@ -140,11 +138,10 @@ impl Device {
 pub fn open_device(
     device: &str,
     loglevel: i32,
-    sr_rx: u32,
     spp: u32,
 ) -> Result<UniquePtr<UsdrDevice>, cxx::Exception> {
     cxx::let_cxx_string!(device_cxx = device);
-    ffi::make_usdr_device(&device_cxx, loglevel, sr_rx, spp)
+    ffi::make_usdr_device(&device_cxx, loglevel, spp)
 }
 
 #[cfg(test)]
@@ -159,13 +156,12 @@ mod tests {
         let mut device = Device::open(
             "",           // device string (empty = auto-detect)
             3,            // loglevel
-            1_000_000,    // samplerate_rx (1 MHz)
             1024,         // samples_per_packet
         ).expect("Failed to open USDR device");
 
         println!("RX bytes per sample: {}", device.rx_bytes_per_sample());
 
-        device.start();
+        device.start(1_000_000);
         device.set_rx_freq(104_100_000);
 
         let num_samples: usize = 1024;

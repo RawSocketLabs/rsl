@@ -16,15 +16,12 @@ void check_or_throw(int err, const char* op) {
 
 UsdrDevice::UsdrDevice(const std::string& device_string,
                        int loglevel,
-                       uint32_t samplerate_rx,
                        uint32_t samples_per_packet)
     : device_string_(device_string),
-      samplerate_rx_(samplerate_rx),
       samples_per_packet_(samples_per_packet)
 {
   usdrlog_setlevel(nullptr, loglevel);
   usdrlog_enablecolorize(nullptr);
-  init();
 }
 
 UsdrDevice::~UsdrDevice() {
@@ -35,7 +32,7 @@ UsdrDevice::~UsdrDevice() {
   }
 }
 
-void UsdrDevice::init() {
+void UsdrDevice::init(uint32_t samplerate) {
   if (dev_.dev != nullptr) {
     return;  // Already initialized
   }
@@ -43,7 +40,7 @@ void UsdrDevice::init() {
   const unsigned chmsk = 0x1u;
   const std::string format = "ci16";
   // rates: [rx_rate, tx_rate, adc_rate, dac_rate]
-  unsigned rates[4] = { samplerate_rx_, 0, 0, 0 };
+  unsigned rates[4] = { samplerate, 0, 0, 0 };
   int res;
 
   res = usdr_dmd_create_string(device_string_.c_str(), &dev_.dev);
@@ -68,8 +65,8 @@ void UsdrDevice::init() {
   check_or_throw(res, "rx stream precharge");
 }
 
-void UsdrDevice::start() {
-  init();
+void UsdrDevice::start(uint32_t rate) {
+  init(rate);
 
   if (dev_.dev == nullptr) {
     throw std::runtime_error("Device is null after init");
@@ -141,11 +138,9 @@ uint32_t UsdrDevice::rx_bytes_per_sample() const {
 std::unique_ptr<UsdrDevice> make_usdr_device(
     const std::string& device_string,
     int32_t loglevel,
-    uint32_t samplerate_rx,
     uint32_t samples_per_packet) {
   return std::make_unique<UsdrDevice>(
       device_string,
       loglevel,
-      samplerate_rx,
       samples_per_packet);
 }
