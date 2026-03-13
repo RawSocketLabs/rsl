@@ -27,12 +27,14 @@ public:
 
   ~UsdrDevice();
 
-  void init(uint32_t sample_rate);
-  void start(uint32_t sample_rate);
+  uint32_t init();
+  uint32_t start(uint32_t sample_rate);
   void stop();
 
   void set_rx_freq(uint32_t hz);
   void set_rx_bandwidth(uint32_t hz);
+
+  float get_temperature();
 
   void receive_data(uint8_t* ch1,
                     uint8_t* ch2,

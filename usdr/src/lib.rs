@@ -13,10 +13,11 @@ mod ffi {
             samples_per_packet: u32,
         ) -> Result<UniquePtr<UsdrDevice>>;
 
-        fn start(self: Pin<&mut UsdrDevice>, rate: u32);
+        fn start(self: Pin<&mut UsdrDevice>, rate: u32) -> u32;
         fn stop(self: Pin<&mut UsdrDevice>);
         fn set_rx_freq(self: Pin<&mut UsdrDevice>, hz: u32);
         fn set_rx_bandwidth(self: Pin<&mut UsdrDevice>, hz: u32);
+        fn get_temperature(self: Pin<&mut UsdrDevice>) -> Result<f32>;
 
         unsafe fn receive_data(
             self: Pin<&mut UsdrDevice>,
@@ -50,7 +51,45 @@ pub enum UsdrError {
     BufferTooSmall { required: usize, provided: usize },
     /// Device is null
     NullDevice,
+    /// Device is too hot!
+    TooHot,
+    /// Failed to create device
+    CreateDevice,
+    /// Failed to power on device
+    PowerOn,
+    /// Failed to set sample rate
+    SetSampleRate,
+    /// Failed to create RX stream
+    CreateRxStream,
+    /// Failed to get RX stream info
+    GetRxStreamInfo,
+    /// Failed to sync RX stream
+    SyncOff,
+    /// Failed to pre-charge RX stream
+    RxStreamPreCharge,
+    /// Failed to set frequency
+    SetFreq,
+    /// Failed to set bandwidth
+    SetBandwidth,
+    /// Failed to sync RX stream to off
+    SyncNone,
+    /// Failed to get temperature
+    GetTemperature,
 }
+
+const USDR_SUCCESS: u32                 = 0;
+const USDR_ERR_CREATE_DEVICE: u32       = 1;
+const USDR_ERR_POWER_ON: u32            = 2;
+const USDR_ERR_SET_SAMPLE_RATE: u32     = 3;
+const USDR_ERR_CREATE_RX_STREAM: u32    = 4;
+const USDR_ERR_GET_RX_STREAM_INFO: u32  = 5;
+const USDR_ERR_SYNC_OFF: u32            = 6;
+const USDR_ERR_RX_STREAM_PRE_CHARGE: u32 = 7;
+const USDR_ERR_NULL_DEVICE: u32         = 8;
+const USDR_ERR_SET_FREQ: u32            = 9;
+const USDR_ERR_SET_BANDWIDTH: u32       = 10;
+const USDR_ERR_SYNC_NONE: u32           = 11;
+const USDR_ERR_TOO_HOT: u32             = 12;
 
 impl std::fmt::Display for UsdrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,6 +98,7 @@ impl std::fmt::Display for UsdrError {
                 write!(f, "Buffer too small: need {} bytes, got {}", required, provided)
             }
             UsdrError::NullDevice => write!(f, "Device is null"),
+            _ => write!(f, "{:?}", self),
         }
     }
 }
@@ -92,8 +132,23 @@ impl Device {
     }
 
     /// Start streaming
-    pub fn start(&mut self, rate: u32) {
-        self.inner.as_mut().expect("Device is null").start(rate);
+    pub fn start(&mut self, rate: u32) -> Result<(), UsdrError> {
+        match self.inner.as_mut().expect("Device is null").start(rate) {
+            USDR_SUCCESS => Ok(()),
+            USDR_ERR_CREATE_DEVICE => Err(UsdrError::CreateDevice),
+            USDR_ERR_POWER_ON => Err(UsdrError::PowerOn),
+            USDR_ERR_SET_SAMPLE_RATE => Err(UsdrError::SetSampleRate),
+            USDR_ERR_CREATE_RX_STREAM => Err(UsdrError::CreateRxStream),
+            USDR_ERR_GET_RX_STREAM_INFO => Err(UsdrError::GetRxStreamInfo),
+            USDR_ERR_SYNC_OFF => Err(UsdrError::SyncOff),
+            USDR_ERR_RX_STREAM_PRE_CHARGE => Err(UsdrError::RxStreamPreCharge),
+            USDR_ERR_NULL_DEVICE => Err(UsdrError::NullDevice),
+            USDR_ERR_SET_FREQ => Err(UsdrError::SetFreq),
+            USDR_ERR_SET_BANDWIDTH => Err(UsdrError::SetBandwidth),
+            USDR_ERR_SYNC_NONE => Err(UsdrError::SyncNone),
+            USDR_ERR_TOO_HOT => Err(UsdrError::TooHot),
+            _ => panic!("Unexpected return value from USDR start()"),
+        }
     }
 
     /// Stop streaming
@@ -104,6 +159,15 @@ impl Device {
     /// Set RX frequency in Hz
     pub fn set_rx_freq(&mut self, hz: u32) {
         self.inner.as_mut().expect("Device is null").set_rx_freq(hz);
+    }
+
+    /// Get device temperature in degrees Celsius
+    pub fn get_temperature(&mut self) -> Result<f32, UsdrError> {
+        self.inner
+            .as_mut()
+            .expect("Device is null")
+            .get_temperature()
+            .map_err(|_| UsdrError::GetTemperature)
     }
 
     /// Receive IQ samples into a slice
