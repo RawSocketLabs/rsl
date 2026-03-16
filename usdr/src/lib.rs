@@ -13,6 +13,7 @@ mod ffi {
             samples_per_packet: u32,
         ) -> Result<UniquePtr<UsdrDevice>>;
 
+        fn init(self: Pin<&mut UsdrDevice>) -> u32;
         fn start(self: Pin<&mut UsdrDevice>, rate: u32) -> u32;
         fn stop(self: Pin<&mut UsdrDevice>);
         fn set_rx_freq(self: Pin<&mut UsdrDevice>, hz: u32);
@@ -77,25 +78,29 @@ pub enum UsdrError {
     GetTemperature,
 }
 
-const USDR_SUCCESS: u32                 = 0;
-const USDR_ERR_CREATE_DEVICE: u32       = 1;
-const USDR_ERR_POWER_ON: u32            = 2;
-const USDR_ERR_SET_SAMPLE_RATE: u32     = 3;
-const USDR_ERR_CREATE_RX_STREAM: u32    = 4;
-const USDR_ERR_GET_RX_STREAM_INFO: u32  = 5;
-const USDR_ERR_SYNC_OFF: u32            = 6;
+const USDR_SUCCESS: u32 = 0;
+const USDR_ERR_CREATE_DEVICE: u32 = 1;
+const USDR_ERR_POWER_ON: u32 = 2;
+const USDR_ERR_SET_SAMPLE_RATE: u32 = 3;
+const USDR_ERR_CREATE_RX_STREAM: u32 = 4;
+const USDR_ERR_GET_RX_STREAM_INFO: u32 = 5;
+const USDR_ERR_SYNC_OFF: u32 = 6;
 const USDR_ERR_RX_STREAM_PRE_CHARGE: u32 = 7;
-const USDR_ERR_NULL_DEVICE: u32         = 8;
-const USDR_ERR_SET_FREQ: u32            = 9;
-const USDR_ERR_SET_BANDWIDTH: u32       = 10;
-const USDR_ERR_SYNC_NONE: u32           = 11;
-const USDR_ERR_TOO_HOT: u32             = 12;
+const USDR_ERR_NULL_DEVICE: u32 = 8;
+const USDR_ERR_SET_FREQ: u32 = 9;
+const USDR_ERR_SET_BANDWIDTH: u32 = 10;
+const USDR_ERR_SYNC_NONE: u32 = 11;
+const USDR_ERR_TOO_HOT: u32 = 12;
 
 impl std::fmt::Display for UsdrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UsdrError::BufferTooSmall { required, provided } => {
-                write!(f, "Buffer too small: need {} bytes, got {}", required, provided)
+                write!(
+                    f,
+                    "Buffer too small: need {} bytes, got {}",
+                    required, provided
+                )
             }
             UsdrError::NullDevice => write!(f, "Device is null"),
             _ => write!(f, "{:?}", self),
@@ -113,17 +118,16 @@ pub struct Device {
 
 impl Device {
     /// Create a new Device by opening a USDR device
-    pub fn open(
-        device: &str,
-        loglevel: i32,
-        spp: u32,
-    ) -> Result<Self, UsdrError> {
-        let inner = open_device(device, loglevel, spp).map_err(|_| UsdrError::NullDevice)?;
-        if inner.is_null() {
+    pub fn open(device: &str, loglevel: i32, spp: u32) -> Result<Self, UsdrError> {
+        let mut inner = open_device(device, loglevel, spp).map_err(|_| UsdrError::NullDevice)?;
+        if inner.as_mut().expect("Device is null").init() > 0 {
             return Err(UsdrError::NullDevice);
         }
         let bytes_per_sample = inner.as_ref().unwrap().rx_bytes_per_sample();
-        Ok(Self { inner, bytes_per_sample })
+        Ok(Self {
+            inner,
+            bytes_per_sample,
+        })
     }
 
     /// Get bytes per sample for RX
@@ -178,10 +182,11 @@ impl Device {
         let ptr = samples.as_mut_ptr() as *mut u8;
 
         unsafe {
-            self.inner
-                .as_mut()
-                .expect("Device is null")
-                .receive_data(ptr, std::ptr::null_mut(), num_samples);
+            self.inner.as_mut().expect("Device is null").receive_data(
+                ptr,
+                std::ptr::null_mut(),
+                num_samples,
+            );
         }
 
         Ok(samples.len())
@@ -218,10 +223,11 @@ mod tests {
     #[test]
     fn test_receive_samples() {
         let mut device = Device::open(
-            "",           // device string (empty = auto-detect)
-            3,            // loglevel
-            1024,         // samples_per_packet
-        ).expect("Failed to open USDR device");
+            "",   // device string (empty = auto-detect)
+            3,    // loglevel
+            1024, // samples_per_packet
+        )
+        .expect("Failed to open USDR device");
 
         println!("RX bytes per sample: {}", device.rx_bytes_per_sample());
 
@@ -241,10 +247,14 @@ mod tests {
         println!("Starting 10 second capture to /tmp/out...");
 
         while start_time.elapsed() < capture_duration {
-            device.receive(&mut samples).expect("Failed to receive samples");
+            device
+                .receive(&mut samples)
+                .expect("Failed to receive samples");
 
             let bytes = samples_to_bytes(&samples);
-            output_file.write_all(&bytes).expect("Failed to write to output file");
+            output_file
+                .write_all(&bytes)
+                .expect("Failed to write to output file");
 
             total_samples += num_samples as u64;
             total_bytes += bytes.len() as u64;
@@ -257,8 +267,15 @@ mod tests {
         println!("Capture complete!");
         println!("  Duration: {:.2} seconds", elapsed.as_secs_f64());
         println!("  Total samples: {}", total_samples);
-        println!("  Total bytes: {} ({:.2} MB)", total_bytes, total_bytes as f64 / 1_000_000.0);
-        println!("  Effective sample rate: {:.2} Hz", total_samples as f64 / elapsed.as_secs_f64());
+        println!(
+            "  Total bytes: {} ({:.2} MB)",
+            total_bytes,
+            total_bytes as f64 / 1_000_000.0
+        );
+        println!(
+            "  Effective sample rate: {:.2} Hz",
+            total_samples as f64 / elapsed.as_secs_f64()
+        );
 
         assert!(total_samples > 0, "Expected to receive some samples");
         assert!(total_bytes > 0, "Expected to write some data");

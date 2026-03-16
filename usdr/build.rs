@@ -1,4 +1,3 @@
-
 fn main() {
     println!("cargo:rerun-if-changed=src/usdr_wrapper.cpp");
     println!("cargo:rerun-if-changed=include/usdr_wrapper.hpp");
