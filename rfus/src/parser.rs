@@ -13,28 +13,78 @@ use crate::error::ParseUnitError;
 use crate::types::{FrequencyHz, FrequencyRange, Hertz, SampleRateSps, ScanTarget};
 
 /// Parse a user-facing RF frequency and return Hz.
+///
+/// This is a convenience wrapper around [`FrequencyHz`] parsing. Inputs must
+/// resolve to an integer Hz value within [`crate::MIN_FREQUENCY_HZ`] through
+/// [`crate::MAX_FREQUENCY_HZ`].
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(rfus::parse_frequency_hz("450m").unwrap(), 450_000_000);
+/// ```
 pub fn parse_frequency_hz(input: &str) -> Result<u64, ParseUnitError> {
     Ok(FrequencyHz::from_str(input)?.hz())
 }
 
 /// Parse a generic Hz quantity and return it as `u32`.
+///
+/// Use this for hardware APIs that accept unconstrained Hz quantities as
+/// `u32`. Frequency-floor validation is not applied; only `u32` conversion is
+/// checked.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(rfus::parse_hertz_u32("12.5khz").unwrap(), 12_500);
+/// ```
 pub fn parse_hertz_u32(input: &str) -> Result<u32, ParseUnitError> {
     Hertz::from_str(input)?.as_u32()
 }
 
 /// Parse a user-facing sample rate and return samples per second.
+///
+/// Inputs may use frequency-style suffixes such as `mhz` or sample-rate
+/// suffixes such as `MS/s` and `msps`. The result must be within
+/// [`crate::MIN_SAMPLE_RATE_SPS`] through [`crate::MAX_SAMPLE_RATE_SPS`].
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(rfus::parse_sample_rate_sps("2msps").unwrap(), 2_000_000);
+/// ```
 pub fn parse_sample_rate_sps(input: &str) -> Result<u32, ParseUnitError> {
     Ok(SampleRateSps::from_str(input)?.sps())
 }
 
 /// Parse a single frequency range.
+///
+/// Ranges accept `lower-upper` or `lower,upper`; both endpoints are parsed as
+/// [`FrequencyHz`] and the final range must satisfy `lower < upper`.
+///
+/// # Examples
+///
+/// ```
+/// let range = rfus::parse_frequency_range("400m-520m").unwrap();
+/// assert_eq!(range.canonical(), "400000000,520000000");
+/// ```
 pub fn parse_frequency_range(input: &str) -> Result<FrequencyRange, ParseUnitError> {
-    FrequencyRange::from_str(input)
+    parse_complete(input, frequency_range_tokens)?.resolve()
 }
 
 /// Parse one or more frequency ranges.
+///
+/// Range lists are separated with semicolons. A single static frequency is
+/// rejected because this helper is specifically for range-only input.
+///
+/// # Examples
+///
+/// ```
+/// let ranges = rfus::parse_frequency_ranges("400m-520m;800m-900m").unwrap();
+/// assert_eq!(ranges.len(), 2);
+/// ```
 pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseUnitError> {
-    match ScanTarget::from_str(input)? {
+    match parse_scan_target(input)? {
         ScanTarget::Ranges(ranges) => Ok(ranges),
         ScanTarget::Static(freq) => Err(ParseUnitError::Parse(format!(
             "{} is a static frequency, not a range",
@@ -43,19 +93,7 @@ pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseU
     }
 }
 
-pub(crate) fn parse_frequency_value(input: &str) -> Result<u64, ParseUnitError> {
-    parse_unit_value(input, UnitSet::Frequency)
-}
-
-pub(crate) fn parse_sample_rate_value(input: &str) -> Result<u64, ParseUnitError> {
-    parse_unit_value(input, UnitSet::SampleRate)
-}
-
-pub(crate) fn parse_frequency_range_value(input: &str) -> Result<FrequencyRange, ParseUnitError> {
-    parse_complete(input, frequency_range_tokens)?.resolve()
-}
-
-pub(crate) fn parse_scan_target_value(input: &str) -> Result<ScanTarget, ParseUnitError> {
+pub(crate) fn parse_scan_target(input: &str) -> Result<ScanTarget, ParseUnitError> {
     parse_complete(input, scan_target_tokens)?.resolve()
 }
 
@@ -72,7 +110,7 @@ fn parse_complete<'a, T>(
         .map_err(|_| ParseUnitError::Parse(input.to_string()))
 }
 
-fn parse_unit_value(input: &str, unit_set: UnitSet) -> Result<u64, ParseUnitError> {
+pub(crate) fn parse_unit_value(input: &str, unit_set: UnitSet) -> Result<u64, ParseUnitError> {
     parse_complete(input, scalar_token)?.resolve(unit_set)
 }
 
@@ -178,15 +216,15 @@ fn number_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
 }
 
 fn unit_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
-    preceded(multispace0, take_while(1.., is_unit_char)).parse_next(input)
-}
-
-fn is_unit_char(c: char) -> bool {
-    c.is_ascii_alphabetic() || c == '/'
+    preceded(
+        multispace0,
+        take_while(1.., |c: char| c.is_ascii_alphabetic() || c == '/'),
+    )
+    .parse_next(input)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum UnitSet {
+pub(crate) enum UnitSet {
     Frequency,
     SampleRate,
 }
