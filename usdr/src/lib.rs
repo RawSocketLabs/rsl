@@ -13,10 +13,10 @@ mod ffi {
             samples_per_packet: u32,
         ) -> Result<UniquePtr<UsdrDevice>>;
 
-        fn init(self: Pin<&mut UsdrDevice>) -> u32;
+        fn init(self: Pin<&mut UsdrDevice>, sample_rate: u32) -> u32;
         fn start(self: Pin<&mut UsdrDevice>, rate: u32) -> u32;
         fn stop(self: Pin<&mut UsdrDevice>);
-        fn set_rx_freq(self: Pin<&mut UsdrDevice>, hz: u32);
+        fn set_rx_freq(self: Pin<&mut UsdrDevice>, hz: u64);
         fn set_rx_bandwidth(self: Pin<&mut UsdrDevice>, hz: u32);
         fn get_temperature(self: Pin<&mut UsdrDevice>) -> Result<f32>;
 
@@ -110,6 +110,25 @@ impl std::fmt::Display for UsdrError {
 
 impl std::error::Error for UsdrError {}
 
+fn map_usdr_result(code: u32) -> Result<(), UsdrError> {
+    match code {
+        USDR_SUCCESS => Ok(()),
+        USDR_ERR_CREATE_DEVICE => Err(UsdrError::CreateDevice),
+        USDR_ERR_POWER_ON => Err(UsdrError::PowerOn),
+        USDR_ERR_SET_SAMPLE_RATE => Err(UsdrError::SetSampleRate),
+        USDR_ERR_CREATE_RX_STREAM => Err(UsdrError::CreateRxStream),
+        USDR_ERR_GET_RX_STREAM_INFO => Err(UsdrError::GetRxStreamInfo),
+        USDR_ERR_SYNC_OFF => Err(UsdrError::SyncOff),
+        USDR_ERR_RX_STREAM_PRE_CHARGE => Err(UsdrError::RxStreamPreCharge),
+        USDR_ERR_NULL_DEVICE => Err(UsdrError::NullDevice),
+        USDR_ERR_SET_FREQ => Err(UsdrError::SetFreq),
+        USDR_ERR_SET_BANDWIDTH => Err(UsdrError::SetBandwidth),
+        USDR_ERR_SYNC_NONE => Err(UsdrError::SyncNone),
+        USDR_ERR_TOO_HOT => Err(UsdrError::TooHot),
+        _ => panic!("Unexpected return code from USDR FFI: {}", code),
+    }
+}
+
 /// Safe wrapper around UsdrDevice
 pub struct Device {
     inner: UniquePtr<UsdrDevice>,
@@ -117,12 +136,18 @@ pub struct Device {
 }
 
 impl Device {
-    /// Create a new Device by opening a USDR device
-    pub fn open(device: &str, loglevel: i32, spp: u32) -> Result<Self, UsdrError> {
+    /// Open a USDR device. `sample_rate` is applied during init so the clock
+    /// plan (and the LMS6002D mixer offset that lets sub-200 MHz tuning work)
+    /// is established before any `set_rx_freq` call.
+    pub fn open(
+        device: &str,
+        loglevel: i32,
+        spp: u32,
+        sample_rate: u32,
+    ) -> Result<Self, UsdrError> {
         let mut inner = open_device(device, loglevel, spp).map_err(|_| UsdrError::NullDevice)?;
-        if inner.as_mut().expect("Device is null").init() > 0 {
-            return Err(UsdrError::NullDevice);
-        }
+        let init_result = inner.as_mut().expect("Device is null").init(sample_rate);
+        map_usdr_result(init_result)?;
         let bytes_per_sample = inner.as_ref().unwrap().rx_bytes_per_sample();
         Ok(Self {
             inner,
@@ -135,24 +160,11 @@ impl Device {
         self.bytes_per_sample
     }
 
-    /// Start streaming
+    /// Start streaming. If `rate` differs from the rate passed to `open()`,
+    /// the sample rate is re-applied.
     pub fn start(&mut self, rate: u32) -> Result<(), UsdrError> {
-        match self.inner.as_mut().expect("Device is null").start(rate) {
-            USDR_SUCCESS => Ok(()),
-            USDR_ERR_CREATE_DEVICE => Err(UsdrError::CreateDevice),
-            USDR_ERR_POWER_ON => Err(UsdrError::PowerOn),
-            USDR_ERR_SET_SAMPLE_RATE => Err(UsdrError::SetSampleRate),
-            USDR_ERR_CREATE_RX_STREAM => Err(UsdrError::CreateRxStream),
-            USDR_ERR_GET_RX_STREAM_INFO => Err(UsdrError::GetRxStreamInfo),
-            USDR_ERR_SYNC_OFF => Err(UsdrError::SyncOff),
-            USDR_ERR_RX_STREAM_PRE_CHARGE => Err(UsdrError::RxStreamPreCharge),
-            USDR_ERR_NULL_DEVICE => Err(UsdrError::NullDevice),
-            USDR_ERR_SET_FREQ => Err(UsdrError::SetFreq),
-            USDR_ERR_SET_BANDWIDTH => Err(UsdrError::SetBandwidth),
-            USDR_ERR_SYNC_NONE => Err(UsdrError::SyncNone),
-            USDR_ERR_TOO_HOT => Err(UsdrError::TooHot),
-            _ => panic!("Unexpected return value from USDR start()"),
-        }
+        let start_result = self.inner.as_mut().expect("Device is null").start(rate);
+        map_usdr_result(start_result)
     }
 
     /// Stop streaming
@@ -161,7 +173,7 @@ impl Device {
     }
 
     /// Set RX frequency in Hz
-    pub fn set_rx_freq(&mut self, hz: u32) {
+    pub fn set_rx_freq(&mut self, hz: u64) {
         self.inner.as_mut().expect("Device is null").set_rx_freq(hz);
     }
 
@@ -223,9 +235,10 @@ mod tests {
     #[test]
     fn test_receive_samples() {
         let mut device = Device::open(
-            "",   // device string (empty = auto-detect)
-            3,    // loglevel
-            1024, // samples_per_packet
+            "",        // device string (empty = auto-detect)
+            3,         // loglevel
+            1024,      // samples_per_packet
+            1_000_000, // sample_rate
         )
         .expect("Failed to open USDR device");
 

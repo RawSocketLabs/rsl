@@ -27,11 +27,11 @@ public:
 
   ~UsdrDevice();
 
-  uint32_t init();
+  uint32_t init(uint32_t sample_rate);
   uint32_t start(uint32_t sample_rate);
   void stop();
 
-  void set_rx_freq(uint32_t hz);
+  void set_rx_freq(uint64_t hz);
   void set_rx_bandwidth(uint32_t hz);
 
   float get_temperature();
@@ -46,6 +46,7 @@ private:
   sdr_data_t dev_{};
   std::string device_string_;
   uint32_t samples_per_packet_;
+  uint32_t sample_rate_{0};
   uint32_t rx_freq_{0};
   uint32_t rx_bandwidth_{0};
 };
@@ -54,4 +55,3 @@ std::unique_ptr<UsdrDevice> make_usdr_device(
     const std::string& device_string,
     int32_t loglevel,
     uint32_t samples_per_packet);
-
