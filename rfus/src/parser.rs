@@ -15,8 +15,7 @@ use crate::types::{FrequencyHz, FrequencyRange, Hertz, SampleRateSps, ScanTarget
 /// Parse a user-facing RF frequency and return Hz.
 ///
 /// This is a convenience wrapper around [`FrequencyHz`] parsing. Inputs must
-/// resolve to an integer Hz value within [`crate::MIN_FREQUENCY_HZ`] through
-/// [`crate::MAX_FREQUENCY_HZ`].
+/// resolve to a whole Hz integer.
 ///
 /// # Examples
 ///
@@ -29,9 +28,8 @@ pub fn parse_frequency_hz(input: &str) -> Result<u64, ParseUnitError> {
 
 /// Parse a generic Hz quantity and return it as `u32`.
 ///
-/// Use this for hardware APIs that accept unconstrained Hz quantities as
-/// `u32`. Frequency-floor validation is not applied; only `u32` conversion is
-/// checked.
+/// Use this for hardware APIs that accept Hz quantities as `u32`. Only the
+/// `u32` conversion is checked; no RF range bounds are applied.
 ///
 /// # Examples
 ///
@@ -45,8 +43,7 @@ pub fn parse_hertz_u32(input: &str) -> Result<u32, ParseUnitError> {
 /// Parse a user-facing sample rate and return samples per second.
 ///
 /// Inputs may use frequency-style suffixes such as `mhz` or sample-rate
-/// suffixes such as `MS/s` and `msps`. The result must be within
-/// [`crate::MIN_SAMPLE_RATE_SPS`] through [`crate::MAX_SAMPLE_RATE_SPS`].
+/// suffixes such as `MS/s` and `msps`. The result must fit `u32`.
 ///
 /// # Examples
 ///
@@ -135,8 +132,8 @@ struct FrequencyRangeTokens<'a> {
 
 impl FrequencyRangeTokens<'_> {
     fn resolve(self) -> Result<FrequencyRange, ParseUnitError> {
-        let lower = FrequencyHz::new(self.lower.resolve(UnitSet::Frequency)?)?;
-        let upper = FrequencyHz::new(self.upper.resolve(UnitSet::Frequency)?)?;
+        let lower = FrequencyHz::new(self.lower.resolve(UnitSet::Frequency)?);
+        let upper = FrequencyHz::new(self.upper.resolve(UnitSet::Frequency)?);
         FrequencyRange::new(lower, upper)
     }
 }
@@ -152,7 +149,7 @@ impl ScanTargetTokens<'_> {
         match self {
             Self::Static(token) => {
                 let hz = token.resolve(UnitSet::Frequency)?;
-                Ok(ScanTarget::Static(FrequencyHz::new(hz)?))
+                Ok(ScanTarget::Static(FrequencyHz::new(hz)))
             }
             Self::Ranges(ranges) => ranges
                 .into_iter()
