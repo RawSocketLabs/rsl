@@ -4,17 +4,15 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
-use crate::constants::{
-    MAX_FREQUENCY_HZ, MAX_SAMPLE_RATE_SPS, MIN_FREQUENCY_HZ, MIN_SAMPLE_RATE_SPS,
-};
 use crate::error::ParseUnitError;
 use crate::parser::{self, UnitSet};
 
 /// A generic hertz quantity.
 ///
-/// Use this for bandwidths, offsets, and other Hz values that should not be
-/// constrained by the RF frequency floor. Display formatting emits the bare
-/// integer Hz value.
+/// Use this for bandwidths, offsets, and other Hz values. It carries the
+/// [`Hertz::as_u32`] helper for hardware APIs that need a `u32`; semantically it
+/// reads as a raw quantity rather than an RF tuning frequency ([`FrequencyHz`]).
+/// Display formatting emits the bare integer Hz value.
 ///
 /// # Examples
 ///
@@ -56,12 +54,12 @@ impl FromStr for Hertz {
     }
 }
 
-/// A validated RF frequency in Hz.
+/// An RF frequency in Hz.
 ///
-/// Parsing enforces [`crate::MIN_FREQUENCY_HZ`] and
-/// [`crate::MAX_FREQUENCY_HZ`]. Use [`FrequencyHz::new_unchecked`] only at
-/// trusted boundaries where validation has already happened. Display formatting
-/// emits the bare integer Hz value.
+/// Parsing imposes no RF range bounds — any value that parses to a whole Hz
+/// integer is accepted. Range limits (e.g. what a device can tune to) are the
+/// consumer's responsibility. Display formatting emits the bare integer Hz
+/// value.
 ///
 /// # Examples
 ///
@@ -74,21 +72,9 @@ impl FromStr for Hertz {
 pub struct FrequencyHz(u64);
 
 impl FrequencyHz {
-    /// Create a frequency without applying range validation.
-    ///
-    /// This constructor is intended for values that have already been checked
-    /// by an external source such as a hardware inventory or protocol schema.
-    pub const fn new_unchecked(value: u64) -> Self {
+    /// Create a frequency from a raw Hz value.
+    pub const fn new(value: u64) -> Self {
         Self(value)
-    }
-
-    /// Create a validated frequency from a raw Hz value.
-    ///
-    /// Returns [`ParseUnitError::OutOfRange`] when `value` is outside
-    /// [`crate::MIN_FREQUENCY_HZ`] through [`crate::MAX_FREQUENCY_HZ`].
-    pub fn new(value: u64) -> Result<Self, ParseUnitError> {
-        validate_range(value, MIN_FREQUENCY_HZ, MAX_FREQUENCY_HZ, "Hz")?;
-        Ok(Self(value))
     }
 
     /// Return the frequency in whole hertz.
@@ -108,7 +94,7 @@ impl FromStr for FrequencyHz {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let hz = parser::parse_unit_value(input, UnitSet::Frequency)?;
-        Self::new(hz)
+        Ok(Self::new(hz))
     }
 }
 
@@ -129,26 +115,9 @@ impl FromStr for FrequencyHz {
 pub struct SampleRateSps(u32);
 
 impl SampleRateSps {
-    /// Create a sample rate without applying range validation.
-    ///
-    /// This constructor is intended for values that have already been checked
-    /// by an external source such as a hardware inventory or protocol schema.
-    pub const fn new_unchecked(value: u32) -> Self {
+    /// Create a sample rate from a raw S/s value.
+    pub const fn new(value: u32) -> Self {
         Self(value)
-    }
-
-    /// Create a validated sample rate from a raw S/s value.
-    ///
-    /// Returns [`ParseUnitError::OutOfRange`] when `value` is outside
-    /// [`crate::MIN_SAMPLE_RATE_SPS`] through [`crate::MAX_SAMPLE_RATE_SPS`].
-    pub fn new(value: u32) -> Result<Self, ParseUnitError> {
-        validate_range(
-            value as u64,
-            MIN_SAMPLE_RATE_SPS as u64,
-            MAX_SAMPLE_RATE_SPS as u64,
-            "S/s",
-        )?;
-        Ok(Self(value))
     }
 
     /// Return the sample rate in whole samples per second.
@@ -168,12 +137,8 @@ impl FromStr for SampleRateSps {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let value = parser::parse_unit_value(input, UnitSet::SampleRate)?;
-        validate_range(
-            value,
-            MIN_SAMPLE_RATE_SPS as u64,
-            MAX_SAMPLE_RATE_SPS as u64,
-            "S/s",
-        )?;
+        // Only a type-fit check: the value must fit u32. No RF range bounds.
+        validate_range(value, 0, u32::MAX as u64, "S/s")?;
         Ok(Self(value as u32))
     }
 }

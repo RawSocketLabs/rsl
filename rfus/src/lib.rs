@@ -67,7 +67,6 @@
 //! assert!(matches!(target, ScanTarget::Ranges(_)));
 //! ```
 
-mod constants;
 mod error;
 mod parser;
 
@@ -79,7 +78,6 @@ mod tests;
 
 mod types;
 
-pub use constants::{MAX_FREQUENCY_HZ, MAX_SAMPLE_RATE_SPS, MIN_FREQUENCY_HZ, MIN_SAMPLE_RATE_SPS};
 pub use error::ParseUnitError;
 pub use parser::{
     parse_frequency_hz, parse_frequency_range, parse_frequency_ranges, parse_hertz_u32,

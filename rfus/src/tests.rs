@@ -34,12 +34,6 @@ fn parses_unbounded_hertz_for_bandwidths() {
 }
 
 #[test]
-fn rejects_sample_rate_bounds() {
-    assert!("100ksps".parse::<SampleRateSps>().is_err());
-    assert!("25msps".parse::<SampleRateSps>().is_err());
-}
-
-#[test]
 fn parses_frequency_ranges() {
     let range = "1mhz-20mhz".parse::<FrequencyRange>().unwrap();
     assert_eq!(range.lower.hz(), 1_000_000);
@@ -176,8 +170,8 @@ fn reports_overflow_and_u32_bounds() {
         "4294967296".parse::<SampleRateSps>().unwrap_err(),
         ParseUnitError::OutOfRange {
             value: 4_294_967_296,
-            min: MIN_SAMPLE_RATE_SPS as u64,
-            max: MAX_SAMPLE_RATE_SPS as u64,
+            min: 0,
+            max: u32::MAX as u64,
             unit: "S/s",
         }
     );
@@ -218,14 +212,13 @@ fn serde_accepts_dense_and_explicit_scan_targets() {
 #[cfg(feature = "serde")]
 #[test]
 fn serde_checks_numeric_boundaries() {
-    assert!(serde_json::from_str::<FrequencyHz>("999999").is_err());
     assert_eq!(
         serde_json::from_str::<SampleRateSps>("200000")
             .unwrap()
             .sps(),
-        MIN_SAMPLE_RATE_SPS
+        200_000
     );
-    assert!(serde_json::from_str::<SampleRateSps>("20000001").is_err());
+    assert!(serde_json::from_str::<SampleRateSps>("4294967296").is_err());
     assert!(
         serde_json::from_str::<FrequencyRange>(r#"{ "lower": 2000000, "upper": 1000000 }"#)
             .is_err()

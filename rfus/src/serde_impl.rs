@@ -140,7 +140,7 @@ impl NumberOrStringUnit for FrequencyHz {
     where
         E: de::Error,
     {
-        FrequencyHz::new(value).map_err(E::custom)
+        Ok(FrequencyHz::new(value))
     }
 
     fn from_string<E>(value: &str) -> Result<Self, E>
@@ -159,7 +159,7 @@ impl NumberOrStringUnit for SampleRateSps {
         E: de::Error,
     {
         let value = u32::try_from(value).map_err(E::custom)?;
-        SampleRateSps::new(value).map_err(E::custom)
+        Ok(SampleRateSps::new(value))
     }
 
     fn from_string<E>(value: &str) -> Result<Self, E>
