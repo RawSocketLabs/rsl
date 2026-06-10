@@ -16,6 +16,7 @@ mod integration {
     use crate::auth::UserPassAuthenticator;
     use crate::client::{Client, TargetAddr};
     use crate::error::{Result, SocksError};
+    use crate::v5::Response;
 
     /// Spawns a TCP echo listener that serves one connection.
     fn spawn_echo() -> SocketAddr {
@@ -49,6 +50,114 @@ mod integration {
             .with_authenticators(vec![Box::new(UserPassAuthenticator::new(|user, pass| {
                 user == b"user" && pass == b"hunter2"
             }))])
+    }
+
+    /// A minimal raw "proxy" that completes NoAuth negotiation, drains the
+    /// request, and returns a reply carrying `rep`. Used to verify the client
+    /// maps reply codes faithfully.
+    fn fake_proxy_replying(rep: u8) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            // Method identifier: version, nmethods, methods.
+            let mut head = [0u8; 2];
+            if s.read_exact(&mut head).is_err() {
+                return;
+            }
+            let mut methods = vec![0u8; head[1] as usize];
+            let _ = s.read_exact(&mut methods);
+            // Offer NoAuth.
+            let _ = s.write_all(&[5, 0x00]);
+            // Request: version, command, rsv, atyp, [addr], port.
+            let mut rhead = [0u8; 4];
+            if s.read_exact(&mut rhead).is_err() {
+                return;
+            }
+            let addr_len = match rhead[3] {
+                1 => 4,
+                4 => 16,
+                3 => {
+                    let mut len = [0u8; 1];
+                    s.read_exact(&mut len).unwrap();
+                    len[0] as usize
+                }
+                _ => 0,
+            };
+            let mut rest = vec![0u8; addr_len + 2];
+            let _ = s.read_exact(&mut rest);
+            // Reply: version, rep, rsv, atyp=IPv4, 0.0.0.0, port 0.
+            let _ = s.write_all(&[5, rep, 0, 1, 0, 0, 0, 0, 0, 0]);
+        });
+        addr
+    }
+
+    #[test]
+    fn rejects_non_v5_identifier() {
+        let (proxy, handle) = spawn_server(Server::bind("127.0.0.1:0").unwrap());
+        let mut stream = TcpStream::connect(proxy).unwrap();
+        stream.write_all(&[4, 1, 0]).unwrap(); // SOCKS version 4
+        let result = handle.join().unwrap();
+        assert!(matches!(result, Err(SocksError::UnsupportedVersion(4))));
+    }
+
+    #[test]
+    fn errors_on_truncated_identifier() {
+        let (proxy, handle) = spawn_server(Server::bind("127.0.0.1:0").unwrap());
+        let mut stream = TcpStream::connect(proxy).unwrap();
+        stream.write_all(&[5, 2]).unwrap(); // claims 2 methods, sends none
+        drop(stream); // half-close mid-message
+        let result = handle.join().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_maps_specific_failure_reply_code() {
+        let proxy = fake_proxy_replying(0x05); // ConnectionRefused
+        let result = Client::new(proxy).connect(("example.com", 80));
+        assert!(matches!(
+            result,
+            Err(SocksError::ReplyFailure(Response::ConnectionRefused))
+        ));
+    }
+
+    #[test]
+    fn udp_relay_drops_unsolicited_source() {
+        let echo = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let echo_addr = echo.local_addr().unwrap();
+        thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            if let Ok((read, src)) = echo.recv_from(&mut buf) {
+                let _ = echo.send_to(&buf[..read], src);
+            }
+        });
+
+        let (proxy, server) = spawn_server(Server::bind("127.0.0.1:0").unwrap());
+        let client = Client::new(proxy);
+        let tunnel = client.udp_associate().expect("associate succeeds");
+        tunnel
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+
+        // Establish the association and confirm the legitimate path works.
+        tunnel.send_to(echo_addr, b"hi").expect("send succeeds");
+        let mut buf = [0u8; 16];
+        let (n, _) = tunnel.recv_from(&mut buf).expect("echo reply received");
+        assert_eq!(&buf[..n], b"hi");
+
+        // A socket the client never contacted injects straight at the relay.
+        // Its source is not the client and not a contacted target, so the
+        // relay must drop it (RFC 1928 §7 must.977213) — the client sees nothing.
+        let rogue = UdpSocket::bind("127.0.0.1:0").unwrap();
+        rogue.send_to(b"INJECT", tunnel.relay_addr()).unwrap();
+        let mut buf = [0u8; 16];
+        assert!(
+            tunnel.recv_from(&mut buf).is_err(),
+            "unsolicited datagram must not reach the client"
+        );
+
+        drop(tunnel);
+        assert!(server.join().unwrap().is_ok());
     }
 
     #[test]

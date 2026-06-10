@@ -211,3 +211,18 @@ pub(crate) fn reply_socket_addr(reply: &Reply) -> Result<SocketAddr> {
         )),
     }
 }
+
+#[cfg(test)]
+mod unit {
+    use super::*;
+
+    #[test]
+    fn target_address_rejects_oversized_domain() {
+        // A domain name cannot exceed the one-octet length prefix on the wire.
+        let target = TargetAddr::Domain("x".repeat(256), 80);
+        assert!(matches!(target.address(), Err(SocksError::Validation(_))));
+
+        let ok = TargetAddr::Domain("x".repeat(255), 80);
+        assert!(ok.address().is_ok());
+    }
+}

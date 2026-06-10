@@ -114,6 +114,12 @@ impl UdpTunnel {
         Ok(self.socket.local_addr()?)
     }
 
+    /// The relay's UDP address (BND.ADDR/BND.PORT from the UDP ASSOCIATE
+    /// reply) that this tunnel sends datagrams to.
+    pub fn relay_addr(&self) -> SocketAddr {
+        self.relay
+    }
+
     /// Sets the read timeout of the tunnel's UDP socket.
     ///
     /// # Errors
