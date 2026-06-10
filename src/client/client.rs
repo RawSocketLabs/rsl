@@ -103,6 +103,7 @@ impl Client {
     /// Connects to the proxy and completes method negotiation, returning the
     /// authenticated stream.
     pub(crate) fn negotiate(&self) -> Result<TcpStream> {
+        //~ implements rfc1928#3/must.d9ac89
         let mut stream = TcpStream::connect(self.proxy)?;
 
         let identifier = IdentifierBuilder::default()

@@ -26,6 +26,9 @@ impl UdpTunnel {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         let local = socket.local_addr()?;
 
+        // The client knows its UDP port but not its externally-visible
+        // address, so it advertises the port with an all-zeros address.
+        //~ implements rfc1928#6/must.ff014a
         let (control, reply) = client.request(
             Command::UdpAssociate,
             &TargetAddr::Ip(SocketAddr::from((Ipv4Addr::UNSPECIFIED, local.port()))),
@@ -64,6 +67,8 @@ impl UdpTunnel {
 
         let mut datagram = cursor.into_inner();
         datagram.extend_from_slice(payload);
+        // `self.relay` is BND.ADDR/BND.PORT from the UDP ASSOCIATE reply.
+        //~ implements rfc1928#7/must.784a05
         self.socket.send_to(&datagram, self.relay)?;
 
         Ok(())

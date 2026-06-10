@@ -27,6 +27,8 @@ pub(crate) fn handle_udp_associate(stream: TcpStream, request: &Request) -> Resu
         }
     };
 
+    // BND.ADDR/BND.PORT in the reply are the relay socket the client sends to.
+    //~ implements rfc1928#6/must.31530e
     send_reply(&stream, Response::Succeeded, socket.local_addr()?)?;
 
     // The expected client IP is taken from the control connection — the SOCKS
