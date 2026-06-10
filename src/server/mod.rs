@@ -52,6 +52,26 @@ mod integration {
     }
 
     #[test]
+    fn handshake_times_out_on_silent_client() {
+        // A client that connects but never sends the method identifier must
+        // not hold the handler open: the server should error out promptly.
+        let server = Server::bind("127.0.0.1:0")
+            .unwrap()
+            .with_handshake_timeout(Some(Duration::from_millis(200)));
+        let (proxy, handle) = spawn_server(server);
+
+        let _silent = TcpStream::connect(proxy).unwrap();
+        let start = std::time::Instant::now();
+        let result = handle.join().unwrap();
+
+        assert!(result.is_err(), "silent client should time out");
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "server should give up near the handshake deadline, not block"
+        );
+    }
+
+    #[test]
     fn connect_relays_data() {
         let echo = spawn_echo();
         let (proxy, server) = spawn_server(Server::bind("127.0.0.1:0").unwrap());

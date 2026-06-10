@@ -1,5 +1,6 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::time::Duration;
 
 use binrw::{io::NoSeek, BinWrite};
 
@@ -13,10 +14,21 @@ use crate::v5::{
 
 /// Serves a single client connection: method negotiation, authentication,
 /// command dispatch, and relaying.
+///
+/// `handshake_timeout`, when set, bounds the time the client has to complete
+/// negotiation, authentication, and the request — a stalled client cannot
+/// hold a handler open. It is cleared before an established relay begins, so
+/// long-lived idle tunnels are unaffected.
 pub(crate) fn handle_client(
     mut stream: TcpStream,
     authenticators: &[Box<dyn Authenticator>],
+    handshake_timeout: Option<Duration>,
 ) -> Result<()> {
+    if let Some(timeout) = handshake_timeout {
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
+    }
+
     let identifier = Identifier::read_from(&mut &stream)?;
     if identifier.version != 5 {
         return Err(SocksError::UnsupportedVersion(identifier.version));
@@ -46,6 +58,13 @@ pub(crate) fn handle_client(
     let request = Request::read_from(&mut &stream)?;
     if request.version != 5 {
         return Err(SocksError::UnsupportedVersion(request.version));
+    }
+
+    // The handshake is complete; an established relay may idle indefinitely,
+    // so lift the negotiation deadline before handing off.
+    if handshake_timeout.is_some() {
+        stream.set_read_timeout(None)?;
+        stream.set_write_timeout(None)?;
     }
 
     match request.command {
