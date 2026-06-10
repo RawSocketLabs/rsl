@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -11,11 +11,53 @@ use crate::server::connection::handle_client;
 /// authentication, and the command request before the server drops it.
 pub const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Default cap on concurrent connection handlers in [`Server::serve`].
+pub const DEFAULT_MAX_CONNECTIONS: usize = 1024;
+
+/// A counting semaphore: `serve` acquires a permit before spawning a handler
+/// and the permit is released when the handler thread ends, so a flood of
+/// connections cannot spawn unbounded threads — excess connections wait in the
+/// OS accept backlog until a slot frees.
+struct Semaphore {
+    permits: Mutex<usize>,
+    available: Condvar,
+}
+
+impl Semaphore {
+    fn new(permits: usize) -> Arc<Self> {
+        Arc::new(Self {
+            permits: Mutex::new(permits),
+            available: Condvar::new(),
+        })
+    }
+
+    /// Blocks until a permit is available, then takes it.
+    fn acquire(self: &Arc<Self>) -> Permit {
+        let mut permits = self.permits.lock().unwrap();
+        while *permits == 0 {
+            permits = self.available.wait(permits).unwrap();
+        }
+        *permits -= 1;
+        Permit(Arc::clone(self))
+    }
+}
+
+/// Returns a permit to the semaphore when dropped.
+struct Permit(Arc<Semaphore>);
+
+impl Drop for Permit {
+    fn drop(&mut self) {
+        *self.0.permits.lock().unwrap() += 1;
+        self.0.available.notify_one();
+    }
+}
+
 /// A SOCKS5 proxy server.
 pub struct Server {
     listener: TcpListener,
     authenticators: Arc<Vec<Box<dyn Authenticator>>>,
     handshake_timeout: Option<Duration>,
+    max_connections: usize,
 }
 
 impl Server {
@@ -28,6 +70,7 @@ impl Server {
             listener: TcpListener::bind(addr)?,
             authenticators: Arc::new(vec![Box::new(NoAuth)]),
             handshake_timeout: Some(DEFAULT_HANDSHAKE_TIMEOUT),
+            max_connections: DEFAULT_MAX_CONNECTIONS,
         })
     }
 
@@ -43,6 +86,14 @@ impl Server {
     /// only to the handshake; an established relay is not time-limited.
     pub fn with_handshake_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Sets the maximum number of concurrent connection handlers in
+    /// [`serve`](Self::serve). Excess connections wait in the accept backlog
+    /// until a slot frees. Must be at least 1.
+    pub fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = max.max(1);
         self
     }
 
@@ -64,18 +115,58 @@ impl Server {
         handle_client(stream, &self.authenticators, self.handshake_timeout)
     }
 
-    /// Serves clients until the listener fails, one thread per connection.
+    /// Serves clients until the listener fails, one thread per connection, up
+    /// to [`max_connections`](Self::with_max_connections) concurrently.
     ///
     /// # Errors
     /// Returns an error if accepting a connection fails.
     pub fn serve(&self) -> Result<()> {
+        let slots = Semaphore::new(self.max_connections);
         loop {
             let (stream, _) = self.listener.accept()?;
+            // Throttle here: block the accept loop until a handler slot frees,
+            // applying backpressure instead of spawning without bound.
+            let permit = slots.acquire();
             let authenticators = Arc::clone(&self.authenticators);
             let handshake_timeout = self.handshake_timeout;
             thread::spawn(move || {
+                let _permit = permit; // released when the handler thread ends
                 let _ = handle_client(stream, &authenticators, handshake_timeout);
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn semaphore_blocks_at_capacity_and_releases_on_drop() {
+        let sem = Semaphore::new(1);
+        let held = sem.acquire(); // capacity exhausted
+
+        let (tx, rx) = mpsc::channel();
+        let waiter = {
+            let sem = Arc::clone(&sem);
+            thread::spawn(move || {
+                let _permit = sem.acquire(); // must block until `held` drops
+                tx.send(()).unwrap();
+            })
+        };
+
+        // The waiter cannot acquire while the only permit is held.
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "acquire should block while at capacity"
+        );
+
+        drop(held); // frees the permit
+        assert!(
+            rx.recv_timeout(Duration::from_secs(2)).is_ok(),
+            "acquire should unblock once a permit is released"
+        );
+        waiter.join().unwrap();
     }
 }
