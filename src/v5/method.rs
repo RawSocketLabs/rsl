@@ -19,11 +19,31 @@ pub enum Method {
     #[brw(magic = 0x80u8)]
     PrivateMethods = 0x80,
 
-    Custom(u8),
-
     #[brw(magic = 0xFFu8)]
     NoAcceptableMethods = 0xFF,
+
+    // Discriminant is arbitrary (binrw matches by magic); 0x04 avoids
+    // overflowing past NoAcceptableMethods under repr(u8).
+    Custom(u8) = 0x04,
 }
 
 #[cfg(test)]
-mod unit {}
+mod unit {
+    use binrw::{io::Cursor, BinRead};
+
+    use super::*;
+
+    #[test]
+    fn test_no_acceptable_methods_parses() {
+        let mut cursor = Cursor::new(vec![0xFFu8]);
+        let method = Method::read_be(&mut cursor).expect("parses");
+        assert_eq!(method, Method::NoAcceptableMethods);
+    }
+
+    #[test]
+    fn test_custom_parses() {
+        let mut cursor = Cursor::new(vec![0x42u8]);
+        let method = Method::read_be(&mut cursor).expect("parses");
+        assert_eq!(method, Method::Custom(0x42));
+    }
+}

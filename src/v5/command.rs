@@ -1,5 +1,4 @@
 use binrw::binrw;
-use derive_builder::Builder;
 
 #[repr(u8)]
 #[binrw]

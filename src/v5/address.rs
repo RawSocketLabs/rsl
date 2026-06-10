@@ -1,7 +1,10 @@
 use std::fmt::{self, Display, Formatter};
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use binrw::binrw;
+use binrw::{binrw, io::Cursor, BinRead};
+
+use crate::error::{Result, SocksError};
 
 #[repr(u8)]
 #[binrw]
@@ -40,6 +43,75 @@ pub enum Address {
         #[br(map = |v: [u8; 16]| Ipv6Addr::from(v))]
         Ipv6Addr,
     ),
+}
+
+impl Address {
+    /// Returns the [`AddressType`] discriminant for this address.
+    pub fn address_type(&self) -> AddressType {
+        match self {
+            Address::V4(_) => AddressType::V4,
+            Address::Domain(_) => AddressType::Domain,
+            Address::V6(_) => AddressType::V6,
+        }
+    }
+
+    /// Formats the address with a port in a form accepted by
+    /// [`std::net::ToSocketAddrs`].
+    pub fn to_socket_string(&self, port: u16) -> String {
+        match self {
+            Address::V4(addr) => format!("{}:{}", addr, port),
+            Address::Domain(domain) => format!("{}:{}", domain, port),
+            Address::V6(addr) => format!("[{}]:{}", addr, port),
+        }
+    }
+}
+
+/// Reads the `address + port` tail of a message whose last consumed byte is
+/// the address type, appending the bytes to `buf` so the complete message can
+/// be parsed from a seekable cursor.
+///
+/// Messages are framed exactly so no bytes beyond the message are consumed
+/// from the stream.
+pub(crate) fn read_addressed_tail(reader: &mut impl Read, mut buf: Vec<u8>) -> Result<Vec<u8>> {
+    let address_type = AddressType::read_be(&mut Cursor::new(&buf[buf.len() - 1..]))?;
+
+    let address_length = match address_type {
+        AddressType::V4 => 4,
+        AddressType::V6 => 16,
+        AddressType::Domain => {
+            let mut length = [0u8; 1];
+            reader.read_exact(&mut length)?;
+            buf.push(length[0]);
+            length[0] as usize
+        }
+        AddressType::Custom(other) => {
+            return Err(SocksError::NotSupported(format!(
+                "address type {:#04x}",
+                other
+            )))
+        }
+    };
+
+    let start = buf.len();
+    buf.resize(start + address_length + 2, 0);
+    reader.read_exact(&mut buf[start..])?;
+
+    Ok(buf)
+}
+
+impl From<IpAddr> for Address {
+    fn from(addr: IpAddr) -> Self {
+        match addr {
+            IpAddr::V4(addr) => Address::V4(addr),
+            IpAddr::V6(addr) => Address::V6(addr),
+        }
+    }
+}
+
+impl From<SocketAddr> for Address {
+    fn from(addr: SocketAddr) -> Self {
+        Address::from(addr.ip())
+    }
 }
 
 #[binrw]

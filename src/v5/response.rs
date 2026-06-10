@@ -2,7 +2,7 @@ use binrw::binrw;
 
 #[repr(u8)]
 #[binrw]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Response {
     #[brw(magic = 0x00u8)]
     Succeeded = 0x00,

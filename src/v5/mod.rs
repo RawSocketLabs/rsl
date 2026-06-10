@@ -6,6 +6,9 @@ mod offer;
 mod reply;
 mod request;
 mod response;
+mod udp_header;
+mod user_pass_request;
+mod user_pass_response;
 
 pub use address::*;
 pub use command::*;
@@ -15,3 +18,6 @@ pub use offer::*;
 pub use reply::*;
 pub use request::*;
 pub use response::*;
+pub use udp_header::*;
+pub use user_pass_request::*;
+pub use user_pass_response::*;
