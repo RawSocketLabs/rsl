@@ -1,5 +1,6 @@
+use std::collections::HashSet;
 use std::io::Read;
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -28,21 +29,29 @@ pub(crate) fn handle_udp_associate(stream: TcpStream, request: &Request) -> Resu
 
     send_reply(&stream, Response::Succeeded, socket.local_addr()?)?;
 
-    // The request may advertise the client's UDP source; an unspecified
-    // address means it is learned from the first datagram instead.
-    let advertised = match request.dest_addr {
+    // The expected client IP is taken from the control connection — the SOCKS
+    // server's authoritative knowledge of who the client is — not from any
+    // advertised or first-seen datagram, which an attacker could forge.
+    //~ implements rfc1928#7/must.9893ba
+    let client_ip = stream.peer_addr()?.ip();
+
+    // DST.ADDR/DST.PORT in the request advertise the client's UDP source port.
+    // Honor the port only; the IP is fixed to the control connection above so
+    // a request claiming someone else's address cannot redirect the relay.
+    let advertised_port = match request.dest_addr {
         Address::V4(addr) if !addr.is_unspecified() && request.dest_port != 0 => {
-            Some(SocketAddr::from((addr, request.dest_port)))
+            Some(request.dest_port)
         }
         Address::V6(addr) if !addr.is_unspecified() && request.dest_port != 0 => {
-            Some(SocketAddr::from((addr, request.dest_port)))
+            Some(request.dest_port)
         }
         _ => None,
     };
+    let client = advertised_port.map(|port| SocketAddr::new(client_ip, port));
 
     let stop = Arc::new(AtomicBool::new(false));
     let relay_stop = Arc::clone(&stop);
-    let relay = thread::spawn(move || relay_datagrams(socket, advertised, relay_stop));
+    let relay = thread::spawn(move || relay_datagrams(socket, client_ip, client, relay_stop));
 
     // Hold the association open until the control connection reaches EOF.
     let mut sink = [0u8; 128];
@@ -56,18 +65,32 @@ pub(crate) fn handle_udp_associate(stream: TcpStream, request: &Request) -> Resu
 
 /// Relays datagrams between the client and remote hosts until stopped.
 ///
-/// Client-originated datagrams are unwrapped and forwarded to their target;
-/// datagrams from any other source are wrapped in a [`UdpHeader`] naming
-/// that source and returned to the client.
+/// The association is anchored to `client_ip`, fixed from the TCP control
+/// connection. A datagram is classified by source:
+/// - from the client's full address (IP fixed to `client_ip`; port advertised
+///   or learned from its first datagram) — outbound: header unwrapped, target
+///   recorded, payload forwarded;
+/// - from a remote the client has actually contacted — inbound reply: wrapped
+///   in a [`UdpHeader`] and returned to the client;
+/// - anything else (wrong IP, or an unsolicited remote) — dropped.
+///
+/// Pinning the client to the control connection's IP and relaying back only
+/// solicited replies prevents a third party from hijacking or injecting into
+/// the association.
 fn relay_datagrams(
     socket: UdpSocket,
-    advertised: Option<SocketAddr>,
+    client_ip: IpAddr,
+    advertised_client: Option<SocketAddr>,
     stop: Arc<AtomicBool>,
 ) -> Result<()> {
     socket.set_read_timeout(Some(Duration::from_secs(1)))?;
 
     let mut buf = vec![0u8; MAX_DATAGRAM];
-    let mut client = advertised;
+    // Full client UDP address: IP is fixed; the port is advertised or learned
+    // from the first datagram that arrives from the client IP.
+    let mut client = advertised_client;
+    // Remote destinations the client has sent to; only these may reply.
+    let mut targets: HashSet<SocketAddr> = HashSet::new();
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -85,25 +108,53 @@ fn relay_datagrams(
             Err(err) => return Err(err.into()),
         };
 
-        let client_addr = *client.get_or_insert(source);
+        // Classify by source: only the pinned client may originate outbound
+        // traffic; only contacted remotes may reply; everything else is
+        // dropped (the else-fall-through below).
+        //~ implements rfc1928#7/must.977213
+        let is_client = match client {
+            Some(addr) => source == addr,
+            // Learn the client's port from its first datagram, but only if it
+            // originates from the pinned client IP.
+            None => source.ip() == client_ip,
+        };
 
-        if source == client_addr {
+        if is_client {
+            client = Some(source);
+
             // Outbound: unwrap the header and forward the payload. Malformed
             // or fragmented datagrams are dropped per RFC 1928.
             let mut cursor = Cursor::new(&buf[..received]);
             let Ok(header) = UdpHeader::read(&mut cursor) else {
                 continue;
             };
+            // Fragmentation is not implemented; drop any fragmented datagram.
+            //~ implements rfc1928#7/must.9cef93
             if header.frag != 0 {
                 continue;
             }
 
+            // Resolve the target (handles V4/V6/domain) so the recorded
+            // addresses match the source of any reply.
             let start = cursor.position() as usize;
             let target = header.dest_addr.to_socket_string(header.dest_port);
-            let _ = socket.send_to(&buf[start..received], target);
-        } else {
-            // Inbound: wrap the payload with the remote's address and return
-            // it to the client.
+            if let Ok(resolved) = target.to_socket_addrs() {
+                let resolved: Vec<SocketAddr> = resolved.collect();
+                for addr in &resolved {
+                    targets.insert(*addr);
+                }
+                if let Some(addr) = resolved.first() {
+                    let _ = socket.send_to(&buf[start..received], addr);
+                }
+            }
+        } else if targets.contains(&source) {
+            // Inbound reply from a remote the client contacted: wrap it with
+            // the remote's address and return it to the client.
+            let Some(client_addr) = client else {
+                continue;
+            };
+
+            //~ implements rfc1928#7/must.641b12
             let address = Address::from(source);
             let header = UdpHeaderBuilder::default()
                 .address_type(address.address_type())
@@ -119,5 +170,6 @@ fn relay_datagrams(
             datagram.extend_from_slice(&buf[..received]);
             let _ = socket.send_to(&datagram, client_addr);
         }
+        // Otherwise: an unsolicited or spoofed datagram — drop it.
     }
 }

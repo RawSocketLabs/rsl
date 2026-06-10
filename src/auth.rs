@@ -109,6 +109,9 @@ impl Authenticator for UserPassAuthenticator {
         response.write(&mut NoSeek::new(&*stream))?;
         stream.flush()?;
 
+        // On a failure status the error propagates up and the stream is
+        // dropped, closing the connection as RFC 1929 requires.
+        //~ implements rfc1929#2/must.f4be21
         if accepted {
             Ok(())
         } else {

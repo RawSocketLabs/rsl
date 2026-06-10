@@ -163,6 +163,42 @@ mod integration {
         assert!(server.join().unwrap().is_ok());
     }
 
+    /// A datagram whose source IP is not the association's client (the TCP
+    /// control connection's peer) must not be forwarded outbound, even if it
+    /// arrives before the real client speaks (RFC 1928 §7 must.977213 /
+    /// must.9893ba). Here a non-loopback source would be required to spoof,
+    /// which we cannot do locally; instead we assert the legitimate path still
+    /// works end to end after pinning the client IP to the control connection.
+    #[test]
+    fn udp_associate_pins_client_to_control_connection() {
+        let echo = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let echo_addr = echo.local_addr().unwrap();
+        thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            if let Ok((read, source)) = echo.recv_from(&mut buf) {
+                let _ = echo.send_to(&buf[..read], source);
+            }
+        });
+
+        let (proxy, server) = spawn_server(Server::bind("127.0.0.1:0").unwrap());
+        let client = Client::new(proxy);
+        let tunnel = client.udp_associate().expect("associate succeeds");
+        tunnel
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+
+        // The client's UDP socket shares 127.0.0.1 with the control
+        // connection, so its datagrams are accepted and relayed.
+        tunnel.send_to(echo_addr, b"pinned").expect("send succeeds");
+        let mut buf = [0u8; 16];
+        let (read, source) = tunnel.recv_from(&mut buf).expect("reply received");
+        assert_eq!(&buf[..read], b"pinned");
+        assert_eq!(source, TargetAddr::Ip(echo_addr));
+
+        drop(tunnel);
+        assert!(server.join().unwrap().is_ok());
+    }
+
     #[test]
     fn udp_associate_relays_datagrams() {
         let echo = UdpSocket::bind("127.0.0.1:0").unwrap();

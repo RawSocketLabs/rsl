@@ -60,6 +60,9 @@ pub(crate) fn handle_client(
 }
 
 /// Sends a reply carrying the given response code and bound address.
+///
+/// RSV defaults to X'00' in [`ReplyBuilder`], as required.
+//~ implements rfc1928#6/must.66f64a
 pub(crate) fn send_reply(stream: &TcpStream, response: Response, addr: SocketAddr) -> Result<()> {
     let bind_addr = Address::from(addr);
     let reply = ReplyBuilder::default()
@@ -74,6 +77,12 @@ pub(crate) fn send_reply(stream: &TcpStream, response: Response, addr: SocketAdd
 }
 
 /// Sends a failure reply with an unspecified bound address.
+///
+/// Every caller returns the propagating error immediately afterward, dropping
+/// the stream and terminating the TCP connection well within the 10-second
+/// bound the RFC sets.
+//~ implements rfc1928#6/must.9c2599
+//~ implements rfc1928#6/must.0bc643
 pub(crate) fn send_failure(stream: &TcpStream, response: Response) -> Result<()> {
     send_reply(
         stream,

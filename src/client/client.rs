@@ -115,6 +115,9 @@ impl Client {
         if offer.version != 5 {
             return Err(SocksError::UnsupportedVersion(offer.version));
         }
+        // X'FF' means none of the offered methods is acceptable; returning
+        // here drops the stream, closing the connection.
+        //~ implements rfc1928#3/must.bfe149
         if offer.method == Method::NoAcceptableMethods {
             return Err(SocksError::NoAcceptableMethods);
         }
