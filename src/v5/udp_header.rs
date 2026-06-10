@@ -3,10 +3,11 @@ use derive_builder::Builder;
 
 use crate::v5::address::{Address, AddressType};
 
-/// UDP request header (RFC 1928 section 7).
+/// UDP request header: RSV, FRAG, ATYP, DST.ADDR, DST.PORT (RFC 1928 §7).
 ///
 /// Prefixes every datagram relayed through a UDP ASSOCIATE relay; the
 /// payload follows the header on the wire.
+//~ models rfc1928#7
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]

@@ -6,6 +6,8 @@ use derive_builder::Builder;
 use crate::error::Result;
 use crate::v5::method::Method;
 
+/// Client method-selection message: VER, NMETHODS, METHODS (RFC 1928 §3).
+//~ models rfc1928#3
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]

@@ -19,9 +19,10 @@ pub enum UserPassStatus {
     Custom(u8),
 }
 
-/// Username/Password authentication response (RFC 1929).
+/// Username/Password authentication response: VER, STATUS (RFC 1929 §2).
 ///
 /// Sent by the server after verifying a [`UserPassRequest`](crate::v5::UserPassRequest).
+//~ models rfc1929#2
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]

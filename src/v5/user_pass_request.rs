@@ -5,9 +5,11 @@ use derive_builder::Builder;
 
 use crate::error::Result;
 
-/// Username/Password authentication request (RFC 1929).
+/// Username/Password authentication request: VER, ULEN, UNAME, PLEN, PASSWD
+/// (RFC 1929 §2).
 ///
 /// Sent by the client after the server selects [`Method::Plain`](crate::v5::Method::Plain).
+//~ models rfc1929#2
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]

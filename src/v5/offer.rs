@@ -6,6 +6,8 @@ use derive_builder::Builder;
 use crate::error::Result;
 use crate::v5::method::Method;
 
+/// Server method-selection reply: VER, METHOD (RFC 1928 §3).
+//~ models rfc1928#3
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]
@@ -26,5 +28,29 @@ impl Offer {
         reader.read_exact(&mut buf)?;
 
         Self::read(&mut Cursor::new(buf)).map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use binrw::BinWrite;
+
+    use super::*;
+
+    /// The §3 method-selection reply round-trips: VER, METHOD.
+    #[test]
+    fn offer_matches_wire_format() {
+        let offer = OfferBuilder::default()
+            .method(Method::NoAuth)
+            .build()
+            .unwrap();
+        let mut cursor = Cursor::new(Vec::new());
+        offer.write(&mut cursor).unwrap();
+        let bytes = cursor.into_inner();
+        assert_eq!(bytes, vec![0x05, 0x00]); // VER=5, METHOD=NoAuth
+
+        let parsed = Offer::read_from(&mut bytes.as_slice()).expect("parses");
+        assert_eq!(parsed.version, 5);
+        assert_eq!(parsed.method, Method::NoAuth);
     }
 }

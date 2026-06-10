@@ -7,6 +7,8 @@ use crate::error::Result;
 use crate::v5::address::{read_addressed_tail, Address, AddressType};
 use crate::v5::command::Command;
 
+/// Client request: VER, CMD, RSV, ATYP, DST.ADDR, DST.PORT (RFC 1928 §4).
+//~ models rfc1928#4
 #[binrw]
 #[brw(big)]
 #[derive(Builder, Clone, Debug)]
