@@ -143,6 +143,8 @@ impl Client {
         let stream = self.negotiate()?;
 
         let address = target.address()?;
+        // RSV defaults to X'00' in RequestBuilder, as required.
+        //~ implements rfc1928#6/must.66f64a part="request RSV field"
         let request = RequestBuilder::default()
             .command(command)
             .address_type(address.address_type())

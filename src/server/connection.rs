@@ -81,7 +81,7 @@ pub(crate) fn handle_client(
 /// Sends a reply carrying the given response code and bound address.
 ///
 /// RSV defaults to X'00' in [`ReplyBuilder`], as required.
-//~ implements rfc1928#6/must.66f64a
+//~ implements rfc1928#6/must.66f64a part="reply RSV field"
 pub(crate) fn send_reply(stream: &TcpStream, response: Response, addr: SocketAddr) -> Result<()> {
     let bind_addr = Address::from(addr);
     let reply = ReplyBuilder::default()

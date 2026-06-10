@@ -121,6 +121,7 @@ mod integration {
         ));
     }
 
+    //~ verifies rfc1928#7/must.977213
     #[test]
     fn udp_relay_drops_unsolicited_source() {
         let echo = UdpSocket::bind("127.0.0.1:0").unwrap();

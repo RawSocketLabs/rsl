@@ -58,6 +58,7 @@ mod unit {
     /// registry: the assigned codes map to their named variants, the
     /// IANA-assigned and private ranges map to `Custom`, and every one of the
     /// 256 codes round-trips back to its byte.
+    //~ verifies rfc1928#3/required.ce9732
     #[test]
     fn enum_matches_method_number_registry() {
         // Assigned codes and the sentinel.
