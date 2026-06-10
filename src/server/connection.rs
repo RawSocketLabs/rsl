@@ -1,6 +1,7 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use binrw::{io::NoSeek, BinWrite};
 
@@ -23,6 +24,7 @@ pub(crate) fn handle_client(
     mut stream: TcpStream,
     authenticators: &[Box<dyn Authenticator>],
     handshake_timeout: Option<Duration>,
+    bind_timeout: Option<Duration>,
 ) -> Result<()> {
     if let Some(timeout) = handshake_timeout {
         stream.set_read_timeout(Some(timeout))?;
@@ -69,7 +71,7 @@ pub(crate) fn handle_client(
 
     match request.command {
         Command::Connect => handle_connect(stream, &request),
-        Command::Bind => handle_bind(stream, &request),
+        Command::Bind => handle_bind(stream, &request, bind_timeout),
         Command::UdpAssociate => handle_udp_associate(stream, &request),
         Command::Custom(other) => {
             send_failure(&stream, Response::CommandNotSupported)?;
@@ -133,7 +135,39 @@ fn handle_connect(stream: TcpStream, request: &Request) -> Result<()> {
     relay(stream, conn)
 }
 
-fn handle_bind(stream: TcpStream, request: &Request) -> Result<()> {
+/// Accept one connection, optionally bounded by a deadline. Without a timeout
+/// it blocks; with one it polls the non-blocking listener until a peer arrives
+/// or the deadline passes, returning a `TimedOut` error so a BIND whose peer
+/// never connects cannot hold the handler (and its listener) open forever.
+fn accept_with_timeout(
+    listener: &TcpListener,
+    timeout: Option<Duration>,
+) -> io::Result<(TcpStream, SocketAddr)> {
+    let Some(timeout) = timeout else {
+        return listener.accept();
+    };
+    listener.set_nonblocking(true)?;
+    let deadline = Instant::now() + timeout;
+    let result = loop {
+        match listener.accept() {
+            Ok(accepted) => break Ok(accepted),
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    break Err(io::Error::new(io::ErrorKind::TimedOut, "BIND peer-wait timed out"));
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => break Err(err),
+        }
+    };
+    // Restore blocking mode so the relay then reads normally.
+    if let Ok((conn, _)) = &result {
+        conn.set_nonblocking(false)?;
+    }
+    result
+}
+
+fn handle_bind(stream: TcpStream, request: &Request, bind_timeout: Option<Duration>) -> Result<()> {
     let listener = match TcpListener::bind((stream.local_addr()?.ip(), 0)) {
         Ok(listener) => listener,
         Err(err) => {
@@ -144,8 +178,12 @@ fn handle_bind(stream: TcpStream, request: &Request) -> Result<()> {
 
     send_reply(&stream, Response::Succeeded, listener.local_addr()?)?;
 
-    let (conn, peer) = match listener.accept() {
+    let (conn, peer) = match accept_with_timeout(&listener, bind_timeout) {
         Ok(accepted) => accepted,
+        Err(err) if err.kind() == io::ErrorKind::TimedOut => {
+            send_failure(&stream, Response::TtlExpired)?;
+            return Err(err.into());
+        }
         Err(err) => {
             send_failure(&stream, Response::GeneralFailure)?;
             return Err(err.into());

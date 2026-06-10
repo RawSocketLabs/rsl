@@ -11,6 +11,10 @@ use crate::server::connection::handle_client;
 /// authentication, and the command request before the server drops it.
 pub const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Default deadline for a BIND request to receive its inbound peer connection
+/// before the server gives up and frees the handler.
+pub const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Default cap on concurrent connection handlers in [`Server::serve`].
 pub const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 
@@ -57,6 +61,7 @@ pub struct Server {
     listener: TcpListener,
     authenticators: Arc<Vec<Box<dyn Authenticator>>>,
     handshake_timeout: Option<Duration>,
+    bind_timeout: Option<Duration>,
     max_connections: usize,
 }
 
@@ -70,6 +75,7 @@ impl Server {
             listener: TcpListener::bind(addr)?,
             authenticators: Arc::new(vec![Box::new(NoAuth)]),
             handshake_timeout: Some(DEFAULT_HANDSHAKE_TIMEOUT),
+            bind_timeout: Some(DEFAULT_BIND_TIMEOUT),
             max_connections: DEFAULT_MAX_CONNECTIONS,
         })
     }
@@ -86,6 +92,15 @@ impl Server {
     /// only to the handshake; an established relay is not time-limited.
     pub fn with_handshake_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Sets the deadline for a BIND request to receive its inbound peer
+    /// connection. `None` waits indefinitely. Guards against BIND requests
+    /// whose peer never arrives, which would otherwise pin a handler and its
+    /// listener for the life of the process.
+    pub fn with_bind_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.bind_timeout = timeout;
         self
     }
 
@@ -112,7 +127,7 @@ impl Server {
     /// an error.
     pub fn accept(&self) -> Result<()> {
         let (stream, _) = self.listener.accept()?;
-        handle_client(stream, &self.authenticators, self.handshake_timeout)
+        handle_client(stream, &self.authenticators, self.handshake_timeout, self.bind_timeout)
     }
 
     /// Serves clients until the listener fails, one thread per connection, up
@@ -129,9 +144,10 @@ impl Server {
             let permit = slots.acquire();
             let authenticators = Arc::clone(&self.authenticators);
             let handshake_timeout = self.handshake_timeout;
+            let bind_timeout = self.bind_timeout;
             thread::spawn(move || {
                 let _permit = permit; // released when the handler thread ends
-                let _ = handle_client(stream, &authenticators, handshake_timeout);
+                let _ = handle_client(stream, &authenticators, handshake_timeout, bind_timeout);
             });
         }
     }

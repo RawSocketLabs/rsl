@@ -14,6 +14,13 @@ use crate::v5::{Address, Request, Response, UdpHeader, UdpHeaderBuilder};
 
 const MAX_DATAGRAM: usize = 65535;
 
+/// Cap on distinct remote destinations tracked per association, so a long-lived
+/// client that talks to many hosts cannot grow the relay's memory without
+/// bound. Beyond this, new destinations are still forwarded outbound but their
+/// replies are not relayed back (a degradation only an abnormal association
+/// reaches).
+const MAX_UDP_TARGETS: usize = 1024;
+
 /// Serves a UDP ASSOCIATE command (RFC 1928 section 7).
 ///
 /// Binds a relay socket, replies with its address, and relays datagrams
@@ -143,7 +150,10 @@ fn relay_datagrams(
             if let Ok(resolved) = target.to_socket_addrs() {
                 let resolved: Vec<SocketAddr> = resolved.collect();
                 for addr in &resolved {
-                    targets.insert(*addr);
+                    // Bound the set; outbound still flows when at capacity.
+                    if targets.len() < MAX_UDP_TARGETS {
+                        targets.insert(*addr);
+                    }
                 }
                 if let Some(addr) = resolved.first() {
                     let _ = socket.send_to(&buf[start..received], addr);

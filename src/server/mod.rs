@@ -162,6 +162,31 @@ mod integration {
     }
 
     #[test]
+    fn bind_times_out_when_peer_never_connects() {
+        // A BIND whose inbound peer never arrives must not pin the handler:
+        // the server should give up near the bind deadline and reply failure.
+        let server = Server::bind("127.0.0.1:0")
+            .unwrap()
+            .with_bind_timeout(Some(Duration::from_millis(300)));
+        let (proxy, handle) = spawn_server(server);
+
+        let client = Client::new(proxy);
+        // The proxy will bind and reply success, then wait for a peer that
+        // never comes; `accept` blocks until the server times out and the
+        // control connection sees the failure / close.
+        let listener = client.bind(SocketAddr::from(([0, 0, 0, 0], 0))).expect("bind reply");
+        let start = std::time::Instant::now();
+        let result = listener.accept();
+
+        assert!(result.is_err(), "peerless BIND should fail");
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "server should give up near the bind deadline, not block"
+        );
+        assert!(handle.join().unwrap().is_err());
+    }
+
+    #[test]
     fn handshake_times_out_on_silent_client() {
         // A client that connects but never sends the method identifier must
         // not hold the handler open: the server should error out promptly.
