@@ -139,6 +139,7 @@ impl Server {
         let slots = Semaphore::new(self.max_connections);
         loop {
             let (stream, _) = self.listener.accept()?;
+            tracing::debug!(peer = ?stream.peer_addr().ok(), "accepted connection");
             // Throttle here: block the accept loop until a handler slot frees,
             // applying backpressure instead of spawning without bound.
             let permit = slots.acquire();

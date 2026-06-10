@@ -20,12 +20,18 @@ use crate::v5::{
 /// negotiation, authentication, and the request — a stalled client cannot
 /// hold a handler open. It is cleared before an established relay begins, so
 /// long-lived idle tunnels are unaffected.
+#[tracing::instrument(
+    name = "socks.connection",
+    skip_all,
+    fields(peer = stream.peer_addr().map(|a| a.to_string()).unwrap_or_default())
+)]
 pub(crate) fn handle_client(
     mut stream: TcpStream,
     authenticators: &[Box<dyn Authenticator>],
     handshake_timeout: Option<Duration>,
     bind_timeout: Option<Duration>,
 ) -> Result<()> {
+    tracing::debug!("handling connection");
     if let Some(timeout) = handshake_timeout {
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
@@ -33,6 +39,7 @@ pub(crate) fn handle_client(
 
     let identifier = Identifier::read_from(&mut &stream)?;
     if identifier.version != 5 {
+        tracing::warn!(version = identifier.version, "rejecting non-v5 identifier");
         return Err(SocksError::UnsupportedVersion(identifier.version));
     }
 
@@ -41,6 +48,7 @@ pub(crate) fn handle_client(
         .find(|authenticator| identifier.methods.contains(&authenticator.method()));
 
     let Some(authenticator) = selected else {
+        tracing::warn!(offered = identifier.methods.len(), "no acceptable methods");
         let offer = OfferBuilder::default()
             .method(Method::NoAcceptableMethods)
             .build()
@@ -48,6 +56,7 @@ pub(crate) fn handle_client(
         offer.write(&mut NoSeek::new(&stream))?;
         return Err(SocksError::NoAcceptableMethods);
     };
+    tracing::debug!(method = ?authenticator.method(), "method selected");
 
     let offer = OfferBuilder::default()
         .method(authenticator.method())
@@ -69,11 +78,13 @@ pub(crate) fn handle_client(
         stream.set_write_timeout(None)?;
     }
 
+    tracing::info!(command = ?request.command, "dispatching request");
     match request.command {
         Command::Connect => handle_connect(stream, &request),
         Command::Bind => handle_bind(stream, &request, bind_timeout),
         Command::UdpAssociate => handle_udp_associate(stream, &request),
         Command::Custom(other) => {
+            tracing::warn!(command = other, "unsupported command");
             send_failure(&stream, Response::CommandNotSupported)?;
             Err(SocksError::NotSupported(format!("command {:#04x}", other)))
         }

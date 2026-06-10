@@ -11,6 +11,16 @@ Primary protocol references:
 GSS-API authentication (RFC 1961) is not implemented here; the
 [`auth::Authenticator`] and [`auth::AuthHandler`] traits are the extension
 point for a future helper crate to provide it.
+
+# Logging
+
+The crate is instrumented with the [`tracing`] facade (connection lifecycle,
+method selection, command dispatch, relay byte counts, auth outcomes). Install
+a subscriber to see output; with none installed the cost is a cached atomic
+check per call site. To compile the instrumentation out entirely, depend on
+tracing with `features = ["release_max_level_off"]`.
+
+[`tracing`]: https://docs.rs/tracing
 */
 
 /// Authentication method negotiation traits and built-in implementations.

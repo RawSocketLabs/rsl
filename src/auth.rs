@@ -113,8 +113,10 @@ impl Authenticator for UserPassAuthenticator {
         // dropped, closing the connection as RFC 1929 requires.
         //~ implements rfc1929#2/must.f4be21
         if accepted {
+            tracing::debug!("username/password accepted");
             Ok(())
         } else {
+            tracing::warn!("username/password rejected");
             Err(SocksError::AuthenticationFailed)
         }
     }

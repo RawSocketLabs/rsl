@@ -7,3 +7,11 @@ edition = "2021"
 binrw = "0.15.0"
 derive_builder = "0.20.0"
 thiserror = "1.0"
+# Structured logging/spans via the tracing facade. With no subscriber
+# installed the instrumentation is near-free (a cached atomic check per call
+# site). Consumers who want it fully compiled out can set, in their own
+# manifest: tracing = { version = "0.1", features = ["release_max_level_off"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
