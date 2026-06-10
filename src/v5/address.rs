@@ -6,19 +6,27 @@ use binrw::{binrw, io::Cursor, BinRead};
 
 use crate::error::{Result, SocksError};
 
+/// A SOCKS5 address-type code (the ATYP field, RFC 1928 §4 Requests).
+///
+/// IPv4, domain name, and IPv6 are the assigned codes; any other is `Custom`.
+//~ models rfc1928#4
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AddressType {
+    /// X'01' IP V4 address.
     #[brw(magic = 0x01u8)]
     V4 = 0x01,
 
+    /// X'03' DOMAINNAME.
     #[brw(magic = 0x03u8)]
     Domain = 0x03,
 
+    /// X'04' IP V6 address.
     #[brw(magic = 0x04u8)]
     V6 = 0x04,
 
+    /// Any unassigned address-type code.
     Custom(u8),
 }
 
@@ -157,11 +165,34 @@ impl fmt::Debug for Domain {
 
 #[cfg(test)]
 mod unit {
+    use binrw::BinWrite;
+
     use super::*;
 
     #[test]
     fn test_domain() {
         let domain = Domain::from("www.google.com");
         println!("{:?}", domain);
+    }
+
+    fn parse(code: u8) -> AddressType {
+        AddressType::read_be(&mut Cursor::new(vec![code])).expect("parses")
+    }
+
+    /// The ATYP enum maps the RFC 1928 §4 address-type codes and round-trips
+    /// all 256.
+    #[test]
+    fn enum_matches_address_type_codes() {
+        assert_eq!(parse(0x01), AddressType::V4);
+        assert_eq!(parse(0x03), AddressType::Domain);
+        assert_eq!(parse(0x04), AddressType::V6);
+        for code in [0x00u8, 0x02, 0x05, 0xFF] {
+            assert_eq!(parse(code), AddressType::Custom(code), "code {code:#04x}");
+        }
+        for code in 0u8..=0xFF {
+            let mut buf = Cursor::new(Vec::new());
+            parse(code).write_be(&mut buf).expect("writes");
+            assert_eq!(buf.into_inner(), vec![code], "code {code:#04x} did not round-trip");
+        }
     }
 }
