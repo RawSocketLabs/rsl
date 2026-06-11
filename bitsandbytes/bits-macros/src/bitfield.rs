@@ -237,7 +237,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
                 default: f.builder_default.clone(),
             })
             .collect();
-        builder::generate(name, vis, &bfields, BuildKind::Bitfield)
+        builder::generate(name, vis, &bfields, BuildKind::Bitfield, None)
     } else {
         quote!()
     };

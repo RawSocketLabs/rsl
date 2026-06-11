@@ -32,7 +32,7 @@ fn unset_required_field_errors() {
 
     // Set opcode but not rcode -> rcode is now the missing one.
     let err = State::builder().opcode(u4::new(1)).build().unwrap_err();
-    assert_eq!(err.field(), "rcode");
+    assert_eq!(err.field(), Some("rcode"));
 }
 
 #[test]
@@ -82,7 +82,7 @@ struct Config {
 #[test]
 fn plain_struct_builder() {
     let err = Config::builder().build().unwrap_err();
-    assert_eq!(err.field(), "name");
+    assert_eq!(err.field(), Some("name"));
 
     let c = Config::builder().name("svc".to_string()).build().unwrap();
     assert_eq!(c, Config { name: "svc".to_string(), port: 69, verbose: false });

@@ -68,11 +68,18 @@ pub(crate) fn parse_builder_attr(attr: &Attribute) -> syn::Result<Option<FieldDe
 }
 
 /// Generates the builder type, `Foo::builder()`, the setters, and `build()`.
+///
+/// `post_build`, when present, is spliced into `build()` after the value is
+/// constructed into the local `__value` and before it is returned — `#[wire]`
+/// uses it to run the soundness validator (`__value.validate()?;`). It must be a
+/// statement (or statements) and may use `?` to short-circuit with a
+/// [`bits::BuilderError`](::bits::BuilderError).
 pub(crate) fn generate(
     name: &Ident,
     vis: &Visibility,
     fields: &[BField],
     kind: BuildKind,
+    post_build: Option<&TokenStream2>,
 ) -> TokenStream2 {
     let builder_name = format_ident!("{}Builder", name);
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
@@ -132,7 +139,9 @@ pub(crate) fn generate(
             /// Builds the value, or returns the first unset required field.
             #vis fn build(self) -> ::core::result::Result<#name, ::bits::BuilderError> {
                 #(#resolve)*
-                ::core::result::Result::Ok(#construct)
+                let __value = #construct;
+                #post_build
+                ::core::result::Result::Ok(__value)
             }
         }
     }
@@ -175,5 +184,5 @@ fn expand_derive_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         fields.push(BField { ident, ty, default });
     }
 
-    Ok(generate(&input.ident, &input.vis, &fields, BuildKind::Plain))
+    Ok(generate(&input.ident, &input.vis, &fields, BuildKind::Plain, None))
 }
