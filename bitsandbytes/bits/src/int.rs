@@ -148,8 +148,11 @@ impl_uint!(u8, u16, u32, u64, u128);
 //
 // The lower-case `uN` names intentionally mirror the standard `u8`/`u16` style
 // (and `arbitrary-int`), so the camel-case lint is silenced here.
+/// Type aliases `u1`..`u127`: each `uN` is an `N`-bit unsigned integer backed by
+/// the smallest sufficient primitive (`UInt<u8, 5>` for `u5`, etc.). The native
+/// widths (`u8`/`u16`/`u32`/`u64`/`u128`) are the standard library's.
 #[rustfmt::skip]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, missing_docs)] // the names are self-documenting
 mod aliases {
     use super::UInt;
 

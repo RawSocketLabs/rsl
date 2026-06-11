@@ -36,6 +36,19 @@ pub enum BitOrder {
 /// [`from_bits`](Bits::from_bits) reconstructs from the low `BITS` bits of its
 /// argument (higher bits ignored). Implementations must round-trip:
 /// `T::from_bits(x.into_bits()) == x` for every representable `x`.
+///
+/// `bool`, the primitive unsigned integers, and the [`UInt`](crate::UInt) types
+/// implement it out of the box; `#[bitfield]` and `#[derive(BitEnum)]` generate
+/// impls so those types nest as fields too.
+///
+/// ```
+/// use bits::Bits;
+///
+/// assert_eq!(<u8 as Bits>::BITS, 8);
+/// assert_eq!(0xABu8.into_bits(), 0xAB);
+/// assert_eq!(u8::from_bits(0x1FF), 0xFF); // from_bits truncates to the width
+/// assert!(!bool::from_bits(0b10)); // only the low bit is read
+/// ```
 pub trait Bits: Copy {
     /// The number of bits this value occupies on the wire.
     const BITS: u32;

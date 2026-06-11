@@ -6,6 +6,8 @@
 //!
 //! These are re-exported from `bits`; depend on that crate, not this one.
 
+#![deny(missing_docs)]
+
 mod bitenum;
 mod bitfield;
 

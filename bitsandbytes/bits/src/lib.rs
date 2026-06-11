@@ -90,6 +90,10 @@ dependency-light bit/byte library — the path to dropping `binrw` entirely.
 [`binrw::BinWrite`]: https://docs.rs/binrw/latest/binrw/trait.BinWrite.html
 */
 
+// Every public item must be documented (the `uN` aliases are the one self-
+// evident exception, allowed at their module).
+#![deny(missing_docs)]
+
 pub mod error;
 mod field;
 pub mod int;

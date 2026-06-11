@@ -66,13 +66,37 @@ RUSTC_WRAPPER= cargo test -p bits --no-default-features # standalone codec, no b
   nested `OpCode`/`Flags` positions, catch-all preservation, exhaustive `Op`,
   SMB `SecurityMode` (LSB) / `Capabilities` (LE), manual ranges, and the
   `Bitfield` seam. Golden byte vectors; runs with or without binrw.
+- `tests/comprehensive.rs` — the full matrix: every backing (u8..u128), msb/lsb
+  mirroring, all three width forms agreeing, masking/overflow, partial-width
+  padding, 3-level nesting, byte-order, exhaustive/catch-all/contract-violation
+  enums (incl. the documented panic for a non-exhaustive no-catch-all enum), and
+  UInt boundaries + error `Display`. Codec-only (runs both feature configs).
 - `tests/binrw_integration.rs` (`#![cfg(feature = "binrw")]`) — the headline:
   bitfields/enums in `#[binrw]` structs with no map glue, byte-aligned enums as
   binrw fields, and intrinsic (LE-in-BE) byte order.
 
-Examples: `cargo run -p bits --example protocol_header` (binrw, DNS-style);
-`cargo run -p bits --example standalone [--no-default-features]` (codec-only,
-builds the IPv4 `0x45` byte).
+`#![deny(missing_docs)]` is on (both crates); the `uN` aliases are the one
+allowed exception. Keep the public surface fully documented.
+
+## Benchmarks
+
+`benches/bitfield_bench.rs` (criterion + pprof) measures `bits` **against the
+crates it replaces** — `bitbybit`, `modular-bitfield-msb` (dev-deps, bench-only)
+— and a hand-written shift/mask baseline, on an identical DNS-shaped 16-bit
+field. Result: `bits` matches `bitbybit`, beats `modular-bitfield`, and is within
+noise of hand-written (pack ~870ps, unpack ~192ps). Run: `cargo bench -p bits`;
+flamegraphs with `-- --profile-time 5`.
+
+## Examples
+
+- `protocol_header` (binrw) — DNS-style collapsed header field.
+- `ipv4_header` (binrw) — a **complete IPv4 header**: several bitfields + a
+  byte-aligned enum + binrw `map` for addresses, producing a valid 20-byte
+  packet header.
+- `enums` (codec-only) — `#[derive(BitEnum)]` in depth: exhaustive, catch-all
+  (the `num_enum` pattern), nesting, and checked-int error handling.
+- `standalone` (codec-only) — `bits` with `--no-default-features`, building the
+  IPv4 `0x45` byte without binrw.
 
 ## Scope notes
 
