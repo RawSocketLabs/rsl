@@ -180,7 +180,7 @@ Arguments weighed:
   in-house codec: (a) true sub-byte fields that straddle byte boundaries *in the
   stream* (today handled by collapsing to an integer first — fine for headers,
   awkward for exotic layouts); and (b) unifying the
-  binrw+derive_builder+bitfield triad into a single `#[message]` derive. If
+  binrw+derive_builder+bitfield triad into a single `#[wire]` derive. If
   those bite, a focused codec is justified — and cheap to adopt because of the
   seam below.
 
@@ -196,7 +196,7 @@ concrete, recurring limitation — not speculatively.
 
 ```
 bits/            # runtime lib (NOT proc-macro): types, traits, re-exports
-bits-macros/     # proc-macro = true: #[bitfield], #[derive(BitEnum)], (later) #[message]
+bits-macros/     # proc-macro = true: #[bitfield], #[derive(BitEnum)], (later) #[wire]
 ```
 `bits` re-exports the macros so users write `use bits::*;`. Both join the
 workspace. Macro code moves to `syn 2.0`. This alone resolves the
@@ -294,7 +294,7 @@ field types don't change. That is the entire point of the seam.
 
 - Short term: keep `derive_builder` for *outer* protocol structs; the bitfield
   `with_*` API removes the `calc` glue for the *inner* collapsed fields.
-- Optional later: a `#[message]` derive in `bits-macros` that folds
+- Optional later: a `#[wire]` derive in `bits-macros` that folds
   **binrw + builder + soundness-check** (the `check_soundness`/`#[brw(ignore)]`
   pattern) into one attribute — replacing the binrw+derive_builder+calc triad
   for headers. This is the natural place to eventually drop `derive_builder`.
@@ -324,21 +324,21 @@ time may rise (more generated code) — explicitly acceptable per the goal.
 5. **Later/optional:** absorb byte-domain helpers — `bits::bytes` (buffers),
    `bits::checksum` (CRC32 + the Internet checksum already in `icmp`),
    `bits::mac` — to drop `bytes`/`crc32fast`/`macaddr`. Then evaluate the
-   `#[message]` derive (drop `derive_builder`) and, last, an in-house codec
+   `#[wire]` derive (drop `derive_builder`) and, last, an in-house codec
    (drop `binrw`).
 
 **Dependency ledger**
 
 | Drop now (Phase 1) | Keep (with exit path) | Orthogonal (absorb later) |
 |---|---|---|
-| arbitrary-int, num_enum, modular-bitfield, modular-bitfield-msb, bitfield-struct, bitbybit | binrw (codec seam), derive_builder (`#[message]`) | bytes, crc32fast, macaddr |
+| arbitrary-int, num_enum, modular-bitfield, modular-bitfield-msb, bitfield-struct, bitbybit | binrw (codec seam), derive_builder (`#[wire]`) | bytes, crc32fast, macaddr |
 
 ---
 
 ## 7. Open decisions for the maintainer
 
 1. **Scope of Phase 1** — bitfields + ints + enums + binrw bridge (recommended),
-   or also the `#[message]` derive in the first pass?
+   or also the `#[wire]` derive in the first pass?
 2. **`bits` vs `bits` + `bits-macros` split** — the split is required (proc-macro
    crates can't export runtime types); confirm the two-crate layout is fine.
 3. **Bit-order default** — default `bits = msb` (network/RFC-diagram order, since
@@ -449,7 +449,7 @@ any unset **required** field; per-field `#[builder(default)]` / `#[builder(defau
 to make a field optional. The builder distinguishes *set* from *unset* — that
 tracking is the feature. It coexists with the infix `with_*` (quick path) and is
 intended to **replace derive_builder** on bit/byte structs, feeding the
-eventually-folded `#[message]` derive (binrw + builder + soundness, §5.6).
+eventually-folded `#[wire]` derive (binrw + builder + soundness, §5.6).
 
 **Defaults I'd pick (override in §8.3):** **required-by-default** (every field
 must be set unless `#[builder(default)]`, like derive_builder) so `build()`
@@ -467,7 +467,7 @@ later pass.
 2. **bitflags indexing** — value-based / LSB (`flag n = 1 << n`), with explicit
    `= 1 << k` and combination (`= SYN | ACK`) overrides. No `msb` flag mode.
 3. **builder scope** — `#[bitfield]` types first this round; plain "message"
-   structs (bitfields + byte fields) come with the later `#[message]` derive.
+   structs (bitfields + byte fields) come with the later `#[wire]` derive.
 4. **builder semantics** — required-by-default; a field must be set or
    `build()` returns `Err` naming the missing field(s). `#[builder(default)]` /
    `#[builder(default = expr)]` makes a field optional. A **separate**
@@ -485,7 +485,157 @@ later pass.
 
 ---
 
-## 9. Sources
+## 9. The `#[wire]` macro (implemented 2026-06-11)
+
+A single attribute that folds the protocol-header triad — **binrw codec +
+builder + collapsed bit-groups + derived fields + soundness** — that DNS/NBT
+headers stack by hand. It is *sugar that expands to the existing primitives*
+(`#[binrw]` + `#[derive(BitsBuilder)]` + `#[bitfield]`), not a new codec.
+
+### 9.1 Research: the feature surface and the sharp edges
+
+**Workspace binrw usage** (attribute frequency across all crates): `magic` ×214,
+`pre_assert` ×84, `big/little` ×84, `map` ×46, `count` ×32, `args` ×25,
+`import` ×19, `ignore` ×12, `calc` ×9, `parse_with` ×7, `if` ×3,
+`restore_position` ×2, `temp`/`try_calc` ×1. `derive_builder`: `default` ×50,
+`setter` ×17, `validate` ×15.
+
+**Conclusion → wrap binrw, don't replace it.** Reimplementing this surface
+(magic/pre_assert/count/args/parse_with/…) would be enormous *and* would destroy
+the escape hatch. So `#[wire]` emits a `#[binrw]` struct and **passes every
+`#[br]/#[bw]/#[brw]` attribute through untouched**, adding native sugar only for
+the patterns binrw expresses awkwardly. (An in-house codec — DESIGN §4's 2b —
+stays deferred; `#[wire]` does not force it.)
+
+**The real shapes it must fold** (DNS/NBT `Header`):
+1. *Collapsed bit-group*: one wire integer, N named fields — today a private
+   `state` field with `#[bw(calc = State::builder()…)]` to reassemble on write,
+   plus N fields each `#[bw(ignore)] #[br(calc = state.x())]` to disassemble on
+   read. Six+ attributes and a private field, kept in sync by hand.
+2. *Derived fields*: `qdcount` etc. `#[bw(map = |x| x.unwrap_or(queries.len()))]`
+   + a struct-level `#[bw(import(queries, …))]`.
+3. *Count-driven `Vec`s*: `#[br(count = questions)] Vec<Question>` (pure binrw).
+4. *Builder-only fields*: NBT `#[brw(ignore)] #[builder(default = true)] check_soundness`.
+5. *Soundness*: `derive_builder`'s `build_fn(validate = "Self::validate")`.
+
+**Ecosystem sharp edges to design around:**
+- **binrw `temp` does not cross the read/write boundary** (binrw #47): a field
+  read-only on `br` is not automatically calc-only on `bw`. This is *exactly*
+  why the hand-written headers carry matched-but-separate `#[br(calc)]` /
+  `#[bw(calc)]` that can drift. `#[wire]` **generates the matched pair**, so
+  the two directions can't diverge — a concrete correctness win, not just terser.
+- **Proc-macro span loss**: re-emitted tokens lose spans, so errors point at the
+  attribute, not the field. Mitigation: emit field tokens with their **original
+  spans**, and report misuse via well-spanned `compile_error!`
+  (`syn::Error::new_spanned`), never a macro panic. Test illegal programs (a
+  `trybuild` compile-fail suite) so error quality is regression-guarded.
+- **Nested attribute macros** (`#[wire]` emitting `#[binrw]`): valid and
+  common, but the emitted `#[binrw]` must be well-formed; keep generated glue
+  minimal and span-correct.
+- **deku** (the most complete reference) names the same surface: `update`
+  (compute-on-write), `temp`, `assert`/`assert_eq`, `cond`, `ctx`, `pad_*`,
+  `id`. We mirror the useful ones (`update`, validation) and lean on binrw
+  passthrough for the rest.
+
+### 9.2 Native features (the value over raw binrw + builder)
+
+```rust
+#[wire(big)]                       // endianness; wraps #[binrw] #[brw(big)]
+struct Header {
+    id: u16,                          // plain field: builder + binrw field
+
+    #[group(u16)]                     // (1) inline bit-group -> one u16 on the wire,
+    opcode: OpCode,                   //     opcode/flags/rcode first-class in the
+    flags:  Flags,                    //     builder & as accessors; matched br/bw
+    rcode:  RCode,                    //     glue generated (no drift)
+
+    #[update(queries.len() as u16)]   // (2) derived on write; overridable
+    qdcount: u16,
+
+    #[builder(default)]               // ESCAPE HATCH: builder attr passes through
+    #[br(count = qdcount)]            // ESCAPE HATCH: binrw attr passes through
+    queries: Vec<Question>,
+
+    #[builder_only(default = true)]   // (4) not on the wire; gates soundness
+    check_soundness: bool,
+}
+
+#[wire(big, validate = Header::soundness)]   // (5) run in build() + post-read,
+                                                //     gated by check_soundness
+```
+
+- **`#[group(uN)]`** — the killer feature: a run of fields packed into a `uN` on
+  the wire, exposed individually. Generated as `#[br(temp)]` packed read +
+  `#[bw(calc = pack)]` + sub-field `#[br(calc = unpack)]` + `#[bw(ignore)]`.
+  Smooths the temp-cross-boundary edge.
+- **`#[update(expr)]`** — compute-on-write (counts/lengths/checksums); the field
+  is written from `expr`, so you never hand-thread `import`.
+- **`#[builder_only]`** — builder field, not on the wire.
+- **soundness `validate`** — runs in `build()` and after `BinRead`, gated by a
+  `#[builder_only]` bool, so disabling it is the documented dual-use escape hatch
+  for emitting malformed traffic.
+- **builder** — `BitsBuilder`-style, folded in.
+
+### 9.3 Escape hatches & integration (a hard requirement)
+
+- **Every `#[br]/#[bw]/#[brw]` attribute passes through verbatim** — the full
+  binrw surface (magic, count, args, import, map, parse_with, if, pre_assert,
+  restore_position, pad, …) remains available on any field.
+- **Every `#[builder(...)]` attribute passes through** to the generated builder.
+- A `#[wire]` struct **is** a `#[binrw]` struct — it produces standard
+  `BinRead`/`BinWrite`, so every binrw consumer (and `bits` bitfields/enums/flags)
+  composes unchanged. You can always drop to raw `#[binrw]` + `#[derive(BitsBuilder)]`.
+- `#[wire]` requires the `binrw` feature (it wraps binrw); document that.
+
+### 9.4 Decisions (confirmed 2026-06-11)
+
+1. **Group syntax — struct-level, named, order-sensitive.** Groups are declared
+   in the attribute by **field name**: `#[wire(big, group(opcode, flags, rcode => u16))]`
+   (multiple `group(...)` clauses allowed; the backing `uN` is the wire size).
+   Naming the fields means a moved/renamed field is a **compile error**, not a
+   silent mislayout. The macro **enforces** that the named fields appear
+   **consecutively and in the same order** in the struct body, erroring (well
+   spanned) otherwise. (No per-field tags — the user found those unclear about
+   *which* group, and the struct-level form gives the size one place.) Mechanism:
+   the macro generates a private `#[bitfield(uN, bits = msb, bytes = <endian>)]`
+   for the group and wires it with `#[br(temp)]` (read the packed word into a
+   temp) + `#[bw(calc = Group::new().with_…())]`, and turns each member into a
+   stored `#[br(calc = temp.field())] #[bw(ignore)]` field — so the matched
+   read/write pair is generated together and cannot drift (the binrw #47 fix).
+2. **`#[update(expr)]` — always recompute on write.** The field becomes
+   `#[br(temp)] #[bw(calc = expr)]`: not stored, not in the builder; on read it is
+   a temp (usable by a later `#[br(count = field)]`), on write it is always `expr`.
+   Derived values can never disagree with the payload.
+3. **Builder — always, opt out** with `#[wire(no_builder)]`.
+4. **Soundness — `#[wire(validate = path)]`.** Auto-creates a `check_soundness`
+   builder-only flag (default `true`); `build()` runs the validator (`path:
+   fn(&Self) -> Result<(), impl Display>`, surfaced as `BuilderError::Invalid`)
+   when the flag is set; setting it `false` is the dual-use escape hatch. A
+   `validate(&self)` method is generated for **opt-in** post-parse checking.
+   **The parser (`BinRead`) is deliberately left permissive** — it never rejects
+   representable input. This is the workspace's dual-use rule (CLAUDE.md: "never
+   enforce a policy requirement inside a parser"): validation is a
+   construction-time / opt-in concern, not a parser concern. Auto-validating on
+   read would both violate that rule and (via a reconstruct-and-clone hack) tax
+   the zero-cost `BinRead` path — so it is intentionally not done.
+
+### 9.5 Outcome
+
+Implemented in `bits-macros/src/wire.rs` (gated on the `binrw` feature; the
+dependent crate needs `binrw` as a direct dep). Lowers to a `#[binrw]` struct +
+a private `#[bitfield]` per group + a `BitsBuilder`-style builder, reusing the
+existing generators. `BuilderError` grew an `Invalid(String)` case so a
+validator's error of any `Display` type flows through `build()` without coupling.
+Tested in `bits/tests/wire.rs` (groups, derived `#[update]` counts,
+count-driven `Vec`s, `#[builder_only]`, multi-group, little-endian, `no_builder`,
+soundness dual-use, and binrw `map`/`magic` passthrough — plus a capstone using
+every feature) and `bits/tests/ui/*` (8 compile-fail cases proving group
+misuse — non-adjacent, out-of-order, unknown, duplicate, marker conflicts — is
+caught with well-spanned errors). Example: `bits/examples/wire_header.rs`.
+
+---
+
+## 10. Sources
 
 - deku — docs.rs/deku; bit support & `bitvec` backing; perf threads
   (github.com/jam1garner/binrw/discussions/184, rust-lang/rust#118674).
@@ -493,3 +643,7 @@ later pass.
   (github.com/jam1garner/binrw/discussions/222).
 - bilge — github.com/hecatia-elegua/bilge; modular-bitfield — lib.rs/crates/modular-bitfield.
 - zerocopy bitfield integration — github.com/google/zerocopy/issues/1497.
+- deku attribute reference (update/temp/assert/cond/ctx/pad/id) — docs.rs/deku/latest/deku/attributes.
+- binrw temp does not cross read/write — github.com/jam1garner/binrw/issues/47.
+- proc-macro error reporting / span loss — blog.turbo.fish/proc-macro-error-handling,
+  rust-lang/rust#76360, dtolnay/proc-macro2#104.

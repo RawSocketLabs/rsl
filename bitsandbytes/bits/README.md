@@ -25,6 +25,7 @@ with first-class [`binrw`](https://docs.rs/binrw) integration.
 | `#[derive(BitEnum)]` | `num_enum`, `bitbybit::bitenum` | enum ⇄ integer with optional catch-all |
 | `#[bitflags]` | `bitflags` | named single-bit flag sets with set algebra |
 | `#[derive(BitsBuilder)]` | `derive_builder` (for bit/byte structs) | required-field builder |
+| `#[wire]` | hand-written `#[binrw]` + builder + collapse glue | whole-header codec: bit-groups + derived fields + soundness |
 
 ## Example
 
@@ -99,6 +100,42 @@ struct State { opcode: u4, #[builder(default)] flags: u8, rcode: RCode }
 
 let s = State::builder().opcode(u4::new(2)).rcode(RCode::ServFail).build()?; // Err if unset
 ```
+
+## Whole-message codecs
+
+`#[wire]` folds a protocol header's binrw codec, builder, collapsed bit-groups,
+derived fields, and soundness check into one attribute. It rewrites the struct
+into a `#[binrw]` struct — so the **entire** binrw attribute surface stays usable
+as an escape hatch — and generates a private `#[bitfield]` per group plus a
+builder.
+
+```rust,ignore
+#[wire(big, group(opcode, flags, rcode => u16), validate = Header::soundness)]
+#[derive(Debug, Clone, PartialEq)]
+struct Header {
+    id: u16,
+    opcode: OpCode,           // these three pack into one u16 on the wire,
+    flags:  Flags,            // but stay first-class in the builder and as
+    rcode:  RCode,            // fields (no calc/ignore boilerplate)
+    #[update(self.questions.len() as u16)]
+    qdcount: u16,             // derived on write, never stored
+    #[br(count = qdcount)]    // escape hatch: a raw binrw attribute
+    #[builder(default)]
+    questions: Vec<Question>,
+}
+```
+
+- `group(a, b, c => uN)` names the **consecutive, in-order** fields to pack;
+  moving or reordering one is a compile error.
+- `#[update(expr)]` derives a field on write (`#[br(temp)] #[bw(calc)]`).
+- `#[builder_only]` keeps a field off the wire.
+- `validate = path` gates `build()` (and an opt-in `validate()` method) behind a
+  `check_soundness` flag — but the **parser stays permissive** (it never rejects
+  representable input, per the dual-use rule); set `check_soundness(false)` to
+  build deliberately malformed messages.
+
+See `examples/wire_header.rs`. (Requires the `binrw` feature and a direct
+`binrw` dependency.)
 
 ## Bit order vs. byte order
 

@@ -17,8 +17,9 @@ binrw integration, meant to replace the external bitfield/int/enum helpers
   (`BuilderError`), and the crate root (re-exports + the `BitEnum` marker trait +
   `__private` for generated code).
 - `bits-macros/` — proc-macro crate: `#[bitfield]`, `#[derive(BitEnum)]`,
-  `#[bitflags]`, and `#[derive(BitsBuilder)]` (the `builder` module is shared by
-  the standalone derive and the `#[bitfield]` intercept).
+  `#[bitflags]`, `#[derive(BitsBuilder)]` (the `builder` module is shared by the
+  standalone derive and the `#[bitfield]` intercept), and `#[wire]` (the
+  whole-header folder, gated on the `binrw` feature).
 
 A proc-macro crate cannot also export runtime items, hence the split. Depend on
 `bits`; it re-exports the macros.
@@ -63,6 +64,42 @@ the proc-macro.
   strips the marker. A real `BitsBuilder` derive also exists for **plain**
   structs. So: put `#[bitfield(...)]` **above** `#[derive(BitsBuilder, ...)]`.
 
+## `#[wire]` (the whole-header folder)
+
+Folds binrw + builder + collapsed bit-groups + derived fields + soundness into
+one attribute. **It is sugar, not a new codec:** `wire::expand` rewrites the
+struct into a `#[::binrw::binrw]` struct (so the *entire* binrw attribute surface
+— `magic`, `count`, `args`, `map`, `parse_with`, `if`, `pre_assert`, … — stays
+usable as an escape hatch), emits a private `#[::bits::bitfield]` per group, and
+calls `builder::generate` for the builder. Lives in `bits-macros/src/wire.rs`;
+re-exported from `bits` only under the `binrw` feature; the **dependent crate
+needs `binrw` as a direct dep** (generated code names `::binrw`).
+
+Load-bearing details:
+
+- **Groups lower via the binrw temp/calc pair.** `group(a, b => uN)` (struct-level,
+  by name) inserts a `#[br(temp)] #[bw(calc = Grp::new().with_a(self.a)…)]` packed
+  word and turns each member into `#[br(calc = grp.a())] #[bw(ignore)]`. Generating
+  the read/write halves *together* sidesteps binrw #47 (a read-`temp` field is not
+  auto-`calc` on write) — the two directions can't drift. The temp word is removed
+  from the struct, so there's no DNS-style 2-byte bloat. Verified the pattern by
+  hand before building the macro.
+- **Group validation is the user's safety requirement:** named members must be
+  **consecutive and in declared order**; the macro errors (well-spanned, at the
+  offending ident) otherwise, so a moved field is a compile error.
+- `#[update(expr)]` → `#[br(temp)] #[bw(calc = expr)]` (not stored, not in the
+  builder; expr references fields via `self.`). `#[builder_only(default = e)]` →
+  `#[br(calc = e)] #[bw(ignore)]` and the builder default becomes `e` (wire both:
+  the read-side calc *and* the builder default must use the same expr — a fixed
+  bug was setting only the former).
+- **Soundness is construction-side only, by design.** `validate = path` auto-adds
+  a `pub check_soundness: bool` (`#[br(calc = true)] #[bw(ignore)]`, default true)
+  and a `validate(&self)` method; `build()` calls it via a `post_build` hook on
+  `builder::generate`. **The parser stays permissive** — auto-validating `BinRead`
+  would violate the dual-use rule (never reject representable input). The
+  validator returns any `Display` error; it flows out as `BuilderError::Invalid`
+  (the enum gained that case).
+
 ## Gotchas
 
 - A catch-all `#[derive(BitEnum)]` mixes a tuple variant with discriminants;
@@ -95,6 +132,16 @@ RUSTC_WRAPPER= cargo test -p bits --no-default-features # standalone codec, no b
   accessors, `iter`, retain vs truncate, and nesting in a `#[bitfield]`.
 - `tests/builder.rs` — `#[derive(BitsBuilder)]`: required-field errors, `default`
   / `default = expr`, the `#[bitfield]` intercept, and the plain-struct path.
+- `tests/wire.rs` (`#![cfg(feature = "binrw")]`) — `#[wire]`: group packing
+  + round-trip, derived `#[update]` counts + count-driven `Vec`s, required-field
+  errors, soundness dual-use (gates build, permissive parser, opt-in `validate()`,
+  `check_soundness(false)` escape hatch), `#[builder_only]` off-wire, multi-group
+  + little-endian, `no_builder`, binrw `map`/`magic` passthrough, and a capstone
+  using every feature in one header.
+- `tests/compile_fail.rs` + `tests/ui/*` — trybuild snapshots proving `#[wire]`
+  misuse (non-adjacent / out-of-order / unknown / duplicate group members, marker
+  conflicts, tuple struct) is rejected with a clear, well-spanned error.
+  Regenerate with `TRYBUILD=overwrite`.
 - `tests/binrw_integration.rs` (`#![cfg(feature = "binrw")]`) — the headline:
   bitfields/enums/flags in `#[binrw]` structs with no map glue, byte-aligned
   enums as binrw fields, and intrinsic (LE-in-BE) byte order.
@@ -124,13 +171,17 @@ flamegraphs with `-- --profile-time 5`.
   (the `num_enum` pattern), nesting, and checked-int error handling.
 - `standalone` (codec-only) — `bits` with `--no-default-features`, building the
   IPv4 `0x45` byte without binrw.
+- `wire_header` (binrw) — a **DNS-style header in one `#[wire]`**: a
+  bit-group, derived counts, soundness, and the builder, with the before/after
+  framing in the file header.
 
 ## Scope notes
 
-- Phase 1 only: no `#[message]` derive (the binrw+builder+soundness folder) and
-  no in-house codec yet — both are deferred in `DESIGN.md`. The `Bitfield` seam
-  (`to_raw`/`from_raw` + the codec-agnostic trait) is the hook a future codec
-  builds on.
+- `#[wire]` (the binrw + builder + bit-group + soundness folder) is built
+  (DESIGN §9). It **wraps** binrw rather than replacing it — an in-house codec
+  (DESIGN §4's option 2b) is still deferred; `#[wire]` does not force it. The
+  `Bitfield` seam (`to_raw`/`from_raw` + the codec-agnostic trait) remains the
+  hook a future codec would build on.
 - Dual-use: `from_raw`/`from_bytes` never validate; `#[catch_all]` preserves
   unknown enum values. Keep that — never make a parser reject representable
   input.
