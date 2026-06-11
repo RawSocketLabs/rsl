@@ -29,6 +29,34 @@ socks` clean after any change.
   address, UDP header, user/pass).
 - `src/error.rs` — `SocksError`.
 
+## Testing & performance
+
+Tests are split by purpose so any layer can run in isolation. Unit / component
+/ sanity tests live in-source under `#[cfg(test)] mod unit` next to the code;
+the rest are dedicated binaries under `tests/`:
+
+- `smoke.rs` — liveness (one byte round-trips through the proxy).
+- `api.rs` — public surface is reachable and keeps its shape.
+- `contract.rs` — golden RFC 1928/1929 wire vectors, parse direction.
+- `integration.rs` — client/server negotiation and error mapping.
+- `e2e.rs` — full proxy→target flows (CONNECT, BIND, UDP, auth).
+- `regression.rs` — guards for fixed defects (UDP source hijack, BIND /
+  handshake timeouts, client-IP pinning). `//~ verifies` annotations live here.
+- `observability.rs` — asserts `tracing` events fire under a subscriber (its
+  own binary on purpose: tracing caches callsite interest on first hit).
+- `common/mod.rs` — shared spawn/echo/proxy helpers.
+
+Run everything: `RUSTC_WRAPPER= cargo test -p socks`.
+
+Benchmarks (`benches/socks_bench.rs`, criterion + pprof):
+
+- Measure: `cargo bench -p socks --bench socks_bench` (groups: `parse`,
+  `handshake`, `relay`; reports under `target/criterion/`).
+- Flamegraph SVGs: `cargo bench -p socks --bench socks_bench -- --profile-time 5`.
+
+Coverage (cargo-tarpaulin, config in `tarpaulin.toml`):
+`cargo tarpaulin --config tarpaulin.toml` → HTML + LCOV in `target/coverage/`.
+
 ## Scope notes
 
 - Compliant-by-default but violatable: see `client::raw` and the
