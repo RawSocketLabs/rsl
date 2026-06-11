@@ -90,20 +90,21 @@ fn bench_handshake(c: &mut Criterion) {
 
 fn bench_relay(c: &mut Criterion) {
     let proxy = spawn_proxy();
-    // Two stand-in peers: one cooperating (nodelay), one Nagle-bound. Paired
-    // with the matching client-side flag below, this contrasts the full-path
-    // nodelay state against the pre-change Nagle state so the win (or its
-    // absence at small sizes) is measured, not asserted.
     let echo_nodelay = spawn_echo(true);
-    let echo_nagle = spawn_echo(false);
+
+    // Relay arms: (label, client-side nodelay, stand-in peer). The Nagle
+    // baseline contrasts the full-path nodelay state against pre-change
+    // behavior, but it is slow by design (~37ms/iter at 64 KiB), so it is
+    // gated behind the `bench-nagle` feature to keep a default run fast.
+    #[cfg_attr(not(feature = "bench-nagle"), allow(unused_mut))]
+    let mut arms: Vec<(&str, bool, SocketAddr)> = vec![("nodelay", true, echo_nodelay)];
+    #[cfg(feature = "bench-nagle")]
+    arms.push(("nagle", false, spawn_echo(false)));
 
     let mut group = c.benchmark_group("relay");
     for size in [256usize, 4096, 65536] {
         let payload = vec![0xABu8; size];
-        for (label, nodelay, echo) in [
-            ("nodelay", true, echo_nodelay),
-            ("nagle", false, echo_nagle),
-        ] {
+        for &(label, nodelay, echo) in &arms {
             let mut stream = Client::new(proxy).connect(echo).expect("connect");
             // The crate sets nodelay on the client stream; override it to match
             // the scenario so the "nagle" arm reflects pre-change behavior.

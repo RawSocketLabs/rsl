@@ -53,6 +53,9 @@ Benchmarks (`benches/socks_bench.rs`, criterion + pprof):
 - Measure: `cargo bench -p socks --bench socks_bench` (groups: `parse`,
   `handshake`, `relay`; reports under `target/criterion/`).
 - Flamegraph SVGs: `cargo bench -p socks --bench socks_bench -- --profile-time 5`.
+- Quantify the TCP_NODELAY win: `cargo bench --features bench-nagle` adds the
+  deliberately-slow Nagle baseline arm (`relay/nagle/*`) alongside
+  `relay/nodelay/*`; off by default so a normal run stays fast.
 
 Coverage (cargo-tarpaulin, config in `tarpaulin.toml`):
 `cargo tarpaulin --config tarpaulin.toml` → HTML + LCOV in `target/coverage/`.

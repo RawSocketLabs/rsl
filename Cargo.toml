@@ -13,6 +13,12 @@ thiserror = "1.0"
 # manifest: tracing = { version = "0.1", features = ["release_max_level_off"] }
 tracing = "0.1"
 
+[features]
+# Adds the deliberately-slow Nagle baseline arm to the relay benchmark
+# (~37ms/iter at 64 KiB). Off by default so `cargo bench` stays fast; enable
+# with `cargo bench --features bench-nagle` to quantify the TCP_NODELAY win.
+bench-nagle = []
+
 [dev-dependencies]
 tracing-subscriber = "0.3"
 # Statistical benchmarking with HTML reports.
