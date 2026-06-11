@@ -109,6 +109,10 @@ pub use int::{UInt, *};
 // so `BitEnum` is both the derive and the marker trait below.
 pub use bits_macros::{bitfield, bitflags, BitEnum, BitsBuilder};
 
+// `#[wire]` wraps binrw, so it exists only with the `binrw` feature.
+#[cfg(feature = "binrw")]
+pub use bits_macros::wire;
+
 /// Marker trait implemented by `#[derive(BitEnum)]` enums: a [`Bits`] value
 /// whose representation is an integer discriminant of a fixed width.
 pub trait BitEnum: Bits {}

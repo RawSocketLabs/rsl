@@ -12,6 +12,8 @@ mod bitenum;
 mod bitfield;
 mod bitflags;
 mod builder;
+#[cfg(feature = "binrw")]
+mod wire;
 
 use proc_macro::TokenStream;
 
@@ -134,4 +136,61 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 #[proc_macro_derive(BitsBuilder, attributes(builder))]
 pub fn bits_builder(item: TokenStream) -> TokenStream {
     builder::expand_derive(item)
+}
+
+/// Folds a protocol message's binrw codec, builder, collapsed bit-groups,
+/// derived fields, and soundness check into one attribute.
+///
+/// `#[wire]` is *sugar over the existing primitives*: it rewrites the struct
+/// into a `#[binrw]` struct — so **every** binrw attribute (`magic`, `count`,
+/// `args`, `import`, `map`, `parse_with`, `if`, `pre_assert`, `pad_*`, …) stays
+/// usable as an escape hatch — and additionally generates a private `#[bitfield]`
+/// per bit-group and a [`BitsBuilder`](macro@BitsBuilder)-style builder.
+///
+/// Requires the `binrw` feature (it wraps binrw) and that the dependent crate has
+/// `binrw` as a direct dependency.
+///
+/// ```ignore
+/// #[wire(big, group(opcode, flags, rcode => u16), validate = Header::soundness)]
+/// #[derive(Debug, Clone, PartialEq)]
+/// struct Header {
+///     id: u16,
+///     opcode: OpCode,           // these three are packed into one u16 on the
+///     flags:  Flags,            // wire (a private #[bitfield]) but stay
+///     rcode:  RCode,            // first-class in the builder and as fields
+///     #[update(self.queries.len() as u16)]
+///     qdcount: u16,             // derived on write, temp on read (not stored)
+///     #[br(count = qdcount)]    // escape hatch: a raw binrw attribute
+///     #[builder(default)]
+///     queries: Vec<Question>,
+/// }
+/// ```
+///
+/// ## Attribute arguments
+///
+/// - `big` | `little` (default `big`): wire byte order (`#[brw(big|little)]`).
+/// - `group(a, b, c => uN)` (repeatable): pack the **named, consecutive,
+///   in-order** fields into a `uN` word. Naming the fields means a moved or
+///   renamed field is a compile error; the macro also rejects members that are
+///   not adjacent or are out of order.
+/// - `validate = path`: `path: fn(&Self) -> Result<(), E: Display>`. Auto-creates
+///   a `check_soundness` builder-only flag (default `true`); `build()` runs the
+///   validator when it is set, and a `validate(&self)` method is generated for
+///   opt-in post-parse checking. The **parser stays permissive** — it never
+///   rejects representable input (the workspace's dual-use rule).
+/// - `no_builder`: skip builder generation (codec + groups only).
+///
+/// ## Field attributes
+///
+/// - `#[update(expr)]`: derived field — `expr` is written every time and the
+///   field is read into a temp (not stored, not in the builder).
+/// - `#[builder_only]` / `#[builder_only(default = expr)]`: a field in the struct
+///   and builder but **not** on the wire.
+/// - `#[builder(default)]` / `#[builder(default = expr)]`: builder default policy
+///   (as for [`BitsBuilder`](macro@BitsBuilder)).
+/// - any `#[br]` / `#[bw]` / `#[brw]`: forwarded verbatim to binrw.
+#[cfg(feature = "binrw")]
+#[proc_macro_attribute]
+pub fn wire(attr: TokenStream, item: TokenStream) -> TokenStream {
+    wire::expand(attr, item)
 }
