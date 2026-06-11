@@ -1,0 +1,39 @@
+[package]
+name = "tftp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+binrw = "0.15.0"
+thiserror = "1.0"
+# Structured logging/spans via the tracing facade. With no subscriber installed
+# the instrumentation is near-free (a cached atomic check per call site).
+# Consumers who want it fully compiled out can set, in their own manifest:
+# tracing = { version = "0.1", features = ["release_max_level_off"] }
+tracing = "0.1"
+
+[features]
+# RFC 2347/2348/2349 option negotiation (blksize, timeout, tsize) and the OACK
+# packet. On by default — it is the common, useful extension — but the core
+# RFC 1350 transfer works with `default-features = false` for a minimal build:
+#
+#   tftp = { version = "0.1", default-features = false }   # RFC 1350 only
+#   tftp = "0.1"                                            # + option negotiation
+default = ["options"]
+options = []
+
+# Adds a deliberately-throttled transfer arm to the benchmark for contrast. Off
+# by default so a normal `cargo bench` run stays quick.
+bench-slow = []
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
+# Statistical benchmarking with HTML reports.
+criterion = { version = "0.5", features = ["html_reports"] }
+# Sampling profiler wired into criterion: `--profile-time <secs>` emits a
+# flamegraph SVG per benchmark instead of measuring.
+pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+
+[[bench]]
+name = "tftp_bench"
+harness = false
