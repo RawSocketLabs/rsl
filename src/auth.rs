@@ -1,3 +1,40 @@
+//! Authentication method negotiation (RFC 1928 §3, RFC 1929).
+//!
+//! After the SOCKS5 greeting, both sides agree on a single authentication
+//! *method* and then run that method's subnegotiation. This module models the
+//! two halves of that exchange as traits — [`Authenticator`] (server side) and
+//! [`AuthHandler`] (client side) — and ships the two built-in methods:
+//!
+//! - [`NoAuth`] — `NO AUTHENTICATION REQUIRED` (X'00'); the subnegotiation is
+//!   empty.
+//! - [`UserPassAuthenticator`] / [`UserPassHandler`] — `USERNAME/PASSWORD`
+//!   (X'02'), the RFC 1929 credential exchange.
+//!
+//! A [`Server`](crate::server::Server) is configured with a list of
+//! `Authenticator`s in preference order; a [`Client`](crate::client::Client)
+//! offers the methods of the `AuthHandler`s it holds. The traits are also the
+//! extension point for methods this crate does not ship — most notably GSS-API
+//! (RFC 1961), which a separate helper crate can provide by implementing them.
+//!
+//! # Example
+//!
+//! A server that only accepts one hard-coded credential:
+//!
+//! ```no_run
+//! use socks::auth::UserPassAuthenticator;
+//! use socks::server::Server;
+//!
+//! # fn main() -> Result<(), socks::error::SocksError> {
+//! let server = Server::bind("127.0.0.1:1080")?.with_authenticators(vec![
+//!     Box::new(UserPassAuthenticator::new(|user, pass| {
+//!         user == b"admin" && pass == b"hunter2"
+//!     })),
+//! ]);
+//! # let _ = server;
+//! # Ok(())
+//! # }
+//! ```
+
 use std::io::Write;
 use std::net::TcpStream;
 

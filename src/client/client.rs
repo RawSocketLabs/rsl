@@ -65,7 +65,30 @@ impl From<(String, u16)> for TargetAddr {
 }
 
 /// A SOCKS5 client that negotiates with a proxy and issues commands.
+///
+/// Construct one with the authentication methods it should offer
+/// ([`new`](Self::new) for no-auth, [`with_user_pass`](Self::with_user_pass)
+/// for RFC 1929, or [`with_auth`](Self::with_auth) for custom handlers), then
+/// call [`connect`](Self::connect), [`bind`](Self::bind), or
+/// [`udp_associate`](Self::udp_associate). Each command runs a fresh
+/// negotiation, so a single `Client` is a reusable description of *how* to reach
+/// the proxy, not a live connection.
+///
+/// # Example
+///
+/// ```no_run
+/// use socks::client::Client;
+///
+/// # fn main() -> Result<(), socks::error::SocksError> {
+/// let client = Client::new("127.0.0.1:1080".parse()?);
+/// let stream = client.connect(("example.com", 80))?;
+/// # let _ = stream;
+/// # Ok(())
+/// # }
+/// ```
 pub struct Client {
+    /// The proxy's address. Public so it can be inspected or reused; set at
+    /// construction.
     pub proxy: SocketAddr,
     auth: Vec<Box<dyn AuthHandler>>,
 }
@@ -175,23 +198,66 @@ impl Client {
         Ok(stream)
     }
 
-    /// Asks the proxy to listen for an inbound connection from
-    /// `expected_peer` (RFC 1928 BIND).
+    /// Asks the proxy to listen for an inbound connection on the client's
+    /// behalf — the BIND command (RFC 1928 §4), used by protocols like
+    /// active-mode FTP where the peer dials back. `expected_peer` names the
+    /// address the proxy should expect the inbound connection from.
+    ///
+    /// Returns immediately with a [`BindListener`] carrying the address the
+    /// proxy is now listening on ([`BindListener::bound`]); call
+    /// [`BindListener::accept`] to block until the peer connects.
     ///
     /// # Errors
     /// Returns [`SocksError::ReplyFailure`] when the proxy refuses the bind,
     /// or an I/O, negotiation, or parse error.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use socks::client::Client;
+    ///
+    /// # fn main() -> Result<(), socks::error::SocksError> {
+    /// let listener = Client::new("127.0.0.1:1080".parse()?)
+    ///     .bind(("198.51.100.7", 0))?;
+    /// println!("peer should connect to {}", listener.bound);
+    /// let (stream, peer) = listener.accept()?;
+    /// # let _ = (stream, peer);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn bind(&self, expected_peer: impl Into<TargetAddr>) -> Result<BindListener> {
         let (stream, reply) = self.request(Command::Bind, &expected_peer.into())?;
         let bound = reply_socket_addr(&reply)?;
         Ok(BindListener::new(stream, bound))
     }
 
-    /// Establishes a UDP ASSOCIATE relay (RFC 1928 section 7).
+    /// Establishes a UDP ASSOCIATE relay (RFC 1928 §7) for sending and
+    /// receiving datagrams through the proxy.
+    ///
+    /// The returned [`UdpTunnel`] owns a UDP socket and the TCP control
+    /// connection that keeps the association alive; dropping it tears the
+    /// association down. Use [`UdpTunnel::send_to`] / [`UdpTunnel::recv_from`]
+    /// to move datagrams. UDP fragmentation is deliberately not supported.
     ///
     /// # Errors
     /// Returns [`SocksError::ReplyFailure`] when the proxy refuses the
     /// association, or an I/O, negotiation, or parse error.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use socks::client::Client;
+    ///
+    /// # fn main() -> Result<(), socks::error::SocksError> {
+    /// let tunnel = Client::new("127.0.0.1:1080".parse()?).udp_associate()?;
+    /// tunnel.send_to(("203.0.113.9", 53), b"\x12\x34")?; // e.g. a DNS query
+    ///
+    /// let mut buf = [0u8; 512];
+    /// let (len, from) = tunnel.recv_from(&mut buf)?;
+    /// println!("{len} bytes from {from:?}");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn udp_associate(&self) -> Result<UdpTunnel> {
         UdpTunnel::establish(self)
     }

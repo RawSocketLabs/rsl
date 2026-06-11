@@ -56,7 +56,33 @@ impl Drop for Permit {
     }
 }
 
-/// A SOCKS5 proxy server.
+/// A SOCKS5 proxy server (RFC 1928).
+///
+/// [`bind`](Self::bind) it to an address, optionally configure authentication
+/// and the resource-exhaustion guards, then drive it with
+/// [`serve`](Self::serve) (loop, one thread per client) or
+/// [`accept`](Self::accept) (one client, current thread). By default it accepts
+/// unauthenticated clients; pass [`Authenticator`]s to
+/// [`with_authenticators`](Self::with_authenticators) to require credentials.
+///
+/// The builder-style setters consume and return `self`, so they chain:
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use socks::auth::UserPassAuthenticator;
+/// use socks::server::Server;
+///
+/// # fn main() -> Result<(), socks::error::SocksError> {
+/// Server::bind("127.0.0.1:1080")?
+///     .with_authenticators(vec![Box::new(UserPassAuthenticator::new(
+///         |user, pass| user == b"admin" && pass == b"hunter2",
+///     ))])
+///     .with_handshake_timeout(Some(Duration::from_secs(10)))
+///     .with_max_connections(256)
+///     .serve()?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct Server {
     listener: TcpListener,
     authenticators: Arc<Vec<Box<dyn Authenticator>>>,

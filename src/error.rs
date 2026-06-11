@@ -1,10 +1,25 @@
+//! The crate's error type and result alias.
+//!
+//! Every fallible operation in this crate returns [`Result<T>`], which is
+//! [`std::result::Result`] specialized to [`SocksError`]. The variants separate
+//! transport failures ([`SocksError::Io`]), malformed wire data
+//! ([`SocksError::MessageParse`]), protocol-level refusals the peer reported
+//! ([`SocksError::ReplyFailure`], [`SocksError::NoAcceptableMethods`],
+//! [`SocksError::AuthenticationFailed`]), and local validation
+//! ([`SocksError::Validation`]).
+//!
+//! [`io::Error`], [`AddrParseError`], and [`binrw::Error`] all convert into
+//! `SocksError` via [`From`], so `?` works directly against the standard
+//! library and the wire layer.
+
 use std::io;
 use std::net::AddrParseError;
 use thiserror::Error;
 
 use crate::v5::Response;
 
-/// Represents all possible errors that can occur in the SOCKS library
+/// Every error this crate can produce. See the [module docs](crate::error) for
+/// how the variants are grouped.
 #[derive(Error, Debug)]
 pub enum SocksError {
     /// I/O errors that occur during network operations
