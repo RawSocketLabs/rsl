@@ -1,0 +1,13 @@
+error: field `b` appears in more than one group
+ --> tests/ui/group_member_twice.rs:3:38
+  |
+3 | #[wire(big, group(a, b => u8), group(b, c => u8))]
+  |                                      ^
+
+warning: unused import: `u4`
+ --> tests/ui/group_member_twice.rs:1:18
+  |
+1 | use bits::{wire, u4};
+  |                  ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

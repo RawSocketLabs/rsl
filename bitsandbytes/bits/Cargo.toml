@@ -25,6 +25,10 @@ binrw = ["dep:binrw", "bits-macros/binrw"]
 # Used by integration tests that exercise the binrw bridge end-to-end against
 # real protocol-shaped structs.
 binrw = "0.15.0"
+# Compile-fail UI tests: assert that `#[wire]` misuse (out-of-order or
+# non-adjacent group members, marker conflicts, …) is rejected with a clear,
+# well-spanned error. Regenerate snapshots with `TRYBUILD=overwrite`.
+trybuild = "1.0"
 # Statistical benchmarking with HTML reports.
 criterion = { version = "0.5", features = ["html_reports"] }
 # Sampling profiler wired into criterion: `--profile-time <secs>` emits a
@@ -48,6 +52,10 @@ required-features = ["binrw"]
 
 [[example]]
 name = "tcp_segment"
+required-features = ["binrw"]
+
+[[example]]
+name = "wire_header"
 required-features = ["binrw"]
 
 [[bench]]

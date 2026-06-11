@@ -1,0 +1,5 @@
+error: unknown `#[wire]` argument `bigendian` (expected `big`, `little`, `group(a, b => uN)`, `validate = path`, or `no_builder`)
+ --> tests/ui/unknown_argument.rs:3:8
+  |
+3 | #[wire(bigendian)]
+  |        ^^^^^^^^^

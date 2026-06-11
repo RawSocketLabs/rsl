@@ -1,0 +1,5 @@
+error: #[wire] requires a struct with named fields
+ --> tests/ui/tuple_struct.rs:4:8
+  |
+4 | struct X(u8);
+  |        ^

@@ -1,0 +1,13 @@
+error: a field cannot combine group membership, `#[update]`, and `#[builder_only]`
+ --> tests/ui/combine_update_and_group.rs:6:5
+  |
+6 |     a: u4,
+  |     ^
+
+warning: unused import: `u4`
+ --> tests/ui/combine_update_and_group.rs:1:18
+  |
+1 | use bits::{wire, u4};
+  |                  ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
