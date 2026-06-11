@@ -21,17 +21,18 @@ use socks::server::Server;
 use socks::v5::{Identifier, Reply, Request};
 
 /// Spawns a long-lived TCP echo server that mirrors bytes for every client.
-fn spawn_echo() -> SocketAddr {
+///
+/// `nodelay` controls Nagle on the echo's side of each connection: it stands
+/// in for the relay's peer, so toggling it lets the relay benchmark contrast a
+/// cooperating (nodelay) peer against a Nagle one.
+fn spawn_echo(nodelay: bool) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             thread::spawn(move || {
                 let mut stream = stream;
-                // The echo stands in for a cooperating peer; without nodelay
-                // its reply tail stalls on Nagle vs the relay's delayed ACKs,
-                // which would measure the harness, not the crate.
-                let _ = stream.set_nodelay(true);
+                let _ = stream.set_nodelay(nodelay);
                 let mut buf = [0u8; 64 * 1024];
                 while let Ok(n) = stream.read(&mut buf) {
                     if n == 0 || stream.write_all(&buf[..n]).is_err() {
@@ -76,7 +77,7 @@ fn bench_parse(c: &mut Criterion) {
 }
 
 fn bench_handshake(c: &mut Criterion) {
-    let echo = spawn_echo();
+    let echo = spawn_echo(true);
     let proxy = spawn_proxy();
 
     c.bench_function("handshake/connect", |b| {
@@ -88,22 +89,37 @@ fn bench_handshake(c: &mut Criterion) {
 }
 
 fn bench_relay(c: &mut Criterion) {
-    let echo = spawn_echo();
     let proxy = spawn_proxy();
+    // Two stand-in peers: one cooperating (nodelay), one Nagle-bound. Paired
+    // with the matching client-side flag below, this contrasts the full-path
+    // nodelay state against the pre-change Nagle state so the win (or its
+    // absence at small sizes) is measured, not asserted.
+    let echo_nodelay = spawn_echo(true);
+    let echo_nagle = spawn_echo(false);
 
     let mut group = c.benchmark_group("relay");
     for size in [256usize, 4096, 65536] {
         let payload = vec![0xABu8; size];
-        let mut stream = Client::new(proxy).connect(echo).expect("connect");
-        let mut buf = vec![0u8; size];
+        for (label, nodelay, echo) in [
+            ("nodelay", true, echo_nodelay),
+            ("nagle", false, echo_nagle),
+        ] {
+            let mut stream = Client::new(proxy).connect(echo).expect("connect");
+            // The crate sets nodelay on the client stream; override it to match
+            // the scenario so the "nagle" arm reflects pre-change behavior.
+            // (The server's relay sockets always run nodelay — unreachable from
+            // here — so this isolates the client+peer contribution.)
+            stream.set_nodelay(nodelay).expect("set_nodelay");
+            let mut buf = vec![0u8; size];
 
-        group.throughput(Throughput::Bytes(size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
-            b.iter(|| {
-                stream.write_all(&payload).unwrap();
-                stream.read_exact(&mut buf).unwrap();
-            })
-        });
+            group.throughput(Throughput::Bytes(size as u64));
+            group.bench_with_input(BenchmarkId::new(label, size), &size, |b, _| {
+                b.iter(|| {
+                    stream.write_all(&payload).unwrap();
+                    stream.read_exact(&mut buf).unwrap();
+                })
+            });
+        }
     }
     group.finish();
 }
