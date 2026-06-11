@@ -8,6 +8,13 @@ use crate::error::{Result, SocksError};
 /// reach end-of-file, propagating half-closes so each side terminates.
 pub(crate) fn relay(client: TcpStream, remote: TcpStream) -> Result<()> {
     tracing::debug!("relay started");
+    // Disable Nagle on both ends of the relay: a proxy forwards whatever it
+    // receives immediately, so coalescing writes here only adds latency
+    // (interacting badly with delayed ACKs on larger transfers). Best-effort —
+    // a relay must not fail over a missed latency tweak.
+    let _ = client.set_nodelay(true);
+    let _ = remote.set_nodelay(true);
+
     let mut client_read = client.try_clone()?;
     let mut remote_write = remote.try_clone()?;
     let mut remote_read = remote;
