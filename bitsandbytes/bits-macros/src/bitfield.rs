@@ -11,7 +11,10 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Attribute, Ident, ItemStruct, LitInt, Token, Type};
+use syn::punctuated::Punctuated;
+use syn::{parse_macro_input, Attribute, Ident, ItemStruct, LitInt, Path, Token, Type};
+
+use crate::builder::{self, BField, BuildKind, FieldDefault};
 
 /// Parsed `#[bitfield(backing, bits = …, bytes = …)]` arguments.
 struct Args {
@@ -84,6 +87,8 @@ struct Field {
     ident: Ident,
     ty: Type,
     spec: Spec,
+    /// How the builder (if any) treats this field when unset.
+    builder_default: FieldDefault,
     /// Doc/cfg attributes to forward onto the generated getter.
     forward: Vec<Attribute>,
 }
@@ -103,8 +108,14 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     let backing = &args.backing;
     let backing_bytes = backing_byte_count(backing)?;
 
-    // Outer attributes minus our own `#[bitfield]` (already consumed as `attr`).
-    let outer: Vec<&Attribute> = item.attrs.iter().collect();
+    // Outer attributes minus our own `#[bitfield]` (consumed as `attr`), with the
+    // `BitsBuilder` derive marker intercepted so we can build it from the fields.
+    let (derive_paths, other_attrs, has_builder) = split_outer_attrs(&item.attrs)?;
+    let derive_attr = if derive_paths.is_empty() {
+        quote!()
+    } else {
+        quote!(#[derive(#(#derive_paths),*)])
+    };
 
     let fields = collect_fields(&item)?;
     let manual = fields.iter().any(|f| matches!(f.spec, Spec::Range(..)));
@@ -217,8 +228,23 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    let builder_ts = if has_builder {
+        let bfields: Vec<BField> = fields
+            .iter()
+            .map(|f| BField {
+                ident: f.ident.clone(),
+                ty: f.ty.clone(),
+                default: f.builder_default.clone(),
+            })
+            .collect();
+        builder::generate(name, vis, &bfields, BuildKind::Bitfield)
+    } else {
+        quote!()
+    };
+
     Ok(quote! {
-        #(#outer)*
+        #(#other_attrs)*
+        #derive_attr
         #vis struct #name {
             value: #backing,
         }
@@ -300,6 +326,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         }
 
         #binrw
+        #builder_ts
     })
 }
 
@@ -365,17 +392,45 @@ fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
             let ident = f.ident.clone().expect("named field");
             let ty = f.ty.clone();
             let mut spec = Spec::Inferred;
+            let mut builder_default = FieldDefault::Required;
             let mut forward = Vec::new();
             for attr in &f.attrs {
                 if attr.path().is_ident("bits") {
                     spec = attr.parse_args::<Spec>()?;
+                } else if let Some(d) = builder::parse_builder_attr(attr)? {
+                    builder_default = d;
                 } else {
                     forward.push(attr.clone());
                 }
             }
-            Ok(Field { ident, ty, spec, forward })
+            Ok(Field { ident, ty, spec, builder_default, forward })
         })
         .collect()
+}
+
+/// Splits the struct's outer attributes into the kept `#[derive(...)]` paths
+/// (with `BitsBuilder` removed) and the other attributes, reporting whether the
+/// `BitsBuilder` marker was present so `#[bitfield]` can generate the builder
+/// itself (the derive can't see the fields after the struct is collapsed).
+fn split_outer_attrs(attrs: &[Attribute]) -> syn::Result<(Vec<Path>, Vec<Attribute>, bool)> {
+    let mut derive_paths = Vec::new();
+    let mut others = Vec::new();
+    let mut has_builder = false;
+    for attr in attrs {
+        if attr.path().is_ident("derive") {
+            let paths = attr.parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)?;
+            for p in paths {
+                if p.is_ident("BitsBuilder") {
+                    has_builder = true;
+                } else {
+                    derive_paths.push(p);
+                }
+            }
+        } else {
+            others.push(attr.clone());
+        }
+    }
+    Ok((derive_paths, others, has_builder))
 }
 
 fn backing_byte_count(backing: &Ident) -> syn::Result<usize> {

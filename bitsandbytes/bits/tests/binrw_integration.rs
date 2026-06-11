@@ -7,7 +7,7 @@
 #![cfg(feature = "binrw")]
 
 use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use bits::{bitfield, u4, BitEnum};
+use bits::{bitfield, bitflags, u4, BitEnum};
 
 // A DNS-like collapsed 16-bit field (MSB-first, big-endian): a `u4` opcode, a
 // plain `u8` of flags, and a `u4` rcode enum — widths sum to 16.
@@ -128,4 +128,37 @@ fn bitfield_byte_order_is_intrinsic_not_inherited() {
     assert_eq!(&bytes[4..6], &[0x03, 0x04]); // big_b: big-endian
 
     assert_eq!(MixedEndian::read(&mut Cursor::new(&bytes)).unwrap(), m);
+}
+
+// A flag set serializes directly as a binrw field — no map glue.
+#[bitflags(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LinkFlags {
+    up: bool,
+    broadcast: bool,
+    loopback: bool,
+    multicast: bool,
+}
+
+#[binrw]
+#[brw(big)]
+#[derive(Debug, PartialEq, Eq)]
+struct Interface {
+    index: u16,
+    flags: LinkFlags,
+    mtu: u16,
+}
+
+#[test]
+fn bitflags_is_a_binrw_field() {
+    let iface = Interface {
+        index: 2,
+        flags: LinkFlags::UP | LinkFlags::MULTICAST,
+        mtu: 1500,
+    };
+    let mut buf = Cursor::new(Vec::new());
+    iface.write(&mut buf).unwrap();
+    let bytes = buf.into_inner();
+    assert_eq!(bytes[2], 0b0000_1001); // up (bit 0) | multicast (bit 3)
+    assert_eq!(Interface::read(&mut Cursor::new(&bytes)).unwrap(), iface);
 }

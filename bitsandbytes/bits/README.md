@@ -23,6 +23,8 @@ with first-class [`binrw`](https://docs.rs/binrw) integration.
 | `u1`..`u127` (`UInt<T, N>`) | `arbitrary-int` | sub-byte unsigned integers |
 | `#[bitfield]` | `modular-bitfield(-msb)`, `bitbybit`, `bitfield-struct` | pack typed fields into one integer |
 | `#[derive(BitEnum)]` | `num_enum`, `bitbybit::bitenum` | enum ⇄ integer with optional catch-all |
+| `#[bitflags]` | `bitflags` | named single-bit flag sets with set algebra |
+| `#[derive(BitsBuilder)]` | `derive_builder` (for bit/byte structs) | required-field builder |
 
 ## Example
 
@@ -66,6 +68,36 @@ struct Header {
     state: State,   // no map glue
     qdcount: u16,
 }
+```
+
+## Flag sets and builders
+
+`#[bitflags]` packs named single-bit flags into one integer with full set
+algebra; flags implement `Bits`, so a flag set is also a valid `#[bitfield]`
+field and a binrw field:
+
+```rust
+use bits::bitflags;
+
+#[bitflags(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TcpFlags { fin: bool, syn: bool, rst: bool, psh: bool, ack: bool, urg: bool, ece: bool, cwr: bool }
+
+let f = TcpFlags::SYN | TcpFlags::ACK;
+assert!(f.contains(TcpFlags::SYN));
+assert!(f.ack());                 // per-flag accessor
+```
+
+`#[derive(BitsBuilder)]` adds a `derive_builder`-style builder where every field
+is **required** unless marked `#[builder(default)]` — so `build()` *calls out* a
+bit/byte you forgot to set, which the infallible infix `with_*` can't:
+
+```rust,ignore
+#[bitfield(u16, bits = msb)]
+#[derive(BitsBuilder, Clone, Copy)]
+struct State { opcode: u4, #[builder(default)] flags: u8, rcode: RCode }
+
+let s = State::builder().opcode(u4::new(2)).rcode(RCode::ServFail).build()?; // Err if unset
 ```
 
 ## Bit order vs. byte order

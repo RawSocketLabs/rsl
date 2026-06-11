@@ -351,7 +351,141 @@ time may rise (more generated code) — explicitly acceptable per the goal.
 
 ---
 
-## 8. Sources
+## 8. `#[bitflags]` and a builder derive — **implemented** (2026-06-11)
+
+Two additions on top of Phase 1, now shipped (`bits-macros/src/bitflags.rs`,
+`builder.rs`; tests in `tests/{flags,builder}.rs`; example `tcp_segment`). Both
+are additive, slot beside the existing macros, and **compose** with them (they
+implement `Bits` + binrw, so a flags type is a valid `#[bitfield]` field and a
+binrw field).
+
+### 8.1 `#[bitflags]` — named single-bit flag sets
+
+**Why.** The workspace has no `bitflags` crate; flag sets are modeled today as
+*N separate `bool` fields* inside a `#[bitfield]` (NBT resource flags
+`group`/`deregister`/`conflict`/`active`/`permanent`; DNS `recursion_desired`;
+etc.). That gives per-flag get/set but no **set algebra** — you cannot write
+`SYN | ACK`, test `flags.contains(RD | RA)`, or iterate the set bits. For
+genuinely set-shaped fields (TCP flags, IPv4 DF/MF, capability bitmasks) the
+bool-field approach is clumsy. This is a distinct primitive from `#[bitfield]`
+(a *homogeneous set of named 1-bit flags with set algebra*, vs. a *struct of
+heterogeneous typed fields*), and keeping it in `bits` avoids re-adding the
+external `bitflags` dependency — while adding what `bitflags` lacks: `Bits` +
+binrw integration so flags nest and serialize.
+
+**Proposed shape** (attribute style, consistent with `#[bitfield]`). An attribute
+macro decorates a *real* struct, and struct fields require types, so each flag is
+a `bool` field (which also reads honestly — a `bool` is a 1-bit flag); bit
+positions auto-assign in declaration order, with `#[flag(N)]` to fix one
+explicitly. Combinations are plain consts built with the generated const helpers.
+
+```rust
+#[bitflags(u8)]                    // backing primitive; `bytes = be|le` optional
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TcpFlags {
+    fin: bool,                     // value 1 << 0 (auto, LSB-indexed)
+    syn: bool,                     // 1 << 1
+    rst: bool, psh: bool, ack: bool, urg: bool, ece: bool, cwr: bool,
+}
+impl TcpFlags {
+    pub const HANDSHAKE: Self = Self::SYN.union(Self::ACK); // a combination const
+}
+
+let f = TcpFlags::SYN | TcpFlags::ACK;
+assert!(f.contains(TcpFlags::SYN));
+assert!(f.syn());                  // per-flag bool accessor
+for one in f.iter() { /* each set single-bit flag */ }
+```
+
+**Generated:** per-flag `const FIN: Self` (etc.) and any combination consts;
+`empty()`, `all()`, `bits()`, `from_bits` (dual-use: **retains** unknown bits),
+`from_bits_truncate`, `contains`, `intersects`, `insert`/`remove`/`toggle`/`set`,
+`is_empty`, `iter()`; the `BitOr`/`BitAnd`/`BitXor`/`Not` (+ assign) operators;
+and `Bits` + binrw impls.
+
+**Defaults I'd pick (override in §8.3):** flags are **value-based / LSB-indexed**
+(flag *n* = `1 << n`; the universal convention — `bits = msb` does not apply to a
+flag set), `from_bits` **retains** unknown bits (dual-use), `iter()` yields only
+the **single-bit** named flags that are set (not combination consts), and field
+names are upper-cased into consts (`fin` → `TcpFlags::FIN`, the `bitflags`
+idiom).
+
+### 8.2 A builder derive (`#[derive(BitsBuilder)]`)
+
+**Why.** Today protocol structs pair `#[derive(Builder)]` (derive_builder) with
+binrw, and to assemble a collapsed bitfield from individual builder fields they
+resort to `#[bw(calc = State::builder().with_opcode(self.opcode)…build())]` plus
+`#[builder(default, setter(into))]` and `#[brw(ignore)]` builder-only fields
+(DNS `Header`, NBT `Header`). It works but is clumsy, and `#[bitfield]`'s infix
+`new().with_*()` is *infallible* — it silently defaults an unset field to 0, so
+"you forgot to set the opcode" is not caught. A `bits`-native builder adds the
+derive_builder value — **required-field tracking** — to bit/byte structs, which
+is the "call out setting or not setting individual bits/bytes" the maintainer
+wants.
+
+**Proposed shape** — a separate `FooBuilder` (Option-backed per field, the
+derive_builder analog) generated alongside the infix `with_*`:
+
+```rust
+#[bitfield(u16, bits = msb)]
+#[derive(BitsBuilder, Clone, Copy)]
+struct State {
+    opcode: u4,                    // required by default
+    #[builder(default)]            // optional; 0 if unset
+    flags: u8,
+    rcode: RCode,                  // required
+}
+
+let s = State::builder()
+    .opcode(u4::new(2))
+    .rcode(RCode::ServFail)
+    // flags omitted -> default
+    .build()?;                     // Err(MissingField) if opcode/rcode unset
+```
+
+**Generated:** `State::builder() -> StateBuilder`; fluent `.field(value)` setters
+(Option-tracked); `.build() -> Result<State, BuilderError>` that errors listing
+any unset **required** field; per-field `#[builder(default)]` / `#[builder(default = expr)]`
+to make a field optional. The builder distinguishes *set* from *unset* — that
+tracking is the feature. It coexists with the infix `with_*` (quick path) and is
+intended to **replace derive_builder** on bit/byte structs, feeding the
+eventually-folded `#[message]` derive (binrw + builder + soundness, §5.6).
+
+**Defaults I'd pick (override in §8.3):** **required-by-default** (every field
+must be set unless `#[builder(default)]`, like derive_builder) so `build()`
+enforces completeness; a **separate** `FooBuilder` type with `build() -> Result`
+(not an enhancement of the infallible `with_*`); scope = **`#[bitfield]` types
+first**, extended to plain "message" structs (bitfields + plain byte fields) in a
+later pass.
+
+### 8.3 Decisions (confirmed 2026-06-11)
+
+1. **bitflags accessors** — set algebra **and** per-flag bool accessors. In
+   addition to the consts/operators/`contains`/`iter`, generate `fin(&self) -> bool`
+   getters, `with_fin(bool) -> Self`, and `set_fin(bool)` (field-named, matching
+   `#[bitfield]` getters), so the current bool-field clusters migrate directly.
+2. **bitflags indexing** — value-based / LSB (`flag n = 1 << n`), with explicit
+   `= 1 << k` and combination (`= SYN | ACK`) overrides. No `msb` flag mode.
+3. **builder scope** — `#[bitfield]` types first this round; plain "message"
+   structs (bitfields + byte fields) come with the later `#[message]` derive.
+4. **builder semantics** — required-by-default; a field must be set or
+   `build()` returns `Err` naming the missing field(s). `#[builder(default)]` /
+   `#[builder(default = expr)]` makes a field optional. A **separate**
+   `FooBuilder` (Option-tracked) with `build() -> Result`, coexisting with the
+   infallible infix `with_*`.
+5. **builder placement** — a standalone `#[derive(BitsBuilder)]` in the derive
+   list. **Mechanism note:** because `#[bitfield]` rewrites the struct to a single
+   backing integer *before* derives run, a real derive can no longer see the
+   logical fields. So `#[bitfield]` **intercepts** `BitsBuilder` from its own
+   derive list (where the fields are still visible), generates the builder, and
+   strips the marker so nothing runs on the collapsed struct. It reads as a normal
+   `#[derive(BitsBuilder)]` to the user. (A real `BitsBuilder` derive also exists
+   for plain, non-`#[bitfield]` structs — the seed of the §8.2 message-struct
+   extension.)
+
+---
+
+## 9. Sources
 
 - deku — docs.rs/deku; bit support & `bitvec` backing; perf threads
   (github.com/jam1garner/binrw/discussions/184, rust-lang/rust#118674).

@@ -94,10 +94,12 @@ dependency-light bit/byte library — the path to dropping `binrw` entirely.
 // evident exception, allowed at their module).
 #![deny(missing_docs)]
 
+pub mod builder;
 pub mod error;
 mod field;
 pub mod int;
 
+pub use builder::BuilderError;
 pub use error::{Error, Result};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
 pub use int::{UInt, *};
@@ -105,7 +107,7 @@ pub use int::{UInt, *};
 // Re-export the macros so users depend only on `bits`. A derive macro and a
 // trait may share a name (like `Debug`) — they live in different namespaces —
 // so `BitEnum` is both the derive and the marker trait below.
-pub use bits_macros::{bitfield, BitEnum};
+pub use bits_macros::{bitfield, bitflags, BitEnum, BitsBuilder};
 
 /// Marker trait implemented by `#[derive(BitEnum)]` enums: a [`Bits`] value
 /// whose representation is an integer discriminant of a fixed width.

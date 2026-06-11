@@ -46,6 +46,10 @@ required-features = ["binrw"]
 name = "ipv4_header"
 required-features = ["binrw"]
 
+[[example]]
+name = "tcp_segment"
+required-features = ["binrw"]
+
 [[bench]]
 name = "bitfield_bench"
 harness = false

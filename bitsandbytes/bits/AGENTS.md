@@ -13,9 +13,12 @@ binrw integration, meant to replace the external bitfield/int/enum helpers
 ## Two-crate layout (required)
 
 - `bits/` — runtime lib: `int` (`UInt<T, N>` + `u1..u127`), `field` (the `Bits`
-  and `Bitfield` traits, `ByteOrder`/`BitOrder`), `error`, and the crate root
-  (re-exports + the `BitEnum` marker trait + `__private` for generated code).
-- `bits-macros/` — proc-macro crate: `#[bitfield]` and `#[derive(BitEnum)]`.
+  and `Bitfield` traits, `ByteOrder`/`BitOrder`), `error`, `builder`
+  (`BuilderError`), and the crate root (re-exports + the `BitEnum` marker trait +
+  `__private` for generated code).
+- `bits-macros/` — proc-macro crate: `#[bitfield]`, `#[derive(BitEnum)]`,
+  `#[bitflags]`, and `#[derive(BitsBuilder)]` (the `builder` module is shared by
+  the standalone derive and the `#[bitfield]` intercept).
 
 A proc-macro crate cannot also export runtime items, hence the split. Depend on
 `bits`; it re-exports the macros.
@@ -42,6 +45,23 @@ the proc-macro.
 - A `BitEnum` gets binrw only when its width is a byte-aligned primitive
   (`u8`/`u16`/…); a sub-byte enum (`u4`) is meaningful only nested in a
   `#[bitfield]`.
+
+## `#[bitflags]` and `#[derive(BitsBuilder)]`
+
+- **`#[bitflags(uN)]`** takes `bool` fields (an attribute macro needs a valid
+  struct, and a `bool` *is* a 1-bit flag); each auto-assigns a bit by position
+  (LSB-first), or `#[flag(N)]` pins it. It generates UPPERCASE consts, set
+  operators, `contains`/`iter`, per-flag `fin()`/`with_fin`/`set_fin`, and
+  `Bits`/`Bitfield`/binrw — so a flag set nests in a `#[bitfield]`. `from_bits`
+  **retains** unknown bits (dual-use); `from_bits_truncate` drops them.
+- **`#[derive(BitsBuilder)]`** — required-by-default; `build() -> Result<_, BuilderError>`
+  errors on the first unset field; `#[builder(default)]` / `#[builder(default = expr)]`
+  opts a field out. **Intercept mechanism (load-bearing):** because `#[bitfield]`
+  collapses the struct to one integer *before* derives run, a real derive can't
+  see the logical fields — so `#[bitfield]` itself scans its derive list for
+  `BitsBuilder` (`split_outer_attrs`), generates the builder from the fields, and
+  strips the marker. A real `BitsBuilder` derive also exists for **plain**
+  structs. So: put `#[bitfield(...)]` **above** `#[derive(BitsBuilder, ...)]`.
 
 ## Gotchas
 
@@ -71,9 +91,13 @@ RUSTC_WRAPPER= cargo test -p bits --no-default-features # standalone codec, no b
   padding, 3-level nesting, byte-order, exhaustive/catch-all/contract-violation
   enums (incl. the documented panic for a non-exhaustive no-catch-all enum), and
   UInt boundaries + error `Display`. Codec-only (runs both feature configs).
+- `tests/flags.rs` — `#[bitflags]`: consts, set algebra + operators, per-flag
+  accessors, `iter`, retain vs truncate, and nesting in a `#[bitfield]`.
+- `tests/builder.rs` — `#[derive(BitsBuilder)]`: required-field errors, `default`
+  / `default = expr`, the `#[bitfield]` intercept, and the plain-struct path.
 - `tests/binrw_integration.rs` (`#![cfg(feature = "binrw")]`) — the headline:
-  bitfields/enums in `#[binrw]` structs with no map glue, byte-aligned enums as
-  binrw fields, and intrinsic (LE-in-BE) byte order.
+  bitfields/enums/flags in `#[binrw]` structs with no map glue, byte-aligned
+  enums as binrw fields, and intrinsic (LE-in-BE) byte order.
 
 `#![deny(missing_docs)]` is on (both crates); the `uN` aliases are the one
 allowed exception. Keep the public surface fully documented.
@@ -93,6 +117,9 @@ flamegraphs with `-- --profile-time 5`.
 - `ipv4_header` (binrw) — a **complete IPv4 header**: several bitfields + a
   byte-aligned enum + binrw `map` for addresses, producing a valid 20-byte
   packet header.
+- `tcp_segment` (binrw) — **all three macros together**: `#[bitflags]` control
+  flags inside a `#[bitfield]` + `#[derive(BitsBuilder)]` word, in a `#[binrw]`
+  header.
 - `enums` (codec-only) — `#[derive(BitEnum)]` in depth: exhaustive, catch-all
   (the `num_enum` pattern), nesting, and checked-int error handling.
 - `standalone` (codec-only) — `bits` with `--no-default-features`, building the
