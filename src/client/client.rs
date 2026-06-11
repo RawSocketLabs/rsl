@@ -106,6 +106,11 @@ impl Client {
         tracing::debug!(proxy = %self.proxy, "connecting to proxy");
         //~ implements rfc1928#3/must.d9ac89
         let mut stream = TcpStream::connect(self.proxy)?;
+        // Disable Nagle: the negotiation handshake is a series of small,
+        // strictly request/response messages, and for CONNECT/BIND this same
+        // stream becomes the relay — coalescing writes only adds latency
+        // (and deadlocks against the peer's delayed ACKs). Best-effort.
+        let _ = stream.set_nodelay(true);
 
         let identifier = IdentifierBuilder::default()
             .methods(self.auth.iter().map(|handler| handler.method()).collect())

@@ -28,6 +28,10 @@ fn spawn_echo() -> SocketAddr {
         for stream in listener.incoming().flatten() {
             thread::spawn(move || {
                 let mut stream = stream;
+                // The echo stands in for a cooperating peer; without nodelay
+                // its reply tail stalls on Nagle vs the relay's delayed ACKs,
+                // which would measure the harness, not the crate.
+                let _ = stream.set_nodelay(true);
                 let mut buf = [0u8; 64 * 1024];
                 while let Ok(n) = stream.read(&mut buf) {
                     if n == 0 || stream.write_all(&buf[..n]).is_err() {
