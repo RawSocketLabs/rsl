@@ -1,26 +1,55 @@
-//! Performance benchmarks for the SOCKS5 crate.
+//! Performance benchmarks for the SOCKS crate.
 //!
-//! Three groups, cheapest first:
+//! The groups are feature-gated to match the crate.
+//!
+//! Under `v5` (the default):
+//!
 //!   * `parse`     — pure-CPU wire decoding of the hot message types.
 //!   * `handshake` — a full negotiate + CONNECT round trip over loopback.
 //!   * `relay`     — steady-state byte throughput on an established tunnel.
 //!
+//! Under `v4`:
+//!
+//!   * `v4/parse`  — pure-CPU wire decoding of a SOCKS4 request.
+//!
 //! Run measurements:      cargo bench -p socks
+//! SOCKS4 arm only:       cargo bench -p socks --no-default-features --features v4
 //! Emit flamegraph SVGs:  cargo bench -p socks -- --profile-time 5
 //! (criterion writes reports under target/criterion/.)
 
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener};
-use std::thread;
-
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::Criterion;
 use pprof::criterion::{Output, PProfProfiler};
 
+#[cfg(feature = "v5")]
+use std::io::{Read, Write};
+#[cfg(feature = "v5")]
+use std::net::{SocketAddr, TcpListener};
+#[cfg(feature = "v5")]
+use std::thread;
+
+#[cfg(feature = "v5")]
+use criterion::{BenchmarkId, Throughput};
+
+#[cfg(feature = "v5")]
 use socks::client::Client;
+#[cfg(feature = "v5")]
 use socks::server::Server;
+#[cfg(feature = "v5")]
 use socks::v5::{Identifier, Reply, Request};
 
+/// Decodes a SOCKS4 CONNECT request — the SOCKS4 hot-path codec.
+#[cfg(feature = "v4")]
+fn bench_v4_parse(c: &mut Criterion) {
+    use socks::v4::Request as V4Request;
+    // VN=4, CD=CONNECT, port 443, 127.0.0.1, userid "bench", NUL.
+    let request = [4u8, 1, 0x01, 0xBB, 127, 0, 0, 1, b'b', b'e', b'n', b'c', b'h', 0];
+    c.bench_function("v4/parse/request", |b| {
+        b.iter(|| V4Request::read_from(&mut request.as_slice()).unwrap())
+    });
+}
+
 /// Spawns a long-lived TCP echo server that mirrors bytes for every client.
+#[cfg(feature = "v5")]
 ///
 /// `nodelay` controls Nagle on the echo's side of each connection: it stands
 /// in for the relay's peer, so toggling it lets the relay benchmark contrast a
@@ -46,6 +75,7 @@ fn spawn_echo(nodelay: bool) -> SocketAddr {
 }
 
 /// Spawns a long-lived proxy serving an unbounded stream of clients.
+#[cfg(feature = "v5")]
 fn spawn_proxy() -> SocketAddr {
     let server = Server::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -55,6 +85,7 @@ fn spawn_proxy() -> SocketAddr {
     addr
 }
 
+#[cfg(feature = "v5")]
 fn bench_parse(c: &mut Criterion) {
     // VER, CMD=CONNECT, RSV, ATYP=IPv4, 127.0.0.1, port 443.
     let request = [5u8, 1, 0, 1, 127, 0, 0, 1, 0x01, 0xBB];
@@ -76,6 +107,7 @@ fn bench_parse(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "v5")]
 fn bench_handshake(c: &mut Criterion) {
     let echo = spawn_echo(true);
     let proxy = spawn_proxy();
@@ -88,6 +120,7 @@ fn bench_handshake(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "v5")]
 fn bench_relay(c: &mut Criterion) {
     let proxy = spawn_proxy();
     let echo_nodelay = spawn_echo(true);
@@ -125,10 +158,23 @@ fn bench_relay(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets = bench_parse, bench_handshake, bench_relay
+// A manual `main` (rather than `criterion_main!`) so the registered groups can
+// be selected by feature at compile time — the macro form cannot be
+// conditionally fed its target list.
+fn main() {
+    let mut criterion = Criterion::default()
+        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
+        .configure_from_args();
+
+    #[cfg(feature = "v4")]
+    bench_v4_parse(&mut criterion);
+
+    #[cfg(feature = "v5")]
+    {
+        bench_parse(&mut criterion);
+        bench_handshake(&mut criterion);
+        bench_relay(&mut criterion);
+    }
+
+    criterion.final_summary();
 }
-criterion_main!(benches);

@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Public-API surface: the high-level types are reachable, construct without
 //! surprise, and keep their documented shapes. These guard against accidental
 //! breaking changes to the API a downstream consumer depends on — they assert

@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Client/server integration: negotiation, error mapping, and the server's
 //! handling of malformed or unacceptable input.
 

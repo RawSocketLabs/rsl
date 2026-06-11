@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Verifies the crate emits `tracing` events when a subscriber is installed.
 //!
 //! This lives in its own integration-test binary on purpose: tracing caches a

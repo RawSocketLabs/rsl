@@ -1,4 +1,12 @@
-//! Driving a SOCKS5 proxy: the client side of RFC 1928.
+//! Driving a SOCKS proxy: the client side.
+//!
+//! This module hosts a client per protocol version. The names at the top level
+//! (`Client`, `TargetAddr`, …) are the **SOCKS5** client (`v5` feature); the
+//! **SOCKS4 / 4A** client lives in the [`v4`] submodule (`v4` feature). Each
+//! version exposes exactly what it can express, so there are no methods that
+//! error at runtime for an unsupported capability.
+//!
+//! # SOCKS5
 //!
 //! [`Client`] is the entry point. It negotiates an authentication method, issues
 //! one of the three SOCKS5 commands, and hands back a transport you use as if it
@@ -22,6 +30,7 @@
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "v5")] {
 //! use std::io::{Read, Write};
 //! use socks::client::Client;
 //!
@@ -34,14 +43,26 @@
 //! stream.read_exact(&mut reply)?;
 //! # Ok(())
 //! # }
+//! # }
 //! ```
 
+#[cfg(feature = "v5")]
 mod bind;
+#[cfg(feature = "v5")]
 mod client;
+#[cfg(feature = "v5")]
 pub mod raw;
+#[cfg(feature = "v5")]
 mod udp;
 
+#[cfg(feature = "v4")]
+pub mod v4;
+
+#[cfg(feature = "v5")]
 pub use bind::BindListener;
+#[cfg(feature = "v5")]
 pub use client::{Client, TargetAddr};
+#[cfg(feature = "v5")]
 pub use raw::RawClient;
+#[cfg(feature = "v5")]
 pub use udp::UdpTunnel;

@@ -1,4 +1,11 @@
-//! Serving SOCKS5 clients: the proxy side of RFC 1928.
+//! Serving SOCKS clients: the proxy side.
+//!
+//! This module hosts a server per protocol version. The top-level [`Server`] is
+//! the **SOCKS5** proxy (`v5` feature); the **SOCKS4 / 4A** proxy lives in the
+//! [`v4`] submodule (`v4` feature). Both reuse the same bidirectional
+//! [`relay`](relay) and concurrency [`pool`](pool) internals.
+//!
+//! # SOCKS5
 //!
 //! [`Server`] binds a listener and, for each client, runs the full session:
 //! method negotiation (RFC 1928 §3), authentication subnegotiation
@@ -24,6 +31,7 @@
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "v5")] {
 //! use socks::server::Server;
 //!
 //! # fn main() -> Result<(), socks::error::SocksError> {
@@ -31,13 +39,24 @@
 //! Server::bind("127.0.0.1:1080")?.serve()?;
 //! # Ok(())
 //! # }
+//! # }
 //! ```
 
-mod connection;
+// Shared across versions: the byte relay and the concurrency-limiting pool.
+pub(crate) mod pool;
 mod relay;
+
+#[cfg(feature = "v5")]
+mod connection;
+#[cfg(feature = "v5")]
 mod server;
+#[cfg(feature = "v5")]
 mod udp;
 
+#[cfg(feature = "v4")]
+pub mod v4;
+
+#[cfg(feature = "v5")]
 pub use server::{
     Server, DEFAULT_BIND_TIMEOUT, DEFAULT_HANDSHAKE_TIMEOUT, DEFAULT_MAX_CONNECTIONS,
 };

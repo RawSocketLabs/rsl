@@ -1,11 +1,12 @@
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use crate::auth::{Authenticator, NoAuth};
 use crate::error::Result;
 use crate::server::connection::handle_client;
+use crate::server::pool::Semaphore;
 
 /// Default deadline for a client to complete method negotiation,
 /// authentication, and the command request before the server drops it.
@@ -17,44 +18,6 @@ pub const DEFAULT_BIND_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Default cap on concurrent connection handlers in [`Server::serve`].
 pub const DEFAULT_MAX_CONNECTIONS: usize = 1024;
-
-/// A counting semaphore: `serve` acquires a permit before spawning a handler
-/// and the permit is released when the handler thread ends, so a flood of
-/// connections cannot spawn unbounded threads — excess connections wait in the
-/// OS accept backlog until a slot frees.
-struct Semaphore {
-    permits: Mutex<usize>,
-    available: Condvar,
-}
-
-impl Semaphore {
-    fn new(permits: usize) -> Arc<Self> {
-        Arc::new(Self {
-            permits: Mutex::new(permits),
-            available: Condvar::new(),
-        })
-    }
-
-    /// Blocks until a permit is available, then takes it.
-    fn acquire(self: &Arc<Self>) -> Permit {
-        let mut permits = self.permits.lock().unwrap();
-        while *permits == 0 {
-            permits = self.available.wait(permits).unwrap();
-        }
-        *permits -= 1;
-        Permit(Arc::clone(self))
-    }
-}
-
-/// Returns a permit to the semaphore when dropped.
-struct Permit(Arc<Semaphore>);
-
-impl Drop for Permit {
-    fn drop(&mut self) {
-        *self.0.permits.lock().unwrap() += 1;
-        self.0.available.notify_one();
-    }
-}
 
 /// A SOCKS5 proxy server (RFC 1928).
 ///
@@ -177,39 +140,5 @@ impl Server {
                 let _ = handle_client(stream, &authenticators, handshake_timeout, bind_timeout);
             });
         }
-    }
-}
-
-#[cfg(test)]
-mod unit {
-    use super::*;
-    use std::sync::mpsc;
-
-    #[test]
-    fn semaphore_blocks_at_capacity_and_releases_on_drop() {
-        let sem = Semaphore::new(1);
-        let held = sem.acquire(); // capacity exhausted
-
-        let (tx, rx) = mpsc::channel();
-        let waiter = {
-            let sem = Arc::clone(&sem);
-            thread::spawn(move || {
-                let _permit = sem.acquire(); // must block until `held` drops
-                tx.send(()).unwrap();
-            })
-        };
-
-        // The waiter cannot acquire while the only permit is held.
-        assert!(
-            rx.recv_timeout(Duration::from_millis(200)).is_err(),
-            "acquire should block while at capacity"
-        );
-
-        drop(held); // frees the permit
-        assert!(
-            rx.recv_timeout(Duration::from_secs(2)).is_ok(),
-            "acquire should unblock once a permit is released"
-        );
-        waiter.join().unwrap();
     }
 }

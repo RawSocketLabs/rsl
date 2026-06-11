@@ -3,10 +3,14 @@
 //! Every fallible operation in this crate returns [`Result<T>`], which is
 //! [`std::result::Result`] specialized to [`SocksError`]. The variants separate
 //! transport failures ([`SocksError::Io`]), malformed wire data
-//! ([`SocksError::MessageParse`]), protocol-level refusals the peer reported
-//! ([`SocksError::ReplyFailure`], [`SocksError::NoAcceptableMethods`],
-//! [`SocksError::AuthenticationFailed`]), and local validation
-//! ([`SocksError::Validation`]).
+//! ([`SocksError::MessageParse`]), protocol-level refusals the peer reported,
+//! and local validation ([`SocksError::Validation`]).
+//!
+//! The type is **version-agnostic**: the variants that name a SOCKS5 reply code
+//! ([`ReplyFailure`](SocksError::ReplyFailure), method negotiation) compile only
+//! under the `v5` feature, and the SOCKS4 reply-code variant
+//! ([`V4ReplyFailure`](SocksError::V4ReplyFailure)) only under `v4`, so the
+//! error enum is exactly as wide as the versions you compiled in.
 //!
 //! [`io::Error`], [`AddrParseError`], and [`binrw::Error`] all convert into
 //! `SocksError` via [`From`], so `?` works directly against the standard
@@ -15,8 +19,6 @@
 use std::io;
 use std::net::AddrParseError;
 use thiserror::Error;
-
-use crate::v5::Response;
 
 /// Every error this crate can produce. See the [module docs](crate::error) for
 /// how the variants are grouped.
@@ -43,16 +45,28 @@ pub enum SocksError {
     UnsupportedVersion(u8),
 
     /// Errors that occur when method negotiation finds no common method
+    /// (SOCKS5 only).
+    #[cfg(feature = "v5")]
     #[error("No acceptable authentication methods")]
     NoAcceptableMethods,
 
     /// Errors that occur when an authentication subnegotiation fails
+    /// (SOCKS5 only).
+    #[cfg(feature = "v5")]
     #[error("Authentication failed")]
     AuthenticationFailed,
 
-    /// Errors that occur when the server replies with a non-success code
+    /// Errors that occur when the SOCKS5 server replies with a non-success
+    /// code.
+    #[cfg(feature = "v5")]
     #[error("Server replied with failure: {0:?}")]
-    ReplyFailure(Response),
+    ReplyFailure(crate::v5::Response),
+
+    /// Errors that occur when the SOCKS4 server returns a non-granted reply
+    /// code (90 is granted; 91–93 and any other are failures).
+    #[cfg(feature = "v4")]
+    #[error("SOCKS4 server rejected the request: {0:?}")]
+    V4ReplyFailure(crate::v4::ReplyCode),
 
     /// Errors that occur when validation fails
     #[error("Validation error: {0}")]
@@ -88,7 +102,7 @@ mod unit {
 
     #[test]
     fn test_io_error_conversion() {
-        let io_err = io::Error::new(io::ErrorKind::Other, "test error");
+        let io_err = io::Error::other("test error");
         let socks_err = SocksError::from(io_err);
         assert!(matches!(socks_err, SocksError::Io(_)));
     }

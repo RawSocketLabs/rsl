@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Smoke test: the fastest possible "is it alive" check — a server binds, a
 //! client negotiates through it, and a single byte makes the round trip. If
 //! this fails, nothing else is worth running.

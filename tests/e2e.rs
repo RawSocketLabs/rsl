@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! End-to-end flows: a real client through a real proxy to a real target,
 //! exercising CONNECT, BIND, UDP ASSOCIATE, and authenticated CONNECT.
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Wire-format contract: fixed byte vectors taken straight from RFC 1928 /
 //! RFC 1929 must parse, through the public API, into the expected typed values.
 //!

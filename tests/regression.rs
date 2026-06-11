@@ -1,3 +1,4 @@
+#![cfg(feature = "v5")]
 //! Regression guards for specific defects found and fixed during hardening:
 //! UDP source hijacking, peerless-BIND pinning, silent-client handshake hang,
 //! and client-IP pinning of a UDP association to its control connection.
