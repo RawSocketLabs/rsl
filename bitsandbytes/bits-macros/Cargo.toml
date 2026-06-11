@@ -1,0 +1,21 @@
+[package]
+name = "bits-macros"
+version = "0.1.0"
+edition = "2021"
+description = "Procedural macros for the `bits` crate: #[bitfield] and #[derive(BitEnum)]."
+license = "MIT"
+repository = "https://github.com/asyio/protocols"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
+[features]
+# When enabled (propagated from `bits`'s `binrw` feature), the macros also emit
+# binrw BinRead/BinWrite impls. The macro inspects this feature at expansion
+# time to decide whether to generate that code.
+binrw = []

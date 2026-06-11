@@ -2,15 +2,31 @@
 name = "bits"
 version = "0.1.0"
 edition = "2021"
-description = "A Rust crate for working with bitfields and fixed-width integers"
+description = "Ergonomic, fast bit/byte field types and macros for binary protocol codecs, with first-class binrw integration."
 license = "MIT"
 repository = "https://github.com/asyio/protocols"
 
-[lib]
-proc-macro = true
-
 [dependencies]
-syn = { version = "2.0", features = ["full"] }
-quote = "1.0"
-proc-macro2 = "1.0"
-thiserror = "1.0" 
+# The derive/attribute macros live in a sibling proc-macro crate (a proc-macro
+# crate cannot also export runtime items). Re-exported below so users only
+# depend on `bits`.
+bits-macros = { path = "../bits-macros", version = "0.1.0" }
+# Optional: when on, the macros emit binrw BinRead/BinWrite impls and this crate
+# re-exports binrw for the generated code to reference. Off => a standalone,
+# dependency-light bit/byte library (the path to dropping binrw entirely).
+binrw = { version = "0.15.0", optional = true }
+
+[features]
+default = ["binrw"]
+# Generate binrw integration for `#[bitfield]` / `#[derive(BitEnum)]` types.
+binrw = ["dep:binrw", "bits-macros/binrw"]
+
+[dev-dependencies]
+# Used by integration tests that exercise the binrw bridge end-to-end against
+# real protocol-shaped structs.
+binrw = "0.15.0"
+
+# The protocol_header example uses binrw; standalone is codec-only.
+[[example]]
+name = "protocol_header"
+required-features = ["binrw"]
