@@ -68,7 +68,7 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// `#[bit_enum(uN)]` sets the width. Exactly one `#[catch_all]` tuple variant
 /// (holding a `uN`/integer) may capture unknown discriminants; without one, an
-/// unknown value decodes to [`bits::Error::UnknownVariant`].
+/// unknown value triggers an `unreachable!` (the enum is assumed exhaustive).
 #[proc_macro_derive(BitEnum, attributes(bit_enum, catch_all))]
 pub fn bit_enum(item: TokenStream) -> TokenStream {
     bitenum::expand(item)

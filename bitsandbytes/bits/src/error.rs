@@ -6,31 +6,20 @@
 
 use core::fmt;
 
-/// Errors from checked construction and decoding.
+/// Errors from checked construction.
+///
+/// Currently the only fallible operation is `UInt::try_new` (and the `TryFrom`
+/// impls built on it). Decoding never fails: the codec is dual-use, so unknown
+/// values are preserved as `Custom`/catch-all rather than rejected, and field
+/// access masks rather than validates.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
-    /// A value did not fit in the target field/integer width.
+    /// A value did not fit in the target integer's bit width.
     ValueTooLarge {
         /// The offending value.
         value: u128,
         /// The maximum number of bits available.
         bits: u32,
-    },
-
-    /// A bit-enum value had no matching variant and the enum has no catch-all.
-    UnknownVariant {
-        /// The discriminant that did not match.
-        value: u128,
-        /// The name of the enum type.
-        type_name: &'static str,
-    },
-
-    /// Not enough bytes were available to decode a value.
-    Truncated {
-        /// How many bytes were needed.
-        needed: usize,
-        /// How many were available.
-        available: usize,
     },
 }
 
@@ -39,12 +28,6 @@ impl fmt::Display for Error {
         match self {
             Error::ValueTooLarge { value, bits } => {
                 write!(f, "value {value} does not fit in {bits} bits")
-            }
-            Error::UnknownVariant { value, type_name } => {
-                write!(f, "no {type_name} variant for discriminant {value}")
-            }
-            Error::Truncated { needed, available } => {
-                write!(f, "truncated: needed {needed} bytes, had {available}")
             }
         }
     }
