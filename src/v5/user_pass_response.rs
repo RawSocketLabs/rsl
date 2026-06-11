@@ -9,6 +9,7 @@ use crate::error::Result;
 ///
 /// A value other than [`UserPassStatus::Success`] indicates failure and the
 /// connection must be closed.
+//~ models rfc1929#2 registry="USERPASS-STATUS"
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq)]

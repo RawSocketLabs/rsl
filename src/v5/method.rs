@@ -8,6 +8,7 @@ use binrw::binrw;
 /// distinguish those ranges because the distinction is administrative, not
 /// behavioral: a code is either one we hold an authenticator for, or it is not.
 //~ implements rfc1928#3/required.ce9732
+//~ models rfc1928#3 registry="METHOD"
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq)]

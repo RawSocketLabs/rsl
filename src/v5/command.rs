@@ -4,7 +4,7 @@ use binrw::binrw;
 ///
 /// The three defined commands are named variants; any other code is an opaque
 /// `Custom`, which the server answers with `CommandNotSupported`.
-//~ models rfc1928#4
+//~ models rfc1928#4 registry="COMMAND"
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq)]

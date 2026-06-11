@@ -4,7 +4,7 @@ use binrw::binrw;
 ///
 /// X'00'–X'08' are the assigned codes; X'09'–X'FF' are unassigned and carried
 /// as `Custom`.
-//~ models rfc1928#6
+//~ models rfc1928#6 registry="REPLY"
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq)]

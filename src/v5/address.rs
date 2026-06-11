@@ -9,7 +9,7 @@ use crate::error::{Result, SocksError};
 /// A SOCKS5 address-type code (the ATYP field, RFC 1928 §4 Requests).
 ///
 /// IPv4, domain name, and IPv6 are the assigned codes; any other is `Custom`.
-//~ models rfc1928#4
+//~ models rfc1928#4 registry="ATYP"
 #[repr(u8)]
 #[binrw]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
