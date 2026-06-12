@@ -320,7 +320,7 @@ time may rise (more generated code) — explicitly acceptable per the goal.
 3. **`dns`** → replace `bitbybit` + `arbitrary-int`. **`smb`** → replace
    `modular-bitfield`; keep `bytes` for now. **`arp`** → replace `num_enum`
    (catch-all) with `BitEnum`.
-4. **Ripple out**; each crate's tests/protoref ledger guard the swap.
+4. **Ripple out**; each crate's tests/refcheck ledger guard the swap.
 5. **Later/optional:** absorb byte-domain helpers — `bits::bytes` (buffers),
    `bits::checksum` (CRC32 + the Internet checksum already in `icmp`),
    `bits::mac` — to drop `bytes`/`crc32fast`/`macaddr`. Then evaluate the
