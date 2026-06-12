@@ -6,7 +6,7 @@
 //!
 //! Run with: `cargo run -p bits --example standalone`
 
-use bits::{bitfield, u2, u4, u6, BitEnum};
+use bits::{BitEnum, bitfield, u2, u4, u6};
 
 /// An IPv4-style first byte: 4-bit version + 4-bit header length.
 #[bitfield(u8, bits = msb)]
@@ -35,12 +35,19 @@ enum Ecn {
 
 fn main() {
     // Pack with the immutable `with_*` builder.
-    let vihl = VersionIhl::new().with_version(u4::new(4)).with_ihl(u4::new(5));
+    let vihl = VersionIhl::new()
+        .with_version(u4::new(4))
+        .with_ihl(u4::new(5));
     assert_eq!(vihl.to_be_bytes(), [0x45]); // the classic IPv4 first byte
     println!("version/IHL byte: {:#04x}", vihl.raw());
 
     let tos = Tos::new().with_dscp(u6::new(46)).with_ecn(Ecn::Ce); // EF + CE
-    println!("ToS byte: {:#04x} (dscp={}, ecn={:?})", tos.raw(), tos.dscp(), tos.ecn());
+    println!(
+        "ToS byte: {:#04x} (dscp={}, ecn={:?})",
+        tos.raw(),
+        tos.dscp(),
+        tos.ecn()
+    );
 
     // Unpack from bytes.
     let parsed = VersionIhl::from_be_bytes([0x45]);

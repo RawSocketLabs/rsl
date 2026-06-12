@@ -165,10 +165,15 @@ fn expand_derive_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
                 return Err(syn::Error::new_spanned(
                     &input.ident,
                     "BitsBuilder requires a struct with named fields",
-                ))
+                ));
             }
         },
-        _ => return Err(syn::Error::new_spanned(&input.ident, "BitsBuilder can only derive for structs")),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "BitsBuilder can only derive for structs",
+            ));
+        }
     };
 
     let mut fields = Vec::new();
@@ -184,5 +189,11 @@ fn expand_derive_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         fields.push(BField { ident, ty, default });
     }
 
-    Ok(generate(&input.ident, &input.vis, &fields, BuildKind::Plain, None))
+    Ok(generate(
+        &input.ident,
+        &input.vis,
+        &fields,
+        BuildKind::Plain,
+        None,
+    ))
 }

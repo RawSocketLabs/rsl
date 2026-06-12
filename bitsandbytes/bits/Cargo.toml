@@ -63,3 +63,6 @@ required-features = ["binrw"]
 [[bench]]
 name = "bitfield_bench"
 harness = false
+
+[lints]
+workspace = true

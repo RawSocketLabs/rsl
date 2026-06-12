@@ -3,7 +3,7 @@
 //! enum exhaustiveness/catch-all, and error paths. Codec-only, so it runs with
 //! and without the `binrw` feature.
 
-use bits::{bitfield, u2, u3, u4, u5, u12, u24, BitEnum, Bits};
+use bits::{BitEnum, Bits, bitfield, u2, u3, u4, u5, u12, u24};
 
 // ---------------------------------------------------------------------------
 // Every backing width packs/unpacks correctly.
@@ -11,19 +11,32 @@ use bits::{bitfield, u2, u3, u4, u5, u12, u24, BitEnum, Bits};
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct B8 { hi: u4, lo: u4 }
+struct B8 {
+    hi: u4,
+    lo: u4,
+}
 
 #[bitfield(u32, bits = msb, bytes = be)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct B32 { a: u8, b: u12, c: u12 }
+struct B32 {
+    a: u8,
+    b: u12,
+    c: u12,
+}
 
 #[bitfield(u64, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct B64 { tag: u4, payload: bits::u60 }
+struct B64 {
+    tag: u4,
+    payload: bits::u60,
+}
 
 #[bitfield(u128, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct B128 { version: u4, rest: bits::u124 }
+struct B128 {
+    version: u4,
+    rest: bits::u124,
+}
 
 #[test]
 fn all_backings_round_trip() {
@@ -31,12 +44,17 @@ fn all_backings_round_trip() {
     assert_eq!(b8.raw(), 0xA5);
     assert_eq!(b8.hi(), u4::new(0xA));
 
-    let b32 = B32::new().with_a(0xFF).with_b(u12::new(0xABC)).with_c(u12::new(0xDEF));
+    let b32 = B32::new()
+        .with_a(0xFF)
+        .with_b(u12::new(0xABC))
+        .with_c(u12::new(0xDEF));
     // a in bits 24..=31, b in 12..=23, c in 0..=11.
     assert_eq!(b32.raw(), 0xFF_ABC_DEF);
     assert_eq!(b32.to_be_bytes(), [0xFF, 0xAB, 0xCD, 0xEF]);
 
-    let b64 = B64::new().with_tag(u4::new(0x9)).with_payload(bits::u60::new(0x123));
+    let b64 = B64::new()
+        .with_tag(u4::new(0x9))
+        .with_payload(bits::u60::new(0x123));
     assert_eq!(b64.tag(), u4::new(9));
     assert_eq!(b64.payload(), bits::u60::new(0x123));
 
@@ -51,11 +69,17 @@ fn all_backings_round_trip() {
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy)]
-struct Msb { first: u3, second: u5 }
+struct Msb {
+    first: u3,
+    second: u5,
+}
 
 #[bitfield(u8, bits = lsb)]
 #[derive(Clone, Copy)]
-struct Lsb { first: u3, second: u5 }
+struct Lsb {
+    first: u3,
+    second: u5,
+}
 
 #[test]
 fn bit_order_is_mirrored() {
@@ -74,22 +98,32 @@ fn bit_order_is_mirrored() {
 
 #[bitfield(u16, bits = msb)]
 #[derive(Clone, Copy)]
-struct Inferred { a: u5, b: bits::u7, c: u4 }
+struct Inferred {
+    a: u5,
+    b: bits::u7,
+    c: u4,
+}
 
 #[bitfield(u16, bits = msb)]
 #[derive(Clone, Copy)]
 struct Widths {
-    #[bits(5)] a: u8,
-    #[bits(7)] b: u8,
-    #[bits(4)] c: u8,
+    #[bits(5)]
+    a: u8,
+    #[bits(7)]
+    b: u8,
+    #[bits(4)]
+    c: u8,
 }
 
 #[bitfield(u16)]
 #[derive(Clone, Copy)]
 struct Ranges {
-    #[bits(11..=15)] a: u8,
-    #[bits(4..=10)] b: u8,
-    #[bits(0..=3)] c: u8,
+    #[bits(11..=15)]
+    a: u8,
+    #[bits(4..=10)]
+    b: u8,
+    #[bits(0..=3)]
+    c: u8,
 }
 
 #[test]
@@ -127,7 +161,10 @@ fn field_setters_mask_to_width() {
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy)]
-struct Partial { flag: bool, value: u4 } // 5 of 8 bits used
+struct Partial {
+    flag: bool,
+    value: u4,
+} // 5 of 8 bits used
 
 #[test]
 fn partial_width_leaves_high_bits_clear() {
@@ -143,15 +180,24 @@ fn partial_width_leaves_high_bits_clear() {
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Inner { x: u2, y: u2 } // 4 bits
+struct Inner {
+    x: u2,
+    y: u2,
+} // 4 bits
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Middle { inner: Inner, z: u4 } // 8 bits
+struct Middle {
+    inner: Inner,
+    z: u4,
+} // 8 bits
 
 #[bitfield(u16, bits = msb)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Outer { middle: Middle, w: u8 } // 16 bits
+struct Outer {
+    middle: Middle,
+    w: u8,
+} // 16 bits
 
 #[test]
 fn three_levels_of_nesting_compose() {
@@ -175,11 +221,17 @@ fn three_levels_of_nesting_compose() {
 
 #[bitfield(u32, bytes = be)]
 #[derive(Clone, Copy)]
-struct BeWord { #[bits(0..=31)] v: u32 }
+struct BeWord {
+    #[bits(0..=31)]
+    v: u32,
+}
 
 #[bitfield(u32, bytes = le)]
 #[derive(Clone, Copy)]
-struct LeWord { #[bits(0..=31)] v: u32 }
+struct LeWord {
+    #[bits(0..=31)]
+    v: u32,
+}
 
 #[test]
 fn byte_order_controls_serialized_bytes() {
@@ -200,15 +252,28 @@ fn byte_order_controls_serialized_bytes() {
 
 #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
 #[bit_enum(u2)]
-enum Exhaustive { Zero, One, Two, Three } // all 4 values of a 2-bit field
+enum Exhaustive {
+    Zero,
+    One,
+    Two,
+    Three,
+} // all 4 values of a 2-bit field
 
 #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
 #[bit_enum(u2)]
-enum WithCatch { Zero, One, #[catch_all] Rest(u2) }
+enum WithCatch {
+    Zero,
+    One,
+    #[catch_all]
+    Rest(u2),
+}
 
 #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
 #[bit_enum(u2)]
-enum Incomplete { Zero, One } // 2 of 4 named, NO catch-all: a stated-exhaustive lie
+enum Incomplete {
+    Zero,
+    One,
+} // 2 of 4 named, NO catch-all: a stated-exhaustive lie
 
 #[test]
 fn exhaustive_enum_round_trips_every_value() {

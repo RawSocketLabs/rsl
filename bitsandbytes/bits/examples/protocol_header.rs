@@ -4,8 +4,8 @@
 //!
 //! Run with: `cargo run -p bits --example protocol_header`
 
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use bits::{bitfield, u3, u4, BitEnum};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
+use bits::{BitEnum, bitfield, u3, u4};
 
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[bit_enum(u4)]

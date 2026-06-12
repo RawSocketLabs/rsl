@@ -6,7 +6,7 @@
 //!   `cargo run -p bits --example enums`
 //!   `cargo run -p bits --example enums --no-default-features`
 
-use bits::{bitfield, u2, u4, BitEnum, Bits};
+use bits::{BitEnum, Bits, bitfield, u2, u4};
 
 // An exhaustive 2-bit enum: all four values named, so no catch-all is needed.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,8 +62,15 @@ fn main() {
     assert_eq!(HardwareType::Other(99).into_bits(), 99); // round-trips
 
     // Nested in a bitfield.
-    let cmd = Command::new().with_op(Op::Vendor(u4::new(0xC))).with_flags(u4::new(0x5));
-    println!("command byte: {:#04x} (op={:?}, flags={})", cmd.raw(), cmd.op(), cmd.flags());
+    let cmd = Command::new()
+        .with_op(Op::Vendor(u4::new(0xC)))
+        .with_flags(u4::new(0x5));
+    println!(
+        "command byte: {:#04x} (op={:?}, flags={})",
+        cmd.raw(),
+        cmd.op(),
+        cmd.flags()
+    );
     assert_eq!(cmd.op(), Op::Vendor(u4::new(0xC)));
 
     // Checked integer construction — errors instead of panicking.

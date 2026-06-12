@@ -3,7 +3,7 @@
 //! and prove `bits` produces the same wire bytes. These are the production
 //! use-cases the crate must cover.
 
-use bits::{bitfield, u3, u4, u5, BitEnum};
+use bits::{BitEnum, bitfield, u3, u4, u5};
 
 // ---------------------------------------------------------------------------
 // DNS message header `State` (application/dns/src/message/{op,state}.rs).
@@ -26,8 +26,18 @@ enum Op {
     Status = 2,
     Update = 5,
     // Exhaustive: every other 4-bit value is named (so no #[catch_all]).
-    R3 = 3, R4 = 4, R6 = 6, R7 = 7, R8 = 8, R9 = 9,
-    R10 = 10, R11 = 11, R12 = 12, R13 = 13, R14 = 14, R15 = 15,
+    R3 = 3,
+    R4 = 4,
+    R6 = 6,
+    R7 = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    R11 = 11,
+    R12 = 12,
+    R13 = 13,
+    R14 = 14,
+    R15 = 15,
 }
 
 #[bitfield(u8, bits = msb)] // 5 used bits: response in the high bit, op in the low 4

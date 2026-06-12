@@ -12,7 +12,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, Attribute, Ident, ItemStruct, LitInt, Path, Token, Type};
+use syn::{Attribute, Ident, ItemStruct, LitInt, Path, Token, Type, parse_macro_input};
 
 use crate::builder::{self, BField, BuildKind, FieldDefault};
 
@@ -44,13 +44,22 @@ impl Parse for Args {
                 ("bytes", "be") => big = true,
                 ("bytes", "le") => big = false,
                 ("bits", other) => {
-                    return Err(syn::Error::new_spanned(&val, format!("expected `msb` or `lsb`, got `{other}`")))
+                    return Err(syn::Error::new_spanned(
+                        &val,
+                        format!("expected `msb` or `lsb`, got `{other}`"),
+                    ));
                 }
                 ("bytes", other) => {
-                    return Err(syn::Error::new_spanned(&val, format!("expected `be` or `le`, got `{other}`")))
+                    return Err(syn::Error::new_spanned(
+                        &val,
+                        format!("expected `be` or `le`, got `{other}`"),
+                    ));
                 }
                 (other, _) => {
-                    return Err(syn::Error::new_spanned(&key, format!("unknown argument `{other}` (expected `bits` or `bytes`)")))
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown argument `{other}` (expected `bits` or `bytes`)"),
+                    ));
                 }
             }
         }
@@ -219,7 +228,11 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     });
 
     let bytes_n = backing_bytes;
-    let byte_order_variant = if args.big { quote!(Big) } else { quote!(Little) };
+    let byte_order_variant = if args.big {
+        quote!(Big)
+    } else {
+        quote!(Little)
+    };
     let bit_order_variant = if args.msb { quote!(Msb) } else { quote!(Lsb) };
 
     let binrw = if cfg!(feature = "binrw") {
@@ -382,7 +395,7 @@ fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
             return Err(syn::Error::new_spanned(
                 &item.ident,
                 "#[bitfield] requires a struct with named fields",
-            ))
+            ));
         }
     };
     named
@@ -403,7 +416,13 @@ fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
                     forward.push(attr.clone());
                 }
             }
-            Ok(Field { ident, ty, spec, builder_default, forward })
+            Ok(Field {
+                ident,
+                ty,
+                spec,
+                builder_default,
+                forward,
+            })
         })
         .collect()
 }

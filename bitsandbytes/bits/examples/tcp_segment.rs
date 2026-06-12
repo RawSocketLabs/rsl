@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo run -p bits --example tcp_segment`
 
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use bits::{bitfield, bitflags, u4, BitsBuilder};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
+use bits::{BitsBuilder, bitfield, bitflags, u4};
 
 /// The 8 TCP control flags.
 #[bitflags(u8)]
@@ -56,7 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .control(Control::SYN | Control::ACK)
         .build()?;
 
-    println!("control flags set: {:?}", offset_flags.control().iter().collect::<Vec<_>>());
+    println!(
+        "control flags set: {:?}",
+        offset_flags.control().iter().collect::<Vec<_>>()
+    );
 
     let header = TcpHeader {
         src_port: 443,

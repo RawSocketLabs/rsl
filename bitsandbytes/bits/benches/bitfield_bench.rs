@@ -11,11 +11,11 @@
 //! Flamegraph: cargo bench -p bits -- --profile-time 5
 //! (Reports under target/criterion/.)
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use pprof::criterion::{Output, PProfProfiler};
 
 // --- `bits` ---------------------------------------------------------------
-use bits::{bitfield, u4, u5, u7, BitEnum};
+use bits::{BitEnum, bitfield, u4, u5, u7};
 
 #[bitfield(u16, bits = msb, bytes = be)]
 #[derive(Clone, Copy)]
@@ -27,8 +27,8 @@ struct BitsState {
 
 // --- `bitbybit` (the dns crate's choice) ----------------------------------
 mod bb {
-    use bitbybit::bitfield;
     pub use arbitrary_int::{u4, u5, u7};
+    use bitbybit::bitfield;
 
     #[bitfield(u16, default = 0)] // bitbybit already generates Clone/Copy
     pub struct State {

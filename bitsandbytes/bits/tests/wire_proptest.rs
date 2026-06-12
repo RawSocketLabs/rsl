@@ -10,7 +10,7 @@
 #![cfg(feature = "binrw")]
 
 use binrw::{BinRead, BinWrite};
-use bits::{bitflags, wire, u4, BitEnum, Bits};
+use bits::{BitEnum, Bits, bitflags, u4, wire};
 use proptest::prelude::*;
 use std::io::Cursor;
 

@@ -1,7 +1,7 @@
 //! `#[derive(BitsBuilder)]`: required-by-default builder semantics, via the
 //! `#[bitfield]` intercept and on a plain struct. Codec-only (no binrw needed).
 
-use bits::{bitfield, u4, BitEnum, BitsBuilder, BuilderError};
+use bits::{BitEnum, BitsBuilder, BuilderError, bitfield, u4};
 
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[bit_enum(u4)]
@@ -49,7 +49,12 @@ fn builds_with_required_set_and_default_applied() {
     assert_eq!(s.flags(), 0);
 
     // Identical to the infix path; the builder just adds required-field checks.
-    assert_eq!(s, State::new().with_opcode(u4::new(2)).with_rcode(RCode::ServFail));
+    assert_eq!(
+        s,
+        State::new()
+            .with_opcode(u4::new(2))
+            .with_rcode(RCode::ServFail)
+    );
 }
 
 // `#[builder(default = expr)]` for a non-Default value.
@@ -65,7 +70,11 @@ struct VersionIhl {
 fn default_expr_is_used_when_unset() {
     let v = VersionIhl::builder().version(u4::new(4)).build().unwrap();
     assert_eq!(v.to_be_bytes(), [0x45]); // version 4, ihl defaulted to 5
-    let v = VersionIhl::builder().version(u4::new(6)).ihl(u4::new(7)).build().unwrap();
+    let v = VersionIhl::builder()
+        .version(u4::new(6))
+        .ihl(u4::new(7))
+        .build()
+        .unwrap();
     assert_eq!(v.to_be_bytes(), [0x67]);
 }
 
@@ -85,7 +94,14 @@ fn plain_struct_builder() {
     assert_eq!(err.field(), Some("name"));
 
     let c = Config::builder().name("svc".to_string()).build().unwrap();
-    assert_eq!(c, Config { name: "svc".to_string(), port: 69, verbose: false });
+    assert_eq!(
+        c,
+        Config {
+            name: "svc".to_string(),
+            port: 69,
+            verbose: false
+        }
+    );
 
     let c = Config::builder()
         .name("svc".to_string())
@@ -93,5 +109,12 @@ fn plain_struct_builder() {
         .verbose(true)
         .build()
         .unwrap();
-    assert_eq!(c, Config { name: "svc".to_string(), port: 8080, verbose: true });
+    assert_eq!(
+        c,
+        Config {
+            name: "svc".to_string(),
+            port: 8080,
+            verbose: true
+        }
+    );
 }

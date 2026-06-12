@@ -115,7 +115,11 @@ fn builder_only_required() {
     // Required in the builder...
     let err = BuilderOnlyRequired::builder().id(1).build().unwrap_err();
     assert_eq!(err.field(), Some("note"));
-    let m = BuilderOnlyRequired::builder().id(1).note(9).build().unwrap();
+    let m = BuilderOnlyRequired::builder()
+        .id(1)
+        .note(9)
+        .build()
+        .unwrap();
     let mut buf = Cursor::new(Vec::new());
     m.write(&mut buf).unwrap();
     assert_eq!(buf.get_ref().as_slice(), &[0x00, 0x01]); // note not on wire
@@ -127,11 +131,7 @@ fn builder_only_required() {
 // 7. A user-declared `check_soundness` field (the NBT pattern): the macro must
 //    NOT inject a second one.
 fn ud_check(s: &UserDeclaredFlag) -> Result<(), String> {
-    if s.id == 0 {
-        Err("bad".into())
-    } else {
-        Ok(())
-    }
+    if s.id == 0 { Err("bad".into()) } else { Ok(()) }
 }
 
 #[wire(big, validate = ud_check)]
@@ -196,11 +196,7 @@ impl std::fmt::Display for MyErr {
     }
 }
 fn custom_err_check(s: &CustomErr) -> Result<(), MyErr> {
-    if s.id == 0 {
-        Err(MyErr(s.id))
-    } else {
-        Ok(())
-    }
+    if s.id == 0 { Err(MyErr(s.id)) } else { Ok(()) }
 }
 
 #[wire(big, validate = custom_err_check)]

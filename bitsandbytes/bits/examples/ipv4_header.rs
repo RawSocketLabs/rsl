@@ -23,8 +23,8 @@
 
 use std::net::Ipv4Addr;
 
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use bits::{bitfield, u13, u2, u4, u6, BitEnum};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
+use bits::{BitEnum, bitfield, u2, u4, u6, u13};
 
 /// Byte 0: version (high nibble) and header length in 32-bit words (low nibble).
 #[bitfield(u8, bits = msb)]
@@ -100,7 +100,9 @@ struct Ipv4Header {
 
 fn main() {
     let header = Ipv4Header {
-        version_ihl: VersionIhl::new().with_version(u4::new(4)).with_ihl(u4::new(5)),
+        version_ihl: VersionIhl::new()
+            .with_version(u4::new(4))
+            .with_ihl(u4::new(5)),
         tos: Tos::new().with_dscp(u6::new(0)).with_ecn(Ecn::NotEct),
         total_length: 20 + 1480,
         identification: 0x1c46,
@@ -124,9 +126,17 @@ fn main() {
 
     let parsed = Ipv4Header::read(&mut Cursor::new(&bytes)).unwrap();
     println!("decoded:");
-    println!("  version={}, ihl={}", parsed.version_ihl.version(), parsed.version_ihl.ihl());
+    println!(
+        "  version={}, ihl={}",
+        parsed.version_ihl.version(),
+        parsed.version_ihl.ihl()
+    );
     println!("  dscp={}, ecn={:?}", parsed.tos.dscp(), parsed.tos.ecn());
-    println!("  DF={}, frag_off={}", parsed.flags_fragment.dont_fragment(), parsed.flags_fragment.fragment_offset());
+    println!(
+        "  DF={}, frag_off={}",
+        parsed.flags_fragment.dont_fragment(),
+        parsed.flags_fragment.fragment_offset()
+    );
     println!("  ttl={}, protocol={:?}", parsed.ttl, parsed.protocol);
     println!("  {} -> {}", parsed.source, parsed.destination);
 

@@ -19,3 +19,6 @@ proc-macro2.workspace = true
 # binrw BinRead/BinWrite impls. The macro inspects this feature at expansion
 # time to decide whether to generate that code.
 binrw = []
+
+[lints]
+workspace = true

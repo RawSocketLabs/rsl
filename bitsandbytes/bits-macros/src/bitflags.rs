@@ -11,7 +11,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Attribute, Ident, ItemStruct, LitInt, Token, Type};
+use syn::{Attribute, Ident, ItemStruct, LitInt, Token, Type, parse_macro_input};
 
 struct Args {
     backing: Ident,
@@ -67,15 +67,29 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
     let flags = collect_flags(&item)?;
 
-    let with_idents: Vec<Ident> = flags.iter().map(|f| format_ident!("with_{}", f.ident)).collect();
-    let set_idents: Vec<Ident> = flags.iter().map(|f| format_ident!("set_{}", f.ident)).collect();
+    let with_idents: Vec<Ident> = flags
+        .iter()
+        .map(|f| format_ident!("with_{}", f.ident))
+        .collect();
+    let set_idents: Vec<Ident> = flags
+        .iter()
+        .map(|f| format_ident!("set_{}", f.ident))
+        .collect();
     let consts: Vec<&Ident> = flags.iter().map(|f| &f.konst).collect();
     let getters: Vec<&Ident> = flags.iter().map(|f| &f.ident).collect();
     let bits: Vec<u32> = flags.iter().map(|f| f.bit).collect();
     let forwards: Vec<&Vec<Attribute>> = flags.iter().map(|f| &f.forward).collect();
 
-    let byte_order_variant = if args.big { quote!(Big) } else { quote!(Little) };
-    let endian = if args.big { quote!(Big) } else { quote!(Little) };
+    let byte_order_variant = if args.big {
+        quote!(Big)
+    } else {
+        quote!(Little)
+    };
+    let endian = if args.big {
+        quote!(Big)
+    } else {
+        quote!(Little)
+    };
 
     let binrw = if cfg!(feature = "binrw") {
         binrw_impls(name, backing, &endian)
@@ -253,14 +267,22 @@ fn binrw_impls(name: &Ident, backing: &Ident, endian: &TokenStream2) -> TokenStr
 fn collect_flags(item: &ItemStruct) -> syn::Result<Vec<Flag>> {
     let named = match &item.fields {
         syn::Fields::Named(n) => n,
-        _ => return Err(syn::Error::new_spanned(&item.ident, "#[bitflags] requires named `bool` fields")),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &item.ident,
+                "#[bitflags] requires named `bool` fields",
+            ));
+        }
     };
     let mut next_bit: u32 = 0;
     let mut flags = Vec::new();
     for f in &named.named {
         let ident = f.ident.clone().expect("named field");
         if !is_bool(&f.ty) {
-            return Err(syn::Error::new_spanned(&f.ty, "each #[bitflags] field must be `bool` (one flag per bit)"));
+            return Err(syn::Error::new_spanned(
+                &f.ty,
+                "each #[bitflags] field must be `bool` (one flag per bit)",
+            ));
         }
         let mut explicit: Option<u32> = None;
         let mut forward = Vec::new();
@@ -275,7 +297,12 @@ fn collect_flags(item: &ItemStruct) -> syn::Result<Vec<Flag>> {
         let bit = explicit.unwrap_or(next_bit);
         next_bit = bit + 1;
         let konst = Ident::new(&ident.to_string().to_ascii_uppercase(), ident.span());
-        flags.push(Flag { ident, konst, bit, forward });
+        flags.push(Flag {
+            ident,
+            konst,
+            bit,
+            forward,
+        });
     }
     Ok(flags)
 }
@@ -291,6 +318,9 @@ fn backing_byte_count(backing: &Ident) -> syn::Result<usize> {
         "u32" => Ok(4),
         "u64" => Ok(8),
         "u128" => Ok(16),
-        other => Err(syn::Error::new_spanned(backing, format!("backing must be u8/u16/u32/u64/u128, got `{other}`"))),
+        other => Err(syn::Error::new_spanned(
+            backing,
+            format!("backing must be u8/u16/u32/u64/u128, got `{other}`"),
+        )),
     }
 }

@@ -29,7 +29,10 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
-use syn::{parenthesized, parse2, parse_quote, Attribute, Expr, Fields, Ident, ItemStruct, Path, Token, Type, Visibility};
+use syn::{
+    Attribute, Expr, Fields, Ident, ItemStruct, Path, Token, Type, Visibility, parenthesized,
+    parse_quote, parse2,
+};
 
 use crate::builder::{self, BField, BuildKind, FieldDefault};
 
@@ -170,7 +173,7 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
             return Err(syn::Error::new_spanned(
                 &input.ident,
                 "#[wire] requires a struct with named fields",
-            ))
+            ));
         }
     };
     // Generic parameters/lifetimes are not threaded through the generated group
@@ -202,10 +205,16 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
         let mut last: Option<usize> = None;
         for m in &g.members {
             let idx = position(m).ok_or_else(|| {
-                syn::Error::new(m.span(), format!("group field `{m}` is not a field of this struct"))
+                syn::Error::new(
+                    m.span(),
+                    format!("group field `{m}` is not a field of this struct"),
+                )
             })?;
             if member_group[idx].is_some() {
-                return Err(syn::Error::new(m.span(), format!("field `{m}` appears in more than one group")));
+                return Err(syn::Error::new(
+                    m.span(),
+                    format!("field `{m}` appears in more than one group"),
+                ));
             }
             if let Some(prev) = last {
                 if idx != prev + 1 {
@@ -330,7 +339,13 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
     // ---- emit transformed binrw fields (inserting group temps) ----
     let mut out_fields: Vec<TokenStream2> = Vec::new();
     for (idx, af) in afields.iter().enumerate() {
-        let AField { ident, ty, vis, forward, .. } = af;
+        let AField {
+            ident,
+            ty,
+            vis,
+            forward,
+            ..
+        } = af;
         match &af.kind {
             Kind::Plain => out_fields.push(quote! {
                 #(#forward)*
@@ -343,8 +358,9 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                 #ident: #ty,
             }),
             Kind::BuilderOnly(def) => {
-                let default: Expr =
-                    def.clone().unwrap_or_else(|| parse_quote!(::core::default::Default::default()));
+                let default: Expr = def
+                    .clone()
+                    .unwrap_or_else(|| parse_quote!(::core::default::Default::default()));
                 out_fields.push(quote! {
                     #(#forward)*
                     #[br(calc = #default)]

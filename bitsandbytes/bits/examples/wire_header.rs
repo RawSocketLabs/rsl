@@ -11,7 +11,7 @@
 //! Run: `cargo run -p bits --example wire_header`
 
 use binrw::{BinRead, BinWrite};
-use bits::{bitflags, wire, u4, BitEnum};
+use bits::{BitEnum, bitflags, u4, wire};
 use std::io::Cursor;
 
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,7 +102,10 @@ fn main() {
     let decoded = Header::read(&mut Cursor::new(&bytes)).unwrap();
     println!("decoded: {decoded:?}");
     assert_eq!(decoded, header);
-    println!("round-trip ok; qdcount auto-counted = {}", decoded.questions.len());
+    println!(
+        "round-trip ok; qdcount auto-counted = {}",
+        decoded.questions.len()
+    );
 
     // Soundness gates construction (the compliant default)...
     let bad = Header::builder()
@@ -123,5 +126,8 @@ fn main() {
         .check_soundness(false)
         .build()
         .unwrap();
-    println!("malformed message built via escape hatch: truncated={}", malformed.flags.truncated());
+    println!(
+        "malformed message built via escape hatch: truncated={}",
+        malformed.flags.truncated()
+    );
 }

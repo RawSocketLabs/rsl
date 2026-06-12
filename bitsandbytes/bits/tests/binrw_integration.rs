@@ -6,8 +6,8 @@
 //! Requires the default `binrw` feature.
 #![cfg(feature = "binrw")]
 
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
-use bits::{bitfield, bitflags, u4, BitEnum};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
+use bits::{BitEnum, bitfield, bitflags, u4};
 
 // A DNS-like collapsed 16-bit field (MSB-first, big-endian): a `u4` opcode, a
 // plain `u8` of flags, and a `u4` rcode enum — widths sum to 16.
@@ -82,7 +82,10 @@ struct Tagged {
 
 #[test]
 fn byte_aligned_bitenum_is_a_binrw_field() {
-    let t = Tagged { kind: Kind::Response, value: 0xBEEF };
+    let t = Tagged {
+        kind: Kind::Response,
+        value: 0xBEEF,
+    };
     let mut buf = Cursor::new(Vec::new());
     t.write(&mut buf).unwrap();
     assert_eq!(buf.get_ref(), &[0x01, 0xBE, 0xEF]);

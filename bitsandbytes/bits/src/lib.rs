@@ -107,7 +107,7 @@ pub use int::{UInt, *};
 // Re-export the macros so users depend only on `bits`. A derive macro and a
 // trait may share a name (like `Debug`) — they live in different namespaces —
 // so `BitEnum` is both the derive and the marker trait below.
-pub use bits_macros::{bitfield, bitflags, BitEnum, BitsBuilder};
+pub use bits_macros::{BitEnum, BitsBuilder, bitfield, bitflags};
 
 // `#[wire]` wraps binrw, so it exists only with the `binrw` feature.
 #[cfg(feature = "binrw")]

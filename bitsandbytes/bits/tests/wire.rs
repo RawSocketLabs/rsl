@@ -2,7 +2,7 @@
 #![cfg(feature = "binrw")]
 
 use binrw::{BinRead, BinWrite};
-use bits::{bitflags, wire, u4, BitEnum};
+use bits::{BitEnum, bitflags, u4, wire};
 use std::io::Cursor;
 
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,7 +63,10 @@ fn builder_roundtrip() {
     let mut buf = Cursor::new(Vec::new());
     h.write(&mut buf).unwrap();
     // id=0x1234 | group: opcode=2 (high nibble) flags=0 rcode=0 => 0x2000 | count=1 | 0xAAAA
-    assert_eq!(buf.get_ref().as_slice(), &[0x12, 0x34, 0x20, 0x00, 0x00, 0x01, 0xAA, 0xAA]);
+    assert_eq!(
+        buf.get_ref().as_slice(),
+        &[0x12, 0x34, 0x20, 0x00, 0x00, 0x01, 0xAA, 0xAA]
+    );
 
     let back = Header::read(&mut Cursor::new(buf.get_ref())).unwrap();
     assert_eq!(back, h);
@@ -99,7 +102,10 @@ fn validate_gates_build_but_not_parse() {
     // check_soundness defaults true -> an invalid value is rejected at build.
     let err = Sound::builder().id(0).value(5).build().unwrap_err();
     assert!(matches!(err, bits::BuilderError::Invalid(_)));
-    assert_eq!(err.to_string(), "soundness check failed: id must be non-zero");
+    assert_eq!(
+        err.to_string(),
+        "soundness check failed: id must be non-zero"
+    );
 
     // A valid value builds.
     assert_eq!(Sound::builder().id(1).value(5).build().unwrap().id, 1);

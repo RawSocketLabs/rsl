@@ -10,7 +10,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Ident, Token, Type};
+use syn::{Data, DeriveInput, Fields, Ident, Token, Type, parse_macro_input};
 
 /// Parsed `#[bit_enum(WidthType, bytes = …)]`.
 struct Args {
@@ -62,7 +62,12 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 
     let data = match &input.data {
         Data::Enum(e) => e,
-        _ => return Err(syn::Error::new_spanned(name, "BitEnum can only derive for enums")),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "BitEnum can only derive for enums",
+            ));
+        }
     };
 
     // Partition variants into unit (discriminant) and a single catch-all.
@@ -74,7 +79,10 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         let is_catch = v.attrs.iter().any(|a| a.path().is_ident("catch_all"));
         if is_catch {
             if catch_all.is_some() {
-                return Err(syn::Error::new_spanned(&v.ident, "only one #[catch_all] variant is allowed"));
+                return Err(syn::Error::new_spanned(
+                    &v.ident,
+                    "only one #[catch_all] variant is allowed",
+                ));
             }
             match &v.fields {
                 Fields::Unnamed(f) if f.unnamed.len() == 1 => {}
@@ -82,7 +90,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
                     return Err(syn::Error::new_spanned(
                         &v.ident,
                         "#[catch_all] must be a one-field tuple variant, e.g. `Custom(u4)`",
-                    ))
+                    ));
                 }
             }
             catch_all = Some(v.ident.clone());
@@ -95,7 +103,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
                 return Err(syn::Error::new_spanned(
                     &v.ident,
                     "non-catch-all BitEnum variants must be unit variants",
-                ))
+                ));
             }
         }
         let disc = match &v.discriminant {
@@ -211,9 +219,16 @@ fn primitive_of(ty: &Type) -> Option<&'static str> {
 }
 
 fn parse_discriminant(expr: &syn::Expr) -> syn::Result<u128> {
-    if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(i), .. }) = expr {
+    if let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Int(i),
+        ..
+    }) = expr
+    {
         i.base10_parse::<u128>()
     } else {
-        Err(syn::Error::new_spanned(expr, "BitEnum discriminants must be integer literals"))
+        Err(syn::Error::new_spanned(
+            expr,
+            "BitEnum discriminants must be integer literals",
+        ))
     }
 }
