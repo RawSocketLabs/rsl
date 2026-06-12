@@ -1,3 +1,6 @@
+// TODO(hygiene): WIP crate; clippy::all ratcheted off pending implementation.
+#![allow(clippy::all)]
+
 mod encrypt;
 
 pub struct Header {
