@@ -1,14 +1,14 @@
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
 use derive_builder::{Builder, UninitializedFieldError};
 use modular_bitfield_msb::prelude::*;
 
+use crate::name::State;
 use crate::name::codes::RCode;
 use crate::name::error::HeaderBuildError;
 use crate::name::label::NameLabel;
 use crate::name::opcode::OpCode;
 use crate::name::question::Question;
 use crate::name::resource::Resource;
-use crate::name::State;
 
 /// Header for a NetBIOS Name Service (NBNS) packet as defined by RFC 1002.
 ///
@@ -241,7 +241,7 @@ pub struct Flags {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use binrw::{io::Cursor, BinWrite};
+    use binrw::{BinWrite, io::Cursor};
     use modular_bitfield_msb::prelude::B2;
 
     use crate::name::codes::{Op, OpCode, QueryCode};

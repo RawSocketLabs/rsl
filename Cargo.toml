@@ -17,3 +17,6 @@ thiserror.workspace = true
 
 [features]
 nbte = []
+
+[lints]
+workspace = true

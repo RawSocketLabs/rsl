@@ -32,7 +32,9 @@ pub enum RError {
     /// Unsupported Request: Allowable only for challenging NBNS when gets an Update type registration request.
     ///
     /// Valid for the following response types: `Query`, `Registration`
-    #[error("Unsupported Request: Allowable only for challenging NBNS when gets an Update type registration request.")]
+    #[error(
+        "Unsupported Request: Allowable only for challenging NBNS when gets an Update type registration request."
+    )]
     UnsupportedRequest,
 
     /// Refused: For policy reasons server will not register this name from this host.

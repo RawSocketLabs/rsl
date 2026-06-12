@@ -1,10 +1,10 @@
 use std::net::IpAddr;
 
-use binrw::{binrw, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw};
 use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 
-use crate::name::label::{parse_labels, Label};
+use crate::name::label::{Label, parse_labels};
 
 /// A NetBIOS resource record.
 #[binrw]

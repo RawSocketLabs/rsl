@@ -1,5 +1,5 @@
 // 3rd Party
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
 use derive_builder::Builder;
 use modular_bitfield::prelude::*;
 use thiserror::Error;

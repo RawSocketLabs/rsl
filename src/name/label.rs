@@ -1,4 +1,4 @@
-use binrw::{binrw, io::Cursor, BinRead, BinResult, BinWrite};
+use binrw::{BinRead, BinResult, BinWrite, binrw, io::Cursor};
 use modular_bitfield::prelude::*;
 
 /// A DNS Label, used in NetBIOS for questions and resources records.
