@@ -49,7 +49,7 @@ default) the client can negotiate `blksize`, `timeout`, and `tsize`
 # Standards
 
 Requirement-level provenance is maintained out-of-band in the workspace's
-`protoref` compliance ledger; the prose here cites the RFC sections so the
+`refcheck` compliance ledger; the prose here cites the RFC sections so the
 behavior is traceable from the docs alone.
 
 | RFC | Title | Status |

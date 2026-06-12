@@ -1,21 +1,21 @@
 # application/tftp
 
 TFTP file-transfer library (client **and** server) — RFC 1350 with the option
-extensions of RFC 2347/2348/2349. protoref protocol name: **`tftp`**.
+extensions of RFC 2347/2348/2349. refcheck protocol name: **`tftp`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace
-> root `AGENTS.md` (build, protoref workflow, dual-use philosophy) also applies.
+> root `AGENTS.md` (build, refcheck workflow, dual-use philosophy) also applies.
 
 ## Start here, not by reading the crate
 
-- Open requirements / status: `RUSTC_WRAPPER= cargo run -q -p protoref --
+- Open requirements / status: `RUSTC_WRAPPER= cargo run -q -p refcheck --
   coverage --protocol tftp`
-- What the spec says: `… protoref -- explain <id> --protocol tftp` /
+- What the spec says: `… refcheck -- explain <id> --protocol tftp` /
   `… requirements --protocol tftp --doc rfc1350 --section <n>`
-- Where a requirement lives: the `//~` annotations — `… protoref -- scan
+- Where a requirement lives: the `//~` annotations — `… refcheck -- scan
   --protocol tftp` lists them with `file:symbol`. Jump there.
 
-Keep `protoref check --protocol tftp` clean after any change.
+Keep `refcheck check --protocol tftp` clean after any change.
 
 ## Three-layer, dual-stance shape
 
