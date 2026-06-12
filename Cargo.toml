@@ -6,13 +6,13 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 [dependencies]
-binrw = "0.15.0"
-thiserror = "1.0"
+binrw.workspace = true
+thiserror.workspace = true
 # Structured logging/spans via the tracing facade. With no subscriber installed
 # the instrumentation is near-free (a cached atomic check per call site).
 # Consumers who want it fully compiled out can set, in their own manifest:
 # tracing = { version = "0.1", features = ["release_max_level_off"] }
-tracing = "0.1"
+tracing.workspace = true
 
 [features]
 # RFC 2347/2348/2349 option negotiation (blksize, timeout, tsize) and the OACK
@@ -31,10 +31,10 @@ bench-slow = []
 [dev-dependencies]
 tracing-subscriber = "0.3"
 # Statistical benchmarking with HTML reports.
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { workspace = true, features = ["html_reports"] }
 # Sampling profiler wired into criterion: `--profile-time <secs>` emits a
 # flamegraph SVG per benchmark instead of measuring.
-pprof = { version = "0.15", features = ["flamegraph", "criterion"] }
+pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 
 [[bench]]
 name = "tftp_bench"
