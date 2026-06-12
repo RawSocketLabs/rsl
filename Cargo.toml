@@ -7,7 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 [dependencies]
 binrw = "0.15.0"
-derive_builder = "0.20.0"
+derive_builder.workspace = true
 thiserror = "1.0"
 # Structured logging/spans via the tracing facade. With no subscriber
 # installed the instrumentation is near-free (a cached atomic check per call
