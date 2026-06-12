@@ -1,11 +1,11 @@
 [package]
 name = "bits"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 description = "Ergonomic, fast bit/byte field types and macros for binary protocol codecs, with first-class binrw integration."
-license = "MIT"
-repository = "https://github.com/asyio/protocols"
-
 [dependencies]
 # The derive/attribute macros live in a sibling proc-macro crate (a proc-macro
 # crate cannot also export runtime items). Re-exported below so users only
