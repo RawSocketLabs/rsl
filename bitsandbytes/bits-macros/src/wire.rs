@@ -27,7 +27,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
 use syn::{parenthesized, parse2, parse_quote, Attribute, Expr, Fields, Ident, ItemStruct, Path, Token, Type, Visibility};
 
@@ -173,6 +173,15 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
             ))
         }
     };
+    // Generic parameters/lifetimes are not threaded through the generated group
+    // bitfields and builder, so reject them with a clear message rather than
+    // emitting a struct that drops them (which would fail confusingly).
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "#[wire] does not support generic parameters or lifetimes",
+        ));
+    }
     let name = &input.ident;
     let vis = &input.vis;
     let struct_attrs = &input.attrs;
@@ -391,12 +400,27 @@ fn expand_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
         let gty = &g.ty_name;
         let backing = &g.backing;
         let (mids, mtys): (Vec<_>, Vec<_>) = g.members.iter().map(|(i, t)| (i, t)).unzip();
+        // A wire word is fully specified: the members must account for every bit
+        // of the backing. If they sum to fewer bits, the bitfield would silently
+        // right-align them (padding the high bits) — a latent wire bug — so make
+        // it a compile error. Model intentional padding as an explicit member.
+        let span = g.members[0].0.span();
+        let width_check = quote_spanned! {span=>
+            #[allow(clippy::identity_op)]
+            const _: () = ::core::assert!(
+                (0u32 #( + <#mtys as ::bits::__private::Bits>::BITS )*) == <#backing>::BITS,
+                "#[wire] group members must fill the backing integer exactly: \
+                 their bit widths must sum to the backing width (add a reserved \
+                 member for padding, or use a smaller backing type)"
+            );
+        };
         quote! {
             #[::bits::bitfield(#backing, bits = msb, bytes = #be_le)]
             #[derive(::core::clone::Clone, ::core::marker::Copy)]
             struct #gty {
                 #( #mids: #mtys, )*
             }
+            #width_check
         }
     });
 

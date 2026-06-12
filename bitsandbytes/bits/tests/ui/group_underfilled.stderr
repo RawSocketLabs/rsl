@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: #[wire] group members must fill the backing integer exactly: their bit widths must sum to the backing width (add a reserved member for padding, or use a smaller backing type)
+ --> tests/ui/group_underfilled.rs:5:19
+  |
+5 | #[wire(big, group(a, b => u16))]
+  |                   ^ evaluation of `_` failed here
