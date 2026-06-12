@@ -165,12 +165,11 @@ allowed exception. Keep the public surface fully documented.
 
 ## Benchmarks
 
-`benches/bitfield_bench.rs` (criterion + pprof) measures `bits` **against the
+`benches/bitfield_bench.rs` (criterion (shared `testutil::bench`)) measures `bits` **against the
 crates it replaces** — `bitbybit`, `modular-bitfield-msb` (dev-deps, bench-only)
 — and a hand-written shift/mask baseline, on an identical DNS-shaped 16-bit
 field. Result: `bits` matches `bitbybit`, beats `modular-bitfield`, and is within
 noise of hand-written (pack ~870ps, unpack ~192ps). Run: `cargo bench -p bits`;
-flamegraphs with `-- --profile-time 5`.
 
 ## Examples
 

@@ -33,9 +33,9 @@ trybuild.workspace = true
 proptest.workspace = true
 # Statistical benchmarking with HTML reports.
 criterion = { workspace = true, features = ["html_reports"] }
-# Sampling profiler wired into criterion: `--profile-time <secs>` emits a
-# flamegraph SVG per benchmark instead of measuring.
-pprof = { workspace = true, features = ["flamegraph", "criterion"] }
+# Shared bench harness (testutil::bench::criterion); criterion stays a
+# direct dev-dep for its macros/types.
+testutil = { workspace = true, features = ["bench"] }
 # The crates `bits` replaces — used *only* in benchmarks to substantiate the
 # "as fast as a hand-written shift/mask" claim before any migration. They are
 # dev-dependencies, so they never enter a real build.

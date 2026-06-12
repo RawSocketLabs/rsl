@@ -12,7 +12,6 @@
 //! (Reports under target/criterion/.)
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use pprof::criterion::{Output, PProfProfiler};
 
 // --- `bits` ---------------------------------------------------------------
 use bits::{BitEnum, bitfield, u4, u5, u7};
@@ -167,8 +166,7 @@ fn bench_primitives(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default()
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = testutil::bench::criterion();
     targets = bench_pack, bench_unpack, bench_bytes_roundtrip, bench_primitives
 }
 criterion_main!(benches);
