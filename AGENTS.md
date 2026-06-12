@@ -99,13 +99,12 @@ version feature.
 Run everything: `RUSTC_WRAPPER= cargo test -p socks` (v5; see the feature matrix
 above for the other versions).
 
-Benchmarks (`benches/socks_bench.rs`, criterion + pprof):
+Benchmarks (`benches/socks_bench.rs`, criterion (shared `testutil::bench`)):
 
 - Measure: `cargo bench -p socks --bench socks_bench` (v5 groups: `parse`,
   `handshake`, `relay`; reports under `target/criterion/`). The `v4` feature
   adds a `v4/parse` group; the bench uses a manual `main` so groups are
   selected by feature.
-- Flamegraph SVGs: `cargo bench -p socks --bench socks_bench -- --profile-time 5`.
 - Quantify the TCP_NODELAY win: `cargo bench --features bench-nagle` adds the
   deliberately-slow Nagle baseline arm (`relay/nagle/*`) alongside
   `relay/nodelay/*`; off by default so a normal run stays fast.

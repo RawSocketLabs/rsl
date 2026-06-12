@@ -18,7 +18,6 @@
 //! (criterion writes reports under target/criterion/.)
 
 use criterion::Criterion;
-use pprof::criterion::{Output, PProfProfiler};
 
 #[cfg(feature = "v5")]
 use std::io::{Read, Write};
@@ -164,9 +163,7 @@ fn bench_relay(c: &mut Criterion) {
 // be selected by feature at compile time — the macro form cannot be
 // conditionally fed its target list.
 fn main() {
-    let mut criterion = Criterion::default()
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
-        .configure_from_args();
+    let mut criterion = testutil::bench::criterion().configure_from_args();
 
     #[cfg(feature = "v4")]
     bench_v4_parse(&mut criterion);
