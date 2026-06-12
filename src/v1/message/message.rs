@@ -1,5 +1,5 @@
 use binrw::io::Cursor;
-use binrw::{binrw, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw};
 use thiserror::Error;
 
 use crate::v1::message::cmd::*;

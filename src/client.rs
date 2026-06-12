@@ -7,8 +7,8 @@ use binrw::BinWrite;
 use binrw::{io::BufReader, io::Cursor, io::NoSeek};
 
 // Protocol Crates
-use nbt::session::{Flags, PacketType, SessionBuilder};
 use nbt::BinWrite as NbtBinWrite;
+use nbt::session::{Flags, PacketType, SessionBuilder};
 
 // Internal
 //use crate::v1::message::cmd::NegotiateResponse;

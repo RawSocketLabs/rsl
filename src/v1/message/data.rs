@@ -66,8 +66,8 @@ pub trait DataLength {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use binrw::io::Cursor;
     use binrw::BinWrite;
+    use binrw::io::Cursor;
 
     #[test]
     fn empty() {

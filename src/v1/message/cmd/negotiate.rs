@@ -1,5 +1,5 @@
 use binrw::io::Cursor;
-use binrw::{binrw, BinRead};
+use binrw::{BinRead, binrw};
 use thiserror::Error;
 
 use crate::v1::message::session::{Capabilities, SecurityMode};
@@ -218,8 +218,8 @@ mod unit {
     use super::*;
     use crate::v1::message::{Command, Status};
 
-    use binrw::io::Cursor;
     use binrw::BinWrite;
+    use binrw::io::Cursor;
 
     #[test]
     fn parse_negotiate_response() {
