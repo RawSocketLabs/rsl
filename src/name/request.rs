@@ -262,8 +262,8 @@ impl Request {
     /// Generate a transaction id and header for an request operation as defined in the RFC.
     pub fn generate(self) -> Result<(u16, Header), RequestGenerationError> {
         // Randomly generate a unique transaction id.
-        let mut rng = rand::thread_rng();
-        let id = rng.gen_range(0..=65_535);
+        let mut rng = rand::rng();
+        let id = rng.random_range(0..=65_535);
 
         // Attempt to create the name label
         let name = NameLabel::new(self.name).map_err(|_| RequestGenerationError::NameError)?;
