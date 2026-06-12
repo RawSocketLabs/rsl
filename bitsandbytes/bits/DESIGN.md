@@ -629,9 +629,44 @@ validator's error of any `Display` type flows through `build()` without coupling
 Tested in `bits/tests/wire.rs` (groups, derived `#[update]` counts,
 count-driven `Vec`s, `#[builder_only]`, multi-group, little-endian, `no_builder`,
 soundness dual-use, and binrw `map`/`magic` passthrough — plus a capstone using
-every feature) and `bits/tests/ui/*` (8 compile-fail cases proving group
-misuse — non-adjacent, out-of-order, unknown, duplicate, marker conflicts — is
-caught with well-spanned errors). Example: `bits/examples/wire_header.rs`.
+every feature) and `bits/tests/ui/*` (10 compile-fail cases proving group
+misuse — non-adjacent, out-of-order, unknown, duplicate, marker conflicts,
+under-filled group, generic struct — is caught with well-spanned errors).
+Example: `bits/examples/wire_header.rs`.
+
+### 9.6 Production hardening (stress testing)
+
+Surfaced and fixed while stress-testing:
+
+- **A group must fill its backing exactly.** If the members' widths sum to fewer
+  bits than the backing, the underlying `#[bitfield]` silently right-aligns them
+  (padding the *high* bits) — a latent wire bug. The macro now emits a const-eval
+  assertion (`Σ member BITS == backing BITS`) so an under-/over-filled group is a
+  compile error pointing at the group; model intentional padding as an explicit
+  `reserved` member. (`#[allow(clippy::identity_op)]` keeps the generated sum from
+  warning in the user's crate.)
+- **Generics/lifetimes are rejected** with a clear message (they aren't threaded
+  into the generated group bitfields/builder), rather than emitting a struct that
+  silently drops them.
+
+Stress coverage added:
+
+- `tests/wire_proptest.rs` — property-based round-trips: `encode∘decode = id` over
+  random field values (incl. catch-all enums and variable sections), and
+  `decode∘encode = id` over random bytes (the parser is total and the group word
+  is a bijection).
+- `tests/wire_golden.rs` — real DNS header byte-vectors (RFC 1035 §4.1.1, flags
+  word as an 8-member group): standard query, authoritative NXDOMAIN response, and
+  opcode-in-high-bits — byte-for-byte.
+- `tests/wire_stress.rs` — edge matrix: little-endian multi-byte group, back-to-back
+  groups, a nested `#[bitfield]` as a group member, `builder_only` without a
+  default, a user-declared `check_soundness` (no double-insert), `validate` +
+  `no_builder`, a custom `Display` validator error, `#[wire]`-in-`#[wire]`, and
+  group-type-name disambiguation across two structs.
+
+**Not yet done (the decisive test):** wiring `#[wire]` into one real header (e.g.
+`nbt`) and asserting byte-identical output + the crate's existing tests pass —
+gated by "don't migrate yet."
 
 ---
 

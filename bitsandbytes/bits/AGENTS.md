@@ -86,7 +86,12 @@ Load-bearing details:
   hand before building the macro.
 - **Group validation is the user's safety requirement:** named members must be
   **consecutive and in declared order**; the macro errors (well-spanned, at the
-  offending ident) otherwise, so a moved field is a compile error.
+  offending ident) otherwise, so a moved field is a compile error. Members must
+  also **fill the backing exactly** — a generated const-eval assert (`Σ member
+  BITS == backing BITS`, wrapped in `#[allow(clippy::identity_op)]`) rejects an
+  under-/over-filled group, since the bitfield would otherwise silently
+  right-align a short group and pad the high bits (a latent wire bug). Generic
+  params/lifetimes are rejected (not threaded into the group bitfields/builder).
 - `#[update(expr)]` → `#[br(temp)] #[bw(calc = expr)]` (not stored, not in the
   builder; expr references fields via `self.`). `#[builder_only(default = e)]` →
   `#[br(calc = e)] #[bw(ignore)]` and the builder default becomes `e` (wire both:
@@ -140,8 +145,17 @@ RUSTC_WRAPPER= cargo test -p bits --no-default-features # standalone codec, no b
   using every feature in one header.
 - `tests/compile_fail.rs` + `tests/ui/*` — trybuild snapshots proving `#[wire]`
   misuse (non-adjacent / out-of-order / unknown / duplicate group members, marker
-  conflicts, tuple struct) is rejected with a clear, well-spanned error.
-  Regenerate with `TRYBUILD=overwrite`.
+  conflicts, tuple struct, under-filled group, generic struct) is rejected with a
+  clear, well-spanned error. Regenerate with `TRYBUILD=overwrite`.
+- `tests/wire_proptest.rs` (proptest) — property round-trips: `encode∘decode = id`
+  over random field values, and `decode∘encode = id` over random bytes (parser is
+  total; the group word is a bijection).
+- `tests/wire_golden.rs` — real DNS header byte-vectors (RFC 1035 §4.1.1, flags
+  word as an 8-member group): query / NXDOMAIN response / opcode-high-bits.
+- `tests/wire_stress.rs` — edge matrix: LE multi-byte group, back-to-back groups,
+  nested `#[bitfield]` member, `builder_only` w/o default, user-declared
+  `check_soundness`, `validate` + `no_builder`, custom `Display` validator error,
+  `#[wire]`-in-`#[wire]`, group-type-name disambiguation.
 - `tests/binrw_integration.rs` (`#![cfg(feature = "binrw")]`) — the headline:
   bitfields/enums/flags in `#[binrw]` structs with no map glue, byte-aligned
   enums as binrw fields, and intrinsic (LE-in-BE) byte order.
