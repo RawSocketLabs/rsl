@@ -2,10 +2,10 @@ use crate::error::{Result, TftpError};
 use crate::wire::ack::Ack;
 use crate::wire::data::Data;
 use crate::wire::error_packet::ErrorPacket;
-use crate::wire::opcode::Opcode;
-use crate::wire::request::Request;
 #[cfg(feature = "options")]
 use crate::wire::oack::OptionAck;
+use crate::wire::opcode::Opcode;
+use crate::wire::request::Request;
 
 /// Any TFTP packet, tagged by opcode — the unifying type the transport reads
 /// and writes.

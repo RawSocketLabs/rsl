@@ -34,7 +34,9 @@ fn server_and_handler_surface_is_reachable() {
     use std::sync::Arc;
 
     let store = Arc::new(MemoryStore::new().with_file("a", b"x".to_vec()));
-    let server = Server::bind("127.0.0.1:0", store).unwrap().with_max_connections(8);
+    let server = Server::bind("127.0.0.1:0", store)
+        .unwrap()
+        .with_max_connections(8);
     assert!(server.local_addr().is_ok());
 
     // A bespoke handler implementing the trait compiles and the helpers exist.
@@ -53,7 +55,10 @@ fn server_and_handler_surface_is_reachable() {
 
 #[test]
 fn wire_types_encode_and_decode() {
-    assert_eq!(Packet::decode(b"\x00\x01f\0octet\0").unwrap().opcode(), Opcode::Read);
+    assert_eq!(
+        Packet::decode(b"\x00\x01f\0octet\0").unwrap().opcode(),
+        Opcode::Read
+    );
     let packets = [
         Packet::Request(Request::read("f", TransferMode::Octet)),
         Packet::Data(Data::new(1, b"x".to_vec())),

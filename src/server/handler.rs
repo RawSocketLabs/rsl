@@ -94,13 +94,19 @@ impl MemoryStore {
 
     /// Preloads a file (builder-style), so a download can find it.
     pub fn with_file(self, name: impl Into<String>, contents: impl Into<Vec<u8>>) -> Self {
-        self.files.lock().unwrap().insert(name.into(), contents.into());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(name.into(), contents.into());
         self
     }
 
     /// Inserts or replaces a file.
     pub fn insert(&self, name: impl Into<String>, contents: impl Into<Vec<u8>>) {
-        self.files.lock().unwrap().insert(name.into(), contents.into());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(name.into(), contents.into());
     }
 
     /// Returns a copy of a stored file's bytes, if present.
@@ -120,7 +126,10 @@ impl Handler for MemoryStore {
     }
 
     fn write(&self, filename: &str, contents: Vec<u8>) -> HandlerResult<()> {
-        self.files.lock().unwrap().insert(filename.to_string(), contents);
+        self.files
+            .lock()
+            .unwrap()
+            .insert(filename.to_string(), contents);
         Ok(())
     }
 }

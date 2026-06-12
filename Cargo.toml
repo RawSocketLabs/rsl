@@ -39,3 +39,6 @@ pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 [[bench]]
 name = "tftp_bench"
 harness = false
+
+[lints]
+workspace = true

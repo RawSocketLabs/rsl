@@ -1,4 +1,4 @@
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
 
 use crate::error::Result;
 
@@ -38,7 +38,8 @@ impl Ack {
     /// Encodes the ACK to its wire bytes.
     pub fn encode(&self) -> Vec<u8> {
         let mut cursor = Cursor::new(Vec::with_capacity(4));
-        self.write(&mut cursor).expect("writing to a Vec cannot fail");
+        self.write(&mut cursor)
+            .expect("writing to a Vec cannot fail");
         cursor.into_inner()
     }
 }

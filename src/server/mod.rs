@@ -36,4 +36,4 @@ mod handler;
 mod server;
 
 pub use handler::{Handler, HandlerResult, MemoryStore, Reject};
-pub use server::{Server, DEFAULT_MAX_CONNECTIONS};
+pub use server::{DEFAULT_MAX_CONNECTIONS, Server};

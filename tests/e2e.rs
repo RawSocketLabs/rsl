@@ -20,7 +20,9 @@ fn download_round_trips_every_size() {
         let payload: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         let (addr, _store) = spawn_server_with(MemoryStore::new().with_file("f", payload.clone()));
 
-        let got = client(addr).get("f").unwrap_or_else(|e| panic!("size {size}: {e}"));
+        let got = client(addr)
+            .get("f")
+            .unwrap_or_else(|e| panic!("size {size}: {e}"));
         assert_eq!(got, payload, "download mismatch at size {size}");
     }
 }
@@ -31,17 +33,31 @@ fn upload_round_trips_every_size() {
         let payload: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         let (addr, store) = spawn_server();
 
-        client(addr).put("up", &payload).unwrap_or_else(|e| panic!("size {size}: {e}"));
-        assert_eq!(store.get("up"), Some(payload), "upload mismatch at size {size}");
+        client(addr)
+            .put("up", &payload)
+            .unwrap_or_else(|e| panic!("size {size}: {e}"));
+        assert_eq!(
+            store.get("up"),
+            Some(payload),
+            "upload mismatch at size {size}"
+        );
     }
 }
 
 #[test]
 fn download_missing_file_reports_peer_error() {
     let (addr, _store) = spawn_server();
-    let err = client(addr).get("absent").expect_err("missing file must error");
+    let err = client(addr)
+        .get("absent")
+        .expect_err("missing file must error");
     assert!(
-        matches!(err, TftpError::Peer { code: ErrorCode::FileNotFound, .. }),
+        matches!(
+            err,
+            TftpError::Peer {
+                code: ErrorCode::FileNotFound,
+                ..
+            }
+        ),
         "got {err:?}"
     );
 }
@@ -60,7 +76,10 @@ fn netascii_round_trips_text_with_newlines() {
     assert_eq!(store.get("notes.txt"), Some(text.clone()));
 
     // And a netascii download translates back to the same host text.
-    let got = client(addr).mode(TransferMode::NetAscii).get("notes.txt").unwrap();
+    let got = client(addr)
+        .mode(TransferMode::NetAscii)
+        .get("notes.txt")
+        .unwrap();
     assert_eq!(got, text);
 }
 

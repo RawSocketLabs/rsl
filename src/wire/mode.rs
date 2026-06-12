@@ -70,7 +70,10 @@ mod unit {
 
     #[test]
     fn parsing_is_case_insensitive() {
-        assert_eq!(TransferMode::from_bytes(b"netascii"), TransferMode::NetAscii);
+        assert_eq!(
+            TransferMode::from_bytes(b"netascii"),
+            TransferMode::NetAscii
+        );
         assert_eq!(TransferMode::from_bytes(b"OCTET"), TransferMode::Octet);
         assert_eq!(TransferMode::from_bytes(b"Mail"), TransferMode::Mail);
     }

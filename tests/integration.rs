@@ -46,7 +46,13 @@ fn write_to_read_only_handler_is_refused_before_data() {
         .put("anything", b"data")
         .expect_err("a read-only server must refuse the write");
     assert!(
-        matches!(err, TftpError::Peer { code: ErrorCode::AccessViolation, .. }),
+        matches!(
+            err,
+            TftpError::Peer {
+                code: ErrorCode::AccessViolation,
+                ..
+            }
+        ),
         "got {err:?}"
     );
 }
@@ -54,7 +60,10 @@ fn write_to_read_only_handler_is_refused_before_data() {
 #[test]
 fn read_from_read_only_handler_succeeds() {
     let addr = spawn(Arc::new(ReadOnly(b"fixed contents".to_vec())));
-    let got = Client::new(addr).with_timeout(TEST_TIMEOUT).get("x").unwrap();
+    let got = Client::new(addr)
+        .with_timeout(TEST_TIMEOUT)
+        .get("x")
+        .unwrap();
     assert_eq!(got, b"fixed contents");
 }
 
@@ -79,7 +88,13 @@ fn custom_reject_code_is_surfaced() {
         .put("dup", b"x")
         .expect_err("must be refused");
     assert!(
-        matches!(err, TftpError::Peer { code: ErrorCode::FileAlreadyExists, .. }),
+        matches!(
+            err,
+            TftpError::Peer {
+                code: ErrorCode::FileAlreadyExists,
+                ..
+            }
+        ),
         "got {err:?}"
     );
 }

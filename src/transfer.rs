@@ -44,7 +44,10 @@ pub(crate) fn send_error(socket: &UdpSocket, dest: SocketAddr, code: ErrorCode, 
 /// Whether an I/O error is a read-timeout (the platform-specific kind that
 /// [`UdpSocket::set_read_timeout`] produces).
 fn is_timeout(err: &io::Error) -> bool {
-    matches!(err.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut)
+    matches!(
+        err.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+    )
 }
 
 /// Receives the next decodable packet, applying the lock-step machinery:
@@ -77,7 +80,12 @@ pub(crate) fn recv_packet(
                 if let Some(tid) = expected {
                     if src != tid {
                         tracing::debug!(%src, expected = %tid, "ignoring packet from wrong TID");
-                        send_error(socket, src, ErrorCode::UnknownTransferId, "unknown transfer ID");
+                        send_error(
+                            socket,
+                            src,
+                            ErrorCode::UnknownTransferId,
+                            "unknown transfer ID",
+                        );
                         continue;
                     }
                 }
@@ -157,7 +165,7 @@ fn await_ack(
                 return Err(TftpError::Unexpected(format!(
                     "expected ACK({block}), got {:?}",
                     other.opcode()
-                )))
+                )));
             }
         }
     }
@@ -205,7 +213,7 @@ pub(crate) fn recv_file(
                 return Err(TftpError::Unexpected(format!(
                     "expected DATA, got {:?}",
                     other.opcode()
-                )))
+                )));
             }
         }
     }

@@ -4,8 +4,8 @@ use std::time::Duration;
 use crate::error::{Result, TftpError};
 use crate::netascii;
 use crate::transfer::{
-    recv_file, recv_packet, send_file, BLOCK_SIZE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT,
-    RECV_BUFFER,
+    BLOCK_SIZE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, RECV_BUFFER, recv_file, recv_packet,
+    send_file,
 };
 use crate::wire::{Ack, Packet, Request, TransferMode};
 
@@ -136,8 +136,14 @@ impl Client {
 
         // First response: the server replies from a fresh TID, which we lock.
         //~ implements rfc1350#4/should.45bc6d part="server TID locked from first reply"
-        let (packet, server_tid) =
-            recv_packet(&socket, &mut buf, None, &last_sent, self.server, self.max_retries)?;
+        let (packet, server_tid) = recv_packet(
+            &socket,
+            &mut buf,
+            None,
+            &last_sent,
+            self.server,
+            self.max_retries,
+        )?;
 
         // Resolve the first packet into (the next block we expect, the ACK we
         // just sent), or finish early if the very first DATA block is short.
@@ -164,7 +170,7 @@ impl Client {
                 return Err(TftpError::Unexpected(format!(
                     "expected DATA/OACK to start a download, got {:?}",
                     other.opcode()
-                )))
+                )));
             }
         };
 
@@ -211,8 +217,14 @@ impl Client {
 
         // First response: ACK(0) (or OACK with the `options` feature). Lock TID.
         //~ implements rfc2347#front/may.acd06f part="handle the WRQ option-negotiation responses"
-        let (packet, server_tid) =
-            recv_packet(&socket, &mut buf, None, &last_sent, self.server, self.max_retries)?;
+        let (packet, server_tid) = recv_packet(
+            &socket,
+            &mut buf,
+            None,
+            &last_sent,
+            self.server,
+            self.max_retries,
+        )?;
         match packet {
             #[cfg(feature = "options")]
             Packet::OptionAck(oack) => self.apply_oack(&oack, &socket, &mut blksize)?,
@@ -222,7 +234,7 @@ impl Client {
                 return Err(TftpError::Unexpected(format!(
                     "expected ACK(0)/OACK to start an upload, got {:?}",
                     other.opcode()
-                )))
+                )));
             }
         }
 

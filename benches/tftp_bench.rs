@@ -71,12 +71,16 @@ fn bench_transfer(c: &mut Criterion) {
     let mut group = c.benchmark_group("transfer");
     for (name, bytes) in &files {
         group.throughput(Throughput::Bytes(bytes.len() as u64));
-        group.bench_with_input(BenchmarkId::new("download", bytes.len()), name, |b, name| {
-            b.iter(|| {
-                let got = Client::new(addr).get(name).unwrap();
-                assert_eq!(got.len(), bytes.len());
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("download", bytes.len()),
+            name,
+            |b, name| {
+                b.iter(|| {
+                    let got = Client::new(addr).get(name).unwrap();
+                    assert_eq!(got.len(), bytes.len());
+                })
+            },
+        );
     }
     group.finish();
 }

@@ -26,6 +26,9 @@ fn main() -> Result<(), tftp::error::TftpError> {
 
     // The codec is liberal: an unknown opcode is a decode error, not a panic.
     let bogus = [0x00, 0x63, 0x00, 0x00];
-    println!("decoding an unknown opcode yields: {:?}", Packet::decode(&bogus));
+    println!(
+        "decoding an unknown opcode yields: {:?}",
+        Packet::decode(&bogus)
+    );
     Ok(())
 }

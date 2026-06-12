@@ -1,4 +1,4 @@
-use binrw::{binrw, io::Cursor, BinRead, BinWrite, NullString};
+use binrw::{BinRead, BinWrite, NullString, binrw, io::Cursor};
 
 use crate::error::Result;
 use crate::wire::error_code::ErrorCode;
@@ -52,7 +52,8 @@ impl ErrorPacket {
     /// Encodes the ERROR packet to its wire bytes.
     pub fn encode(&self) -> Vec<u8> {
         let mut cursor = Cursor::new(Vec::with_capacity(5 + self.message.len()));
-        self.write(&mut cursor).expect("writing to a Vec cannot fail");
+        self.write(&mut cursor)
+            .expect("writing to a Vec cannot fail");
         cursor.into_inner()
     }
 }

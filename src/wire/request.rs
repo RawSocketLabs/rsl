@@ -1,5 +1,5 @@
 use crate::error::{Result, TftpError};
-use crate::wire::codec::{put_cstr, ByteReader};
+use crate::wire::codec::{ByteReader, put_cstr};
 use crate::wire::mode::TransferMode;
 #[cfg(feature = "options")]
 use crate::wire::option::TftpOption;

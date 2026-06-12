@@ -68,4 +68,4 @@ pub use request::{Request, RequestKind};
 #[cfg(feature = "options")]
 pub use oack::OptionAck;
 #[cfg(feature = "options")]
-pub use option::{blksize, timeout_secs, tsize, TftpOption};
+pub use option::{TftpOption, blksize, timeout_secs, tsize};

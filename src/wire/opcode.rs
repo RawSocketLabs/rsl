@@ -42,7 +42,7 @@ pub enum Opcode {
 
 #[cfg(test)]
 mod unit {
-    use binrw::{io::Cursor, BinRead, BinWrite};
+    use binrw::{BinRead, BinWrite, io::Cursor};
 
     use super::*;
 
@@ -64,7 +64,11 @@ mod unit {
         for code in [0u16, 1, 2, 3, 4, 5, 6, 7, 0xFFFF] {
             let mut buf = Cursor::new(Vec::new());
             parse(code).write(&mut buf).expect("writes");
-            assert_eq!(buf.into_inner(), code.to_be_bytes(), "code {code} round-trip");
+            assert_eq!(
+                buf.into_inner(),
+                code.to_be_bytes(),
+                "code {code} round-trip"
+            );
         }
     }
 }

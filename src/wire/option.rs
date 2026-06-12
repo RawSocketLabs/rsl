@@ -119,9 +119,18 @@ mod unit {
 
     #[test]
     fn known_options_parse_to_typed_variants() {
-        assert_eq!(TftpOption::from_pair("blksize", "1024"), TftpOption::BlkSize(1024));
-        assert_eq!(TftpOption::from_pair("BLKSIZE", "8"), TftpOption::BlkSize(8));
-        assert_eq!(TftpOption::from_pair("timeout", "5"), TftpOption::Timeout(5));
+        assert_eq!(
+            TftpOption::from_pair("blksize", "1024"),
+            TftpOption::BlkSize(1024)
+        );
+        assert_eq!(
+            TftpOption::from_pair("BLKSIZE", "8"),
+            TftpOption::BlkSize(8)
+        );
+        assert_eq!(
+            TftpOption::from_pair("timeout", "5"),
+            TftpOption::Timeout(5)
+        );
         assert_eq!(TftpOption::from_pair("tsize", "0"), TftpOption::TSize(0));
     }
 
@@ -134,7 +143,10 @@ mod unit {
         ));
         assert_eq!(
             TftpOption::from_pair("X-Wild", "yes"),
-            TftpOption::Other { name: "x-wild".to_string(), value: "yes".to_string() }
+            TftpOption::Other {
+                name: "x-wild".to_string(),
+                value: "yes".to_string()
+            }
         );
     }
 

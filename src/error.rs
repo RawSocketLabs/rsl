@@ -94,7 +94,10 @@ mod unit {
         let err = TftpError::from_error_packet(&packet);
         assert!(matches!(
             err,
-            TftpError::Peer { code: ErrorCode::FileNotFound, .. }
+            TftpError::Peer {
+                code: ErrorCode::FileNotFound,
+                ..
+            }
         ));
     }
 }

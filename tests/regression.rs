@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{client, spawn_server_with, TEST_TIMEOUT};
+use common::{TEST_TIMEOUT, client, spawn_server_with};
 use tftp::client::RawClient;
 use tftp::error::TftpError;
 use tftp::server::MemoryStore;
@@ -27,7 +27,10 @@ fn server_answers_from_a_fresh_tid() {
         addr.port(),
         "the server must reply from a new TID, not the listen port"
     );
-    assert!(matches!(packet, Packet::Data(_)), "first reply should be DATA");
+    assert!(
+        matches!(packet, Packet::Data(_)),
+        "first reply should be DATA"
+    );
 }
 
 /// A datagram from a source other than the locked TID must be answered with an
@@ -49,9 +52,7 @@ fn stray_sender_gets_unknown_tid_error() {
     // A different socket pokes the server's transfer TID with an ACK.
     let stray = RawClient::bind(server_tid).unwrap();
     stray.set_read_timeout(Some(TEST_TIMEOUT)).unwrap();
-    stray
-        .send(&Packet::Ack(tftp::wire::Ack::new(99)))
-        .unwrap();
+    stray.send(&Packet::Ack(tftp::wire::Ack::new(99))).unwrap();
 
     let (packet, _) = stray.recv().expect("stray should receive an ERROR");
     match packet {

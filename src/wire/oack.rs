@@ -1,5 +1,5 @@
 use crate::error::{Result, TftpError};
-use crate::wire::codec::{put_cstr, ByteReader};
+use crate::wire::codec::{ByteReader, put_cstr};
 use crate::wire::option::TftpOption;
 
 /// An Option Acknowledgment (OACK, RFC 2347): opcode 6 followed by the

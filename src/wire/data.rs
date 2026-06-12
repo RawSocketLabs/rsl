@@ -1,4 +1,4 @@
-use binrw::{binrw, io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, binrw, io::Cursor};
 
 use crate::error::Result;
 
@@ -49,7 +49,8 @@ impl Data {
     /// Encodes the DATA packet to its wire bytes.
     pub fn encode(&self) -> Vec<u8> {
         let mut cursor = Cursor::new(Vec::with_capacity(4 + self.payload.len()));
-        self.write(&mut cursor).expect("writing to a Vec cannot fail");
+        self.write(&mut cursor)
+            .expect("writing to a Vec cannot fail");
         cursor.into_inner()
     }
 }
@@ -61,7 +62,10 @@ mod unit {
     #[test]
     fn data_round_trips_with_payload() {
         let data = Data::new(1, b"hello".to_vec());
-        assert_eq!(data.encode(), [&[0x00, 0x03, 0x00, 0x01][..], b"hello"].concat());
+        assert_eq!(
+            data.encode(),
+            [&[0x00, 0x03, 0x00, 0x01][..], b"hello"].concat()
+        );
         assert_eq!(Data::decode(&data.encode()).unwrap(), data);
     }
 

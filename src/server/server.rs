@@ -6,11 +6,11 @@ use std::time::Duration;
 use crate::error::{Result, TftpError};
 use crate::netascii;
 use crate::server::handler::{Handler, Reject};
-use crate::transfer::{
-    recv_file, send_error, send_file, BLOCK_SIZE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, RECV_BUFFER,
-};
 #[cfg(feature = "options")]
 use crate::transfer::recv_packet;
+use crate::transfer::{
+    BLOCK_SIZE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, RECV_BUFFER, recv_file, send_error, send_file,
+};
 use crate::wire::{Ack, Packet, Request, RequestKind};
 
 #[cfg(feature = "options")]
@@ -288,12 +288,7 @@ fn reject_transfer(socket: &UdpSocket, client: SocketAddr, reject: Reject) -> Re
 /// Waits for the client's ACK(0) that follows an OACK on a read, retransmitting
 /// the OACK on timeout.
 #[cfg(feature = "options")]
-fn await_ack0(
-    socket: &UdpSocket,
-    client: SocketAddr,
-    oack: &[u8],
-    max_retries: u32,
-) -> Result<()> {
+fn await_ack0(socket: &UdpSocket, client: SocketAddr, oack: &[u8], max_retries: u32) -> Result<()> {
     let mut buf = vec![0u8; RECV_BUFFER];
     let (packet, _) = recv_packet(socket, &mut buf, Some(client), oack, client, max_retries)?;
     match packet {
