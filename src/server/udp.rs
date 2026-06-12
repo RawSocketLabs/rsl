@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use binrw::{io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, io::Cursor};
 
 use crate::error::{Result, SocksError};
 use crate::server::connection::{send_failure, send_reply};

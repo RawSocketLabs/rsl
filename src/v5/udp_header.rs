@@ -26,7 +26,7 @@ pub struct UdpHeader {
 mod unit {
     use std::net::Ipv4Addr;
 
-    use binrw::{io::Cursor, BinRead, BinWrite};
+    use binrw::{BinRead, BinWrite, io::Cursor};
 
     use super::*;
 

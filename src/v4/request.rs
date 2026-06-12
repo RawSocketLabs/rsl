@@ -88,7 +88,9 @@ impl BinWrite for Request {
         self.version.write_options(writer, Endian::Big, ())?;
         self.command.write_options(writer, Endian::Big, ())?;
         self.dest_port.write_options(writer, Endian::Big, ())?;
-        self.dest_ip.octets().write_options(writer, Endian::Big, ())?;
+        self.dest_ip
+            .octets()
+            .write_options(writer, Endian::Big, ())?;
         self.userid.write_options(writer, Endian::Big, ())?;
         #[cfg(feature = "v4a")]
         if let Some(domain) = &self.domain {
@@ -250,7 +252,11 @@ mod unit {
             parsed.domain.as_ref().map(|d| d.to_string()),
             Some("example.com".to_string())
         );
-        assert_eq!(reader, &[0x42], "framing must stop at the domain terminator");
+        assert_eq!(
+            reader,
+            &[0x42],
+            "framing must stop at the domain terminator"
+        );
     }
 
     #[cfg(feature = "v4a")]

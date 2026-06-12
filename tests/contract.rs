@@ -37,7 +37,10 @@ fn request_connect_ipv4() {
     let request = Request::read_from(&mut bytes).expect("parses");
     assert_eq!(request.command, Command::Connect);
     assert_eq!(request.reserved, 0);
-    assert_eq!(request.dest_addr.to_socket_string(request.dest_port), "127.0.0.1:443");
+    assert_eq!(
+        request.dest_addr.to_socket_string(request.dest_port),
+        "127.0.0.1:443"
+    );
 }
 
 #[test]
@@ -48,7 +51,10 @@ fn request_connect_domain() {
     bytes.extend_from_slice(&80u16.to_be_bytes());
     let request = Request::read_from(&mut bytes.as_slice()).expect("parses");
     assert!(matches!(request.dest_addr, Address::Domain(_)));
-    assert_eq!(request.dest_addr.to_socket_string(request.dest_port), "example.com:80");
+    assert_eq!(
+        request.dest_addr.to_socket_string(request.dest_port),
+        "example.com:80"
+    );
 }
 
 #[test]

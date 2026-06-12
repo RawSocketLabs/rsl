@@ -8,8 +8,8 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 use socks::client::Client;
@@ -59,5 +59,8 @@ fn emits_events_with_a_subscriber() {
     drop(stream);
     let _ = handle.join();
 
-    assert!(count.load(Ordering::Relaxed) > 0, "tracing should emit events");
+    assert!(
+        count.load(Ordering::Relaxed) > 0,
+        "tracing should emit events"
+    );
 }

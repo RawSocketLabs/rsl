@@ -42,7 +42,9 @@ use socks::v5::{Identifier, Reply, Request};
 fn bench_v4_parse(c: &mut Criterion) {
     use socks::v4::Request as V4Request;
     // VN=4, CD=CONNECT, port 443, 127.0.0.1, userid "bench", NUL.
-    let request = [4u8, 1, 0x01, 0xBB, 127, 0, 0, 1, b'b', b'e', b'n', b'c', b'h', 0];
+    let request = [
+        4u8, 1, 0x01, 0xBB, 127, 0, 0, 1, b'b', b'e', b'n', b'c', b'h', 0,
+    ];
     c.bench_function("v4/parse/request", |b| {
         b.iter(|| V4Request::read_from(&mut request.as_slice()).unwrap())
     });

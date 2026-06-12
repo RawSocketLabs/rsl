@@ -27,7 +27,9 @@ fn udp_relay_drops_unsolicited_source() {
     });
 
     let (proxy, server) = spawn_proxy(Server::bind("127.0.0.1:0").unwrap());
-    let tunnel = Client::new(proxy).udp_associate().expect("associate succeeds");
+    let tunnel = Client::new(proxy)
+        .udp_associate()
+        .expect("associate succeeds");
     tunnel
         .set_read_timeout(Some(Duration::from_millis(500)))
         .unwrap();
@@ -65,8 +67,12 @@ fn udp_associate_pins_client_to_control_connection() {
     });
 
     let (proxy, server) = spawn_proxy(Server::bind("127.0.0.1:0").unwrap());
-    let tunnel = Client::new(proxy).udp_associate().expect("associate succeeds");
-    tunnel.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let tunnel = Client::new(proxy)
+        .udp_associate()
+        .expect("associate succeeds");
+    tunnel
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
 
     // The client's UDP socket shares 127.0.0.1 with the control connection,
     // so its datagrams are accepted and relayed.

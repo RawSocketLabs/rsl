@@ -116,7 +116,12 @@ impl Server {
     /// an error.
     pub fn accept(&self) -> Result<()> {
         let (stream, _) = self.listener.accept()?;
-        handle_client(stream, &self.authenticators, self.handshake_timeout, self.bind_timeout)
+        handle_client(
+            stream,
+            &self.authenticators,
+            self.handshake_timeout,
+            self.bind_timeout,
+        )
     }
 
     /// Serves clients until the listener fails, one thread per connection, up

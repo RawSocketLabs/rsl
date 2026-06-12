@@ -1,8 +1,8 @@
 use std::net::{Ipv4Addr, SocketAddr, TcpStream, UdpSocket};
 
-use binrw::{io::Cursor, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite, io::Cursor};
 
-use crate::client::client::{reply_socket_addr, Client, TargetAddr};
+use crate::client::client::{Client, TargetAddr, reply_socket_addr};
 use crate::error::{Result, SocksError};
 use crate::v5::{Address, Command, UdpHeader, UdpHeaderBuilder};
 

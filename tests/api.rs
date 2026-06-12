@@ -10,7 +10,7 @@ use std::time::Duration;
 use socks::client::{Client, TargetAddr};
 use socks::error::SocksError;
 use socks::server::{
-    Server, DEFAULT_BIND_TIMEOUT, DEFAULT_HANDSHAKE_TIMEOUT, DEFAULT_MAX_CONNECTIONS,
+    DEFAULT_BIND_TIMEOUT, DEFAULT_HANDSHAKE_TIMEOUT, DEFAULT_MAX_CONNECTIONS, Server,
 };
 
 fn loopback() -> SocketAddr {

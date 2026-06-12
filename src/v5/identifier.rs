@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{BinRead, binrw, io::Cursor};
 use derive_builder::Builder;
 
 use crate::error::Result;
@@ -44,7 +44,7 @@ impl Identifier {
 
 #[cfg(test)]
 mod unit {
-    use binrw::{io::Cursor, BinWrite};
+    use binrw::{BinWrite, io::Cursor};
 
     use super::*;
 

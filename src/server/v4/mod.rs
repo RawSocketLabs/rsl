@@ -37,10 +37,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use binrw::{io::NoSeek, BinWrite};
+use binrw::{BinWrite, io::NoSeek};
 
 use crate::error::{Result, SocksError};
-use crate::server::pool::{accept_with_timeout, Semaphore};
+use crate::server::pool::{Semaphore, accept_with_timeout};
 use crate::server::relay::relay;
 use crate::v4::{Command, ReplyBuilder, ReplyCode, Request};
 
@@ -191,14 +191,24 @@ fn handle_client(
     let request = Request::read_from(&mut &stream)?;
     if request.version != 4 {
         tracing::warn!(version = request.version, "rejecting non-v4 request");
-        let _ = send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)));
+        let _ = send_reply(
+            &stream,
+            ReplyCode::Rejected,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        );
         return Err(SocksError::UnsupportedVersion(request.version));
     }
 
     if !authorizer(&request) {
         tracing::warn!(userid = %request.userid, "request rejected by authorizer");
-        send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
-        return Err(SocksError::Validation("SOCKS4 request not authorized".to_string()));
+        send_reply(
+            &stream,
+            ReplyCode::Rejected,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        )?;
+        return Err(SocksError::Validation(
+            "SOCKS4 request not authorized".to_string(),
+        ));
     }
 
     // The handshake is complete; an established relay may idle indefinitely.
@@ -213,7 +223,11 @@ fn handle_client(
         Command::Bind => handle_bind(stream, &request, bind_timeout),
         Command::Custom(other) => {
             tracing::warn!(command = other, "unsupported SOCKS4 command");
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             Err(SocksError::NotSupported(format!("SOCKS4 command {other}")))
         }
     }
@@ -231,7 +245,7 @@ fn resolve_target(request: &Request) -> Result<Vec<SocketAddr>> {
             None => {
                 return Err(SocksError::MessageParse(
                     "SOCKS4A marker address without a domain name".to_string(),
-                ))
+                ));
             }
         };
         let resolved: Vec<SocketAddr> = (host.as_str(), request.dest_port)
@@ -246,7 +260,11 @@ fn handle_connect(stream: TcpStream, request: &Request) -> Result<()> {
     let targets = match resolve_target(request) {
         Ok(targets) if !targets.is_empty() => targets,
         _ => {
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             return Err(SocksError::Validation(
                 "SOCKS4 destination did not resolve".to_string(),
             ));
@@ -256,12 +274,20 @@ fn handle_connect(stream: TcpStream, request: &Request) -> Result<()> {
     let conn = match connect_any(&targets) {
         Ok(conn) => conn,
         Err(err) => {
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             return Err(err.into());
         }
     };
 
-    send_reply(&stream, ReplyCode::Granted, conn.peer_addr().unwrap_or_else(|_| targets[0]))?;
+    send_reply(
+        &stream,
+        ReplyCode::Granted,
+        conn.peer_addr().unwrap_or_else(|_| targets[0]),
+    )?;
     relay(stream, conn)
 }
 
@@ -282,7 +308,11 @@ fn handle_bind(stream: TcpStream, request: &Request, bind_timeout: Option<Durati
     let listener = match TcpListener::bind((stream.local_addr()?.ip(), 0)) {
         Ok(listener) => listener,
         Err(err) => {
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             return Err(err.into());
         }
     };
@@ -294,11 +324,19 @@ fn handle_bind(stream: TcpStream, request: &Request, bind_timeout: Option<Durati
     let (conn, peer) = match accept_with_timeout(&listener, bind_timeout) {
         Ok(accepted) => accepted,
         Err(err) if err.kind() == io::ErrorKind::TimedOut => {
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             return Err(err.into());
         }
         Err(err) => {
-            send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+            send_reply(
+                &stream,
+                ReplyCode::Rejected,
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            )?;
             return Err(err.into());
         }
     };
@@ -307,7 +345,11 @@ fn handle_bind(stream: TcpStream, request: &Request, bind_timeout: Option<Durati
     // address is concrete (the memo expects BIND's peer to be the CONNECT
     // destination).
     if !request.dest_ip.is_unspecified() && IpAddr::V4(request.dest_ip) != peer.ip() {
-        send_reply(&stream, ReplyCode::Rejected, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))?;
+        send_reply(
+            &stream,
+            ReplyCode::Rejected,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        )?;
         return Err(SocksError::Validation(format!(
             "unexpected SOCKS4 bind peer: {peer}"
         )));

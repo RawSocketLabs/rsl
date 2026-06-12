@@ -10,7 +10,7 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::thread;
 use std::time::Duration;
 
-use socks::client::v4::{raw, Client};
+use socks::client::v4::{Client, raw};
 use socks::error::SocksError;
 use socks::server::v4::Server;
 use socks::v4::ReplyCode;

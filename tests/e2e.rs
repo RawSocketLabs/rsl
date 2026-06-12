@@ -81,8 +81,12 @@ fn udp_associate_relays_datagrams() {
     let echo = spawn_udp_echo();
     let (proxy, server) = spawn_proxy(Server::bind("127.0.0.1:0").unwrap());
 
-    let tunnel = Client::new(proxy).udp_associate().expect("associate succeeds");
-    tunnel.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let tunnel = Client::new(proxy)
+        .udp_associate()
+        .expect("associate succeeds");
+    tunnel
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     tunnel.send_to(echo, b"ping").expect("send succeeds");
 
     let mut buf = [0u8; 16];

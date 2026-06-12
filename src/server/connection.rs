@@ -2,7 +2,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-use binrw::{io::NoSeek, BinWrite};
+use binrw::{BinWrite, io::NoSeek};
 
 use crate::auth::Authenticator;
 use crate::error::{Result, SocksError};

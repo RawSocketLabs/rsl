@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{BinRead, binrw, io::Cursor};
 use derive_builder::Builder;
 
 use crate::error::Result;
@@ -103,10 +103,7 @@ mod unit {
             .dest_port(40000)
             .build()
             .unwrap();
-        assert_eq!(
-            any.bound_socket(proxy),
-            SocketAddrV4::new(proxy, 40000)
-        );
+        assert_eq!(any.bound_socket(proxy), SocketAddrV4::new(proxy, 40000));
 
         let concrete = ReplyBuilder::default()
             .code(ReplyCode::Granted)

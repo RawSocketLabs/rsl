@@ -1,10 +1,10 @@
 use std::io::Read;
 
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{BinRead, binrw, io::Cursor};
 use derive_builder::Builder;
 
 use crate::error::Result;
-use crate::v5::address::{read_addressed_tail, Address, AddressType};
+use crate::v5::address::{Address, AddressType, read_addressed_tail};
 use crate::v5::command::Command;
 
 /// Client request: VER, CMD, RSV, ATYP, DST.ADDR, DST.PORT (RFC 1928 §4).

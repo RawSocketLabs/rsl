@@ -58,3 +58,6 @@ pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 [[bench]]
 name = "socks_bench"
 harness = false
+
+[lints]
+workspace = true

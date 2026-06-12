@@ -15,7 +15,7 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use binrw::{io::NoSeek, BinWrite};
+use binrw::{BinWrite, io::NoSeek};
 
 use crate::error::Result;
 use crate::v5::{Identifier, Offer, Reply, Request, UserPassRequest, UserPassResponse};

@@ -38,7 +38,7 @@
 use std::io::Write;
 use std::net::TcpStream;
 
-use binrw::{io::NoSeek, BinWrite};
+use binrw::{BinWrite, io::NoSeek};
 
 use crate::error::{Result, SocksError};
 use crate::v5::{

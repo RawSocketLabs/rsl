@@ -7,7 +7,7 @@
 
 use std::net::Ipv4Addr;
 
-use binrw::{io::Cursor, BinWrite, NullString};
+use binrw::{BinWrite, NullString, io::Cursor};
 use socks::v4::{Command, Reply, ReplyCode, Request};
 
 /// A SOCKS4 CONNECT request: VN=4, CD=1, port 23 (telnet), 66.102.7.99,

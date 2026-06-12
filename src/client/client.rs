@@ -1,6 +1,6 @@
 use std::net::{SocketAddr, TcpStream};
 
-use binrw::{io::NoSeek, BinWrite};
+use binrw::{BinWrite, io::NoSeek};
 
 use crate::auth::{AuthHandler, NoAuth, UserPassHandler};
 use crate::client::bind::BindListener;

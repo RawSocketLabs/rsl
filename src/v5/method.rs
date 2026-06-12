@@ -37,7 +37,7 @@ pub enum Method {
 
 #[cfg(test)]
 mod unit {
-    use binrw::{io::Cursor, BinRead, BinWrite};
+    use binrw::{BinRead, BinWrite, io::Cursor};
 
     use super::*;
 
@@ -78,7 +78,11 @@ mod unit {
         for code in 0u8..=0xFF {
             let mut buf = Cursor::new(Vec::new());
             parse(code).write_be(&mut buf).expect("writes");
-            assert_eq!(buf.into_inner(), vec![code], "code {code:#04x} did not round-trip");
+            assert_eq!(
+                buf.into_inner(),
+                vec![code],
+                "code {code:#04x} did not round-trip"
+            );
         }
     }
 }

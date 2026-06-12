@@ -36,7 +36,7 @@ pub mod raw;
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream};
 
-use binrw::{io::NoSeek, BinWrite, NullString};
+use binrw::{BinWrite, NullString, io::NoSeek};
 
 use crate::error::{Result, SocksError};
 use crate::v4::{Command, Reply, RequestBuilder};

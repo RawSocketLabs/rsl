@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{BinRead, binrw, io::Cursor};
 use derive_builder::Builder;
 
 use crate::error::Result;
@@ -49,7 +49,7 @@ impl UserPassResponse {
 
 #[cfg(test)]
 mod unit {
-    use binrw::{io::Cursor, BinRead, BinWrite};
+    use binrw::{BinRead, BinWrite, io::Cursor};
 
     use super::*;
 

@@ -64,4 +64,4 @@ mod request;
 pub use command::Command;
 pub use reply::{Reply, ReplyBuilder, ReplyBuilderError};
 pub use reply_code::ReplyCode;
-pub use request::{is_unresolved_marker, Request, RequestBuilder, RequestBuilderError};
+pub use request::{Request, RequestBuilder, RequestBuilderError, is_unresolved_marker};

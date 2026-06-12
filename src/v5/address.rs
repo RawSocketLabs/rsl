@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{BinRead, binrw, io::Cursor};
 
 use crate::error::{Result, SocksError};
 
@@ -96,7 +96,7 @@ pub(crate) fn read_addressed_tail(reader: &mut impl Read, mut buf: Vec<u8>) -> R
             return Err(SocksError::NotSupported(format!(
                 "address type {:#04x}",
                 other
-            )))
+            )));
         }
     };
 
@@ -192,7 +192,11 @@ mod unit {
         for code in 0u8..=0xFF {
             let mut buf = Cursor::new(Vec::new());
             parse(code).write_be(&mut buf).expect("writes");
-            assert_eq!(buf.into_inner(), vec![code], "code {code:#04x} did not round-trip");
+            assert_eq!(
+                buf.into_inner(),
+                vec![code],
+                "code {code:#04x} did not round-trip"
+            );
         }
     }
 }
