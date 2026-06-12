@@ -29,6 +29,8 @@ binrw = "0.15.0"
 # non-adjacent group members, marker conflicts, …) is rejected with a clear,
 # well-spanned error. Regenerate snapshots with `TRYBUILD=overwrite`.
 trybuild = "1.0"
+# Property-based round-trip stress testing for `#[wire]` codecs.
+proptest = "1"
 # Statistical benchmarking with HTML reports.
 criterion = { version = "0.5", features = ["html_reports"] }
 # Sampling profiler wired into criterion: `--profile-time <secs>` emits a
