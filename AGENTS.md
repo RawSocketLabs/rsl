@@ -1,7 +1,7 @@
 # session/socks
 
 SOCKS proxy library covering all three wire versions, each behind a Cargo
-feature. protoref protocol name: **`socks`**.
+feature. refcheck protocol name: **`socks`**.
 
 | Version | Feature | Source | Surface |
 |---|---|---|---|
@@ -15,7 +15,7 @@ At least one version feature must be enabled; `error::SocksError` and the
 `server::{relay,pool}` internals are the only version-agnostic parts.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace
-> root `AGENTS.md` (build, protoref workflow, dual-use philosophy) also applies.
+> root `AGENTS.md` (build, refcheck workflow, dual-use philosophy) also applies.
 
 ## Feature matrix — always test more than the default
 
@@ -34,14 +34,14 @@ Version-specific doc examples are gated inside the snippet with
 
 ## Start here, not by reading the crate
 
-- Open requirements / status: `RUSTC_WRAPPER= cargo run -q -p protoref --
+- Open requirements / status: `RUSTC_WRAPPER= cargo run -q -p refcheck --
   coverage --protocol socks`
-- What the spec says: `… protoref -- explain <id> --protocol socks` /
+- What the spec says: `… refcheck -- explain <id> --protocol socks` /
   `… requirements --protocol socks --section <n> --level must`
-- Where a requirement lives: it's in the `//~` annotations — `… protoref --
+- Where a requirement lives: it's in the `//~` annotations — `… refcheck --
   scan --protocol socks` lists them with `file:symbol`. Jump there.
 
-The corpus is fully triaged (0 untriaged). Keep `protoref check --protocol
+The corpus is fully triaged (0 untriaged). Keep `refcheck check --protocol
 socks` clean after any change.
 
 ## Entry points

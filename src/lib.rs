@@ -88,7 +88,7 @@ let stream = Client::new("127.0.0.1:1080".parse()?)
 # Standards
 
 Requirement-level provenance is maintained out-of-band in the workspace's
-`protoref` compliance ledger; the prose here cites the source sections so the
+`refcheck` compliance ledger; the prose here cites the source sections so the
 behavior is traceable from the docs alone.
 
 | Source | Title | Status in this crate |
