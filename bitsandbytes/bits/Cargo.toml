@@ -35,7 +35,7 @@ proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 # Sampling profiler wired into criterion: `--profile-time <secs>` emits a
 # flamegraph SVG per benchmark instead of measuring.
-pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+pprof = { version = "0.15", features = ["flamegraph", "criterion"] }
 # The crates `bits` replaces — used *only* in benchmarks to substantiate the
 # "as fast as a hand-written shift/mask" claim before any migration. They are
 # dev-dependencies, so they never enter a real build.
