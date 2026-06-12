@@ -29,12 +29,12 @@ options = []
 bench-slow = []
 
 [dev-dependencies]
-tracing-subscriber = "0.3"
+tracing-subscriber.workspace = true
 # Statistical benchmarking with HTML reports.
 criterion = { workspace = true, features = ["html_reports"] }
-# Sampling profiler wired into criterion: `--profile-time <secs>` emits a
-# flamegraph SVG per benchmark instead of measuring.
-pprof = { workspace = true, features = ["flamegraph", "criterion"] }
+# Shared bench harness (testutil::bench::criterion); criterion stays a
+# direct dev-dep for its macros/types.
+testutil = { workspace = true, features = ["bench"] }
 
 [[bench]]
 name = "tftp_bench"

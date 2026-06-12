@@ -17,7 +17,6 @@ use std::thread;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
-use pprof::criterion::{Output, PProfProfiler};
 
 use tftp::client::Client;
 use tftp::server::{MemoryStore, Server};
@@ -86,9 +85,7 @@ fn bench_transfer(c: &mut Criterion) {
 }
 
 fn main() {
-    let mut criterion = Criterion::default()
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
-        .configure_from_args();
+    let mut criterion = testutil::bench::criterion().configure_from_args();
     bench_parse(&mut criterion);
     bench_transfer(&mut criterion);
     criterion.final_summary();

@@ -80,11 +80,10 @@ options-only behavior is gated in tests with `#[cfg(feature = "options")]`.
 
 Run everything: `RUSTC_WRAPPER= cargo test -p tftp`.
 
-Benchmarks (`benches/tftp_bench.rs`, criterion + pprof; manual `main`):
+Benchmarks (`benches/tftp_bench.rs`, criterion (shared `testutil::bench`); manual `main`):
 
 - Measure: `cargo bench -p tftp --bench tftp_bench` (groups: `parse`,
   `transfer`).
-- Flamegraphs: `… -- --profile-time 5`.
 - `--features bench-slow` adds a 1 MiB download arm.
 
 Examples: `cargo run -p tftp --example serve_and_transfer` (full client+server
