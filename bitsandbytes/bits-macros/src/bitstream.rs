@@ -120,8 +120,8 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         impl ::bits::BitDecode for #name {
             const BIT_LEN: u32 = 0 #(+ #widths)*;
 
-            fn bit_decode(
-                r: &mut ::bits::__private::BitReader<'_>,
+            fn bit_decode<S: ::bits::__private::Source>(
+                r: &mut S,
             ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
                 ::core::result::Result::Ok(Self { #(#reads,)* })
             }
@@ -148,9 +148,9 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #guard
         impl ::bits::BitEncode for #name {
-            fn bit_encode(
+            fn bit_encode<K: ::bits::__private::Sink>(
                 &self,
-                w: &mut ::bits::__private::BitWriter,
+                w: &mut K,
             ) -> ::core::result::Result<(), ::bits::__private::BitError> {
                 #(#writes)*
                 ::core::result::Result::Ok(())

@@ -258,29 +258,91 @@ impl BitWriter {
     }
 }
 
+/// A bit-level **input** the codec recurses over — a [`BitReader`] (in-memory
+/// slice) or a [`StreamBitReader`] (forward `Read`). The recursion is generic
+/// over `Source`, so one codec runs over any input. (The seekable/streaming
+/// `BufSource` ladder is Phase 3.)
+pub trait Source {
+    /// Reads `n` (`<= 128`) bits MSB-first into the low bits of a `u128`.
+    ///
+    /// # Errors
+    /// Propagates the reader's [`BitError`].
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError>;
+
+    /// The current absolute bit offset (for position-aware errors).
+    fn bit_pos(&self) -> usize;
+
+    /// Reads one [`Bits`] value of its declared width.
+    ///
+    /// # Errors
+    /// As [`read_bits`](Source::read_bits).
+    fn read<T: Bits>(&mut self) -> Result<T, BitError> {
+        Ok(T::from_bits(self.read_bits(T::BITS)?))
+    }
+}
+
+/// A bit-level **output** the codec writes to — currently the in-memory
+/// [`BitWriter`]; a `std::io::Write` adapter is added in chunk B2.
+pub trait Sink {
+    /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
+    ///
+    /// # Errors
+    /// Propagates the writer's [`BitError`].
+    fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError>;
+
+    /// The number of bits written so far.
+    fn bit_pos(&self) -> usize;
+
+    /// Appends one [`Bits`] value of its declared width.
+    ///
+    /// # Errors
+    /// As [`write_bits`](Sink::write_bits).
+    fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
+        self.write_bits(value.into_bits(), T::BITS)
+    }
+}
+
+impl Source for BitReader<'_> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        BitReader::read_bits(self, n)
+    }
+    fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+}
+
+impl Sink for BitWriter {
+    fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
+        BitWriter::write_bits(self, value, n)
+    }
+    fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+}
+
 /// A message decoded from a bit stream — the recursion point a
 /// `#[derive(BitDecode)]` struct implements (reading each field in declaration
-/// order). Leaf fields are any [`Bits`] type.
+/// order). Leaf fields are any [`Bits`] type; nested messages recurse.
 pub trait BitDecode: Sized {
     /// Total bit width of the message — the sum of its fields' widths. The derive
     /// computes it from `<Field as Bits>::BITS`; used to size a byte region when
     /// the message is embedded in a byte stream (see `#[bitwire]`).
     const BIT_LEN: u32;
 
-    /// Decodes `Self` from `r`, advancing its cursor.
+    /// Decodes `Self` from any [`Source`], advancing its cursor.
     ///
     /// # Errors
-    /// Propagates the reader's [`BitError`].
-    fn bit_decode(r: &mut BitReader<'_>) -> Result<Self, BitError>;
+    /// Propagates the source's [`BitError`].
+    fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError>;
 }
 
 /// A message encoded to a bit stream — the dual of [`BitDecode`].
 pub trait BitEncode {
-    /// Encodes `self` into `w`, advancing its cursor.
+    /// Encodes `self` into any [`Sink`], advancing its cursor.
     ///
     /// # Errors
-    /// Propagates the writer's [`BitError`].
-    fn bit_encode(&self, w: &mut BitWriter) -> Result<(), BitError>;
+    /// Propagates the sink's [`BitError`].
+    fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
 }
 
 /// **Spike (DESIGN §11 DD3):** a *forward-only* bit reader over any
@@ -362,6 +424,15 @@ impl<R: std::io::Read> StreamBitReader<R> {
     /// As [`read_bits`](Self::read_bits).
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         Ok(T::from_bits(self.read_bits(T::BITS)?))
+    }
+}
+
+impl<R: std::io::Read> Source for StreamBitReader<R> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        StreamBitReader::read_bits(self, n)
+    }
+    fn bit_pos(&self) -> usize {
+        self.pos
     }
 }
 

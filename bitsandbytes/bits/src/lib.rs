@@ -112,7 +112,7 @@ mod field;
 pub mod int;
 
 pub use bitstream::{
-    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, StreamBitReader,
+    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, Sink, Source, StreamBitReader,
 };
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
@@ -135,7 +135,9 @@ pub trait BitEnum: Bits {}
 /// Implementation details referenced by macro-generated code. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::bitstream::{BitDecode, BitEncode, BitError, BitReader, BitWriter};
+    pub use crate::bitstream::{
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, Sink, Source,
+    };
     #[cfg(feature = "binrw")]
     pub use crate::bitstream::{read_bits_region, write_bits_region};
     pub use crate::error::UnknownDiscriminant;
