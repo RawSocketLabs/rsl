@@ -126,6 +126,27 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 ::core::result::Result::Ok(Self { #(#reads,)* })
             }
         }
+
+        impl #name {
+            #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed (the tail stays in `buf`; transactional on error)."]
+            pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                ::bits::__private::decode_consume(buf)
+            }
+            #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
+            pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                ::bits::__private::decode_peek(bytes)
+            }
+            #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
+            pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                ::bits::__private::decode_exact(bytes)
+            }
+            #[doc = "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."]
+            pub fn decode_from<S: ::bits::__private::Source>(
+                r: &mut S,
+            ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                <Self as ::bits::BitDecode>::bit_decode(r)
+            }
+        }
     })
 }
 
@@ -154,6 +175,27 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ) -> ::core::result::Result<(), ::bits::__private::BitError> {
                 #(#writes)*
                 ::core::result::Result::Ok(())
+            }
+        }
+
+        impl #name {
+            #[doc = "Encode to any `std::io::Write` (socket, file, `Vec`)."]
+            pub fn encode<W: ::std::io::Write>(
+                &self,
+                w: &mut W,
+            ) -> ::core::result::Result<(), ::bits::__private::BitError> {
+                ::bits::__private::encode_to_writer(self, w)
+            }
+            #[doc = "Encode to a `Vec<u8>`."]
+            pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
+                ::bits::__private::encode_to_vec(self)
+            }
+            #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
+            pub fn encode_into<K: ::bits::__private::Sink>(
+                &self,
+                w: &mut K,
+            ) -> ::core::result::Result<(), ::bits::__private::BitError> {
+                <Self as ::bits::BitEncode>::bit_encode(self, w)
             }
         }
     })

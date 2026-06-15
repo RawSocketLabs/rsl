@@ -46,16 +46,28 @@ pub struct BitError {
 }
 
 /// The cause of a [`BitError`]. Non-exhaustive: later phases add variants
-/// (`Incomplete`, `TrailingBytes`, `BadMagic`, …).
+/// (`BadMagic`, …).
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// Ran past the end of the input: `needed` bits were requested, `remaining`
-    /// were left.
+    /// Ran past the end of a finite input (a slice): `needed` bits were requested,
+    /// `remaining` were left. Definitive — distinct from [`Incomplete`](ErrorKind::Incomplete).
     UnexpectedEof {
         /// Bits requested.
         needed: usize,
         /// Bits still available.
+        remaining: usize,
+    },
+    /// A streaming source ([`StreamBitReader`]) ran out mid-message: the caller
+    /// should read more bytes and retry. `needed` is a best-effort byte hint
+    /// (`None` when unknown). See [`BitError::is_incomplete`].
+    Incomplete {
+        /// Best-effort estimate of additional bytes needed, if known.
+        needed: Option<usize>,
+    },
+    /// `decode_exact` left whole bytes unconsumed after the message.
+    TrailingBytes {
+        /// Number of trailing bytes.
         remaining: usize,
     },
     /// A single field exceeded the 128-bit carrier width.
@@ -63,6 +75,8 @@ pub enum ErrorKind {
         /// The offending width.
         width: usize,
     },
+    /// An I/O error while encoding to a [`std::io::Write`] sink.
+    Io(std::io::ErrorKind),
 }
 
 impl BitError {
@@ -86,6 +100,14 @@ impl BitError {
         }
         self
     }
+
+    /// Whether this is the streaming "need more bytes" signal
+    /// ([`ErrorKind::Incomplete`]) — the caller should read more and retry, as
+    /// opposed to a definitive parse failure.
+    #[must_use]
+    pub fn is_incomplete(&self) -> bool {
+        matches!(self.kind, ErrorKind::Incomplete { .. })
+    }
 }
 
 impl fmt::Display for BitError {
@@ -95,9 +117,17 @@ impl fmt::Display for BitError {
                 f,
                 "unexpected end of input: needed {needed} bits, {remaining} remain"
             )?,
+            ErrorKind::Incomplete { needed } => match needed {
+                Some(n) => write!(f, "incomplete: need ~{n} more bytes")?,
+                None => write!(f, "incomplete: need more bytes")?,
+            },
+            ErrorKind::TrailingBytes { remaining } => {
+                write!(f, "{remaining} trailing bytes after the message")?;
+            }
             ErrorKind::TooWide { width } => {
                 write!(f, "field width {width} exceeds the 128-bit carrier")?;
             }
+            ErrorKind::Io(kind) => write!(f, "I/O error: {kind:?}")?,
         }
         write!(f, " at bit {}", self.at)?;
         if let Some(field) = self.field {
@@ -345,6 +375,93 @@ pub trait BitEncode {
     fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
 }
 
+// ---------------------------------------------------------------------------
+// Entry-point helpers — the logic behind the `#[derive]`-generated inherent
+// methods (`Type::decode`/`peek`/`decode_exact`/`encode`/`to_bytes`). Kept here
+// so the logic lives in one place rather than monomorphized inline per type;
+// doc-hidden because the public surface is the generated methods.
+// ---------------------------------------------------------------------------
+
+/// Decodes one message from the front of `buf`, advancing `buf` past the bytes
+/// consumed (the tail stays in `buf`). Transactional: on error `buf` is
+/// unchanged. Backs `Type::decode`.
+///
+/// # Errors
+/// Propagates the decode [`BitError`].
+#[doc(hidden)]
+pub fn decode_consume<T: BitDecode>(buf: &mut &[u8]) -> Result<T, BitError> {
+    let input = core::mem::take(buf);
+    let mut r = BitReader::new(input);
+    match T::bit_decode(&mut r) {
+        Ok(v) => {
+            *buf = &input[r.bit_pos().div_ceil(8)..];
+            Ok(v)
+        }
+        Err(e) => {
+            *buf = input;
+            Err(e)
+        }
+    }
+}
+
+/// Decodes one message from `bytes` without consuming the caller's buffer
+/// (tail-tolerant). Backs `Type::peek`.
+///
+/// # Errors
+/// Propagates the decode [`BitError`].
+#[doc(hidden)]
+pub fn decode_peek<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
+    T::bit_decode(&mut BitReader::new(bytes))
+}
+
+/// Decodes and requires every **whole byte** consumed; a sub-byte tail in the
+/// final byte is treated as padding. Backs `Type::decode_exact`.
+///
+/// # Errors
+/// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the decode error.
+#[doc(hidden)]
+pub fn decode_exact<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
+    let mut r = BitReader::new(bytes);
+    let v = T::bit_decode(&mut r)?;
+    let consumed = r.bit_pos().div_ceil(8);
+    if consumed < bytes.len() {
+        return Err(BitError::new(
+            ErrorKind::TrailingBytes {
+                remaining: bytes.len() - consumed,
+            },
+            r.bit_pos(),
+        ));
+    }
+    Ok(v)
+}
+
+/// Encodes `value` to a `Vec<u8>`. Backs `Type::to_bytes`.
+///
+/// # Errors
+/// Propagates the encode [`BitError`].
+#[doc(hidden)]
+pub fn encode_to_vec<T: BitEncode>(value: &T) -> Result<Vec<u8>, BitError> {
+    let mut w = BitWriter::new();
+    value.bit_encode(&mut w)?;
+    Ok(w.into_bytes())
+}
+
+/// Encodes `value` to any [`std::io::Write`]. Backs `Type::encode`.
+///
+/// # Errors
+/// [`ErrorKind::Io`] on a write failure, else the encode error.
+#[doc(hidden)]
+pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
+    value: &T,
+    w: &mut W,
+) -> Result<(), BitError> {
+    let mut bw = BitWriter::new();
+    value.bit_encode(&mut bw)?;
+    let at = bw.bit_len();
+    w.write_all(&bw.into_bytes())
+        .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
+}
+
 /// **Spike (DESIGN §11 DD3):** a *forward-only* bit reader over any
 /// [`std::io::Read`] — the streaming counterpart to the in-memory [`BitReader`].
 ///
@@ -384,8 +501,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
     /// Reads `n` (`<= 64`) bits MSB-first, pulling bytes from the source as needed.
     ///
     /// # Errors
-    /// [`ErrorKind::TooWide`] if `n > 64`; [`ErrorKind::UnexpectedEof`] if the
-    /// source runs out mid-field. Either carries the bit offset.
+    /// [`ErrorKind::TooWide`] if `n > 64`; [`ErrorKind::Incomplete`] if the
+    /// source runs out mid-field (read more and retry). Either carries the bit
+    /// offset.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 64 {
             return Err(BitError::new(
@@ -397,13 +515,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
         while self.nbits < n {
             let mut b = [0u8; 1];
             if self.inner.read_exact(&mut b).is_err() {
-                return Err(BitError::new(
-                    ErrorKind::UnexpectedEof {
-                        needed: n as usize,
-                        remaining: self.nbits as usize,
-                    },
-                    at,
-                ));
+                // A stream ran out mid-field: signal "need more bytes" (the caller
+                // can buffer and retry), not a definitive end-of-input.
+                return Err(BitError::new(ErrorKind::Incomplete { needed: None }, at));
             }
             self.acc = (self.acc << 8) | u128::from(b[0]);
             self.nbits += 8;
