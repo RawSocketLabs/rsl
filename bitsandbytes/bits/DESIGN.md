@@ -670,7 +670,193 @@ gated by "don't migrate yet."
 
 ---
 
-## 10. Sources
+## 10. Bit-level stream codec — spike (2026-06-14)
+
+§4 deferred an in-house codec until a **concrete, recurring** limitation
+appeared. It has: a **DMR burst** (ETSI TS 102 361-1 §4.2.2) is 264 bits =
+`108 | 48 (sync) | 108`, none byte-aligned. Over binrw's byte `Read + Seek` this
+forces per-field `seek_before = SeekFrom::Current(-1)` hops and
+`from_be_bytes`/`>> 4` nibble juggling — exactly §4(a) ("sub-byte fields that
+straddle byte boundaries *in the stream*"). This recurs across bit-oriented
+radio/PHY protocols.
+
+**Key finding:** vendoring binrw does **not** fix this — its foundation is a byte
+cursor, so the bit-level need is a *capability* gap, not an ownership gap. The
+fix is a bit-aware cursor, which the crate's integer substrate (`UInt`, `Bits`,
+shift/mask) already supports — bit-aware **and** fast, no `bitvec` (the §3.1 gap
+neither binrw nor deku fills).
+
+**Built (`src/bitstream.rs`, `bits-macros/src/bitstream.rs`):**
+- `BitReader`/`BitWriter` — big-endian/MSB-first bit cursors over a byte buffer;
+  `read::<T: Bits>()` / `write::<T: Bits>(_)` read/write any `Bits` value at any
+  bit offset.
+- `BitDecode`/`BitEncode` traits + `#[derive(_)]` — read/write a struct's named
+  fields in declaration order; composes with `#[derive(BitEnum)]` (the 48-bit
+  sync became a `#[bit_enum(u48)]` with a `#[catch_all]`, so an unknown pattern is
+  *preserved* — strictly better than the original `try_map` that errored).
+- **Right-tool guard** — the derives reject an *all-byte-aligned* struct via a
+  const-eval assert (the cursor never leaves byte boundaries ⇒ use `#[binrw]`/
+  `#[wire]`), with `#[bit_stream(allow_byte_aligned)]` as the escape hatch. Keeps
+  "which macro when?" unambiguous; grouping is steered by the message/docs, not a
+  hard rule (false positives would add the confusion we're removing).
+- Proof: `tests/bitstream_dmr.rs` — the DMR burst as three declared fields, no
+  seeks/shifts/`map`; round-trips through 33 bytes; sync lands at bit 108;
+  unknown pattern preserved.
+
+**Open decisions (deferred):**
+- *Scope of the bit codec* — payload/`Vec` fields, nested `BitDecode` messages,
+  bit-order (LSB) knob, and binrw-parity attributes (`magic`/`count`/`calc`/
+  `validate`) so it "dovetails" with `#[bitfield]`/`#[wire]`.
+- *Relationship to binrw* — replace incrementally vs. permanent coexistence vs.
+  vendor binrw as the byte-aligned base (its ~13.7k LoC; MIT — credit retained,
+  see `ACKNOWLEDGMENTS.md`).
+- *Naming* — `bits`→`bnb` ("bits and bytes"; macro `#[bin]`) is honest only once the
+  byte/bit codec is owned; deferred until the codec direction settles. **Resolved in
+  §11.**
+
+---
+
+## 11. Codec direction — confirmed design decisions (2026-06-15)
+
+Decisions the maintainer has confirmed to **move toward** (an owned, bit-aware
+codec — eventual target name `bnb` / `bnb-macros`). These steer the spike; the
+full rebuild sequence is `ROADMAP.md`. The browsable target-API rustdoc lives in
+`src/design_preview/` (`--features doc-preview`).
+
+### DD1 — Keep binrw's `br`/`bw`/`brw` attribute grammar, owned by one macro
+
+**The codec macro is `#[bin]`** (decided 2026-06-15; rejected `#[wire]` as too
+network-specific — this codec is medium-agnostic over any source/sink/buffer).
+`#[bin]` + `br`/`bw`/`brw` share one root and read as a family ("**b**inary
+**r**ead/**w**rite"). Generated traits are **`Decode` / `Encode`** (methods
+`decode`/`encode`), matching §5.5's seam and the spike's `BitDecode`/`BitEncode`,
+and **deliberately not** binrw's `BinRead`/`BinWrite`/`BinResult` (those would
+collide while the bridge is in the tree). Directional codecs are **flags on the one
+macro** — `#[bin(read_only)]` / `#[bin(write_only)]` (consistent with
+`forward_only`), not separate macros.
+
+The read/write split (`#[br]` read-only, `#[bw]` write-only, `#[brw]` both) plus
+the sub-keys (`magic`/`calc`/`temp`/`ignore`/`map`/`count`/`args`/…) is binrw's
+best idea and we adopt it **verbatim** as our surface.
+
+- *Not "rude":* attribute spelling is an interface (uncopyrightable), binrw is
+  MIT, and we credit it (`ACKNOWLEDGMENTS.md`). The one obligation we take on is
+  **semantic fidelity** — where we reuse a spelling, it must mean what binrw means,
+  so a binrw user is never surprised.
+- *Mechanism:* a helper attribute has a single consumer, so **one** macro
+  (`#[bin]`; the spike prototyped it as `#[bitwire]`) owns the surface and
+  **dispatches per field** — a byte-aligned field's `#[br/bw/brw]` is forwarded to
+  binrw untouched; a bit-level region is handled by the bit cursor. One vocabulary,
+  two backends. (Spike: §10's `#[bitwire]` dispatch demo.)
+
+### DD2 — Design the `Seek` requirement away on the default (in-memory) path
+
+binrw requires `Read + Seek` uniformly (hence the `NoSeek` wrapper) because it
+builds on `std::io` streams. Our `BitReader`/`BitWriter` work over an **owned byte
+buffer with their own cursor**, so seeking is just cursor arithmetic — always
+available, no `Seek` trait, no `NoSeek` ceremony.
+
+- *Tradeoff (accepted):* the whole message must be resident (a `&[u8]`). For
+  bounded protocol PDUs — what asyio parses — that is the normal case and enables
+  zero-copy + free random access (e.g. DNS name-compression pointer following).
+- *What we consciously defer* (the genuine benefits of binrw's stream model, see
+  the Seek-benefits analysis): inputs **larger than memory**, `std::io` ecosystem
+  interop, and large **random-access file/container formats** (ELF/ZIP/fonts). Not
+  asyio's domain today.
+
+### DD3 — When a streaming backend is added, make the IO bound attribute-driven
+
+If/when a `std::io::Read` backend lands for the deferred cases, **invert binrw's
+default**: forward-only parsing requires only `Read`; only a field using a
+position-dependent directive (`restore_position`, absolute `seek`, pad-to-offset)
+pulls in `Read + Seek`. An explicit `#[wire(forward_only)]` pins a `Read`-only
+bound (and makes a seek directive a compile error). So the common case never pays
+the `NoSeek` tax. (Spike: §10's forward-only `StreamBitReader<R: Read>` demo —
+parses from `&[u8]`, which is `Read` but **not** `Seek`.)
+
+### DD4 — Keep the in-memory cursor as default, parameterize the source later
+
+The bit-cursor logic only needs *a byte source*. We will later parameterize it so
+the same `#[derive]`s and the same `br`/`bw`/`brw` surface run over either a
+`&[u8]` cursor (default, zero-copy — protocols) or a buffered `Read + Seek` (file
+formats). Choosing the slice model now **defers** the DD2 benefits, it does not
+forgo them.
+
+### DD5 — Rename `bits`→`bnb` once the codec is owned
+
+`bnb` ("bits and bytes"; the macro is `#[bin]`) is the target name; honest only when
+the byte/bit codec is genuinely ours. A discrete mechanical migration, sequenced in
+`ROADMAP.md` — not done speculatively.
+
+### Confirmed API surface — design review (2026-06-15)
+
+A full walk-through with the maintainer locked the user-facing surface. The
+browsable form is `src/design_preview/` (`--features doc-preview`); this is the
+canonical summary. Every item below is **decided**, not open.
+
+**Macro & traits.** `#[bin]` → `Decode` / `Encode` (methods `decode`/`encode`);
+`#[bin(read_only)]` / `#[bin(write_only)]` for directional codecs; field directives
+`#[br]`/`#[bw]`/`#[brw]` kept verbatim. Errors: `bnb::Error` / `bnb::Result`
+(position-aware) — **not** binrw's `BinRead`/`BinWrite`/`BinResult`.
+
+**I/O — one easy button over `Source` / `Sink`.**
+- `decode(&mut impl Source)` — `Source` impl'd for `&[u8]` (consume, transactional)
+  and any `std::io::Read` (forward-only, no `Seek`). Tail-tolerant; the consume idiom
+  is `&mut &[u8]`.
+- `encode(&mut impl Sink)` — any `std::io::Write` (+ `BitWriter`); plus `to_bytes()`.
+- Variants: `decode_exact(&[u8])` (strict full-consume), `peek(&[u8])`
+  (non-consuming), `decode_from(&mut BitReader)` (explicit cursor: seek / overlap /
+  many messages), `encode_into(&mut BitWriter)`.
+- Streaming signal: `Incomplete { needed: Option<usize> }` (`e.is_incomplete()`).
+- Caveat: consume over a `Read` is byte-granular; back-to-back *bit-packed* messages
+  use `decode_from(&mut BitReader)`.
+
+**Seek as a source capability (ladder).** In-memory `&[u8]`/`BitReader` seek for free
+(inherent `seek_to_bit`/`align_to_byte`). Non-slice seekable sources implement a
+`SeekSource` trait; a seek-using message is bound `SeekSource`, forward-only is
+`Source`. `BufSource<R: Read>` is a **bounded** (`cap(n)`, default = framed size)
+socket adapter that retains read bytes → seek within the window + read-more on
+demand (the "continuously-receiving peer that also seeks" case). Large `Read + Seek`
+files implement `SeekSource` directly — roadmap (Phase 3b), not MVP. Seek API is
+**both** inherent (on `BitReader`) and the `SeekSource` trait.
+
+**Parameterized parsing — `ctx` (binrw `import`/`args`).** Declare `#[bin(ctx(...))]`,
+pass `#[br(ctx { … })]`. **Layer 1** (build now): lower to generated **inherent**
+`Type::decode_with(src, ctx)` + a `Ctx` struct; the macro emits concrete
+`decode_with` at every field / enum-arm / count-loop → covers declarative ASN.1/TLV
++ arbitrary nesting + borrowed context, with **no `Args` associated type on the core
+trait**. **Layer 2** (deferred, additive): a `DecodeWith<A>`/`EncodeWith<A>` companion
+trait for hand-written generics / trait objects — call sites unchanged when it lands.
+
+**Validation.** Opt-in (`#[bin(validate = path)]`; most types declare none),
+**Builder-bound**, **construction / structural soundness only** (well-formed struct —
+**not** protocol-conversation validity, which is the session/state-machine layer's
+job). `path: fn(&Builder) -> Result<(), impl Display>`, run by `build()`; **no method
+on the concrete type** (this supersedes §9.4's post-parse `validate(&self)`). Bypass:
+`skip_validation()` builder method, generated **only** when a validator exists — no
+`build_unchecked`/`build_raw`/`raw::build`. Three construction tiers: struct literal
+`Frame { .. }` (rawest — pub fields, no checks) → `build()?` → `…skip_validation().build()?`.
+
+**Layout details.**
+- *Positioning units* — always typed `N.bits()` / `N.bytes()` (helpers in
+  `bnb::prelude`, composable with `+`); no bare-integer unit ambiguity, consistent
+  with `seek_to_bit`/`align_to_byte`.
+- *Bit order* — per-struct only (`#[bin(bit_order = msb|lsb)]`); mixed order within a
+  message uses a nested `#[bitfield]`/group with its own `bits = msb|lsb`. No
+  per-field override.
+- *Reserved bits* — explicit `#[reserved]` (default 0) / `#[reserved = expr]` members
+  (mirrors `#[bin(default)]` / `default = expr`); builder-optional, **preserved on
+  decode** (observe a peer's non-compliant reserved bits), settable for fuzzing, and
+  count toward the fill-exactly invariant. A *verified-on-read* reserved constant is
+  `magic = <uN>` instead. No implicit gaps.
+
+**Dual-use escape hatches (the ladder).** `from_raw`/`from_bits` (value
+representation), `#[catch_all]`/`Custom(..)` (unknown enum values preserved),
+permissive `Decode` (never rejects representable input), `skip_validation()`,
+`allow_byte_aligned`, `parse_with`/`write_with`, `peek`, and the plain `pub`-field
+struct literal (the rawest construction).
+
+## 12. Sources
 
 - deku — docs.rs/deku; bit support & `bitvec` backing; perf threads
   (github.com/jam1garner/binrw/discussions/184, rust-lang/rust#118674).

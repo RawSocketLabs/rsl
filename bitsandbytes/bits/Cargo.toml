@@ -20,6 +20,11 @@ binrw = { workspace = true, optional = true }
 default = ["binrw"]
 # Generate binrw integration for `#[bitfield]` / `#[derive(BitEnum)]` types.
 binrw = ["dep:binrw", "bits-macros/binrw"]
+# Renders the `bnb` target-design rustdoc preview (doc-only modules, no code, not
+# yet implemented). Review with:
+#   RUSTC_WRAPPER= cargo doc -p bits --features doc-preview --no-deps --open
+# Never part of a real build or the default docs.
+doc-preview = []
 
 [dev-dependencies]
 # Used by integration tests that exercise the binrw bridge end-to-end against

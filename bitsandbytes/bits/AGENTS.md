@@ -46,6 +46,13 @@ the proc-macro.
 - A `BitEnum` gets binrw only when its width is a byte-aligned primitive
   (`u8`/`u16`/…); a sub-byte enum (`u4`) is meaningful only nested in a
   `#[bitfield]`.
+- A byte-aligned `BitEnum` *also* gets `num_enum`-parity conversions
+  (`bitenum.rs::conv_impls`), **independent of the `binrw` feature**:
+  `From<Enum> for uN` always; `From<uN> for Enum` when there's a `#[catch_all]`
+  (total) else `TryFrom<uN> for Enum` (errors with `bits::UnknownDiscriminant`).
+  So a magic-byte enum needs no hand-written `From`/round-trip test — the derive
+  is the whole file. (`From`/`TryFrom` are mutually exclusive per enum, so the std
+  blanket `TryFrom` never collides.)
 
 ## `#[bitflags]` and `#[derive(BitsBuilder)]`
 
@@ -187,6 +194,40 @@ noise of hand-written (pack ~870ps, unpack ~192ps). Run: `cargo bench -p bits`;
 - `wire_header` (binrw) — a **DNS-style header in one `#[wire]`**: a
   bit-group, derived counts, soundness, and the builder, with the before/after
   framing in the file header.
+
+## `bitstream` — bit-level stream codec (spike, DESIGN §10)
+
+`src/bitstream.rs` + `bits-macros/src/bitstream.rs`: `BitReader`/`BitWriter`
+(big-endian/MSB-first bit cursors) + `BitDecode`/`BitEncode` traits & derives.
+Reads/writes any `Bits` value at an **arbitrary bit offset** — the thing binrw's
+byte `Read+Seek` can't do (driven by the DMR burst: `108|48|108` bits, none
+byte-aligned). Proof in `tests/bitstream_dmr.rs`. **Experimental & narrow:**
+named structs of `Bits`-typed fields only; no payload/`Vec`/nested-message support
+yet, no LSB bit-order. It does **not** replace binrw or `#[wire]` — it's the start
+of the owned bit-aware codec (rebuild plan: `ROADMAP.md`). Don't migrate protocol
+crates onto it yet.
+
+Also in Phase 0: `BitReader::seek_to_bit`/`align_to_byte` (seeking is free cursor
+math — no `Seek`/`NoSeek`); `StreamBitReader<R: Read>` (forward-only over
+`std::io::Read`, **no `Seek`** — the DD3 demo, `tests/bitstream_seek.rs`); and
+**`#[bitwire(big|little)]`** (`bits-macros`, `binrw` feature) — the **dispatch**
+macro: lowers to `#[binrw]`, byte-aligned fields keep the full binrw surface,
+a `#[bits]`-marked field is a `BitDecode` region wired via binrw `parse_with`/
+`write_with` (`read_bits_region`/`write_bits_region`). One `br/bw/brw` vocabulary,
+two backends (`tests/bitwire_dispatch.rs`). `BitDecode::BIT_LEN` (derive-computed)
+sizes the region; a `#[bits]` region must be byte-aligned overall (const assert).
+
+**Right-tool guard (don't remove):** the derives emit a const-eval assert
+(`alignment_guard`, same mechanism as the `#[bitfield]` fill assert) that
+**rejects an all-byte-aligned struct** — every field width a multiple of 8 ⇒ the
+cursor never leaves byte boundaries ⇒ `#[binrw]`/`#[wire]` is the right tool. The
+message names the alternatives (binrw/wire for bytes, `#[bitfield]` for sub-byte
+runs). Escape hatch: struct-level `#[bit_stream(allow_byte_aligned)]` (a helper
+attr declared by both derives). Proof: `tests/ui/bitstream_byte_aligned.rs`
+(reject) + `tests/bitstream_guard.rs` (override). Grouping is steered by the
+message + the docs decision table, **not** a hard rule (a `u4`+`u4` run is
+legitimately ambiguous; erroring on it would add confusion, not remove it). See `ACKNOWLEDGMENTS.md` for the binrw credit; the vendor-vs-replace and
+`bits`→`bnb` naming calls are open (DESIGN §10–§11, ROADMAP.md).
 
 ## Scope notes
 
