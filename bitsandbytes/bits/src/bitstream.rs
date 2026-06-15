@@ -30,10 +30,28 @@ use core::fmt;
 
 use crate::field::Bits;
 
-/// An error from the bit-level codec.
+/// A position-aware bit-codec error — the runtime analogue of binrw's error
+/// spans. It records the **bit offset** where decoding/encoding failed and, when
+/// the derive can supply it, the **field** being processed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BitError {
-    /// Asked for more bits than remain in the input.
+pub struct BitError {
+    /// The cause.
+    pub kind: ErrorKind,
+    /// Absolute bit offset where the error occurred.
+    pub at: usize,
+    /// The field being decoded/encoded when it occurred, if recorded by the
+    /// derive (the innermost field — the "span"). `None` for low-level reader
+    /// errors with no field context.
+    pub field: Option<&'static str>,
+}
+
+/// The cause of a [`BitError`]. Non-exhaustive: later phases add variants
+/// (`Incomplete`, `TrailingBytes`, `BadMagic`, …).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ErrorKind {
+    /// Ran past the end of the input: `needed` bits were requested, `remaining`
+    /// were left.
     UnexpectedEof {
         /// Bits requested.
         needed: usize,
@@ -41,20 +59,51 @@ pub enum BitError {
         remaining: usize,
     },
     /// A single field exceeded the 128-bit carrier width.
-    TooWide(usize),
+    TooWide {
+        /// The offending width.
+        width: usize,
+    },
+}
+
+impl BitError {
+    /// Builds an error at absolute bit offset `at`, with no field recorded yet.
+    #[must_use]
+    pub fn new(kind: ErrorKind, at: usize) -> Self {
+        Self {
+            kind,
+            at,
+            field: None,
+        }
+    }
+
+    /// Records the field being processed, **if one is not already set** — so the
+    /// innermost field (set first as the error propagates up) wins. The derive
+    /// calls this per field.
+    #[must_use]
+    pub fn in_field(mut self, field: &'static str) -> Self {
+        if self.field.is_none() {
+            self.field = Some(field);
+        }
+        self
+    }
 }
 
 impl fmt::Display for BitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BitError::UnexpectedEof { needed, remaining } => write!(
+        match &self.kind {
+            ErrorKind::UnexpectedEof { needed, remaining } => write!(
                 f,
                 "unexpected end of input: needed {needed} bits, {remaining} remain"
-            ),
-            BitError::TooWide(n) => {
-                write!(f, "field width {n} exceeds the 128-bit carrier")
+            )?,
+            ErrorKind::TooWide { width } => {
+                write!(f, "field width {width} exceeds the 128-bit carrier")?;
             }
         }
+        write!(f, " at bit {}", self.at)?;
+        if let Some(field) = self.field {
+            write!(f, " (field `{field}`)")?;
+        }
+        Ok(())
     }
 }
 
@@ -90,18 +139,21 @@ impl<'a> BitReader<'a> {
     /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, MSB-first.
     ///
     /// # Errors
-    /// [`BitError::TooWide`] if `n > 128`; [`BitError::UnexpectedEof`] if fewer
-    /// than `n` bits remain.
+    /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::UnexpectedEof`] if fewer
+    /// than `n` bits remain. Either carries the current bit offset.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let n = n as usize;
         if n > 128 {
-            return Err(BitError::TooWide(n));
+            return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
         }
         if n > self.remaining_bits() {
-            return Err(BitError::UnexpectedEof {
-                needed: n,
-                remaining: self.remaining_bits(),
-            });
+            return Err(BitError::new(
+                ErrorKind::UnexpectedEof {
+                    needed: n,
+                    remaining: self.remaining_bits(),
+                },
+                self.bit_pos,
+            ));
         }
         let mut acc: u128 = 0;
         for _ in 0..n {
@@ -126,13 +178,17 @@ impl<'a> BitReader<'a> {
     /// just cursor arithmetic. (Enables e.g. DNS name-compression pointers.)
     ///
     /// # Errors
-    /// [`BitError::UnexpectedEof`] if `pos` is past the end of the buffer.
+    /// [`ErrorKind::UnexpectedEof`] if `pos` is past the end of the buffer.
     pub fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
-        if pos > self.bytes.len() * 8 {
-            return Err(BitError::UnexpectedEof {
-                needed: pos,
-                remaining: self.bytes.len() * 8,
-            });
+        let end = self.bytes.len() * 8;
+        if pos > end {
+            return Err(BitError::new(
+                ErrorKind::UnexpectedEof {
+                    needed: pos,
+                    remaining: end,
+                },
+                self.bit_pos,
+            ));
         }
         self.bit_pos = pos;
         Ok(())
@@ -168,11 +224,11 @@ impl BitWriter {
     /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
     ///
     /// # Errors
-    /// [`BitError::TooWide`] if `n > 128`.
+    /// [`ErrorKind::TooWide`] if `n > 128`.
     pub fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
         let n = n as usize;
         if n > 128 {
-            return Err(BitError::TooWide(n));
+            return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
         }
         for i in (0..n).rev() {
             let byte_idx = self.bit_pos >> 3;
@@ -242,6 +298,8 @@ pub struct StreamBitReader<R> {
     /// Buffered-but-unconsumed bits, right-aligned in the low `nbits` bits.
     acc: u128,
     nbits: u32,
+    /// Total bits consumed so far (for position-aware errors).
+    pos: usize,
 }
 
 impl<R: std::io::Read> StreamBitReader<R> {
@@ -251,26 +309,40 @@ impl<R: std::io::Read> StreamBitReader<R> {
             inner,
             acc: 0,
             nbits: 0,
+            pos: 0,
         }
+    }
+
+    /// The total number of bits consumed so far.
+    #[must_use]
+    pub fn bit_pos(&self) -> usize {
+        self.pos
     }
 
     /// Reads `n` (`<= 64`) bits MSB-first, pulling bytes from the source as needed.
     ///
     /// # Errors
-    /// [`BitError::TooWide`] if `n > 64`; [`BitError::UnexpectedEof`] if the source
-    /// runs out mid-field.
+    /// [`ErrorKind::TooWide`] if `n > 64`; [`ErrorKind::UnexpectedEof`] if the
+    /// source runs out mid-field. Either carries the bit offset.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 64 {
-            return Err(BitError::TooWide(n as usize));
+            return Err(BitError::new(
+                ErrorKind::TooWide { width: n as usize },
+                self.pos,
+            ));
         }
+        let at = self.pos;
         while self.nbits < n {
             let mut b = [0u8; 1];
-            self.inner
-                .read_exact(&mut b)
-                .map_err(|_| BitError::UnexpectedEof {
-                    needed: n as usize,
-                    remaining: self.nbits as usize,
-                })?;
+            if self.inner.read_exact(&mut b).is_err() {
+                return Err(BitError::new(
+                    ErrorKind::UnexpectedEof {
+                        needed: n as usize,
+                        remaining: self.nbits as usize,
+                    },
+                    at,
+                ));
+            }
             self.acc = (self.acc << 8) | u128::from(b[0]);
             self.nbits += 8;
         }
@@ -280,6 +352,7 @@ impl<R: std::io::Read> StreamBitReader<R> {
         self.nbits = shift;
         let keep = if shift == 0 { 0 } else { (1u128 << shift) - 1 };
         self.acc &= keep;
+        self.pos += n as usize;
         Ok(val)
     }
 
@@ -377,12 +450,22 @@ mod unit {
     fn eof_is_an_error_not_a_panic() {
         let mut r = BitReader::new(&[0xFF]);
         assert_eq!(r.read::<u4>().unwrap(), u4::new(0xF));
+        let err = r.read_bits(8).unwrap_err();
         assert_eq!(
-            r.read_bits(8),
-            Err(BitError::UnexpectedEof {
+            err.kind,
+            ErrorKind::UnexpectedEof {
                 needed: 8,
                 remaining: 4
-            })
+            }
         );
+        assert_eq!(err.at, 4, "error records the bit offset");
+        assert!(err.field.is_none(), "no field context at the reader level");
+    }
+
+    #[test]
+    fn too_wide_is_rejected() {
+        let mut r = BitReader::new(&[0u8; 32]);
+        let err = r.read_bits(129).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::TooWide { width: 129 });
     }
 }

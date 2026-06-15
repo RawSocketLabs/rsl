@@ -53,7 +53,7 @@ Make the bit codec able to express a *whole* message, not just a fixed region.
       non-`Bits` fields). Resolve the leaf-vs-message dispatch in the derive.
 - [ ] **Payload fields** — `Vec<u8>`/`[u8; N]`/`Vec<T: BitDecode>` with a
       length/count source (sets up `count`).
-- [ ] **Position-aware errors** — carry bit offset + field name in `BitError`
+- [x] **Position-aware errors** — carry bit offset + field name in `BitError`
       (the runtime analogue of binrw's error spans).
 - [ ] **Coverage** — proptest `encode∘decode = id`; golden vectors for a real
       bit protocol.

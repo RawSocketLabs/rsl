@@ -111,7 +111,9 @@ pub mod error;
 mod field;
 pub mod int;
 
-pub use bitstream::{BitDecode, BitEncode, BitError, BitReader, BitWriter, StreamBitReader};
+pub use bitstream::{
+    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, StreamBitReader,
+};
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};

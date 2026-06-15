@@ -112,7 +112,8 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     });
     let reads = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
-        quote!(#id: r.read()?)
+        // Attach the field name to any error for a position-aware "span".
+        quote!(#id: r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?)
     });
     Ok(quote! {
         #guard
@@ -142,7 +143,7 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let guard = alignment_guard(fields, allow_byte_aligned(input)?);
     let writes = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
-        quote!(w.write(self.#id)?;)
+        quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     });
     Ok(quote! {
         #guard
