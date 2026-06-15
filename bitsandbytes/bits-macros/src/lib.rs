@@ -11,6 +11,7 @@
 mod bitenum;
 mod bitfield;
 mod bitflags;
+mod bitstream;
 mod builder;
 #[cfg(feature = "binrw")]
 mod wire;
@@ -104,9 +105,99 @@ pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `#[bit_enum(uN)]` sets the width. Exactly one `#[catch_all]` tuple variant
 /// (holding a `uN`/integer) may capture unknown discriminants; without one, an
 /// unknown value triggers an `unreachable!` (the enum is assumed exhaustive).
+///
+/// ## Generated API
+///
+/// Always: the `bits::{Bits, BitEnum}` impls (so the enum nests in a
+/// `#[bitfield]`). For a **byte-aligned** width (`u8`/`u16`/…) additionally —
+/// independent of the `binrw` feature, for `num_enum` parity:
+///
+/// - `From<Enum> for uN` (every variant maps to a value);
+/// - with `#[catch_all]`: `From<uN> for Enum` (total — unknowns absorbed);
+/// - without it: `TryFrom<uN> for Enum`, erroring with
+///   [`bits::UnknownDiscriminant`](../bits/struct.UnknownDiscriminant.html) on an
+///   unknown value.
+///
+/// With the `binrw` feature, a byte-aligned enum also gets `BinRead`/`BinWrite`.
+/// A sub-byte enum (`u4`) gets none of these — it is only meaningful nested in a
+/// `#[bitfield]`.
 #[proc_macro_derive(BitEnum, attributes(bit_enum, catch_all))]
 pub fn bit_enum(item: TokenStream) -> TokenStream {
     bitenum::expand(item)
+}
+
+/// Derives a [`bits::BitDecode`] impl that reads the struct's named fields, in
+/// declaration order, from a **bit** cursor ([`bits::BitReader`]).
+///
+/// ```ignore
+/// #[derive(BitDecode, BitEncode, Copy, Clone, Debug, PartialEq, Eq)]
+/// struct GenericBurst {   // a 264-bit DMR burst, fields at bit offsets
+///     p1: u108,           // bits   0..108
+///     pattern: SyncPattern,// bits 108..156 (a 48-bit #[derive(BitEnum)])
+///     p2: u108,           // bits 156..264
+/// }
+/// ```
+///
+/// Each field is read with `BitReader::read`, so any [`bits::Bits`] type
+/// (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`) works as a field — no
+/// byte-alignment, seeks, or shift glue. **Spike:** named structs only; nested
+/// `BitDecode` messages, byte/`Vec` payloads, and `#[br]`-style attributes are
+/// not yet supported.
+///
+/// ## Which codec? (the derive steers you)
+///
+/// | Your data | Use | Why |
+/// |---|---|---|
+/// | Fields straddle byte boundaries in the stream (e.g. `108 \| 48 \| 108` bits) | **`#[derive(BitDecode/BitEncode)]`** | only codec that reads at arbitrary bit offsets |
+/// | Whole-byte fields, possibly with magic/counts/`Vec`/nesting | **`#[binrw]` / `#[wire]`** | richer attribute surface, byte-aligned |
+/// | A run of sub-byte fields that fills one integer | **`#[bitfield]` / `#[wire] group(...)`** | one packed word with named accessors |
+///
+/// To enforce that, the derive **rejects an all-byte-aligned struct** at compile
+/// time (every field a whole number of bytes ⇒ the cursor never leaves byte
+/// boundaries ⇒ `#[binrw]`/`#[wire]` is the better tool). Override with the
+/// struct-level `#[bit_stream(allow_byte_aligned)]` when you really mean it.
+#[proc_macro_derive(BitDecode, attributes(bit_stream))]
+pub fn bit_decode(item: TokenStream) -> TokenStream {
+    bitstream::expand_decode(item)
+}
+
+/// Derives a [`bits::BitEncode`] impl — the dual of [`macro@BitDecode`], writing
+/// the struct's named fields in order to a [`bits::BitWriter`] bit cursor. Shares
+/// [`BitDecode`](macro@BitDecode)'s right-tool guard and `#[bit_stream(...)]`
+/// override.
+#[proc_macro_derive(BitEncode, attributes(bit_stream))]
+pub fn bit_encode(item: TokenStream) -> TokenStream {
+    bitstream::expand_encode(item)
+}
+
+/// **Spike (DESIGN §11 DD1):** the dispatch attribute — one struct, two backends.
+///
+/// Lowers to a `#[binrw]` struct, so byte-aligned fields keep the **full binrw
+/// surface** (`#[br]`/`#[bw]`/`#[brw]` with `magic`/`count`/`args`/…) handled by
+/// binrw, while a field marked `#[bits]` is a [`bits::BitDecode`]/[`bits::BitEncode`]
+/// region wired in through binrw's own `parse_with`/`write_with` escape hatch — so
+/// sub-byte regions ride inside an otherwise byte-aligned message.
+///
+/// ```ignore
+/// #[bitwire(big)]
+/// #[derive(Debug, PartialEq)]
+/// struct Burst {
+///     #[brw(magic = 0xCAFEu16)]   // pure binrw
+///     id: u16,
+///     #[bits]                     // bit codec: a byte-aligned region of sub-byte fields
+///     payload: BurstPayload,      // a #[derive(BitDecode, BitEncode)] struct
+///     crc: u16,                   // pure binrw
+/// }
+/// ```
+///
+/// Requires the `binrw` feature and that the dependent crate has `binrw` as a
+/// direct dependency. A `#[bits]` region must be byte-aligned overall (asserted at
+/// compile time). **Spike scope:** `big`/`little` only; no field-level bit groups
+/// or `#[update]`/`validate` yet (those live on `#[wire]`).
+#[cfg(feature = "binrw")]
+#[proc_macro_attribute]
+pub fn bitwire(attr: TokenStream, item: TokenStream) -> TokenStream {
+    bitstream::expand_bitwire(attr, item)
 }
 
 /// Generates a `derive_builder`-style builder for a struct (or, when listed in a

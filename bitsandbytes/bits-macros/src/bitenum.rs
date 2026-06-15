@@ -140,6 +140,10 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    // `From`/`TryFrom` against the primitive — `num_enum` parity, feature-
+    // independent (also present without binrw).
+    let conv = conv_impls(name, width, &unit, catch_all.is_some());
+
     Ok(quote! {
         impl #bits_path for #name {
             const BITS: u32 = <#width as #bits_path>::BITS;
@@ -162,7 +166,80 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         impl ::bits::BitEnum for #name {}
 
         #binrw
+        #conv
     })
+}
+
+/// Emits primitive interop for a byte-aligned enum — the `num_enum`
+/// `IntoPrimitive`/`FromPrimitive`/`TryFromPrimitive` parity:
+///
+/// - `From<Enum> for uN` — always (every variant maps to a value);
+/// - with a `#[catch_all]`, `From<uN> for Enum` — total, unknowns absorbed;
+/// - without one, `TryFrom<uN> for Enum` — rejects unknown discriminants with
+///   [`UnknownDiscriminant`](::bits::UnknownDiscriminant).
+///
+/// A sub-byte width (`u4`) gets nothing — nest it in a `#[bitfield]`. The
+/// conversions don't need binrw, so they're emitted in both feature configs.
+fn conv_impls(
+    name: &Ident,
+    width: &Type,
+    unit: &[(Ident, u128)],
+    has_catch_all: bool,
+) -> TokenStream2 {
+    if primitive_of(width).is_none() {
+        return quote!(); // sub-byte width: nest it in a #[bitfield]
+    }
+    let bits_path = quote!(::bits::__private::Bits);
+
+    // Enum -> primitive: total. `from_bits` performs the (lossless) down-cast,
+    // keeping `as` out of the expanded call site.
+    let into_prim = quote! {
+        impl ::core::convert::From<#name> for #width {
+            #[inline]
+            fn from(value: #name) -> Self {
+                <#width as #bits_path>::from_bits(<#name as #bits_path>::into_bits(value))
+            }
+        }
+    };
+
+    // primitive -> Enum: infallible `From` iff a catch-all can absorb unknowns,
+    // else a checked `TryFrom`.
+    let from_prim = if has_catch_all {
+        quote! {
+            impl ::core::convert::From<#width> for #name {
+                #[inline]
+                fn from(value: #width) -> Self {
+                    <#name as #bits_path>::from_bits(u128::from(value))
+                }
+            }
+        }
+    } else {
+        let arms = unit
+            .iter()
+            .map(|(id, disc)| quote!(#disc => ::core::result::Result::Ok(#name::#id)));
+        quote! {
+            impl ::core::convert::TryFrom<#width> for #name {
+                type Error = ::bits::__private::UnknownDiscriminant;
+                #[inline]
+                fn try_from(value: #width) -> ::core::result::Result<Self, Self::Error> {
+                    match u128::from(value) {
+                        #(#arms,)*
+                        other => ::core::result::Result::Err(
+                            ::bits::__private::UnknownDiscriminant {
+                                value: other,
+                                type_name: ::core::stringify!(#name),
+                            },
+                        ),
+                    }
+                }
+            }
+        }
+    };
+
+    quote! {
+        #into_prim
+        #from_prim
+    }
 }
 
 /// Emits binrw impls for an enum whose width is a byte-aligned primitive.

@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: this struct's fields are all byte-aligned, so the bit-stream codec (BitDecode/BitEncode) adds nothing over a byte codec: use `#[binrw]` or `#[wire]` instead (they also give magic/count/args/Vec/nested messages). Collapse adjacent sub-byte fields into a `#[bitfield]`/`#[wire] group(...)`. BitDecode/BitEncode are for fields that straddle byte boundaries in the stream (e.g. a 108-bit payload). To keep the bit-stream codec for an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.
+ --> tests/ui/bitstream_byte_aligned.rs:6:10
+  |
+6 | #[derive(BitDecode)]
+  |          ^^^^^^^^^ evaluation of `_` failed here

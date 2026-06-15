@@ -298,6 +298,60 @@ fn non_exhaustive_without_catch_all_panics_on_the_gap() {
     let _ = Incomplete::from_bits(2);
 }
 
+// Byte-aligned enums additionally get `From`/`TryFrom` against the primitive
+// (the `num_enum` parity), independent of the binrw feature.
+
+// Non-contiguous, with a catch-all: the `num_enum(catch_all)` shape — both
+// directions are infallible `From`.
+#[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
+#[bit_enum(u8)]
+#[repr(u8)]
+enum VendorId {
+    Acme = 1,
+    Globex = 7,
+    Initech = 200,
+    #[catch_all]
+    Unknown(u8),
+}
+
+// Exhaustively-named but missing values, no catch-all: primitive -> enum is a
+// checked `TryFrom`.
+#[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
+#[bit_enum(u16, bytes = be)]
+#[repr(u16)]
+enum Sparse16 {
+    A = 0,
+    B = 9,
+    C = 600,
+}
+
+#[test]
+fn catch_all_enum_converts_both_ways_infallibly() {
+    // Enum -> primitive.
+    assert_eq!(u8::from(VendorId::Globex), 7);
+    assert_eq!(u8::from(VendorId::Unknown(99)), 99);
+    // primitive -> enum is total: known named, unknown preserved losslessly.
+    assert_eq!(VendorId::from(7u8), VendorId::Globex);
+    assert_eq!(VendorId::from(99u8), VendorId::Unknown(99));
+    // Round-trips across the whole domain — what the hand-written test used to do.
+    for byte in 0u8..=255 {
+        assert_eq!(u8::from(VendorId::from(byte)), byte);
+    }
+}
+
+#[test]
+fn no_catch_all_enum_uses_checked_try_from() {
+    assert_eq!(u16::from(Sparse16::B), 9);
+    assert_eq!(Sparse16::try_from(600u16), Ok(Sparse16::C));
+    let err = Sparse16::try_from(5u16).unwrap_err();
+    assert_eq!(err.value, 5);
+    assert_eq!(err.type_name, "Sparse16");
+    assert_eq!(
+        err.to_string(),
+        "Sparse16 has no variant for discriminant 5"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // UInt boundaries and error paths.
 // ---------------------------------------------------------------------------

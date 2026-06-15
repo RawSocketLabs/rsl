@@ -2,6 +2,12 @@
 `bits` — ergonomic, fast bit/byte field types for binary protocol codecs, with
 first-class [`binrw`] integration.
 
+> **Direction → `bnb`.** An owned, bit-aware successor that drops the external
+> `binrw` dependency (and renames `bits` → `bnb`) is planned. Its target API is
+> documented in the `design_preview` module (build with `--features doc-preview`)
+> and in `ROADMAP.md`, and is **not yet implemented**. Everything below describes
+> the crate as it ships **today**.
+
 It provides three things, designed to *compose*:
 
 - **Arbitrary-width integers** ([`u1`]..[`u127`], via [`UInt`]) for sub-byte
@@ -94,24 +100,31 @@ dependency-light bit/byte library — the path to dropping `binrw` entirely.
 // evident exception, allowed at their module).
 #![deny(missing_docs)]
 
+pub mod bitstream;
 pub mod builder;
+/// Target-design rustdoc preview for the future `bnb` codec — doc-only, **not
+/// yet implemented**. Enabled by the `doc-preview` feature for review; see
+/// `ROADMAP.md`. Renders like binrw's `docs::attribute` reference.
+#[cfg(feature = "doc-preview")]
+pub mod design_preview;
 pub mod error;
 mod field;
 pub mod int;
 
+pub use bitstream::{BitDecode, BitEncode, BitError, BitReader, BitWriter, StreamBitReader};
 pub use builder::BuilderError;
-pub use error::{Error, Result};
+pub use error::{Error, Result, UnknownDiscriminant};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
 pub use int::{UInt, *};
 
 // Re-export the macros so users depend only on `bits`. A derive macro and a
 // trait may share a name (like `Debug`) — they live in different namespaces —
-// so `BitEnum` is both the derive and the marker trait below.
-pub use bits_macros::{BitEnum, BitsBuilder, bitfield, bitflags};
+// so `BitEnum`/`BitDecode`/`BitEncode` are each both a derive and a trait.
+pub use bits_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bitfield, bitflags};
 
-// `#[wire]` wraps binrw, so it exists only with the `binrw` feature.
+// `#[wire]`/`#[bitwire]` wrap binrw, so they exist only with the `binrw` feature.
 #[cfg(feature = "binrw")]
-pub use bits_macros::wire;
+pub use bits_macros::{bitwire, wire};
 
 /// Marker trait implemented by `#[derive(BitEnum)]` enums: a [`Bits`] value
 /// whose representation is an integer discriminant of a fixed width.
@@ -120,6 +133,10 @@ pub trait BitEnum: Bits {}
 /// Implementation details referenced by macro-generated code. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::bitstream::{BitDecode, BitEncode, BitError, BitReader, BitWriter};
+    #[cfg(feature = "binrw")]
+    pub use crate::bitstream::{read_bits_region, write_bits_region};
+    pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
 
     /// Re-export of `binrw` so generated `BinRead`/`BinWrite` impls can name it
