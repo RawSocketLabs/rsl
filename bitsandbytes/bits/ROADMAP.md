@@ -41,7 +41,7 @@ region, via binrw's `parse_with`/`write_with`). Proofs: `tests/bitstream_dmr.rs`
 
 Make the bit codec able to express a *whole* message, not just a fixed region.
 
-- [ ] **Entry points + builder** — `decode(&mut impl Source)` / `decode_exact` /
+- [x] **Entry points + builder** — `decode(&mut impl Source)` / `decode_exact` /
       `peek` / `decode_from`; `encode(&mut impl Sink)` / `to_bytes` / `encode_into`;
       and the required-by-default builder. `Source`/`Sink` start as `&[u8]` +
       `Read`/`Write`; the seek ladder is Phase 3. `Incomplete { needed: Option<usize> }`
@@ -131,6 +131,13 @@ order of need:
       Seek` so a `File` seeks via `io::Seek` + bit offset, no buffering — the
       file/container-format use case DESIGN §11 DD2 deferred. Designed now (preview
       + this entry), implemented when it earns its place.
+- [ ] **Optional `bytes` integration (feature-gated, off by default).** Real value
+      for async/tokio networking, but **not** in the core (dependency-light): an
+      opt-in `bytes` feature adds `Source`/`Sink` over `Buf`/`BufMut` (zero-copy
+      reads from `BytesMut`/`Bytes`/`Chain`) and `Bytes`/`BytesMut` as **zero-copy
+      payload** field types (vs the Phase-1 `Vec<u8>`/`[u8; N]`). Pairs with the
+      `Incomplete` retry loop for tokio-`Decoder`-style framing. Mirrors how `binrw`
+      is feature-gated; users off tokio never pull it in.
 
 **Exit:** forward-only streams need only `Read` (no `NoSeek` tax); seek-over-socket
 works bounded via `BufSource`; the large-file `Read + Seek` path is designed and
