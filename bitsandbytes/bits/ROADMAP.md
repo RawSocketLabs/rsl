@@ -158,8 +158,11 @@ histogram order; each is a checkbox with read + write + a test:
       `gen_encode`, shared with the derives) instead of lowering — so a `temp` field
       absent from the emitted struct can still drive the codec. `tests/bin_calc_temp.rs`
       + `ui/bin_temp_needs_calc`.
-- [ ] `parse_with` / `write_with` (×7) — keep as the escape hatch (already the
-      bridge primitive).
+- [x] `parse_with` / `write_with` (×7) — the field-level custom-codec escape hatch,
+      now **native** (no binrw): `#[br(parse_with = f)]` reads via `f(r) -> Result<T,
+      BitError>` and `#[bw(write_with = f)]` writes via `f(&self.field, w)`. A
+      parse_with without its inverse is a clear error; the field is treated as
+      custom-width (guard-exempt). `tests/bin_parse_with.rs`.
 - [x] `if` (×3) — `#[br(if(<cond>))]` on an `Option<T>` field: `Some(read)` when the
       condition (over earlier fields, as locals) holds, else `None`; on encode the
       `Option`'s presence drives the write (the read condition isn't re-evaluated).

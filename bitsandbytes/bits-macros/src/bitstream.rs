@@ -247,12 +247,18 @@ struct FieldBr {
     /// `Result`); they are mutually exclusive.
     map: Option<syn::Expr>,
     try_map: Option<syn::Expr>,
+    /// `#[br(parse_with = <f>)]` — the escape hatch: `f(r) -> Result<T, BitError>`
+    /// reads the field with a custom function (`f: fn<S: Source>(&mut S) -> …`).
+    parse_with: Option<syn::Expr>,
     /// `#[bw(calc = <expr>)]` — on encode, write `expr` (computed from the other
     /// fields) instead of `self.field`. The matched read/write pair is generated
     /// together so the directions can't drift.
     calc: Option<syn::Expr>,
     /// `#[bw(map = <f>)]` — on encode, write `f(&self.field)` (the wire value).
     bw_map: Option<syn::Expr>,
+    /// `#[bw(write_with = <f>)]` — the escape hatch: `f(&self.field, w) -> Result<(),
+    /// BitError>` writes the field with a custom function.
+    write_with: Option<syn::Expr>,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -265,6 +271,7 @@ enum BrDirective {
     If(syn::Expr),
     Map(syn::Expr),
     TryMap(syn::Expr),
+    ParseWith(syn::Expr),
 }
 
 impl Parse for BrDirective {
@@ -297,9 +304,13 @@ impl Parse for BrDirective {
                     input.parse::<Token![=]>()?;
                     Ok(BrDirective::TryMap(input.parse()?))
                 }
+                "parse_with" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::ParseWith(input.parse()?))
+                }
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, or `try_map`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, or `parse_with`",
                 )),
             }
         }
@@ -322,6 +333,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::If(e) => br.cond = Some(e),
                     BrDirective::Map(e) => br.map = Some(e),
                     BrDirective::TryMap(e) => br.try_map = Some(e),
+                    BrDirective::ParseWith(e) => br.parse_with = Some(e),
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -332,9 +344,12 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 } else if meta.path.is_ident("map") {
                     br.bw_map = Some(meta.value()?.parse()?);
                     Ok(())
+                } else if meta.path.is_ident("write_with") {
+                    br.write_with = Some(meta.value()?.parse()?);
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bw(...)]` directive; expected `calc = <expr>` or `map = <f>`",
+                        "unknown `#[bw(...)]` directive; expected `calc = <expr>`, `map = <f>`, or `write_with = <f>`",
                     ))
                 }
             })?;
@@ -375,11 +390,17 @@ fn field_is_conditional(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.cond.is_some())
 }
 
-/// Whether a field is `map`/`try_map`-transformed. The field type isn't `Bits`
-/// (the wire type lives in the converter), so its width is indeterminate too.
+/// Whether a field has a custom codec (`map`/`try_map`/`parse_with`/`write_with`).
+/// Its type isn't necessarily `Bits` (the wire shape lives in the converter/fn), so
+/// its width is indeterminate.
 fn field_is_mapped(f: &syn::Field) -> bool {
-    parse_field_br(f)
-        .is_ok_and(|br| br.map.is_some() || br.try_map.is_some() || br.bw_map.is_some())
+    parse_field_br(f).is_ok_and(|br| {
+        br.map.is_some()
+            || br.try_map.is_some()
+            || br.bw_map.is_some()
+            || br.parse_with.is_some()
+            || br.write_with.is_some()
+    })
 }
 
 /// A reserved field — on the wire (its type gives the width) but not stored: read
@@ -520,6 +541,11 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         );
     }
+    // `parse_with`: the escape hatch — a custom `f(r) -> Result<T, BitError>`.
+    if let Some(f) = &br.parse_with {
+        return Ok(quote!(let #id: #ty = (#f)(r)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+    }
     if let Some(elem) = vec_elem(f) {
         let count = br.count.ok_or_else(|| {
             syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
@@ -632,10 +658,21 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         );
     }
+    // `write_with`: the escape hatch — a custom `f(&self.field, w) -> Result<()>`.
+    if let Some(f) = &br.write_with {
+        return Ok(quote!((#f)(&self.#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+    }
     if br.map.is_some() || br.try_map.is_some() {
         return Err(syn::Error::new_spanned(
             f,
             "a `#[br(map = …)]`/`#[br(try_map = …)]` field needs the inverse `#[bw(map = <f>)]` to encode",
+        ));
+    }
+    if br.parse_with.is_some() {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(parse_with = …)]` field needs the inverse `#[bw(write_with = <f>)]` to encode",
         ));
     }
     // `if(...)`: a conditional `Option<T>` — write the inner value iff present (the
