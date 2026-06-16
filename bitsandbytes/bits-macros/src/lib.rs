@@ -171,6 +171,29 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
     bitstream::expand_encode(item)
 }
 
+/// `#[bin]` — the unified native bit-codec attribute (Phase 2). One macro that
+/// folds the codec (`BitDecode`/`BitEncode`) and the required-by-default builder.
+///
+/// ```ignore
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq)]
+/// struct Frame {
+///     version: u4,
+///     #[builder(default)] flags: u4,
+///     payload_len: u12,
+/// }
+/// // -> Frame::decode/peek/decode_exact, encode/to_bytes, and Frame::builder()
+/// ```
+///
+/// Struct-level options: `read_only` / `write_only` (directional), `no_builder`,
+/// `bit_order = msb|lsb`, `allow_byte_aligned`. Field directives
+/// (`#[br]`/`#[bw]`/`#[brw]`, …) arrive in later Phase 2 chunks. It lowers to
+/// `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which stay usable directly.
+#[proc_macro_attribute]
+pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    bitstream::expand_bin(attr, item)
+}
+
 /// **Spike (DESIGN §11 DD1):** the dispatch attribute — one struct, two backends.
 ///
 /// Lowers to a `#[binrw]` struct, so byte-aligned fields keep the **full binrw

@@ -20,6 +20,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
+use syn::parse::Parser;
 use syn::{
     Data, DeriveInput, Fields, FieldsNamed, Ident, ItemStruct, parse_macro_input, parse_quote,
 };
@@ -273,6 +274,105 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 <Self as ::bits::BitEncode>::bit_encode(self, w)
             }
         }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `#[bin]` — the unified codec attribute (Phase 2 foundation, ROADMAP).
+//
+// One macro that folds codec + builder. It *lowers* to the existing
+// `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream(...)]`, so the
+// field-directive logic lives in those derives and `#[bin]` is a thin, zero-
+// duplication front-end (the same shape as `#[wire]` lowering to `#[binrw]`).
+// Field directives (`#[br]`/`#[bw]`/`#[brw]`) are added in later chunks and ride
+// through as derive helper attributes. (Trait rename BitDecode->Decode: Phase 5.)
+// ---------------------------------------------------------------------------
+
+/// Parsed struct-level `#[bin(...)]` options.
+#[derive(Default)]
+struct BinArgs {
+    read_only: bool,
+    write_only: bool,
+    no_builder: bool,
+    lsb: bool,
+    allow_byte_aligned: bool,
+}
+
+/// Entry for `#[bin(...)]`.
+pub fn expand_bin(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match bin_inner(attr, item) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> {
+    let mut args = BinArgs::default();
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("read_only") {
+            args.read_only = true;
+        } else if meta.path.is_ident("write_only") {
+            args.write_only = true;
+        } else if meta.path.is_ident("no_builder") {
+            args.no_builder = true;
+        } else if meta.path.is_ident("allow_byte_aligned") {
+            args.allow_byte_aligned = true;
+        } else if meta.path.is_ident("bit_order") {
+            let v: Ident = meta.value()?.parse()?;
+            match v.to_string().as_str() {
+                "msb" => args.lsb = false,
+                "lsb" => args.lsb = true,
+                _ => return Err(meta.error("expected `msb` or `lsb`")),
+            }
+        } else {
+            return Err(meta.error(
+                "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
+                 no_builder, bit_order = msb|lsb, allow_byte_aligned",
+            ));
+        }
+        Ok(())
+    });
+    Parser::parse(parser, attr)?;
+
+    let s: ItemStruct = syn::parse(item)?;
+    if args.read_only && args.write_only {
+        return Err(syn::Error::new_spanned(
+            &s.ident,
+            "`read_only` and `write_only` are mutually exclusive",
+        ));
+    }
+
+    // Lower to the codec/builder derives. read_only ⇒ Decode only (no builder);
+    // write_only ⇒ Encode + builder; default ⇒ both + builder.
+    let mut derives: Vec<TokenStream2> = Vec::new();
+    if !args.write_only {
+        derives.push(quote!(::bits::BitDecode));
+    }
+    if !args.read_only {
+        derives.push(quote!(::bits::BitEncode));
+        if !args.no_builder {
+            derives.push(quote!(::bits::BitsBuilder));
+        }
+    }
+
+    // Lower the struct-level options to a `#[bit_stream(...)]` helper attribute.
+    let mut bs: Vec<TokenStream2> = Vec::new();
+    if args.lsb {
+        bs.push(quote!(bit_order = lsb));
+    }
+    if args.allow_byte_aligned {
+        bs.push(quote!(allow_byte_aligned));
+    }
+    let bit_stream = if bs.is_empty() {
+        quote!()
+    } else {
+        quote!(#[bit_stream(#(#bs),*)])
+    };
+
+    Ok(quote! {
+        #[derive(#(#derives),*)]
+        #bit_stream
+        #s
     })
 }
 

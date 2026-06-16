@@ -78,6 +78,10 @@ Stop *forwarding* directives to binrw and start *interpreting* them against the
 cursor, folding the spike's `#[wire]`/`#[bitwire]` into a single `#[bin]`. Build in
 histogram order; each is a checkbox with read + write + a test:
 
+- [x] **Foundation: `#[bin]` macro** — one attribute folding codec + builder
+      (`read_only`/`write_only`/`no_builder`/`bit_order`/`allow_byte_aligned`),
+      lowering to `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream]`.
+      The directives below ride through as derive helper attributes.
 - [ ] `magic` (×214) — read-and-verify / write a constant (bit or byte width).
 - [ ] `pre_assert` (×84) — precondition (dual-use: assertion on *construction*/
       opt-in, never a hard parser reject).

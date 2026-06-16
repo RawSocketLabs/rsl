@@ -122,7 +122,7 @@ pub use int::{UInt, *};
 // Re-export the macros so users depend only on `bits`. A derive macro and a
 // trait may share a name (like `Debug`) — they live in different namespaces —
 // so `BitEnum`/`BitDecode`/`BitEncode` are each both a derive and a trait.
-pub use bits_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bitfield, bitflags};
+pub use bits_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bin, bitfield, bitflags};
 
 // `#[wire]`/`#[bitwire]` wrap binrw, so they exist only with the `binrw` feature.
 #[cfg(feature = "binrw")]
