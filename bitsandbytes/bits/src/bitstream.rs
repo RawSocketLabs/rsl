@@ -1196,6 +1196,111 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
 
 impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
 
+/// Zero-copy `bytes`-crate adapters (the `bytes` feature): own a `Bytes` frame to
+/// decode, encode into a `BytesMut` you `freeze()` to a `Bytes` — the async/tokio
+/// framing case. Off by default so the core stays dependency-light.
+#[cfg(feature = "bytes")]
+mod bytes_io {
+    use super::{BitError, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source};
+
+    /// A [`SeekSource`](super::SeekSource) that **owns** a `bytes::Bytes` frame (no
+    /// borrow), decoding bits from it. Constructing it from a `Bytes` is a refcount
+    /// bump (zero copy).
+    #[derive(Clone, Debug)]
+    pub struct BytesReader {
+        data: bytes::Bytes,
+        bit_pos: usize,
+        layout: Layout,
+    }
+
+    impl BytesReader {
+        /// Owns `data`, positioned at bit 0, MSB-first big-endian.
+        #[must_use]
+        pub fn new(data: bytes::Bytes) -> Self {
+            Self::with_layout(data, Layout::default())
+        }
+
+        /// Owns `data` with the given [`Layout`](super::Layout).
+        #[must_use]
+        pub fn with_layout(data: bytes::Bytes, layout: Layout) -> Self {
+            Self {
+                data,
+                bit_pos: 0,
+                layout,
+            }
+        }
+    }
+
+    impl Source for BytesReader {
+        fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+            let mut br = BitReader::with_layout(&self.data, self.layout);
+            br.seek_to_bit(self.bit_pos)?;
+            let v = br.read_bits(n)?;
+            self.bit_pos = Source::bit_pos(&br);
+            Ok(v)
+        }
+        fn bit_pos(&self) -> usize {
+            self.bit_pos
+        }
+        fn byte_order(&self) -> ByteOrder {
+            self.layout.byte
+        }
+        fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+            self.bit_pos = pos;
+            Ok(())
+        }
+    }
+
+    impl SeekSource for BytesReader {}
+
+    /// A [`Sink`](super::Sink) that encodes into a `bytes::BytesMut`; [`freeze`]
+    /// hands off a zero-copy `Bytes`.
+    ///
+    /// [`freeze`]: BytesWriter::freeze
+    #[derive(Clone, Debug, Default)]
+    pub struct BytesWriter {
+        inner: BitWriter,
+    }
+
+    impl BytesWriter {
+        /// An empty MSB-first, big-endian writer.
+        #[must_use]
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// An empty writer in the given [`Layout`](super::Layout).
+        #[must_use]
+        pub fn with_layout(layout: Layout) -> Self {
+            Self {
+                inner: BitWriter::with_layout(layout),
+            }
+        }
+
+        /// The encoded bytes as a zero-copy `Bytes` (the final partial byte is
+        /// zero-padded).
+        #[must_use]
+        pub fn freeze(self) -> bytes::Bytes {
+            bytes::Bytes::from(self.inner.into_bytes())
+        }
+    }
+
+    impl Sink for BytesWriter {
+        fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
+            self.inner.write_bits(value, n)
+        }
+        fn bit_pos(&self) -> usize {
+            Sink::bit_pos(&self.inner)
+        }
+        fn byte_order(&self) -> ByteOrder {
+            Sink::byte_order(&self.inner)
+        }
+    }
+}
+
+#[cfg(feature = "bytes")]
+pub use bytes_io::{BytesReader, BytesWriter};
+
 /// binrw bridge: `parse_with`/`write_with` helpers that embed a bit-decoded
 /// region inside a `#[binrw]`/`#[bitwire]` struct. This is the **dispatch seam**
 /// — binrw owns the byte-aligned stream (magic/count/args/…), these hand a

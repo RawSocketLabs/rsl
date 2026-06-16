@@ -117,6 +117,10 @@ pub use bitstream::{
     StreamBitReader,
 };
 
+/// Zero-copy `bytes`-crate adapters (the `bytes` feature).
+#[cfg(feature = "bytes")]
+pub use bitstream::{BytesReader, BytesWriter};
+
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
 /// `3.bytes()`) used by `#[br(pad_before = …)]` etc.
 pub mod prelude {

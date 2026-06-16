@@ -227,17 +227,17 @@ order of need:
 - [x] **3b: large seekable files.** `SeekReader<R: Read + Seek>` — a `SeekSource`
       that seeks via `io::Seek` to the byte holding the bit cursor, no buffering (the
       file/container-format case). `tests/bin_seek_reader.rs`.
-- [ ] **Optional `bytes` integration (feature-gated, off by default).** Real value
-      for async/tokio networking, but **not** in the core (dependency-light): an
-      opt-in `bytes` feature adds `Source`/`Sink` over `Buf`/`BufMut` (zero-copy
-      reads from `BytesMut`/`Bytes`/`Chain`) and `Bytes`/`BytesMut` as **zero-copy
-      payload** field types (vs the Phase-1 `Vec<u8>`/`[u8; N]`). Pairs with the
-      `Incomplete` retry loop for tokio-`Decoder`-style framing. Mirrors how `binrw`
-      is feature-gated; users off tokio never pull it in.
+- [x] **Optional `bytes` integration (feature-gated, off by default).** The `bytes`
+      feature adds `BytesReader` (a `SeekSource` that **owns** a `Bytes` frame — a
+      refcount-bump construct) and `BytesWriter` (a `Sink` that `freeze()`s to a
+      zero-copy `Bytes`) — the async/tokio framing path, pairing with the `Incomplete`
+      retry loop. Off by default so the core stays dependency-light. `tests/bin_bytes.rs`.
+      (`Bytes`/`BytesMut` as zero-copy *payload field types* in the macro are an
+      additive follow-on when a tokio consumer lands.)
 
-**Exit:** forward-only streams need only `Read` (no `NoSeek` tax); seek-over-socket
-works bounded via `BufSource`; the large-file `Read + Seek` path is designed and
-scheduled.
+**Exit ✓ (achieved):** forward-only streams need only `Source` (no `NoSeek` tax);
+seek-over-socket works bounded via `BufSource`; the large-file `Read + Seek` path
+(`SeekReader`) and the opt-in `bytes` adapters are implemented.
 
 ## Phase 4 — Reach parity, drop the binrw dependency
 

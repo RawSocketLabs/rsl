@@ -15,11 +15,17 @@ bits-macros = { workspace = true }
 # re-exports binrw for the generated code to reference. Off => a standalone,
 # dependency-light bit/byte library (the path to dropping binrw entirely).
 binrw = { workspace = true, optional = true }
+# Optional: zero-copy `Source`/`Sink` over the `bytes` crate (own a `Bytes` frame to
+# decode, encode to a `Bytes` to send) — for async/tokio framing. Off by default so
+# the core stays dependency-light; users off tokio never pull it in.
+bytes = { workspace = true, optional = true }
 
 [features]
 default = ["binrw"]
 # Generate binrw integration for `#[bitfield]` / `#[derive(BitEnum)]` types.
 binrw = ["dep:binrw", "bits-macros/binrw"]
+# `bytes`-crate adapters (`BytesReader`/`BytesWriter`).
+bytes = ["dep:bytes"]
 # Renders the `bnb` target-design rustdoc preview (doc-only modules, no code, not
 # yet implemented). Review with:
 #   RUSTC_WRAPPER= cargo doc -p bits --features doc-preview --no-deps --open
