@@ -1,0 +1,13 @@
+error: group fields must be consecutive and in declared order; `c` does not immediately follow the previous group member in the struct body
+ --> tests/ui/group_not_consecutive.rs:3:22
+  |
+3 | #[wire(big, group(a, c => u8))]
+  |                      ^
+
+warning: unused import: `u4`
+ --> tests/ui/group_not_consecutive.rs:1:17
+  |
+1 | use bnb::{wire, u4};
+  |                 ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

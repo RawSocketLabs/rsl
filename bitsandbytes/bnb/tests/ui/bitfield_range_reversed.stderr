@@ -1,0 +1,5 @@
+error: `#[bits(15..=11)]` is reversed; write the range low..=high (i.e. `11..=15`)
+ --> tests/ui/bitfield_range_reversed.rs:8:5
+  |
+8 |     opcode: bnb::u5,
+  |     ^^^^^^
