@@ -69,5 +69,9 @@ required-features = ["binrw"]
 name = "bitfield_bench"
 harness = false
 
+[[bench]]
+name = "bitstream_bench"
+harness = false
+
 [lints]
 workspace = true
