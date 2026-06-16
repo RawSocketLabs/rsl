@@ -59,11 +59,18 @@ Make the bit codec able to express a *whole* message, not just a fixed region.
       they break the const `BIT_LEN` and need the `FixedLen`-trait split.
 - [x] **Position-aware errors** — carry bit offset + field name in `BitError`
       (the runtime analogue of binrw's error spans).
-- [ ] **Coverage** — proptest `encode∘decode = id`; golden vectors for a real
-      bit protocol.
+- [x] **Coverage** — proptest `encode∘decode = id` over random field values; a
+      golden byte vector; known-sync recognition + unknown-sync preservation
+      (`tests/bitstream_dmr_frame.rs`).
 
-**Exit:** a complete DMR *frame* (sync search + slot type + embedded signalling),
-not just one burst, parses and round-trips with **no binrw**.
+**Exit ✓ (achieved):** a complete DMR *frame* — slot type + a 264-bit nested
+burst (with a 48-bit sync `BitEnum`) + a CRC payload — round-trips with **no
+binrw** (`tests/bitstream_dmr_frame.rs`).
+
+> **Phase 1 deferrals → Phase 2** (refinement, as agreed): drop the `#[nested]`
+> marker via universal `Bits` impls; variable `Vec`/`count` payloads (with the
+> `BIT_LEN`→`FixedLen` split); `StreamBitReader` LSB + mixed-order nesting; dotted
+> error paths (`outer.inner.leaf`); the `bytes` feature (Phase 3).
 
 ## Phase 2 — The owned `br`/`bw`/`brw` attribute surface
 
