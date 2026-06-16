@@ -8,9 +8,10 @@
 //! crate supports (the maximum width is 128 bits).
 
 /// Byte order of a bitfield's backing integer when it is serialized.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ByteOrder {
-    /// Most-significant byte first (network order).
+    /// Most-significant byte first (network order). The default.
+    #[default]
     Big,
     /// Least-significant byte first.
     Little,

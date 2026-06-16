@@ -114,8 +114,11 @@ histogram order; each is a checkbox with read + write + a test:
       hook) instead of `#[derive(BitsBuilder)]`. `tests/bin_validate.rs` +
       `ui/bin_validate_needs_builder`. (`skip_validation()` convenience deferred —
       the literal already bypasses; binrw's *read-side* pre_assert stays a non-goal.)
-- [ ] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — unify with the
-      bit codec.
+- [x] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — a `Layout` (bit +
+      byte order) threads through the cursors and `Source`/`Sink` (so it flows through
+      nesting/map/magic). `#[bin(little)]` byte-swaps **byte-multiple** values (binrw's
+      rule); sub-byte/straddling widths are unaffected. `apply_byte_order` is its own
+      inverse (read/write share it). `tests/bin_byte_order.rs` (wire-visible golden).
 - [x] `map` / `try_map` (×46) — `#[br(map = <f>)]` reads the wire value (`f`'s arg
       type) and transforms it to the field type; `#[br(try_map = <f>)]` is fallible
       (a conversion error → `ErrorKind::Convert`). `#[bw(map = <f>)]` is the inverse

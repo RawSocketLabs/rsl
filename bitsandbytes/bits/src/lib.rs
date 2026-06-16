@@ -112,8 +112,8 @@ mod field;
 pub mod int;
 
 pub use bitstream::{
-    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, FixedBitLen, Sink, Source,
-    StreamBitReader,
+    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, FixedBitLen, Layout, Sink,
+    Source, StreamBitReader,
 };
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
@@ -137,8 +137,8 @@ pub trait BitEnum: Bits {}
 #[doc(hidden)]
 pub mod __private {
     pub use crate::bitstream::{
-        BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Sink, Source, bits_of,
-        decode_consume, decode_exact, decode_exact_with, decode_peek, encode_to_vec,
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, Sink, Source,
+        bits_of, decode_consume, decode_exact, decode_exact_with, decode_peek, encode_to_vec,
         encode_to_vec_with, encode_to_writer, read_byte_array, read_mapped, read_try_mapped,
         verify_magic, write_byte_array, write_mapped,
     };

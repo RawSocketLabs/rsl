@@ -107,6 +107,8 @@ struct BitStreamAttrs {
     allow_byte_aligned: bool,
     /// `bit_order = lsb` (else MSB-first, the default).
     lsb: bool,
+    /// `little` / `byte_order = little` (else big-endian, the default).
+    little: bool,
     /// `magic = <expr>` — a leading constant verified on read, emitted on write.
     /// Any `Bits` value, so it can be sub-byte (`u3::new(0b110)`) unlike binrw.
     magic: Option<syn::Expr>,
@@ -132,6 +134,14 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                         _ => return Err(meta.error("expected `msb` or `lsb`")),
                     }
                     Ok(())
+                } else if meta.path.is_ident("byte_order") {
+                    let val: Ident = meta.value()?.parse()?;
+                    match val.to_string().as_str() {
+                        "big" => attrs.little = false,
+                        "little" => attrs.little = true,
+                        _ => return Err(meta.error("expected `big` or `little`")),
+                    }
+                    Ok(())
                 } else if meta.path.is_ident("magic") {
                     attrs.magic = Some(meta.value()?.parse()?);
                     Ok(())
@@ -143,7 +153,7 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, `magic = <expr>`, or `ctx(name: Ty, …)`",
+                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, `byte_order = big|little`, `magic = <expr>`, or `ctx(name: Ty, …)`",
                     ))
                 }
             })?;
@@ -152,13 +162,19 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
     Ok(attrs)
 }
 
-/// The runtime `BitOrder` token for the struct's declared order.
-fn order_token(attrs: &BitStreamAttrs) -> TokenStream2 {
-    if attrs.lsb {
+/// The runtime [`Layout`](bits::Layout) (bit + byte order) for the struct.
+fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
+    let bit = if attrs.lsb {
         quote!(::bits::__private::BitOrder::Lsb)
     } else {
         quote!(::bits::__private::BitOrder::Msb)
-    }
+    };
+    let byte = if attrs.little {
+        quote!(::bits::__private::ByteOrder::Little)
+    } else {
+        quote!(::bits::__private::ByteOrder::Big)
+    };
+    quote!(::bits::__private::Layout { bit: #bit, byte: #byte })
 }
 
 /// Whether a field is a **nested message** (marked `#[nested]`) — a
@@ -715,7 +731,7 @@ fn gen_decode(
         attrs.allow_byte_aligned || indeterminate,
         attrs.magic.as_ref(),
     );
-    let order = order_token(attrs);
+    let layout = layout_token(attrs);
     // `magic`: a leading constant read and verified before the fields. Its width
     // (inferred from the value's type) joins `BIT_LEN`.
     let (magic_read, magic_bits) = match &attrs.magic {
@@ -769,7 +785,7 @@ fn gen_decode(
                     bytes: &[u8],
                     __ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                    ::bits::__private::decode_exact_with(bytes, #order, |r| Self::decode_with(r, __ctx))
+                    ::bits::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx))
                 }
             }
         });
@@ -805,15 +821,15 @@ fn gen_decode(
         impl #name {
             #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed (the tail stays in `buf`; transactional on error)."]
             pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_consume(buf, #order)
+                ::bits::__private::decode_consume(buf, #layout)
             }
             #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
             pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_peek(bytes, #order)
+                ::bits::__private::decode_peek(bytes, #layout)
             }
             #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
             pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_exact(bytes, #order)
+                ::bits::__private::decode_exact(bytes, #layout)
             }
             #[doc = "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."]
             pub fn decode_from<S: ::bits::__private::Source>(
@@ -859,7 +875,7 @@ fn gen_encode(
         attrs.allow_byte_aligned || indeterminate,
         attrs.magic.as_ref(),
     );
-    let order = order_token(attrs);
+    let layout = layout_token(attrs);
     // `magic`: emit the leading constant before the fields (matched read/write).
     let magic_write = match &attrs.magic {
         Some(m) => quote! {
@@ -905,7 +921,7 @@ fn gen_encode(
                     &self,
                     __ctx: #ctx_name,
                 ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
-                    ::bits::__private::encode_to_vec_with(#order, |w| self.encode_with(w, __ctx))
+                    ::bits::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx))
                 }
             }
         });
@@ -930,11 +946,11 @@ fn gen_encode(
                 &self,
                 w: &mut W,
             ) -> ::core::result::Result<(), ::bits::__private::BitError> {
-                ::bits::__private::encode_to_writer(self, w, #order)
+                ::bits::__private::encode_to_writer(self, w, #layout)
             }
             #[doc = "Encode to a `Vec<u8>`."]
             pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
-                ::bits::__private::encode_to_vec(self, #order)
+                ::bits::__private::encode_to_vec(self, #layout)
             }
             #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
             pub fn encode_into<K: ::bits::__private::Sink>(
@@ -965,6 +981,7 @@ struct BinArgs {
     write_only: bool,
     no_builder: bool,
     lsb: bool,
+    little: bool,
     allow_byte_aligned: bool,
     magic: Option<syn::Expr>,
     ctx: Vec<(Ident, Type)>,
@@ -1000,6 +1017,10 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
                 "lsb" => args.lsb = true,
                 _ => return Err(meta.error("expected `msb` or `lsb`")),
             }
+        } else if meta.path.is_ident("big") {
+            args.little = false;
+        } else if meta.path.is_ident("little") {
+            args.little = true;
         } else if meta.path.is_ident("magic") {
             args.magic = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("ctx") {
@@ -1012,8 +1033,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, bit_order = msb|lsb, magic = <expr>, ctx(name: Ty, …), \
-                 validate = <path>, allow_byte_aligned",
+                 no_builder, big, little, bit_order = msb|lsb, magic = <expr>, \
+                 ctx(name: Ty, …), validate = <path>, allow_byte_aligned",
             ));
         }
         Ok(())
@@ -1050,6 +1071,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     let attrs = BitStreamAttrs {
         allow_byte_aligned: args.allow_byte_aligned,
         lsb: args.lsb,
+        little: args.little,
         magic: args.magic.clone(),
         ctx: args.ctx.clone(),
     };

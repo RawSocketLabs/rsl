@@ -8,8 +8,9 @@
 //! read/write any [`Bits`] value (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`)
 //! directly — bit-aware *and* fast (shift/mask, no `bitvec`).
 //!
-//! Bit order is big-endian / MSB-first (bit 0 is the high bit of byte 0), which
-//! is what RFC/ETSI ASCII-art layouts mean. LSB-first is future work.
+//! The wire [`Layout`] is configurable: bit order (MSB-first default — bit 0 is the
+//! high bit of byte 0, the RFC/ETSI convention — or LSB-first) and byte order (big-
+//! endian default, or little-endian for byte-multiple values).
 //!
 //! ```
 //! use bits::{u4, u12, BitReader, BitWriter};
@@ -28,7 +29,7 @@
 
 use core::fmt;
 
-use crate::field::{BitOrder, Bits};
+use crate::field::{BitOrder, Bits, ByteOrder};
 
 /// A position-aware bit-codec error — the runtime analogue of binrw's error
 /// spans. It records the **bit offset** where decoding/encoding failed and, when
@@ -246,6 +247,36 @@ where
     w.write(f(value))
 }
 
+/// The wire layout: bit packing order **and** byte order, threaded through the
+/// cursors and entry points. `#[bin(big|little)]` and `#[bin(bit_order = msb|lsb)]`
+/// set it; the default is MSB-first, big-endian (RFC/network order).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Layout {
+    /// Bit packing order — does the first bit land in the high or low bit.
+    pub bit: BitOrder,
+    /// Byte order, applied to byte-multiple values.
+    pub byte: ByteOrder,
+}
+
+/// Reverses the low `bits / 8` bytes of `raw` when little-endian and the width is a
+/// whole number of bytes (binrw applies byte order only to byte-multiple types); a
+/// no-op for big-endian or sub-byte widths. It is its own inverse, so read and
+/// write share it.
+fn apply_byte_order(raw: u128, bits: u32, byte: ByteOrder) -> u128 {
+    if byte == ByteOrder::Big || bits % 8 != 0 {
+        return raw;
+    }
+    let n = (bits / 8) as usize;
+    let le = raw.to_le_bytes();
+    let mut out = 0u128;
+    let mut i = 0;
+    while i < n {
+        out |= (le[i] as u128) << (8 * (n - 1 - i));
+        i += 1;
+    }
+    out
+}
+
 /// A cursor that reads values at arbitrary bit offsets from a byte slice, in a
 /// chosen [`BitOrder`] (MSB-first by default — `bit 0` is the high bit of byte 0,
 /// the RFC/ETSI ASCII-art convention; LSB-first for serial/PHY layers).
@@ -254,22 +285,36 @@ pub struct BitReader<'a> {
     bytes: &'a [u8],
     bit_pos: usize,
     order: BitOrder,
+    byte: ByteOrder,
 }
 
 impl<'a> BitReader<'a> {
-    /// Wraps `bytes`, positioned at bit 0, **MSB-first**.
+    /// Wraps `bytes`, positioned at bit 0, **MSB-first**, big-endian.
     #[must_use]
     pub fn new(bytes: &'a [u8]) -> Self {
         Self::with_order(bytes, BitOrder::Msb)
     }
 
-    /// Wraps `bytes`, positioned at bit 0, in the given bit order.
+    /// Wraps `bytes`, positioned at bit 0, in the given bit order (big-endian).
     #[must_use]
     pub fn with_order(bytes: &'a [u8], order: BitOrder) -> Self {
+        Self::with_layout(
+            bytes,
+            Layout {
+                bit: order,
+                byte: ByteOrder::Big,
+            },
+        )
+    }
+
+    /// Wraps `bytes`, positioned at bit 0, in the given [`Layout`] (bit + byte order).
+    #[must_use]
+    pub fn with_layout(bytes: &'a [u8], layout: Layout) -> Self {
         Self {
             bytes,
             bit_pos: 0,
-            order,
+            order: layout.bit,
+            byte: layout.byte,
         }
     }
 
@@ -329,12 +374,14 @@ impl<'a> BitReader<'a> {
         Ok(acc)
     }
 
-    /// Reads one [`Bits`] value of its declared width.
+    /// Reads one [`Bits`] value of its declared width, applying the byte order to a
+    /// byte-multiple value.
     ///
     /// # Errors
     /// As [`read_bits`](Self::read_bits).
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
-        Ok(T::from_bits(self.read_bits(T::BITS)?))
+        let raw = self.read_bits(T::BITS)?;
+        Ok(T::from_bits(apply_byte_order(raw, T::BITS, self.byte)))
     }
 
     /// Moves the cursor to absolute bit `pos`. Unlike binrw, this needs no `Seek`
@@ -372,22 +419,33 @@ pub struct BitWriter {
     bytes: Vec<u8>,
     bit_pos: usize,
     order: BitOrder,
+    byte: ByteOrder,
 }
 
 impl BitWriter {
-    /// An empty **MSB-first** writer.
+    /// An empty **MSB-first**, big-endian writer.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// An empty writer in the given bit order.
+    /// An empty writer in the given bit order (big-endian).
     #[must_use]
     pub fn with_order(order: BitOrder) -> Self {
+        Self::with_layout(Layout {
+            bit: order,
+            byte: ByteOrder::Big,
+        })
+    }
+
+    /// An empty writer in the given [`Layout`] (bit + byte order).
+    #[must_use]
+    pub fn with_layout(layout: Layout) -> Self {
         Self {
             bytes: Vec::new(),
             bit_pos: 0,
-            order,
+            order: layout.bit,
+            byte: layout.byte,
         }
     }
 
@@ -425,12 +483,14 @@ impl BitWriter {
         Ok(())
     }
 
-    /// Appends one [`Bits`] value of its declared width.
+    /// Appends one [`Bits`] value of its declared width, applying the byte order to
+    /// a byte-multiple value.
     ///
     /// # Errors
     /// As [`write_bits`](Self::write_bits).
     pub fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        self.write_bits(value.into_bits(), T::BITS)
+        let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte);
+        self.write_bits(raw, T::BITS)
     }
 
     /// Consumes the writer, returning the packed bytes.
@@ -454,12 +514,22 @@ pub trait Source {
     /// The current absolute bit offset (for position-aware errors).
     fn bit_pos(&self) -> usize;
 
-    /// Reads one [`Bits`] value of its declared width.
+    /// The byte order applied to a byte-multiple value (default big-endian).
+    fn byte_order(&self) -> ByteOrder {
+        ByteOrder::Big
+    }
+
+    /// Reads one [`Bits`] value of its declared width, applying the byte order.
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
     fn read<T: Bits>(&mut self) -> Result<T, BitError> {
-        Ok(T::from_bits(self.read_bits(T::BITS)?))
+        let raw = self.read_bits(T::BITS)?;
+        Ok(T::from_bits(apply_byte_order(
+            raw,
+            T::BITS,
+            self.byte_order(),
+        )))
     }
 }
 
@@ -475,12 +545,18 @@ pub trait Sink {
     /// The number of bits written so far.
     fn bit_pos(&self) -> usize;
 
-    /// Appends one [`Bits`] value of its declared width.
+    /// The byte order applied to a byte-multiple value (default big-endian).
+    fn byte_order(&self) -> ByteOrder {
+        ByteOrder::Big
+    }
+
+    /// Appends one [`Bits`] value of its declared width, applying the byte order.
     ///
     /// # Errors
     /// As [`write_bits`](Sink::write_bits).
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        self.write_bits(value.into_bits(), T::BITS)
+        let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte_order());
+        self.write_bits(raw, T::BITS)
     }
 }
 
@@ -491,6 +567,9 @@ impl Source for BitReader<'_> {
     fn bit_pos(&self) -> usize {
         self.bit_pos
     }
+    fn byte_order(&self) -> ByteOrder {
+        self.byte
+    }
 }
 
 impl Sink for BitWriter {
@@ -499,6 +578,9 @@ impl Sink for BitWriter {
     }
     fn bit_pos(&self) -> usize {
         self.bit_pos
+    }
+    fn byte_order(&self) -> ByteOrder {
+        self.byte
     }
 }
 
@@ -547,9 +629,9 @@ pub trait BitEncode {
 /// # Errors
 /// Propagates the decode [`BitError`].
 #[doc(hidden)]
-pub fn decode_consume<T: BitDecode>(buf: &mut &[u8], order: BitOrder) -> Result<T, BitError> {
+pub fn decode_consume<T: BitDecode>(buf: &mut &[u8], layout: Layout) -> Result<T, BitError> {
     let input = core::mem::take(buf);
-    let mut r = BitReader::with_order(input, order);
+    let mut r = BitReader::with_layout(input, layout);
     match T::bit_decode(&mut r) {
         Ok(v) => {
             *buf = &input[r.bit_pos().div_ceil(8)..];
@@ -568,8 +650,8 @@ pub fn decode_consume<T: BitDecode>(buf: &mut &[u8], order: BitOrder) -> Result<
 /// # Errors
 /// Propagates the decode [`BitError`].
 #[doc(hidden)]
-pub fn decode_peek<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, BitError> {
-    T::bit_decode(&mut BitReader::with_order(bytes, order))
+pub fn decode_peek<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<T, BitError> {
+    T::bit_decode(&mut BitReader::with_layout(bytes, layout))
 }
 
 /// `decode_exact` over a caller-supplied decode closure rather than the
@@ -579,11 +661,11 @@ pub fn decode_peek<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, Bit
 /// # Errors
 /// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the closure's error.
 #[doc(hidden)]
-pub fn decode_exact_with<T, F>(bytes: &[u8], order: BitOrder, f: F) -> Result<T, BitError>
+pub fn decode_exact_with<T, F>(bytes: &[u8], layout: Layout, f: F) -> Result<T, BitError>
 where
     F: FnOnce(&mut BitReader) -> Result<T, BitError>,
 {
-    let mut r = BitReader::with_order(bytes, order);
+    let mut r = BitReader::with_layout(bytes, layout);
     let v = f(&mut r)?;
     let consumed = r.bit_pos().div_ceil(8);
     if consumed < bytes.len() {
@@ -603,11 +685,11 @@ where
 /// # Errors
 /// Propagates the closure's [`BitError`].
 #[doc(hidden)]
-pub fn encode_to_vec_with<F>(order: BitOrder, f: F) -> Result<Vec<u8>, BitError>
+pub fn encode_to_vec_with<F>(layout: Layout, f: F) -> Result<Vec<u8>, BitError>
 where
     F: FnOnce(&mut BitWriter) -> Result<(), BitError>,
 {
-    let mut w = BitWriter::with_order(order);
+    let mut w = BitWriter::with_layout(layout);
     f(&mut w)?;
     Ok(w.into_bytes())
 }
@@ -618,8 +700,8 @@ where
 /// # Errors
 /// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the decode error.
 #[doc(hidden)]
-pub fn decode_exact<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, BitError> {
-    let mut r = BitReader::with_order(bytes, order);
+pub fn decode_exact<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<T, BitError> {
+    let mut r = BitReader::with_layout(bytes, layout);
     let v = T::bit_decode(&mut r)?;
     let consumed = r.bit_pos().div_ceil(8);
     if consumed < bytes.len() {
@@ -638,8 +720,8 @@ pub fn decode_exact<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, Bi
 /// # Errors
 /// Propagates the encode [`BitError`].
 #[doc(hidden)]
-pub fn encode_to_vec<T: BitEncode>(value: &T, order: BitOrder) -> Result<Vec<u8>, BitError> {
-    let mut w = BitWriter::with_order(order);
+pub fn encode_to_vec<T: BitEncode>(value: &T, layout: Layout) -> Result<Vec<u8>, BitError> {
+    let mut w = BitWriter::with_layout(layout);
     value.bit_encode(&mut w)?;
     Ok(w.into_bytes())
 }
@@ -652,9 +734,9 @@ pub fn encode_to_vec<T: BitEncode>(value: &T, order: BitOrder) -> Result<Vec<u8>
 pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
     value: &T,
     w: &mut W,
-    order: BitOrder,
+    layout: Layout,
 ) -> Result<(), BitError> {
-    let mut bw = BitWriter::with_order(order);
+    let mut bw = BitWriter::with_layout(layout);
     value.bit_encode(&mut bw)?;
     let at = bw.bit_len();
     w.write_all(&bw.into_bytes())
