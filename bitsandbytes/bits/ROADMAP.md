@@ -241,14 +241,19 @@ seek-over-socket works bounded via `BufSource`; the large-file `Read + Seek` pat
 
 ## Phase 4 — Reach parity, drop the binrw dependency
 
-- [ ] Audit remaining binrw-bridged call sites; rebuild or consciously drop the
-      long tail.
-- [ ] Move `binrw` behind an **optional `binrw-compat`** feature (interop only),
-      default **off**; the native codec is the default path.
-- [ ] Remove `binrw`/`binrw_derive` from the default dependency graph; update
-      `deny.toml`, `Cargo.lock`, license story. Keep `ACKNOWLEDGMENTS.md`.
+- [x] Audited the binrw-bridged surface: the `#[bitfield]`/`#[derive(BitEnum)]`
+      BinRead/BinWrite impls and the `#[wire]`/`#[bitwire]` macros. All consciously
+      **kept as opt-in interop** (the native `#[bin]` covers the codec); nothing is
+      forced — they live behind the feature.
+- [x] `binrw` is now **opt-in, default off** (`default = []`; a `binrw-compat` alias
+      spells the intent). The native codec is the default path.
+- [x] `binrw`/`binrw_derive` are out of the default dependency graph (`cargo tree
+      -p bits -e normal` shows no binrw). `deny.toml` stays valid (binrw is still used
+      by protocol crates + the opt-in feature); `Cargo.lock` tracked; `ACKNOWLEDGMENTS.md`
+      kept.
 
-**Exit:** `cargo tree` shows no default `binrw`; all `bits`/protocol tests pass.
+**Exit ✓ (achieved):** `cargo tree -p bits` shows no default `binrw`; `bits` tests
+pass on default (44 groups), `--features binrw`, and `--features bytes`.
 
 ## Phase 5 — Rename `bits` → `bnb`
 

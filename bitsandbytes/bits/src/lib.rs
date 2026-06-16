@@ -73,10 +73,12 @@ These are independent knobs, which is the whole point:
 - `bytes = be | le` — endianness of the backing integer when serialized.
   Default: `be`.
 
-# binrw integration (the `binrw` feature, on by default)
+# binrw integration (the `binrw` feature — **opt-in interop, off by default**)
 
-With the feature on, `#[bitfield]` and `#[derive(BitEnum)]` types implement
-[`binrw::BinRead`]/[`binrw::BinWrite`] using their declared byte order, so:
+The native `#[bin]` codec is the default path; `binrw` is opt-in interop only (so a
+`bits` dependency pulls no binrw by default). With the feature on, `#[bitfield]` and
+`#[derive(BitEnum)]` types implement [`binrw::BinRead`]/[`binrw::BinWrite`] using
+their declared byte order, so:
 
 ```ignore
 #[binrw]
@@ -88,8 +90,8 @@ struct Header {
 }
 ```
 
-Turn the feature off (`default-features = false`) for a standalone,
-dependency-light bit/byte library — the path to dropping `binrw` entirely.
+Enable it with `features = ["binrw"]` (or the `binrw-compat` alias) for interop;
+otherwise you get a standalone, dependency-light bit/byte library.
 
 [`binrw`]: https://docs.rs/binrw
 [`binrw::BinRead`]: https://docs.rs/binrw/latest/binrw/trait.BinRead.html
