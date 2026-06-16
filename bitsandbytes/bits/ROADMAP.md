@@ -138,9 +138,12 @@ histogram order; each is a checkbox with read + write + a test:
 - [ ] `restore_position` (×2), `pad_*`/`align_*`, `seek` — position ops with
       **typed** amounts (`N.bits()`/`N.bytes()`, `bnb::prelude`, composable); free on
       the cursor (DD2).
-- [ ] `#[reserved]` / `#[reserved = expr]` — explicit reserved members (default
-      `0`/`expr`; preserved on decode, settable, count toward fill-exactly). A
-      verified-on-read reserved constant is `magic` instead.
+- [x] `#[reserved]` / `#[reserved_with(<expr>)]` — reserved bits: on the wire (the
+      field type gives the width, so they count toward `BIT_LEN`/the guard) but not
+      stored. Read and discarded (lenient — a non-zero value isn't rejected; use
+      `magic` for an enforced constant); written as the type's zero / `<expr>`.
+      Dropped from the struct and builder (like `temp`, but auto-written). `#[bin]`
+      only. `tests/bin_reserved.rs`.
 - [ ] Directional codecs — `#[bin(read_only)]` / `#[bin(write_only)]` flags
       (read_only ⇒ `Decode` only; write_only ⇒ `Encode` + builder).
 - [ ] `validate` — opt-in, **Builder-bound** `fn(&Builder) -> Result<(), impl

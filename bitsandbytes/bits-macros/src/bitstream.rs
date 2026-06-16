@@ -8,9 +8,10 @@
 //! the bit-stream codec composes with the rest of the crate's macros. Nested
 //! `#[nested]` messages, `[u8; N]` payloads, `magic`, `#[br(count = …)]` `Vec`s,
 //! `ctx` parameterization, `#[br(temp)]`/`#[bw(calc = …)]`, `#[br(if(…))]`
-//! conditional `Option`s, and `#[br(map/try_map = …)]`/`#[bw(map = …)]` transforms
-//! are supported (`temp`/`calc` via `#[bin]`, which generates the codec directly);
-//! the rest of the `#[br]`/`#[bw]` surface is in progress.
+//! conditional `Option`s, `#[br(map/try_map = …)]`/`#[bw(map = …)]` transforms, and
+//! `#[reserved]`/`#[reserved_with(…)]` bits are supported (`temp`/`calc`/`reserved`
+//! via `#[bin]`, which generates the codec directly); the rest of the
+//! `#[br]`/`#[bw]` surface is in progress.
 //!
 //! ## Right-tool guard
 //!
@@ -353,6 +354,37 @@ fn field_is_mapped(f: &syn::Field) -> bool {
         .is_ok_and(|br| br.map.is_some() || br.try_map.is_some() || br.bw_map.is_some())
 }
 
+/// A reserved field — on the wire (its type gives the width) but not stored: read
+/// and discarded (lenient), written as a constant.
+enum Reserved {
+    /// `#[reserved]` — written as the type's zero value.
+    Zero,
+    /// `#[reserved_with(<expr>)]` — written as `<expr>` (e.g. a must-be-one pattern).
+    With(Box<syn::Expr>),
+}
+
+/// Parses a field's `#[reserved]` / `#[reserved_with(<expr>)]`, if present.
+fn field_reserved(f: &syn::Field) -> syn::Result<Option<Reserved>> {
+    for attr in &f.attrs {
+        if attr.path().is_ident("reserved") {
+            return Ok(Some(Reserved::Zero));
+        }
+        if attr.path().is_ident("reserved_with") {
+            return Ok(Some(Reserved::With(Box::new(attr.parse_args()?))));
+        }
+    }
+    Ok(None)
+}
+
+/// Whether a field is reserved (`#[reserved]`/`#[reserved_with]`). Reserved fields
+/// have a fixed width (their type's), so — unlike `temp` — they still count toward
+/// `BIT_LEN` and the guard; they are just not stored.
+fn field_is_reserved(f: &syn::Field) -> bool {
+    f.attrs
+        .iter()
+        .any(|a| a.path().is_ident("reserved") || a.path().is_ident("reserved_with"))
+}
+
 /// Whether a field attribute is a codec-only helper (`#[nested]`/`#[br]`/`#[bw]`).
 /// `#[bin]` strips these from the struct it emits — it generates the codec impls
 /// directly, so (unlike the derive path) nothing registers them as helper attrs.
@@ -405,6 +437,13 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     let br = parse_field_br(f)?;
+    // `#[reserved]`: consume the bits but discard the value (lenient — a non-zero
+    // reserved value is not rejected; use `magic` to enforce one).
+    if field_is_reserved(f) {
+        return Ok(
+            quote!(let _: #ty = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        );
+    }
     // `if(<cond>)`: a conditional `Option<T>`. `cond` is over earlier fields (as
     // locals). `Some(read)` when it holds, else `None` (consuming nothing).
     if let Some(cond) = &br.cond {
@@ -511,6 +550,19 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
 fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
+    // `#[reserved]`: write the type's zero (or the `reserved_with` value), pinned to
+    // the field's type so the width is unambiguous.
+    if let Some(reserved) = field_reserved(f)? {
+        let value = match reserved {
+            Reserved::Zero => quote!(<#ty as ::bits::__private::Bits>::from_bits(0)),
+            Reserved::With(expr) => {
+                let expr = *expr;
+                quote!({ let __r: #ty = #expr; __r })
+            }
+        };
+        return Ok(quote!(::bits::__private::Sink::write(w, #value)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+    }
     let br = parse_field_br(f)?;
     // `calc`: write a value computed from the other fields rather than `self.#id`,
     // pinned to the field's declared type so the wire width is unambiguous.
@@ -680,7 +732,7 @@ fn gen_decode(
     let ids: Vec<&Ident> = fields
         .named
         .iter()
-        .filter(|f| !field_is_temp(f))
+        .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
         .map(|f| f.ident.as_ref().expect("named field"))
         .collect();
     let read_stmts = fields
@@ -816,7 +868,7 @@ fn gen_encode(
     let field_set: Vec<&Ident> = fields
         .named
         .iter()
-        .filter(|f| !field_is_temp(f))
+        .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
         .map(|f| f.ident.as_ref().expect("named field"))
         .collect();
     let writes = fields
@@ -1010,7 +1062,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         named.named = named
             .named
             .iter()
-            .filter(|f| !field_is_temp(f))
+            .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
             .cloned()
             .map(|mut f| {
                 f.attrs.retain(|a| !is_codec_field_attr(a));

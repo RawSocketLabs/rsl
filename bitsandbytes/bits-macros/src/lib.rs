@@ -158,7 +158,10 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 /// time (every field a whole number of bytes ⇒ the cursor never leaves byte
 /// boundaries ⇒ `#[binrw]`/`#[wire]` is the better tool). Override with the
 /// struct-level `#[bit_stream(allow_byte_aligned)]` when you really mean it.
-#[proc_macro_derive(BitDecode, attributes(bit_stream, nested, br, bw, brw))]
+#[proc_macro_derive(
+    BitDecode,
+    attributes(bit_stream, nested, br, bw, brw, reserved, reserved_with)
+)]
 pub fn bit_decode(item: TokenStream) -> TokenStream {
     bitstream::expand_decode(item)
 }
@@ -167,7 +170,10 @@ pub fn bit_decode(item: TokenStream) -> TokenStream {
 /// the struct's named fields in order to a [`bits::BitWriter`] bit cursor. Shares
 /// [`BitDecode`](macro@BitDecode)'s right-tool guard and `#[bit_stream(...)]`
 /// override.
-#[proc_macro_derive(BitEncode, attributes(bit_stream, nested, br, bw, brw))]
+#[proc_macro_derive(
+    BitEncode,
+    attributes(bit_stream, nested, br, bw, brw, reserved, reserved_with)
+)]
 pub fn bit_encode(item: TokenStream) -> TokenStream {
     bitstream::expand_encode(item)
 }
