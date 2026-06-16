@@ -462,6 +462,33 @@ pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
         .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
 }
 
+/// Reads a fixed `[u8; N]` byte array (`N * 8` bits) from the cursor. Backs a
+/// `[u8; N]` payload field; `N` is inferred from the field type. Variable-length
+/// payloads (`Vec` + `count`) are Phase 2.
+///
+/// # Errors
+/// Propagates the source's [`BitError`].
+#[doc(hidden)]
+pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], BitError> {
+    let mut arr = [0u8; N];
+    for b in &mut arr {
+        *b = r.read_bits(8)? as u8;
+    }
+    Ok(arr)
+}
+
+/// Writes a fixed `[u8; N]` byte array. Backs a `[u8; N]` payload field.
+///
+/// # Errors
+/// Propagates the sink's [`BitError`].
+#[doc(hidden)]
+pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Result<(), BitError> {
+    for &b in arr {
+        w.write_bits(u128::from(b), 8)?;
+    }
+    Ok(())
+}
+
 /// **Spike (DESIGN §11 DD3):** a *forward-only* bit reader over any
 /// [`std::io::Read`] — the streaming counterpart to the in-memory [`BitReader`].
 ///

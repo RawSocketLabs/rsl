@@ -51,8 +51,10 @@ Make the bit codec able to express a *whole* message, not just a fixed region.
 - [x] **Nested `BitDecode` messages** — a `BitDecode` field inside another (the
       derive must call `BitDecode::bit_decode`, not just `Bits::read`, for
       non-`Bits` fields). Resolve the leaf-vs-message dispatch in the derive.
-- [ ] **Payload fields** — `Vec<u8>`/`[u8; N]`/`Vec<T: BitDecode>` with a
-      length/count source (sets up `count`).
+- [x] **Fixed payload fields** — `[u8; N]` byte arrays (read/written even at a
+      non-byte-aligned offset; `N * 8` toward `BIT_LEN`). Variable `Vec<u8>`/
+      `Vec<T>` + `count` are **Phase 2** (where the `count` attribute lives), since
+      they break the const `BIT_LEN` and need the `FixedLen`-trait split.
 - [x] **Position-aware errors** — carry bit offset + field name in `BitError`
       (the runtime analogue of binrw's error spans).
 - [ ] **Coverage** — proptest `encode∘decode = id`; golden vectors for a real

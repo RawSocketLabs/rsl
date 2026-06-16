@@ -82,13 +82,27 @@ fn is_nested(f: &syn::Field) -> bool {
     f.attrs.iter().any(|a| a.path().is_ident("nested"))
 }
 
+/// If the field is a fixed `[u8; N]` byte array, returns its length expression.
+fn byte_array_len(f: &syn::Field) -> Option<&syn::Expr> {
+    if let syn::Type::Array(arr) = &f.ty {
+        if let syn::Type::Path(p) = &*arr.elem {
+            if p.path.is_ident("u8") {
+                return Some(&arr.len);
+            }
+        }
+    }
+    None
+}
+
 /// The bit-width expression for a field: a nested message contributes its
-/// `BIT_LEN`, a `Bits` leaf its `BITS`. Resolved by the compiler (the macro
-/// never computes widths), matching how `#[bitfield]` guards its layout.
+/// `BIT_LEN`, a fixed `[u8; N]` byte array `N * 8`, a `Bits` leaf its `BITS`.
+/// Resolved by the compiler (the macro never computes widths).
 fn field_width(f: &syn::Field) -> TokenStream2 {
     let ty = &f.ty;
     if is_nested(f) {
         quote!(<#ty as ::bits::__private::BitDecode>::BIT_LEN)
+    } else if let Some(len) = byte_array_len(f) {
+        quote!(((#len) as u32 * 8))
     } else {
         quote!(<#ty as ::bits::__private::Bits>::BITS)
     }
@@ -130,6 +144,9 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         // Attach the field name to any error for a position-aware "span".
         if is_nested(f) {
             quote!(#id: <#ty as ::bits::__private::BitDecode>::bit_decode(r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
+        } else if byte_array_len(f).is_some() {
+            quote!(#id: ::bits::__private::read_byte_array(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?)
         } else {
             quote!(#id: r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?)
@@ -187,6 +204,9 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         let ty = &f.ty;
         if is_nested(f) {
             quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else if byte_array_len(f).is_some() {
+            quote!(::bits::__private::write_byte_array(&self.#id, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
             quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
