@@ -55,24 +55,49 @@ fn named_struct(input: &DeriveInput) -> syn::Result<&FieldsNamed> {
     }
 }
 
-/// Whether `#[bit_stream(allow_byte_aligned)]` opts out of the guard.
-fn allow_byte_aligned(input: &DeriveInput) -> syn::Result<bool> {
-    let mut allow = false;
+/// Parsed struct-level `#[bit_stream(...)]` options.
+#[derive(Default)]
+struct BitStreamAttrs {
+    /// `allow_byte_aligned` — opt out of the right-tool guard.
+    allow_byte_aligned: bool,
+    /// `bit_order = lsb` (else MSB-first, the default).
+    lsb: bool,
+}
+
+fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
+    let mut attrs = BitStreamAttrs::default();
     for attr in &input.attrs {
         if attr.path().is_ident("bit_stream") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("allow_byte_aligned") {
-                    allow = true;
+                    attrs.allow_byte_aligned = true;
+                    Ok(())
+                } else if meta.path.is_ident("bit_order") {
+                    let val: Ident = meta.value()?.parse()?;
+                    match val.to_string().as_str() {
+                        "msb" => attrs.lsb = false,
+                        "lsb" => attrs.lsb = true,
+                        _ => return Err(meta.error("expected `msb` or `lsb`")),
+                    }
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`",
+                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned` or `bit_order = msb|lsb`",
                     ))
                 }
             })?;
         }
     }
-    Ok(allow)
+    Ok(attrs)
+}
+
+/// The runtime `BitOrder` token for the struct's declared order.
+fn order_token(attrs: &BitStreamAttrs) -> TokenStream2 {
+    if attrs.lsb {
+        quote!(::bits::__private::BitOrder::Lsb)
+    } else {
+        quote!(::bits::__private::BitOrder::Msb)
+    }
 }
 
 /// Whether a field is a **nested message** (marked `#[nested]`) — a
@@ -136,7 +161,9 @@ pub fn expand_decode(item: TokenStream) -> TokenStream {
 fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
-    let guard = alignment_guard(fields, allow_byte_aligned(input)?);
+    let attrs = parse_bit_stream(input)?;
+    let guard = alignment_guard(fields, attrs.allow_byte_aligned);
+    let order = order_token(&attrs);
     let widths = fields.named.iter().map(field_width);
     let reads = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
@@ -167,15 +194,15 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         impl #name {
             #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed (the tail stays in `buf`; transactional on error)."]
             pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_consume(buf)
+                ::bits::__private::decode_consume(buf, #order)
             }
             #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
             pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_peek(bytes)
+                ::bits::__private::decode_peek(bytes, #order)
             }
             #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
             pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bits::__private::BitError> {
-                ::bits::__private::decode_exact(bytes)
+                ::bits::__private::decode_exact(bytes, #order)
             }
             #[doc = "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."]
             pub fn decode_from<S: ::bits::__private::Source>(
@@ -198,7 +225,9 @@ pub fn expand_encode(item: TokenStream) -> TokenStream {
 fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
-    let guard = alignment_guard(fields, allow_byte_aligned(input)?);
+    let attrs = parse_bit_stream(input)?;
+    let guard = alignment_guard(fields, attrs.allow_byte_aligned);
+    let order = order_token(&attrs);
     let writes = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
         let ty = &f.ty;
@@ -230,11 +259,11 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 &self,
                 w: &mut W,
             ) -> ::core::result::Result<(), ::bits::__private::BitError> {
-                ::bits::__private::encode_to_writer(self, w)
+                ::bits::__private::encode_to_writer(self, w, #order)
             }
             #[doc = "Encode to a `Vec<u8>`."]
             pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
-                ::bits::__private::encode_to_vec(self)
+                ::bits::__private::encode_to_vec(self, #order)
             }
             #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
             pub fn encode_into<K: ::bits::__private::Sink>(

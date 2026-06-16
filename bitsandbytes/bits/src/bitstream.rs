@@ -28,7 +28,7 @@
 
 use core::fmt;
 
-use crate::field::Bits;
+use crate::field::{BitOrder, Bits};
 
 /// A position-aware bit-codec error — the runtime analogue of binrw's error
 /// spans. It records the **bit offset** where decoding/encoding failed and, when
@@ -139,19 +139,31 @@ impl fmt::Display for BitError {
 
 impl std::error::Error for BitError {}
 
-/// A big-endian / MSB-first cursor that reads values at arbitrary bit offsets
-/// from a byte slice.
+/// A cursor that reads values at arbitrary bit offsets from a byte slice, in a
+/// chosen [`BitOrder`] (MSB-first by default — `bit 0` is the high bit of byte 0,
+/// the RFC/ETSI ASCII-art convention; LSB-first for serial/PHY layers).
 #[derive(Clone, Debug)]
 pub struct BitReader<'a> {
     bytes: &'a [u8],
     bit_pos: usize,
+    order: BitOrder,
 }
 
 impl<'a> BitReader<'a> {
-    /// Wraps `bytes`, positioned at bit 0.
+    /// Wraps `bytes`, positioned at bit 0, **MSB-first**.
     #[must_use]
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, bit_pos: 0 }
+        Self::with_order(bytes, BitOrder::Msb)
+    }
+
+    /// Wraps `bytes`, positioned at bit 0, in the given bit order.
+    #[must_use]
+    pub fn with_order(bytes: &'a [u8], order: BitOrder) -> Self {
+        Self {
+            bytes,
+            bit_pos: 0,
+            order,
+        }
     }
 
     /// The current absolute bit offset.
@@ -186,11 +198,26 @@ impl<'a> BitReader<'a> {
             ));
         }
         let mut acc: u128 = 0;
-        for _ in 0..n {
-            let byte = self.bytes[self.bit_pos >> 3];
-            let bit = (byte >> (7 - (self.bit_pos & 7))) & 1;
-            acc = (acc << 1) | u128::from(bit);
-            self.bit_pos += 1;
+        match self.order {
+            // MSB-first: first bit read is the field's most-significant.
+            BitOrder::Msb => {
+                for _ in 0..n {
+                    let byte = self.bytes[self.bit_pos >> 3];
+                    let bit = (byte >> (7 - (self.bit_pos & 7))) & 1;
+                    acc = (acc << 1) | u128::from(bit);
+                    self.bit_pos += 1;
+                }
+            }
+            // LSB-first: `bit 0` is a byte's low bit; first bit read is the field's
+            // least-significant.
+            BitOrder::Lsb => {
+                for i in 0..n {
+                    let byte = self.bytes[self.bit_pos >> 3];
+                    let bit = (byte >> (self.bit_pos & 7)) & 1;
+                    acc |= u128::from(bit) << i;
+                    self.bit_pos += 1;
+                }
+            }
         }
         Ok(acc)
     }
@@ -230,19 +257,31 @@ impl<'a> BitReader<'a> {
     }
 }
 
-/// A big-endian / MSB-first sink that appends values at arbitrary bit offsets,
-/// growing a byte buffer (the final partial byte is zero-padded).
+/// A sink that appends values at arbitrary bit offsets in a chosen [`BitOrder`]
+/// (MSB-first by default), growing a byte buffer (the final partial byte is
+/// zero-padded).
 #[derive(Clone, Debug, Default)]
 pub struct BitWriter {
     bytes: Vec<u8>,
     bit_pos: usize,
+    order: BitOrder,
 }
 
 impl BitWriter {
-    /// An empty writer.
+    /// An empty **MSB-first** writer.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// An empty writer in the given bit order.
+    #[must_use]
+    pub fn with_order(order: BitOrder) -> Self {
+        Self {
+            bytes: Vec::new(),
+            bit_pos: 0,
+            order,
+        }
     }
 
     /// Bits written so far.
@@ -251,7 +290,7 @@ impl BitWriter {
         self.bit_pos
     }
 
-    /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
+    /// Appends the low `n` (`<= 128`) bits of `value`, in the writer's bit order.
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`.
@@ -260,13 +299,19 @@ impl BitWriter {
         if n > 128 {
             return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
         }
-        for i in (0..n).rev() {
+        for k in 0..n {
+            // MSB-first emits the field's high bit first (i = n-1-k); LSB-first
+            // emits its low bit first (i = k) into the byte's low bit.
+            let (i, shift) = match self.order {
+                BitOrder::Msb => (n - 1 - k, 7 - (self.bit_pos & 7)),
+                BitOrder::Lsb => (k, self.bit_pos & 7),
+            };
             let byte_idx = self.bit_pos >> 3;
             if byte_idx == self.bytes.len() {
                 self.bytes.push(0);
             }
             if (value >> i) & 1 != 0 {
-                self.bytes[byte_idx] |= 1 << (7 - (self.bit_pos & 7));
+                self.bytes[byte_idx] |= 1 << shift;
             }
             self.bit_pos += 1;
         }
@@ -389,9 +434,9 @@ pub trait BitEncode {
 /// # Errors
 /// Propagates the decode [`BitError`].
 #[doc(hidden)]
-pub fn decode_consume<T: BitDecode>(buf: &mut &[u8]) -> Result<T, BitError> {
+pub fn decode_consume<T: BitDecode>(buf: &mut &[u8], order: BitOrder) -> Result<T, BitError> {
     let input = core::mem::take(buf);
-    let mut r = BitReader::new(input);
+    let mut r = BitReader::with_order(input, order);
     match T::bit_decode(&mut r) {
         Ok(v) => {
             *buf = &input[r.bit_pos().div_ceil(8)..];
@@ -410,8 +455,8 @@ pub fn decode_consume<T: BitDecode>(buf: &mut &[u8]) -> Result<T, BitError> {
 /// # Errors
 /// Propagates the decode [`BitError`].
 #[doc(hidden)]
-pub fn decode_peek<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
-    T::bit_decode(&mut BitReader::new(bytes))
+pub fn decode_peek<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, BitError> {
+    T::bit_decode(&mut BitReader::with_order(bytes, order))
 }
 
 /// Decodes and requires every **whole byte** consumed; a sub-byte tail in the
@@ -420,8 +465,8 @@ pub fn decode_peek<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
 /// # Errors
 /// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the decode error.
 #[doc(hidden)]
-pub fn decode_exact<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
-    let mut r = BitReader::new(bytes);
+pub fn decode_exact<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, BitError> {
+    let mut r = BitReader::with_order(bytes, order);
     let v = T::bit_decode(&mut r)?;
     let consumed = r.bit_pos().div_ceil(8);
     if consumed < bytes.len() {
@@ -440,8 +485,8 @@ pub fn decode_exact<T: BitDecode>(bytes: &[u8]) -> Result<T, BitError> {
 /// # Errors
 /// Propagates the encode [`BitError`].
 #[doc(hidden)]
-pub fn encode_to_vec<T: BitEncode>(value: &T) -> Result<Vec<u8>, BitError> {
-    let mut w = BitWriter::new();
+pub fn encode_to_vec<T: BitEncode>(value: &T, order: BitOrder) -> Result<Vec<u8>, BitError> {
+    let mut w = BitWriter::with_order(order);
     value.bit_encode(&mut w)?;
     Ok(w.into_bytes())
 }
@@ -454,8 +499,9 @@ pub fn encode_to_vec<T: BitEncode>(value: &T) -> Result<Vec<u8>, BitError> {
 pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
     value: &T,
     w: &mut W,
+    order: BitOrder,
 ) -> Result<(), BitError> {
-    let mut bw = BitWriter::new();
+    let mut bw = BitWriter::with_order(order);
     value.bit_encode(&mut bw)?;
     let at = bw.bit_len();
     w.write_all(&bw.into_bytes())

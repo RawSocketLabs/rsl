@@ -21,9 +21,10 @@ pub enum ByteOrder {
 ///
 /// Most network protocols (and the ASCII-art layouts in their RFCs) are
 /// most-significant-first, so [`Msb`](BitOrder::Msb) is the crate default.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum BitOrder {
     /// First field in the high bits (network / RFC-diagram order). The default.
+    #[default]
     Msb,
     /// First field in the low bits.
     Lsb,

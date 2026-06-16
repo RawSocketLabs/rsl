@@ -46,8 +46,10 @@ Make the bit codec able to express a *whole* message, not just a fixed region.
       and the required-by-default builder. `Source`/`Sink` start as `&[u8]` +
       `Read`/`Write`; the seek ladder is Phase 3. `Incomplete { needed: Option<usize> }`
       streaming signal.
-- [ ] **LSB-first bit order** (today MSB-only) — a `#[bin(bit_order = lsb)]` knob
-      (per-struct); mirror `#[bitfield]`'s `bits = msb|lsb`.
+- [x] **LSB-first bit order** — `#[bit_stream(bit_order = lsb)]` (per-struct; the
+      `#[bin(...)]` spelling arrives with the Phase 2 macro). BitReader/BitWriter are
+      order-aware; order flows through nesting via Source/Sink. `StreamBitReader`
+      LSB + mixed-order nesting are Phase 2.
 - [x] **Nested `BitDecode` messages** — a `BitDecode` field inside another (the
       derive must call `BitDecode::bit_decode`, not just `Bits::read`, for
       non-`Bits` fields). Resolve the leaf-vs-message dispatch in the derive.
