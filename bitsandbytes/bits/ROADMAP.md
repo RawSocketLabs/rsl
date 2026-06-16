@@ -91,7 +91,12 @@ histogram order; each is a checkbox with read + write + a test:
 - [ ] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — unify with the
       bit codec.
 - [ ] `map` / `try_map` (×46) — value transform on read/write.
-- [ ] `count` (×32) — count-driven `Vec` (depends on Phase 1 payloads).
+- [x] `count` (×32) — `#[br(count = <expr>)]` on a `Vec<T>` (leaf or `#[nested]`
+      elements); `expr` may name an earlier field. Forced the `BIT_LEN`→`FixedBitLen`
+      split: `BitDecode` drops the const; a fixed message *also* impls `FixedBitLen`,
+      a `count`-bearing one does not (trybuild `ui/bin_count_not_fixed`). Reads grow
+      the `Vec` without untrusted pre-allocation. `tests/bin_count.rs`. (Pairing with
+      `temp`/`calc` so the length field isn't stored: the `calc`/`temp` chunk.)
 - [ ] `ctx` (binrw `args`/`import`, ×25/×19) — parameterized parse, **Layer 1**:
       declare `#[bin(ctx(...))]`, pass `#[br(ctx { … })]`; lower to generated
       **inherent** `Type::decode_with(src, ctx)` + a `Ctx` struct, with the macro

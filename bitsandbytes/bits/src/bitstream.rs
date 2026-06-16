@@ -440,18 +440,24 @@ impl Sink for BitWriter {
 
 /// A message decoded from a bit stream — the recursion point a
 /// `#[derive(BitDecode)]` struct implements (reading each field in declaration
-/// order). Leaf fields are any [`Bits`] type; nested messages recurse.
+/// order). Leaf fields are any [`Bits`] type; nested messages recurse. Fixed- or
+/// variable-length; a fixed-length message *also* implements [`FixedBitLen`].
 pub trait BitDecode: Sized {
-    /// Total bit width of the message — the sum of its fields' widths. The derive
-    /// computes it from `<Field as Bits>::BITS`; used to size a byte region when
-    /// the message is embedded in a byte stream (see `#[bitwire]`).
-    const BIT_LEN: u32;
-
     /// Decodes `Self` from any [`Source`], advancing its cursor.
     ///
     /// # Errors
     /// Propagates the source's [`BitError`].
     fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError>;
+}
+
+/// A message whose encoded length is a **compile-time constant** — i.e. it has no
+/// variable-length (`count`-driven `Vec`) field. The derive implements this only
+/// for fixed messages; it sizes a fixed byte region when the message is embedded
+/// in a byte stream (the binrw bridge / `#[bitwire]`). A `count`-bearing message
+/// implements [`BitDecode`]/[`BitEncode`] but **not** this.
+pub trait FixedBitLen {
+    /// Total encoded width of the message in bits — the sum of its fields' widths.
+    const BIT_LEN: u32;
 }
 
 /// A message encoded to a bit stream — the dual of [`BitDecode`].
@@ -683,11 +689,11 @@ mod binrw_bridge {
     /// I/O errors from the reader, or a [`BitError`] wrapped as `binrw::Error::Custom`.
     pub fn read_bits_region<T, R>(reader: &mut R, _endian: Endian, _args: ()) -> BinResult<T>
     where
-        T: BitDecode,
+        T: BitDecode + super::FixedBitLen,
         R: Read + Seek,
     {
         let pos = reader.stream_position()?;
-        let n = (T::BIT_LEN as usize).div_ceil(8);
+        let n = (<T as super::FixedBitLen>::BIT_LEN as usize).div_ceil(8);
         let mut buf = vec![0u8; n];
         reader.read_exact(&mut buf)?;
         let mut br = BitReader::new(&buf);

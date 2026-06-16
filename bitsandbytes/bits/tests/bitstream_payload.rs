@@ -2,7 +2,7 @@
 //! (read/written even at a non-byte-aligned offset). Variable-length `Vec` +
 //! `count` is Phase 2.
 
-use bits::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, u4, u12};
+use bits::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, FixedBitLen, u4, u12};
 
 #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
 struct Frame {
@@ -35,7 +35,7 @@ fn fixed_byte_array_round_trips() {
 
 #[test]
 fn payload_counts_n_times_8_in_bit_len() {
-    assert_eq!(<Frame as BitDecode>::BIT_LEN, 4 + 32 + 12);
+    assert_eq!(<Frame as FixedBitLen>::BIT_LEN, 4 + 32 + 12);
 }
 
 #[test]

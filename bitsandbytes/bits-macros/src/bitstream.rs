@@ -6,7 +6,8 @@
 //! is read with `r.read()` / written with `w.write(self.field)`, which works for
 //! any `bits::Bits` type (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`), so
 //! the bit-stream codec composes with the rest of the crate's macros. Nested
-//! `BitDecode` messages and `#[br]`-style attributes are future work.
+//! `#[nested]` messages, `[u8; N]` payloads, `magic`, and `#[br(count = …)]`
+//! `Vec`s are supported; the rest of the `#[br]`/`#[bw]` surface is in progress.
 //!
 //! ## Right-tool guard
 //!
@@ -126,17 +127,149 @@ fn byte_array_len(f: &syn::Field) -> Option<&syn::Expr> {
     None
 }
 
-/// The bit-width expression for a field: a nested message contributes its
-/// `BIT_LEN`, a fixed `[u8; N]` byte array `N * 8`, a `Bits` leaf its `BITS`.
-/// Resolved by the compiler (the macro never computes widths).
+/// If the field's type is `Vec<T>`, returns the element type `T` — a
+/// variable-length, `count`-driven field.
+fn vec_elem(f: &syn::Field) -> Option<&syn::Type> {
+    if let syn::Type::Path(p) = &f.ty {
+        let seg = p.path.segments.last()?;
+        if seg.ident == "Vec" {
+            if let syn::PathArguments::AngleBracketed(a) = &seg.arguments {
+                if let Some(syn::GenericArgument::Type(t)) = a.args.first() {
+                    return Some(t);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parses `#[br(count = <expr>)]` from a field, if present. `count` is the only
+/// `#[br(...)]` directive so far (more arrive in later Phase 2 chunks). The `expr`
+/// may name an earlier field (read into a local before this one).
+fn field_count(f: &syn::Field) -> syn::Result<Option<syn::Expr>> {
+    let mut count = None;
+    for attr in &f.attrs {
+        if attr.path().is_ident("br") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("count") {
+                    count = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else {
+                    Err(meta.error(
+                        "unknown `#[br(...)]` directive; only `count = <expr>` is supported so far",
+                    ))
+                }
+            })?;
+        }
+    }
+    Ok(count)
+}
+
+/// The bit-width expression for a field, used by the alignment guard (and, for a
+/// fixed message, the `BIT_LEN` sum): a nested message contributes its
+/// `FixedBitLen::BIT_LEN`, a fixed `[u8; N]` `N * 8`, a `Bits` leaf its `BITS`, a
+/// `Vec<T>` its **element** width (its alignment is the element's). Resolved by
+/// the compiler (the macro never computes widths).
 fn field_width(f: &syn::Field) -> TokenStream2 {
     let ty = &f.ty;
-    if is_nested(f) {
-        quote!(<#ty as ::bits::__private::BitDecode>::BIT_LEN)
+    if let Some(elem) = vec_elem(f) {
+        if is_nested(f) {
+            quote!(<#elem as ::bits::__private::FixedBitLen>::BIT_LEN)
+        } else {
+            quote!(<#elem as ::bits::__private::Bits>::BITS)
+        }
+    } else if is_nested(f) {
+        quote!(<#ty as ::bits::__private::FixedBitLen>::BIT_LEN)
     } else if let Some(len) = byte_array_len(f) {
         quote!(((#len) as u32 * 8))
     } else {
         quote!(<#ty as ::bits::__private::Bits>::BITS)
+    }
+}
+
+/// The decode statement for one field — a `let #id = …;` binding (so a later
+/// `count` can name an earlier field). Variable `Vec<T>` fields loop `count`
+/// times; element reads dispatch nested-message vs `Bits` leaf via `#[nested]`.
+fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
+    let id = f.ident.as_ref().expect("named field");
+    let ty = &f.ty;
+    let count = field_count(f)?;
+    if let Some(elem) = vec_elem(f) {
+        let count = count.ok_or_else(|| {
+            syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
+        })?;
+        // Read one element into `__e`, pinning its type so inference can't drift.
+        let read_elem = if is_nested(f) {
+            quote! {
+                let __e = <#elem as ::bits::__private::BitDecode>::bit_decode(r)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        } else {
+            quote! {
+                let __e: #elem = ::bits::__private::Source::read(r)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        };
+        // No untrusted pre-allocation: `count` is attacker-controlled, so grow the
+        // Vec by pushing (bounded by the input — each element consumes ≥1 bit).
+        Ok(quote! {
+            let #id = {
+                let __n = (#count) as usize;
+                let mut __v: ::std::vec::Vec<#elem> = ::std::vec::Vec::new();
+                for _ in 0..__n {
+                    #read_elem
+                    __v.push(__e);
+                }
+                __v
+            };
+        })
+    } else {
+        if count.is_some() {
+            return Err(syn::Error::new_spanned(
+                f,
+                "`#[br(count = …)]` applies only to a `Vec<_>` field",
+            ));
+        }
+        if is_nested(f) {
+            Ok(
+                quote!(let #id = <#ty as ::bits::__private::BitDecode>::bit_decode(r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            )
+        } else if byte_array_len(f).is_some() {
+            Ok(quote!(let #id = ::bits::__private::read_byte_array(r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+        } else {
+            Ok(quote!(let #id = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+        }
+    }
+}
+
+/// The encode statement for one field — `Vec<T>` writes every element; the count
+/// is implied by `len()` (a separate length field is the user's, often `calc`'d).
+fn field_write_stmt(f: &syn::Field) -> TokenStream2 {
+    let id = f.ident.as_ref().expect("named field");
+    let ty = &f.ty;
+    if let Some(elem) = vec_elem(f) {
+        let write_elem = if is_nested(f) {
+            quote!(<#elem as ::bits::__private::BitEncode>::bit_encode(__e, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else {
+            quote!(::bits::__private::Sink::write(w, *__e)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        };
+        quote! {
+            for __e in &self.#id {
+                #write_elem
+            }
+        }
+    } else if is_nested(f) {
+        quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else if byte_array_len(f).is_some() {
+        quote!(::bits::__private::write_byte_array(&self.#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else {
+        quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     }
 }
 
@@ -191,31 +324,44 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         ),
         None => (quote!(), quote!()),
     };
-    let widths = fields.named.iter().map(field_width);
-    let reads = fields.named.iter().map(|f| {
-        let id = f.ident.as_ref().expect("named field");
-        let ty = &f.ty;
-        // Attach the field name to any error for a position-aware "span".
-        if is_nested(f) {
-            quote!(#id: <#ty as ::bits::__private::BitDecode>::bit_decode(r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
-        } else if byte_array_len(f).is_some() {
-            quote!(#id: ::bits::__private::read_byte_array(r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
-        } else {
-            quote!(#id: r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?)
+
+    // Read each field into a same-named local (declaration order), so a later
+    // `count` directive can reference an earlier field; then build `Self`.
+    let ids: Vec<&Ident> = fields
+        .named
+        .iter()
+        .map(|f| f.ident.as_ref().expect("named field"))
+        .collect();
+    let read_stmts = fields
+        .named
+        .iter()
+        .map(field_read_stmt)
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    // A message with a `count`-driven `Vec` is variable-length; only a fixed one
+    // also implements `FixedBitLen` (its const length sizes embedded regions).
+    let variable = fields.named.iter().any(|f| vec_elem(f).is_some());
+    let fixed_bit_len = if variable {
+        quote!()
+    } else {
+        let widths = fields.named.iter().map(field_width);
+        quote! {
+            impl ::bits::__private::FixedBitLen for #name {
+                const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
+            }
         }
-    });
+    };
+
     Ok(quote! {
         #guard
+        #fixed_bit_len
         impl ::bits::BitDecode for #name {
-            const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
-
             fn bit_decode<S: ::bits::__private::Source>(
                 r: &mut S,
             ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
                 #magic_read
-                ::core::result::Result::Ok(Self { #(#reads,)* })
+                #(#read_stmts)*
+                ::core::result::Result::Ok(Self { #(#ids),* })
             }
         }
 
@@ -263,19 +409,7 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         },
         None => quote!(),
     };
-    let writes = fields.named.iter().map(|f| {
-        let id = f.ident.as_ref().expect("named field");
-        let ty = &f.ty;
-        if is_nested(f) {
-            quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else if byte_array_len(f).is_some() {
-            quote!(::bits::__private::write_byte_array(&self.#id, w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else {
-            quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        }
-    });
+    let writes = fields.named.iter().map(field_write_stmt);
     Ok(quote! {
         #guard
         impl ::bits::BitEncode for #name {
@@ -467,7 +601,7 @@ fn bitwire_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStr
             let ty = &field.ty;
             asserts.push(quote! {
                 const _: () = assert!(
-                    <#ty as ::bits::BitDecode>::BIT_LEN % 8 == 0,
+                    <#ty as ::bits::__private::FixedBitLen>::BIT_LEN % 8 == 0,
                     "#[bits] region must be byte-aligned (its fields' widths must sum to a multiple of 8) to embed in the byte stream"
                 );
             });

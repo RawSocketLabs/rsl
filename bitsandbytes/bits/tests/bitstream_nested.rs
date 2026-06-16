@@ -2,7 +2,7 @@
 //! `BitDecode`/`BitEncode` message, recursed into (not a `Bits` leaf). The marker
 //! is a Phase-1 mechanism; the end-state can auto-detect via universal impls.
 
-use bits::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, u4, u12};
+use bits::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, FixedBitLen, u4, u12};
 
 #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
 struct Inner {
@@ -46,8 +46,8 @@ fn nested_round_trips() {
 
 #[test]
 fn bit_len_sums_through_the_nesting() {
-    assert_eq!(<Inner as BitDecode>::BIT_LEN, 16);
-    assert_eq!(<Outer as BitDecode>::BIT_LEN, 4 + 16 + 12);
+    assert_eq!(<Inner as FixedBitLen>::BIT_LEN, 16);
+    assert_eq!(<Outer as FixedBitLen>::BIT_LEN, 4 + 16 + 12);
 }
 
 #[test]

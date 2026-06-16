@@ -141,9 +141,10 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 /// Each leaf field is read with `Source::read`, so any [`bits::Bits`] type
 /// (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`) works as a field — no
 /// byte-alignment, seeks, or shift glue. A field marked **`#[nested]`** is itself
-/// a `BitDecode`/`BitEncode` message and is recursed into (its `BIT_LEN` counts
-/// toward the parent's). **Phase 1:** named structs only; byte/`Vec` payloads and
-/// `#[br]`-style attributes are not yet supported.
+/// a `BitDecode`/`BitEncode` message and is recursed into (a fixed one's
+/// `FixedBitLen::BIT_LEN` counts toward the parent's). `[u8; N]` payloads and
+/// `#[br(count = …)]` `Vec`s are supported; a `count`-bearing message is
+/// variable-length and so does not implement [`bits::FixedBitLen`].
 ///
 /// ## Which codec? (the derive steers you)
 ///
@@ -157,7 +158,7 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 /// time (every field a whole number of bytes ⇒ the cursor never leaves byte
 /// boundaries ⇒ `#[binrw]`/`#[wire]` is the better tool). Override with the
 /// struct-level `#[bit_stream(allow_byte_aligned)]` when you really mean it.
-#[proc_macro_derive(BitDecode, attributes(bit_stream, nested))]
+#[proc_macro_derive(BitDecode, attributes(bit_stream, nested, br, bw, brw))]
 pub fn bit_decode(item: TokenStream) -> TokenStream {
     bitstream::expand_decode(item)
 }
@@ -166,7 +167,7 @@ pub fn bit_decode(item: TokenStream) -> TokenStream {
 /// the struct's named fields in order to a [`bits::BitWriter`] bit cursor. Shares
 /// [`BitDecode`](macro@BitDecode)'s right-tool guard and `#[bit_stream(...)]`
 /// override.
-#[proc_macro_derive(BitEncode, attributes(bit_stream, nested))]
+#[proc_macro_derive(BitEncode, attributes(bit_stream, nested, br, bw, brw))]
 pub fn bit_encode(item: TokenStream) -> TokenStream {
     bitstream::expand_encode(item)
 }

@@ -22,7 +22,7 @@ fn magic_round_trips() {
     assert_eq!(bytes[0], 0x7E, "magic emitted first");
     assert_eq!(Framed::decode_exact(&bytes).unwrap(), f);
     // The magic counts toward the const length: 8 + 4 + 12 = 24 bits = 3 bytes.
-    assert_eq!(<Framed as bits::BitDecode>::BIT_LEN, 24);
+    assert_eq!(<Framed as bits::FixedBitLen>::BIT_LEN, 24);
     assert_eq!(bytes.len(), 3);
 }
 
