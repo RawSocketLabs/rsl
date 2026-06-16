@@ -90,7 +90,12 @@ histogram order; each is a checkbox with read + write + a test:
       opt-in, never a hard parser reject).
 - [ ] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — unify with the
       bit codec.
-- [ ] `map` / `try_map` (×46) — value transform on read/write.
+- [x] `map` / `try_map` (×46) — `#[br(map = <f>)]` reads the wire value (`f`'s arg
+      type) and transforms it to the field type; `#[br(try_map = <f>)]` is fallible
+      (a conversion error → `ErrorKind::Convert`). `#[bw(map = <f>)]` is the inverse
+      (write `f(&self.field)`); a read-side map without it is a clear error. A mapped
+      field's type isn't `Bits`, so it's variable + guard-exempt. `tests/bin_map.rs`
+      + `ui/bin_map_needs_inverse`.
 - [x] `count` (×32) — `#[br(count = <expr>)]` on a `Vec<T>` (leaf or `#[nested]`
       elements); `expr` may name an earlier field. Forced the `BIT_LEN`→`FixedBitLen`
       split: `BitDecode` drops the const; a fixed message *also* impls `FixedBitLen`,

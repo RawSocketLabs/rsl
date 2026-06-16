@@ -85,6 +85,12 @@ pub enum ErrorKind {
         /// The value actually read.
         found: u128,
     },
+    /// A `try_map` conversion from the wire representation failed; `message` is the
+    /// converter's `Display` output.
+    Convert {
+        /// The converter's error, rendered.
+        message: String,
+    },
 }
 
 impl BitError {
@@ -104,6 +110,13 @@ impl BitError {
     #[must_use]
     pub fn bad_magic(expected: u128, found: u128, at: usize) -> Self {
         Self::new(ErrorKind::BadMagic { expected, found }, at)
+    }
+
+    /// Builds a [`ErrorKind::Convert`] error (a `try_map` conversion failed) at
+    /// absolute bit offset `at`.
+    #[must_use]
+    pub fn convert(message: String, at: usize) -> Self {
+        Self::new(ErrorKind::Convert { message }, at)
     }
 
     /// Records the field being processed, **if one is not already set** — so the
@@ -147,6 +160,9 @@ impl fmt::Display for BitError {
             ErrorKind::BadMagic { expected, found } => {
                 write!(f, "bad magic: expected {expected:#x}, found {found:#x}")?;
             }
+            ErrorKind::Convert { message } => {
+                write!(f, "conversion failed: {message}")?;
+            }
         }
         write!(f, " at bit {}", self.at)?;
         if let Some(field) = self.field {
@@ -180,6 +196,54 @@ pub fn verify_magic<T: Bits, S: Source>(r: &mut S, expected: T) -> Result<(), Bi
         return Err(BitError::bad_magic(e, g, at));
     }
     Ok(())
+}
+
+/// Reads a wire value `W` (inferred from `f`'s argument type) and maps it to the
+/// field type `T` — backs `#[br(map = …)]`.
+///
+/// # Errors
+/// Propagates the read [`BitError`].
+#[doc(hidden)]
+pub fn read_mapped<W, T, S, F>(r: &mut S, f: F) -> Result<T, BitError>
+where
+    W: Bits,
+    S: Source,
+    F: FnOnce(W) -> T,
+{
+    let raw: W = r.read()?;
+    Ok(f(raw))
+}
+
+/// Fallible variant — backs `#[br(try_map = …)]`. A conversion error becomes an
+/// [`ErrorKind::Convert`] at the value's offset.
+///
+/// # Errors
+/// The read [`BitError`], or the converter's failure as [`ErrorKind::Convert`].
+#[doc(hidden)]
+pub fn read_try_mapped<W, T, E, S, F>(r: &mut S, f: F) -> Result<T, BitError>
+where
+    W: Bits,
+    S: Source,
+    E: fmt::Display,
+    F: FnOnce(W) -> Result<T, E>,
+{
+    let at = r.bit_pos();
+    let raw: W = r.read()?;
+    f(raw).map_err(|e| BitError::convert(e.to_string(), at))
+}
+
+/// Maps the field `T` to its wire value `W` and writes it — backs `#[bw(map = …)]`.
+///
+/// # Errors
+/// Propagates the write [`BitError`].
+#[doc(hidden)]
+pub fn write_mapped<W, T, K, F>(w: &mut K, value: &T, f: F) -> Result<(), BitError>
+where
+    W: Bits,
+    K: Sink,
+    F: FnOnce(&T) -> W,
+{
+    w.write(f(value))
 }
 
 /// A cursor that reads values at arbitrary bit offsets from a byte slice, in a

@@ -1,0 +1,6 @@
+error: a `#[br(map = …)]`/`#[br(try_map = …)]` field needs the inverse `#[bw(map = <f>)]` to encode
+  --> tests/ui/bin_map_needs_inverse.rs:11:5
+   |
+11 | /     #[br(map = |raw: u16| Wrapped(raw))]
+12 | |     value: Wrapped,
+   | |__________________^

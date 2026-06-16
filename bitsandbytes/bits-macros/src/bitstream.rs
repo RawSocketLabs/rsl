@@ -7,9 +7,10 @@
 //! any `bits::Bits` type (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`), so
 //! the bit-stream codec composes with the rest of the crate's macros. Nested
 //! `#[nested]` messages, `[u8; N]` payloads, `magic`, `#[br(count = …)]` `Vec`s,
-//! `ctx` parameterization, `#[br(temp)]`/`#[bw(calc = …)]`, and `#[br(if(…))]`
-//! conditional `Option`s are supported (`temp`/`calc` via `#[bin]`, which generates
-//! the codec directly); the rest of the `#[br]`/`#[bw]` surface is in progress.
+//! `ctx` parameterization, `#[br(temp)]`/`#[bw(calc = …)]`, `#[br(if(…))]`
+//! conditional `Option`s, and `#[br(map/try_map = …)]`/`#[bw(map = …)]` transforms
+//! are supported (`temp`/`calc` via `#[bin]`, which generates the codec directly);
+//! the rest of the `#[br]`/`#[bw]` surface is in progress.
 //!
 //! ## Right-tool guard
 //!
@@ -221,10 +222,17 @@ struct FieldBr {
     /// condition (over earlier fields, as locals) holds, else `None`; on encode the
     /// `Option`'s presence drives whether it is written.
     cond: Option<syn::Expr>,
+    /// `#[br(map = <f>)]` — read the wire value `f`'s argument types, then `f(raw)`
+    /// gives the field. `#[br(try_map = <f>)]` is the fallible form (`f` returns a
+    /// `Result`); they are mutually exclusive.
+    map: Option<syn::Expr>,
+    try_map: Option<syn::Expr>,
     /// `#[bw(calc = <expr>)]` — on encode, write `expr` (computed from the other
     /// fields) instead of `self.field`. The matched read/write pair is generated
     /// together so the directions can't drift.
     calc: Option<syn::Expr>,
+    /// `#[bw(map = <f>)]` — on encode, write `f(&self.field)` (the wire value).
+    bw_map: Option<syn::Expr>,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -234,6 +242,8 @@ enum BrDirective {
     Ctx(Vec<Ident>),
     Temp,
     If(syn::Expr),
+    Map(syn::Expr),
+    TryMap(syn::Expr),
 }
 
 impl Parse for BrDirective {
@@ -257,9 +267,17 @@ impl Parse for BrDirective {
                     let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
                     Ok(BrDirective::Ctx(names.into_iter().collect()))
                 }
+                "map" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::Map(input.parse()?))
+                }
+                "try_map" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::TryMap(input.parse()?))
+                }
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count = <expr>`, `ctx { a, b }`, `temp`, or `if(<expr>)`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, or `try_map`",
                 )),
             }
         }
@@ -279,6 +297,8 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::Ctx(names) => br.ctx = Some(names),
                     BrDirective::Temp => br.temp = true,
                     BrDirective::If(e) => br.cond = Some(e),
+                    BrDirective::Map(e) => br.map = Some(e),
+                    BrDirective::TryMap(e) => br.try_map = Some(e),
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -286,11 +306,22 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 if meta.path.is_ident("calc") {
                     br.calc = Some(meta.value()?.parse()?);
                     Ok(())
+                } else if meta.path.is_ident("map") {
+                    br.bw_map = Some(meta.value()?.parse()?);
+                    Ok(())
                 } else {
-                    Err(meta.error("unknown `#[bw(...)]` directive; expected `calc = <expr>`"))
+                    Err(meta.error(
+                        "unknown `#[bw(...)]` directive; expected `calc = <expr>` or `map = <f>`",
+                    ))
                 }
             })?;
         }
+    }
+    if br.map.is_some() && br.try_map.is_some() {
+        return Err(syn::Error::new_spanned(
+            f,
+            "`#[br(map = …)]` and `#[br(try_map = …)]` are mutually exclusive",
+        ));
     }
     Ok(br)
 }
@@ -313,6 +344,13 @@ fn field_is_temp(f: &syn::Field) -> bool {
 /// variable-length and exempt from the alignment guard.
 fn field_is_conditional(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.cond.is_some())
+}
+
+/// Whether a field is `map`/`try_map`-transformed. The field type isn't `Bits`
+/// (the wire type lives in the converter), so its width is indeterminate too.
+fn field_is_mapped(f: &syn::Field) -> bool {
+    parse_field_br(f)
+        .is_ok_and(|br| br.map.is_some() || br.try_map.is_some() || br.bw_map.is_some())
 }
 
 /// Whether a field attribute is a codec-only helper (`#[nested]`/`#[br]`/`#[bw]`).
@@ -390,6 +428,20 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
                 ::core::option::Option::None
             };
         });
+    }
+    // `map`/`try_map`: read the wire value (`f`'s argument type) and transform it to
+    // the field type, pinned to the field's declared type.
+    if let Some(map) = &br.map {
+        return Ok(
+            quote!(let #id: #ty = ::bits::__private::read_mapped(r, #map)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        );
+    }
+    if let Some(try_map) = &br.try_map {
+        return Ok(
+            quote!(let #id: #ty = ::bits::__private::read_try_mapped(r, #try_map)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        );
     }
     if let Some(elem) = vec_elem(f) {
         let count = br.count.ok_or_else(|| {
@@ -476,6 +528,20 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
         return Err(syn::Error::new_spanned(
             f,
             "a `#[br(temp)]` field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
+        ));
+    }
+    // `map`: write `f(&self.field)` (the wire value). A read-side `map`/`try_map`
+    // needs the inverse `#[bw(map = …)]` to be encodable.
+    if let Some(bw_map) = &br.bw_map {
+        return Ok(
+            quote!(::bits::__private::write_mapped(w, &self.#id, #bw_map)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        );
+    }
+    if br.map.is_some() || br.try_map.is_some() {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(map = …)]`/`#[br(try_map = …)]` field needs the inverse `#[bw(map = <f>)]` to encode",
         ));
     }
     // `if(...)`: a conditional `Option<T>` — write the inner value iff present (the
@@ -588,7 +654,7 @@ fn gen_decode(
         || fields
             .named
             .iter()
-            .any(|f| field_has_ctx(f) || field_is_conditional(f));
+            .any(|f| field_has_ctx(f) || field_is_conditional(f) || field_is_mapped(f));
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,
@@ -732,7 +798,7 @@ fn gen_encode(
         || fields
             .named
             .iter()
-            .any(|f| field_has_ctx(f) || field_is_conditional(f));
+            .any(|f| field_has_ctx(f) || field_is_conditional(f) || field_is_mapped(f));
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,
