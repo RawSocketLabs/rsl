@@ -169,9 +169,13 @@ histogram order; each is a checkbox with read + write + a test:
       Leaf or `#[nested]` inner. A non-`Option` field is a clear error. The `#[br]`
       parser is now keyword-aware (`if` is a keyword, so `parse_nested_meta` can't
       read it). `tests/bin_if.rs` + `ui/bin_if_needs_option`.
-- [ ] `restore_position` (×2), `pad_*`/`align_*`, `seek` — position ops with
-      **typed** amounts (`N.bits()`/`N.bytes()`, `bnb::prelude`, composable); free on
-      the cursor (DD2).
+- [x] `pad_*`/`align_*` — forward positioning with **typed** amounts (`4.bits()` /
+      `3.bytes()` via `bits::prelude`): `#[br(pad_before/pad_after = <bits>)]` skips a
+      bit count, `#[br(align_before/align_after)]` skips to the next byte boundary.
+      Works on any forward `Source` (skip = read-and-discard / write zeros); such a
+      field is guard-exempt. `tests/bin_positioning.rs`. **Backward `seek` /
+      `restore_position` (×2) are deferred to Phase 3** — they need `SeekSource`
+      (DD2/DD3); the in-memory `BitReader::seek_to_bit` already exists for direct use.
 - [x] `#[reserved]` / `#[reserved_with(<expr>)]` — reserved bits: on the wire (the
       field type gives the width, so they count toward `BIT_LEN`/the guard) but not
       stored. Read and discarded (lenient — a non-zero value isn't rejected; use

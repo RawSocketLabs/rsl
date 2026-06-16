@@ -247,6 +247,75 @@ where
     w.write(f(value))
 }
 
+/// A typed bit/byte amount for positioning directives — `4.bits()`, `3.bytes()` —
+/// resolving to a bit count. Bring it in with `use bits::prelude::*`.
+pub trait BitAmount: Copy {
+    /// This many **bits**.
+    fn bits(self) -> u32;
+    /// This many **bytes** (× 8 bits).
+    fn bytes(self) -> u32;
+}
+
+macro_rules! impl_bit_amount {
+    ($($t:ty),*) => {$(
+        impl BitAmount for $t {
+            fn bits(self) -> u32 { self as u32 }
+            fn bytes(self) -> u32 { (self as u32) * 8 }
+        }
+    )*};
+}
+impl_bit_amount!(u8, u16, u32, u64, usize, i32);
+
+/// Skips `bits` forward (consuming and discarding) — backs `#[br(pad_before/after)]`.
+///
+/// # Errors
+/// Propagates the source's [`BitError`].
+#[doc(hidden)]
+pub fn skip_read<S: Source>(r: &mut S, bits: u32) -> Result<(), BitError> {
+    let mut left = bits;
+    while left > 0 {
+        let n = left.min(128);
+        r.read_bits(n)?;
+        left -= n;
+    }
+    Ok(())
+}
+
+/// Writes `bits` zero bits forward — the write dual of [`skip_read`].
+///
+/// # Errors
+/// Propagates the sink's [`BitError`].
+#[doc(hidden)]
+pub fn skip_write<K: Sink>(w: &mut K, bits: u32) -> Result<(), BitError> {
+    let mut left = bits;
+    while left > 0 {
+        let n = left.min(128);
+        w.write_bits(0, n)?;
+        left -= n;
+    }
+    Ok(())
+}
+
+/// Skips forward to the next byte boundary — backs `#[br(align_before/after)]`.
+///
+/// # Errors
+/// Propagates the source's [`BitError`].
+#[doc(hidden)]
+pub fn align_read<S: Source>(r: &mut S) -> Result<(), BitError> {
+    let pad = (8 - (r.bit_pos() % 8)) % 8;
+    skip_read(r, pad as u32)
+}
+
+/// Pads with zero bits to the next byte boundary — the write dual of [`align_read`].
+///
+/// # Errors
+/// Propagates the sink's [`BitError`].
+#[doc(hidden)]
+pub fn align_write<K: Sink>(w: &mut K) -> Result<(), BitError> {
+    let pad = (8 - (w.bit_pos() % 8)) % 8;
+    skip_write(w, pad as u32)
+}
+
 /// The wire layout: bit packing order **and** byte order, threaded through the
 /// cursors and entry points. `#[bin(big|little)]` and `#[bin(bit_order = msb|lsb)]`
 /// set it; the default is MSB-first, big-endian (RFC/network order).

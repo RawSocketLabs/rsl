@@ -259,6 +259,13 @@ struct FieldBr {
     /// `#[bw(write_with = <f>)]` — the escape hatch: `f(&self.field, w) -> Result<(),
     /// BitError>` writes the field with a custom function.
     write_with: Option<syn::Expr>,
+    /// `#[br(pad_before/pad_after = <bits>)]` — skip a bit count around the field
+    /// (`4.bits()` / `3.bytes()` via `bits::prelude`). `align_before/align_after`
+    /// skip to the next byte boundary.
+    pad_before: Option<syn::Expr>,
+    pad_after: Option<syn::Expr>,
+    align_before: bool,
+    align_after: bool,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -272,6 +279,10 @@ enum BrDirective {
     Map(syn::Expr),
     TryMap(syn::Expr),
     ParseWith(syn::Expr),
+    PadBefore(syn::Expr),
+    PadAfter(syn::Expr),
+    AlignBefore,
+    AlignAfter,
 }
 
 impl Parse for BrDirective {
@@ -308,9 +319,19 @@ impl Parse for BrDirective {
                     input.parse::<Token![=]>()?;
                     Ok(BrDirective::ParseWith(input.parse()?))
                 }
+                "pad_before" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::PadBefore(input.parse()?))
+                }
+                "pad_after" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::PadAfter(input.parse()?))
+                }
+                "align_before" => Ok(BrDirective::AlignBefore),
+                "align_after" => Ok(BrDirective::AlignAfter),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, or `parse_with`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, or `align_before/after`",
                 )),
             }
         }
@@ -334,6 +355,10 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::Map(e) => br.map = Some(e),
                     BrDirective::TryMap(e) => br.try_map = Some(e),
                     BrDirective::ParseWith(e) => br.parse_with = Some(e),
+                    BrDirective::PadBefore(e) => br.pad_before = Some(e),
+                    BrDirective::PadAfter(e) => br.pad_after = Some(e),
+                    BrDirective::AlignBefore => br.align_before = true,
+                    BrDirective::AlignAfter => br.align_after = true,
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -381,6 +406,14 @@ fn field_is_temp(f: &syn::Field) -> bool {
 /// written, zero wire bits).
 fn field_is_ignore(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.ignore)
+}
+
+/// Whether a field carries a positioning directive (`pad_*`/`align_*`). Those shift
+/// the cursor, so the struct's fixed length / alignment can't be computed statically.
+fn field_has_positioning(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| {
+        br.pad_before.is_some() || br.pad_after.is_some() || br.align_before || br.align_after
+    })
 }
 
 /// Whether a field is conditional (`#[br(if(...))]`). Like a `ctx` child, its
@@ -485,10 +518,32 @@ fn field_width(f: &syn::Field) -> TokenStream2 {
     }
 }
 
-/// The decode statement for one field — a `let #id = …;` binding (so a later
-/// `count` can name an earlier field). Variable `Vec<T>` fields loop `count`
-/// times; element reads dispatch nested-message vs `Bits` leaf via `#[nested]`.
+/// Positioning statements emitted before/after a field: `align_*` skips to the next
+/// byte boundary, `pad_*` skips a bit count.
+fn pad_read_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
+    let align = align.then(|| quote!(::bits::__private::align_read(r)?;));
+    let pad = pad.map(|n| quote!(::bits::__private::skip_read(r, #n)?;));
+    quote!(#align #pad)
+}
+
+fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
+    let align = align.then(|| quote!(::bits::__private::align_write(w)?;));
+    let pad = pad.map(|n| quote!(::bits::__private::skip_write(w, #n)?;));
+    quote!(#align #pad)
+}
+
+/// The decode statement for one field — a `let #id = …;` binding, wrapped with any
+/// `pad_*`/`align_*` positioning. A later `count` can name an earlier field.
 fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
+    let br = parse_field_br(f)?;
+    let pre = pad_read_tokens(br.align_before, br.pad_before.as_ref());
+    let post = pad_read_tokens(br.align_after, br.pad_after.as_ref());
+    let core = field_read_core(f)?;
+    Ok(quote!(#pre #core #post))
+}
+
+/// The core decode statement (without positioning).
+fn field_read_core(f: &syn::Field) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     let br = parse_field_br(f)?;
@@ -608,10 +663,20 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
     }
 }
 
-/// The encode statement for one field — `Vec<T>` writes every element; the count
-/// is implied by `len()` (a separate length field is the user's, often `calc`'d).
-/// `field_set` is the parent's field names, for resolving a `ctx { … }` pass.
+/// The encode statement for one field, wrapped with any `pad_*`/`align_*`. `Vec<T>`
+/// writes every element; the count is implied by `len()` (a separate length field
+/// is the user's, often `calc`'d). `field_set` is the parent's field names, for
+/// resolving a `ctx { … }` pass.
 fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
+    let br = parse_field_br(f)?;
+    let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
+    let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
+    let core = field_write_core(f, field_set)?;
+    Ok(quote!(#pre #core #post))
+}
+
+/// The core encode statement (without positioning).
+fn field_write_core(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     // `#[reserved]`: write the type's zero (or the `reserved_with` value), pinned to
@@ -782,10 +847,12 @@ fn gen_decode(
     // `ctx`/`if` anywhere makes widths/alignment indeterminable: exempt from the
     // guard and never `FixedBitLen`.
     let indeterminate = !attrs.ctx.is_empty()
-        || fields
-            .named
-            .iter()
-            .any(|f| field_has_ctx(f) || field_is_conditional(f) || field_is_mapped(f));
+        || fields.named.iter().any(|f| {
+            field_has_ctx(f)
+                || field_is_conditional(f)
+                || field_is_mapped(f)
+                || field_has_positioning(f)
+        });
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,
@@ -926,10 +993,12 @@ fn gen_encode(
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
     let indeterminate = !attrs.ctx.is_empty()
-        || fields
-            .named
-            .iter()
-            .any(|f| field_has_ctx(f) || field_is_conditional(f) || field_is_mapped(f));
+        || fields.named.iter().any(|f| {
+            field_has_ctx(f)
+                || field_is_conditional(f)
+                || field_is_mapped(f)
+                || field_has_positioning(f)
+        });
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,

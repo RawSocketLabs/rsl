@@ -112,9 +112,15 @@ mod field;
 pub mod int;
 
 pub use bitstream::{
-    BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, FixedBitLen, Layout, Sink,
-    Source, StreamBitReader,
+    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, FixedBitLen,
+    Layout, Sink, Source, StreamBitReader,
 };
+
+/// Common imports for the codec — the typed positioning amounts (`4.bits()`,
+/// `3.bytes()`) used by `#[br(pad_before = …)]` etc.
+pub mod prelude {
+    pub use crate::BitAmount;
+}
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
@@ -138,9 +144,10 @@ pub trait BitEnum: Bits {}
 pub mod __private {
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, Sink, Source,
-        bits_of, decode_consume, decode_exact, decode_exact_with, decode_peek, encode_to_vec,
-        encode_to_vec_with, encode_to_writer, read_byte_array, read_mapped, read_try_mapped,
-        verify_magic, write_byte_array, write_mapped,
+        align_read, align_write, bits_of, decode_consume, decode_exact, decode_exact_with,
+        decode_peek, encode_to_vec, encode_to_vec_with, encode_to_writer, read_byte_array,
+        read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array,
+        write_mapped,
     };
     #[cfg(feature = "binrw")]
     pub use crate::bitstream::{read_bits_region, write_bits_region};
