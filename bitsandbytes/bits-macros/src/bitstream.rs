@@ -75,17 +75,34 @@ fn allow_byte_aligned(input: &DeriveInput) -> syn::Result<bool> {
     Ok(allow)
 }
 
+/// Whether a field is a **nested message** (marked `#[nested]`) — a
+/// `BitDecode`/`BitEncode` struct recursed into — rather than a `Bits` leaf.
+/// (Phase 1 marker; the end-state can auto-detect via universal `Bits` impls.)
+fn is_nested(f: &syn::Field) -> bool {
+    f.attrs.iter().any(|a| a.path().is_ident("nested"))
+}
+
+/// The bit-width expression for a field: a nested message contributes its
+/// `BIT_LEN`, a `Bits` leaf its `BITS`. Resolved by the compiler (the macro
+/// never computes widths), matching how `#[bitfield]` guards its layout.
+fn field_width(f: &syn::Field) -> TokenStream2 {
+    let ty = &f.ty;
+    if is_nested(f) {
+        quote!(<#ty as ::bits::__private::BitDecode>::BIT_LEN)
+    } else {
+        quote!(<#ty as ::bits::__private::Bits>::BITS)
+    }
+}
+
 /// A const-eval assertion that the struct is *not* entirely byte-aligned (the
-/// bit-stream codec would otherwise be the wrong tool). Widths come from
-/// `<T as Bits>::BITS` (resolved by the compiler — the macro never computes them),
-/// matching how `#[bitfield]` guards its layout. Empty/opted-out → no guard.
+/// bit-stream codec would otherwise be the wrong tool). Empty/opted-out → no guard.
 fn alignment_guard(fields: &FieldsNamed, allow: bool) -> TokenStream2 {
     if allow || fields.named.is_empty() {
         return quote!();
     }
     let aligned = fields.named.iter().map(|f| {
-        let ty = &f.ty;
-        quote!((<#ty as ::bits::__private::Bits>::BITS % 8 == 0))
+        let w = field_width(f);
+        quote!((#w % 8 == 0))
     });
     quote! {
         const _: () = {
@@ -106,14 +123,17 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
     let guard = alignment_guard(fields, allow_byte_aligned(input)?);
-    let widths = fields.named.iter().map(|f| {
-        let ty = &f.ty;
-        quote!(<#ty as ::bits::__private::Bits>::BITS)
-    });
+    let widths = fields.named.iter().map(field_width);
     let reads = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
+        let ty = &f.ty;
         // Attach the field name to any error for a position-aware "span".
-        quote!(#id: r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?)
+        if is_nested(f) {
+            quote!(#id: <#ty as ::bits::__private::BitDecode>::bit_decode(r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
+        } else {
+            quote!(#id: r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?)
+        }
     });
     Ok(quote! {
         #guard
@@ -164,7 +184,13 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let guard = alignment_guard(fields, allow_byte_aligned(input)?);
     let writes = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
-        quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        let ty = &f.ty;
+        if is_nested(f) {
+            quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else {
+            quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        }
     });
     Ok(quote! {
         #guard

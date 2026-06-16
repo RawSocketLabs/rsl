@@ -48,7 +48,7 @@ Make the bit codec able to express a *whole* message, not just a fixed region.
       streaming signal.
 - [ ] **LSB-first bit order** (today MSB-only) — a `#[bin(bit_order = lsb)]` knob
       (per-struct); mirror `#[bitfield]`'s `bits = msb|lsb`.
-- [ ] **Nested `BitDecode` messages** — a `BitDecode` field inside another (the
+- [x] **Nested `BitDecode` messages** — a `BitDecode` field inside another (the
       derive must call `BitDecode::bit_decode`, not just `Bits::read`, for
       non-`Bits` fields). Resolve the leaf-vs-message dispatch in the derive.
 - [ ] **Payload fields** — `Vec<u8>`/`[u8; N]`/`Vec<T: BitDecode>` with a
