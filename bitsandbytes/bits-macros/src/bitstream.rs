@@ -385,11 +385,14 @@ fn field_is_reserved(f: &syn::Field) -> bool {
         .any(|a| a.path().is_ident("reserved") || a.path().is_ident("reserved_with"))
 }
 
-/// Whether a field attribute is a codec-only helper (`#[nested]`/`#[br]`/`#[bw]`).
-/// `#[bin]` strips these from the struct it emits — it generates the codec impls
-/// directly, so (unlike the derive path) nothing registers them as helper attrs.
+/// Whether a field attribute is one `#[bin]` consumes itself (`#[nested]`/`#[br]`/
+/// `#[bw]` for the codec, `#[builder]` for the builder) and must strip from the
+/// struct it emits — it generates the codec and builder directly, so nothing
+/// registers these as helper attributes.
 fn is_codec_field_attr(a: &syn::Attribute) -> bool {
-    a.path().is_ident("nested") || a.path().is_ident("br") || a.path().is_ident("bw")
+    ["nested", "br", "bw", "builder"]
+        .iter()
+        .any(|n| a.path().is_ident(n))
 }
 
 /// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
@@ -965,6 +968,10 @@ struct BinArgs {
     allow_byte_aligned: bool,
     magic: Option<syn::Expr>,
     ctx: Vec<(Ident, Type)>,
+    /// `validate = <path>` — a `fn(&Self) -> Result<(), impl Display>` run by
+    /// `build()` (construction soundness; the parser stays permissive). A free
+    /// function, not a method, so it isn't mistaken for protocol-context validity.
+    validate: Option<syn::Path>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -1000,10 +1007,13 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             syn::parenthesized!(content in meta.input);
             let params = Punctuated::<CtxParam, Token![,]>::parse_terminated(&content)?;
             args.ctx = params.into_iter().map(|p| (p.name, p.ty)).collect();
+        } else if meta.path.is_ident("validate") {
+            args.validate = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, bit_order = msb|lsb, magic = <expr>, ctx(name: Ty, …), allow_byte_aligned",
+                 no_builder, bit_order = msb|lsb, magic = <expr>, ctx(name: Ty, …), \
+                 validate = <path>, allow_byte_aligned",
             ));
         }
         Ok(())
@@ -1071,11 +1081,48 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             .collect();
     }
 
-    // The builder rides on the cleaned struct (so `temp` fields are absent from it).
+    // The builder is generated directly from the stored fields (so it can run the
+    // `validate` hook via `builder::generate`'s post_build, and so `temp`/`reserved`
+    // fields are absent from it).
     let builder = if args.read_only || args.no_builder {
+        if args.validate.is_some() {
+            return Err(syn::Error::new_spanned(
+                &s.ident,
+                "`validate` needs the builder; it is incompatible with `read_only`/`no_builder`",
+            ));
+        }
         quote!()
     } else {
-        quote!(#[derive(::bits::BitsBuilder)])
+        // `validate`: run the soundness check on the built value; a failure is a
+        // `BuilderError::Invalid`. The parser stays permissive (decode never runs it).
+        let post_build = args.validate.as_ref().map(|path| {
+            quote! {
+                (#path)(&__value)
+                    .map_err(|__e| ::bits::BuilderError::invalid(__e.to_string()))?;
+            }
+        });
+        let mut bfields = Vec::new();
+        for f in &full_fields.named {
+            if field_is_temp(f) || field_is_reserved(f) {
+                continue; // not stored, so not a builder field
+            }
+            let ident = f.ident.clone().expect("named field");
+            let ty = f.ty.clone();
+            let mut default = crate::builder::FieldDefault::Required;
+            for attr in &f.attrs {
+                if let Some(d) = crate::builder::parse_builder_attr(attr)? {
+                    default = d;
+                }
+            }
+            bfields.push(crate::builder::BField { ident, ty, default });
+        }
+        crate::builder::generate(
+            &s.ident,
+            &s.vis,
+            &bfields,
+            crate::builder::BuildKind::Plain,
+            post_build.as_ref(),
+        )
     };
 
     // `ctx(...)`: the single front-end owns the generated `<Name>Ctx` struct.
@@ -1094,8 +1141,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
 
     Ok(quote! {
         #ctx_struct
-        #builder
         #clean
+        #builder
         #decode
         #encode
     })

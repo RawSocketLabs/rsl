@@ -86,8 +86,14 @@ histogram order; each is a checkbox with read + write + a test:
       `#[bin(magic = <expr>)]`; sub-byte allowed (`u3::new(0b110)`, beyond binrw) so
       it suppresses the right-tool guard; mismatch → `ErrorKind::BadMagic`.
       `tests/bin_magic.rs`.
-- [ ] `pre_assert` (×84) — precondition (dual-use: assertion on *construction*/
-      opt-in, never a hard parser reject).
+- [x] `pre_assert` (×84) — realized as `#[bin(validate = <path>)]`: a free
+      `fn(&Self) -> Result<(), impl Display>` run by `build()` (a failure →
+      `BuilderError::Invalid`). Dual-use: the **parser stays permissive** — `decode`
+      never validates, so a non-conformant value still parses; the struct literal is
+      the raw escape. Folded `#[bin]`'s builder onto `builder::generate` (post_build
+      hook) instead of `#[derive(BitsBuilder)]`. `tests/bin_validate.rs` +
+      `ui/bin_validate_needs_builder`. (`skip_validation()` convenience deferred —
+      the literal already bypasses; binrw's *read-side* pre_assert stays a non-goal.)
 - [ ] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — unify with the
       bit codec.
 - [x] `map` / `try_map` (×46) — `#[br(map = <f>)]` reads the wire value (`f`'s arg
