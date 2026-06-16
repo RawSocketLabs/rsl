@@ -97,12 +97,16 @@ histogram order; each is a checkbox with read + write + a test:
       a `count`-bearing one does not (trybuild `ui/bin_count_not_fixed`). Reads grow
       the `Vec` without untrusted pre-allocation. `tests/bin_count.rs`. (Pairing with
       `temp`/`calc` so the length field isn't stored: the `calc`/`temp` chunk.)
-- [ ] `ctx` (binrw `args`/`import`, ×25/×19) — parameterized parse, **Layer 1**:
-      declare `#[bin(ctx(...))]`, pass `#[br(ctx { … })]`; lower to generated
-      **inherent** `Type::decode_with(src, ctx)` + a `Ctx` struct, with the macro
-      emitting concrete `decode_with` calls at every field/enum-arm/count-loop. No
-      `Args` associated type on the core trait. Covers declarative ASN.1/TLV +
-      arbitrary nesting + borrowed context.
+- [x] `ctx` (binrw `args`/`import`, ×25/×19) — parameterized parse, **Layer 1**:
+      declare `#[bin(ctx(name: Ty, …))]`, pass `#[br(ctx { a, b })]`. A ctx type gets
+      inherent `decode_with`/`encode_with`/`decode_with_exact`/`to_bytes_with` + a
+      generated `<Name>Ctx` struct (emitted by `#[bin]`), and does **not** implement
+      `BitDecode`/`BitEncode` (no `Args` on the core trait; trybuild
+      `ui/bin_ctx_needs_context`). The macro emits concrete `decode_with`/`encode_with`
+      calls at every ctx field and count-loop element; passed names resolve per
+      direction (a parent field → `self.x` on encode, a parent ctx param → local).
+      Covers TLV/ASN.1 + Vec-of-ctx. `tests/bin_ctx.rs`. (Enum arms: once `#[bin]`
+      enums land.)
 - [ ] `ctx` **Layer 2 (deferred, additive)** — a `DecodeWith<A>`/`EncodeWith<A>`
       companion trait (+ blanket `DecodeWith<()>` for every `Decode`) for
       **hand-written generic combinators / trait-object parsing**. Adds the

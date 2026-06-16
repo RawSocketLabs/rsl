@@ -508,6 +508,46 @@ pub fn decode_peek<T: BitDecode>(bytes: &[u8], order: BitOrder) -> Result<T, Bit
     T::bit_decode(&mut BitReader::with_order(bytes, order))
 }
 
+/// `decode_exact` over a caller-supplied decode closure rather than the
+/// [`BitDecode`] trait — backs the `ctx`-parameterized `Type::decode_with_exact`
+/// (a `ctx` type takes a context argument, so it has no plain `bit_decode`).
+///
+/// # Errors
+/// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the closure's error.
+#[doc(hidden)]
+pub fn decode_exact_with<T, F>(bytes: &[u8], order: BitOrder, f: F) -> Result<T, BitError>
+where
+    F: FnOnce(&mut BitReader) -> Result<T, BitError>,
+{
+    let mut r = BitReader::with_order(bytes, order);
+    let v = f(&mut r)?;
+    let consumed = r.bit_pos().div_ceil(8);
+    if consumed < bytes.len() {
+        return Err(BitError::new(
+            ErrorKind::TrailingBytes {
+                remaining: bytes.len() - consumed,
+            },
+            r.bit_pos(),
+        ));
+    }
+    Ok(v)
+}
+
+/// `to_bytes` over a caller-supplied encode closure — backs the `ctx`-parameterized
+/// `Type::to_bytes_with`.
+///
+/// # Errors
+/// Propagates the closure's [`BitError`].
+#[doc(hidden)]
+pub fn encode_to_vec_with<F>(order: BitOrder, f: F) -> Result<Vec<u8>, BitError>
+where
+    F: FnOnce(&mut BitWriter) -> Result<(), BitError>,
+{
+    let mut w = BitWriter::with_order(order);
+    f(&mut w)?;
+    Ok(w.into_bytes())
+}
+
 /// Decodes and requires every **whole byte** consumed; a sub-byte tail in the
 /// final byte is treated as padding. Backs `Type::decode_exact`.
 ///

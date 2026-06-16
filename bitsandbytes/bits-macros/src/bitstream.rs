@@ -20,11 +20,50 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::quote;
-use syn::parse::Parser;
+use quote::{format_ident, quote};
+use syn::parse::{Parse, ParseStream, Parser};
+use syn::punctuated::Punctuated;
 use syn::{
-    Data, DeriveInput, Fields, FieldsNamed, Ident, ItemStruct, parse_macro_input, parse_quote,
+    Data, DeriveInput, Fields, FieldsNamed, Ident, ItemStruct, Token, Type, parse_macro_input,
+    parse_quote,
 };
+
+/// A declared context parameter `name: Ty` from `ctx(name: Ty, …)`.
+struct CtxParam {
+    name: Ident,
+    ty: Type,
+}
+
+impl Parse for CtxParam {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let ty: Type = input.parse()?;
+        Ok(CtxParam { name, ty })
+    }
+}
+
+/// The generated context-struct name for a type/ident — `Foo` ⇒ `FooCtx`.
+fn ctx_struct_ident(name: &Ident) -> Ident {
+    format_ident!("{}Ctx", name)
+}
+
+/// The context-struct **type** for a field/element type — appends `Ctx` to the
+/// last path segment so `m::Value` ⇒ `m::ValueCtx`.
+fn ctx_struct_ty(ty: &Type) -> syn::Result<TokenStream2> {
+    if let Type::Path(p) = ty {
+        let mut path = p.path.clone();
+        if let Some(last) = path.segments.last_mut() {
+            last.ident = ctx_struct_ident(&last.ident);
+            last.arguments = syn::PathArguments::None;
+            return Ok(quote!(#path));
+        }
+    }
+    Err(syn::Error::new_spanned(
+        ty,
+        "a `ctx`-parameterized field must have a path type (so its `…Ctx` struct can be named)",
+    ))
+}
 
 /// The const-eval guard's message — names both better tools.
 const BYTE_ALIGNED_MSG: &str = "this struct's fields are all byte-aligned, so the \
@@ -67,6 +106,10 @@ struct BitStreamAttrs {
     /// `magic = <expr>` — a leading constant verified on read, emitted on write.
     /// Any `Bits` value, so it can be sub-byte (`u3::new(0b110)`) unlike binrw.
     magic: Option<syn::Expr>,
+    /// `ctx(name: Ty, …)` — context this type needs from its parent (binrw
+    /// `import`). When present the type gets `decode_with`/`encode_with` (it does
+    /// **not** implement `BitDecode`/`BitEncode`, which take no context).
+    ctx: Vec<(Ident, Type)>,
 }
 
 fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
@@ -88,9 +131,15 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                 } else if meta.path.is_ident("magic") {
                     attrs.magic = Some(meta.value()?.parse()?);
                     Ok(())
+                } else if meta.path.is_ident("ctx") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    let params = Punctuated::<CtxParam, Token![,]>::parse_terminated(&content)?;
+                    attrs.ctx = params.into_iter().map(|p| (p.name, p.ty)).collect();
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, or `magic = <expr>`",
+                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, `magic = <expr>`, or `ctx(name: Ty, …)`",
                     ))
                 }
             })?;
@@ -143,26 +192,64 @@ fn vec_elem(f: &syn::Field) -> Option<&syn::Type> {
     None
 }
 
-/// Parses `#[br(count = <expr>)]` from a field, if present. `count` is the only
-/// `#[br(...)]` directive so far (more arrive in later Phase 2 chunks). The `expr`
-/// may name an earlier field (read into a local before this one).
-fn field_count(f: &syn::Field) -> syn::Result<Option<syn::Expr>> {
-    let mut count = None;
+/// Parsed field-level `#[br(...)]` directives.
+#[derive(Default)]
+struct FieldBr {
+    /// `count = <expr>` — element count for a `Vec<T>` (may name an earlier field).
+    count: Option<syn::Expr>,
+    /// `ctx { a, b }` — pass context to a nested `ctx` message's `decode_with`/
+    /// `encode_with`. Each name is a parent field or the parent's own ctx param.
+    ctx: Option<Vec<Ident>>,
+}
+
+/// Parses a field's `#[br(count = …, ctx { … })]` directives.
+fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
+    let mut br = FieldBr::default();
     for attr in &f.attrs {
         if attr.path().is_ident("br") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("count") {
-                    count = Some(meta.value()?.parse()?);
+                    br.count = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("ctx") {
+                    let content;
+                    syn::braced!(content in meta.input);
+                    let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+                    br.ctx = Some(names.into_iter().collect());
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[br(...)]` directive; only `count = <expr>` is supported so far",
+                        "unknown `#[br(...)]` directive; expected `count = <expr>` or `ctx { a, b }`",
                     ))
                 }
             })?;
         }
     }
-    Ok(count)
+    Ok(br)
+}
+
+/// Whether a field threads context to a `ctx` child (`#[br(ctx { … })]`). Such a
+/// field's width is indeterminate (the child isn't `Bits`/`FixedBitLen`), so it
+/// makes the struct variable-length and exempt from the alignment guard. Parse
+/// errors are deferred to [`field_read_stmt`], which validates properly.
+fn field_has_ctx(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.ctx.is_some())
+}
+
+/// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
+/// on encode a parent **field** becomes `name: self.name`, anything else (the
+/// parent's own ctx param, already a local) stays shorthand `name`. On decode all
+/// names are locals, so all stay shorthand.
+fn ctx_literal(
+    ctx_ty: &TokenStream2,
+    names: &[Ident],
+    field_set: Option<&[&Ident]>,
+) -> TokenStream2 {
+    let inits = names.iter().map(|n| match field_set {
+        Some(fields) if fields.contains(&n) => quote!(#n: self.#n),
+        _ => quote!(#n),
+    });
+    quote!(#ctx_ty { #(#inits),* })
 }
 
 /// The bit-width expression for a field, used by the alignment guard (and, for a
@@ -193,13 +280,19 @@ fn field_width(f: &syn::Field) -> TokenStream2 {
 fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
-    let count = field_count(f)?;
+    let br = parse_field_br(f)?;
     if let Some(elem) = vec_elem(f) {
-        let count = count.ok_or_else(|| {
+        let count = br.count.ok_or_else(|| {
             syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
         })?;
         // Read one element into `__e`, pinning its type so inference can't drift.
-        let read_elem = if is_nested(f) {
+        let read_elem = if let Some(names) = &br.ctx {
+            let lit = ctx_literal(&ctx_struct_ty(elem)?, names, None);
+            quote! {
+                let __e = <#elem>::decode_with(r, #lit)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        } else if is_nested(f) {
             quote! {
                 let __e = <#elem as ::bits::__private::BitDecode>::bit_decode(r)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
@@ -224,13 +317,17 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
             };
         })
     } else {
-        if count.is_some() {
+        if br.count.is_some() {
             return Err(syn::Error::new_spanned(
                 f,
                 "`#[br(count = …)]` applies only to a `Vec<_>` field",
             ));
         }
-        if is_nested(f) {
+        if let Some(names) = &br.ctx {
+            let lit = ctx_literal(&ctx_struct_ty(ty)?, names, None);
+            Ok(quote!(let #id = <#ty>::decode_with(r, #lit)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+        } else if is_nested(f) {
             Ok(
                 quote!(let #id = <#ty as ::bits::__private::BitDecode>::bit_decode(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
@@ -246,30 +343,42 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
 
 /// The encode statement for one field — `Vec<T>` writes every element; the count
 /// is implied by `len()` (a separate length field is the user's, often `calc`'d).
-fn field_write_stmt(f: &syn::Field) -> TokenStream2 {
+/// `field_set` is the parent's field names, for resolving a `ctx { … }` pass.
+fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
+    let br = parse_field_br(f)?;
     if let Some(elem) = vec_elem(f) {
-        let write_elem = if is_nested(f) {
+        let write_elem = if let Some(names) = &br.ctx {
+            let lit = ctx_literal(&ctx_struct_ty(elem)?, names, Some(field_set));
+            quote!(<#elem>::encode_with(__e, w, #lit)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else if is_nested(f) {
             quote!(<#elem as ::bits::__private::BitEncode>::bit_encode(__e, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
             quote!(::bits::__private::Sink::write(w, *__e)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
-        quote! {
+        Ok(quote! {
             for __e in &self.#id {
                 #write_elem
             }
-        }
+        })
+    } else if let Some(names) = &br.ctx {
+        let lit = ctx_literal(&ctx_struct_ty(ty)?, names, Some(field_set));
+        Ok(quote!(<#ty>::encode_with(&self.#id, w, #lit)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     } else if is_nested(f) {
-        quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        Ok(
+            quote!(<#ty as ::bits::__private::BitEncode>::bit_encode(&self.#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        )
     } else if byte_array_len(f).is_some() {
-        quote!(::bits::__private::write_byte_array(&self.#id, w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        Ok(quote!(::bits::__private::write_byte_array(&self.#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     } else {
-        quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        Ok(quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     }
 }
 
@@ -311,7 +420,13 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
     let attrs = parse_bit_stream(input)?;
-    let guard = alignment_guard(fields, attrs.allow_byte_aligned, attrs.magic.as_ref());
+    // `ctx` anywhere makes widths/alignment indeterminable: exempt from the guard.
+    let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
+    let guard = alignment_guard(
+        fields,
+        attrs.allow_byte_aligned || has_ctx,
+        attrs.magic.as_ref(),
+    );
     let order = order_token(&attrs);
     // `magic`: a leading constant read and verified before the fields. Its width
     // (inferred from the value's type) joins `BIT_LEN`.
@@ -338,9 +453,40 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(field_read_stmt)
         .collect::<syn::Result<Vec<_>>>()?;
 
-    // A message with a `count`-driven `Vec` is variable-length; only a fixed one
-    // also implements `FixedBitLen` (its const length sizes embedded regions).
-    let variable = fields.named.iter().any(|f| vec_elem(f).is_some());
+    // A `ctx(...)`-declaring message takes context it can't get from the plain
+    // `BitDecode` trait, so it gets inherent `decode_with`/`decode_with_exact`
+    // (binding the ctx params as locals) instead — no `BitDecode`/`FixedBitLen`.
+    if !attrs.ctx.is_empty() {
+        let ctx_name = ctx_struct_ident(name);
+        let ctx_binds = attrs.ctx.iter().map(|(n, _)| quote!(let #n = __ctx.#n;));
+        return Ok(quote! {
+            #guard
+            impl #name {
+                #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
+                #[allow(unused_variables)] // a ctx param may be used on only one side
+                pub fn decode_with<S: ::bits::__private::Source>(
+                    r: &mut S,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                    #(#ctx_binds)*
+                    #magic_read
+                    #(#read_stmts)*
+                    ::core::result::Result::Ok(Self { #(#ids),* })
+                }
+                #[doc = "Decode from bytes with context, requiring every whole byte consumed."]
+                pub fn decode_with_exact(
+                    bytes: &[u8],
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                    ::bits::__private::decode_exact_with(bytes, #order, |r| Self::decode_with(r, __ctx))
+                }
+            }
+        });
+    }
+
+    // A message with a `count`-driven `Vec` (or a `ctx` child) is variable-length;
+    // only a fixed one also implements `FixedBitLen` (sizes embedded regions).
+    let variable = has_ctx || fields.named.iter().any(|f| vec_elem(f).is_some());
     let fixed_bit_len = if variable {
         quote!()
     } else {
@@ -400,7 +546,12 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
     let attrs = parse_bit_stream(input)?;
-    let guard = alignment_guard(fields, attrs.allow_byte_aligned, attrs.magic.as_ref());
+    let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
+    let guard = alignment_guard(
+        fields,
+        attrs.allow_byte_aligned || has_ctx,
+        attrs.magic.as_ref(),
+    );
     let order = order_token(&attrs);
     // `magic`: emit the leading constant before the fields (matched read/write).
     let magic_write = match &attrs.magic {
@@ -409,7 +560,48 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         },
         None => quote!(),
     };
-    let writes = fields.named.iter().map(field_write_stmt);
+    let field_set: Vec<&Ident> = fields
+        .named
+        .iter()
+        .map(|f| f.ident.as_ref().expect("named field"))
+        .collect();
+    let writes = fields
+        .named
+        .iter()
+        .map(|f| field_write_stmt(f, &field_set))
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    // `ctx(...)`: the dual of decode — inherent `encode_with`/`to_bytes_with`
+    // (binding the ctx params as locals), not a `BitEncode` impl.
+    if !attrs.ctx.is_empty() {
+        let ctx_name = ctx_struct_ident(name);
+        let ctx_binds = attrs.ctx.iter().map(|(n, _)| quote!(let #n = __ctx.#n;));
+        return Ok(quote! {
+            #guard
+            impl #name {
+                #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
+                #[allow(unused_variables)] // a ctx param may be used on only one side
+                pub fn encode_with<K: ::bits::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<(), ::bits::__private::BitError> {
+                    #(#ctx_binds)*
+                    #magic_write
+                    #(#writes)*
+                    ::core::result::Result::Ok(())
+                }
+                #[doc = "Encode to a `Vec<u8>` with context."]
+                pub fn to_bytes_with(
+                    &self,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
+                    ::bits::__private::encode_to_vec_with(#order, |w| self.encode_with(w, __ctx))
+                }
+            }
+        });
+    }
+
     Ok(quote! {
         #guard
         impl ::bits::BitEncode for #name {
@@ -466,6 +658,7 @@ struct BinArgs {
     lsb: bool,
     allow_byte_aligned: bool,
     magic: Option<syn::Expr>,
+    ctx: Vec<(Ident, Type)>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -496,10 +689,15 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             }
         } else if meta.path.is_ident("magic") {
             args.magic = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("ctx") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            let params = Punctuated::<CtxParam, Token![,]>::parse_terminated(&content)?;
+            args.ctx = params.into_iter().map(|p| (p.name, p.ty)).collect();
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, bit_order = msb|lsb, magic = <expr>, allow_byte_aligned",
+                 no_builder, bit_order = msb|lsb, magic = <expr>, ctx(name: Ty, …), allow_byte_aligned",
             ));
         }
         Ok(())
@@ -538,6 +736,25 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     if let Some(m) = &args.magic {
         bs.push(quote!(magic = #m));
     }
+
+    // `ctx(...)`: emit the context struct here (the single front-end owns it; the
+    // derives only reference `<Name>Ctx`), and forward the declaration so the
+    // derives generate `decode_with`/`encode_with`.
+    let ctx_struct = if args.ctx.is_empty() {
+        quote!()
+    } else {
+        let ctx_name = ctx_struct_ident(&s.ident);
+        let vis = &s.vis;
+        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
+        bs.push(quote!(ctx(#(#params),*)));
+        quote! {
+            #[derive(Clone)]
+            #[doc = "Context for decoding/encoding the matching `#[bin(ctx(...))]` type."]
+            #vis struct #ctx_name { #(#decls),* }
+        }
+    };
+
     let bit_stream = if bs.is_empty() {
         quote!()
     } else {
@@ -545,6 +762,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     };
 
     Ok(quote! {
+        #ctx_struct
         #[derive(#(#derives),*)]
         #bit_stream
         #s

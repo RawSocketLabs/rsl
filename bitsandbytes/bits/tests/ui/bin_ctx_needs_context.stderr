@@ -1,0 +1,22 @@
+error[E0599]: no associated function or constant named `decode_exact` found for struct `Value` in the current scope
+  --> tests/ui/bin_ctx_needs_context.rs:13:20
+   |
+ 7 | struct Value {
+   | ------------ associated function or constant `decode_exact` not found for this struct
+...
+13 |     let _ = Value::decode_exact(&[0u8]);
+   |                    ^^^^^^^^^^^^ associated function or constant not found in `Value`
+   |
+note: if you're trying to build a new `Value` consider using one of the following associated functions:
+      Value::decode_with
+      Value::decode_with_exact
+  --> tests/ui/bin_ctx_needs_context.rs:6:1
+   |
+ 6 | #[bin(ctx(tag: u8))]
+   | ^^^^^^^^^^^^^^^^^^^^
+help: there is an associated function `decode_with_exact` with a similar name
+  --> tests/ui/bin_ctx_needs_context.rs:6:1
+   |
+ 6 | #[bin(ctx(tag: u8))]
+   | ^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the derive macro `::bits::BitDecode` (in Nightly builds, run with -Z macro-backtrace for more info)
