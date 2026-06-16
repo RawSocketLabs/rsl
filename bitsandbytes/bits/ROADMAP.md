@@ -113,8 +113,15 @@ histogram order; each is a checkbox with read + write + a test:
       polymorphic threading the macro doesn't need; `Type::decode_with` call sites
       are unchanged when it lands, so it can ship later with no churn.
 - [ ] `ignore` (×12) — skip on read / don't emit.
-- [ ] `calc` / `temp` (×9/×1) — compute-on-write / read-temp (already modeled by
-      `#[wire]`'s `#[update]` and group temps; reuse).
+- [x] `calc` / `temp` (×9/×1) — `#[br(temp)]` reads into a local (usable by a later
+      `count`/`ctx`) but is **not stored**; `#[bw(calc = <expr>)]` writes a value
+      computed from the other fields (pinned to the field's type). Together they drop
+      a redundant length/count field from the struct *and* the builder, and keep it
+      from drifting from the `Vec` (matched read/write, generated together). This
+      forced `#[bin]` to generate the codec **directly** (extracted `gen_decode`/
+      `gen_encode`, shared with the derives) instead of lowering — so a `temp` field
+      absent from the emitted struct can still drive the codec. `tests/bin_calc_temp.rs`
+      + `ui/bin_temp_needs_calc`.
 - [ ] `parse_with` / `write_with` (×7) — keep as the escape hatch (already the
       bridge primitive).
 - [ ] `if` (×3) — conditional field.

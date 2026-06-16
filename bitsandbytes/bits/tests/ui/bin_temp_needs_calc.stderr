@@ -1,0 +1,6 @@
+error: a `#[br(temp)]` field is not stored, so it needs `#[bw(calc = <expr>)]` to encode
+ --> tests/ui/bin_temp_needs_calc.rs:8:5
+  |
+8 | /     #[br(temp)]
+9 | |     count: u16,
+  | |______________^

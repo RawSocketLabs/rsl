@@ -6,8 +6,10 @@
 //! is read with `r.read()` / written with `w.write(self.field)`, which works for
 //! any `bits::Bits` type (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`), so
 //! the bit-stream codec composes with the rest of the crate's macros. Nested
-//! `#[nested]` messages, `[u8; N]` payloads, `magic`, and `#[br(count = …)]`
-//! `Vec`s are supported; the rest of the `#[br]`/`#[bw]` surface is in progress.
+//! `#[nested]` messages, `[u8; N]` payloads, `magic`, `#[br(count = …)]` `Vec`s,
+//! `ctx` parameterization, and `#[br(temp)]`/`#[bw(calc = …)]` are supported (the
+//! last via `#[bin]`, which generates the codec directly); the rest of the
+//! `#[br]`/`#[bw]` surface is in progress.
 //!
 //! ## Right-tool guard
 //!
@@ -200,9 +202,17 @@ struct FieldBr {
     /// `ctx { a, b }` — pass context to a nested `ctx` message's `decode_with`/
     /// `encode_with`. Each name is a parent field or the parent's own ctx param.
     ctx: Option<Vec<Ident>>,
+    /// `#[br(temp)]` — read into a local (usable by a later `count`/`ctx`) but do
+    /// **not** store the field; `#[bin]` strips it from the struct. Pairs with
+    /// `#[bw(calc = …)]` for the write side.
+    temp: bool,
+    /// `#[bw(calc = <expr>)]` — on encode, write `expr` (computed from the other
+    /// fields) instead of `self.field`. The matched read/write pair is generated
+    /// together so the directions can't drift.
+    calc: Option<syn::Expr>,
 }
 
-/// Parses a field's `#[br(count = …, ctx { … })]` directives.
+/// Parses a field's `#[br(count = …, ctx { … }, temp)]` and `#[bw(calc = …)]`.
 fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
     let mut br = FieldBr::default();
     for attr in &f.attrs {
@@ -217,10 +227,22 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
                     br.ctx = Some(names.into_iter().collect());
                     Ok(())
+                } else if meta.path.is_ident("temp") {
+                    br.temp = true;
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[br(...)]` directive; expected `count = <expr>` or `ctx { a, b }`",
+                        "unknown `#[br(...)]` directive; expected `count = <expr>`, `ctx { a, b }`, or `temp`",
                     ))
+                }
+            })?;
+        } else if attr.path().is_ident("bw") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("calc") {
+                    br.calc = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else {
+                    Err(meta.error("unknown `#[bw(...)]` directive; expected `calc = <expr>`"))
                 }
             })?;
         }
@@ -234,6 +256,18 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
 /// errors are deferred to [`field_read_stmt`], which validates properly.
 fn field_has_ctx(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.ctx.is_some())
+}
+
+/// Whether a field is `#[br(temp)]` (read into a local, not stored).
+fn field_is_temp(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.temp)
+}
+
+/// Whether a field attribute is a codec-only helper (`#[nested]`/`#[br]`/`#[bw]`).
+/// `#[bin]` strips these from the struct it emits — it generates the codec impls
+/// directly, so (unlike the derive path) nothing registers them as helper attrs.
+fn is_codec_field_attr(a: &syn::Attribute) -> bool {
+    a.path().is_ident("nested") || a.path().is_ident("br") || a.path().is_ident("bw")
 }
 
 /// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
@@ -336,7 +370,9 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
             Ok(quote!(let #id = ::bits::__private::read_byte_array(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
         } else {
-            Ok(quote!(let #id = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+            // Pin the leaf type explicitly: a `temp` field is not stored in `Self`,
+            // so the construction can't infer it.
+            Ok(quote!(let #id: #ty = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;))
         }
     }
 }
@@ -348,6 +384,24 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     let br = parse_field_br(f)?;
+    // `calc`: write a value computed from the other fields rather than `self.#id`,
+    // pinned to the field's declared type so the wire width is unambiguous.
+    if let Some(calc) = &br.calc {
+        return Ok(quote! {
+            {
+                let __calc: #ty = #calc;
+                ::bits::__private::Sink::write(w, __calc)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        });
+    }
+    // A `temp` field is never stored, so it cannot be written without a `calc`.
+    if br.temp {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(temp)]` field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
+        ));
+    }
     if let Some(elem) = vec_elem(f) {
         let write_elem = if let Some(names) = &br.ctx {
             let lit = ctx_literal(&ctx_struct_ty(elem)?, names, Some(field_set));
@@ -417,9 +471,22 @@ pub fn expand_decode(item: TokenStream) -> TokenStream {
 }
 
 fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let name = &input.ident;
-    let fields = named_struct(input)?;
-    let attrs = parse_bit_stream(input)?;
+    gen_decode(
+        &input.ident,
+        named_struct(input)?,
+        &parse_bit_stream(input)?,
+    )
+}
+
+/// Generates the decode side (`BitDecode` + entry points, or `decode_with` for a
+/// `ctx` type) from a name + field list + parsed options. Shared by the
+/// `#[derive(BitDecode)]` path and by `#[bin]` (which can pass `temp` fields not
+/// present in the emitted struct).
+fn gen_decode(
+    name: &Ident,
+    fields: &FieldsNamed,
+    attrs: &BitStreamAttrs,
+) -> syn::Result<TokenStream2> {
     // `ctx` anywhere makes widths/alignment indeterminable: exempt from the guard.
     let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
     let guard = alignment_guard(
@@ -427,7 +494,7 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         attrs.allow_byte_aligned || has_ctx,
         attrs.magic.as_ref(),
     );
-    let order = order_token(&attrs);
+    let order = order_token(attrs);
     // `magic`: a leading constant read and verified before the fields. Its width
     // (inferred from the value's type) joins `BIT_LEN`.
     let (magic_read, magic_bits) = match &attrs.magic {
@@ -441,10 +508,13 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     };
 
     // Read each field into a same-named local (declaration order), so a later
-    // `count` directive can reference an earlier field; then build `Self`.
+    // `count`/`ctx` directive can reference an earlier field; then build `Self`
+    // from the **stored** fields only (`#[br(temp)]` reads into a local but is not
+    // a struct field).
     let ids: Vec<&Ident> = fields
         .named
         .iter()
+        .filter(|f| !field_is_temp(f))
         .map(|f| f.ident.as_ref().expect("named field"))
         .collect();
     let read_stmts = fields
@@ -543,16 +613,28 @@ pub fn expand_encode(item: TokenStream) -> TokenStream {
 }
 
 fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let name = &input.ident;
-    let fields = named_struct(input)?;
-    let attrs = parse_bit_stream(input)?;
+    gen_encode(
+        &input.ident,
+        named_struct(input)?,
+        &parse_bit_stream(input)?,
+    )
+}
+
+/// Generates the encode side (`BitEncode` + entry points, or `encode_with` for a
+/// `ctx` type). Shared by `#[derive(BitEncode)]` and `#[bin]`. `calc` fields write
+/// a computed value; `temp` fields (no `self` field) are written via their `calc`.
+fn gen_encode(
+    name: &Ident,
+    fields: &FieldsNamed,
+    attrs: &BitStreamAttrs,
+) -> syn::Result<TokenStream2> {
     let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || has_ctx,
         attrs.magic.as_ref(),
     );
-    let order = order_token(&attrs);
+    let order = order_token(attrs);
     // `magic`: emit the leading constant before the fields (matched read/write).
     let magic_write = match &attrs.magic {
         Some(m) => quote! {
@@ -560,9 +642,11 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         },
         None => quote!(),
     };
+    // Only stored (non-`temp`) fields exist on `self`, for `ctx { … }` resolution.
     let field_set: Vec<&Ident> = fields
         .named
         .iter()
+        .filter(|f| !field_is_temp(f))
         .map(|f| f.ident.as_ref().expect("named field"))
         .collect();
     let writes = fields
@@ -711,43 +795,74 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             "`read_only` and `write_only` are mutually exclusive",
         ));
     }
-
-    // Lower to the codec/builder derives. read_only ⇒ Decode only (no builder);
-    // write_only ⇒ Encode + builder; default ⇒ both + builder.
-    let mut derives: Vec<TokenStream2> = Vec::new();
-    if !args.write_only {
-        derives.push(quote!(::bits::BitDecode));
+    if !s.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &s.generics,
+            "#[bin] does not support generic parameters yet",
+        ));
     }
-    if !args.read_only {
-        derives.push(quote!(::bits::BitEncode));
-        if !args.no_builder {
-            derives.push(quote!(::bits::BitsBuilder));
+    let full_fields = match &s.fields {
+        Fields::Named(n) => n,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &s.ident,
+                "#[bin] requires a struct with named fields",
+            ));
         }
+    };
+
+    // `#[bin]` generates the codec **directly** from the full field list — so a
+    // `#[br(temp)]` field (read into a local, not stored) can participate — while
+    // the emitted struct drops it. (Unlike P2.0–P2.3, this no longer lowers to the
+    // `#[derive(BitDecode/BitEncode)]` codec; those derives remain usable directly.)
+    let attrs = BitStreamAttrs {
+        allow_byte_aligned: args.allow_byte_aligned,
+        lsb: args.lsb,
+        magic: args.magic.clone(),
+        ctx: args.ctx.clone(),
+    };
+    let decode = if args.write_only {
+        quote!()
+    } else {
+        gen_decode(&s.ident, full_fields, &attrs)?
+    };
+    let encode = if args.read_only {
+        quote!()
+    } else {
+        gen_encode(&s.ident, full_fields, &attrs)?
+    };
+
+    // The emitted struct: drop `#[br(temp)]` fields and strip codec-only field
+    // attributes (they are not registered helper attrs here — the codec is
+    // generated directly, not via the derives).
+    let mut clean = s.clone();
+    if let Fields::Named(named) = &mut clean.fields {
+        named.named = named
+            .named
+            .iter()
+            .filter(|f| !field_is_temp(f))
+            .cloned()
+            .map(|mut f| {
+                f.attrs.retain(|a| !is_codec_field_attr(a));
+                f
+            })
+            .collect();
     }
 
-    // Lower the struct-level options to a `#[bit_stream(...)]` helper attribute.
-    let mut bs: Vec<TokenStream2> = Vec::new();
-    if args.lsb {
-        bs.push(quote!(bit_order = lsb));
-    }
-    if args.allow_byte_aligned {
-        bs.push(quote!(allow_byte_aligned));
-    }
-    if let Some(m) = &args.magic {
-        bs.push(quote!(magic = #m));
-    }
+    // The builder rides on the cleaned struct (so `temp` fields are absent from it).
+    let builder = if args.read_only || args.no_builder {
+        quote!()
+    } else {
+        quote!(#[derive(::bits::BitsBuilder)])
+    };
 
-    // `ctx(...)`: emit the context struct here (the single front-end owns it; the
-    // derives only reference `<Name>Ctx`), and forward the declaration so the
-    // derives generate `decode_with`/`encode_with`.
+    // `ctx(...)`: the single front-end owns the generated `<Name>Ctx` struct.
     let ctx_struct = if args.ctx.is_empty() {
         quote!()
     } else {
         let ctx_name = ctx_struct_ident(&s.ident);
         let vis = &s.vis;
         let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
-        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
-        bs.push(quote!(ctx(#(#params),*)));
         quote! {
             #[derive(Clone)]
             #[doc = "Context for decoding/encoding the matching `#[bin(ctx(...))]` type."]
@@ -755,17 +870,12 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         }
     };
 
-    let bit_stream = if bs.is_empty() {
-        quote!()
-    } else {
-        quote!(#[bit_stream(#(#bs),*)])
-    };
-
     Ok(quote! {
         #ctx_struct
-        #[derive(#(#derives),*)]
-        #bit_stream
-        #s
+        #builder
+        #clean
+        #decode
+        #encode
     })
 }
 

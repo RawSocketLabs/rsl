@@ -19,4 +19,4 @@ help: there is an associated function `decode_with_exact` with a similar name
    |
  6 | #[bin(ctx(tag: u8))]
    | ^^^^^^^^^^^^^^^^^^^^
-   = note: this error originates in the derive macro `::bits::BitDecode` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the attribute macro `bin` (in Nightly builds, run with -Z macro-backtrace for more info)
