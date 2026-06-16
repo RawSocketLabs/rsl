@@ -7,9 +7,9 @@
 //! any `bits::Bits` type (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`), so
 //! the bit-stream codec composes with the rest of the crate's macros. Nested
 //! `#[nested]` messages, `[u8; N]` payloads, `magic`, `#[br(count = …)]` `Vec`s,
-//! `ctx` parameterization, and `#[br(temp)]`/`#[bw(calc = …)]` are supported (the
-//! last via `#[bin]`, which generates the codec directly); the rest of the
-//! `#[br]`/`#[bw]` surface is in progress.
+//! `ctx` parameterization, `#[br(temp)]`/`#[bw(calc = …)]`, and `#[br(if(…))]`
+//! conditional `Option`s are supported (`temp`/`calc` via `#[bin]`, which generates
+//! the codec directly); the rest of the `#[br]`/`#[bw]` surface is in progress.
 //!
 //! ## Right-tool guard
 //!
@@ -181,9 +181,20 @@ fn byte_array_len(f: &syn::Field) -> Option<&syn::Expr> {
 /// If the field's type is `Vec<T>`, returns the element type `T` — a
 /// variable-length, `count`-driven field.
 fn vec_elem(f: &syn::Field) -> Option<&syn::Type> {
-    if let syn::Type::Path(p) = &f.ty {
+    single_generic(&f.ty, "Vec")
+}
+
+/// If the field's type is `Option<T>`, returns the inner type `T` — a
+/// conditional (`#[br(if(...))]`) field.
+fn option_elem(f: &syn::Field) -> Option<&syn::Type> {
+    single_generic(&f.ty, "Option")
+}
+
+/// The single type argument of `Wrapper<T>`, if `ty` is `Wrapper<T>`.
+fn single_generic<'a>(ty: &'a syn::Type, wrapper: &str) -> Option<&'a syn::Type> {
+    if let syn::Type::Path(p) = ty {
         let seg = p.path.segments.last()?;
-        if seg.ident == "Vec" {
+        if seg.ident == wrapper {
             if let syn::PathArguments::AngleBracketed(a) = &seg.arguments {
                 if let Some(syn::GenericArgument::Type(t)) = a.args.first() {
                     return Some(t);
@@ -206,36 +217,70 @@ struct FieldBr {
     /// **not** store the field; `#[bin]` strips it from the struct. Pairs with
     /// `#[bw(calc = …)]` for the write side.
     temp: bool,
+    /// `#[br(if(<expr>))]` — a conditional `Option<T>` field: read `Some` when the
+    /// condition (over earlier fields, as locals) holds, else `None`; on encode the
+    /// `Option`'s presence drives whether it is written.
+    cond: Option<syn::Expr>,
     /// `#[bw(calc = <expr>)]` — on encode, write `expr` (computed from the other
     /// fields) instead of `self.field`. The matched read/write pair is generated
     /// together so the directions can't drift.
     calc: Option<syn::Expr>,
 }
 
-/// Parses a field's `#[br(count = …, ctx { … }, temp)]` and `#[bw(calc = …)]`.
+/// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
+/// because `if` is a keyword and can't be read as a meta path ident.
+enum BrDirective {
+    Count(syn::Expr),
+    Ctx(Vec<Ident>),
+    Temp,
+    If(syn::Expr),
+}
+
+impl Parse for BrDirective {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![if]) {
+            input.parse::<Token![if]>()?;
+            let content;
+            syn::parenthesized!(content in input);
+            Ok(BrDirective::If(content.parse()?))
+        } else {
+            let kw: Ident = input.parse()?;
+            match kw.to_string().as_str() {
+                "count" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::Count(input.parse()?))
+                }
+                "temp" => Ok(BrDirective::Temp),
+                "ctx" => {
+                    let content;
+                    syn::braced!(content in input);
+                    let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+                    Ok(BrDirective::Ctx(names.into_iter().collect()))
+                }
+                _ => Err(syn::Error::new_spanned(
+                    kw,
+                    "unknown `#[br(...)]` directive; expected `count = <expr>`, `ctx { a, b }`, `temp`, or `if(<expr>)`",
+                )),
+            }
+        }
+    }
+}
+
+/// Parses a field's `#[br(count = …, ctx { … }, temp, if(…))]` and `#[bw(calc = …)]`.
 fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
     let mut br = FieldBr::default();
     for attr in &f.attrs {
         if attr.path().is_ident("br") {
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("count") {
-                    br.count = Some(meta.value()?.parse()?);
-                    Ok(())
-                } else if meta.path.is_ident("ctx") {
-                    let content;
-                    syn::braced!(content in meta.input);
-                    let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
-                    br.ctx = Some(names.into_iter().collect());
-                    Ok(())
-                } else if meta.path.is_ident("temp") {
-                    br.temp = true;
-                    Ok(())
-                } else {
-                    Err(meta.error(
-                        "unknown `#[br(...)]` directive; expected `count = <expr>`, `ctx { a, b }`, or `temp`",
-                    ))
+            let directives =
+                attr.parse_args_with(Punctuated::<BrDirective, Token![,]>::parse_terminated)?;
+            for d in directives {
+                match d {
+                    BrDirective::Count(e) => br.count = Some(e),
+                    BrDirective::Ctx(names) => br.ctx = Some(names),
+                    BrDirective::Temp => br.temp = true,
+                    BrDirective::If(e) => br.cond = Some(e),
                 }
-            })?;
+            }
         } else if attr.path().is_ident("bw") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("calc") {
@@ -261,6 +306,13 @@ fn field_has_ctx(f: &syn::Field) -> bool {
 /// Whether a field is `#[br(temp)]` (read into a local, not stored).
 fn field_is_temp(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.temp)
+}
+
+/// Whether a field is conditional (`#[br(if(...))]`). Like a `ctx` child, its
+/// width is indeterminate (present or absent), so it makes the struct
+/// variable-length and exempt from the alignment guard.
+fn field_is_conditional(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.cond.is_some())
 }
 
 /// Whether a field attribute is a codec-only helper (`#[nested]`/`#[br]`/`#[bw]`).
@@ -315,6 +367,30 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     let br = parse_field_br(f)?;
+    // `if(<cond>)`: a conditional `Option<T>`. `cond` is over earlier fields (as
+    // locals). `Some(read)` when it holds, else `None` (consuming nothing).
+    if let Some(cond) = &br.cond {
+        let inner = option_elem(f).ok_or_else(|| {
+            syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
+        })?;
+        let read_inner = if is_nested(f) {
+            quote!(<#inner as ::bits::__private::BitDecode>::bit_decode(r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
+        } else {
+            quote! {{
+                let __v: #inner = ::bits::__private::Source::read(r)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                __v
+            }}
+        };
+        return Ok(quote! {
+            let #id = if (#cond) {
+                ::core::option::Option::Some(#read_inner)
+            } else {
+                ::core::option::Option::None
+            };
+        });
+    }
     if let Some(elem) = vec_elem(f) {
         let count = br.count.ok_or_else(|| {
             syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
@@ -402,6 +478,25 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
             "a `#[br(temp)]` field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
         ));
     }
+    // `if(...)`: a conditional `Option<T>` — write the inner value iff present (the
+    // `Option` drives the write; the read-side condition is not re-evaluated).
+    if br.cond.is_some() {
+        let inner = option_elem(f).ok_or_else(|| {
+            syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
+        })?;
+        let write_inner = if is_nested(f) {
+            quote!(<#inner as ::bits::__private::BitEncode>::bit_encode(__v, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else {
+            quote!(::bits::__private::Sink::write(w, *__v)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        };
+        return Ok(quote! {
+            if let ::core::option::Option::Some(__v) = &self.#id {
+                #write_inner
+            }
+        });
+    }
     if let Some(elem) = vec_elem(f) {
         let write_elem = if let Some(names) = &br.ctx {
             let lit = ctx_literal(&ctx_struct_ty(elem)?, names, Some(field_set));
@@ -487,11 +582,16 @@ fn gen_decode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
-    // `ctx` anywhere makes widths/alignment indeterminable: exempt from the guard.
-    let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
+    // `ctx`/`if` anywhere makes widths/alignment indeterminable: exempt from the
+    // guard and never `FixedBitLen`.
+    let indeterminate = !attrs.ctx.is_empty()
+        || fields
+            .named
+            .iter()
+            .any(|f| field_has_ctx(f) || field_is_conditional(f));
     let guard = alignment_guard(
         fields,
-        attrs.allow_byte_aligned || has_ctx,
+        attrs.allow_byte_aligned || indeterminate,
         attrs.magic.as_ref(),
     );
     let order = order_token(attrs);
@@ -554,9 +654,9 @@ fn gen_decode(
         });
     }
 
-    // A message with a `count`-driven `Vec` (or a `ctx` child) is variable-length;
-    // only a fixed one also implements `FixedBitLen` (sizes embedded regions).
-    let variable = has_ctx || fields.named.iter().any(|f| vec_elem(f).is_some());
+    // A message with a `count`-driven `Vec` (or a `ctx`/`if` field) is variable-
+    // length; only a fixed one also implements `FixedBitLen` (sizes embedded regions).
+    let variable = indeterminate || fields.named.iter().any(|f| vec_elem(f).is_some());
     let fixed_bit_len = if variable {
         quote!()
     } else {
@@ -628,10 +728,14 @@ fn gen_encode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
-    let has_ctx = !attrs.ctx.is_empty() || fields.named.iter().any(field_has_ctx);
+    let indeterminate = !attrs.ctx.is_empty()
+        || fields
+            .named
+            .iter()
+            .any(|f| field_has_ctx(f) || field_is_conditional(f));
     let guard = alignment_guard(
         fields,
-        attrs.allow_byte_aligned || has_ctx,
+        attrs.allow_byte_aligned || indeterminate,
         attrs.magic.as_ref(),
     );
     let order = order_token(attrs);

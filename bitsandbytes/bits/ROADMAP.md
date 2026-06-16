@@ -124,7 +124,12 @@ histogram order; each is a checkbox with read + write + a test:
       + `ui/bin_temp_needs_calc`.
 - [ ] `parse_with` / `write_with` (×7) — keep as the escape hatch (already the
       bridge primitive).
-- [ ] `if` (×3) — conditional field.
+- [x] `if` (×3) — `#[br(if(<cond>))]` on an `Option<T>` field: `Some(read)` when the
+      condition (over earlier fields, as locals) holds, else `None`; on encode the
+      `Option`'s presence drives the write (the read condition isn't re-evaluated).
+      Leaf or `#[nested]` inner. A non-`Option` field is a clear error. The `#[br]`
+      parser is now keyword-aware (`if` is a keyword, so `parse_nested_meta` can't
+      read it). `tests/bin_if.rs` + `ui/bin_if_needs_option`.
 - [ ] `restore_position` (×2), `pad_*`/`align_*`, `seek` — position ops with
       **typed** amounts (`N.bits()`/`N.bytes()`, `bnb::prelude`, composable); free on
       the cursor (DD2).
