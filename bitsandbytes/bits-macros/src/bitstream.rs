@@ -915,6 +915,16 @@ fn gen_decode(
                     ::bits::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx))
                 }
             }
+            // ctx Layer 2: the polymorphic companion, so generic combinators can take
+            // this type via `T: DecodeWith<#ctx_name>`.
+            impl ::bits::DecodeWith<#ctx_name> for #name {
+                fn decode_with<S: ::bits::__private::Source>(
+                    r: &mut S,
+                    args: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                    <#name>::decode_with(r, args)
+                }
+            }
         });
     }
 
@@ -1051,6 +1061,16 @@ fn gen_encode(
                     __ctx: #ctx_name,
                 ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bits::__private::BitError> {
                     ::bits::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx))
+                }
+            }
+            // ctx Layer 2: the polymorphic companion (dual of `DecodeWith`).
+            impl ::bits::EncodeWith<#ctx_name> for #name {
+                fn encode_with<K: ::bits::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                    args: #ctx_name,
+                ) -> ::core::result::Result<(), ::bits::__private::BitError> {
+                    <#name>::encode_with(self, w, args)
                 }
             }
         });

@@ -684,6 +684,41 @@ pub trait BitEncode {
     fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
 }
 
+/// Polymorphic decode **with context** `A` — the companion to a `#[bin(ctx(...))]`
+/// type's inherent `decode_with`, for hand-written generic combinators and
+/// trait-object parsing (ctx Layer 2). Every [`BitDecode`] type is `DecodeWith<()>`
+/// (blanket), and a ctx type is `DecodeWith<…Ctx>`, so one bound `T: DecodeWith<A>`
+/// spans both context-free and context-taking messages. Inherent `Type::decode_with`
+/// call sites are unaffected.
+pub trait DecodeWith<A>: Sized {
+    /// Decodes `Self` from a [`Source`] given `args`.
+    ///
+    /// # Errors
+    /// Propagates the decode [`BitError`].
+    fn decode_with<S: Source>(r: &mut S, args: A) -> Result<Self, BitError>;
+}
+
+/// The dual of [`DecodeWith`] — polymorphic encode with context `A`.
+pub trait EncodeWith<A> {
+    /// Encodes `self` into a [`Sink`] given `args`.
+    ///
+    /// # Errors
+    /// Propagates the encode [`BitError`].
+    fn encode_with<K: Sink>(&self, w: &mut K, args: A) -> Result<(), BitError>;
+}
+
+impl<T: BitDecode> DecodeWith<()> for T {
+    fn decode_with<S: Source>(r: &mut S, _args: ()) -> Result<Self, BitError> {
+        T::bit_decode(r)
+    }
+}
+
+impl<T: BitEncode> EncodeWith<()> for T {
+    fn encode_with<K: Sink>(&self, w: &mut K, _args: ()) -> Result<(), BitError> {
+        self.bit_encode(w)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entry-point helpers — the logic behind the `#[derive]`-generated inherent
 // methods (`Type::decode`/`peek`/`decode_exact`/`encode`/`to_bytes`). Kept here

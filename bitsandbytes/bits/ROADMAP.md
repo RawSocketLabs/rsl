@@ -141,11 +141,12 @@ histogram order; each is a checkbox with read + write + a test:
       direction (a parent field → `self.x` on encode, a parent ctx param → local).
       Covers TLV/ASN.1 + Vec-of-ctx. `tests/bin_ctx.rs`. (Enum arms: once `#[bin]`
       enums land.)
-- [ ] `ctx` **Layer 2 (deferred, additive)** — a `DecodeWith<A>`/`EncodeWith<A>`
-      companion trait (+ blanket `DecodeWith<()>` for every `Decode`) for
-      **hand-written generic combinators / trait-object parsing**. Adds the
-      polymorphic threading the macro doesn't need; `Type::decode_with` call sites
-      are unchanged when it lands, so it can ship later with no churn.
+- [x] `ctx` **Layer 2 (additive)** — `DecodeWith<A>`/`EncodeWith<A>` companion traits
+      with a blanket `DecodeWith<()>` for every `BitDecode` (and `EncodeWith<()>` for
+      every `BitEncode`); a `#[bin(ctx(...))]` type also gets `DecodeWith<…Ctx>`
+      (delegating to its inherent `decode_with`). So one bound `T: DecodeWith<A>`
+      spans context-free and context-taking messages — for generic combinators /
+      trait-object parsing. Inherent call sites unchanged. `tests/bin_ctx_layer2.rs`.
 - [x] `ignore` (×12) — `#[br(ignore)]`: an in-memory-only field, `Default::default()`
       on read (no input consumed) and skipped on write (zero wire bits), but still a
       stored + builder field. Excluded from `BIT_LEN`/the guard. `tests/bin_ignore.rs`.
