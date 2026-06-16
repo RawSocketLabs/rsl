@@ -220,11 +220,10 @@ order of need:
 - [x] **`SeekSource: Source`** — a marker guaranteeing `seek_to_bit` works; impl'd
       by `BitReader` (slice). (`R: Read + Seek` adapter is 3b.) Inherent
       `seek_to_bit`/`align_to_byte` stay on `BitReader` for the in-memory case.
-- [ ] **`BufSource<R: Read>`** — the socket+seek adapter: retains read bytes so a
-      seek-using message over a *non-seekable* stream works (seek within the
-      buffer), reads more on demand, and is **bounded** (`cap(n)`, default = framed
-      message size; overflow is an `Err`, never unbounded). The "continuously
-      receiving peer that also needs to seek" case.
+- [x] **`BufSource<R: Read>`** — the socket+seek adapter: retains read bytes so a
+      seek-using message over a *non-seekable* stream works (seek within the buffer),
+      reads more on demand, and is **bounded** (`cap`, default 64 KiB; overflow →
+      `ErrorKind::BufferFull`, never unbounded). A `SeekSource`. `tests/bin_buf_source.rs`.
 - [ ] **3b (long-run, not MVP): large seekable files.** `SeekSource for R: Read +
       Seek` so a `File` seeks via `io::Seek` + bit offset, no buffering — the
       file/container-format use case DESIGN §11 DD2 deferred. Designed now (preview

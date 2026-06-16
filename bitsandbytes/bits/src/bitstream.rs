@@ -96,6 +96,12 @@ pub enum ErrorKind {
     /// [`Source`] (a forward-only stream). Decode from a slice ([`BitReader`]) or a
     /// seekable source instead.
     NotSeekable,
+    /// A [`BufSource`] hit its retention cap before the message finished — the
+    /// framed message is larger than the configured bound (never unbounded).
+    BufferFull {
+        /// The cap, in bytes.
+        cap: usize,
+    },
 }
 
 impl BitError {
@@ -170,6 +176,9 @@ impl fmt::Display for BitError {
             }
             ErrorKind::NotSeekable => {
                 write!(f, "a position directive ran on a non-seekable source")?;
+            }
+            ErrorKind::BufferFull { cap } => {
+                write!(f, "buffered source exceeded its {cap}-byte cap")?;
             }
         }
         write!(f, " at bit {}", self.at)?;
@@ -989,6 +998,122 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
         self.pos
     }
 }
+
+/// A **seekable** [`Source`] over a forward `Read` (a socket): it *retains* the
+/// bytes it has read, so a seek-using message (`restore_position`) works over a
+/// non-seekable stream by seeking within the retained buffer, reading more on
+/// demand. It is **bounded** — a retention `cap` (default 64 KiB) past which it
+/// errors [`ErrorKind::BufferFull`] rather than buffering unboundedly. The
+/// "continuously-receiving peer that also needs to seek" case (DD3/DD4).
+#[derive(Clone, Debug)]
+pub struct BufSource<R> {
+    inner: R,
+    buf: Vec<u8>,
+    bit_pos: usize,
+    cap: usize,
+    layout: Layout,
+    eof: bool,
+}
+
+impl<R: std::io::Read> BufSource<R> {
+    /// Wraps `inner` with the default 64 KiB retention cap, MSB-first big-endian.
+    #[must_use]
+    pub fn new(inner: R) -> Self {
+        Self::with_cap(inner, 64 * 1024)
+    }
+
+    /// Wraps `inner` with a retention `cap` (bytes), MSB-first big-endian.
+    #[must_use]
+    pub fn with_cap(inner: R, cap: usize) -> Self {
+        Self::with_cap_and_layout(inner, cap, Layout::default())
+    }
+
+    /// Wraps `inner` with a retention `cap` (bytes) and [`Layout`].
+    #[must_use]
+    pub fn with_cap_and_layout(inner: R, cap: usize, layout: Layout) -> Self {
+        Self {
+            inner,
+            buf: Vec::new(),
+            bit_pos: 0,
+            cap,
+            layout,
+            eof: false,
+        }
+    }
+
+    /// Reads from `inner` until `buf` holds at least `byte_end` bytes (or EOF/cap).
+    fn fill_to(&mut self, byte_end: usize) -> Result<(), BitError> {
+        while self.buf.len() < byte_end && !self.eof {
+            if self.buf.len() >= self.cap {
+                return Err(BitError::new(
+                    ErrorKind::BufferFull { cap: self.cap },
+                    self.bit_pos,
+                ));
+            }
+            let want = (byte_end - self.buf.len()).min(self.cap - self.buf.len());
+            let start = self.buf.len();
+            self.buf.resize(start + want, 0);
+            match self.inner.read(&mut self.buf[start..]) {
+                Ok(0) => {
+                    self.buf.truncate(start);
+                    self.eof = true;
+                }
+                Ok(got) => self.buf.truncate(start + got),
+                Err(e) => {
+                    self.buf.truncate(start);
+                    return Err(BitError::new(ErrorKind::Io(e.kind()), self.bit_pos));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<R: std::io::Read> Source for BufSource<R> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        if n > 128 {
+            return Err(BitError::new(
+                ErrorKind::TooWide { width: n as usize },
+                self.bit_pos,
+            ));
+        }
+        let byte_end = (self.bit_pos + n as usize).div_ceil(8);
+        self.fill_to(byte_end)?;
+        if self.buf.len() < byte_end {
+            return Err(BitError::new(
+                ErrorKind::Incomplete {
+                    needed: Some(byte_end - self.buf.len()),
+                },
+                self.bit_pos,
+            ));
+        }
+        let mut acc = 0u128;
+        for k in 0..n as usize {
+            let p = self.bit_pos + k;
+            let byte = self.buf[p >> 3];
+            match self.layout.bit {
+                BitOrder::Msb => acc = (acc << 1) | u128::from((byte >> (7 - (p & 7))) & 1),
+                BitOrder::Lsb => acc |= u128::from((byte >> (p & 7)) & 1) << k,
+            }
+        }
+        self.bit_pos += n as usize;
+        Ok(acc)
+    }
+    fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+    fn byte_order(&self) -> ByteOrder {
+        self.layout.byte
+    }
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        // Seek within the retained buffer; a later read fills more on demand.
+        // Backward seeks (`restore_position`) hit already-retained bytes.
+        self.bit_pos = pos;
+        Ok(())
+    }
+}
+
+impl<R: std::io::Read> SeekSource for BufSource<R> {}
 
 /// binrw bridge: `parse_with`/`write_with` helpers that embed a bit-decoded
 /// region inside a `#[binrw]`/`#[bitwire]` struct. This is the **dispatch seam**
