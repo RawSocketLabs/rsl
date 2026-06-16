@@ -134,6 +134,20 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             "mixing `#[bits(A..=B)]` ranges with inferred/`#[bits(N)]` widths is not allowed; use one style for the whole struct",
         ));
     }
+    // Ranges are written low..=high (the offset is the low end). Catch a reversed
+    // range with a clear, spanned error instead of a const-eval subtract overflow.
+    for f in &fields {
+        if let Spec::Range(a, b) = &f.spec
+            && a > b
+        {
+            return Err(syn::Error::new_spanned(
+                &f.ident,
+                format!(
+                    "`#[bits({a}..={b})]` is reversed; write the range low..=high (i.e. `{b}..={a}`)"
+                ),
+            ));
+        }
+    }
 
     // Per-field width const tokens (`<Ty as Bits>::BITS` or a literal).
     let width_ident = |f: &Field| format_ident!("__bits_w_{}", f.ident);
