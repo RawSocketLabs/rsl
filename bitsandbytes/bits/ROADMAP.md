@@ -146,7 +146,9 @@ histogram order; each is a checkbox with read + write + a test:
       **hand-written generic combinators / trait-object parsing**. Adds the
       polymorphic threading the macro doesn't need; `Type::decode_with` call sites
       are unchanged when it lands, so it can ship later with no churn.
-- [ ] `ignore` (×12) — skip on read / don't emit.
+- [x] `ignore` (×12) — `#[br(ignore)]`: an in-memory-only field, `Default::default()`
+      on read (no input consumed) and skipped on write (zero wire bits), but still a
+      stored + builder field. Excluded from `BIT_LEN`/the guard. `tests/bin_ignore.rs`.
 - [x] `calc` / `temp` (×9/×1) — `#[br(temp)]` reads into a local (usable by a later
       `count`/`ctx`) but is **not stored**; `#[bw(calc = <expr>)]` writes a value
       computed from the other fields (pinned to the field's type). Together they drop
@@ -173,12 +175,15 @@ histogram order; each is a checkbox with read + write + a test:
       `magic` for an enforced constant); written as the type's zero / `<expr>`.
       Dropped from the struct and builder (like `temp`, but auto-written). `#[bin]`
       only. `tests/bin_reserved.rs`.
-- [ ] Directional codecs — `#[bin(read_only)]` / `#[bin(write_only)]` flags
-      (read_only ⇒ `Decode` only; write_only ⇒ `Encode` + builder).
-- [ ] `validate` — opt-in, **Builder-bound** `fn(&Builder) -> Result<(), impl
-      Display>`, run by `build()`; generates `skip_validation()`. Construction
-      soundness only; **no** method on the concrete type (supersedes spike §9.4
-      post-parse `validate`).
+- [x] Directional codecs — `#[bin(read_only)]` / `#[bin(write_only)]` flags
+      (read_only ⇒ `Decode` only, no builder; write_only ⇒ `Encode` + builder).
+      Shipped with the `#[bin]` foundation; mutually exclusive (a clear error).
+- [x] `validate` — shipped as the `pre_assert` item above (`#[bin(validate = path)]`,
+      run by `build()`, construction-soundness only, **no** method on the concrete
+      type). Implemented as a free `fn(&Self) -> Result<(), impl Display>` rather than
+      `fn(&Builder)` — it validates the fully-resolved value (a builder with `Option`
+      fields is awkward to check, and `self` is partly moved by then). `skip_validation()`
+      stays deferred: the struct literal already bypasses (the dual-use raw path).
 
 **Exit:** the high-frequency surface is native; the spike's `#[wire]`/`#[bitwire]`
 are folded into one `#[bin]`; the binrw bridge is used only for the long tail.

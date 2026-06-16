@@ -239,6 +239,9 @@ struct FieldBr {
     /// condition (over earlier fields, as locals) holds, else `None`; on encode the
     /// `Option`'s presence drives whether it is written.
     cond: Option<syn::Expr>,
+    /// `#[br(ignore)]` — an in-memory-only field: `Default::default()` on read (no
+    /// input consumed), skipped on write. Zero wire bits.
+    ignore: bool,
     /// `#[br(map = <f>)]` — read the wire value `f`'s argument types, then `f(raw)`
     /// gives the field. `#[br(try_map = <f>)]` is the fallible form (`f` returns a
     /// `Result`); they are mutually exclusive.
@@ -258,6 +261,7 @@ enum BrDirective {
     Count(syn::Expr),
     Ctx(Vec<Ident>),
     Temp,
+    Ignore,
     If(syn::Expr),
     Map(syn::Expr),
     TryMap(syn::Expr),
@@ -278,6 +282,7 @@ impl Parse for BrDirective {
                     Ok(BrDirective::Count(input.parse()?))
                 }
                 "temp" => Ok(BrDirective::Temp),
+                "ignore" => Ok(BrDirective::Ignore),
                 "ctx" => {
                     let content;
                     syn::braced!(content in input);
@@ -294,7 +299,7 @@ impl Parse for BrDirective {
                 }
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, or `try_map`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, or `try_map`",
                 )),
             }
         }
@@ -313,6 +318,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::Count(e) => br.count = Some(e),
                     BrDirective::Ctx(names) => br.ctx = Some(names),
                     BrDirective::Temp => br.temp = true,
+                    BrDirective::Ignore => br.ignore = true,
                     BrDirective::If(e) => br.cond = Some(e),
                     BrDirective::Map(e) => br.map = Some(e),
                     BrDirective::TryMap(e) => br.try_map = Some(e),
@@ -354,6 +360,12 @@ fn field_has_ctx(f: &syn::Field) -> bool {
 /// Whether a field is `#[br(temp)]` (read into a local, not stored).
 fn field_is_temp(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.temp)
+}
+
+/// Whether a field is `#[br(ignore)]` (in-memory only — defaulted on read, not
+/// written, zero wire bits).
+fn field_is_ignore(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.ignore)
 }
 
 /// Whether a field is conditional (`#[br(if(...))]`). Like a `ctx` child, its
@@ -434,6 +446,9 @@ fn ctx_literal(
 /// the compiler (the macro never computes widths).
 fn field_width(f: &syn::Field) -> TokenStream2 {
     let ty = &f.ty;
+    if field_is_ignore(f) {
+        return quote!(0u32); // in-memory only: zero wire bits
+    }
     if let Some(elem) = vec_elem(f) {
         if is_nested(f) {
             quote!(<#elem as ::bits::__private::FixedBitLen>::BIT_LEN)
@@ -462,6 +477,10 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
         return Ok(
             quote!(let _: #ty = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         );
+    }
+    // `ignore`: in-memory only — `Default::default()` on read, no input consumed.
+    if br.ignore {
+        return Ok(quote!(let #id = ::core::default::Default::default();));
     }
     // `if(<cond>)`: a conditional `Option<T>`. `cond` is over earlier fields (as
     // locals). `Some(read)` when it holds, else `None` (consuming nothing).
@@ -583,6 +602,10 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     let br = parse_field_br(f)?;
+    // `ignore`: in-memory only — emit nothing.
+    if br.ignore {
+        return Ok(quote!());
+    }
     // `calc`: write a value computed from the other fields rather than `self.#id`,
     // pinned to the field's declared type so the wire width is unambiguous.
     if let Some(calc) = &br.calc {
