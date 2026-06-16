@@ -1115,6 +1115,87 @@ impl<R: std::io::Read> Source for BufSource<R> {
 
 impl<R: std::io::Read> SeekSource for BufSource<R> {}
 
+/// A [`SeekSource`] over a seekable reader (`Read + Seek`, e.g. a `File`): it seeks
+/// via [`std::io::Seek`] to the byte holding the bit cursor, **without buffering** —
+/// the large-file / container-format case (Phase 3b). For a *non*-seekable stream
+/// that still needs to seek, use [`BufSource`].
+#[derive(Clone, Debug)]
+pub struct SeekReader<R> {
+    inner: R,
+    bit_pos: usize,
+    layout: Layout,
+}
+
+impl<R: std::io::Read + std::io::Seek> SeekReader<R> {
+    /// Wraps `inner` at bit 0, MSB-first big-endian.
+    #[must_use]
+    pub fn new(inner: R) -> Self {
+        Self::with_layout(inner, Layout::default())
+    }
+
+    /// Wraps `inner` at bit 0 with the given [`Layout`].
+    #[must_use]
+    pub fn with_layout(inner: R, layout: Layout) -> Self {
+        Self {
+            inner,
+            bit_pos: 0,
+            layout,
+        }
+    }
+}
+
+impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        if n > 128 {
+            return Err(BitError::new(
+                ErrorKind::TooWide { width: n as usize },
+                self.bit_pos,
+            ));
+        }
+        let bit_off = self.bit_pos % 8;
+        let byte_start = (self.bit_pos / 8) as u64;
+        let nbytes = (bit_off + n as usize).div_ceil(8);
+        self.inner
+            .seek(std::io::SeekFrom::Start(byte_start))
+            .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), self.bit_pos))?;
+        let mut buf = vec![0u8; nbytes];
+        self.inner.read_exact(&mut buf).map_err(|e| {
+            let kind = if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                ErrorKind::UnexpectedEof {
+                    needed: n as usize,
+                    remaining: 0,
+                }
+            } else {
+                ErrorKind::Io(e.kind())
+            };
+            BitError::new(kind, self.bit_pos)
+        })?;
+        let mut acc = 0u128;
+        for k in 0..n as usize {
+            let p = bit_off + k;
+            let byte = buf[p >> 3];
+            match self.layout.bit {
+                BitOrder::Msb => acc = (acc << 1) | u128::from((byte >> (7 - (p & 7))) & 1),
+                BitOrder::Lsb => acc |= u128::from((byte >> (p & 7)) & 1) << k,
+            }
+        }
+        self.bit_pos += n as usize;
+        Ok(acc)
+    }
+    fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+    fn byte_order(&self) -> ByteOrder {
+        self.layout.byte
+    }
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        self.bit_pos = pos; // the actual `io::Seek` happens on the next read
+        Ok(())
+    }
+}
+
+impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
+
 /// binrw bridge: `parse_with`/`write_with` helpers that embed a bit-decoded
 /// region inside a `#[binrw]`/`#[bitwire]` struct. This is the **dispatch seam**
 /// — binrw owns the byte-aligned stream (magic/count/args/…), these hand a

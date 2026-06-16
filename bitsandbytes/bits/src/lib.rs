@@ -113,7 +113,8 @@ pub mod int;
 
 pub use bitstream::{
     BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, BufSource, DecodeWith,
-    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source, StreamBitReader,
+    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekReader, SeekSource, Sink, Source,
+    StreamBitReader,
 };
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,

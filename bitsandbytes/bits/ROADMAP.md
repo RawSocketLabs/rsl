@@ -224,10 +224,9 @@ order of need:
       seek-using message over a *non-seekable* stream works (seek within the buffer),
       reads more on demand, and is **bounded** (`cap`, default 64 KiB; overflow →
       `ErrorKind::BufferFull`, never unbounded). A `SeekSource`. `tests/bin_buf_source.rs`.
-- [ ] **3b (long-run, not MVP): large seekable files.** `SeekSource for R: Read +
-      Seek` so a `File` seeks via `io::Seek` + bit offset, no buffering — the
-      file/container-format use case DESIGN §11 DD2 deferred. Designed now (preview
-      + this entry), implemented when it earns its place.
+- [x] **3b: large seekable files.** `SeekReader<R: Read + Seek>` — a `SeekSource`
+      that seeks via `io::Seek` to the byte holding the bit cursor, no buffering (the
+      file/container-format case). `tests/bin_seek_reader.rs`.
 - [ ] **Optional `bytes` integration (feature-gated, off by default).** Real value
       for async/tokio networking, but **not** in the core (dependency-light): an
       opt-in `bytes` feature adds `Source`/`Sink` over `Buf`/`BufMut` (zero-copy
