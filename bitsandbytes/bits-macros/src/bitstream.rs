@@ -266,6 +266,10 @@ struct FieldBr {
     pad_after: Option<syn::Expr>,
     align_before: bool,
     align_after: bool,
+    /// `#[br(restore_position)]` — read the field (a peek), then rewind the cursor so
+    /// later fields re-read from the same offset; skipped on write. Needs a
+    /// [`SeekSource`](bits::SeekSource) (a slice cursor) — errors on a forward stream.
+    restore_position: bool,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -283,6 +287,7 @@ enum BrDirective {
     PadAfter(syn::Expr),
     AlignBefore,
     AlignAfter,
+    RestorePosition,
 }
 
 impl Parse for BrDirective {
@@ -329,9 +334,10 @@ impl Parse for BrDirective {
                 }
                 "align_before" => Ok(BrDirective::AlignBefore),
                 "align_after" => Ok(BrDirective::AlignAfter),
+                "restore_position" => Ok(BrDirective::RestorePosition),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, or `align_before/after`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, or `restore_position`",
                 )),
             }
         }
@@ -359,6 +365,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::PadAfter(e) => br.pad_after = Some(e),
                     BrDirective::AlignBefore => br.align_before = true,
                     BrDirective::AlignAfter => br.align_after = true,
+                    BrDirective::RestorePosition => br.restore_position = true,
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -412,7 +419,11 @@ fn field_is_ignore(f: &syn::Field) -> bool {
 /// the cursor, so the struct's fixed length / alignment can't be computed statically.
 fn field_has_positioning(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| {
-        br.pad_before.is_some() || br.pad_after.is_some() || br.align_before || br.align_after
+        br.pad_before.is_some()
+            || br.pad_after.is_some()
+            || br.align_before
+            || br.align_after
+            || br.restore_position
     })
 }
 
@@ -538,7 +549,15 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
     let br = parse_field_br(f)?;
     let pre = pad_read_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_read_tokens(br.align_after, br.pad_after.as_ref());
-    let core = field_read_core(f)?;
+    let mut core = field_read_core(f)?;
+    if br.restore_position {
+        // Peek: save the offset, read the field, rewind so later fields re-read it.
+        core = quote! {
+            let __pos = ::bits::__private::Source::bit_pos(r);
+            #core
+            ::bits::__private::Source::seek_to_bit(r, __pos)?;
+        };
+    }
     Ok(quote!(#pre #core #post))
 }
 
@@ -671,7 +690,13 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
     let br = parse_field_br(f)?;
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
-    let core = field_write_core(f, field_set)?;
+    // A `restore_position` field is a read-side peek (it overlaps later data), so it
+    // is not written — the overlapping field emits those bytes.
+    let core = if br.restore_position {
+        quote!()
+    } else {
+        field_write_core(f, field_set)?
+    };
     Ok(quote!(#pre #core #post))
 }
 
@@ -1129,6 +1154,7 @@ struct BinArgs {
     read_only: bool,
     write_only: bool,
     no_builder: bool,
+    forward_only: bool,
     lsb: bool,
     little: bool,
     magic: Option<syn::Expr>,
@@ -1156,6 +1182,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.write_only = true;
         } else if meta.path.is_ident("no_builder") {
             args.no_builder = true;
+        } else if meta.path.is_ident("forward_only") {
+            args.forward_only = true;
         } else if meta.path.is_ident("bit_order") {
             let v: Ident = meta.value()?.parse()?;
             match v.to_string().as_str() {
@@ -1179,7 +1207,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, big, little, bit_order = msb|lsb, magic = <expr>, \
+                 no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
                  ctx(name: Ty, …), validate = <path>",
             ));
         }
@@ -1209,6 +1237,21 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             ));
         }
     };
+    // `forward_only` pins a `Source`-only bound: a seek directive is then a compile
+    // error (it would need a `SeekSource`).
+    if args.forward_only {
+        for f in &full_fields.named {
+            if parse_field_br(f)
+                .map(|br| br.restore_position)
+                .unwrap_or(false)
+            {
+                return Err(syn::Error::new_spanned(
+                    f,
+                    "`#[br(restore_position)]` needs to seek, but the struct is `#[bin(forward_only)]`",
+                ));
+            }
+        }
+    }
 
     // `#[bin]` generates the codec **directly** from the full field list — so a
     // `#[br(temp)]` field (read into a local, not stored) can participate — while

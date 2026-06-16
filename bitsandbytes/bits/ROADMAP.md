@@ -209,16 +209,17 @@ for the long tail (and Phase 4 removes it from the default graph).
 The unified I/O model (preview: `design_preview::io_model`). Build the tiers in
 order of need:
 
-- [ ] **`Source` trait** — forward byte read + bit-position; impl'd for `&[u8]`
-      (consume, transactional) and any `std::io::Read`. `decode(&mut impl Source)`
-      works on slice, socket, file for **forward-only** messages.
-- [ ] **Attribute-driven bound**: a forward-only message is bounded `Source`; a
-      message using a position directive (`seek`/`restore_position`/absolute `pad`)
-      is bounded **`SeekSource`**. `#[bin(forward_only)]` pins `Source`-only and
-      makes a seek directive a compile error.
-- [ ] **`SeekSource: Source`** — adds `seek_to_bit`; impl'd by `BitReader` (slice)
-      and (Phase 3b) `R: Read + Seek`. (Inherent `seek_to_bit`/`align_to_byte` stay
-      on `BitReader` for the common in-memory case.)
+- [x] **`Source` trait** — forward bit read + bit-position; impl'd by `BitReader`
+      (slice) and `StreamBitReader<R: Read>`. `decode_from(&mut impl Source)` works
+      forward-only; `decode`/`peek`/`decode_exact` wrap a slice. (Shipped Phase 1.)
+- [x] **Attribute-driven bound**: a forward-only message uses `Source`;
+      `restore_position` rewinds via `Source::seek_to_bit` (real on a `SeekSource`,
+      else a runtime `ErrorKind::NotSeekable`). `#[bin(forward_only)]` makes a seek
+      directive (`restore_position`) a **compile error** (trybuild
+      `ui/bin_forward_only_no_seek`). `tests/bin_restore_position.rs`.
+- [x] **`SeekSource: Source`** — a marker guaranteeing `seek_to_bit` works; impl'd
+      by `BitReader` (slice). (`R: Read + Seek` adapter is 3b.) Inherent
+      `seek_to_bit`/`align_to_byte` stay on `BitReader` for the in-memory case.
 - [ ] **`BufSource<R: Read>`** — the socket+seek adapter: retains read bytes so a
       seek-using message over a *non-seekable* stream works (seek within the
       buffer), reads more on demand, and is **bounded** (`cap(n)`, default = framed

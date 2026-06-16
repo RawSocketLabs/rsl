@@ -92,6 +92,10 @@ pub enum ErrorKind {
         /// The converter's error, rendered.
         message: String,
     },
+    /// A position directive (`restore_position`/seek) ran on a non-seekable
+    /// [`Source`] (a forward-only stream). Decode from a slice ([`BitReader`]) or a
+    /// seekable source instead.
+    NotSeekable,
 }
 
 impl BitError {
@@ -163,6 +167,9 @@ impl fmt::Display for BitError {
             }
             ErrorKind::Convert { message } => {
                 write!(f, "conversion failed: {message}")?;
+            }
+            ErrorKind::NotSeekable => {
+                write!(f, "a position directive ran on a non-seekable source")?;
             }
         }
         write!(f, " at bit {}", self.at)?;
@@ -588,6 +595,16 @@ pub trait Source {
         ByteOrder::Big
     }
 
+    /// Moves the cursor to absolute bit `pos`. The default — for a forward-only
+    /// source — fails with [`ErrorKind::NotSeekable`]; seekable sources (the slice
+    /// [`BitReader`]) override it. A [`SeekSource`] guarantees this works.
+    ///
+    /// # Errors
+    /// [`ErrorKind::NotSeekable`] unless the source is seekable.
+    fn seek_to_bit(&mut self, _pos: usize) -> Result<(), BitError> {
+        Err(BitError::new(ErrorKind::NotSeekable, self.bit_pos()))
+    }
+
     /// Reads one [`Bits`] value of its declared width, applying the byte order.
     ///
     /// # Errors
@@ -601,6 +618,14 @@ pub trait Source {
         )))
     }
 }
+
+/// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
+/// the failing default) — the bound for a message using a position directive
+/// (`restore_position`). Implemented by the in-memory [`BitReader`]; a `Read + Seek`
+/// adapter is Phase 3b.
+pub trait SeekSource: Source {}
+
+impl SeekSource for BitReader<'_> {}
 
 /// A bit-level **output** the codec writes to — currently the in-memory
 /// [`BitWriter`]; a `std::io::Write` adapter is added in chunk B2.
@@ -638,6 +663,9 @@ impl Source for BitReader<'_> {
     }
     fn byte_order(&self) -> ByteOrder {
         self.byte
+    }
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        BitReader::seek_to_bit(self, pos)
     }
 }
 
