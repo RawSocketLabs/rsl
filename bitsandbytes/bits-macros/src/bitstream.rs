@@ -69,13 +69,13 @@ fn ctx_struct_ty(ty: &Type) -> syn::Result<TokenStream2> {
     ))
 }
 
-/// The const-eval guard's message — names both better tools.
-const BYTE_ALIGNED_MSG: &str = "this struct's fields are all byte-aligned, so the \
-bit-stream codec (BitDecode/BitEncode) adds nothing over a byte codec: use `#[binrw]` or \
-`#[wire]` instead (they also give magic/count/args/Vec/nested messages). Collapse adjacent \
-sub-byte fields into a `#[bitfield]`/`#[wire] group(...)`. BitDecode/BitEncode are for fields \
-that straddle byte boundaries in the stream (e.g. a 108-bit payload). To keep the bit-stream \
-codec for an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.";
+/// The const-eval guard's message — steers the bare derive toward `#[bin]`.
+const BYTE_ALIGNED_MSG: &str = "this struct's fields are all byte-aligned. The bare \
+`#[derive(BitDecode/BitEncode)]` is the low-level bit codec; for a byte-aligned message use \
+`#[bin]` — the unified codec (it handles byte-aligned data natively and adds \
+magic/count/ctx/map/if/validate, folding the former `#[wire]`/`#[bitwire]`). The bare derive \
+is for fields that straddle byte boundaries (e.g. a 108-bit payload). To keep the bare derive \
+on an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.";
 
 /// Returns the named fields of a non-generic struct, or a well-spanned error.
 fn named_struct(input: &DeriveInput) -> syn::Result<&FieldsNamed> {
@@ -1131,7 +1131,6 @@ struct BinArgs {
     no_builder: bool,
     lsb: bool,
     little: bool,
-    allow_byte_aligned: bool,
     magic: Option<syn::Expr>,
     ctx: Vec<(Ident, Type)>,
     /// `validate = <path>` — a `fn(&Self) -> Result<(), impl Display>` run by
@@ -1157,8 +1156,6 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.write_only = true;
         } else if meta.path.is_ident("no_builder") {
             args.no_builder = true;
-        } else if meta.path.is_ident("allow_byte_aligned") {
-            args.allow_byte_aligned = true;
         } else if meta.path.is_ident("bit_order") {
             let v: Ident = meta.value()?.parse()?;
             match v.to_string().as_str() {
@@ -1183,7 +1180,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, big, little, bit_order = msb|lsb, magic = <expr>, \
-                 ctx(name: Ty, …), validate = <path>, allow_byte_aligned",
+                 ctx(name: Ty, …), validate = <path>",
             ));
         }
         Ok(())
@@ -1217,8 +1214,13 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     // `#[br(temp)]` field (read into a local, not stored) can participate — while
     // the emitted struct drops it. (Unlike P2.0–P2.3, this no longer lowers to the
     // `#[derive(BitDecode/BitEncode)]` codec; those derives remain usable directly.)
+    //
+    // The right-tool guard is always suppressed for `#[bin]`: it is the *unified*
+    // codec (the fold of `#[wire]`/`#[bitwire]`), so a byte-aligned message is a
+    // first-class use, not a misuse. The guard stays on the bare derives as advisory
+    // steering toward `#[bin]`.
     let attrs = BitStreamAttrs {
-        allow_byte_aligned: args.allow_byte_aligned,
+        allow_byte_aligned: true,
         lsb: args.lsb,
         little: args.little,
         magic: args.magic.clone(),

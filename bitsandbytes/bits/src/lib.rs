@@ -132,6 +132,10 @@ pub use int::{UInt, *};
 pub use bits_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bin, bitfield, bitflags};
 
 // `#[wire]`/`#[bitwire]` wrap binrw, so they exist only with the `binrw` feature.
+// **Superseded by `#[bin]`** (Phase 2 fold): `#[bin]` is the unified codec and now
+// handles byte-aligned messages natively with the full directive surface, so it
+// covers both. These are kept for binrw interop only and are dropped when binrw
+// leaves the default graph (Phase 4).
 #[cfg(feature = "binrw")]
 pub use bits_macros::{bitwire, wire};
 

@@ -4,14 +4,14 @@
 
 use bits::{bin, u4, u12};
 
-#[bin(big, allow_byte_aligned)]
+#[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct BeWord {
     value: u16,
     big: u32,
 }
 
-#[bin(little, allow_byte_aligned)]
+#[bin(little)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct LeWord {
     value: u16,

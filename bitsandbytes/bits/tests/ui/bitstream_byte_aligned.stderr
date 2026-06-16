@@ -1,4 +1,4 @@
-error[E0080]: evaluation panicked: this struct's fields are all byte-aligned, so the bit-stream codec (BitDecode/BitEncode) adds nothing over a byte codec: use `#[binrw]` or `#[wire]` instead (they also give magic/count/args/Vec/nested messages). Collapse adjacent sub-byte fields into a `#[bitfield]`/`#[wire] group(...)`. BitDecode/BitEncode are for fields that straddle byte boundaries in the stream (e.g. a 108-bit payload). To keep the bit-stream codec for an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.
+error[E0080]: evaluation panicked: this struct's fields are all byte-aligned. The bare `#[derive(BitDecode/BitEncode)]` is the low-level bit codec; for a byte-aligned message use `#[bin]` — the unified codec (it handles byte-aligned data natively and adds magic/count/ctx/map/if/validate, folding the former `#[wire]`/`#[bitwire]`). The bare derive is for fields that straddle byte boundaries (e.g. a 108-bit payload). To keep the bare derive on an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.
  --> tests/ui/bitstream_byte_aligned.rs:6:10
   |
 6 | #[derive(BitDecode)]

@@ -193,8 +193,16 @@ histogram order; each is a checkbox with read + write + a test:
       fields is awkward to check, and `self` is partly moved by then). `skip_validation()`
       stays deferred: the struct literal already bypasses (the dual-use raw path).
 
-**Exit:** the high-frequency surface is native; the spike's `#[wire]`/`#[bitwire]`
-are folded into one `#[bin]`; the binrw bridge is used only for the long tail.
+- [x] **Fold `#[wire]`/`#[bitwire]` into `#[bin]`** — `#[bin]` is the unified codec:
+      the right-tool guard is suppressed for it (kept as advisory steering on the bare
+      derives), so a **byte-aligned** message is a first-class `#[bin]` use, covering
+      everything `#[wire]` did natively (magic, `temp`/`calc` count, count-driven `Vec`,
+      builder — no binrw). `tests/bin_fold.rs`. `#[wire]`/`#[bitwire]` are kept for
+      binrw interop only (dropped in Phase 4) and documented as superseded.
+
+**Exit ✓ (achieved):** the high-frequency surface is native; the spike's
+`#[wire]`/`#[bitwire]` are folded into one `#[bin]`; the binrw bridge is used only
+for the long tail (and Phase 4 removes it from the default graph).
 
 ## Phase 3 — The `Source`/`SeekSource` ladder + attribute-driven bounds (DD3/DD4)
 
