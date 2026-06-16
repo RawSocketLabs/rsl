@@ -63,6 +63,9 @@ struct BitStreamAttrs {
     allow_byte_aligned: bool,
     /// `bit_order = lsb` (else MSB-first, the default).
     lsb: bool,
+    /// `magic = <expr>` — a leading constant verified on read, emitted on write.
+    /// Any `Bits` value, so it can be sub-byte (`u3::new(0b110)`) unlike binrw.
+    magic: Option<syn::Expr>,
 }
 
 fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
@@ -81,9 +84,12 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                         _ => return Err(meta.error("expected `msb` or `lsb`")),
                     }
                     Ok(())
+                } else if meta.path.is_ident("magic") {
+                    attrs.magic = Some(meta.value()?.parse()?);
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned` or `bit_order = msb|lsb`",
+                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, or `magic = <expr>`",
                     ))
                 }
             })?;
@@ -136,17 +142,26 @@ fn field_width(f: &syn::Field) -> TokenStream2 {
 
 /// A const-eval assertion that the struct is *not* entirely byte-aligned (the
 /// bit-stream codec would otherwise be the wrong tool). Empty/opted-out → no guard.
-fn alignment_guard(fields: &FieldsNamed, allow: bool) -> TokenStream2 {
-    if allow || fields.named.is_empty() {
+/// A sub-byte `magic` counts as a non-byte-aligned element (binrw can't express
+/// one), so it suppresses the guard just like a sub-byte field.
+fn alignment_guard(fields: &FieldsNamed, allow: bool, magic: Option<&syn::Expr>) -> TokenStream2 {
+    if allow || (fields.named.is_empty() && magic.is_none()) {
         return quote!();
     }
-    let aligned = fields.named.iter().map(|f| {
-        let w = field_width(f);
-        quote!((#w % 8 == 0))
-    });
+    let mut terms: Vec<TokenStream2> = fields
+        .named
+        .iter()
+        .map(|f| {
+            let w = field_width(f);
+            quote!((#w % 8 == 0))
+        })
+        .collect();
+    if let Some(m) = magic {
+        terms.push(quote!((::bits::__private::bits_of(&#m) % 8 == 0)));
+    }
     quote! {
         const _: () = {
-            assert!(!(true #(&& #aligned)*), #BYTE_ALIGNED_MSG);
+            assert!(!(true #(&& #terms)*), #BYTE_ALIGNED_MSG);
         };
     }
 }
@@ -163,8 +178,19 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
     let attrs = parse_bit_stream(input)?;
-    let guard = alignment_guard(fields, attrs.allow_byte_aligned);
+    let guard = alignment_guard(fields, attrs.allow_byte_aligned, attrs.magic.as_ref());
     let order = order_token(&attrs);
+    // `magic`: a leading constant read and verified before the fields. Its width
+    // (inferred from the value's type) joins `BIT_LEN`.
+    let (magic_read, magic_bits) = match &attrs.magic {
+        Some(m) => (
+            quote! {
+                ::bits::__private::verify_magic(r, #m).map_err(|e| e.in_field("magic"))?;
+            },
+            quote!(::bits::__private::bits_of(&#m) +),
+        ),
+        None => (quote!(), quote!()),
+    };
     let widths = fields.named.iter().map(field_width);
     let reads = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
@@ -183,11 +209,12 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #guard
         impl ::bits::BitDecode for #name {
-            const BIT_LEN: u32 = 0 #(+ #widths)*;
+            const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
 
             fn bit_decode<S: ::bits::__private::Source>(
                 r: &mut S,
             ) -> ::core::result::Result<Self, ::bits::__private::BitError> {
+                #magic_read
                 ::core::result::Result::Ok(Self { #(#reads,)* })
             }
         }
@@ -227,8 +254,15 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let fields = named_struct(input)?;
     let attrs = parse_bit_stream(input)?;
-    let guard = alignment_guard(fields, attrs.allow_byte_aligned);
+    let guard = alignment_guard(fields, attrs.allow_byte_aligned, attrs.magic.as_ref());
     let order = order_token(&attrs);
+    // `magic`: emit the leading constant before the fields (matched read/write).
+    let magic_write = match &attrs.magic {
+        Some(m) => quote! {
+            ::bits::__private::Sink::write(w, #m).map_err(|e| e.in_field("magic"))?;
+        },
+        None => quote!(),
+    };
     let writes = fields.named.iter().map(|f| {
         let id = f.ident.as_ref().expect("named field");
         let ty = &f.ty;
@@ -249,6 +283,7 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 &self,
                 w: &mut K,
             ) -> ::core::result::Result<(), ::bits::__private::BitError> {
+                #magic_write
                 #(#writes)*
                 ::core::result::Result::Ok(())
             }
@@ -296,6 +331,7 @@ struct BinArgs {
     no_builder: bool,
     lsb: bool,
     allow_byte_aligned: bool,
+    magic: Option<syn::Expr>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -324,10 +360,12 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
                 "lsb" => args.lsb = true,
                 _ => return Err(meta.error("expected `msb` or `lsb`")),
             }
+        } else if meta.path.is_ident("magic") {
+            args.magic = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, bit_order = msb|lsb, allow_byte_aligned",
+                 no_builder, bit_order = msb|lsb, magic = <expr>, allow_byte_aligned",
             ));
         }
         Ok(())
@@ -362,6 +400,9 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     }
     if args.allow_byte_aligned {
         bs.push(quote!(allow_byte_aligned));
+    }
+    if let Some(m) = &args.magic {
+        bs.push(quote!(magic = #m));
     }
     let bit_stream = if bs.is_empty() {
         quote!()

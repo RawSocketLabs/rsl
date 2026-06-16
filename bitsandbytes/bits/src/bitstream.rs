@@ -77,6 +77,14 @@ pub enum ErrorKind {
     },
     /// An I/O error while encoding to a [`std::io::Write`] sink.
     Io(std::io::ErrorKind),
+    /// A `magic` constant read off the wire did not match. Both values are the
+    /// type-erased low-bit representations ([`Bits::into_bits`](crate::Bits::into_bits)).
+    BadMagic {
+        /// The constant the codec expected.
+        expected: u128,
+        /// The value actually read.
+        found: u128,
+    },
 }
 
 impl BitError {
@@ -88,6 +96,14 @@ impl BitError {
             at,
             field: None,
         }
+    }
+
+    /// Builds a [`ErrorKind::BadMagic`] error (a `magic` constant mismatched) at
+    /// absolute bit offset `at`. `expected`/`found` are the type-erased low-bit
+    /// values ([`Bits::into_bits`](crate::Bits::into_bits)).
+    #[must_use]
+    pub fn bad_magic(expected: u128, found: u128, at: usize) -> Self {
+        Self::new(ErrorKind::BadMagic { expected, found }, at)
     }
 
     /// Records the field being processed, **if one is not already set** — so the
@@ -128,6 +144,9 @@ impl fmt::Display for BitError {
                 write!(f, "field width {width} exceeds the 128-bit carrier")?;
             }
             ErrorKind::Io(kind) => write!(f, "I/O error: {kind:?}")?,
+            ErrorKind::BadMagic { expected, found } => {
+                write!(f, "bad magic: expected {expected:#x}, found {found:#x}")?;
+            }
         }
         write!(f, " at bit {}", self.at)?;
         if let Some(field) = self.field {
@@ -138,6 +157,30 @@ impl fmt::Display for BitError {
 }
 
 impl std::error::Error for BitError {}
+
+/// The bit width of a [`Bits`] value's type. Generated `BIT_LEN` consts and the
+/// alignment guard call this to size a `magic` constant whose type they only have
+/// as an expression (the value is taken by reference purely to infer `T`).
+#[doc(hidden)]
+#[must_use]
+pub const fn bits_of<T: Bits>(_value: &T) -> u32 {
+    T::BITS
+}
+
+/// Reads a `magic` constant and verifies it equals `expected`, compared as
+/// type-erased bits (so `T` needs only [`Bits`] — no `Copy`/`PartialEq`, and `T`
+/// is pinned by the argument so the generated call site needs no turbofish). On
+/// mismatch: [`ErrorKind::BadMagic`] at the magic's offset.
+#[doc(hidden)]
+pub fn verify_magic<T: Bits, S: Source>(r: &mut S, expected: T) -> Result<(), BitError> {
+    let at = r.bit_pos();
+    let found: T = r.read()?;
+    let (e, g) = (expected.into_bits(), found.into_bits());
+    if e != g {
+        return Err(BitError::bad_magic(e, g, at));
+    }
+    Ok(())
+}
 
 /// A cursor that reads values at arbitrary bit offsets from a byte slice, in a
 /// chosen [`BitOrder`] (MSB-first by default — `bit 0` is the high bit of byte 0,

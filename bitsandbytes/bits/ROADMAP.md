@@ -82,7 +82,10 @@ histogram order; each is a checkbox with read + write + a test:
       (`read_only`/`write_only`/`no_builder`/`bit_order`/`allow_byte_aligned`),
       lowering to `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream]`.
       The directives below ride through as derive helper attributes.
-- [ ] `magic` (×214) — read-and-verify / write a constant (bit or byte width).
+- [x] `magic` (×214) — read-and-verify / write a constant (bit or byte width).
+      `#[bin(magic = <expr>)]`; sub-byte allowed (`u3::new(0b110)`, beyond binrw) so
+      it suppresses the right-tool guard; mismatch → `ErrorKind::BadMagic`.
+      `tests/bin_magic.rs`.
 - [ ] `pre_assert` (×84) — precondition (dual-use: assertion on *construction*/
       opt-in, never a hard parser reject).
 - [ ] `big`/`little` (×84) + `bit_order = msb|lsb` (per-struct) — unify with the

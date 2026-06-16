@@ -136,9 +136,9 @@ pub trait BitEnum: Bits {}
 #[doc(hidden)]
 pub mod __private {
     pub use crate::bitstream::{
-        BitDecode, BitEncode, BitError, BitReader, BitWriter, Sink, Source, decode_consume,
-        decode_exact, decode_peek, encode_to_vec, encode_to_writer, read_byte_array,
-        write_byte_array,
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, Sink, Source, bits_of,
+        decode_consume, decode_exact, decode_peek, encode_to_vec, encode_to_writer,
+        read_byte_array, verify_magic, write_byte_array,
     };
     #[cfg(feature = "binrw")]
     pub use crate::bitstream::{read_bits_region, write_bits_region};
