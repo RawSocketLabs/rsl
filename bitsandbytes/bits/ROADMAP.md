@@ -27,6 +27,26 @@
 6. **Each phase carries its tests**: unit + golden vectors + proptest round-trips
    + trybuild misuse snapshots + a criterion bench vs. the binrw path.
 
+## Feature workflow (how each roadmap item ships)
+
+A repeatable loop; every checkbox below goes through it before it is ticked:
+
+1. **Scope** — read the `design_preview` + this entry; identify what it touches
+   (runtime `bits/src/bitstream.rs` / macro `bits-macros/src/bitstream.rs` / tests).
+2. **Plan** the smallest chunk; build **runtime helper → macro codegen → test**.
+3. **Implement** incrementally; keep the macro emitting *const exprs / helper calls*,
+   never computing widths itself; pin generated types so inference can't drift.
+4. **Prove** — a positive round-trip/golden test **and** a `trybuild` negative
+   wherever there is a misuse to catch (clear, well-spanned error).
+5. **Gate** (all clean): `RUSTC_WRAPPER= cargo test -p bits`, `… --no-default-features`,
+   `… clippy -p bits-macros -p bits --all-targets` (`clippy::all = deny`),
+   `… fmt --all --check`.
+6. **Document** — tick this item with a one-line record of the design decision;
+   refresh the module / derive docs and the "which macro when?" table.
+7. **Commit** — one Conventional-Commit per item (`feat`/`fix`/`refactor` + scope,
+   `!` for breaking); the body explains the *why*.
+8. **Remember** — record non-obvious decisions in agent memory.
+
 ## Phase 0 — Spike *(done)*
 
 `BitReader`/`BitWriter` (MSB-first slice cursors), `#[derive(BitDecode/BitEncode)]`,
