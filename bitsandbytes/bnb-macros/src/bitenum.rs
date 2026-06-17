@@ -4,7 +4,10 @@
 //! `#[bit_enum(WidthType)]`). Unit variants carry explicit or auto-incremented
 //! discriminants; an optional `#[catch_all]` tuple variant captures any
 //! unrecognized value, making decoding total and lossless (the dual-use
-//! convention). Without a catch-all the enum is assumed exhaustive.
+//! convention). Without a catch-all the variants must cover the whole width, or the
+//! enum must be marked `#[bit_enum(.., closed)]` to assert a closed set — otherwise
+//! it is a compile error, since the infallible `from_bits` (codec / `#[bitfield]`
+//! getter) path would panic on an unknown discriminant.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -12,30 +15,52 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Data, DeriveInput, Fields, Ident, Token, Type, parse_macro_input};
 
-/// Parsed `#[bit_enum(WidthType, bytes = …)]`. `bytes = be|le` is accepted (for
-/// source compatibility) but byte order is meaningful only on the wire — a `BitEnum`
-/// is a discriminant value, so it is ignored here.
+/// Parsed `#[bit_enum(WidthType, bytes = …, closed)]`. `bytes = be|le` is accepted
+/// (for source compatibility) but byte order is meaningful only on the wire — a
+/// `BitEnum` is a discriminant value, so it is ignored here. `closed` asserts the
+/// enum is a closed set (see the exhaustiveness check in [`expand_inner`]).
 struct Args {
     width: Type,
+    /// `closed` — the author asserts no `#[catch_all]` is wanted even though the
+    /// variants do not cover the whole width: an unknown discriminant is a contract
+    /// violation (the checked `TryFrom` rejects it; the infallible path panics).
+    closed: bool,
 }
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let width: Type = input.parse()?;
+        let mut closed = false;
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
                 break;
             }
             let key: Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-            let val: Ident = input.parse()?;
-            match (key.to_string().as_str(), val.to_string().as_str()) {
-                ("bytes", "be" | "le") => {}
-                _ => return Err(syn::Error::new_spanned(&key, "expected `bytes = be|le`")),
+            match key.to_string().as_str() {
+                "closed" => closed = true,
+                "bytes" => {
+                    input.parse::<Token![=]>()?;
+                    let val: Ident = input.parse()?;
+                    match val.to_string().as_str() {
+                        "be" | "le" => {}
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                &val,
+                                format!("expected `be` or `le`, got `{other}`"),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        "expected `bytes = be|le` or `closed`",
+                    ));
+                }
             }
         }
-        Ok(Args { width })
+        Ok(Args { width, closed })
     }
 }
 
@@ -111,6 +136,29 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         };
         unit.push((v.ident.clone(), disc));
         next = disc + 1;
+    }
+
+    // Decode safety: `Bits::from_bits` is infallible and runs on the decode path (and
+    // inside `#[bitfield]` getters), so an unknown discriminant with no `#[catch_all]`
+    // has nowhere to go and panics. Require the author to either preserve unknowns
+    // (catch-all, the dual-use default) or assert a closed set (`closed`) — unless the
+    // unit variants already cover every value of the width, in which case the panic is
+    // statically unreachable.
+    if catch_all.is_none() && !args.closed {
+        let covered = width_bits(width)
+            .is_some_and(|bits| bits < 128 && (unit.len() as u128) == (1u128 << bits));
+        if !covered {
+            return Err(syn::Error::new_spanned(
+                name,
+                "this `BitEnum` has no `#[catch_all]` and its variants do not cover every \
+                 value of its width, so decoding an unknown discriminant (on the codec path \
+                 or in a `#[bitfield]` getter) would panic. Either add a catch-all variant \
+                 (e.g. `#[catch_all] Other(<width>)`) to preserve unknown values — the \
+                 dual-use default — or, if the set really is closed, write \
+                 `#[bit_enum(<width>, closed)]` to assert it (the checked `TryFrom` still \
+                 rejects unknowns; only the infallible path panics).",
+            ));
+        }
     }
 
     let bits_path = quote!(::bnb::__private::Bits);
@@ -230,6 +278,24 @@ fn conv_impls(
         #into_prim
         #from_prim
     }
+}
+
+/// The bit width of a `#[bit_enum(W)]` width type, if it is a `uN` (the `u1`..`u127`
+/// aliases or the `u8`/`u16`/`u32`/`u64`/`u128` primitives). Used only to decide
+/// whether the unit variants cover the whole domain.
+fn width_bits(ty: &Type) -> Option<u32> {
+    if let Type::Path(p) = ty {
+        if let Some(seg) = p.path.segments.last() {
+            if let Some(rest) = seg.ident.to_string().strip_prefix('u') {
+                if let Ok(n) = rest.parse::<u32>() {
+                    if (1..=128).contains(&n) {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Returns the primitive name if `ty` is `u8`/`u16`/`u32`/`u64`/`u128`.

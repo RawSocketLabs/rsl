@@ -125,6 +125,12 @@ confusion, not remove it).
   Rust forbids **explicit** discriminants there without `#[repr(..)]`. For
   contiguous-from-0 values the derive's auto-numbering works (drop the `= N`);
   only non-contiguous catch-all enums need `#[repr(u8)]` + explicit values.
+- A no-`#[catch_all]` `BitEnum` whose variants don't cover its width is a **compile
+  error** (the infallible `from_bits` codec/getter path would panic on an unknown
+  discriminant). Add `#[catch_all] Other(uN)` to preserve unknowns (dual-use), or
+  `#[bit_enum(uN, closed)]` to assert a closed set (then `from_bits` still panics on
+  an out-of-set value; the checked `TryFrom` rejects it). A fully-covered enum
+  (e.g. a 2-bit enum with all 4 variants) needs neither.
 - Field widths must sum to `<= backing` bits (a generated `const` assert
   enforces it). A bitfield's `Bits::BITS` is the **declared total** width, not
   the backing width — that's what makes sub-byte nesting (`OpCode` = 5 bits in a

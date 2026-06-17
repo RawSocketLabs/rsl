@@ -269,11 +269,11 @@ enum WithCatch {
 }
 
 #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
-#[bit_enum(u2)]
+#[bit_enum(u2, closed)]
 enum Incomplete {
     Zero,
     One,
-} // 2 of 4 named, NO catch-all: a stated-exhaustive lie
+} // 2 of 4 named, `closed`: an out-of-set discriminant is a contract violation
 
 #[test]
 fn exhaustive_enum_round_trips_every_value() {
@@ -293,13 +293,13 @@ fn catch_all_preserves_every_unrepresented_value() {
 #[test]
 #[should_panic(expected = "no variant for discriminant")]
 fn non_exhaustive_without_catch_all_panics_on_the_gap() {
-    // Documented contract: omitting #[catch_all] asserts exhaustiveness; a
-    // value with no variant is a declaration bug and surfaces loudly.
+    // Documented contract: `#[bit_enum(.., closed)]` asserts a closed set; a value
+    // with no variant is a declaration bug and surfaces loudly on the infallible path.
     let _ = Incomplete::from_bits(2);
 }
 
 // Byte-aligned enums additionally get `From`/`TryFrom` against the primitive
-// (the `num_enum` parity), independent of the binrw feature.
+// (the `num_enum` parity).
 
 // Non-contiguous, with a catch-all: the `num_enum(catch_all)` shape — both
 // directions are infallible `From`.
@@ -314,10 +314,10 @@ enum VendorId {
     Unknown(u8),
 }
 
-// Exhaustively-named but missing values, no catch-all: primitive -> enum is a
-// checked `TryFrom`.
+// A closed set (`closed`): named values with gaps, no catch-all, so primitive ->
+// enum is a checked `TryFrom`.
 #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = be, closed)]
 #[repr(u16)]
 enum Sparse16 {
     A = 0,

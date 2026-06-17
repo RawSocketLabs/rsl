@@ -100,8 +100,12 @@ pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// `#[bit_enum(uN)]` sets the width. Exactly one `#[catch_all]` tuple variant
-/// (holding a `uN`/integer) may capture unknown discriminants; without one, an
-/// unknown value triggers an `unreachable!` (the enum is assumed exhaustive).
+/// (holding a `uN`/integer) may capture unknown discriminants. Without a catch-all
+/// the variants must cover the whole width, or the enum must be declared
+/// `#[bit_enum(uN, closed)]` to assert a closed set — otherwise it is a **compile
+/// error**, because `from_bits` (the infallible codec / `#[bitfield]`-getter path)
+/// would panic on an unknown discriminant. A `closed` enum still `unreachable!`s on
+/// that path; its checked `TryFrom` rejects unknowns instead.
 ///
 /// ## Generated API
 ///

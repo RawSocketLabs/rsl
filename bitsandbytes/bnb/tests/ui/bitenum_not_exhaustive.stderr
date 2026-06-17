@@ -1,0 +1,5 @@
+error: this `BitEnum` has no `#[catch_all]` and its variants do not cover every value of its width, so decoding an unknown discriminant (on the codec path or in a `#[bitfield]` getter) would panic. Either add a catch-all variant (e.g. `#[catch_all] Other(<width>)`) to preserve unknown values — the dual-use default — or, if the set really is closed, write `#[bit_enum(<width>, closed)]` to assert it (the checked `TryFrom` still rejects unknowns; only the infallible path panics).
+  --> tests/ui/bitenum_not_exhaustive.rs:11:6
+   |
+11 | enum Status {
+   |      ^^^^^^

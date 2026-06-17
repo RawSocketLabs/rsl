@@ -34,10 +34,13 @@ enum HardwareType {
     Other(u16),
 }
 
-// No catch-all: the derive emits a *checked* `TryFrom<u8>` instead, rejecting
-// values it can't name with a `bnb::UnknownDiscriminant`.
+// A closed set: no `#[catch_all]`, and the two values don't cover all of `u8`, so
+// `closed` asserts the set is intentionally closed. The derive then emits a *checked*
+// `TryFrom<u8>` that rejects unknowns with a `bnb::UnknownDiscriminant`. (Without
+// `closed` this is a compile error, because the infallible codec path would panic on
+// an unknown discriminant — `closed` is the explicit acknowledgement of that.)
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u8)]
+#[bit_enum(u8, closed)]
 #[repr(u8)]
 enum Direction {
     Request = 1,
