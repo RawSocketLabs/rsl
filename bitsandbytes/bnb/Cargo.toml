@@ -20,11 +20,6 @@ bytes = { workspace = true, optional = true }
 default = []
 # `bytes`-crate adapters (`BytesReader`/`BytesWriter`).
 bytes = ["dep:bytes"]
-# Renders the `bnb` target-design rustdoc preview (doc-only modules, no code).
-# Review with:
-#   RUSTC_WRAPPER= cargo doc -p bnb --features doc-preview --no-deps --open
-# Never part of a real build or the default docs.
-doc-preview = []
 
 [dev-dependencies]
 # Compile-fail UI tests: assert that `#[bin]`/`#[bitfield]` misuse is rejected with

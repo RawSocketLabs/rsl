@@ -75,6 +75,26 @@ Whole-message bit-aware codec: `#[bin]` (magic/count/ctx/map/if/calc·temp/reser
 positioning/validate) over a `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O
 ladder, with an opt-in `bytes` feature for async framing. It is the owned successor
 to our former binrw usage — no binrw dependency.
+
+# Guide
+
+The [`guide`] module is a set of worked, runnable walkthroughs — start there for a
+tour of the crate and the rationale behind each piece. Reading order:
+
+1. [`guide::quick_start`] — a five-minute tour of every macro.
+2. [`guide::numbers`] — the arbitrary-width integers (`u1`..`u127`) and the [`Bits`]
+   trait that lets everything compose.
+3. [`guide::bitfields`] — `#[bitfield]`: bit order, byte order, widths and ranges,
+   nesting.
+4. [`guide::enums`] — `#[derive(BitEnum)]`: catch-all vs. closed, `num_enum` parity.
+5. [`guide::flags`] — `#[bitflags]`: single-bit flag sets with set algebra.
+6. [`guide::builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
+7. [`guide::bin_codec`] — `#[bin]`: a whole protocol header, end to end.
+8. [`guide::directives`] — the field-directive reference, one example each.
+9. [`guide::io`] — the `Source`/`Sink` I/O ladder (slice, stream, socket, file, `bytes`).
+10. [`guide::errors`] — position-aware errors and the streaming `Incomplete` signal.
+11. [`guide::dual_use`] — the compliant-by-default-but-violatable philosophy.
+12. [`guide::composition`] — how the pieces nest and size each other.
 */
 
 // Every public item must be documented (the `uN` aliases are the one self-
@@ -83,13 +103,9 @@ to our former binrw usage — no binrw dependency.
 
 pub mod bitstream;
 pub mod builder;
-/// Target-design rustdoc preview for the future `bnb` codec — doc-only, **not
-/// yet implemented**. Enabled by the `doc-preview` feature for review; see
-/// `ROADMAP.md`. Renders like binrw's `docs::attribute` reference.
-#[cfg(feature = "doc-preview")]
-pub mod design_preview;
 pub mod error;
 mod field;
+pub mod guide;
 pub mod int;
 
 pub use bitstream::{

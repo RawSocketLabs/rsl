@@ -79,7 +79,7 @@ pub enum ErrorKind {
     /// An I/O error while encoding to a [`std::io::Write`] sink.
     Io(std::io::ErrorKind),
     /// A `magic` constant read off the wire did not match. Both values are the
-    /// type-erased low-bit representations ([`Bits::into_bits`](crate::Bits::into_bits)).
+    /// type-erased low-bit representations ([`Bits::into_bits`]).
     BadMagic {
         /// The constant the codec expected.
         expected: u128,
@@ -117,7 +117,7 @@ impl BitError {
 
     /// Builds a [`ErrorKind::BadMagic`] error (a `magic` constant mismatched) at
     /// absolute bit offset `at`. `expected`/`found` are the type-erased low-bit
-    /// values ([`Bits::into_bits`](crate::Bits::into_bits)).
+    /// values ([`Bits::into_bits`]).
     #[must_use]
     pub fn bad_magic(expected: u128, found: u128, at: usize) -> Self {
         Self::new(ErrorKind::BadMagic { expected, found }, at)
