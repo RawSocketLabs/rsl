@@ -1004,13 +1004,15 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 /// parsing. A seeking variant would add `Read + Seek` *only* where a
 /// position-dependent directive needs it — the attribute-driven bound DD3
 /// describes. Demonstrated by reading from `&[u8]`, which is `Read` but **not**
-/// `Seek`. Reads up to 64 bits per call.
+/// `Seek`. Reads up to 128 bits per call (the [`Source`] width ceiling).
 #[derive(Debug)]
 pub struct StreamBitReader<R> {
     inner: R,
-    /// Buffered-but-unconsumed bits, right-aligned in the low `nbits` bits.
-    acc: u128,
-    nbits: u32,
+    /// Leftover bits from the last partially-consumed byte, right-aligned in the low
+    /// `lead_bits` bits (MSB-first, so they are the *high* bits of the next read).
+    /// Always fewer than 8.
+    lead: u32,
+    lead_bits: u32,
     /// Total bits consumed so far (for position-aware errors).
     pos: usize,
 }
@@ -1020,8 +1022,8 @@ impl<R: std::io::Read> StreamBitReader<R> {
     pub fn new(inner: R) -> Self {
         Self {
             inner,
-            acc: 0,
-            nbits: 0,
+            lead: 0,
+            lead_bits: 0,
             pos: 0,
         }
     }
@@ -1032,41 +1034,51 @@ impl<R: std::io::Read> StreamBitReader<R> {
         self.pos
     }
 
-    /// Reads `n` (`<= 64`) bits MSB-first, pulling bytes from the source as needed.
+    /// Reads `n` (`<= 128`) bits MSB-first, pulling bytes from the source as needed.
     ///
     /// # Errors
-    /// [`ErrorKind::TooWide`] if `n > 64`; [`ErrorKind::Incomplete`] if the
+    /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::Incomplete`] if the
     /// source runs out mid-field (read more and retry). Either carries the bit
     /// offset.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
-        if n > 64 {
+        if n > 128 {
             return Err(BitError::new(
                 ErrorKind::TooWide { width: n as usize },
                 self.pos,
             ));
         }
         let at = self.pos;
-        while self.nbits < n {
-            let mut b = [0u8; 1];
-            if self.inner.read_exact(&mut b).is_err() {
-                // A stream ran out mid-field: signal "need more bytes" (the caller
-                // can buffer and retry), not a definitive end-of-input.
-                return Err(BitError::new(ErrorKind::Incomplete { needed: None }, at));
+        // Build the result MSB-first, consuming the leftover bits then whole bytes.
+        // The accumulator never holds more than `n` (<= 128) bits, so it can't
+        // overflow — unlike a "shift bytes in, mask out" buffer, which is why the old
+        // byte-accumulator capped at 64 and this caps at the full 128.
+        let mut result: u128 = 0;
+        let mut need = n;
+        while need > 0 {
+            if self.lead_bits == 0 {
+                let mut b = [0u8; 1];
+                if self.inner.read_exact(&mut b).is_err() {
+                    // Ran out mid-field: "need more bytes" (buffer and retry), not a
+                    // definitive end-of-input.
+                    return Err(BitError::new(ErrorKind::Incomplete { needed: None }, at));
+                }
+                self.lead = u32::from(b[0]);
+                self.lead_bits = 8;
             }
-            self.acc = (self.acc << 8) | u128::from(b[0]);
-            self.nbits += 8;
+            let take = need.min(self.lead_bits);
+            // The top `take` of the `lead_bits` leftover bits (MSB-first).
+            let shift = self.lead_bits - take;
+            let chunk = (self.lead >> shift) & ((1u32 << take) - 1);
+            result = (result << take) | u128::from(chunk);
+            self.lead_bits -= take;
+            self.lead &= (1u32 << self.lead_bits) - 1; // keep the unconsumed low bits
+            need -= take;
         }
-        let shift = self.nbits - n;
-        let take = if n == 0 { 0 } else { (1u128 << n) - 1 };
-        let val = (self.acc >> shift) & take;
-        self.nbits = shift;
-        let keep = if shift == 0 { 0 } else { (1u128 << shift) - 1 };
-        self.acc &= keep;
         self.pos += n as usize;
-        Ok(val)
+        Ok(result)
     }
 
-    /// Reads one [`Bits`] value (width `<= 64`) of its declared width.
+    /// Reads one [`Bits`] value (width `<= 128`) of its declared width.
     ///
     /// # Errors
     /// As [`read_bits`](Self::read_bits).
@@ -1411,5 +1423,38 @@ mod unit {
         let mut r = BitReader::new(&[0u8; 32]);
         let err = r.read_bits(129).unwrap_err();
         assert_eq!(err.kind, ErrorKind::TooWide { width: 129 });
+    }
+
+    #[test]
+    fn stream_reader_matches_slice_up_to_128_bits() {
+        // The `Source` contract allows reads up to 128 bits; the forward streaming
+        // reader must agree with the slice reader across the whole range, including
+        // wide (> 64-bit) and byte-straddling reads.
+        let bytes: Vec<u8> = (0u8..16).collect(); // 0x00 01 02 … 0F
+
+        // A single 128-bit read.
+        let mut s = StreamBitReader::new(&bytes[..]);
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(s.read_bits(128).unwrap(), r.read_bits(128).unwrap());
+
+        // A 100-bit then 28-bit split (each crosses byte boundaries and the second
+        // starts mid-byte, exercising the leftover-bits path).
+        let mut s = StreamBitReader::new(&bytes[..]);
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(s.read_bits(100).unwrap(), r.read_bits(100).unwrap());
+        assert_eq!(s.read_bits(28).unwrap(), r.read_bits(28).unwrap());
+
+        // Over-wide is rejected at 128 now, not 64.
+        let mut s = StreamBitReader::new(&bytes[..]);
+        assert_eq!(
+            s.read_bits(65).unwrap(),
+            BitReader::new(&bytes).read_bits(65).unwrap(),
+            "a 65-bit read used to be rejected"
+        );
+        let mut s = StreamBitReader::new(&bytes[..]);
+        assert_eq!(
+            s.read_bits(129).unwrap_err().kind,
+            ErrorKind::TooWide { width: 129 }
+        );
     }
 }
