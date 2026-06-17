@@ -50,6 +50,9 @@ use proc_macro::TokenStream;
 /// `new()`/`Default` (all-zero), `with_<field>`/`set_<field>`, `<field>()`
 /// getters, `raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
 /// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
+///
+/// See the `bnb::guide::bitfields` page for runnable examples (bit/byte order,
+/// inferred vs. ranged widths, nesting).
 #[proc_macro_attribute]
 pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
     bitfield::expand(attr, item)
@@ -81,6 +84,9 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// consts); per-flag `fin()`/`with_fin(bool)`/`set_fin(bool)`; `iter()`; the
 /// `| & ^ - !` (+ assign) operators; and `Bits`/`Bitfield` impls so a
 /// flag set nests in a `#[bitfield]` and serializes.
+///
+/// See the `bnb::guide::flags` page for runnable examples (set algebra, iteration,
+/// retain-vs-truncate, nesting).
 #[proc_macro_attribute]
 pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
     bitflags::expand(attr, item)
@@ -115,19 +121,21 @@ pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// - `From<Enum> for uN` (every variant maps to a value);
 /// - with `#[catch_all]`: `From<uN> for Enum` (total — unknowns absorbed);
-/// - without it: `TryFrom<uN> for Enum`, erroring with
-///   [`bnb::UnknownDiscriminant`](bnb::UnknownDiscriminant) on an
+/// - without it: `TryFrom<uN> for Enum`, erroring with `bnb::UnknownDiscriminant` on an
 ///   unknown value.
 ///
 /// A sub-byte enum (`u4`) gets none of these — it is only meaningful nested in a
 /// `#[bitfield]`.
+///
+/// See the `bnb::guide::enums` page for runnable examples (catch-all, `closed`, the
+/// `num_enum` parity, and nesting).
 #[proc_macro_derive(BitEnum, attributes(bit_enum, catch_all))]
 pub fn bit_enum(item: TokenStream) -> TokenStream {
     bitenum::expand(item)
 }
 
-/// Derives a [`bnb::BitDecode`] impl that reads the struct's named fields, in
-/// declaration order, from a **bit** cursor ([`bnb::BitReader`]).
+/// Derives a `bnb::BitDecode` impl that reads the struct's named fields, in
+/// declaration order, from a **bit** cursor (a `bnb::BitReader`).
 ///
 /// ```ignore
 /// #[derive(BitDecode, BitEncode, Copy, Clone, Debug, PartialEq, Eq)]
@@ -138,13 +146,13 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// Each leaf field is read with `Source::read`, so any [`bnb::Bits`] type
+/// Each leaf field is read with `Source::read`, so any `bnb::Bits` type
 /// (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`) works as a field — no
 /// byte-alignment, seeks, or shift glue. A field marked **`#[nested]`** is itself
 /// a `BitDecode`/`BitEncode` message and is recursed into (a fixed one's
 /// `FixedBitLen::BIT_LEN` counts toward the parent's). `[u8; N]` payloads and
 /// `#[br(count = …)]` `Vec`s are supported; a `count`-bearing message is
-/// variable-length and so does not implement [`bnb::FixedBitLen`].
+/// variable-length and so does not implement `bnb::FixedBitLen`.
 ///
 /// ## Which codec? (the derive steers you)
 ///
@@ -158,6 +166,9 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 /// compile time (every field a whole number of bytes ⇒ the cursor never leaves byte
 /// boundaries ⇒ `#[bin]` is the better tool). Override with the struct-level
 /// `#[bit_stream(allow_byte_aligned)]` when you really mean it.
+///
+/// See the `bnb::guide::directives` page for a runnable example of each `#[br]`/`#[bw]`
+/// directive, and `bnb::guide::bin_codec` for the `#[bin]` front-end.
 #[proc_macro_derive(
     BitDecode,
     attributes(bit_stream, nested, br, bw, brw, reserved, reserved_with)
@@ -166,8 +177,8 @@ pub fn bit_decode(item: TokenStream) -> TokenStream {
     bitstream::expand_decode(item)
 }
 
-/// Derives a [`bnb::BitEncode`] impl — the dual of [`macro@BitDecode`], writing
-/// the struct's named fields in order to a [`bnb::BitWriter`] bit cursor. Shares
+/// Derives a `bnb::BitEncode` impl — the dual of [`macro@BitDecode`], writing
+/// the struct's named fields in order to a `bnb::BitWriter` bit cursor. Shares
 /// [`BitDecode`](macro@BitDecode)'s right-tool guard and `#[bit_stream(...)]`
 /// override.
 #[proc_macro_derive(
@@ -178,24 +189,42 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
     bitstream::expand_encode(item)
 }
 
-/// `#[bin]` — the unified native bit-codec attribute (Phase 2). One macro that
-/// folds the codec (`BitDecode`/`BitEncode`) and the required-by-default builder.
+/// `#[bin]` — the unified whole-message bit codec. One attribute that folds the read
+/// codec ([`BitDecode`](macro@BitDecode)), the write codec
+/// ([`BitEncode`](macro@BitEncode)), and a required-by-default builder
+/// ([`BitsBuilder`](macro@BitsBuilder)) over a struct of `bnb::Bits` fields, read and
+/// written at arbitrary bit offsets.
 ///
 /// ```ignore
-/// #[bin(big)]
+/// #[bin(big, validate = Frame::check)]
 /// #[derive(Debug, PartialEq)]
 /// struct Frame {
 ///     version: u4,
 ///     #[builder(default)] flags: u4,
-///     payload_len: u12,
+///     #[br(temp)] #[bw(calc = self.payload.len() as u16)] len: u16,
+///     #[br(count = len)] payload: Vec<u8>,
 /// }
-/// // -> Frame::decode/peek/decode_exact, encode/to_bytes, and Frame::builder()
+/// // -> Frame::{decode, peek, decode_exact, decode_from},
+/// //    Frame::{encode, to_bytes, encode_into}, and Frame::builder()
 /// ```
 ///
-/// Struct-level options: `read_only` / `write_only` (directional), `no_builder`,
-/// `bit_order = msb|lsb`, `allow_byte_aligned`. Field directives
-/// (`#[br]`/`#[bw]`/`#[brw]`, …) arrive in later Phase 2 chunks. It lowers to
-/// `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which stay usable directly.
+/// ## Struct-level options
+///
+/// `big` / `little` (byte order), `bit_order = msb|lsb`, `magic = <expr>` (a leading
+/// constant verified on read / emitted on write), `read_only` / `write_only`
+/// (directional), `no_builder`, `forward_only` (bound decoding to a forward `Source`),
+/// `ctx(name: Ty, …)` (context from the parent), and `validate = <path>` (a soundness
+/// check run by `build()` — the parser stays permissive).
+///
+/// ## Field directives
+///
+/// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`, `map`/`try_map`
+/// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `ignore`, `pad_before/after`,
+/// `align_before/after`, `restore_position`; plus `#[reserved]` / `#[reserved_with(…)]`.
+///
+/// `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which stay usable
+/// directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
+/// `bnb::guide::directives` for one runnable example per directive.
 #[proc_macro_attribute]
 pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
     bitstream::expand_bin(attr, item)
@@ -225,6 +254,9 @@ pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// On a `#[bitfield]` struct, list `#[bitfield(...)]` **above** the `#[derive]`
 /// so it intercepts this marker.
+///
+/// See the `bnb::guide::builders` page for runnable examples (required-field errors,
+/// `default`/`default = expr`, the `#[bitfield]` intercept).
 #[proc_macro_derive(BitsBuilder, attributes(builder))]
 pub fn bits_builder(item: TokenStream) -> TokenStream {
     builder::expand_derive(item)
