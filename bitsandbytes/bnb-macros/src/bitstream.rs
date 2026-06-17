@@ -398,62 +398,38 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
     Ok(br)
 }
 
-/// Whether a field threads context to a `ctx` child (`#[br(ctx { … })]`). Such a
-/// field's width is indeterminate (the child isn't `Bits`/`FixedBitLen`), so it
-/// makes the struct variable-length and exempt from the alignment guard. Parse
-/// errors are deferred to [`field_read_stmt`], which validates properly.
-fn field_has_ctx(f: &syn::Field) -> bool {
-    parse_field_br(f).is_ok_and(|br| br.ctx.is_some())
-}
-
-/// Whether a field is `#[br(temp)]` (read into a local, not stored).
+/// Whether a field is `#[br(temp)]` (read into a local, not stored). Used by the
+/// `#[bin]` front-end ([`bin_inner`]) to filter the emitted struct/builder; the codec
+/// generators read `temp` off the pre-parsed [`FieldBr`] instead.
 fn field_is_temp(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.temp)
 }
 
 /// Whether a field is `#[br(ignore)]` (in-memory only — defaulted on read, not
-/// written, zero wire bits).
+/// written, zero wire bits). Read by [`field_width`], which has no parsed `br`.
 fn field_is_ignore(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.ignore)
 }
 
-/// Whether a field carries a positioning directive (`pad_*`/`align_*`). Those shift
-/// the cursor, so the struct's fixed length / alignment can't be computed statically.
-fn field_has_positioning(f: &syn::Field) -> bool {
-    parse_field_br(f).is_ok_and(|br| {
-        br.pad_before.is_some()
-            || br.pad_after.is_some()
-            || br.align_before
-            || br.align_after
-            || br.restore_position
-    })
-}
-
-/// Whether a field seeks the cursor (`#[br(restore_position)]`) — the only directive
-/// that needs a [`SeekSource`]. `pad_*`/`align_*` move forward and need only `Source`,
-/// so the explicit-source entry point can stay maximally permissive without one.
-fn field_seeks(f: &syn::Field) -> bool {
-    parse_field_br(f).is_ok_and(|br| br.restore_position)
-}
-
-/// Whether a field is conditional (`#[br(if(...))]`). Like a `ctx` child, its
-/// width is indeterminate (present or absent), so it makes the struct
-/// variable-length and exempt from the alignment guard.
-fn field_is_conditional(f: &syn::Field) -> bool {
-    parse_field_br(f).is_ok_and(|br| br.cond.is_some())
-}
-
-/// Whether a field has a custom codec (`map`/`try_map`/`parse_with`/`write_with`).
-/// Its type isn't necessarily `Bits` (the wire shape lives in the converter/fn), so
-/// its width is indeterminate.
-fn field_is_mapped(f: &syn::Field) -> bool {
-    parse_field_br(f).is_ok_and(|br| {
-        br.map.is_some()
-            || br.try_map.is_some()
-            || br.bw_map.is_some()
-            || br.parse_with.is_some()
-            || br.write_with.is_some()
-    })
+/// Whether a field's directives make the message variable-length / its width
+/// indeterminate, so it is exempt from the alignment guard and the message never
+/// implements `FixedBitLen`: a `ctx` child (not `Bits`/`FixedBitLen`), a conditional
+/// `if` (present or absent), a custom codec (`map`/`try_map`/`parse_with`/`write_with`,
+/// whose wire shape lives in the converter), or a positioning directive
+/// (`pad_*`/`align_*`/`restore_position`, which shifts the cursor).
+fn br_indeterminate(br: &FieldBr) -> bool {
+    br.ctx.is_some()
+        || br.cond.is_some()
+        || br.map.is_some()
+        || br.try_map.is_some()
+        || br.bw_map.is_some()
+        || br.parse_with.is_some()
+        || br.write_with.is_some()
+        || br.pad_before.is_some()
+        || br.pad_after.is_some()
+        || br.align_before
+        || br.align_after
+        || br.restore_position
 }
 
 /// A reserved field — on the wire (its type gives the width) but not stored: read
@@ -554,11 +530,10 @@ fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
 
 /// The decode statement for one field — a `let #id = …;` binding, wrapped with any
 /// `pad_*`/`align_*` positioning. A later `count` can name an earlier field.
-fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
-    let br = parse_field_br(f)?;
+fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let pre = pad_read_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_read_tokens(br.align_after, br.pad_after.as_ref());
-    let mut core = field_read_core(f)?;
+    let mut core = field_read_core(f, br)?;
     if br.restore_position {
         // Peek: save the offset, read the field, rewind so later fields re-read it.
         core = quote! {
@@ -571,10 +546,9 @@ fn field_read_stmt(f: &syn::Field) -> syn::Result<TokenStream2> {
 }
 
 /// The core decode statement (without positioning).
-fn field_read_core(f: &syn::Field) -> syn::Result<TokenStream2> {
+fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
-    let br = parse_field_br(f)?;
     // `#[reserved]`: consume the bits but discard the value (lenient — a non-zero
     // reserved value is not rejected; use `magic` to enforce one).
     if field_is_reserved(f) {
@@ -628,7 +602,7 @@ fn field_read_core(f: &syn::Field) -> syn::Result<TokenStream2> {
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     if let Some(elem) = vec_elem(f) {
-        let count = br.count.ok_or_else(|| {
+        let count = br.count.as_ref().ok_or_else(|| {
             syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
         })?;
         // Read one element into `__e`, pinning its type so inference can't drift.
@@ -693,8 +667,11 @@ fn field_read_core(f: &syn::Field) -> syn::Result<TokenStream2> {
 /// writes every element; the count is implied by `len()` (a separate length field
 /// is the user's, often `calc`'d). `field_set` is the parent's field names, for
 /// resolving a `ctx { … }` pass.
-fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
-    let br = parse_field_br(f)?;
+fn field_write_stmt(
+    f: &syn::Field,
+    br: &FieldBr,
+    field_set: &[&Ident],
+) -> syn::Result<TokenStream2> {
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
     // A `restore_position` field is a read-side peek (it overlaps later data), so it
@@ -702,13 +679,17 @@ fn field_write_stmt(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
     let core = if br.restore_position {
         quote!()
     } else {
-        field_write_core(f, field_set)?
+        field_write_core(f, br, field_set)?
     };
     Ok(quote!(#pre #core #post))
 }
 
 /// The core encode statement (without positioning).
-fn field_write_core(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenStream2> {
+fn field_write_core(
+    f: &syn::Field,
+    br: &FieldBr,
+    field_set: &[&Ident],
+) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     // `#[reserved]`: write the type's zero (or the `reserved_with` value), pinned to
@@ -724,7 +705,6 @@ fn field_write_core(f: &syn::Field, field_set: &[&Ident]) -> syn::Result<TokenSt
         return Ok(quote!(::bnb::__private::Sink::write(w, #value)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
-    let br = parse_field_br(f)?;
     // `ignore`: in-memory only — emit nothing.
     if br.ignore {
         return Ok(quote!());
@@ -874,15 +854,17 @@ fn gen_decode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
-    // `ctx`/`if` anywhere makes widths/alignment indeterminable: exempt from the
-    // guard and never `FixedBitLen`.
-    let indeterminate = !attrs.ctx.is_empty()
-        || fields.named.iter().any(|f| {
-            field_has_ctx(f)
-                || field_is_conditional(f)
-                || field_is_mapped(f)
-                || field_has_positioning(f)
-        });
+    // Parse each field's `#[br]`/`#[bw]` directives once, up front (propagating any
+    // parse error immediately), then drive every decision off the parsed list — no
+    // re-parsing per predicate.
+    let brs: Vec<FieldBr> = fields
+        .named
+        .iter()
+        .map(parse_field_br)
+        .collect::<syn::Result<Vec<_>>>()?;
+    // A `ctx`/`if`/map/positioning field anywhere makes widths/alignment
+    // indeterminable: exempt from the guard and never `FixedBitLen`.
+    let indeterminate = !attrs.ctx.is_empty() || brs.iter().any(br_indeterminate);
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,
@@ -908,13 +890,15 @@ fn gen_decode(
     let ids: Vec<&Ident> = fields
         .named
         .iter()
-        .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
-        .map(|f| f.ident.as_ref().expect("named field"))
+        .zip(&brs)
+        .filter(|(f, br)| !br.temp && !field_is_reserved(f))
+        .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
     let read_stmts = fields
         .named
         .iter()
-        .map(field_read_stmt)
+        .zip(&brs)
+        .map(|(f, br)| field_read_stmt(f, br))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // A `ctx(...)`-declaring message takes context it can't get from the plain
@@ -977,7 +961,7 @@ fn gen_decode(
     // any forward `Source` (including a streaming reader) works. The slice entry
     // points (`decode`/`peek`/`decode_exact`) always go through a seekable
     // `BitReader`, so they are unaffected.
-    let seeks = fields.named.iter().any(field_seeks);
+    let seeks = brs.iter().any(|br| br.restore_position);
     let from_bound = if seeks {
         quote!(::bnb::__private::SeekSource)
     } else {
@@ -1050,13 +1034,14 @@ fn gen_encode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
-    let indeterminate = !attrs.ctx.is_empty()
-        || fields.named.iter().any(|f| {
-            field_has_ctx(f)
-                || field_is_conditional(f)
-                || field_is_mapped(f)
-                || field_has_positioning(f)
-        });
+    // Parse each field's directives once (see `gen_decode`), then derive everything
+    // from the parsed list.
+    let brs: Vec<FieldBr> = fields
+        .named
+        .iter()
+        .map(parse_field_br)
+        .collect::<syn::Result<Vec<_>>>()?;
+    let indeterminate = !attrs.ctx.is_empty() || brs.iter().any(br_indeterminate);
     let guard = alignment_guard(
         fields,
         attrs.allow_byte_aligned || indeterminate,
@@ -1074,13 +1059,15 @@ fn gen_encode(
     let field_set: Vec<&Ident> = fields
         .named
         .iter()
-        .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
-        .map(|f| f.ident.as_ref().expect("named field"))
+        .zip(&brs)
+        .filter(|(f, br)| !br.temp && !field_is_reserved(f))
+        .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
     let writes = fields
         .named
         .iter()
-        .map(|f| field_write_stmt(f, &field_set))
+        .zip(&brs)
+        .map(|(f, br)| field_write_stmt(f, br, &field_set))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // `ctx(...)`: the dual of decode — inherent `encode_with`/`to_bytes_with`
