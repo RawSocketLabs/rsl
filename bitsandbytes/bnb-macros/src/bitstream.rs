@@ -267,8 +267,10 @@ struct FieldBr {
     align_before: bool,
     align_after: bool,
     /// `#[br(restore_position)]` — read the field (a peek), then rewind the cursor so
-    /// later fields re-read from the same offset; skipped on write. Needs a
-    /// [`SeekSource`](bnb::SeekSource) (a slice cursor) — errors on a forward stream.
+    /// later fields re-read from the same offset; skipped on write. Seeks, so the
+    /// generated `decode_from` is bound on [`SeekSource`](bnb::SeekSource): a
+    /// forward-only stream is a compile error (the slice entry points
+    /// `decode`/`peek`/`decode_exact` always qualify).
     restore_position: bool,
 }
 
@@ -425,6 +427,13 @@ fn field_has_positioning(f: &syn::Field) -> bool {
             || br.align_after
             || br.restore_position
     })
+}
+
+/// Whether a field seeks the cursor (`#[br(restore_position)]`) — the only directive
+/// that needs a [`SeekSource`]. `pad_*`/`align_*` move forward and need only `Source`,
+/// so the explicit-source entry point can stay maximally permissive without one.
+fn field_seeks(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.restore_position)
 }
 
 /// Whether a field is conditional (`#[br(if(...))]`). Like a `ctx` child, its
@@ -963,6 +972,24 @@ fn gen_decode(
         }
     };
 
+    // `restore_position` seeks, so the explicit-source entry point requires a
+    // [`SeekSource`]; a forward-only stream is then a compile error. Without a seek,
+    // any forward `Source` (including a streaming reader) works. The slice entry
+    // points (`decode`/`peek`/`decode_exact`) always go through a seekable
+    // `BitReader`, so they are unaffected.
+    let seeks = fields.named.iter().any(field_seeks);
+    let from_bound = if seeks {
+        quote!(::bnb::__private::SeekSource)
+    } else {
+        quote!(::bnb::__private::Source)
+    };
+    let from_doc = if seeks {
+        "Decode from an explicit **seekable** bit source. This message uses \
+         `restore_position`, so a forward-only stream is rejected at compile time."
+    } else {
+        "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."
+    };
+
     Ok(quote! {
         #guard
         #fixed_bit_len
@@ -989,8 +1016,8 @@ fn gen_decode(
             pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
                 ::bnb::__private::decode_exact(bytes, #layout)
             }
-            #[doc = "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."]
-            pub fn decode_from<S: ::bnb::__private::Source>(
+            #[doc = #from_doc]
+            pub fn decode_from<S: #from_bound>(
                 r: &mut S,
             ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
                 <Self as ::bnb::BitDecode>::bit_decode(r)

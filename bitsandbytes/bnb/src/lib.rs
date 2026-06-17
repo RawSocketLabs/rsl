@@ -125,11 +125,11 @@ pub trait BitEnum: Bits {}
 #[doc(hidden)]
 pub mod __private {
     pub use crate::bitstream::{
-        BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, Sink, Source,
-        align_read, align_write, bits_of, decode_consume, decode_exact, decode_exact_with,
-        decode_peek, encode_to_vec, encode_to_vec_with, encode_to_writer, read_byte_array,
-        read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array,
-        write_mapped,
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, SeekSource,
+        Sink, Source, align_read, align_write, bits_of, decode_consume, decode_exact,
+        decode_exact_with, decode_peek, encode_to_vec, encode_to_vec_with, encode_to_writer,
+        read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write, verify_magic,
+        write_byte_array, write_mapped,
     };
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};

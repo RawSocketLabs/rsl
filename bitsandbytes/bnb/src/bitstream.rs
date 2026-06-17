@@ -647,9 +647,10 @@ pub trait Source {
 }
 
 /// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
-/// the failing default) — the bound for a message using a position directive
-/// (`restore_position`). Implemented by the in-memory [`BitReader`]; a `Read + Seek`
-/// adapter is Phase 3b.
+/// the failing default). A `#[bin]` message that uses `restore_position` bounds its
+/// generated `decode_from` on this trait, so a forward-only stream is rejected at
+/// compile time. Implemented by [`BitReader`], [`BufSource`], and [`SeekReader`]
+/// (and, with the `bytes` feature, `BytesReader`).
 pub trait SeekSource: Source {}
 
 impl SeekSource for BitReader<'_> {}

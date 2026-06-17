@@ -8,3 +8,13 @@ fn ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
 }
+
+/// The `restore_position`→`SeekSource` diagnostic lists the in-scope `SeekSource`
+/// impls, which the `bytes` feature extends (it adds `BytesReader`). Pin this case
+/// to the default feature set so the snapshot is stable across configs.
+#[cfg(not(feature = "bytes"))]
+#[test]
+fn ui_seek() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui_seek/*.rs");
+}
