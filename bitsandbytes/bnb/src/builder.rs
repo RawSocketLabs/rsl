@@ -1,4 +1,4 @@
-//! Support types for `#[derive(BitsBuilder)]` and `#[wire]`.
+//! Support types for `#[derive(BitsBuilder)]` and `#[bin]`.
 
 use core::fmt;
 

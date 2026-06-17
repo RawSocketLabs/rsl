@@ -249,12 +249,6 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     };
     let bit_order_variant = if args.msb { quote!(Msb) } else { quote!(Lsb) };
 
-    let binrw = if cfg!(feature = "binrw") {
-        binrw_impls(name, backing, args.big)
-    } else {
-        quote!()
-    };
-
     let builder_ts = if has_builder {
         let bfields: Vec<BField> = fields
             .iter()
@@ -351,55 +345,8 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             fn to_raw(self) -> #backing { self.value }
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
-
-        #binrw
         #builder_ts
     })
-}
-
-/// Generates the binrw `BinRead`/`BinWrite` (+ endian markers) impls for a
-/// bitfield, using its declared byte order regardless of the surrounding
-/// context's endianness (the byte order is intrinsic to the type).
-fn binrw_impls(name: &Ident, backing: &Ident, big: bool) -> TokenStream2 {
-    let endian = if big { quote!(Big) } else { quote!(Little) };
-    quote! {
-        const _: () = {
-            use ::bnb::__private::binrw::{BinRead, BinResult, BinWrite, Endian};
-            use ::bnb::__private::binrw::io::{Read, Seek, Write};
-            use ::bnb::__private::binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-
-            impl ReadEndian for #name {
-                const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian);
-            }
-            impl WriteEndian for #name {
-                const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian);
-            }
-
-            impl BinRead for #name {
-                type Args<'a> = ();
-                fn read_options<R: Read + Seek>(
-                    reader: &mut R,
-                    _endian: Endian,
-                    _args: Self::Args<'_>,
-                ) -> BinResult<Self> {
-                    let raw = <#backing as BinRead>::read_options(reader, Endian::#endian, ())?;
-                    Ok(Self::from_raw(raw))
-                }
-            }
-
-            impl BinWrite for #name {
-                type Args<'a> = ();
-                fn write_options<W: Write + Seek>(
-                    &self,
-                    writer: &mut W,
-                    _endian: Endian,
-                    _args: Self::Args<'_>,
-                ) -> BinResult<()> {
-                    <#backing as BinWrite>::write_options(&self.value, writer, Endian::#endian, ())
-                }
-            }
-        };
-    }
 }
 
 fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {

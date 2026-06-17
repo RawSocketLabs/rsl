@@ -1,5 +1,0 @@
-error: #[wire] does not support generic parameters or lifetimes
- --> tests/ui/generic_struct.rs:4:9
-  |
-4 | struct X<T> {
-  |         ^^^

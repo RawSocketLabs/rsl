@@ -70,8 +70,8 @@ pub(crate) fn parse_builder_attr(attr: &Attribute) -> syn::Result<Option<FieldDe
 /// Generates the builder type, `Foo::builder()`, the setters, and `build()`.
 ///
 /// `post_build`, when present, is spliced into `build()` after the value is
-/// constructed into the local `__value` and before it is returned — `#[wire]`
-/// uses it to run the soundness validator (`__value.validate()?;`). It must be a
+/// constructed into the local `__value` and before it is returned (e.g. to run
+/// a soundness validator, `__value.validate()?;`). It must be a
 /// statement (or statements) and may use `?` to short-circuit with a
 /// [`bnb::BuilderError`](::bnb::BuilderError).
 pub(crate) fn generate(

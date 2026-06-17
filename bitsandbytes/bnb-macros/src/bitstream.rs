@@ -15,21 +15,19 @@
 //!
 //! ## Right-tool guard
 //!
-//! The bit-stream codec earns its keep only when fields land at non-byte offsets.
-//! If a struct's fields are **all byte-aligned** (every width a multiple of 8),
-//! the cursor never leaves byte boundaries, so `#[binrw]`/`#[wire]` is the better
-//! tool (richer: `magic`/`count`/`args`/`Vec`/nesting). The derives emit a
-//! const-eval guard that rejects such a struct, steering the author to the right
-//! macro. The escape hatch is `#[bit_stream(allow_byte_aligned)]`.
+//! The bare `#[derive(BitDecode/BitEncode)]` is the low-level bit codec; if a
+//! struct's fields are **all byte-aligned** (every width a multiple of 8) the cursor
+//! never leaves byte boundaries, so `#[bin]` (the unified codec) is the better tool.
+//! The derives emit a const-eval guard that rejects such a struct, steering the
+//! author to `#[bin]`. The escape hatch is `#[bit_stream(allow_byte_aligned)]`.
 
 use proc_macro::TokenStream;
-use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::{
     Data, DeriveInput, Fields, FieldsNamed, Ident, ItemStruct, Token, Type, parse_macro_input,
-    parse_quote,
 };
 
 /// A declared context parameter `name: Ty` from `ctx(name: Ty, …)`.
@@ -73,9 +71,9 @@ fn ctx_struct_ty(ty: &Type) -> syn::Result<TokenStream2> {
 const BYTE_ALIGNED_MSG: &str = "this struct's fields are all byte-aligned. The bare \
 `#[derive(BitDecode/BitEncode)]` is the low-level bit codec; for a byte-aligned message use \
 `#[bin]` — the unified codec (it handles byte-aligned data natively and adds \
-magic/count/ctx/map/if/validate, folding the former `#[wire]`/`#[bitwire]`). The bare derive \
-is for fields that straddle byte boundaries (e.g. a 108-bit payload). To keep the bare derive \
-on an all-byte-aligned struct anyway, add `#[bit_stream(allow_byte_aligned)]`.";
+magic/count/ctx/map/if/validate). The bare derive is for fields that straddle byte boundaries \
+(e.g. a 108-bit payload). To keep the bare derive on an all-byte-aligned struct anyway, add \
+`#[bit_stream(allow_byte_aligned)]`.";
 
 /// Returns the named fields of a non-generic struct, or a well-spanned error.
 fn named_struct(input: &DeriveInput) -> syn::Result<&FieldsNamed> {
@@ -1139,9 +1137,8 @@ fn gen_encode(
 // One macro that folds codec + builder. It *lowers* to the existing
 // `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream(...)]`, so the
 // field-directive logic lives in those derives and `#[bin]` is a thin, zero-
-// duplication front-end (the same shape as `#[wire]` lowering to `#[binrw]`).
-// Field directives (`#[br]`/`#[bw]`/`#[brw]`) are added in later chunks and ride
-// through as derive helper attributes. (Trait rename BitDecode->Decode: Phase 5.)
+// duplication front-end over them.
+// Field directives (`#[br]`/`#[bw]`/`#[brw]`) ride through as derive helper attrs.
 // ---------------------------------------------------------------------------
 
 /// Parsed struct-level `#[bin(...)]` options.
@@ -1255,9 +1252,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     // `#[derive(BitDecode/BitEncode)]` codec; those derives remain usable directly.)
     //
     // The right-tool guard is always suppressed for `#[bin]`: it is the *unified*
-    // codec (the fold of `#[wire]`/`#[bitwire]`), so a byte-aligned message is a
-    // first-class use, not a misuse. The guard stays on the bare derives as advisory
-    // steering toward `#[bin]`.
+    // codec, so a byte-aligned message is a first-class use, not a misuse. The
+    // guard stays on the bare derives as advisory steering toward `#[bin]`.
     let attrs = BitStreamAttrs {
         allow_byte_aligned: true,
         lsb: args.lsb,
@@ -1358,88 +1354,4 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         #decode
         #encode
     })
-}
-
-// ---------------------------------------------------------------------------
-// `#[bitwire]` — the dispatch macro (spike, DESIGN §11 DD1).
-//
-// Lowers to a `#[binrw]` struct: byte-aligned fields keep their `#[br]/#[bw]/
-// #[brw]` attributes (binrw runs them — magic/count/args/…); a field marked
-// `#[bits]` is a `BitDecode`/`BitEncode` *region* wired into binrw via its own
-// `parse_with`/`write_with` escape hatch. One vocabulary, two backends.
-// ---------------------------------------------------------------------------
-
-/// Entry for `#[cfg(feature = "binrw")]` `#[bitwire(big|little)]`.
-#[cfg(feature = "binrw")]
-pub fn expand_bitwire(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match bitwire_inner(attr.into(), item.into()) {
-        Ok(ts) => ts.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-#[cfg(feature = "binrw")]
-fn bitwire_inner(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
-    let endian = parse_endian(attr)?;
-    let mut s: ItemStruct = syn::parse2(item)?;
-    let fields = match &mut s.fields {
-        Fields::Named(n) => n,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                &s.ident,
-                "#[bitwire] requires a struct with named fields",
-            ));
-        }
-    };
-
-    // For each `#[bits]` field: strip the marker, inject the binrw bridge
-    // attributes, and assert the region is byte-aligned (so it occupies whole
-    // bytes in the stream).
-    let mut asserts = Vec::new();
-    for field in &mut fields.named {
-        let mut is_bits = false;
-        field.attrs.retain(|a| {
-            if a.path().is_ident("bits") {
-                is_bits = true;
-                false
-            } else {
-                true
-            }
-        });
-        if is_bits {
-            let ty = &field.ty;
-            asserts.push(quote! {
-                const _: () = assert!(
-                    <#ty as ::bnb::__private::FixedBitLen>::BIT_LEN % 8 == 0,
-                    "#[bits] region must be byte-aligned (its fields' widths must sum to a multiple of 8) to embed in the byte stream"
-                );
-            });
-            field.attrs.push(parse_quote!(
-                #[br(parse_with = ::bnb::__private::read_bits_region)]
-            ));
-            field.attrs.push(parse_quote!(
-                #[bw(write_with = ::bnb::__private::write_bits_region)]
-            ));
-        }
-    }
-
-    Ok(quote! {
-        #(#asserts)*
-        #[::binrw::binrw]
-        #[brw(#endian)]
-        #s
-    })
-}
-
-/// Parses the `big`/`little` endian argument (default `big`).
-#[cfg(feature = "binrw")]
-fn parse_endian(attr: TokenStream2) -> syn::Result<Ident> {
-    if attr.is_empty() {
-        return Ok(Ident::new("big", Span::call_site()));
-    }
-    let id: Ident = syn::parse2(attr)?;
-    match id.to_string().as_str() {
-        "big" | "little" => Ok(id),
-        _ => Err(syn::Error::new_spanned(&id, "expected `big` or `little`")),
-    }
 }

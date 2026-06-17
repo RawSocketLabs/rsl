@@ -44,7 +44,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 ///
 /// A catch-all enum is total, so its primitive→enum conversion is an infallible
 /// `From` and never produces this. This mirrors `num_enum`'s
-/// `TryFromPrimitiveError`. Decoding through `binrw`/`Bits::from_bits` is
+/// `TryFromPrimitiveError`. Decoding through the codec / `Bits::from_bits` is
 /// unaffected — that path stays permissive (dual-use); this is only for the
 /// caller who opts into a checked conversion.
 #[derive(Clone, Debug, PartialEq, Eq)]

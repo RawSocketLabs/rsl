@@ -4,7 +4,7 @@
 //! Each `bool` field is one flag, auto-assigned a bit by declaration order
 //! (LSB-first: the first field is `1 << 0`), or pinned with `#[flag(N)]`.
 //! Generates the flag consts, set operators, membership/iteration, per-flag bool
-//! accessors, and `Bits`/`Bitfield`/binrw impls so a flag set nests in a
+//! accessors, and `Bits`/`Bitfield` impls so a flag set nests in a
 //! `#[bitfield]` and serializes.
 
 use proc_macro::TokenStream;
@@ -84,17 +84,6 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!(Big)
     } else {
         quote!(Little)
-    };
-    let endian = if args.big {
-        quote!(Big)
-    } else {
-        quote!(Little)
-    };
-
-    let binrw = if cfg!(feature = "binrw") {
-        binrw_impls(name, backing, &endian)
-    } else {
-        quote!()
     };
 
     Ok(quote! {
@@ -232,36 +221,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             fn to_raw(self) -> #backing { self.value }
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
-
-        #binrw
     })
-}
-
-fn binrw_impls(name: &Ident, backing: &Ident, endian: &TokenStream2) -> TokenStream2 {
-    quote! {
-        const _: () = {
-            use ::bnb::__private::binrw::{BinRead, BinResult, BinWrite, Endian};
-            use ::bnb::__private::binrw::io::{Read, Seek, Write};
-            use ::bnb::__private::binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-
-            impl ReadEndian for #name { const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian); }
-            impl WriteEndian for #name { const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian); }
-
-            impl BinRead for #name {
-                type Args<'a> = ();
-                fn read_options<R: Read + Seek>(reader: &mut R, _endian: Endian, _args: ()) -> BinResult<Self> {
-                    let raw = <#backing as BinRead>::read_options(reader, Endian::#endian, ())?;
-                    Ok(Self { value: raw })
-                }
-            }
-            impl BinWrite for #name {
-                type Args<'a> = ();
-                fn write_options<W: Write + Seek>(&self, writer: &mut W, _endian: Endian, _args: ()) -> BinResult<()> {
-                    <#backing as BinWrite>::write_options(&self.value, writer, Endian::#endian, ())
-                }
-            }
-        };
-    }
 }
 
 fn collect_flags(item: &ItemStruct) -> syn::Result<Vec<Flag>> {

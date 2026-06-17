@@ -12,16 +12,16 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Data, DeriveInput, Fields, Ident, Token, Type, parse_macro_input};
 
-/// Parsed `#[bit_enum(WidthType, bytes = …)]`.
+/// Parsed `#[bit_enum(WidthType, bytes = …)]`. `bytes = be|le` is accepted (for
+/// source compatibility) but byte order is meaningful only on the wire — a `BitEnum`
+/// is a discriminant value, so it is ignored here.
 struct Args {
     width: Type,
-    big: bool,
 }
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let width: Type = input.parse()?;
-        let mut big = true;
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
@@ -31,12 +31,11 @@ impl Parse for Args {
             input.parse::<Token![=]>()?;
             let val: Ident = input.parse()?;
             match (key.to_string().as_str(), val.to_string().as_str()) {
-                ("bytes", "be") => big = true,
-                ("bytes", "le") => big = false,
+                ("bytes", "be" | "le") => {}
                 _ => return Err(syn::Error::new_spanned(&key, "expected `bytes = be|le`")),
             }
         }
-        Ok(Args { width, big })
+        Ok(Args { width })
     }
 }
 
@@ -132,16 +131,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         )),
     };
 
-    // Optional binrw: only when the width is a byte-aligned primitive (a sub-byte
-    // enum is only meaningful nested inside a #[bitfield]).
-    let binrw = if cfg!(feature = "binrw") {
-        binrw_impls(name, width, args.big)
-    } else {
-        quote!()
-    };
-
-    // `From`/`TryFrom` against the primitive — `num_enum` parity, feature-
-    // independent (also present without binrw).
+    // `From`/`TryFrom` against the primitive — `num_enum` parity.
     let conv = conv_impls(name, width, &unit, catch_all.is_some());
 
     Ok(quote! {
@@ -165,7 +155,6 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 
         impl ::bnb::BitEnum for #name {}
 
-        #binrw
         #conv
     })
 }
@@ -178,8 +167,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 /// - without one, `TryFrom<uN> for Enum` — rejects unknown discriminants with
 ///   [`UnknownDiscriminant`](::bnb::UnknownDiscriminant).
 ///
-/// A sub-byte width (`u4`) gets nothing — nest it in a `#[bitfield]`. The
-/// conversions don't need binrw, so they're emitted in both feature configs.
+/// A sub-byte width (`u4`) gets nothing — nest it in a `#[bitfield]`.
 fn conv_impls(
     name: &Ident,
     width: &Type,
@@ -239,42 +227,6 @@ fn conv_impls(
     quote! {
         #into_prim
         #from_prim
-    }
-}
-
-/// Emits binrw impls for an enum whose width is a byte-aligned primitive.
-fn binrw_impls(name: &Ident, width: &Type, big: bool) -> TokenStream2 {
-    let prim = match primitive_of(width) {
-        Some(p) => p,
-        None => return quote!(), // sub-byte width: nest it in a #[bitfield]
-    };
-    let prim = Ident::new(prim, proc_macro2::Span::call_site());
-    let endian = if big { quote!(Big) } else { quote!(Little) };
-    quote! {
-        const _: () = {
-            use ::bnb::__private::binrw::{BinRead, BinResult, BinWrite, Endian};
-            use ::bnb::__private::binrw::io::{Read, Seek, Write};
-            use ::bnb::__private::binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-            use ::bnb::__private::Bits;
-
-            impl ReadEndian for #name { const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian); }
-            impl WriteEndian for #name { const ENDIAN: EndianKind = EndianKind::Endian(Endian::#endian); }
-
-            impl BinRead for #name {
-                type Args<'a> = ();
-                fn read_options<R: Read + Seek>(reader: &mut R, _endian: Endian, _args: ()) -> BinResult<Self> {
-                    let raw = <#prim as BinRead>::read_options(reader, Endian::#endian, ())?;
-                    Ok(<#name as Bits>::from_bits(raw as u128))
-                }
-            }
-            impl BinWrite for #name {
-                type Args<'a> = ();
-                fn write_options<W: Write + Seek>(&self, writer: &mut W, _endian: Endian, _args: ()) -> BinResult<()> {
-                    let raw = <#name as Bits>::into_bits(*self) as #prim;
-                    <#prim as BinWrite>::write_options(&raw, writer, Endian::#endian, ())
-                }
-            }
-        };
     }
 }
 

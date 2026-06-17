@@ -102,9 +102,8 @@ macro_rules! impl_bits_for_primitive {
 
 impl_bits_for_primitive!(u8, u16, u32, u64, u128);
 
-/// The seam every `#[bitfield]` struct implements — the stable interface a codec
-/// (binrw today, an in-house codec later) builds on, independent of how the
-/// fields are accessed.
+/// The seam every `#[bitfield]` struct implements — the stable interface the
+/// `#[bin]` codec builds on, independent of how the fields are accessed.
 ///
 /// A bitfield is a thin wrapper over a single backing unsigned integer; this
 /// trait exposes that backing plus the declared layout metadata. The generated

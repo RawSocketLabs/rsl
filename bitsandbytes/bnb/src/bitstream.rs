@@ -705,8 +705,9 @@ pub trait BitDecode: Sized {
 /// A message whose encoded length is a **compile-time constant** — i.e. it has no
 /// variable-length (`count`-driven `Vec`) field. The derive implements this only
 /// for fixed messages; it sizes a fixed byte region when the message is embedded
-/// in a byte stream (the binrw bridge / `#[bitwire]`). A `count`-bearing message
-/// implements [`BitDecode`]/[`BitEncode`] but **not** this.
+/// in a byte stream (e.g. a `#[nested]` field's contribution to its parent's
+/// width). A `count`-bearing message implements [`BitDecode`]/[`BitEncode`] but
+/// **not** this.
 pub trait FixedBitLen {
     /// Total encoded width of the message in bits — the sum of its fields' widths.
     const BIT_LEN: u32;
@@ -1300,67 +1301,6 @@ mod bytes_io {
 
 #[cfg(feature = "bytes")]
 pub use bytes_io::{BytesReader, BytesWriter};
-
-/// binrw bridge: `parse_with`/`write_with` helpers that embed a bit-decoded
-/// region inside a `#[binrw]`/`#[bitwire]` struct. This is the **dispatch seam**
-/// — binrw owns the byte-aligned stream (magic/count/args/…), these hand a
-/// byte-aligned sub-region to the bit cursor. Used by the `#[bitwire]` macro
-/// (DESIGN §11 DD1).
-#[cfg(feature = "binrw")]
-mod binrw_bridge {
-    use super::{BitDecode, BitEncode, BitError, BitReader, BitWriter};
-    use binrw::io::{Read, Seek, Write};
-    use binrw::{BinResult, Endian};
-
-    /// `parse_with` bridge: read `T`'s byte-region from the stream, bit-decode it.
-    ///
-    /// # Errors
-    /// I/O errors from the reader, or a [`BitError`] wrapped as `binrw::Error::Custom`.
-    pub fn read_bits_region<T, R>(reader: &mut R, _endian: Endian, _args: ()) -> BinResult<T>
-    where
-        T: BitDecode + super::FixedBitLen,
-        R: Read + Seek,
-    {
-        let pos = reader.stream_position()?;
-        let n = (<T as super::FixedBitLen>::BIT_LEN as usize).div_ceil(8);
-        let mut buf = vec![0u8; n];
-        reader.read_exact(&mut buf)?;
-        let mut br = BitReader::new(&buf);
-        T::bit_decode(&mut br).map_err(|e: BitError| binrw::Error::Custom {
-            pos,
-            err: Box::new(e),
-        })
-    }
-
-    /// `write_with` bridge: bit-encode `T`, emit its bytes.
-    ///
-    /// # Errors
-    /// I/O errors from the writer, or a [`BitError`] wrapped as `binrw::Error::Custom`.
-    pub fn write_bits_region<T, W>(
-        value: &T,
-        writer: &mut W,
-        _endian: Endian,
-        _args: (),
-    ) -> BinResult<()>
-    where
-        T: BitEncode,
-        W: Write + Seek,
-    {
-        let pos = writer.stream_position()?;
-        let mut bw = BitWriter::new();
-        value
-            .bit_encode(&mut bw)
-            .map_err(|e: BitError| binrw::Error::Custom {
-                pos,
-                err: Box::new(e),
-            })?;
-        writer.write_all(&bw.into_bytes())?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "binrw")]
-pub use binrw_bridge::{read_bits_region, write_bits_region};
 
 #[cfg(test)]
 mod unit {

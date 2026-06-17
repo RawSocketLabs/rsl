@@ -5,76 +5,44 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Ergonomic, fast bit/byte field types and macros for binary protocol codecs, with first-class binrw integration."
+description = "An owned, bit-aware binary codec: fast bit/byte field types and the unified #[bin] macro."
 [dependencies]
 # The derive/attribute macros live in a sibling proc-macro crate (a proc-macro
 # crate cannot also export runtime items). Re-exported below so users only
-# depend on `bits`.
+# depend on `bnb`.
 bnb-macros = { workspace = true }
-# Optional: when on, the macros emit binrw BinRead/BinWrite impls and this crate
-# re-exports binrw for the generated code to reference. Off => a standalone,
-# dependency-light bit/byte library (the path to dropping binrw entirely).
-binrw = { workspace = true, optional = true }
 # Optional: zero-copy `Source`/`Sink` over the `bytes` crate (own a `Bytes` frame to
 # decode, encode to a `Bytes` to send) — for async/tokio framing. Off by default so
 # the core stays dependency-light; users off tokio never pull it in.
 bytes = { workspace = true, optional = true }
 
 [features]
-# Phase 4: the native `#[bin]` codec is the default path — `binrw` is now **opt-in
-# interop only**, off by default, so a downstream `bits` dependency pulls no binrw.
 default = []
-# binrw interop: `#[bitfield]`/`#[derive(BitEnum)]` BinRead/BinWrite impls and the
-# `#[wire]`/`#[bitwire]` bridge macros (superseded by `#[bin]`).
-binrw = ["dep:binrw", "bnb-macros/binrw"]
-# Alias spelling its purpose (interop-only); see the ROADMAP Phase 4.
-binrw-compat = ["binrw"]
 # `bytes`-crate adapters (`BytesReader`/`BytesWriter`).
 bytes = ["dep:bytes"]
-# Renders the `bnb` target-design rustdoc preview (doc-only modules, no code, not
-# yet implemented). Review with:
+# Renders the `bnb` target-design rustdoc preview (doc-only modules, no code).
+# Review with:
 #   RUSTC_WRAPPER= cargo doc -p bnb --features doc-preview --no-deps --open
 # Never part of a real build or the default docs.
 doc-preview = []
 
 [dev-dependencies]
-# Used by integration tests that exercise the binrw bridge end-to-end against
-# real protocol-shaped structs.
-binrw.workspace = true
-# Compile-fail UI tests: assert that `#[wire]` misuse (out-of-order or
-# non-adjacent group members, marker conflicts, …) is rejected with a clear,
-# well-spanned error. Regenerate snapshots with `TRYBUILD=overwrite`.
+# Compile-fail UI tests: assert that `#[bin]`/`#[bitfield]` misuse is rejected with
+# a clear, well-spanned error. Regenerate snapshots with `TRYBUILD=overwrite`.
 trybuild.workspace = true
-# Property-based round-trip stress testing for `#[wire]` codecs.
+# Property-based round-trip stress testing.
 proptest.workspace = true
 # Statistical benchmarking with HTML reports.
 criterion = { workspace = true, features = ["html_reports"] }
 # Shared bench harness (testutil::bench::criterion); criterion stays a
 # direct dev-dep for its macros/types.
 testutil = { workspace = true, features = ["bench"] }
-# The crates `bits` replaces — used *only* in benchmarks to substantiate the
+# The crates `bnb` replaces — used *only* in benchmarks to substantiate the
 # "as fast as a hand-written shift/mask" claim before any migration. They are
 # dev-dependencies, so they never enter a real build.
 bitbybit.workspace = true
 arbitrary-int.workspace = true
 modular-bitfield-msb.workspace = true
-
-# Examples that use binrw are gated; the codec-only ones build either way.
-[[example]]
-name = "protocol_header"
-required-features = ["binrw"]
-
-[[example]]
-name = "ipv4_header"
-required-features = ["binrw"]
-
-[[example]]
-name = "tcp_segment"
-required-features = ["binrw"]
-
-[[example]]
-name = "wire_header"
-required-features = ["binrw"]
 
 [[bench]]
 name = "bitfield_bench"

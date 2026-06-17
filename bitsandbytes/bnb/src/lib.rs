@@ -1,29 +1,25 @@
 /*!
-`bits` — ergonomic, fast bit/byte field types for binary protocol codecs, with
-first-class [`binrw`] integration.
+`bnb` — an owned, bit-aware binary codec: ergonomic, fast bit/byte field types and
+the unified `#[bin]` whole-message codec. No `binrw` dependency.
 
-> **Direction → `bnb`.** An owned, bit-aware successor that drops the external
-> `binrw` dependency (and renames `bits` → `bnb`) is planned. Its target API is
-> documented in the `design_preview` module (build with `--features doc-preview`)
-> and in `ROADMAP.md`, and is **not yet implemented**. Everything below describes
-> the crate as it ships **today**.
-
-It provides three things, designed to *compose*:
+It provides, designed to *compose*:
 
 - **Arbitrary-width integers** ([`u1`]..[`u127`], via [`UInt`]) for sub-byte
   fields — a dependency-free replacement for `arbitrary-int`.
 - **`#[bitfield]`** — an attribute macro that packs typed fields into a single
   backing integer with **explicit, independent control of bit order**
   (MSB/LSB-first) **and byte order** (big/little). It generates getters,
-  immutable `with_*` setters, raw access, allocation-free `*_bytes` conversions,
-  and — with the default `binrw` feature — `BinRead`/`BinWrite` impls so the type
-  drops into a `#[binrw]` struct with **no `map` glue**.
+  immutable `with_*` setters, raw access, and allocation-free `*_bytes` conversions.
 - **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width, with an optional
   `#[catch_all]` variant that preserves unknown values (the dual-use convention).
+- **`#[bin]`** — the unified whole-message codec (see below): reads/writes a struct
+  at arbitrary bit offsets, with the full directive surface that subsumed our
+  former `binrw` usage.
 
 The aim is to retire the workspace's stack of overlapping helpers
 (`modular-bitfield`(`-msb`), `bitfield-struct`, `bitbybit`, `arbitrary-int`,
-`num_enum`) behind one fast, integer-backed (shift/mask, no `bitvec`) crate.
+`num_enum`, and our use of `binrw`) behind one fast, integer-backed
+(shift/mask, no `bitvec`) crate.
 
 # Example — a DNS-style 16-bit header field
 
@@ -73,29 +69,12 @@ These are independent knobs, which is the whole point:
 - `bytes = be | le` — endianness of the backing integer when serialized.
   Default: `be`.
 
-# binrw integration (the `binrw` feature — **opt-in interop, off by default**)
+# The `#[bin]` codec
 
-The native `#[bin]` codec is the default path; `binrw` is opt-in interop only (so a
-`bits` dependency pulls no binrw by default). With the feature on, `#[bitfield]` and
-`#[derive(BitEnum)]` types implement [`binrw::BinRead`]/[`binrw::BinWrite`] using
-their declared byte order, so:
-
-```ignore
-#[binrw]
-#[brw(big)]
-struct Header {
-    id: u16,
-    state: State,   // no #[br(map = ...)] / #[bw(map = ...)] needed
-    qd: u16,
-}
-```
-
-Enable it with `features = ["binrw"]` (or the `binrw-compat` alias) for interop;
-otherwise you get a standalone, dependency-light bit/byte library.
-
-[`binrw`]: https://docs.rs/binrw
-[`binrw::BinRead`]: https://docs.rs/binrw/latest/binrw/trait.BinRead.html
-[`binrw::BinWrite`]: https://docs.rs/binrw/latest/binrw/trait.BinWrite.html
+Whole-message bit-aware codec: `#[bin]` (magic/count/ctx/map/if/calc·temp/reserved/
+positioning/validate) over a `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O
+ladder, with an opt-in `bytes` feature for async framing. It is the owned successor
+to our former binrw usage — no binrw dependency.
 */
 
 // Every public item must be documented (the `uN` aliases are the one self-
@@ -138,14 +117,6 @@ pub use int::{UInt, *};
 // so `BitEnum`/`BitDecode`/`BitEncode` are each both a derive and a trait.
 pub use bnb_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bin, bitfield, bitflags};
 
-// `#[wire]`/`#[bitwire]` wrap binrw, so they exist only with the `binrw` feature.
-// **Superseded by `#[bin]`** (Phase 2 fold): `#[bin]` is the unified codec and now
-// handles byte-aligned messages natively with the full directive surface, so it
-// covers both. These are kept for binrw interop only and are dropped when binrw
-// leaves the default graph (Phase 4).
-#[cfg(feature = "binrw")]
-pub use bnb_macros::{bitwire, wire};
-
 /// Marker trait implemented by `#[derive(BitEnum)]` enums: a [`Bits`] value
 /// whose representation is an integer discriminant of a fixed width.
 pub trait BitEnum: Bits {}
@@ -160,13 +131,6 @@ pub mod __private {
         read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array,
         write_mapped,
     };
-    #[cfg(feature = "binrw")]
-    pub use crate::bitstream::{read_bits_region, write_bits_region};
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
-
-    /// Re-export of `binrw` so generated `BinRead`/`BinWrite` impls can name it
-    /// without the user crate depending on `binrw` directly.
-    #[cfg(feature = "binrw")]
-    pub use ::binrw;
 }

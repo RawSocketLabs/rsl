@@ -1,10 +1,10 @@
-//! Procedural macros for the [`bits`](https://docs.rs/bits) crate.
+//! Procedural macros for the [`bnb`](https://docs.rs/bnb) crate.
 //!
 //! - [`macro@bitfield`] — pack typed fields into one backing integer with
 //!   explicit bit and byte order.
 //! - [`macro@BitEnum`] — derive enum ⇄ integer with an optional catch-all.
 //!
-//! These are re-exported from `bits`; depend on that crate, not this one.
+//! These are re-exported from `bnb`; depend on that crate, not this one.
 
 #![deny(missing_docs)]
 
@@ -13,8 +13,6 @@ mod bitfield;
 mod bitflags;
 mod bitstream;
 mod builder;
-#[cfg(feature = "binrw")]
-mod wire;
 
 use proc_macro::TokenStream;
 
@@ -51,8 +49,7 @@ use proc_macro::TokenStream;
 ///
 /// `new()`/`Default` (all-zero), `with_<field>`/`set_<field>`, `<field>()`
 /// getters, `raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
-/// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls. With
-/// the `binrw` feature, also `BinRead`/`BinWrite` using the declared byte order.
+/// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
 #[proc_macro_attribute]
 pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
     bitfield::expand(attr, item)
@@ -82,7 +79,7 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `contains`/`intersects`/`is_empty`/`insert`/`remove`/`toggle`/`set`;
 /// const `union`/`intersection`/`difference`/`complement` (for combination
 /// consts); per-flag `fin()`/`with_fin(bool)`/`set_fin(bool)`; `iter()`; the
-/// `| & ^ - !` (+ assign) operators; and `Bits`/`Bitfield` (+ binrw) impls so a
+/// `| & ^ - !` (+ assign) operators; and `Bits`/`Bitfield` impls so a
 /// flag set nests in a `#[bitfield]` and serializes.
 #[proc_macro_attribute]
 pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -110,15 +107,14 @@ pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Always: the `bnb::{Bits, BitEnum}` impls (so the enum nests in a
 /// `#[bitfield]`). For a **byte-aligned** width (`u8`/`u16`/…) additionally —
-/// independent of the `binrw` feature, for `num_enum` parity:
+/// for `num_enum` parity:
 ///
 /// - `From<Enum> for uN` (every variant maps to a value);
 /// - with `#[catch_all]`: `From<uN> for Enum` (total — unknowns absorbed);
 /// - without it: `TryFrom<uN> for Enum`, erroring with
-///   [`bnb::UnknownDiscriminant`](../bits/struct.UnknownDiscriminant.html) on an
+///   [`bnb::UnknownDiscriminant`](bnb::UnknownDiscriminant) on an
 ///   unknown value.
 ///
-/// With the `binrw` feature, a byte-aligned enum also gets `BinRead`/`BinWrite`.
 /// A sub-byte enum (`u4`) gets none of these — it is only meaningful nested in a
 /// `#[bitfield]`.
 #[proc_macro_derive(BitEnum, attributes(bit_enum, catch_all))]
@@ -150,14 +146,14 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 ///
 /// | Your data | Use | Why |
 /// |---|---|---|
-/// | Fields straddle byte boundaries in the stream (e.g. `108 \| 48 \| 108` bits) | **`#[derive(BitDecode/BitEncode)]`** | only codec that reads at arbitrary bit offsets |
-/// | Whole-byte fields, possibly with magic/counts/`Vec`/nesting | **`#[binrw]` / `#[wire]`** | richer attribute surface, byte-aligned |
-/// | A run of sub-byte fields that fills one integer | **`#[bitfield]` / `#[wire] group(...)`** | one packed word with named accessors |
+/// | Fields straddle byte boundaries (e.g. `108 \| 48 \| 108` bits) | **`#[derive(BitDecode/BitEncode)]`** or **`#[bin]`** | reads at arbitrary bit offsets |
+/// | A whole message (magic/counts/`Vec`/nesting/ctx/…), bit- or byte-aligned | **`#[bin]`** | the unified codec |
+/// | A run of sub-byte fields that fills one integer | **`#[bitfield]`** | one packed word with named accessors |
 ///
-/// To enforce that, the derive **rejects an all-byte-aligned struct** at compile
-/// time (every field a whole number of bytes ⇒ the cursor never leaves byte
-/// boundaries ⇒ `#[binrw]`/`#[wire]` is the better tool). Override with the
-/// struct-level `#[bit_stream(allow_byte_aligned)]` when you really mean it.
+/// To enforce that, the bare derive **rejects an all-byte-aligned struct** at
+/// compile time (every field a whole number of bytes ⇒ the cursor never leaves byte
+/// boundaries ⇒ `#[bin]` is the better tool). Override with the struct-level
+/// `#[bit_stream(allow_byte_aligned)]` when you really mean it.
 #[proc_macro_derive(
     BitDecode,
     attributes(bit_stream, nested, br, bw, brw, reserved, reserved_with)
@@ -201,36 +197,6 @@ pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
     bitstream::expand_bin(attr, item)
 }
 
-/// **Spike (DESIGN §11 DD1):** the dispatch attribute — one struct, two backends.
-///
-/// Lowers to a `#[binrw]` struct, so byte-aligned fields keep the **full binrw
-/// surface** (`#[br]`/`#[bw]`/`#[brw]` with `magic`/`count`/`args`/…) handled by
-/// binrw, while a field marked `#[bits]` is a [`bnb::BitDecode`]/[`bnb::BitEncode`]
-/// region wired in through binrw's own `parse_with`/`write_with` escape hatch — so
-/// sub-byte regions ride inside an otherwise byte-aligned message.
-///
-/// ```ignore
-/// #[bitwire(big)]
-/// #[derive(Debug, PartialEq)]
-/// struct Burst {
-///     #[brw(magic = 0xCAFEu16)]   // pure binrw
-///     id: u16,
-///     #[bits]                     // bit codec: a byte-aligned region of sub-byte fields
-///     payload: BurstPayload,      // a #[derive(BitDecode, BitEncode)] struct
-///     crc: u16,                   // pure binrw
-/// }
-/// ```
-///
-/// Requires the `binrw` feature and that the dependent crate has `binrw` as a
-/// direct dependency. A `#[bits]` region must be byte-aligned overall (asserted at
-/// compile time). **Spike scope:** `big`/`little` only; no field-level bit groups
-/// or `#[update]`/`validate` yet (those live on `#[wire]`).
-#[cfg(feature = "binrw")]
-#[proc_macro_attribute]
-pub fn bitwire(attr: TokenStream, item: TokenStream) -> TokenStream {
-    bitstream::expand_bitwire(attr, item)
-}
-
 /// Generates a `derive_builder`-style builder for a struct (or, when listed in a
 /// `#[bitfield]`'s derives, for the bitfield — intercepted by `#[bitfield]`).
 ///
@@ -258,61 +224,4 @@ pub fn bitwire(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(BitsBuilder, attributes(builder))]
 pub fn bits_builder(item: TokenStream) -> TokenStream {
     builder::expand_derive(item)
-}
-
-/// Folds a protocol message's binrw codec, builder, collapsed bit-groups,
-/// derived fields, and soundness check into one attribute.
-///
-/// `#[wire]` is *sugar over the existing primitives*: it rewrites the struct
-/// into a `#[binrw]` struct — so **every** binrw attribute (`magic`, `count`,
-/// `args`, `import`, `map`, `parse_with`, `if`, `pre_assert`, `pad_*`, …) stays
-/// usable as an escape hatch — and additionally generates a private `#[bitfield]`
-/// per bit-group and a [`BitsBuilder`](macro@BitsBuilder)-style builder.
-///
-/// Requires the `binrw` feature (it wraps binrw) and that the dependent crate has
-/// `binrw` as a direct dependency.
-///
-/// ```ignore
-/// #[wire(big, group(opcode, flags, rcode => u16), validate = Header::soundness)]
-/// #[derive(Debug, Clone, PartialEq)]
-/// struct Header {
-///     id: u16,
-///     opcode: OpCode,           // these three are packed into one u16 on the
-///     flags:  Flags,            // wire (a private #[bitfield]) but stay
-///     rcode:  RCode,            // first-class in the builder and as fields
-///     #[update(self.queries.len() as u16)]
-///     qdcount: u16,             // derived on write, temp on read (not stored)
-///     #[br(count = qdcount)]    // escape hatch: a raw binrw attribute
-///     #[builder(default)]
-///     queries: Vec<Question>,
-/// }
-/// ```
-///
-/// ## Attribute arguments
-///
-/// - `big` | `little` (default `big`): wire byte order (`#[brw(big|little)]`).
-/// - `group(a, b, c => uN)` (repeatable): pack the **named, consecutive,
-///   in-order** fields into a `uN` word. Naming the fields means a moved or
-///   renamed field is a compile error; the macro also rejects members that are
-///   not adjacent or are out of order.
-/// - `validate = path`: `path: fn(&Self) -> Result<(), E: Display>`. Auto-creates
-///   a `check_soundness` builder-only flag (default `true`); `build()` runs the
-///   validator when it is set, and a `validate(&self)` method is generated for
-///   opt-in post-parse checking. The **parser stays permissive** — it never
-///   rejects representable input (the workspace's dual-use rule).
-/// - `no_builder`: skip builder generation (codec + groups only).
-///
-/// ## Field attributes
-///
-/// - `#[update(expr)]`: derived field — `expr` is written every time and the
-///   field is read into a temp (not stored, not in the builder).
-/// - `#[builder_only]` / `#[builder_only(default = expr)]`: a field in the struct
-///   and builder but **not** on the wire.
-/// - `#[builder(default)]` / `#[builder(default = expr)]`: builder default policy
-///   (as for [`BitsBuilder`](macro@BitsBuilder)).
-/// - any `#[br]` / `#[bw]` / `#[brw]`: forwarded verbatim to binrw.
-#[cfg(feature = "binrw")]
-#[proc_macro_attribute]
-pub fn wire(attr: TokenStream, item: TokenStream) -> TokenStream {
-    wire::expand(attr, item)
 }
