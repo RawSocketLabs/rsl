@@ -26,6 +26,19 @@ use crate::field::Bits;
 /// value is always in `0..=MAX` (`MAX == 2^N - 1`); construct with
 /// [`new`](UInt::new) (panicking) or [`try_new`](UInt::try_new) (checked), and
 /// read it back with [`value`](UInt::value).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::u5;
+///
+/// let a = u5::new(17);              // checked; panics if > 31
+/// assert_eq!(a.value(), 17);
+/// assert!(u5::try_new(32).is_err()); // out of range -> Err, no panic
+/// assert_eq!(u5::from_raw(0xFF).value(), 31); // masks to the low 5 bits
+/// assert_eq!(u5::MAX.value(), 31);
+/// assert_eq!(u5::MIN.value(), 0);
+/// ```
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UInt<T, const N: usize> {
     value: T,

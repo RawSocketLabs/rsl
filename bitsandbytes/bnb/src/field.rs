@@ -8,6 +8,13 @@
 //! crate supports (the maximum width is 128 bits).
 
 /// Byte order of a bitfield's backing integer when it is serialized.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::ByteOrder;
+/// assert_eq!(ByteOrder::default(), ByteOrder::Big); // network order is the default
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ByteOrder {
     /// Most-significant byte first (network order). The default.
@@ -22,6 +29,13 @@ pub enum ByteOrder {
 ///
 /// Most network protocols (and the ASCII-art layouts in their RFCs) are
 /// most-significant-first, so [`Msb`](BitOrder::Msb) is the crate default.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::BitOrder;
+/// assert_eq!(BitOrder::default(), BitOrder::Msb); // first field in the high bits
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum BitOrder {
     /// First field in the high bits (network / RFC-diagram order). The default.
@@ -109,6 +123,23 @@ impl_bits_for_primitive!(u8, u16, u32, u64, u128);
 /// trait exposes that backing plus the declared layout metadata. The generated
 /// type also provides inherent `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/
 /// `from_le_bytes` for allocation-free (de)serialization.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bitfield, u4, Bitfield, BitOrder, ByteOrder};
+///
+/// #[bitfield(u8, bits = msb, bytes = be)]
+/// #[derive(Clone, Copy)]
+/// struct Byte { hi: u4, lo: u4 }
+///
+/// let b = Byte::new().with_hi(u4::new(0xA)).with_lo(u4::new(0xB));
+/// assert_eq!(b.to_raw(), 0xAB);              // the backing integer
+/// assert_eq!(Byte::from_raw(0xCD).hi().value(), 0xC);
+/// assert_eq!(Byte::WIDTH, 8);                // declared layout metadata
+/// assert_eq!(Byte::BYTE_ORDER, ByteOrder::Big);
+/// assert_eq!(Byte::BIT_ORDER, BitOrder::Msb);
+/// ```
 pub trait Bitfield: Bits + Sized {
     /// The backing primitive integer (`u8`, `u16`, `u32`, `u64`, or `u128`).
     type Backing: Copy;

@@ -14,6 +14,21 @@ use core::fmt;
 ///   check rejected the built value. The string is the validator's error,
 ///   stringified, so any `Display` error type composes without coupling the
 ///   builder to a protocol-specific error type.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bitfield, u4, BitsBuilder, BuilderError};
+///
+/// #[bitfield(u8, bits = msb)]
+/// #[derive(BitsBuilder, Clone, Copy, Debug)]
+/// struct Nibbles { hi: u4, lo: u4 }
+///
+/// let err = Nibbles::builder().hi(u4::new(0xA)).build().unwrap_err();
+/// assert_eq!(err, BuilderError::MissingField("lo"));
+/// assert_eq!(err.field(), Some("lo"));
+/// assert_eq!(err.to_string(), "required field `lo` was not set");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuilderError {
     /// A required field was not set; carries the field name.

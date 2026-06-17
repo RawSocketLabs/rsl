@@ -34,6 +34,21 @@ use crate::field::{BitOrder, Bits, ByteOrder};
 /// A position-aware bit-codec error — the runtime analogue of binrw's error
 /// spans. It records the **bit offset** where decoding/encoding failed and, when
 /// the derive can supply it, the **field** being processed.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bin, ErrorKind};
+///
+/// #[bin(big)]
+/// #[derive(Debug)]
+/// struct Pair { a: u16, b: u16 }
+///
+/// let err = Pair::decode_exact(&[0x00]).unwrap_err(); // only one byte of four
+/// assert_eq!(err.at, 0);             // the bit offset where it failed
+/// assert_eq!(err.field, Some("a"));  // the field being read (the span)
+/// assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitError {
     /// The cause.
@@ -277,6 +292,17 @@ where
 
 /// A typed bit/byte amount for positioning directives — `4.bits()`, `3.bytes()` —
 /// resolving to a bit count. Bring it in with `use bnb::prelude::*`.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::prelude::*;
+/// assert_eq!(4u32.bits(), 4);
+/// assert_eq!(3u32.bytes(), 24);
+/// ```
+///
+/// Used by the positioning directives, e.g. `#[br(pad_before = 2u32.bytes())]` — see
+/// [`guide::directives`](crate::guide::directives).
 pub trait BitAmount: Copy {
     /// This many **bits**.
     fn bits(self) -> u32;
@@ -347,6 +373,18 @@ pub fn align_write<K: Sink>(w: &mut K) -> Result<(), BitError> {
 /// The wire layout: bit packing order **and** byte order, threaded through the
 /// cursors and entry points. `#[bin(big|little)]` and `#[bin(bit_order = msb|lsb)]`
 /// set it; the default is MSB-first, big-endian (RFC/network order).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitReader, BitOrder, ByteOrder, Layout};
+///
+/// // Read a 16-bit value little-endian instead of the default big-endian.
+/// let layout = Layout { bit: BitOrder::Msb, byte: ByteOrder::Little };
+/// let mut r = BitReader::with_layout(&[0x34, 0x12], layout);
+/// assert_eq!(r.read::<u16>().unwrap(), 0x1234);
+/// assert_eq!(Layout::default(), Layout { bit: BitOrder::Msb, byte: ByteOrder::Big });
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Layout {
     /// Bit packing order — does the first bit land in the high or low bit.
@@ -468,6 +506,17 @@ fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: Bi
 /// A cursor that reads values at arbitrary bit offsets from a byte slice, in a
 /// chosen [`BitOrder`] (MSB-first by default — `bit 0` is the high bit of byte 0,
 /// the RFC/ETSI ASCII-art convention; LSB-first for serial/PHY layers).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitReader, u4, u12};
+///
+/// let mut r = BitReader::new(&[0xAB, 0xCD]);
+/// assert_eq!(r.read::<u4>().unwrap(), u4::new(0xA)); // 4 bits
+/// assert_eq!(r.read::<u12>().unwrap(), u12::new(0xBCD)); // the next 12, straddling a byte
+/// assert_eq!(r.remaining_bits(), 0);
+/// ```
 #[derive(Clone, Debug)]
 pub struct BitReader<'a> {
     bytes: &'a [u8],
@@ -584,6 +633,18 @@ impl<'a> BitReader<'a> {
 /// A sink that appends values at arbitrary bit offsets in a chosen [`BitOrder`]
 /// (MSB-first by default), growing a byte buffer (the final partial byte is
 /// zero-padded).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitWriter, u4, u12};
+///
+/// let mut w = BitWriter::new();
+/// w.write(u4::new(0xA)).unwrap();
+/// w.write(u12::new(0xBCD)).unwrap();
+/// assert_eq!(w.bit_len(), 16);
+/// assert_eq!(w.into_bytes(), [0xAB, 0xCD]);
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct BitWriter {
     bytes: Vec<u8>,
@@ -658,10 +719,23 @@ impl BitWriter {
     }
 }
 
-/// A bit-level **input** the codec recurses over — a [`BitReader`] (in-memory
-/// slice) or a [`StreamBitReader`] (forward `Read`). The recursion is generic
-/// over `Source`, so one codec runs over any input. (The seekable/streaming
-/// `BufSource` ladder is Phase 3.)
+/// A bit-level **input** the codec recurses over. Implemented by [`BitReader`]
+/// (in-memory slice), [`StreamBitReader`] (forward `Read`), [`BufSource`] (a
+/// retain-and-seek socket adapter), and [`SeekReader`] (`Read + Seek`); the codec is
+/// generic over `Source`, so one decoder runs over any of them — see
+/// [`guide::io`](crate::guide::io).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitReader, Source, u4};
+///
+/// // A reader generic over any `Source`.
+/// fn first_nibble<S: Source>(s: &mut S) -> u4 { s.read().unwrap() }
+///
+/// let mut r = BitReader::new(&[0xA5]);
+/// assert_eq!(first_nibble(&mut r), u4::new(0xA));
+/// ```
 pub trait Source {
     /// Reads `n` (`<= 128`) bits MSB-first into the low bits of a `u128`.
     ///
@@ -714,6 +788,20 @@ impl SeekSource for BitReader<'_> {}
 /// A bit-level **output** the codec writes to — the in-memory [`BitWriter`]
 /// (and, under the `bytes` feature, `BytesWriter`). Encode to any
 /// [`std::io::Write`] via a message's generated `encode` method.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitWriter, Sink, u4};
+///
+/// // A writer generic over any `Sink`.
+/// fn put_nibble<K: Sink>(k: &mut K, v: u4) { k.write(v).unwrap(); }
+///
+/// let mut w = BitWriter::new();
+/// put_nibble(&mut w, u4::new(0xA));
+/// put_nibble(&mut w, u4::new(0x5));
+/// assert_eq!(w.into_bytes(), [0xA5]);
+/// ```
 pub trait Sink {
     /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
     ///
@@ -778,6 +866,24 @@ impl Sink for BitWriter {
 /// `#[derive(BitDecode)]` struct implements (reading each field in declaration
 /// order). Leaf fields are any [`Bits`] type; nested messages recurse. Fixed- or
 /// variable-length; a fixed-length message *also* implements [`FixedBitLen`].
+///
+/// Most users reach for [`#[bin]`](macro@crate::bin) (which derives this plus
+/// [`BitEncode`] and a builder); the bare derives are the codec on its own, for fields
+/// that straddle byte boundaries.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitDecode, BitEncode, u4, u12};
+///
+/// // A 4-bit tag + a 12-bit length, straddling the byte boundary.
+/// #[derive(BitDecode, BitEncode, Debug, PartialEq)]
+/// struct Frame { tag: u4, len: u12 }
+///
+/// let f = Frame::decode_exact(&[0xAB, 0xCD]).unwrap();
+/// assert_eq!(f, Frame { tag: u4::new(0xA), len: u12::new(0xBCD) });
+/// assert_eq!(f.to_bytes().unwrap(), [0xAB, 0xCD]); // round-trips
+/// ```
 pub trait BitDecode: Sized {
     /// Decodes `Self` from any [`Source`], advancing its cursor.
     ///
@@ -996,15 +1102,30 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
     Ok(())
 }
 
-/// A *forward-only* bit reader over any [`std::io::Read`] — the streaming
-/// counterpart to the in-memory [`BitReader`].
+/// A *forward-only* bit reader over any [`std::io::Read`] — the streaming counterpart
+/// to the in-memory [`BitReader`], for a stream you read once and don't seek.
 ///
-/// It is bounded on `Read` **only, not `Seek`**: binrw's uniform `Read + Seek`
-/// requirement (and the `NoSeek` wrapper it forces) is avoided for forward
-/// parsing. A seeking variant would add `Read + Seek` *only* where a
-/// position-dependent directive needs it — the attribute-driven bound DD3
-/// describes. Demonstrated by reading from `&[u8]`, which is `Read` but **not**
-/// `Seek`. Reads up to 128 bits per call (the [`Source`] width ceiling).
+/// It is bounded on `Read` **only, not `Seek`**, so it works over inputs that can't
+/// seek (a socket, or a `&[u8]`, which is `Read` but not `Seek`). A message that needs
+/// to seek (`#[br(restore_position)]`) won't decode through it — use a [`BufSource`] or
+/// [`SeekReader`] for that. Reads up to 128 bits per call (the [`Source`] width
+/// ceiling); running out mid-message yields [`ErrorKind::Incomplete`] ("read more and
+/// retry").
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bin, StreamBitReader};
+///
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq)]
+/// struct Word { value: u32 }
+///
+/// // `&[u8]` is `Read` but not `Seek` — exactly the forward-only case.
+/// let data: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+/// let mut s = StreamBitReader::new(data);
+/// assert_eq!(Word::decode_from(&mut s).unwrap(), Word { value: 0x1234_5678 });
+/// ```
 #[derive(Debug)]
 pub struct StreamBitReader<R> {
     inner: R,
@@ -1096,12 +1217,25 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
     }
 }
 
-/// A **seekable** [`Source`] over a forward `Read` (a socket): it *retains* the
-/// bytes it has read, so a seek-using message (`restore_position`) works over a
-/// non-seekable stream by seeking within the retained buffer, reading more on
-/// demand. It is **bounded** — a retention `cap` (default 64 KiB) past which it
-/// errors [`ErrorKind::BufferFull`] rather than buffering unboundedly. The
-/// "continuously-receiving peer that also needs to seek" case (DD3/DD4).
+/// A **seekable** [`Source`] over a forward `Read` (a socket): it *retains* the bytes
+/// it has read, so a seek-using message (`restore_position`) works over a non-seekable
+/// stream by seeking within the retained buffer, reading more on demand. It is
+/// **bounded** — a retention `cap` (default 64 KiB) past which it errors
+/// [`ErrorKind::BufferFull`] rather than buffering unboundedly. The
+/// "continuously-receiving peer that also needs to seek" case.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bin, BufSource};
+///
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq)]
+/// struct Word { value: u32 }
+///
+/// let mut src = BufSource::new(&[0x12, 0x34, 0x56, 0x78][..]); // any `Read`
+/// assert_eq!(Word::decode_from(&mut src).unwrap(), Word { value: 0x1234_5678 });
+/// ```
 #[derive(Clone, Debug)]
 pub struct BufSource<R> {
     inner: R,
@@ -1206,8 +1340,22 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 
 /// A [`SeekSource`] over a seekable reader (`Read + Seek`, e.g. a `File`): it seeks
 /// via [`std::io::Seek`] to the byte holding the bit cursor, **without buffering** —
-/// the large-file / container-format case (Phase 3b). For a *non*-seekable stream
-/// that still needs to seek, use [`BufSource`].
+/// the large-file / container-format case. For a *non*-seekable stream that still
+/// needs to seek, use [`BufSource`].
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{bin, SeekReader};
+/// use std::io::Cursor;
+///
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq)]
+/// struct Word { value: u32 }
+///
+/// let mut f = SeekReader::new(Cursor::new(vec![0x12u8, 0x34, 0x56, 0x78]));
+/// assert_eq!(Word::decode_from(&mut f).unwrap(), Word { value: 0x1234_5678 });
+/// ```
 #[derive(Clone, Debug)]
 pub struct SeekReader<R> {
     inner: R,

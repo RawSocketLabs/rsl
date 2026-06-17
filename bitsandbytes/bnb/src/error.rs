@@ -12,6 +12,16 @@ use core::fmt;
 /// impls built on it). Decoding never fails: the codec is dual-use, so unknown
 /// values are preserved as `Custom`/catch-all rather than rejected, and field
 /// access masks rather than validates.
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{u4, Error};
+///
+/// let err = u4::try_new(20).unwrap_err(); // 20 doesn't fit in 4 bits
+/// assert_eq!(err, Error::ValueTooLarge { value: 20, bits: 4 });
+/// assert_eq!(err.to_string(), "value 20 does not fit in 4 bits");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// A value did not fit in the target integer's bit width.
@@ -47,6 +57,20 @@ pub type Result<T> = core::result::Result<T, Error>;
 /// `TryFromPrimitiveError`. Decoding through the codec / `Bits::from_bits` is
 /// unaffected — that path stays permissive (dual-use); this is only for the
 /// caller who opts into a checked conversion.
+///
+/// # Examples
+///
+/// ```
+/// #[derive(bnb::BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+/// #[bit_enum(u8, closed)]
+/// #[repr(u8)]
+/// enum Direction { Request = 1, Reply = 2 }
+///
+/// let err = Direction::try_from(9u8).unwrap_err(); // no variant for 9
+/// assert_eq!(err.value, 9);
+/// assert_eq!(err.type_name, "Direction");
+/// assert_eq!(err.to_string(), "Direction has no variant for discriminant 9");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnknownDiscriminant {
     /// The unrecognized value.
