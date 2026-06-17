@@ -375,6 +375,96 @@ fn apply_byte_order(raw: u128, bits: u32, byte: ByteOrder) -> u128 {
     out
 }
 
+/// Extracts `n` (`<= 128`) bits starting at absolute bit offset `pos` from `buf`, in
+/// `order`, returned right-aligned in a `u128` (byte order is applied separately by
+/// `read`). The single bit-extraction routine behind every slice-backed [`Source`]
+/// ([`BitReader`], [`BufSource`], [`SeekReader`]). The caller must have bounds-checked
+/// `pos + n <= buf.len() * 8` and `n <= 128`.
+///
+/// **Fast path:** when the read is byte-aligned (`pos % 8 == 0` and `n % 8 == 0`) the
+/// bytes are accumulated whole — one iteration per byte, not per bit (≈8× fewer).
+#[inline]
+fn extract_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
+    if pos % 8 == 0 && n % 8 == 0 {
+        let start = pos / 8;
+        let nbytes = n / 8;
+        let mut acc = 0u128;
+        match order {
+            // MSB-first byte-aligned == big-endian byte concatenation.
+            BitOrder::Msb => {
+                for j in 0..nbytes {
+                    acc = (acc << 8) | u128::from(buf[start + j]);
+                }
+            }
+            // LSB-first byte-aligned == little-endian byte concatenation.
+            BitOrder::Lsb => {
+                for j in 0..nbytes {
+                    acc |= u128::from(buf[start + j]) << (8 * j);
+                }
+            }
+        }
+        return acc;
+    }
+    // General path: one bit at a time (handles sub-byte offsets/widths).
+    let mut acc = 0u128;
+    match order {
+        BitOrder::Msb => {
+            for k in 0..n {
+                let p = pos + k;
+                acc = (acc << 1) | u128::from((buf[p >> 3] >> (7 - (p & 7))) & 1);
+            }
+        }
+        BitOrder::Lsb => {
+            for k in 0..n {
+                let p = pos + k;
+                acc |= u128::from((buf[p >> 3] >> (p & 7)) & 1) << k;
+            }
+        }
+    }
+    acc
+}
+
+/// Appends the low `n` (`<= 128`) bits of `value` to `out` at absolute bit offset
+/// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`].
+///
+/// **Fast path:** when appending byte-aligned at the end (`bit_pos % 8 == 0`,
+/// `n % 8 == 0`, cursor at `out.len()`) the bytes are pushed whole, one per byte.
+#[inline]
+fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
+    if n % 8 == 0 && bit_pos % 8 == 0 && bit_pos / 8 == out.len() {
+        let nbytes = n / 8;
+        match order {
+            BitOrder::Msb => {
+                for j in 0..nbytes {
+                    out.push((value >> (8 * (nbytes - 1 - j))) as u8);
+                }
+            }
+            BitOrder::Lsb => {
+                for j in 0..nbytes {
+                    out.push((value >> (8 * j)) as u8);
+                }
+            }
+        }
+        return;
+    }
+    for k in 0..n {
+        let p = bit_pos + k;
+        // MSB-first emits the field's high bit first (i = n-1-k); LSB-first emits its
+        // low bit first (i = k) into the byte's low bit.
+        let (i, shift) = match order {
+            BitOrder::Msb => (n - 1 - k, 7 - (p & 7)),
+            BitOrder::Lsb => (k, p & 7),
+        };
+        let byte_idx = p >> 3;
+        if byte_idx == out.len() {
+            out.push(0);
+        }
+        if (value >> i) & 1 != 0 {
+            out[byte_idx] |= 1 << shift;
+        }
+    }
+}
+
 /// A cursor that reads values at arbitrary bit offsets from a byte slice, in a
 /// chosen [`BitOrder`] (MSB-first by default — `bit 0` is the high bit of byte 0,
 /// the RFC/ETSI ASCII-art convention; LSB-first for serial/PHY layers).
@@ -448,28 +538,8 @@ impl<'a> BitReader<'a> {
                 self.bit_pos,
             ));
         }
-        let mut acc: u128 = 0;
-        match self.order {
-            // MSB-first: first bit read is the field's most-significant.
-            BitOrder::Msb => {
-                for _ in 0..n {
-                    let byte = self.bytes[self.bit_pos >> 3];
-                    let bit = (byte >> (7 - (self.bit_pos & 7))) & 1;
-                    acc = (acc << 1) | u128::from(bit);
-                    self.bit_pos += 1;
-                }
-            }
-            // LSB-first: `bit 0` is a byte's low bit; first bit read is the field's
-            // least-significant.
-            BitOrder::Lsb => {
-                for i in 0..n {
-                    let byte = self.bytes[self.bit_pos >> 3];
-                    let bit = (byte >> (self.bit_pos & 7)) & 1;
-                    acc |= u128::from(bit) << i;
-                    self.bit_pos += 1;
-                }
-            }
-        }
+        let acc = extract_bits(self.bytes, self.bit_pos, n, self.order);
+        self.bit_pos += n;
         Ok(acc)
     }
 
@@ -565,22 +635,8 @@ impl BitWriter {
         if n > 128 {
             return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
         }
-        for k in 0..n {
-            // MSB-first emits the field's high bit first (i = n-1-k); LSB-first
-            // emits its low bit first (i = k) into the byte's low bit.
-            let (i, shift) = match self.order {
-                BitOrder::Msb => (n - 1 - k, 7 - (self.bit_pos & 7)),
-                BitOrder::Lsb => (k, self.bit_pos & 7),
-            };
-            let byte_idx = self.bit_pos >> 3;
-            if byte_idx == self.bytes.len() {
-                self.bytes.push(0);
-            }
-            if (value >> i) & 1 != 0 {
-                self.bytes[byte_idx] |= 1 << shift;
-            }
-            self.bit_pos += 1;
-        }
+        emit_bits(&mut self.bytes, self.bit_pos, value, n, self.order);
+        self.bit_pos += n;
         Ok(())
     }
 
@@ -1116,15 +1172,7 @@ impl<R: std::io::Read> Source for BufSource<R> {
                 self.bit_pos,
             ));
         }
-        let mut acc = 0u128;
-        for k in 0..n as usize {
-            let p = self.bit_pos + k;
-            let byte = self.buf[p >> 3];
-            match self.layout.bit {
-                BitOrder::Msb => acc = (acc << 1) | u128::from((byte >> (7 - (p & 7))) & 1),
-                BitOrder::Lsb => acc |= u128::from((byte >> (p & 7)) & 1) << k,
-            }
-        }
+        let acc = extract_bits(&self.buf, self.bit_pos, n as usize, self.layout.bit);
         self.bit_pos += n as usize;
         Ok(acc)
     }
@@ -1199,15 +1247,7 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
             };
             BitError::new(kind, self.bit_pos)
         })?;
-        let mut acc = 0u128;
-        for k in 0..n as usize {
-            let p = bit_off + k;
-            let byte = buf[p >> 3];
-            match self.layout.bit {
-                BitOrder::Msb => acc = (acc << 1) | u128::from((byte >> (7 - (p & 7))) & 1),
-                BitOrder::Lsb => acc |= u128::from((byte >> (p & 7)) & 1) << k,
-            }
-        }
+        let acc = extract_bits(&buf, bit_off, n as usize, self.layout.bit);
         self.bit_pos += n as usize;
         Ok(acc)
     }

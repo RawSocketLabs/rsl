@@ -1,6 +1,7 @@
-//! Codec throughput (Phase 1): encode/decode a DMR-frame-shaped message through
-//! the native bit codec. Establishes a baseline; the head-to-head vs. the binrw
-//! path comes with Phase 2/4 (ROADMAP).
+//! Codec throughput: encode/decode through the native bit codec, over two shapes —
+//! a **DMR burst** (`108|48|108` bits, fully unaligned: the general per-bit path)
+//! and a **byte-aligned packet** (whole-byte fields + a `[u8; N]` payload: the
+//! byte-aligned fast path, which copies whole bytes instead of shifting per bit).
 
 use bnb::{BitDecode, BitEncode, BitEnum, u4, u48, u108};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
@@ -53,9 +54,42 @@ fn bench_codec(c: &mut Criterion) {
     g.finish();
 }
 
+/// An all-byte-aligned message: whole-byte scalar fields plus a 32-byte payload.
+/// Every read/write is byte-aligned, so it exercises the fast path. (The bare derive
+/// would steer this to `#[bin]`; `allow_byte_aligned` opts in for the benchmark.)
+#[derive(BitDecode, BitEncode, Clone)]
+#[bit_stream(allow_byte_aligned)]
+struct Packet {
+    version: u16,
+    flags: u16,
+    length: u32,
+    seq: u32,
+    payload: [u8; 32],
+}
+
+fn bench_byte_aligned(c: &mut Criterion) {
+    let pkt = Packet {
+        version: 0x0102,
+        flags: 0xABCD,
+        length: 0x0001_0000,
+        seq: 0xDEAD_BEEF,
+        payload: [0x5A; 32],
+    };
+    let bytes = pkt.to_bytes().unwrap();
+
+    let mut g = c.benchmark_group("byte_aligned");
+    g.bench_function("encode", |b| {
+        b.iter(|| black_box(&pkt).to_bytes().unwrap());
+    });
+    g.bench_function("decode", |b| {
+        b.iter(|| Packet::decode_exact(black_box(&bytes)).unwrap());
+    });
+    g.finish();
+}
+
 criterion_group! {
     name = benches;
     config = testutil::bench::criterion();
-    targets = bench_codec
+    targets = bench_codec, bench_byte_aligned
 }
 criterion_main!(benches);
