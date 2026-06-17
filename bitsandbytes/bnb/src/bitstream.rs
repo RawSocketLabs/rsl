@@ -1,5 +1,5 @@
-//! **Spike:** a bit-level stream codec — read/write fields at arbitrary *bit*
-//! offsets, not just byte boundaries.
+//! A bit-level stream codec — read/write fields at arbitrary *bit* offsets, not
+//! just byte boundaries.
 //!
 //! This is the piece `binrw` cannot express: its IO model is a byte
 //! `Read + Seek`, so a field that starts mid-byte (a 108-bit DMR payload, a
@@ -191,6 +191,18 @@ impl fmt::Display for BitError {
 
 impl std::error::Error for BitError {}
 
+impl From<crate::error::Error> for BitError {
+    /// Bridges a construction error (e.g. `UInt::try_new`) into a codec error, so it
+    /// `?`-propagates inside a custom `parse_with`/`write_with` fn or a converter
+    /// that returns [`BitError`]. The offset is unknown (`0`) — the codec's own
+    /// reads/writes carry the real bit offset; this is only for borrowed construction
+    /// failures with no cursor context.
+    #[inline]
+    fn from(e: crate::error::Error) -> Self {
+        BitError::convert(e.to_string(), 0)
+    }
+}
+
 /// The bit width of a [`Bits`] value's type. Generated `BIT_LEN` consts and the
 /// alignment guard call this to size a `magic` constant whose type they only have
 /// as an expression (the value is taken by reference purely to infer `T`).
@@ -347,6 +359,7 @@ pub struct Layout {
 /// whole number of bytes (binrw applies byte order only to byte-multiple types); a
 /// no-op for big-endian or sub-byte widths. It is its own inverse, so read and
 /// write share it.
+#[inline]
 fn apply_byte_order(raw: u128, bits: u32, byte: ByteOrder) -> u128 {
     if byte == ByteOrder::Big || bits % 8 != 0 {
         return raw;
@@ -420,6 +433,7 @@ impl<'a> BitReader<'a> {
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::UnexpectedEof`] if fewer
     /// than `n` bits remain. Either carries the current bit offset.
+    #[inline]
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let n = n as usize;
         if n > 128 {
@@ -464,6 +478,7 @@ impl<'a> BitReader<'a> {
     ///
     /// # Errors
     /// As [`read_bits`](Self::read_bits).
+    #[inline]
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
         Ok(T::from_bits(apply_byte_order(raw, T::BITS, self.byte)))
@@ -544,6 +559,7 @@ impl BitWriter {
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`.
+    #[inline]
     pub fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
         let n = n as usize;
         if n > 128 {
@@ -573,6 +589,7 @@ impl BitWriter {
     ///
     /// # Errors
     /// As [`write_bits`](Self::write_bits).
+    #[inline]
     pub fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
         let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte);
         self.write_bits(raw, T::BITS)
@@ -618,6 +635,7 @@ pub trait Source {
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
+    #[inline]
     fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
         Ok(T::from_bits(apply_byte_order(
@@ -636,8 +654,9 @@ pub trait SeekSource: Source {}
 
 impl SeekSource for BitReader<'_> {}
 
-/// A bit-level **output** the codec writes to — currently the in-memory
-/// [`BitWriter`]; a `std::io::Write` adapter is added in chunk B2.
+/// A bit-level **output** the codec writes to — the in-memory [`BitWriter`]
+/// (and, under the `bytes` feature, `BytesWriter`). Encode to any
+/// [`std::io::Write`] via a message's generated `encode` method.
 pub trait Sink {
     /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
     ///
@@ -657,6 +676,7 @@ pub trait Sink {
     ///
     /// # Errors
     /// As [`write_bits`](Sink::write_bits).
+    #[inline]
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
         let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte_order());
         self.write_bits(raw, T::BITS)
@@ -664,27 +684,34 @@ pub trait Sink {
 }
 
 impl Source for BitReader<'_> {
+    #[inline]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         BitReader::read_bits(self, n)
     }
+    #[inline]
     fn bit_pos(&self) -> usize {
         self.bit_pos
     }
+    #[inline]
     fn byte_order(&self) -> ByteOrder {
         self.byte
     }
+    #[inline]
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         BitReader::seek_to_bit(self, pos)
     }
 }
 
 impl Sink for BitWriter {
+    #[inline]
     fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
         BitWriter::write_bits(self, value, n)
     }
+    #[inline]
     fn bit_pos(&self) -> usize {
         self.bit_pos
     }
+    #[inline]
     fn byte_order(&self) -> ByteOrder {
         self.byte
     }
@@ -912,8 +939,8 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
     Ok(())
 }
 
-/// **Spike (DESIGN §11 DD3):** a *forward-only* bit reader over any
-/// [`std::io::Read`] — the streaming counterpart to the in-memory [`BitReader`].
+/// A *forward-only* bit reader over any [`std::io::Read`] — the streaming
+/// counterpart to the in-memory [`BitReader`].
 ///
 /// It is bounded on `Read` **only, not `Seek`**: binrw's uniform `Read + Seek`
 /// requirement (and the `NoSeek` wrapper it forces) is avoided for forward

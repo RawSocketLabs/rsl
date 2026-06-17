@@ -208,7 +208,9 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
         impl ::bnb::__private::Bits for #name {
             const BITS: u32 = <#backing>::BITS;
+            #[inline]
             fn into_bits(self) -> u128 { self.value as u128 }
+            #[inline]
             fn from_bits(raw: u128) -> Self { Self { value: raw as #backing } }
         }
 
@@ -218,7 +220,9 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             const BYTE_ORDER: ::bnb::__private::ByteOrder = ::bnb::__private::ByteOrder::#byte_order_variant;
             // Flag sets are inherently LSB-indexed (flag n = 1 << n).
             const BIT_ORDER: ::bnb::__private::BitOrder = ::bnb::__private::BitOrder::Lsb;
+            #[inline]
             fn to_raw(self) -> #backing { self.value }
+            #[inline]
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
     })

@@ -219,14 +219,25 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         let with = format_ident!("with_{}", ident);
         let set = format_ident!("set_{}", ident);
         let forward = &f.forward;
+        // The getter inherits the field's own doc comment (forwarded). If the field
+        // is undocumented, emit a fallback so the `pub fn` is never missing-docs in
+        // a downstream crate that denies it.
+        let getter_doc = if f.forward.iter().any(|a| a.path().is_ident("doc")) {
+            quote!()
+        } else {
+            quote!(#[doc = concat!("Returns the `", stringify!(#ident), "` field.")])
+        };
         quote! {
+            #getter_doc
             #(#forward)*
+            #[inline]
             #vis fn #ident(&self) -> #ty {
                 let raw = ((self.value as u128) >> Self::#off) & Self::#mask;
                 <#ty as #bits_path>::from_bits(raw)
             }
 
             #[doc = concat!("Returns a copy with `", stringify!(#ident), "` set.")]
+            #[inline]
             #vis fn #with(mut self, value: #ty) -> Self {
                 let field = (<#ty as #bits_path>::into_bits(value) & Self::#mask) << Self::#off;
                 self.value = ((self.value as u128 & !(Self::#mask << Self::#off)) | field) as #backing;
@@ -234,6 +245,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             }
 
             #[doc = concat!("Sets `", stringify!(#ident), "` in place.")]
+            #[inline]
             #vis fn #set(&mut self, value: #ty) {
                 let field = (<#ty as #bits_path>::into_bits(value) & Self::#mask) << Self::#off;
                 self.value = ((self.value as u128 & !(Self::#mask << Self::#off)) | field) as #backing;
@@ -328,10 +340,12 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
         impl #bits_path for #name {
             const BITS: u32 = Self::WIDTH;
+            #[inline]
             fn into_bits(self) -> u128 {
                 let m: u128 = if Self::WIDTH >= 128 { u128::MAX } else { (1u128 << Self::WIDTH) - 1 };
                 (self.value as u128) & m
             }
+            #[inline]
             fn from_bits(raw: u128) -> Self {
                 Self { value: raw as #backing }
             }
@@ -342,7 +356,9 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             const WIDTH: u32 = Self::WIDTH;
             const BYTE_ORDER: ::bnb::__private::ByteOrder = ::bnb::__private::ByteOrder::#byte_order_variant;
             const BIT_ORDER: ::bnb::__private::BitOrder = ::bnb::__private::BitOrder::#bit_order_variant;
+            #[inline]
             fn to_raw(self) -> #backing { self.value }
+            #[inline]
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
         #builder_ts

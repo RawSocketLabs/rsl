@@ -138,6 +138,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         impl #bits_path for #name {
             const BITS: u32 = <#width as #bits_path>::BITS;
 
+            #[inline]
             fn into_bits(self) -> u128 {
                 match self {
                     #(#into_unit,)*
@@ -145,6 +146,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
                 }
             }
 
+            #[inline]
             fn from_bits(raw: u128) -> Self {
                 match raw {
                     #(#from_unit,)*
