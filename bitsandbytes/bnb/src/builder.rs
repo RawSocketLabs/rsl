@@ -10,7 +10,7 @@ use core::fmt;
 ///   `#[builder(default)]` (or `#[builder(default = expr)]`). This is what lets the
 ///   builder *call out* an unset bit/byte instead of silently defaulting it to
 ///   zero (the gap in the infix `with_*` API).
-/// - [`Invalid`](BuilderError::Invalid) — a `#[wire(validate = …)]` soundness
+/// - [`Invalid`](BuilderError::Invalid) — a `#[bin(validate = …)]` soundness
 ///   check rejected the built value. The string is the validator's error,
 ///   stringified, so any `Display` error type composes without coupling the
 ///   builder to a protocol-specific error type.

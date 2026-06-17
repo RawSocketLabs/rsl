@@ -1,5 +1,5 @@
 //! Expansion of `#[derive(BitDecode)]` / `#[derive(BitEncode)]` — the bit-stream
-//! message codec (spike).
+//! message codec.
 //!
 //! Each generates an impl that reads/writes the struct's named fields **in
 //! declaration order** from a `bnb::BitReader`/`BitWriter` bit cursor. A field
@@ -9,9 +9,10 @@
 //! `#[nested]` messages, `[u8; N]` payloads, `magic`, `#[br(count = …)]` `Vec`s,
 //! `ctx` parameterization, `#[br(temp)]`/`#[bw(calc = …)]`, `#[br(if(…))]`
 //! conditional `Option`s, `#[br(map/try_map = …)]`/`#[bw(map = …)]` transforms, and
-//! `#[reserved]`/`#[reserved_with(…)]` bits are supported (`temp`/`calc`/`reserved`
-//! via `#[bin]`, which generates the codec directly); the rest of the
-//! `#[br]`/`#[bw]` surface is in progress.
+//! `#[reserved]`/`#[reserved_with(…)]` bits, positioning (`pad_*`/`align_*`/
+//! `restore_position`), and the `parse_with`/`write_with` escape hatches are all
+//! supported (`temp`/`calc`/`reserved` via `#[bin]`, which generates the codec
+//! directly).
 //!
 //! ## Right-tool guard
 //!
@@ -177,7 +178,8 @@ fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
 
 /// Whether a field is a **nested message** (marked `#[nested]`) — a
 /// `BitDecode`/`BitEncode` struct recursed into — rather than a `Bits` leaf.
-/// (Phase 1 marker; the end-state can auto-detect via universal `Bits` impls.)
+/// An explicit marker: a nested message and a `Bits` leaf are both struct fields,
+/// so the attribute disambiguates which codec path to emit.
 fn is_nested(f: &syn::Field) -> bool {
     f.attrs.iter().any(|a| a.path().is_ident("nested"))
 }

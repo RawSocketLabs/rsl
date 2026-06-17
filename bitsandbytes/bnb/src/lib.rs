@@ -112,7 +112,7 @@ pub use error::{Error, Result, UnknownDiscriminant};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
 pub use int::{UInt, *};
 
-// Re-export the macros so users depend only on `bits`. A derive macro and a
+// Re-export the macros so users depend only on `bnb`. A derive macro and a
 // trait may share a name (like `Debug`) — they live in different namespaces —
 // so `BitEnum`/`BitDecode`/`BitEncode` are each both a derive and a trait.
 pub use bnb_macros::{BitDecode, BitEncode, BitEnum, BitsBuilder, bin, bitfield, bitflags};

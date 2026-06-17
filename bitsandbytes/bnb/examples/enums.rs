@@ -1,10 +1,8 @@
 //! `#[derive(BitEnum)]` in depth — the `num_enum` / `bitbybit::bitenum`
 //! replacement. Shows exhaustive enums, catch-all (dual-use) enums, nesting in a
-//! bitfield, and checked integer construction with error handling. Codec-only,
-//! so it runs with or without binrw:
+//! bitfield, and checked integer construction with error handling.
 //!
-//!   `cargo run -p bits --example enums`
-//!   `cargo run -p bits --example enums --no-default-features`
+//!   `cargo run -p bnb --example enums`
 
 use bnb::{BitEnum, Bits, bitfield, u2, u4};
 
@@ -22,7 +20,7 @@ enum Ecn {
 // values we don't name (exactly the `num_enum(catch_all)` pattern). Because the
 // width is byte-aligned, the derive also emits `From<HardwareType> for u16` and,
 // thanks to the catch-all, an infallible `From<u16> for HardwareType` — so this
-// one derive replaces a hand-written `#[binrw]` magic-byte enum *and* its
+// one derive replaces a hand-written magic-byte enum *and* its
 // `impl From<…> for u16` *and* the round-trips-every-discriminant test.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u16, bytes = be)]

@@ -1,10 +1,7 @@
-//! Using `bits` as a dependency-light bit/byte library — no `binrw`, no sockets,
-//! just packing and unpacking. This is the path to dropping external codec deps.
+//! Using `bnb` as a dependency-light bit/byte library — no external codec deps,
+//! no sockets, just packing and unpacking a couple of IPv4-style header bytes.
 //!
-//! Build it without binrw to prove the point:
-//!   `cargo run -p bits --example standalone --no-default-features`
-//!
-//! Run with: `cargo run -p bits --example standalone`
+//! Run with: `cargo run -p bnb --example standalone`
 
 use bnb::{BitEnum, bitfield, u2, u4, u6};
 

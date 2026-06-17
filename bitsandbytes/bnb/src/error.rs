@@ -1,8 +1,8 @@
 //! The crate's error type and result alias.
 //!
-//! Hand-rolled (no `thiserror`) to keep `bits` dependency-light — the long-term
-//! goal is for protocol crates to depend on `bits` *instead of* a stack of
-//! external helpers, so `bits` itself stays lean.
+//! Hand-rolled (no `thiserror`) to keep `bnb` dependency-light — protocol crates
+//! depend on `bnb` *instead of* a stack of external helpers, so `bnb` itself
+//! stays lean.
 
 use core::fmt;
 
