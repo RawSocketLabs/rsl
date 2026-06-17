@@ -361,6 +361,12 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             #[inline]
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
+
+        // Force the width-fit assert. `__BITS_FIT` is an associated const, which Rust
+        // only const-evaluates when referenced, so a free `const _` that uses it makes
+        // an over-wide bitfield a hard compile error instead of a silent truncation.
+        const _: () = #name::__BITS_FIT;
+
         #builder_ts
     })
 }
