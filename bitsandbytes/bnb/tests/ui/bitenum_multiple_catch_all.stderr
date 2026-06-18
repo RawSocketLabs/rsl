@@ -1,0 +1,5 @@
+error: only one #[catch_all] variant is allowed
+  --> tests/ui/bitenum_multiple_catch_all.rs:12:5
+   |
+12 |     Y(u4),
+   |     ^

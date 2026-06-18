@@ -1,0 +1,6 @@
+error: a `#[br(parse_with = …)]` field needs the inverse `#[bw(write_with = <f>)]` to encode
+  --> tests/ui/bin_parse_with_needs_write_with.rs:12:5
+   |
+12 | /     #[br(parse_with = rd)]
+13 | |     v: u8,
+   | |_________^

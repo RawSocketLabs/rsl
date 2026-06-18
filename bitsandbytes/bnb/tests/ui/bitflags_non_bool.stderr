@@ -1,0 +1,5 @@
+error: each #[bitflags] field must be `bool` (one flag per bit)
+ --> tests/ui/bitflags_non_bool.rs:9:8
+  |
+9 |     b: u8, // not a `bool` — each flag is a single bit
+  |        ^^

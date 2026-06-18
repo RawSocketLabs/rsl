@@ -1,0 +1,5 @@
+error: `read_only` and `write_only` are mutually exclusive
+ --> tests/ui/bin_read_write_only.rs:6:8
+  |
+6 | struct X {
+  |        ^
