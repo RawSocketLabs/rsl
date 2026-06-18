@@ -154,12 +154,14 @@
 //! assert_eq!(Parsed::decode_exact(&[0x07]).unwrap(), Parsed { raw: 7, note: 0 });
 //! ```
 //!
-//! # `reserved` / `reserved_with` — fixed wire bits, not stored
+//! # `reserved` / `reserved_with` — fixed wire bits with a spec value
 //!
-//! `#[reserved]` occupies its type's width on the wire (read and discarded, written as
-//! zero) but isn't a struct field; `#[reserved_with(<expr>)]` writes a constant instead
-//! of zero (e.g. a must-be-one pattern). Reads are lenient — a non-zero reserved value
-//! is tolerated, not rejected.
+//! A reserved field is a normal **stored** field with a known *spec value*: the type's
+//! zero for `#[reserved]`, the given expression for `#[reserved_with(<expr>)]` (e.g. a
+//! must-be-one pattern). On the default path it reads and writes its *actual* value —
+//! so you can observe a peer's reserved bits and override them — while the builder
+//! defaults it to the spec value (so it isn't required) and the `spec_*` codecs use the
+//! spec value instead.
 //!
 //! ```
 //! use bnb::bin;
@@ -167,14 +169,21 @@
 //! #[derive(Debug, PartialEq)]
 //! struct R {
 //!     a: u8,
-//!     #[reserved] pad: u8,                 // written as 0x00
-//!     #[reserved_with(0xFFu8)] ones: u8,   // written as 0xFF
+//!     #[reserved] pad: u8,                 // spec value 0x00
+//!     #[reserved_with(0xFFu8)] ones: u8,   // spec value 0xFF
 //!     b: u8,
 //! }
 //!
-//! let r = R { a: 1, b: 2 };                 // no `pad`/`ones` fields
+//! // The builder makes the reserved fields optional, defaulting to their spec values.
+//! let r = R::builder().a(1).b(2).build().unwrap();
 //! assert_eq!(r.to_bytes().unwrap(), [0x01, 0x00, 0xFF, 0x02]);
-//! assert_eq!(R::decode_exact(&[0x01, 0x55, 0x55, 0x02]).unwrap(), r); // reserved ignored
+//!
+//! // Decode captures the actual reserved bits; spec_decode reports the expected ones.
+//! let actual = R::decode_exact(&[0x01, 0x55, 0x55, 0x02]).unwrap();
+//! assert_eq!((actual.pad, actual.ones), (0x55, 0x55));
+//! let spec = R::spec_decode_exact(&[0x01, 0x55, 0x55, 0x02]).unwrap();
+//! assert_eq!((spec.pad, spec.ones), (0x00, 0xFF));     // the spec values
+//! assert_eq!(spec.to_spec_bytes().unwrap(), [0x01, 0x00, 0xFF, 0x02]);
 //! ```
 //!
 //! # `pad_*` / `align_*` — forward positioning

@@ -208,10 +208,13 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   failed and the **field** being processed (the innermost wins, like a span), so a
   failure points at the exact place. A streaming source that runs out mid-message
   reports `Incomplete` ("read more and retry"), distinct from a definitive failure.
-- **Reserved bits are explicit and preserved.** `#[reserved]` occupies its width on the
-  wire but isn't stored; reads are lenient (a peer's non-compliant reserved bits are
-  tolerated), and a must-be-one pattern uses `#[reserved_with(…)]`. A
-  *verified-on-read* constant is `magic` instead.
+- **Reserved bits are explicit, stored, and observable.** A `#[reserved]` field is a
+  normal stored field with a known *spec value* (the type's zero, or the
+  `#[reserved_with(…)]` expression). On the default path it reads/writes its actual
+  value, so a peer's non-compliant reserved bits are captured and a caller can override
+  them (dual-use); the builder defaults it to the spec value (so it isn't required), and
+  the `spec_*` codecs (`to_spec_bytes`/`spec_decode_exact`/…) use the spec value
+  instead. A *verified-on-read* constant is `magic` instead.
 
 ## 9. Performance
 

@@ -1075,6 +1075,24 @@ pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
         .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
 }
 
+/// `encode_to_writer` over a caller-supplied encode closure — backs a `spec_*`
+/// message's `spec_encode` (whose write body differs from the plain `bit_encode`).
+///
+/// # Errors
+/// [`ErrorKind::Io`] on a write failure, else the closure's error.
+#[doc(hidden)]
+pub fn encode_to_writer_with<W, F>(w: &mut W, layout: Layout, f: F) -> Result<(), BitError>
+where
+    W: std::io::Write,
+    F: FnOnce(&mut BitWriter) -> Result<(), BitError>,
+{
+    let mut bw = BitWriter::with_layout(layout);
+    f(&mut bw)?;
+    let at = bw.bit_len();
+    w.write_all(&bw.into_bytes())
+        .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
+}
+
 /// Reads a fixed `[u8; N]` byte array (`N * 8` bits) from the cursor. Backs a
 /// `[u8; N]` payload field; `N` is inferred from the field type. Variable-length
 /// payloads (`Vec` + `count`) are Phase 2.

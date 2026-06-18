@@ -443,12 +443,14 @@ fn br_indeterminate(br: &FieldBr) -> bool {
         || br.restore_position
 }
 
-/// A reserved field — on the wire (its type gives the width) but not stored: read
-/// and discarded (lenient), written as a constant.
+/// A reserved field — a normal stored field with a known **spec value** (the type's
+/// zero, or the `reserved_with` expression). On the default codec path it reads/writes
+/// like any field (so you observe and can override the actual wire bits); the `spec_*`
+/// codecs and the builder default use the spec value instead.
 enum Reserved {
-    /// `#[reserved]` — written as the type's zero value.
+    /// `#[reserved]` — spec value is the type's zero.
     Zero,
-    /// `#[reserved_with(<expr>)]` — written as `<expr>` (e.g. a must-be-one pattern).
+    /// `#[reserved_with(<expr>)]` — spec value is `<expr>` (e.g. a must-be-one pattern).
     With(Box<syn::Expr>),
 }
 
@@ -465,9 +467,23 @@ fn field_reserved(f: &syn::Field) -> syn::Result<Option<Reserved>> {
     Ok(None)
 }
 
-/// Whether a field is reserved (`#[reserved]`/`#[reserved_with]`). Reserved fields
-/// have a fixed width (their type's), so — unlike `temp` — they still count toward
-/// `BIT_LEN` and the guard; they are just not stored.
+/// The spec value of a reserved field — what the `spec_*` codecs write/report and what
+/// the builder defaults to: the type's zero for `#[reserved]`, the given expression for
+/// `#[reserved_with(<expr>)]`. `None` if the field is not reserved. (On the default
+/// path a reserved field is a normal stored field; only `spec_*` and the builder
+/// default use this.)
+fn reserved_spec_value(f: &syn::Field) -> syn::Result<Option<TokenStream2>> {
+    let ty = &f.ty;
+    Ok(field_reserved(f)?.map(|reserved| match reserved {
+        Reserved::Zero => quote!(<#ty as ::bnb::__private::Bits>::from_bits(0)),
+        Reserved::With(expr) => {
+            let expr = *expr;
+            quote!({ let __r: #ty = #expr; __r })
+        }
+    }))
+}
+
+/// Whether a field carries `#[reserved]`/`#[reserved_with]` (a cheap attribute check).
 fn field_is_reserved(f: &syn::Field) -> bool {
     f.attrs
         .iter()
@@ -479,9 +495,17 @@ fn field_is_reserved(f: &syn::Field) -> bool {
 /// struct it emits — it generates the codec and builder directly, so nothing
 /// registers these as helper attributes.
 fn is_codec_field_attr(a: &syn::Attribute) -> bool {
-    ["nested", "br", "bw", "brw", "builder"]
-        .iter()
-        .any(|n| a.path().is_ident(n))
+    [
+        "nested",
+        "br",
+        "bw",
+        "brw",
+        "builder",
+        "reserved",
+        "reserved_with",
+    ]
+    .iter()
+    .any(|n| a.path().is_ident(n))
 }
 
 /// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
@@ -560,13 +584,8 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
 fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
-    // `#[reserved]`: consume the bits but discard the value (lenient — a non-zero
-    // reserved value is not rejected; use `magic` to enforce one).
-    if field_is_reserved(f) {
-        return Ok(
-            quote!(let _: #ty = r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;),
-        );
-    }
+    // A `#[reserved]` field reads as a normal stored leaf here (so the actual wire bits
+    // are observable); the `spec_*` decoders overwrite it with the spec value afterward.
     // `ignore`: in-memory only — `Default::default()` on read, no input consumed.
     if br.ignore {
         return Ok(quote!(let #id = ::core::default::Default::default();));
@@ -682,6 +701,7 @@ fn field_write_stmt(
     f: &syn::Field,
     br: &FieldBr,
     field_set: &[&Ident],
+    spec: bool,
 ) -> syn::Result<TokenStream2> {
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
@@ -690,7 +710,7 @@ fn field_write_stmt(
     let core = if br.restore_position {
         quote!()
     } else {
-        field_write_core(f, br, field_set)?
+        field_write_core(f, br, field_set, spec)?
     };
     Ok(quote!(#pre #core #post))
 }
@@ -700,21 +720,18 @@ fn field_write_core(
     f: &syn::Field,
     br: &FieldBr,
     field_set: &[&Ident],
+    spec: bool,
 ) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
-    // `#[reserved]`: write the type's zero (or the `reserved_with` value), pinned to
-    // the field's type so the width is unambiguous.
-    if let Some(reserved) = field_reserved(f)? {
-        let value = match reserved {
-            Reserved::Zero => quote!(<#ty as ::bnb::__private::Bits>::from_bits(0)),
-            Reserved::With(expr) => {
-                let expr = *expr;
-                quote!({ let __r: #ty = #expr; __r })
-            }
-        };
-        return Ok(quote!(::bnb::__private::Sink::write(w, #value)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+    // `#[reserved]` on the **spec** path: write the spec value (type zero, or the
+    // `reserved_with` expression). On the default (actual) path a reserved field falls
+    // through and writes its stored value like any field.
+    if spec {
+        if let Some(value) = reserved_spec_value(f)? {
+            return Ok(quote!(::bnb::__private::Sink::write(w, #value)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+        }
     }
     // `ignore`: in-memory only — emit nothing.
     if br.ignore {
@@ -902,7 +919,7 @@ fn gen_decode(
         .named
         .iter()
         .zip(&brs)
-        .filter(|(f, br)| !br.temp && !field_is_reserved(f))
+        .filter(|(_, br)| !br.temp)
         .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
     let read_stmts = fields
@@ -985,6 +1002,45 @@ fn gen_decode(
         "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."
     };
 
+    // `spec_*` decoders: decode normally (capturing the wire bits), then overwrite each
+    // reserved field with its spec value. Only emitted when the message has a reserved
+    // field (otherwise the spec and actual decoders are identical).
+    let mut reserved_overwrites = Vec::new();
+    for f in &fields.named {
+        if let Some(v) = reserved_spec_value(f)? {
+            let id = f.ident.as_ref().expect("named field");
+            reserved_overwrites.push(quote!(__v.#id = #v;));
+        }
+    }
+    let spec_decode = if reserved_overwrites.is_empty() {
+        quote!()
+    } else {
+        quote! {
+            impl #name {
+                #[doc = "Like `decode_exact`, but reserved fields are set to their spec value instead of the bytes on the wire."]
+                pub fn spec_decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    let mut __v = Self::decode_exact(bytes)?;
+                    #(#reserved_overwrites)*
+                    ::core::result::Result::Ok(__v)
+                }
+                #[doc = "Like `peek`, but reserved fields are set to their spec value."]
+                pub fn spec_peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    let mut __v = Self::peek(bytes)?;
+                    #(#reserved_overwrites)*
+                    ::core::result::Result::Ok(__v)
+                }
+                #[doc = "Like `decode_from`, but reserved fields are set to their spec value."]
+                pub fn spec_decode_from<S: #from_bound>(
+                    r: &mut S,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    let mut __v = Self::decode_from(r)?;
+                    #(#reserved_overwrites)*
+                    ::core::result::Result::Ok(__v)
+                }
+            }
+        }
+    };
+
     Ok(quote! {
         #guard
         #fixed_bit_len
@@ -1018,6 +1074,7 @@ fn gen_decode(
                 <Self as ::bnb::BitDecode>::bit_decode(r)
             }
         }
+        #spec_decode
     })
 }
 
@@ -1071,14 +1128,14 @@ fn gen_encode(
         .named
         .iter()
         .zip(&brs)
-        .filter(|(f, br)| !br.temp && !field_is_reserved(f))
+        .filter(|(_, br)| !br.temp)
         .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
     let writes = fields
         .named
         .iter()
         .zip(&brs)
-        .map(|(f, br)| field_write_stmt(f, br, &field_set))
+        .map(|(f, br)| field_write_stmt(f, br, &field_set, false))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // `ctx(...)`: the dual of decode — inherent `encode_with`/`to_bytes_with`
@@ -1122,6 +1179,50 @@ fn gen_encode(
         });
     }
 
+    // `spec_*` encoders: write the spec value for reserved fields (ignoring the stored
+    // override). Only when the message has a reserved field.
+    let has_reserved = fields.named.iter().any(field_is_reserved);
+    let spec_encode = if !has_reserved {
+        quote!()
+    } else {
+        let writes_spec = fields
+            .named
+            .iter()
+            .zip(&brs)
+            .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
+            .collect::<syn::Result<Vec<_>>>()?;
+        quote! {
+            impl #name {
+                #[doc = "Encode with reserved fields written as their spec value (ignoring any stored override), to a `Vec<u8>`."]
+                pub fn to_spec_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_vec_with(#layout, |w| self.__bit_encode_spec(w))
+                }
+                #[doc = "Encode with reserved fields written as their spec value, to any `std::io::Write`."]
+                pub fn spec_encode<W: ::std::io::Write>(
+                    &self,
+                    w: &mut W,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_writer_with(w, #layout, |bw| self.__bit_encode_spec(bw))
+                }
+                #[doc = "Encode with reserved fields written as their spec value, into an explicit bit sink."]
+                pub fn spec_encode_into<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    self.__bit_encode_spec(w)
+                }
+                fn __bit_encode_spec<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    #magic_write
+                    #(#writes_spec)*
+                    ::core::result::Result::Ok(())
+                }
+            }
+        }
+    };
+
     Ok(quote! {
         #guard
         impl ::bnb::BitEncode for #name {
@@ -1155,6 +1256,7 @@ fn gen_encode(
                 <Self as ::bnb::BitEncode>::bit_encode(self, w)
             }
         }
+        #spec_encode
     })
 }
 
@@ -1299,15 +1401,16 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         gen_encode(&s.ident, full_fields, &attrs)?
     };
 
-    // The emitted struct: drop `#[br(temp)]` fields and strip codec-only field
-    // attributes (they are not registered helper attrs here — the codec is
-    // generated directly, not via the derives).
+    // The emitted struct: drop `#[br(temp)]` fields (not stored) and strip codec-only
+    // field attributes (they are not registered helper attrs here — the codec is
+    // generated directly, not via the derives). A `#[reserved]` field is kept (it is a
+    // normal stored field now), with its `#[reserved]`/`#[reserved_with]` attr stripped.
     let mut clean = s.clone();
     if let Fields::Named(named) = &mut clean.fields {
         named.named = named
             .named
             .iter()
-            .filter(|f| !field_is_temp(f) && !field_is_reserved(f))
+            .filter(|f| !field_is_temp(f))
             .cloned()
             .map(|mut f| {
                 f.attrs.retain(|a| !is_codec_field_attr(a));
@@ -1317,8 +1420,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     }
 
     // The builder is generated directly from the stored fields (so it can run the
-    // `validate` hook via `builder::generate`'s post_build, and so `temp`/`reserved`
-    // fields are absent from it).
+    // `validate` hook via `builder::generate`'s post_build). `temp` fields are absent;
+    // a reserved field is present but optional, defaulting to its spec value.
     let builder = if args.read_only || args.no_builder {
         if args.validate.is_some() {
             return Err(syn::Error::new_spanned(
@@ -1338,12 +1441,18 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         });
         let mut bfields = Vec::new();
         for f in &full_fields.named {
-            if field_is_temp(f) || field_is_reserved(f) {
-                continue; // not stored, so not a builder field
+            if field_is_temp(f) {
+                continue; // a temp field is not stored, so not a builder field
             }
             let ident = f.ident.clone().expect("named field");
             let ty = f.ty.clone();
-            let mut default = crate::builder::FieldDefault::Required;
+            // A reserved field is optional, defaulting to its spec value (so the builder
+            // doesn't require it, but a caller can override it). A normal field is
+            // required unless it carries `#[builder(default[= …])]`.
+            let mut default = match reserved_spec_value(f)? {
+                Some(spec) => crate::builder::FieldDefault::DefaultExpr(syn::parse2(spec)?),
+                None => crate::builder::FieldDefault::Required,
+            };
             for attr in &f.attrs {
                 if let Some(d) = crate::builder::parse_builder_attr(attr)? {
                     default = d;
