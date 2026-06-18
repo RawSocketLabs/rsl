@@ -1,17 +1,14 @@
 # bnb / bnb-macros
 
-> **History:** the crates were `bits`/`bits-macros` (renamed Phase 5) and the
-> codec began as a binrw bridge. **binrw has since been fully removed** — `bnb`
-> is now a self-contained, owned codec. For the full phase plan (all ✓) see
-> **`ROADMAP.md`**; `bnb/DESIGN.md` has the proposal and build-vs-buy decision.
-
 Workspace utility crates: a fast, **owned bit-aware** binary codec, integer-backed,
-that replaces the external bitfield/int/enum/codec stack (`modular-bitfield(-msb)`,
-`bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and our former use of
-`binrw`). The unified `#[bin]` attribute is the whole-message front-end
+that collapses the capabilities of a bitfield/int/enum stack
+(`modular-bitfield(-msb)`, `bitfield-struct`, `bitbybit`, `arbitrary-int`,
+`num_enum`) plus a declarative codec **modeled on `binrw`** into one crate. The
+unified `#[bin]` attribute is the whole-message front-end
 (magic/count/ctx/map/if/calc·temp/reserved/positioning/validate + a
-`Source`/`SeekSource`/`BufSource`/`SeekReader` I/O ladder, opt-in `bytes`). **There
-is no binrw dependency or feature** — the codec is entirely in-house.
+`Source`/`SeekSource`/`BufSource`/`SeekReader` I/O ladder, opt-in `bytes`). The codec
+is entirely in-house — `binrw` is an inspiration, not a dependency (see
+`ACKNOWLEDGMENTS.md`); `bnb/DESIGN.md` has the design rationale.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace
 > root `AGENTS.md` also applies. **Not wired into any protocol crate yet** — by
@@ -80,7 +77,7 @@ the proc-macro.
 
 ## `#[bin]` — the unified whole-message codec
 
-`#[bin]` is the owned successor to our former binrw usage: one attribute that
+`#[bin]` is the crate's flagship: one attribute that
 folds the codec (`BitDecode`/`BitEncode`) and the required-by-default builder over
 a struct, generating `decode`/`peek`/`decode_exact`, `encode`/`to_bytes`, and
 `Foo::builder()`. It reads/writes fields at **arbitrary bit offsets**, so the same

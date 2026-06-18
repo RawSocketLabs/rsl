@@ -164,8 +164,8 @@ mixed in one struct.
 proc-macro crate). Depend only on `bnb`. The optional `bytes` feature adds the
 `bytes`-crate I/O adapters; the core is otherwise dependency-light.
 
-See [`DESIGN.md`](DESIGN.md) for the rationale and [`ROADMAP.md`](ROADMAP.md) for the
-(complete) phase plan.
+See [`DESIGN.md`](DESIGN.md) for the design rationale and [`ROADMAP.md`](ROADMAP.md)
+for the capability/status summary.
 
 ## Inspiration
 
