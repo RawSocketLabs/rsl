@@ -87,6 +87,93 @@
 //! - `ctx(name: Ty, …)` — declare context the message needs from its parent.
 //! - `validate = <path>` — a soundness check run by `build()`.
 //!
+//! ## Each option, by example
+//!
+//! Byte and bit order:
+//!
+//! ```
+//! use bnb::{bin, u4};
+//!
+//! #[bin(little)] // little-endian byte order
+//! #[derive(Debug, PartialEq)]
+//! struct Le { v: u32 }
+//! assert_eq!(Le { v: 0x1234_5678 }.to_bytes().unwrap(), [0x78, 0x56, 0x34, 0x12]);
+//!
+//! #[bin(big, bit_order = lsb)] // the first field lands in the LOW bits of the byte
+//! #[derive(Debug, PartialEq)]
+//! struct Lsb { a: u4, b: u4 }
+//! assert_eq!(Lsb { a: u4::new(0xA), b: u4::new(0xB) }.to_bytes().unwrap(), [0xBA]);
+//! ```
+//!
+//! Directional codecs and the builder:
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! #[bin(big, read_only)] // only decodes — no `to_bytes`/`encode`
+//! #[derive(Debug, PartialEq)]
+//! struct Ro { v: u16 }
+//! assert_eq!(Ro::decode_exact(&[0x12, 0x34]).unwrap(), Ro { v: 0x1234 });
+//!
+//! #[bin(big, write_only)] // only encodes — no `decode`/`peek`
+//! struct Wo { v: u16 }
+//! assert_eq!(Wo { v: 0x1234 }.to_bytes().unwrap(), [0x12, 0x34]);
+//!
+//! #[bin(big, no_builder)] // no `Nb::builder()` — construct directly
+//! #[derive(Debug, PartialEq)]
+//! struct Nb { v: u16 }
+//! assert_eq!(Nb { v: 5 }.to_bytes().unwrap(), [0x00, 0x05]);
+//! ```
+//!
+//! `forward_only` — decode from a non-seekable stream, with a compile-time no-seek
+//! guarantee (a `#[br(restore_position)]` field would then be a compile error):
+//!
+//! ```
+//! use bnb::{bin, StreamBitReader};
+//!
+//! #[bin(big, forward_only)]
+//! #[derive(Debug, PartialEq)]
+//! struct Hdr { magic: u16, len: u16 }
+//!
+//! let data: &[u8] = &[0xCA, 0xFE, 0x00, 0x10]; // `&[u8]` is `Read` but not `Seek`
+//! let mut s = StreamBitReader::new(data);
+//! assert_eq!(Hdr::decode_from(&mut s).unwrap(), Hdr { magic: 0xCAFE, len: 16 });
+//! ```
+//!
+//! `ctx(...)` — context a message needs from its parent. The parent passes it with
+//! `#[br(ctx { … })]`; the type can also be used standalone via the generated `*_with`
+//! methods and its `…Ctx` struct:
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! #[bin(big, ctx(len: u16))]
+//! #[derive(Debug, PartialEq)]
+//! struct Body {
+//!     #[br(count = len)]
+//!     data: Vec<u8>,
+//! }
+//!
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Packet {
+//!     len: u16,
+//!     #[br(ctx { len })] // pass `len` to `Body`
+//!     body: Body,
+//! }
+//!
+//! let p = Packet { len: 3, body: Body { data: vec![1, 2, 3] } };
+//! assert_eq!(p.to_bytes().unwrap(), [0x00, 0x03, 1, 2, 3]);
+//! assert_eq!(Packet::decode_exact(&[0x00, 0x03, 1, 2, 3]).unwrap(), p);
+//!
+//! // Standalone, via the generated `*_with` methods + the `BodyCtx` struct:
+//! let b = Body::decode_with_exact(&[0xAA, 0xBB], BodyCtx { len: 2 }).unwrap();
+//! assert_eq!(b.data, vec![0xAA, 0xBB]);
+//! assert_eq!(b.to_bytes_with(BodyCtx { len: 2 }).unwrap(), vec![0xAA, 0xBB]);
+//! ```
+//!
+//! (`magic` and `validate` are shown below.)
+//!
 //! # Dual-use: `validate` gates the builder, not the parser
 //!
 //! `validate = path` runs a `fn(&Self) -> Result<(), impl Display>` in `build()` only.
