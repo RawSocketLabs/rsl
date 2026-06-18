@@ -136,17 +136,18 @@
 //! assert_eq!(Named::decode_exact(&[0x02, b'H', b'i']).unwrap(), n);
 //! ```
 //!
-//! # `ignore` — an in-memory-only field
+//! # `brw(ignore)` — a field neither read nor written
 //!
-//! `#[br(ignore)]` consumes no wire bits: the field is `Default::default()` on read and
+//! `#[brw(ignore)]` consumes no wire bits: the field is `Default::default()` on read and
 //! skipped on write. Use it for derived/scratch state you want on the struct but not on
-//! the wire.
+//! the wire. It is spelled with `brw` (not `br`) because it applies to **both**
+//! directions.
 //!
 //! ```
 //! use bnb::bin;
 //! #[bin(big)]
 //! #[derive(Debug, PartialEq)]
-//! struct Parsed { raw: u8, #[br(ignore)] note: u32 }
+//! struct Parsed { raw: u8, #[brw(ignore)] note: u32 }
 //!
 //! let p = Parsed { raw: 7, note: 999 };
 //! assert_eq!(p.to_bytes().unwrap(), [0x07]);             // note not written

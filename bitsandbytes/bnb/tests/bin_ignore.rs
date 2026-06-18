@@ -1,6 +1,6 @@
-//! `ignore` (ROADMAP Phase 2): an in-memory-only field — `Default::default()` on
-//! read (no input consumed), skipped on write. Zero wire bits, but still a stored
-//! (and builder) field.
+//! `#[brw(ignore)]`: a field that is neither read nor written — `Default::default()`
+//! on read (no input consumed), skipped on write. Zero wire bits, but still a stored
+//! (and builder) field. Spelled with `brw` because it applies to both directions.
 
 use bnb::{bin, u4, u12};
 
@@ -9,7 +9,7 @@ use bnb::{bin, u4, u12};
 struct Frame {
     tag: u4,
     payload: u12,
-    #[br(ignore)]
+    #[brw(ignore)]
     note: u32, // in-memory metadata, never serialized
 }
 

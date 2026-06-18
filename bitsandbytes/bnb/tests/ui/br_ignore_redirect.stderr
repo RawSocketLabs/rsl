@@ -1,0 +1,5 @@
+error: `ignore` marks a field as neither read nor written; write it as `#[brw(ignore)]`
+ --> tests/ui/br_ignore_redirect.rs:9:10
+  |
+9 |     #[br(ignore)]
+  |          ^^^^^^

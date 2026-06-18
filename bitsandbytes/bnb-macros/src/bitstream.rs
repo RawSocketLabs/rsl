@@ -239,8 +239,9 @@ struct FieldBr {
     /// condition (over earlier fields, as locals) holds, else `None`; on encode the
     /// `Option`'s presence drives whether it is written.
     cond: Option<syn::Expr>,
-    /// `#[br(ignore)]` — an in-memory-only field: `Default::default()` on read (no
-    /// input consumed), skipped on write. Zero wire bits.
+    /// `#[brw(ignore)]` — a field that is **neither read nor written**: in-memory
+    /// only, `Default::default()` on read (no input consumed) and skipped on write.
+    /// Spelled with `brw` because it applies to both directions.
     ignore: bool,
     /// `#[br(map = <f>)]` — read the wire value `f`'s argument types, then `f(raw)`
     /// gives the field. `#[br(try_map = <f>)]` is the fallible form (`f` returns a
@@ -280,7 +281,6 @@ enum BrDirective {
     Count(syn::Expr),
     Ctx(Vec<Ident>),
     Temp,
-    Ignore,
     If(syn::Expr),
     Map(syn::Expr),
     TryMap(syn::Expr),
@@ -307,7 +307,10 @@ impl Parse for BrDirective {
                     Ok(BrDirective::Count(input.parse()?))
                 }
                 "temp" => Ok(BrDirective::Temp),
-                "ignore" => Ok(BrDirective::Ignore),
+                "ignore" => Err(syn::Error::new_spanned(
+                    &kw,
+                    "`ignore` marks a field as neither read nor written; write it as `#[brw(ignore)]`",
+                )),
                 "ctx" => {
                     let content;
                     syn::braced!(content in input);
@@ -339,7 +342,7 @@ impl Parse for BrDirective {
                 "restore_position" => Ok(BrDirective::RestorePosition),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `ignore`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, or `restore_position`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, or `restore_position`",
                 )),
             }
         }
@@ -358,7 +361,6 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::Count(e) => br.count = Some(e),
                     BrDirective::Ctx(names) => br.ctx = Some(names),
                     BrDirective::Temp => br.temp = true,
-                    BrDirective::Ignore => br.ignore = true,
                     BrDirective::If(e) => br.cond = Some(e),
                     BrDirective::Map(e) => br.map = Some(e),
                     BrDirective::TryMap(e) => br.try_map = Some(e),
@@ -387,6 +389,15 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     ))
                 }
             })?;
+        } else if attr.path().is_ident("brw") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("ignore") {
+                    br.ignore = true;
+                    Ok(())
+                } else {
+                    Err(meta.error("unknown `#[brw(...)]` directive; expected `ignore`"))
+                }
+            })?;
         }
     }
     if br.map.is_some() && br.try_map.is_some() {
@@ -405,7 +416,7 @@ fn field_is_temp(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.temp)
 }
 
-/// Whether a field is `#[br(ignore)]` (in-memory only — defaulted on read, not
+/// Whether a field is `#[brw(ignore)]` (in-memory only — defaulted on read, not
 /// written, zero wire bits). Read by [`field_width`], which has no parsed `br`.
 fn field_is_ignore(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.ignore)
@@ -468,7 +479,7 @@ fn field_is_reserved(f: &syn::Field) -> bool {
 /// struct it emits — it generates the codec and builder directly, so nothing
 /// registers these as helper attributes.
 fn is_codec_field_attr(a: &syn::Attribute) -> bool {
-    ["nested", "br", "bw", "builder"]
+    ["nested", "br", "bw", "brw", "builder"]
         .iter()
         .any(|n| a.path().is_ident(n))
 }

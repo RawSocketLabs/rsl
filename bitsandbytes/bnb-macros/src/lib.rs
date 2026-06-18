@@ -219,8 +219,9 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// ## Field directives
 ///
 /// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`, `map`/`try_map`
-/// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `ignore`, `pad_before/after`,
-/// `align_before/after`, `restore_position`; plus `#[reserved]` / `#[reserved_with(…)]`.
+/// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `pad_before/after`,
+/// `align_before/after`, `restore_position`; `#[brw(ignore)]` (neither read nor
+/// written); plus `#[reserved]` / `#[reserved_with(…)]`.
 ///
 /// `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which stay usable
 /// directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
