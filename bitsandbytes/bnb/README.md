@@ -4,9 +4,9 @@ An **owned, bit-aware binary codec**: ergonomic, fast bit/byte field types plus 
 unified `#[bin]` whole-message macro for binary protocols. No external codec
 dependency — `bnb` is self-contained.
 
-`bnb` retires a stack of overlapping helpers — `modular-bitfield(-msb)`,
-`bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a hand-rolled
-`binrw` codec — behind one crate that is:
+`bnb` collapses a stack of overlapping helpers — `modular-bitfield(-msb)`,
+`bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a `binrw`-style
+codec — into one crate that is:
 
 - **Integer-backed and fast** — bitfields are plain shift/mask on a single backing
   integer (no `bitvec`); the stream codec reads/writes at arbitrary **bit** offsets.
@@ -166,3 +166,23 @@ proc-macro crate). Depend only on `bnb`. The optional `bytes` feature adds the
 
 See [`DESIGN.md`](DESIGN.md) for the rationale and [`ROADMAP.md`](ROADMAP.md) for the
 (complete) phase plan.
+
+## Inspiration
+
+`bnb` collapses the capabilities of several excellent crates into one. The
+arbitrary-width integers echo [`arbitrary-int`]; the bitfield packing echoes
+[`modular-bitfield`], [`bitfield-struct`], and [`bitbybit`]; the enum ⇄ integer
+mapping echoes [`num_enum`]; and — most of all — the declarative, bidirectional
+codec and its `#[br]`/`#[bw]` attribute vocabulary are modeled on
+[`binrw`](https://github.com/jam1garner/binrw), so the two feel like one toolkit.
+
+`bnb` shares no code with any of them — it is a from-scratch implementation,
+extended to do the one thing a byte-oriented `Read + Seek` codec cannot: read and
+write fields at arbitrary **bit** offsets. See [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md)
+for the full credit.
+
+[`arbitrary-int`]: https://crates.io/crates/arbitrary-int
+[`modular-bitfield`]: https://crates.io/crates/modular-bitfield
+[`bitfield-struct`]: https://crates.io/crates/bitfield-struct
+[`bitbybit`]: https://crates.io/crates/bitbybit
+[`num_enum`]: https://crates.io/crates/num_enum

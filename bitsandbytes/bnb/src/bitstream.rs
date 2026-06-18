@@ -1,9 +1,9 @@
 //! A bit-level stream codec — read/write fields at arbitrary *bit* offsets, not
 //! just byte boundaries.
 //!
-//! This is the piece `binrw` cannot express: its IO model is a byte
-//! `Read + Seek`, so a field that starts mid-byte (a 108-bit DMR payload, a
-//! 48-bit sync pattern) forces hand-rolled backward seeks and nibble shifts.
+//! A byte-oriented `Read + Seek` codec can only address byte boundaries, so a field
+//! that starts mid-byte (a 108-bit DMR payload, a 48-bit sync pattern) forces
+//! hand-rolled backward seeks and nibble shifts.
 //! [`BitReader`]/[`BitWriter`] track a **bit** cursor over a byte buffer and
 //! read/write any [`Bits`] value (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`)
 //! directly — bit-aware *and* fast (shift/mask, no `bitvec`).
@@ -31,9 +31,9 @@ use core::fmt;
 
 use crate::field::{BitOrder, Bits, ByteOrder};
 
-/// A position-aware bit-codec error — the runtime analogue of binrw's error
-/// spans. It records the **bit offset** where decoding/encoding failed and, when
-/// the derive can supply it, the **field** being processed.
+/// A position-aware bit-codec error (it carries a span-like position). It records the
+/// **bit offset** where decoding/encoding failed and, when the derive can supply it,
+/// the **field** being processed.
 ///
 /// # Examples
 ///
@@ -394,7 +394,7 @@ pub struct Layout {
 }
 
 /// Reverses the low `bits / 8` bytes of `raw` when little-endian and the width is a
-/// whole number of bytes (binrw applies byte order only to byte-multiple types); a
+/// whole number of bytes (byte order applies only to byte-multiple values); a
 /// no-op for big-endian or sub-byte widths. It is its own inverse, so read and
 /// write share it.
 #[inline]
@@ -603,9 +603,9 @@ impl<'a> BitReader<'a> {
         Ok(T::from_bits(apply_byte_order(raw, T::BITS, self.byte)))
     }
 
-    /// Moves the cursor to absolute bit `pos`. Unlike binrw, this needs no `Seek`
-    /// trait and no `NoSeek` wrapper — the whole buffer is in hand, so a seek is
-    /// just cursor arithmetic. (Enables e.g. DNS name-compression pointers.)
+    /// Moves the cursor to absolute bit `pos`. This needs no `Seek` trait — the whole
+    /// buffer is in hand, so a seek is just cursor arithmetic. (Enables e.g. DNS
+    /// name-compression pointers.)
     ///
     /// # Errors
     /// [`ErrorKind::UnexpectedEof`] if `pos` is past the end of the buffer.

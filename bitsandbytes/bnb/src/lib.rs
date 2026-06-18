@@ -1,6 +1,6 @@
 /*!
 `bnb` — an owned, bit-aware binary codec: ergonomic, fast bit/byte field types and
-the unified `#[bin]` whole-message codec. No `binrw` dependency.
+the unified `#[bin]` whole-message codec.
 
 It provides, designed to *compose*:
 
@@ -13,13 +13,12 @@ It provides, designed to *compose*:
 - **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width, with an optional
   `#[catch_all]` variant that preserves unknown values (the dual-use convention).
 - **`#[bin]`** — the unified whole-message codec (see below): reads/writes a struct
-  at arbitrary bit offsets, with the full directive surface that subsumed our
-  former `binrw` usage.
+  at arbitrary bit offsets, with a rich, `binrw`-inspired directive surface.
 
-The aim is to retire the workspace's stack of overlapping helpers
-(`modular-bitfield`(`-msb`), `bitfield-struct`, `bitbybit`, `arbitrary-int`,
-`num_enum`, and our use of `binrw`) behind one fast, integer-backed
-(shift/mask, no `bitvec`) crate.
+The aim is to collapse a whole stack of overlapping helpers —
+`modular-bitfield`(`-msb`), `bitfield-struct`, `bitbybit`, `arbitrary-int`,
+`num_enum`, and a `binrw`-style codec — into one fast, integer-backed
+(shift/mask, no `bitvec`) crate. See [Inspiration](#inspiration).
 
 # Example — a DNS-style 16-bit header field
 
@@ -73,8 +72,20 @@ These are independent knobs, which is the whole point:
 
 Whole-message bit-aware codec: `#[bin]` (magic/count/ctx/map/if/calc·temp/reserved/
 positioning/validate) over a `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O
-ladder, with an opt-in `bytes` feature for async framing. It is the owned successor
-to our former binrw usage — no binrw dependency.
+ladder, with an opt-in `bytes` feature for async framing.
+
+# Inspiration
+
+`bnb` stands on the shoulders of several excellent crates, collapsing their
+capabilities into one: the arbitrary-width integers of `arbitrary-int`; the
+bitfield packing of `modular-bitfield`, `bitfield-struct`, and `bitbybit`; the
+enum ⇄ integer mapping of `num_enum`; and — most of all — the declarative,
+bidirectional codec design of [`binrw`](https://github.com/jam1garner/binrw),
+whose `#[br]`/`#[bw]` attribute vocabulary `#[bin]` deliberately echoes so the two
+feel like one toolkit. `bnb` shares no code with these crates; it is a from-scratch
+implementation, extended to do the one thing a byte-oriented `Read + Seek` codec
+cannot: read and write fields at arbitrary **bit** offsets. See `ACKNOWLEDGMENTS.md`
+for the full credit.
 
 # Guide
 

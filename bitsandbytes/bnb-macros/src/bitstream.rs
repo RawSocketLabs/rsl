@@ -109,11 +109,11 @@ struct BitStreamAttrs {
     /// `little` / `byte_order = little` (else big-endian, the default).
     little: bool,
     /// `magic = <expr>` — a leading constant verified on read, emitted on write.
-    /// Any `Bits` value, so it can be sub-byte (`u3::new(0b110)`) unlike binrw.
+    /// Any `Bits` value, so it can even be sub-byte (`u3::new(0b110)`).
     magic: Option<syn::Expr>,
-    /// `ctx(name: Ty, …)` — context this type needs from its parent (binrw
-    /// `import`). When present the type gets `decode_with`/`encode_with` (it does
-    /// **not** implement `BitDecode`/`BitEncode`, which take no context).
+    /// `ctx(name: Ty, …)` — context this type needs from its parent. When present the
+    /// type gets `decode_with`/`encode_with` (it does **not** implement
+    /// `BitDecode`/`BitEncode`, which take no context).
     ctx: Vec<(Ident, Type)>,
 }
 
@@ -805,8 +805,8 @@ fn field_write_core(
 
 /// A const-eval assertion that the struct is *not* entirely byte-aligned (the
 /// bit-stream codec would otherwise be the wrong tool). Empty/opted-out → no guard.
-/// A sub-byte `magic` counts as a non-byte-aligned element (binrw can't express
-/// one), so it suppresses the guard just like a sub-byte field.
+/// A sub-byte `magic` counts as a non-byte-aligned element, so it suppresses the
+/// guard just like a sub-byte field.
 fn alignment_guard(fields: &FieldsNamed, allow: bool, magic: Option<&syn::Expr>) -> TokenStream2 {
     if allow || (fields.named.is_empty() && magic.is_none()) {
         return quote!();
