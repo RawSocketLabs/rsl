@@ -2567,12 +2567,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }
     };
 
-    // Decode niceties: `decode_as_<variant>` parses the bytes as one explicit variant
+    // Decode helpers: `decode_as_<variant>` parses the bytes as one explicit variant
     // (its magic, if any, then its payload), bypassing dispatch — handy when the variant
     // is known out of band, and for tests. `decode_tagged` feeds a tag-dispatched enum
     // its selector directly. A `ctx` enum threads the context through both.
     let ctx_name = ctx_struct_ident(name);
-    let mut nicety_methods = Vec::new();
+    let mut helper_methods = Vec::new();
     for v in &dispatch.variants {
         if v.role() == VariantRole::CatchAll {
             continue; // the catch-all isn't an explicit target — use `decode`/`decode_with`
@@ -2594,7 +2594,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             ::core::result::Result::Ok(#ctor)
         };
         if is_ctx_type {
-            nicety_methods.push(quote! {
+            helper_methods.push(quote! {
                 #[doc = #doc]
                 #[allow(unused_variables)]
                 pub fn #mname(bytes: &[u8], __ctx: #ctx_name) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
@@ -2602,7 +2602,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             });
         } else {
-            nicety_methods.push(quote! {
+            helper_methods.push(quote! {
                 #[doc = #doc]
                 pub fn #mname(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
                     ::bnb::__private::decode_exact_with(bytes, #layout, |r| { #body })
@@ -2620,7 +2620,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let sel_ty = selector_ty
             .as_ref()
             .expect("tag dispatch has a selector type");
-        nicety_methods.push(quote! {
+        helper_methods.push(quote! {
             #[doc = "Decode `bytes` with the given selector (tag), then dispatch — sugar for `decode_with_exact`."]
             pub fn decode_tagged(#sel: #sel_ty, bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
                 Self::decode_with_exact(bytes, #ctx_name { #sel })
@@ -2688,7 +2688,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
             quote!(#read #chain)
         };
-        nicety_methods.push(quote! {
+        helper_methods.push(quote! {
             #[doc = "Identify which variant `bytes` is from the wire magic, without parsing the payload."]
             pub fn peek_variant(bytes: &[u8]) -> ::core::result::Result<#kind_name, ::bnb::__private::BitError> {
                 ::bnb::__private::decode_peek_with(bytes, #layout, |r| {
@@ -2706,10 +2706,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     } else {
         quote!()
     };
-    let niceties = if nicety_methods.is_empty() {
+    let helpers = if helper_methods.is_empty() {
         quote!()
     } else {
-        quote!(impl #name { #(#nicety_methods)* })
+        quote!(impl #name { #(#helper_methods)* })
     };
 
     // The codec impls: a `ctx` enum gets `decode_with`/`encode_with` (+ the `…Ctx`
@@ -2869,7 +2869,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         #clean
         #kind_enum
         #accessor_fn
-        #niceties
+        #helpers
         #decode
         #encode
     })
