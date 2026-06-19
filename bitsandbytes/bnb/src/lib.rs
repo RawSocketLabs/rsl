@@ -102,7 +102,7 @@ tour of the crate and the rationale behind each piece. Reading order:
 6. [`guide::builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
 7. [`guide::bin_codec`] — `#[bin]`: a whole protocol header, end to end.
 8. [`guide::directives`] — the field-directive reference, one example each.
-9. [`guide::dispatch`] — `#[bin]` on an enum: tag-dispatched tagged unions.
+9. [`guide::dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
 10. [`guide::io`] — the `Source`/`Sink` I/O ladder (slice, stream, socket, file, `bytes`).
 11. [`guide::errors`] — position-aware errors and the streaming `Incomplete` signal.
 12. [`guide::dual_use`] — the compliant-by-default-but-violatable philosophy.

@@ -149,7 +149,7 @@ pub(crate) fn generate(
 
 /// The standalone `#[derive(BitsBuilder)]` entry, for plain (non-`#[bitfield]`)
 /// structs.
-pub fn expand_derive(item: TokenStream) -> TokenStream {
+pub(crate) fn expand_derive(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match expand_derive_inner(input) {
         Ok(ts) => ts.into(),

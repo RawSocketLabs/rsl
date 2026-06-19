@@ -49,7 +49,7 @@ struct Flag {
     forward: Vec<Attribute>,
 }
 
-pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as Args);
     let item = parse_macro_input!(item as ItemStruct);
     match expand_inner(args, item) {

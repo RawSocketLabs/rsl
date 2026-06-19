@@ -64,7 +64,7 @@ impl Parse for Args {
     }
 }
 
-pub fn expand(item: TokenStream) -> TokenStream {
+pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match expand_inner(input) {
         Ok(ts) => ts.into(),

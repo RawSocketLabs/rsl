@@ -2,7 +2,14 @@
 //!
 //! - [`macro@bitfield`] — pack typed fields into one backing integer with
 //!   explicit bit and byte order.
+//! - [`macro@bitflags`] — pack named single-bit flags into one integer, with set
+//!   algebra.
 //! - [`macro@BitEnum`] — derive enum ⇄ integer with an optional catch-all.
+//! - [`macro@BitDecode`] / [`macro@BitEncode`] — the low-level read/write codec
+//!   derives (fields at arbitrary bit offsets).
+//! - [`macro@bin`] — the unified whole-message codec attribute, folding the codec
+//!   derives plus a builder (also dispatches tagged-union enums).
+//! - [`macro@BitsBuilder`] — a required-by-default builder.
 //!
 //! These are re-exported from `bnb`; depend on that crate, not this one.
 

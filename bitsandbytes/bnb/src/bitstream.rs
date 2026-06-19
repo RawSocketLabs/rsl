@@ -1184,7 +1184,8 @@ where
 
 /// Reads a fixed `[u8; N]` byte array (`N * 8` bits) from the cursor. Backs a
 /// `[u8; N]` payload field; `N` is inferred from the field type. Variable-length
-/// payloads (`Vec` + `count`) are Phase 2.
+/// payloads (`Vec` + `#[br(count = …)]`) take a separate push-based path that
+/// grows by element, so an attacker-controlled count can't over-allocate.
 ///
 /// # Errors
 /// Propagates the source's [`BitError`].

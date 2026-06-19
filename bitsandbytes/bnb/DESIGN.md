@@ -148,6 +148,26 @@ byte boundaries, so `#[bin]` is the better tool, and a sub-byte run that fills o
 integer wants `#[bitfield]`). The guard is advisory steering, with
 `#[bit_stream(allow_byte_aligned)]` as the escape hatch; `#[bin]` always suppresses it.
 
+### 5.1 Tagged-union enums
+
+`#[bin]` also applies to an *enum* — a protocol union that selects one of several
+payloads. The design keeps two concerns deliberately **orthogonal**, because protocols
+mix them:
+
+- **`magic`** — a wire constant that is *read and written* (a byte string like
+  `b"IHDR"`, or a width-suffixed integer like `0x01u16`). Under magic dispatch it *is*
+  the discriminant; combined with a tag it is a post-selection signature.
+- **`tag`** — a read-only **selector** drawn from `ctx`, never on the wire. The parent
+  passes it down (`#[br(ctx { … })]`); `tag()` recovers it to drive a no-drift `calc`.
+
+The two compose, and may be mixed in one enum (tag priority, then magic) — the same
+wire-constant-vs-selector split `#[bin]` draws on the struct side. The dual-use rule
+carries over verbatim: a `#[catch_all]` variant preserves an unknown discriminant
+rather than rejecting it; only an explicitly *closed* magic set errors. Variable-width
+byte-string magics reuse the same [`SeekSource`](#6-the-io-ladder) capability the
+positioning directives need — the bit cursor does the peeking, not a parallel mechanism.
+The worked encodings live in the `bnb::guide::dispatch` page.
+
 ## 6. The I/O ladder
 
 The everyday entry points work on byte slices and `Vec`s. For other inputs,

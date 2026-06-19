@@ -931,7 +931,7 @@ fn alignment_guard(fields: &FieldsNamed, allow: bool, magic: Option<&syn::Expr>)
     }
 }
 
-pub fn expand_decode(item: TokenStream) -> TokenStream {
+pub(crate) fn expand_decode(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match decode_inner(&input) {
         Ok(ts) => ts.into(),
@@ -1169,7 +1169,7 @@ fn tokens_mention(ts: TokenStream2, names: &[&Ident]) -> bool {
     })
 }
 
-pub fn expand_encode(item: TokenStream) -> TokenStream {
+pub(crate) fn expand_encode(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match encode_inner(&input) {
         Ok(ts) => ts.into(),
@@ -1378,7 +1378,7 @@ fn gen_encode(
 }
 
 // ---------------------------------------------------------------------------
-// `#[bin]` — the unified codec attribute (Phase 2 foundation, ROADMAP).
+// `#[bin]` — the unified codec attribute.
 //
 // One macro that folds codec + builder. It *lowers* to the existing
 // `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream(...)]`, so the
@@ -1408,7 +1408,7 @@ struct BinArgs {
 }
 
 /// Entry for `#[bin(...)]`.
-pub fn expand_bin(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn expand_bin(attr: TokenStream, item: TokenStream) -> TokenStream {
     match bin_inner(attr, item) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
@@ -1809,14 +1809,13 @@ fn variant_field_write(
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch model for `#[bin]` enums (Phase 1). Two orthogonal axes:
+// Dispatch model for `#[bin]` enums. Two orthogonal axes:
 //   * `tag`   — a read-only selector from `ctx` (never on the wire) that *picks*
 //               the variant; takes priority over magic.
 //   * `magic` — a wire constant (byte string or byte-aligned unsigned int literal),
 //               verified on read and written on encode; the discriminant when there
 //               is no tag, or a post-selection signature when there is.
-// This module is the parsed+validated model; `bin_enum` is wired onto it in the
-// next step.
+// This module is the parsed+validated model; `bin_enum` (below) is wired onto it.
 // ---------------------------------------------------------------------------
 
 /// A `magic` wire constant. Restricted to **byte-oriented literals** so its on-wire

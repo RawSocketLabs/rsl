@@ -1,19 +1,19 @@
-//! Performance measurements for `bits`, benchmarked **against the crates it
+//! Performance measurements for `bnb`, benchmarked **against the crates it
 //! replaces** (`bitbybit`, `modular-bitfield-msb`) and a hand-written
 //! shift/mask baseline, on an identical 16-bit MSB-first field
 //! (`a:5 | b:7 | c:4`, the DNS-header shape).
 //!
 //! The point is to substantiate the design claim: an integer-backed `#[bitfield]`
 //! is as fast as hand-written bit twiddling, and at least on par with the
-//! existing crates — so migrating to `bits` costs nothing at runtime.
+//! existing crates — so migrating to `bnb` costs nothing at runtime.
 //!
-//! Run:        cargo bench -p bits
-//! Flamegraph: cargo bench -p bits -- --profile-time 5
+//! Run:        cargo bench -p bnb
+//! Flamegraph: cargo bench -p bnb -- --profile-time 5
 //! (Reports under target/criterion/.)
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
-// --- `bits` ---------------------------------------------------------------
+// --- `bnb` ----------------------------------------------------------------
 use bnb::{BitEnum, bitfield, u4, u5, u7};
 
 #[bitfield(u16, bits = msb, bytes = be)]
@@ -26,7 +26,7 @@ struct BitsState {
 
 // --- `bitbybit` (the dns crate's choice) ----------------------------------
 mod bb {
-    pub use arbitrary_int::{u4, u5, u7};
+    pub(crate) use arbitrary_int::{u4, u5, u7};
     use bitbybit::bitfield;
 
     #[bitfield(u16, default = 0)] // bitbybit already generates Clone/Copy
@@ -41,6 +41,10 @@ mod bb {
 }
 
 // --- `modular-bitfield-msb` (the nbt crate's choice) ----------------------
+// `modular_bitfield`'s `#[bitfield]` always emits a `pub` struct regardless of the
+// declared visibility, so this comparison-only module can't narrow it; allow the
+// `unreachable_pub` it produces here rather than across the whole bench.
+#[allow(unreachable_pub)]
 mod mb {
     use modular_bitfield_msb::prelude::*;
 
@@ -55,7 +59,7 @@ mod mb {
 
 fn bench_pack(c: &mut Criterion) {
     let mut g = c.benchmark_group("pack");
-    g.bench_function("bits", |bn| {
+    g.bench_function("bnb", |bn| {
         bn.iter(|| {
             BitsState::new()
                 .with_a(u5::new(black_box(2)))
@@ -103,7 +107,7 @@ fn bench_unpack(c: &mut Criterion) {
     let raw: u16 = 0x1002 | (42 << 4);
 
     let mut g = c.benchmark_group("unpack");
-    g.bench_function("bits", |bn| {
+    g.bench_function("bnb", |bn| {
         let s = black_box(bits_s);
         bn.iter(|| s.a().value() as u16 + s.b().value() as u16 + s.c().value() as u16)
     });
@@ -127,7 +131,7 @@ fn bench_bytes_roundtrip(c: &mut Criterion) {
     let mb_s = mb::State::from_bytes([0x12, 0xAC]);
 
     let mut g = c.benchmark_group("bytes_roundtrip");
-    g.bench_function("bits", |bn| {
+    g.bench_function("bnb", |bn| {
         let s = black_box(bits_s);
         bn.iter(|| BitsState::from_be_bytes(black_box(s.to_be_bytes())))
     });
@@ -150,14 +154,14 @@ enum Code {
 
 fn bench_primitives(c: &mut Criterion) {
     let mut g = c.benchmark_group("primitives");
-    g.bench_function("bits_uint_new", |bn| bn.iter(|| u5::new(black_box(17))));
+    g.bench_function("bnb_uint_new", |bn| bn.iter(|| u5::new(black_box(17))));
     g.bench_function("arbitrary_int_new", |bn| {
         bn.iter(|| bb::u5::new(black_box(17)))
     });
-    g.bench_function("bits_enum_decode", |bn| {
+    g.bench_function("bnb_enum_decode", |bn| {
         bn.iter(|| <Code as bnb::Bits>::from_bits(black_box(9)))
     });
-    g.bench_function("bits_enum_encode", |bn| {
+    g.bench_function("bnb_enum_encode", |bn| {
         let v = black_box(Code::Other(u4::new(9)));
         bn.iter(|| <Code as bnb::Bits>::into_bits(v))
     });
