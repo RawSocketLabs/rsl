@@ -2227,12 +2227,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         .iter()
         .find(|v| v.role() == VariantRole::CatchAll);
 
-    if has_selector && magic_dispatch {
-        return Err(syn::Error::new_spanned(
-            name,
-            "mixing tag-dispatched and magic-dispatched variants in one enum is not yet implemented",
-        ));
-    }
+    // Hybrid (some tag variants, some magic-only): the selector picks a tag variant first,
+    // then unmatched selectors fall through to magic dispatch (tag priority).
+    let hybrid = has_selector && magic_dispatch;
     if !has_selector && !magic_dispatch {
         return Err(syn::Error::new_spanned(
             name,
@@ -2308,8 +2305,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     };
 
     // An accessor (`tag()`/`magic()`) reports a single discriminant; that is only
-    // well-defined when widths are uniform and there is no typed fallback.
-    let gen_accessor = !mixed && fallback_variant.is_none();
+    // well-defined for a uniform-width, single-kind dispatch with no typed fallback (so
+    // not mixed-width, not a fallback, and not a hybrid's two discriminant kinds).
+    let gen_accessor = !mixed && fallback_variant.is_none() && !hybrid;
 
     // Per-variant encode arms (+ accessor arms). The tail variant (typed fallback or
     // catch-all) writes no discriminant of its own, except a single-read catch-all, which
@@ -2375,7 +2373,14 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // fallback), or a `peek_bytes` + `starts_with` + seek chain (variable width / fallback,
     // so the tail can re-read the unconsumed magic). Tag: a `match` on the selector. The
     // tail body is the final else.
-    let dispatch_decode = if magic_dispatch && use_peek {
+    //
+    // The magic block: a single `__m` read + `==` chain (uniform width), or a `peek_bytes`
+    // + `starts_with` + seek chain (variable width / fallback), ending in the tail body.
+    // Used directly for pure-magic dispatch, and as the selector `match`'s fall-through
+    // under hybrid (tag takes priority, then magic).
+    let magic_block = if !magic_dispatch {
+        quote!()
+    } else if use_peek {
         let max = dispatch
             .variants
             .iter()
@@ -2405,7 +2410,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             let __peek = ::bnb::__private::peek_bytes(r, #max)?;
             #chain
         }
-    } else if magic_dispatch {
+    } else {
         let read = rep_magic
             .expect("magic dispatch has a representative magic")
             .read_into(&format_ident!("__m"));
@@ -2423,7 +2428,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
         }
         quote!(#read #chain)
-    } else {
+    };
+
+    let dispatch_decode = if has_selector {
+        // Tag dispatch (incl. hybrid): match the selector; an unmatched selector falls to
+        // the magic block (hybrid) or the tail body (pure tag).
         let sel = dispatch
             .selector
             .as_ref()
@@ -2446,12 +2455,21 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 });
             }
         }
-        let catch_pat = if tail_variant.is_some() {
+        let else_body = if magic_dispatch {
+            quote!({ #magic_block })
+        } else {
+            tail_body.clone()
+        };
+        // A pure-tag catch-all captures the unmatched selector (`__other`); a hybrid reads
+        // `__m` in the magic block, so the unmatched selector is unused there.
+        let catch_pat = if !magic_dispatch && tail_variant.is_some() {
             quote!(__other)
         } else {
             quote!(_)
         };
-        quote!(match #sel { #(#arms)* #catch_pat => #tail_body })
+        quote!(match #sel { #(#arms)* #catch_pat => #else_body })
+    } else {
+        magic_block
     };
 
     let prefix_verify = dispatch.prefix.as_ref().map(|m| m.verify("prefix"));
@@ -2608,7 +2626,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // (the dispatch decision only, no payload). Magic dispatch only — under tag dispatch
     // the caller already holds the selector.
     let kind_name = format_ident!("{}Kind", name);
-    let kind_enum = if magic_dispatch && want_decode {
+    let kind_enum = if magic_dispatch && !has_selector && want_decode {
         // The "nothing matched" kind: the tail variant's kind, else an error.
         let tail_kind = tail_variant
             .map(|tv| {

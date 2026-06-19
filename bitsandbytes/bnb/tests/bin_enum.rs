@@ -291,6 +291,55 @@ fn decode_as_and_tagged_for_tag_enum() {
     );
 }
 
+// ── Hybrid: tag dispatch takes priority; an unmatched selector falls to magic. ──
+#[bin(big, ctx(kind: u8), tag = kind)]
+#[derive(Debug, PartialEq)]
+enum Hybrid {
+    #[bin(tag = 1)]
+    Known(u16),
+    #[bin(magic = b"EXT")]
+    Extended { sub: u8 },
+    #[catch_all]
+    Unknown {
+        magic: [u8; 3],
+        #[br(count = 1)]
+        rest: Vec<u8>,
+    },
+}
+
+#[test]
+fn hybrid_tag_then_magic() {
+    // kind=1 selects the tag variant — no wire discriminant.
+    let known = Hybrid::decode_with_exact(&[0xAB, 0xCD], HybridCtx { kind: 1 }).unwrap();
+    assert_eq!(known, Hybrid::Known(0xABCD));
+    assert_eq!(
+        known.to_bytes_with(HybridCtx { kind: 1 }).unwrap(),
+        [0xAB, 0xCD]
+    );
+
+    // An unmatched selector (kind=9) falls through to magic dispatch.
+    let ext = Hybrid::decode_with_exact(b"EXT\x05", HybridCtx { kind: 9 }).unwrap();
+    assert_eq!(ext, Hybrid::Extended { sub: 5 });
+    assert_eq!(
+        ext.to_bytes_with(HybridCtx { kind: 9 }).unwrap(),
+        b"EXT\x05"
+    );
+
+    // Unknown magic -> the catch-all captures it.
+    let unk = Hybrid::decode_with_exact(b"ZZZ\xFF", HybridCtx { kind: 9 }).unwrap();
+    assert_eq!(
+        unk,
+        Hybrid::Unknown {
+            magic: *b"ZZZ",
+            rest: vec![0xFF],
+        }
+    );
+    assert_eq!(
+        unk.to_bytes_with(HybridCtx { kind: 9 }).unwrap(),
+        b"ZZZ\xFF"
+    );
+}
+
 // ── Variable-width magic: byte-string signatures of differing lengths, peeked and
 //    matched by prefix; the catch-all reads from the unconsumed position. ──
 #[bin(big)]
