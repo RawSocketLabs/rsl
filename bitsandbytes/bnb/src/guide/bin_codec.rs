@@ -140,9 +140,11 @@
 //! assert_eq!(Hdr::decode_from(&mut s).unwrap(), Hdr { magic: 0xCAFE, len: 16 });
 //! ```
 //!
-//! `ctx(...)` — context a message needs from its parent. The parent passes it with
-//! `#[br(ctx { … })]`; the type can also be used standalone via the generated `*_with`
-//! methods and its `…Ctx` struct:
+//! `ctx(...)` — context a message needs from its parent **to decode**. The parent passes it
+//! with `#[br(ctx { … })]`; standalone, `decode_with`/`decode_with_exact` take a `…Ctx`
+//! (built positionally with `…Ctx::new`). `ctx` is **decode-only**: encode stays a plain
+//! `to_bytes()` unless the *write* side actually reads a ctx param (a keyed `bw(map)`,
+//! `calc`, or `write_with`), in which case the type gets `to_bytes_with`/`encode_with`:
 //!
 //! ```
 //! use bnb::bin;
@@ -166,10 +168,11 @@
 //! assert_eq!(p.to_bytes().unwrap(), [0x00, 0x03, 1, 2, 3]);
 //! assert_eq!(Packet::decode_exact(&[0x00, 0x03, 1, 2, 3]).unwrap(), p);
 //!
-//! // Standalone, via the generated `*_with` methods + the `BodyCtx` struct:
-//! let b = Body::decode_with_exact(&[0xAA, 0xBB], BodyCtx { len: 2 }).unwrap();
+//! // Standalone: decode needs the context (build it with `BodyCtx::new`); encode is
+//! // plain — `ctx` is decode-only, and `Body`'s write side doesn't read `len`.
+//! let b = Body::decode_with_exact(&[0xAA, 0xBB], BodyCtx::new(2)).unwrap();
 //! assert_eq!(b.data, vec![0xAA, 0xBB]);
-//! assert_eq!(b.to_bytes_with(BodyCtx { len: 2 }).unwrap(), vec![0xAA, 0xBB]);
+//! assert_eq!(b.to_bytes().unwrap(), vec![0xAA, 0xBB]);
 //! ```
 //!
 //! (`magic` and `validate` are shown below.)

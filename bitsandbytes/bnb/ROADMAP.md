@@ -39,6 +39,19 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] Lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`; the bare derives carry
       the all-byte-aligned right-tool guard (escape hatch
       `#[bit_stream(allow_byte_aligned)]`).
+- [x] **Tagged-union enums** (`#[bin]` on an enum) — dispatch by per-variant `magic` (a
+      wire constant: byte string or width-suffixed int), by a read-only `tag` selector
+      drawn from `ctx` (never on the wire), an enum-level `magic` prefix, or a hybrid of
+      the two; `#[catch_all]` preserves an unknown discriminant (else a closed set is a
+      decode error); variable-width / typed-fallback magics peek+seek; `magic()`/`tag()`
+      accessors plus `decode_as_<variant>`/`peek_variant`/`decode_tagged` helpers. See
+      [`bnb::guide::dispatch`].
+- [x] **`ctx` is decode-only** — `decode_with` + a generated `…Ctx` (built positionally
+      with `…Ctx::new`) carry parse context; encode stays a plain `to_bytes` unless the
+      *write* side reads a ctx param (a keyed `bw(map)`/`calc`/`write_with`), then it gets
+      `to_bytes_with`/`encode_with`. A variant `Vec` field can forward per-element `ctx`.
+      `DecodeWith<A>`/`EncodeWith<A>` are the polymorphic companions — one bound spans
+      context-free and context-taking messages.
 
 ## I/O ladder
 

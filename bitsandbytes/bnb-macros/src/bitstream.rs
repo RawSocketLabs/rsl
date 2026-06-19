@@ -801,7 +801,7 @@ fn field_write_core(
         // A `temp` field isn't stored, so a later `#[br(ctx { … })]` pass can't resolve
         // it via `self.#id`. Bind its computed value to a **named** local (in encode-fn
         // scope, written in declaration order) so the ctx pass finds it — e.g. a tag
-        // recomputed with `#[bw(calc = self.body.tag())]` and handed to a `tag_from`
+        // recomputed with `#[bw(calc = self.body.tag())]` and handed to a `tag`-dispatched
         // enum. A non-`temp` `calc` field keeps a throwaway local (it has `self.#id`).
         if br.temp {
             return Ok(quote! {
@@ -869,8 +869,9 @@ fn field_write_core(
     }
     if let Some(elem) = vec_elem(f) {
         let write_elem = if let Some(names) = &br.ctx {
-            let lit = ctx_literal(&ctx_struct_ty(elem)?, names, Some(field_set));
-            quote!(<#elem>::encode_with(__e, w, #lit)
+            let elem_ctx = ctx_struct_ty(elem)?;
+            let lit = ctx_literal(&elem_ctx, names, Some(field_set));
+            quote!(<#elem as ::bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else if is_nested(f) {
             quote!(<#elem as ::bnb::__private::BitEncode>::bit_encode(__e, w)
@@ -885,9 +886,12 @@ fn field_write_core(
             }
         })
     } else if let Some(names) = &br.ctx {
-        let lit = ctx_literal(&ctx_struct_ty(ty)?, names, Some(field_set));
-        Ok(quote!(<#ty>::encode_with(&self.#id, w, #lit)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+        let child_ctx = ctx_struct_ty(ty)?;
+        let lit = ctx_literal(&child_ctx, names, Some(field_set));
+        Ok(
+            quote!(<#ty as ::bnb::EncodeWith<#child_ctx>>::encode_with(&self.#id, w, #lit)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        )
     } else if is_nested(f) {
         Ok(
             quote!(<#ty as ::bnb::__private::BitEncode>::bit_encode(&self.#id, w)
@@ -1151,6 +1155,20 @@ fn gen_decode(
     })
 }
 
+/// Whether a token stream mentions any of `names` (recursing into groups). Decides whether
+/// a type's generated **encode** body reads a `ctx` parameter — and so whether `ctx` is
+/// decode-only for it (plain encode) or it needs `encode_with`. Scanning the emitted tokens
+/// catches *every* write-side reference (`calc`/`bw(map)`/`write_with`/`reserved_with`/
+/// positioning, or a `ctx { … }` forward passing a param down) with no false negatives;
+/// over-detection is harmless (it would merely keep `encode_with`).
+fn tokens_mention(ts: TokenStream2, names: &[&Ident]) -> bool {
+    ts.into_iter().any(|tt| match tt {
+        proc_macro2::TokenTree::Ident(id) => names.iter().any(|n| **n == id),
+        proc_macro2::TokenTree::Group(g) => tokens_mention(g.stream(), names),
+        _ => false,
+    })
+}
+
 pub fn expand_encode(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match encode_inner(&input) {
@@ -1211,9 +1229,14 @@ fn gen_encode(
         .map(|(f, br)| field_write_stmt(f, br, &field_set, false))
         .collect::<syn::Result<Vec<_>>>()?;
 
-    // `ctx(...)`: the dual of decode — inherent `encode_with`/`to_bytes_with`
-    // (binding the ctx params as locals), not a `BitEncode` impl.
-    if !attrs.ctx.is_empty() {
+    // `ctx` is **decode-only** by default: if the generated encode body references a ctx
+    // param — a `calc`/`bw(map)`/`write_with`/`reserved_with`/positioning expr, or a
+    // `ctx { … }` forward passing one down — the type gets `encode_with`/`to_bytes_with`;
+    // otherwise a plain `BitEncode`/`to_bytes` (below), so encode needs no context.
+    let ctx_names: Vec<&Ident> = attrs.ctx.iter().map(|(n, _)| n).collect();
+    let encode_uses_ctx =
+        !ctx_names.is_empty() && writes.iter().any(|w| tokens_mention(w.clone(), &ctx_names));
+    if encode_uses_ctx {
         let ctx_name = ctx_struct_ident(name);
         let ctx_binds = attrs.ctx.iter().map(|(n, _)| quote!(let #n = __ctx.#n;));
         return Ok(quote! {
@@ -1296,6 +1319,26 @@ fn gen_encode(
         }
     };
 
+    // A `ctx` type whose encode does *not* read context still impls `EncodeWith` (ignoring
+    // the context), so a parent can forward to it uniformly whether or not it needs one.
+    let encode_with_trait = if attrs.ctx.is_empty() {
+        quote!()
+    } else {
+        let ctx_name = ctx_struct_ident(name);
+        quote! {
+            impl ::bnb::EncodeWith<#ctx_name> for #name {
+                #[allow(unused_variables)]
+                fn encode_with<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                    args: #ctx_name,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                }
+            }
+        }
+    };
+
     Ok(quote! {
         #guard
         impl ::bnb::BitEncode for #name {
@@ -1329,6 +1372,7 @@ fn gen_encode(
                 <Self as ::bnb::BitEncode>::bit_encode(self, w)
             }
         }
+        #encode_with_trait
         #spec_encode
     })
 }
@@ -1579,10 +1623,18 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         let ctx_name = ctx_struct_ident(&s.ident);
         let vis = &s.vis;
         let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
+        let names = args.ctx.iter().map(|(n, _)| n);
         quote! {
             #[derive(Clone)]
-            #[doc = "Context for decoding/encoding the matching `#[bin(ctx(...))]` type."]
+            #[doc = "Context for the matching `#[bin(ctx(...))]` type — pass it to `decode_with`."]
             #vis struct #ctx_name { #(#decls),* }
+            impl #ctx_name {
+                #[doc = "Construct the context positionally, in declaration order."]
+                #vis fn new(#(#params),*) -> Self {
+                    Self { #(#names),* }
+                }
+            }
         }
     };
 
@@ -1596,14 +1648,14 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
 }
 
 // ---------------------------------------------------------------------------
-// `#[bin]` on an enum — tag-dispatched tagged union.
+// `#[bin]` on an enum — a dispatched tagged union.
 //
-// A discriminant (read via `tag = <ty>`, or taken from a `ctx` param via
-// `tag_from = <param>`) selects the variant; each variant is a mini-struct whose
-// fields reuse the `#[br]`/`#[bw]` grammar. `#[catch_all]` preserves an unknown tag
-// and its payload (dual-use). Decode reuses `field_read_stmt` (it reads into locals,
-// so it is variant-agnostic); encode needs a local-based writer because the struct
-// writer is `self.#id`-coupled.
+// A variant is selected by its on-wire `magic` (a constant read+written), by a read-only
+// `tag` selector drawn from a `ctx` param (never on the wire), or a hybrid of the two;
+// each variant is a mini-struct whose fields reuse the `#[br]`/`#[bw]` grammar.
+// `#[catch_all]` preserves an unknown discriminant and its payload (dual-use). Decode
+// reuses `field_read_stmt` (it reads into locals, so it is variant-agnostic); encode needs
+// a local-based writer because the struct writer is `self.#id`-coupled.
 // ---------------------------------------------------------------------------
 
 /// The bind idents for a variant's fields — the field's own ident (named) or a
@@ -1630,18 +1682,6 @@ fn variant_path_fields(
         Fields::Unnamed(_) => quote!(#name::#vid( #(#idents),* )),
         Fields::Unit => quote!(#name::#vid),
     }
-}
-
-/// The one variant-field shape the encode side can't yet mirror (so reject it on both
-/// sides to keep decode/encode symmetric): per-element `ctx` on a `Vec` field.
-fn variant_check(f: &syn::Field, br: &FieldBr) -> syn::Result<()> {
-    if vec_elem(f).is_some() && br.ctx.is_some() {
-        return Err(syn::Error::new_spanned(
-            f,
-            "per-element `ctx` on a `Vec` variant field is not supported yet",
-        ));
-    }
-    Ok(())
 }
 
 /// `ctx { … }` literal for a **variant** encode arm. A name that is a stored sibling is
@@ -1702,11 +1742,13 @@ fn variant_field_write(
             "a `#[br(temp)]` variant field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
         ));
     }
-    // `ctx { … }`: encode a nested ctx-message, resolving the passed names against the
-    // arm's stored siblings (deref'd) and enum ctx params / temp locals (by value).
-    if let Some(names) = &br.ctx {
-        let lit = ctx_literal_variant(&ctx_struct_ty(ty)?, names, stored);
-        let core = quote!(<#ty>::encode_with(#id, w, #lit)
+    // `ctx { … }` on a single nested ctx-message (the `Vec<_>` case is handled below):
+    // resolve the passed names against the arm's stored siblings (deref'd) and enum ctx
+    // params / temp locals (by value).
+    if let (Some(names), None) = (&br.ctx, vec_elem(f)) {
+        let child_ctx = ctx_struct_ty(ty)?;
+        let lit = ctx_literal_variant(&child_ctx, names, stored);
+        let core = quote!(<#ty as ::bnb::EncodeWith<#child_ctx>>::encode_with(#id, w, #lit)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         return Ok(quote!(#pre #core #post));
     }
@@ -1740,7 +1782,12 @@ fn variant_field_write(
         };
         quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
     } else if let Some(elem) = vec_elem(f) {
-        let write_elem = if is_nested(f) {
+        let write_elem = if let Some(names) = &br.ctx {
+            let elem_ctx = ctx_struct_ty(elem)?;
+            let lit = ctx_literal_variant(&elem_ctx, names, stored);
+            quote!(<#elem as ::bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else if is_nested(f) {
             quote!(<#elem as ::bnb::__private::BitEncode>::bit_encode(__e, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
@@ -2143,7 +2190,6 @@ fn variant_field_codec(
     for (i, f) in v.fields.iter().enumerate() {
         let id = &idents[i];
         let br = parse_field_br(f)?;
-        variant_check(f, &br)?;
         if is_catch && i == 0 {
             if br.temp {
                 return Err(syn::Error::new_spanned(
@@ -2712,10 +2758,19 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         quote!(impl #name { #(#helper_methods)* })
     };
 
-    // The codec impls: a `ctx` enum gets `decode_with`/`encode_with` (+ the `…Ctx`
-    // struct); a plain one gets `BitDecode`/`BitEncode` + the slice/stream entry points.
-    let (decode, encode, ctx_struct) = if is_ctx_type {
-        let decode = want_decode.then(|| quote! {
+    // The codec impls. Decode: a `ctx` enum gets `decode_with` (+ `DecodeWith`); a plain
+    // one gets `BitDecode` + the slice/stream entry points. Encode: `ctx` is decode-only,
+    // so a `ctx` enum still gets a **plain** `BitEncode`/`to_bytes` unless its encode body
+    // actually reads a ctx param (a `calc`/`bw(map)`/`ctx`-forward naming one) — then it
+    // gets `encode_with`/`to_bytes_with` instead. Either way it impls `EncodeWith` so a
+    // parent can forward to it.
+    let ctx_param_names: Vec<&Ident> = args.ctx.iter().map(|(n, _)| n).collect();
+    let enum_encode_uses_ctx = is_ctx_type && tokens_mention(encode_body.clone(), &ctx_param_names);
+
+    let decode = if !want_decode {
+        quote!()
+    } else if is_ctx_type {
+        quote! {
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
@@ -2742,8 +2797,43 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     <#name>::decode_with(r, args)
                 }
             }
-        });
-        let encode = want_encode.then(|| quote! {
+        }
+    } else {
+        quote! {
+            impl ::bnb::BitDecode for #name {
+                fn bit_decode<S: ::bnb::__private::Source>(
+                    r: &mut S,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    #decode_body
+                }
+            }
+            impl #name {
+                #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed."]
+                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_consume(buf, #layout)
+                }
+                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
+                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_peek(bytes, #layout)
+                }
+                #[doc = "Decode and require every whole byte consumed."]
+                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_exact(bytes, #layout)
+                }
+                #[doc = "Decode from an explicit bit source (a seekable one if a variant seeks)."]
+                pub fn decode_from<S: #from_bound>(
+                    r: &mut S,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    <Self as ::bnb::BitDecode>::bit_decode(r)
+                }
+            }
+        }
+    };
+
+    let encode = if !want_encode {
+        quote!()
+    } else if enum_encode_uses_ctx {
+        quote! {
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
@@ -2772,45 +2862,25 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     <#name>::encode_with(self, w, args)
                 }
             }
-        });
-        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
-        let ctx_struct = quote! {
-            #[derive(Clone)]
-            #[doc = "Context for decoding/encoding the matching `#[bin(ctx(...))]` type."]
-            #vis struct #ctx_name { #(#decls),* }
-        };
-        (decode, encode, ctx_struct)
+        }
     } else {
-        let decode = want_decode.then(|| quote! {
-            impl ::bnb::BitDecode for #name {
-                fn bit_decode<S: ::bnb::__private::Source>(
-                    r: &mut S,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    #decode_body
-                }
-            }
-            impl #name {
-                #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed."]
-                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_consume(buf, #layout)
-                }
-                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
-                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_peek(bytes, #layout)
-                }
-                #[doc = "Decode and require every whole byte consumed."]
-                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact(bytes, #layout)
-                }
-                #[doc = "Decode from an explicit bit source (a seekable one if a variant seeks)."]
-                pub fn decode_from<S: #from_bound>(
-                    r: &mut S,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    <Self as ::bnb::BitDecode>::bit_decode(r)
+        // Plain encode (ctx not used on the write side). A `ctx` enum additionally impls a
+        // context-ignoring `EncodeWith` so a parent can forward to it uniformly.
+        let encode_with_trait = is_ctx_type.then(|| {
+            quote! {
+                impl ::bnb::EncodeWith<#ctx_name> for #name {
+                    #[allow(unused_variables)]
+                    fn encode_with<K: ::bnb::__private::Sink>(
+                        &self,
+                        w: &mut K,
+                        args: #ctx_name,
+                    ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                        <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                    }
                 }
             }
         });
-        let encode = want_encode.then(|| quote! {
+        quote! {
             impl ::bnb::BitEncode for #name {
                 fn bit_encode<K: ::bnb::__private::Sink>(
                     &self,
@@ -2839,8 +2909,27 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     <Self as ::bnb::BitEncode>::bit_encode(self, w)
                 }
             }
-        });
-        (decode, encode, quote!())
+            #encode_with_trait
+        }
+    };
+
+    let ctx_struct = if is_ctx_type {
+        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
+        let names = args.ctx.iter().map(|(n, _)| n);
+        quote! {
+            #[derive(Clone)]
+            #[doc = "Context for the matching `#[bin(ctx(...))]` type — pass it to `decode_with`."]
+            #vis struct #ctx_name { #(#decls),* }
+            impl #ctx_name {
+                #[doc = "Construct the context positionally, in declaration order."]
+                #vis fn new(#(#params),*) -> Self {
+                    Self { #(#names),* }
+                }
+            }
+        }
+    } else {
+        quote!()
     };
 
     // The emitted enum: drop `#[br(temp)]` variant fields (read but not stored), strip

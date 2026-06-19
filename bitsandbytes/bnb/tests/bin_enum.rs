@@ -312,18 +312,12 @@ fn hybrid_tag_then_magic() {
     // kind=1 selects the tag variant — no wire discriminant.
     let known = Hybrid::decode_with_exact(&[0xAB, 0xCD], HybridCtx { kind: 1 }).unwrap();
     assert_eq!(known, Hybrid::Known(0xABCD));
-    assert_eq!(
-        known.to_bytes_with(HybridCtx { kind: 1 }).unwrap(),
-        [0xAB, 0xCD]
-    );
+    assert_eq!(known.to_bytes().unwrap(), [0xAB, 0xCD]);
 
     // An unmatched selector (kind=9) falls through to magic dispatch.
     let ext = Hybrid::decode_with_exact(b"EXT\x05", HybridCtx { kind: 9 }).unwrap();
     assert_eq!(ext, Hybrid::Extended { sub: 5 });
-    assert_eq!(
-        ext.to_bytes_with(HybridCtx { kind: 9 }).unwrap(),
-        b"EXT\x05"
-    );
+    assert_eq!(ext.to_bytes().unwrap(), b"EXT\x05");
 
     // Unknown magic -> the catch-all captures it.
     let unk = Hybrid::decode_with_exact(b"ZZZ\xFF", HybridCtx { kind: 9 }).unwrap();
@@ -334,10 +328,7 @@ fn hybrid_tag_then_magic() {
             rest: vec![0xFF],
         }
     );
-    assert_eq!(
-        unk.to_bytes_with(HybridCtx { kind: 9 }).unwrap(),
-        b"ZZZ\xFF"
-    );
+    assert_eq!(unk.to_bytes().unwrap(), b"ZZZ\xFF");
 }
 
 // ── Variable-width magic: byte-string signatures of differing lengths, peeked and
@@ -450,7 +441,7 @@ fn tag_with_verification_magic() {
     let li = [b'L', b'I', 0xAA, 0xBB, 0xCC, 0xDD];
     let v = Msg::decode_with_exact(&li, MsgCtx { kind: 1 }).unwrap();
     assert_eq!(v, Msg::Login(0xAABB_CCDD));
-    assert_eq!(v.to_bytes_with(MsgCtx { kind: 1 }).unwrap(), li);
+    assert_eq!(v.to_bytes().unwrap(), li);
 
     // A bad signature for the selected variant is rejected.
     assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
@@ -460,10 +451,7 @@ fn tag_with_verification_magic() {
         Msg::decode_with_exact(&[], MsgCtx { kind: 2 }).unwrap(),
         Msg::Ping
     );
-    assert_eq!(
-        Msg::Ping.to_bytes_with(MsgCtx { kind: 2 }).unwrap(),
-        Vec::<u8>::new()
-    );
+    assert_eq!(Msg::Ping.to_bytes().unwrap(), Vec::<u8>::new());
 }
 
 // ── Variant-field directives still work under the new dispatch. ──

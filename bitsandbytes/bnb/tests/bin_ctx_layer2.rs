@@ -45,7 +45,7 @@ fn one_bound_spans_context_free_and_context_taking() {
         flag: u4::new(0xF),
         data: vec![0xAA, 0xBB],
     };
-    let bytes = wc.to_bytes_with(ctx.clone()).unwrap();
+    let bytes = wc.to_bytes().unwrap();
     let mut r = BitReader::new(&bytes);
     let got: WithCtx = decode_one(&mut r, ctx).unwrap();
     assert_eq!(got, wc);
