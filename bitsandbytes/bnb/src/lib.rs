@@ -122,8 +122,8 @@ pub mod int;
 
 pub use bitstream::{
     BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, BufSource, DecodeWith,
-    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekReader, SeekSource, Sink, Source,
-    StreamBitReader,
+    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekReader, SeekSource, Sink, SinkWriter, Source,
+    SourceReader, StreamBitReader,
 };
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).

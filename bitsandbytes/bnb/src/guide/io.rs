@@ -97,6 +97,29 @@
 //! let mut r = BytesReader::new(frame); // owns the frame, no copy
 //! ```
 //!
+//! # Bridging to `std::io`
+//!
+//! The ladder above adapts a `std::io::Read` *into* a [`Source`](crate::Source)
+//! ([`BufSource`](crate::BufSource)/[`SeekReader`](crate::SeekReader)). The reverse —
+//! handing a bnb cursor to `std::io`-based code from a `parse_with`/`write_with` — is
+//! [`Source::as_read`](crate::Source::as_read) and [`Sink::as_write`](crate::Sink::as_write),
+//! byte views over the cursor. With `From<io::Error>`, `std::io` results `?` straight
+//! into a [`BitError`](crate::BitError):
+//!
+//! ```
+//! use bnb::{BitError, BitReader, Source};
+//! use std::io::Read;
+//!
+//! fn read_three<S: Source>(r: &mut S) -> Result<[u8; 3], BitError> {
+//!     let mut buf = [0u8; 3];
+//!     r.as_read().read_exact(&mut buf)?; // a `std::io::Read` view over the cursor
+//!     Ok(buf)
+//! }
+//!
+//! let mut r = BitReader::new(&[0xAA, 0xBB, 0xCC]);
+//! assert_eq!(read_three(&mut r).unwrap(), [0xAA, 0xBB, 0xCC]);
+//! ```
+//!
 //! # Streaming and partial input
 //!
 //! A [`StreamBitReader`](crate::StreamBitReader) or [`BufSource`](crate::BufSource)

@@ -165,6 +165,16 @@ impl BitError {
     }
 }
 
+impl From<std::io::Error> for BitError {
+    /// Wraps a [`std::io::Error`] as [`ErrorKind::Io`] — so a `parse_with`/`write_with`
+    /// using [`Source::as_read`]/[`Sink::as_write`] can `?` `std::io` results straight
+    /// into a `BitError`. The bit offset is unknown at this boundary (recorded as `0`);
+    /// build with [`BitError::new`] if you need the precise position.
+    fn from(e: std::io::Error) -> Self {
+        BitError::new(ErrorKind::Io(e.kind()), 0)
+    }
+}
+
 impl fmt::Display for BitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
@@ -774,6 +784,42 @@ pub trait Source {
             self.byte_order(),
         )))
     }
+
+    /// Borrows this source as a [`std::io::Read`] over its bytes — for handing the
+    /// cursor to `std::io`-based code from a `#[br(parse_with = …)]` (e.g. a decoder, or
+    /// a `Read`-based parser). Reads 8 bits per byte; see [`SourceReader`].
+    fn as_read(&mut self) -> SourceReader<'_, Self>
+    where
+        Self: Sized,
+    {
+        SourceReader(self)
+    }
+}
+
+/// A [`std::io::Read`] view over a [`Source`], from [`Source::as_read`]. Each `read`
+/// pulls 8 bits per byte through [`Source::read_bits`], so it works at any bit
+/// alignment (you will normally be byte-aligned). A read failure surfaces as an
+/// `io::Error` when no bytes were produced, or ends the read short once some were — the
+/// `std::io` convention. This is the outbound dual of [`BufSource`]/[`SeekReader`] (which
+/// adapt a `std::io::Read` *into* a `Source`).
+pub struct SourceReader<'a, S: Source>(&'a mut S);
+
+impl<S: Source> std::io::Read for SourceReader<'_, S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        for (i, slot) in buf.iter_mut().enumerate() {
+            match self.0.read_bits(8) {
+                Ok(b) => *slot = b as u8,
+                Err(e) if i == 0 => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        e.to_string(),
+                    ));
+                }
+                Err(_) => return Ok(i),
+            }
+        }
+        Ok(buf.len())
+    }
 }
 
 /// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
@@ -825,6 +871,36 @@ pub trait Sink {
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
         let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte_order());
         self.write_bits(raw, T::BITS)
+    }
+
+    /// Borrows this sink as a [`std::io::Write`] — the dual of [`Source::as_read`], for
+    /// handing the cursor to `std::io`-based code from a `#[bw(write_with = …)]`. Writes 8
+    /// bits per byte; see [`SinkWriter`].
+    fn as_write(&mut self) -> SinkWriter<'_, Self>
+    where
+        Self: Sized,
+    {
+        SinkWriter(self)
+    }
+}
+
+/// A [`std::io::Write`] view over a [`Sink`], from [`Sink::as_write`]. Each `write`
+/// pushes 8 bits per byte through [`Sink::write_bits`]. The outbound dual of
+/// [`SourceReader`]; `flush` is a no-op (the sink owns its buffer).
+pub struct SinkWriter<'a, K: Sink>(&'a mut K);
+
+impl<K: Sink> std::io::Write for SinkWriter<'_, K> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &b in buf {
+            self.0
+                .write_bits(u128::from(b), 8)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
