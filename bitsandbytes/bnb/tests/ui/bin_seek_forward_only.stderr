@@ -1,0 +1,6 @@
+error: `#[br(seek = …)]` needs to seek, but the struct is `#[bin(forward_only)]`
+ --> tests/ui/bin_seek_forward_only.rs:8:5
+  |
+8 | /     #[br(seek = 16u32)]
+9 | |     target: u8,
+  | |______________^

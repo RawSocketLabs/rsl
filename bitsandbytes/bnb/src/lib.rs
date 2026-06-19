@@ -160,4 +160,7 @@ pub mod __private {
     };
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
+    /// Re-exported for the `#[br(dbg)]` directive's generated `trace!` call, so a user
+    /// of the directive needs no direct `tracing` dependency.
+    pub use ::tracing;
 }

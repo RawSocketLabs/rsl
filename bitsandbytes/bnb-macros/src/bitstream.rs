@@ -273,6 +273,16 @@ struct FieldBr {
     /// forward-only stream is a compile error (the slice entry points
     /// `decode`/`peek`/`decode_exact` always qualify).
     restore_position: bool,
+    /// `#[br(seek = <bits>)]` — before reading, jump the cursor to that **absolute**
+    /// bit offset (e.g. following a pointer). A read-side primitive (the writer is
+    /// append-only); pair with `restore_position` to read at an offset and return.
+    /// Like `restore_position` it seeks, so `decode_from` is bound on
+    /// [`SeekSource`](bnb::SeekSource). On encode the seek is a no-op — see the guide.
+    seek: Option<syn::Expr>,
+    /// `#[br(dbg)]` — emit a `tracing` event (TRACE level, target `bnb::dbg`) carrying
+    /// the field's start offset and decoded value as it is read (the field type must be
+    /// `Debug`). A read-only diagnostic: it consumes no extra bits and is inert on encode.
+    dbg: bool,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -290,6 +300,8 @@ enum BrDirective {
     AlignBefore,
     AlignAfter,
     RestorePosition,
+    Seek(syn::Expr),
+    Dbg,
 }
 
 impl Parse for BrDirective {
@@ -340,9 +352,14 @@ impl Parse for BrDirective {
                 "align_before" => Ok(BrDirective::AlignBefore),
                 "align_after" => Ok(BrDirective::AlignAfter),
                 "restore_position" => Ok(BrDirective::RestorePosition),
+                "seek" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::Seek(input.parse()?))
+                }
+                "dbg" => Ok(BrDirective::Dbg),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, or `restore_position`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, `restore_position`, `seek = <bits>`, or `dbg`",
                 )),
             }
         }
@@ -370,6 +387,8 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::AlignBefore => br.align_before = true,
                     BrDirective::AlignAfter => br.align_after = true,
                     BrDirective::RestorePosition => br.restore_position = true,
+                    BrDirective::Seek(e) => br.seek = Some(e),
+                    BrDirective::Dbg => br.dbg = true,
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -427,7 +446,7 @@ fn field_is_ignore(f: &syn::Field) -> bool {
 /// implements `FixedBitLen`: a `ctx` child (not `Bits`/`FixedBitLen`), a conditional
 /// `if` (present or absent), a custom codec (`map`/`try_map`/`parse_with`/`write_with`,
 /// whose wire shape lives in the converter), or a positioning directive
-/// (`pad_*`/`align_*`/`restore_position`, which shifts the cursor).
+/// (`pad_*`/`align_*`/`seek`/`restore_position`, which shifts the cursor).
 fn br_indeterminate(br: &FieldBr) -> bool {
     br.ctx.is_some()
         || br.cond.is_some()
@@ -441,6 +460,7 @@ fn br_indeterminate(br: &FieldBr) -> bool {
         || br.align_before
         || br.align_after
         || br.restore_position
+        || br.seek.is_some()
 }
 
 /// A reserved field — a normal stored field with a known **spec value** (the type's
@@ -568,16 +588,41 @@ fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
 fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let pre = pad_read_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_read_tokens(br.align_after, br.pad_after.as_ref());
+    // `seek = <bits>`: jump to an absolute bit offset before the read (following a
+    // pointer). Read-side only; emitted inside the `restore_position` wrap so the saved
+    // offset is the *pre-seek* one (read at the offset, then return).
+    let seek = br
+        .seek
+        .as_ref()
+        .map(|e| quote!(::bnb::__private::Source::seek_to_bit(r, (#e) as usize)?;));
     let mut core = field_read_core(f, br)?;
-    if br.restore_position {
-        // Peek: save the offset, read the field, rewind so later fields re-read it.
+    // `dbg`: trace the field's start offset and decoded value (the field must be
+    // `Debug`). Captured after any `seek`, so the offset is where the bits actually came
+    // from. TRACE level under target `bnb::dbg` — enable with `RUST_LOG=bnb::dbg=trace`.
+    if br.dbg {
+        let id = f.ident.as_ref().expect("named field");
         core = quote! {
-            let __pos = ::bnb::__private::Source::bit_pos(r);
+            let __dbg_at = ::bnb::__private::Source::bit_pos(r);
             #core
+            ::bnb::__private::tracing::trace!(
+                target: "bnb::dbg",
+                field = ::core::stringify!(#id),
+                at_bit = __dbg_at,
+                value = ?#id,
+            );
+        };
+    }
+    let mut body = quote!(#seek #core);
+    if br.restore_position {
+        // Peek: save the offset (before any seek), read the field, rewind so later
+        // fields re-read from where they were.
+        body = quote! {
+            let __pos = ::bnb::__private::Source::bit_pos(r);
+            #body
             ::bnb::__private::Source::seek_to_bit(r, __pos)?;
         };
     }
-    Ok(quote!(#pre #core #post))
+    Ok(quote!(#pre #body #post))
 }
 
 /// The core decode statement (without positioning).
@@ -989,15 +1034,18 @@ fn gen_decode(
     // any forward `Source` (including a streaming reader) works. The slice entry
     // points (`decode`/`peek`/`decode_exact`) always go through a seekable
     // `BitReader`, so they are unaffected.
-    let seeks = brs.iter().any(|br| br.restore_position);
+    let seeks = brs
+        .iter()
+        .any(|br| br.restore_position || br.seek.is_some());
     let from_bound = if seeks {
         quote!(::bnb::__private::SeekSource)
     } else {
         quote!(::bnb::__private::Source)
     };
     let from_doc = if seeks {
-        "Decode from an explicit **seekable** bit source. This message uses \
-         `restore_position`, so a forward-only stream is rejected at compile time."
+        "Decode from an explicit **seekable** bit source. This message uses a seeking \
+         directive (`restore_position`/`seek`), so a forward-only stream is rejected at \
+         compile time."
     } else {
         "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."
     };
@@ -1363,13 +1411,20 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     // error (it would need a `SeekSource`).
     if args.forward_only {
         for f in &full_fields.named {
-            if parse_field_br(f)
-                .map(|br| br.restore_position)
-                .unwrap_or(false)
-            {
+            let Ok(br) = parse_field_br(f) else { continue };
+            let seeking = if br.restore_position {
+                Some("restore_position")
+            } else if br.seek.is_some() {
+                Some("seek = …")
+            } else {
+                None
+            };
+            if let Some(name) = seeking {
                 return Err(syn::Error::new_spanned(
                     f,
-                    "`#[br(restore_position)]` needs to seek, but the struct is `#[bin(forward_only)]`",
+                    format!(
+                        "`#[br({name})]` needs to seek, but the struct is `#[bin(forward_only)]`"
+                    ),
                 ));
             }
         }

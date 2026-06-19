@@ -11,6 +11,10 @@ description = "An owned, bit-aware binary codec: fast bit/byte field types and t
 # crate cannot also export runtime items). Re-exported below so users only
 # depend on `bnb`.
 bnb-macros = { workspace = true }
+# Structured diagnostics: the `#[br(dbg)]` directive emits a `tracing` event (TRACE,
+# target `bnb::dbg`). The lightweight facade only — the workspace logging stance
+# (libraries emit events; the application installs the subscriber).
+tracing = { workspace = true }
 # Optional: zero-copy `Source`/`Sink` over the `bytes` crate (own a `Bytes` frame to
 # decode, encode to a `Bytes` to send) — for async/tokio framing. Off by default so
 # the core stays dependency-light; users off tokio never pull it in.

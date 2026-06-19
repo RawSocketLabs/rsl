@@ -236,3 +236,52 @@
 //! assert_eq!(p.full, 0xABCD);
 //! assert_eq!(p.to_bytes().unwrap(), [0xAB, 0xCD]); // `full` emits the bytes; `tag` does not
 //! ```
+//!
+//! # `seek` — read at an absolute offset (pointer-following)
+//!
+//! `#[br(seek = <bits>)]` jumps the cursor to an **absolute** bit offset before reading
+//! the field — the building block for offset tables and pointer chains. Bit/byte amounts
+//! come from the [`prelude`](crate::prelude) (`ptr.bytes()`, `n.bits()`). It is read-side
+//! (the writer is append-only); pair it with `restore_position` to read at the offset and
+//! return so later fields continue in order. Like `restore_position` it seeks, so
+//! `decode_from` on a forward-only stream is a compile error; the slice paths qualify.
+//!
+//! ```
+//! use bnb::{bin, prelude::*};
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Ptr {
+//!     ptr: u8,                                     // byte offset of `target`
+//!     #[br(seek = ptr.bytes(), restore_position)]
+//!     target: u8,                                  // read at `ptr`, then rewind
+//!     next: u8,                                    // continues right after `ptr`
+//! }
+//!
+//! // `peek` doesn't require full consumption (seek/restore leave the tail untouched).
+//! let p = Ptr::peek(&[0x03, 0x11, 0x22, 0xAB]).unwrap();
+//! assert_eq!((p.ptr, p.target, p.next), (3, 0xAB, 0x11));
+//! ```
+//!
+//! On encode the seek is a no-op (the writer appends), so a *relocated* layout won't
+//! round-trip through the default encoder — emit such formats with `write_with` /
+//! `write_only`, where you control placement.
+//!
+//! # `dbg` — trace a field as it decodes
+//!
+//! `#[br(dbg)]` emits a [`tracing`](https://docs.rs/tracing) event as the field is read,
+//! carrying its start bit offset and decoded value (the field type must be `Debug`). It
+//! is a read-side diagnostic — no extra bits are consumed and encode is unaffected. The
+//! event is at `TRACE` level under the `bnb::dbg` target, so you can surface just these
+//! with `RUST_LOG=bnb::dbg=trace` (the application installs the subscriber; libraries
+//! only emit).
+//!
+//! ```
+//! use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Framed { tag: u8, #[br(dbg)] len: u16 }
+//!
+//! // Decoding is identical with or without `dbg`; it just also traces `len`.
+//! let f = Framed::decode_exact(&[0x01, 0x00, 0x2A]).unwrap();
+//! assert_eq!(f, Framed { tag: 1, len: 42 });
+//! ```
