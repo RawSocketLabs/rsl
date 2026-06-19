@@ -716,7 +716,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         Ok(quote! {
             let #id = {
                 let __n = (#count) as usize;
-                let mut __v: ::std::vec::Vec<#elem> = ::std::vec::Vec::new();
+                let mut __v: ::bnb::__private::Vec<#elem> = ::bnb::__private::Vec::new();
                 for _ in 0..__n {
                     #read_elem
                     __v.push(__e);
@@ -1258,7 +1258,7 @@ fn gen_encode(
                 pub fn to_bytes_with(
                     &self,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
                     ::bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx))
                 }
             }
@@ -1288,32 +1288,33 @@ fn gen_encode(
             .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
             .collect::<syn::Result<Vec<_>>>()?;
         quote! {
-            impl #name {
-                #[doc = "Encode with reserved fields written as their spec value (ignoring any stored override), to a `Vec<u8>`."]
-                pub fn to_spec_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_vec_with(#layout, |w| self.__bit_encode_spec(w))
-                }
-                #[doc = "Encode with reserved fields written as their spec value, to any `std::io::Write`."]
-                pub fn spec_encode<W: ::std::io::Write>(
-                    &self,
-                    w: &mut W,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_writer_with(w, #layout, |bw| self.__bit_encode_spec(bw))
-                }
-                #[doc = "Encode with reserved fields written as their spec value, into an explicit bit sink."]
-                pub fn spec_encode_into<K: ::bnb::__private::Sink>(
-                    &self,
-                    w: &mut K,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    self.__bit_encode_spec(w)
-                }
-                fn __bit_encode_spec<K: ::bnb::__private::Sink>(
+            impl ::bnb::SpecEncode for #name {
+                const SPEC_LAYOUT: ::bnb::Layout = #layout;
+                fn spec_bit_encode<K: ::bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                 ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
                     #magic_write
                     #(#writes_spec)*
                     ::core::result::Result::Ok(())
+                }
+            }
+            impl #name {
+                #[doc = "Encode with reserved fields written as their spec value (ignoring any stored"]
+                #[doc = "override), to a `Vec<u8>`. For a `std::io::Write` sink, bring"]
+                #[doc = "[`SpecEncodeExt`](::bnb::SpecEncodeExt) into scope and call `.spec_encode(&mut w)` (the `std` feature)."]
+                pub fn to_spec_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_vec_with(
+                        #layout,
+                        |w| <Self as ::bnb::SpecEncode>::spec_bit_encode(self, w),
+                    )
+                }
+                #[doc = "Encode with reserved fields written as their spec value, into an explicit bit sink."]
+                pub fn spec_encode_into<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    <Self as ::bnb::SpecEncode>::spec_bit_encode(self, w)
                 }
             }
         }
@@ -1342,6 +1343,7 @@ fn gen_encode(
     Ok(quote! {
         #guard
         impl ::bnb::BitEncode for #name {
+            const LAYOUT: ::bnb::Layout = #layout;
             fn bit_encode<K: ::bnb::__private::Sink>(
                 &self,
                 w: &mut K,
@@ -1353,15 +1355,9 @@ fn gen_encode(
         }
 
         impl #name {
-            #[doc = "Encode to any `std::io::Write` (socket, file, `Vec`)."]
-            pub fn encode<W: ::std::io::Write>(
-                &self,
-                w: &mut W,
-            ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                ::bnb::__private::encode_to_writer(self, w, #layout)
-            }
-            #[doc = "Encode to a `Vec<u8>`."]
-            pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+            #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
+            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
+            pub fn to_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
                 ::bnb::__private::encode_to_vec(self, #layout)
             }
             #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
@@ -1825,7 +1821,9 @@ enum Magic {
     /// A byte-string/byte literal — its raw bytes.
     Bytes(Vec<u8>),
     /// A byte-aligned unsigned integer literal — the expression and its byte width.
-    Int { value: syn::Expr, width: usize },
+    /// `value` is boxed: `syn::Expr` is large (~240 bytes), so an unboxed variant would
+    /// dominate the enum's size (`clippy::large_enum_variant`).
+    Int { value: Box<syn::Expr>, width: usize },
 }
 
 /// The unsigned integer type token for a byte width (1/2/4/8/16).
@@ -1907,7 +1905,7 @@ impl Magic {
             if #binding != #expected {
                 return ::core::result::Result::Err(
                     ::bnb::__private::BitError::convert(
-                        ::std::string::String::from(#msg),
+                        ::bnb::__private::String::from(#msg),
                         ::bnb::__private::Source::bit_pos(r),
                     ).in_field("magic"),
                 );
@@ -1939,7 +1937,7 @@ fn parse_magic(expr: &syn::Expr) -> syn::Result<Magic> {
     if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = expr {
         match lit {
             syn::Lit::ByteStr(s) => return Ok(Magic::Bytes(s.value())),
-            syn::Lit::Byte(b) => return Ok(Magic::Bytes(::std::vec![b.value()])),
+            syn::Lit::Byte(b) => return Ok(Magic::Bytes(vec![b.value()])),
             syn::Lit::Int(li) => {
                 let width = match li.suffix() {
                     "u8" => 1usize,
@@ -1963,7 +1961,7 @@ fn parse_magic(expr: &syn::Expr) -> syn::Result<Magic> {
                     }
                 };
                 return Ok(Magic::Int {
-                    value: expr.clone(),
+                    value: Box::new(expr.clone()),
                     width,
                 });
             }
@@ -2408,7 +2406,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     } else {
         quote! {{
             ::core::result::Result::Err(::bnb::__private::BitError::convert(
-                ::std::string::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
+                ::bnb::__private::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
                 ::bnb::__private::Source::bit_pos(r),
             ).in_field(#disc_field))
         }}
@@ -2686,7 +2684,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             .unwrap_or_else(|| {
                 quote!(::core::result::Result::Err(
                     ::bnb::__private::BitError::convert(
-                        ::std::string::String::from(concat!(
+                        ::bnb::__private::String::from(concat!(
                             "unrecognized ",
                             stringify!(#name),
                             " discriminant"
@@ -2848,7 +2846,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 pub fn to_bytes_with(
                     &self,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
                     ::bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx.clone()))
                 }
             }
@@ -2881,6 +2879,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         });
         quote! {
             impl ::bnb::BitEncode for #name {
+                const LAYOUT: ::bnb::Layout = #layout;
                 fn bit_encode<K: ::bnb::__private::Sink>(
                     &self,
                     w: &mut K,
@@ -2889,15 +2888,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             impl #name {
-                #[doc = "Encode to any `std::io::Write` (socket, file, `Vec`)."]
-                pub fn encode<W: ::std::io::Write>(
-                    &self,
-                    w: &mut W,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_writer(self, w, #layout)
-                }
-                #[doc = "Encode to a `Vec<u8>`."]
-                pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
+                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
+                pub fn to_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
                     ::bnb::__private::encode_to_vec(self, #layout)
                 }
                 #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]

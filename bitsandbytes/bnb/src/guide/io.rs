@@ -74,6 +74,7 @@
 //!
 //! ```
 //! use bnb::bin;
+//! use bnb::EncodeExt;   // brings `.encode(&mut impl Write)` into scope (the `std` feature)
 //! # #[bin(big)] #[derive(Debug, PartialEq)] struct Word { value: u32 }
 //! let w = Word { value: 0x1234_5678 };
 //! assert_eq!(w.to_bytes().unwrap(), [0x12, 0x34, 0x56, 0x78]);

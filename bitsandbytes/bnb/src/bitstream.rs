@@ -27,6 +27,8 @@
 //! assert_eq!(r.read::<u12>().unwrap(), u12::new(0xBCD));
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 use crate::field::{BitOrder, Bits, ByteOrder};
@@ -91,7 +93,8 @@ pub enum ErrorKind {
         /// The offending width.
         width: usize,
     },
-    /// An I/O error while encoding to a [`std::io::Write`] sink.
+    /// An I/O error while encoding to a [`std::io::Write`] sink (the `std` feature).
+    #[cfg(feature = "std")]
     Io(std::io::ErrorKind),
     /// A `magic` constant read off the wire did not match. Both values are the
     /// type-erased low-bit representations ([`Bits::into_bits`]).
@@ -165,6 +168,7 @@ impl BitError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for BitError {
     /// Wraps a [`std::io::Error`] as [`ErrorKind::Io`] — so a `parse_with`/`write_with`
     /// using [`Source::as_read`]/[`Sink::as_write`] can `?` `std::io` results straight
@@ -192,6 +196,7 @@ impl fmt::Display for BitError {
             ErrorKind::TooWide { width } => {
                 write!(f, "field width {width} exceeds the 128-bit carrier")?;
             }
+            #[cfg(feature = "std")]
             ErrorKind::Io(kind) => write!(f, "I/O error: {kind:?}")?,
             ErrorKind::BadMagic { expected, found } => {
                 write!(f, "bad magic: expected {expected:#x}, found {found:#x}")?;
@@ -214,7 +219,7 @@ impl fmt::Display for BitError {
     }
 }
 
-impl std::error::Error for BitError {}
+impl core::error::Error for BitError {}
 
 impl From<crate::error::Error> for BitError {
     /// Bridges a construction error (e.g. `UInt::try_new`) into a codec error, so it
@@ -787,7 +792,9 @@ pub trait Source {
 
     /// Borrows this source as a [`std::io::Read`] over its bytes — for handing the
     /// cursor to `std::io`-based code from a `#[br(parse_with = …)]` (e.g. a decoder, or
-    /// a `Read`-based parser). Reads 8 bits per byte; see [`SourceReader`].
+    /// a `Read`-based parser). Reads 8 bits per byte; see [`SourceReader`]. Only with
+    /// the `std` feature.
+    #[cfg(feature = "std")]
     fn as_read(&mut self) -> SourceReader<'_, Self>
     where
         Self: Sized,
@@ -802,8 +809,10 @@ pub trait Source {
 /// `io::Error` when no bytes were produced, or ends the read short once some were — the
 /// `std::io` convention. This is the outbound dual of [`BufSource`]/[`SeekReader`] (which
 /// adapt a `std::io::Read` *into* a `Source`).
+#[cfg(feature = "std")]
 pub struct SourceReader<'a, S: Source>(&'a mut S);
 
+#[cfg(feature = "std")]
 impl<S: Source> std::io::Read for SourceReader<'_, S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         for (i, slot) in buf.iter_mut().enumerate() {
@@ -875,7 +884,8 @@ pub trait Sink {
 
     /// Borrows this sink as a [`std::io::Write`] — the dual of [`Source::as_read`], for
     /// handing the cursor to `std::io`-based code from a `#[bw(write_with = …)]`. Writes 8
-    /// bits per byte; see [`SinkWriter`].
+    /// bits per byte; see [`SinkWriter`]. Only with the `std` feature.
+    #[cfg(feature = "std")]
     fn as_write(&mut self) -> SinkWriter<'_, Self>
     where
         Self: Sized,
@@ -887,8 +897,10 @@ pub trait Sink {
 /// A [`std::io::Write`] view over a [`Sink`], from [`Sink::as_write`]. Each `write`
 /// pushes 8 bits per byte through [`Sink::write_bits`]. The outbound dual of
 /// [`SourceReader`]; `flush` is a no-op (the sink owns its buffer).
+#[cfg(feature = "std")]
 pub struct SinkWriter<'a, K: Sink>(&'a mut K);
 
+#[cfg(feature = "std")]
 impl<K: Sink> std::io::Write for SinkWriter<'_, K> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         for &b in buf {
@@ -981,12 +993,80 @@ pub trait FixedBitLen {
 
 /// A message encoded to a bit stream — the dual of [`BitDecode`].
 pub trait BitEncode {
+    /// The message's bit/byte order, used to size a fresh [`BitWriter`] when
+    /// encoding to a `Vec`/writer. The derive sets it from the struct's declared
+    /// `bit_order`/`bytes`; a hand-written impl that only ever encodes into a
+    /// caller-supplied [`Sink`] can leave the default.
+    const LAYOUT: Layout = Layout {
+        bit: BitOrder::Msb,
+        byte: ByteOrder::Big,
+    };
+
     /// Encodes `self` into any [`Sink`], advancing its cursor.
     ///
     /// # Errors
     /// Propagates the sink's [`BitError`].
     fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
 }
+
+/// `encode(writer)` for any [`BitEncode`] message — encodes to a `Vec` (using the
+/// type's [`LAYOUT`](BitEncode::LAYOUT)) and writes it to a [`std::io::Write`]
+/// sink. A blanket-implemented extension trait, so bring it into scope
+/// (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w)`.
+/// Only available with the `std` feature; in `no_std` use [`BitEncode`]'s
+/// generated `to_bytes`/`encode_into`.
+#[cfg(feature = "std")]
+pub trait EncodeExt: BitEncode {
+    /// Encodes `self` to any [`std::io::Write`] (socket, file, `Vec`).
+    ///
+    /// # Errors
+    /// [`ErrorKind::Io`] on a write failure, else the encode error.
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
+    where
+        Self: Sized,
+    {
+        encode_to_writer(self, w, Self::LAYOUT)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: BitEncode> EncodeExt for T {}
+
+/// The "write reserved fields as their spec value" encode path, generated for a
+/// `#[bin]` message that has a `reserved` field. The inherent `to_spec_bytes` /
+/// `spec_encode_into` ride on this; the `std`-only [`SpecEncodeExt`] adds
+/// `spec_encode(writer)`.
+pub trait SpecEncode {
+    /// The message's bit/byte order (mirrors [`BitEncode::LAYOUT`]).
+    const SPEC_LAYOUT: Layout;
+
+    /// Encodes `self` into a [`Sink`], writing reserved fields as their spec value
+    /// (ignoring any stored override).
+    ///
+    /// # Errors
+    /// Propagates the sink's [`BitError`].
+    fn spec_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
+}
+
+/// `spec_encode(writer)` for any [`SpecEncode`] message — the spec-value dual of
+/// [`EncodeExt`]. Blanket-implemented; bring it into scope to call it. Only with
+/// the `std` feature; in `no_std` use the generated `to_spec_bytes`.
+#[cfg(feature = "std")]
+pub trait SpecEncodeExt: SpecEncode {
+    /// Encodes `self` to any [`std::io::Write`], reserved fields as their spec value.
+    ///
+    /// # Errors
+    /// [`ErrorKind::Io`] on a write failure, else the encode error.
+    fn spec_encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
+    where
+        Self: Sized,
+    {
+        encode_to_writer_with(w, Self::SPEC_LAYOUT, |bw| self.spec_bit_encode(bw))
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: SpecEncode> SpecEncodeExt for T {}
 
 /// Polymorphic decode **with context** `A` — the companion to a `#[bin(ctx(...))]`
 /// type's inherent `decode_with`, for hand-written generic combinators and
@@ -1147,10 +1227,11 @@ pub fn encode_to_vec<T: BitEncode>(value: &T, layout: Layout) -> Result<Vec<u8>,
     Ok(w.into_bytes())
 }
 
-/// Encodes `value` to any [`std::io::Write`]. Backs `Type::encode`.
+/// Encodes `value` to any [`std::io::Write`]. Backs [`EncodeExt::encode`].
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the encode error.
+#[cfg(feature = "std")]
 #[doc(hidden)]
 pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
     value: &T,
@@ -1164,11 +1245,12 @@ pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
         .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
 }
 
-/// `encode_to_writer` over a caller-supplied encode closure — backs a `spec_*`
-/// message's `spec_encode` (whose write body differs from the plain `bit_encode`).
+/// `encode_to_writer` over a caller-supplied encode closure — backs
+/// [`SpecEncodeExt::spec_encode`] (whose write body differs from the plain `bit_encode`).
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the closure's error.
+#[cfg(feature = "std")]
 #[doc(hidden)]
 pub fn encode_to_writer_with<W, F>(w: &mut W, layout: Layout, f: F) -> Result<(), BitError>
 where
@@ -1257,6 +1339,7 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 /// let mut s = StreamBitReader::new(data);
 /// assert_eq!(Word::decode_from(&mut s).unwrap(), Word { value: 0x1234_5678 });
 /// ```
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct StreamBitReader<R> {
     inner: R,
@@ -1269,6 +1352,7 @@ pub struct StreamBitReader<R> {
     pos: usize,
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> StreamBitReader<R> {
     /// Wraps a byte source.
     pub fn new(inner: R) -> Self {
@@ -1339,6 +1423,7 @@ impl<R: std::io::Read> StreamBitReader<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> Source for StreamBitReader<R> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         StreamBitReader::read_bits(self, n)
@@ -1367,6 +1452,7 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
 /// let mut src = BufSource::new(&[0x12, 0x34, 0x56, 0x78][..]); // any `Read`
 /// assert_eq!(Word::decode_from(&mut src).unwrap(), Word { value: 0x1234_5678 });
 /// ```
+#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct BufSource<R> {
     inner: R,
@@ -1377,6 +1463,7 @@ pub struct BufSource<R> {
     eof: bool,
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> BufSource<R> {
     /// Wraps `inner` with the default 64 KiB retention cap, MSB-first big-endian.
     #[must_use]
@@ -1431,6 +1518,7 @@ impl<R: std::io::Read> BufSource<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> Source for BufSource<R> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 128 {
@@ -1467,6 +1555,7 @@ impl<R: std::io::Read> Source for BufSource<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> SeekSource for BufSource<R> {}
 
 /// A [`SeekSource`] over a seekable reader (`Read + Seek`, e.g. a `File`): it seeks
@@ -1487,6 +1576,7 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// let mut f = SeekReader::new(Cursor::new(vec![0x12u8, 0x34, 0x56, 0x78]));
 /// assert_eq!(Word::decode_from(&mut f).unwrap(), Word { value: 0x1234_5678 });
 /// ```
+#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct SeekReader<R> {
     inner: R,
@@ -1494,6 +1584,7 @@ pub struct SeekReader<R> {
     layout: Layout,
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> SeekReader<R> {
     /// Wraps `inner` at bit 0, MSB-first big-endian.
     #[must_use]
@@ -1512,6 +1603,7 @@ impl<R: std::io::Read + std::io::Seek> SeekReader<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 128 {
@@ -1554,6 +1646,7 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature): own a `Bytes` frame to

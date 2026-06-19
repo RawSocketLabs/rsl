@@ -190,6 +190,40 @@ forbids seek directives outright. The in-memory cursor needs no `Seek` trait at 
 the whole buffer is in hand, so a seek is just cursor arithmetic (which also enables
 e.g. DNS name-compression pointer following).
 
+### 6.1 `no_std` and the `std` feature (Option A)
+
+`bnb` is `no_std` + `alloc`. `alloc` is unconditional — the codec's output model *is*
+`Vec<u8>` (and `count` payloads / error strings own heap), so a heapless variant would
+be a different crate, not a feature. The default-on **`std`** feature adds only the
+rows of the table above that are backed by `std::io` (`StreamBitReader`/`BufSource`/
+`SeekReader`, the `as_read`/`as_write` views), the `From<std::io::Error>` bridge +
+`ErrorKind::Io`, and the `encode(writer)`/`spec_encode(writer)` conveniences. The
+forward-only/seekable distinction is unchanged; `no_std` simply has fewer `Source`
+implementations to feed `decode_from` (the in-memory `BitReader`, and `BytesReader`
+under `bytes`).
+
+The chosen boundary is **buffer-at-a-time, not streaming** ("Option A"): `no_std`
+decodes from a `&[u8]` and encodes to a `Vec<u8>`, then the caller writes those bytes to
+its transport. This fits the workspace's datagram-oriented protocols (a UDP/ICMP/DNS
+packet arrives whole) and keeps the change small and dependency-light. Two consequences
+fall out of *a proc-macro cannot see the consumer crate's feature flags*:
+
+- **`encode(writer)` is a blanket extension trait, not a generated inherent method.**
+  `EncodeExt`/`SpecEncodeExt` are `std`-gated and blanket-implemented over
+  `BitEncode`/`SpecEncode`, so they appear exactly when `bnb/std` is on — whereas a
+  `#[cfg(feature = "std")]` emitted into a generated method would key off the *user
+  crate's* feature name and silently vanish for a default `cargo add bnb`. Cost: callers
+  bring the trait into scope (`use bnb::prelude::*`). `to_bytes`/`encode_into` stay
+  inherent (no import), so the common path is unaffected.
+- **`BitEncode` carries `const LAYOUT`** so the blanket `encode` can build a correctly
+  ordered `BitWriter` without the per-type layout literal the old inherent method had.
+- **`#[br(dbg)]` is `std`-only.** It emits a `tracing` event, and `tracing`'s default
+  features link `std`; the workspace dep can't be overridden per-member, so `tracing` is
+  an optional dep pulled in by `bnb`'s `std` feature. An embedded build uses its own
+  logger. **A future "Option B"** (an in-house `bnb::io` `Read`/`Write`/`Seek`
+  abstraction, à la `embedded-io`) would unify the code path and bring streaming to
+  `no_std`; it is deferred until an embedded byte-stream transport (TCP/serial) needs it.
+
 ## 7. Dual-use by default
 
 The crates are **compliant by default, deliberately violatable**:

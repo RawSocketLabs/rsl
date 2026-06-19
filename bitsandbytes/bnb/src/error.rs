@@ -43,7 +43,7 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 /// A `Result` specialized to [`Error`].
 pub type Result<T> = core::result::Result<T, Error>;
@@ -89,4 +89,4 @@ impl fmt::Display for UnknownDiscriminant {
     }
 }
 
-impl std::error::Error for UnknownDiscriminant {}
+impl core::error::Error for UnknownDiscriminant {}

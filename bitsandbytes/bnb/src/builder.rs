@@ -1,5 +1,6 @@
 //! Support types for `#[derive(BitsBuilder)]` and `#[bin]`.
 
+use alloc::string::String;
 use core::fmt;
 
 /// The error a generated builder's `build()` returns.
@@ -67,4 +68,4 @@ impl fmt::Display for BuilderError {
     }
 }
 
-impl std::error::Error for BuilderError {}
+impl core::error::Error for BuilderError {}

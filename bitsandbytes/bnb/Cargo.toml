@@ -12,18 +12,25 @@ description = "An owned, bit-aware binary codec: fast bit/byte field types and t
 # depend on `bnb`.
 bnb-macros = { workspace = true }
 # Structured diagnostics: the `#[br(dbg)]` directive emits a `tracing` event (TRACE,
-# target `bnb::dbg`). The lightweight facade only — the workspace logging stance
-# (libraries emit events; the application installs the subscriber).
-tracing = { workspace = true }
+# target `bnb::dbg`). Optional, pulled in by the `std` feature — `tracing`'s default
+# features link `std`, and the workspace dep can't be overridden here, so `#[br(dbg)]`
+# is a `std`-only debugging aid (an embedded build uses its own logger).
+tracing = { workspace = true, optional = true }
 # Optional: zero-copy `Source`/`Sink` over the `bytes` crate (own a `Bytes` frame to
 # decode, encode to a `Bytes` to send) — for async/tokio framing. Off by default so
-# the core stays dependency-light; users off tokio never pull it in.
+# the core stays dependency-light; users off tokio never pull it in. The adapters are
+# inherently a std/tokio concern, so the `bytes` feature also turns on `std`.
 bytes = { workspace = true, optional = true }
 
 [features]
-default = []
-# `bytes`-crate adapters (`BytesReader`/`BytesWriter`).
-bytes = ["dep:bytes"]
+# `std` (default) enables the `std::io` ladder (`StreamBitReader`/`BufSource`/
+# `SeekReader`, `encode(writer)`/`spec_encode(writer)`, `From<std::io::Error>`) and the
+# `tracing`-backed `#[br(dbg)]` directive. Without it `bnb` is `no_std` — it always
+# needs `alloc`: decode from `&[u8]`, encode to `Vec<u8>`.
+default = ["std"]
+std = ["dep:tracing"]
+# `bytes`-crate adapters (`BytesReader`/`BytesWriter`); imply `std` (tokio framing).
+bytes = ["dep:bytes", "std"]
 
 [dev-dependencies]
 # Compile-fail UI tests: assert that `#[bin]`/`#[bitfield]` misuse is rejected with

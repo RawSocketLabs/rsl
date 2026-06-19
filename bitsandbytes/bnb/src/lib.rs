@@ -74,6 +74,25 @@ Whole-message bit-aware codec: `#[bin]` (magic/count/ctx/map/if/calc·temp/reser
 positioning/validate) over a `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O
 ladder, with an opt-in `bytes` feature for async framing.
 
+# Feature flags & `no_std`
+
+`bnb` is `no_std`-compatible — it always needs `alloc` (the codec produces
+`Vec<u8>` and owns variable-length payloads), but not `std`. Build with
+`default-features = false` for an embedded target.
+
+- **`std`** *(default)* — the `std::io` ladder ([`StreamBitReader`], [`BufSource`],
+  [`SeekReader`], [`Source::as_read`]/[`Sink::as_write`]), the `From<std::io::Error>`
+  bridge, and the `encode(writer)`/`spec_encode(writer)` conveniences ([`EncodeExt`]/
+  [`SpecEncodeExt`]). The `#[br(dbg)]` directive (which emits a `tracing` event) is
+  also `std`-only.
+- **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
+
+Without `std` you still get the full macro surface plus: decode from a `&[u8]`
+([`BitReader`], `Type::decode`/`decode_exact`/`peek`/`decode_from`) and encode to a
+`Vec<u8>` (`Type::to_bytes`/`to_spec_bytes`, `encode_into` over a [`Sink`]). You lose
+only the streaming `std::io` adapters and `encode(&mut impl Write)`; on `no_std`,
+encode with `to_bytes()` and write the bytes to your transport yourself.
+
 # Inspiration
 
 `bnb` stands on the shoulders of several excellent crates, collapsing their
@@ -112,6 +131,13 @@ tour of the crate and the rationale behind each piece. Reading order:
 // Every public item must be documented (the `uN` aliases are the one self-
 // evident exception, allowed at their module).
 #![deny(missing_docs)]
+// `bnb` is `no_std` when built without the (default) `std` feature; `alloc` is
+// always required — the codec produces `Vec<u8>` and owns variable-length
+// payloads/error messages. The `std` feature re-enables the `std::io` ladder
+// (`StreamBitReader`/`BufSource`/`SeekReader`, `encode(writer)`).
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 pub mod bitstream;
 pub mod builder;
@@ -121,9 +147,16 @@ pub mod guide;
 pub mod int;
 
 pub use bitstream::{
-    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, BufSource, DecodeWith,
-    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekReader, SeekSource, Sink, SinkWriter, Source,
-    SourceReader, StreamBitReader,
+    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, DecodeWith, EncodeWith,
+    ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source, SpecEncode,
+};
+
+/// The `std::io` I/O ladder and writer conveniences — only with the (default)
+/// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
+/// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_spec_bytes`).
+#[cfg(feature = "std")]
+pub use bitstream::{
+    BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, SpecEncodeExt, StreamBitReader,
 };
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
@@ -131,9 +164,12 @@ pub use bitstream::{
 pub use bitstream::{BytesReader, BytesWriter};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
-/// `3.bytes()`) used by `#[br(pad_before = …)]` etc.
+/// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the encode extension
+/// traits that carry `encode(writer)`/`spec_encode(writer)` (the `std` feature).
 pub mod prelude {
     pub use crate::BitAmount;
+    #[cfg(feature = "std")]
+    pub use crate::{EncodeExt, SpecEncodeExt};
 }
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
@@ -156,12 +192,20 @@ pub mod __private {
         BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, SeekSource,
         Sink, Source, align_read, align_write, bits_of, decode_consume, decode_exact,
         decode_exact_with, decode_peek, decode_peek_with, encode_to_vec, encode_to_vec_with,
-        encode_to_writer, encode_to_writer_with, peek_bytes, read_byte_array, read_mapped,
-        read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array, write_mapped,
+        peek_bytes, read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write,
+        verify_magic, write_byte_array, write_mapped,
     };
+    /// The `std::io::Write`-based encode helpers, behind the `std` feature.
+    #[cfg(feature = "std")]
+    pub use crate::bitstream::{encode_to_writer, encode_to_writer_with};
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
+    /// Owned-collection re-exports so macro-generated code names neither `std` nor
+    /// `alloc` directly (the user crate need not declare `extern crate alloc`).
+    pub use ::alloc::{string::String, vec, vec::Vec};
     /// Re-exported for the `#[br(dbg)]` directive's generated `trace!` call, so a user
-    /// of the directive needs no direct `tracing` dependency.
+    /// of the directive needs no direct `tracing` dependency. `#[br(dbg)]` is a
+    /// `std`-only debugging aid (see the `tracing` dependency note in `Cargo.toml`).
+    #[cfg(feature = "std")]
     pub use ::tracing;
 }

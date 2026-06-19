@@ -2,7 +2,7 @@
 //! `decode_from` + `encode`/`to_bytes`/`encode_into`, with the `Incomplete`
 //! (streaming) and `TrailingBytes` (strict) signals.
 
-use bnb::{BitDecode, BitEncode, BitReader, ErrorKind, StreamBitReader, u4, u12};
+use bnb::{BitDecode, BitEncode, BitReader, EncodeExt, ErrorKind, StreamBitReader, u4, u12};
 use std::io::Cursor;
 
 #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]

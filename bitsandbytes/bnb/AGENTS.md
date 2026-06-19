@@ -100,6 +100,28 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
 
+## `no_std` (Option A) — the `std` feature
+
+`bnb` is `no_std` + `alloc`; the default-on **`std`** feature adds everything backed by
+`std::io`. **Load-bearing facts when editing the codec/macros:**
+
+- `alloc` is unconditional (`extern crate alloc` in `lib.rs`); use `alloc::{vec::Vec,
+  string::{String, ToString}}` in the runtime, and emit `::bnb::__private::{Vec, String,
+  vec}` from the macros — **never `::std::…` inside a `quote!`** (it breaks `no_std`
+  consumers). Errors impl `core::error::Error`, not `std::error::Error`.
+- Gate behind `#[cfg(feature = "std")]`: the reader/writer adapters (`StreamBitReader`/
+  `BufSource`/`SeekReader`/`SourceReader`/`SinkWriter`, `as_read`/`as_write`),
+  `encode_to_writer*`, `From<std::io::Error>`, and `ErrorKind::Io`.
+- `encode(writer)`/`spec_encode(writer)` are **`std`-gated blanket extension traits**
+  (`EncodeExt: BitEncode` / `SpecEncodeExt: SpecEncode`), **not** generated inherent
+  methods — a proc-macro can't see the consumer's features, so a generated
+  `#[cfg(feature="std")]` would key off the *wrong* crate's flag. The generated code
+  emits `to_bytes`/`encode_into`/`to_spec_bytes`/`spec_encode_into` (inherent, portable)
+  plus `impl BitEncode { const LAYOUT }` and `impl SpecEncode` (the ext traits read
+  `LAYOUT`/`SPEC_LAYOUT`). Call sites need `use bnb::prelude::*`.
+- `#[br(dbg)]` is `std`-only (`tracing` is an optional dep enabled by `std`); the
+  `__private::tracing` re-export is `std`-gated.
+
 ### Low-level `#[derive(BitDecode/BitEncode)]` + the right-tool guard
 
 The bare derives are the codec without the builder/`#[bin]` sugar — use them when
@@ -140,6 +162,10 @@ confusion, not remove it).
 ```bash
 RUSTC_WRAPPER= cargo test -p bnb                 # core codec (default features)
 RUSTC_WRAPPER= cargo test -p bnb --features bytes # + the bytes-crate I/O adapters
+# no_std proof: build the detached smoke crate for a bare-metal target (std off).
+# A host `--no-default-features` build still links std, so the cross target is the
+# one that actually fails on a leak.
+RUSTC_WRAPPER= cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
 ```
 
 - `src/{int,field}.rs` unit tests — int ranges/conversions, `Bits` impls.

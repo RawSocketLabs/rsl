@@ -66,6 +66,20 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] Seeking enforced in the type system: a `restore_position` message's `decode_from`
       is bound on `SeekSource`, so a forward-only stream is a compile error.
 
+## `no_std`
+
+- [x] `no_std` + `alloc` behind a default-on **`std`** feature (Option A — buffer-at-a-
+      time, not streaming). Without `std`: full macro surface, decode from `&[u8]`,
+      encode to `Vec<u8>` (`to_bytes`/`to_spec_bytes`/`encode_into`). Verified by
+      building `bnb/nostd-check` for `thumbv7em-none-eabi`.
+- [x] `std` gates the `std::io` ladder (`StreamBitReader`/`BufSource`/`SeekReader`,
+      `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
+      `encode(writer)`/`spec_encode(writer)` extension traits (`EncodeExt`/`SpecEncodeExt`).
+      `#[br(dbg)]` (a `tracing` event) is `std`-only.
+- [ ] **Option B** (deferred) — an in-house `bnb::io` `Read`/`Write`/`Seek` abstraction
+      to bring streaming I/O to `no_std` and unify the code path; revisit when an
+      embedded byte-stream transport (TCP/serial) needs it.
+
 ## Cross-cutting
 
 - [x] **Dual-use** — compliant defaults, permissive parsers (`#[catch_all]`, retained

@@ -1,0 +1,15 @@
+[package]
+name = "bnb-nostd-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Detached from the parent workspace on purpose: this crate exists only to be
+# built for a bare-metal target (`thumbv7em-none-eabi`) with `bnb`'s `std` feature
+# off, proving the runtime *and* macro-generated code use only `core` + `alloc`.
+# Its own `[workspace]` table keeps `cargo build`/`test` at the repo root from
+# pulling it into the normal workspace build.
+[workspace]
+
+[dependencies]
+bnb = { path = "..", default-features = false }
