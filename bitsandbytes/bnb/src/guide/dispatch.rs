@@ -117,6 +117,52 @@
 //! assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
 //! ```
 //!
+//! # Variable-width magics and a typed fallback
+//!
+//! Byte-string magics may differ in length: dispatch then **peeks** the longest, matches
+//! a prefix, and seeks past the winner (so it needs a seekable source). A variant with
+//! **no** `tag`/`magic` is a *typed fallback*, parsed when nothing matched; use a
+//! fallback **or** a `#[catch_all]` (which here reads from the unconsumed position), not
+//! both. Where nothing matches, the unmatched bytes are still there to read.
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! enum Frame {
+//!     #[bin(magic = b"LOGIN")] Login { user: u32 }, // 5-byte magic
+//!     #[bin(magic = b"BYE")]   Bye,                  // 3-byte magic
+//!     Raw { len: u8, #[br(count = len)] body: Vec<u8> }, // typed fallback
+//! }
+//!
+//! assert_eq!(Frame::decode_exact(b"BYE").unwrap(), Frame::Bye);
+//! assert_eq!(Frame::decode_exact(&[0x02, 0xAA, 0xBB]).unwrap(),
+//!            Frame::Raw { len: 2, body: vec![0xAA, 0xBB] });
+//! ```
+//!
+//! # Hybrid: `tag` priority, then `magic`
+//!
+//! One enum can mix both — the selector picks a tag variant first, and an **unmatched**
+//! selector falls through to magic dispatch:
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! #[bin(big, ctx(kind: u8), tag = kind)]
+//! #[derive(Debug, PartialEq)]
+//! enum Packet {
+//!     #[bin(tag = 1)]          Known(u16),          // chosen by kind == 1
+//!     #[bin(magic = b"EXT")]   Extended { sub: u8 }, // else matched by wire magic
+//!     #[catch_all]             Other { magic: [u8; 3], #[br(count = 1)] rest: Vec<u8> },
+//! }
+//!
+//! assert_eq!(Packet::decode_with_exact(&[0xAB, 0xCD], PacketCtx { kind: 1 }).unwrap(),
+//!            Packet::Known(0xABCD));
+//! assert_eq!(Packet::decode_with_exact(b"EXT\x05", PacketCtx { kind: 9 }).unwrap(),
+//!            Packet::Extended { sub: 5 });
+//! ```
+//!
 //! # Decode helpers
 //!
 //! Beyond the usual entry points, a dispatched enum gets:
@@ -145,11 +191,16 @@
 //!
 //! - **`magic` values are literals**: a byte string, or a width-suffixed unsigned integer
 //!   (`1u16`, `0xCAu8`). Sub-byte and non-literal magics are rejected so the wire width is
-//!   always unambiguous.
-//! - A `#[catch_all]` stores the discriminant in its first field (the captured magic, or
-//!   the selector under tag dispatch) so it can round-trip; its remaining fields are the
-//!   payload (length usually from a `count`).
+//!   always unambiguous. Variable-width / fallback dispatch needs **byte-string** magics
+//!   (so an unmatched discriminant can be re-read).
+//! - A single-read `#[catch_all]` stores the discriminant in its first field (the captured
+//!   magic, or the selector under tag dispatch) so it can round-trip. On the peek path
+//!   (variable width / fallback) the magic stays in the catch-all's own fields instead.
 //! - Variant fields support the full directive grammar (`count`, `if`, `map`, `ctx`,
 //!   `temp`/`calc`, `parse_with`, …), so a catch-all can read its own length and recompute
 //!   it on encode.
-//! - `tag()` (tag dispatch) / `magic()` (magic dispatch) return the variant's discriminant.
+//! - `tag()` / `magic()` return the variant's discriminant — generated only when there is a
+//!   single one to report (so not for variable-width magic, a typed fallback, or a hybrid);
+//!   `peek_variant` likewise needs an on-wire magic (so not under tag/hybrid dispatch).
+//! - With overlapping byte-string magics, declaration order decides — a magic that is a
+//!   prefix of another should come first, and a fallback must not begin like a magic.

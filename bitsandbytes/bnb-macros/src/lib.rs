@@ -230,12 +230,16 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// **`magic`** wire constant (a byte string or width-suffixed unsigned int, read *and*
 /// written — the discriminant, or a verified signature on a tag-variant) and a **`tag`**
 /// selector taken from `ctx` (read-only, never on the wire). With per-variant `magic`s
-/// the enum reads the discriminant and matches; with `#[bin(tag = <ctx-param>)]` + variant
-/// `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant; the two
-/// compose. A single `#[catch_all]` preserves an unknown discriminant (dual-use), else a
-/// magic enum is a closed set. An optional enum-level `magic` is a leading prefix.
-/// Variants may be unit, tuple, named, or `#[nested]`, and the codec exposes a `magic()`
-/// (magic dispatch) / `tag()` (tag dispatch) accessor. See the `bnb::guide::dispatch` page.
+/// the enum reads the discriminant and matches (a single `==` for uniform widths, or a
+/// peek-and-`starts_with` for variable-width byte strings); with `#[bin(tag = <ctx-param>)]`
+/// + variant `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant;
+/// the two compose (and may even be mixed in one enum — tag priority, then magic). The
+/// "nothing matched" tail is a `#[catch_all]` (preserving the unknown discriminant) or a
+/// typed no-tag/no-magic fallback variant, not both; without either a magic enum is a
+/// closed set. An optional enum-level `magic` is a leading prefix. Variants may be unit,
+/// tuple, named, or `#[nested]`. The codec also generates `decode_as_<variant>`,
+/// `peek_variant`/`<Name>Kind`, `decode_tagged`, and a `magic()`/`tag()` accessor where
+/// the discriminant is single-valued. See the `bnb::guide::dispatch` page.
 ///
 /// On a struct, `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which
 /// stay usable directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
