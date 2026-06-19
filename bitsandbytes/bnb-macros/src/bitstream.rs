@@ -1624,38 +1624,83 @@ fn variant_path_fields(
     }
 }
 
-/// Directives not yet supported on a variant field — rejected up front so a variant
-/// can't decode in a way it can't encode (read/write stay symmetric).
-fn variant_reject_unsupported(f: &syn::Field, br: &FieldBr) -> syn::Result<()> {
-    let bad = if br.ctx.is_some() {
-        Some("ctx")
-    } else if br.temp {
-        Some("temp")
-    } else if br.calc.is_some() {
-        Some("calc")
-    } else {
-        None
-    };
-    if let Some(d) = bad {
+/// The one variant-field shape the encode side can't yet mirror (so reject it on both
+/// sides to keep decode/encode symmetric): per-element `ctx` on a `Vec` field.
+fn variant_check(f: &syn::Field, br: &FieldBr) -> syn::Result<()> {
+    if vec_elem(f).is_some() && br.ctx.is_some() {
         return Err(syn::Error::new_spanned(
             f,
-            format!("`{d}` is not supported on a `#[bin]` enum variant field yet"),
+            "per-element `ctx` on a `Vec` variant field is not supported yet",
         ));
     }
     Ok(())
 }
 
+/// `ctx { … }` literal for a **variant** encode arm. A name that is a stored sibling is
+/// a match-bound `&FieldTy`, so it is dereferenced (`*n`); a `temp` local or an enum
+/// `ctx` parameter is already a value (`n`). (The struct dual, [`ctx_literal`], uses
+/// `self.n` for stored fields instead.)
+fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[Ident], stored: &[Ident]) -> TokenStream2 {
+    let inits = names.iter().map(|n| {
+        if stored.contains(n) {
+            quote!(#n: *#n)
+        } else {
+            quote!(#n)
+        }
+    });
+    quote!(#ctx_ty { #(#inits),* })
+}
+
 /// The encode statement for one variant field, addressing the **match-bound local**
-/// `id` (a `&FieldTy`) rather than `self.#id`. Mirrors the supported subset of
-/// [`field_write_core`]; `ctx`/`temp`/`calc` are rejected by
-/// [`variant_reject_unsupported`].
-fn variant_field_write(f: &syn::Field, br: &FieldBr, id: &Ident) -> syn::Result<TokenStream2> {
+/// `id` (a `&FieldTy`) rather than `self.#id`. Mirrors [`field_write_core`] for the
+/// variant world: `calc`/`temp`/`ctx` resolve sibling names against `stored` (the
+/// arm's bound stored fields), which a variant `ctx` literal dereferences.
+fn variant_field_write(
+    f: &syn::Field,
+    br: &FieldBr,
+    id: &Ident,
+    stored: &[Ident],
+) -> syn::Result<TokenStream2> {
     let ty = &f.ty;
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
     // `restore_position`: a read-side peek — the overlapping field owns the bytes.
     if br.restore_position {
         return Ok(quote!(#pre #post));
+    }
+    // `calc`: write a computed value. A `temp` field isn't in the match pattern, so bind
+    // its value to a **named** local (so a later `ctx`/field can resolve it); a non-temp
+    // `calc` field is in the pattern, so use a throwaway. The expr sees stored siblings as
+    // references (use `s.len()` / `*s`), like a struct `calc` sees `self.s`.
+    if let Some(calc) = &br.calc {
+        let core = if br.temp {
+            quote! {
+                let #id: #ty = #calc;
+                ::bnb::__private::Sink::write(w, #id)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        } else {
+            quote! {{
+                let __v: #ty = #calc;
+                ::bnb::__private::Sink::write(w, __v)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }}
+        };
+        return Ok(quote!(#pre #core #post));
+    }
+    if br.temp {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(temp)]` variant field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
+        ));
+    }
+    // `ctx { … }`: encode a nested ctx-message, resolving the passed names against the
+    // arm's stored siblings (deref'd) and enum ctx params / temp locals (by value).
+    if let Some(names) = &br.ctx {
+        let lit = ctx_literal_variant(&ctx_struct_ty(ty)?, names, stored);
+        let core = quote!(<#ty>::encode_with(#id, w, #lit)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
+        return Ok(quote!(#pre #core #post));
     }
     let core = if br.ignore {
         quote!()
@@ -1825,16 +1870,32 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     for plan in &plans {
         let vid = &plan.v.ident;
         let idents = variant_bind_idents(&plan.v.fields);
-        let pat = variant_path_fields(name, vid, &plan.v.fields, &idents);
+        // The pattern/constructor binds only **stored** fields: a `#[br(temp)]` variant
+        // field is read into a local but dropped from the variant (mirrors a struct).
+        let stored_idents: Vec<Ident> = plan
+            .v
+            .fields
+            .iter()
+            .zip(&idents)
+            .filter(|(f, _)| !field_is_temp(f))
+            .map(|(_, id)| id.clone())
+            .collect();
+        let pat = variant_path_fields(name, vid, &plan.v.fields, &stored_idents);
 
-        // Decode: read each field into its local; the catch-all's first field is the
-        // captured tag (bound from the catch pattern, never read from the wire).
+        // Decode: read each field into its local (full directive grammar via
+        // `field_read_stmt`); the catch-all's first field is the captured tag.
         let mut reads = Vec::new();
         for (i, f) in plan.v.fields.iter().enumerate() {
             let id = &idents[i];
             let br = parse_field_br(f)?;
-            variant_reject_unsupported(f, &br)?;
+            variant_check(f, &br)?;
             if plan.catch_all && i == 0 {
+                if br.temp {
+                    return Err(syn::Error::new_spanned(
+                        f,
+                        "the `#[catch_all]` first field holds the captured tag, so it can't be `#[br(temp)]`",
+                    ));
+                }
                 reads.push(quote!(let #id: #tag_ty = __other;));
             } else {
                 let mut nf = f.clone();
@@ -1864,7 +1925,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
             let id = &idents[i];
             let br = parse_field_br(f)?;
-            writes.push(variant_field_write(f, &br, id)?);
+            writes.push(variant_field_write(f, &br, id, &stored_idents)?);
         }
         encode_arms.push(quote!(#pat => { #(#writes)* }));
 
@@ -2099,23 +2160,23 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         (decode, encode, quote!())
     };
 
-    // The emitted enum: strip the dispatch attrs (`#[bin(tag=…)]`, `#[catch_all]`) and
-    // codec field attrs, leaving an ordinary enum beside the generated impls.
+    // The emitted enum: drop `#[br(temp)]` variant fields (read but not stored), strip
+    // the dispatch attrs (`#[bin(tag=…)]`, `#[catch_all]`) and codec field attrs, leaving
+    // an ordinary enum beside the generated impls.
+    let strip = |f: &syn::Field| -> Option<syn::Field> {
+        (!field_is_temp(f)).then(|| {
+            let mut f = f.clone();
+            f.attrs.retain(|a| !is_codec_field_attr(a));
+            f
+        })
+    };
     let mut clean = e.clone();
     for v in &mut clean.variants {
         v.attrs
             .retain(|a| !(a.path().is_ident("bin") || a.path().is_ident("catch_all")));
         match &mut v.fields {
-            Fields::Named(n) => {
-                for f in &mut n.named {
-                    f.attrs.retain(|a| !is_codec_field_attr(a));
-                }
-            }
-            Fields::Unnamed(u) => {
-                for f in &mut u.unnamed {
-                    f.attrs.retain(|a| !is_codec_field_attr(a));
-                }
-            }
+            Fields::Named(n) => n.named = n.named.iter().filter_map(&strip).collect(),
+            Fields::Unnamed(u) => u.unnamed = u.unnamed.iter().filter_map(&strip).collect(),
             Fields::Unit => {}
         }
     }

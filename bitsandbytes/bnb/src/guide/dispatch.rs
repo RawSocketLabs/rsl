@@ -39,6 +39,9 @@
 //! encode round-trips it. Without a catch-all the union is *closed* — an unknown tag is
 //! a decode error.
 //!
+//! Variant fields carry the full directive grammar, so a catch-all can read its own
+//! length and recompute it on encode (`temp` + `calc`) — never storing it, never drifting:
+//!
 //! ```
 //! use bnb::bin;
 //!
@@ -47,12 +50,19 @@
 //! enum Tlv {
 //!     #[bin(tag = 1)] Hello,
 //!     #[catch_all]
-//!     Unknown { tag: u8, #[br(count = 2)] body: Vec<u8> },
+//!     Unknown {
+//!         tag: u8,                       // captures the unrecognized discriminant
+//!         #[br(temp)]
+//!         #[bw(calc = body.len() as u8)] // recomputed from the payload on encode
+//!         len: u8,
+//!         #[br(count = len)]
+//!         body: Vec<u8>,
+//!     },
 //! }
 //!
-//! let v = Tlv::decode_exact(&[0x07, 0xAA, 0xBB]).unwrap();
-//! assert_eq!(v, Tlv::Unknown { tag: 7, body: vec![0xAA, 0xBB] });
-//! assert_eq!(v.to_bytes().unwrap(), [0x07, 0xAA, 0xBB]); // the unknown tag is preserved
+//! let v = Tlv::decode_exact(&[0x07, 0x02, 0xAA, 0xBB]).unwrap();
+//! assert_eq!(v, Tlv::Unknown { tag: 7, body: vec![0xAA, 0xBB] }); // `len` isn't stored
+//! assert_eq!(v.to_bytes().unwrap(), [0x07, 0x02, 0xAA, 0xBB]); // tag + len + body preserved
 //! ```
 //!
 //! # External tag — dispatch on context
@@ -124,5 +134,6 @@
 //!   paths (e.g. a `#[derive(BitEnum)]` variant for named tags).
 //! - A `#[catch_all]` variant must store the tag in its first field so encode can put
 //!   it back; the remaining fields are its payload (length usually from a `count`).
-//! - Variant fields support the struct directives except `ctx`/`temp`/`calc` (not yet
-//!   on variants).
+//! - Variant fields support the struct directives — including `temp`/`calc` and `ctx`
+//!   (a variant `ctx`/`calc` expression sees its sibling fields by name). The one
+//!   exception is per-element `ctx` on a `Vec` variant field.

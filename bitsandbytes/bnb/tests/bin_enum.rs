@@ -180,3 +180,74 @@ fn temp_tag_is_recomputed_on_encode_and_passed_as_ctx() {
         q
     );
 }
+
+// `temp` + `calc` on a VARIANT field: a length-prefixed catch-all that reads its own
+// length on decode and recomputes it from the payload on encode (never stored, never
+// drifts) — the killer feature for self-delimiting unknown records.
+#[bin(big, tag = u8)]
+#[derive(Debug, PartialEq)]
+enum Tlv {
+    #[bin(tag = 1)]
+    Ping,
+    #[catch_all]
+    Unknown {
+        tag: u8,
+        #[br(temp)]
+        #[bw(calc = body.len() as u8)] // sees the sibling `body: &Vec<u8>` on encode
+        len: u8,
+        #[br(count = len)]
+        body: Vec<u8>,
+    },
+}
+
+#[test]
+fn temp_calc_length_on_a_variant_field() {
+    // tag 9 is unknown -> Unknown captures it, reads len=3, then 3 payload bytes.
+    let bytes = [0x09, 0x03, 0xAA, 0xBB, 0xCC];
+    let v = Tlv::decode_exact(&bytes).unwrap();
+    assert_eq!(
+        v,
+        Tlv::Unknown {
+            tag: 9,
+            body: vec![0xAA, 0xBB, 0xCC], // `len` is not a field — it was temp
+        }
+    );
+    // On encode `len` is recomputed from body.len() == 3, so it round-trips.
+    assert_eq!(v.to_bytes().unwrap(), bytes);
+}
+
+// `ctx` on a VARIANT field: the payload is itself a ctx-message taking a length from an
+// earlier sibling of the same variant.
+#[bin(big, ctx(n: u8))]
+#[derive(Debug, PartialEq)]
+struct Sized {
+    #[br(count = n)]
+    bytes: Vec<u8>,
+}
+
+#[bin(big, tag = u8)]
+#[derive(Debug, PartialEq)]
+enum Framed {
+    #[bin(tag = 1)]
+    Blob {
+        n: u8,
+        #[br(ctx { n })] // hand the sibling `n` to `Sized`'s ctx param
+        data: Sized,
+    },
+}
+
+#[test]
+fn ctx_on_a_variant_field() {
+    let bytes = [0x01, 0x02, 0xAA, 0xBB];
+    let f = Framed::decode_exact(&bytes).unwrap();
+    assert_eq!(
+        f,
+        Framed::Blob {
+            n: 2,
+            data: Sized {
+                bytes: vec![0xAA, 0xBB],
+            },
+        }
+    );
+    assert_eq!(f.to_bytes().unwrap(), bytes);
+}
