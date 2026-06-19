@@ -89,16 +89,33 @@
 //! # `tag()` — keep an external discriminant from drifting
 //!
 //! Every dispatched enum gets a `tag()` accessor returning the chosen variant's
-//! discriminant, so a parent that stores the tag separately can recompute it instead of
-//! risking drift: `#[bw(calc = self.body.tag())]`.
+//! discriminant. Combined with `temp` + `calc`, the parent need not store the tag at
+//! all: it is read into a temp on decode and recomputed from the variant on encode, so
+//! the two can never disagree.
 //!
 //! ```
-//! # use bnb::bin;
-//! # #[bin(big, ctx(kind: u16), tag_from = kind)]
-//! # #[derive(Debug, PartialEq)]
-//! # enum Body { #[bin(tag = 1)] Login(u32), #[bin(tag = 2)] Data { n: u8 } }
-//! assert_eq!(Body::Data { n: 0 }.tag(), 2);
-//! assert_eq!(Body::Login(0).tag(), 1);
+//! use bnb::bin;
+//!
+//! #[bin(big, ctx(kind: u16), tag_from = kind)]
+//! #[derive(Debug, PartialEq)]
+//! enum Body {
+//!     #[bin(tag = 1)] Login(u32),
+//!     #[bin(tag = 2)] Data { n: u8 },
+//! }
+//!
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Packet {
+//!     #[br(temp)]                   // not a stored field — read into a local on decode
+//!     #[bw(calc = self.body.tag())] // ...and recomputed from the variant on encode
+//!     kind: u16,
+//!     #[br(ctx { kind })]           // handed to the union as its selector
+//!     body: Body,
+//! }
+//!
+//! let p = Packet { body: Body::Data { n: 7 } };
+//! assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]); // kind == body.tag() == 2
+//! assert_eq!(Packet::decode_exact(&[0x00, 0x02, 0x07]).unwrap(), p);
 //! ```
 //!
 //! # Notes

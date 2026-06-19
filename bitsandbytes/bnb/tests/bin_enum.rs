@@ -148,3 +148,35 @@ fn tag_accessor_drives_a_parents_no_drift_tag() {
     assert_eq!(p.kind, 2);
     assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]);
 }
+
+// The no-drift pattern in full: the tag isn't stored at all — it is read into a temp on
+// decode and recomputed from the chosen variant on encode, then handed to the union.
+#[bin(big)]
+#[derive(Debug, PartialEq)]
+struct Packet2 {
+    #[br(temp)]
+    #[bw(calc = self.body.tag())]
+    kind: u16,
+    #[br(ctx { kind })]
+    body: Body,
+}
+
+#[test]
+fn temp_tag_is_recomputed_on_encode_and_passed_as_ctx() {
+    let p = Packet2 {
+        body: Body::Data { n: 7 },
+    };
+    // `kind` is not a field of Packet2; on encode it is `body.tag()` == 2, written then
+    // passed to `body` as ctx; on decode it is a temp read and passed down.
+    assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]);
+    assert_eq!(Packet2::decode_exact(&[0x00, 0x02, 0x07]).unwrap(), p);
+
+    let q = Packet2 {
+        body: Body::Login(0x0102_0304),
+    };
+    assert_eq!(q.to_bytes().unwrap(), [0x00, 0x01, 0x01, 0x02, 0x03, 0x04]);
+    assert_eq!(
+        Packet2::decode_exact(&[0x00, 0x01, 0x01, 0x02, 0x03, 0x04]).unwrap(),
+        q
+    );
+}

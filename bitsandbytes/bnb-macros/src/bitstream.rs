@@ -785,6 +785,18 @@ fn field_write_core(
     // `calc`: write a value computed from the other fields rather than `self.#id`,
     // pinned to the field's declared type so the wire width is unambiguous.
     if let Some(calc) = &br.calc {
+        // A `temp` field isn't stored, so a later `#[br(ctx { … })]` pass can't resolve
+        // it via `self.#id`. Bind its computed value to a **named** local (in encode-fn
+        // scope, written in declaration order) so the ctx pass finds it — e.g. a tag
+        // recomputed with `#[bw(calc = self.body.tag())]` and handed to a `tag_from`
+        // enum. A non-`temp` `calc` field keeps a throwaway local (it has `self.#id`).
+        if br.temp {
+            return Ok(quote! {
+                let #id: #ty = #calc;
+                ::bnb::__private::Sink::write(w, #id)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            });
+        }
         return Ok(quote! {
             {
                 let __calc: #ty = #calc;
