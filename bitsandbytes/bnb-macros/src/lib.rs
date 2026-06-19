@@ -231,8 +231,8 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// written — the discriminant, or a verified signature on a tag-variant) and a **`tag`**
 /// selector taken from `ctx` (read-only, never on the wire). With per-variant `magic`s
 /// the enum reads the discriminant and matches (a single `==` for uniform widths, or a
-/// peek-and-`starts_with` for variable-width byte strings); with `#[bin(tag = <ctx-param>)]`
-/// + variant `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant;
+/// peek-and-`starts_with` for variable-width byte strings). With `#[bin(tag = <ctx-param>)]`
+/// and variant `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant;
 /// the two compose (and may even be mixed in one enum — tag priority, then magic). The
 /// "nothing matched" tail is a `#[catch_all]` (preserving the unknown discriminant) or a
 /// typed no-tag/no-magic fallback variant, not both; without either a magic enum is a
