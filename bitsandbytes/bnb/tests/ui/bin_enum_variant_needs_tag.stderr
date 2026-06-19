@@ -1,0 +1,5 @@
+error: each variant needs `#[bin(tag = <value>)]` (or exactly one `#[catch_all]`)
+ --> tests/ui/bin_enum_variant_needs_tag.rs:8:5
+  |
+8 |     B(u8), // no tag, no #[catch_all]
+  |     ^

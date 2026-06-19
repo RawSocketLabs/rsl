@@ -1333,6 +1333,12 @@ struct BinArgs {
     /// `build()` (construction soundness; the parser stays permissive). A free
     /// function, not a method, so it isn't mistaken for protocol-context validity.
     validate: Option<syn::Path>,
+    /// `tag = <type>` (enum only) — read a discriminant of this `Bits` type, then
+    /// dispatch to the variant whose `#[bin(tag = <value>)]` matches.
+    tag: Option<Type>,
+    /// `tag_from = <ctx-param>` (enum only) — dispatch on an existing `ctx(...)`
+    /// parameter instead of reading a discriminant (the parent already consumed it).
+    tag_from: Option<Ident>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -1374,22 +1380,44 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.ctx = params.into_iter().map(|p| (p.name, p.ty)).collect();
         } else if meta.path.is_ident("validate") {
             args.validate = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("tag") {
+            args.tag = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("tag_from") {
+            args.tag_from = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
-                 ctx(name: Ty, …), validate = <path>",
+                 ctx(name: Ty, …), validate = <path>, tag = <type>, tag_from = <ctx-param>",
             ));
         }
         Ok(())
     });
     Parser::parse(parser, attr)?;
 
-    let s: ItemStruct = syn::parse(item)?;
     if args.read_only && args.write_only {
+        return Err(syn::Error::new(
+            ::proc_macro2::Span::call_site(),
+            "`read_only` and `write_only` are mutually exclusive",
+        ));
+    }
+    match syn::parse::<syn::Item>(item)? {
+        syn::Item::Struct(s) => bin_struct(&args, &s),
+        syn::Item::Enum(e) => bin_enum(&args, &e),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "#[bin] requires a struct or an enum",
+        )),
+    }
+}
+
+/// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
+/// required-by-default builder, folded over a named-field struct.
+fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
+    if args.tag.is_some() || args.tag_from.is_some() {
         return Err(syn::Error::new_spanned(
             &s.ident,
-            "`read_only` and `write_only` are mutually exclusive",
+            "`tag`/`tag_from` apply to a `#[bin]` enum, not a struct",
         ));
     }
     if !s.generics.params.is_empty() {
@@ -1542,6 +1570,548 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         #ctx_struct
         #clean
         #builder
+        #decode
+        #encode
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `#[bin]` on an enum — tag-dispatched tagged union.
+//
+// A discriminant (read via `tag = <ty>`, or taken from a `ctx` param via
+// `tag_from = <param>`) selects the variant; each variant is a mini-struct whose
+// fields reuse the `#[br]`/`#[bw]` grammar. `#[catch_all]` preserves an unknown tag
+// and its payload (dual-use). Decode reuses `field_read_stmt` (it reads into locals,
+// so it is variant-agnostic); encode needs a local-based writer because the struct
+// writer is `self.#id`-coupled.
+// ---------------------------------------------------------------------------
+
+/// The bind idents for a variant's fields — the field's own ident (named) or a
+/// synthesized `__f{i}` (tuple). Empty for a unit variant.
+fn variant_bind_idents(fields: &Fields) -> Vec<Ident> {
+    fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| f.ident.clone().unwrap_or_else(|| format_ident!("__f{}", i)))
+        .collect()
+}
+
+/// `Name::Variant { a, b }` / `Name::Variant(a, b)` / `Name::Variant` — serves as
+/// **both** the destructuring pattern (encode/`tag`) and the construction expr
+/// (decode), which are syntactically identical with field-shorthand.
+fn variant_path_fields(
+    name: &Ident,
+    vid: &Ident,
+    fields: &Fields,
+    idents: &[Ident],
+) -> TokenStream2 {
+    match fields {
+        Fields::Named(_) => quote!(#name::#vid { #(#idents),* }),
+        Fields::Unnamed(_) => quote!(#name::#vid( #(#idents),* )),
+        Fields::Unit => quote!(#name::#vid),
+    }
+}
+
+/// Directives not yet supported on a variant field — rejected up front so a variant
+/// can't decode in a way it can't encode (read/write stay symmetric).
+fn variant_reject_unsupported(f: &syn::Field, br: &FieldBr) -> syn::Result<()> {
+    let bad = if br.ctx.is_some() {
+        Some("ctx")
+    } else if br.temp {
+        Some("temp")
+    } else if br.calc.is_some() {
+        Some("calc")
+    } else {
+        None
+    };
+    if let Some(d) = bad {
+        return Err(syn::Error::new_spanned(
+            f,
+            format!("`{d}` is not supported on a `#[bin]` enum variant field yet"),
+        ));
+    }
+    Ok(())
+}
+
+/// The encode statement for one variant field, addressing the **match-bound local**
+/// `id` (a `&FieldTy`) rather than `self.#id`. Mirrors the supported subset of
+/// [`field_write_core`]; `ctx`/`temp`/`calc` are rejected by
+/// [`variant_reject_unsupported`].
+fn variant_field_write(f: &syn::Field, br: &FieldBr, id: &Ident) -> syn::Result<TokenStream2> {
+    let ty = &f.ty;
+    let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
+    let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
+    // `restore_position`: a read-side peek — the overlapping field owns the bytes.
+    if br.restore_position {
+        return Ok(quote!(#pre #post));
+    }
+    let core = if br.ignore {
+        quote!()
+    } else if let Some(bw_map) = &br.bw_map {
+        quote!(::bnb::__private::write_mapped(w, #id, #bw_map)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else if let Some(wf) = &br.write_with {
+        quote!((#wf)(#id, w).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else if br.map.is_some() || br.try_map.is_some() {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(map = …)]`/`#[br(try_map = …)]` variant field needs the inverse `#[bw(map = <f>)]`",
+        ));
+    } else if br.parse_with.is_some() {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a `#[br(parse_with = …)]` variant field needs the inverse `#[bw(write_with = <f>)]`",
+        ));
+    } else if br.cond.is_some() {
+        let inner = option_elem(f).ok_or_else(|| {
+            syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>`")
+        })?;
+        let write_inner = if is_nested(f) {
+            quote!(<#inner as ::bnb::__private::BitEncode>::bit_encode(__v, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else {
+            quote!(::bnb::__private::Sink::write(w, *__v)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        };
+        quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
+    } else if let Some(elem) = vec_elem(f) {
+        let write_elem = if is_nested(f) {
+            quote!(<#elem as ::bnb::__private::BitEncode>::bit_encode(__e, w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        } else {
+            quote!(::bnb::__private::Sink::write(w, *__e)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        };
+        quote!(for __e in #id { #write_elem })
+    } else if is_nested(f) {
+        quote!(<#ty as ::bnb::__private::BitEncode>::bit_encode(#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else if byte_array_len(f).is_some() {
+        quote!(::bnb::__private::write_byte_array(#id, w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    } else {
+        quote!(::bnb::__private::Sink::write(w, *#id)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+    };
+    Ok(quote!(#pre #core #post))
+}
+
+/// The `#[bin]` enum path. See the module banner above.
+fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
+    let name = &e.ident;
+    let vis = &e.vis;
+    if !e.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &e.generics,
+            "#[bin] does not support generic parameters yet",
+        ));
+    }
+    if args.magic.is_some() {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`magic` is not supported on a `#[bin]` enum yet",
+        ));
+    }
+    if args.validate.is_some() {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`validate` needs the builder; a `#[bin]` enum has none",
+        ));
+    }
+
+    // Tag source: internal `tag = <ty>` (read it) XOR external `tag_from = <param>`
+    // (take it from a declared `ctx` parameter). `tag_ty` types the tag everywhere.
+    let (tag_ty, read_tag): (Type, TokenStream2) = match (&args.tag, &args.tag_from) {
+        (Some(_), Some(_)) => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "`tag` and `tag_from` are mutually exclusive",
+            ));
+        }
+        (None, None) => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "a `#[bin]` enum needs `tag = <type>` (read a discriminant) or `tag_from = <ctx-param>` (dispatch on context)",
+            ));
+        }
+        (Some(ty), None) => (
+            ty.clone(),
+            quote!(let __tag: #ty = ::bnb::__private::Source::read(r).map_err(|e| e.in_field("tag"))?;),
+        ),
+        (None, Some(sel)) => {
+            let ty = args
+                .ctx
+                .iter()
+                .find(|(n, _)| n == sel)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(sel, "`tag_from` must name a `ctx(...)` parameter")
+                })?;
+            (ty, quote!(let __tag = #sel;))
+        }
+    };
+
+    // Parse each variant: `#[bin(tag = <value>)]` or a single `#[catch_all]`.
+    struct VPlan<'a> {
+        v: &'a syn::Variant,
+        tag: Option<syn::Expr>,
+        catch_all: bool,
+    }
+    let mut plans: Vec<VPlan> = Vec::new();
+    let mut catch_alls = 0;
+    for v in &e.variants {
+        let mut tag = None;
+        let mut catch_all = false;
+        for a in &v.attrs {
+            if a.path().is_ident("catch_all") {
+                catch_all = true;
+            } else if a.path().is_ident("bin") {
+                a.parse_nested_meta(|m| {
+                    if m.path.is_ident("tag") {
+                        tag = Some(m.value()?.parse()?);
+                        Ok(())
+                    } else {
+                        Err(m.error("expected `tag = <value>` on a variant"))
+                    }
+                })?;
+            }
+        }
+        if catch_all {
+            catch_alls += 1;
+            if tag.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &v.ident,
+                    "a `#[catch_all]` variant has no `tag` (it captures the unmatched one)",
+                ));
+            }
+            if v.fields.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    &v.ident,
+                    "a `#[catch_all]` variant needs a first field to hold the captured tag",
+                ));
+            }
+        } else if tag.is_none() {
+            return Err(syn::Error::new_spanned(
+                &v.ident,
+                "each variant needs `#[bin(tag = <value>)]` (or exactly one `#[catch_all]`)",
+            ));
+        }
+        plans.push(VPlan { v, tag, catch_all });
+    }
+    if catch_alls > 1 {
+        return Err(syn::Error::new_spanned(
+            name,
+            "a `#[bin]` enum may have at most one `#[catch_all]` variant",
+        ));
+    }
+
+    // Build the decode arms, encode arms, and `tag()` arms in one pass.
+    let mut decode_arms = Vec::new();
+    let mut encode_arms = Vec::new();
+    let mut tag_arms = Vec::new();
+    let mut catch_arm = None;
+    for plan in &plans {
+        let vid = &plan.v.ident;
+        let idents = variant_bind_idents(&plan.v.fields);
+        let pat = variant_path_fields(name, vid, &plan.v.fields, &idents);
+
+        // Decode: read each field into its local; the catch-all's first field is the
+        // captured tag (bound from the catch pattern, never read from the wire).
+        let mut reads = Vec::new();
+        for (i, f) in plan.v.fields.iter().enumerate() {
+            let id = &idents[i];
+            let br = parse_field_br(f)?;
+            variant_reject_unsupported(f, &br)?;
+            if plan.catch_all && i == 0 {
+                reads.push(quote!(let #id: #tag_ty = __other;));
+            } else {
+                let mut nf = f.clone();
+                nf.ident = Some(id.clone());
+                reads.push(field_read_stmt(&nf, &br)?);
+            }
+        }
+
+        // Encode: write the tag (internal only), then the payload locals.
+        let mut writes = Vec::new();
+        if args.tag.is_some() {
+            if plan.catch_all {
+                let first = &idents[0];
+                writes.push(quote!(::bnb::__private::Sink::write(w, *#first)
+                    .map_err(|e| e.in_field("tag"))?;));
+            } else {
+                let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
+                writes.push(quote! {{
+                    let __t: #tag_ty = #tagval;
+                    ::bnb::__private::Sink::write(w, __t).map_err(|e| e.in_field("tag"))?;
+                }});
+            }
+        }
+        for (i, f) in plan.v.fields.iter().enumerate() {
+            if plan.catch_all && i == 0 {
+                continue; // the captured tag, written above (internal) or owned by parent
+            }
+            let id = &idents[i];
+            let br = parse_field_br(f)?;
+            writes.push(variant_field_write(f, &br, id)?);
+        }
+        encode_arms.push(quote!(#pat => { #(#writes)* }));
+
+        // `tag()`: the variant's discriminant — the literal, or the catch-all's stored first field.
+        let tag_value = if plan.catch_all {
+            let first = &idents[0];
+            quote!(*#first)
+        } else {
+            let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
+            quote!({ let __t: #tag_ty = #tagval; __t })
+        };
+        tag_arms.push(quote!(#pat => #tag_value,));
+
+        if plan.catch_all {
+            catch_arm = Some(quote!(__other => {
+                #(#reads)*
+                ::core::result::Result::Ok(#pat)
+            }));
+        } else {
+            let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
+            decode_arms.push(quote!(#tagval => {
+                #(#reads)*
+                ::core::result::Result::Ok(#pat)
+            }));
+        }
+    }
+    // No catch-all ⇒ a closed union: an unrecognized tag is a decode error.
+    let catch_arm = catch_arm.unwrap_or_else(|| {
+        quote! {
+            __other => ::core::result::Result::Err(
+                ::bnb::__private::BitError::convert(
+                    ::std::string::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
+                    ::bnb::__private::Source::bit_pos(r),
+                ).in_field("tag"),
+            )
+        }
+    });
+
+    let decode_body = quote! {
+        #read_tag
+        match __tag {
+            #(#decode_arms)*
+            #catch_arm
+        }
+    };
+    let encode_body = quote! {
+        match self {
+            #(#encode_arms)*
+        }
+        ::core::result::Result::Ok(())
+    };
+
+    // A seeking variant field (`seek`/`restore_position`) binds the explicit source on
+    // `SeekSource`; `forward_only` then rejects it, mirroring the struct path.
+    let seeks = e
+        .variants
+        .iter()
+        .flat_map(|v| &v.fields)
+        .any(|f| parse_field_br(f).is_ok_and(|br| br.restore_position || br.seek.is_some()));
+    if args.forward_only && seeks {
+        return Err(syn::Error::new_spanned(
+            name,
+            "a seeking variant field (`seek`/`restore_position`) is incompatible with `#[bin(forward_only)]`",
+        ));
+    }
+    let from_bound = if seeks {
+        quote!(::bnb::__private::SeekSource)
+    } else {
+        quote!(::bnb::__private::Source)
+    };
+
+    let attrs = BitStreamAttrs {
+        allow_byte_aligned: true,
+        lsb: args.lsb,
+        little: args.little,
+        magic: None,
+        ctx: args.ctx.clone(),
+    };
+    let layout = layout_token(&attrs);
+    let want_decode = !args.write_only;
+    let want_encode = !args.read_only;
+    let is_ctx_type = !args.ctx.is_empty();
+    let ctx_binds: Vec<TokenStream2> = args
+        .ctx
+        .iter()
+        .map(|(n, _)| quote!(let #n = __ctx.#n;))
+        .collect();
+
+    // `tag()` is an inherent accessor on every dispatched enum (drives the parent's
+    // `#[bw(calc = self.body.tag())]` when the tag lives outside the union).
+    let tag_fn = quote! {
+        impl #name {
+            #[doc = "The wire discriminant (tag) this value encodes as."]
+            #[allow(unused_variables)]
+            pub fn tag(&self) -> #tag_ty {
+                match self {
+                    #(#tag_arms)*
+                }
+            }
+        }
+    };
+
+    // The codec impls: a `ctx` enum gets `decode_with`/`encode_with` (+ the `…Ctx`
+    // struct); a plain one gets `BitDecode`/`BitEncode` + the slice/stream entry points.
+    let (decode, encode, ctx_struct) = if is_ctx_type {
+        let ctx_name = ctx_struct_ident(name);
+        let decode = want_decode.then(|| quote! {
+            impl #name {
+                #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
+                #[allow(unused_variables)]
+                pub fn decode_with<S: #from_bound>(
+                    r: &mut S,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    #(#ctx_binds)*
+                    #decode_body
+                }
+                #[doc = "Decode from bytes with context, requiring every whole byte consumed."]
+                pub fn decode_with_exact(
+                    bytes: &[u8],
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx.clone()))
+                }
+            }
+            impl ::bnb::DecodeWith<#ctx_name> for #name {
+                fn decode_with<S: ::bnb::__private::Source>(
+                    r: &mut S,
+                    args: #ctx_name,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    <#name>::decode_with(r, args)
+                }
+            }
+        });
+        let encode = want_encode.then(|| quote! {
+            impl #name {
+                #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
+                #[allow(unused_variables)]
+                pub fn encode_with<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    #(#ctx_binds)*
+                    #encode_body
+                }
+                #[doc = "Encode to a `Vec<u8>` with context."]
+                pub fn to_bytes_with(
+                    &self,
+                    __ctx: #ctx_name,
+                ) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx.clone()))
+                }
+            }
+            impl ::bnb::EncodeWith<#ctx_name> for #name {
+                fn encode_with<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                    args: #ctx_name,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    <#name>::encode_with(self, w, args)
+                }
+            }
+        });
+        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let ctx_struct = quote! {
+            #[derive(Clone)]
+            #[doc = "Context for decoding/encoding the matching `#[bin(ctx(...))]` type."]
+            #vis struct #ctx_name { #(#decls),* }
+        };
+        (decode, encode, ctx_struct)
+    } else {
+        let decode = want_decode.then(|| quote! {
+            impl ::bnb::BitDecode for #name {
+                fn bit_decode<S: ::bnb::__private::Source>(
+                    r: &mut S,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    #decode_body
+                }
+            }
+            impl #name {
+                #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed."]
+                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_consume(buf, #layout)
+                }
+                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
+                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_peek(bytes, #layout)
+                }
+                #[doc = "Decode and require every whole byte consumed."]
+                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_exact(bytes, #layout)
+                }
+                #[doc = "Decode from an explicit bit source (a seekable one if a variant seeks)."]
+                pub fn decode_from<S: #from_bound>(
+                    r: &mut S,
+                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    <Self as ::bnb::BitDecode>::bit_decode(r)
+                }
+            }
+        });
+        let encode = want_encode.then(|| quote! {
+            impl ::bnb::BitEncode for #name {
+                fn bit_encode<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    #encode_body
+                }
+            }
+            impl #name {
+                #[doc = "Encode to any `std::io::Write` (socket, file, `Vec`)."]
+                pub fn encode<W: ::std::io::Write>(
+                    &self,
+                    w: &mut W,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_writer(self, w, #layout)
+                }
+                #[doc = "Encode to a `Vec<u8>`."]
+                pub fn to_bytes(&self) -> ::core::result::Result<::std::vec::Vec<u8>, ::bnb::__private::BitError> {
+                    ::bnb::__private::encode_to_vec(self, #layout)
+                }
+                #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
+                pub fn encode_into<K: ::bnb::__private::Sink>(
+                    &self,
+                    w: &mut K,
+                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                    <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                }
+            }
+        });
+        (decode, encode, quote!())
+    };
+
+    // The emitted enum: strip the dispatch attrs (`#[bin(tag=…)]`, `#[catch_all]`) and
+    // codec field attrs, leaving an ordinary enum beside the generated impls.
+    let mut clean = e.clone();
+    for v in &mut clean.variants {
+        v.attrs
+            .retain(|a| !(a.path().is_ident("bin") || a.path().is_ident("catch_all")));
+        match &mut v.fields {
+            Fields::Named(n) => {
+                for f in &mut n.named {
+                    f.attrs.retain(|a| !is_codec_field_attr(a));
+                }
+            }
+            Fields::Unnamed(u) => {
+                for f in &mut u.unnamed {
+                    f.attrs.retain(|a| !is_codec_field_attr(a));
+                }
+            }
+            Fields::Unit => {}
+        }
+    }
+
+    Ok(quote! {
+        #ctx_struct
+        #clean
+        #tag_fn
         #decode
         #encode
     })

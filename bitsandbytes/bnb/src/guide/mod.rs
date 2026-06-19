@@ -12,6 +12,7 @@
 //! - [`builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
 //! - [`bin_codec`] — `#[bin]`: a whole protocol header, end to end.
 //! - [`directives`] — the field-directive reference, one example each.
+//! - [`dispatch`] — `#[bin]` on an enum: tag-dispatched tagged unions.
 //! - [`io`] — the `Source`/`Sink` I/O ladder.
 //! - [`errors`] — position-aware errors and the streaming `Incomplete` signal.
 //! - [`dual_use`] — compliant by default, deliberately violatable.
@@ -40,6 +41,7 @@ pub mod bitfields;
 pub mod builders;
 pub mod composition;
 pub mod directives;
+pub mod dispatch;
 pub mod dual_use;
 pub mod enums;
 pub mod errors;

@@ -1,5 +1,7 @@
 error: `read_only` and `write_only` are mutually exclusive
- --> tests/ui/bin_read_write_only.rs:6:8
+ --> tests/ui/bin_read_write_only.rs:5:1
   |
-6 | struct X {
-  |        ^
+5 | #[bin(big, read_only, write_only)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `bin` (in Nightly builds, run with -Z macro-backtrace for more info)

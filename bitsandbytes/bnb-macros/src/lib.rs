@@ -224,8 +224,17 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// decodes); `#[brw(ignore)]` (neither read nor written); plus `#[reserved]` /
 /// `#[reserved_with(…)]`.
 ///
-/// `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which stay usable
-/// directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
+/// ## On an enum — tagged-union dispatch
+///
+/// `#[bin]` also applies to an enum, where it reads a discriminant and dispatches to a
+/// variant: `#[bin(tag = <ty>)]` reads the tag, or `#[bin(tag_from = <ctx-param>)]`
+/// takes it from context; each variant carries `#[bin(tag = <value>)]`, and a single
+/// `#[catch_all]` variant preserves an unknown tag (dual-use). Variants may be unit,
+/// tuple, named, or `#[nested]`, and the codec exposes a `tag()` accessor. See the
+/// `bnb::guide::dispatch` page.
+///
+/// On a struct, `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which
+/// stay usable directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
 /// `bnb::guide::directives` for one runnable example per directive.
 #[proc_macro_attribute]
 pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
