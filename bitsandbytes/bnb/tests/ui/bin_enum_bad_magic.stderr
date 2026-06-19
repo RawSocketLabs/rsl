@@ -1,0 +1,5 @@
+error: a `magic` integer needs a width suffix so its wire size is unambiguous, e.g. `0x01u16`
+ --> tests/ui/bin_enum_bad_magic.rs:7:19
+  |
+7 |     #[bin(magic = 1)]
+  |                   ^

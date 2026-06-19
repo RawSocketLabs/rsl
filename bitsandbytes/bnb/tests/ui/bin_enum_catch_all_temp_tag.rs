@@ -1,16 +1,16 @@
-//! A `#[catch_all]` variant's first field holds the captured tag, so it can't be temp
-//! (the tag would be lost and couldn't round-trip on encode).
+//! A `#[catch_all]` variant's first field holds the captured discriminant, so it can't
+//! be `#[br(temp)]` (the discriminant would be lost and couldn't round-trip).
 use bnb::bin;
 
-#[bin(big, tag = u8)]
+#[bin(big)]
 enum E {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u8)]
     A(u8),
     #[catch_all]
     Other {
         #[br(temp)]
         #[bw(calc = 0u8)]
-        tag: u8,
+        magic: u8,
         rest: u8,
     },
 }

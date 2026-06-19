@@ -1,80 +1,82 @@
-//! `#[bin]` on an enum — tag-dispatched tagged unions.
+//! `#[bin]` on an enum — tagged-union dispatch.
 //!
-//! A protocol union carries a discriminant (a type/opcode/content-type) that selects
-//! which payload follows. `#[bin]` on an enum reads that **tag** and dispatches to the
-//! matching variant; each variant is a mini-struct whose fields use the same
-//! `#[br]`/`#[bw]` grammar as a struct. Decode is a single forward `match` — no
-//! backtracking.
+//! A protocol union picks one of several payloads. `#[bin]` on an enum expresses that
+//! with two **orthogonal** concepts:
 //!
-//! # Internal tag — read the discriminant, then dispatch
+//! - **`magic`** — a wire constant that is *read and written*: a byte string (`b"IHDR"`)
+//!   or a width-suffixed unsigned integer (`0x01u16`). It is the discriminant under
+//!   *magic dispatch*, or a verified signature on a tag-variant.
+//! - **`tag`** — a read-only **selector** taken from `ctx`. It picks the variant but is
+//!   **never** on the wire.
 //!
-//! `#[bin(tag = <ty>)]` reads a discriminant of that `Bits` type; each variant declares
-//! its value with `#[bin(tag = <value>)]`. Variants may be unit, tuple, named, or
-//! `#[nested]` (another `#[bin]` message).
+//! `#[catch_all]` preserves an unknown discriminant (dual-use); without one, a magic enum
+//! is a *closed set* and an unknown discriminant is a decode error.
+//!
+//! # Magic dispatch — the discriminant is on the wire
+//!
+//! With no `tag`, each variant's `magic` is its discriminant: decode reads it once and
+//! matches; encode writes it. Variants may be unit, tuple, named, or `#[nested]`.
 //!
 //! ```
 //! use bnb::bin;
 //!
-//! #[bin(big, tag = u16)]
+//! #[bin(big)]
 //! #[derive(Debug, PartialEq)]
 //! enum Rdata {
-//!     #[bin(tag = 1)] A(u32),                  // tuple newtype
-//!     #[bin(tag = 2)] Port { lo: u8, hi: u8 }, // struct variant
-//!     #[bin(tag = 0)] Ping,                    // unit: tag only
+//!     #[bin(magic = 1u16)] A(u32),
+//!     #[bin(magic = 2u16)] Port { lo: u8, hi: u8 },
+//!     #[bin(magic = 0u16)] Ping,
+//!     #[catch_all]
+//!     Other { magic: u16, #[br(count = 2)] raw: Vec<u8> }, // captures an unknown magic
 //! }
 //!
 //! assert_eq!(Rdata::A(0x0808_0808).to_bytes().unwrap(), [0x00, 0x01, 8, 8, 8, 8]);
-//! assert_eq!(
-//!     Rdata::decode_exact(&[0x00, 0x02, 0x1A, 0x2B]).unwrap(),
-//!     Rdata::Port { lo: 0x1A, hi: 0x2B },
-//! );
-//! assert_eq!(Rdata::Ping.to_bytes().unwrap(), [0x00, 0x00]);
+//! assert_eq!(Rdata::decode_exact(&[0x00, 0x09, 0xAA, 0xBB]).unwrap(),
+//!            Rdata::Other { magic: 9, raw: vec![0xAA, 0xBB] });
+//! assert_eq!(Rdata::A(0).magic(), 1); // the `magic()` accessor
 //! ```
 //!
-//! # `#[catch_all]` — preserve an unknown tag (dual-use)
-//!
-//! The dual-use convention from [`#[derive(BitEnum)]`](super::enums) lifts to
-//! data-carrying enums: a `#[catch_all]` variant captures an unrecognized tag (its
-//! **first field**) plus the raw payload, so decode never rejects an unknown union and
-//! encode round-trips it. Without a catch-all the union is *closed* — an unknown tag is
-//! a decode error.
-//!
-//! Variant fields carry the full directive grammar, so a catch-all can read its own
-//! length and recompute it on encode (`temp` + `calc`) — never storing it, never drifting:
+//! Byte-string magics work the same way — the natural fit for PNG/RIFF-style signatures:
 //!
 //! ```
 //! use bnb::bin;
 //!
-//! #[bin(big, tag = u8)]
+//! #[bin(big)]
 //! #[derive(Debug, PartialEq)]
-//! enum Tlv {
-//!     #[bin(tag = 1)] Hello,
-//!     #[catch_all]
-//!     Unknown {
-//!         tag: u8,                       // captures the unrecognized discriminant
-//!         #[br(temp)]
-//!         #[bw(calc = body.len() as u8)] // recomputed from the payload on encode
-//!         len: u8,
-//!         #[br(count = len)]
-//!         body: Vec<u8>,
-//!     },
+//! enum Chunk {
+//!     #[bin(magic = b"IHDR")] Header { width: u16, height: u16 },
+//!     #[bin(magic = b"IDAT")] Data(u8),
+//!     #[catch_all] Other { magic: [u8; 4], #[br(count = 1)] rest: Vec<u8> },
 //! }
 //!
-//! let v = Tlv::decode_exact(&[0x07, 0x02, 0xAA, 0xBB]).unwrap();
-//! assert_eq!(v, Tlv::Unknown { tag: 7, body: vec![0xAA, 0xBB] }); // `len` isn't stored
-//! assert_eq!(v.to_bytes().unwrap(), [0x07, 0x02, 0xAA, 0xBB]); // tag + len + body preserved
+//! let hdr = [b'I', b'H', b'D', b'R', 0x00, 0x10, 0x00, 0x20];
+//! assert_eq!(Chunk::decode_exact(&hdr).unwrap(), Chunk::Header { width: 16, height: 32 });
+//! assert_eq!(Chunk::Header { width: 16, height: 32 }.to_bytes().unwrap(), hdr);
 //! ```
 //!
-//! # External tag — dispatch on context
+//! A leading enum-level **`magic` prefix** is verified on read and written on encode,
+//! once, before dispatch:
 //!
-//! Often the discriminant is a separate field the parent already read. Declare it as
-//! `ctx` and dispatch with `tag_from = <param>`; the enum then reads **no** tag of its
-//! own, and the parent passes the value down with `#[br(ctx { … })]`.
+//! ```
+//! # use bnb::bin;
+//! #[bin(big, magic = b"BNB")]
+//! #[derive(Debug, PartialEq)]
+//! enum Pre { #[bin(magic = 1u8)] A(u16), #[bin(magic = 2u8)] B }
+//!
+//! assert_eq!(Pre::A(0xCAFE).to_bytes().unwrap(), [b'B', b'N', b'B', 0x01, 0xCA, 0xFE]);
+//! assert!(Pre::decode_exact(&[b'X', b'N', b'B', 0x01, 0, 0]).is_err()); // bad prefix
+//! ```
+//!
+//! # Tag dispatch — a read-only selector, nothing on the wire
+//!
+//! Declare a selector with `tag = <ctx-param>` and give each variant `#[bin(tag = V)]`.
+//! The enum reads/writes **no** discriminant; the parent passes the selector down with
+//! `#[br(ctx { … })]`, and `tag()` recovers it (driving a no-drift `calc`).
 //!
 //! ```
 //! use bnb::bin;
 //!
-//! #[bin(big, ctx(kind: u16), tag_from = kind)]
+//! #[bin(big, ctx(kind: u16), tag = kind)]
 //! #[derive(Debug, PartialEq)]
 //! enum Body {
 //!     #[bin(tag = 1)] Login(u32),
@@ -84,56 +86,46 @@
 //! #[bin(big)]
 //! #[derive(Debug, PartialEq)]
 //! struct Packet {
+//!     #[br(temp)]
+//!     #[bw(calc = self.body.tag())] // recompute the tag from the chosen variant
 //!     kind: u16,
 //!     #[br(ctx { kind })]
 //!     body: Body,
 //! }
 //!
-//! let bytes = [0x00, 0x02, 0x2A];
-//! assert_eq!(
-//!     Packet::decode_exact(&bytes).unwrap(),
-//!     Packet { kind: 2, body: Body::Data { n: 42 } },
-//! );
-//! ```
-//!
-//! # `tag()` — keep an external discriminant from drifting
-//!
-//! Every dispatched enum gets a `tag()` accessor returning the chosen variant's
-//! discriminant. Combined with `temp` + `calc`, the parent need not store the tag at
-//! all: it is read into a temp on decode and recomputed from the variant on encode, so
-//! the two can never disagree.
-//!
-//! ```
-//! use bnb::bin;
-//!
-//! #[bin(big, ctx(kind: u16), tag_from = kind)]
-//! #[derive(Debug, PartialEq)]
-//! enum Body {
-//!     #[bin(tag = 1)] Login(u32),
-//!     #[bin(tag = 2)] Data { n: u8 },
-//! }
-//!
-//! #[bin(big)]
-//! #[derive(Debug, PartialEq)]
-//! struct Packet {
-//!     #[br(temp)]                   // not a stored field — read into a local on decode
-//!     #[bw(calc = self.body.tag())] // ...and recomputed from the variant on encode
-//!     kind: u16,
-//!     #[br(ctx { kind })]           // handed to the union as its selector
-//!     body: Body,
-//! }
-//!
 //! let p = Packet { body: Body::Data { n: 7 } };
-//! assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]); // kind == body.tag() == 2
+//! assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]); // tag 2 then the payload
 //! assert_eq!(Packet::decode_exact(&[0x00, 0x02, 0x07]).unwrap(), p);
+//! ```
+//!
+//! # Composing `tag` + `magic`
+//!
+//! The two stack: the `tag` selects the variant, then its `magic` is a **signature** —
+//! verified on read, written on encode (it *is* on the wire; the tag is not).
+//!
+//! ```
+//! # use bnb::bin;
+//! #[bin(big, ctx(kind: u8), tag = kind)]
+//! #[derive(Debug, PartialEq)]
+//! enum Msg {
+//!     #[bin(tag = 1, magic = b"LI")] Login(u32), // verify "LI" after the tag picks it
+//!     #[bin(tag = 2)] Ping,                       // no signature
+//! }
+//!
+//! let li = [b'L', b'I', 0xAA, 0xBB, 0xCC, 0xDD];
+//! assert_eq!(Msg::decode_with_exact(&li, MsgCtx { kind: 1 }).unwrap(), Msg::Login(0xAABB_CCDD));
+//! assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
 //! ```
 //!
 //! # Notes
 //!
-//! - Tag values are used as `match` patterns, so they must be literals or `const`
-//!   paths (e.g. a `#[derive(BitEnum)]` variant for named tags).
-//! - A `#[catch_all]` variant must store the tag in its first field so encode can put
-//!   it back; the remaining fields are its payload (length usually from a `count`).
-//! - Variant fields support the struct directives — including `temp`/`calc` and `ctx`
-//!   (a variant `ctx`/`calc` expression sees its sibling fields by name). The one
-//!   exception is per-element `ctx` on a `Vec` variant field.
+//! - **`magic` values are literals**: a byte string, or a width-suffixed unsigned integer
+//!   (`1u16`, `0xCAu8`). Sub-byte and non-literal magics are rejected so the wire width is
+//!   always unambiguous.
+//! - A `#[catch_all]` stores the discriminant in its first field (the captured magic, or
+//!   the selector under tag dispatch) so it can round-trip; its remaining fields are the
+//!   payload (length usually from a `count`).
+//! - Variant fields support the full directive grammar (`count`, `if`, `map`, `ctx`,
+//!   `temp`/`calc`, `parse_with`, …), so a catch-all can read its own length and recompute
+//!   it on encode.
+//! - `tag()` (tag dispatch) / `magic()` (magic dispatch) return the variant's discriminant.

@@ -1,7 +1,7 @@
-error: the `#[catch_all]` first field holds the captured tag, so it can't be `#[br(temp)]`
+error: the `#[catch_all]` first field holds the captured discriminant, so it can't be `#[br(temp)]`
   --> tests/ui/bin_enum_catch_all_temp_tag.rs:11:9
    |
 11 | /         #[br(temp)]
 12 | |         #[bw(calc = 0u8)]
-13 | |         tag: u8,
-   | |_______________^
+13 | |         magic: u8,
+   | |_________________^

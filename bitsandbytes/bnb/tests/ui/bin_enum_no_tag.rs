@@ -1,4 +1,5 @@
-//! A `#[bin]` enum must declare how the variant is selected: `tag` or `tag_from`.
+//! A variant with `tag = …` needs the enum to declare the selector via
+//! `#[bin(tag = <ctx-param>)]` (the off-wire dispatch source).
 use bnb::bin;
 
 #[bin(big)]

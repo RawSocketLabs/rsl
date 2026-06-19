@@ -1345,12 +1345,9 @@ struct BinArgs {
     /// `build()` (construction soundness; the parser stays permissive). A free
     /// function, not a method, so it isn't mistaken for protocol-context validity.
     validate: Option<syn::Path>,
-    /// `tag = <type>` (enum only) — read a discriminant of this `Bits` type, then
-    /// dispatch to the variant whose `#[bin(tag = <value>)]` matches.
-    tag: Option<Type>,
-    /// `tag_from = <ctx-param>` (enum only) — dispatch on an existing `ctx(...)`
-    /// parameter instead of reading a discriminant (the parent already consumed it).
-    tag_from: Option<Ident>,
+    /// `tag = <ctx-param>` (enum only) — the **selector**: dispatch each `#[bin(tag =
+    /// <value>)]` variant on this `ctx(...)` parameter (read-only, never on the wire).
+    tag: Option<Ident>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -1394,13 +1391,11 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.validate = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("tag") {
             args.tag = Some(meta.value()?.parse()?);
-        } else if meta.path.is_ident("tag_from") {
-            args.tag_from = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
-                 ctx(name: Ty, …), validate = <path>, tag = <type>, tag_from = <ctx-param>",
+                 ctx(name: Ty, …), validate = <path>, tag = <ctx-param>",
             ));
         }
         Ok(())
@@ -1426,10 +1421,10 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
 /// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
 /// required-by-default builder, folded over a named-field struct.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
-    if args.tag.is_some() || args.tag_from.is_some() {
+    if args.tag.is_some() {
         return Err(syn::Error::new_spanned(
             &s.ident,
-            "`tag`/`tag_from` apply to a `#[bin]` enum, not a struct",
+            "`tag` (variant dispatch) applies to a `#[bin]` enum, not a struct",
         ));
     }
     if !s.generics.params.is_empty() {
@@ -1767,7 +1762,6 @@ fn variant_field_write(
 /// A `magic` wire constant. Restricted to **byte-oriented literals** so its on-wire
 /// width is unambiguous: a byte string (`b"IHDR"`) or a width-suffixed unsigned
 /// integer (`0x01u16`). Sub-byte types (`u4`) and non-literals are rejected.
-#[allow(dead_code)] // wired into `bin_enum` in Phase 1 step 2
 enum Magic {
     /// A byte-string/byte literal — its raw bytes.
     Bytes(Vec<u8>),
@@ -1775,7 +1769,18 @@ enum Magic {
     Int { value: syn::Expr, width: usize },
 }
 
-#[allow(dead_code)]
+/// The unsigned integer type token for a byte width (1/2/4/8/16).
+fn int_type_for_width(width: usize) -> TokenStream2 {
+    match width {
+        1 => quote!(u8),
+        2 => quote!(u16),
+        4 => quote!(u32),
+        8 => quote!(u64),
+        16 => quote!(u128),
+        _ => unreachable!("magic int width is validated to 1/2/4/8/16"),
+    }
+}
+
 impl Magic {
     /// The on-wire byte length of this magic.
     fn byte_len(&self) -> usize {
@@ -1784,10 +1789,93 @@ impl Magic {
             Magic::Int { width, .. } => *width,
         }
     }
+
+    /// A coarse shape discriminator (byte-string vs integer) for "all magics in this
+    /// enum read the same way" checks — two magics dispatch uniformly iff their
+    /// `(kind, byte_len)` agree.
+    fn kind(&self) -> u8 {
+        match self {
+            Magic::Bytes(_) => 0,
+            Magic::Int { .. } => 1,
+        }
+    }
+
+    /// The type this magic is read into: `[u8; N]` for a byte string, the unsigned
+    /// integer type for an int.
+    fn read_type(&self) -> TokenStream2 {
+        match self {
+            Magic::Bytes(b) => {
+                let n = b.len();
+                quote!([u8; #n])
+            }
+            Magic::Int { width, .. } => int_type_for_width(*width),
+        }
+    }
+
+    /// A `read_type`-valued constant equal to this magic — for `==` dispatch and for
+    /// writing a known variant's magic.
+    fn const_expr(&self) -> TokenStream2 {
+        match self {
+            Magic::Bytes(b) => {
+                let bytes = b.iter();
+                quote!([#(#bytes),*])
+            }
+            Magic::Int { value, .. } => quote!(#value),
+        }
+    }
+
+    /// Read this magic from `r` into the local `binding`.
+    fn read_into(&self, binding: &Ident) -> TokenStream2 {
+        let ty = self.read_type();
+        match self {
+            Magic::Bytes(_) => quote!(
+                let #binding: #ty = ::bnb::__private::read_byte_array(r).map_err(|e| e.in_field("magic"))?;
+            ),
+            Magic::Int { .. } => quote!(
+                let #binding: #ty = ::bnb::__private::Source::read(r).map_err(|e| e.in_field("magic"))?;
+            ),
+        }
+    }
+
+    /// Read and verify this magic, erroring on mismatch (`what` names the site).
+    fn verify(&self, what: &str) -> TokenStream2 {
+        let binding = format_ident!("__vm");
+        let read = self.read_into(&binding);
+        let expected = self.const_expr();
+        let msg = format!("magic mismatch ({what})");
+        quote! {
+            #read
+            if #binding != #expected {
+                return ::core::result::Result::Err(
+                    ::bnb::__private::BitError::convert(
+                        ::std::string::String::from(#msg),
+                        ::bnb::__private::Source::bit_pos(r),
+                    ).in_field("magic"),
+                );
+            }
+        }
+    }
+
+    /// Write `value` (a `read_type`-typed expression) as this magic to `w`.
+    fn write_value(&self, value: &TokenStream2) -> TokenStream2 {
+        match self {
+            Magic::Bytes(_) => quote!(
+                ::bnb::__private::write_byte_array(&#value, w).map_err(|e| e.in_field("magic"))?;
+            ),
+            Magic::Int { .. } => quote!(
+                ::bnb::__private::Sink::write(w, #value).map_err(|e| e.in_field("magic"))?;
+            ),
+        }
+    }
+
+    /// Write this magic's constant value to `w` (for a known variant).
+    fn write_const(&self) -> TokenStream2 {
+        let c = self.const_expr();
+        self.write_value(&c)
+    }
 }
 
 /// Parses + validates a `magic = <literal>` value into a [`Magic`].
-#[allow(dead_code)]
 fn parse_magic(expr: &syn::Expr) -> syn::Result<Magic> {
     if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = expr {
         match lit {
@@ -1830,7 +1918,6 @@ fn parse_magic(expr: &syn::Expr) -> syn::Result<Magic> {
 }
 
 /// How a single variant is selected.
-#[allow(dead_code)]
 #[derive(PartialEq, Eq, Debug)]
 enum VariantRole {
     /// `#[bin(tag = V)]` — chosen by the selector; no wire signature.
@@ -1846,7 +1933,6 @@ enum VariantRole {
 }
 
 /// One variant's dispatch directives.
-#[allow(dead_code)]
 struct VariantDispatch<'a> {
     variant: &'a syn::Variant,
     /// `#[bin(tag = V)]` — the selector value to match against.
@@ -1856,7 +1942,6 @@ struct VariantDispatch<'a> {
     catch_all: bool,
 }
 
-#[allow(dead_code)]
 impl VariantDispatch<'_> {
     fn role(&self) -> VariantRole {
         if self.catch_all {
@@ -1873,7 +1958,6 @@ impl VariantDispatch<'_> {
 }
 
 /// The uniformity of the variant magic widths — decides single-read vs peek dispatch.
-#[allow(dead_code)]
 #[derive(PartialEq, Eq, Debug)]
 enum MagicWidth {
     /// No variant carries a magic.
@@ -1885,7 +1969,6 @@ enum MagicWidth {
 }
 
 /// The parsed + validated dispatch plan for a `#[bin]` enum.
-#[allow(dead_code)]
 struct EnumDispatch<'a> {
     /// `#[bin(tag = <ctx-param>)]` — the selector for tag-variants, if any.
     selector: Option<Ident>,
@@ -1894,7 +1977,6 @@ struct EnumDispatch<'a> {
     variants: Vec<VariantDispatch<'a>>,
 }
 
-#[allow(dead_code)]
 impl<'a> EnumDispatch<'a> {
     /// Parses every variant's dispatch directives and validates the structural rules
     /// (a tag-variant needs a declared selector; at most one `#[catch_all]`; at most
@@ -1969,13 +2051,15 @@ impl<'a> EnumDispatch<'a> {
         })
     }
 
-    /// The uniformity of the variant magic widths.
+    /// The width uniformity of the **dispatching** magics (magic-only variants). A magic
+    /// on a tag-variant is a post-selection signature, verified per variant, so it never
+    /// participates in the read-once-then-match decision this drives.
     fn magic_width(&self) -> MagicWidth {
         let mut width: Option<usize> = None;
         let mut mixed = false;
         for v in &self.variants {
-            if let Some(m) = &v.magic {
-                let len = m.byte_len();
+            if v.role() == VariantRole::MagicOnly {
+                let len = v.magic.as_ref().expect("MagicOnly has a magic").byte_len();
                 match width {
                     None => width = Some(len),
                     Some(w) if w != len => mixed = true,
@@ -1989,6 +2073,91 @@ impl<'a> EnumDispatch<'a> {
             (None, false) => MagicWidth::None,
         }
     }
+
+    /// The read type shared by all dispatching magics, if they agree on `(kind, width)`
+    /// (a single-read `__m`); `None` if there are none or they disagree (peek dispatch).
+    fn uniform_magic_read_type(&self) -> Option<TokenStream2> {
+        let mut shape: Option<(u8, usize)> = None;
+        let mut ty = None;
+        for v in &self.variants {
+            if v.role() == VariantRole::MagicOnly {
+                let m = v.magic.as_ref().expect("MagicOnly has a magic");
+                let s = (m.kind(), m.byte_len());
+                match shape {
+                    None => {
+                        shape = Some(s);
+                        ty = Some(m.read_type());
+                    }
+                    Some(prev) if prev != s => return None,
+                    _ => {}
+                }
+            }
+        }
+        ty
+    }
+}
+
+/// Field-level decode/encode for one variant: the per-field reads + the path-with-fields
+/// (used as both the decode constructor and the encode pattern) + the per-field writes.
+/// For a `#[catch_all]`, `catch_capture` is the discriminant expression bound into the
+/// first field on read; that field is omitted from `writes` (the dispatch emits it).
+/// `#[br(temp)]` fields are read but dropped from the variant (mirrors a struct).
+fn variant_field_codec(
+    name: &Ident,
+    v: &syn::Variant,
+    catch_capture: Option<&TokenStream2>,
+) -> syn::Result<(Vec<TokenStream2>, TokenStream2, Vec<TokenStream2>)> {
+    let vid = &v.ident;
+    let idents = variant_bind_idents(&v.fields);
+    let stored_idents: Vec<Ident> = v
+        .fields
+        .iter()
+        .zip(&idents)
+        .filter(|(f, _)| !field_is_temp(f))
+        .map(|(_, id)| id.clone())
+        .collect();
+    let path = variant_path_fields(name, vid, &v.fields, &stored_idents);
+
+    let is_catch = catch_capture.is_some();
+    if is_catch && v.fields.is_empty() {
+        return Err(syn::Error::new_spanned(
+            vid,
+            "a `#[catch_all]` variant needs a first field to hold the captured discriminant",
+        ));
+    }
+
+    let mut reads = Vec::new();
+    for (i, f) in v.fields.iter().enumerate() {
+        let id = &idents[i];
+        let br = parse_field_br(f)?;
+        variant_check(f, &br)?;
+        if is_catch && i == 0 {
+            if br.temp {
+                return Err(syn::Error::new_spanned(
+                    f,
+                    "the `#[catch_all]` first field holds the captured discriminant, so it can't be `#[br(temp)]`",
+                ));
+            }
+            let cap = catch_capture.expect("catch capture present");
+            reads.push(quote!(let #id = #cap;));
+        } else {
+            let mut nf = f.clone();
+            nf.ident = Some(id.clone());
+            reads.push(field_read_stmt(&nf, &br)?);
+        }
+    }
+
+    let mut writes = Vec::new();
+    for (i, f) in v.fields.iter().enumerate() {
+        if is_catch && i == 0 {
+            continue; // the captured discriminant — the dispatch emits it
+        }
+        let id = &idents[i];
+        let br = parse_field_br(f)?;
+        writes.push(variant_field_write(f, &br, id, &stored_idents)?);
+    }
+
+    Ok((reads, path, writes))
 }
 
 /// The `#[bin]` enum path. See the module banner above.
@@ -2001,12 +2170,6 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             "#[bin] does not support generic parameters yet",
         ));
     }
-    if args.magic.is_some() {
-        return Err(syn::Error::new_spanned(
-            name,
-            "`magic` is not supported on a `#[bin]` enum yet",
-        ));
-    }
     if args.validate.is_some() {
         return Err(syn::Error::new_spanned(
             name,
@@ -2014,202 +2177,208 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         ));
     }
 
-    // Tag source: internal `tag = <ty>` (read it) XOR external `tag_from = <param>`
-    // (take it from a declared `ctx` parameter). `tag_ty` types the tag everywhere.
-    let (tag_ty, read_tag): (Type, TokenStream2) = match (&args.tag, &args.tag_from) {
-        (Some(_), Some(_)) => {
-            return Err(syn::Error::new_spanned(
-                name,
-                "`tag` and `tag_from` are mutually exclusive",
-            ));
-        }
-        (None, None) => {
-            return Err(syn::Error::new_spanned(
-                name,
-                "a `#[bin]` enum needs `tag = <type>` (read a discriminant) or `tag_from = <ctx-param>` (dispatch on context)",
-            ));
-        }
-        (Some(ty), None) => (
-            ty.clone(),
-            quote!(let __tag: #ty = ::bnb::__private::Source::read(r).map_err(|e| e.in_field("tag"))?;),
-        ),
-        (None, Some(sel)) => {
-            let ty = args
-                .ctx
+    // Enum-level `magic` is a leading prefix constant, verified on read / written on
+    // encode before dispatch. Then parse + validate the per-variant dispatch model.
+    let prefix = args.magic.as_ref().map(parse_magic).transpose()?;
+    let dispatch = EnumDispatch::parse(e, args.tag.clone(), prefix)?;
+
+    // The dispatch mode, and the parts of the chain still landing in later Phase 1 steps.
+    let has_selector = dispatch.selector.is_some();
+    let magic_dispatch = dispatch
+        .variants
+        .iter()
+        .any(|v| v.role() == VariantRole::MagicOnly);
+    if dispatch
+        .variants
+        .iter()
+        .any(|v| v.role() == VariantRole::Fallback)
+    {
+        return Err(syn::Error::new_spanned(
+            name,
+            "a no-tag/no-magic fallback variant is not yet implemented; use `#[catch_all]`",
+        ));
+    }
+    if has_selector && magic_dispatch {
+        return Err(syn::Error::new_spanned(
+            name,
+            "mixing tag-dispatched and magic-dispatched variants in one enum is not yet implemented",
+        ));
+    }
+    if dispatch.magic_width() == MagicWidth::Mixed {
+        return Err(syn::Error::new_spanned(
+            name,
+            "variable-width magics are not yet implemented; give every magic the same byte length",
+        ));
+    }
+    if !has_selector && !magic_dispatch {
+        return Err(syn::Error::new_spanned(
+            name,
+            "a `#[bin]` enum dispatches on `tag = <ctx-param>` (variant `tag`s) or per-variant `magic`s; it has neither",
+        ));
+    }
+
+    // For tag dispatch: the selector ident + its `ctx` type. For magic dispatch: a
+    // representative dispatching magic (drives the single `__m` read and the catch
+    // capture's writer). The `#[catch_all]` first field captures the read magic (magic
+    // dispatch) or the selector value (tag dispatch).
+    let selector_ty = dispatch
+        .selector
+        .as_ref()
+        .map(|sel| {
+            args.ctx
                 .iter()
                 .find(|(n, _)| n == sel)
                 .map(|(_, t)| t.clone())
                 .ok_or_else(|| {
-                    syn::Error::new_spanned(sel, "`tag_from` must name a `ctx(...)` parameter")
-                })?;
-            (ty, quote!(let __tag = #sel;))
-        }
+                    syn::Error::new_spanned(
+                        sel,
+                        "`tag = <ctx-param>` must name a `ctx(...)` parameter",
+                    )
+                })
+        })
+        .transpose()?;
+    let rep_magic = dispatch
+        .variants
+        .iter()
+        .find_map(|v| (v.role() == VariantRole::MagicOnly).then(|| v.magic.as_ref().unwrap()));
+    // The discriminant bound into a `#[catch_all]`'s first field: the read magic (`__m`,
+    // magic dispatch) or the unmatched selector (`__other`, bound by the `match` arm).
+    let captured: TokenStream2 = if magic_dispatch {
+        quote!(__m)
+    } else {
+        quote!(__other)
+    };
+    let catch_variant = dispatch
+        .variants
+        .iter()
+        .find(|v| v.role() == VariantRole::CatchAll);
+
+    // Per-variant encode arms + accessor (`tag()` / `magic()`) arms.
+    let mut encode_arms = Vec::new();
+    let mut accessor_arms = Vec::new();
+    for v in &dispatch.variants {
+        let is_catch = v.role() == VariantRole::CatchAll;
+        let cap = is_catch.then(|| captured.clone());
+        let (_, pat, writes) = variant_field_codec(name, v.variant, cap.as_ref())?;
+
+        // Write this variant's discriminant: a known variant's `magic`, or the catch-all's
+        // captured magic (magic dispatch). A tag-only variant and a tag-dispatch catch-all
+        // write nothing — the tag is the off-wire selector.
+        let write_disc = if is_catch {
+            if magic_dispatch {
+                let first = &variant_bind_idents(&v.variant.fields)[0];
+                match rep_magic
+                    .expect("magic dispatch has a representative magic")
+                    .kind()
+                {
+                    0 => {
+                        quote!(::bnb::__private::write_byte_array(#first, w).map_err(|e| e.in_field("magic"))?;)
+                    }
+                    _ => {
+                        quote!(::bnb::__private::Sink::write(w, *#first).map_err(|e| e.in_field("magic"))?;)
+                    }
+                }
+            } else {
+                quote!()
+            }
+        } else if let Some(m) = &v.magic {
+            m.write_const()
+        } else {
+            quote!()
+        };
+        encode_arms.push(quote!(#pat => { #write_disc #(#writes)* }));
+
+        // `tag()` / `magic()`: the selector value / magic constant, or the catch-all's captured one.
+        let acc = if is_catch {
+            let first = &variant_bind_idents(&v.variant.fields)[0];
+            quote!(*#first)
+        } else if magic_dispatch {
+            v.magic.as_ref().expect("magic variant").const_expr()
+        } else {
+            let tagval = v.tag.as_ref().expect("tag variant");
+            quote!(#tagval)
+        };
+        accessor_arms.push(quote!(#pat => #acc,));
+    }
+
+    // The "nothing matched" body: the catch-all (capturing the discriminant), or — for a
+    // closed set — an `unrecognized discriminant` error.
+    let disc_field = if magic_dispatch { "magic" } else { "tag" };
+    let catch_body = if let Some(cv) = catch_variant {
+        let (reads, ctor, _) = variant_field_codec(name, cv.variant, Some(&captured))?;
+        quote! {{
+            #(#reads)*
+            ::core::result::Result::Ok(#ctor)
+        }}
+    } else {
+        quote! {{
+            ::core::result::Result::Err(::bnb::__private::BitError::convert(
+                ::std::string::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
+                ::bnb::__private::Source::bit_pos(r),
+            ).in_field(#disc_field))
+        }}
     };
 
-    // Parse each variant: `#[bin(tag = <value>)]` or a single `#[catch_all]`.
-    struct VPlan<'a> {
-        v: &'a syn::Variant,
-        tag: Option<syn::Expr>,
-        catch_all: bool,
-    }
-    let mut plans: Vec<VPlan> = Vec::new();
-    let mut catch_alls = 0;
-    for v in &e.variants {
-        let mut tag = None;
-        let mut catch_all = false;
-        for a in &v.attrs {
-            if a.path().is_ident("catch_all") {
-                catch_all = true;
-            } else if a.path().is_ident("bin") {
-                a.parse_nested_meta(|m| {
-                    if m.path.is_ident("tag") {
-                        tag = Some(m.value()?.parse()?);
-                        Ok(())
-                    } else {
-                        Err(m.error("expected `tag = <value>` on a variant"))
+    // The decode dispatch: a single `__m` read + an `==` chain (magic dispatch), or a
+    // `match` on the selector (tag dispatch). The catch body is the final else.
+    let dispatch_decode = if magic_dispatch {
+        let read = rep_magic
+            .expect("magic dispatch has a representative magic")
+            .read_into(&format_ident!("__m"));
+        let mut chain = catch_body.clone();
+        for v in dispatch.variants.iter().rev() {
+            if v.role() == VariantRole::MagicOnly {
+                let c = v.magic.as_ref().unwrap().const_expr();
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+                chain = quote! {
+                    if __m == #c {
+                        #(#reads)*
+                        ::core::result::Result::Ok(#ctor)
+                    } else #chain
+                };
+            }
+        }
+        quote!(#read #chain)
+    } else {
+        let sel = dispatch
+            .selector
+            .as_ref()
+            .expect("tag dispatch has a selector");
+        let mut arms = Vec::new();
+        for v in &dispatch.variants {
+            if matches!(v.role(), VariantRole::TagOnly | VariantRole::TagAndMagic) {
+                let tagval = v.tag.as_ref().unwrap();
+                let verify = v
+                    .magic
+                    .as_ref()
+                    .map(|m| m.verify(&v.variant.ident.to_string()));
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+                arms.push(quote! {
+                    #tagval => {
+                        #verify
+                        #(#reads)*
+                        ::core::result::Result::Ok(#ctor)
                     }
-                })?;
+                });
             }
         }
-        if catch_all {
-            catch_alls += 1;
-            if tag.is_some() {
-                return Err(syn::Error::new_spanned(
-                    &v.ident,
-                    "a `#[catch_all]` variant has no `tag` (it captures the unmatched one)",
-                ));
-            }
-            if v.fields.is_empty() {
-                return Err(syn::Error::new_spanned(
-                    &v.ident,
-                    "a `#[catch_all]` variant needs a first field to hold the captured tag",
-                ));
-            }
-        } else if tag.is_none() {
-            return Err(syn::Error::new_spanned(
-                &v.ident,
-                "each variant needs `#[bin(tag = <value>)]` (or exactly one `#[catch_all]`)",
-            ));
-        }
-        plans.push(VPlan { v, tag, catch_all });
-    }
-    if catch_alls > 1 {
-        return Err(syn::Error::new_spanned(
-            name,
-            "a `#[bin]` enum may have at most one `#[catch_all]` variant",
-        ));
-    }
-
-    // Build the decode arms, encode arms, and `tag()` arms in one pass.
-    let mut decode_arms = Vec::new();
-    let mut encode_arms = Vec::new();
-    let mut tag_arms = Vec::new();
-    let mut catch_arm = None;
-    for plan in &plans {
-        let vid = &plan.v.ident;
-        let idents = variant_bind_idents(&plan.v.fields);
-        // The pattern/constructor binds only **stored** fields: a `#[br(temp)]` variant
-        // field is read into a local but dropped from the variant (mirrors a struct).
-        let stored_idents: Vec<Ident> = plan
-            .v
-            .fields
-            .iter()
-            .zip(&idents)
-            .filter(|(f, _)| !field_is_temp(f))
-            .map(|(_, id)| id.clone())
-            .collect();
-        let pat = variant_path_fields(name, vid, &plan.v.fields, &stored_idents);
-
-        // Decode: read each field into its local (full directive grammar via
-        // `field_read_stmt`); the catch-all's first field is the captured tag.
-        let mut reads = Vec::new();
-        for (i, f) in plan.v.fields.iter().enumerate() {
-            let id = &idents[i];
-            let br = parse_field_br(f)?;
-            variant_check(f, &br)?;
-            if plan.catch_all && i == 0 {
-                if br.temp {
-                    return Err(syn::Error::new_spanned(
-                        f,
-                        "the `#[catch_all]` first field holds the captured tag, so it can't be `#[br(temp)]`",
-                    ));
-                }
-                reads.push(quote!(let #id: #tag_ty = __other;));
-            } else {
-                let mut nf = f.clone();
-                nf.ident = Some(id.clone());
-                reads.push(field_read_stmt(&nf, &br)?);
-            }
-        }
-
-        // Encode: write the tag (internal only), then the payload locals.
-        let mut writes = Vec::new();
-        if args.tag.is_some() {
-            if plan.catch_all {
-                let first = &idents[0];
-                writes.push(quote!(::bnb::__private::Sink::write(w, *#first)
-                    .map_err(|e| e.in_field("tag"))?;));
-            } else {
-                let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
-                writes.push(quote! {{
-                    let __t: #tag_ty = #tagval;
-                    ::bnb::__private::Sink::write(w, __t).map_err(|e| e.in_field("tag"))?;
-                }});
-            }
-        }
-        for (i, f) in plan.v.fields.iter().enumerate() {
-            if plan.catch_all && i == 0 {
-                continue; // the captured tag, written above (internal) or owned by parent
-            }
-            let id = &idents[i];
-            let br = parse_field_br(f)?;
-            writes.push(variant_field_write(f, &br, id, &stored_idents)?);
-        }
-        encode_arms.push(quote!(#pat => { #(#writes)* }));
-
-        // `tag()`: the variant's discriminant — the literal, or the catch-all's stored first field.
-        let tag_value = if plan.catch_all {
-            let first = &idents[0];
-            quote!(*#first)
+        let catch_pat = if catch_variant.is_some() {
+            quote!(__other)
         } else {
-            let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
-            quote!({ let __t: #tag_ty = #tagval; __t })
+            quote!(_)
         };
-        tag_arms.push(quote!(#pat => #tag_value,));
+        quote!(match #sel { #(#arms)* #catch_pat => #catch_body })
+    };
 
-        if plan.catch_all {
-            catch_arm = Some(quote!(__other => {
-                #(#reads)*
-                ::core::result::Result::Ok(#pat)
-            }));
-        } else {
-            let tagval = plan.tag.as_ref().expect("non-catch-all has a tag");
-            decode_arms.push(quote!(#tagval => {
-                #(#reads)*
-                ::core::result::Result::Ok(#pat)
-            }));
-        }
-    }
-    // No catch-all ⇒ a closed union: an unrecognized tag is a decode error.
-    let catch_arm = catch_arm.unwrap_or_else(|| {
-        quote! {
-            __other => ::core::result::Result::Err(
-                ::bnb::__private::BitError::convert(
-                    ::std::string::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
-                    ::bnb::__private::Source::bit_pos(r),
-                ).in_field("tag"),
-            )
-        }
-    });
+    let prefix_verify = dispatch.prefix.as_ref().map(|m| m.verify("prefix"));
+    let prefix_write = dispatch.prefix.as_ref().map(|m| m.write_const());
 
     let decode_body = quote! {
-        #read_tag
-        match __tag {
-            #(#decode_arms)*
-            #catch_arm
-        }
+        #prefix_verify
+        #dispatch_decode
     };
     let encode_body = quote! {
+        #prefix_write
         match self {
             #(#encode_arms)*
         }
@@ -2252,15 +2421,36 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         .map(|(n, _)| quote!(let #n = __ctx.#n;))
         .collect();
 
-    // `tag()` is an inherent accessor on every dispatched enum (drives the parent's
-    // `#[bw(calc = self.body.tag())]` when the tag lives outside the union).
-    let tag_fn = quote! {
-        impl #name {
-            #[doc = "The wire discriminant (tag) this value encodes as."]
-            #[allow(unused_variables)]
-            pub fn tag(&self) -> #tag_ty {
-                match self {
-                    #(#tag_arms)*
+    // An inherent accessor on every dispatched enum: `tag()` (the off-wire selector this
+    // value dispatches as — drives a parent's `#[bw(calc = self.body.tag())]`) for tag
+    // dispatch, or `magic()` (the wire signature) for magic dispatch.
+    let accessor_fn = if magic_dispatch {
+        let magic_ty = dispatch
+            .uniform_magic_read_type()
+            .expect("uniform magic dispatch has a read type");
+        quote! {
+            impl #name {
+                #[doc = "The wire magic this value encodes as."]
+                #[allow(unused_variables)]
+                pub fn magic(&self) -> #magic_ty {
+                    match self {
+                        #(#accessor_arms)*
+                    }
+                }
+            }
+        }
+    } else {
+        let sel_ty = selector_ty
+            .as_ref()
+            .expect("tag dispatch has a selector type");
+        quote! {
+            impl #name {
+                #[doc = "The selector this value dispatches as (the off-wire `tag`)."]
+                #[allow(unused_variables)]
+                pub fn tag(&self) -> #sel_ty {
+                    match self {
+                        #(#accessor_arms)*
+                    }
                 }
             }
         }
@@ -2422,7 +2612,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #ctx_struct
         #clean
-        #tag_fn
+        #accessor_fn
         #decode
         #encode
     })

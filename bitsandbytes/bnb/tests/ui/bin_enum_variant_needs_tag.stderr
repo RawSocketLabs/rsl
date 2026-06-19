@@ -1,5 +1,5 @@
-error: each variant needs `#[bin(tag = <value>)]` (or exactly one `#[catch_all]`)
- --> tests/ui/bin_enum_variant_needs_tag.rs:8:5
+error: a no-tag/no-magic fallback variant is not yet implemented; use `#[catch_all]`
+ --> tests/ui/bin_enum_variant_needs_tag.rs:6:6
   |
-8 |     B(u8), // no tag, no #[catch_all]
-  |     ^
+6 | enum E {
+  |      ^

@@ -226,12 +226,16 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 ///
 /// ## On an enum — tagged-union dispatch
 ///
-/// `#[bin]` also applies to an enum, where it reads a discriminant and dispatches to a
-/// variant: `#[bin(tag = <ty>)]` reads the tag, or `#[bin(tag_from = <ctx-param>)]`
-/// takes it from context; each variant carries `#[bin(tag = <value>)]`, and a single
-/// `#[catch_all]` variant preserves an unknown tag (dual-use). Variants may be unit,
-/// tuple, named, or `#[nested]`, and the codec exposes a `tag()` accessor. See the
-/// `bnb::guide::dispatch` page.
+/// `#[bin]` also applies to an enum, dispatching on two orthogonal concepts: a
+/// **`magic`** wire constant (a byte string or width-suffixed unsigned int, read *and*
+/// written — the discriminant, or a verified signature on a tag-variant) and a **`tag`**
+/// selector taken from `ctx` (read-only, never on the wire). With per-variant `magic`s
+/// the enum reads the discriminant and matches; with `#[bin(tag = <ctx-param>)]` + variant
+/// `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant; the two
+/// compose. A single `#[catch_all]` preserves an unknown discriminant (dual-use), else a
+/// magic enum is a closed set. An optional enum-level `magic` is a leading prefix.
+/// Variants may be unit, tuple, named, or `#[nested]`, and the codec exposes a `magic()`
+/// (magic dispatch) / `tag()` (tag dispatch) accessor. See the `bnb::guide::dispatch` page.
 ///
 /// On a struct, `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which
 /// stay usable directly. See the `bnb::guide::bin_codec` page for a full walkthrough and

@@ -1,11 +1,12 @@
-//! Every `#[bin]` enum variant needs a `#[bin(tag = <value>)]` (or one `#[catch_all]`).
+//! A variant with neither `tag`, `magic`, nor `#[catch_all]` is a typed fallback —
+//! not yet implemented in this Phase 1 step.
 use bnb::bin;
 
-#[bin(big, tag = u8)]
+#[bin(big)]
 enum E {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u8)]
     A(u8),
-    B(u8), // no tag, no #[catch_all]
+    B(u8), // no magic / tag — a fallback
 }
 
 fn main() {}

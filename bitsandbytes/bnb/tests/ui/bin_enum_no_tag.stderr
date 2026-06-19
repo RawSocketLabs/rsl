@@ -1,5 +1,5 @@
-error: a `#[bin]` enum needs `tag = <type>` (read a discriminant) or `tag_from = <ctx-param>` (dispatch on context)
- --> tests/ui/bin_enum_no_tag.rs:5:6
+error: a variant with `tag = …` needs the enum to declare the selector via `#[bin(tag = <ctx-param>)]`
+ --> tests/ui/bin_enum_no_tag.rs:8:5
   |
-5 | enum E {
-  |      ^
+8 |     A(u8),
+  |     ^

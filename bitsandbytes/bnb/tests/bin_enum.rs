@@ -1,8 +1,10 @@
-//! `#[bin]` on an enum — tag-dispatched tagged unions.
+//! `#[bin]` on an enum — tagged-union dispatch.
 //!
-//! A discriminant (read via `tag = <ty>`, or taken from a `ctx` param via
-//! `tag_from = <param>`) selects the variant; `#[catch_all]` preserves an unknown tag
-//! and its payload (dual-use). Variants may be unit, tuple, named, or `#[nested]`.
+//! Two orthogonal concepts: `magic` is a wire constant (byte string or byte-aligned int)
+//! that is read *and* written — the discriminant under magic dispatch, or a verified
+//! signature on a tag-variant; `tag` is a read-only selector from `ctx` that picks the
+//! variant and is never on the wire. `#[catch_all]` preserves an unknown discriminant
+//! (dual-use); without one a magic enum is a closed set (unknown ⇒ decode error).
 
 use bnb::bin;
 
@@ -12,28 +14,28 @@ struct Inner {
     x: u16,
 }
 
-// Internal tag: read a u16, then dispatch. Mixed variant shapes + a catch-all.
-#[bin(big, tag = u16)]
+// ── Integer magic dispatch: read a u16, match, dispatch. Every variant shape. ──
+#[bin(big)]
 #[derive(Debug, PartialEq)]
 enum Rdata {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u16)]
     A(u32), // tuple newtype
-    #[bin(tag = 2)]
+    #[bin(magic = 2u16)]
     Port { lo: u8, hi: u8 }, // struct variant
-    #[bin(tag = 3)]
+    #[bin(magic = 3u16)]
     Nested(#[nested] Inner), // a nested #[bin] message
-    #[bin(tag = 0)]
-    Ping, // unit variant: tag only
+    #[bin(magic = 0u16)]
+    Ping, // unit variant: magic only
     #[catch_all]
     Other {
-        tag: u16, // first field captures the unmatched discriminant
+        magic: u16, // first field captures the unmatched discriminant
         #[br(count = 2)]
         raw: Vec<u8>,
     },
 }
 
 #[test]
-fn internal_tag_roundtrips_every_variant_shape() {
+fn int_magic_roundtrips_every_variant_shape() {
     let cases: &[(Rdata, &[u8])] = &[
         (Rdata::A(0xDEAD_BEEF), &[0x00, 0x01, 0xDE, 0xAD, 0xBE, 0xEF]),
         (
@@ -57,55 +59,129 @@ fn internal_tag_roundtrips_every_variant_shape() {
 }
 
 #[test]
-fn catch_all_preserves_an_unknown_tag_and_roundtrips() {
-    // Tag 9 matches no variant -> Other captures it plus the 2 raw payload bytes.
-    let bytes = [0x00, 0x09, 0xAA, 0xBB];
+fn catch_all_captures_an_unknown_magic_and_roundtrips() {
+    let bytes = [0x00, 0x09, 0xAA, 0xBB]; // magic 9 matches nothing
     let decoded = Rdata::decode_exact(&bytes).unwrap();
     assert_eq!(
         decoded,
         Rdata::Other {
-            tag: 9,
+            magic: 9,
             raw: vec![0xAA, 0xBB],
         }
     );
-    // ...and it round-trips: the unknown tag goes back on the wire unchanged.
-    assert_eq!(decoded.to_bytes().unwrap(), bytes);
+    assert_eq!(decoded.to_bytes().unwrap(), bytes); // unknown magic preserved
 }
 
 #[test]
-fn tag_accessor_reports_each_variants_discriminant() {
-    assert_eq!(Rdata::A(5).tag(), 1);
-    assert_eq!(Rdata::Port { lo: 0, hi: 0 }.tag(), 2);
-    assert_eq!(Rdata::Ping.tag(), 0);
+fn magic_accessor_reports_each_variants_signature() {
+    assert_eq!(Rdata::A(5).magic(), 1);
+    assert_eq!(Rdata::Ping.magic(), 0);
     assert_eq!(
         Rdata::Other {
-            tag: 99,
+            magic: 99,
             raw: vec![]
         }
-        .tag(),
+        .magic(),
         99
     );
 }
 
-// A closed union (no `#[catch_all]`): an unrecognized tag is a decode error.
-#[bin(big, tag = u8)]
+// ── Byte-string magic dispatch (PNG/RIFF-style signatures). ──
+#[bin(big)]
+#[derive(Debug, PartialEq)]
+enum Chunk {
+    #[bin(magic = b"IHDR")]
+    Header { width: u16, height: u16 },
+    #[bin(magic = b"IDAT")]
+    Data(u8),
+    #[catch_all]
+    Other {
+        magic: [u8; 4],
+        #[br(count = 1)]
+        rest: Vec<u8>,
+    },
+}
+
+#[test]
+fn byte_string_magic_dispatch() {
+    let hdr = [b'I', b'H', b'D', b'R', 0x00, 0x10, 0x00, 0x20];
+    assert_eq!(
+        Chunk::decode_exact(&hdr).unwrap(),
+        Chunk::Header {
+            width: 16,
+            height: 32
+        }
+    );
+    assert_eq!(
+        Chunk::Header {
+            width: 16,
+            height: 32
+        }
+        .to_bytes()
+        .unwrap(),
+        hdr
+    );
+    assert_eq!(
+        Chunk::Header {
+            width: 0,
+            height: 0
+        }
+        .magic(),
+        *b"IHDR"
+    );
+
+    let unknown = [b'X', b'X', b'X', b'X', 0x42];
+    assert_eq!(
+        Chunk::decode_exact(&unknown).unwrap(),
+        Chunk::Other {
+            magic: *b"XXXX",
+            rest: vec![0x42],
+        }
+    );
+    assert_eq!(
+        Chunk::decode_exact(&unknown).unwrap().to_bytes().unwrap(),
+        unknown
+    );
+}
+
+// ── A closed magic set (no catch-all): an unknown magic is a decode error. ──
+#[bin(big)]
 #[derive(Debug, PartialEq)]
 enum Closed {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u8)]
     One(u8),
-    #[bin(tag = 2)]
+    #[bin(magic = 2u8)]
     Two(u8),
 }
 
 #[test]
-fn closed_union_errors_on_unknown_tag() {
+fn closed_magic_set_errors_on_unknown() {
     assert_eq!(Closed::decode_exact(&[1, 0x42]).unwrap(), Closed::One(0x42));
     assert_eq!(Closed::decode_exact(&[2, 0x99]).unwrap(), Closed::Two(0x99));
-    assert!(Closed::decode_exact(&[9, 0x00]).is_err()); // no catch_all -> rejected
+    assert!(Closed::decode_exact(&[9, 0x00]).is_err());
 }
 
-// External tag: the parent reads `kind` and hands it down; the enum reads no tag.
-#[bin(big, ctx(kind: u16), tag_from = kind)]
+// ── A leading magic prefix (verified + written once) before dispatch. ──
+#[bin(big, magic = b"BNB")]
+#[derive(Debug, PartialEq)]
+enum Pre {
+    #[bin(magic = 1u8)]
+    A(u16),
+    #[bin(magic = 2u8)]
+    B,
+}
+
+#[test]
+fn enum_level_magic_prefix() {
+    let a = [b'B', b'N', b'B', 0x01, 0xCA, 0xFE];
+    assert_eq!(Pre::decode_exact(&a).unwrap(), Pre::A(0xCAFE));
+    assert_eq!(Pre::A(0xCAFE).to_bytes().unwrap(), a);
+    // A wrong prefix is rejected before dispatch.
+    assert!(Pre::decode_exact(&[b'X', b'N', b'B', 0x01, 0x00, 0x00]).is_err());
+}
+
+// ── Tag dispatch: a ctx selector picks the variant; nothing on the wire is the tag. ──
+#[bin(big, ctx(kind: u16), tag = kind)]
 #[derive(Debug, PartialEq)]
 enum Body {
     #[bin(tag = 1)]
@@ -123,34 +199,22 @@ struct Packet {
 }
 
 #[test]
-fn external_tag_dispatches_on_parent_context() {
+fn tag_dispatch_writes_no_discriminant() {
     let p = Packet {
         kind: 1,
         body: Body::Login(0xAABB_CCDD),
     };
-    let bytes = [0x00, 0x01, 0xAA, 0xBB, 0xCC, 0xDD];
+    let bytes = [0x00, 0x01, 0xAA, 0xBB, 0xCC, 0xDD]; // kind, then payload only
     assert_eq!(p.to_bytes().unwrap(), bytes);
     assert_eq!(Packet::decode_exact(&bytes).unwrap(), p);
 
-    // The enum can also be driven standalone via its generated `*_with` API.
+    // Standalone: the enum reads no tag, only the payload (one byte here).
     let b = Body::decode_with_exact(&[0x07], BodyCtx { kind: 2 }).unwrap();
     assert_eq!(b, Body::Data { n: 7 });
+    assert_eq!(b.tag(), 2);
 }
 
-#[test]
-fn tag_accessor_drives_a_parents_no_drift_tag() {
-    // `tag()` lets the parent recompute the discriminant from the chosen variant
-    // (`#[bw(calc = self.body.tag())]`) when the tag is stored as a normal field.
-    let p = Packet {
-        kind: Body::Data { n: 7 }.tag(),
-        body: Body::Data { n: 7 },
-    };
-    assert_eq!(p.kind, 2);
-    assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]);
-}
-
-// The no-drift pattern in full: the tag isn't stored at all — it is read into a temp on
-// decode and recomputed from the chosen variant on encode, then handed to the union.
+// The no-drift pattern: the tag isn't stored — it's a temp recomputed from `body.tag()`.
 #[bin(big)]
 #[derive(Debug, PartialEq)]
 struct Packet2 {
@@ -162,38 +226,60 @@ struct Packet2 {
 }
 
 #[test]
-fn temp_tag_is_recomputed_on_encode_and_passed_as_ctx() {
+fn temp_tag_recomputed_on_encode_and_passed_as_ctx() {
     let p = Packet2 {
         body: Body::Data { n: 7 },
     };
-    // `kind` is not a field of Packet2; on encode it is `body.tag()` == 2, written then
-    // passed to `body` as ctx; on decode it is a temp read and passed down.
     assert_eq!(p.to_bytes().unwrap(), [0x00, 0x02, 0x07]);
     assert_eq!(Packet2::decode_exact(&[0x00, 0x02, 0x07]).unwrap(), p);
+}
 
-    let q = Packet2 {
-        body: Body::Login(0x0102_0304),
-    };
-    assert_eq!(q.to_bytes().unwrap(), [0x00, 0x01, 0x01, 0x02, 0x03, 0x04]);
+// ── `tag` + `magic` compose: the selector picks the variant, then its signature is
+//    verified on read and written on encode (it IS on the wire; the tag is not). ──
+#[bin(big, ctx(kind: u8), tag = kind)]
+#[derive(Debug, PartialEq)]
+enum Msg {
+    #[bin(tag = 1, magic = b"LI")]
+    Login(u32),
+    #[bin(tag = 2)]
+    Ping, // no signature
+}
+
+#[test]
+fn tag_with_verification_magic() {
+    // kind=1 selects Login; "LI" is then verified and the u32 read.
+    let li = [b'L', b'I', 0xAA, 0xBB, 0xCC, 0xDD];
+    let v = Msg::decode_with_exact(&li, MsgCtx { kind: 1 }).unwrap();
+    assert_eq!(v, Msg::Login(0xAABB_CCDD));
+    assert_eq!(v.to_bytes_with(MsgCtx { kind: 1 }).unwrap(), li);
+
+    // A bad signature for the selected variant is rejected.
+    assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
+
+    // kind=2 selects Ping (no signature, no payload).
     assert_eq!(
-        Packet2::decode_exact(&[0x00, 0x01, 0x01, 0x02, 0x03, 0x04]).unwrap(),
-        q
+        Msg::decode_with_exact(&[], MsgCtx { kind: 2 }).unwrap(),
+        Msg::Ping
+    );
+    assert_eq!(
+        Msg::Ping.to_bytes_with(MsgCtx { kind: 2 }).unwrap(),
+        Vec::<u8>::new()
     );
 }
 
-// `temp` + `calc` on a VARIANT field: a length-prefixed catch-all that reads its own
-// length on decode and recomputes it from the payload on encode (never stored, never
-// drifts) — the killer feature for self-delimiting unknown records.
-#[bin(big, tag = u8)]
+// ── Variant-field directives still work under the new dispatch. ──
+
+// `temp` + `calc` on a catch-all field: read its own length, recompute on encode.
+#[bin(big)]
 #[derive(Debug, PartialEq)]
 enum Tlv {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u8)]
     Ping,
     #[catch_all]
     Unknown {
-        tag: u8,
+        magic: u8,
         #[br(temp)]
-        #[bw(calc = body.len() as u8)] // sees the sibling `body: &Vec<u8>` on encode
+        #[bw(calc = body.len() as u8)]
         len: u8,
         #[br(count = len)]
         body: Vec<u8>,
@@ -201,50 +287,47 @@ enum Tlv {
 }
 
 #[test]
-fn temp_calc_length_on_a_variant_field() {
-    // tag 9 is unknown -> Unknown captures it, reads len=3, then 3 payload bytes.
-    let bytes = [0x09, 0x03, 0xAA, 0xBB, 0xCC];
+fn temp_calc_length_on_a_catch_all_field() {
+    let bytes = [0x09, 0x03, 0xAA, 0xBB, 0xCC]; // magic 9, len 3, 3 payload bytes
     let v = Tlv::decode_exact(&bytes).unwrap();
     assert_eq!(
         v,
         Tlv::Unknown {
-            tag: 9,
-            body: vec![0xAA, 0xBB, 0xCC], // `len` is not a field — it was temp
+            magic: 9,
+            body: vec![0xAA, 0xBB, 0xCC],
         }
     );
-    // On encode `len` is recomputed from body.len() == 3, so it round-trips.
     assert_eq!(v.to_bytes().unwrap(), bytes);
 }
 
-// `ctx` on a VARIANT field: the payload is itself a ctx-message taking a length from an
-// earlier sibling of the same variant.
+// `ctx` on a variant field: the payload is itself a ctx-message taking a sibling length.
 #[bin(big, ctx(n: u8))]
 #[derive(Debug, PartialEq)]
-struct Sized {
+struct SizedBlob {
     #[br(count = n)]
     bytes: Vec<u8>,
 }
 
-#[bin(big, tag = u8)]
+#[bin(big)]
 #[derive(Debug, PartialEq)]
 enum Framed {
-    #[bin(tag = 1)]
+    #[bin(magic = 1u8)]
     Blob {
         n: u8,
-        #[br(ctx { n })] // hand the sibling `n` to `Sized`'s ctx param
-        data: Sized,
+        #[br(ctx { n })]
+        data: SizedBlob,
     },
 }
 
 #[test]
 fn ctx_on_a_variant_field() {
-    let bytes = [0x01, 0x02, 0xAA, 0xBB];
+    let bytes = [0x01, 0x02, 0xAA, 0xBB]; // magic 1, n=2, two payload bytes
     let f = Framed::decode_exact(&bytes).unwrap();
     assert_eq!(
         f,
         Framed::Blob {
             n: 2,
-            data: Sized {
+            data: SizedBlob {
                 bytes: vec![0xAA, 0xBB],
             },
         }
