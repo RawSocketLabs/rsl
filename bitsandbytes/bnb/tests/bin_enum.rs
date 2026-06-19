@@ -291,6 +291,99 @@ fn decode_as_and_tagged_for_tag_enum() {
     );
 }
 
+// ── Variable-width magic: byte-string signatures of differing lengths, peeked and
+//    matched by prefix; the catch-all reads from the unconsumed position. ──
+#[bin(big)]
+#[derive(Debug, PartialEq)]
+enum Frame {
+    #[bin(magic = b"LOGIN")]
+    Login { user: u32 },
+    #[bin(magic = b"BYE")]
+    Bye,
+    #[catch_all]
+    Unknown {
+        #[br(count = 2)]
+        raw: Vec<u8>,
+    },
+}
+
+#[test]
+fn mixed_width_magic_dispatch() {
+    let login = [b'L', b'O', b'G', b'I', b'N', 0xAA, 0xBB, 0xCC, 0xDD];
+    assert_eq!(
+        Frame::decode_exact(&login).unwrap(),
+        Frame::Login { user: 0xAABB_CCDD }
+    );
+    assert_eq!(
+        Frame::Login { user: 0xAABB_CCDD }.to_bytes().unwrap(),
+        login
+    );
+    assert_eq!(Frame::decode_exact(b"BYE").unwrap(), Frame::Bye);
+    assert_eq!(Frame::Bye.to_bytes().unwrap(), b"BYE");
+
+    // Unknown: nothing matches, so the catch-all reads from the unconsumed start — the
+    // bytes (including what would be a magic) live in its own field, and round-trip.
+    let unk = [0xDE, 0xAD];
+    assert_eq!(
+        Frame::decode_exact(&unk).unwrap(),
+        Frame::Unknown {
+            raw: vec![0xDE, 0xAD]
+        }
+    );
+    assert_eq!(
+        Frame::Unknown {
+            raw: vec![0xDE, 0xAD]
+        }
+        .to_bytes()
+        .unwrap(),
+        unk
+    );
+    assert_eq!(Frame::peek_variant(&login).unwrap(), FrameKind::Login);
+    assert_eq!(Frame::peek_variant(&unk).unwrap(), FrameKind::Unknown);
+}
+
+// ── A typed fallback: magic variants, then a no-magic/no-tag variant parsed when none
+//    matches (parsing from the unconsumed position). ──
+#[bin(big)]
+#[derive(Debug, PartialEq)]
+enum Wire {
+    #[bin(magic = b"PING")]
+    Ping,
+    #[bin(magic = b"PONG")]
+    Pong,
+    Raw {
+        len: u8,
+        #[br(count = len)]
+        body: Vec<u8>,
+    },
+}
+
+#[test]
+fn typed_fallback_when_no_magic_matches() {
+    assert_eq!(Wire::decode_exact(b"PING").unwrap(), Wire::Ping);
+    assert_eq!(Wire::Pong.to_bytes().unwrap(), b"PONG");
+    // Not PING/PONG -> the typed fallback parses from the start.
+    let raw = [0x02, 0xAA, 0xBB];
+    assert_eq!(
+        Wire::decode_exact(&raw).unwrap(),
+        Wire::Raw {
+            len: 2,
+            body: vec![0xAA, 0xBB]
+        }
+    );
+    assert_eq!(
+        Wire::Raw {
+            len: 2,
+            body: vec![0xAA, 0xBB]
+        }
+        .to_bytes()
+        .unwrap(),
+        raw
+    );
+    assert_eq!(Wire::peek_variant(b"PONG").unwrap(), WireKind::Pong);
+    assert_eq!(Wire::peek_variant(&raw).unwrap(), WireKind::Raw);
+}
+
 // ── `tag` + `magic` compose: the selector picks the variant, then its signature is
 //    verified on read and written on encode (it IS on the wire; the tag is not). ──
 #[bin(big, ctx(kind: u8), tag = kind)]

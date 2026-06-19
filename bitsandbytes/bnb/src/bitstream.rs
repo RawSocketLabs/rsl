@@ -1198,14 +1198,16 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
 }
 
 /// Peeks up to `max` bytes without consuming them — reads them, then rewinds. Returns
-/// however many are available (fewer than `max` at end-of-input). Needs a seekable
-/// source; backs variable-width `#[bin]` enum magic dispatch (peek the longest magic,
-/// match a prefix, then seek past the matched one).
+/// however many are available (fewer than `max` at end-of-input). Backs variable-width
+/// `#[bin]` enum magic dispatch (peek the longest magic, match a prefix, then seek past
+/// the matched one). Like other seeking directives it bounds the generated `decode_from`
+/// on [`SeekSource`]; a forward-only source fails at runtime with
+/// [`ErrorKind::NotSeekable`].
 ///
 /// # Errors
 /// [`ErrorKind::NotSeekable`] if the source can't rewind.
 #[doc(hidden)]
-pub fn peek_bytes<S: SeekSource>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
+pub fn peek_bytes<S: Source>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
     let start = r.bit_pos();
     let mut out = Vec::with_capacity(max);
     for _ in 0..max {

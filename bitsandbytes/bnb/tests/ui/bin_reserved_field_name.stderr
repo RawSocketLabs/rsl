@@ -1,0 +1,5 @@
+error: a field named `w` collides with the codec's generated source/sink — rename it (e.g. `w_`)
+ --> tests/ui/bin_reserved_field_name.rs:6:5
+  |
+6 |     w: u8,
+  |     ^

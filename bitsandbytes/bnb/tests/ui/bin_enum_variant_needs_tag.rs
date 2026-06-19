@@ -1,12 +1,14 @@
-//! A variant with neither `tag`, `magic`, nor `#[catch_all]` is a typed fallback —
-//! not yet implemented in this Phase 1 step.
+//! Option (a): a `#[bin]` enum's "nothing matched" tail is a typed fallback OR a
+//! `#[catch_all]`, not both.
 use bnb::bin;
 
 #[bin(big)]
 enum E {
     #[bin(magic = 1u8)]
     A(u8),
-    B(u8), // no magic / tag — a fallback
+    B(u8), // a typed fallback...
+    #[catch_all]
+    C { x: u8 }, // ...and a catch_all — at most one tail
 }
 
 fn main() {}
