@@ -1753,6 +1753,244 @@ fn variant_field_write(
     Ok(quote!(#pre #core #post))
 }
 
+// ---------------------------------------------------------------------------
+// Dispatch model for `#[bin]` enums (Phase 1). Two orthogonal axes:
+//   * `tag`   — a read-only selector from `ctx` (never on the wire) that *picks*
+//               the variant; takes priority over magic.
+//   * `magic` — a wire constant (byte string or byte-aligned unsigned int literal),
+//               verified on read and written on encode; the discriminant when there
+//               is no tag, or a post-selection signature when there is.
+// This module is the parsed+validated model; `bin_enum` is wired onto it in the
+// next step.
+// ---------------------------------------------------------------------------
+
+/// A `magic` wire constant. Restricted to **byte-oriented literals** so its on-wire
+/// width is unambiguous: a byte string (`b"IHDR"`) or a width-suffixed unsigned
+/// integer (`0x01u16`). Sub-byte types (`u4`) and non-literals are rejected.
+#[allow(dead_code)] // wired into `bin_enum` in Phase 1 step 2
+enum Magic {
+    /// A byte-string/byte literal — its raw bytes.
+    Bytes(Vec<u8>),
+    /// A byte-aligned unsigned integer literal — the expression and its byte width.
+    Int { value: syn::Expr, width: usize },
+}
+
+#[allow(dead_code)]
+impl Magic {
+    /// The on-wire byte length of this magic.
+    fn byte_len(&self) -> usize {
+        match self {
+            Magic::Bytes(b) => b.len(),
+            Magic::Int { width, .. } => *width,
+        }
+    }
+}
+
+/// Parses + validates a `magic = <literal>` value into a [`Magic`].
+#[allow(dead_code)]
+fn parse_magic(expr: &syn::Expr) -> syn::Result<Magic> {
+    if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = expr {
+        match lit {
+            syn::Lit::ByteStr(s) => return Ok(Magic::Bytes(s.value())),
+            syn::Lit::Byte(b) => return Ok(Magic::Bytes(::std::vec![b.value()])),
+            syn::Lit::Int(li) => {
+                let width = match li.suffix() {
+                    "u8" => 1usize,
+                    "u16" => 2,
+                    "u32" => 4,
+                    "u64" => 8,
+                    "u128" => 16,
+                    "" => {
+                        return Err(syn::Error::new_spanned(
+                            expr,
+                            "a `magic` integer needs a width suffix so its wire size is unambiguous, e.g. `0x01u16`",
+                        ));
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            expr,
+                            format!(
+                                "`{other}` is not a valid `magic` type; use a byte-aligned unsigned integer (u8/u16/u32/u64/u128) or a byte string"
+                            ),
+                        ));
+                    }
+                };
+                return Ok(Magic::Int {
+                    value: expr.clone(),
+                    width,
+                });
+            }
+            _ => {}
+        }
+    }
+    Err(syn::Error::new_spanned(
+        expr,
+        "a `magic` must be a byte string (`b\"…\"`) or a byte-aligned unsigned integer literal (`0x01u16`)",
+    ))
+}
+
+/// How a single variant is selected.
+#[allow(dead_code)]
+#[derive(PartialEq, Eq, Debug)]
+enum VariantRole {
+    /// `#[bin(tag = V)]` — chosen by the selector; no wire signature.
+    TagOnly,
+    /// `#[bin(tag = V, magic = M)]` — chosen by the selector, then verify `M`.
+    TagAndMagic,
+    /// `#[bin(magic = M)]` — chosen by matching `M` on the wire.
+    MagicOnly,
+    /// neither tag nor magic — the typed fallback (at most one).
+    Fallback,
+    /// `#[catch_all]` — the raw capture (at most one).
+    CatchAll,
+}
+
+/// One variant's dispatch directives.
+#[allow(dead_code)]
+struct VariantDispatch<'a> {
+    variant: &'a syn::Variant,
+    /// `#[bin(tag = V)]` — the selector value to match against.
+    tag: Option<syn::Expr>,
+    /// `#[bin(magic = M)]` — the wire signature.
+    magic: Option<Magic>,
+    catch_all: bool,
+}
+
+#[allow(dead_code)]
+impl VariantDispatch<'_> {
+    fn role(&self) -> VariantRole {
+        if self.catch_all {
+            VariantRole::CatchAll
+        } else {
+            match (self.tag.is_some(), self.magic.is_some()) {
+                (true, true) => VariantRole::TagAndMagic,
+                (true, false) => VariantRole::TagOnly,
+                (false, true) => VariantRole::MagicOnly,
+                (false, false) => VariantRole::Fallback,
+            }
+        }
+    }
+}
+
+/// The uniformity of the variant magic widths — decides single-read vs peek dispatch.
+#[allow(dead_code)]
+#[derive(PartialEq, Eq, Debug)]
+enum MagicWidth {
+    /// No variant carries a magic.
+    None,
+    /// Every magic-bearing variant has this same byte width (single-read dispatch).
+    Uniform(usize),
+    /// Magics differ in width (peek-and-match dispatch — a later step).
+    Mixed,
+}
+
+/// The parsed + validated dispatch plan for a `#[bin]` enum.
+#[allow(dead_code)]
+struct EnumDispatch<'a> {
+    /// `#[bin(tag = <ctx-param>)]` — the selector for tag-variants, if any.
+    selector: Option<Ident>,
+    /// `#[bin(magic = <const>)]` — an optional leading prefix.
+    prefix: Option<Magic>,
+    variants: Vec<VariantDispatch<'a>>,
+}
+
+#[allow(dead_code)]
+impl<'a> EnumDispatch<'a> {
+    /// Parses every variant's dispatch directives and validates the structural rules
+    /// (a tag-variant needs a declared selector; at most one `#[catch_all]`; at most
+    /// one typed fallback). `selector`/`prefix` come from the enum-level `#[bin(...)]`.
+    fn parse(
+        e: &'a syn::ItemEnum,
+        selector: Option<Ident>,
+        prefix: Option<Magic>,
+    ) -> syn::Result<Self> {
+        let mut variants = Vec::new();
+        let mut catch_alls = 0u32;
+        let mut fallbacks = 0u32;
+        for v in &e.variants {
+            let mut tag = None;
+            let mut magic = None;
+            let mut catch_all = false;
+            for a in &v.attrs {
+                if a.path().is_ident("catch_all") {
+                    catch_all = true;
+                } else if a.path().is_ident("bin") {
+                    a.parse_nested_meta(|m| {
+                        if m.path.is_ident("tag") {
+                            tag = Some(m.value()?.parse()?);
+                            Ok(())
+                        } else if m.path.is_ident("magic") {
+                            let expr: syn::Expr = m.value()?.parse()?;
+                            magic = Some(parse_magic(&expr)?);
+                            Ok(())
+                        } else {
+                            Err(m.error(
+                                "expected `tag = <value>` or `magic = <literal>` on a variant",
+                            ))
+                        }
+                    })?;
+                }
+            }
+            let vd = VariantDispatch {
+                variant: v,
+                tag,
+                magic,
+                catch_all,
+            };
+            match vd.role() {
+                VariantRole::CatchAll => catch_alls += 1,
+                VariantRole::Fallback => fallbacks += 1,
+                VariantRole::TagOnly | VariantRole::TagAndMagic if selector.is_none() => {
+                    return Err(syn::Error::new_spanned(
+                        &v.ident,
+                        "a variant with `tag = …` needs the enum to declare the selector via `#[bin(tag = <ctx-param>)]`",
+                    ));
+                }
+                _ => {}
+            }
+            variants.push(vd);
+        }
+        if catch_alls > 1 {
+            return Err(syn::Error::new_spanned(
+                &e.ident,
+                "a `#[bin]` enum may have at most one `#[catch_all]` variant",
+            ));
+        }
+        if fallbacks > 1 {
+            return Err(syn::Error::new_spanned(
+                &e.ident,
+                "a `#[bin]` enum may have at most one no-tag/no-magic fallback variant",
+            ));
+        }
+        Ok(EnumDispatch {
+            selector,
+            prefix,
+            variants,
+        })
+    }
+
+    /// The uniformity of the variant magic widths.
+    fn magic_width(&self) -> MagicWidth {
+        let mut width: Option<usize> = None;
+        let mut mixed = false;
+        for v in &self.variants {
+            if let Some(m) = &v.magic {
+                let len = m.byte_len();
+                match width {
+                    None => width = Some(len),
+                    Some(w) if w != len => mixed = true,
+                    _ => {}
+                }
+            }
+        }
+        match (width, mixed) {
+            (_, true) => MagicWidth::Mixed,
+            (Some(w), false) => MagicWidth::Uniform(w),
+            (None, false) => MagicWidth::None,
+        }
+    }
+}
+
 /// The `#[bin]` enum path. See the module banner above.
 fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let name = &e.ident;
@@ -2188,4 +2426,92 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         #decode
         #encode
     })
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    // Source snippets are kept uniformly as `r#"…"#` (several contain `b"…"` magics).
+    #![allow(clippy::needless_raw_string_hashes)]
+    use super::{EnumDispatch, Magic, MagicWidth, VariantRole};
+
+    fn enum_of(src: &str) -> syn::ItemEnum {
+        syn::parse_str(src).expect("valid enum source")
+    }
+    fn sel(name: &str) -> syn::Ident {
+        syn::parse_str(name).expect("valid ident")
+    }
+
+    #[test]
+    fn integer_magic_widths_inferred_from_suffix() {
+        let src = r#"enum E { #[bin(magic = 0xCAFEu16)] A(u32), #[bin(magic = 0x01u16)] B }"#;
+        let e = enum_of(src);
+        let d = EnumDispatch::parse(&e, None, None).unwrap();
+        assert_eq!(d.variants.len(), 2);
+        assert_eq!(d.variants[0].magic.as_ref().unwrap().byte_len(), 2);
+        assert_eq!(d.variants[0].role(), VariantRole::MagicOnly);
+        assert_eq!(d.magic_width(), MagicWidth::Uniform(2));
+    }
+
+    #[test]
+    fn byte_string_magic_widths_and_mixed_detection() {
+        let e = enum_of(r#"enum E { #[bin(magic = b"IHDR")] A, #[bin(magic = b"END")] B }"#);
+        let d = EnumDispatch::parse(&e, None, None).unwrap();
+        assert_eq!(d.variants[0].magic.as_ref().unwrap().byte_len(), 4);
+        assert_eq!(d.variants[1].magic.as_ref().unwrap().byte_len(), 3);
+        assert_eq!(d.magic_width(), MagicWidth::Mixed);
+    }
+
+    #[test]
+    fn tag_variant_requires_a_selector() {
+        let e = enum_of(r#"enum E { #[bin(tag = 1)] A(u8) }"#);
+        assert!(EnumDispatch::parse(&e, None, None).is_err());
+        let d = EnumDispatch::parse(&e, Some(sel("kind")), None).unwrap();
+        assert_eq!(d.variants[0].role(), VariantRole::TagOnly);
+    }
+
+    #[test]
+    fn tag_and_magic_compose_on_one_variant() {
+        let e = enum_of(r#"enum E { #[bin(tag = 1, magic = b"LI")] A(u32) }"#);
+        let d = EnumDispatch::parse(&e, Some(sel("kind")), None).unwrap();
+        assert_eq!(d.variants[0].role(), VariantRole::TagAndMagic);
+    }
+
+    #[test]
+    fn fallback_and_catch_all_roles() {
+        let e = enum_of(r#"enum E { #[bin(magic = b"X")] A, Plain(u32), #[catch_all] Other(u8) }"#);
+        let d = EnumDispatch::parse(&e, None, None).unwrap();
+        assert_eq!(d.variants[1].role(), VariantRole::Fallback);
+        assert_eq!(d.variants[2].role(), VariantRole::CatchAll);
+    }
+
+    #[test]
+    fn rejects_invalid_magic_values() {
+        let bad = [
+            r#"enum E { #[bin(magic = SOME_CONST)] A }"#, // non-literal
+            r#"enum E { #[bin(magic = 1)] A }"#,          // unsuffixed int (ambiguous width)
+            r#"enum E { #[bin(magic = 1usize)] A }"#,     // non-byte-aligned/platform width
+            r#"enum E { #[bin(magic = u4::new(1))] A }"#, // sub-byte, and a non-literal
+        ];
+        for src in bad {
+            assert!(
+                EnumDispatch::parse(&enum_of(src), None, None).is_err(),
+                "should reject: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_two_catch_alls_and_two_fallbacks() {
+        let two_catch = r#"enum E { #[catch_all] A(u8), #[catch_all] B(u8) }"#;
+        assert!(EnumDispatch::parse(&enum_of(two_catch), None, None).is_err());
+        let two_fallback = r#"enum E { A(u8), B(u8) }"#;
+        assert!(EnumDispatch::parse(&enum_of(two_fallback), None, None).is_err());
+    }
+
+    #[test]
+    fn prefix_is_recorded() {
+        let e = enum_of(r#"enum E { #[bin(magic = b"X")] A }"#);
+        let d = EnumDispatch::parse(&e, None, Some(Magic::Bytes(b"PRE".to_vec()))).unwrap();
+        assert_eq!(d.prefix.as_ref().unwrap().byte_len(), 3);
+    }
 }
