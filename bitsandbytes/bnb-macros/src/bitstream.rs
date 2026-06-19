@@ -2496,9 +2496,14 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             .flat_map(|v| &v.fields)
             .any(|f| parse_field_br(f).is_ok_and(|br| br.restore_position || br.seek.is_some()));
     if args.forward_only && seeks {
+        let reason = if use_peek {
+            "variable-width / fallback magic dispatch peeks (it needs to seek)"
+        } else {
+            "a seeking variant field (`seek`/`restore_position`)"
+        };
         return Err(syn::Error::new_spanned(
             name,
-            "a seeking variant field (`seek`/`restore_position`) is incompatible with `#[bin(forward_only)]`",
+            format!("{reason} is incompatible with `#[bin(forward_only)]`"),
         ));
     }
     let from_bound = if seeks {
