@@ -234,6 +234,63 @@ fn temp_tag_recomputed_on_encode_and_passed_as_ctx() {
     assert_eq!(Packet2::decode_exact(&[0x00, 0x02, 0x07]).unwrap(), p);
 }
 
+// ── `decode_as_<variant>` parses the bytes as one explicit variant (bypassing
+//    dispatch); `decode_tagged` feeds a tag enum its selector. ──
+#[test]
+fn decode_as_explicit_variant_magic() {
+    assert_eq!(
+        Rdata::decode_as_a(&[0x00, 0x01, 0xDE, 0xAD, 0xBE, 0xEF]).unwrap(),
+        Rdata::A(0xDEAD_BEEF)
+    );
+    assert_eq!(
+        Rdata::decode_as_port(&[0x00, 0x02, 0x11, 0x22]).unwrap(),
+        Rdata::Port { lo: 0x11, hi: 0x22 }
+    );
+    // A wrong magic for the targeted variant is rejected.
+    assert!(Rdata::decode_as_a(&[0x00, 0x09, 0, 0, 0, 0]).is_err());
+    // The prefix is verified too.
+    assert_eq!(
+        Pre::decode_as_a(&[b'B', b'N', b'B', 0x01, 0xCA, 0xFE]).unwrap(),
+        Pre::A(0xCAFE)
+    );
+    assert!(Pre::decode_as_a(&[b'X', b'N', b'B', 0x01, 0x00, 0x00]).is_err());
+}
+
+#[test]
+fn peek_variant_identifies_by_magic() {
+    assert_eq!(
+        Rdata::peek_variant(&[0x00, 0x01, 0, 0, 0, 0]).unwrap(),
+        RdataKind::A
+    );
+    assert_eq!(Rdata::peek_variant(&[0x00, 0x00]).unwrap(), RdataKind::Ping);
+    assert_eq!(
+        Rdata::peek_variant(&[0x00, 0x09]).unwrap(),
+        RdataKind::Other
+    ); // -> catch-all
+    assert_eq!(Chunk::peek_variant(b"IDAT\x00").unwrap(), ChunkKind::Data);
+    // A closed set errors on an unknown magic.
+    assert!(Closed::peek_variant(&[9, 0]).is_err());
+    assert_eq!(Closed::peek_variant(&[1, 0x42]).unwrap(), ClosedKind::One);
+}
+
+#[test]
+fn decode_as_and_tagged_for_tag_enum() {
+    let li = [0xAA, 0xBB, 0xCC, 0xDD];
+    // decode_as takes the ctx (Login here ignores it); decode_tagged takes the selector.
+    assert_eq!(
+        Body::decode_as_login(&li, BodyCtx { kind: 0 }).unwrap(),
+        Body::Login(0xAABB_CCDD)
+    );
+    assert_eq!(
+        Body::decode_tagged(1, &li).unwrap(),
+        Body::Login(0xAABB_CCDD)
+    );
+    assert_eq!(
+        Body::decode_tagged(2, &[0x07]).unwrap(),
+        Body::Data { n: 7 }
+    );
+}
+
 // ── `tag` + `magic` compose: the selector picks the variant, then its signature is
 //    verified on read and written on encode (it IS on the wire; the tag is not). ──
 #[bin(big, ctx(kind: u8), tag = kind)]

@@ -2160,6 +2160,23 @@ fn variant_field_codec(
     Ok((reads, path, writes))
 }
 
+/// `CamelCase` → `snake_case`, for the generated `decode_as_<variant>` methods.
+fn snake_case(ident: &Ident) -> String {
+    let s = ident.to_string();
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.char_indices() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// The `#[bin]` enum path. See the module banner above.
 fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let name = &e.ident;
@@ -2456,10 +2473,129 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }
     };
 
+    // Decode niceties: `decode_as_<variant>` parses the bytes as one explicit variant
+    // (its magic, if any, then its payload), bypassing dispatch — handy when the variant
+    // is known out of band, and for tests. `decode_tagged` feeds a tag-dispatched enum
+    // its selector directly. A `ctx` enum threads the context through both.
+    let ctx_name = ctx_struct_ident(name);
+    let mut nicety_methods = Vec::new();
+    for v in &dispatch.variants {
+        if v.role() == VariantRole::CatchAll {
+            continue; // the catch-all isn't an explicit target — use `decode`/`decode_with`
+        }
+        let mname = format_ident!("decode_as_{}", snake_case(&v.variant.ident));
+        let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+        let magic_verify = v
+            .magic
+            .as_ref()
+            .map(|m| m.verify(&v.variant.ident.to_string()));
+        let doc = format!(
+            "Decode `bytes` as the `{}` variant — its `magic` (if any) then its payload, requiring every whole byte consumed.",
+            v.variant.ident
+        );
+        let body = quote! {
+            #prefix_verify
+            #magic_verify
+            #(#reads)*
+            ::core::result::Result::Ok(#ctor)
+        };
+        if is_ctx_type {
+            nicety_methods.push(quote! {
+                #[doc = #doc]
+                #[allow(unused_variables)]
+                pub fn #mname(bytes: &[u8], __ctx: #ctx_name) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| { #(#ctx_binds)* #body })
+                }
+            });
+        } else {
+            nicety_methods.push(quote! {
+                #[doc = #doc]
+                pub fn #mname(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| { #body })
+                }
+            });
+        }
+    }
+    // `decode_tagged(selector, bytes)` — sugar for a tag-dispatched enum whose only
+    // context is the selector.
+    if !magic_dispatch && want_decode && args.ctx.len() == 1 {
+        let sel = dispatch
+            .selector
+            .as_ref()
+            .expect("tag dispatch has a selector");
+        let sel_ty = selector_ty
+            .as_ref()
+            .expect("tag dispatch has a selector type");
+        nicety_methods.push(quote! {
+            #[doc = "Decode `bytes` with the given selector (tag), then dispatch — sugar for `decode_with_exact`."]
+            pub fn decode_tagged(#sel: #sel_ty, bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                Self::decode_with_exact(bytes, #ctx_name { #sel })
+            }
+        });
+    }
+    // `peek_variant` + a `<Name>Kind` enum: identify the variant by the wire magic
+    // (the dispatch decision only, no payload). Magic dispatch only — under tag dispatch
+    // the caller already holds the selector.
+    let kind_name = format_ident!("{}Kind", name);
+    let kind_enum = if magic_dispatch && want_decode {
+        let read = rep_magic
+            .expect("magic dispatch has a representative magic")
+            .read_into(&format_ident!("__m"));
+        let unknown = catch_variant
+            .map(|cv| {
+                let k = &cv.variant.ident;
+                quote!(::core::result::Result::Ok(#kind_name::#k))
+            })
+            .unwrap_or_else(|| {
+                quote!(::core::result::Result::Err(
+                    ::bnb::__private::BitError::convert(
+                        ::std::string::String::from(concat!(
+                            "unrecognized ",
+                            stringify!(#name),
+                            " discriminant"
+                        )),
+                        ::bnb::__private::Source::bit_pos(r),
+                    )
+                    .in_field("magic")
+                ))
+            });
+        let mut chain = quote!({ #unknown });
+        for v in dispatch.variants.iter().rev() {
+            if v.role() == VariantRole::MagicOnly {
+                let c = v.magic.as_ref().unwrap().const_expr();
+                let k = &v.variant.ident;
+                chain =
+                    quote!(if __m == #c { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
+            }
+        }
+        nicety_methods.push(quote! {
+            #[doc = "Identify which variant `bytes` is from the wire magic, without parsing the payload."]
+            pub fn peek_variant(bytes: &[u8]) -> ::core::result::Result<#kind_name, ::bnb::__private::BitError> {
+                ::bnb::__private::decode_peek_with(bytes, #layout, |r| {
+                    #prefix_verify
+                    #read
+                    #chain
+                })
+            }
+        });
+        let kvars = dispatch.variants.iter().map(|v| &v.variant.ident);
+        quote! {
+            #[doc = "The variant kind of a value, from `peek_variant` (the dispatch decision only)."]
+            #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug, ::core::cmp::PartialEq, ::core::cmp::Eq)]
+            #vis enum #kind_name { #(#kvars),* }
+        }
+    } else {
+        quote!()
+    };
+    let niceties = if nicety_methods.is_empty() {
+        quote!()
+    } else {
+        quote!(impl #name { #(#nicety_methods)* })
+    };
+
     // The codec impls: a `ctx` enum gets `decode_with`/`encode_with` (+ the `…Ctx`
     // struct); a plain one gets `BitDecode`/`BitEncode` + the slice/stream entry points.
     let (decode, encode, ctx_struct) = if is_ctx_type {
-        let ctx_name = ctx_struct_ident(name);
         let decode = want_decode.then(|| quote! {
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
@@ -2612,7 +2748,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #ctx_struct
         #clean
+        #kind_enum
         #accessor_fn
+        #niceties
         #decode
         #encode
     })

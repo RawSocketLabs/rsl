@@ -117,6 +117,30 @@
 //! assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
 //! ```
 //!
+//! # Decode helpers
+//!
+//! Beyond the usual entry points, a dispatched enum gets:
+//!
+//! - **`decode_as_<variant>(bytes)`** — parse the bytes *as one explicit variant* (its
+//!   magic, if any, then its payload), bypassing dispatch. Handy when the variant is
+//!   known out of band, and for tests. (A `ctx` enum takes the context too.)
+//! - **`peek_variant(bytes) -> <Name>Kind`** (magic dispatch) — identify *which* variant
+//!   the bytes are, from the wire magic, **without** parsing the payload — for routing.
+//! - **`decode_tagged(selector, bytes)`** (tag dispatch) — feed the selector directly.
+//!
+//! ```
+//! # use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! enum Op {
+//!     #[bin(magic = 1u8)] Get(u16),
+//!     #[bin(magic = 2u8)] Set { key: u8, val: u8 },
+//! }
+//!
+//! assert_eq!(Op::peek_variant(&[0x02, 9, 9]).unwrap(), OpKind::Set);
+//! assert_eq!(Op::decode_as_get(&[0x01, 0xAB, 0xCD]).unwrap(), Op::Get(0xABCD));
+//! ```
+//!
 //! # Notes
 //!
 //! - **`magic` values are literals**: a byte string, or a width-suffixed unsigned integer

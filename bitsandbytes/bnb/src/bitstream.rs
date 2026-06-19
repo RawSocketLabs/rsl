@@ -1062,6 +1062,19 @@ pub fn decode_peek<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<T, BitE
     T::bit_decode(&mut BitReader::with_layout(bytes, layout))
 }
 
+/// `decode_peek` over a caller-supplied closure (no consumption requirement) — backs a
+/// `#[bin]` enum's `peek_variant`, which runs only the dispatch decision over `bytes`.
+///
+/// # Errors
+/// Propagates the closure's [`BitError`].
+#[doc(hidden)]
+pub fn decode_peek_with<T, F>(bytes: &[u8], layout: Layout, f: F) -> Result<T, BitError>
+where
+    F: FnOnce(&mut BitReader) -> Result<T, BitError>,
+{
+    f(&mut BitReader::with_layout(bytes, layout))
+}
+
 /// `decode_exact` over a caller-supplied decode closure rather than the
 /// [`BitDecode`] trait — backs the `ctx`-parameterized `Type::decode_with_exact`
 /// (a `ctx` type takes a context argument, so it has no plain `bit_decode`).
@@ -1182,6 +1195,27 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
         *b = r.read_bits(8)? as u8;
     }
     Ok(arr)
+}
+
+/// Peeks up to `max` bytes without consuming them — reads them, then rewinds. Returns
+/// however many are available (fewer than `max` at end-of-input). Needs a seekable
+/// source; backs variable-width `#[bin]` enum magic dispatch (peek the longest magic,
+/// match a prefix, then seek past the matched one).
+///
+/// # Errors
+/// [`ErrorKind::NotSeekable`] if the source can't rewind.
+#[doc(hidden)]
+pub fn peek_bytes<S: SeekSource>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
+    let start = r.bit_pos();
+    let mut out = Vec::with_capacity(max);
+    for _ in 0..max {
+        match r.read_bits(8) {
+            Ok(b) => out.push(b as u8),
+            Err(_) => break, // end of input — a shorter magic may still match
+        }
+    }
+    r.seek_to_bit(start)?;
+    Ok(out)
 }
 
 /// Writes a fixed `[u8; N]` byte array. Backs a `[u8; N]` payload field.
