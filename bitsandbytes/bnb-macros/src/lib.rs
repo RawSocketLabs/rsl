@@ -23,6 +23,28 @@ mod builder;
 
 use proc_macro::TokenStream;
 
+/// The path to the `bnb` runtime crate as the *dependent* crate imports it, for
+/// generated code to reference. Resolved via [`proc_macro_crate`] against the
+/// runtime's published package name, so the output works whether a consumer uses
+/// the default name or renames the dependency (e.g. `bnb = { package = "…" }`).
+///
+/// `FoundCrate::Itself` (the runtime's own tests/doctests/examples, which link the
+/// lib by its `[lib] name = "bnb"`) and the not-found fallback both emit `::bnb`;
+/// the runtime's `lib.rs` carries `extern crate self as bnb;` so that resolves
+/// inside the lib too.
+pub(crate) fn bnb_path() -> proc_macro2::TokenStream {
+    use proc_macro_crate::{FoundCrate, crate_name};
+    // NOTE: this is the runtime's **package** name. It is `bnb` in this workspace;
+    // change it to the published name (`bitsandbytes`) when the crate is extracted.
+    match crate_name("bnb") {
+        Ok(FoundCrate::Name(name)) => {
+            let ident = proc_macro2::Ident::new(&name, proc_macro2::Span::call_site());
+            quote::quote!(::#ident)
+        }
+        Ok(FoundCrate::Itself) | Err(_) => quote::quote!(::bnb),
+    }
+}
+
 /// Packs the annotated struct's fields into a single backing integer.
 ///
 /// ```ignore

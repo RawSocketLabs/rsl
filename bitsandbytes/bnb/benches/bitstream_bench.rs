@@ -89,7 +89,7 @@ fn bench_byte_aligned(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = testutil::bench::criterion();
+    config = Criterion::default();
     targets = bench_codec, bench_byte_aligned
 }
 criterion_main!(benches);

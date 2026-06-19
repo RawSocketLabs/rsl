@@ -73,6 +73,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 }
 
 fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let name = &input.ident;
 
     // Locate the `#[bit_enum(...)]` attribute.
@@ -161,7 +162,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
     }
 
-    let bits_path = quote!(::bnb::__private::Bits);
+    let bits_path = quote!(#bnb::__private::Bits);
 
     // into_bits: discriminant for unit variants; inner value for catch-all.
     let into_unit = unit.iter().map(|(id, disc)| quote!(#name::#id => #disc));
@@ -203,7 +204,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
             }
         }
 
-        impl ::bnb::BitEnum for #name {}
+        impl #bnb::BitEnum for #name {}
 
         #conv
     })
@@ -227,7 +228,8 @@ fn conv_impls(
     if primitive_of(width).is_none() {
         return quote!(); // sub-byte width: nest it in a #[bitfield]
     }
-    let bits_path = quote!(::bnb::__private::Bits);
+    let bnb = crate::bnb_path();
+    let bits_path = quote!(#bnb::__private::Bits);
 
     // Enum -> primitive: total. `from_bits` performs the (lossless) down-cast,
     // keeping `as` out of the expanded call site.
@@ -257,13 +259,13 @@ fn conv_impls(
             .map(|(id, disc)| quote!(#disc => ::core::result::Result::Ok(#name::#id)));
         quote! {
             impl ::core::convert::TryFrom<#width> for #name {
-                type Error = ::bnb::__private::UnknownDiscriminant;
+                type Error = #bnb::__private::UnknownDiscriminant;
                 #[inline]
                 fn try_from(value: #width) -> ::core::result::Result<Self, Self::Error> {
                     match u128::from(value) {
                         #(#arms,)*
                         other => ::core::result::Result::Err(
-                            ::bnb::__private::UnknownDiscriminant {
+                            #bnb::__private::UnknownDiscriminant {
                                 value: other,
                                 type_name: ::core::stringify!(#name),
                             },

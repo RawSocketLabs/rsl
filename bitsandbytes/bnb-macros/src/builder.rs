@@ -81,6 +81,7 @@ pub(crate) fn generate(
     kind: BuildKind,
     post_build: Option<&TokenStream2>,
 ) -> TokenStream2 {
+    let bnb = crate::bnb_path();
     let builder_name = format_ident!("{}Builder", name);
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let tys: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
@@ -90,7 +91,7 @@ pub(crate) fn generate(
         match &f.default {
             FieldDefault::Required => quote! {
                 let #id = self.#id.ok_or_else(
-                    || ::bnb::BuilderError::missing_field(stringify!(#id)),
+                    || #bnb::BuilderError::missing_field(stringify!(#id)),
                 )?;
             },
             FieldDefault::DefaultTrait => quote!(let #id = self.#id.unwrap_or_default();),
@@ -137,7 +138,7 @@ pub(crate) fn generate(
             )*
 
             /// Builds the value, or returns the first unset required field.
-            #vis fn build(self) -> ::core::result::Result<#name, ::bnb::BuilderError> {
+            #vis fn build(self) -> ::core::result::Result<#name, #bnb::BuilderError> {
                 #(#resolve)*
                 let __value = #construct;
                 #post_build

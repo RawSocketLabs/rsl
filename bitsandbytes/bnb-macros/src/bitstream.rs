@@ -163,17 +163,18 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
 
 /// The runtime [`Layout`](bnb::Layout) (bit + byte order) for the struct.
 fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
+    let bnb = crate::bnb_path();
     let bit = if attrs.lsb {
-        quote!(::bnb::__private::BitOrder::Lsb)
+        quote!(#bnb::__private::BitOrder::Lsb)
     } else {
-        quote!(::bnb::__private::BitOrder::Msb)
+        quote!(#bnb::__private::BitOrder::Msb)
     };
     let byte = if attrs.little {
-        quote!(::bnb::__private::ByteOrder::Little)
+        quote!(#bnb::__private::ByteOrder::Little)
     } else {
-        quote!(::bnb::__private::ByteOrder::Big)
+        quote!(#bnb::__private::ByteOrder::Big)
     };
-    quote!(::bnb::__private::Layout { bit: #bit, byte: #byte })
+    quote!(#bnb::__private::Layout { bit: #bit, byte: #byte })
 }
 
 /// Whether a field is a **nested message** (marked `#[nested]`) — a
@@ -506,9 +507,10 @@ fn field_reserved(f: &syn::Field) -> syn::Result<Option<Reserved>> {
 /// path a reserved field is a normal stored field; only `spec_*` and the builder
 /// default use this.)
 fn reserved_spec_value(f: &syn::Field) -> syn::Result<Option<TokenStream2>> {
+    let bnb = crate::bnb_path();
     let ty = &f.ty;
     Ok(field_reserved(f)?.map(|reserved| match reserved {
-        Reserved::Zero => quote!(<#ty as ::bnb::__private::Bits>::from_bits(0)),
+        Reserved::Zero => quote!(<#ty as #bnb::__private::Bits>::from_bits(0)),
         Reserved::With(expr) => {
             let expr = *expr;
             quote!({ let __r: #ty = #expr; __r })
@@ -563,42 +565,46 @@ fn ctx_literal(
 /// `Vec<T>` its **element** width (its alignment is the element's). Resolved by
 /// the compiler (the macro never computes widths).
 fn field_width(f: &syn::Field) -> TokenStream2 {
+    let bnb = crate::bnb_path();
     let ty = &f.ty;
     if field_is_ignore(f) {
         return quote!(0u32); // in-memory only: zero wire bits
     }
     if let Some(elem) = vec_elem(f) {
         if is_nested(f) {
-            quote!(<#elem as ::bnb::__private::FixedBitLen>::BIT_LEN)
+            quote!(<#elem as #bnb::__private::FixedBitLen>::BIT_LEN)
         } else {
-            quote!(<#elem as ::bnb::__private::Bits>::BITS)
+            quote!(<#elem as #bnb::__private::Bits>::BITS)
         }
     } else if is_nested(f) {
-        quote!(<#ty as ::bnb::__private::FixedBitLen>::BIT_LEN)
+        quote!(<#ty as #bnb::__private::FixedBitLen>::BIT_LEN)
     } else if let Some(len) = byte_array_len(f) {
         quote!(((#len) as u32 * 8))
     } else {
-        quote!(<#ty as ::bnb::__private::Bits>::BITS)
+        quote!(<#ty as #bnb::__private::Bits>::BITS)
     }
 }
 
 /// Positioning statements emitted before/after a field: `align_*` skips to the next
 /// byte boundary, `pad_*` skips a bit count.
 fn pad_read_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
-    let align = align.then(|| quote!(::bnb::__private::align_read(r)?;));
-    let pad = pad.map(|n| quote!(::bnb::__private::skip_read(r, #n)?;));
+    let bnb = crate::bnb_path();
+    let align = align.then(|| quote!(#bnb::__private::align_read(r)?;));
+    let pad = pad.map(|n| quote!(#bnb::__private::skip_read(r, #n)?;));
     quote!(#align #pad)
 }
 
 fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
-    let align = align.then(|| quote!(::bnb::__private::align_write(w)?;));
-    let pad = pad.map(|n| quote!(::bnb::__private::skip_write(w, #n)?;));
+    let bnb = crate::bnb_path();
+    let align = align.then(|| quote!(#bnb::__private::align_write(w)?;));
+    let pad = pad.map(|n| quote!(#bnb::__private::skip_write(w, #n)?;));
     quote!(#align #pad)
 }
 
 /// The decode statement for one field — a `let #id = …;` binding, wrapped with any
 /// `pad_*`/`align_*` positioning. A later `count` can name an earlier field.
 fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let pre = pad_read_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_read_tokens(br.align_after, br.pad_after.as_ref());
     // `seek = <bits>`: jump to an absolute bit offset before the read (following a
@@ -607,7 +613,7 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let seek = br
         .seek
         .as_ref()
-        .map(|e| quote!(::bnb::__private::Source::seek_to_bit(r, (#e) as usize)?;));
+        .map(|e| quote!(#bnb::__private::Source::seek_to_bit(r, (#e) as usize)?;));
     let mut core = field_read_core(f, br)?;
     // `dbg`: trace the field's start offset and decoded value (the field must be
     // `Debug`). Captured after any `seek`, so the offset is where the bits actually came
@@ -615,9 +621,9 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     if br.dbg {
         let id = f.ident.as_ref().expect("named field");
         core = quote! {
-            let __dbg_at = ::bnb::__private::Source::bit_pos(r);
+            let __dbg_at = #bnb::__private::Source::bit_pos(r);
             #core
-            ::bnb::__private::tracing::trace!(
+            #bnb::__private::tracing::trace!(
                 target: "bnb::dbg",
                 field = ::core::stringify!(#id),
                 at_bit = __dbg_at,
@@ -630,9 +636,9 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         // Peek: save the offset (before any seek), read the field, rewind so later
         // fields re-read from where they were.
         body = quote! {
-            let __pos = ::bnb::__private::Source::bit_pos(r);
+            let __pos = #bnb::__private::Source::bit_pos(r);
             #body
-            ::bnb::__private::Source::seek_to_bit(r, __pos)?;
+            #bnb::__private::Source::seek_to_bit(r, __pos)?;
         };
     }
     Ok(quote!(#pre #body #post))
@@ -640,6 +646,7 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
 
 /// The core decode statement (without positioning).
 fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     // A `#[reserved]` field reads as a normal stored leaf here (so the actual wire bits
@@ -655,11 +662,11 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
         let read_inner = if is_nested(f) {
-            quote!(<#inner as ::bnb::__private::BitDecode>::bit_decode(r)
+            quote!(<#inner as #bnb::__private::BitDecode>::bit_decode(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?)
         } else {
             quote! {{
-                let __v: #inner = ::bnb::__private::Source::read(r)
+                let __v: #inner = #bnb::__private::Source::read(r)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
                 __v
             }}
@@ -675,12 +682,12 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     // `map`/`try_map`: read the wire value (`f`'s argument type) and transform it to
     // the field type, pinned to the field's declared type.
     if let Some(map) = &br.map {
-        return Ok(quote!(let #id: #ty = ::bnb::__private::read_mapped(r, #map)
+        return Ok(quote!(let #id: #ty = #bnb::__private::read_mapped(r, #map)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     if let Some(try_map) = &br.try_map {
         return Ok(
-            quote!(let #id: #ty = ::bnb::__private::read_try_mapped(r, #try_map)
+            quote!(let #id: #ty = #bnb::__private::read_try_mapped(r, #try_map)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         );
     }
@@ -702,12 +709,12 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
             }
         } else if is_nested(f) {
             quote! {
-                let __e = <#elem as ::bnb::__private::BitDecode>::bit_decode(r)
+                let __e = <#elem as #bnb::__private::BitDecode>::bit_decode(r)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         } else {
             quote! {
-                let __e: #elem = ::bnb::__private::Source::read(r)
+                let __e: #elem = #bnb::__private::Source::read(r)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         };
@@ -716,7 +723,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         Ok(quote! {
             let #id = {
                 let __n = (#count) as usize;
-                let mut __v: ::bnb::__private::Vec<#elem> = ::bnb::__private::Vec::new();
+                let mut __v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
                 for _ in 0..__n {
                     #read_elem
                     __v.push(__e);
@@ -737,11 +744,11 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
         } else if is_nested(f) {
             Ok(
-                quote!(let #id = <#ty as ::bnb::__private::BitDecode>::bit_decode(r)
+                quote!(let #id = <#ty as #bnb::__private::BitDecode>::bit_decode(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
             )
         } else if byte_array_len(f).is_some() {
-            Ok(quote!(let #id = ::bnb::__private::read_byte_array(r)
+            Ok(quote!(let #id = #bnb::__private::read_byte_array(r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
         } else {
             // Pin the leaf type explicitly: a `temp` field is not stored in `Self`,
@@ -780,6 +787,7 @@ fn field_write_core(
     field_set: &[&Ident],
     spec: bool,
 ) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     // `#[reserved]` on the **spec** path: write the spec value (type zero, or the
@@ -787,7 +795,7 @@ fn field_write_core(
     // through and writes its stored value like any field.
     if spec {
         if let Some(value) = reserved_spec_value(f)? {
-            return Ok(quote!(::bnb::__private::Sink::write(w, #value)
+            return Ok(quote!(#bnb::__private::Sink::write(w, #value)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
         }
     }
@@ -806,14 +814,14 @@ fn field_write_core(
         if br.temp {
             return Ok(quote! {
                 let #id: #ty = #calc;
-                ::bnb::__private::Sink::write(w, #id)
+                #bnb::__private::Sink::write(w, #id)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             });
         }
         return Ok(quote! {
             {
                 let __calc: #ty = #calc;
-                ::bnb::__private::Sink::write(w, __calc)
+                #bnb::__private::Sink::write(w, __calc)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         });
@@ -828,7 +836,7 @@ fn field_write_core(
     // `map`: write `f(&self.field)` (the wire value). A read-side `map`/`try_map`
     // needs the inverse `#[bw(map = …)]` to be encodable.
     if let Some(bw_map) = &br.bw_map {
-        return Ok(quote!(::bnb::__private::write_mapped(w, &self.#id, #bw_map)
+        return Ok(quote!(#bnb::__private::write_mapped(w, &self.#id, #bw_map)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     // `write_with`: the escape hatch — a custom `f(&self.field, w) -> Result<()>`.
@@ -855,10 +863,10 @@ fn field_write_core(
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
         let write_inner = if is_nested(f) {
-            quote!(<#inner as ::bnb::__private::BitEncode>::bit_encode(__v, w)
+            quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(::bnb::__private::Sink::write(w, *__v)
+            quote!(#bnb::__private::Sink::write(w, *__v)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         return Ok(quote! {
@@ -871,13 +879,13 @@ fn field_write_core(
         let write_elem = if let Some(names) = &br.ctx {
             let elem_ctx = ctx_struct_ty(elem)?;
             let lit = ctx_literal(&elem_ctx, names, Some(field_set));
-            quote!(<#elem as ::bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
+            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else if is_nested(f) {
-            quote!(<#elem as ::bnb::__private::BitEncode>::bit_encode(__e, w)
+            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(::bnb::__private::Sink::write(w, *__e)
+            quote!(#bnb::__private::Sink::write(w, *__e)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         Ok(quote! {
@@ -889,16 +897,16 @@ fn field_write_core(
         let child_ctx = ctx_struct_ty(ty)?;
         let lit = ctx_literal(&child_ctx, names, Some(field_set));
         Ok(
-            quote!(<#ty as ::bnb::EncodeWith<#child_ctx>>::encode_with(&self.#id, w, #lit)
+            quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(&self.#id, w, #lit)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         )
     } else if is_nested(f) {
         Ok(
-            quote!(<#ty as ::bnb::__private::BitEncode>::bit_encode(&self.#id, w)
+            quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(&self.#id, w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         )
     } else if byte_array_len(f).is_some() {
-        Ok(quote!(::bnb::__private::write_byte_array(&self.#id, w)
+        Ok(quote!(#bnb::__private::write_byte_array(&self.#id, w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     } else {
         Ok(quote!(w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;))
@@ -913,6 +921,7 @@ fn alignment_guard(fields: &FieldsNamed, allow: bool, magic: Option<&syn::Expr>)
     if allow || (fields.named.is_empty() && magic.is_none()) {
         return quote!();
     }
+    let bnb = crate::bnb_path();
     let mut terms: Vec<TokenStream2> = fields
         .named
         .iter()
@@ -922,7 +931,7 @@ fn alignment_guard(fields: &FieldsNamed, allow: bool, magic: Option<&syn::Expr>)
         })
         .collect();
     if let Some(m) = magic {
-        terms.push(quote!((::bnb::__private::bits_of(&#m) % 8 == 0)));
+        terms.push(quote!((#bnb::__private::bits_of(&#m) % 8 == 0)));
     }
     quote! {
         const _: () = {
@@ -956,6 +965,7 @@ fn gen_decode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     // Parse each field's `#[br]`/`#[bw]` directives once, up front (propagating any
     // parse error immediately), then drive every decision off the parsed list — no
     // re-parsing per predicate.
@@ -978,9 +988,9 @@ fn gen_decode(
     let (magic_read, magic_bits) = match &attrs.magic {
         Some(m) => (
             quote! {
-                ::bnb::__private::verify_magic(r, #m).map_err(|e| e.in_field("magic"))?;
+                #bnb::__private::verify_magic(r, #m).map_err(|e| e.in_field("magic"))?;
             },
-            quote!(::bnb::__private::bits_of(&#m) +),
+            quote!(#bnb::__private::bits_of(&#m) +),
         ),
         None => (quote!(), quote!()),
     };
@@ -1014,10 +1024,10 @@ fn gen_decode(
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn decode_with<S: ::bnb::__private::Source>(
+                pub fn decode_with<S: #bnb::__private::Source>(
                     r: &mut S,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #magic_read
                     #(#read_stmts)*
@@ -1027,17 +1037,17 @@ fn gen_decode(
                 pub fn decode_with_exact(
                     bytes: &[u8],
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx))
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx))
                 }
             }
             // ctx Layer 2: the polymorphic companion, so generic combinators can take
             // this type via `T: DecodeWith<#ctx_name>`.
-            impl ::bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<S: ::bnb::__private::Source>(
+            impl #bnb::DecodeWith<#ctx_name> for #name {
+                fn decode_with<S: #bnb::__private::Source>(
                     r: &mut S,
                     args: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(r, args)
                 }
             }
@@ -1052,7 +1062,7 @@ fn gen_decode(
     } else {
         let widths = fields.named.iter().map(field_width);
         quote! {
-            impl ::bnb::__private::FixedBitLen for #name {
+            impl #bnb::__private::FixedBitLen for #name {
                 const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
             }
         }
@@ -1067,9 +1077,9 @@ fn gen_decode(
         .iter()
         .any(|br| br.restore_position || br.seek.is_some());
     let from_bound = if seeks {
-        quote!(::bnb::__private::SeekSource)
+        quote!(#bnb::__private::SeekSource)
     } else {
-        quote!(::bnb::__private::Source)
+        quote!(#bnb::__private::Source)
     };
     let from_doc = if seeks {
         "Decode from an explicit **seekable** bit source. This message uses a seeking \
@@ -1095,13 +1105,13 @@ fn gen_decode(
         quote! {
             impl #name {
                 #[doc = "Like `decode_exact`, but reserved fields are set to their spec value instead of the bytes on the wire."]
-                pub fn spec_decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                pub fn spec_decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     let mut __v = Self::decode_exact(bytes)?;
                     #(#reserved_overwrites)*
                     ::core::result::Result::Ok(__v)
                 }
                 #[doc = "Like `peek`, but reserved fields are set to their spec value."]
-                pub fn spec_peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                pub fn spec_peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     let mut __v = Self::peek(bytes)?;
                     #(#reserved_overwrites)*
                     ::core::result::Result::Ok(__v)
@@ -1109,7 +1119,7 @@ fn gen_decode(
                 #[doc = "Like `decode_from`, but reserved fields are set to their spec value."]
                 pub fn spec_decode_from<S: #from_bound>(
                     r: &mut S,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     let mut __v = Self::decode_from(r)?;
                     #(#reserved_overwrites)*
                     ::core::result::Result::Ok(__v)
@@ -1121,10 +1131,10 @@ fn gen_decode(
     Ok(quote! {
         #guard
         #fixed_bit_len
-        impl ::bnb::BitDecode for #name {
-            fn bit_decode<S: ::bnb::__private::Source>(
+        impl #bnb::BitDecode for #name {
+            fn bit_decode<S: #bnb::__private::Source>(
                 r: &mut S,
-            ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #magic_read
                 #(#read_stmts)*
                 ::core::result::Result::Ok(Self { #(#ids),* })
@@ -1133,22 +1143,22 @@ fn gen_decode(
 
         impl #name {
             #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed (the tail stays in `buf`; transactional on error)."]
-            pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                ::bnb::__private::decode_consume(buf, #layout)
+            pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                #bnb::__private::decode_consume(buf, #layout)
             }
             #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
-            pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                ::bnb::__private::decode_peek(bytes, #layout)
+            pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                #bnb::__private::decode_peek(bytes, #layout)
             }
             #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
-            pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                ::bnb::__private::decode_exact(bytes, #layout)
+            pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                #bnb::__private::decode_exact(bytes, #layout)
             }
             #[doc = #from_doc]
             pub fn decode_from<S: #from_bound>(
                 r: &mut S,
-            ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                <Self as ::bnb::BitDecode>::bit_decode(r)
+            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                <Self as #bnb::BitDecode>::bit_decode(r)
             }
         }
         #spec_decode
@@ -1193,6 +1203,7 @@ fn gen_encode(
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
 ) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     // Parse each field's directives once (see `gen_decode`), then derive everything
     // from the parsed list.
     let brs: Vec<FieldBr> = fields
@@ -1210,7 +1221,7 @@ fn gen_encode(
     // `magic`: emit the leading constant before the fields (matched read/write).
     let magic_write = match &attrs.magic {
         Some(m) => quote! {
-            ::bnb::__private::Sink::write(w, #m).map_err(|e| e.in_field("magic"))?;
+            #bnb::__private::Sink::write(w, #m).map_err(|e| e.in_field("magic"))?;
         },
         None => quote!(),
     };
@@ -1244,11 +1255,11 @@ fn gen_encode(
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn encode_with<K: ::bnb::__private::Sink>(
+                pub fn encode_with<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #magic_write
                     #(#writes)*
@@ -1258,17 +1269,17 @@ fn gen_encode(
                 pub fn to_bytes_with(
                     &self,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx))
+                ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx))
                 }
             }
             // ctx Layer 2: the polymorphic companion (dual of `DecodeWith`).
-            impl ::bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<K: ::bnb::__private::Sink>(
+            impl #bnb::EncodeWith<#ctx_name> for #name {
+                fn encode_with<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                     args: #ctx_name,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, w, args)
                 }
             }
@@ -1288,12 +1299,12 @@ fn gen_encode(
             .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
             .collect::<syn::Result<Vec<_>>>()?;
         quote! {
-            impl ::bnb::SpecEncode for #name {
-                const SPEC_LAYOUT: ::bnb::Layout = #layout;
-                fn spec_bit_encode<K: ::bnb::__private::Sink>(
+            impl #bnb::SpecEncode for #name {
+                const SPEC_LAYOUT: #bnb::Layout = #layout;
+                fn spec_bit_encode<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #magic_write
                     #(#writes_spec)*
                     ::core::result::Result::Ok(())
@@ -1303,18 +1314,18 @@ fn gen_encode(
                 #[doc = "Encode with reserved fields written as their spec value (ignoring any stored"]
                 #[doc = "override), to a `Vec<u8>`. For a `std::io::Write` sink, bring"]
                 #[doc = "[`SpecEncodeExt`](::bnb::SpecEncodeExt) into scope and call `.spec_encode(&mut w)` (the `std` feature)."]
-                pub fn to_spec_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_vec_with(
+                pub fn to_spec_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec_with(
                         #layout,
-                        |w| <Self as ::bnb::SpecEncode>::spec_bit_encode(self, w),
+                        |w| <Self as #bnb::SpecEncode>::spec_bit_encode(self, w),
                     )
                 }
                 #[doc = "Encode with reserved fields written as their spec value, into an explicit bit sink."]
-                pub fn spec_encode_into<K: ::bnb::__private::Sink>(
+                pub fn spec_encode_into<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    <Self as ::bnb::SpecEncode>::spec_bit_encode(self, w)
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                    <Self as #bnb::SpecEncode>::spec_bit_encode(self, w)
                 }
             }
         }
@@ -1327,14 +1338,14 @@ fn gen_encode(
     } else {
         let ctx_name = ctx_struct_ident(name);
         quote! {
-            impl ::bnb::EncodeWith<#ctx_name> for #name {
+            impl #bnb::EncodeWith<#ctx_name> for #name {
                 #[allow(unused_variables)]
-                fn encode_with<K: ::bnb::__private::Sink>(
+                fn encode_with<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                     args: #ctx_name,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                    <Self as #bnb::BitEncode>::bit_encode(self, w)
                 }
             }
         }
@@ -1342,12 +1353,12 @@ fn gen_encode(
 
     Ok(quote! {
         #guard
-        impl ::bnb::BitEncode for #name {
-            const LAYOUT: ::bnb::Layout = #layout;
-            fn bit_encode<K: ::bnb::__private::Sink>(
+        impl #bnb::BitEncode for #name {
+            const LAYOUT: #bnb::Layout = #layout;
+            fn bit_encode<K: #bnb::__private::Sink>(
                 &self,
                 w: &mut K,
-            ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+            ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                 #magic_write
                 #(#writes)*
                 ::core::result::Result::Ok(())
@@ -1357,15 +1368,15 @@ fn gen_encode(
         impl #name {
             #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
             #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
-            pub fn to_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
-                ::bnb::__private::encode_to_vec(self, #layout)
+            pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                #bnb::__private::encode_to_vec(self, #layout)
             }
             #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
-            pub fn encode_into<K: ::bnb::__private::Sink>(
+            pub fn encode_into<K: #bnb::__private::Sink>(
                 &self,
                 w: &mut K,
-            ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                <Self as ::bnb::BitEncode>::bit_encode(self, w)
+            ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                <Self as #bnb::BitEncode>::bit_encode(self, w)
             }
         }
         #encode_with_trait
@@ -1474,6 +1485,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
 /// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
 /// required-by-default builder, folded over a named-field struct.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     if args.tag.is_some() {
         return Err(syn::Error::new_spanned(
             &s.ident,
@@ -1579,7 +1591,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         let post_build = args.validate.as_ref().map(|path| {
             quote! {
                 (#path)(&__value)
-                    .map_err(|__e| ::bnb::BuilderError::invalid(__e.to_string()))?;
+                    .map_err(|__e| #bnb::BuilderError::invalid(__e.to_string()))?;
             }
         });
         let mut bfields = Vec::new();
@@ -1705,6 +1717,7 @@ fn variant_field_write(
     id: &Ident,
     stored: &[Ident],
 ) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let ty = &f.ty;
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
@@ -1720,13 +1733,13 @@ fn variant_field_write(
         let core = if br.temp {
             quote! {
                 let #id: #ty = #calc;
-                ::bnb::__private::Sink::write(w, #id)
+                #bnb::__private::Sink::write(w, #id)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         } else {
             quote! {{
                 let __v: #ty = #calc;
-                ::bnb::__private::Sink::write(w, __v)
+                #bnb::__private::Sink::write(w, __v)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }}
         };
@@ -1744,14 +1757,14 @@ fn variant_field_write(
     if let (Some(names), None) = (&br.ctx, vec_elem(f)) {
         let child_ctx = ctx_struct_ty(ty)?;
         let lit = ctx_literal_variant(&child_ctx, names, stored);
-        let core = quote!(<#ty as ::bnb::EncodeWith<#child_ctx>>::encode_with(#id, w, #lit)
+        let core = quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(#id, w, #lit)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         return Ok(quote!(#pre #core #post));
     }
     let core = if br.ignore {
         quote!()
     } else if let Some(bw_map) = &br.bw_map {
-        quote!(::bnb::__private::write_mapped(w, #id, #bw_map)
+        quote!(#bnb::__private::write_mapped(w, #id, #bw_map)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     } else if let Some(wf) = &br.write_with {
         quote!((#wf)(#id, w).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
@@ -1770,10 +1783,10 @@ fn variant_field_write(
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>`")
         })?;
         let write_inner = if is_nested(f) {
-            quote!(<#inner as ::bnb::__private::BitEncode>::bit_encode(__v, w)
+            quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(::bnb::__private::Sink::write(w, *__v)
+            quote!(#bnb::__private::Sink::write(w, *__v)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
@@ -1781,24 +1794,24 @@ fn variant_field_write(
         let write_elem = if let Some(names) = &br.ctx {
             let elem_ctx = ctx_struct_ty(elem)?;
             let lit = ctx_literal_variant(&elem_ctx, names, stored);
-            quote!(<#elem as ::bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
+            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, w, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else if is_nested(f) {
-            quote!(<#elem as ::bnb::__private::BitEncode>::bit_encode(__e, w)
+            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(::bnb::__private::Sink::write(w, *__e)
+            quote!(#bnb::__private::Sink::write(w, *__e)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         quote!(for __e in #id { #write_elem })
     } else if is_nested(f) {
-        quote!(<#ty as ::bnb::__private::BitEncode>::bit_encode(#id, w)
+        quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#id, w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     } else if byte_array_len(f).is_some() {
-        quote!(::bnb::__private::write_byte_array(#id, w)
+        quote!(#bnb::__private::write_byte_array(#id, w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     } else {
-        quote!(::bnb::__private::Sink::write(w, *#id)
+        quote!(#bnb::__private::Sink::write(w, *#id)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     };
     Ok(quote!(#pre #core #post))
@@ -1883,19 +1896,21 @@ impl Magic {
 
     /// Read this magic from `r` into the local `binding`.
     fn read_into(&self, binding: &Ident) -> TokenStream2 {
+        let bnb = crate::bnb_path();
         let ty = self.read_type();
         match self {
             Magic::Bytes(_) => quote!(
-                let #binding: #ty = ::bnb::__private::read_byte_array(r).map_err(|e| e.in_field("magic"))?;
+                let #binding: #ty = #bnb::__private::read_byte_array(r).map_err(|e| e.in_field("magic"))?;
             ),
             Magic::Int { .. } => quote!(
-                let #binding: #ty = ::bnb::__private::Source::read(r).map_err(|e| e.in_field("magic"))?;
+                let #binding: #ty = #bnb::__private::Source::read(r).map_err(|e| e.in_field("magic"))?;
             ),
         }
     }
 
     /// Read and verify this magic, erroring on mismatch (`what` names the site).
     fn verify(&self, what: &str) -> TokenStream2 {
+        let bnb = crate::bnb_path();
         let binding = format_ident!("__vm");
         let read = self.read_into(&binding);
         let expected = self.const_expr();
@@ -1904,9 +1919,9 @@ impl Magic {
             #read
             if #binding != #expected {
                 return ::core::result::Result::Err(
-                    ::bnb::__private::BitError::convert(
-                        ::bnb::__private::String::from(#msg),
-                        ::bnb::__private::Source::bit_pos(r),
+                    #bnb::__private::BitError::convert(
+                        #bnb::__private::String::from(#msg),
+                        #bnb::__private::Source::bit_pos(r),
                     ).in_field("magic"),
                 );
             }
@@ -1915,12 +1930,13 @@ impl Magic {
 
     /// Write `value` (a `read_type`-typed expression) as this magic to `w`.
     fn write_value(&self, value: &TokenStream2) -> TokenStream2 {
+        let bnb = crate::bnb_path();
         match self {
             Magic::Bytes(_) => quote!(
-                ::bnb::__private::write_byte_array(&#value, w).map_err(|e| e.in_field("magic"))?;
+                #bnb::__private::write_byte_array(&#value, w).map_err(|e| e.in_field("magic"))?;
             ),
             Magic::Int { .. } => quote!(
-                ::bnb::__private::Sink::write(w, #value).map_err(|e| e.in_field("magic"))?;
+                #bnb::__private::Sink::write(w, #value).map_err(|e| e.in_field("magic"))?;
             ),
         }
     }
@@ -2235,6 +2251,7 @@ fn snake_case(ident: &Ident) -> String {
 
 /// The `#[bin]` enum path. See the module banner above.
 fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let name = &e.ident;
     let vis = &e.vis;
     if !e.generics.params.is_empty() {
@@ -2366,10 +2383,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             let first = &variant_bind_idents(&v.variant.fields)[0];
             match rep_magic.expect("magic dispatch").kind() {
                 0 => {
-                    quote!(::bnb::__private::write_byte_array(#first, w).map_err(|e| e.in_field("magic"))?;)
+                    quote!(#bnb::__private::write_byte_array(#first, w).map_err(|e| e.in_field("magic"))?;)
                 }
                 _ => {
-                    quote!(::bnb::__private::Sink::write(w, *#first).map_err(|e| e.in_field("magic"))?;)
+                    quote!(#bnb::__private::Sink::write(w, *#first).map_err(|e| e.in_field("magic"))?;)
                 }
             }
         } else if let Some(m) = v.magic.as_ref().filter(|_| !is_tail) {
@@ -2405,9 +2422,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }}
     } else {
         quote! {{
-            ::core::result::Result::Err(::bnb::__private::BitError::convert(
-                ::bnb::__private::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
-                ::bnb::__private::Source::bit_pos(r),
+            ::core::result::Result::Err(#bnb::__private::BitError::convert(
+                #bnb::__private::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
+                #bnb::__private::Source::bit_pos(r),
             ).in_field(#disc_field))
         }}
     };
@@ -2442,7 +2459,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
                 chain = quote! {
                     if __peek.starts_with(&[#(#bytes),*]) {
-                        ::bnb::__private::Source::seek_to_bit(r, ::bnb::__private::Source::bit_pos(r) + #len * 8)?;
+                        #bnb::__private::Source::seek_to_bit(r, #bnb::__private::Source::bit_pos(r) + #len * 8)?;
                         #(#reads)*
                         ::core::result::Result::Ok(#ctor)
                     } else #chain
@@ -2450,7 +2467,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
         }
         quote! {
-            let __peek = ::bnb::__private::peek_bytes(r, #max)?;
+            let __peek = #bnb::__private::peek_bytes(r, #max)?;
             #chain
         }
     } else {
@@ -2550,9 +2567,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         ));
     }
     let from_bound = if seeks {
-        quote!(::bnb::__private::SeekSource)
+        quote!(#bnb::__private::SeekSource)
     } else {
-        quote!(::bnb::__private::Source)
+        quote!(#bnb::__private::Source)
     };
 
     let attrs = BitStreamAttrs {
@@ -2640,15 +2657,15 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             helper_methods.push(quote! {
                 #[doc = #doc]
                 #[allow(unused_variables)]
-                pub fn #mname(bytes: &[u8], __ctx: #ctx_name) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| { #(#ctx_binds)* #body })
+                pub fn #mname(bytes: &[u8], __ctx: #ctx_name) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact_with(bytes, #layout, |r| { #(#ctx_binds)* #body })
                 }
             });
         } else {
             helper_methods.push(quote! {
                 #[doc = #doc]
-                pub fn #mname(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| { #body })
+                pub fn #mname(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact_with(bytes, #layout, |r| { #body })
                 }
             });
         }
@@ -2665,7 +2682,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             .expect("tag dispatch has a selector type");
         helper_methods.push(quote! {
             #[doc = "Decode `bytes` with the given selector (tag), then dispatch — sugar for `decode_with_exact`."]
-            pub fn decode_tagged(#sel: #sel_ty, bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+            pub fn decode_tagged(#sel: #sel_ty, bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 Self::decode_with_exact(bytes, #ctx_name { #sel })
             }
         });
@@ -2683,13 +2700,13 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             })
             .unwrap_or_else(|| {
                 quote!(::core::result::Result::Err(
-                    ::bnb::__private::BitError::convert(
-                        ::bnb::__private::String::from(concat!(
+                    #bnb::__private::BitError::convert(
+                        #bnb::__private::String::from(concat!(
                             "unrecognized ",
                             stringify!(#name),
                             " discriminant"
                         )),
-                        ::bnb::__private::Source::bit_pos(r),
+                        #bnb::__private::Source::bit_pos(r),
                     )
                     .in_field("magic")
                 ))
@@ -2714,7 +2731,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             quote! {
-                let __peek = ::bnb::__private::peek_bytes(r, #max)?;
+                let __peek = #bnb::__private::peek_bytes(r, #max)?;
                 #chain
             }
         } else {
@@ -2733,8 +2750,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         };
         helper_methods.push(quote! {
             #[doc = "Identify which variant `bytes` is from the wire magic, without parsing the payload."]
-            pub fn peek_variant(bytes: &[u8]) -> ::core::result::Result<#kind_name, ::bnb::__private::BitError> {
-                ::bnb::__private::decode_peek_with(bytes, #layout, |r| {
+            pub fn peek_variant(bytes: &[u8]) -> ::core::result::Result<#kind_name, #bnb::__private::BitError> {
+                #bnb::__private::decode_peek_with(bytes, #layout, |r| {
                     #prefix_verify
                     #decision
                 })
@@ -2774,7 +2791,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 pub fn decode_with<S: #from_bound>(
                     r: &mut S,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #decode_body
                 }
@@ -2782,46 +2799,46 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 pub fn decode_with_exact(
                     bytes: &[u8],
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx.clone()))
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact_with(bytes, #layout, |r| Self::decode_with(r, __ctx.clone()))
                 }
             }
-            impl ::bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<S: ::bnb::__private::Source>(
+            impl #bnb::DecodeWith<#ctx_name> for #name {
+                fn decode_with<S: #bnb::__private::Source>(
                     r: &mut S,
                     args: #ctx_name,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(r, args)
                 }
             }
         }
     } else {
         quote! {
-            impl ::bnb::BitDecode for #name {
-                fn bit_decode<S: ::bnb::__private::Source>(
+            impl #bnb::BitDecode for #name {
+                fn bit_decode<S: #bnb::__private::Source>(
                     r: &mut S,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #decode_body
                 }
             }
             impl #name {
                 #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed."]
-                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_consume(buf, #layout)
+                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_consume(buf, #layout)
                 }
                 #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
-                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_peek(bytes, #layout)
+                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_peek(bytes, #layout)
                 }
                 #[doc = "Decode and require every whole byte consumed."]
-                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    ::bnb::__private::decode_exact(bytes, #layout)
+                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact(bytes, #layout)
                 }
                 #[doc = "Decode from an explicit bit source (a seekable one if a variant seeks)."]
                 pub fn decode_from<S: #from_bound>(
                     r: &mut S,
-                ) -> ::core::result::Result<Self, ::bnb::__private::BitError> {
-                    <Self as ::bnb::BitDecode>::bit_decode(r)
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    <Self as #bnb::BitDecode>::bit_decode(r)
                 }
             }
         }
@@ -2834,11 +2851,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
-                pub fn encode_with<K: ::bnb::__private::Sink>(
+                pub fn encode_with<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #encode_body
                 }
@@ -2846,16 +2863,16 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 pub fn to_bytes_with(
                     &self,
                     __ctx: #ctx_name,
-                ) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx.clone()))
+                ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec_with(#layout, |w| self.encode_with(w, __ctx.clone()))
                 }
             }
-            impl ::bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<K: ::bnb::__private::Sink>(
+            impl #bnb::EncodeWith<#ctx_name> for #name {
+                fn encode_with<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
                     args: #ctx_name,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, w, args)
                 }
             }
@@ -2865,40 +2882,40 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         // context-ignoring `EncodeWith` so a parent can forward to it uniformly.
         let encode_with_trait = is_ctx_type.then(|| {
             quote! {
-                impl ::bnb::EncodeWith<#ctx_name> for #name {
+                impl #bnb::EncodeWith<#ctx_name> for #name {
                     #[allow(unused_variables)]
-                    fn encode_with<K: ::bnb::__private::Sink>(
+                    fn encode_with<K: #bnb::__private::Sink>(
                         &self,
                         w: &mut K,
                         args: #ctx_name,
-                    ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                        <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                    ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                        <Self as #bnb::BitEncode>::bit_encode(self, w)
                     }
                 }
             }
         });
         quote! {
-            impl ::bnb::BitEncode for #name {
-                const LAYOUT: ::bnb::Layout = #layout;
-                fn bit_encode<K: ::bnb::__private::Sink>(
+            impl #bnb::BitEncode for #name {
+                const LAYOUT: #bnb::Layout = #layout;
+                fn bit_encode<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #encode_body
                 }
             }
             impl #name {
                 #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
                 #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
-                pub fn to_bytes(&self) -> ::core::result::Result<::bnb::__private::Vec<u8>, ::bnb::__private::BitError> {
-                    ::bnb::__private::encode_to_vec(self, #layout)
+                pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec(self, #layout)
                 }
                 #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
-                pub fn encode_into<K: ::bnb::__private::Sink>(
+                pub fn encode_into<K: #bnb::__private::Sink>(
                     &self,
                     w: &mut K,
-                ) -> ::core::result::Result<(), ::bnb::__private::BitError> {
-                    <Self as ::bnb::BitEncode>::bit_encode(self, w)
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                    <Self as #bnb::BitEncode>::bit_encode(self, w)
                 }
             }
             #encode_with_trait

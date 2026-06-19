@@ -17,7 +17,9 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use bnb::{BitEnum, BitError, bin, bitfield, u4};
+// `renamed_bnb` is `bnb` under a `package = "…"` alias (see Cargo.toml) — proving
+// the macro-generated `::renamed_bnb::…` paths resolve via `proc-macro-crate`.
+use renamed_bnb::{BitEnum, BitError, bin, bitfield, u4};
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

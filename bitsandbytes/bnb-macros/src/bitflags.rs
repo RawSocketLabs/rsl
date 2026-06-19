@@ -59,6 +59,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
@@ -206,7 +207,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             fn sub_assign(&mut self, rhs: Self) { self.value &= !rhs.value; }
         }
 
-        impl ::bnb::__private::Bits for #name {
+        impl #bnb::__private::Bits for #name {
             const BITS: u32 = <#backing>::BITS;
             #[inline]
             fn into_bits(self) -> u128 { self.value as u128 }
@@ -214,12 +215,12 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             fn from_bits(raw: u128) -> Self { Self { value: raw as #backing } }
         }
 
-        impl ::bnb::__private::Bitfield for #name {
+        impl #bnb::__private::Bitfield for #name {
             type Backing = #backing;
             const WIDTH: u32 = <#backing>::BITS;
-            const BYTE_ORDER: ::bnb::__private::ByteOrder = ::bnb::__private::ByteOrder::#byte_order_variant;
+            const BYTE_ORDER: #bnb::__private::ByteOrder = #bnb::__private::ByteOrder::#byte_order_variant;
             // Flag sets are inherently LSB-indexed (flag n = 1 << n).
-            const BIT_ORDER: ::bnb::__private::BitOrder = ::bnb::__private::BitOrder::Lsb;
+            const BIT_ORDER: #bnb::__private::BitOrder = #bnb::__private::BitOrder::Lsb;
             #[inline]
             fn to_raw(self) -> #backing { self.value }
             #[inline]

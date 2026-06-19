@@ -138,6 +138,10 @@ tour of the crate and the rationale behind each piece. Reading order:
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
+// Macro-generated code references the runtime by the path `proc-macro-crate`
+// resolves — `::bnb` for the crate itself. This self-alias makes that path
+// resolve inside the crate's own modules (the lib name is `bnb`).
+extern crate self as bnb;
 
 pub mod bitstream;
 pub mod builder;

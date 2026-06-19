@@ -170,7 +170,7 @@ fn bench_primitives(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = testutil::bench::criterion();
+    config = Criterion::default();
     targets = bench_pack, bench_unpack, bench_bytes_roundtrip, bench_primitives
 }
 criterion_main!(benches);

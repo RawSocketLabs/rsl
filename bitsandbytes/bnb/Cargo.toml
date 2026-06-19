@@ -38,11 +38,9 @@ bytes = ["dep:bytes", "std"]
 trybuild.workspace = true
 # Property-based round-trip stress testing.
 proptest.workspace = true
-# Statistical benchmarking with HTML reports.
+# Statistical benchmarking with HTML reports. The benches use `Criterion::default()`
+# directly (no shared `testutil` harness) so `bnb` stays self-contained / publishable.
 criterion = { workspace = true, features = ["html_reports"] }
-# Shared bench harness (testutil::bench::criterion); criterion stays a
-# direct dev-dep for its macros/types.
-testutil = { workspace = true, features = ["bench"] }
 # The crates `bnb` replaces — used *only* in benchmarks to substantiate the
 # "as fast as a hand-written shift/mask" claim before any migration. They are
 # dev-dependencies, so they never enter a real build.

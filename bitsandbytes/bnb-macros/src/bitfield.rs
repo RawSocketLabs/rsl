@@ -112,6 +112,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
@@ -154,7 +155,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     let off_ident = |f: &Field| format_ident!("__bits_off_{}", f.ident);
     let mask_ident = |f: &Field| format_ident!("__bits_mask_{}", f.ident);
 
-    let bits_path = quote!(::bnb::__private::Bits);
+    let bits_path = quote!(#bnb::__private::Bits);
 
     // 1. Width consts.
     let width_consts = fields.iter().map(|f| {
@@ -351,11 +352,11 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             }
         }
 
-        impl ::bnb::__private::Bitfield for #name {
+        impl #bnb::__private::Bitfield for #name {
             type Backing = #backing;
             const WIDTH: u32 = Self::WIDTH;
-            const BYTE_ORDER: ::bnb::__private::ByteOrder = ::bnb::__private::ByteOrder::#byte_order_variant;
-            const BIT_ORDER: ::bnb::__private::BitOrder = ::bnb::__private::BitOrder::#bit_order_variant;
+            const BYTE_ORDER: #bnb::__private::ByteOrder = #bnb::__private::ByteOrder::#byte_order_variant;
+            const BIT_ORDER: #bnb::__private::BitOrder = #bnb::__private::BitOrder::#bit_order_variant;
             #[inline]
             fn to_raw(self) -> #backing { self.value }
             #[inline]

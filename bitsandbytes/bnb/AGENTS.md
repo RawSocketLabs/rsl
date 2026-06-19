@@ -106,9 +106,17 @@ attribute handles byte-aligned headers and sub-byte frames alike.
 `std::io`. **Load-bearing facts when editing the codec/macros:**
 
 - `alloc` is unconditional (`extern crate alloc` in `lib.rs`); use `alloc::{vec::Vec,
-  string::{String, ToString}}` in the runtime, and emit `::bnb::__private::{Vec, String,
+  string::{String, ToString}}` in the runtime, and emit `#bnb::__private::{Vec, String,
   vec}` from the macros — **never `::std::…` inside a `quote!`** (it breaks `no_std`
   consumers). Errors impl `core::error::Error`, not `std::error::Error`.
+- **Runtime-crate path in generated code is resolved, not hardcoded.** Each macro
+  fn that emits runtime paths does `let bnb = crate::bnb_path();` and interpolates
+  `#bnb` (e.g. `#bnb::__private::Vec`); `bnb_path()` (in `bnb-macros/src/lib.rs`) uses
+  `proc-macro-crate` so the path matches whatever name the *dependent* imports the
+  crate as — so a consumer can rename it (`bnb = { package = "bitsandbytes" }`). Never
+  re-introduce a literal `::bnb` in a `quote!` (the `bnb_path()` string is the runtime's
+  **package** name — update it if the package is renamed). `lib.rs` carries `extern crate
+  self as bnb;` so `#bnb` = `::bnb` resolves inside the crate and its tests/doctests.
 - Gate behind `#[cfg(feature = "std")]`: the reader/writer adapters (`StreamBitReader`/
   `BufSource`/`SeekReader`/`SourceReader`/`SinkWriter`, `as_read`/`as_write`),
   `encode_to_writer*`, `From<std::io::Error>`, and `ErrorKind::Io`.
