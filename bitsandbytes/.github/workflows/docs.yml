@@ -1,0 +1,60 @@
+name: docs (GitHub Pages)
+
+# Publishes rustdoc for the current `main` to GitHub Pages — a preview of the
+# unpublished tip, alongside the released docs on docs.rs. Built nightly with
+# `--cfg docsrs` so it matches the docs.rs output (incl. the per-feature badges).
+#
+# One-time setup: repo Settings → Pages → Build and deployment → Source =
+# "GitHub Actions".
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+# Least privilege for the Pages deployment (OIDC).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize deployments; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build rustdoc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Build docs on nightly with `--cfg docsrs` (the `feature(doc_cfg)` badges
+      # need nightly). The MSRV/stable pin in rust-toolchain.toml must not win here.
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/configure-pages@v5
+      - name: Build docs (all features, docs.rs-style)
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs"
+        run: cargo doc --no-deps --all-features --workspace
+      - name: Landing redirect → the bnb crate
+        run: echo '<meta http-equiv="refresh" content="0; url=bnb/index.html">' > target/doc/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/doc
+
+  deploy:
+    name: deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
