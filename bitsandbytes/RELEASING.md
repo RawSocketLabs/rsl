@@ -34,11 +34,13 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
 and `git_release_enable = false`. Today this is version + `CHANGELOG` management
 plus git tags only.
 
-## One-time setup: the baseline tags
+## Baseline tags (done)
 
-release-plz computes a bump from the commits **since the last tag**. There are no
-tags yet, so before the first run, tag the current `0.1.0` state on `main` so the
-pre-`0.1.0` history (which predates this convention) is never re-scanned:
+release-plz computes a bump from the commits **since the last tag**, so the `0.1.0`
+baseline is already tagged on `main` — `v0.1.0` (runtime) and
+`bitsandbytes-macros-v0.1.0` (macros) — which keeps the pre-`0.1.0` history (it
+predates this convention) from ever being re-scanned. If you ever need to recreate
+them:
 
 ```sh
 git checkout main && git pull
@@ -47,15 +49,36 @@ git tag bitsandbytes-macros-v0.1.0  # macro crate
 git push origin v0.1.0 bitsandbytes-macros-v0.1.0
 ```
 
-(If you skip this, release-plz will create these tags itself on its first run, but
-tagging explicitly keeps the first generated changelog from summarizing old history.)
+## Required: a token that can open the release PR
 
-## Optional: let CI run on the release PR
+The **RawSocketLabs org disallows GitHub Actions from creating pull requests** (org
+Settings → Actions → General → Workflow permissions — it's a 409 to enable it at the
+repo level). So the default `GITHUB_TOKEN` is rejected when release-plz opens the
+release PR:
 
-PRs opened by the default `GITHUB_TOKEN` don't trigger other workflows, so CI won't
-run on the release PR. To get CI there, add a PAT or GitHub App token as the
-`RELEASE_PLZ_TOKEN` repository secret; the workflow uses it when present and falls
-back to `GITHUB_TOKEN` otherwise.
+```
+403 — GitHub Actions is not permitted to create or approve pull requests
+```
+
+A token that acts as a **user or GitHub App** (not as "GitHub Actions") is therefore
+required — it isn't subject to that policy, and it also makes CI run on the release PR
+(which `GITHUB_TOKEN`-opened PRs don't trigger). Add it as the `RELEASE_PLZ_TOKEN`
+repository secret; the `release-plz-pr` job already prefers it
+(`${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}`), so no workflow change is
+needed. Use one of:
+
+- **A fine-grained PAT** (simplest) — repository access to this repo, with
+  **Contents: read/write** and **Pull requests: read/write**.
+- **A GitHub App token** (no human owner, auto-rotated) — install an app with the same
+  permissions and mint the token via `actions/create-github-app-token` in the workflow.
+
+Until that secret exists, the `release-plz-release` (tags-only) job still works
+(pushing tags needs no PR-creation rights), but `release-plz-pr` will **403** the first
+time there is a releasable (`feat:`/`fix:`) commit on `main`.
+
+Alternatively, a RawSocketLabs **org owner** can allow Actions to create PRs org-wide
+(org Settings → Actions → General → "Allow GitHub Actions to create and approve pull
+requests"); then the default `GITHUB_TOKEN` suffices and no PAT is needed.
 
 ## When you're ready to publish to crates.io
 
