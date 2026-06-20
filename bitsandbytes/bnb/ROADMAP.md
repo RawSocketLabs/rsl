@@ -152,9 +152,11 @@ passes with no breaking change needed.
 
 ### F. Release hygiene
 
-- [ ] `CHANGELOG`, a release process (`cargo-release`), `CONTRIBUTING.md` / `SECURITY.md`;
-      CI jobs for fuzz + Miri + semver-checks alongside the existing
-      fmt/clippy/test/no_std/deny/MSRV set.
+- [x] Conventional-Commit enforcement (commitlint CI) + Conventional-Commit-driven
+      release automation (`release-plz`: per-crate `CHANGELOG.md` + SemVer-bump PRs,
+      git tags on merge; crates.io publishing deferred — see `RELEASING.md`).
+- [ ] `CONTRIBUTING.md` / `SECURITY.md`; CI jobs for fuzz + Miri + semver-checks
+      alongside the existing fmt/clippy/test/no_std/deny/MSRV set.
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
