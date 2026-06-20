@@ -23,25 +23,31 @@ mod builder;
 
 use proc_macro::TokenStream;
 
-/// The path to the `bnb` runtime crate as the *dependent* crate imports it, for
-/// generated code to reference. Resolved via [`proc_macro_crate`] against the
-/// runtime's published package name, so the output works whether a consumer uses
-/// the default name or renames the dependency (e.g. `bnb = { package = "…" }`).
+/// The path to the runtime crate as the crate currently being compiled refers to
+/// it, for generated code to reference.
 ///
-/// `FoundCrate::Itself` (the runtime's own tests/doctests/examples, which link the
-/// lib by its `[lib] name = "bnb"`) and the not-found fallback both emit `::bnb`;
-/// the runtime's `lib.rs` carries `extern crate self as bnb;` so that resolves
-/// inside the lib too.
+/// The runtime is **published as `bitsandbytes`** but its **library is named `bnb`**
+/// (`[lib] name`); downstream consumers import it as `bnb` via
+/// `bnb = { package = "bitsandbytes" }`. Cargo links the library by its lib name
+/// (`bnb`) for any *non-renamed* reference — the crate's own tests/doctests/examples,
+/// `trybuild`'s temp crates, and an un-aliased `bitsandbytes = "…"` consumer — and by
+/// the *dependency key* for a `package = "…"`-renamed one. So:
+///
+/// - [`proc_macro_crate`] reporting the package name `bitsandbytes` (or `Itself`, or
+///   not found) ⇒ a non-renamed reference ⇒ emit the lib name `::bnb`. `lib.rs` carries
+///   `extern crate self as bnb;` so `::bnb` resolves inside the lib itself too.
+/// - any other name ⇒ a `package = "…"` rename ⇒ emit that key (`::#name`).
 pub(crate) fn bnb_path() -> proc_macro2::TokenStream {
     use proc_macro_crate::{FoundCrate, crate_name};
-    // NOTE: this is the runtime's **package** name. It is `bnb` in this workspace;
-    // change it to the published name (`bitsandbytes`) when the crate is extracted.
-    match crate_name("bnb") {
-        Ok(FoundCrate::Name(name)) => {
+    match crate_name("bitsandbytes") {
+        // Renamed dependency: the key is the import name.
+        Ok(FoundCrate::Name(name)) if name != "bitsandbytes" => {
             let ident = proc_macro2::Ident::new(&name, proc_macro2::Span::call_site());
             quote::quote!(::#ident)
         }
-        Ok(FoundCrate::Itself) | Err(_) => quote::quote!(::bnb),
+        // Non-renamed (`Name("bitsandbytes")`), the crate itself, or unresolved: all
+        // link the library by its lib name `bnb`.
+        _ => quote::quote!(::bnb),
     }
 }
 

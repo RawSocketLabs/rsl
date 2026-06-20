@@ -16,4 +16,4 @@ publish = false
 # `proc-macro-crate` resolution in `bnb-macros`, proving generated code references
 # the crate by whatever name a consumer chose (the `package = "…"` rename pattern,
 # e.g. the eventual `bnb = { package = "bitsandbytes" }`).
-renamed_bnb = { package = "bnb", path = "..", default-features = false }
+renamed_bnb = { package = "bitsandbytes", path = "..", default-features = false }

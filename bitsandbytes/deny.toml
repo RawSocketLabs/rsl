@@ -1,0 +1,70 @@
+# cargo-deny configuration — supply-chain + dependency hygiene.
+# Run: `cargo deny check`.
+
+[advisories]
+version = 2
+# RustSec vulnerabilities are denied by default (version 2). Also reject yanked
+# crates and surface unmaintained ones.
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Permissive licenses compatible with this workspace's MIT OR Apache-2.0.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    # webpki-roots bundles Mozilla's CA set under this permissive data license.
+    "CDLA-Permissive-2.0",
+]
+# Per-crate license blessings for code that never ships in a product. `inferno`
+# (CDDL-1.0, otherwise disallowed) is pulled only by `pprof`, which is testutil's
+# opt-in, dev/bench-only `profiling` feature (bench flamegraphs). It is absent
+# from the default resolve graph — visible only under `cargo deny --all-features`
+# — so this keeps that path green without relaxing the bar for shipped crates.
+exceptions = [
+    { name = "inferno", allow = ["CDDL-1.0"] },
+]
+
+[bans]
+# Our direct dependencies are single-version (enforced via
+# [workspace.dependencies]); deny duplicates so drift can never silently return.
+multiple-versions = "deny"
+wildcards = "warn"
+# Transitive duplicates outside our control (older deps pull syn 1.x, and the
+# tree carries several windows-sys/getrandom/hashbrown/socket2). Skipped so the
+# gate still catches *our* drift.
+#
+# winnow/toml_edit/toml_datetime: the toml-rs ecosystem is mid-migration —
+# `toml` (refcheck's config parser) still rides winnow 0.7, while num_enum's
+# proc-macro build-dep (`proc-macro-crate` -> `toml_edit` 0.25) rides winnow
+# 1.0. This skew is borne by `refcheck`, an internal reference/compliance tool
+# that is never part of a shipped product and which leaves this workspace at
+# Phase 2 — so its dependency hygiene is intentionally relaxed and not worth
+# distorting the codebase to avoid. Resolves on its own when num_enum is dropped
+# for the `bnb` crate, or fully at Phase 2 when refcheck is its own repo.
+skip = [
+    "getrandom",
+    "hashbrown",
+    "socket2",
+    "syn",
+    "windows-sys",
+    "winnow",
+    "toml_edit",
+    "toml_datetime",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
