@@ -176,12 +176,13 @@ passes with no breaking change needed.
 - [x] Conventional-Commit enforcement (commitlint CI) + Conventional-Commit-driven
       release automation (`release-plz`: per-crate `CHANGELOG.md` + SemVer-bump PRs,
       git tags on merge; crates.io publishing deferred — see `RELEASING.md`).
-- [ ] `CONTRIBUTING.md` (remaining). `SECURITY.md` ✓ — threat model, the dual-use "what
-      is / isn't a vulnerability" scope, the security properties (zero `unsafe`, fuzzed
-      decode, bounded-allocation guard), and private GitHub vulnerability reporting. CI now
-      also runs **fuzz**, **public-api**, and **semver-checks** alongside
-      fmt/clippy/test/no_std/deny/MSRV; **Miri** is the only outstanding gate (de-prioritized
-      — see Section B).
+- [x] `CONTRIBUTING.md` (product-first, maintainer-decides model; issue-first for
+      non-trivial work; inbound = outbound dual MIT/Apache; the local-checks + API-gate
+      regen commands) and `SECURITY.md` (threat model, the dual-use "what is / isn't a
+      vulnerability" scope, the security properties, private GitHub vulnerability reporting
+      — now enabled). CI also runs **fuzz**, **public-api**, and **semver-checks** alongside
+      fmt/clippy/test/no_std/deny/MSRV. **Miri** is the only outstanding gate
+      (de-prioritized — see Section B).
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
