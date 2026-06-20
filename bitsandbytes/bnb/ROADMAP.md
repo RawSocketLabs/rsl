@@ -151,8 +151,10 @@ passes with no breaking change needed.
       committed snapshot is the reviewed baseline (regenerate deliberately on a real
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
-- [ ] `cargo-semver-checks` in CI — the paired follow-up (catch SemVer *breakage* between
-      releases, vs the above which catches *any* surface change).
+- [x] `cargo-semver-checks` in CI (`semver-checks` job, pinned to `0.48`) — checks the
+      runtime crate against the latest release tag (`v{version}`, auto-advancing) and
+      **blocks** on SemVer-breaking changes until the version is bumped, so breakage is
+      deliberate. Complements `public-api` (which flags *any* surface change).
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
 
 ### D. Docs & migration

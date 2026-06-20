@@ -117,3 +117,33 @@ jobs:
             echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bnb/public-api.txt"
             exit 1
           fi
+
+  semver-checks:
+    name: cargo-semver-checks (no breakage since last release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the release tags for the baseline
+      # cargo-semver-checks builds rustdoc JSON on *stable* (via RUSTC_BOOTSTRAP), so the
+      # repo's pinned-stable toolchain is fine — no nightly needed.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Pin the tool version — its lint set / output can change across releases.
+      - run: cargo install cargo-semver-checks --version 0.48.0 --locked
+      - name: Check the runtime crate against the latest release tag
+        run: |
+          # The runtime crate is tagged `v{version}`; the macro crate uses a name-prefixed
+          # tag, so the `v*` glob selects only the runtime crate's releases. Baseline auto-
+          # advances as new releases are tagged.
+          baseline=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$baseline" ]; then
+            echo "No v* release tag yet — nothing to baseline against; skipping."
+            exit 0
+          fi
+          echo "Baseline: $baseline"
+          # Blocking: a SemVer-breaking change vs the last release fails until the version
+          # is bumped (release-plz drives the bump from a `feat!`/`BREAKING CHANGE:`; on
+          # 0.x that's a minor bump). The proc-macro crate has no library API surface, so
+          # only the runtime crate is checked — its macros are re-exported and covered here.
+          cargo semver-checks --baseline-rev "$baseline" -p bitsandbytes
