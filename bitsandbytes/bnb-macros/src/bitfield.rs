@@ -138,15 +138,17 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     // Ranges are written low..=high (the offset is the low end). Catch a reversed
     // range with a clear, spanned error instead of a const-eval subtract overflow.
     for f in &fields {
-        if let Spec::Range(a, b) = &f.spec
-            && a > b
-        {
-            return Err(syn::Error::new_spanned(
-                &f.ident,
-                format!(
-                    "`#[bits({a}..={b})]` is reversed; write the range low..=high (i.e. `{b}..={a}`)"
-                ),
-            ));
+        // Nested rather than a `let`-chain: let-chains are unstable below Rust 1.88,
+        // and the MSRV is 1.85.
+        if let Spec::Range(a, b) = &f.spec {
+            if a > b {
+                return Err(syn::Error::new_spanned(
+                    &f.ident,
+                    format!(
+                        "`#[bits({a}..={b})]` is reversed; write the range low..=high (i.e. `{b}..={a}`)"
+                    ),
+                ));
+            }
         }
     }
 
