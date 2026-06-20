@@ -38,7 +38,12 @@ arbitrary-int = "1.3"
 modular-bitfield-msb = "0.11"
 
 [workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
+# Zero `unsafe`, enforced as a guarantee rather than a convention: `forbid` (unlike
+# `deny`) cannot be locally re-enabled by an `#[allow]`. Subsumes the former
+# `unsafe_op_in_unsafe_fn = "deny"` (with no `unsafe`, there are no unsafe fns). The
+# macros never *emit* `unsafe` either, so `bnb` is usable from a consumer that also
+# `#![forbid(unsafe_code)]`.
+unsafe_code = "forbid"
 unreachable_pub = "warn"
 missing_docs = "warn"          # `bnb` upgrades to deny itself (`#![deny(missing_docs)]`)
 

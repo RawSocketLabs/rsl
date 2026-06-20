@@ -89,6 +89,9 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       `Error`/`UnknownDiscriminant`/`BuilderError` cover construction.
 - [x] **Performance** — shift/mask bitfields (matches `bitbybit`, within noise of
       hand-written); byte-aligned fast path in the stream codec; `#[inline]` hot path.
+- [x] **Zero `unsafe`** — `unsafe_code = "forbid"` (workspace lints) across both crates
+      and every target; the macros emit no `unsafe`, so a consumer can `#![forbid(unsafe_code)]`
+      and still use `bnb`. A bit-level codec with no `unsafe` is a deliberate selling point.
 
 ## Testing
 
@@ -125,8 +128,12 @@ passes with no breaking change needed.
       the "decode of arbitrary bytes never panics" proptest, plus the fixed-parser
       bijection assert; curated seed corpus). Wired into CI (the `fuzz` job: build +
       time-boxed smoke run under ASan/UBSan). Remaining: submit to **OSS-Fuzz**.
-- [ ] **Miri** over the test suite (audit every `unsafe` first — near-zero `unsafe` is a
-      1.0 selling point; document it).
+- [x] **Zero `unsafe`** — enforced crate-wide by `unsafe_code = "forbid"` in the
+      workspace lints (a guarantee an `#[allow]` can't reopen, unlike `deny`). The macros
+      never *emit* `unsafe` either, so the guarantee carries into consumer code.
+- [ ] **Miri** over the test suite — lower priority now that `unsafe` is forbidden (Miri
+      mainly hunts UB reachable through `unsafe`); keep as a backstop for the codec's
+      slice/offset arithmetic, but it no longer gates 1.0.
 - [ ] Differential correctness vs `binrw`/`modular-bitfield` on shared shapes (the bench
       targets already exist).
 - [ ] Boundary stress: `u127`, the full endian × bit-order matrix, sub-byte straddles,
