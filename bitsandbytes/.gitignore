@@ -1,1 +1,18 @@
 /target
+
+# cargo-fuzz build output, crash reproducers, and coverage — never committed.
+/fuzz/target
+/fuzz/artifacts
+/fuzz/coverage
+# Corpus: commit ONLY the curated, human-named seeds; ignore the machine-found
+# inputs libFuzzer appends during a run (40-hex-char sha1 filenames).
+/fuzz/corpus/decode/*
+!/fuzz/corpus/decode/counted
+!/fuzz/corpus/decode/counted_empty
+!/fuzz/corpus/decode/frame
+!/fuzz/corpus/decode/header
+!/fuzz/corpus/decode/magic
+!/fuzz/corpus/decode/optional_absent
+!/fuzz/corpus/decode/optional_present
+!/fuzz/corpus/decode/tagged_catch_all
+!/fuzz/corpus/decode/tagged_known

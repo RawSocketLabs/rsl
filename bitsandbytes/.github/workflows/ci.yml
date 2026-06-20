@@ -72,3 +72,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
+
+  fuzz:
+    name: cargo-fuzz (decode path, smoke run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # cargo-fuzz needs nightly + ASan/UBSan; rust-toolchain.toml pins the tree to
+      # stable, so drop it (same pattern as the MSRV job) and default to nightly.
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-fuzz --locked
+      # Build first so a compile break is a clear, fast failure separate from a crash.
+      - run: cargo fuzz build decode
+      # Time-boxed smoke run: replays the committed seed corpus, then fuzzes briefly.
+      # A panic / OOB / UB writes a crash artifact and fails the job. `-runs` caps it
+      # so the job is bounded even if `-max_total_time` misbehaves on a slow runner.
+      - run: cargo fuzz run decode -- -max_total_time=60 -runs=2000000

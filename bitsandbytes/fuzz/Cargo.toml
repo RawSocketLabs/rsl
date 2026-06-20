@@ -1,0 +1,28 @@
+# cargo-fuzz crate for `bnb`'s decode path. Deliberately its **own** workspace (the
+# empty `[workspace]` table below) so the unstable libfuzzer-sys toolchain never
+# leaks into the parent workspace's stable fmt/clippy/test/no_std/deny/MSRV jobs.
+# Run from the repo root: `cargo +nightly fuzz run decode`.
+[package]
+name = "bnb-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.bitsandbytes]
+path = "../bnb"
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+# Detach from the parent workspace.
+[workspace]

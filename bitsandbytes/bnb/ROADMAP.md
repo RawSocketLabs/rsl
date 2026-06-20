@@ -121,8 +121,10 @@ passes with no breaking change needed.
 
 ### B. Correctness hardening — it parses untrusted bytes
 
-- [ ] A `cargo-fuzz` target on the decode path (promote the "decode of arbitrary bytes
-      never panics" proptest); run in CI, ideally submit to **OSS-Fuzz**.
+- [x] A `cargo-fuzz` target on the decode path (`fuzz/fuzz_targets/decode.rs` — promotes
+      the "decode of arbitrary bytes never panics" proptest, plus the fixed-parser
+      bijection assert; curated seed corpus). Wired into CI (the `fuzz` job: build +
+      time-boxed smoke run under ASan/UBSan). Remaining: submit to **OSS-Fuzz**.
 - [ ] **Miri** over the test suite (audit every `unsafe` first — near-zero `unsafe` is a
       1.0 selling point; document it).
 - [ ] Differential correctness vs `binrw`/`modular-bitfield` on shared shapes (the bench
@@ -155,8 +157,8 @@ passes with no breaking change needed.
 - [x] Conventional-Commit enforcement (commitlint CI) + Conventional-Commit-driven
       release automation (`release-plz`: per-crate `CHANGELOG.md` + SemVer-bump PRs,
       git tags on merge; crates.io publishing deferred — see `RELEASING.md`).
-- [ ] `CONTRIBUTING.md` / `SECURITY.md`; CI jobs for fuzz + Miri + semver-checks
-      alongside the existing fmt/clippy/test/no_std/deny/MSRV set.
+- [ ] `CONTRIBUTING.md` / `SECURITY.md`; CI jobs for fuzz (✓ done) + Miri +
+      semver-checks alongside the existing fmt/clippy/test/no_std/deny/MSRV set.
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
