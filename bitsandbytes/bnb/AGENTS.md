@@ -199,9 +199,12 @@ cargo +1.85.0 check --workspace
 - `tests/builder.rs` — `#[derive(BitsBuilder)]`: required-field errors, `default`
   / `default = expr`, the `#[bitfield]` intercept, and the plain-struct path.
 - `tests/bin_*.rs` — the `#[bin]` surface, one concern per file: `bin_macro`
-  (the fold), `bin_magic`, `bin_count`, `bin_ctx`(+`_layer2`), `bin_map`,
+  (the fold), `bin_magic`, `bin_count` (+ `bin_count_adversarial`: hostile
+  `count` — over-count → graceful EOF, `u32::MAX` → no pre-alloc, under-count
+  → `TrailingBytes`), `bin_ctx`(+`_layer2`), `bin_map`,
   `bin_if`, `bin_calc_temp`, `bin_reserved`, `bin_ignore`, `bin_parse_with`,
-  `bin_positioning`/`bin_restore_position`, `bin_validate`, `bin_byte_order`,
+  `bin_positioning`/`bin_restore_position`, `bin_validate`, `bin_byte_order`
+  (+ `bin_order_matrix`: the message-level endian × bit-order 2×2),
   `bin_fold`, and the I/O ladder (`bin_buf_source`, `bin_seek_reader`,
   `bin_bytes` — the last under `--features bytes`).
 - `tests/bitstream_*.rs` — the low-level derives/runtime: `bitstream_dmr`(+`_frame`)

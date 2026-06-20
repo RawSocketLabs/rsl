@@ -136,8 +136,12 @@ passes with no breaking change needed.
       slice/offset arithmetic, but it no longer gates 1.0.
 - [ ] Differential correctness vs `binrw`/`modular-bitfield` on shared shapes (the bench
       targets already exist).
-- [ ] Boundary stress: `u127`, the full endian × bit-order matrix, sub-byte straddles,
-      attacker-controlled `count` (the push-based `Vec` guard).
+- [x] Boundary stress: `u127`/`u128` incl. all-ones (`edge_cases.rs`), the endian ×
+      bit-order matrix at both the bitfield layer (`comprehensive.rs`) and the message
+      layer (`bin_order_matrix.rs` — the 2×2 compose-without-aliasing), sub-byte straddles
+      (`bitstream_dmr`), and **attacker-controlled `count`** (`bin_count_adversarial.rs`:
+      over-count → graceful `UnexpectedEof`, `u32::MAX` count → no pre-alloc, under-count
+      → `TrailingBytes`, nested over-read keeps the innermost span).
 
 ### C. API freeze + SemVer tooling
 
