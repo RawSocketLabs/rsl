@@ -131,6 +131,10 @@ tour of the crate and the rationale behind each piece. Reading order:
 // Every public item must be documented (the `uN` aliases are the one self-
 // evident exception, allowed at their module).
 #![deny(missing_docs)]
+// On docs.rs (which sets `--cfg docsrs` and builds on nightly), annotate every
+// feature-gated item with an "Available on crate feature …" badge. A no-op on
+// stable, where `docsrs` is never set.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 // `bnb` is `no_std` when built without the (default) `std` feature; `alloc` is
 // always required — the codec produces `Vec<u8>` and owns variable-length
 // payloads/error messages. The `std` feature re-enables the `std::io` ladder

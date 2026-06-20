@@ -1,8 +1,14 @@
 # bnb
 
+[![crates.io](https://img.shields.io/crates/v/bitsandbytes.svg)](https://crates.io/crates/bitsandbytes)
+[![docs.rs](https://docs.rs/bitsandbytes/badge.svg)](https://docs.rs/bitsandbytes)
+
 An **owned, bit-aware binary codec**: ergonomic, fast bit/byte field types plus a
 unified `#[bin]` whole-message macro for binary protocols. No external codec
 dependency — `bnb` is self-contained.
+
+Published on crates.io as **`bitsandbytes`**; import it as `bnb`:
+`bnb = { package = "bitsandbytes", version = "0.1" }`. Docs: <https://docs.rs/bitsandbytes>.
 
 `bnb` collapses a stack of overlapping helpers — `modular-bitfield(-msb)`,
 `bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a `binrw`-style
