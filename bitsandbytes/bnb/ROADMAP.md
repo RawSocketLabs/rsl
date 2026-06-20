@@ -145,8 +145,14 @@ passes with no breaking change needed.
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
       `EncodeExt`/`SpecEncodeExt` ergonomics — commit only to what you'll keep. Mark
       growth points `#[non_exhaustive]` (errors already are).
-- [ ] `cargo-public-api` snapshot + `cargo-semver-checks` in CI (catch unintended
-      surface / breakage between releases).
+- [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
+      + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
+      cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the
+      committed snapshot is the reviewed baseline (regenerate deliberately on a real
+      change). The proc-macro crate has no rustdoc-extractable surface — its macros are
+      covered via the re-exports in the runtime-crate snapshot.
+- [ ] `cargo-semver-checks` in CI — the paired follow-up (catch SemVer *breakage* between
+      releases, vs the above which catches *any* surface change).
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
 
 ### D. Docs & migration

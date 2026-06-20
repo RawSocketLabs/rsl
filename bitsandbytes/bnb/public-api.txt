@@ -1,0 +1,2579 @@
+pub mod bnb
+pub use bnb::BitDecode
+pub use bnb::BitEncode
+pub use bnb::BitEnum
+pub use bnb::BitsBuilder
+pub use bnb::bin
+pub use bnb::bitfield
+pub use bnb::bitflags
+pub mod bnb::bitstream
+#[non_exhaustive] pub enum bnb::bitstream::ErrorKind
+pub bnb::bitstream::ErrorKind::BadMagic
+pub bnb::bitstream::ErrorKind::BadMagic::expected: u128
+pub bnb::bitstream::ErrorKind::BadMagic::found: u128
+pub bnb::bitstream::ErrorKind::BufferFull
+pub bnb::bitstream::ErrorKind::BufferFull::cap: usize
+pub bnb::bitstream::ErrorKind::Convert
+pub bnb::bitstream::ErrorKind::Convert::message: alloc::string::String
+pub bnb::bitstream::ErrorKind::Incomplete
+pub bnb::bitstream::ErrorKind::Incomplete::needed: core::option::Option<usize>
+pub bnb::bitstream::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::bitstream::ErrorKind::NotSeekable
+pub bnb::bitstream::ErrorKind::TooWide
+pub bnb::bitstream::ErrorKind::TooWide::width: usize
+pub bnb::bitstream::ErrorKind::TrailingBytes
+pub bnb::bitstream::ErrorKind::TrailingBytes::remaining: usize
+pub bnb::bitstream::ErrorKind::UnexpectedEof
+pub bnb::bitstream::ErrorKind::UnexpectedEof::needed: usize
+pub bnb::bitstream::ErrorKind::UnexpectedEof::remaining: usize
+impl core::clone::Clone for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::clone(&self) -> bnb::bitstream::ErrorKind
+impl core::cmp::Eq for bnb::bitstream::ErrorKind
+impl core::cmp::PartialEq for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::eq(&self, &bnb::bitstream::ErrorKind) -> bool
+impl core::fmt::Debug for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::ErrorKind
+impl core::marker::Freeze for bnb::bitstream::ErrorKind
+impl core::marker::Send for bnb::bitstream::ErrorKind
+impl core::marker::Sync for bnb::bitstream::ErrorKind
+impl core::marker::Unpin for bnb::bitstream::ErrorKind
+impl core::marker::UnsafeUnpin for bnb::bitstream::ErrorKind
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::ErrorKind
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::ErrorKind
+impl<T, U> core::convert::Into<U> for bnb::bitstream::ErrorKind where U: core::convert::From<T>
+pub fn bnb::bitstream::ErrorKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::ErrorKind where U: core::convert::Into<T>
+pub type bnb::bitstream::ErrorKind::Error = core::convert::Infallible
+pub fn bnb::bitstream::ErrorKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::ErrorKind where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::ErrorKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::ErrorKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::ErrorKind where T: core::clone::Clone
+pub type bnb::bitstream::ErrorKind::Owned = T
+pub fn bnb::bitstream::ErrorKind::clone_into(&self, &mut T)
+pub fn bnb::bitstream::ErrorKind::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::ErrorKind where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::ErrorKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::ErrorKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::ErrorKind where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::ErrorKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::ErrorKind
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
+pub struct bnb::bitstream::BitError
+pub bnb::bitstream::BitError::at: usize
+pub bnb::bitstream::BitError::field: core::option::Option<&'static str>
+pub bnb::bitstream::BitError::kind: bnb::bitstream::ErrorKind
+impl bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::bad_magic(u128, u128, usize) -> Self
+pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+pub fn bnb::bitstream::BitError::in_field(self, &'static str) -> Self
+pub fn bnb::bitstream::BitError::is_incomplete(&self) -> bool
+pub fn bnb::bitstream::BitError::new(bnb::bitstream::ErrorKind, usize) -> Self
+impl core::clone::Clone for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
+impl core::cmp::Eq for bnb::bitstream::BitError
+impl core::cmp::PartialEq for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
+impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(std::io::error::Error) -> Self
+impl core::error::Error for bnb::bitstream::BitError
+impl core::fmt::Debug for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::BitError
+impl core::marker::Freeze for bnb::bitstream::BitError
+impl core::marker::Send for bnb::bitstream::BitError
+impl core::marker::Sync for bnb::bitstream::BitError
+impl core::marker::Unpin for bnb::bitstream::BitError
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitError where U: core::convert::From<T>
+pub fn bnb::bitstream::BitError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitError where U: core::convert::Into<T>
+pub type bnb::bitstream::BitError::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitError where T: core::clone::Clone
+pub type bnb::bitstream::BitError::Owned = T
+pub fn bnb::bitstream::BitError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::bitstream::BitError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::bitstream::BitError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::bitstream::BitError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitError where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitError where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitError
+pub struct bnb::bitstream::BitReader<'a>
+impl<'a> bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::align_to_byte(&mut self)
+pub fn bnb::bitstream::BitReader<'a>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'a>::new(&'a [u8]) -> Self
+pub fn bnb::bitstream::BitReader<'a>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::remaining_bits(&self) -> usize
+pub fn bnb::bitstream::BitReader<'a>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::with_layout(&'a [u8], bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BitReader<'a>::with_order(&'a [u8], bnb::BitOrder) -> Self
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
+impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
+pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<'a> core::clone::Clone for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::clone(&self) -> bnb::bitstream::BitReader<'a>
+impl<'a> core::fmt::Debug for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Send for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Sync for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Unpin for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::UnsafeUnpin for bnb::bitstream::BitReader<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitReader<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitReader<'a>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitReader<'a> where U: core::convert::From<T>
+pub fn bnb::bitstream::BitReader<'a>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitReader<'a> where U: core::convert::Into<T>
+pub type bnb::bitstream::BitReader<'a>::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitReader<'a>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitReader<'a> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitReader<'a>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitReader<'a>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitReader<'a> where T: core::clone::Clone
+pub type bnb::bitstream::BitReader<'a>::Owned = T
+pub fn bnb::bitstream::BitReader<'a>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitReader<'a>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitReader<'a> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitReader<'a> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitReader<'a> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitReader<'a> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitReader<'a>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitReader<'a>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitReader<'a>
+pub struct bnb::bitstream::BitWriter
+impl bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
+pub fn bnb::bitstream::BitWriter::new() -> Self
+pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
+impl core::default::Default for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
+impl core::fmt::Debug for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::bitstream::BitWriter
+impl core::marker::Send for bnb::bitstream::BitWriter
+impl core::marker::Sync for bnb::bitstream::BitWriter
+impl core::marker::Unpin for bnb::bitstream::BitWriter
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitWriter where U: core::convert::From<T>
+pub fn bnb::bitstream::BitWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitWriter where U: core::convert::Into<T>
+pub type bnb::bitstream::BitWriter::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitWriter::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitWriter where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitWriter where T: core::clone::Clone
+pub type bnb::bitstream::BitWriter::Owned = T
+pub fn bnb::bitstream::BitWriter::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitWriter::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitWriter where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitWriter where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitWriter where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitWriter where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitWriter::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitWriter
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitWriter
+pub struct bnb::bitstream::BufSource<R>
+impl<R: std::io::Read> bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_cap(R, usize) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_cap_and_layout(R, usize, bnb::bitstream::Layout) -> Self
+impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::clone(&self) -> bnb::bitstream::BufSource<R>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::BufSource<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::BufSource<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::BufSource<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::BufSource<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::BufSource<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BufSource<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BufSource<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BufSource<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::BufSource<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BufSource<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::BufSource<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::BufSource<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BufSource<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BufSource<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BufSource<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BufSource<R> where T: core::clone::Clone
+pub type bnb::bitstream::BufSource<R>::Owned = T
+pub fn bnb::bitstream::BufSource<R>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BufSource<R>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BufSource<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BufSource<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BufSource<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BufSource<R> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BufSource<R>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BufSource<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BufSource<R>
+pub struct bnb::bitstream::BytesReader
+impl bnb::BytesReader
+pub fn bnb::BytesReader::new(bytes::bytes::Bytes) -> Self
+pub fn bnb::BytesReader::with_layout(bytes::bytes::Bytes, bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::Source for bnb::BytesReader
+pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesReader::bit_pos(&self) -> usize
+pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::BytesReader
+pub fn bnb::BytesReader::clone(&self) -> bnb::BytesReader
+impl core::fmt::Debug for bnb::BytesReader
+pub fn bnb::BytesReader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for bnb::BytesReader
+impl core::marker::Send for bnb::BytesReader
+impl core::marker::Sync for bnb::BytesReader
+impl core::marker::Unpin for bnb::BytesReader
+impl core::marker::UnsafeUnpin for bnb::BytesReader
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesReader
+impl core::panic::unwind_safe::UnwindSafe for bnb::BytesReader
+impl<T, U> core::convert::Into<U> for bnb::BytesReader where U: core::convert::From<T>
+pub fn bnb::BytesReader::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::BytesReader where U: core::convert::Into<T>
+pub type bnb::BytesReader::Error = core::convert::Infallible
+pub fn bnb::BytesReader::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::BytesReader where U: core::convert::TryFrom<T>
+pub type bnb::BytesReader::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::BytesReader::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::BytesReader where T: core::clone::Clone
+pub type bnb::BytesReader::Owned = T
+pub fn bnb::BytesReader::clone_into(&self, &mut T)
+pub fn bnb::BytesReader::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::BytesReader where T: 'static + ?core::marker::Sized
+pub fn bnb::BytesReader::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::BytesReader where T: ?core::marker::Sized
+pub fn bnb::BytesReader::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::BytesReader where T: ?core::marker::Sized
+pub fn bnb::BytesReader::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::BytesReader where T: core::clone::Clone
+pub unsafe fn bnb::BytesReader::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::BytesReader
+pub fn bnb::BytesReader::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::BytesReader
+impl<T> tracing::instrument::WithSubscriber for bnb::BytesReader
+pub struct bnb::bitstream::BytesWriter
+impl bnb::BytesWriter
+pub fn bnb::BytesWriter::freeze(self) -> bytes::bytes::Bytes
+pub fn bnb::BytesWriter::new() -> Self
+pub fn bnb::BytesWriter::with_layout(bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::Sink for bnb::BytesWriter
+pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesWriter::bit_pos(&self) -> usize
+pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::BytesWriter
+pub fn bnb::BytesWriter::clone(&self) -> bnb::BytesWriter
+impl core::default::Default for bnb::BytesWriter
+pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
+impl core::fmt::Debug for bnb::BytesWriter
+pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::BytesWriter
+impl core::marker::Send for bnb::BytesWriter
+impl core::marker::Sync for bnb::BytesWriter
+impl core::marker::Unpin for bnb::BytesWriter
+impl core::marker::UnsafeUnpin for bnb::BytesWriter
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
+impl core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
+impl<T, U> core::convert::Into<U> for bnb::BytesWriter where U: core::convert::From<T>
+pub fn bnb::BytesWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::BytesWriter where U: core::convert::Into<T>
+pub type bnb::BytesWriter::Error = core::convert::Infallible
+pub fn bnb::BytesWriter::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::BytesWriter where U: core::convert::TryFrom<T>
+pub type bnb::BytesWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::BytesWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::BytesWriter where T: core::clone::Clone
+pub type bnb::BytesWriter::Owned = T
+pub fn bnb::BytesWriter::clone_into(&self, &mut T)
+pub fn bnb::BytesWriter::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::BytesWriter where T: 'static + ?core::marker::Sized
+pub fn bnb::BytesWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::BytesWriter where T: ?core::marker::Sized
+pub fn bnb::BytesWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::BytesWriter where T: ?core::marker::Sized
+pub fn bnb::BytesWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::BytesWriter where T: core::clone::Clone
+pub unsafe fn bnb::BytesWriter::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::BytesWriter
+pub fn bnb::BytesWriter::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::BytesWriter
+impl<T> tracing::instrument::WithSubscriber for bnb::BytesWriter
+pub struct bnb::bitstream::Layout
+pub bnb::bitstream::Layout::bit: bnb::BitOrder
+pub bnb::bitstream::Layout::byte: bnb::ByteOrder
+impl core::clone::Clone for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::clone(&self) -> bnb::bitstream::Layout
+impl core::cmp::Eq for bnb::bitstream::Layout
+impl core::cmp::PartialEq for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::eq(&self, &bnb::bitstream::Layout) -> bool
+impl core::default::Default for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::default() -> bnb::bitstream::Layout
+impl core::fmt::Debug for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::Layout
+impl core::marker::StructuralPartialEq for bnb::bitstream::Layout
+impl core::marker::Freeze for bnb::bitstream::Layout
+impl core::marker::Send for bnb::bitstream::Layout
+impl core::marker::Sync for bnb::bitstream::Layout
+impl core::marker::Unpin for bnb::bitstream::Layout
+impl core::marker::UnsafeUnpin for bnb::bitstream::Layout
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::Layout
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::Layout
+impl<T, U> core::convert::Into<U> for bnb::bitstream::Layout where U: core::convert::From<T>
+pub fn bnb::bitstream::Layout::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::Layout where U: core::convert::Into<T>
+pub type bnb::bitstream::Layout::Error = core::convert::Infallible
+pub fn bnb::bitstream::Layout::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::Layout where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::Layout::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::Layout::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::Layout where T: core::clone::Clone
+pub type bnb::bitstream::Layout::Owned = T
+pub fn bnb::bitstream::Layout::clone_into(&self, &mut T)
+pub fn bnb::bitstream::Layout::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::Layout where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::Layout::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::Layout where T: ?core::marker::Sized
+pub fn bnb::bitstream::Layout::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::Layout where T: ?core::marker::Sized
+pub fn bnb::bitstream::Layout::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::Layout where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::Layout::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::Layout
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::Layout
+pub struct bnb::bitstream::SeekReader<R>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::new(R) -> Self
+pub fn bnb::bitstream::SeekReader<R>::with_layout(R, bnb::bitstream::Layout) -> Self
+impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::clone(&self) -> bnb::bitstream::SeekReader<R>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::SeekReader<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::SeekReader<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::SeekReader<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::SeekReader<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::SeekReader<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SeekReader<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SeekReader<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SeekReader<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::SeekReader<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SeekReader<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::SeekReader<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SeekReader<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SeekReader<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SeekReader<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SeekReader<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::SeekReader<R> where T: core::clone::Clone
+pub type bnb::bitstream::SeekReader<R>::Owned = T
+pub fn bnb::bitstream::SeekReader<R>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::SeekReader<R>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::SeekReader<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SeekReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SeekReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::SeekReader<R> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::SeekReader<R>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SeekReader<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SeekReader<R>
+pub struct bnb::bitstream::SinkWriter<'a, K: bnb::bitstream::Sink>(_)
+impl<K: bnb::bitstream::Sink> std::io::Write for bnb::bitstream::SinkWriter<'_, K>
+pub fn bnb::bitstream::SinkWriter<'_, K>::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::bitstream::SinkWriter<'_, K>::write(&mut self, &[u8]) -> std::io::error::Result<usize>
+impl<'a, K> core::marker::Freeze for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::marker::Send for bnb::bitstream::SinkWriter<'a, K> where K: core::marker::Send
+impl<'a, K> core::marker::Sync for bnb::bitstream::SinkWriter<'a, K> where K: core::marker::Sync
+impl<'a, K> core::marker::Unpin for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::marker::UnsafeUnpin for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SinkWriter<'a, K> where K: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, K> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SinkWriter<'a, K>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::From<T>
+pub fn bnb::bitstream::SinkWriter<'a, K>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::Into<T>
+pub type bnb::bitstream::SinkWriter<'a, K>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SinkWriter<'a, K>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SinkWriter<'a, K>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SinkWriter<'a, K>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::SinkWriter<'a, K> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SinkWriter<'a, K> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SinkWriter<'a, K> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::SinkWriter<'a, K>
+pub fn bnb::bitstream::SinkWriter<'a, K>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SinkWriter<'a, K>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SinkWriter<'a, K>
+pub struct bnb::bitstream::SourceReader<'a, S: bnb::bitstream::Source>(_)
+impl<S: bnb::bitstream::Source> std::io::Read for bnb::bitstream::SourceReader<'_, S>
+pub fn bnb::bitstream::SourceReader<'_, S>::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl<'a, S> core::marker::Freeze for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::marker::Send for bnb::bitstream::SourceReader<'a, S> where S: core::marker::Send
+impl<'a, S> core::marker::Sync for bnb::bitstream::SourceReader<'a, S> where S: core::marker::Sync
+impl<'a, S> core::marker::Unpin for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::marker::UnsafeUnpin for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SourceReader<'a, S> where S: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SourceReader<'a, S>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::From<T>
+pub fn bnb::bitstream::SourceReader<'a, S>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::Into<T>
+pub type bnb::bitstream::SourceReader<'a, S>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SourceReader<'a, S>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SourceReader<'a, S>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SourceReader<'a, S>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::SourceReader<'a, S> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SourceReader<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SourceReader<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::SourceReader<'a, S>
+pub fn bnb::bitstream::SourceReader<'a, S>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SourceReader<'a, S>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SourceReader<'a, S>
+pub struct bnb::bitstream::StreamBitReader<R>
+impl<R: std::io::Read> bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::new(R) -> Self
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::StreamBitReader<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::StreamBitReader<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::StreamBitReader<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::StreamBitReader<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::StreamBitReader<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::StreamBitReader<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::StreamBitReader<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::StreamBitReader<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::StreamBitReader<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::StreamBitReader<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::StreamBitReader<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::StreamBitReader<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::StreamBitReader<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::StreamBitReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::StreamBitReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::StreamBitReader<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::StreamBitReader<R>
+pub trait bnb::bitstream::BitAmount: core::marker::Copy
+pub fn bnb::bitstream::BitAmount::bits(self) -> u32
+pub fn bnb::bitstream::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i32
+pub fn i32::bits(self) -> u32
+pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u16
+pub fn u16::bits(self) -> u32
+pub fn u16::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u32
+pub fn u32::bits(self) -> u32
+pub fn u32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u64
+pub fn u64::bits(self) -> u32
+pub fn u64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u8
+pub fn u8::bits(self) -> u32
+pub fn u8::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for usize
+pub fn usize::bits(self) -> u32
+pub fn usize::bytes(self) -> u32
+pub trait bnb::bitstream::BitDecode: core::marker::Sized
+pub fn bnb::bitstream::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub trait bnb::bitstream::BitEncode
+pub const bnb::bitstream::BitEncode::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::bitstream::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
+pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
+pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub trait bnb::bitstream::EncodeExt: bnb::bitstream::BitEncode
+pub fn bnb::bitstream::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub trait bnb::bitstream::EncodeWith<A>
+pub fn bnb::bitstream::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T
+pub fn T::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::FixedBitLen
+pub const bnb::bitstream::FixedBitLen::BIT_LEN: u32
+pub trait bnb::bitstream::SeekSource: bnb::bitstream::Source
+impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
+impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+pub trait bnb::bitstream::Sink
+pub fn bnb::bitstream::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::Sink::bit_pos(&self) -> usize
+pub fn bnb::bitstream::Sink::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::BytesWriter
+pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesWriter::bit_pos(&self) -> usize
+pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::Source
+pub fn bnb::bitstream::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::Source::bit_pos(&self) -> usize
+pub fn bnb::bitstream::Source::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::Source::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::BytesReader
+pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesReader::bit_pos(&self) -> usize
+pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
+pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::SpecEncode
+pub const bnb::bitstream::SpecEncode::SPEC_LAYOUT: bnb::bitstream::Layout
+pub fn bnb::bitstream::SpecEncode::spec_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::SpecEncodeExt: bnb::bitstream::SpecEncode
+pub fn bnb::bitstream::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
+pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub mod bnb::builder
+pub enum bnb::builder::BuilderError
+pub bnb::builder::BuilderError::Invalid(alloc::string::String)
+pub bnb::builder::BuilderError::MissingField(&'static str)
+impl bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::field(&self) -> core::option::Option<&'static str>
+pub fn bnb::builder::BuilderError::invalid(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn bnb::builder::BuilderError::missing_field(&'static str) -> Self
+impl core::clone::Clone for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::clone(&self) -> bnb::builder::BuilderError
+impl core::cmp::Eq for bnb::builder::BuilderError
+impl core::cmp::PartialEq for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::eq(&self, &bnb::builder::BuilderError) -> bool
+impl core::error::Error for bnb::builder::BuilderError
+impl core::fmt::Debug for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::builder::BuilderError
+impl core::marker::Freeze for bnb::builder::BuilderError
+impl core::marker::Send for bnb::builder::BuilderError
+impl core::marker::Sync for bnb::builder::BuilderError
+impl core::marker::Unpin for bnb::builder::BuilderError
+impl core::marker::UnsafeUnpin for bnb::builder::BuilderError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::builder::BuilderError
+impl core::panic::unwind_safe::UnwindSafe for bnb::builder::BuilderError
+impl<T, U> core::convert::Into<U> for bnb::builder::BuilderError where U: core::convert::From<T>
+pub fn bnb::builder::BuilderError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::builder::BuilderError where U: core::convert::Into<T>
+pub type bnb::builder::BuilderError::Error = core::convert::Infallible
+pub fn bnb::builder::BuilderError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::builder::BuilderError where U: core::convert::TryFrom<T>
+pub type bnb::builder::BuilderError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::builder::BuilderError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::builder::BuilderError where T: core::clone::Clone
+pub type bnb::builder::BuilderError::Owned = T
+pub fn bnb::builder::BuilderError::clone_into(&self, &mut T)
+pub fn bnb::builder::BuilderError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::builder::BuilderError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::builder::BuilderError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::builder::BuilderError where T: 'static + ?core::marker::Sized
+pub fn bnb::builder::BuilderError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::builder::BuilderError where T: ?core::marker::Sized
+pub fn bnb::builder::BuilderError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::builder::BuilderError where T: ?core::marker::Sized
+pub fn bnb::builder::BuilderError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::builder::BuilderError where T: core::clone::Clone
+pub unsafe fn bnb::builder::BuilderError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::builder::BuilderError
+impl<T> tracing::instrument::WithSubscriber for bnb::builder::BuilderError
+pub mod bnb::error
+pub enum bnb::error::Error
+pub bnb::error::Error::ValueTooLarge
+pub bnb::error::Error::ValueTooLarge::bits: u32
+pub bnb::error::Error::ValueTooLarge::value: u128
+impl core::clone::Clone for bnb::error::Error
+pub fn bnb::error::Error::clone(&self) -> bnb::error::Error
+impl core::cmp::Eq for bnb::error::Error
+impl core::cmp::PartialEq for bnb::error::Error
+pub fn bnb::error::Error::eq(&self, &bnb::error::Error) -> bool
+impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::error::Error for bnb::error::Error
+impl core::fmt::Debug for bnb::error::Error
+pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::Error
+pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::Error
+impl core::marker::Freeze for bnb::error::Error
+impl core::marker::Send for bnb::error::Error
+impl core::marker::Sync for bnb::error::Error
+impl core::marker::Unpin for bnb::error::Error
+impl core::marker::UnsafeUnpin for bnb::error::Error
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::Error
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::Error
+impl<T, U> core::convert::Into<U> for bnb::error::Error where U: core::convert::From<T>
+pub fn bnb::error::Error::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::Error where U: core::convert::Into<T>
+pub type bnb::error::Error::Error = core::convert::Infallible
+pub fn bnb::error::Error::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::Error where U: core::convert::TryFrom<T>
+pub type bnb::error::Error::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::Error::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::Error where T: core::clone::Clone
+pub type bnb::error::Error::Owned = T
+pub fn bnb::error::Error::clone_into(&self, &mut T)
+pub fn bnb::error::Error::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::Error where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::Error::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::Error where T: 'static + ?core::marker::Sized
+pub fn bnb::error::Error::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::Error where T: ?core::marker::Sized
+pub fn bnb::error::Error::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::Error where T: ?core::marker::Sized
+pub fn bnb::error::Error::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::Error where T: core::clone::Clone
+pub unsafe fn bnb::error::Error::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::Error
+pub fn bnb::error::Error::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::Error
+impl<T> tracing::instrument::WithSubscriber for bnb::error::Error
+pub struct bnb::error::UnknownDiscriminant
+pub bnb::error::UnknownDiscriminant::type_name: &'static str
+pub bnb::error::UnknownDiscriminant::value: u128
+impl core::clone::Clone for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::clone(&self) -> bnb::error::UnknownDiscriminant
+impl core::cmp::Eq for bnb::error::UnknownDiscriminant
+impl core::cmp::PartialEq for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::eq(&self, &bnb::error::UnknownDiscriminant) -> bool
+impl core::error::Error for bnb::error::UnknownDiscriminant
+impl core::fmt::Debug for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::UnknownDiscriminant
+impl core::marker::Freeze for bnb::error::UnknownDiscriminant
+impl core::marker::Send for bnb::error::UnknownDiscriminant
+impl core::marker::Sync for bnb::error::UnknownDiscriminant
+impl core::marker::Unpin for bnb::error::UnknownDiscriminant
+impl core::marker::UnsafeUnpin for bnb::error::UnknownDiscriminant
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::UnknownDiscriminant
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::UnknownDiscriminant
+impl<T, U> core::convert::Into<U> for bnb::error::UnknownDiscriminant where U: core::convert::From<T>
+pub fn bnb::error::UnknownDiscriminant::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::UnknownDiscriminant where U: core::convert::Into<T>
+pub type bnb::error::UnknownDiscriminant::Error = core::convert::Infallible
+pub fn bnb::error::UnknownDiscriminant::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::UnknownDiscriminant where U: core::convert::TryFrom<T>
+pub type bnb::error::UnknownDiscriminant::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::UnknownDiscriminant::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::UnknownDiscriminant where T: core::clone::Clone
+pub type bnb::error::UnknownDiscriminant::Owned = T
+pub fn bnb::error::UnknownDiscriminant::clone_into(&self, &mut T)
+pub fn bnb::error::UnknownDiscriminant::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::UnknownDiscriminant where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::UnknownDiscriminant where T: 'static + ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::UnknownDiscriminant where T: ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::UnknownDiscriminant where T: ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::UnknownDiscriminant where T: core::clone::Clone
+pub unsafe fn bnb::error::UnknownDiscriminant::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
+impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
+pub type bnb::error::Result<T> = core::result::Result<T, bnb::error::Error>
+pub mod bnb::guide
+pub mod bnb::guide::bin_codec
+pub mod bnb::guide::bitfields
+pub mod bnb::guide::builders
+pub mod bnb::guide::composition
+pub mod bnb::guide::directives
+pub mod bnb::guide::dispatch
+pub mod bnb::guide::dual_use
+pub mod bnb::guide::enums
+pub mod bnb::guide::errors
+pub mod bnb::guide::flags
+pub mod bnb::guide::io
+pub mod bnb::guide::numbers
+pub mod bnb::guide::quick_start
+pub mod bnb::int
+pub struct bnb::int::UInt<T, const N: usize>
+impl<const N: usize> bnb::UInt<u128, N>
+pub const bnb::UInt<u128, N>::BITS: usize
+pub const bnb::UInt<u128, N>::MASK: u128
+pub const bnb::UInt<u128, N>::MAX: Self
+pub const bnb::UInt<u128, N>::MIN: Self
+pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
+pub const fn bnb::UInt<u128, N>::new(u128) -> Self
+pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u128, N>::value(self) -> u128
+impl<const N: usize> bnb::UInt<u16, N>
+pub const bnb::UInt<u16, N>::BITS: usize
+pub const bnb::UInt<u16, N>::MASK: u16
+pub const bnb::UInt<u16, N>::MAX: Self
+pub const bnb::UInt<u16, N>::MIN: Self
+pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
+pub const fn bnb::UInt<u16, N>::new(u16) -> Self
+pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u16, N>::value(self) -> u16
+impl<const N: usize> bnb::UInt<u32, N>
+pub const bnb::UInt<u32, N>::BITS: usize
+pub const bnb::UInt<u32, N>::MASK: u32
+pub const bnb::UInt<u32, N>::MAX: Self
+pub const bnb::UInt<u32, N>::MIN: Self
+pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
+pub const fn bnb::UInt<u32, N>::new(u32) -> Self
+pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u32, N>::value(self) -> u32
+impl<const N: usize> bnb::UInt<u64, N>
+pub const bnb::UInt<u64, N>::BITS: usize
+pub const bnb::UInt<u64, N>::MASK: u64
+pub const bnb::UInt<u64, N>::MAX: Self
+pub const bnb::UInt<u64, N>::MIN: Self
+pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
+pub const fn bnb::UInt<u64, N>::new(u64) -> Self
+pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u64, N>::value(self) -> u64
+impl<const N: usize> bnb::UInt<u8, N>
+pub const bnb::UInt<u8, N>::BITS: usize
+pub const bnb::UInt<u8, N>::MASK: u8
+pub const bnb::UInt<u8, N>::MAX: Self
+pub const bnb::UInt<u8, N>::MIN: Self
+pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
+pub const fn bnb::UInt<u8, N>::new(u8) -> Self
+pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u8, N>::value(self) -> u8
+impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::clone(&self) -> bnb::UInt<T, N>
+impl<T: core::cmp::Eq, const N: usize> core::cmp::Eq for bnb::UInt<T, N>
+impl<T: core::cmp::Ord, const N: usize> core::cmp::Ord for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::cmp(&self, &bnb::UInt<T, N>) -> core::cmp::Ordering
+impl<T: core::cmp::PartialEq, const N: usize> core::cmp::PartialEq for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::eq(&self, &bnb::UInt<T, N>) -> bool
+impl<T: core::cmp::PartialEq, const N: usize> core::marker::StructuralPartialEq for bnb::UInt<T, N>
+impl<T: core::cmp::PartialOrd, const N: usize> core::cmp::PartialOrd for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::partial_cmp(&self, &bnb::UInt<T, N>) -> core::option::Option<core::cmp::Ordering>
+impl<T: core::hash::Hash, const N: usize> core::hash::Hash for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl<T: core::marker::Copy, const N: usize> core::marker::Copy for bnb::UInt<T, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u128, N>
+pub const bnb::UInt<u128, N>::BITS: u32
+pub fn bnb::UInt<u128, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u128, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u16, N>
+pub const bnb::UInt<u16, N>::BITS: u32
+pub fn bnb::UInt<u16, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u16, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u32, N>
+pub const bnb::UInt<u32, N>::BITS: u32
+pub fn bnb::UInt<u32, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u32, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u64, N>
+pub const bnb::UInt<u64, N>::BITS: u32
+pub fn bnb::UInt<u64, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u64, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
+pub const bnb::UInt<u8, N>::BITS: u32
+pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
+pub fn u128::from(bnb::UInt<u128, N>) -> u128
+impl<const N: usize> core::convert::From<bnb::UInt<u16, N>> for u16
+pub fn u16::from(bnb::UInt<u16, N>) -> u16
+impl<const N: usize> core::convert::From<bnb::UInt<u32, N>> for u32
+pub fn u32::from(bnb::UInt<u32, N>) -> u32
+impl<const N: usize> core::convert::From<bnb::UInt<u64, N>> for u64
+pub fn u64::from(bnb::UInt<u64, N>) -> u64
+impl<const N: usize> core::convert::From<bnb::UInt<u8, N>> for u8
+pub fn u8::from(bnb::UInt<u8, N>) -> u8
+impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
+pub type bnb::UInt<u128, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
+pub type bnb::UInt<u16, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
+pub type bnb::UInt<u32, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
+pub type bnb::UInt<u64, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
+pub type bnb::UInt<u8, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
+impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::default() -> Self
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T, const N: usize> core::marker::Freeze for bnb::UInt<T, N> where T: core::marker::Freeze
+impl<T, const N: usize> core::marker::Send for bnb::UInt<T, N> where T: core::marker::Send
+impl<T, const N: usize> core::marker::Sync for bnb::UInt<T, N> where T: core::marker::Sync
+impl<T, const N: usize> core::marker::Unpin for bnb::UInt<T, N> where T: core::marker::Unpin
+impl<T, const N: usize> core::marker::UnsafeUnpin for bnb::UInt<T, N> where T: core::marker::UnsafeUnpin
+impl<T, const N: usize> core::panic::unwind_safe::RefUnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T, const N: usize> core::panic::unwind_safe::UnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::UInt<T, N> where U: core::convert::From<T>
+pub fn bnb::UInt<T, N>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::UInt<T, N> where U: core::convert::Into<T>
+pub type bnb::UInt<T, N>::Error = core::convert::Infallible
+pub fn bnb::UInt<T, N>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::UInt<T, N> where U: core::convert::TryFrom<T>
+pub type bnb::UInt<T, N>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::UInt<T, N>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::UInt<T, N> where T: core::clone::Clone
+pub type bnb::UInt<T, N>::Owned = T
+pub fn bnb::UInt<T, N>::clone_into(&self, &mut T)
+pub fn bnb::UInt<T, N>::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
+pub fn bnb::UInt<T, N>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+pub fn bnb::UInt<T, N>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+pub fn bnb::UInt<T, N>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::UInt<T, N> where T: core::clone::Clone
+pub unsafe fn bnb::UInt<T, N>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::UInt<T, N>
+impl<T> tracing::instrument::WithSubscriber for bnb::UInt<T, N>
+pub type bnb::int::u1 = bnb::UInt<u8, 1>
+pub type bnb::int::u10 = bnb::UInt<u16, 10>
+pub type bnb::int::u100 = bnb::UInt<u128, 100>
+pub type bnb::int::u101 = bnb::UInt<u128, 101>
+pub type bnb::int::u102 = bnb::UInt<u128, 102>
+pub type bnb::int::u103 = bnb::UInt<u128, 103>
+pub type bnb::int::u104 = bnb::UInt<u128, 104>
+pub type bnb::int::u105 = bnb::UInt<u128, 105>
+pub type bnb::int::u106 = bnb::UInt<u128, 106>
+pub type bnb::int::u107 = bnb::UInt<u128, 107>
+pub type bnb::int::u108 = bnb::UInt<u128, 108>
+pub type bnb::int::u109 = bnb::UInt<u128, 109>
+pub type bnb::int::u11 = bnb::UInt<u16, 11>
+pub type bnb::int::u110 = bnb::UInt<u128, 110>
+pub type bnb::int::u111 = bnb::UInt<u128, 111>
+pub type bnb::int::u112 = bnb::UInt<u128, 112>
+pub type bnb::int::u113 = bnb::UInt<u128, 113>
+pub type bnb::int::u114 = bnb::UInt<u128, 114>
+pub type bnb::int::u115 = bnb::UInt<u128, 115>
+pub type bnb::int::u116 = bnb::UInt<u128, 116>
+pub type bnb::int::u117 = bnb::UInt<u128, 117>
+pub type bnb::int::u118 = bnb::UInt<u128, 118>
+pub type bnb::int::u119 = bnb::UInt<u128, 119>
+pub type bnb::int::u12 = bnb::UInt<u16, 12>
+pub type bnb::int::u120 = bnb::UInt<u128, 120>
+pub type bnb::int::u121 = bnb::UInt<u128, 121>
+pub type bnb::int::u122 = bnb::UInt<u128, 122>
+pub type bnb::int::u123 = bnb::UInt<u128, 123>
+pub type bnb::int::u124 = bnb::UInt<u128, 124>
+pub type bnb::int::u125 = bnb::UInt<u128, 125>
+pub type bnb::int::u126 = bnb::UInt<u128, 126>
+pub type bnb::int::u127 = bnb::UInt<u128, 127>
+pub type bnb::int::u13 = bnb::UInt<u16, 13>
+pub type bnb::int::u14 = bnb::UInt<u16, 14>
+pub type bnb::int::u15 = bnb::UInt<u16, 15>
+pub type bnb::int::u17 = bnb::UInt<u32, 17>
+pub type bnb::int::u18 = bnb::UInt<u32, 18>
+pub type bnb::int::u19 = bnb::UInt<u32, 19>
+pub type bnb::int::u2 = bnb::UInt<u8, 2>
+pub type bnb::int::u20 = bnb::UInt<u32, 20>
+pub type bnb::int::u21 = bnb::UInt<u32, 21>
+pub type bnb::int::u22 = bnb::UInt<u32, 22>
+pub type bnb::int::u23 = bnb::UInt<u32, 23>
+pub type bnb::int::u24 = bnb::UInt<u32, 24>
+pub type bnb::int::u25 = bnb::UInt<u32, 25>
+pub type bnb::int::u26 = bnb::UInt<u32, 26>
+pub type bnb::int::u27 = bnb::UInt<u32, 27>
+pub type bnb::int::u28 = bnb::UInt<u32, 28>
+pub type bnb::int::u29 = bnb::UInt<u32, 29>
+pub type bnb::int::u3 = bnb::UInt<u8, 3>
+pub type bnb::int::u30 = bnb::UInt<u32, 30>
+pub type bnb::int::u31 = bnb::UInt<u32, 31>
+pub type bnb::int::u33 = bnb::UInt<u64, 33>
+pub type bnb::int::u34 = bnb::UInt<u64, 34>
+pub type bnb::int::u35 = bnb::UInt<u64, 35>
+pub type bnb::int::u36 = bnb::UInt<u64, 36>
+pub type bnb::int::u37 = bnb::UInt<u64, 37>
+pub type bnb::int::u38 = bnb::UInt<u64, 38>
+pub type bnb::int::u39 = bnb::UInt<u64, 39>
+pub type bnb::int::u4 = bnb::UInt<u8, 4>
+pub type bnb::int::u40 = bnb::UInt<u64, 40>
+pub type bnb::int::u41 = bnb::UInt<u64, 41>
+pub type bnb::int::u42 = bnb::UInt<u64, 42>
+pub type bnb::int::u43 = bnb::UInt<u64, 43>
+pub type bnb::int::u44 = bnb::UInt<u64, 44>
+pub type bnb::int::u45 = bnb::UInt<u64, 45>
+pub type bnb::int::u46 = bnb::UInt<u64, 46>
+pub type bnb::int::u47 = bnb::UInt<u64, 47>
+pub type bnb::int::u48 = bnb::UInt<u64, 48>
+pub type bnb::int::u49 = bnb::UInt<u64, 49>
+pub type bnb::int::u5 = bnb::UInt<u8, 5>
+pub type bnb::int::u50 = bnb::UInt<u64, 50>
+pub type bnb::int::u51 = bnb::UInt<u64, 51>
+pub type bnb::int::u52 = bnb::UInt<u64, 52>
+pub type bnb::int::u53 = bnb::UInt<u64, 53>
+pub type bnb::int::u54 = bnb::UInt<u64, 54>
+pub type bnb::int::u55 = bnb::UInt<u64, 55>
+pub type bnb::int::u56 = bnb::UInt<u64, 56>
+pub type bnb::int::u57 = bnb::UInt<u64, 57>
+pub type bnb::int::u58 = bnb::UInt<u64, 58>
+pub type bnb::int::u59 = bnb::UInt<u64, 59>
+pub type bnb::int::u6 = bnb::UInt<u8, 6>
+pub type bnb::int::u60 = bnb::UInt<u64, 60>
+pub type bnb::int::u61 = bnb::UInt<u64, 61>
+pub type bnb::int::u62 = bnb::UInt<u64, 62>
+pub type bnb::int::u63 = bnb::UInt<u64, 63>
+pub type bnb::int::u65 = bnb::UInt<u128, 65>
+pub type bnb::int::u66 = bnb::UInt<u128, 66>
+pub type bnb::int::u67 = bnb::UInt<u128, 67>
+pub type bnb::int::u68 = bnb::UInt<u128, 68>
+pub type bnb::int::u69 = bnb::UInt<u128, 69>
+pub type bnb::int::u7 = bnb::UInt<u8, 7>
+pub type bnb::int::u70 = bnb::UInt<u128, 70>
+pub type bnb::int::u71 = bnb::UInt<u128, 71>
+pub type bnb::int::u72 = bnb::UInt<u128, 72>
+pub type bnb::int::u73 = bnb::UInt<u128, 73>
+pub type bnb::int::u74 = bnb::UInt<u128, 74>
+pub type bnb::int::u75 = bnb::UInt<u128, 75>
+pub type bnb::int::u76 = bnb::UInt<u128, 76>
+pub type bnb::int::u77 = bnb::UInt<u128, 77>
+pub type bnb::int::u78 = bnb::UInt<u128, 78>
+pub type bnb::int::u79 = bnb::UInt<u128, 79>
+pub type bnb::int::u80 = bnb::UInt<u128, 80>
+pub type bnb::int::u81 = bnb::UInt<u128, 81>
+pub type bnb::int::u82 = bnb::UInt<u128, 82>
+pub type bnb::int::u83 = bnb::UInt<u128, 83>
+pub type bnb::int::u84 = bnb::UInt<u128, 84>
+pub type bnb::int::u85 = bnb::UInt<u128, 85>
+pub type bnb::int::u86 = bnb::UInt<u128, 86>
+pub type bnb::int::u87 = bnb::UInt<u128, 87>
+pub type bnb::int::u88 = bnb::UInt<u128, 88>
+pub type bnb::int::u89 = bnb::UInt<u128, 89>
+pub type bnb::int::u9 = bnb::UInt<u16, 9>
+pub type bnb::int::u90 = bnb::UInt<u128, 90>
+pub type bnb::int::u91 = bnb::UInt<u128, 91>
+pub type bnb::int::u92 = bnb::UInt<u128, 92>
+pub type bnb::int::u93 = bnb::UInt<u128, 93>
+pub type bnb::int::u94 = bnb::UInt<u128, 94>
+pub type bnb::int::u95 = bnb::UInt<u128, 95>
+pub type bnb::int::u96 = bnb::UInt<u128, 96>
+pub type bnb::int::u97 = bnb::UInt<u128, 97>
+pub type bnb::int::u98 = bnb::UInt<u128, 98>
+pub type bnb::int::u99 = bnb::UInt<u128, 99>
+pub mod bnb::prelude
+pub trait bnb::prelude::BitAmount: core::marker::Copy
+pub fn bnb::prelude::BitAmount::bits(self) -> u32
+pub fn bnb::prelude::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i32
+pub fn i32::bits(self) -> u32
+pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u16
+pub fn u16::bits(self) -> u32
+pub fn u16::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u32
+pub fn u32::bits(self) -> u32
+pub fn u32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u64
+pub fn u64::bits(self) -> u32
+pub fn u64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u8
+pub fn u8::bits(self) -> u32
+pub fn u8::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for usize
+pub fn usize::bits(self) -> u32
+pub fn usize::bytes(self) -> u32
+pub trait bnb::prelude::EncodeExt: bnb::bitstream::BitEncode
+pub fn bnb::prelude::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub trait bnb::prelude::SpecEncodeExt: bnb::bitstream::SpecEncode
+pub fn bnb::prelude::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
+pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub enum bnb::BitOrder
+pub bnb::BitOrder::Lsb
+pub bnb::BitOrder::Msb
+impl core::clone::Clone for bnb::BitOrder
+pub fn bnb::BitOrder::clone(&self) -> bnb::BitOrder
+impl core::cmp::Eq for bnb::BitOrder
+impl core::cmp::PartialEq for bnb::BitOrder
+pub fn bnb::BitOrder::eq(&self, &bnb::BitOrder) -> bool
+impl core::default::Default for bnb::BitOrder
+pub fn bnb::BitOrder::default() -> bnb::BitOrder
+impl core::fmt::Debug for bnb::BitOrder
+pub fn bnb::BitOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::BitOrder
+impl core::marker::StructuralPartialEq for bnb::BitOrder
+impl core::marker::Freeze for bnb::BitOrder
+impl core::marker::Send for bnb::BitOrder
+impl core::marker::Sync for bnb::BitOrder
+impl core::marker::Unpin for bnb::BitOrder
+impl core::marker::UnsafeUnpin for bnb::BitOrder
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::BitOrder
+impl core::panic::unwind_safe::UnwindSafe for bnb::BitOrder
+impl<T, U> core::convert::Into<U> for bnb::BitOrder where U: core::convert::From<T>
+pub fn bnb::BitOrder::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::BitOrder where U: core::convert::Into<T>
+pub type bnb::BitOrder::Error = core::convert::Infallible
+pub fn bnb::BitOrder::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::BitOrder where U: core::convert::TryFrom<T>
+pub type bnb::BitOrder::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::BitOrder::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::BitOrder where T: core::clone::Clone
+pub type bnb::BitOrder::Owned = T
+pub fn bnb::BitOrder::clone_into(&self, &mut T)
+pub fn bnb::BitOrder::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::BitOrder where T: 'static + ?core::marker::Sized
+pub fn bnb::BitOrder::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::BitOrder where T: ?core::marker::Sized
+pub fn bnb::BitOrder::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::BitOrder where T: ?core::marker::Sized
+pub fn bnb::BitOrder::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::BitOrder where T: core::clone::Clone
+pub unsafe fn bnb::BitOrder::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::BitOrder
+pub fn bnb::BitOrder::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::BitOrder
+impl<T> tracing::instrument::WithSubscriber for bnb::BitOrder
+pub enum bnb::BuilderError
+pub bnb::BuilderError::Invalid(alloc::string::String)
+pub bnb::BuilderError::MissingField(&'static str)
+impl bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::field(&self) -> core::option::Option<&'static str>
+pub fn bnb::builder::BuilderError::invalid(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn bnb::builder::BuilderError::missing_field(&'static str) -> Self
+impl core::clone::Clone for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::clone(&self) -> bnb::builder::BuilderError
+impl core::cmp::Eq for bnb::builder::BuilderError
+impl core::cmp::PartialEq for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::eq(&self, &bnb::builder::BuilderError) -> bool
+impl core::error::Error for bnb::builder::BuilderError
+impl core::fmt::Debug for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::builder::BuilderError
+impl core::marker::Freeze for bnb::builder::BuilderError
+impl core::marker::Send for bnb::builder::BuilderError
+impl core::marker::Sync for bnb::builder::BuilderError
+impl core::marker::Unpin for bnb::builder::BuilderError
+impl core::marker::UnsafeUnpin for bnb::builder::BuilderError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::builder::BuilderError
+impl core::panic::unwind_safe::UnwindSafe for bnb::builder::BuilderError
+impl<T, U> core::convert::Into<U> for bnb::builder::BuilderError where U: core::convert::From<T>
+pub fn bnb::builder::BuilderError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::builder::BuilderError where U: core::convert::Into<T>
+pub type bnb::builder::BuilderError::Error = core::convert::Infallible
+pub fn bnb::builder::BuilderError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::builder::BuilderError where U: core::convert::TryFrom<T>
+pub type bnb::builder::BuilderError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::builder::BuilderError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::builder::BuilderError where T: core::clone::Clone
+pub type bnb::builder::BuilderError::Owned = T
+pub fn bnb::builder::BuilderError::clone_into(&self, &mut T)
+pub fn bnb::builder::BuilderError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::builder::BuilderError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::builder::BuilderError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::builder::BuilderError where T: 'static + ?core::marker::Sized
+pub fn bnb::builder::BuilderError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::builder::BuilderError where T: ?core::marker::Sized
+pub fn bnb::builder::BuilderError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::builder::BuilderError where T: ?core::marker::Sized
+pub fn bnb::builder::BuilderError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::builder::BuilderError where T: core::clone::Clone
+pub unsafe fn bnb::builder::BuilderError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::builder::BuilderError
+pub fn bnb::builder::BuilderError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::builder::BuilderError
+impl<T> tracing::instrument::WithSubscriber for bnb::builder::BuilderError
+pub enum bnb::ByteOrder
+pub bnb::ByteOrder::Big
+pub bnb::ByteOrder::Little
+impl core::clone::Clone for bnb::ByteOrder
+pub fn bnb::ByteOrder::clone(&self) -> bnb::ByteOrder
+impl core::cmp::Eq for bnb::ByteOrder
+impl core::cmp::PartialEq for bnb::ByteOrder
+pub fn bnb::ByteOrder::eq(&self, &bnb::ByteOrder) -> bool
+impl core::default::Default for bnb::ByteOrder
+pub fn bnb::ByteOrder::default() -> bnb::ByteOrder
+impl core::fmt::Debug for bnb::ByteOrder
+pub fn bnb::ByteOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::ByteOrder
+impl core::marker::StructuralPartialEq for bnb::ByteOrder
+impl core::marker::Freeze for bnb::ByteOrder
+impl core::marker::Send for bnb::ByteOrder
+impl core::marker::Sync for bnb::ByteOrder
+impl core::marker::Unpin for bnb::ByteOrder
+impl core::marker::UnsafeUnpin for bnb::ByteOrder
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::ByteOrder
+impl core::panic::unwind_safe::UnwindSafe for bnb::ByteOrder
+impl<T, U> core::convert::Into<U> for bnb::ByteOrder where U: core::convert::From<T>
+pub fn bnb::ByteOrder::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::ByteOrder where U: core::convert::Into<T>
+pub type bnb::ByteOrder::Error = core::convert::Infallible
+pub fn bnb::ByteOrder::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::ByteOrder where U: core::convert::TryFrom<T>
+pub type bnb::ByteOrder::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::ByteOrder::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::ByteOrder where T: core::clone::Clone
+pub type bnb::ByteOrder::Owned = T
+pub fn bnb::ByteOrder::clone_into(&self, &mut T)
+pub fn bnb::ByteOrder::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::ByteOrder where T: 'static + ?core::marker::Sized
+pub fn bnb::ByteOrder::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::ByteOrder where T: ?core::marker::Sized
+pub fn bnb::ByteOrder::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::ByteOrder where T: ?core::marker::Sized
+pub fn bnb::ByteOrder::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::ByteOrder where T: core::clone::Clone
+pub unsafe fn bnb::ByteOrder::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::ByteOrder
+pub fn bnb::ByteOrder::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::ByteOrder
+impl<T> tracing::instrument::WithSubscriber for bnb::ByteOrder
+pub enum bnb::Error
+pub bnb::Error::ValueTooLarge
+pub bnb::Error::ValueTooLarge::bits: u32
+pub bnb::Error::ValueTooLarge::value: u128
+impl core::clone::Clone for bnb::error::Error
+pub fn bnb::error::Error::clone(&self) -> bnb::error::Error
+impl core::cmp::Eq for bnb::error::Error
+impl core::cmp::PartialEq for bnb::error::Error
+pub fn bnb::error::Error::eq(&self, &bnb::error::Error) -> bool
+impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::error::Error for bnb::error::Error
+impl core::fmt::Debug for bnb::error::Error
+pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::Error
+pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::Error
+impl core::marker::Freeze for bnb::error::Error
+impl core::marker::Send for bnb::error::Error
+impl core::marker::Sync for bnb::error::Error
+impl core::marker::Unpin for bnb::error::Error
+impl core::marker::UnsafeUnpin for bnb::error::Error
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::Error
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::Error
+impl<T, U> core::convert::Into<U> for bnb::error::Error where U: core::convert::From<T>
+pub fn bnb::error::Error::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::Error where U: core::convert::Into<T>
+pub type bnb::error::Error::Error = core::convert::Infallible
+pub fn bnb::error::Error::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::Error where U: core::convert::TryFrom<T>
+pub type bnb::error::Error::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::Error::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::Error where T: core::clone::Clone
+pub type bnb::error::Error::Owned = T
+pub fn bnb::error::Error::clone_into(&self, &mut T)
+pub fn bnb::error::Error::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::Error where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::Error::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::Error where T: 'static + ?core::marker::Sized
+pub fn bnb::error::Error::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::Error where T: ?core::marker::Sized
+pub fn bnb::error::Error::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::Error where T: ?core::marker::Sized
+pub fn bnb::error::Error::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::Error where T: core::clone::Clone
+pub unsafe fn bnb::error::Error::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::Error
+pub fn bnb::error::Error::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::Error
+impl<T> tracing::instrument::WithSubscriber for bnb::error::Error
+#[non_exhaustive] pub enum bnb::ErrorKind
+pub bnb::ErrorKind::BadMagic
+pub bnb::ErrorKind::BadMagic::expected: u128
+pub bnb::ErrorKind::BadMagic::found: u128
+pub bnb::ErrorKind::BufferFull
+pub bnb::ErrorKind::BufferFull::cap: usize
+pub bnb::ErrorKind::Convert
+pub bnb::ErrorKind::Convert::message: alloc::string::String
+pub bnb::ErrorKind::Incomplete
+pub bnb::ErrorKind::Incomplete::needed: core::option::Option<usize>
+pub bnb::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::ErrorKind::NotSeekable
+pub bnb::ErrorKind::TooWide
+pub bnb::ErrorKind::TooWide::width: usize
+pub bnb::ErrorKind::TrailingBytes
+pub bnb::ErrorKind::TrailingBytes::remaining: usize
+pub bnb::ErrorKind::UnexpectedEof
+pub bnb::ErrorKind::UnexpectedEof::needed: usize
+pub bnb::ErrorKind::UnexpectedEof::remaining: usize
+impl core::clone::Clone for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::clone(&self) -> bnb::bitstream::ErrorKind
+impl core::cmp::Eq for bnb::bitstream::ErrorKind
+impl core::cmp::PartialEq for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::eq(&self, &bnb::bitstream::ErrorKind) -> bool
+impl core::fmt::Debug for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::ErrorKind
+impl core::marker::Freeze for bnb::bitstream::ErrorKind
+impl core::marker::Send for bnb::bitstream::ErrorKind
+impl core::marker::Sync for bnb::bitstream::ErrorKind
+impl core::marker::Unpin for bnb::bitstream::ErrorKind
+impl core::marker::UnsafeUnpin for bnb::bitstream::ErrorKind
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::ErrorKind
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::ErrorKind
+impl<T, U> core::convert::Into<U> for bnb::bitstream::ErrorKind where U: core::convert::From<T>
+pub fn bnb::bitstream::ErrorKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::ErrorKind where U: core::convert::Into<T>
+pub type bnb::bitstream::ErrorKind::Error = core::convert::Infallible
+pub fn bnb::bitstream::ErrorKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::ErrorKind where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::ErrorKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::ErrorKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::ErrorKind where T: core::clone::Clone
+pub type bnb::bitstream::ErrorKind::Owned = T
+pub fn bnb::bitstream::ErrorKind::clone_into(&self, &mut T)
+pub fn bnb::bitstream::ErrorKind::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::ErrorKind where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::ErrorKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::ErrorKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::ErrorKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::ErrorKind where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::ErrorKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::ErrorKind
+pub fn bnb::bitstream::ErrorKind::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::ErrorKind
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
+pub struct bnb::BitError
+pub bnb::BitError::at: usize
+pub bnb::BitError::field: core::option::Option<&'static str>
+pub bnb::BitError::kind: bnb::bitstream::ErrorKind
+impl bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::bad_magic(u128, u128, usize) -> Self
+pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+pub fn bnb::bitstream::BitError::in_field(self, &'static str) -> Self
+pub fn bnb::bitstream::BitError::is_incomplete(&self) -> bool
+pub fn bnb::bitstream::BitError::new(bnb::bitstream::ErrorKind, usize) -> Self
+impl core::clone::Clone for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
+impl core::cmp::Eq for bnb::bitstream::BitError
+impl core::cmp::PartialEq for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
+impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(std::io::error::Error) -> Self
+impl core::error::Error for bnb::bitstream::BitError
+impl core::fmt::Debug for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::BitError
+impl core::marker::Freeze for bnb::bitstream::BitError
+impl core::marker::Send for bnb::bitstream::BitError
+impl core::marker::Sync for bnb::bitstream::BitError
+impl core::marker::Unpin for bnb::bitstream::BitError
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitError where U: core::convert::From<T>
+pub fn bnb::bitstream::BitError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitError where U: core::convert::Into<T>
+pub type bnb::bitstream::BitError::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitError where T: core::clone::Clone
+pub type bnb::bitstream::BitError::Owned = T
+pub fn bnb::bitstream::BitError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::bitstream::BitError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::bitstream::BitError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::bitstream::BitError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitError where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitError where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitError
+pub struct bnb::BitReader<'a>
+impl<'a> bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::align_to_byte(&mut self)
+pub fn bnb::bitstream::BitReader<'a>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'a>::new(&'a [u8]) -> Self
+pub fn bnb::bitstream::BitReader<'a>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::remaining_bits(&self) -> usize
+pub fn bnb::bitstream::BitReader<'a>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::with_layout(&'a [u8], bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BitReader<'a>::with_order(&'a [u8], bnb::BitOrder) -> Self
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
+impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
+pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<'a> core::clone::Clone for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::clone(&self) -> bnb::bitstream::BitReader<'a>
+impl<'a> core::fmt::Debug for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Send for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Sync for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::Unpin for bnb::bitstream::BitReader<'a>
+impl<'a> core::marker::UnsafeUnpin for bnb::bitstream::BitReader<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitReader<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitReader<'a>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitReader<'a> where U: core::convert::From<T>
+pub fn bnb::bitstream::BitReader<'a>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitReader<'a> where U: core::convert::Into<T>
+pub type bnb::bitstream::BitReader<'a>::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitReader<'a>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitReader<'a> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitReader<'a>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitReader<'a>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitReader<'a> where T: core::clone::Clone
+pub type bnb::bitstream::BitReader<'a>::Owned = T
+pub fn bnb::bitstream::BitReader<'a>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitReader<'a>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitReader<'a> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitReader<'a> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitReader<'a> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitReader<'a>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitReader<'a> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitReader<'a>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitReader<'a>
+pub fn bnb::bitstream::BitReader<'a>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitReader<'a>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitReader<'a>
+pub struct bnb::BitWriter
+impl bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
+pub fn bnb::bitstream::BitWriter::new() -> Self
+pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
+impl core::default::Default for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
+impl core::fmt::Debug for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::bitstream::BitWriter
+impl core::marker::Send for bnb::bitstream::BitWriter
+impl core::marker::Sync for bnb::bitstream::BitWriter
+impl core::marker::Unpin for bnb::bitstream::BitWriter
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitWriter where U: core::convert::From<T>
+pub fn bnb::bitstream::BitWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitWriter where U: core::convert::Into<T>
+pub type bnb::bitstream::BitWriter::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitWriter::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitWriter where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitWriter where T: core::clone::Clone
+pub type bnb::bitstream::BitWriter::Owned = T
+pub fn bnb::bitstream::BitWriter::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitWriter::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitWriter where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitWriter where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitWriter where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitWriter where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitWriter::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitWriter
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitWriter
+pub struct bnb::BufSource<R>
+impl<R: std::io::Read> bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_cap(R, usize) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_cap_and_layout(R, usize, bnb::bitstream::Layout) -> Self
+impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::clone(&self) -> bnb::bitstream::BufSource<R>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::BufSource<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::BufSource<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::BufSource<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::BufSource<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::BufSource<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BufSource<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BufSource<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BufSource<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::BufSource<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BufSource<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::BufSource<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::BufSource<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BufSource<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BufSource<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BufSource<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BufSource<R> where T: core::clone::Clone
+pub type bnb::bitstream::BufSource<R>::Owned = T
+pub fn bnb::bitstream::BufSource<R>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BufSource<R>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BufSource<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BufSource<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BufSource<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BufSource<R> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BufSource<R>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BufSource<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BufSource<R>
+pub struct bnb::BytesReader
+impl bnb::BytesReader
+pub fn bnb::BytesReader::new(bytes::bytes::Bytes) -> Self
+pub fn bnb::BytesReader::with_layout(bytes::bytes::Bytes, bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::Source for bnb::BytesReader
+pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesReader::bit_pos(&self) -> usize
+pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::BytesReader
+pub fn bnb::BytesReader::clone(&self) -> bnb::BytesReader
+impl core::fmt::Debug for bnb::BytesReader
+pub fn bnb::BytesReader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for bnb::BytesReader
+impl core::marker::Send for bnb::BytesReader
+impl core::marker::Sync for bnb::BytesReader
+impl core::marker::Unpin for bnb::BytesReader
+impl core::marker::UnsafeUnpin for bnb::BytesReader
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesReader
+impl core::panic::unwind_safe::UnwindSafe for bnb::BytesReader
+impl<T, U> core::convert::Into<U> for bnb::BytesReader where U: core::convert::From<T>
+pub fn bnb::BytesReader::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::BytesReader where U: core::convert::Into<T>
+pub type bnb::BytesReader::Error = core::convert::Infallible
+pub fn bnb::BytesReader::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::BytesReader where U: core::convert::TryFrom<T>
+pub type bnb::BytesReader::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::BytesReader::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::BytesReader where T: core::clone::Clone
+pub type bnb::BytesReader::Owned = T
+pub fn bnb::BytesReader::clone_into(&self, &mut T)
+pub fn bnb::BytesReader::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::BytesReader where T: 'static + ?core::marker::Sized
+pub fn bnb::BytesReader::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::BytesReader where T: ?core::marker::Sized
+pub fn bnb::BytesReader::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::BytesReader where T: ?core::marker::Sized
+pub fn bnb::BytesReader::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::BytesReader where T: core::clone::Clone
+pub unsafe fn bnb::BytesReader::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::BytesReader
+pub fn bnb::BytesReader::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::BytesReader
+impl<T> tracing::instrument::WithSubscriber for bnb::BytesReader
+pub struct bnb::BytesWriter
+impl bnb::BytesWriter
+pub fn bnb::BytesWriter::freeze(self) -> bytes::bytes::Bytes
+pub fn bnb::BytesWriter::new() -> Self
+pub fn bnb::BytesWriter::with_layout(bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::Sink for bnb::BytesWriter
+pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesWriter::bit_pos(&self) -> usize
+pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl core::clone::Clone for bnb::BytesWriter
+pub fn bnb::BytesWriter::clone(&self) -> bnb::BytesWriter
+impl core::default::Default for bnb::BytesWriter
+pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
+impl core::fmt::Debug for bnb::BytesWriter
+pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::BytesWriter
+impl core::marker::Send for bnb::BytesWriter
+impl core::marker::Sync for bnb::BytesWriter
+impl core::marker::Unpin for bnb::BytesWriter
+impl core::marker::UnsafeUnpin for bnb::BytesWriter
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
+impl core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
+impl<T, U> core::convert::Into<U> for bnb::BytesWriter where U: core::convert::From<T>
+pub fn bnb::BytesWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::BytesWriter where U: core::convert::Into<T>
+pub type bnb::BytesWriter::Error = core::convert::Infallible
+pub fn bnb::BytesWriter::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::BytesWriter where U: core::convert::TryFrom<T>
+pub type bnb::BytesWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::BytesWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::BytesWriter where T: core::clone::Clone
+pub type bnb::BytesWriter::Owned = T
+pub fn bnb::BytesWriter::clone_into(&self, &mut T)
+pub fn bnb::BytesWriter::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::BytesWriter where T: 'static + ?core::marker::Sized
+pub fn bnb::BytesWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::BytesWriter where T: ?core::marker::Sized
+pub fn bnb::BytesWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::BytesWriter where T: ?core::marker::Sized
+pub fn bnb::BytesWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::BytesWriter where T: core::clone::Clone
+pub unsafe fn bnb::BytesWriter::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::BytesWriter
+pub fn bnb::BytesWriter::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::BytesWriter
+impl<T> tracing::instrument::WithSubscriber for bnb::BytesWriter
+pub struct bnb::Layout
+pub bnb::Layout::bit: bnb::BitOrder
+pub bnb::Layout::byte: bnb::ByteOrder
+impl core::clone::Clone for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::clone(&self) -> bnb::bitstream::Layout
+impl core::cmp::Eq for bnb::bitstream::Layout
+impl core::cmp::PartialEq for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::eq(&self, &bnb::bitstream::Layout) -> bool
+impl core::default::Default for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::default() -> bnb::bitstream::Layout
+impl core::fmt::Debug for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::Layout
+impl core::marker::StructuralPartialEq for bnb::bitstream::Layout
+impl core::marker::Freeze for bnb::bitstream::Layout
+impl core::marker::Send for bnb::bitstream::Layout
+impl core::marker::Sync for bnb::bitstream::Layout
+impl core::marker::Unpin for bnb::bitstream::Layout
+impl core::marker::UnsafeUnpin for bnb::bitstream::Layout
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::Layout
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::Layout
+impl<T, U> core::convert::Into<U> for bnb::bitstream::Layout where U: core::convert::From<T>
+pub fn bnb::bitstream::Layout::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::Layout where U: core::convert::Into<T>
+pub type bnb::bitstream::Layout::Error = core::convert::Infallible
+pub fn bnb::bitstream::Layout::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::Layout where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::Layout::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::Layout::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::Layout where T: core::clone::Clone
+pub type bnb::bitstream::Layout::Owned = T
+pub fn bnb::bitstream::Layout::clone_into(&self, &mut T)
+pub fn bnb::bitstream::Layout::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::Layout where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::Layout::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::Layout where T: ?core::marker::Sized
+pub fn bnb::bitstream::Layout::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::Layout where T: ?core::marker::Sized
+pub fn bnb::bitstream::Layout::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::Layout where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::Layout::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::Layout
+pub fn bnb::bitstream::Layout::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::Layout
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::Layout
+pub struct bnb::SeekReader<R>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::new(R) -> Self
+pub fn bnb::bitstream::SeekReader<R>::with_layout(R, bnb::bitstream::Layout) -> Self
+impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::clone(&self) -> bnb::bitstream::SeekReader<R>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::SeekReader<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::SeekReader<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::SeekReader<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::SeekReader<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::SeekReader<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SeekReader<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SeekReader<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SeekReader<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::SeekReader<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SeekReader<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::SeekReader<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SeekReader<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SeekReader<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SeekReader<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SeekReader<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::SeekReader<R> where T: core::clone::Clone
+pub type bnb::bitstream::SeekReader<R>::Owned = T
+pub fn bnb::bitstream::SeekReader<R>::clone_into(&self, &mut T)
+pub fn bnb::bitstream::SeekReader<R>::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::SeekReader<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SeekReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SeekReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::SeekReader<R> where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::SeekReader<R>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SeekReader<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SeekReader<R>
+pub struct bnb::SinkWriter<'a, K: bnb::bitstream::Sink>(_)
+impl<K: bnb::bitstream::Sink> std::io::Write for bnb::bitstream::SinkWriter<'_, K>
+pub fn bnb::bitstream::SinkWriter<'_, K>::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::bitstream::SinkWriter<'_, K>::write(&mut self, &[u8]) -> std::io::error::Result<usize>
+impl<'a, K> core::marker::Freeze for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::marker::Send for bnb::bitstream::SinkWriter<'a, K> where K: core::marker::Send
+impl<'a, K> core::marker::Sync for bnb::bitstream::SinkWriter<'a, K> where K: core::marker::Sync
+impl<'a, K> core::marker::Unpin for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::marker::UnsafeUnpin for bnb::bitstream::SinkWriter<'a, K>
+impl<'a, K> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SinkWriter<'a, K> where K: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, K> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SinkWriter<'a, K>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::From<T>
+pub fn bnb::bitstream::SinkWriter<'a, K>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::Into<T>
+pub type bnb::bitstream::SinkWriter<'a, K>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SinkWriter<'a, K>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SinkWriter<'a, K> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SinkWriter<'a, K>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SinkWriter<'a, K>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::SinkWriter<'a, K> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SinkWriter<'a, K> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SinkWriter<'a, K> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SinkWriter<'a, K>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::SinkWriter<'a, K>
+pub fn bnb::bitstream::SinkWriter<'a, K>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SinkWriter<'a, K>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SinkWriter<'a, K>
+pub struct bnb::SourceReader<'a, S: bnb::bitstream::Source>(_)
+impl<S: bnb::bitstream::Source> std::io::Read for bnb::bitstream::SourceReader<'_, S>
+pub fn bnb::bitstream::SourceReader<'_, S>::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl<'a, S> core::marker::Freeze for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::marker::Send for bnb::bitstream::SourceReader<'a, S> where S: core::marker::Send
+impl<'a, S> core::marker::Sync for bnb::bitstream::SourceReader<'a, S> where S: core::marker::Sync
+impl<'a, S> core::marker::Unpin for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::marker::UnsafeUnpin for bnb::bitstream::SourceReader<'a, S>
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::SourceReader<'a, S> where S: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::SourceReader<'a, S>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::From<T>
+pub fn bnb::bitstream::SourceReader<'a, S>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::Into<T>
+pub type bnb::bitstream::SourceReader<'a, S>::Error = core::convert::Infallible
+pub fn bnb::bitstream::SourceReader<'a, S>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::SourceReader<'a, S> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::SourceReader<'a, S>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::SourceReader<'a, S>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::SourceReader<'a, S> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::SourceReader<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::SourceReader<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::SourceReader<'a, S>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::SourceReader<'a, S>
+pub fn bnb::bitstream::SourceReader<'a, S>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::SourceReader<'a, S>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::SourceReader<'a, S>
+pub struct bnb::StreamBitReader<R>
+impl<R: std::io::Read> bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::new(R) -> Self
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R> core::marker::Freeze for bnb::bitstream::StreamBitReader<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for bnb::bitstream::StreamBitReader<R> where R: core::marker::Send
+impl<R> core::marker::Sync for bnb::bitstream::StreamBitReader<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for bnb::bitstream::StreamBitReader<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for bnb::bitstream::StreamBitReader<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::StreamBitReader<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for bnb::bitstream::StreamBitReader<R> where R: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::From<T>
+pub fn bnb::bitstream::StreamBitReader<R>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::Into<T>
+pub type bnb::bitstream::StreamBitReader<R>::Error = core::convert::Infallible
+pub fn bnb::bitstream::StreamBitReader<R>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::StreamBitReader<R> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::StreamBitReader<R>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::StreamBitReader<R>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::StreamBitReader<R> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::StreamBitReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::StreamBitReader<R> where T: ?core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::StreamBitReader<R>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::StreamBitReader<R>
+pub struct bnb::UInt<T, const N: usize>
+pub struct bnb::UInt<T, const N: usize>
+impl<const N: usize> bnb::UInt<u128, N>
+impl<const N: usize> bnb::UInt<u128, N>
+pub const bnb::UInt<u128, N>::BITS: usize
+pub const bnb::UInt<u128, N>::BITS: usize
+pub const bnb::UInt<u128, N>::MASK: u128
+pub const bnb::UInt<u128, N>::MASK: u128
+pub const bnb::UInt<u128, N>::MAX: Self
+pub const bnb::UInt<u128, N>::MAX: Self
+pub const bnb::UInt<u128, N>::MIN: Self
+pub const bnb::UInt<u128, N>::MIN: Self
+pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
+pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
+pub const fn bnb::UInt<u128, N>::new(u128) -> Self
+pub const fn bnb::UInt<u128, N>::new(u128) -> Self
+pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u128, N>::value(self) -> u128
+pub const fn bnb::UInt<u128, N>::value(self) -> u128
+impl<const N: usize> bnb::UInt<u16, N>
+impl<const N: usize> bnb::UInt<u16, N>
+pub const bnb::UInt<u16, N>::BITS: usize
+pub const bnb::UInt<u16, N>::BITS: usize
+pub const bnb::UInt<u16, N>::MASK: u16
+pub const bnb::UInt<u16, N>::MASK: u16
+pub const bnb::UInt<u16, N>::MAX: Self
+pub const bnb::UInt<u16, N>::MAX: Self
+pub const bnb::UInt<u16, N>::MIN: Self
+pub const bnb::UInt<u16, N>::MIN: Self
+pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
+pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
+pub const fn bnb::UInt<u16, N>::new(u16) -> Self
+pub const fn bnb::UInt<u16, N>::new(u16) -> Self
+pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u16, N>::value(self) -> u16
+pub const fn bnb::UInt<u16, N>::value(self) -> u16
+impl<const N: usize> bnb::UInt<u32, N>
+impl<const N: usize> bnb::UInt<u32, N>
+pub const bnb::UInt<u32, N>::BITS: usize
+pub const bnb::UInt<u32, N>::BITS: usize
+pub const bnb::UInt<u32, N>::MASK: u32
+pub const bnb::UInt<u32, N>::MASK: u32
+pub const bnb::UInt<u32, N>::MAX: Self
+pub const bnb::UInt<u32, N>::MAX: Self
+pub const bnb::UInt<u32, N>::MIN: Self
+pub const bnb::UInt<u32, N>::MIN: Self
+pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
+pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
+pub const fn bnb::UInt<u32, N>::new(u32) -> Self
+pub const fn bnb::UInt<u32, N>::new(u32) -> Self
+pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u32, N>::value(self) -> u32
+pub const fn bnb::UInt<u32, N>::value(self) -> u32
+impl<const N: usize> bnb::UInt<u64, N>
+impl<const N: usize> bnb::UInt<u64, N>
+pub const bnb::UInt<u64, N>::BITS: usize
+pub const bnb::UInt<u64, N>::BITS: usize
+pub const bnb::UInt<u64, N>::MASK: u64
+pub const bnb::UInt<u64, N>::MASK: u64
+pub const bnb::UInt<u64, N>::MAX: Self
+pub const bnb::UInt<u64, N>::MAX: Self
+pub const bnb::UInt<u64, N>::MIN: Self
+pub const bnb::UInt<u64, N>::MIN: Self
+pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
+pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
+pub const fn bnb::UInt<u64, N>::new(u64) -> Self
+pub const fn bnb::UInt<u64, N>::new(u64) -> Self
+pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u64, N>::value(self) -> u64
+pub const fn bnb::UInt<u64, N>::value(self) -> u64
+impl<const N: usize> bnb::UInt<u8, N>
+impl<const N: usize> bnb::UInt<u8, N>
+pub const bnb::UInt<u8, N>::BITS: usize
+pub const bnb::UInt<u8, N>::BITS: usize
+pub const bnb::UInt<u8, N>::MASK: u8
+pub const bnb::UInt<u8, N>::MASK: u8
+pub const bnb::UInt<u8, N>::MAX: Self
+pub const bnb::UInt<u8, N>::MAX: Self
+pub const bnb::UInt<u8, N>::MIN: Self
+pub const bnb::UInt<u8, N>::MIN: Self
+pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
+pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
+pub const fn bnb::UInt<u8, N>::new(u8) -> Self
+pub const fn bnb::UInt<u8, N>::new(u8) -> Self
+pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
+pub const fn bnb::UInt<u8, N>::value(self) -> u8
+pub const fn bnb::UInt<u8, N>::value(self) -> u8
+impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
+impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::clone(&self) -> bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::clone(&self) -> bnb::UInt<T, N>
+impl<T: core::cmp::Eq, const N: usize> core::cmp::Eq for bnb::UInt<T, N>
+impl<T: core::cmp::Eq, const N: usize> core::cmp::Eq for bnb::UInt<T, N>
+impl<T: core::cmp::Ord, const N: usize> core::cmp::Ord for bnb::UInt<T, N>
+impl<T: core::cmp::Ord, const N: usize> core::cmp::Ord for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::cmp(&self, &bnb::UInt<T, N>) -> core::cmp::Ordering
+pub fn bnb::UInt<T, N>::cmp(&self, &bnb::UInt<T, N>) -> core::cmp::Ordering
+impl<T: core::cmp::PartialEq, const N: usize> core::cmp::PartialEq for bnb::UInt<T, N>
+impl<T: core::cmp::PartialEq, const N: usize> core::cmp::PartialEq for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::eq(&self, &bnb::UInt<T, N>) -> bool
+pub fn bnb::UInt<T, N>::eq(&self, &bnb::UInt<T, N>) -> bool
+impl<T: core::cmp::PartialEq, const N: usize> core::marker::StructuralPartialEq for bnb::UInt<T, N>
+impl<T: core::cmp::PartialEq, const N: usize> core::marker::StructuralPartialEq for bnb::UInt<T, N>
+impl<T: core::cmp::PartialOrd, const N: usize> core::cmp::PartialOrd for bnb::UInt<T, N>
+impl<T: core::cmp::PartialOrd, const N: usize> core::cmp::PartialOrd for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::partial_cmp(&self, &bnb::UInt<T, N>) -> core::option::Option<core::cmp::Ordering>
+pub fn bnb::UInt<T, N>::partial_cmp(&self, &bnb::UInt<T, N>) -> core::option::Option<core::cmp::Ordering>
+impl<T: core::hash::Hash, const N: usize> core::hash::Hash for bnb::UInt<T, N>
+impl<T: core::hash::Hash, const N: usize> core::hash::Hash for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
+pub fn bnb::UInt<T, N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl<T: core::marker::Copy, const N: usize> core::marker::Copy for bnb::UInt<T, N>
+impl<T: core::marker::Copy, const N: usize> core::marker::Copy for bnb::UInt<T, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u128, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u128, N>
+pub const bnb::UInt<u128, N>::BITS: u32
+pub const bnb::UInt<u128, N>::BITS: u32
+pub fn bnb::UInt<u128, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u128, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u128, N>::into_bits(self) -> u128
+pub fn bnb::UInt<u128, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u16, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u16, N>
+pub const bnb::UInt<u16, N>::BITS: u32
+pub const bnb::UInt<u16, N>::BITS: u32
+pub fn bnb::UInt<u16, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u16, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u16, N>::into_bits(self) -> u128
+pub fn bnb::UInt<u16, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u32, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u32, N>
+pub const bnb::UInt<u32, N>::BITS: u32
+pub const bnb::UInt<u32, N>::BITS: u32
+pub fn bnb::UInt<u32, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u32, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u32, N>::into_bits(self) -> u128
+pub fn bnb::UInt<u32, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u64, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u64, N>
+pub const bnb::UInt<u64, N>::BITS: u32
+pub const bnb::UInt<u64, N>::BITS: u32
+pub fn bnb::UInt<u64, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u64, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u64, N>::into_bits(self) -> u128
+pub fn bnb::UInt<u64, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
+impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
+pub const bnb::UInt<u8, N>::BITS: u32
+pub const bnb::UInt<u8, N>::BITS: u32
+pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
+impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
+pub fn u128::from(bnb::UInt<u128, N>) -> u128
+pub fn u128::from(bnb::UInt<u128, N>) -> u128
+impl<const N: usize> core::convert::From<bnb::UInt<u16, N>> for u16
+impl<const N: usize> core::convert::From<bnb::UInt<u16, N>> for u16
+pub fn u16::from(bnb::UInt<u16, N>) -> u16
+pub fn u16::from(bnb::UInt<u16, N>) -> u16
+impl<const N: usize> core::convert::From<bnb::UInt<u32, N>> for u32
+impl<const N: usize> core::convert::From<bnb::UInt<u32, N>> for u32
+pub fn u32::from(bnb::UInt<u32, N>) -> u32
+pub fn u32::from(bnb::UInt<u32, N>) -> u32
+impl<const N: usize> core::convert::From<bnb::UInt<u64, N>> for u64
+impl<const N: usize> core::convert::From<bnb::UInt<u64, N>> for u64
+pub fn u64::from(bnb::UInt<u64, N>) -> u64
+pub fn u64::from(bnb::UInt<u64, N>) -> u64
+impl<const N: usize> core::convert::From<bnb::UInt<u8, N>> for u8
+impl<const N: usize> core::convert::From<bnb::UInt<u8, N>> for u8
+pub fn u8::from(bnb::UInt<u8, N>) -> u8
+pub fn u8::from(bnb::UInt<u8, N>) -> u8
+impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
+impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
+pub type bnb::UInt<u128, N>::Error = bnb::error::Error
+pub type bnb::UInt<u128, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
+impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
+pub type bnb::UInt<u16, N>::Error = bnb::error::Error
+pub type bnb::UInt<u16, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
+impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
+pub type bnb::UInt<u32, N>::Error = bnb::error::Error
+pub type bnb::UInt<u32, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
+impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
+pub type bnb::UInt<u64, N>::Error = bnb::error::Error
+pub type bnb::UInt<u64, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
+impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
+impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
+pub type bnb::UInt<u8, N>::Error = bnb::error::Error
+pub type bnb::UInt<u8, N>::Error = bnb::error::Error
+pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
+impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
+impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::default() -> Self
+pub fn bnb::UInt<u128, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u16, N>
+impl<const N: usize> core::default::Default for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::default() -> Self
+pub fn bnb::UInt<u16, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u32, N>
+impl<const N: usize> core::default::Default for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::default() -> Self
+pub fn bnb::UInt<u32, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u64, N>
+impl<const N: usize> core::default::Default for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::default() -> Self
+pub fn bnb::UInt<u64, N>::default() -> Self
+impl<const N: usize> core::default::Default for bnb::UInt<u8, N>
+impl<const N: usize> core::default::Default for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::default() -> Self
+pub fn bnb::UInt<u8, N>::default() -> Self
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u128, N>
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u16, N>
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u32, N>
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u64, N>
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u8, N>
+impl<const N: usize> core::fmt::Debug for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u128, N>
+impl<const N: usize> core::fmt::Display for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u16, N>
+impl<const N: usize> core::fmt::Display for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u32, N>
+impl<const N: usize> core::fmt::Display for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u64, N>
+impl<const N: usize> core::fmt::Display for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for bnb::UInt<u8, N>
+impl<const N: usize> core::fmt::Display for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T, const N: usize> core::marker::Freeze for bnb::UInt<T, N> where T: core::marker::Freeze
+impl<T, const N: usize> core::marker::Freeze for bnb::UInt<T, N> where T: core::marker::Freeze
+impl<T, const N: usize> core::marker::Send for bnb::UInt<T, N> where T: core::marker::Send
+impl<T, const N: usize> core::marker::Send for bnb::UInt<T, N> where T: core::marker::Send
+impl<T, const N: usize> core::marker::Sync for bnb::UInt<T, N> where T: core::marker::Sync
+impl<T, const N: usize> core::marker::Sync for bnb::UInt<T, N> where T: core::marker::Sync
+impl<T, const N: usize> core::marker::Unpin for bnb::UInt<T, N> where T: core::marker::Unpin
+impl<T, const N: usize> core::marker::Unpin for bnb::UInt<T, N> where T: core::marker::Unpin
+impl<T, const N: usize> core::marker::UnsafeUnpin for bnb::UInt<T, N> where T: core::marker::UnsafeUnpin
+impl<T, const N: usize> core::marker::UnsafeUnpin for bnb::UInt<T, N> where T: core::marker::UnsafeUnpin
+impl<T, const N: usize> core::panic::unwind_safe::RefUnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T, const N: usize> core::panic::unwind_safe::RefUnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T, const N: usize> core::panic::unwind_safe::UnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, const N: usize> core::panic::unwind_safe::UnwindSafe for bnb::UInt<T, N> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::UInt<T, N> where U: core::convert::From<T>
+impl<T, U> core::convert::Into<U> for bnb::UInt<T, N> where U: core::convert::From<T>
+pub fn bnb::UInt<T, N>::into(self) -> U
+pub fn bnb::UInt<T, N>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::UInt<T, N> where U: core::convert::Into<T>
+impl<T, U> core::convert::TryFrom<U> for bnb::UInt<T, N> where U: core::convert::Into<T>
+pub type bnb::UInt<T, N>::Error = core::convert::Infallible
+pub type bnb::UInt<T, N>::Error = core::convert::Infallible
+pub fn bnb::UInt<T, N>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+pub fn bnb::UInt<T, N>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::UInt<T, N> where U: core::convert::TryFrom<T>
+impl<T, U> core::convert::TryInto<U> for bnb::UInt<T, N> where U: core::convert::TryFrom<T>
+pub type bnb::UInt<T, N>::Error = <U as core::convert::TryFrom<T>>::Error
+pub type bnb::UInt<T, N>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::UInt<T, N>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+pub fn bnb::UInt<T, N>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::UInt<T, N> where T: core::clone::Clone
+impl<T> alloc::borrow::ToOwned for bnb::UInt<T, N> where T: core::clone::Clone
+pub type bnb::UInt<T, N>::Owned = T
+pub type bnb::UInt<T, N>::Owned = T
+pub fn bnb::UInt<T, N>::clone_into(&self, &mut T)
+pub fn bnb::UInt<T, N>::clone_into(&self, &mut T)
+pub fn bnb::UInt<T, N>::to_owned(&self) -> T
+pub fn bnb::UInt<T, N>::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display + ?core::marker::Sized
+impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
+pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
+impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
+pub fn bnb::UInt<T, N>::type_id(&self) -> core::any::TypeId
+pub fn bnb::UInt<T, N>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+impl<T> core::borrow::Borrow<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+pub fn bnb::UInt<T, N>::borrow(&self) -> &T
+pub fn bnb::UInt<T, N>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+impl<T> core::borrow::BorrowMut<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
+pub fn bnb::UInt<T, N>::borrow_mut(&mut self) -> &mut T
+pub fn bnb::UInt<T, N>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::UInt<T, N> where T: core::clone::Clone
+impl<T> core::clone::CloneToUninit for bnb::UInt<T, N> where T: core::clone::Clone
+pub unsafe fn bnb::UInt<T, N>::clone_to_uninit(&self, *mut u8)
+pub unsafe fn bnb::UInt<T, N>::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::UInt<T, N>
+impl<T> core::convert::From<T> for bnb::UInt<T, N>
+pub fn bnb::UInt<T, N>::from(T) -> T
+pub fn bnb::UInt<T, N>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::UInt<T, N>
+impl<T> tracing::instrument::Instrument for bnb::UInt<T, N>
+impl<T> tracing::instrument::WithSubscriber for bnb::UInt<T, N>
+impl<T> tracing::instrument::WithSubscriber for bnb::UInt<T, N>
+pub struct bnb::UnknownDiscriminant
+pub bnb::UnknownDiscriminant::type_name: &'static str
+pub bnb::UnknownDiscriminant::value: u128
+impl core::clone::Clone for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::clone(&self) -> bnb::error::UnknownDiscriminant
+impl core::cmp::Eq for bnb::error::UnknownDiscriminant
+impl core::cmp::PartialEq for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::eq(&self, &bnb::error::UnknownDiscriminant) -> bool
+impl core::error::Error for bnb::error::UnknownDiscriminant
+impl core::fmt::Debug for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::UnknownDiscriminant
+impl core::marker::Freeze for bnb::error::UnknownDiscriminant
+impl core::marker::Send for bnb::error::UnknownDiscriminant
+impl core::marker::Sync for bnb::error::UnknownDiscriminant
+impl core::marker::Unpin for bnb::error::UnknownDiscriminant
+impl core::marker::UnsafeUnpin for bnb::error::UnknownDiscriminant
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::UnknownDiscriminant
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::UnknownDiscriminant
+impl<T, U> core::convert::Into<U> for bnb::error::UnknownDiscriminant where U: core::convert::From<T>
+pub fn bnb::error::UnknownDiscriminant::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::UnknownDiscriminant where U: core::convert::Into<T>
+pub type bnb::error::UnknownDiscriminant::Error = core::convert::Infallible
+pub fn bnb::error::UnknownDiscriminant::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::UnknownDiscriminant where U: core::convert::TryFrom<T>
+pub type bnb::error::UnknownDiscriminant::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::UnknownDiscriminant::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::UnknownDiscriminant where T: core::clone::Clone
+pub type bnb::error::UnknownDiscriminant::Owned = T
+pub fn bnb::error::UnknownDiscriminant::clone_into(&self, &mut T)
+pub fn bnb::error::UnknownDiscriminant::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::UnknownDiscriminant where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::UnknownDiscriminant where T: 'static + ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::UnknownDiscriminant where T: ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::UnknownDiscriminant where T: ?core::marker::Sized
+pub fn bnb::error::UnknownDiscriminant::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::UnknownDiscriminant where T: core::clone::Clone
+pub unsafe fn bnb::error::UnknownDiscriminant::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::UnknownDiscriminant
+pub fn bnb::error::UnknownDiscriminant::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
+impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
+pub trait bnb::BitAmount: core::marker::Copy
+pub fn bnb::BitAmount::bits(self) -> u32
+pub fn bnb::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i32
+pub fn i32::bits(self) -> u32
+pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u16
+pub fn u16::bits(self) -> u32
+pub fn u16::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u32
+pub fn u32::bits(self) -> u32
+pub fn u32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u64
+pub fn u64::bits(self) -> u32
+pub fn u64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for u8
+pub fn u8::bits(self) -> u32
+pub fn u8::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for usize
+pub fn usize::bits(self) -> u32
+pub fn usize::bytes(self) -> u32
+pub trait bnb::BitDecode: core::marker::Sized
+pub fn bnb::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub trait bnb::BitEncode
+pub const bnb::BitEncode::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::BitEnum: bnb::Bits
+pub trait bnb::Bitfield: bnb::Bits + core::marker::Sized
+pub type bnb::Bitfield::Backing: core::marker::Copy
+pub const bnb::Bitfield::BIT_ORDER: bnb::BitOrder
+pub const bnb::Bitfield::BYTE_ORDER: bnb::ByteOrder
+pub const bnb::Bitfield::WIDTH: u32
+pub fn bnb::Bitfield::from_raw(Self::Backing) -> Self
+pub fn bnb::Bitfield::to_raw(self) -> Self::Backing
+pub trait bnb::Bits: core::marker::Copy
+pub const bnb::Bits::BITS: u32
+pub fn bnb::Bits::from_bits(u128) -> Self
+pub fn bnb::Bits::into_bits(self) -> u128
+impl bnb::Bits for bool
+pub const bool::BITS: u32
+pub fn bool::from_bits(u128) -> Self
+pub fn bool::into_bits(self) -> u128
+impl bnb::Bits for u128
+pub const u128::BITS: u32
+pub fn u128::from_bits(u128) -> Self
+pub fn u128::into_bits(self) -> u128
+impl bnb::Bits for u16
+pub const u16::BITS: u32
+pub fn u16::from_bits(u128) -> Self
+pub fn u16::into_bits(self) -> u128
+impl bnb::Bits for u32
+pub const u32::BITS: u32
+pub fn u32::from_bits(u128) -> Self
+pub fn u32::into_bits(self) -> u128
+impl bnb::Bits for u64
+pub const u64::BITS: u32
+pub fn u64::from_bits(u128) -> Self
+pub fn u64::into_bits(self) -> u128
+impl bnb::Bits for u8
+pub const u8::BITS: u32
+pub fn u8::from_bits(u128) -> Self
+pub fn u8::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u128, N>
+pub const bnb::UInt<u128, N>::BITS: u32
+pub fn bnb::UInt<u128, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u128, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u16, N>
+pub const bnb::UInt<u16, N>::BITS: u32
+pub fn bnb::UInt<u16, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u16, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u32, N>
+pub const bnb::UInt<u32, N>::BITS: u32
+pub fn bnb::UInt<u32, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u32, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u64, N>
+pub const bnb::UInt<u64, N>::BITS: u32
+pub fn bnb::UInt<u64, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u64, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
+pub const bnb::UInt<u8, N>::BITS: u32
+pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
+pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+pub trait bnb::DecodeWith<A>: core::marker::Sized
+pub fn bnb::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
+pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub trait bnb::EncodeExt: bnb::bitstream::BitEncode
+pub fn bnb::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub trait bnb::EncodeWith<A>
+pub fn bnb::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T
+pub fn T::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::FixedBitLen
+pub const bnb::FixedBitLen::BIT_LEN: u32
+pub trait bnb::SeekSource: bnb::bitstream::Source
+impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
+impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+pub trait bnb::Sink
+pub fn bnb::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::Sink::bit_pos(&self) -> usize
+pub fn bnb::Sink::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::BytesWriter
+pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesWriter::bit_pos(&self) -> usize
+pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::Source
+pub fn bnb::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::Source::bit_pos(&self) -> usize
+pub fn bnb::Source::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::Source::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::BytesReader
+pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::BytesReader::bit_pos(&self) -> usize
+pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
+pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
+pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
+pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::SpecEncode
+pub const bnb::SpecEncode::SPEC_LAYOUT: bnb::bitstream::Layout
+pub fn bnb::SpecEncode::spec_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::SpecEncodeExt: bnb::bitstream::SpecEncode
+pub fn bnb::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
+pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub type bnb::Result<T> = core::result::Result<T, bnb::error::Error>
+pub type bnb::u1 = bnb::UInt<u8, 1>
+pub type bnb::u10 = bnb::UInt<u16, 10>
+pub type bnb::u100 = bnb::UInt<u128, 100>
+pub type bnb::u101 = bnb::UInt<u128, 101>
+pub type bnb::u102 = bnb::UInt<u128, 102>
+pub type bnb::u103 = bnb::UInt<u128, 103>
+pub type bnb::u104 = bnb::UInt<u128, 104>
+pub type bnb::u105 = bnb::UInt<u128, 105>
+pub type bnb::u106 = bnb::UInt<u128, 106>
+pub type bnb::u107 = bnb::UInt<u128, 107>
+pub type bnb::u108 = bnb::UInt<u128, 108>
+pub type bnb::u109 = bnb::UInt<u128, 109>
+pub type bnb::u11 = bnb::UInt<u16, 11>
+pub type bnb::u110 = bnb::UInt<u128, 110>
+pub type bnb::u111 = bnb::UInt<u128, 111>
+pub type bnb::u112 = bnb::UInt<u128, 112>
+pub type bnb::u113 = bnb::UInt<u128, 113>
+pub type bnb::u114 = bnb::UInt<u128, 114>
+pub type bnb::u115 = bnb::UInt<u128, 115>
+pub type bnb::u116 = bnb::UInt<u128, 116>
+pub type bnb::u117 = bnb::UInt<u128, 117>
+pub type bnb::u118 = bnb::UInt<u128, 118>
+pub type bnb::u119 = bnb::UInt<u128, 119>
+pub type bnb::u12 = bnb::UInt<u16, 12>
+pub type bnb::u120 = bnb::UInt<u128, 120>
+pub type bnb::u121 = bnb::UInt<u128, 121>
+pub type bnb::u122 = bnb::UInt<u128, 122>
+pub type bnb::u123 = bnb::UInt<u128, 123>
+pub type bnb::u124 = bnb::UInt<u128, 124>
+pub type bnb::u125 = bnb::UInt<u128, 125>
+pub type bnb::u126 = bnb::UInt<u128, 126>
+pub type bnb::u127 = bnb::UInt<u128, 127>
+pub type bnb::u13 = bnb::UInt<u16, 13>
+pub type bnb::u14 = bnb::UInt<u16, 14>
+pub type bnb::u15 = bnb::UInt<u16, 15>
+pub type bnb::u17 = bnb::UInt<u32, 17>
+pub type bnb::u18 = bnb::UInt<u32, 18>
+pub type bnb::u19 = bnb::UInt<u32, 19>
+pub type bnb::u2 = bnb::UInt<u8, 2>
+pub type bnb::u20 = bnb::UInt<u32, 20>
+pub type bnb::u21 = bnb::UInt<u32, 21>
+pub type bnb::u22 = bnb::UInt<u32, 22>
+pub type bnb::u23 = bnb::UInt<u32, 23>
+pub type bnb::u24 = bnb::UInt<u32, 24>
+pub type bnb::u25 = bnb::UInt<u32, 25>
+pub type bnb::u26 = bnb::UInt<u32, 26>
+pub type bnb::u27 = bnb::UInt<u32, 27>
+pub type bnb::u28 = bnb::UInt<u32, 28>
+pub type bnb::u29 = bnb::UInt<u32, 29>
+pub type bnb::u3 = bnb::UInt<u8, 3>
+pub type bnb::u30 = bnb::UInt<u32, 30>
+pub type bnb::u31 = bnb::UInt<u32, 31>
+pub type bnb::u33 = bnb::UInt<u64, 33>
+pub type bnb::u34 = bnb::UInt<u64, 34>
+pub type bnb::u35 = bnb::UInt<u64, 35>
+pub type bnb::u36 = bnb::UInt<u64, 36>
+pub type bnb::u37 = bnb::UInt<u64, 37>
+pub type bnb::u38 = bnb::UInt<u64, 38>
+pub type bnb::u39 = bnb::UInt<u64, 39>
+pub type bnb::u4 = bnb::UInt<u8, 4>
+pub type bnb::u40 = bnb::UInt<u64, 40>
+pub type bnb::u41 = bnb::UInt<u64, 41>
+pub type bnb::u42 = bnb::UInt<u64, 42>
+pub type bnb::u43 = bnb::UInt<u64, 43>
+pub type bnb::u44 = bnb::UInt<u64, 44>
+pub type bnb::u45 = bnb::UInt<u64, 45>
+pub type bnb::u46 = bnb::UInt<u64, 46>
+pub type bnb::u47 = bnb::UInt<u64, 47>
+pub type bnb::u48 = bnb::UInt<u64, 48>
+pub type bnb::u49 = bnb::UInt<u64, 49>
+pub type bnb::u5 = bnb::UInt<u8, 5>
+pub type bnb::u50 = bnb::UInt<u64, 50>
+pub type bnb::u51 = bnb::UInt<u64, 51>
+pub type bnb::u52 = bnb::UInt<u64, 52>
+pub type bnb::u53 = bnb::UInt<u64, 53>
+pub type bnb::u54 = bnb::UInt<u64, 54>
+pub type bnb::u55 = bnb::UInt<u64, 55>
+pub type bnb::u56 = bnb::UInt<u64, 56>
+pub type bnb::u57 = bnb::UInt<u64, 57>
+pub type bnb::u58 = bnb::UInt<u64, 58>
+pub type bnb::u59 = bnb::UInt<u64, 59>
+pub type bnb::u6 = bnb::UInt<u8, 6>
+pub type bnb::u60 = bnb::UInt<u64, 60>
+pub type bnb::u61 = bnb::UInt<u64, 61>
+pub type bnb::u62 = bnb::UInt<u64, 62>
+pub type bnb::u63 = bnb::UInt<u64, 63>
+pub type bnb::u65 = bnb::UInt<u128, 65>
+pub type bnb::u66 = bnb::UInt<u128, 66>
+pub type bnb::u67 = bnb::UInt<u128, 67>
+pub type bnb::u68 = bnb::UInt<u128, 68>
+pub type bnb::u69 = bnb::UInt<u128, 69>
+pub type bnb::u7 = bnb::UInt<u8, 7>
+pub type bnb::u70 = bnb::UInt<u128, 70>
+pub type bnb::u71 = bnb::UInt<u128, 71>
+pub type bnb::u72 = bnb::UInt<u128, 72>
+pub type bnb::u73 = bnb::UInt<u128, 73>
+pub type bnb::u74 = bnb::UInt<u128, 74>
+pub type bnb::u75 = bnb::UInt<u128, 75>
+pub type bnb::u76 = bnb::UInt<u128, 76>
+pub type bnb::u77 = bnb::UInt<u128, 77>
+pub type bnb::u78 = bnb::UInt<u128, 78>
+pub type bnb::u79 = bnb::UInt<u128, 79>
+pub type bnb::u80 = bnb::UInt<u128, 80>
+pub type bnb::u81 = bnb::UInt<u128, 81>
+pub type bnb::u82 = bnb::UInt<u128, 82>
+pub type bnb::u83 = bnb::UInt<u128, 83>
+pub type bnb::u84 = bnb::UInt<u128, 84>
+pub type bnb::u85 = bnb::UInt<u128, 85>
+pub type bnb::u86 = bnb::UInt<u128, 86>
+pub type bnb::u87 = bnb::UInt<u128, 87>
+pub type bnb::u88 = bnb::UInt<u128, 88>
+pub type bnb::u89 = bnb::UInt<u128, 89>
+pub type bnb::u9 = bnb::UInt<u16, 9>
+pub type bnb::u90 = bnb::UInt<u128, 90>
+pub type bnb::u91 = bnb::UInt<u128, 91>
+pub type bnb::u92 = bnb::UInt<u128, 92>
+pub type bnb::u93 = bnb::UInt<u128, 93>
+pub type bnb::u94 = bnb::UInt<u128, 94>
+pub type bnb::u95 = bnb::UInt<u128, 95>
+pub type bnb::u96 = bnb::UInt<u128, 96>
+pub type bnb::u97 = bnb::UInt<u128, 97>
+pub type bnb::u98 = bnb::UInt<u128, 98>
+pub type bnb::u99 = bnb::UInt<u128, 99>

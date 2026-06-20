@@ -90,3 +90,30 @@ jobs:
       # A panic / OOB / UB writes a crash artifact and fails the job. `-runs` caps it
       # so the job is bounded even if `-max_total_time` misbehaves on a slow runner.
       - run: cargo fuzz run decode -- -max_total_time=60 -runs=2000000
+
+  public-api:
+    name: public-api (no unintended surface change)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # cargo-public-api builds *nightly* rustdoc JSON, whose format drifts between
+      # nightlies — so the snapshot is reproducible only against the EXACT toolchain it
+      # was generated with. Pin it (the repo's rust-toolchain.toml pins stable, so drop
+      # it as the msrv/fuzz jobs do). To change the pin, bump this date AND regenerate
+      # the snapshot with the same toolchain (command in the failure message below).
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-17
+      - uses: Swatinem/rust-cache@v2
+      # Pin the tool version too — its output format can change across releases.
+      - run: cargo install cargo-public-api --version 0.52.0 --locked
+      - name: Diff the public API against the committed snapshot
+        run: |
+          cargo public-api -p bitsandbytes --all-features > "$RUNNER_TEMP/public-api.txt"
+          if ! diff -u bnb/public-api.txt "$RUNNER_TEMP/public-api.txt"; then
+            echo "::error::Public API differs from bnb/public-api.txt (see diff above)."
+            echo "If the change is intentional, regenerate the snapshot:"
+            echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bnb/public-api.txt"
+            exit 1
+          fi
