@@ -1,18 +1,20 @@
 # bnb / bnb-macros
 
-Workspace utility crates: a fast, **owned bit-aware** binary codec, integer-backed,
-that collapses the capabilities of a bitfield/int/enum stack
-(`modular-bitfield(-msb)`, `bitfield-struct`, `bitbybit`, `arbitrary-int`,
-`num_enum`) plus a declarative codec **modeled on `binrw`** into one crate. The
-unified `#[bin]` attribute is the whole-message front-end
+A fast, **owned bit-aware** binary codec, integer-backed, that collapses the
+capabilities of a bitfield/int/enum stack (`modular-bitfield(-msb)`,
+`bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`) plus a declarative codec
+**modeled on `binrw`** into one crate. The unified `#[bin]` attribute is the
+whole-message front-end
 (magic/count/ctx/map/if/calc·temp/reserved/positioning/validate + a
 `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O ladder, opt-in `bytes`). The codec
 is entirely in-house — `binrw` is an inspiration, not a dependency (see
-`ACKNOWLEDGMENTS.md`); `bnb/DESIGN.md` has the design rationale.
+`ACKNOWLEDGMENTS.md`); `DESIGN.md` has the design rationale.
 
-> Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace
-> root `AGENTS.md` also applies. **Not wired into any protocol crate yet** — by
-> design.
+> Canonical agent-guidance file for this crate; `CLAUDE.md` is a symlink to it, and
+> the repo-root `README.md` is the user-facing overview.
+>
+> **Published as `bitsandbytes` / `bitsandbytes-macros`; imported as `bnb` / `bnb_macros`**
+> (via `[lib] name`). Downstream: `bnb = { package = "bitsandbytes" }`, then `use bnb`.
 
 ## Two-crate layout (required)
 
@@ -28,8 +30,9 @@ is entirely in-house — `binrw` is an inspiration, not a dependency (see
   `#[derive(BitDecode)]`/`#[derive(BitEncode)]` codec derives, and `#[bin]` (the
   unified codec attribute that folds those derives + the builder).
 
-A proc-macro crate cannot also export runtime items, hence the split. Depend on
-`bnb`; it re-exports the macros.
+A proc-macro crate cannot also export runtime items, hence the split. Depend only on
+the runtime (`bnb = { package = "bitsandbytes" }`); it re-exports the macros, so
+downstream never names `bitsandbytes-macros` directly.
 
 ## How the `#[bitfield]` macro works (the load-bearing idea)
 
@@ -109,14 +112,17 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   string::{String, ToString}}` in the runtime, and emit `#bnb::__private::{Vec, String,
   vec}` from the macros — **never `::std::…` inside a `quote!`** (it breaks `no_std`
   consumers). Errors impl `core::error::Error`, not `std::error::Error`.
-- **Runtime-crate path in generated code is resolved, not hardcoded.** Each macro
-  fn that emits runtime paths does `let bnb = crate::bnb_path();` and interpolates
-  `#bnb` (e.g. `#bnb::__private::Vec`); `bnb_path()` (in `bnb-macros/src/lib.rs`) uses
-  `proc-macro-crate` so the path matches whatever name the *dependent* imports the
-  crate as — so a consumer can rename it (`bnb = { package = "bitsandbytes" }`). Never
-  re-introduce a literal `::bnb` in a `quote!` (the `bnb_path()` string is the runtime's
-  **package** name — update it if the package is renamed). `lib.rs` carries `extern crate
-  self as bnb;` so `#bnb` = `::bnb` resolves inside the crate and its tests/doctests.
+- **Runtime-crate path in generated code is resolved, not hardcoded.** Each macro fn
+  that emits runtime paths does `let bnb = crate::bnb_path();` and interpolates `#bnb`
+  (e.g. `#bnb::__private::Vec`) — **never a literal `::bnb` in a `quote!`**. `bnb_path()`
+  (in `bnb-macros/src/lib.rs`) resolves it via `proc-macro-crate`: the crate is published
+  as `bitsandbytes` but its lib is named `bnb`, and Cargo links any *non-renamed*
+  reference (the crate's own tests/doctests/examples, `trybuild`'s temp crates, an
+  un-aliased `bitsandbytes = "…"` consumer) by the **lib name `bnb`**, but a
+  `package = "…"`-renamed dep by its **key**. So `crate_name("bitsandbytes")` returning
+  the package name (or `Itself`, or not-found) ⇒ emit `::bnb`; any other name ⇒ that key.
+  `lib.rs` carries `extern crate self as bnb;` so `::bnb` resolves inside the lib too.
+  (If the package is ever renamed, update the `"bitsandbytes"` string in `bnb_path`.)
 - Gate behind `#[cfg(feature = "std")]`: the reader/writer adapters (`StreamBitReader`/
   `BufSource`/`SeekReader`/`SourceReader`/`SinkWriter`, `as_read`/`as_write`),
   `encode_to_writer*`, `From<std::io::Error>`, and `ErrorKind::Io`.
@@ -168,12 +174,14 @@ confusion, not remove it).
 ## Testing
 
 ```bash
-RUSTC_WRAPPER= cargo test -p bnb                 # core codec (default features)
-RUSTC_WRAPPER= cargo test -p bnb --features bytes # + the bytes-crate I/O adapters
+cargo test                                  # whole workspace (default features)
+cargo test -p bitsandbytes --features bytes # + the bytes-crate I/O adapters
 # no_std proof: build the detached smoke crate for a bare-metal target (std off).
 # A host `--no-default-features` build still links std, so the cross target is the
 # one that actually fails on a leak.
-RUSTC_WRAPPER= cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+# MSRV floor (1.85): let-chains are unstable below 1.88 — DON'T use them; verify with:
+cargo +1.85.0 check --workspace
 ```
 
 - `src/{int,field}.rs` unit tests — int ranges/conversions, `Bits` impls.
@@ -213,14 +221,14 @@ allowed exception. Keep the public surface fully documented.
 
 ## Benchmarks
 
-- `benches/bitfield_bench.rs` (criterion, shared `testutil::bench`) measures `bnb`
+- `benches/bitfield_bench.rs` (criterion, `Criterion::default()`) measures `bnb`
   **against the crates it replaces** — `bitbybit`, `modular-bitfield-msb` (dev-deps,
   bench-only) — and a hand-written shift/mask baseline, on an identical DNS-shaped
   16-bit field. Result: `bnb` matches `bitbybit`, beats `modular-bitfield`, within
   noise of hand-written (pack ~870ps, unpack ~192ps).
 - `benches/bitstream_bench.rs` — the `#[bin]`/derive codec throughput.
 
-Run: `cargo bench -p bnb`. Flamegraphs are opt-in via `testutil/profiling`.
+Run: `cargo bench -p bitsandbytes`.
 
 ## Examples
 
