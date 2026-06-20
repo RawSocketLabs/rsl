@@ -1,6 +1,7 @@
 # `bnb` — status and capabilities
 
-**Status: feature-complete.** `bnb` is an owned, bit-aware binary codec — the field
+**Status: feature-complete (`0.1.0`); on the road to 1.0** — see
+[Road to 1.0](#road-to-10). `bnb` is an owned, bit-aware binary codec — the field
 types, macros, whole-message codec, and I/O ladder below are all built, tested, and
 benchmarked. This file is the capability checklist; for the design rationale see
 [`DESIGN.md`](DESIGN.md), for runnable walkthroughs the [`bnb::guide`] module, and for
@@ -97,3 +98,72 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       never panics") across many shapes.
 - [x] All runtime error kinds asserted; trybuild compile-fail snapshots for the macro
       misuse surface.
+
+## Road to 1.0
+
+`bnb` is *feature-complete* but not yet *1.0-stable*. **1.0 is a SemVer promise — no
+breaking changes until 2.0** — so the gate is real-world API validation, not feature
+count; it stays on `0.x` (where breaking changes are cheap) until the surface has
+survived real use. Suggested order: **A** and **B** run in parallel and drive **C**
+(the API shakes out from real use); **D/E/F** are polish; then soak on a late `0.x`
+(e.g. `0.9`) in a real tool for a release or two and tag **`1.0.0`** once a cycle
+passes with no breaking change needed.
+
+### A. Live testing / dogfooding — load-bearing (`bnb` has no real consumer yet)
+
+- [ ] Port 2–3 real protocols onto `bnb` — DNS is the flagship (rich bitfields, golden
+      vectors, refcheck RFC tracking); `nbt`/`smb` come off `modular-bitfield`;
+      `icmp`/`tftp` exercise the `#[bin]` message codec. The `asyio/protocols` crates
+      (the stack `bnb` was built to replace) are the proving ground.
+- [ ] Each ported crate passes its **existing** suite **byte-identically** (golden vectors).
+- [ ] Decode **real captured traffic** (pcaps) and interop against a **live peer** — the
+      dual-use story: emit to a real server / fuzz a real client.
+
+### B. Correctness hardening — it parses untrusted bytes
+
+- [ ] A `cargo-fuzz` target on the decode path (promote the "decode of arbitrary bytes
+      never panics" proptest); run in CI, ideally submit to **OSS-Fuzz**.
+- [ ] **Miri** over the test suite (audit every `unsafe` first — near-zero `unsafe` is a
+      1.0 selling point; document it).
+- [ ] Differential correctness vs `binrw`/`modular-bitfield` on shared shapes (the bench
+      targets already exist).
+- [ ] Boundary stress: `u127`, the full endian × bit-order matrix, sub-byte straddles,
+      attacker-controlled `count` (the push-based `Vec` guard).
+
+### C. API freeze + SemVer tooling
+
+- [ ] Deliberate public-API review: trait shapes (`BitDecode`/`BitEncode`/`Source`/
+      `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
+      `EncodeExt`/`SpecEncodeExt` ergonomics — commit only to what you'll keep. Mark
+      growth points `#[non_exhaustive]` (errors already are).
+- [ ] `cargo-public-api` snapshot + `cargo-semver-checks` in CI (catch unintended
+      surface / breakage between releases).
+- [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
+
+### D. Docs & migration
+
+- [ ] Migration guide (`modular-bitfield`/`binrw`/`num_enum` → `bnb`) and a
+      `CHANGELOG.md` (the `guide` module, `DESIGN.md`, docs.rs + Pages are already done).
+
+### E. Performance baseline
+
+- [ ] Throughput on **real whole-messages** (not just a 16-bit field); a CI
+      perf-regression gate; a macro compile-time / codegen-bloat sanity check.
+
+### F. Release hygiene
+
+- [ ] `CHANGELOG`, a release process (`cargo-release`), `CONTRIBUTING.md` / `SECURITY.md`;
+      CI jobs for fuzz + Miri + semver-checks alongside the existing
+      fmt/clippy/test/no_std/deny/MSRV set.
+
+### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
+
+- [ ] **`r` / `w` field-name collision** — a user field named `r` or `w` collides with the
+      generated source/sink params (currently a hard error). Rename the generated params
+      (e.g. `__r`/`__w`) before 1.0 so it isn't a permanent papercut.
+- [ ] **Option B (no_std streaming I/O)** — a 1.0 requirement, or explicit post-1.0
+      (additive)? Document the boundary either way so it's an expectation, not a surprise.
+- [ ] **`encode(writer)` ergonomics** — keep the `use bnb::prelude::*` extension-trait
+      form, or reconsider while it's still cheap?
+- [ ] **Scope line** — is `serde` interop / an `async` codec in scope for 1.0, or
+      explicitly out? Decide now so 1.0's surface is intentional.
