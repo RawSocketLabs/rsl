@@ -8,7 +8,7 @@ project is run and how to make a change land smoothly.
 
 `bnb` is built and maintained by **RawSocketLabs** and used in our products, so its
 direction is **product-first**: changes are judged primarily by how well they serve those
-use cases and the [ROADMAP](bnb/ROADMAP.md). We're happy to hear good ideas and will
+use cases and the [ROADMAP](../bnb/ROADMAP.md). We're happy to hear good ideas and will
 engage with them, but the maintainers make the final call on what's accepted — and not
 every proposal will land. That's not a knock on the work; it's how we keep the API surface
 intentional on the road to 1.0.
@@ -41,7 +41,7 @@ In practice:
 Commits must follow **[Conventional Commits](https://www.conventionalcommits.org/)** —
 commitlint enforces this in CI, and `release-plz` derives each crate's SemVer bump and
 `CHANGELOG.md` from them. Allowed types are in
-[`commitlint.config.mjs`](commitlint.config.mjs): `feat`, `fix`, `docs`, `test`,
+[`commitlint.config.mjs`](../.config/commitlint.config.mjs): `feat`, `fix`, `docs`, `test`,
 `refactor`, `chore`, `ci`, `perf`, `style`, `build`, `bench`, `revert`. Only `feat`
 (minor) and `fix` (patch) move a version; a breaking change uses `!` or a
 `BREAKING CHANGE:` footer (on `0.x` that's a minor bump).
@@ -81,8 +81,8 @@ change is intended (and call it out in the PR):
   `cargo +1.85.0 check` above catches it.
 - **Pick the right tool** (`#[bitfield]` vs `#[bin]` vs the bare derives) — the
   right-tool guard rejects all-byte-aligned bare-derive structs. The design rationale and
-  internal invariants live in [`bnb/DESIGN.md`](bnb/DESIGN.md) and the contributor/agent
-  guide [`bnb/AGENTS.md`](bnb/AGENTS.md).
+  internal invariants live in [`bnb/DESIGN.md`](../bnb/DESIGN.md) and the contributor/agent
+  guide [`bnb/AGENTS.md`](../bnb/AGENTS.md).
 
 ## Review & merge
 
@@ -93,6 +93,6 @@ Expect review to weigh the change against the product use cases and the ROADMAP.
 ## Licensing of contributions
 
 Unless you explicitly state otherwise, any contribution you intentionally submit for
-inclusion in this project shall be **dual-licensed under [MIT](LICENSE-MIT) OR
-[Apache-2.0](LICENSE-APACHE)** — the same terms as the project — with no additional terms
+inclusion in this project shall be **dual-licensed under [MIT](../LICENSE-MIT) OR
+[Apache-2.0](../LICENSE-APACHE)** — the same terms as the project — with no additional terms
 or conditions. **No CLA or sign-off is required.**

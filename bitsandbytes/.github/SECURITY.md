@@ -31,12 +31,12 @@ The crate is pre-1.0, so security fixes land on the **latest released `0.x`** li
 | latest `0.x` | ✅ |
 | older `0.x` | ❌ (please upgrade) |
 
-This table will change once `1.0` ships (see [`bnb/ROADMAP.md`](bnb/ROADMAP.md), "Road to
+This table will change once `1.0` ships (see [`bnb/ROADMAP.md`](../bnb/ROADMAP.md), "Road to
 1.0").
 
 ## What is — and isn't — a vulnerability
 
-`bnb` is **dual-use** (see [`bnb/DESIGN.md`](bnb/DESIGN.md)): it parses real-world and
+`bnb` is **dual-use** (see [`bnb/DESIGN.md`](../bnb/DESIGN.md)): it parses real-world and
 deliberately-malformed wire formats, and it does **not** sanitize what it decodes. Knowing
 which side of that line a behavior falls on avoids noise reports.
 

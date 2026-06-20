@@ -61,6 +61,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # deny.toml lives in .config/ now. `--config` is a flag on the `check`
+          # subcommand, so it must come AFTER it — and this action places
+          # `command-arguments` after the subcommand (`arguments` goes before it).
+          command-arguments: --config .config/deny.toml
 
   msrv:
     name: MSRV (rust-version = 1.85)

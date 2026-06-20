@@ -175,7 +175,7 @@ passes with no breaking change needed.
 
 - [x] Conventional-Commit enforcement (commitlint CI) + Conventional-Commit-driven
       release automation (`release-plz`: per-crate `CHANGELOG.md` + SemVer-bump PRs,
-      git tags on merge; crates.io publishing deferred — see `RELEASING.md`).
+      git tags on merge; crates.io publishing deferred — see `docs/RELEASING.md`).
 - [x] `CONTRIBUTING.md` (product-first, maintainer-decides model; issue-first for
       non-trivial work; inbound = outbound dual MIT/Apache; the local-checks + API-gate
       regen commands) and `SECURITY.md` (threat model, the dual-use "what is / isn't a

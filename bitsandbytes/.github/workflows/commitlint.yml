@@ -1,6 +1,6 @@
 # Enforce Conventional Commits on every commit in a PR (the repo merges/rebases
 # real commits onto `main`, so each message must conform — that history is what
-# release-plz parses to compute version bumps). Config: ../../commitlint.config.mjs.
+# release-plz parses to compute version bumps). Config: ../../.config/commitlint.config.mjs.
 name: commit-lint
 
 on:
@@ -22,4 +22,4 @@ jobs:
           fetch-depth: 0
       - uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.mjs
+          configFile: .config/commitlint.config.mjs

@@ -31,6 +31,11 @@ plus a declarative codec (modeled on `binrw`) into one crate. See:
 `no_std`: build with `--no-default-features` (always needs `alloc`); the default `std`
 feature adds the `std::io` ladder and `encode(writer)` conveniences.
 
+## Contributing & security
+
+See [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) for how contributions work (and the local
+checks that mirror CI), and [`SECURITY.md`](.github/SECURITY.md) to report a vulnerability.
+
 ## License
 
 Dual-licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
