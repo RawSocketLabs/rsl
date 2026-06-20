@@ -70,3 +70,23 @@ fn read_only_decodes_only() {
     // No `to_bytes`/builder is generated for a read_only type (enforced at compile
     // time — only Decode is derived).
 }
+
+// Fields named `r`/`w` once collided with the codec's generated source/sink and were
+// a hard error. The params are now `__bnb_r`/`__bnb_w`, so `r`/`w` are ordinary field
+// names — even usable as a sibling local in a directive like `count`.
+#[bin(big)]
+#[derive(Debug, PartialEq, Eq)]
+struct Rw {
+    r: u8,
+    w: u8,
+    #[br(count = r as usize)]
+    tail: Vec<u8>,
+}
+
+#[test]
+fn fields_named_r_and_w_roundtrip() {
+    let v = Rw::builder().r(3).w(7).tail(vec![1, 2, 3]).build().unwrap();
+    let bytes = v.to_bytes().unwrap();
+    assert_eq!(bytes, vec![3, 7, 1, 2, 3]);
+    assert_eq!(Rw::decode_exact(&bytes).unwrap(), v);
+}

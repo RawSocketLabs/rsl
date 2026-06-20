@@ -160,9 +160,9 @@ passes with no breaking change needed.
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
-- [ ] **`r` / `w` field-name collision** — a user field named `r` or `w` collides with the
-      generated source/sink params (currently a hard error). Rename the generated params
-      (e.g. `__r`/`__w`) before 1.0 so it isn't a permanent papercut.
+- [x] **`r` / `w` field-name collision** — *resolved*: the generated source/sink params are
+      now `__bnb_r`/`__bnb_w`, so a user field named `r` or `w` no longer collides (the hard
+      error is gone). Proof: `bin_macro.rs::fields_named_r_and_w_roundtrip`.
 - [ ] **Option B (no_std streaming I/O)** — a 1.0 requirement, or explicit post-1.0
       (additive)? Document the boundary either way so it's an expectation, not a surprise.
 - [ ] **`encode(writer)` ergonomics** — keep the `use bnb::prelude::*` extension-trait
