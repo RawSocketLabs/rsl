@@ -217,10 +217,11 @@ passes with no breaking change needed.
 - [x] **Bitfield `Debug`** *(done)* — `#[bitfield]` intercepts a `#[derive(Debug)]` and emits a
       custom impl decomposing the **logical** fields (`version: u4(4), ihl: u4(5)`) instead of
       the opaque backing int (`{ value: 69 }`); bitfields nested in `#[bin]` structs inherit it.
-- [ ] **A canonical diff helper** *(pending; pairs with the verbatim/canonical encode split)* —
-      a `canonical_diff()`-style view that surfaces where a value's stored fields differ from
-      its canonical form, plus an in-memory `to_canonical(self) -> Self`. `Debug` stays the
-      stored state.
+- [x] **Canonical helpers** *(done)* — generated alongside `to_canonical_bytes` (when a
+      message has a `reserved` or non-`temp` `calc` field): `to_canonical(self) -> Self` (the
+      in-memory canonical form — reserved → spec, `calc` → recomputed), `canonical_diff(&self)
+      -> Vec<&'static str>` (names of fields differing from canonical), and `is_canonical(&self)
+      -> bool`. `Debug` stays the stored state. Closes the encode-model arc (E1–E3).
 - [ ] **`#[default]` for `BitEnum` + struct field defaults** (all additive). (1) a `#[default]`
       variant marker so `Enum::default()` is well-defined — std `#[derive(Default)]` already
       covers *unit-only* enums, so bnb only needs its own for the `catch_all` case; (2)

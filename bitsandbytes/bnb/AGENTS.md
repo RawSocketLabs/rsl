@@ -137,7 +137,10 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `to_canonical_bytes`/`encode_canonical` are **canonical**: reserved → spec value, `calc`
   → recomputed, so the result is always spec-compliant. The canonical impl is generated
   only when a message has a `reserved` or non-`temp` `calc` field (else the two are
-  identical). There is **no canonical decode** — `decode_*` is always verbatim.
+  identical). There is **no canonical decode** — `decode_*` is always verbatim. The same
+  condition also generates the in-memory helpers `to_canonical(self) -> Self`,
+  `canonical_diff(&self) -> Vec<&'static str>` (fields differing from canonical), and
+  `is_canonical(&self) -> bool`.
 - `encode(writer)`/`encode_canonical(writer)` are **`std`-gated blanket extension traits**
   (`EncodeExt: BitEncode` / `CanonicalEncodeExt: CanonicalEncode`), **not** generated inherent
   methods — a proc-macro can't see the consumer's features, so a generated

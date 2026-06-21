@@ -1272,6 +1272,37 @@ fn gen_encode(
             .zip(&brs)
             .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
             .collect::<syn::Result<Vec<_>>>()?;
+
+        // In-memory canonicalization helpers (`to_canonical`/`canonical_diff`/
+        // `is_canonical`). For each *stored* (non-`temp`) field the canonical value is: the
+        // recomputed `calc` expr, the reserved spec value, or the field itself unchanged.
+        let mut calc_precompute = Vec::new();
+        let mut field_inits = Vec::new();
+        let mut diff_checks = Vec::new();
+        for (f, br) in fields.named.iter().zip(&brs) {
+            if br.temp {
+                continue; // not stored — absent from the struct
+            }
+            let id = f.ident.as_ref().expect("named field");
+            let ty = &f.ty;
+            if let Some(calc) = &br.calc {
+                // Non-`temp` `calc` (temp filtered above): canonical value = recompute.
+                let local = format_ident!("__canon_{}", id);
+                calc_precompute.push(quote!(let #local: #ty = #calc;));
+                field_inits.push(quote!(#id: #local));
+                diff_checks
+                    .push(quote!(if self.#id != (#calc) { __d.push(::core::stringify!(#id)); }));
+            } else if let Some(spec) = reserved_spec_value(f)? {
+                // Reserved: canonical value = spec value.
+                field_inits.push(quote!(#id: #spec));
+                diff_checks
+                    .push(quote!(if self.#id != (#spec) { __d.push(::core::stringify!(#id)); }));
+            } else {
+                // Ordinary stored field: moved unchanged.
+                field_inits.push(quote!(#id: self.#id));
+            }
+        }
+
         quote! {
             impl #bnb::CanonicalEncode for #name {
                 const CANONICAL_LAYOUT: #bnb::Layout = #layout;
@@ -1303,6 +1334,28 @@ fn gen_encode(
                     __bnb_w: &mut K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <Self as #bnb::CanonicalEncode>::canonical_bit_encode(self, __bnb_w)
+                }
+
+                #[doc = "The **canonical form in memory**: a copy with reserved fields set to their"]
+                #[doc = "spec value and `calc` fields recomputed. `value.to_canonical().to_bytes()`"]
+                #[doc = "equals `value.to_canonical_bytes()`."]
+                pub fn to_canonical(self) -> Self {
+                    #(#calc_precompute)*
+                    Self { #(#field_inits),* }
+                }
+
+                #[doc = "The names of the stored fields whose value differs from canonical — i.e."]
+                #[doc = "reserved fields not at their spec value, or `calc` fields not equal to their"]
+                #[doc = "recomputed value. Empty iff `self` is already canonical."]
+                pub fn canonical_diff(&self) -> #bnb::__private::Vec<&'static str> {
+                    let mut __d = #bnb::__private::Vec::new();
+                    #(#diff_checks)*
+                    __d
+                }
+
+                #[doc = "Whether `self` is already in canonical form (no reserved/`calc` field differs)."]
+                pub fn is_canonical(&self) -> bool {
+                    self.canonical_diff().is_empty()
                 }
             }
         }
