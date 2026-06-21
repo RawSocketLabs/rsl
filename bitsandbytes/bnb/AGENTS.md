@@ -270,6 +270,11 @@ Run: `cargo bench -p bitsandbytes`.
 - Dual-use: `from_raw`/`from_bytes` and the parser never validate; `#[catch_all]`
   preserves unknown enum values; `#[bin]`'s `validate`/soundness is
   **construction-side only** (gates `build()`, leaves decode permissive). Keep
-  that — never make a parser reject representable input.
+  that — never make a parser reject representable input. `validate = path` is also
+  generated as re-runnable `validate()` / `is_valid()` methods (computed on demand — no
+  stored "valid" flag, which would go stale on mutation). By convention `validate` checks
+  **semantic** soundness, not `calc`/`reserved` fields (those are representational, normalized
+  by `to_canonical_bytes`), so validity holds for the canonical form too; `to_canonical_bytes`
+  itself stays a pure normalization (compose `validate()` before sending if you need the check).
 - The `Bitfield` seam (`to_raw`/`from_raw` + the codec-agnostic trait) is the hook
   the `#[bin]` codec builds on; a value type stays codec-agnostic.

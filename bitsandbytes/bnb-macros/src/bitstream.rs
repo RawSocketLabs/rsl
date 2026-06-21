@@ -1919,11 +1919,43 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         }
     };
 
+    // `validate = path` is also exposed as re-runnable methods: `build()` checks once at
+    // construction, but the value can be mutated before sending — `validate()`/`is_valid()`
+    // re-check on demand (always current, never a stale flag).
+    let validate_methods = if let Some(path) = &args.validate {
+        let vis = &s.vis;
+        let name = &s.ident;
+        quote! {
+            impl #name {
+                #[doc = "Re-run the `#[bin(validate = …)]` soundness check against the current value."]
+                #[doc = "`build()` runs it once at construction; call this before sending if the value"]
+                #[doc = "may have been mutated since. It checks **semantic** soundness — by convention"]
+                #[doc = "not `calc`/`reserved` fields, which are representational (normalized by"]
+                #[doc = "`to_canonical_bytes`) rather than a matter of validity."]
+                #[doc = ""]
+                #[doc = "# Errors"]
+                #[doc = "The validator's error when the value is unsound."]
+                #vis fn validate(&self) -> ::core::result::Result<(), impl ::core::fmt::Display> {
+                    (#path)(self)
+                }
+                #[doc = "Whether the `#[bin(validate = …)]` check passes for the current value —"]
+                #[doc = "computed on demand, so it never goes stale after a mutation."]
+                #[must_use]
+                #vis fn is_valid(&self) -> bool {
+                    self.validate().is_ok()
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
     Ok(quote! {
         #ctx_struct
         #clean
         #mode_extras
         #new_ctor
+        #validate_methods
         #builder
         #decode
         #encode

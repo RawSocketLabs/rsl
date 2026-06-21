@@ -187,7 +187,12 @@
 //! `validate = path` runs a `fn(&Self) -> Result<(), impl Display>` in `build()` only.
 //! The **parser stays permissive** — it never rejects representable input — so a
 //! deliberately malformed message is still decodable (for fuzzing / interop), even
-//! though it can't be *built*:
+//! though it can't be *built*. It's also exposed as re-runnable methods: `build()` checks
+//! once, but a value can be mutated before you send it, so **`validate()` / `is_valid()`
+//! re-check the *current* value on demand** (computed, never a stale flag). By convention
+//! `validate` expresses **semantic** soundness — not `calc`/`reserved` fields, which are
+//! representational (normalized by `to_canonical_bytes`), so it's a property of the message's
+//! meaning that holds for the canonical form too.
 //!
 //! ```
 //! use bnb::bin;
@@ -203,6 +208,11 @@
 //!
 //! assert!(Msg::builder().kind(0).len(4).build().is_err());      // builder: rejected
 //! assert!(Msg::decode_exact(&[0x00, 0x04]).is_ok());            // parser: permissive
+//!
+//! let mut m = Msg::builder().kind(1).len(4).build().unwrap();
+//! assert!(m.is_valid());                                        // sound as built
+//! m.kind = 0;                                                   // mutated before sending…
+//! assert!(!m.is_valid());                                       // …re-check catches it
 //! ```
 //!
 //! # Derived, never-drifting fields

@@ -37,7 +37,9 @@
 //!
 //! `#[bin(validate = …)]` runs only in `build()`. Decoding the very same malformed
 //! bytes still succeeds — so you can parse hostile input for analysis, but can't
-//! *accidentally build* a malformed message:
+//! *accidentally build* a malformed message. The same check is exposed as re-runnable
+//! `validate()` / `is_valid()` methods (computed on demand, never a stale flag), so you can
+//! re-confirm soundness before sending a value that may have been mutated since `build()`:
 //!
 //! ```
 //! use bnb::bin;

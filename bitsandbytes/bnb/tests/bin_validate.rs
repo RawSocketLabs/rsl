@@ -57,3 +57,24 @@ fn parser_stays_permissive() {
     let bytes = unsound.to_bytes().unwrap();
     assert_eq!(Header::decode_exact(&bytes).unwrap(), unsound);
 }
+
+#[test]
+fn validate_and_is_valid_recheck_on_demand() {
+    // `build()` validates once; `validate()`/`is_valid()` re-check the *current* value, so a
+    // mutation that breaks the invariant before sending is caught (no stale "valid" flag).
+    let mut h = Header::builder()
+        .version(u4::new(1))
+        .flags(u4::new(0))
+        .length(8)
+        .build()
+        .unwrap();
+    assert!(h.is_valid());
+    assert!(h.validate().is_ok());
+
+    h.length = 0; // mutated into an unsound state after construction
+    assert!(!h.is_valid());
+    assert_eq!(
+        h.validate().unwrap_err().to_string(),
+        "length must be non-zero"
+    );
+}
