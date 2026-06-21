@@ -239,6 +239,21 @@
 //! assert_eq!(Frame::decode_exact(&[0xCA, 0xFE, 0x02, 0x01, 0x02]).unwrap().payload, vec![1, 2]);
 //! ```
 //!
+//! ## `temp` + `calc` vs a stored `calc`
+//!
+//! Whether a `calc` field is also `temp` is the choice between *never keep it* and *keep it
+//! but be able to recompute it*:
+//!
+//! - **`temp` + `calc`** (above) — the field is **not stored**: it's read into a local, written
+//!   from the expression, and absent from the struct. Use it for purely-derived prefixes you
+//!   never need to read back (a `len`/`count`). It always recomputes, so it creates **no
+//!   verbatim/canonical gap** — there's nothing to drift.
+//! - **`calc` *without* `temp`** — the field **is stored** (you can read the decoded value, e.g.
+//!   an as-received checksum), and `to_bytes` writes it **verbatim** while `to_canonical_bytes`
+//!   **recomputes** it. Use it when you want to *inspect or preserve* the on-wire value (dual-use:
+//!   send a deliberately-wrong checksum) yet still be able to emit the correct one. This is what
+//!   makes a message [canonical-bearing](#two-encode-forms-verbatim-vs-canonical).
+//!
 //! # Two encode forms: verbatim vs canonical
 //!
 //! A dual-use codec needs to do two opposite things: reproduce a message **exactly** (even a
@@ -264,12 +279,14 @@
 //!
 //! Such a message also carries a wire-ignored **`encode_mode`** (defaulting to `Verbatim`),
 //! settable via `set_encode_mode`/`with_encode_mode` or the builder's `.encode_mode(…)`, and
-//! readable with `encode_mode()`. The std-writer [`encode`](crate::EncodeExt::encode) follows
-//! it — so you set the policy once and stream the value without re-specifying. `to_bytes` /
-//! `to_canonical_bytes` ignore it (always verbatim / canonical). The mode is **excluded from
-//! `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render preference, not message data), and because
-//! the field can't appear in a struct literal, **construct these via the builder, `new(…)`, or
-//! `decode`** (every `#[bin]` type gets a positional `new(fields…)` over its stored fields).
+//! readable with `encode_mode()`. **Exactly one entry point consults it** — the std-writer
+//! [`encode`](crate::EncodeExt::encode), so you set the policy once and stream the value
+//! without re-specifying. Every *other* encoder ignores it and is explicit: `to_bytes` /
+//! `encode_into` are always verbatim, `to_canonical_bytes` / `canonical_encode_into` always
+//! canonical. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render
+//! preference, not message data), and because the field can't appear in a struct literal,
+//! **construct these via the builder, `new(…)`, or `decode`** (every `#[bin]` type gets a
+//! positional `new(fields…)` over its stored fields).
 //!
 //! ```
 //! use bnb::{bin, EncodeExt, EncodeMode};

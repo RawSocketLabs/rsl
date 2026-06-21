@@ -12,6 +12,13 @@
 //! `#[catch_all]` preserves an unknown discriminant (dual-use); without one, a magic enum
 //! is a *closed set* and an unknown discriminant is a decode error.
 //!
+//! A tagged-union enum encodes **verbatim** — the canonical/`encode_mode`/`validate`/`new`
+//! surface that a [`#[bin]` struct](super::bin_codec#two-encode-forms-verbatim-vs-canonical)
+//! gets for a `reserved`/`calc` field is **struct-only**. Those are properties of a concrete
+//! record; for a union they belong to whichever variant payload is selected (each variant is
+//! itself a `#[bin]`-style record), not to the dispatch. So canonicalize / validate the
+//! payload type, then dispatch.
+//!
 //! # Magic dispatch — the discriminant is on the wire
 //!
 //! With no `tag`, each variant's `magic` is its discriminant: decode reads it once and

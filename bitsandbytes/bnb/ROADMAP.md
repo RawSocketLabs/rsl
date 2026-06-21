@@ -28,9 +28,17 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 
 ## The `#[bin]` whole-message codec
 
-- [x] Folds read + write codecs and the builder over one struct; generates
-      `decode`/`peek`/`decode_exact`/`decode_from`, `encode`/`to_bytes`/`encode_into`,
-      `builder()`.
+- [x] Folds read + write codecs and the builder over one struct; generates the decode
+      entry points (`decode`/`peek`/`decode_exact`/`decode_from`), the encode entry points
+      (`to_bytes`/`encode_into` + the `encode(writer)` convenience), and construction
+      (`new(fields…)`, `builder()`).
+- [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
+      byte-identical `decode → to_bytes`); `to_canonical_bytes` normalizes (`reserved` → spec,
+      `calc` recomputed). Generated for a `reserved`/`calc` message, which also carries a
+      wire-ignored `encode_mode` field (default `Verbatim`; the `std`-writer `encode(w)` follows
+      it) and the in-memory helpers `to_canonical`/`canonical_diff`/`is_canonical`. The mode is
+      excluded from eq/hash/`Debug`, so these types are builder/`new`/`decode`-constructed.
+      **Struct-only** — a tagged-union enum encodes verbatim (no canonical/mode/`validate`/`new`).
 - [x] **Struct options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
       (sub-byte allowed), `read_only`/`write_only`, `no_builder`, `forward_only`,
       `ctx(name: Ty, …)`, `validate = <path>`.
@@ -84,7 +92,9 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 ## Cross-cutting
 
 - [x] **Dual-use** — compliant defaults, permissive parsers (`#[catch_all]`, retained
-      reserved/flag bits), construction-side-only `validate`, raw escape hatches.
+      reserved/flag bits), construction-side `validate` (gates `build()`; never the parser) —
+      also exposed as re-runnable `validate()`/`is_valid()` methods (computed, no stored flag)
+      to re-check a value mutated since `build()` — and raw escape hatches.
 - [x] **Position-aware errors** — `BitError` carries the bit offset + field; the codec
       `Error`/`UnknownDiscriminant`/`BuilderError` cover construction.
 - [x] **Performance** — shift/mask bitfields (matches `bitbybit`, within noise of
@@ -149,6 +159,12 @@ passes with no breaking change needed.
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
       `EncodeExt::encode(w)` / settable `encode_mode` / `EncodeMode` ergonomics — commit only to
       what you'll keep. Mark growth points `#[non_exhaustive]` (errors already are).
+      **Scrutinize the encode/construct surface breadth:** a `reserved`/`calc` `#[bin]` struct now
+      exposes ~14 methods here (`to_bytes`/`to_canonical_bytes`/`encode_into`/`canonical_encode_into`
+      + `to_canonical`/`canonical_diff`/`is_canonical` + the `encode_mode` trio + `new`/`builder` +
+      `validate`/`is_valid`). Decide before the freeze whether the low-level sink writers
+      (`encode_into`/`canonical_encode_into`) and the full mode trio all earn their place, or fold
+      some. (See the encode-surface analysis in the maintainer notes / PR discussion.)
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
       cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the
@@ -235,5 +251,10 @@ passes with no breaking change needed.
       std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
       real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
       `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
+- [ ] **Encode-model parity for tagged-union enums** — the canonical/`encode_mode`/`validate`/
+      `new` surface is currently **struct-only**; a `#[bin]` enum encodes verbatim even if a variant
+      has a `reserved`/`calc` field. Decide before 1.0 whether to (a) bring parity (the enum
+      delegates to its selected variant's canonical form / validity), or (b) keep it struct-only and
+      document the boundary as intentional (done in the guide/DESIGN). Additive either way.
 - [ ] **Scope line** — is `serde` interop / an `async` codec in scope for 1.0, or
       explicitly out? Decide now so 1.0's surface is intentional.

@@ -126,10 +126,13 @@ impossible layout is a compile error rather than a silent miscompile.
 ## 5. The `#[bin]` codec
 
 `#[bin]` folds the read codec, the write codec, and a required-by-default builder over
-one struct, generating `decode`/`peek`/`decode_exact`/`decode_from`,
-`encode`/`to_bytes`/`encode_into`, and `Type::builder()`. Fields are read and written
-at arbitrary bit offsets, so the same attribute handles byte-aligned headers and
-sub-byte frames, and any `Bits` type drops in as a field.
+one struct, generating the decode entry points (`decode`/`peek`/`decode_exact`/
+`decode_from`), the encode entry points (`to_bytes`/`encode_into`, plus
+`to_canonical_bytes`/`canonical_encode_into` for a message that has a `reserved`/`calc`
+field — see §5.2), the `encode(writer)` convenience, and construction
+(`Type::new(fields…)`, `Type::builder()`). Fields are read and written at arbitrary bit
+offsets, so the same attribute handles byte-aligned headers and sub-byte frames, and any
+`Bits` type drops in as a field.
 
 **Struct-level options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
 (a leading constant verified on read, emitted on write — any `Bits` value, so it can be
@@ -167,6 +170,37 @@ rather than rejecting it; only an explicitly *closed* magic set errors. Variable
 byte-string magics reuse the same [`SeekSource`](#6-the-io-ladder) capability the
 positioning directives need — the bit cursor does the peeking, not a parallel mechanism.
 The worked encodings live in the `bnb::guide::dispatch` page.
+
+The encode model and construction surface below (§5.2) are **struct-only** — a
+tagged-union enum encodes verbatim (no `to_canonical_bytes`/`encode_mode`/`validate`/`new`).
+Those are properties of a concrete record; an enum's per-variant payloads define them, not
+the union.
+
+### 5.2 Encode model, construction, and validity
+
+A message has two **encode forms**. `to_bytes` is **verbatim** — exactly what's stored, so
+`decode → to_bytes` round-trips byte-for-byte and a deliberately-wrong field goes on the
+wire as-is (dual-use). `to_canonical_bytes` is **canonical** — `reserved` fields written as
+their spec value and `calc` fields recomputed, always spec-compliant. The two differ only
+when a message has a `reserved` or non-`temp` `calc` field (a `temp`+`calc` field is never
+stored, so it always recomputes and creates no gap), so `to_canonical_bytes` and the
+in-memory helpers `to_canonical`/`canonical_diff`/`is_canonical` are generated only then.
+
+The verbatim/canonical choice can also be **carried on the value**: such a message gains a
+wire-ignored `encode_mode` field (default `Verbatim`; set via the builder, `with_encode_mode`,
+`set_encode_mode`). It is consulted by exactly one entry point — the `std`-writer
+`encode(w)` — so you can set the policy once and stream the value; the explicit `to_bytes`/
+`to_canonical_bytes` (and the low-level `encode_into`/`canonical_encode_into` sinks) ignore
+it. The field is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (a render preference, not
+data — `#[bin]` intercepts those derives), which means such a type is constructed via the
+builder, `new(fields…)`, or `decode` rather than a struct literal.
+
+`validate = path` (the construction-soundness check `build()` runs) is also exposed as
+re-runnable `validate()` / `is_valid()` methods: `build()` checks once, but a value can be
+mutated before sending, so these re-check the *current* value (computed, never a stored
+flag). By convention `validate` expresses **semantic** soundness — not the representational
+`calc`/`reserved` fields — so validity holds for the canonical form too; `to_canonical_bytes`
+stays a pure normalization (compose `validate()` before sending if you want the check).
 
 ## 6. The I/O ladder
 
