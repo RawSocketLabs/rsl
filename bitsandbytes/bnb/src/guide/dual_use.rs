@@ -76,8 +76,8 @@
 //! [`to_bytes`](super::bin_codec#two-encode-forms-verbatim-vs-canonical) is **verbatim** — it
 //! re-emits exactly what you hold (retained `reserved` bits, a stored `calc` value), so a
 //! message you parsed off the wire round-trips byte-for-byte, malformed or not. Normalizing to
-//! the spec is the *explicit* `to_canonical_bytes` (or `encode(w, EncodeMode::Canonical)`),
-//! never something the codec does behind your back.
+//! the spec is the *explicit* `to_canonical_bytes` (or setting the value's `encode_mode` to
+//! `Canonical`, which `encode` then follows), never something the codec does behind your back.
 //!
 //! # What is still rejected
 //!

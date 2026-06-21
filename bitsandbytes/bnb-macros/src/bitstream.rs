@@ -515,6 +515,64 @@ fn field_is_reserved(f: &syn::Field) -> bool {
         .any(|a| a.path().is_ident("reserved") || a.path().is_ident("reserved_with"))
 }
 
+/// Whether a message has a verbatim-vs-canonical distinction — a `reserved` field or a
+/// non-`temp` `calc` field. Drives the canonical encoder *and* (for `#[bin]`) the in-memory
+/// `encode_mode` field.
+fn struct_has_canonical(fields: &FieldsNamed) -> bool {
+    fields.named.iter().any(|f| {
+        if field_is_reserved(f) {
+            return true;
+        }
+        matches!(parse_field_br(f), Ok(br) if br.calc.is_some() && !br.temp)
+    })
+}
+
+/// The derive partition for a `#[bin]` struct with an injected `encode_mode` field.
+struct BinDerives {
+    /// Derive paths re-emitted on the struct as-is (everything but the intercepted three).
+    kept: Vec<syn::Path>,
+    /// Non-`derive` outer attributes (doc comments, `#[repr]`, …), kept verbatim.
+    others: Vec<syn::Attribute>,
+    has_debug: bool,
+    has_partial_eq: bool,
+    has_hash: bool,
+}
+
+/// Splits a `#[bin]` struct's outer attributes, intercepting `Debug`/`PartialEq`/`Hash` —
+/// `#[bin]` re-emits those as custom impls that exclude the injected `encode_mode` field.
+/// `Eq` stays (it is a marker that holds with the extra field).
+fn split_bin_derives(attrs: &[syn::Attribute]) -> syn::Result<BinDerives> {
+    let mut kept = Vec::new();
+    let mut others = Vec::new();
+    let (mut has_debug, mut has_partial_eq, mut has_hash) = (false, false, false);
+    for attr in attrs {
+        if attr.path().is_ident("derive") {
+            let paths =
+                attr.parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)?;
+            for p in paths {
+                if p.is_ident("Debug") {
+                    has_debug = true;
+                } else if p.is_ident("PartialEq") {
+                    has_partial_eq = true;
+                } else if p.is_ident("Hash") {
+                    has_hash = true;
+                } else {
+                    kept.push(p);
+                }
+            }
+        } else {
+            others.push(attr.clone());
+        }
+    }
+    Ok(BinDerives {
+        kept,
+        others,
+        has_debug,
+        has_partial_eq,
+        has_hash,
+    })
+}
+
 /// Whether a field attribute is one `#[bin]` consumes itself (`#[nested]`/`#[br]`/
 /// `#[bw]` for the codec, `#[builder]` for the builder) and must strip from the
 /// struct it emits — it generates the codec and builder directly, so nothing
@@ -957,6 +1015,7 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         &input.ident,
         named_struct(input)?,
         &parse_bit_stream(input)?,
+        false, // the bare derive never injects the `encode_mode` field
     )
 }
 
@@ -968,8 +1027,17 @@ fn gen_decode(
     name: &Ident,
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
+    inject_mode: bool,
 ) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
+    // When `#[bin]` injects the in-memory `encode_mode` field (a message with a
+    // verbatim/canonical distinction), every `Self { … }` the decoder builds must set it.
+    // A decoded value defaults to `Verbatim`, so `decode` then `encode` round-trips.
+    let mode_init = if inject_mode {
+        quote!(, encode_mode: #bnb::EncodeMode::Verbatim)
+    } else {
+        quote!()
+    };
     // Parse each field's `#[br]`/`#[bw]` directives once, up front (propagating any
     // parse error immediately), then drive every decision off the parsed list — no
     // re-parsing per predicate.
@@ -1035,7 +1103,7 @@ fn gen_decode(
                     #(#ctx_binds)*
                     #magic_read
                     #(#read_stmts)*
-                    ::core::result::Result::Ok(Self { #(#ids),* })
+                    ::core::result::Result::Ok(Self { #(#ids),* #mode_init })
                 }
                 #[doc = "Decode from bytes with context, requiring every whole byte consumed."]
                 pub fn decode_with_exact(
@@ -1106,7 +1174,7 @@ fn gen_decode(
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #magic_read
                 #(#read_stmts)*
-                ::core::result::Result::Ok(Self { #(#ids),* })
+                ::core::result::Result::Ok(Self { #(#ids),* #mode_init })
             }
         }
 
@@ -1160,6 +1228,7 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         &input.ident,
         named_struct(input)?,
         &parse_bit_stream(input)?,
+        false, // the bare derive never injects the `encode_mode` field
     )
 }
 
@@ -1170,6 +1239,7 @@ fn gen_encode(
     name: &Ident,
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
+    inject_mode: bool,
 ) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     // Parse each field's directives once (see `gen_decode`), then derive everything
@@ -1263,6 +1333,20 @@ fn gen_encode(
         .iter()
         .zip(&brs)
         .any(|(f, br)| field_is_reserved(f) || (br.calc.is_some() && !br.temp));
+    // When `#[bin]` injected the in-memory `encode_mode` field, `BitEncode::encode_mode`
+    // returns it (so `encode` consults the value's mode) and `to_canonical` carries it over.
+    let encode_mode_override = if inject_mode {
+        quote! {
+            fn encode_mode(&self) -> #bnb::EncodeMode { self.encode_mode }
+        }
+    } else {
+        quote!()
+    };
+    let canonical_mode_init = if inject_mode {
+        quote!(, encode_mode: self.encode_mode)
+    } else {
+        quote!()
+    };
     let (canonical_method, canonical_inherent) = if !has_canonical {
         (quote!(), quote!())
     } else {
@@ -1319,9 +1403,8 @@ fn gen_encode(
                 #[doc = "Encode the **canonical** form to a `Vec<u8>`: reserved fields written as their"]
                 #[doc = "spec value and `calc` fields recomputed (ignoring the stored values), so the"]
                 #[doc = "result is always spec-compliant. (`to_bytes` is verbatim — it writes exactly"]
-                #[doc = "what is stored.) For a `std::io::Write` sink, bring"]
-                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call"]
-                #[doc = "`.encode(&mut w, bnb::EncodeMode::Canonical)` (the `std` feature)."]
+                #[doc = "what is stored.) To make the `std::io::Write` `encode(&mut w)` emit this form,"]
+                #[doc = "set the value's `encode_mode` to `Canonical` (e.g. `with_encode_mode`)."]
                 pub fn to_canonical_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec_with(
                         #layout,
@@ -1341,7 +1424,7 @@ fn gen_encode(
                 #[doc = "equals `value.to_canonical_bytes()`."]
                 pub fn to_canonical(self) -> Self {
                     #(#calc_precompute)*
-                    Self { #(#field_inits),* }
+                    Self { #(#field_inits),* #canonical_mode_init }
                 }
 
                 #[doc = "The names of the stored fields whose value differs from canonical — i.e."]
@@ -1395,15 +1478,16 @@ fn gen_encode(
                 ::core::result::Result::Ok(())
             }
             #canonical_method
+            #encode_mode_override
         }
 
         impl #name {
             #[doc = "Encode to a `Vec<u8>`, **verbatim** — exactly what's stored, never silently"]
             #[doc = "rewritten (so `decode` then `to_bytes` round-trips byte-for-byte). For the"]
             #[doc = "spec-normalized form, use `to_canonical_bytes` (generated when the message has"]
-            #[doc = "a `reserved` or `calc` field). To write to a `std::io::Write` sink, bring"]
-            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call"]
-            #[doc = "`.encode(&mut w, bnb::EncodeMode::Verbatim)` (the `std` feature)."]
+            #[doc = "a `reserved` or `calc` field). To write to a `std::io::Write` sink following the"]
+            #[doc = "value's `encode_mode`, bring [`EncodeExt`](::bnb::EncodeExt) into scope and call"]
+            #[doc = "`.encode(&mut w)` (the `std` feature)."]
             pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                 #bnb::__private::encode_to_vec(self, #layout)
             }
@@ -1581,15 +1665,33 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         magic: args.magic.clone(),
         ctx: args.ctx.clone(),
     };
+    // A message with a verbatim/canonical distinction carries a settable, wire-ignored
+    // `encode_mode` field (consulted by `encode`). Only inject it on the write side: a
+    // `read_only` codec never encodes, so it needs no mode.
+    let inject_mode = !args.read_only && struct_has_canonical(full_fields);
+    if inject_mode {
+        if let Some(clash) = full_fields
+            .named
+            .iter()
+            .find(|f| f.ident.as_ref().is_some_and(|i| i == "encode_mode"))
+        {
+            return Err(syn::Error::new_spanned(
+                clash,
+                "`#[bin]` adds an `encode_mode` field to a message with a reserved/calc field; \
+                 rename this field",
+            ));
+        }
+    }
+
     let decode = if args.write_only {
         quote!()
     } else {
-        gen_decode(&s.ident, full_fields, &attrs)?
+        gen_decode(&s.ident, full_fields, &attrs, inject_mode)?
     };
     let encode = if args.read_only {
         quote!()
     } else {
-        gen_encode(&s.ident, full_fields, &attrs)?
+        gen_encode(&s.ident, full_fields, &attrs, inject_mode)?
     };
 
     // The emitted struct: drop `#[br(temp)]` fields (not stored) and strip codec-only
@@ -1609,6 +1711,130 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             })
             .collect();
     }
+
+    // Inject the wire-ignored `encode_mode` field + its accessors, and re-emit `Debug`/
+    // `PartialEq`/`Hash` as custom impls that exclude it (so a decoded value still equals a
+    // wire-identical built one, regardless of mode). Construction is then builder/`decode`
+    // only — a bare `Name { … }` literal can't name the private field.
+    let mode_extras = if inject_mode {
+        let BinDerives {
+            kept,
+            others,
+            has_debug,
+            has_partial_eq,
+            has_hash,
+        } = split_bin_derives(&clean.attrs)?;
+        clean.attrs = others;
+        if !kept.is_empty() {
+            clean
+                .attrs
+                .extend(syn::Attribute::parse_outer.parse2(quote!(#[derive(#(#kept),*)]))?);
+        }
+        if let Fields::Named(named) = &mut clean.fields {
+            named
+                .named
+                .push(syn::Field::parse_named.parse2(quote!(encode_mode: #bnb::EncodeMode))?);
+        }
+        // The stored, user-visible fields (everything in `clean` except the injected mode).
+        let user_idents: Vec<_> = match &clean.fields {
+            Fields::Named(n) => n
+                .named
+                .iter()
+                .filter_map(|f| f.ident.clone())
+                .filter(|i| i != "encode_mode")
+                .collect(),
+            _ => Vec::new(),
+        };
+        let name = &s.ident;
+        let debug_impl = has_debug.then(|| {
+            quote! {
+                impl ::core::fmt::Debug for #name {
+                    fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        __f.debug_struct(::core::stringify!(#name))
+                            #(.field(::core::stringify!(#user_idents), &self.#user_idents))*
+                            .finish()
+                    }
+                }
+            }
+        });
+        let partial_eq_impl = has_partial_eq.then(|| {
+            quote! {
+                impl ::core::cmp::PartialEq for #name {
+                    fn eq(&self, __other: &Self) -> bool {
+                        true #(&& self.#user_idents == __other.#user_idents)*
+                    }
+                }
+            }
+        });
+        let hash_impl = has_hash.then(|| {
+            quote! {
+                impl ::core::hash::Hash for #name {
+                    fn hash<__H: ::core::hash::Hasher>(&self, __state: &mut __H) {
+                        #(::core::hash::Hash::hash(&self.#user_idents, __state);)*
+                    }
+                }
+            }
+        });
+        let vis = &s.vis;
+        quote! {
+            impl #name {
+                #[doc = "The form `encode` writes for this value (`to_bytes`/`to_canonical_bytes` ignore it)."]
+                #vis fn encode_mode(&self) -> #bnb::EncodeMode { self.encode_mode }
+                #[doc = "Set the form `encode` writes (in place)."]
+                #vis fn set_encode_mode(&mut self, __mode: #bnb::EncodeMode) { self.encode_mode = __mode; }
+                #[doc = "Return `self` with the encode mode set (chainable)."]
+                #[must_use]
+                #vis fn with_encode_mode(mut self, __mode: #bnb::EncodeMode) -> Self {
+                    self.encode_mode = __mode;
+                    self
+                }
+            }
+            #debug_impl
+            #partial_eq_impl
+            #hash_impl
+        }
+    } else {
+        quote!()
+    };
+
+    // A positional `new(...)` over the stored fields, in declaration order — the direct
+    // replacement for a struct literal (which an `encode_mode`-bearing type can no longer use,
+    // and which is otherwise just sugar). Unlike the builder, it takes every stored field
+    // (`reserved`/`calc` included) and never validates; the encode mode starts at `Verbatim`.
+    let new_ctor = {
+        let stored: Vec<&syn::Field> = full_fields
+            .named
+            .iter()
+            .filter(|f| !field_is_temp(f))
+            .collect();
+        let params = stored.iter().map(|f| {
+            let id = f.ident.as_ref().expect("named field");
+            let ty = &f.ty;
+            quote!(#id: #ty)
+        });
+        let inits = stored
+            .iter()
+            .map(|f| f.ident.as_ref().expect("named field"));
+        let mode_field_init = if inject_mode {
+            quote!(, encode_mode: #bnb::EncodeMode::Verbatim)
+        } else {
+            quote!()
+        };
+        let vis = &s.vis;
+        let name = &s.ident;
+        quote! {
+            impl #name {
+                #[doc = "Construct from every stored field, in declaration order — the direct"]
+                #[doc = "replacement for a struct literal. The builder (`Self::builder()`) is the"]
+                #[doc = "alternative that lets `reserved`/`#[builder(default)]` fields default; this"]
+                #[doc = "takes them all and never validates. (The encode mode starts at `Verbatim`.)"]
+                #[allow(clippy::too_many_arguments)]
+                #vis fn new(#(#params),*) -> Self {
+                    Self { #(#inits),* #mode_field_init }
+                }
+            }
+        }
+    };
 
     // The builder is generated directly from the stored fields (so it can run the
     // `validate` hook via `builder::generate`'s post_build). `temp` fields are absent;
@@ -1651,6 +1877,17 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             }
             bfields.push(crate::builder::BField { ident, ty, default });
         }
+        // The injected `encode_mode` is an optional builder field (defaults to `Verbatim`),
+        // so `build()` also initializes it — exposing `.encode_mode(…)` at construction.
+        if inject_mode {
+            bfields.push(crate::builder::BField {
+                ident: syn::parse_quote!(encode_mode),
+                ty: syn::parse_quote!(#bnb::EncodeMode),
+                default: crate::builder::FieldDefault::DefaultExpr(
+                    syn::parse_quote!(#bnb::EncodeMode::Verbatim),
+                ),
+            });
+        }
         crate::builder::generate(
             &s.ident,
             &s.vis,
@@ -1685,6 +1922,8 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #ctx_struct
         #clean
+        #mode_extras
+        #new_ctor
         #builder
         #decode
         #encode

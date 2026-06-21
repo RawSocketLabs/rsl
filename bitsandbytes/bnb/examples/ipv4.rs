@@ -227,14 +227,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `to_canonical()` is the same correction, in memory.
     assert!(tampered.clone().to_canonical().is_canonical());
 
-    // ===== runtime mode selection: encode(w, mode) ==============================
-    // When verbatim-vs-canonical is a *runtime* value (a config flag, a CLI option),
-    // `encode(w, mode)` writes straight to any std::io::Write — here a Vec standing in
-    // for a socket. (`to_bytes`/`to_canonical_bytes` are the compile-time form.)
+    // ===== mode carried on the value: encode(w) follows it ======================
+    // The verbatim/canonical choice can be set on the value (here per-iteration), and
+    // `encode(w)` — straight to any std::io::Write, a Vec standing in for a socket —
+    // follows it. (`to_bytes`/`to_canonical_bytes` are the explicit compile-time form.)
     for mode in [EncodeMode::Verbatim, EncodeMode::Canonical] {
         let mut socket: Vec<u8> = Vec::new();
-        tampered.encode(&mut socket, mode)?;
-        info!(?mode, checksum = %format!("0x{:04x}", checksum_of(&socket)), "encode(w, mode)");
+        tampered
+            .clone()
+            .with_encode_mode(mode)
+            .encode(&mut socket)?;
+        info!(?mode, checksum = %format!("0x{:04x}", checksum_of(&socket)), "encode(w) follows the set mode");
     }
 
     // ===== dual-use: an unknown protocol is preserved ===========================

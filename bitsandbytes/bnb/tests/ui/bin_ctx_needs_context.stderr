@@ -8,6 +8,7 @@ error[E0599]: no associated function or constant named `decode_exact` found for 
    |                    ^^^^^^^^^^^^ associated function or constant not found in `Value`
    |
 note: if you're trying to build a new `Value` consider using one of the following associated functions:
+      Value::new
       Value::decode_with
       Value::decode_with_exact
   --> tests/ui/bin_ctx_needs_context.rs:6:1

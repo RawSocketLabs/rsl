@@ -73,12 +73,14 @@ fn reserved_with_spec_value_is_the_pattern() {
     assert_eq!(f.to_bytes().unwrap()[0], 0xAE); // tag(1010) reserved(111) rest-high(0)
 
     // Override to a non-spec value: `to_bytes` puts it on the wire verbatim, while
-    // `to_canonical_bytes` forces the pattern back.
-    let g = Frame2 {
-        tag: u4::new(0xA),
-        must_be_one: u3::new(0),
-        rest: u4::new(0x5),
-    };
+    // `to_canonical_bytes` forces the pattern back. (The builder lets a caller set the
+    // reserved field to a non-spec value on purpose — dual-use.)
+    let g = Frame2::builder()
+        .tag(u4::new(0xA))
+        .must_be_one(u3::new(0))
+        .rest(u4::new(0x5))
+        .build()
+        .unwrap();
     assert_eq!(g.to_bytes().unwrap()[0], 0xA0); // verbatim: reserved(000)
     assert_eq!(g.to_canonical_bytes().unwrap()[0], 0xAE); // canonical: reserved forced to 111
 

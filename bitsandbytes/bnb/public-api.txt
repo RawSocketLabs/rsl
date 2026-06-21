@@ -13,10 +13,18 @@ pub bnb::bitstream::EncodeMode::Verbatim
 impl core::clone::Clone for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::clone(&self) -> bnb::bitstream::EncodeMode
 impl core::cmp::Eq for bnb::bitstream::EncodeMode
+impl core::cmp::Ord for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::cmp(&self, &bnb::bitstream::EncodeMode) -> core::cmp::Ordering
 impl core::cmp::PartialEq for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::eq(&self, &bnb::bitstream::EncodeMode) -> bool
+impl core::cmp::PartialOrd for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::partial_cmp(&self, &bnb::bitstream::EncodeMode) -> core::option::Option<core::cmp::Ordering>
+impl core::default::Default for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::default() -> bnb::bitstream::EncodeMode
 impl core::fmt::Debug for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for bnb::bitstream::EncodeMode
 impl core::marker::StructuralPartialEq for bnb::bitstream::EncodeMode
 impl core::marker::Freeze for bnb::bitstream::EncodeMode
@@ -631,14 +639,15 @@ pub trait bnb::bitstream::BitEncode
 pub const bnb::bitstream::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::bitstream::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitEncode::encode_mode(&self) -> bnb::bitstream::EncodeMode
 pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
 pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
 pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
 pub trait bnb::bitstream::EncodeExt: bnb::bitstream::BitEncode
-pub fn bnb::bitstream::EncodeExt::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::bitstream::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
-pub fn T::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub trait bnb::bitstream::EncodeWith<A>
 pub fn bnb::bitstream::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T
@@ -1189,9 +1198,9 @@ impl bnb::bitstream::BitAmount for usize
 pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
 pub trait bnb::prelude::EncodeExt: bnb::bitstream::BitEncode
-pub fn bnb::prelude::EncodeExt::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::prelude::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
-pub fn T::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub enum bnb::BitOrder
 pub bnb::BitOrder::Lsb
 pub bnb::BitOrder::Msb
@@ -1339,10 +1348,18 @@ pub bnb::EncodeMode::Verbatim
 impl core::clone::Clone for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::clone(&self) -> bnb::bitstream::EncodeMode
 impl core::cmp::Eq for bnb::bitstream::EncodeMode
+impl core::cmp::Ord for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::cmp(&self, &bnb::bitstream::EncodeMode) -> core::cmp::Ordering
 impl core::cmp::PartialEq for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::eq(&self, &bnb::bitstream::EncodeMode) -> bool
+impl core::cmp::PartialOrd for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::partial_cmp(&self, &bnb::bitstream::EncodeMode) -> core::option::Option<core::cmp::Ordering>
+impl core::default::Default for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::default() -> bnb::bitstream::EncodeMode
 impl core::fmt::Debug for bnb::bitstream::EncodeMode
 pub fn bnb::bitstream::EncodeMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for bnb::bitstream::EncodeMode
+pub fn bnb::bitstream::EncodeMode::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for bnb::bitstream::EncodeMode
 impl core::marker::StructuralPartialEq for bnb::bitstream::EncodeMode
 impl core::marker::Freeze for bnb::bitstream::EncodeMode
@@ -2388,6 +2405,7 @@ pub trait bnb::BitEncode
 pub const bnb::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BitEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BitEncode::encode_mode(&self) -> bnb::bitstream::EncodeMode
 pub trait bnb::BitEnum: bnb::Bits
 pub trait bnb::Bitfield: bnb::Bits + core::marker::Sized
 pub type bnb::Bitfield::Backing: core::marker::Copy
@@ -2449,9 +2467,9 @@ pub fn bnb::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> cor
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
 pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
 pub trait bnb::EncodeExt: bnb::bitstream::BitEncode
-pub fn bnb::EncodeExt::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
-pub fn T::encode<W: std::io::Write>(&self, &mut W, bnb::bitstream::EncodeMode) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub trait bnb::EncodeWith<A>
 pub fn bnb::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T

@@ -69,21 +69,21 @@
 //!
 //! # Encoding
 //!
-//! `to_bytes()` (the common case) returns a `Vec`; `encode(&mut impl Write, mode)` writes
-//! straight to a socket or file, and `encode_into(&mut impl Sink)` targets an explicit bit
-//! sink. The `mode` is an [`EncodeMode`](crate::EncodeMode) — **verbatim** (the stored bytes)
-//! or **canonical** (spec-normalized); see
+//! `to_bytes()` (the common case) returns a `Vec`; `encode(&mut impl Write)` writes straight
+//! to a socket or file, and `encode_into(&mut impl Sink)` targets an explicit bit sink.
+//! `encode` follows the value's [`encode_mode`](crate::EncodeMode) — **verbatim** by default,
+//! or **canonical** if set — see
 //! [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
 //!
 //! ```
 //! use bnb::bin;
-//! use bnb::{EncodeExt, EncodeMode}; // `.encode(&mut impl Write, mode)` (the `std` feature)
+//! use bnb::EncodeExt; // brings `.encode(&mut impl Write)` into scope (the `std` feature)
 //! # #[bin(big)] #[derive(Debug, PartialEq)] struct Word { value: u32 }
 //! let w = Word { value: 0x1234_5678 };
 //! assert_eq!(w.to_bytes().unwrap(), [0x12, 0x34, 0x56, 0x78]);
 //!
 //! let mut out: Vec<u8> = Vec::new();   // any std::io::Write
-//! w.encode(&mut out, EncodeMode::Verbatim).unwrap();
+//! w.encode(&mut out).unwrap();         // Word has no canonical form → always verbatim
 //! assert_eq!(out, [0x12, 0x34, 0x56, 0x78]);
 //! ```
 //!

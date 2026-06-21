@@ -75,7 +75,7 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       building `bnb/nostd-check` for `thumbv7em-none-eabi`.
 - [x] `std` gates the `std::io` ladder (`StreamBitReader`/`BufSource`/`SeekReader`,
       `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
-      `encode(writer, mode)` extension trait (`EncodeExt`). `#[br(dbg)]` (a `tracing` event)
+      `encode(writer)` extension trait (`EncodeExt`). `#[br(dbg)]` (a `tracing` event)
       is `std`-only.
 - [ ] **Option B** (deferred) — an in-house `bnb::io` `Read`/`Write`/`Seek` abstraction
       to bring streaming I/O to `no_std` and unify the code path; revisit when an
@@ -147,8 +147,8 @@ passes with no breaking change needed.
 
 - [ ] Deliberate public-API review: trait shapes (`BitDecode`/`BitEncode`/`Source`/
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
-      `EncodeExt::encode(w, mode)` / `EncodeMode` ergonomics — commit only to what you'll keep.
-      Mark growth points `#[non_exhaustive]` (errors already are).
+      `EncodeExt::encode(w)` / settable `encode_mode` / `EncodeMode` ergonomics — commit only to
+      what you'll keep. Mark growth points `#[non_exhaustive]` (errors already are).
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
       cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the
@@ -205,13 +205,18 @@ passes with no breaking change needed.
         `calc`; always a valid, spec-compliant message. Generated whenever a struct has a `reserved`
         or non-`temp` `calc` field, alongside the in-memory helpers `to_canonical(self) -> Self` /
         `canonical_diff` / `is_canonical`.
-      - **Runtime mode on the writer:** `encode(w, mode: EncodeMode)` (`EncodeMode { Verbatim,
-        Canonical }`) dispatches to the verbatim/canonical bodies — the runtime counterpart to the
-        compile-time `to_bytes`/`to_canonical_bytes` choice. The canonical path is a **defaulted
-        method on `BitEncode`** (`canonical_bit_encode`, default = `bit_encode`), so there is **no
-        separate `CanonicalEncode`/`CanonicalEncodeExt` trait** — a single `EncodeExt::encode(w, mode)`
-        covers every message. Decided against `read`/`write` naming (collides with the `Source::read`/
-        `Sink::write` cursor layer) and against a `bool`/Vec-dispatcher.
+      - **Mode carried on the value:** a message with a `reserved`/`calc` field gains a settable,
+        wire-ignored `encode_mode` field (`EncodeMode { Verbatim, Canonical }`, default `Verbatim`)
+        — set via the builder's `.encode_mode(…)`, `set_encode_mode`/`with_encode_mode`; read via
+        `encode_mode()`. The std-writer `encode(w)` follows it (no `mode` parameter); `to_bytes`/
+        `to_canonical_bytes` stay explicit. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/
+        `Debug`** (a render preference, not data; `#[bin]` intercepts those derives), so these types
+        are **builder/`decode`-constructed** (the field can't appear in a literal). The canonical
+        path is a **defaulted method on `BitEncode`** (`canonical_bit_encode`, default = `bit_encode`),
+        so there is **no separate `CanonicalEncode`/`CanonicalEncodeExt` trait**. Decided against
+        `read`/`write` naming (collides with the `Source::read`/`Sink::write` cursor layer), against a
+        `bool`/Vec-dispatcher, and (after first shipping `encode(w, mode)`) against a call-time mode
+        parameter in favor of the carried field.
       - **No `encode_mixed`** — per-field selection is covered by the value-level `#[brw(ignore)]` idiom.
       - **No `decode_canonical`** — one permissive `decode()` (verbatim) stays; normalize-on-read loses
         dual-use info and validate-on-read would reject input (both anti-dual-use).

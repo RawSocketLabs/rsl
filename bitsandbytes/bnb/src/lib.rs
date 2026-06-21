@@ -82,7 +82,7 @@ ladder, with an opt-in `bytes` feature for async framing.
 
 - **`std`** *(default)* — the `std::io` ladder ([`StreamBitReader`], [`BufSource`],
   [`SeekReader`], [`Source::as_read`]/[`Sink::as_write`]), the `From<std::io::Error>`
-  bridge, and the `encode(writer, mode)` convenience ([`EncodeExt`]). The `#[br(dbg)]`
+  bridge, and the `encode(writer)` convenience ([`EncodeExt`]). The `#[br(dbg)]`
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 
@@ -170,7 +170,7 @@ pub use bitstream::{BytesReader, BytesWriter};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
 /// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the [`EncodeExt`] trait that
-/// carries `encode(writer, mode)` (the `std` feature).
+/// carries `encode(writer)` (the `std` feature).
 pub mod prelude {
     pub use crate::BitAmount;
     #[cfg(feature = "std")]

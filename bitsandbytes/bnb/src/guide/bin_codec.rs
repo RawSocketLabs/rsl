@@ -67,14 +67,16 @@
 //! | decode | `decode_from(&mut S)` | from an explicit [`Source`](crate::Source) (stream/socket/file) |
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
-//! | encode | `encode(&mut W, mode)` | encode to any [`std::io::Write`] in an [`EncodeMode`](crate::EncodeMode) |
+//! | encode | `encode(&mut W)` | encode to any [`std::io::Write`], following the value's `encode_mode` |
 //! | encode | `encode_into(&mut K)` | encode (verbatim) into an explicit [`Sink`](crate::Sink) |
 //! | build | `builder()` | the required-by-default builder |
+//! | build | `new(fields…)` | positional constructor — every stored field, in declaration order |
 //!
 //! `decode`/`peek`/`decode_exact`/`to_bytes` are the everyday slice/`Vec` path;
-//! `decode_from`/`encode(&mut W, mode)`/`encode_into` open the door to the
-//! [I/O ladder](super::io). († `to_canonical_bytes` and the canonical helpers exist only
-//! when the message has a `reserved` or `calc` field — see [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
+//! `decode_from`/`encode(&mut W)`/`encode_into` open the door to the
+//! [I/O ladder](super::io). († `to_canonical_bytes`, the canonical helpers, and the settable
+//! `encode_mode` exist only when the message has a `reserved` or `calc` field — see
+//! [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
 //!
 //! # Struct-level options
 //!
@@ -246,9 +248,18 @@
 //!
 //! Three helpers inspect or normalize the value **in memory**, without encoding:
 //! `is_canonical()`, `canonical_diff()` (the names of the fields that differ from canonical),
-//! and `to_canonical(self) -> Self`. And when the choice is a *runtime* value (a config flag,
-//! a CLI option), [`encode(&mut w, mode)`](crate::EncodeExt::encode) writes either form to any
-//! `std::io::Write`.
+//! and `to_canonical(self) -> Self`.
+//!
+//! ## The `encode_mode` field
+//!
+//! Such a message also carries a wire-ignored **`encode_mode`** (defaulting to `Verbatim`),
+//! settable via `set_encode_mode`/`with_encode_mode` or the builder's `.encode_mode(…)`, and
+//! readable with `encode_mode()`. The std-writer [`encode`](crate::EncodeExt::encode) follows
+//! it — so you set the policy once and stream the value without re-specifying. `to_bytes` /
+//! `to_canonical_bytes` ignore it (always verbatim / canonical). The mode is **excluded from
+//! `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render preference, not message data), and because
+//! the field can't appear in a struct literal, **construct these via the builder, `new(…)`, or
+//! `decode`** (every `#[bin]` type gets a positional `new(fields…)` over its stored fields).
 //!
 //! ```
 //! use bnb::{bin, EncodeExt, EncodeMode};
@@ -264,8 +275,8 @@
 //!     check: u8,                     // canonical value: tag ^ 0x5A
 //! }
 //!
-//! // A value a peer sent us with non-spec reserved bits and a stale checksum:
-//! let p = Packet { tag: 0x10, rsv: 0xFF, check: 0x99 };
+//! // A value a peer sent us with non-spec reserved bits and a stale checksum (builder-only):
+//! let p = Packet::builder().tag(0x10).rsv(0xFF).check(0x99).build().unwrap();
 //!
 //! // VERBATIM — exactly what's stored (so decode -> to_bytes round-trips):
 //! assert_eq!(p.to_bytes().unwrap(), [0x10, 0xFF, 0x99]);
@@ -277,10 +288,13 @@
 //! assert!(!p.is_canonical());
 //! assert_eq!(p.canonical_diff(), ["rsv", "check"]);
 //!
-//! // Choose the form at runtime when writing to a socket/file:
+//! // `encode(w)` follows the value's mode (default Verbatim); set it to stream canonical:
 //! let mut out: Vec<u8> = Vec::new();
-//! p.encode(&mut out, EncodeMode::Canonical).unwrap();
+//! p.clone().with_encode_mode(EncodeMode::Canonical).encode(&mut out).unwrap();
 //! assert_eq!(out, [0x10, 0x00, 0x4A]);
+//!
+//! // The mode never affects equality — a value differs from its re-moded self only in render:
+//! assert_eq!(p, p.clone().with_encode_mode(EncodeMode::Canonical));
 //! ```
 //!
 //! See [`directives`](super::directives) for every field directive, and
