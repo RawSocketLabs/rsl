@@ -69,8 +69,11 @@
 //!
 //! # Encoding
 //!
-//! `to_bytes()` is the common case; `encode(&mut impl Write)` goes straight to a
-//! socket or file, and `encode_into(&mut impl Sink)` targets an explicit bit sink.
+//! `to_bytes()` (the common case) returns a `Vec`; `encode(&mut impl Write, mode)` writes
+//! straight to a socket or file, and `encode_into(&mut impl Sink)` targets an explicit bit
+//! sink. The `mode` is an [`EncodeMode`](crate::EncodeMode) — **verbatim** (the stored bytes)
+//! or **canonical** (spec-normalized); see
+//! [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
 //!
 //! ```
 //! use bnb::bin;

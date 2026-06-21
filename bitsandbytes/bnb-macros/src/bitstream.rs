@@ -1398,12 +1398,16 @@ fn gen_encode(
         }
 
         impl #name {
-            #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
-            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
+            #[doc = "Encode to a `Vec<u8>`, **verbatim** — exactly what's stored, never silently"]
+            #[doc = "rewritten (so `decode` then `to_bytes` round-trips byte-for-byte). For the"]
+            #[doc = "spec-normalized form, use `to_canonical_bytes` (generated when the message has"]
+            #[doc = "a `reserved` or `calc` field). To write to a `std::io::Write` sink, bring"]
+            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call"]
+            #[doc = "`.encode(&mut w, bnb::EncodeMode::Verbatim)` (the `std` feature)."]
             pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                 #bnb::__private::encode_to_vec(self, #layout)
             }
-            #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
+            #[doc = "Encode (verbatim) into an explicit bit sink (a `BitWriter`)."]
             pub fn encode_into<K: #bnb::__private::Sink>(
                 &self,
                 __bnb_w: &mut K,

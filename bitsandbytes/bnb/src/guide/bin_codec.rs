@@ -65,13 +65,16 @@
 //! | decode | `decode(&mut &[u8])` | one message from the front; advances the slice |
 //! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation |
 //! | decode | `decode_from(&mut S)` | from an explicit [`Source`](crate::Source) (stream/socket/file) |
-//! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer |
-//! | encode | `encode(&mut W)` | encode to any [`std::io::Write`] |
-//! | encode | `encode_into(&mut K)` | encode into an explicit [`Sink`](crate::Sink) |
+//! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
+//! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
+//! | encode | `encode(&mut W, mode)` | encode to any [`std::io::Write`] in an [`EncodeMode`](crate::EncodeMode) |
+//! | encode | `encode_into(&mut K)` | encode (verbatim) into an explicit [`Sink`](crate::Sink) |
 //! | build | `builder()` | the required-by-default builder |
 //!
 //! `decode`/`peek`/`decode_exact`/`to_bytes` are the everyday slice/`Vec` path;
-//! `decode_from`/`encode_into` open the door to the [I/O ladder](super::io).
+//! `decode_from`/`encode(&mut W, mode)`/`encode_into` open the door to the
+//! [I/O ladder](super::io). († `to_canonical_bytes` and the canonical helpers exist only
+//! when the message has a `reserved` or `calc` field — see [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
 //!
 //! # Struct-level options
 //!
@@ -222,6 +225,62 @@
 //! let f = Frame::builder().payload(vec![0xDE, 0xAD, 0xBE, 0xEF]).build().unwrap();
 //! assert_eq!(f.to_bytes().unwrap(), [0xCA, 0xFE, 0x04, 0xDE, 0xAD, 0xBE, 0xEF]);
 //! assert_eq!(Frame::decode_exact(&[0xCA, 0xFE, 0x02, 0x01, 0x02]).unwrap().payload, vec![1, 2]);
+//! ```
+//!
+//! # Two encode forms: verbatim vs canonical
+//!
+//! A dual-use codec needs to do two opposite things: reproduce a message **exactly** (even a
+//! malformed one you parsed off the wire), and emit a **spec-clean** one. So `#[bin]` gives
+//! you both, and *never silently* picks for you:
+//!
+//! - **`to_bytes()` is verbatim** — it writes exactly what's stored. Retained `reserved` bits
+//!   stay, a stored `calc` value is written as-is. This is the faithful inverse of `decode`:
+//!   `decode` then `to_bytes` is byte-for-byte identical.
+//! - **`to_canonical_bytes()` is canonical** — `reserved` fields are written as their spec
+//!   value and `calc` fields are recomputed, so the result is always spec-compliant.
+//!
+//! The two differ only when a message has a `reserved` or non-`temp` `calc` field — so
+//! `to_canonical_bytes` (and the three helpers below) are generated **only then**; otherwise
+//! verbatim *is* canonical and only `to_bytes` exists. (`temp` + `calc` fields are never
+//! stored, so they always recompute — they don't create a verbatim/canonical gap.)
+//!
+//! Three helpers inspect or normalize the value **in memory**, without encoding:
+//! `is_canonical()`, `canonical_diff()` (the names of the fields that differ from canonical),
+//! and `to_canonical(self) -> Self`. And when the choice is a *runtime* value (a config flag,
+//! a CLI option), [`encode(&mut w, mode)`](crate::EncodeExt::encode) writes either form to any
+//! `std::io::Write`.
+//!
+//! ```
+//! use bnb::{bin, EncodeExt, EncodeMode};
+//!
+//! #[bin(big)]
+//! #[derive(Debug, Clone, PartialEq)]
+//! struct Packet {
+//!     tag: u8,
+//!     #[reserved]
+//!     rsv: u8,                       // spec value 0
+//!     #[bw(calc = self.tag ^ 0x5A)]
+//!     #[builder(default)]
+//!     check: u8,                     // canonical value: tag ^ 0x5A
+//! }
+//!
+//! // A value a peer sent us with non-spec reserved bits and a stale checksum:
+//! let p = Packet { tag: 0x10, rsv: 0xFF, check: 0x99 };
+//!
+//! // VERBATIM — exactly what's stored (so decode -> to_bytes round-trips):
+//! assert_eq!(p.to_bytes().unwrap(), [0x10, 0xFF, 0x99]);
+//!
+//! // CANONICAL — reserved -> 0, checksum recomputed (0x10 ^ 0x5A = 0x4A):
+//! assert_eq!(p.to_canonical_bytes().unwrap(), [0x10, 0x00, 0x4A]);
+//!
+//! // Inspect the gap without encoding:
+//! assert!(!p.is_canonical());
+//! assert_eq!(p.canonical_diff(), ["rsv", "check"]);
+//!
+//! // Choose the form at runtime when writing to a socket/file:
+//! let mut out: Vec<u8> = Vec::new();
+//! p.encode(&mut out, EncodeMode::Canonical).unwrap();
+//! assert_eq!(out, [0x10, 0x00, 0x4A]);
 //! ```
 //!
 //! See [`directives`](super::directives) for every field directive, and
