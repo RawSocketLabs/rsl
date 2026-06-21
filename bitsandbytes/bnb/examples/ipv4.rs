@@ -1,17 +1,17 @@
 //! **IPv4 header** — a real wire-format parser, end to end.
 //!
-//! One `#[bin]` message folds three `#[bitfield]`s and a `#[derive(BitEnum)]`, recomputes
-//! the header checksum on write (`calc`), and maps the raw address words to real
-//! `std::net::Ipv4Addr`s (`map`). It decodes a captured packet and logs exactly what came
-//! in and what it became, then builds a fresh header with the required-by-default
-//! **builder** — note we never supply a checksum; `#[builder(default)]` + `calc` fill it
-//! in on write — and logs the bytes that come out. It also shows two dual-use escape
-//! hatches: emitting a deliberately-wrong checksum (a `calc` passthrough toggled by a
-//! `#[brw(ignore)]` field), and an unknown protocol number preserved rather than rejected.
+//! One `#[bin]` message folds three `#[bitfield]`s and a `#[derive(BitEnum)]`, and maps the
+//! raw address words to real `std::net::Ipv4Addr`s (`map`). The header checksum is a `calc`
+//! field, which makes it the showcase for bnb's two encode paths:
+//!   * **`to_bytes()` is verbatim** — it writes exactly what's stored, so a decoded packet
+//!     round-trips byte-identically, and a deliberately-wrong checksum goes on the wire as-is
+//!     (dual-use);
+//!   * **`to_canonical_bytes()` is canonical** — it recomputes the checksum, so the result is
+//!     always valid.
 //!
-//! Output goes through **`tracing`** (a real logging facade), rendered by
-//! `tracing-subscriber`. The header types are `no_std`-portable (decode from `&[u8]`,
-//! encode to `Vec`); only this `main` needs `std`.
+//! It also uses the canonical helpers (`is_canonical`, `canonical_diff`, `to_canonical`) and
+//! shows an unknown protocol number preserved rather than rejected. Output goes through
+//! **`tracing`**. The header types are `no_std`-portable; only this `main` needs `std`.
 //!
 //! Run with: `cargo run -p bitsandbytes --example ipv4`
 
@@ -83,12 +83,11 @@ struct Ipv4Header {
     flags_frag: FlagsFrag,
     ttl: u8,
     protocol: Protocol,
-    // `calc` recomputes the checksum on every write (and `#[builder(default)]` means the
-    // builder never asks for it). The conditional opts into a **dual-use passthrough**:
-    // when `emit_raw_checksum` is set, write the stored `checksum` verbatim instead —
-    // e.g. to emit a deliberately-wrong packet. (`self.checksum` is the stored value
-    // because this field isn't `temp`.)
-    #[bw(calc = if self.emit_raw_checksum { self.checksum } else { self.header_checksum() })]
+    // A `calc` field: `to_bytes` writes the stored value verbatim, `to_canonical_bytes`
+    // recomputes it. `#[builder(default)]` means the builder never asks for it (canonicalize
+    // to fill it in). Having a non-`temp` `calc` field is what makes bnb generate
+    // `to_canonical_bytes` / `is_canonical` / `canonical_diff` / `to_canonical` for this type.
+    #[bw(calc = self.header_checksum())]
     #[builder(default)]
     checksum: u16,
     // The wire repr is a big-endian `u32`; `map` turns it into a real `Ipv4Addr`.
@@ -98,13 +97,6 @@ struct Ipv4Header {
     #[br(map = |raw: u32| Ipv4Addr::from(raw))]
     #[bw(map = |ip: &Ipv4Addr| u32::from(*ip))]
     dst: Ipv4Addr,
-    /// Encode-time switch, **not on the wire** (`#[brw(ignore)]`): when `true`, the
-    /// checksum `calc` above writes the stored value verbatim instead of recomputing —
-    /// the dual-use escape hatch for emitting a non-compliant packet on purpose.
-    /// `Default`s to `false` (recompute), including on decode.
-    #[brw(ignore)]
-    #[builder(default)]
-    emit_raw_checksum: bool,
 }
 
 impl Ipv4Header {
@@ -141,15 +133,19 @@ fn hex(bytes: &[u8]) -> String {
         .join(" ")
 }
 
+/// The checksum bytes (offset 10..12) of an encoded header.
+fn checksum_of(bytes: &[u8]) -> u16 {
+    u16::from_be_bytes([bytes[10], bytes[11]])
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // A real logging subscriber renders the `tracing` events below to stderr.
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
         .without_time()
         .init();
 
-    // ===== decode ===============================================================
+    // ===== decode (always verbatim) =============================================
     // The canonical RFC 791 / Wikipedia checksum example header (192.168.0.1 → .199, UDP).
     let wire: [u8; 20] = [
         0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0xb8, 0x61, 0xc0, 0xa8, 0x00,
@@ -158,33 +154,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(len = wire.len(), bytes = %hex(&wire), "decoding IPv4 header");
 
     let hdr = Ipv4Header::decode_exact(&wire)?;
-    let computed = hdr.header_checksum();
     info!(
+        // the bitfield `Debug` decomposes `ver_ihl`/`flags_frag` into logical fields
         version = %hdr.ver_ihl.version(),
         ihl = %hdr.ver_ihl.ihl(),
-        total_length = hdr.total_length,
-        id = hdr.identification,
-        df = hdr.flags_frag.dont_fragment(),
-        frag_offset = %hdr.flags_frag.fragment_offset(),
         ttl = hdr.ttl,
         protocol = ?hdr.protocol,
+        df = hdr.flags_frag.dont_fragment(),
         src = %hdr.src,
         dst = %hdr.dst,
         checksum = %format!("0x{:04x}", hdr.checksum),
-        checksum_valid = hdr.checksum == computed, // a stored field, so we can validate it
+        is_canonical = hdr.is_canonical(), // a valid packet is already canonical
         "decoded header",
     );
-    assert_eq!(hdr.checksum, computed);
+    assert!(hdr.is_canonical());
+    assert!(hdr.canonical_diff().is_empty());
 
-    // Re-encode the decoded header — byte-for-byte identical (proves the checksum math).
-    let reencoded = hdr.to_bytes()?;
-    info!(bytes = %hex(&reencoded), "re-encoded the decoded header (expect byte-identical)");
-    assert_eq!(reencoded, wire, "round-trip must be byte-identical");
+    // `to_bytes` is verbatim, so a decoded packet round-trips byte-for-byte.
+    let verbatim = hdr.to_bytes()?;
+    info!(bytes = %hex(&verbatim), "to_bytes (verbatim) → byte-identical to the input");
+    assert_eq!(verbatim, wire);
 
-    // ===== encode via the builder ===============================================
-    // Build a fresh TCP header. We never call `.checksum(...)` — it's `#[builder(default)]`
-    // and `calc` computes the real value on write.
-    let header = Ipv4Header::builder()
+    // ===== build + canonicalize =================================================
+    // The builder never sets a checksum (it's `#[builder(default)]`, so it defaults to 0).
+    let built = Ipv4Header::builder()
         .ver_ihl(
             VersionIhl::new()
                 .with_version(u4::new(4))
@@ -200,42 +193,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .dst(Ipv4Addr::new(10, 0, 0, 2))
         .build()?;
     info!(
-        protocol = ?header.protocol,
-        src = %header.src,
-        dst = %header.dst,
-        checksum = header.checksum, // 0 — we never set it
-        "header to write (checksum not set; calc will fill it)",
+        stored_checksum = built.checksum,            // 0 — never set
+        is_canonical = built.is_canonical(),         // false: 0 ≠ the real checksum
+        diff = ?built.canonical_diff(),              // ["checksum"]
+        "built a header (checksum unset)",
     );
+    assert!(!built.is_canonical());
 
-    let bytes = header.to_bytes()?;
-    let on_wire_checksum = u16::from_be_bytes([bytes[10], bytes[11]]);
+    // `to_canonical_bytes` recomputes the checksum, giving a valid packet on the wire.
+    let canonical = built.to_canonical_bytes()?;
     info!(
-        len = bytes.len(),
-        bytes = %hex(&bytes),
-        checksum = %format!("0x{on_wire_checksum:04x}"),
-        "encoded header (checksum auto-computed by calc)",
+        bytes = %hex(&canonical),
+        checksum = %format!("0x{:04x}", checksum_of(&canonical)),
+        "to_canonical_bytes → checksum filled in",
     );
 
-    // The packet we just wrote decodes back, and its checksum validates.
-    let parsed_back = Ipv4Header::decode_exact(&bytes)?;
-    assert_eq!(parsed_back.checksum, parsed_back.header_checksum());
-
-    // ===== dual-use: emit a deliberately-wrong checksum =========================
-    // Same header, but flip the `emit_raw_checksum` switch and stash a bogus checksum.
-    // `calc` then writes that stored value verbatim instead of recomputing — for
-    // replaying a captured packet exactly, or testing whether a peer validates checksums.
-    let mut tampered = header.clone();
-    tampered.checksum = 0xBAD0; // a wrong value we want on the wire
-    tampered.emit_raw_checksum = true; // opt into passthrough
-    let tampered_bytes = tampered.to_bytes()?;
-    let tampered_checksum = u16::from_be_bytes([tampered_bytes[10], tampered_bytes[11]]);
+    // ===== dual-use: verbatim vs canonical ======================================
+    // A header carrying a deliberately-wrong checksum. `to_bytes` emits it as-is (for
+    // replay / testing a peer); `to_canonical_bytes` corrects it. No special flag needed —
+    // the choice is which method you call.
+    let mut tampered = built.clone();
+    tampered.checksum = 0xBAD0;
+    let raw = tampered.to_bytes()?; // verbatim
+    let fixed = tampered.to_canonical_bytes()?; // canonical
     info!(
-        recomputed = %format!("0x{on_wire_checksum:04x}"),
-        passthrough = %format!("0x{tampered_checksum:04x}"),
-        "calc passthrough: default recomputes a correct checksum; emit_raw_checksum writes the stored value verbatim",
+        diff = ?tampered.canonical_diff(),
+        verbatim = %format!("0x{:04x}", checksum_of(&raw)),
+        canonical = %format!("0x{:04x}", checksum_of(&fixed)),
+        "to_bytes keeps 0xBAD0; to_canonical_bytes recomputes the real value",
     );
-    assert_ne!(on_wire_checksum, 0xBAD0); // default mode → recomputed, correct
-    assert_eq!(tampered_checksum, 0xBAD0); // passthrough → the bogus stored value reached the wire
+    assert_eq!(checksum_of(&raw), 0xBAD0);
+    assert_ne!(checksum_of(&fixed), 0xBAD0);
+    // `to_canonical()` is the same correction, in memory.
+    assert!(tampered.to_canonical().is_canonical());
 
     // ===== dual-use: an unknown protocol is preserved ===========================
     let mut exotic = wire;
