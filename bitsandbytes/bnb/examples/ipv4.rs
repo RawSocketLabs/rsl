@@ -15,7 +15,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example ipv4`
 
-use bnb::{BitEnum, bin, bitfield, u2, u4, u6, u13};
+use bnb::{BitEnum, EncodeExt, EncodeMode, bin, bitfield, u2, u4, u6, u13};
 use std::net::Ipv4Addr;
 use tracing::info;
 
@@ -225,7 +225,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(checksum_of(&raw), 0xBAD0);
     assert_ne!(checksum_of(&fixed), 0xBAD0);
     // `to_canonical()` is the same correction, in memory.
-    assert!(tampered.to_canonical().is_canonical());
+    assert!(tampered.clone().to_canonical().is_canonical());
+
+    // ===== runtime mode selection: encode(w, mode) ==============================
+    // When verbatim-vs-canonical is a *runtime* value (a config flag, a CLI option),
+    // `encode(w, mode)` writes straight to any std::io::Write — here a Vec standing in
+    // for a socket. (`to_bytes`/`to_canonical_bytes` are the compile-time form.)
+    for mode in [EncodeMode::Verbatim, EncodeMode::Canonical] {
+        let mut socket: Vec<u8> = Vec::new();
+        tampered.encode(&mut socket, mode)?;
+        info!(?mode, checksum = %format!("0x{:04x}", checksum_of(&socket)), "encode(w, mode)");
+    }
 
     // ===== dual-use: an unknown protocol is preserved ===========================
     let mut exotic = wire;

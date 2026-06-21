@@ -1263,8 +1263,8 @@ fn gen_encode(
         .iter()
         .zip(&brs)
         .any(|(f, br)| field_is_reserved(f) || (br.calc.is_some() && !br.temp));
-    let canonical_encode = if !has_canonical {
-        quote!()
+    let (canonical_method, canonical_inherent) = if !has_canonical {
+        (quote!(), quote!())
     } else {
         let writes_canonical = fields
             .named
@@ -1303,29 +1303,29 @@ fn gen_encode(
             }
         }
 
-        quote! {
-            impl #bnb::CanonicalEncode for #name {
-                const CANONICAL_LAYOUT: #bnb::Layout = #layout;
-                fn canonical_bit_encode<K: #bnb::__private::Sink>(
-                    &self,
-                    __bnb_w: &mut K,
-                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    #magic_write
-                    #(#writes_canonical)*
-                    ::core::result::Result::Ok(())
-                }
+        // Overrides `BitEncode`'s default (verbatim) `canonical_bit_encode`.
+        let method = quote! {
+            fn canonical_bit_encode<K: #bnb::__private::Sink>(
+                &self,
+                __bnb_w: &mut K,
+            ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                #magic_write
+                #(#writes_canonical)*
+                ::core::result::Result::Ok(())
             }
+        };
+        let inherent = quote! {
             impl #name {
                 #[doc = "Encode the **canonical** form to a `Vec<u8>`: reserved fields written as their"]
                 #[doc = "spec value and `calc` fields recomputed (ignoring the stored values), so the"]
                 #[doc = "result is always spec-compliant. (`to_bytes` is verbatim — it writes exactly"]
                 #[doc = "what is stored.) For a `std::io::Write` sink, bring"]
-                #[doc = "[`CanonicalEncodeExt`](::bnb::CanonicalEncodeExt) into scope and call"]
-                #[doc = "`.encode_canonical(&mut w)` (the `std` feature)."]
+                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call"]
+                #[doc = "`.encode(&mut w, bnb::EncodeMode::Canonical)` (the `std` feature)."]
                 pub fn to_canonical_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec_with(
                         #layout,
-                        |__bnb_w| <Self as #bnb::CanonicalEncode>::canonical_bit_encode(self, __bnb_w),
+                        |__bnb_w| <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w),
                     )
                 }
                 #[doc = "Encode the canonical form into an explicit bit sink."]
@@ -1333,7 +1333,7 @@ fn gen_encode(
                     &self,
                     __bnb_w: &mut K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    <Self as #bnb::CanonicalEncode>::canonical_bit_encode(self, __bnb_w)
+                    <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w)
                 }
 
                 #[doc = "The **canonical form in memory**: a copy with reserved fields set to their"]
@@ -1358,7 +1358,8 @@ fn gen_encode(
                     self.canonical_diff().is_empty()
                 }
             }
-        }
+        };
+        (method, inherent)
     };
 
     // A `ctx` type whose encode does *not* read context still impls `EncodeWith` (ignoring
@@ -1393,6 +1394,7 @@ fn gen_encode(
                 #(#writes)*
                 ::core::result::Result::Ok(())
             }
+            #canonical_method
         }
 
         impl #name {
@@ -1410,7 +1412,7 @@ fn gen_encode(
             }
         }
         #encode_with_trait
-        #canonical_encode
+        #canonical_inherent
     })
 }
 

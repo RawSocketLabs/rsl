@@ -130,24 +130,27 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   (If the package is ever renamed, update the `"bitsandbytes"` string in `bnb_path`.)
 - Gate behind `#[cfg(feature = "std")]`: the reader/writer adapters (`StreamBitReader`/
   `BufSource`/`SeekReader`/`SourceReader`/`SinkWriter`, `as_read`/`as_write`),
-  `encode_to_writer*`, `From<std::io::Error>`, and `ErrorKind::Io`.
-- **Two encode paths — verbatim vs canonical.** `to_bytes`/`encode` are **verbatim**: they
-  emit exactly what's stored (retained `reserved`, stored non-`temp` `calc`) — never
-  silently rewriting the caller's bytes, and `decode → to_bytes` is byte-identical.
-  `to_canonical_bytes`/`encode_canonical` are **canonical**: reserved → spec value, `calc`
-  → recomputed, so the result is always spec-compliant. The canonical impl is generated
-  only when a message has a `reserved` or non-`temp` `calc` field (else the two are
-  identical). There is **no canonical decode** — `decode_*` is always verbatim. The same
-  condition also generates the in-memory helpers `to_canonical(self) -> Self`,
-  `canonical_diff(&self) -> Vec<&'static str>` (fields differing from canonical), and
-  `is_canonical(&self) -> bool`.
-- `encode(writer)`/`encode_canonical(writer)` are **`std`-gated blanket extension traits**
-  (`EncodeExt: BitEncode` / `CanonicalEncodeExt: CanonicalEncode`), **not** generated inherent
-  methods — a proc-macro can't see the consumer's features, so a generated
-  `#[cfg(feature="std")]` would key off the *wrong* crate's flag. The generated code
-  emits `to_bytes`/`encode_into`/`to_canonical_bytes`/`canonical_encode_into` (inherent,
-  portable) plus `impl BitEncode { const LAYOUT }` and `impl CanonicalEncode` (the ext
-  traits read `LAYOUT`/`CANONICAL_LAYOUT`). Call sites need `use bnb::prelude::*`.
+  `encode_to_writer_with`, `From<std::io::Error>`, and `ErrorKind::Io`.
+- **Two encode forms — verbatim vs canonical** ([`EncodeMode`]). `to_bytes` and `bit_encode`
+  are **verbatim**: they emit exactly what's stored (retained `reserved`, stored non-`temp`
+  `calc`) — never silently rewriting the caller's bytes, and `decode → to_bytes` is
+  byte-identical. `to_canonical_bytes` and `canonical_bit_encode` are **canonical**: reserved
+  → spec value, `calc` → recomputed, so the result is always spec-compliant. `canonical_bit_encode`
+  is a **defaulted method on `BitEncode`** (`fn canonical_bit_encode(..) { self.bit_encode(..) }`),
+  overridden by the derive **only** when a message has a `reserved` or non-`temp` `calc` field
+  (else verbatim == canonical) — there is no separate `CanonicalEncode` trait. There is **no
+  canonical decode** — `decode_*` is always verbatim. The same `reserved`/`calc` condition also
+  generates the inherent `to_canonical_bytes`/`canonical_encode_into` plus the in-memory helpers
+  `to_canonical(self) -> Self`, `canonical_diff(&self) -> Vec<&'static str>` (fields differing
+  from canonical), and `is_canonical(&self) -> bool`.
+- **Runtime mode selection lives on the writer:** `encode(writer, mode: EncodeMode)` (the
+  `std`-gated blanket ext trait `EncodeExt: BitEncode`) dispatches to `bit_encode` vs
+  `canonical_bit_encode`. It's an ext trait — **not** a generated inherent method — because a
+  proc-macro can't see the consumer's features, so a generated `#[cfg(feature="std")]` would key
+  off the *wrong* crate's flag. The generated code emits `to_bytes`/`encode_into`/
+  `to_canonical_bytes`/`canonical_encode_into` (inherent, portable) plus `impl BitEncode { const
+  LAYOUT; fn bit_encode; [fn canonical_bit_encode when reserved/calc] }`. Call sites bring the ext
+  method into scope with `use bnb::prelude::*` (or `use bnb::EncodeExt`).
 - `#[br(dbg)]` is `std`-only (`tracing` is an optional dep enabled by `std`); the
   `__private::tracing` re-export is `std`-gated.
 

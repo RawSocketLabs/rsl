@@ -75,8 +75,8 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       building `bnb/nostd-check` for `thumbv7em-none-eabi`.
 - [x] `std` gates the `std::io` ladder (`StreamBitReader`/`BufSource`/`SeekReader`,
       `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
-      `encode(writer)`/`encode_canonical(writer)` extension traits (`EncodeExt`/`CanonicalEncodeExt`).
-      `#[br(dbg)]` (a `tracing` event) is `std`-only.
+      `encode(writer, mode)` extension trait (`EncodeExt`). `#[br(dbg)]` (a `tracing` event)
+      is `std`-only.
 - [ ] **Option B** (deferred) — an in-house `bnb::io` `Read`/`Write`/`Seek` abstraction
       to bring streaming I/O to `no_std` and unify the code path; revisit when an
       embedded byte-stream transport (TCP/serial) needs it.
@@ -147,8 +147,8 @@ passes with no breaking change needed.
 
 - [ ] Deliberate public-API review: trait shapes (`BitDecode`/`BitEncode`/`Source`/
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
-      `EncodeExt`/`CanonicalEncodeExt` ergonomics — commit only to what you'll keep. Mark
-      growth points `#[non_exhaustive]` (errors already are).
+      `EncodeExt::encode(w, mode)` / `EncodeMode` ergonomics — commit only to what you'll keep.
+      Mark growth points `#[non_exhaustive]` (errors already are).
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
       cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the
@@ -194,26 +194,27 @@ passes with no breaking change needed.
       error is gone). Proof: `bin_macro.rs::fields_named_r_and_w_roundtrip`.
 - [ ] **Option B (no_std streaming I/O)** — a 1.0 requirement, or explicit post-1.0
       (additive)? Document the boundary either way so it's an expectation, not a surprise.
-- [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(decided; implementation
-      pending)*. Today `to_bytes` is an inconsistent hybrid (retains `reserved` but recomputes
-      `calc`). **Decision:**
-      - **`to_bytes()` / `encode(w)` = verbatim** — emit exactly what's stored (retained `reserved`
-        + stored non-`temp` `calc`). Matches the `to_bytes`/`as_bytes` ecosystem idiom, is
-        dual-use-honest ("never silently rewrite what you gave me"), and restores a byte-identical
-        `decode → to_bytes` round-trip as the default. (`temp`+`calc` fields are never stored, so
-        they always recompute.)
-      - **`to_canonical_bytes()` / `encode_canonical(w)` = canonical** — normalize `reserved` to its
-        spec value, recompute `calc`; always a valid, spec-compliant message. This *renames* today's
-        `to_spec_bytes`/`spec_encode` (`SpecEncode` → `CanonicalEncode`) and additionally generates
-        it whenever a struct has a non-`temp` `calc` (not just `reserved`).
-      - **No `encode_mixed`** — per-field selection is already covered by the value-level
-        `#[brw(ignore)]` flag idiom.
-      - **No `decode_canonical`** — one permissive `decode()` (verbatim) stays; normalize-on-read
-        loses dual-use info and validate-on-read would reject input (both anti-dual-use). In-memory
-        canonicalization, if ever wanted, is an explicit `to_canonical(self) -> Self` helper.
-      Breaking (the only behavior change is non-`temp` `calc` in `to_bytes`: recompute → stored;
-      blast radius is essentially just `examples/ipv4.rs`) — do on `0.x`. Subsumes the old
-      `encode(writer)` ergonomics item.
+- [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(done — E1–E3 plus the
+      runtime `EncodeMode`)*. `to_bytes` used to be an inconsistent hybrid (retained `reserved` but
+      recomputed `calc`). **Shipped:**
+      - **`to_bytes()` = verbatim** — emit exactly what's stored (retained `reserved` + stored
+        non-`temp` `calc`). Matches the `to_bytes`/`as_bytes` ecosystem idiom, is dual-use-honest
+        ("never silently rewrite what you gave me"), and restores a byte-identical `decode → to_bytes`
+        round-trip as the default. (`temp`+`calc` fields are never stored, so they always recompute.)
+      - **`to_canonical_bytes()` = canonical** — normalize `reserved` to its spec value, recompute
+        `calc`; always a valid, spec-compliant message. Generated whenever a struct has a `reserved`
+        or non-`temp` `calc` field, alongside the in-memory helpers `to_canonical(self) -> Self` /
+        `canonical_diff` / `is_canonical`.
+      - **Runtime mode on the writer:** `encode(w, mode: EncodeMode)` (`EncodeMode { Verbatim,
+        Canonical }`) dispatches to the verbatim/canonical bodies — the runtime counterpart to the
+        compile-time `to_bytes`/`to_canonical_bytes` choice. The canonical path is a **defaulted
+        method on `BitEncode`** (`canonical_bit_encode`, default = `bit_encode`), so there is **no
+        separate `CanonicalEncode`/`CanonicalEncodeExt` trait** — a single `EncodeExt::encode(w, mode)`
+        covers every message. Decided against `read`/`write` naming (collides with the `Source::read`/
+        `Sink::write` cursor layer) and against a `bool`/Vec-dispatcher.
+      - **No `encode_mixed`** — per-field selection is covered by the value-level `#[brw(ignore)]` idiom.
+      - **No `decode_canonical`** — one permissive `decode()` (verbatim) stays; normalize-on-read loses
+        dual-use info and validate-on-read would reject input (both anti-dual-use).
 - [x] **Bitfield `Debug`** *(done)* — `#[bitfield]` intercepts a `#[derive(Debug)]` and emits a
       custom impl decomposing the **logical** fields (`version: u4(4), ihl: u4(5)`) instead of
       the opaque backing int (`{ value: 69 }`); bitfields nested in `#[bin]` structs inherit it.

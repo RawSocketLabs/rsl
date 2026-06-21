@@ -82,9 +82,8 @@ ladder, with an opt-in `bytes` feature for async framing.
 
 - **`std`** *(default)* — the `std::io` ladder ([`StreamBitReader`], [`BufSource`],
   [`SeekReader`], [`Source::as_read`]/[`Sink::as_write`]), the `From<std::io::Error>`
-  bridge, and the `encode(writer)`/`encode_canonical(writer)` conveniences ([`EncodeExt`]/
-  [`CanonicalEncodeExt`]). The `#[br(dbg)]` directive (which emits a `tracing` event) is
-  also `std`-only.
+  bridge, and the `encode(writer, mode)` convenience ([`EncodeExt`]). The `#[br(dbg)]`
+  directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
@@ -155,7 +154,7 @@ pub mod guide;
 pub mod int;
 
 pub use bitstream::{
-    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, CanonicalEncode, DecodeWith,
+    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, DecodeWith, EncodeMode,
     EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
 };
 
@@ -163,21 +162,19 @@ pub use bitstream::{
 /// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
 /// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_canonical_bytes`).
 #[cfg(feature = "std")]
-pub use bitstream::{
-    BufSource, CanonicalEncodeExt, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader,
-};
+pub use bitstream::{BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader};
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
 #[cfg(feature = "bytes")]
 pub use bitstream::{BytesReader, BytesWriter};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
-/// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the encode extension
-/// traits that carry `encode(writer)`/`encode_canonical(writer)` (the `std` feature).
+/// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the [`EncodeExt`] trait that
+/// carries `encode(writer, mode)` (the `std` feature).
 pub mod prelude {
     pub use crate::BitAmount;
     #[cfg(feature = "std")]
-    pub use crate::{CanonicalEncodeExt, EncodeExt};
+    pub use crate::EncodeExt;
 }
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};
@@ -196,6 +193,9 @@ pub trait BitEnum: Bits {}
 /// Implementation details referenced by macro-generated code. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
+    /// The `std::io::Write`-based encode helpers, behind the `std` feature.
+    #[cfg(feature = "std")]
+    pub use crate::bitstream::encode_to_writer_with;
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, SeekSource,
         Sink, Source, align_read, align_write, bits_of, decode_consume, decode_exact,
@@ -203,9 +203,6 @@ pub mod __private {
         peek_bytes, read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write,
         verify_magic, write_byte_array, write_mapped,
     };
-    /// The `std::io::Write`-based encode helpers, behind the `std` feature.
-    #[cfg(feature = "std")]
-    pub use crate::bitstream::{encode_to_writer, encode_to_writer_with};
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
     /// Owned-collection re-exports so macro-generated code names neither `std` nor

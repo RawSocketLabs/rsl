@@ -197,7 +197,7 @@ e.g. DNS name-compression pointer following).
 be a different crate, not a feature. The default-on **`std`** feature adds only the
 rows of the table above that are backed by `std::io` (`StreamBitReader`/`BufSource`/
 `SeekReader`, the `as_read`/`as_write` views), the `From<std::io::Error>` bridge +
-`ErrorKind::Io`, and the `encode(writer)`/`encode_canonical(writer)` conveniences. The
+`ErrorKind::Io`, and the `encode(writer, mode)` convenience. The
 forward-only/seekable distinction is unchanged; `no_std` simply has fewer `Source`
 implementations to feed `decode_from` (the in-memory `BitReader`, and `BytesReader`
 under `bytes`).
@@ -208,13 +208,17 @@ its transport. This fits the workspace's datagram-oriented protocols (a UDP/ICMP
 packet arrives whole) and keeps the change small and dependency-light. Two consequences
 fall out of *a proc-macro cannot see the consumer crate's feature flags*:
 
-- **`encode(writer)` is a blanket extension trait, not a generated inherent method.**
-  `EncodeExt`/`CanonicalEncodeExt` are `std`-gated and blanket-implemented over
-  `BitEncode`/`CanonicalEncode`, so they appear exactly when `bnb/std` is on — whereas a
-  `#[cfg(feature = "std")]` emitted into a generated method would key off the *user
-  crate's* feature name and silently vanish for a default `cargo add bnb`. Cost: callers
-  bring the trait into scope (`use bnb::prelude::*`). `to_bytes`/`encode_into` stay
-  inherent (no import), so the common path is unaffected.
+- **`encode(writer, mode)` is a blanket extension trait, not a generated inherent method.**
+  The single `EncodeExt` is `std`-gated and blanket-implemented over `BitEncode`, so it
+  appears exactly when `bnb/std` is on — whereas a `#[cfg(feature = "std")]` emitted into a
+  generated method would key off the *user crate's* feature name and silently vanish for a
+  default `cargo add bnb`. It takes an [`EncodeMode`] (`Verbatim`/`Canonical`) and dispatches
+  to `bit_encode` vs `canonical_bit_encode` — the runtime counterpart to choosing
+  `to_bytes`/`to_canonical_bytes` at compile time. The canonical path is a **defaulted method
+  on `BitEncode`** (no separate `CanonicalEncode` trait), so `encode(.., Canonical)` works for
+  every message — for one without `reserved`/`calc`, the default makes it identical to
+  verbatim. Cost: callers bring the trait into scope (`use bnb::prelude::*`). `to_bytes`/
+  `to_canonical_bytes`/`encode_into` stay inherent (no import), so the common path is unaffected.
 - **`BitEncode` carries `const LAYOUT`** so the blanket `encode` can build a correctly
   ordered `BitWriter` without the per-type layout literal the old inherent method had.
 - **`#[br(dbg)]` is `std`-only.** It emits a `tracing` event, and `tracing`'s default

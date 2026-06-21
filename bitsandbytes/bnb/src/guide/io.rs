@@ -74,13 +74,13 @@
 //!
 //! ```
 //! use bnb::bin;
-//! use bnb::EncodeExt;   // brings `.encode(&mut impl Write)` into scope (the `std` feature)
+//! use bnb::{EncodeExt, EncodeMode}; // `.encode(&mut impl Write, mode)` (the `std` feature)
 //! # #[bin(big)] #[derive(Debug, PartialEq)] struct Word { value: u32 }
 //! let w = Word { value: 0x1234_5678 };
 //! assert_eq!(w.to_bytes().unwrap(), [0x12, 0x34, 0x56, 0x78]);
 //!
 //! let mut out: Vec<u8> = Vec::new();   // any std::io::Write
-//! w.encode(&mut out).unwrap();
+//! w.encode(&mut out, EncodeMode::Verbatim).unwrap();
 //! assert_eq!(out, [0x12, 0x34, 0x56, 0x78]);
 //! ```
 //!

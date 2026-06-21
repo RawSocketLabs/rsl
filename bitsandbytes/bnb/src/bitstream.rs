@@ -991,7 +991,26 @@ pub trait FixedBitLen {
     const BIT_LEN: u32;
 }
 
+/// Which form [`EncodeExt::encode`] (and the `encode_into` family) writes — the runtime
+/// counterpart to choosing `to_bytes` vs `to_canonical_bytes` at compile time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EncodeMode {
+    /// **Verbatim** — write exactly what's stored (retained `reserved` bits, the stored
+    /// value of a `calc` field). Never silently rewrites the caller's data, and is the
+    /// faithful dual of `decode`.
+    Verbatim,
+    /// **Canonical** — `reserved` fields written as their spec value and `calc` fields
+    /// recomputed, so the result is always spec-compliant.
+    Canonical,
+}
+
 /// A message encoded to a bit stream — the dual of [`BitDecode`].
+///
+/// Encoding has two forms (see [`EncodeMode`]): the required [`bit_encode`](Self::bit_encode)
+/// is **verbatim** (exactly what's stored), and [`canonical_bit_encode`](Self::canonical_bit_encode)
+/// is **canonical** (`reserved` → spec value, `calc` → recomputed). The default canonical
+/// impl just calls `bit_encode`, so the two are identical unless a `#[bin]` message has a
+/// `reserved` or non-`temp` `calc` field — in which case the derive overrides it.
 pub trait BitEncode {
     /// The message's bit/byte order, used to size a fresh [`BitWriter`] when
     /// encoding to a `Vec`/writer. The derive sets it from the struct's declared
@@ -1002,75 +1021,52 @@ pub trait BitEncode {
         byte: ByteOrder::Big,
     };
 
-    /// Encodes `self` into any [`Sink`], advancing its cursor.
+    /// Encodes `self` **verbatim** into any [`Sink`], advancing its cursor.
     ///
     /// # Errors
     /// Propagates the sink's [`BitError`].
     fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
+
+    /// Encodes `self`'s **canonical** form into any [`Sink`]: `reserved` fields as their
+    /// spec value, `calc` fields recomputed. Defaults to [`bit_encode`](Self::bit_encode)
+    /// (verbatim == canonical) for messages with no `reserved`/`calc` field.
+    ///
+    /// # Errors
+    /// Propagates the sink's [`BitError`].
+    fn canonical_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
+        self.bit_encode(w)
+    }
 }
 
-/// `encode(writer)` for any [`BitEncode`] message — encodes to a `Vec` (using the
-/// type's [`LAYOUT`](BitEncode::LAYOUT)) and writes it to a [`std::io::Write`]
-/// sink. A blanket-implemented extension trait, so bring it into scope
-/// (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w)`.
-/// Only available with the `std` feature; in `no_std` use [`BitEncode`]'s
-/// generated `to_bytes`/`encode_into`.
+/// `encode(writer, mode)` for any [`BitEncode`] message — encodes to a `Vec` (using the
+/// type's [`LAYOUT`](BitEncode::LAYOUT)) in the chosen [`EncodeMode`] and writes it to a
+/// [`std::io::Write`] sink. A blanket-implemented extension trait, so bring it into scope
+/// (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w, mode)`. Only
+/// with the `std` feature; in `no_std` use the generated `to_bytes`/`to_canonical_bytes`/
+/// `encode_into`.
 #[cfg(feature = "std")]
 pub trait EncodeExt: BitEncode {
-    /// Encodes `self` to any [`std::io::Write`] (socket, file, `Vec`).
+    /// Encodes `self` to any [`std::io::Write`] (socket, file, `Vec`) in `mode`.
     ///
     /// # Errors
     /// [`ErrorKind::Io`] on a write failure, else the encode error.
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
+    fn encode<W: std::io::Write>(&self, w: &mut W, mode: EncodeMode) -> Result<(), BitError>
     where
         Self: Sized,
     {
-        encode_to_writer(self, w, Self::LAYOUT)
+        match mode {
+            EncodeMode::Verbatim => {
+                encode_to_writer_with(w, Self::LAYOUT, |bw| self.bit_encode(bw))
+            }
+            EncodeMode::Canonical => {
+                encode_to_writer_with(w, Self::LAYOUT, |bw| self.canonical_bit_encode(bw))
+            }
+        }
     }
 }
 
 #[cfg(feature = "std")]
 impl<T: BitEncode> EncodeExt for T {}
-
-/// The **canonical** encode path — reserved fields written as their spec value and `calc`
-/// fields recomputed (ignoring the stored values), so the result is always spec-compliant.
-/// Generated for a `#[bin]` message that has a `reserved` or non-`temp` `calc` field (where
-/// it would differ from the verbatim [`BitEncode`]). The inherent `to_canonical_bytes` /
-/// `canonical_encode_into` ride on this; the `std`-only [`CanonicalEncodeExt`] adds
-/// `encode_canonical(writer)`. The verbatim counterpart is [`BitEncode`]/`to_bytes`.
-pub trait CanonicalEncode {
-    /// The message's bit/byte order (mirrors [`BitEncode::LAYOUT`]).
-    const CANONICAL_LAYOUT: Layout;
-
-    /// Encodes `self`'s canonical form into a [`Sink`]: reserved fields as their spec
-    /// value, `calc` fields recomputed (ignoring the stored values).
-    ///
-    /// # Errors
-    /// Propagates the sink's [`BitError`].
-    fn canonical_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
-}
-
-/// `encode_canonical(writer)` for any [`CanonicalEncode`] message — the canonical dual of
-/// [`EncodeExt`]. Blanket-implemented; bring it into scope to call it. Only with the `std`
-/// feature; in `no_std` use the generated `to_canonical_bytes`.
-#[cfg(feature = "std")]
-pub trait CanonicalEncodeExt: CanonicalEncode {
-    /// Encodes `self`'s canonical form to any [`std::io::Write`].
-    ///
-    /// # Errors
-    /// [`ErrorKind::Io`] on a write failure, else the encode error.
-    fn encode_canonical<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
-    where
-        Self: Sized,
-    {
-        encode_to_writer_with(w, Self::CANONICAL_LAYOUT, |bw| {
-            self.canonical_bit_encode(bw)
-        })
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: CanonicalEncode> CanonicalEncodeExt for T {}
 
 /// Polymorphic decode **with context** `A` — the companion to a `#[bin(ctx(...))]`
 /// type's inherent `decode_with`, for hand-written generic combinators and
@@ -1235,22 +1231,9 @@ pub fn encode_to_vec<T: BitEncode>(value: &T, layout: Layout) -> Result<Vec<u8>,
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the encode error.
-#[cfg(feature = "std")]
-#[doc(hidden)]
-pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
-    value: &T,
-    w: &mut W,
-    layout: Layout,
-) -> Result<(), BitError> {
-    let mut bw = BitWriter::with_layout(layout);
-    value.bit_encode(&mut bw)?;
-    let at = bw.bit_len();
-    w.write_all(&bw.into_bytes())
-        .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), at))
-}
-
-/// `encode_to_writer` over a caller-supplied encode closure — backs
-/// [`CanonicalEncodeExt::encode_canonical`] (whose write body differs from `bit_encode`).
+/// Encode to a [`std::io::Write`] over a caller-supplied encode closure — backs
+/// [`EncodeExt::encode`] in either [`EncodeMode`] (the closure picks `bit_encode` vs
+/// `canonical_bit_encode`).
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the closure's error.

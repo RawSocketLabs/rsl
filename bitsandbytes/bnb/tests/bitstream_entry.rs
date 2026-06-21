@@ -2,7 +2,9 @@
 //! `decode_from` + `encode`/`to_bytes`/`encode_into`, with the `Incomplete`
 //! (streaming) and `TrailingBytes` (strict) signals.
 
-use bnb::{BitDecode, BitEncode, BitReader, EncodeExt, ErrorKind, StreamBitReader, u4, u12};
+use bnb::{
+    BitDecode, BitEncode, BitReader, EncodeExt, EncodeMode, ErrorKind, StreamBitReader, u4, u12,
+};
 use std::io::Cursor;
 
 #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
@@ -70,7 +72,7 @@ fn decode_exact_rejects_trailing_bytes() {
 fn encode_to_any_write() {
     let (w, bytes) = sample();
     let mut sink = Cursor::new(Vec::new());
-    w.encode(&mut sink).unwrap();
+    w.encode(&mut sink, EncodeMode::Verbatim).unwrap();
     assert_eq!(sink.into_inner(), bytes);
 }
 
@@ -86,7 +88,7 @@ fn encode_io_error_is_reported() {
         }
     }
     let (w, _) = sample();
-    let err = w.encode(&mut Full).unwrap_err();
+    let err = w.encode(&mut Full, EncodeMode::Verbatim).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Io(std::io::ErrorKind::WriteZero));
 }
 

@@ -4,7 +4,7 @@
 //!   * `canonical_diff(&self) -> Vec<&'static str>` — names of fields that aren't canonical;
 //!   * `is_canonical(&self) -> bool`.
 
-use bnb::{bin, u4};
+use bnb::{EncodeExt, EncodeMode, bin, u4};
 
 #[bin(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,4 +64,26 @@ fn an_already_canonical_value_has_no_diff() {
     let c = m.to_canonical();
     assert!(c.is_canonical());
     assert_eq!(c.check, 0x21);
+}
+
+#[test]
+fn encode_writer_dispatches_on_mode() {
+    // The std-writer `encode(w, mode)` picks the same bytes as the inherent Vec methods.
+    let m = Msg {
+        tag: u4::new(0xA),
+        rsv: u4::new(0xF),
+        check: 0x99,
+        payload: 0x10,
+    };
+
+    let mut verbatim = Vec::new();
+    m.encode(&mut verbatim, EncodeMode::Verbatim).unwrap();
+    assert_eq!(verbatim, m.to_bytes().unwrap());
+
+    let mut canonical = Vec::new();
+    m.encode(&mut canonical, EncodeMode::Canonical).unwrap();
+    assert_eq!(canonical, m.to_canonical_bytes().unwrap());
+
+    // The two modes differ here (reserved + a stale calc), confirming real dispatch.
+    assert_ne!(verbatim, canonical);
 }

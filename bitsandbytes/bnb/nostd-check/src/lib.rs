@@ -3,7 +3,7 @@
 //! Built for a bare-metal target with `bnb`'s `std` feature **off**, this proves
 //! the runtime *and* the macro-generated code use only `core` + `alloc` — no
 //! accidental `std` linkage. It exercises every generated path that used to emit
-//! `::std::…`: a `magic` constant, a `reserved` field (the `CanonicalEncode` path), a
+//! `::std::…`: a `magic` constant, a `reserved` field (the canonical encode path), a
 //! `count`-driven `Vec` payload, a `#[bitfield]`, and a closed `BitEnum`'s checked
 //! `TryFrom` (the `UnknownDiscriminant`/`String` path).
 //!
@@ -59,7 +59,7 @@ pub fn build(frame: &Frame) -> Result<Vec<u8>, BitError> {
     frame.to_bytes()
 }
 
-/// The spec-value encode path (reserved fields as spec) — exercises `CanonicalEncode`.
+/// The spec-value encode path (reserved fields as spec) — exercises the canonical encode path (`to_canonical_bytes`).
 pub fn build_spec(frame: &Frame) -> Result<Vec<u8>, BitError> {
     frame.to_canonical_bytes()
 }
