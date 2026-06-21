@@ -32,6 +32,9 @@ proc-macro-crate = "3"
 trybuild = "1.0"
 proptest = "1"
 criterion = "0.5"
+# A tracing subscriber for the examples (real logging instead of `println!`). Minimal
+# features to keep the dependency tree small under the strict `multiple-versions` deny.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 # The crates `bnb` collapses — used *only* in benches to substantiate the perf claims.
 bitbybit = "1.3"
 arbitrary-int = "1.3"

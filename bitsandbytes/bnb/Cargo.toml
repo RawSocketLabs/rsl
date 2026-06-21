@@ -50,6 +50,11 @@ std = ["dep:tracing"]
 bytes = ["dep:bytes", "std"]
 
 [dev-dependencies]
+# Real logging in the examples (instead of `println!`). `tracing` is also an optional
+# runtime dep (the `std` feature, for `#[br(dbg)]`); as a dev-dep it's always available
+# to examples, and `tracing-subscriber` renders the events.
+tracing.workspace = true
+tracing-subscriber.workspace = true
 # Compile-fail UI tests: assert that `#[bin]`/`#[bitfield]` misuse is rejected with
 # a clear, well-spanned error. Regenerate snapshots with `TRYBUILD=overwrite`.
 trybuild.workspace = true

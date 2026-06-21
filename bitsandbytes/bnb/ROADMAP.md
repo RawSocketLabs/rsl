@@ -194,7 +194,37 @@ passes with no breaking change needed.
       error is gone). Proof: `bin_macro.rs::fields_named_r_and_w_roundtrip`.
 - [ ] **Option B (no_std streaming I/O)** — a 1.0 requirement, or explicit post-1.0
       (additive)? Document the boundary either way so it's an expectation, not a surprise.
-- [ ] **`encode(writer)` ergonomics** — keep the `use bnb::prelude::*` extension-trait
-      form, or reconsider while it's still cheap?
+- [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(decided; implementation
+      pending)*. Today `to_bytes` is an inconsistent hybrid (retains `reserved` but recomputes
+      `calc`). **Decision:**
+      - **`to_bytes()` / `encode(w)` = verbatim** — emit exactly what's stored (retained `reserved`
+        + stored non-`temp` `calc`). Matches the `to_bytes`/`as_bytes` ecosystem idiom, is
+        dual-use-honest ("never silently rewrite what you gave me"), and restores a byte-identical
+        `decode → to_bytes` round-trip as the default. (`temp`+`calc` fields are never stored, so
+        they always recompute.)
+      - **`to_canonical_bytes()` / `encode_canonical(w)` = canonical** — normalize `reserved` to its
+        spec value, recompute `calc`; always a valid, spec-compliant message. This *renames* today's
+        `to_spec_bytes`/`spec_encode` (`SpecEncode` → `CanonicalEncode`) and additionally generates
+        it whenever a struct has a non-`temp` `calc` (not just `reserved`).
+      - **No `encode_mixed`** — per-field selection is already covered by the value-level
+        `#[brw(ignore)]` flag idiom.
+      - **No `decode_canonical`** — one permissive `decode()` (verbatim) stays; normalize-on-read
+        loses dual-use info and validate-on-read would reject input (both anti-dual-use). In-memory
+        canonicalization, if ever wanted, is an explicit `to_canonical(self) -> Self` helper.
+      Breaking (the only behavior change is non-`temp` `calc` in `to_bytes`: recompute → stored;
+      blast radius is essentially just `examples/ipv4.rs`) — do on `0.x`. Subsumes the old
+      `encode(writer)` ergonomics item.
+- [x] **Bitfield `Debug` + a canonical diff** *(decided; pending)*. `#[bitfield]` should emit a
+      custom `Debug` that decomposes the **logical** fields (`version=4, ihl=5`) instead of the
+      opaque backing int (`{ value: 69 }`). `Debug` stays the stored state; a separate
+      `canonical_diff()`-style helper surfaces where stored ≠ canonical (pairs with the
+      verbatim/canonical encode split).
+- [ ] **`#[default]` for `BitEnum` + struct field defaults** (all additive). (1) a `#[default]`
+      variant marker so `Enum::default()` is well-defined — std `#[derive(Default)]` already
+      covers *unit-only* enums, so bnb only needs its own for the `catch_all` case; (2)
+      `#[default(<value>)]` on the `catch_all` variant (e.g. `#[default(0)] Other(u8)`) — beyond
+      std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
+      real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
+      `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
 - [ ] **Scope line** — is `serde` interop / an `async` codec in scope for 1.0, or
       explicitly out? Decide now so 1.0's surface is intentional.
