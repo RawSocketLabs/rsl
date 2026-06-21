@@ -52,6 +52,11 @@ the proc-macro.
 - A `#[bitfield]` emits `Bits` + `Bitfield` impls (so it nests in another
   bitfield and in a `#[bin]` message) using its **declared** byte order, plus
   inherent `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`.
+- `#[bitfield]` **intercepts `#[derive(Debug)]`** (like `BitsBuilder`, via
+  `split_outer_attrs`) and emits a custom `Debug` over the *logical* getters
+  (`version: u4(4), ihl: u4(5)`) instead of letting std derive the opaque
+  `{ value: 69 }` on the collapsed backing int. A `#[bin]` struct's std `Debug`
+  then shows nested bitfields decomposed.
 - A byte-aligned `BitEnum` *also* gets `num_enum`-parity conversions
   (`bitenum.rs::conv_impls`): `From<Enum> for uN` always; `From<uN> for Enum`
   when there's a `#[catch_all]` (total) else `TryFrom<uN> for Enum` (errors with

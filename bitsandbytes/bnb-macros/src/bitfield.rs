@@ -119,8 +119,9 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     let backing_bytes = backing_byte_count(backing)?;
 
     // Outer attributes minus our own `#[bitfield]` (consumed as `attr`), with the
-    // `BitsBuilder` derive marker intercepted so we can build it from the fields.
-    let (derive_paths, other_attrs, has_builder) = split_outer_attrs(&item.attrs)?;
+    // `BitsBuilder` and `Debug` derive markers intercepted (we build the builder, and a
+    // logical-field `Debug`, from the fields the std derives can't see post-collapse).
+    let (derive_paths, other_attrs, has_builder, has_debug) = split_outer_attrs(&item.attrs)?;
     let derive_attr = if derive_paths.is_empty() {
         quote!()
     } else {
@@ -278,6 +279,23 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    // An intercepted `Debug` derive becomes a custom impl over the *logical* fields (via
+    // their getters), so `{:?}` shows `version: 4, ihl: 5` rather than the backing int.
+    let debug_ts = if has_debug {
+        let field_idents: Vec<_> = fields.iter().map(|f| &f.ident).collect();
+        quote! {
+            impl ::core::fmt::Debug for #name {
+                fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    __f.debug_struct(::core::stringify!(#name))
+                        #( .field(::core::stringify!(#field_idents), &self.#field_idents()) )*
+                        .finish()
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
     Ok(quote! {
         #(#other_attrs)*
         #derive_attr
@@ -371,6 +389,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         const _: () = #name::__BITS_FIT;
 
         #builder_ts
+        #debug_ts
     })
 }
 
@@ -413,20 +432,25 @@ fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
         .collect()
 }
 
-/// Splits the struct's outer attributes into the kept `#[derive(...)]` paths
-/// (with `BitsBuilder` removed) and the other attributes, reporting whether the
-/// `BitsBuilder` marker was present so `#[bitfield]` can generate the builder
-/// itself (the derive can't see the fields after the struct is collapsed).
-fn split_outer_attrs(attrs: &[Attribute]) -> syn::Result<(Vec<Path>, Vec<Attribute>, bool)> {
+/// Splits the struct's outer attributes into the kept `#[derive(...)]` paths and the
+/// other attributes, intercepting two derives: `BitsBuilder` (so `#[bitfield]` can build
+/// the builder from the fields the derive can't see after the struct is collapsed) and
+/// `Debug` (so `#[bitfield]` can emit a custom `Debug` that decomposes the *logical*
+/// fields, e.g. `version=4, ihl=5`, instead of the std derive's opaque `{ value: 69 }`).
+/// Reports whether each marker was present.
+fn split_outer_attrs(attrs: &[Attribute]) -> syn::Result<(Vec<Path>, Vec<Attribute>, bool, bool)> {
     let mut derive_paths = Vec::new();
     let mut others = Vec::new();
     let mut has_builder = false;
+    let mut has_debug = false;
     for attr in attrs {
         if attr.path().is_ident("derive") {
             let paths = attr.parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)?;
             for p in paths {
                 if p.is_ident("BitsBuilder") {
                     has_builder = true;
+                } else if p.is_ident("Debug") {
+                    has_debug = true;
                 } else {
                     derive_paths.push(p);
                 }
@@ -435,7 +459,7 @@ fn split_outer_attrs(attrs: &[Attribute]) -> syn::Result<(Vec<Path>, Vec<Attribu
             others.push(attr.clone());
         }
     }
-    Ok((derive_paths, others, has_builder))
+    Ok((derive_paths, others, has_builder, has_debug))
 }
 
 fn backing_byte_count(backing: &Ident) -> syn::Result<usize> {

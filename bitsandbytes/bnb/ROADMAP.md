@@ -214,11 +214,13 @@ passes with no breaking change needed.
       Breaking (the only behavior change is non-`temp` `calc` in `to_bytes`: recompute → stored;
       blast radius is essentially just `examples/ipv4.rs`) — do on `0.x`. Subsumes the old
       `encode(writer)` ergonomics item.
-- [x] **Bitfield `Debug` + a canonical diff** *(decided; pending)*. `#[bitfield]` should emit a
-      custom `Debug` that decomposes the **logical** fields (`version=4, ihl=5`) instead of the
-      opaque backing int (`{ value: 69 }`). `Debug` stays the stored state; a separate
-      `canonical_diff()`-style helper surfaces where stored ≠ canonical (pairs with the
-      verbatim/canonical encode split).
+- [x] **Bitfield `Debug`** *(done)* — `#[bitfield]` intercepts a `#[derive(Debug)]` and emits a
+      custom impl decomposing the **logical** fields (`version: u4(4), ihl: u4(5)`) instead of
+      the opaque backing int (`{ value: 69 }`); bitfields nested in `#[bin]` structs inherit it.
+- [ ] **A canonical diff helper** *(pending; pairs with the verbatim/canonical encode split)* —
+      a `canonical_diff()`-style view that surfaces where a value's stored fields differ from
+      its canonical form, plus an in-memory `to_canonical(self) -> Self`. `Debug` stays the
+      stored state.
 - [ ] **`#[default]` for `BitEnum` + struct field defaults** (all additive). (1) a `#[default]`
       variant marker so `Enum::default()` is well-defined — std `#[derive(Default)]` already
       covers *unit-only* enums, so bnb only needs its own for the `catch_all` case; (2)
