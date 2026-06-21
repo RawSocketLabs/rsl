@@ -67,8 +67,10 @@ change is intended (and call it out in the PR):
   ```bash
   cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bnb/public-api.txt
   ```
-- **`semver-checks`** — a SemVer-breaking change is blocked until the version is bumped;
-  `release-plz` drives that bump from your `feat!`/`BREAKING CHANGE:` commit.
+- **`semver-checks`** — *informational* (non-blocking): it flags a SemVer-breaking change
+  vs the last release as a heads-up. Mark a breaking change with `!` / a `BREAKING CHANGE:`
+  footer; `release-plz` turns it into the right version bump when it cuts the release PR
+  (it owns versioning — don't hand-bump versions in a feature PR).
 
 ## Code expectations
 

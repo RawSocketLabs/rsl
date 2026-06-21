@@ -197,7 +197,7 @@ e.g. DNS name-compression pointer following).
 be a different crate, not a feature. The default-on **`std`** feature adds only the
 rows of the table above that are backed by `std::io` (`StreamBitReader`/`BufSource`/
 `SeekReader`, the `as_read`/`as_write` views), the `From<std::io::Error>` bridge +
-`ErrorKind::Io`, and the `encode(writer)`/`spec_encode(writer)` conveniences. The
+`ErrorKind::Io`, and the `encode(writer)`/`encode_canonical(writer)` conveniences. The
 forward-only/seekable distinction is unchanged; `no_std` simply has fewer `Source`
 implementations to feed `decode_from` (the in-memory `BitReader`, and `BytesReader`
 under `bytes`).
@@ -209,8 +209,8 @@ packet arrives whole) and keeps the change small and dependency-light. Two conse
 fall out of *a proc-macro cannot see the consumer crate's feature flags*:
 
 - **`encode(writer)` is a blanket extension trait, not a generated inherent method.**
-  `EncodeExt`/`SpecEncodeExt` are `std`-gated and blanket-implemented over
-  `BitEncode`/`SpecEncode`, so they appear exactly when `bnb/std` is on — whereas a
+  `EncodeExt`/`CanonicalEncodeExt` are `std`-gated and blanket-implemented over
+  `BitEncode`/`CanonicalEncode`, so they appear exactly when `bnb/std` is on — whereas a
   `#[cfg(feature = "std")]` emitted into a generated method would key off the *user
   crate's* feature name and silently vanish for a default `cargo add bnb`. Cost: callers
   bring the trait into scope (`use bnb::prelude::*`). `to_bytes`/`encode_into` stay
@@ -264,11 +264,11 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   reports `Incomplete` ("read more and retry"), distinct from a definitive failure.
 - **Reserved bits are explicit, stored, and observable.** A `#[reserved]` field is a
   normal stored field with a known *spec value* (the type's zero, or the
-  `#[reserved_with(…)]` expression). On the default path it reads/writes its actual
-  value, so a peer's non-compliant reserved bits are captured and a caller can override
-  them (dual-use); the builder defaults it to the spec value (so it isn't required), and
-  the `spec_*` codecs (`to_spec_bytes`/`spec_decode_exact`/…) use the spec value
-  instead. A *verified-on-read* constant is `magic` instead.
+  `#[reserved_with(…)]` expression). On the verbatim path (`decode`/`to_bytes`) it
+  reads/writes its actual value, so a peer's non-compliant reserved bits are captured and
+  a caller can override them (dual-use); the builder defaults it to the spec value (so it
+  isn't required), and the **canonical** encoder (`to_canonical_bytes`) writes the spec
+  value instead. A *verified-on-read* constant is `magic` instead.
 
 ## 9. Performance
 

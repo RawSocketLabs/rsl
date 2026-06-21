@@ -587,6 +587,13 @@ pub fn bnb::bitstream::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) 
 pub trait bnb::bitstream::BitEncode
 pub const bnb::bitstream::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::bitstream::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::CanonicalEncode
+pub const bnb::bitstream::CanonicalEncode::CANONICAL_LAYOUT: bnb::bitstream::Layout
+pub fn bnb::bitstream::CanonicalEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::bitstream::CanonicalEncodeExt: bnb::bitstream::CanonicalEncode
+pub fn bnb::bitstream::CanonicalEncodeExt::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::CanonicalEncode> bnb::bitstream::CanonicalEncodeExt for T
+pub fn T::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
 pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
@@ -666,13 +673,6 @@ pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::bitstream::SpecEncode
-pub const bnb::bitstream::SpecEncode::SPEC_LAYOUT: bnb::bitstream::Layout
-pub fn bnb::bitstream::SpecEncode::spec_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::bitstream::SpecEncodeExt: bnb::bitstream::SpecEncode
-pub fn bnb::bitstream::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
-impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
-pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub mod bnb::builder
 pub enum bnb::builder::BuilderError
 pub bnb::builder::BuilderError::Invalid(alloc::string::String)
@@ -1151,14 +1151,14 @@ pub fn u8::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for usize
 pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
+pub trait bnb::prelude::CanonicalEncodeExt: bnb::bitstream::CanonicalEncode
+pub fn bnb::prelude::CanonicalEncodeExt::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::CanonicalEncode> bnb::bitstream::CanonicalEncodeExt for T
+pub fn T::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub trait bnb::prelude::EncodeExt: bnb::bitstream::BitEncode
 pub fn bnb::prelude::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
 pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
-pub trait bnb::prelude::SpecEncodeExt: bnb::bitstream::SpecEncode
-pub fn bnb::prelude::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
-impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
-pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub enum bnb::BitOrder
 pub bnb::BitOrder::Lsb
 pub bnb::BitOrder::Msb
@@ -2367,6 +2367,13 @@ impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
 pub const bnb::UInt<u8, N>::BITS: u32
 pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+pub trait bnb::CanonicalEncode
+pub const bnb::CanonicalEncode::CANONICAL_LAYOUT: bnb::bitstream::Layout
+pub fn bnb::CanonicalEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::CanonicalEncodeExt: bnb::bitstream::CanonicalEncode
+pub fn bnb::CanonicalEncodeExt::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T: bnb::bitstream::CanonicalEncode> bnb::bitstream::CanonicalEncodeExt for T
+pub fn T::encode_canonical<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub trait bnb::DecodeWith<A>: core::marker::Sized
 pub fn bnb::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
@@ -2446,13 +2453,6 @@ pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::SpecEncode
-pub const bnb::SpecEncode::SPEC_LAYOUT: bnb::bitstream::Layout
-pub fn bnb::SpecEncode::spec_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::SpecEncodeExt: bnb::bitstream::SpecEncode
-pub fn bnb::SpecEncodeExt::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
-impl<T: bnb::bitstream::SpecEncode> bnb::bitstream::SpecEncodeExt for T
-pub fn T::spec_encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 pub type bnb::Result<T> = core::result::Result<T, bnb::error::Error>
 pub type bnb::u1 = bnb::UInt<u8, 1>
 pub type bnb::u10 = bnb::UInt<u16, 10>

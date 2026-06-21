@@ -1032,41 +1032,45 @@ pub trait EncodeExt: BitEncode {
 #[cfg(feature = "std")]
 impl<T: BitEncode> EncodeExt for T {}
 
-/// The "write reserved fields as their spec value" encode path, generated for a
-/// `#[bin]` message that has a `reserved` field. The inherent `to_spec_bytes` /
-/// `spec_encode_into` ride on this; the `std`-only [`SpecEncodeExt`] adds
-/// `spec_encode(writer)`.
-pub trait SpecEncode {
+/// The **canonical** encode path — reserved fields written as their spec value and `calc`
+/// fields recomputed (ignoring the stored values), so the result is always spec-compliant.
+/// Generated for a `#[bin]` message that has a `reserved` or non-`temp` `calc` field (where
+/// it would differ from the verbatim [`BitEncode`]). The inherent `to_canonical_bytes` /
+/// `canonical_encode_into` ride on this; the `std`-only [`CanonicalEncodeExt`] adds
+/// `encode_canonical(writer)`. The verbatim counterpart is [`BitEncode`]/`to_bytes`.
+pub trait CanonicalEncode {
     /// The message's bit/byte order (mirrors [`BitEncode::LAYOUT`]).
-    const SPEC_LAYOUT: Layout;
+    const CANONICAL_LAYOUT: Layout;
 
-    /// Encodes `self` into a [`Sink`], writing reserved fields as their spec value
-    /// (ignoring any stored override).
+    /// Encodes `self`'s canonical form into a [`Sink`]: reserved fields as their spec
+    /// value, `calc` fields recomputed (ignoring the stored values).
     ///
     /// # Errors
     /// Propagates the sink's [`BitError`].
-    fn spec_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
+    fn canonical_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError>;
 }
 
-/// `spec_encode(writer)` for any [`SpecEncode`] message — the spec-value dual of
-/// [`EncodeExt`]. Blanket-implemented; bring it into scope to call it. Only with
-/// the `std` feature; in `no_std` use the generated `to_spec_bytes`.
+/// `encode_canonical(writer)` for any [`CanonicalEncode`] message — the canonical dual of
+/// [`EncodeExt`]. Blanket-implemented; bring it into scope to call it. Only with the `std`
+/// feature; in `no_std` use the generated `to_canonical_bytes`.
 #[cfg(feature = "std")]
-pub trait SpecEncodeExt: SpecEncode {
-    /// Encodes `self` to any [`std::io::Write`], reserved fields as their spec value.
+pub trait CanonicalEncodeExt: CanonicalEncode {
+    /// Encodes `self`'s canonical form to any [`std::io::Write`].
     ///
     /// # Errors
     /// [`ErrorKind::Io`] on a write failure, else the encode error.
-    fn spec_encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
+    fn encode_canonical<W: std::io::Write>(&self, w: &mut W) -> Result<(), BitError>
     where
         Self: Sized,
     {
-        encode_to_writer_with(w, Self::SPEC_LAYOUT, |bw| self.spec_bit_encode(bw))
+        encode_to_writer_with(w, Self::CANONICAL_LAYOUT, |bw| {
+            self.canonical_bit_encode(bw)
+        })
     }
 }
 
 #[cfg(feature = "std")]
-impl<T: SpecEncode> SpecEncodeExt for T {}
+impl<T: CanonicalEncode> CanonicalEncodeExt for T {}
 
 /// Polymorphic decode **with context** `A` — the companion to a `#[bin(ctx(...))]`
 /// type's inherent `decode_with`, for hand-written generic combinators and
@@ -1246,7 +1250,7 @@ pub fn encode_to_writer<T: BitEncode, W: std::io::Write>(
 }
 
 /// `encode_to_writer` over a caller-supplied encode closure — backs
-/// [`SpecEncodeExt::spec_encode`] (whose write body differs from the plain `bit_encode`).
+/// [`CanonicalEncodeExt::encode_canonical`] (whose write body differs from `bit_encode`).
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the closure's error.

@@ -82,14 +82,14 @@ ladder, with an opt-in `bytes` feature for async framing.
 
 - **`std`** *(default)* — the `std::io` ladder ([`StreamBitReader`], [`BufSource`],
   [`SeekReader`], [`Source::as_read`]/[`Sink::as_write`]), the `From<std::io::Error>`
-  bridge, and the `encode(writer)`/`spec_encode(writer)` conveniences ([`EncodeExt`]/
-  [`SpecEncodeExt`]). The `#[br(dbg)]` directive (which emits a `tracing` event) is
+  bridge, and the `encode(writer)`/`encode_canonical(writer)` conveniences ([`EncodeExt`]/
+  [`CanonicalEncodeExt`]). The `#[br(dbg)]` directive (which emits a `tracing` event) is
   also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
 ([`BitReader`], `Type::decode`/`decode_exact`/`peek`/`decode_from`) and encode to a
-`Vec<u8>` (`Type::to_bytes`/`to_spec_bytes`, `encode_into` over a [`Sink`]). You lose
+`Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, `encode_into` over a [`Sink`]). You lose
 only the streaming `std::io` adapters and `encode(&mut impl Write)`; on `no_std`,
 encode with `to_bytes()` and write the bytes to your transport yourself.
 
@@ -155,16 +155,16 @@ pub mod guide;
 pub mod int;
 
 pub use bitstream::{
-    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, DecodeWith, EncodeWith,
-    ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source, SpecEncode,
+    BitAmount, BitDecode, BitEncode, BitError, BitReader, BitWriter, CanonicalEncode, DecodeWith,
+    EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
 };
 
 /// The `std::io` I/O ladder and writer conveniences — only with the (default)
 /// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
-/// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_spec_bytes`).
+/// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_canonical_bytes`).
 #[cfg(feature = "std")]
 pub use bitstream::{
-    BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, SpecEncodeExt, StreamBitReader,
+    BufSource, CanonicalEncodeExt, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader,
 };
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
@@ -173,11 +173,11 @@ pub use bitstream::{BytesReader, BytesWriter};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
 /// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the encode extension
-/// traits that carry `encode(writer)`/`spec_encode(writer)` (the `std` feature).
+/// traits that carry `encode(writer)`/`encode_canonical(writer)` (the `std` feature).
 pub mod prelude {
     pub use crate::BitAmount;
     #[cfg(feature = "std")]
-    pub use crate::{EncodeExt, SpecEncodeExt};
+    pub use crate::{CanonicalEncodeExt, EncodeExt};
 }
 pub use builder::BuilderError;
 pub use error::{Error, Result, UnknownDiscriminant};

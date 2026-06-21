@@ -469,8 +469,8 @@ fn br_indeterminate(br: &FieldBr) -> bool {
 
 /// A reserved field — a normal stored field with a known **spec value** (the type's
 /// zero, or the `reserved_with` expression). On the default codec path it reads/writes
-/// like any field (so you observe and can override the actual wire bits); the `spec_*`
-/// codecs and the builder default use the spec value instead.
+/// like any field (so you observe and can override the actual wire bits); the canonical
+/// encoder and the builder default use the spec value instead.
 enum Reserved {
     /// `#[reserved]` — spec value is the type's zero.
     Zero,
@@ -491,11 +491,11 @@ fn field_reserved(f: &syn::Field) -> syn::Result<Option<Reserved>> {
     Ok(None)
 }
 
-/// The spec value of a reserved field — what the `spec_*` codecs write/report and what
-/// the builder defaults to: the type's zero for `#[reserved]`, the given expression for
-/// `#[reserved_with(<expr>)]`. `None` if the field is not reserved. (On the default
-/// path a reserved field is a normal stored field; only `spec_*` and the builder
-/// default use this.)
+/// The spec value of a reserved field — what the canonical encoder writes and what the
+/// builder defaults to: the type's zero for `#[reserved]`, the given expression for
+/// `#[reserved_with(<expr>)]`. `None` if the field is not reserved. (On the verbatim
+/// path a reserved field is a normal stored field; only the canonical encoder and the
+/// builder default use this.)
 fn reserved_spec_value(f: &syn::Field) -> syn::Result<Option<TokenStream2>> {
     let bnb = crate::bnb_path();
     let ty = &f.ty;
@@ -640,7 +640,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     // A `#[reserved]` field reads as a normal stored leaf here (so the actual wire bits
-    // are observable); the `spec_*` decoders overwrite it with the spec value afterward.
+    // are observable and retained — decode is always verbatim).
     // `ignore`: in-memory only — `Default::default()` on read, no input consumed.
     if br.ignore {
         return Ok(quote!(let #id = ::core::default::Default::default();));
@@ -784,8 +784,8 @@ fn field_write_core(
     let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
-    // `#[reserved]` on the **spec** path: write the spec value (type zero, or the
-    // `reserved_with` expression). On the default (actual) path a reserved field falls
+    // `#[reserved]` on the **canonical** path: write the spec value (type zero, or the
+    // `reserved_with` expression). On the verbatim (default) path a reserved field falls
     // through and writes its stored value like any field.
     if spec {
         if let Some(value) = reserved_spec_value(f)? {
@@ -797,28 +797,36 @@ fn field_write_core(
     if br.ignore {
         return Ok(quote!());
     }
-    // `calc`: write a value computed from the other fields rather than `self.#id`,
-    // pinned to the field's declared type so the wire width is unambiguous.
+    // `calc`: a value computed from the other fields. On the **canonical** path
+    // (`spec == true`) we recompute it; on the default **verbatim** path a *stored*
+    // (non-`temp`) `calc` field is written as-is — `to_bytes` never silently rewrites what
+    // the caller put in the field (dual-use). A `temp` field has no stored value, so it
+    // always recomputes.
     if let Some(calc) = &br.calc {
-        // A `temp` field isn't stored, so a later `#[br(ctx { … })]` pass can't resolve
-        // it via `self.#id`. Bind its computed value to a **named** local (in encode-fn
-        // scope, written in declaration order) so the ctx pass finds it — e.g. a tag
-        // recomputed with `#[bw(calc = self.body.tag())]` and handed to a `tag`-dispatched
-        // enum. A non-`temp` `calc` field keeps a throwaway local (it has `self.#id`).
         if br.temp {
+            // Not stored, so a later `#[br(ctx { … })]` pass can't resolve it via
+            // `self.#id`. Bind the computed value to a **named** local (in encode-fn scope,
+            // in declaration order) so the ctx pass finds it — e.g. a tag recomputed with
+            // `#[bw(calc = self.body.tag())]` and handed to a `tag`-dispatched enum.
             return Ok(quote! {
                 let #id: #ty = #calc;
                 #bnb::__private::Sink::write(__bnb_w, #id)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             });
         }
-        return Ok(quote! {
-            {
-                let __calc: #ty = #calc;
-                #bnb::__private::Sink::write(__bnb_w, __calc)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }
-        });
+        if spec {
+            // Canonical: recompute from the other fields, pinned to the declared type.
+            return Ok(quote! {
+                {
+                    let __calc: #ty = #calc;
+                    #bnb::__private::Sink::write(__bnb_w, __calc)
+                        .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                }
+            });
+        }
+        // Verbatim (default): write the stored value exactly as it is.
+        return Ok(quote!(#bnb::__private::Sink::write(__bnb_w, self.#id)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     // A `temp` field is never stored, so it cannot be written without a `calc`.
     if br.temp {
@@ -1085,44 +1093,9 @@ fn gen_decode(
         "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."
     };
 
-    // `spec_*` decoders: decode normally (capturing the wire bits), then overwrite each
-    // reserved field with its spec value. Only emitted when the message has a reserved
-    // field (otherwise the spec and actual decoders are identical).
-    let mut reserved_overwrites = Vec::new();
-    for f in &fields.named {
-        if let Some(v) = reserved_spec_value(f)? {
-            let id = f.ident.as_ref().expect("named field");
-            reserved_overwrites.push(quote!(__v.#id = #v;));
-        }
-    }
-    let spec_decode = if reserved_overwrites.is_empty() {
-        quote!()
-    } else {
-        quote! {
-            impl #name {
-                #[doc = "Like `decode_exact`, but reserved fields are set to their spec value instead of the bytes on the wire."]
-                pub fn spec_decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    let mut __v = Self::decode_exact(bytes)?;
-                    #(#reserved_overwrites)*
-                    ::core::result::Result::Ok(__v)
-                }
-                #[doc = "Like `peek`, but reserved fields are set to their spec value."]
-                pub fn spec_peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    let mut __v = Self::peek(bytes)?;
-                    #(#reserved_overwrites)*
-                    ::core::result::Result::Ok(__v)
-                }
-                #[doc = "Like `decode_from`, but reserved fields are set to their spec value."]
-                pub fn spec_decode_from<S: #from_bound>(
-                    __bnb_r: &mut S,
-                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    let mut __v = Self::decode_from(__bnb_r)?;
-                    #(#reserved_overwrites)*
-                    ::core::result::Result::Ok(__v)
-                }
-            }
-        }
-    };
+    // There is no canonical *decode*: `decode_*` is always verbatim (it retains the wire
+    // bits of reserved fields — dual-use). Canonicalization is an encode-side concern
+    // (`to_canonical_bytes`) or an explicit in-memory helper.
 
     Ok(quote! {
         #guard
@@ -1157,7 +1130,6 @@ fn gen_decode(
                 <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
             }
         }
-        #spec_decode
     })
 }
 
@@ -1282,46 +1254,55 @@ fn gen_encode(
         });
     }
 
-    // `spec_*` encoders: write the spec value for reserved fields (ignoring the stored
-    // override). Only when the message has a reserved field.
-    let has_reserved = fields.named.iter().any(field_is_reserved);
-    let spec_encode = if !has_reserved {
+    // The **canonical** encoder: reserved fields written as their spec value and `calc`
+    // fields recomputed (ignoring the stored values). Generated only when it would differ
+    // from the verbatim encoder — i.e. the message has a reserved field or a non-`temp`
+    // `calc` field (otherwise canonical and verbatim are identical).
+    let has_canonical = fields
+        .named
+        .iter()
+        .zip(&brs)
+        .any(|(f, br)| field_is_reserved(f) || (br.calc.is_some() && !br.temp));
+    let canonical_encode = if !has_canonical {
         quote!()
     } else {
-        let writes_spec = fields
+        let writes_canonical = fields
             .named
             .iter()
             .zip(&brs)
             .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
             .collect::<syn::Result<Vec<_>>>()?;
         quote! {
-            impl #bnb::SpecEncode for #name {
-                const SPEC_LAYOUT: #bnb::Layout = #layout;
-                fn spec_bit_encode<K: #bnb::__private::Sink>(
+            impl #bnb::CanonicalEncode for #name {
+                const CANONICAL_LAYOUT: #bnb::Layout = #layout;
+                fn canonical_bit_encode<K: #bnb::__private::Sink>(
                     &self,
                     __bnb_w: &mut K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #magic_write
-                    #(#writes_spec)*
+                    #(#writes_canonical)*
                     ::core::result::Result::Ok(())
                 }
             }
             impl #name {
-                #[doc = "Encode with reserved fields written as their spec value (ignoring any stored"]
-                #[doc = "override), to a `Vec<u8>`. For a `std::io::Write` sink, bring"]
-                #[doc = "[`SpecEncodeExt`](::bnb::SpecEncodeExt) into scope and call `.spec_encode(&mut w)` (the `std` feature)."]
-                pub fn to_spec_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                #[doc = "Encode the **canonical** form to a `Vec<u8>`: reserved fields written as their"]
+                #[doc = "spec value and `calc` fields recomputed (ignoring the stored values), so the"]
+                #[doc = "result is always spec-compliant. (`to_bytes` is verbatim — it writes exactly"]
+                #[doc = "what is stored.) For a `std::io::Write` sink, bring"]
+                #[doc = "[`CanonicalEncodeExt`](::bnb::CanonicalEncodeExt) into scope and call"]
+                #[doc = "`.encode_canonical(&mut w)` (the `std` feature)."]
+                pub fn to_canonical_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec_with(
                         #layout,
-                        |__bnb_w| <Self as #bnb::SpecEncode>::spec_bit_encode(self, __bnb_w),
+                        |__bnb_w| <Self as #bnb::CanonicalEncode>::canonical_bit_encode(self, __bnb_w),
                     )
                 }
-                #[doc = "Encode with reserved fields written as their spec value, into an explicit bit sink."]
-                pub fn spec_encode_into<K: #bnb::__private::Sink>(
+                #[doc = "Encode the canonical form into an explicit bit sink."]
+                pub fn canonical_encode_into<K: #bnb::__private::Sink>(
                     &self,
                     __bnb_w: &mut K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    <Self as #bnb::SpecEncode>::spec_bit_encode(self, __bnb_w)
+                    <Self as #bnb::CanonicalEncode>::canonical_bit_encode(self, __bnb_w)
                 }
             }
         }
@@ -1376,7 +1357,7 @@ fn gen_encode(
             }
         }
         #encode_with_trait
-        #spec_encode
+        #canonical_encode
     })
 }
 

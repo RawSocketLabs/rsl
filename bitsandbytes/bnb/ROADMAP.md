@@ -71,11 +71,11 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 
 - [x] `no_std` + `alloc` behind a default-on **`std`** feature (Option A — buffer-at-a-
       time, not streaming). Without `std`: full macro surface, decode from `&[u8]`,
-      encode to `Vec<u8>` (`to_bytes`/`to_spec_bytes`/`encode_into`). Verified by
+      encode to `Vec<u8>` (`to_bytes`/`to_canonical_bytes`/`encode_into`). Verified by
       building `bnb/nostd-check` for `thumbv7em-none-eabi`.
 - [x] `std` gates the `std::io` ladder (`StreamBitReader`/`BufSource`/`SeekReader`,
       `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
-      `encode(writer)`/`spec_encode(writer)` extension traits (`EncodeExt`/`SpecEncodeExt`).
+      `encode(writer)`/`encode_canonical(writer)` extension traits (`EncodeExt`/`CanonicalEncodeExt`).
       `#[br(dbg)]` (a `tracing` event) is `std`-only.
 - [ ] **Option B** (deferred) — an in-house `bnb::io` `Read`/`Write`/`Seek` abstraction
       to bring streaming I/O to `no_std` and unify the code path; revisit when an
@@ -147,7 +147,7 @@ passes with no breaking change needed.
 
 - [ ] Deliberate public-API review: trait shapes (`BitDecode`/`BitEncode`/`Source`/
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
-      `EncodeExt`/`SpecEncodeExt` ergonomics — commit only to what you'll keep. Mark
+      `EncodeExt`/`CanonicalEncodeExt` ergonomics — commit only to what you'll keep. Mark
       growth points `#[non_exhaustive]` (errors already are).
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
@@ -156,9 +156,12 @@ passes with no breaking change needed.
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
 - [x] `cargo-semver-checks` in CI (`semver-checks` job, pinned to `0.48`) — checks the
-      runtime crate against the latest release tag (`v{version}`, auto-advancing) and
-      **blocks** on SemVer-breaking changes until the version is bumped, so breakage is
-      deliberate. Complements `public-api` (which flags *any* surface change).
+      runtime crate against the latest release tag (`v{version}`, auto-advancing). **Run as
+      informational** (`continue-on-error`): it surfaces SemVer breakage early as a heads-up
+      but does not block, because release-plz already runs cargo-semver-checks and owns the
+      version bump at release time (a break becomes a 0.x minor in the release PR). A
+      blocking gate would force in-PR version bumps that fight that model. Complements
+      `public-api` (which flags *any* surface change).
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
 
 ### D. Docs & migration

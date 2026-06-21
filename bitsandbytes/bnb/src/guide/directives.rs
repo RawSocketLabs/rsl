@@ -178,12 +178,12 @@
 //! let r = R::builder().a(1).b(2).build().unwrap();
 //! assert_eq!(r.to_bytes().unwrap(), [0x01, 0x00, 0xFF, 0x02]);
 //!
-//! // Decode captures the actual reserved bits; spec_decode reports the expected ones.
+//! // Decode is verbatim — it captures the actual reserved bits off the wire...
 //! let actual = R::decode_exact(&[0x01, 0x55, 0x55, 0x02]).unwrap();
 //! assert_eq!((actual.pad, actual.ones), (0x55, 0x55));
-//! let spec = R::spec_decode_exact(&[0x01, 0x55, 0x55, 0x02]).unwrap();
-//! assert_eq!((spec.pad, spec.ones), (0x00, 0xFF));     // the spec values
-//! assert_eq!(spec.to_spec_bytes().unwrap(), [0x01, 0x00, 0xFF, 0x02]);
+//! assert_eq!(actual.to_bytes().unwrap(), [0x01, 0x55, 0x55, 0x02]); // re-emitted as-is
+//! // ...while `to_canonical_bytes` writes the reserved fields' spec values instead.
+//! assert_eq!(actual.to_canonical_bytes().unwrap(), [0x01, 0x00, 0xFF, 0x02]);
 //! ```
 //!
 //! # `pad_*` / `align_*` — forward positioning
