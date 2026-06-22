@@ -154,6 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(len = wire.len(), bytes = %hex(&wire), "decoding IPv4 header");
 
     let hdr = Ipv4Header::decode_exact(&wire)?;
+    info!("the full decoded structure:\n{hdr:#?}"); // the whole header, pretty-printed
     info!(
         // the bitfield `Debug` decomposes `ver_ihl`/`flags_frag` into logical fields
         version = %hdr.ver_ihl.version(),

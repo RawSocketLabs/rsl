@@ -269,7 +269,7 @@ Run: `cargo bench -p bitsandbytes`.
 
 ## Scope notes
 
-- Dual-use: `from_raw`/`from_bytes` and the parser never validate; `#[catch_all]`
+- Dual-use: `from_raw`/`from_be_bytes` and the parser never validate; `#[catch_all]`
   preserves unknown enum values; `#[bin]`'s `validate`/soundness is
   **construction-side only** (gates `build()`, leaves decode permissive). Keep
   that — never make a parser reject representable input. `validate = path` is also
