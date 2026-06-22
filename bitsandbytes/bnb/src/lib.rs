@@ -88,7 +88,7 @@ ladder, with an opt-in `bytes` feature for async framing.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
 ([`BitReader`], `Type::decode`/`decode_exact`/`peek`/`decode_from`) and encode to a
-`Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, `encode_into` over a [`Sink`]). You lose
+`Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, or [`BitEncode::bit_encode`] over a [`Sink`]). You lose
 only the streaming `std::io` adapters and `encode(&mut impl Write)`; on `no_std`,
 encode with `to_bytes()` and write the bytes to your transport yourself.
 

@@ -240,7 +240,7 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 ///     #[br(count = len)] payload: Vec<u8>,
 /// }
 /// // -> Frame::{decode, peek, decode_exact, decode_from},
-/// //    Frame::{encode, to_bytes, encode_into}, and Frame::builder()
+/// //    Frame::{to_bytes, encode}, Frame::new(..), and Frame::builder()
 /// ```
 ///
 /// ## Struct-level options

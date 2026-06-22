@@ -1052,8 +1052,9 @@ pub trait BitEncode {
 /// [`LAYOUT`](BitEncode::LAYOUT)) in `self`'s [`encode_mode`](BitEncode::encode_mode) and
 /// writes it to a [`std::io::Write`] sink. A blanket-implemented extension trait, so bring it
 /// into scope (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w)`. Only
-/// with the `std` feature; in `no_std` use the generated `to_bytes`/`to_canonical_bytes`/
-/// `encode_into`.
+/// with the `std` feature; in `no_std` use the generated `to_bytes`/`to_canonical_bytes`, or
+/// [`bit_encode`](BitEncode::bit_encode)/[`canonical_bit_encode`](BitEncode::canonical_bit_encode)
+/// over a [`Sink`].
 #[cfg(feature = "std")]
 pub trait EncodeExt: BitEncode {
     /// Encodes `self` to any [`std::io::Write`] (socket, file, `Vec`) in the value's

@@ -30,8 +30,8 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 
 - [x] Folds read + write codecs and the builder over one struct; generates the decode
       entry points (`decode`/`peek`/`decode_exact`/`decode_from`), the encode entry points
-      (`to_bytes`/`encode_into` + the `encode(writer)` convenience), and construction
-      (`new(fields…)`, `builder()`).
+      (`to_bytes` + the `encode(writer)` convenience, plus `BitEncode::bit_encode` for a `Sink`),
+      and construction (`new(fields…)`, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
       byte-identical `decode → to_bytes`); `to_canonical_bytes` normalizes (`reserved` → spec,
       `calc` recomputed). Generated for a `reserved`/`calc` message, which also carries a
@@ -79,7 +79,8 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 
 - [x] `no_std` + `alloc` behind a default-on **`std`** feature (Option A — buffer-at-a-
       time, not streaming). Without `std`: full macro surface, decode from `&[u8]`,
-      encode to `Vec<u8>` (`to_bytes`/`to_canonical_bytes`/`encode_into`). Verified by
+      encode to `Vec<u8>` (`to_bytes`/`to_canonical_bytes`, or `BitEncode::bit_encode` over a
+      `Sink`). Verified by
       building `bnb/nostd-check` for `thumbv7em-none-eabi`.
 - [x] `std` gates the `std::io` ladder (`StreamBitReader`/`BufSource`/`SeekReader`,
       `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
@@ -159,12 +160,15 @@ passes with no breaking change needed.
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
       `EncodeExt::encode(w)` / settable `encode_mode` / `EncodeMode` ergonomics — commit only to
       what you'll keep. Mark growth points `#[non_exhaustive]` (errors already are).
-      **Scrutinize the encode/construct surface breadth:** a `reserved`/`calc` `#[bin]` struct now
-      exposes ~14 methods here (`to_bytes`/`to_canonical_bytes`/`encode_into`/`canonical_encode_into`
-      + `to_canonical`/`canonical_diff`/`is_canonical` + the `encode_mode` trio + `new`/`builder` +
-      `validate`/`is_valid`). Decide before the freeze whether the low-level sink writers
-      (`encode_into`/`canonical_encode_into`) and the full mode trio all earn their place, or fold
-      some. (See the encode-surface analysis in the maintainer notes / PR discussion.)
+      **Scrutinize the encode/construct surface breadth:** a `reserved`/`calc` `#[bin]` struct
+      exposes ~12 inherent methods here (`to_bytes`/`to_canonical_bytes` + `to_canonical`/
+      `canonical_diff`/`is_canonical` + the `encode_mode` trio + `new`/`builder` + `validate`/
+      `is_valid`). The inherent `encode_into`/`canonical_encode_into` sink writers were **cut** as
+      redundant over the `BitEncode::bit_encode`/`canonical_bit_encode` trait methods (0 uses vs the
+      trait's; sink-composition now uses the trait, symmetric with `encode(w)` needing `EncodeExt`).
+      Still to weigh before the freeze: whether the full `encode_mode` trio (`set_`/`with_`/getter)
+      and `canonical_diff` earn their slots, and — bigger — whether the carried-`encode_mode`
+      mechanism pays for its complexity once dogfooding shows real streaming use.
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
       cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the

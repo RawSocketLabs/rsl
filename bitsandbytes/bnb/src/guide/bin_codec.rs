@@ -68,12 +68,12 @@
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
 //! | encode | `encode(&mut W)` | encode to any [`std::io::Write`], following the value's `encode_mode` |
-//! | encode | `encode_into(&mut K)` | encode (verbatim) into an explicit [`Sink`](crate::Sink) |
+//! | encode | `bit_encode(&mut K)` | write into an explicit [`Sink`](crate::Sink) — a [`BitEncode`](crate::BitEncode) trait method (`canonical_bit_encode` for the canonical form) |
 //! | build | `builder()` | the required-by-default builder |
 //! | build | `new(fields…)` | positional constructor — every stored field, in declaration order |
 //!
 //! `decode`/`peek`/`decode_exact`/`to_bytes` are the everyday slice/`Vec` path;
-//! `decode_from`/`encode(&mut W)`/`encode_into` open the door to the
+//! `decode_from`/`encode(&mut W)`/`bit_encode` open the door to the
 //! [I/O ladder](super::io). († `to_canonical_bytes`, the canonical helpers, and the settable
 //! `encode_mode` exist only when the message has a `reserved` or `calc` field — see
 //! [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
@@ -282,7 +282,7 @@
 //! readable with `encode_mode()`. **Exactly one entry point consults it** — the std-writer
 //! [`encode`](crate::EncodeExt::encode), so you set the policy once and stream the value
 //! without re-specifying. Every *other* encoder ignores it and is explicit: `to_bytes` /
-//! `encode_into` are always verbatim, `to_canonical_bytes` / `canonical_encode_into` always
+//! `bit_encode` are always verbatim, `to_canonical_bytes` / `canonical_bit_encode` always
 //! canonical. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render
 //! preference, not message data), and because the field can't appear in a struct literal,
 //! **construct these via the builder, `new(…)`, or `decode`** (every `#[bin]` type gets a

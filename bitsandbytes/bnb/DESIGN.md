@@ -127,9 +127,9 @@ impossible layout is a compile error rather than a silent miscompile.
 
 `#[bin]` folds the read codec, the write codec, and a required-by-default builder over
 one struct, generating the decode entry points (`decode`/`peek`/`decode_exact`/
-`decode_from`), the encode entry points (`to_bytes`/`encode_into`, plus
-`to_canonical_bytes`/`canonical_encode_into` for a message that has a `reserved`/`calc`
-field — see §5.2), the `encode(writer)` convenience, and construction
+`decode_from`), the encode entry points (`to_bytes`, plus `to_canonical_bytes` for a
+message that has a `reserved`/`calc` field — see §5.2), the `encode(writer)` convenience
+(and `BitEncode::bit_encode` for writing into a `Sink`), and construction
 (`Type::new(fields…)`, `Type::builder()`). Fields are read and written at arbitrary bit
 offsets, so the same attribute handles byte-aligned headers and sub-byte frames, and any
 `Bits` type drops in as a field.
@@ -190,8 +190,8 @@ The verbatim/canonical choice can also be **carried on the value**: such a messa
 wire-ignored `encode_mode` field (default `Verbatim`; set via the builder, `with_encode_mode`,
 `set_encode_mode`). It is consulted by exactly one entry point — the `std`-writer
 `encode(w)` — so you can set the policy once and stream the value; the explicit `to_bytes`/
-`to_canonical_bytes` (and the low-level `encode_into`/`canonical_encode_into` sinks) ignore
-it. The field is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (a render preference, not
+`to_canonical_bytes` (and the `BitEncode` sink methods `bit_encode`/`canonical_bit_encode`)
+ignore it. The field is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (a render preference, not
 data — `#[bin]` intercepts those derives), which means such a type is constructed via the
 builder, `new(fields…)`, or `decode` rather than a struct literal.
 
@@ -205,7 +205,7 @@ stays a pure normalization (compose `validate()` before sending if you want the 
 ## 6. The I/O ladder
 
 The everyday entry points work on byte slices and `Vec`s. For other inputs,
-`decode_from` takes any `Source` and `encode_into` any `Sink`:
+`decode_from` takes any `Source`, and `BitEncode::bit_encode` writes into any `Sink`:
 
 | Source | Backing | Seek | Use |
 |---|---|---|---|
@@ -254,8 +254,8 @@ fall out of *a proc-macro cannot see the consumer crate's feature flags*:
   works for every message — one without `reserved`/`calc` has no field and stays verbatim.
   `#[bin]` intercepts `Debug`/`PartialEq`/`Hash` so the mode never affects equality (a render
   preference, not data), which makes these types builder/`decode`-constructed. Cost: callers
-  bring the trait into scope (`use bnb::prelude::*`); `to_bytes`/`to_canonical_bytes`/`encode_into`
-  stay inherent and unconditional.
+  bring the trait into scope (`use bnb::prelude::*`); the `to_bytes`/`to_canonical_bytes` `Vec`
+  encoders stay inherent and unconditional (sink-writing uses the `BitEncode` trait methods).
 - **`BitEncode` carries `const LAYOUT`** so the blanket `encode` can build a correctly
   ordered `BitWriter` without the per-type layout literal the old inherent method had.
 - **`#[br(dbg)]` is `std`-only.** It emits a `tracing` event, and `tracing`'s default

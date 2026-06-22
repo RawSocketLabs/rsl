@@ -2,7 +2,8 @@
 //!
 //! The everyday entry points (`decode`/`peek`/`decode_exact`/`to_bytes`) work on byte
 //! slices and `Vec`s. When you need to read from a socket or a file, `decode_from`
-//! takes any [`Source`](crate::Source) and `encode_into` any [`Sink`](crate::Sink).
+//! takes any [`Source`](crate::Source); to write into an explicit [`Sink`](crate::Sink),
+//! [`BitEncode::bit_encode`](crate::BitEncode::bit_encode) does the dual.
 //! Pick the source by what your input can do:
 //!
 //! | Source | Backing | Can seek? | Use for |
@@ -70,10 +71,10 @@
 //! # Encoding
 //!
 //! `to_bytes()` (the common case) returns a `Vec`; `encode(&mut impl Write)` writes straight
-//! to a socket or file, and `encode_into(&mut impl Sink)` targets an explicit bit sink.
-//! `encode` follows the value's [`encode_mode`](crate::EncodeMode) — **verbatim** by default,
-//! or **canonical** if set — see
-//! [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
+//! to a socket or file, and [`bit_encode(&mut impl Sink)`](crate::BitEncode::bit_encode) targets
+//! an explicit bit sink (for composing into a cursor you already hold). `encode` follows the
+//! value's [`encode_mode`](crate::EncodeMode) — **verbatim** by default, or **canonical** if set
+//! — see [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
 //!
 //! ```
 //! use bnb::bin;

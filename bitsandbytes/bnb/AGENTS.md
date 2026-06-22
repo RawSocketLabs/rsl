@@ -142,9 +142,11 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   overridden by the derive **only** when a message has a `reserved` or non-`temp` `calc` field
   (else verbatim == canonical) — there is no separate `CanonicalEncode` trait. There is **no
   canonical decode** — `decode_*` is always verbatim. The same `reserved`/`calc` condition also
-  generates the inherent `to_canonical_bytes`/`canonical_encode_into` plus the in-memory helpers
+  generates the inherent `to_canonical_bytes` plus the in-memory helpers
   `to_canonical(self) -> Self`, `canonical_diff(&self) -> Vec<&'static str>` (fields differing
-  from canonical), and `is_canonical(&self) -> bool`.
+  from canonical), and `is_canonical(&self) -> bool`. (Sink-writing is the `BitEncode` trait
+  methods `bit_encode`/`canonical_bit_encode`, not an inherent `encode_into` — that wrapper was
+  cut as redundant.)
 - **The mode is carried on the value, not passed to `encode`.** A `reserved`/`calc` message gets
   a wire-ignored **`encode_mode`** field (default `Verbatim`): builder `.encode_mode(…)`,
   `set_encode_mode`/`with_encode_mode`, getter `encode_mode()`. `BitEncode::encode_mode(&self)`
@@ -155,8 +157,8 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   in with `use bnb::prelude::*`). **`#[bin]` injects the field and intercepts `Debug`/`PartialEq`/
   `Hash`** (custom impls over the user fields) so the mode is excluded from equality/hash/Debug — a
   render preference, not data — which means these types are **builder/`decode`-constructed** (the
-  private field can't appear in a literal). Generated, portable (no `EncodeExt`) methods: `to_bytes`/
-  `encode_into` (verbatim), `to_canonical_bytes`/`canonical_encode_into` (canonical), plus `impl
+  private field can't appear in a literal). Generated, portable (no `EncodeExt`) methods: `to_bytes`
+  (verbatim) and `to_canonical_bytes` (canonical); sink-writing is the trait methods on `impl
   BitEncode { const LAYOUT; fn bit_encode; [fn canonical_bit_encode + fn encode_mode when
   reserved/calc] }`.
 - `#[br(dbg)]` is `std`-only (`tracing` is an optional dep enabled by `std`); the

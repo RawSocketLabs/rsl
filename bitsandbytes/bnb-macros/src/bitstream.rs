@@ -1411,13 +1411,6 @@ fn gen_encode(
                         |__bnb_w| <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w),
                     )
                 }
-                #[doc = "Encode the canonical form into an explicit bit sink."]
-                pub fn canonical_encode_into<K: #bnb::__private::Sink>(
-                    &self,
-                    __bnb_w: &mut K,
-                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w)
-                }
 
                 #[doc = "The **canonical form in memory**: a copy with reserved fields set to their"]
                 #[doc = "spec value and `calc` fields recomputed. `value.to_canonical().to_bytes()`"]
@@ -1485,18 +1478,12 @@ fn gen_encode(
             #[doc = "Encode to a `Vec<u8>`, **verbatim** — exactly what's stored, never silently"]
             #[doc = "rewritten (so `decode` then `to_bytes` round-trips byte-for-byte). For the"]
             #[doc = "spec-normalized form, use `to_canonical_bytes` (generated when the message has"]
-            #[doc = "a `reserved` or `calc` field). To write to a `std::io::Write` sink following the"]
-            #[doc = "value's `encode_mode`, bring [`EncodeExt`](::bnb::EncodeExt) into scope and call"]
-            #[doc = "`.encode(&mut w)` (the `std` feature)."]
+            #[doc = "a `reserved` or `calc` field). To write into an explicit bit sink (a `BitWriter`)"]
+            #[doc = "or a `std::io::Write`, bring [`BitEncode`](::bnb::BitEncode) /"]
+            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.bit_encode(&mut sink)` /"]
+            #[doc = "`.encode(&mut w)` (the latter follows the value's `encode_mode`, `std` only)."]
             pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                 #bnb::__private::encode_to_vec(self, #layout)
-            }
-            #[doc = "Encode (verbatim) into an explicit bit sink (a `BitWriter`)."]
-            pub fn encode_into<K: #bnb::__private::Sink>(
-                &self,
-                __bnb_w: &mut K,
-            ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
             }
         }
         #encode_with_trait
@@ -3212,17 +3199,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             impl #name {
-                #[doc = "Encode to a `Vec<u8>`. To encode to a `std::io::Write` sink, bring"]
-                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.encode(&mut w)` (the `std` feature)."]
+                #[doc = "Encode to a `Vec<u8>`. To write into an explicit bit sink (a `BitWriter`)"]
+                #[doc = "or a `std::io::Write`, bring [`BitEncode`](::bnb::BitEncode) /"]
+                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.bit_encode(&mut sink)` /"]
+                #[doc = "`.encode(&mut w)` (the latter is `std`-only)."]
                 pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec(self, #layout)
-                }
-                #[doc = "Encode into an explicit bit sink (a `BitWriter`)."]
-                pub fn encode_into<K: #bnb::__private::Sink>(
-                    &self,
-                    __bnb_w: &mut K,
-                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
                 }
             }
             #encode_with_trait
