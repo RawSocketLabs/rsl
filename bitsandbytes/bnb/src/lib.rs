@@ -85,6 +85,9 @@ ladder, with an opt-in `bytes` feature for async framing.
   bridge, and the `encode(writer)` convenience ([`EncodeExt`]). The `#[br(dbg)]`
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
+- **`tokio`** — [`BinCodec`], a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
+  message, so `Framed::new(stream, BinCodec::<T>::new())` is a `Stream + Sink` of `T`. Implies
+  `bytes`.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
 ([`BitReader`], `Type::decode`/`decode_exact`/`peek`/`decode_from`) and encode to a
@@ -148,6 +151,9 @@ extern crate self as bnb;
 
 pub mod bitstream;
 pub mod builder;
+/// Async framing — a [`tokio_util::codec`] adapter (the `tokio` feature).
+#[cfg(feature = "tokio")]
+pub mod codec;
 pub mod error;
 mod field;
 pub mod guide;
@@ -167,6 +173,10 @@ pub use bitstream::{BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
 #[cfg(feature = "bytes")]
 pub use bitstream::{BytesReader, BytesWriter};
+
+/// The async `tokio_util` codec adapter (the `tokio` feature).
+#[cfg(feature = "tokio")]
+pub use codec::BinCodec;
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
 /// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the [`EncodeExt`] trait that

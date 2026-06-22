@@ -72,6 +72,9 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] `SeekReader<R: Read + Seek>` — large file / container.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
+- [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message, so
+      `Framed::new(stream, BinCodec::<T>::new())` is an async `Stream + Sink` (opt-in `tokio`
+      feature; `examples/tokio_framed.rs`).
 - [x] Seeking enforced in the type system: a `restore_position` message's `decode_from`
       is bound on `SeekSource`, so a forward-only stream is a compile error.
 

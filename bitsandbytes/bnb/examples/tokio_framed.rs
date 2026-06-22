@@ -1,77 +1,17 @@
-//! **tokio_framed** — *prototype*: a `tokio_util::codec` adapter so any bnb `#[bin]` message
-//! flows over an async `Framed` TCP stream, evaluated against a real client/server.
+//! **tokio_framed** — [`bnb::BinCodec`] (the `tokio` feature) framing `#[bin]` messages over an
+//! async `Framed` TCP stream, against a real client/server.
 //!
-//! The whole adapter is the ~30-line [`BinCodec`] below: `Decoder` reads one message off the
-//! receive buffer (returning `None` when only a partial frame is present — `Framed` then waits
-//! for more bytes), and `Encoder` appends `bit_encode`'s output. It is **generic over any
-//! `BitDecode + BitEncode`** — no per-type glue — so `Framed::new(stream, BinCodec::<T>::new())`
-//! gives you a `Stream + Sink` of `T`.
+//! `BinCodec<T>` is `tokio_util`'s `Decoder`/`Encoder` for *any* `#[bin]` message, so
+//! `Framed::new(stream, BinCodec::<T>::new())` is a `Stream + Sink` of `T` — no per-type glue.
+//! Here a server answers Pings with Pongs until Bye, all async over loopback.
 //!
-//! This lives in an example (not the crate) on purpose: it's a prototype to judge the ergonomics
-//! before deciding whether a `bnb::BinCodec` behind a `tokio` feature earns its place.
-//!
-//! Run with: `cargo run -p bitsandbytes --example tokio_framed --features bytes`
+//! Run with: `cargo run -p bitsandbytes --example tokio_framed --features tokio`
 
-use bnb::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, bin};
-use bytes::{Buf, BytesMut};
+use bnb::{BinCodec, bin};
 use futures_util::{SinkExt, StreamExt};
-use std::io;
-use std::marker::PhantomData;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::Framed;
 use tracing::info;
-
-/// A `tokio_util` codec for any bnb `#[bin]` message — the entire bnb↔tokio adapter.
-struct BinCodec<T>(PhantomData<T>);
-
-impl<T> BinCodec<T> {
-    fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: BitDecode> Decoder for BinCodec<T> {
-    type Item = T;
-    type Error = io::Error;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<T>, io::Error> {
-        if src.is_empty() {
-            return Ok(None);
-        }
-        let mut reader = BitReader::new(&src[..]);
-        match <T as BitDecode>::bit_decode(&mut reader) {
-            Ok(item) => {
-                // Consume exactly what this message used; leave the rest for the next call.
-                let consumed = reader.bit_pos() / 8; // these protocols are byte-aligned
-                src.advance(consumed);
-                Ok(Some(item))
-            }
-            // The buffer holds only a partial frame — tell `Framed` to read more (don't consume).
-            Err(e)
-                if matches!(
-                    e.kind,
-                    ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. }
-                ) =>
-            {
-                Ok(None)
-            }
-            // A genuine framing error.
-            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
-        }
-    }
-}
-
-impl<T: BitEncode> Encoder<T> for BinCodec<T> {
-    type Error = io::Error;
-
-    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), io::Error> {
-        let mut w = BitWriter::with_layout(<T as BitEncode>::LAYOUT);
-        item.bit_encode(&mut w)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        dst.extend_from_slice(&w.into_bytes());
-        Ok(())
-    }
-}
 
 /// A tiny self-delimiting RPC (magic-dispatched), the message type the codec frames.
 #[bin(big, magic = b"RPC")]

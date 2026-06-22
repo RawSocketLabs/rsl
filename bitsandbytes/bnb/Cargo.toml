@@ -38,6 +38,9 @@ tracing = { workspace = true, optional = true }
 # the core stays dependency-light; users off tokio never pull it in. The adapters are
 # inherently a std/tokio concern, so the `bytes` feature also turns on `std`.
 bytes = { workspace = true, optional = true }
+# Optional: the `tokio_util::codec` adapter ([`BinCodec`]) for async framing. Off by
+# default; pulled in only by the `tokio` feature.
+tokio-util = { workspace = true, optional = true }
 
 [features]
 # `std` (default) enables the `std::io` ladder (`StreamBitReader`/`BufSource`/
@@ -48,6 +51,9 @@ default = ["std"]
 std = ["dep:tracing"]
 # `bytes`-crate adapters (`BytesReader`/`BytesWriter`); imply `std` (tokio framing).
 bytes = ["dep:bytes", "std"]
+# `BinCodec`: a `tokio_util::codec` Decoder/Encoder for any `#[bin]` message (async framing
+# over `tokio`). Needs the `bytes` adapters' `BytesMut`, so it implies `bytes`.
+tokio = ["dep:tokio-util", "bytes"]
 
 [dev-dependencies]
 # Real logging in the examples (instead of `println!`). `tracing` is also an optional
@@ -69,10 +75,10 @@ criterion = { workspace = true, features = ["html_reports"] }
 bitbybit.workspace = true
 arbitrary-int.workspace = true
 modular-bitfield-msb.workspace = true
-# The `tokio_framed` example prototypes a `tokio_util` codec adapter (async framing).
-# Dev-deps only — never in a real `bnb` build.
+# The `tokio_framed` example drives `bnb::BinCodec` (the `tokio` feature) over a real async
+# socket. The runtime + the `Stream`/`Sink` ext traits are dev-only; `tokio-util` comes from
+# the `tokio` feature.
 tokio.workspace = true
-tokio-util.workspace = true
 futures-util.workspace = true
 
 # The `framed` example exercises the opt-in `bytes` adapters, so it only builds with
@@ -81,11 +87,11 @@ futures-util.workspace = true
 name = "framed"
 required-features = ["bytes"]
 
-# `tokio_framed` prototypes a tokio_util codec adapter; gated on `bytes` (the async-framing
-# feature) so default builds skip it and don't compile the heavy tokio dev-deps.
+# `tokio_framed` drives `bnb::BinCodec`; gated on `tokio` so default builds skip it (and the
+# heavy async deps).
 [[example]]
 name = "tokio_framed"
-required-features = ["bytes"]
+required-features = ["tokio"]
 
 [[bench]]
 name = "bitfield_bench"

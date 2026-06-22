@@ -771,6 +771,44 @@ impl<T> core::convert::From<T> for bnb::builder::BuilderError
 pub fn bnb::builder::BuilderError::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::builder::BuilderError
 impl<T> tracing::instrument::WithSubscriber for bnb::builder::BuilderError
+pub mod bnb::codec
+pub struct bnb::codec::BinCodec<T>(_)
+impl<T> bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::new() -> Self
+impl<T: bnb::bitstream::BitDecode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
+pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
+pub type bnb::codec::BinCodec<T>::Item = T
+pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::codec::BinCodec<T>
+pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
+pub fn bnb::codec::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::default::Default for bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::default() -> Self
+impl<T> core::marker::Freeze for bnb::codec::BinCodec<T>
+impl<T> core::marker::Send for bnb::codec::BinCodec<T> where T: core::marker::Send
+impl<T> core::marker::Sync for bnb::codec::BinCodec<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for bnb::codec::BinCodec<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for bnb::codec::BinCodec<T>
+impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::codec::BinCodec<T> where U: core::convert::From<T>
+pub fn bnb::codec::BinCodec<T>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::codec::BinCodec<T> where U: core::convert::Into<T>
+pub type bnb::codec::BinCodec<T>::Error = core::convert::Infallible
+pub fn bnb::codec::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::codec::BinCodec<T> where U: core::convert::TryFrom<T>
+pub type bnb::codec::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::codec::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::codec::BinCodec<T> where T: 'static + ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
+impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
 pub mod bnb::error
 pub enum bnb::error::Error
 pub bnb::error::Error::ValueTooLarge
@@ -1501,6 +1539,43 @@ impl<T> core::convert::From<T> for bnb::bitstream::ErrorKind
 pub fn bnb::bitstream::ErrorKind::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::ErrorKind
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
+pub struct bnb::BinCodec<T>(_)
+impl<T> bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::new() -> Self
+impl<T: bnb::bitstream::BitDecode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
+pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
+pub type bnb::codec::BinCodec<T>::Item = T
+pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::codec::BinCodec<T>
+pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
+pub fn bnb::codec::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::default::Default for bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::default() -> Self
+impl<T> core::marker::Freeze for bnb::codec::BinCodec<T>
+impl<T> core::marker::Send for bnb::codec::BinCodec<T> where T: core::marker::Send
+impl<T> core::marker::Sync for bnb::codec::BinCodec<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for bnb::codec::BinCodec<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for bnb::codec::BinCodec<T>
+impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::codec::BinCodec<T> where U: core::convert::From<T>
+pub fn bnb::codec::BinCodec<T>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::codec::BinCodec<T> where U: core::convert::Into<T>
+pub type bnb::codec::BinCodec<T>::Error = core::convert::Infallible
+pub fn bnb::codec::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::codec::BinCodec<T> where U: core::convert::TryFrom<T>
+pub type bnb::codec::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::codec::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::codec::BinCodec<T> where T: 'static + ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::codec::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
+pub fn bnb::codec::BinCodec<T>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
+impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
 pub struct bnb::BitError
 pub bnb::BitError::at: usize
 pub bnb::BitError::field: core::option::Option<&'static str>
