@@ -69,11 +69,22 @@ criterion = { workspace = true, features = ["html_reports"] }
 bitbybit.workspace = true
 arbitrary-int.workspace = true
 modular-bitfield-msb.workspace = true
+# The `tokio_framed` example prototypes a `tokio_util` codec adapter (async framing).
+# Dev-deps only — never in a real `bnb` build.
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
 
 # The `framed` example exercises the opt-in `bytes` adapters, so it only builds with
 # `--features bytes` (default `cargo build`/`test` skip it; the others auto-discover).
 [[example]]
 name = "framed"
+required-features = ["bytes"]
+
+# `tokio_framed` prototypes a tokio_util codec adapter; gated on `bytes` (the async-framing
+# feature) so default builds skip it and don't compile the heavy tokio dev-deps.
+[[example]]
+name = "tokio_framed"
 required-features = ["bytes"]
 
 [[bench]]
