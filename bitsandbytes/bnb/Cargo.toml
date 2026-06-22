@@ -41,7 +41,7 @@ bytes = { workspace = true, optional = true }
 
 [features]
 # `std` (default) enables the `std::io` ladder (`StreamBitReader`/`BufSource`/
-# `SeekReader`, `encode(writer)`/`spec_encode(writer)`, `From<std::io::Error>`) and the
+# `SeekReader`, the `encode(writer)` convenience, `From<std::io::Error>`) and the
 # `tracing`-backed `#[br(dbg)]` directive. Without it `bnb` is `no_std` — it always
 # needs `alloc`: decode from `&[u8]`, encode to `Vec<u8>`.
 default = ["std"]
@@ -69,6 +69,12 @@ criterion = { workspace = true, features = ["html_reports"] }
 bitbybit.workspace = true
 arbitrary-int.workspace = true
 modular-bitfield-msb.workspace = true
+
+# The `framed` example exercises the opt-in `bytes` adapters, so it only builds with
+# `--features bytes` (default `cargo build`/`test` skip it; the others auto-discover).
+[[example]]
+name = "framed"
+required-features = ["bytes"]
 
 [[bench]]
 name = "bitfield_bench"
