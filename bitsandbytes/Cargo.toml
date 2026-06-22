@@ -14,7 +14,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 # The proc-macro crate. Published as `bitsandbytes-macros`, but imported as `bnb_macros`
 # (the dep key, = the lib name) and re-exported by the `bnb` runtime crate.
-bnb-macros = { package = "bitsandbytes-macros", path = "bnb-macros", version = "0.1.0" }
+bnb-macros = { package = "bitsandbytes-macros", path = "bnb-macros", version = "0.2.0" }
 # Structured diagnostics for the `#[br(dbg)]` directive (std-only; optional in `bnb`).
 tracing = "0.1"
 # Optional zero-copy `Source`/`Sink` adapters over the `bytes` crate.
