@@ -158,3 +158,9 @@
 //! the equivalent of tokio's `into_split` is `Arc<TcpStream>` — clone the `Arc` per side and use
 //! `&*arc` (still `Read + Write`), no `try_clone`. The runnable `examples/tcp.rs` shows a full
 //! client/server.
+//!
+//! For an ergonomic wrapper, the **`net` feature** adds `MessageStream` — it owns a `Read +
+//! Write` stream and exposes `read_message`/`write_message` (so you exchange `#[bin]` values,
+//! not bytes) — and `MessageDatagram`, the datagram counterpart over any `DatagramSocket`
+//! (`UdpSocket`, `UnixDatagram`, …) with `send_message`/`recv_message`. With **`tokio`**,
+//! `BinCodec` does the same for an async `Framed` stream.

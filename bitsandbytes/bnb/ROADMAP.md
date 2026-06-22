@@ -75,6 +75,10 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message, so
       `Framed::new(stream, BinCodec::<T>::new())` is an async `Stream + Sink` (opt-in `tokio`
       feature; `examples/tokio_framed.rs`).
+- [x] `MessageStream` / `MessageDatagram` — ergonomic `std` socket helpers: whole-message
+      `read_message`/`write_message` over a `Read + Write` stream (`TcpStream`; owns it, both
+      directions, no `try_clone`) and `send_message`/`recv_message` over any `DatagramSocket`
+      (`UdpSocket`, `UnixDatagram`, …) (opt-in `net` feature; `examples/sockets.rs`).
 - [x] Seeking enforced in the type system: a `restore_position` message's `decode_from`
       is bound on `SeekSource`, so a forward-only stream is a compile error.
 

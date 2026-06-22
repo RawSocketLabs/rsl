@@ -54,6 +54,9 @@ bytes = ["dep:bytes", "std"]
 # `BinCodec`: a `tokio_util::codec` Decoder/Encoder for any `#[bin]` message (async framing
 # over `tokio`). Needs the `bytes` adapters' `BytesMut`, so it implies `bytes`.
 tokio = ["dep:tokio-util", "bytes"]
+# Ergonomic std socket helpers (`MessageStream` over `TcpStream`, `UdpExt` on `UdpSocket`).
+# Pure std — no extra deps.
+net = ["std"]
 
 [dev-dependencies]
 # Real logging in the examples (instead of `println!`). `tracing` is also an optional
@@ -92,6 +95,11 @@ required-features = ["bytes"]
 [[example]]
 name = "tokio_framed"
 required-features = ["tokio"]
+
+# `sockets` shows the `net` feature's ergonomic helpers (`MessageStream`/`UdpExt`).
+[[example]]
+name = "sockets"
+required-features = ["net"]
 
 [[bench]]
 name = "bitfield_bench"
