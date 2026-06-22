@@ -131,3 +131,30 @@
 //! that runs out mid-message reports [`ErrorKind::Incomplete`](crate::ErrorKind), the
 //! "read more bytes and retry" signal — distinct from a definitive parse failure. See
 //! [`errors`](super::errors).
+//!
+//! # Reading *and* writing one connection (without `try_clone`)
+//!
+//! To run a request/response loop on a single TCP connection you need to read and write the
+//! same socket. You don't need `try_clone()` (which dups the fd): **`std`'s `&TcpStream`
+//! implements both [`Read`](std::io::Read) and [`Write`](std::io::Write)**, so wrap the read
+//! half in a [`BufSource`](crate::BufSource) and write through `&TcpStream` — two shared borrows
+//! of the *same* socket:
+//!
+//! ```no_run
+//! use bnb::{bin, BufSource};
+//! use std::io::Write;
+//! use std::net::TcpStream;
+//! # #[bin(big)] #[derive(Debug, PartialEq)] struct Msg { seq: u32 }
+//! let stream = TcpStream::connect("127.0.0.1:9000")?;
+//! let mut reader = BufSource::new(&stream); // &TcpStream: Read
+//! let mut writer = &stream;                 // &TcpStream: Write — the same socket
+//!
+//! writer.write_all(&Msg { seq: 1 }.to_bytes()?)?;
+//! let reply = Msg::decode_from(&mut reader)?; // one framed message off the stream
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! For halves you need to **move across threads** (a dedicated reader thread and writer thread),
+//! the equivalent of tokio's `into_split` is `Arc<TcpStream>` — clone the `Arc` per side and use
+//! `&*arc` (still `Read + Write`), no `try_clone`. The runnable `examples/tcp.rs` shows a full
+//! client/server.
