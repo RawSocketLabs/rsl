@@ -72,9 +72,10 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] `SeekReader<R: Read + Seek>` — large file / container.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
-- [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message, so
-      `Framed::new(stream, BinCodec::<T>::new())` is an async `Stream + Sink` (opt-in `tokio`
-      feature; `examples/tokio_framed.rs`).
+- [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message: drives
+      both `Framed` (async TCP stream) and `UdpFramed` (async UDP datagrams, `(T, addr)`) — one
+      codec, both transports (opt-in `tokio` feature; `examples/tokio_framed.rs`,
+      `examples/tokio_udp.rs`).
 - [x] `MessageStream` / `MessageDatagram` — ergonomic `std` socket helpers: whole-message
       `read_message`/`write_message` over a `Read + Write` stream (`TcpStream`; owns it, both
       directions, no `try_clone`) and `send_message`/`recv_message` over any `DatagramSocket`

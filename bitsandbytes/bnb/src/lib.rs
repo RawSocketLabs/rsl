@@ -86,8 +86,8 @@ ladder, with an opt-in `bytes` feature for async framing.
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 - **`tokio`** — [`BinCodec`], a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
-  message, so `Framed::new(stream, BinCodec::<T>::new())` is a `Stream + Sink` of `T`. Implies
-  `bytes`.
+  message: `Framed::new(tcp, BinCodec::<T>::new())` (a stream) or `UdpFramed::new(udp, …)` (a
+  datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
 - **`net`** — ergonomic `std` socket helpers: [`MessageStream`] (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and [`MessageDatagram`] (`send_message`/
   `recv_message` over any [`DatagramSocket`] — `UdpSocket`, `UnixDatagram`, …). Implies `std`.

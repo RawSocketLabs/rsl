@@ -90,13 +90,17 @@ futures-util.workspace = true
 name = "framed"
 required-features = ["bytes"]
 
-# `tokio_framed` drives `bnb::BinCodec`; gated on `tokio` so default builds skip it (and the
-# heavy async deps).
+# `tokio_framed` (TCP) and `tokio_udp` (UDP) drive `bnb::BinCodec`; gated on `tokio` so default
+# builds skip them (and the heavy async deps).
 [[example]]
 name = "tokio_framed"
 required-features = ["tokio"]
 
-# `sockets` shows the `net` feature's ergonomic helpers (`MessageStream`/`UdpExt`).
+[[example]]
+name = "tokio_udp"
+required-features = ["tokio"]
+
+# `sockets` shows the `net` feature's ergonomic helpers (`MessageStream`/`MessageDatagram`).
 [[example]]
 name = "sockets"
 required-features = ["net"]

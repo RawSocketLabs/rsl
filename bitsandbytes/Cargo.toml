@@ -42,7 +42,7 @@ modular-bitfield-msb = "0.11"
 # The `tokio_framed` example's async runtime + codec framework (dev-only). Minimal features
 # to stay under the strict `multiple-versions` deny.
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
-tokio-util = { version = "0.7", features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec", "net"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 
 [workspace.lints.rust]

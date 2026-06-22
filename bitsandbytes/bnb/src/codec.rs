@@ -17,6 +17,11 @@
 //! The codec relies on each message being **self-delimiting** (its `#[bin]` structure or a
 //! `magic`/length prefix bounds it) — `decode` reads exactly one message and returns `None`
 //! when only a partial frame has arrived, so `Framed` reads more and retries.
+//!
+//! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
+//! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So
+//! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the
+//! async mirror of the sync `MessageStream` / `MessageDatagram` split. See `examples/tokio_udp`.
 
 use crate::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind};
 use bytes::{Buf, BytesMut};
