@@ -104,9 +104,13 @@ required-features = ["tokio"]
 name = "tokio_udp"
 required-features = ["tokio"]
 
-# `sockets` shows the `net` feature's ergonomic helpers (`MessageStream`/`MessageDatagram`).
+# `sockets` and `unix_stream` show the `net` feature's helpers (`MessageStream`/`MessageDatagram`).
 [[example]]
 name = "sockets"
+required-features = ["net"]
+
+[[example]]
+name = "unix_stream"
 required-features = ["net"]
 
 [[bench]]

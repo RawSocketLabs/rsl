@@ -20,7 +20,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `bin_message` | The `#[bin]` fold end-to-end: bitfield + enum fields, `count`, `temp`/`calc`, `validate` | `--example bin_message` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
 | `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
-| `alignment` | `pad_before`/`pad_after`/`align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
+| `alignment` | `pad_before` + `align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
+| `padding` | `align_before` + `pad_after` — realign after a sub-byte field, fixed-size trailing pad | `--example padding` |
 | `conditional` | `#[bin]` **`if`** — optional scalar + nested fields gated by a flag — plus `map` to a domain newtype | `--example conditional` |
 | `versioned` | `#[bin]` **`if`** gated by a *version* field (v1 vs v2 layout), with a `try_map` version guard | `--example versioned` |
 | `ctx` | **`ctx`** context threading + enum **`tag`** dispatch: a body whose variant is chosen by an off-wire selector | `--example ctx` |
@@ -42,6 +43,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `bytes_frame` | The `bytes` feature: zero-copy framing — encode to a `Bytes`, decode from an owned `Bytes`, cheap slices | `--example bytes_frame --features bytes` |
 | `tcp` | Raw `std` TCP: `BufSource` + the `&TcpStream` duplex trick (read + write one socket, no `try_clone`) | `--example tcp` |
 | `sockets` | The `net` feature: `MessageStream` (TCP) and `MessageDatagram` (UDP **and** Unix datagram — one API) | `--example sockets --features net` |
+| `unix_stream` | The `net` feature: `MessageStream` over a Unix-domain **stream** socket — generic beyond `TcpStream` | `--example unix_stream --features net` |
 | `tokio_framed` | The `tokio` feature: `BinCodec` over an async `Framed` TCP stream | `--example tokio_framed --features tokio` |
 | `tokio_udp` | The `tokio` feature: the *same* `BinCodec` over `UdpFramed` (async UDP datagrams) | `--example tokio_udp --features tokio` |
 
@@ -61,11 +63,11 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `ctx` + `tag` dispatch | ctx, ctx_length |
 | `parse_with` / `write_with` | varint, dns |
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
-| `pad` / `align` | alignment |
+| `pad` / `align` | alignment, padding |
 | `#[reserved]` | reserved, telemetry |
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | bin_message, telemetry |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp, bufsource / archive, peek / framed, streaming |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
-| `net` feature | sockets |
+| `net` feature | sockets, unix_stream |
