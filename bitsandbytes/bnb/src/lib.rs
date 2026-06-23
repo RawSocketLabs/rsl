@@ -233,4 +233,20 @@ pub mod __private {
     /// `std`-only debugging aid (see the `tracing` dependency note in `Cargo.toml`).
     #[cfg(feature = "std")]
     pub use ::tracing;
+
+    /// Adaptive byte-buffer formatter for the `#[bin]` `#[try_str]` field hint: renders a
+    /// buffer that is **valid UTF-8** as a quoted, escaped string (`"hello"`, `"a\nb"`) and any
+    /// buffer with a non-UTF-8 byte as **hex bytes** (`[de, ad, be, ef]`). All-or-nothing — it
+    /// never replaces bytes (no lossy `�`), so the rendering can't misrepresent the wire.
+    pub struct TryStr<'a, T: ?Sized>(pub &'a T);
+
+    impl<T: AsRef<[u8]> + ?Sized> ::core::fmt::Debug for TryStr<'_, T> {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            let bytes = self.0.as_ref();
+            match ::core::str::from_utf8(bytes) {
+                ::core::result::Result::Ok(s) => ::core::fmt::Debug::fmt(s, f),
+                ::core::result::Result::Err(_) => write!(f, "{bytes:02x?}"),
+            }
+        }
+    }
 }

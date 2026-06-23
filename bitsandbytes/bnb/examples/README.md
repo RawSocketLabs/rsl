@@ -31,6 +31,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
 | `cstring` | **`parse_with`/`write_with`** — a NUL-terminated C string (a third custom-codec shape) | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
+| `try_str` | **`#[try_str]`** — a `Debug` hint: a byte buffer prints as a string when valid UTF-8, else hex bytes (never lossy) | `--example try_str` |
 | `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`/`#[nested]` sections, enum dispatch, UDP loopback | `--example dns` |
 
 ## I/O ladder & transports
@@ -69,6 +70,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[reserved]` | reserved, telemetry |
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
+| `#[try_str]` (Debug rendering) | try_str |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp, bufsource / archive, peek / framed, streaming |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |

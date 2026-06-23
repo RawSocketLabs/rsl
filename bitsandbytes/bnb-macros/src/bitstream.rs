@@ -586,9 +586,63 @@ fn is_codec_field_attr(a: &syn::Attribute) -> bool {
         "builder",
         "reserved",
         "reserved_with",
+        "try_str",
     ]
     .iter()
     .any(|n| a.path().is_ident(n))
+}
+
+/// A field marked `#[try_str]` — a `Debug`-rendering hint: render this byte-buffer field as a
+/// string when it is valid UTF-8, else as hex bytes (all-or-nothing; never lossy).
+fn field_is_try_str(f: &syn::Field) -> bool {
+    f.attrs.iter().any(|a| a.path().is_ident("try_str"))
+}
+
+/// Removes `Debug` from the struct's `#[derive(…)]` lists (keeping the other derives), so
+/// `#[bin]` can emit a custom `Debug`. Returns whether `Debug` was present.
+fn intercept_debug_derive(attrs: &[syn::Attribute]) -> syn::Result<(bool, Vec<syn::Attribute>)> {
+    let mut had_debug = false;
+    let mut out = Vec::new();
+    for attr in attrs {
+        if attr.path().is_ident("derive") {
+            let paths =
+                attr.parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)?;
+            let kept: Vec<_> = paths
+                .into_iter()
+                .filter(|p| {
+                    if p.is_ident("Debug") {
+                        had_debug = true;
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            if !kept.is_empty() {
+                out.extend(syn::Attribute::parse_outer.parse2(quote!(#[derive(#(#kept),*)]))?);
+            }
+        } else {
+            out.push(attr.clone());
+        }
+    }
+    Ok((had_debug, out))
+}
+
+/// The per-field `.field(…)` calls for a generated `debug_struct`, wrapping `#[try_str]` fields
+/// in the adaptive [`TryStr`] formatter.
+fn debug_field_calls(
+    idents: &[syn::Ident],
+    try_str: &[syn::Ident],
+    bnb: &TokenStream2,
+) -> TokenStream2 {
+    let calls = idents.iter().map(|id| {
+        if try_str.iter().any(|t| t == id) {
+            quote!(.field(::core::stringify!(#id), &#bnb::__private::TryStr(&self.#id)))
+        } else {
+            quote!(.field(::core::stringify!(#id), &self.#id))
+        }
+    });
+    quote!(#(#calls)*)
 }
 
 /// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
@@ -1670,6 +1724,15 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         }
     }
 
+    // `#[try_str]` is a Debug-rendering hint: a stored byte-buffer field renders as a string
+    // when it is valid UTF-8, else as hex bytes. Collect the stored (non-`temp`) ones.
+    let try_str_idents: Vec<syn::Ident> = full_fields
+        .named
+        .iter()
+        .filter(|f| field_is_try_str(f) && !field_is_temp(f))
+        .filter_map(|f| f.ident.clone())
+        .collect();
+
     let decode = if args.write_only {
         quote!()
     } else {
@@ -1733,12 +1796,13 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             _ => Vec::new(),
         };
         let name = &s.ident;
+        let debug_calls = debug_field_calls(&user_idents, &try_str_idents, &bnb);
         let debug_impl = has_debug.then(|| {
             quote! {
                 impl ::core::fmt::Debug for #name {
                     fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         __f.debug_struct(::core::stringify!(#name))
-                            #(.field(::core::stringify!(#user_idents), &self.#user_idents))*
+                            #debug_calls
                             .finish()
                     }
                 }
@@ -1779,6 +1843,31 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             #debug_impl
             #partial_eq_impl
             #hash_impl
+        }
+    } else if !try_str_idents.is_empty() {
+        // No `encode_mode` to exclude, but `#[try_str]` fields still need adaptive rendering:
+        // intercept *only* `Debug` (other derives stay) and emit a custom impl over all stored
+        // fields. With no `#[derive(Debug)]` there's nothing to intercept.
+        let (had_debug, new_attrs) = intercept_debug_derive(&clean.attrs)?;
+        if had_debug {
+            clean.attrs = new_attrs;
+            let name = &s.ident;
+            let stored_idents: Vec<syn::Ident> = match &clean.fields {
+                Fields::Named(n) => n.named.iter().filter_map(|f| f.ident.clone()).collect(),
+                _ => Vec::new(),
+            };
+            let debug_calls = debug_field_calls(&stored_idents, &try_str_idents, &bnb);
+            quote! {
+                impl ::core::fmt::Debug for #name {
+                    fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        __f.debug_struct(::core::stringify!(#name))
+                            #debug_calls
+                            .finish()
+                    }
+                }
+            }
+        } else {
+            quote!()
         }
     } else {
         quote!()

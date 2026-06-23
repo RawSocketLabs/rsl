@@ -285,3 +285,29 @@
 //! let f = Framed::decode_exact(&[0x01, 0x00, 0x2A]).unwrap();
 //! assert_eq!(f, Framed { tag: 1, len: 42 });
 //! ```
+//!
+//! # `try_str` — render a byte buffer as a string in `Debug`
+//!
+//! `#[try_str]` is a **rendering hint**, not a codec directive: a byte-buffer field (`Vec<u8>`
+//! / `[u8; N]`) prints in `Debug` as a quoted, escaped **string** when its bytes are valid
+//! UTF-8, and falls back to **hex bytes** otherwise — all-or-nothing, never lossy (no `�`). It
+//! changes nothing on the wire: the field still stores raw bytes (sized by `count`, etc.), so
+//! the parser stays permissive — a non-UTF-8 value decodes fine, it just renders as bytes.
+//! `Debug` is what `tracing`'s `?` and `{:#?}` use, so this is what tidies up log output.
+//!
+//! ```
+//! use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq, Eq)]
+//! struct Record {
+//!     id: u8,
+//!     #[br(temp)] #[bw(calc = self.name.len() as u8)] len: u8,
+//!     #[br(count = len)] #[try_str] name: Vec<u8>,
+//! }
+//!
+//! let text = Record { id: 1, name: b"hi".to_vec() };
+//! assert!(format!("{text:?}").contains(r#"name: "hi""#));   // valid UTF-8 -> "hi"
+//!
+//! let bin = Record { id: 2, name: vec![0xC0, 0xDE] };
+//! assert!(format!("{bin:?}").contains("name: [c0, de]")); // not UTF-8 -> hex bytes
+//! ```

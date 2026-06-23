@@ -44,7 +44,9 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       `ctx(name: Ty, …)`, `validate = <path>`.
 - [x] **Field directives:** `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
       `map`/`try_map` (+ inverse `bw(map)`), `parse_with`/`write_with`, `ignore`,
-      `pad_*`/`align_*`, `restore_position`, `#[reserved]`/`#[reserved_with(…)]`.
+      `pad_*`/`align_*`, `restore_position`, `#[reserved]`/`#[reserved_with(…)]`,
+      `#[try_str]` (a `Debug`-rendering hint: a byte buffer prints as a string when valid
+      UTF-8, else hex bytes — never lossy; codec unaffected).
 - [x] Lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`; the bare derives carry
       the all-byte-aligned right-tool guard (escape hatch
       `#[bit_stream(allow_byte_aligned)]`).
