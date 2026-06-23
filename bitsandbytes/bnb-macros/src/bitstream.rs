@@ -645,6 +645,75 @@ fn debug_field_calls(
     quote!(#(#calls)*)
 }
 
+/// A custom `Debug` for a `#[bin]` enum when any variant field is `#[try_str]`: renders those
+/// fields adaptively (string-or-bytes) and the rest as the std derive would. Returns `None` when
+/// no variant field is `#[try_str]` (the std `#[derive(Debug)]` is then left untouched). It
+/// matches over the **stored** fields (`temp` fields are dropped from the emitted enum).
+fn enum_try_str_debug(
+    name: &syn::Ident,
+    variants: &Punctuated<syn::Variant, Token![,]>,
+    bnb: &TokenStream2,
+) -> Option<TokenStream2> {
+    let has_try_str = variants.iter().any(|v| {
+        v.fields
+            .iter()
+            .any(|f| !field_is_temp(f) && field_is_try_str(f))
+    });
+    if !has_try_str {
+        return None;
+    }
+    let arms = variants.iter().map(|v| {
+        let vn = &v.ident;
+        match &v.fields {
+            Fields::Unit => quote!(Self::#vn => __f.write_str(::core::stringify!(#vn))),
+            Fields::Named(named) => {
+                let stored: Vec<&syn::Field> =
+                    named.named.iter().filter(|f| !field_is_temp(f)).collect();
+                let binds: Vec<&syn::Ident> =
+                    stored.iter().filter_map(|f| f.ident.as_ref()).collect();
+                let calls = stored.iter().map(|f| {
+                    let id = f.ident.as_ref().unwrap();
+                    if field_is_try_str(f) {
+                        quote!(.field(::core::stringify!(#id), &#bnb::__private::TryStr(#id)))
+                    } else {
+                        quote!(.field(::core::stringify!(#id), #id))
+                    }
+                });
+                quote!(Self::#vn { #(#binds),* } =>
+                    __f.debug_struct(::core::stringify!(#vn)) #(#calls)* .finish())
+            }
+            Fields::Unnamed(unnamed) => {
+                let stored: Vec<&syn::Field> = unnamed
+                    .unnamed
+                    .iter()
+                    .filter(|f| !field_is_temp(f))
+                    .collect();
+                let binds: Vec<syn::Ident> = (0..stored.len())
+                    .map(|i| quote::format_ident!("__f{i}"))
+                    .collect();
+                let calls = stored.iter().zip(&binds).map(|(f, b)| {
+                    if field_is_try_str(f) {
+                        quote!(.field(&#bnb::__private::TryStr(#b)))
+                    } else {
+                        quote!(.field(#b))
+                    }
+                });
+                quote!(Self::#vn( #(#binds),* ) =>
+                    __f.debug_tuple(::core::stringify!(#vn)) #(#calls)* .finish())
+            }
+        }
+    });
+    Some(quote! {
+        impl ::core::fmt::Debug for #name {
+            fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                match self {
+                    #(#arms),*
+                }
+            }
+        }
+    })
+}
+
 /// The context-struct literal for a `ctx { a, b }` pass, resolving each name:
 /// on encode a parent **field** becomes `name: self.name`, anything else (the
 /// parent's own ctx param, already a local) stays shorthand `name`. On decode all
@@ -3340,9 +3409,23 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }
     }
 
+    // `#[try_str]` variant fields render adaptively: intercept `Debug` (when derived) and emit a
+    // custom impl over the variants. No `#[derive(Debug)]` ⇒ nothing to replace.
+    let try_str_debug = match enum_try_str_debug(name, &e.variants, &bnb) {
+        Some(impl_) => {
+            let (had_debug, new_attrs) = intercept_debug_derive(&clean.attrs)?;
+            had_debug.then(|| {
+                clean.attrs = new_attrs;
+                impl_
+            })
+        }
+        None => None,
+    };
+
     Ok(quote! {
         #ctx_struct
         #clean
+        #try_str_debug
         #kind_enum
         #accessor_fn
         #helpers

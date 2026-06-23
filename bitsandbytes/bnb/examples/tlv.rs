@@ -20,6 +20,7 @@ enum Field {
         #[bw(calc = text.len() as u8)]
         len: u8,
         #[br(count = len)]
+        #[try_str]
         text: Vec<u8>,
     },
     #[bin(magic = 0x03u8)]

@@ -15,6 +15,7 @@ struct Event {
     #[bw(calc = self.detail.len() as u8)]
     len: u8,
     #[br(count = len)]
+    #[try_str]
     detail: Vec<u8>,
 }
 

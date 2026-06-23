@@ -20,6 +20,7 @@ enum Body {
         #[bw(calc = text.len() as u8)]
         len: u8,
         #[br(count = len)]
+        #[try_str]
         text: Vec<u8>,
     },
     #[bin(tag = 3)]

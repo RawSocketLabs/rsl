@@ -34,6 +34,7 @@ struct Header {
     #[bw(calc = self.name.len() as u8)]
     name_len: u8,
     #[br(count = name_len)]
+    #[try_str]
     name: Vec<u8>,
 }
 

@@ -66,3 +66,49 @@ fn try_str_in_a_canonical_struct() {
     assert!(dbg.contains(r#"label: "hi""#), "got: {dbg}");
     assert!(!dbg.contains("encode_mode"), "mode must stay hidden: {dbg}");
 }
+
+// `#[try_str]` on an **enum** variant field (the dispatch case): the custom Debug renders the
+// hinted field adaptively while other variants/fields render as usual.
+#[bin(big)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum Packet {
+    #[bin(magic = 0x01u8)]
+    Note {
+        #[br(temp)]
+        #[bw(calc = text.len() as u8)]
+        len: u8,
+        #[br(count = len)]
+        #[try_str]
+        text: Vec<u8>,
+    },
+    #[bin(magic = 0x02u8)]
+    Ping,
+}
+
+#[test]
+fn try_str_on_an_enum_variant_field() {
+    let text = Packet::Note {
+        text: b"ok".to_vec(),
+    };
+    assert!(
+        format!("{text:?}").contains(r#"text: "ok""#),
+        "got: {text:?}"
+    );
+
+    let binary = Packet::Note {
+        text: vec![0xC0, 0xDE],
+    };
+    assert!(
+        format!("{binary:?}").contains("text: [c0, de]"),
+        "got: {binary:?}"
+    );
+
+    // Other variants render unchanged.
+    assert_eq!(format!("{:?}", Packet::Ping), "Ping");
+
+    // Codec is unaffected.
+    assert_eq!(
+        Packet::decode_exact(&text.to_bytes().unwrap()).unwrap(),
+        text
+    );
+}

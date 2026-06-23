@@ -35,6 +35,7 @@ struct Entry {
     id: u16,
     #[br(parse_with = parse_cstr)]
     #[bw(write_with = write_cstr)]
+    #[try_str]
     name: Vec<u8>,
     flags: u8,
 }

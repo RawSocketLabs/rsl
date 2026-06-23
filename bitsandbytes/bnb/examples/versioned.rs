@@ -24,6 +24,7 @@ struct Label {
     #[bw(calc = self.text.len() as u8)]
     len: u8,
     #[br(count = len)]
+    #[try_str]
     text: Vec<u8>,
 }
 
