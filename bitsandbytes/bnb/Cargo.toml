@@ -90,6 +90,10 @@ futures-util.workspace = true
 name = "framed"
 required-features = ["bytes"]
 
+[[example]]
+name = "bytes_frame"
+required-features = ["bytes"]
+
 # `tokio_framed` (TCP) and `tokio_udp` (UDP) drive `bnb::BinCodec`; gated on `tokio` so default
 # builds skip them (and the heavy async deps).
 [[example]]
