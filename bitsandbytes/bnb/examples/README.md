@@ -20,8 +20,12 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `bin_message` | The `#[bin]` fold end-to-end: bitfield + enum fields, `count`, `temp`/`calc`, `validate` | `--example bin_message` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
 | `conditional` | `#[bin]` **`if`** — optional scalar + nested fields gated by a flag — plus `map` to a domain newtype | `--example conditional` |
+| `versioned` | `#[bin]` **`if`** gated by a *version* field (v1 vs v2 layout), with a `try_map` version guard | `--example versioned` |
 | `ctx` | **`ctx`** context threading + enum **`tag`** dispatch: a body whose variant is chosen by an off-wire selector | `--example ctx` |
+| `ctx_length` | **`ctx`** sizing a field: a column count threaded into a `count`-loop of rows (`decode_with`/`…Ctx`) | `--example ctx_length` |
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
+| `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
+| `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
 | `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`/`#[nested]` sections, enum dispatch, UDP loopback | `--example dns` |
 
 ## I/O ladder & transports
@@ -29,6 +33,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | Example | Shows | Run |
 |---|---|---|
 | `archive` | `SeekReader` random access: a container index of `(offset, length)` records seeked to **out of order** | `--example archive` |
+| `peek` | `SeekReader` + **`restore_position`** — read a discriminant, then rewind so a later field re-reads it | `--example peek` |
 | `framed` | The opt-in `bytes` adapters (`BytesReader`/`BytesWriter`) + the streaming `Incomplete` signal | `--example framed --features bytes` |
 | `tcp` | Raw `std` TCP: `BufSource` + the `&TcpStream` duplex trick (read + write one socket, no `try_clone`) | `--example tcp` |
 | `sockets` | The `net` feature: `MessageStream` (TCP) and `MessageDatagram` (UDP **and** Unix datagram — one API) | `--example sockets --features net` |
@@ -45,11 +50,13 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` / `#[nested]` | tlv, dns, telemetry, bin_message, archive, framed |
 | `temp`/`calc` | most `#[bin]` examples |
-| `map` / `try_map` | conditional, ipv4 |
-| `if` (conditional) | conditional |
-| `ctx` + `tag` dispatch | ctx |
-| `parse_with` / seeking | dns, archive |
+| `map` | conditional, ipv4 |
+| `try_map` | checked, versioned |
+| `if` (conditional) | conditional, versioned |
+| `ctx` + `tag` dispatch | ctx, ctx_length |
+| `parse_with` / `write_with` | varint, dns |
+| seeking (`restore_position`) | archive, peek, dns |
 | verbatim vs canonical | ipv4, telemetry |
 | `validate` | bin_message, telemetry |
-| I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp / archive / framed |
+| I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp / archive, peek / framed |
 | `bytes` / `tokio` / `net` features | framed / tokio_framed + tokio_udp / sockets |
