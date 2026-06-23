@@ -29,6 +29,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
+| `cstring` | **`parse_with`/`write_with`** — a NUL-terminated C string (a third custom-codec shape) | `--example cstring` |
+| `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
 | `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`/`#[nested]` sections, enum dispatch, UDP loopback | `--example dns` |
 
 ## I/O ladder & transports
@@ -61,12 +63,12 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `try_map` | checked, versioned |
 | `if` (conditional) | conditional, versioned |
 | `ctx` + `tag` dispatch | ctx, ctx_length |
-| `parse_with` / `write_with` | varint, dns |
+| `parse_with` / `write_with` | varint, cstring, dns |
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
 | `pad` / `align` | alignment, padding |
 | `#[reserved]` | reserved, telemetry |
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
-| `validate` | bin_message, telemetry |
+| `validate` | validate, bin_message, telemetry |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp, bufsource / archive, peek / framed, streaming |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
