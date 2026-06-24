@@ -24,8 +24,10 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `padding` | `align_before` + `pad_after` — realign after a sub-byte field, fixed-size trailing pad | `--example padding` |
 | `conditional` | `#[bin]` **`if`** — optional scalar + nested fields gated by a flag — plus `map` to a domain newtype | `--example conditional` |
 | `versioned` | `#[bin]` **`if`** gated by a *version* field (v1 vs v2 layout), with a `try_map` version guard | `--example versioned` |
+| `heartbeat` | three at once — `#[bitflags]` status + `map` to a typed voltage + `if` gated by a **flag** | `--example heartbeat` |
 | `ctx` | **`ctx`** context threading + enum **`tag`** dispatch: a body whose variant is chosen by an off-wire selector | `--example ctx` |
 | `ctx_length` | **`ctx`** sizing a field: a column count threaded into a `count`-loop of rows (`decode_with`/`…Ctx`) | `--example ctx_length` |
+| `versioned_cells` | **`ctx`** + **`try_map`**: a `try_map`-validated version threaded into each cell to set its data width | `--example versioned_cells` |
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
@@ -56,14 +58,14 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 |---|---|
 | `#[bitfield]` | standalone, ipv4, enums, dns, telemetry, bin_message |
 | `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message |
-| `#[bitflags]` | flags, telemetry |
+| `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` / `#[nested]` | tlv, dns, telemetry, bin_message, archive, framed |
 | `temp`/`calc` | most `#[bin]` examples |
-| `map` | conditional, ipv4 |
-| `try_map` | checked, versioned |
-| `if` (conditional) | conditional, versioned |
-| `ctx` + `tag` dispatch | ctx, ctx_length |
+| `map` | conditional, ipv4, heartbeat |
+| `try_map` | checked, versioned, versioned_cells |
+| `if` (conditional) | conditional, versioned, heartbeat |
+| `ctx` + `tag` dispatch | ctx, ctx_length, versioned_cells |
 | `parse_with` / `write_with` | varint, cstring, dns |
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
 | `pad` / `align` | alignment, padding |
