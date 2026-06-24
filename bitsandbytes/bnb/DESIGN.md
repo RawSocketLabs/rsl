@@ -79,6 +79,12 @@ implement `Bits`. Because the unit of composition is "a value of N bits," a 5-bi
 nests in a 16-bit bitfield which nests in a byte-aligned `#[bin]` message — without any
 glue, and with widths checked by the compiler.
 
+A `Bits` value is the unit of bit-*packing*, but it is also a unit of *stream* coding:
+every `Bits` type additionally implements the message codec traits
+(`BitDecode`/`BitEncode`/`FixedBitLen`) as thin delegations to reading/writing its bits.
+So `#[bin]` decodes, encodes, and sizes every field — a `Bits` leaf *or* a nested `#[bin]`
+message — through one uniform interface, with no marker to disambiguate the two (see §8).
+
 ### 3.2 Two crates
 
 A proc-macro crate cannot also export runtime items, so:
@@ -132,7 +138,8 @@ message that has a `reserved`/`calc` field — see §5.2), the `encode(writer)` 
 (and `BitEncode::bit_encode` for writing into a `Sink`), and construction
 (`Type::new(fields…)`, `Type::builder()`). Fields are read and written at arbitrary bit
 offsets, so the same attribute handles byte-aligned headers and sub-byte frames, and any
-`Bits` type drops in as a field.
+`Bits` type *or* nested `#[bin]` message drops in as a field — both decoded, encoded, and
+sized through one uniform codec path, with no marker (§8).
 
 **Struct-level options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
 (a leading constant verified on read, emitted on write — any `Bits` value, so it can be
@@ -299,6 +306,17 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   (Layer 1 — covers nesting, counts, borrowed context with no `Args` type on the core
   trait); a `DecodeWith<A>`/`EncodeWith<A>` companion (Layer 2) carries the same to
   hand-written generics and trait objects.
+- **One field-codec path — no `#[nested]` marker.** A field is either a `Bits` leaf (a
+  `uN`/`#[bitfield]`/enum — a single packed value, read by reading its bits) or a nested
+  message (another `#[bin]` type — a layout of fields, read by recursing into its codec).
+  A proc-macro can't tell the two apart by type name, so the codec once needed an explicit
+  `#[nested]` marker. Instead, **every `Bits` leaf also implements
+  `BitDecode`/`BitEncode`/`FixedBitLen`** (thin delegations to its bit read/write), so
+  `#[bin]` calls those uniformly for *every* field. These are **concrete** impls — one per
+  leaf type, emitted by each `Bits`-producing macro — *not* an `impl<T: Bits>` blanket,
+  which Rust's coherence rejects against the per-message derives (no specialization, no
+  negative bounds). The `Bits` *packing* role is untouched; only the stream-codec impls
+  were added. `#[nested]` is still accepted as a no-op for backward compatibility.
 - **Position-aware errors.** A codec error records the absolute **bit offset** where it
   failed and the **field** being processed (the innermost wins, like a span), so a
   failure points at the exact place. A streaming source that runs out mid-message
