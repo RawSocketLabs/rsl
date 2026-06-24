@@ -37,7 +37,6 @@ struct Document {
     #[bw(calc = self.fields.len() as u8)]
     count: u8,
     #[br(count = count)]
-    #[nested]
     fields: Vec<Field>,
 }
 

@@ -296,6 +296,8 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
+
     Ok(quote! {
         #(#other_attrs)*
         #derive_attr
@@ -388,6 +390,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         // an over-wide bitfield a hard compile error instead of a silent truncation.
         const _: () = #name::__BITS_FIT;
 
+        #leaf_codec
         #builder_ts
         #debug_ts
     })

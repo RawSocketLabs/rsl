@@ -177,13 +177,10 @@ fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
     quote!(#bnb::__private::Layout { bit: #bit, byte: #byte })
 }
 
-/// Whether a field is a **nested message** (marked `#[nested]`) — a
-/// `BitDecode`/`BitEncode` struct recursed into — rather than a `Bits` leaf.
-/// An explicit marker: a nested message and a `Bits` leaf are both struct fields,
-/// so the attribute disambiguates which codec path to emit.
-fn is_nested(f: &syn::Field) -> bool {
-    f.attrs.iter().any(|a| a.path().is_ident("nested"))
-}
+// `#[nested]` is now obsolete: every field type (a `Bits` leaf or a message) implements
+// `BitDecode`/`BitEncode`, so `#[bin]` decodes/encodes and sizes every field uniformly with no
+// marker. The attribute is still accepted (and stripped by `is_codec_field_attr`) for backward
+// compatibility, but it no longer affects codegen.
 
 /// If the field is a fixed `[u8; N]` byte array, returns its length expression.
 fn byte_array_len(f: &syn::Field) -> Option<&syn::Expr> {
@@ -742,17 +739,13 @@ fn field_width(f: &syn::Field) -> TokenStream2 {
         return quote!(0u32); // in-memory only: zero wire bits
     }
     if let Some(elem) = vec_elem(f) {
-        if is_nested(f) {
-            quote!(<#elem as #bnb::__private::FixedBitLen>::BIT_LEN)
-        } else {
-            quote!(<#elem as #bnb::__private::Bits>::BITS)
-        }
-    } else if is_nested(f) {
-        quote!(<#ty as #bnb::__private::FixedBitLen>::BIT_LEN)
+        quote!(<#elem as #bnb::__private::FixedBitLen>::BIT_LEN)
     } else if let Some(len) = byte_array_len(f) {
         quote!(((#len) as u32 * 8))
     } else {
-        quote!(<#ty as #bnb::__private::Bits>::BITS)
+        // A leaf and a fixed message both report their width via `FixedBitLen` (leaves carry
+        // the impl now: `BIT_LEN == Bits::BITS`), so no `#[nested]` is needed to size a field.
+        quote!(<#ty as #bnb::__private::FixedBitLen>::BIT_LEN)
     }
 }
 
@@ -832,16 +825,10 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         let inner = option_elem(f).ok_or_else(|| {
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
-        let read_inner = if is_nested(f) {
-            quote!(<#inner as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?)
-        } else {
-            quote! {{
-                let __v: #inner = #bnb::__private::Source::read(__bnb_r)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-                __v
-            }}
-        };
+        // Uniform field codec: a leaf (`uN`/bitfield/enum) and a nested message both decode
+        // via `BitDecode` (leaves carry the impl now), so no `#[nested]` marker is needed.
+        let read_inner = quote!(<#inner as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?);
         return Ok(quote! {
             let #id = if (#cond) {
                 ::core::option::Option::Some(#read_inner)
@@ -880,14 +867,9 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                 let __e = <#elem>::decode_with(__bnb_r, #lit)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
-        } else if is_nested(f) {
-            quote! {
-                let __e = <#elem as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }
         } else {
             quote! {
-                let __e: #elem = #bnb::__private::Source::read(__bnb_r)
+                let __e = <#elem as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         };
@@ -915,19 +897,16 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
             let lit = ctx_literal(&ctx_struct_ty(ty)?, names, None);
             Ok(quote!(let #id = <#ty>::decode_with(__bnb_r, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
-        } else if is_nested(f) {
-            Ok(
-                quote!(let #id = <#ty as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
-            )
         } else if byte_array_len(f).is_some() {
             Ok(quote!(let #id = #bnb::__private::read_byte_array(__bnb_r)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
         } else {
-            // Pin the leaf type explicitly: a `temp` field is not stored in `Self`,
-            // so the construction can't infer it.
+            // Uniform codec: a leaf or a nested message both decode via `BitDecode`.
+            // (`bit_decode` returns `#ty`, so a `temp` field's type is pinned without an
+            // explicit annotation.)
             Ok(
-                quote!(let #id: #ty = __bnb_r.read().map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+                quote!(let #id = <#ty as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
             )
         }
     }
@@ -1047,13 +1026,8 @@ fn field_write_core(
         let inner = option_elem(f).ok_or_else(|| {
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
-        let write_inner = if is_nested(f) {
-            quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else {
-            quote!(#bnb::__private::Sink::write(__bnb_w, *__v)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        };
+        let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         return Ok(quote! {
             if let ::core::option::Option::Some(__v) = &self.#id {
                 #write_inner
@@ -1066,11 +1040,8 @@ fn field_write_core(
             let lit = ctx_literal(&elem_ctx, names, Some(field_set));
             quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else if is_nested(f) {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(#bnb::__private::Sink::write(__bnb_w, *__e)
+            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         Ok(quote! {
@@ -1085,16 +1056,15 @@ fn field_write_core(
             quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(&self.#id, __bnb_w, #lit)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         )
-    } else if is_nested(f) {
-        Ok(
-            quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(&self.#id, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
-        )
     } else if byte_array_len(f).is_some() {
         Ok(quote!(#bnb::__private::write_byte_array(&self.#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     } else {
-        Ok(quote!(__bnb_w.write(self.#id).map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+        // Uniform codec: a leaf or a nested message both encode via `BitEncode`.
+        Ok(
+            quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(&self.#id, __bnb_w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+        )
     }
 }
 
@@ -2234,13 +2204,8 @@ fn variant_field_write(
         let inner = option_elem(f).ok_or_else(|| {
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>`")
         })?;
-        let write_inner = if is_nested(f) {
-            quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else {
-            quote!(#bnb::__private::Sink::write(__bnb_w, *__v)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        };
+        let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
+            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
     } else if let Some(elem) = vec_elem(f) {
         let write_elem = if let Some(names) = &br.ctx {
@@ -2248,22 +2213,17 @@ fn variant_field_write(
             let lit = ctx_literal_variant(&elem_ctx, names, stored);
             quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else if is_nested(f) {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         } else {
-            quote!(#bnb::__private::Sink::write(__bnb_w, *__e)
+            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
         };
         quote!(for __e in #id { #write_elem })
-    } else if is_nested(f) {
-        quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#id, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     } else if byte_array_len(f).is_some() {
         quote!(#bnb::__private::write_byte_array(#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     } else {
-        quote!(#bnb::__private::Sink::write(__bnb_w, *#id)
+        // Uniform codec: a leaf or a nested message both encode via `BitEncode`.
+        quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
     };
     Ok(quote!(#pre #core #post))

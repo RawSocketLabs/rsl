@@ -51,6 +51,38 @@ pub(crate) fn bnb_path() -> proc_macro2::TokenStream {
     }
 }
 
+/// The `BitDecode`/`BitEncode` impls a `Bits` type carries so it's usable as a `#[bin]` field
+/// without a `#[nested]` marker — thin delegations to the bit read/write. Emitted by every
+/// `Bits`-producing macro (`#[bitfield]`, `#[derive(BitEnum)]`, `#[bitflags]`) for the type it
+/// generates; coheres because each is a concrete impl (no blanket).
+pub(crate) fn bits_leaf_codec_impl(
+    name: &syn::Ident,
+    bnb: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    quote::quote! {
+        impl #bnb::__private::BitDecode for #name {
+            #[inline]
+            fn bit_decode<__S: #bnb::__private::Source>(
+                __r: &mut __S,
+            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                __r.read::<Self>()
+            }
+        }
+        impl #bnb::__private::BitEncode for #name {
+            #[inline]
+            fn bit_encode<__K: #bnb::__private::Sink>(
+                &self,
+                __w: &mut __K,
+            ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                __w.write(*self)
+            }
+        }
+        impl #bnb::__private::FixedBitLen for #name {
+            const BIT_LEN: u32 = <Self as #bnb::__private::Bits>::BITS;
+        }
+    }
+}
+
 /// Packs the annotated struct's fields into a single backing integer.
 ///
 /// ```ignore

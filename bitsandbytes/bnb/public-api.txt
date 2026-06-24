@@ -635,15 +635,64 @@ pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
 pub trait bnb::bitstream::BitDecode: core::marker::Sized
 pub fn bnb::bitstream::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for bool
+pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u128
+pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u16
+pub fn u16::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u32
+pub fn u32::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u64
+pub fn u64::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u8
+pub fn u8::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 pub trait bnb::bitstream::BitEncode
 pub const bnb::bitstream::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::bitstream::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitEncode::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for bool
+pub const bool::LAYOUT: bnb::bitstream::Layout
+pub fn bool::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bool::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bool::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u128
+pub const u128::LAYOUT: bnb::bitstream::Layout
+pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u128::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u128::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u16
+pub const u16::LAYOUT: bnb::bitstream::Layout
+pub fn u16::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u16::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u16::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u32
+pub const u32::LAYOUT: bnb::bitstream::Layout
+pub fn u32::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u32::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u32::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u64
+pub const u64::LAYOUT: bnb::bitstream::Layout
+pub fn u64::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u64::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u64::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u8
+pub const u8::LAYOUT: bnb::bitstream::Layout
+pub fn u8::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u8::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u8::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
 pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
 pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
-pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn T::decode_with<S>(&mut S, ()) -> core::result::Result<T, bnb::bitstream::BitError> where S: bnb::bitstream::Source
 pub trait bnb::bitstream::EncodeExt: bnb::bitstream::BitEncode
 pub fn bnb::bitstream::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
@@ -651,9 +700,23 @@ pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), b
 pub trait bnb::bitstream::EncodeWith<A>
 pub fn bnb::bitstream::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T
-pub fn T::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn T::encode_with<K>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError> where K: bnb::bitstream::Sink
 pub trait bnb::bitstream::FixedBitLen
 pub const bnb::bitstream::FixedBitLen::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for bool
+pub const bool::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u128
+pub const u128::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u16
+pub const u16::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u32
+pub const u32::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u64
+pub const u64::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u8
+pub const u8::BIT_LEN: u32
+impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::BIT_LEN: u32
 pub trait bnb::bitstream::SeekSource: bnb::bitstream::Source
 impl bnb::bitstream::SeekSource for bnb::BytesReader
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
@@ -969,6 +1032,15 @@ pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
 pub const fn bnb::UInt<u8, N>::new(u8) -> Self
 pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
+impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::BIT_LEN: u32
 impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
 pub fn bnb::UInt<T, N>::clone(&self) -> bnb::UInt<T, N>
 impl<T: core::cmp::Eq, const N: usize> core::cmp::Eq for bnb::UInt<T, N>
@@ -1078,6 +1150,12 @@ pub fn bnb::UInt<T, N>::clone_into(&self, &mut T)
 pub fn bnb::UInt<T, N>::to_owned(&self) -> T
 impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display + ?core::marker::Sized
 pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
+impl<T> bnb::bitstream::DecodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitDecode
+pub fn bnb::UInt<T, N>::decode_with<S>(&mut S, ()) -> core::result::Result<T, bnb::bitstream::BitError> where S: bnb::bitstream::Source
+impl<T> bnb::bitstream::EncodeExt for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+pub fn bnb::UInt<T, N>::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T> bnb::bitstream::EncodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+pub fn bnb::UInt<T, N>::encode_with<K>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError> where K: bnb::bitstream::Sink
 impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
 pub fn bnb::UInt<T, N>::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for bnb::UInt<T, N> where T: ?core::marker::Sized
@@ -2323,6 +2401,24 @@ pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
 pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
+impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
+pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
+pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::BIT_LEN: u32
+pub const bnb::UInt<T, N>::BIT_LEN: u32
 impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
 impl<T: core::clone::Clone, const N: usize> core::clone::Clone for bnb::UInt<T, N>
 pub fn bnb::UInt<T, N>::clone(&self) -> bnb::UInt<T, N>
@@ -2541,6 +2637,18 @@ impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display 
 impl<T> alloc::string::ToString for bnb::UInt<T, N> where T: core::fmt::Display + ?core::marker::Sized
 pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
 pub fn bnb::UInt<T, N>::to_string(&self) -> alloc::string::String
+impl<T> bnb::bitstream::DecodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitDecode
+impl<T> bnb::bitstream::DecodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitDecode
+pub fn bnb::UInt<T, N>::decode_with<S>(&mut S, ()) -> core::result::Result<T, bnb::bitstream::BitError> where S: bnb::bitstream::Source
+pub fn bnb::UInt<T, N>::decode_with<S>(&mut S, ()) -> core::result::Result<T, bnb::bitstream::BitError> where S: bnb::bitstream::Source
+impl<T> bnb::bitstream::EncodeExt for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+impl<T> bnb::bitstream::EncodeExt for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+pub fn bnb::UInt<T, N>::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::UInt<T, N>::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+impl<T> bnb::bitstream::EncodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+impl<T> bnb::bitstream::EncodeWith<()> for bnb::UInt<T, N> where T: bnb::bitstream::BitEncode
+pub fn bnb::UInt<T, N>::encode_with<K>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError> where K: bnb::bitstream::Sink
+pub fn bnb::UInt<T, N>::encode_with<K>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError> where K: bnb::bitstream::Sink
 impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
 impl<T> core::any::Any for bnb::UInt<T, N> where T: 'static + ?core::marker::Sized
 pub fn bnb::UInt<T, N>::type_id(&self) -> core::any::TypeId
@@ -2635,11 +2743,60 @@ pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
 pub trait bnb::BitDecode: core::marker::Sized
 pub fn bnb::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for bool
+pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u128
+pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u16
+pub fn u16::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u32
+pub fn u32::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u64
+pub fn u64::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for u8
+pub fn u8::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 pub trait bnb::BitEncode
 pub const bnb::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BitEncode::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BitEncode::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for bool
+pub const bool::LAYOUT: bnb::bitstream::Layout
+pub fn bool::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bool::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bool::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u128
+pub const u128::LAYOUT: bnb::bitstream::Layout
+pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u128::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u128::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u16
+pub const u16::LAYOUT: bnb::bitstream::Layout
+pub fn u16::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u16::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u16::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u32
+pub const u32::LAYOUT: bnb::bitstream::Layout
+pub fn u32::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u32::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u32::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u64
+pub const u64::LAYOUT: bnb::bitstream::Layout
+pub fn u64::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u64::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u64::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for u8
+pub const u8::LAYOUT: bnb::bitstream::Layout
+pub fn u8::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u8::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn u8::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
+pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
 pub trait bnb::BitEnum: bnb::Bits
 pub trait bnb::Bitfield: bnb::Bits + core::marker::Sized
 pub type bnb::Bitfield::Backing: core::marker::Copy
@@ -2711,7 +2868,7 @@ pub fn std::os::unix::net::datagram::UnixDatagram::send_to(&self, &[u8], &Self::
 pub trait bnb::DecodeWith<A>: core::marker::Sized
 pub fn bnb::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
-pub fn T::decode_with<S: bnb::bitstream::Source>(&mut S, ()) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn T::decode_with<S>(&mut S, ()) -> core::result::Result<T, bnb::bitstream::BitError> where S: bnb::bitstream::Source
 pub trait bnb::EncodeExt: bnb::bitstream::BitEncode
 pub fn bnb::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
@@ -2719,9 +2876,23 @@ pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), b
 pub trait bnb::EncodeWith<A>
 pub fn bnb::EncodeWith::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, A) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeWith<()> for T
-pub fn T::encode_with<K: bnb::bitstream::Sink>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn T::encode_with<K>(&self, &mut K, ()) -> core::result::Result<(), bnb::bitstream::BitError> where K: bnb::bitstream::Sink
 pub trait bnb::FixedBitLen
 pub const bnb::FixedBitLen::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for bool
+pub const bool::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u128
+pub const u128::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u16
+pub const u16::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u32
+pub const u32::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u64
+pub const u64::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for u8
+pub const u8::BIT_LEN: u32
+impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
+pub const bnb::UInt<T, N>::BIT_LEN: u32
 pub trait bnb::SeekSource: bnb::bitstream::Source
 impl bnb::bitstream::SeekSource for bnb::BytesReader
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>

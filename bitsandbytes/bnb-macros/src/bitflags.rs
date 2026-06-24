@@ -87,6 +87,8 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!(Little)
     };
 
+    let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
+
     Ok(quote! {
         #(#outer)*
         #vis struct #name {
@@ -226,6 +228,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             #[inline]
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
+        #leaf_codec
     })
 }
 

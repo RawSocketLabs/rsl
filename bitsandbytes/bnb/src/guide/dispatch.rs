@@ -22,7 +22,7 @@
 //! # Magic dispatch — the discriminant is on the wire
 //!
 //! With no `tag`, each variant's `magic` is its discriminant: decode reads it once and
-//! matches; encode writes it. Variants may be unit, tuple, named, or `#[nested]`.
+//! matches; encode writes it. Variants may be unit, tuple, or named.
 //!
 //! ```
 //! use bnb::bin;

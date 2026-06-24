@@ -25,7 +25,6 @@ struct Index {
     #[bw(calc = self.entries.len() as u8)]
     count: u8,
     #[br(count = count)]
-    #[nested]
     entries: Vec<Entry>,
 }
 

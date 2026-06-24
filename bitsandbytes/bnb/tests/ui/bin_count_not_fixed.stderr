@@ -9,3 +9,11 @@ help: the trait `FixedBitLen` is not implemented for `Msg`
    |
  6 | struct Msg {
    | ^^^^^^^^^^
+   = help: the following other types implement trait `FixedBitLen`:
+             UInt<T, N>
+             bool
+             u128
+             u16
+             u32
+             u64
+             u8

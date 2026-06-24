@@ -27,7 +27,6 @@ struct Table {
     #[bw(calc = self.rows.len() as u8)]
     row_count: u8,
     #[br(count = row_count, ctx { columns })] // thread `columns` into each Row
-    #[nested]
     rows: Vec<Row>,
 }
 

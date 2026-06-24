@@ -166,18 +166,14 @@ struct Message {
     #[bw(calc = self.additional.len() as u16)]
     arcount: u16,
     #[br(count = qdcount)]
-    #[nested]
     questions: Vec<Question>,
     #[br(count = ancount)]
-    #[nested]
     #[builder(default)]
     answers: Vec<Record>,
     #[br(count = nscount)]
-    #[nested]
     #[builder(default)]
     authority: Vec<Record>,
     #[br(count = arcount)]
-    #[nested]
     #[builder(default)]
     additional: Vec<Record>,
 }

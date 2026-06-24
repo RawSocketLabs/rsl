@@ -30,7 +30,6 @@ struct Reading {
     #[br(if(flags & 0x01 != 0))]
     auth_token: Option<u32>, // an optional scalar
     #[br(if(flags & 0x02 != 0))]
-    #[nested]
     battery: Option<Battery>, // an optional nested message
 }
 

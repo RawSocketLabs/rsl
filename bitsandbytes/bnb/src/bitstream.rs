@@ -983,9 +983,10 @@ pub trait BitDecode: Sized {
 /// A message whose encoded length is a **compile-time constant** — i.e. it has no
 /// variable-length (`count`-driven `Vec`) field. The derive implements this only
 /// for fixed messages; it sizes a fixed byte region when the message is embedded
-/// in a byte stream (e.g. a `#[nested]` field's contribution to its parent's
-/// width). A `count`-bearing message implements [`BitDecode`]/[`BitEncode`] but
-/// **not** this.
+/// as a field in another message (its contribution to the parent's width). A
+/// `count`-bearing message implements [`BitDecode`]/[`BitEncode`] but **not** this.
+/// `Bits` leaves also implement it (their `BIT_LEN` is `Bits::BITS`), so a field's
+/// width is computed uniformly whether it's a leaf or a nested message.
 pub trait FixedBitLen {
     /// Total encoded width of the message in bits — the sum of its fields' widths.
     const BIT_LEN: u32;
@@ -1046,6 +1047,63 @@ pub trait BitEncode {
     fn encode_mode(&self) -> EncodeMode {
         EncodeMode::Verbatim
     }
+}
+
+// A `Bits` leaf (a `uN`, a `#[bitfield]`, a `BitEnum`/`#[bitflags]`) is *also* field-codable:
+// it decodes by reading its `BITS` bits and encodes by writing them. This lets `#[bin]` treat
+// **every** field uniformly through `bit_decode`/`bit_encode`, so it needs no `#[nested]` marker
+// to choose between "read bits" and "recurse into a message". (The `Bits` packing role — the
+// reason these types exist — is untouched; this only *adds* the stream-codec impls.) No blanket
+// `impl<T: Bits>` is possible (it would collide with the per-message derives under coherence),
+// so the leaves are covered concretely here and the macros emit one for each user `Bits` type.
+macro_rules! bits_leaf_codec {
+    ($($t:ty),* $(,)?) => {$(
+        impl BitDecode for $t {
+            #[inline]
+            fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
+                r.read::<$t>()
+            }
+        }
+        impl BitEncode for $t {
+            #[inline]
+            fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
+                w.write(*self)
+            }
+        }
+        // A leaf's fixed width is its `Bits::BITS`, so `#[bin]` can size it the same way it
+        // sizes a fixed nested message — uniformly via `FixedBitLen`.
+        impl FixedBitLen for $t {
+            const BIT_LEN: u32 = <$t as Bits>::BITS;
+        }
+    )*};
+}
+bits_leaf_codec!(u8, u16, u32, u64, u128, bool);
+
+impl<T, const N: usize> BitDecode for crate::int::UInt<T, N>
+where
+    crate::int::UInt<T, N>: Bits,
+{
+    #[inline]
+    fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
+        r.read::<Self>()
+    }
+}
+
+impl<T, const N: usize> BitEncode for crate::int::UInt<T, N>
+where
+    crate::int::UInt<T, N>: Bits,
+{
+    #[inline]
+    fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
+        w.write(*self)
+    }
+}
+
+impl<T, const N: usize> FixedBitLen for crate::int::UInt<T, N>
+where
+    crate::int::UInt<T, N>: Bits,
+{
+    const BIT_LEN: u32 = <Self as Bits>::BITS;
 }
 
 /// `encode(writer)` for any [`BitEncode`] message — encodes to a `Vec` (using the type's

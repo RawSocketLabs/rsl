@@ -182,6 +182,8 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 
     // `From`/`TryFrom` against the primitive — `num_enum` parity.
     let conv = conv_impls(name, width, &unit, catch_all.is_some());
+    // The field-codec delegations, so the enum is a `#[bin]` leaf field without `#[nested]`.
+    let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
 
     Ok(quote! {
         impl #bits_path for #name {
@@ -207,6 +209,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         impl #bnb::BitEnum for #name {}
 
         #conv
+        #leaf_codec
     })
 }
 

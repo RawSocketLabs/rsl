@@ -39,7 +39,6 @@ struct Event {
     #[br(if(version >= 2))]
     priority: Option<u8>,
     #[br(if(version >= 2))]
-    #[nested]
     label: Option<Label>,
 }
 

@@ -35,7 +35,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `cstring` | **`parse_with`/`write_with`** — a NUL-terminated C string (a third custom-codec shape) | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
 | `try_str` | **`#[try_str]`** — a `Debug` hint: a byte buffer prints as a string when valid UTF-8, else hex bytes (never lossy) | `--example try_str` |
-| `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`/`#[nested]` sections, enum dispatch, UDP loopback | `--example dns` |
+| `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`-driven sections, enum dispatch, UDP loopback | `--example dns` |
 
 ## I/O ladder & transports
 
@@ -61,7 +61,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message |
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
-| `count` / `#[nested]` | tlv, dns, telemetry, bin_message, archive, framed |
+| `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
 | `temp`/`calc` | most `#[bin]` examples |
 | `map` | conditional, ipv4, heartbeat |
 | `try_map` | checked, versioned, versioned_cells |

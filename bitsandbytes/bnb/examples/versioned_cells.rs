@@ -35,7 +35,6 @@ struct Table {
     #[bw(calc = self.cells.len() as u8)]
     count: u8,
     #[br(count = count, ctx { version })] // thread the validated version into each cell
-    #[nested]
     cells: Vec<Cell>,
 }
 
