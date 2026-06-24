@@ -22,6 +22,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
 | `alignment` | `pad_before` + `align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
 | `padding` | `align_before` + `pad_after` — realign after a sub-byte field, fixed-size trailing pad | `--example padding` |
+| `register` | `#[reserved]`/`#[reserved_with]` (must-be-zero + must-be-one) **and** `pad` in a fixed-layout control register | `--example register` |
 | `conditional` | `#[bin]` **`if`** — optional scalar + nested fields gated by a flag — plus `map` to a domain newtype | `--example conditional` |
 | `versioned` | `#[bin]` **`if`** gated by a *version* field (v1 vs v2 layout), with a `try_map` version guard | `--example versioned` |
 | `heartbeat` | three at once — `#[bitflags]` status + `map` to a typed voltage + `if` gated by a **flag** | `--example heartbeat` |
@@ -68,8 +69,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `ctx` + `tag` dispatch | ctx, ctx_length, versioned_cells |
 | `parse_with` / `write_with` | varint, cstring, dns |
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
-| `pad` / `align` | alignment, padding |
-| `#[reserved]` | reserved, telemetry |
+| `pad` / `align` | alignment, padding, register |
+| `#[reserved]` / `#[reserved_with]` | reserved, register, telemetry |
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
 | `#[try_str]` (Debug rendering) | try_str |
