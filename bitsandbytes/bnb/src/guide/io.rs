@@ -132,6 +132,13 @@
 //! "read more bytes and retry" signal — distinct from a definitive parse failure. See
 //! [`errors`](super::errors).
 //!
+//! When bytes arrive in pieces from something that *isn't* a `Read` (a channel, a callback, an
+//! async chunk), [`BitBuf`](crate::BitBuf) is the **push/pull** counterpart: `push(&bytes)` as
+//! they come, `pull::<T>()` to take whole messages off the front (it returns `None` until a full
+//! message is buffered). It tracks a **bit** position, so even messages that don't end on byte
+//! boundaries reassemble cleanly — unlike a byte cursor (`decode(&mut &[u8])`), which can only
+//! advance whole bytes.
+//!
 //! # Reading *and* writing one connection (without `try_clone`)
 //!
 //! To run a request/response loop on a single TCP connection you need to read and write the

@@ -1617,6 +1617,117 @@ impl<R: std::io::Read> Source for BufSource<R> {
 #[cfg(feature = "std")]
 impl<R: std::io::Read> SeekSource for BufSource<R> {}
 
+/// A **push/pull, bit-aware** decode buffer for incremental framing.
+///
+/// Feed bytes with [`push`](Self::push) as they arrive — from a socket, a channel, a callback,
+/// anything that delivers bytes — and take whole messages off the front with [`pull`](Self::pull),
+/// which returns `Ok(None)` when it needs more bytes (push more and call again).
+///
+/// Unlike a byte cursor ([`decode`] over a `&mut &[u8]`, or `bytes::BytesMut::advance`), `BitBuf`
+/// tracks a **bit** position, so a stream of messages that *don't* end on byte boundaries
+/// (bit-packed frames) reassembles cleanly: it reclaims the fully-consumed whole bytes and retains
+/// any partial trailing byte for the next message. It's the *pushable*, in-memory counterpart to
+/// [`BufSource`] (which pulls from a `Read`). `no_std`-compatible (`alloc` only).
+///
+/// ```
+/// use bnb::{bin, BitBuf};
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq, Eq)]
+/// struct Ping { seq: u16 }
+///
+/// let mut bb = BitBuf::new();
+/// bb.push(&[0x00]);                                  // only half of the first message
+/// assert_eq!(bb.pull::<Ping>().unwrap(), None);      // not a whole message yet
+/// bb.push(&[0x01, 0x00, 0x02]);                      // rest of msg 1 + all of msg 2
+/// assert_eq!(bb.pull::<Ping>().unwrap(), Some(Ping { seq: 1 }));
+/// assert_eq!(bb.pull::<Ping>().unwrap(), Some(Ping { seq: 2 }));
+/// assert_eq!(bb.pull::<Ping>().unwrap(), None);      // drained
+/// ```
+///
+/// [`decode`]: crate::BitDecode
+#[derive(Debug, Default, Clone)]
+pub struct BitBuf {
+    /// Unconsumed bytes: a possibly-partial leading byte (see `bit_off`) followed by whole ones.
+    buf: Vec<u8>,
+    /// Sub-byte offset (`0..8`) into `buf[0]` where the next message begins.
+    bit_off: usize,
+}
+
+impl BitBuf {
+    /// An empty buffer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// An empty buffer with room for `cap` bytes before reallocating.
+    #[must_use]
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            buf: Vec::with_capacity(cap),
+            bit_off: 0,
+        }
+    }
+
+    /// Append freshly-received bytes to the back of the buffer.
+    pub fn push(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes);
+    }
+
+    /// The number of unconsumed bits currently buffered.
+    #[must_use]
+    pub fn bit_len(&self) -> usize {
+        self.buf.len() * 8 - self.bit_off
+    }
+
+    /// Whether no unconsumed bits remain.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.bit_len() == 0
+    }
+
+    /// Drop all buffered bytes and reset the bit cursor.
+    pub fn clear(&mut self) {
+        self.buf.clear();
+        self.bit_off = 0;
+    }
+
+    /// Decode the next complete message off the front, reclaiming the whole bytes it consumed.
+    ///
+    /// Returns `Ok(None)` when the buffer doesn't yet hold a whole message — push more bytes and
+    /// call again; the buffer is left untouched, so the retry is free. A malformed message is an
+    /// `Err`. The byte/bit order is taken from `T`'s [`LAYOUT`](BitEncode::LAYOUT), so it decodes
+    /// `little`/`lsb` messages correctly.
+    ///
+    /// # Errors
+    /// A codec [`BitError`] for a malformed message.
+    pub fn pull<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, BitError> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        let mut r = BitReader::with_layout(&self.buf, <T as BitEncode>::LAYOUT);
+        r.seek_to_bit(self.bit_off)?;
+        match T::bit_decode(&mut r) {
+            Ok(msg) => {
+                let pos = r.bit_pos();
+                self.buf.drain(..pos / 8); // reclaim fully-consumed whole bytes
+                self.bit_off = pos % 8; // retain the partial trailing byte's offset
+                Ok(Some(msg))
+            }
+            // Only a partial message is buffered — wait for more (leave the buffer as-is).
+            Err(e)
+                if matches!(
+                    e.kind,
+                    ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. }
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
 /// A [`SeekSource`] over a seekable reader (`Read + Seek`, e.g. a `File`): it seeks
 /// via [`std::io::Seek`] to the byte holding the bit cursor, **without buffering** —
 /// the large-file / container-format case. For a *non*-seekable stream that still

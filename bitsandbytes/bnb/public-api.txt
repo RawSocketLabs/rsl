@@ -116,6 +116,52 @@ impl<T> core::convert::From<T> for bnb::bitstream::ErrorKind
 pub fn bnb::bitstream::ErrorKind::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::ErrorKind
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
+pub struct bnb::bitstream::BitBuf
+impl bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitBuf::clear(&mut self)
+pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
+pub fn bnb::bitstream::BitBuf::new() -> Self
+pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
+pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
+impl core::clone::Clone for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
+impl core::default::Default for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::default() -> bnb::bitstream::BitBuf
+impl core::fmt::Debug for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::bitstream::BitBuf
+impl core::marker::Send for bnb::bitstream::BitBuf
+impl core::marker::Sync for bnb::bitstream::BitBuf
+impl core::marker::Unpin for bnb::bitstream::BitBuf
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitBuf
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitBuf
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitBuf
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitBuf where U: core::convert::From<T>
+pub fn bnb::bitstream::BitBuf::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitBuf where U: core::convert::Into<T>
+pub type bnb::bitstream::BitBuf::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitBuf::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitBuf where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitBuf::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitBuf::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitBuf where T: core::clone::Clone
+pub type bnb::bitstream::BitBuf::Owned = T
+pub fn bnb::bitstream::BitBuf::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitBuf::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitBuf where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitBuf where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitBuf where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitBuf where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitBuf::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitBuf
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitBuf
 pub struct bnb::bitstream::BitError
 pub bnb::bitstream::BitError::at: usize
 pub bnb::bitstream::BitError::field: core::option::Option<&'static str>
@@ -1740,6 +1786,52 @@ impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
 pub fn bnb::codec::BinCodec<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
 impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
+pub struct bnb::BitBuf
+impl bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitBuf::clear(&mut self)
+pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
+pub fn bnb::bitstream::BitBuf::new() -> Self
+pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
+pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
+impl core::clone::Clone for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
+impl core::default::Default for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::default() -> bnb::bitstream::BitBuf
+impl core::fmt::Debug for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::bitstream::BitBuf
+impl core::marker::Send for bnb::bitstream::BitBuf
+impl core::marker::Sync for bnb::bitstream::BitBuf
+impl core::marker::Unpin for bnb::bitstream::BitBuf
+impl core::marker::UnsafeUnpin for bnb::bitstream::BitBuf
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitBuf
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitBuf
+impl<T, U> core::convert::Into<U> for bnb::bitstream::BitBuf where U: core::convert::From<T>
+pub fn bnb::bitstream::BitBuf::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitBuf where U: core::convert::Into<T>
+pub type bnb::bitstream::BitBuf::Error = core::convert::Infallible
+pub fn bnb::bitstream::BitBuf::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::BitBuf where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::BitBuf::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::BitBuf::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::BitBuf where T: core::clone::Clone
+pub type bnb::bitstream::BitBuf::Owned = T
+pub fn bnb::bitstream::BitBuf::clone_into(&self, &mut T)
+pub fn bnb::bitstream::BitBuf::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::BitBuf where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::BitBuf where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::BitBuf where T: ?core::marker::Sized
+pub fn bnb::bitstream::BitBuf::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::BitBuf where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::BitBuf::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::BitBuf
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitBuf
 pub struct bnb::BitError
 pub bnb::BitError::at: usize
 pub bnb::BitError::field: core::option::Option<&'static str>
