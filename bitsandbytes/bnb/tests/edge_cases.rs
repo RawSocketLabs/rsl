@@ -50,7 +50,7 @@ fn restore_position_works_over_buf_source() {
     // `BufSource` is a `SeekSource`; the rewind must work at runtime (not just over a
     // slice `BitReader`), seeking back within the retained buffer.
     let mut src = BufSource::new(&[0xAB, 0xCD][..]);
-    let p = Peeked::decode_from(&mut src).unwrap();
+    let p = Peeked::decode(&mut src).unwrap();
     assert_eq!(p.tag, 0xAB); // peeked
     assert_eq!(p.full, 0xABCD); // then re-read as the high byte of the u16
 }

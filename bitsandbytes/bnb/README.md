@@ -125,7 +125,7 @@ let parsed = Header::decode_exact(&bytes)?; // exact inverse
 ```
 
 The generated API per `#[bin]` type: `decode` / `peek` / `decode_exact` /
-`decode_from`, `encode` (to any `io::Write`) / `to_bytes` / `encode_into`, and
+`decode`, `encode` (to any `io::Write`) / `to_bytes` / `encode_into`, and
 `Type::builder()`. See [`examples/bin_message.rs`](examples/bin_message.rs) for a
 complete, runnable DNS-header + framed-payload round-trip.
 

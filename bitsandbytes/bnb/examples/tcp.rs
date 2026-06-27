@@ -4,7 +4,7 @@
 //! A `#[bin]` enum is a self-delimiting RPC (magic-dispatched), so a reader pulls exactly one
 //! message off the stream at a time. The read side wraps the socket in a [`BufSource`] (the
 //! `std::io::Read` → bnb `Source` adapter that buffers as the decoder needs bytes, so
-//! `decode_from` blocks until a whole message has arrived). The write side just calls
+//! `decode` blocks until a whole message has arrived). The write side just calls
 //! `to_bytes()` + `write_all`.
 //!
 //! **The duplex trick:** `std`'s `&TcpStream` implements *both* `Read` and `Write`, so the read
@@ -63,9 +63,9 @@ fn reply_to(req: &Message) -> Option<Message> {
 fn serve(stream: TcpStream) -> std::io::Result<()> {
     let mut reader = BufSource::new(&stream); // &TcpStream: Read
     let mut writer = &stream; // &TcpStream: Write — the same underlying socket
-    // `decode_from` returns `Err` when the connection closes (or on a framing error) — that
+    // `decode` returns `Err` when the connection closes (or on a framing error) — that
     // ends the read loop.
-    while let Ok(req) = Message::decode_from(&mut reader) {
+    while let Ok(req) = Message::decode(&mut reader) {
         info!(?req, "server ← request");
         match reply_to(&req) {
             Some(reply) => {
@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writer.write_all(&bytes)?;
         info!(?request, bytes = %hex(&bytes), "client → request");
 
-        let reply = Message::decode_from(&mut reader)?; // one framed reply off the stream
+        let reply = Message::decode(&mut reader)?; // one framed reply off the stream
         info!(?reply, "client ← reply");
         match (&request, &reply) {
             (Message::Ping { seq }, Message::Pong { seq: back }) => assert_eq!(seq, back),

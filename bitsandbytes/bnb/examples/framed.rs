@@ -11,7 +11,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example framed --features bytes`
 
-use bnb::{BitEncode, BytesReader, BytesWriter, StreamBitReader, bin};
+use bnb::{BitEncode, BitReader, BytesReader, BytesWriter, StreamBitReader, bin};
 use bytes::Bytes;
 use tracing::info;
 
@@ -90,13 +90,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Server side: decode the frame from an owned Bytes (no copy), then reply.
         let mut reader = BytesReader::new(on_wire);
-        let decoded = Message::decode_from(&mut reader)?;
+        let decoded = Message::decode(&mut reader)?;
         let reply = server_reply(&decoded);
         let reply_wire = frame(&reply);
         info!(?reply, bytes = %hex(&reply_wire), "server → client");
 
         // Client side: decode the reply.
-        let echoed = Message::decode_from(&mut BytesReader::new(reply_wire))?;
+        let echoed = Message::decode(&mut BytesReader::new(reply_wire))?;
         assert_eq!(echoed, reply);
     }
 
@@ -109,13 +109,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     buf.extend_from_slice(&frame(&Message::Bye));
     info!(bytes = %hex(&buf), "three frames packed in one buffer");
 
-    let mut rest: &[u8] = &buf;
+    let mut reader = BitReader::new(&buf);
     let mut count = 0;
-    while !rest.is_empty() {
-        let msg = Message::decode(&mut rest)?; // reads one frame, advances `rest`
+    while reader.remaining_bits() > 0 {
+        let msg = Message::decode(&mut reader)?; // reads one frame, advances the cursor
         info!(
             ?msg,
-            remaining = rest.len(),
+            remaining_bits = reader.remaining_bits(),
             "decoded one frame off the stream"
         );
         count += 1;
@@ -127,11 +127,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the "buffer more bytes and retry" signal — distinct from a malformed-frame error.
     let whole = frame(&say("hello world"));
     let truncated = &whole[..whole.len() - 4]; // the text is cut short
-    let err = Message::decode_from(&mut StreamBitReader::new(truncated)).unwrap_err();
+    let err = Message::decode(&mut StreamBitReader::new(truncated)).unwrap_err();
     info!(error = %err, incomplete = err.is_incomplete(), "truncated frame → read more");
     assert!(err.is_incomplete());
     // The whole frame decodes cleanly.
-    let ok = Message::decode_from(&mut StreamBitReader::new(&whole[..]))?;
+    let ok = Message::decode(&mut StreamBitReader::new(&whole[..]))?;
     assert_eq!(ok, say("hello world"));
 
     info!("all checks passed");

@@ -1,6 +1,6 @@
 //! `BitBuf` — a push/pull, bit-aware incremental decode buffer.
 
-use bnb::{BitBuf, BitEncode, BitWriter, bin, u4};
+use bnb::{BitBuf, BitDecode, BitEncode, BitWriter, bin, u4};
 
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -70,5 +70,32 @@ fn clear_and_capacity() {
     bb.push(&[1, 2, 3]);
     assert_eq!(bb.bit_len(), 24);
     bb.clear();
+    assert!(bb.is_empty());
+}
+
+// BitBuf is a Source: it reads through the same `bit_decode` entry the renamed `decode` uses.
+// The default-order buffer reads a big message; `with_layout` reads a little one (this also
+// proves byte order is applied exactly once — no double-ordering in the Source delegation).
+#[test]
+fn reads_as_a_source_respecting_layout() {
+    // big message via a default (msb/big) BitBuf
+    let f = Frame {
+        tag: u4::new(0xC),
+        val: 0x9A,
+    };
+    let mut bb = BitBuf::new();
+    bb.push(&f.to_bytes().unwrap());
+    assert_eq!(<Frame as BitDecode>::bit_decode(&mut bb).unwrap(), f);
+
+    // little message via a layout-configured BitBuf (byte-aligned, so compact fully drains)
+    let m = LeMsg {
+        a: 0x1234,
+        b: 0xDEAD_BEEF,
+    };
+    let mut bb = BitBuf::new().with_layout(<LeMsg as BitEncode>::LAYOUT);
+    bb.push(&m.to_bytes().unwrap());
+    let got = <LeMsg as BitDecode>::bit_decode(&mut bb).unwrap();
+    assert_eq!(got, m); // would be byte-swapped if ordering double-applied
+    bb.compact(); // Source path doesn't auto-reclaim
     assert!(bb.is_empty());
 }

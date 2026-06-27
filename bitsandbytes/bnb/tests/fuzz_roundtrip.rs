@@ -134,8 +134,8 @@ proptest! {
         // The other entry points must be equally robust.
         let _ = Header::peek(&bytes);
         let _ = Counted::peek(&bytes);
-        let mut cursor = &bytes[..];
-        let _ = Counted::decode(&mut cursor);
+        let _ = Counted::decode_all(&bytes);
+        let _ = Counted::decode_iter(&bytes).count();
     }
 
     // --- 3. decode ∘ encode = id for fixed total parsers ---------------------

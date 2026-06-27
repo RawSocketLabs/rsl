@@ -132,8 +132,8 @@ impossible layout is a compile error rather than a silent miscompile.
 ## 5. The `#[bin]` codec
 
 `#[bin]` folds the read codec, the write codec, and a required-by-default builder over
-one struct, generating the decode entry points (`decode`/`peek`/`decode_exact`/
-`decode_from`), the encode entry points (`to_bytes`, plus `to_canonical_bytes` for a
+one struct, generating the decode entry points (`decode`/`decode_all`/`decode_iter`/
+`peek`/`decode_exact`), the encode entry points (`to_bytes`, plus `to_canonical_bytes` for a
 message that has a `reserved`/`calc` field — see §5.2), the `encode(writer)` convenience
 (and `BitEncode::bit_encode` for writing into a `Sink`), and construction
 (`Type::new(fields…)`, `Type::builder()`). Fields are read and written at arbitrary bit
@@ -212,7 +212,7 @@ stays a pure normalization (compose `validate()` before sending if you want the 
 ## 6. The I/O ladder
 
 The everyday entry points work on byte slices and `Vec`s. For other inputs,
-`decode_from` takes any `Source`, and `BitEncode::bit_encode` writes into any `Sink`:
+`decode` takes any `Source`, and `BitEncode::bit_encode` writes into any `Sink`:
 
 | Source | Backing | Seek | Use |
 |---|---|---|---|
@@ -225,7 +225,7 @@ The everyday entry points work on byte slices and `Vec`s. For other inputs,
 Seeking is only needed by a message that uses `restore_position`; everything else runs
 over the forward-only `StreamBitReader` too. **Seeking is a source capability, enforced
 in the type system:** when a message uses `restore_position`, the generated
-`decode_from` is bound on `SeekSource`, so decoding it through a forward-only stream is
+`decode` is bound on `SeekSource`, so decoding it through a forward-only stream is
 a compile error rather than a runtime surprise; `forward_only` is the opt-in that
 forbids seek directives outright. The in-memory cursor needs no `Seek` trait at all —
 the whole buffer is in hand, so a seek is just cursor arithmetic (which also enables
@@ -240,7 +240,7 @@ rows of the table above that are backed by `std::io` (`StreamBitReader`/`BufSour
 `SeekReader`, the `as_read`/`as_write` views), the `From<std::io::Error>` bridge +
 `ErrorKind::Io`, and the `encode(writer)` convenience. The
 forward-only/seekable distinction is unchanged; `no_std` simply has fewer `Source`
-implementations to feed `decode_from` (the in-memory `BitReader`, and `BytesReader`
+implementations to feed `decode` (the in-memory `BitReader`, and `BytesReader`
 under `bytes`).
 
 The chosen boundary is **buffer-at-a-time, not streaming** ("Option A"): `no_std`

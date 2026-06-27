@@ -35,7 +35,7 @@ fn seek_using_message_over_a_nonseekable_stream() {
     // Wire bytes from the restore_position round-trip: flags=5, value=0xABCD.
     let wire = vec![0x5A, 0xBC, 0xD0];
     let mut src = BufSource::new(Chunked { data: wire, pos: 0 });
-    let f = Frame::decode_from(&mut src).unwrap();
+    let f = Frame::decode(&mut src).unwrap();
     assert_eq!(f.value, 0xABCD);
     assert_eq!(f.peek, 0xAB, "the rewind re-read retained bytes");
 }

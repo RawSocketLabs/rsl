@@ -61,10 +61,11 @@
 //!
 //! | Direction | Method | Use |
 //! |---|---|---|
+//! | decode | `decode(&mut S)` | one message from a [`Source`](crate::Source) cursor (`BitReader`/socket/file/[`BitBuf`](crate::BitBuf)), advancing it |
 //! | decode | `decode_exact(&[u8])` | one message that consumes every whole byte |
-//! | decode | `decode(&mut &[u8])` | one message from the front; advances the slice |
+//! | decode | `decode_all(&[u8]) -> Vec<_>` | every message in the buffer (bit-aware, layout baked in) |
+//! | decode | `decode_iter(&[u8])` | a lazy iterator over the buffer's messages |
 //! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation |
-//! | decode | `decode_from(&mut S)` | from an explicit [`Source`](crate::Source) (stream/socket/file) |
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
 //! | encode | `encode(&mut W)` | encode to any [`std::io::Write`], following the value's `encode_mode` |
@@ -73,7 +74,7 @@
 //! | build | `new(fields…)` | positional constructor — every stored field, in declaration order |
 //!
 //! `decode`/`peek`/`decode_exact`/`to_bytes` are the everyday slice/`Vec` path;
-//! `decode_from`/`encode(&mut W)`/`bit_encode` open the door to the
+//! `decode`/`encode(&mut W)`/`bit_encode` open the door to the
 //! [I/O ladder](super::io). († `to_canonical_bytes`, the canonical helpers, and the settable
 //! `encode_mode` exist only when the message has a `reserved` or `calc` field — see
 //! [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
@@ -142,7 +143,7 @@
 //!
 //! let data: &[u8] = &[0xCA, 0xFE, 0x00, 0x10]; // `&[u8]` is `Read` but not `Seek`
 //! let mut s = StreamBitReader::new(data);
-//! assert_eq!(Hdr::decode_from(&mut s).unwrap(), Hdr { magic: 0xCAFE, len: 16 });
+//! assert_eq!(Hdr::decode(&mut s).unwrap(), Hdr { magic: 0xCAFE, len: 16 });
 //! ```
 //!
 //! `ctx(...)` — context a message needs from its parent **to decode**. The parent passes it

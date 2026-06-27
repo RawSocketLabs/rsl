@@ -1,5 +1,5 @@
 //! Entry points (ROADMAP Phase 1, chunk B2): `decode`/`peek`/`decode_exact`/
-//! `decode_from` + `encode`/`to_bytes`/`encode_into`, with the `Incomplete`
+//! `decode` + `encode`/`to_bytes`/`encode_into`, with the `Incomplete`
 //! (streaming) and `TrailingBytes` (strict) signals.
 
 use bnb::{BitDecode, BitEncode, BitReader, EncodeExt, ErrorKind, StreamBitReader, u4, u12};
@@ -34,25 +34,36 @@ fn to_bytes_peek_and_tail_tolerance() {
 }
 
 #[test]
-fn decode_consumes_and_advances() {
+fn decode_advances_a_cursor() {
     let (w, bytes) = sample();
     let mut both = bytes.to_vec();
     both.extend_from_slice(&bytes); // two messages back to back
 
-    let mut cursor: &[u8] = &both;
-    assert_eq!(Word::decode(&mut cursor).unwrap(), w);
-    assert_eq!(cursor.len(), 2, "advanced past the first message");
-    assert_eq!(Word::decode(&mut cursor).unwrap(), w);
-    assert!(cursor.is_empty(), "consumed both");
+    let mut cur = BitReader::new(&both);
+    assert_eq!(Word::decode(&mut cur).unwrap(), w);
+    assert_eq!(cur.bit_pos(), 16, "advanced past the first message");
+    assert_eq!(Word::decode(&mut cur).unwrap(), w);
+    assert_eq!(cur.bit_pos(), both.len() * 8, "consumed both");
 }
 
 #[test]
-fn decode_is_transactional_on_error() {
+fn decode_all_and_iter_collect_back_to_back() {
+    let (w, bytes) = sample();
+    let mut both = bytes.to_vec();
+    both.extend_from_slice(&bytes);
+
+    // decode_all — eager; decode_iter — lazy. Both layout-baked and bit-aware.
+    assert_eq!(Word::decode_all(&both).unwrap(), vec![w, w]);
+    let collected: Result<Vec<_>, _> = Word::decode_iter(&both).collect();
+    assert_eq!(collected.unwrap(), vec![w, w]);
+}
+
+#[test]
+fn decode_errors_on_short_cursor() {
     let short = [0xABu8]; // one byte; Word needs two
-    let mut cursor: &[u8] = &short;
-    let err = Word::decode(&mut cursor).unwrap_err();
+    let mut cur = BitReader::new(&short);
+    let err = Word::decode(&mut cur).unwrap_err();
     assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
-    assert_eq!(cursor.len(), 1, "buffer restored on error (transactional)");
 }
 
 #[test]
@@ -91,10 +102,10 @@ fn encode_io_error_is_reported() {
 }
 
 #[test]
-fn decode_from_explicit_cursor() {
+fn decode_explicit_cursor() {
     let (w, bytes) = sample();
     let mut r = BitReader::new(&bytes);
-    assert_eq!(Word::decode_from(&mut r).unwrap(), w);
+    assert_eq!(Word::decode(&mut r).unwrap(), w);
 }
 
 #[test]
@@ -103,7 +114,7 @@ fn streaming_shortfall_is_incomplete_not_eof() {
     // Only the first byte available over a stream: the shortfall is the retry
     // signal, not a definitive EOF.
     let mut stream = StreamBitReader::new(&bytes[..1]);
-    let err = Word::decode_from(&mut stream).unwrap_err();
+    let err = Word::decode(&mut stream).unwrap_err();
     assert!(err.is_incomplete(), "stream shortfall is incomplete: {err}");
     assert!(matches!(err.kind, ErrorKind::Incomplete { .. }));
     assert_eq!(err.field, Some("b"), "still records the field span");

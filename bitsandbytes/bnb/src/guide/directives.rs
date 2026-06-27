@@ -219,7 +219,7 @@
 //! `#[br(restore_position)]` reads the field, then rewinds the cursor so later fields
 //! re-read the same bytes (e.g. peek a discriminant, then read the full record). The
 //! field is not re-emitted on write — the overlapping field owns those bytes. It needs
-//! a seekable source, so `decode_from` on a forward-only stream is a compile error; the
+//! a seekable source, so `decode` on a forward-only stream is a compile error; the
 //! slice paths (`decode`/`peek`/`decode_exact`) always qualify.
 //!
 //! ```
@@ -244,7 +244,7 @@
 //! come from the [`prelude`](crate::prelude) (`ptr.bytes()`, `n.bits()`). It is read-side
 //! (the writer is append-only); pair it with `restore_position` to read at the offset and
 //! return so later fields continue in order. Like `restore_position` it seeks, so
-//! `decode_from` on a forward-only stream is a compile error; the slice paths qualify.
+//! `decode` on a forward-only stream is a compile error; the slice paths qualify.
 //!
 //! ```
 //! use bnb::{bin, prelude::*};

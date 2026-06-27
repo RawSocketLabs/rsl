@@ -27,6 +27,6 @@ fn round_trip_through_bytes() {
 
     // Decode from an owned Bytes via BytesReader.
     let mut r = BytesReader::new(frozen.clone());
-    let decoded = Frame::decode_from(&mut r).unwrap();
+    let decoded = Frame::decode(&mut r).unwrap();
     assert_eq!(decoded, f);
 }

@@ -4,7 +4,7 @@
 //! `seek` is a read-side primitive (the writer is append-only). Paired with
 //! `restore_position` it reads at an offset and returns, so later fields continue from
 //! where they were — the classic offset-table / pointer-follow shape. Because it seeks,
-//! `decode_from` is bound on `SeekSource`; the slice entry points always qualify.
+//! `decode` is bound on `SeekSource`; the slice entry points always qualify.
 
 use bnb::{bin, prelude::*};
 

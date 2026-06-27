@@ -271,7 +271,7 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 ///     #[br(temp)] #[bw(calc = self.payload.len() as u16)] len: u16,
 ///     #[br(count = len)] payload: Vec<u8>,
 /// }
-/// // -> Frame::{decode, peek, decode_exact, decode_from},
+/// // -> Frame::{decode, decode_all, decode_iter, peek, decode_exact},
 /// //    Frame::{to_bytes, encode}, Frame::new(..), and Frame::builder()
 /// ```
 ///

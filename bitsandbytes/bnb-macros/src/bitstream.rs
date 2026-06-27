@@ -267,14 +267,14 @@ struct FieldBr {
     align_after: bool,
     /// `#[br(restore_position)]` — read the field (a peek), then rewind the cursor so
     /// later fields re-read from the same offset; skipped on write. Seeks, so the
-    /// generated `decode_from` is bound on [`SeekSource`](bnb::SeekSource): a
+    /// generated `decode` is bound on [`SeekSource`](bnb::SeekSource): a
     /// forward-only stream is a compile error (the slice entry points
     /// `decode`/`peek`/`decode_exact` always qualify).
     restore_position: bool,
     /// `#[br(seek = <bits>)]` — before reading, jump the cursor to that **absolute**
     /// bit offset (e.g. following a pointer). A read-side primitive (the writer is
     /// append-only); pair with `restore_position` to read at an offset and return.
-    /// Like `restore_position` it seeks, so `decode_from` is bound on
+    /// Like `restore_position` it seeks, so `decode` is bound on
     /// [`SeekSource`](bnb::SeekSource). On encode the seek is a no-op — see the guide.
     seek: Option<syn::Expr>,
     /// `#[br(dbg)]` — emit a `tracing` event (TRACE level, target `bnb::dbg`) carrying
@@ -1247,11 +1247,15 @@ fn gen_decode(
         quote!(#bnb::__private::Source)
     };
     let from_doc = if seeks {
-        "Decode from an explicit **seekable** bit source. This message uses a seeking \
-         directive (`restore_position`/`seek`), so a forward-only stream is rejected at \
-         compile time."
+        "Decode one message from a **seekable** bit cursor (a `BitReader`, `BufSource`, `BitBuf`, \
+         …), advancing it. This message uses a seeking directive (`restore_position`/`seek`), so a \
+         forward-only stream is rejected at compile time. The byte/bit order is the cursor's — \
+         build it with the message's layout, or use `decode_exact`/`decode_all`, which bake it in."
     } else {
-        "Decode from an explicit bit source (a `BitReader` cursor or a streaming reader)."
+        "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming \
+         reader, …), advancing it. The byte/bit order is the cursor's, not the message's — for a \
+         non-default (`little`/`lsb`) order build the cursor with the message's layout (e.g. \
+         `BitReader::with_layout`), or use `decode_exact`/`decode_all`, which bake it in."
     };
 
     // There is no canonical *decode*: `decode_*` is always verbatim (it retains the wire
@@ -1272,9 +1276,23 @@ fn gen_decode(
         }
 
         impl #name {
-            #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed (the tail stays in `buf`; transactional on error)."]
-            pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                #bnb::__private::decode_consume(buf, #layout)
+            #[doc = #from_doc]
+            pub fn decode<S: #from_bound>(
+                __bnb_r: &mut S,
+            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
+            }
+            #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. The buffer must hold whole messages (a partial tail is an error)."]
+            pub fn decode_all(
+                bytes: &[u8],
+            ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
+                #bnb::__private::decode_all(bytes, #layout)
+            }
+            #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs."]
+            pub fn decode_iter(
+                bytes: &[u8],
+            ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
+                #bnb::__private::decode_iter(bytes, #layout)
             }
             #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
             pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
@@ -1283,12 +1301,6 @@ fn gen_decode(
             #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
             pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #bnb::__private::decode_exact(bytes, #layout)
-            }
-            #[doc = #from_doc]
-            pub fn decode_from<S: #from_bound>(
-                __bnb_r: &mut S,
-            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
             }
         }
     })
@@ -3234,9 +3246,23 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             impl #name {
-                #[doc = "Decode one message from the front of `buf`, advancing it past the bytes consumed."]
-                pub fn decode(buf: &mut &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_consume(buf, #layout)
+                #[doc = "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming reader, …), advancing it; a seekable cursor is required if a variant seeks. The byte/bit order is the cursor's — use `decode_exact`/`decode_all` to bake the message's in."]
+                pub fn decode<S: #from_bound>(
+                    __bnb_r: &mut S,
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
+                }
+                #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. The buffer must hold whole messages (a partial tail is an error)."]
+                pub fn decode_all(
+                    bytes: &[u8],
+                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
+                    #bnb::__private::decode_all(bytes, #layout)
+                }
+                #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs."]
+                pub fn decode_iter(
+                    bytes: &[u8],
+                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
+                    #bnb::__private::decode_iter(bytes, #layout)
                 }
                 #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
                 pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
@@ -3245,12 +3271,6 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 #[doc = "Decode and require every whole byte consumed."]
                 pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_exact(bytes, #layout)
-                }
-                #[doc = "Decode from an explicit bit source (a seekable one if a variant seeks)."]
-                pub fn decode_from<S: #from_bound>(
-                    __bnb_r: &mut S,
-                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
             }
         }

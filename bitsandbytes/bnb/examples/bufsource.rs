@@ -38,9 +38,9 @@ fn main() -> Result<(), bnb::BitError> {
     let wire = [0x5A, 0xBC, 0xDE]; // flags=0x5A, value=0xBCDE; the peek sees value's high byte
 
     // The reader can't seek — but `BufSource` retains bytes, so the `restore_position` rewind
-    // works anyway. (`Frame::decode_from` is bound on `SeekSource`; `BufSource` is one.)
+    // works anyway. (`Frame::decode` is bound on `SeekSource`; `BufSource` is one.)
     let mut src = BufSource::new(Trickle { data: &wire });
-    let f = Frame::decode_from(&mut src)?;
+    let f = Frame::decode(&mut src)?;
     println!("{f:#?}");
 
     assert_eq!(f.flags, 0x5A);

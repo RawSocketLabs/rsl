@@ -18,7 +18,7 @@ struct Frame {
 fn seek_reader_over_a_file_like_source() {
     let wire = vec![0x5A, 0xBC, 0xD0]; // flags=5, value=0xABCD (restore_position layout)
     let mut src = SeekReader::new(Cursor::new(wire));
-    let f = Frame::decode_from(&mut src).unwrap();
+    let f = Frame::decode(&mut src).unwrap();
     assert_eq!(f.value, 0xABCD);
     assert_eq!(f.peek, 0xAB, "rewound and re-read via io::Seek");
 }

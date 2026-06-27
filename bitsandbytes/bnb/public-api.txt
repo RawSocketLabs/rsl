@@ -120,11 +120,21 @@ pub struct bnb::bitstream::BitBuf
 impl bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
 pub fn bnb::bitstream::BitBuf::clear(&mut self)
+pub fn bnb::bitstream::BitBuf::compact(&mut self)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
+pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
+impl bnb::bitstream::Source for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
 impl core::default::Default for bnb::bitstream::BitBuf
@@ -765,6 +775,7 @@ impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bn
 pub const bnb::UInt<T, N>::BIT_LEN: u32
 pub trait bnb::bitstream::SeekSource: bnb::bitstream::Source
 impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
@@ -800,6 +811,13 @@ pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
 pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
@@ -1790,11 +1808,21 @@ pub struct bnb::BitBuf
 impl bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
 pub fn bnb::bitstream::BitBuf::clear(&mut self)
+pub fn bnb::bitstream::BitBuf::compact(&mut self)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
+pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
+impl bnb::bitstream::Source for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
 impl core::default::Default for bnb::bitstream::BitBuf
@@ -2987,6 +3015,7 @@ impl<T, const N: usize> bnb::bitstream::FixedBitLen for bnb::UInt<T, N> where bn
 pub const bnb::UInt<T, N>::BIT_LEN: u32
 pub trait bnb::SeekSource: bnb::bitstream::Source
 impl bnb::bitstream::SeekSource for bnb::BytesReader
+impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
@@ -3022,6 +3051,13 @@ pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl bnb::bitstream::Source for bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
+pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
 pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize

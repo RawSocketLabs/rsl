@@ -1,7 +1,7 @@
 //! The I/O ladder — where the codec reads from and writes to.
 //!
 //! The everyday entry points (`decode`/`peek`/`decode_exact`/`to_bytes`) work on byte
-//! slices and `Vec`s. When you need to read from a socket or a file, `decode_from`
+//! slices and `Vec`s. When you need to read from a socket or a file, `decode`
 //! takes any [`Source`](crate::Source); to write into an explicit [`Sink`](crate::Sink),
 //! [`BitEncode::bit_encode`](crate::BitEncode::bit_encode) does the dual.
 //! Pick the source by what your input can do:
@@ -36,7 +36,7 @@
 //! assert_eq!(r.read::<u12>().unwrap(), u12::new(0xBCD));
 //! ```
 //!
-//! # `decode_from` over each source
+//! # `decode` over each source
 //!
 //! The same message decodes from a slice cursor, a forward stream, a buffered socket,
 //! or a seekable file — only the source type changes:
@@ -53,19 +53,19 @@
 //!
 //! // in-memory slice cursor
 //! let mut r = BitReader::new(&bytes);
-//! assert_eq!(Word::decode_from(&mut r).unwrap(), Word { value: 0x1234_5678 });
+//! assert_eq!(Word::decode(&mut r).unwrap(), Word { value: 0x1234_5678 });
 //!
 //! // a forward-only `Read` (a `&[u8]` is `Read` but not `Seek`)
 //! let mut s = StreamBitReader::new(&bytes[..]);
-//! assert_eq!(Word::decode_from(&mut s).unwrap(), Word { value: 0x1234_5678 });
+//! assert_eq!(Word::decode(&mut s).unwrap(), Word { value: 0x1234_5678 });
 //!
 //! // a `Read` with a bounded retain-and-seek buffer (the socket case)
 //! let mut b = BufSource::new(&bytes[..]);
-//! assert_eq!(Word::decode_from(&mut b).unwrap(), Word { value: 0x1234_5678 });
+//! assert_eq!(Word::decode(&mut b).unwrap(), Word { value: 0x1234_5678 });
 //!
 //! // a `Read + Seek` (a file; here a Cursor over a Vec)
 //! let mut f = SeekReader::new(Cursor::new(bytes.to_vec()));
-//! assert_eq!(Word::decode_from(&mut f).unwrap(), Word { value: 0x1234_5678 });
+//! assert_eq!(Word::decode(&mut f).unwrap(), Word { value: 0x1234_5678 });
 //! ```
 //!
 //! # Encoding
@@ -135,9 +135,9 @@
 //! When bytes arrive in pieces from something that *isn't* a `Read` (a channel, a callback, an
 //! async chunk), [`BitBuf`](crate::BitBuf) is the **push/pull** counterpart: `push(&bytes)` as
 //! they come, `pull::<T>()` to take whole messages off the front (it returns `None` until a full
-//! message is buffered). It tracks a **bit** position, so even messages that don't end on byte
-//! boundaries reassemble cleanly — unlike a byte cursor (`decode(&mut &[u8])`), which can only
-//! advance whole bytes.
+//! message is buffered). `BitBuf` is itself a [`SeekSource`](crate::SeekSource), so it also reads
+//! through plain [`decode`](crate::BitDecode) (`Type::decode(&mut bitbuf)`); `pull` adds the
+//! reclaim + layout-baking + `None`-on-incomplete on top.
 //!
 //! # Reading *and* writing one connection (without `try_clone`)
 //!
@@ -157,7 +157,7 @@
 //! let mut writer = &stream;                 // &TcpStream: Write — the same socket
 //!
 //! writer.write_all(&Msg { seq: 1 }.to_bytes()?)?;
-//! let reply = Msg::decode_from(&mut reader)?; // one framed message off the stream
+//! let reply = Msg::decode(&mut reader)?; // one framed message off the stream
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!

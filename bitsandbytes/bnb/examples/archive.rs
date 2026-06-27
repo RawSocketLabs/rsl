@@ -56,7 +56,7 @@ fn main() -> Result<(), bnb::BitError> {
 
     // Read it back over a seekable source (a Cursor here; a std::fs::File is the same).
     let mut src = SeekReader::new(Cursor::new(file));
-    let index = Index::decode_from(&mut src)?;
+    let index = Index::decode(&mut src)?;
     println!("{index:#?}");
 
     // Random access: seek to each entry's offset and read its blob — reversed, to prove it.

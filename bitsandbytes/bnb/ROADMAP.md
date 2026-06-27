@@ -29,7 +29,7 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 ## The `#[bin]` whole-message codec
 
 - [x] Folds read + write codecs and the builder over one struct; generates the decode
-      entry points (`decode`/`peek`/`decode_exact`/`decode_from`), the encode entry points
+      entry points (`decode`/`decode_all`/`decode_iter`/`peek`/`decode_exact`), the encode entry points
       (`to_bytes` + the `encode(writer)` convenience, plus `BitEncode::bit_encode` for a `Sink`),
       and construction (`new(fields…)`, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
@@ -82,7 +82,7 @@ credit (binrw and the bit/int/enum crates that inspired this one)
       `read_message`/`write_message` over a `Read + Write` stream (`TcpStream`; owns it, both
       directions, no `try_clone`) and `send_message`/`recv_message` over any `DatagramSocket`
       (`UdpSocket`, `UnixDatagram`, …) (opt-in `net` feature; `examples/sockets.rs`).
-- [x] Seeking enforced in the type system: a `restore_position` message's `decode_from`
+- [x] Seeking enforced in the type system: a `restore_position` message's `decode`
       is bound on `SeekSource`, so a forward-only stream is a compile error.
 
 ## `no_std`

@@ -24,7 +24,7 @@ fn main() -> Result<(), bnb::BitError> {
     let wire = vec![0x07, 0x12, 0x34]; // type = 7, length = 0x1234
     let mut src = SeekReader::new(Cursor::new(wire));
 
-    let frame = Frame::decode_from(&mut src)?;
+    let frame = Frame::decode(&mut src)?;
     println!("{frame:#?}");
 
     // `restore_position` rewound the cursor, so both fields saw the same first byte.

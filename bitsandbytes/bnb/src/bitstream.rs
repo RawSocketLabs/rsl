@@ -833,7 +833,7 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
 
 /// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
 /// the failing default). A `#[bin]` message that uses `restore_position` bounds its
-/// generated `decode_from` on this trait, so a forward-only stream is rejected at
+/// generated `decode` on this trait, so a forward-only stream is rejected at
 /// compile time. Implemented by [`BitReader`], [`BufSource`], and [`SeekReader`]
 /// (and, with the `bytes` feature, `BytesReader`).
 pub trait SeekSource: Source {}
@@ -1182,26 +1182,51 @@ impl<T: BitEncode> EncodeWith<()> for T {
 // doc-hidden because the public surface is the generated methods.
 // ---------------------------------------------------------------------------
 
-/// Decodes one message from the front of `buf`, advancing `buf` past the bytes
-/// consumed (the tail stays in `buf`). Transactional: on error `buf` is
-/// unchanged. Backs `Type::decode`.
+/// Decode every message from `bytes` into a `Vec`, with the message's own byte/bit order baked
+/// in — bit-aware, so messages that don't end on byte boundaries reassemble correctly. Backs
+/// `Type::decode_all`. The buffer must hold whole messages (a partial tail is an error).
 ///
 /// # Errors
-/// Propagates the decode [`BitError`].
+/// The first decode [`BitError`] (e.g. a truncated trailing message).
 #[doc(hidden)]
-pub fn decode_consume<T: BitDecode>(buf: &mut &[u8], layout: Layout) -> Result<T, BitError> {
-    let input = core::mem::take(buf);
-    let mut r = BitReader::with_layout(input, layout);
-    match T::bit_decode(&mut r) {
-        Ok(v) => {
-            *buf = &input[r.bit_pos().div_ceil(8)..];
-            Ok(v)
-        }
-        Err(e) => {
-            *buf = input;
-            Err(e)
+pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, BitError> {
+    let mut r = BitReader::with_layout(bytes, layout);
+    let mut out = Vec::new();
+    while r.remaining_bits() > 0 {
+        let before = r.bit_pos();
+        out.push(T::bit_decode(&mut r)?);
+        if r.bit_pos() == before {
+            break; // a zero-width message would otherwise spin forever
         }
     }
+    Ok(out)
+}
+
+/// A lazy iterator decoding successive `T` from `bytes` (layout baked in) until the buffer is
+/// drained, ending after the first error if one occurs. Backs `Type::decode_iter`.
+#[doc(hidden)]
+pub fn decode_iter<T: BitDecode>(
+    bytes: &[u8],
+    layout: Layout,
+) -> impl Iterator<Item = Result<T, BitError>> + '_ {
+    let mut r = BitReader::with_layout(bytes, layout);
+    let mut stopped = false;
+    core::iter::from_fn(move || {
+        if stopped || r.remaining_bits() == 0 {
+            return None;
+        }
+        let before = r.bit_pos();
+        match T::bit_decode(&mut r) {
+            Ok(v) => {
+                stopped = r.bit_pos() == before; // stop if a zero-width message made no progress
+                Some(Ok(v))
+            }
+            Err(e) => {
+                stopped = true;
+                Some(Err(e))
+            }
+        }
+    })
 }
 
 /// Decodes one message from `bytes` without consuming the caller's buffer
@@ -1342,7 +1367,7 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
 /// Peeks up to `max` bytes without consuming them — reads them, then rewinds. Returns
 /// however many are available (fewer than `max` at end-of-input). Backs variable-width
 /// `#[bin]` enum magic dispatch (peek the longest magic, match a prefix, then seek past
-/// the matched one). Like other seeking directives it bounds the generated `decode_from`
+/// the matched one). Like other seeking directives it bounds the generated `decode`
 /// on [`SeekSource`]; a forward-only source fails at runtime with
 /// [`ErrorKind::NotSeekable`].
 ///
@@ -1396,7 +1421,7 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 /// // `&[u8]` is `Read` but not `Seek` — exactly the forward-only case.
 /// let data: &[u8] = &[0x12, 0x34, 0x56, 0x78];
 /// let mut s = StreamBitReader::new(data);
-/// assert_eq!(Word::decode_from(&mut s).unwrap(), Word { value: 0x1234_5678 });
+/// assert_eq!(Word::decode(&mut s).unwrap(), Word { value: 0x1234_5678 });
 /// ```
 #[cfg(feature = "std")]
 #[derive(Debug)]
@@ -1509,7 +1534,7 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
 /// struct Word { value: u32 }
 ///
 /// let mut src = BufSource::new(&[0x12, 0x34, 0x56, 0x78][..]); // any `Read`
-/// assert_eq!(Word::decode_from(&mut src).unwrap(), Word { value: 0x1234_5678 });
+/// assert_eq!(Word::decode(&mut src).unwrap(), Word { value: 0x1234_5678 });
 /// ```
 #[cfg(feature = "std")]
 #[derive(Clone, Debug)]
@@ -1623,11 +1648,18 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// anything that delivers bytes — and take whole messages off the front with [`pull`](Self::pull),
 /// which returns `Ok(None)` when it needs more bytes (push more and call again).
 ///
-/// Unlike a byte cursor ([`decode`] over a `&mut &[u8]`, or `bytes::BytesMut::advance`), `BitBuf`
-/// tracks a **bit** position, so a stream of messages that *don't* end on byte boundaries
-/// (bit-packed frames) reassembles cleanly: it reclaims the fully-consumed whole bytes and retains
-/// any partial trailing byte for the next message. It's the *pushable*, in-memory counterpart to
-/// [`BufSource`] (which pulls from a `Read`). `no_std`-compatible (`alloc` only).
+/// Unlike a byte cursor (`bytes::BytesMut::advance`), `BitBuf` tracks a **bit** position, so a
+/// stream of messages that *don't* end on byte boundaries (bit-packed frames) reassembles cleanly:
+/// it reclaims the fully-consumed whole bytes and retains any partial trailing byte for the next
+/// message. It's the *pushable*, in-memory counterpart to [`BufSource`] (which pulls from a
+/// `Read`). `no_std`-compatible (`alloc` only).
+///
+/// `BitBuf` is also a [`SeekSource`], so it reads through the same [`decode`](crate::BitDecode)
+/// entry points as every other cursor: `Type::decode(&mut bitbuf)` advances its cursor (then call
+/// [`compact`](Self::compact) to reclaim). For streaming, prefer [`pull`](Self::pull) — it bakes
+/// the message's own [`LAYOUT`](BitEncode::LAYOUT) (so `little`/`lsb` messages are always correct),
+/// decodes **and** reclaims, and reports "need more bytes" as `Ok(None)`. The bare `Source` path
+/// instead uses the buffer's own [`with_layout`](Self::with_layout) order (default msb/big).
 ///
 /// ```
 /// use bnb::{bin, BitBuf};
@@ -1644,17 +1676,18 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// assert_eq!(bb.pull::<Ping>().unwrap(), None);      // drained
 /// ```
 ///
-/// [`decode`]: crate::BitDecode
 #[derive(Debug, Default, Clone)]
 pub struct BitBuf {
-    /// Unconsumed bytes: a possibly-partial leading byte (see `bit_off`) followed by whole ones.
+    /// Buffered bytes; everything before `cursor`'s byte is reclaimed by `pull`/`compact`.
     buf: Vec<u8>,
-    /// Sub-byte offset (`0..8`) into `buf[0]` where the next message begins.
-    bit_off: usize,
+    /// Live read position, in bits, into `buf` (`0..=buf.len() * 8`).
+    cursor: usize,
+    /// Byte/bit order for the [`Source`] impl (the `decode(&mut bitbuf)` path); default msb/big.
+    layout: Layout,
 }
 
 impl BitBuf {
-    /// An empty buffer.
+    /// An empty buffer (msb/big order for the [`Source`] path).
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -1665,8 +1698,17 @@ impl BitBuf {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
-            bit_off: 0,
+            cursor: 0,
+            layout: Layout::default(),
         }
+    }
+
+    /// Set the byte/bit order used by the [`Source`] impl (the `decode(&mut bitbuf)` path).
+    /// [`pull`](Self::pull) ignores this — it always bakes the message's own `LAYOUT`.
+    #[must_use]
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
     }
 
     /// Append freshly-received bytes to the back of the buffer.
@@ -1677,7 +1719,7 @@ impl BitBuf {
     /// The number of unconsumed bits currently buffered.
     #[must_use]
     pub fn bit_len(&self) -> usize {
-        self.buf.len() * 8 - self.bit_off
+        self.buf.len() * 8 - self.cursor
     }
 
     /// Whether no unconsumed bits remain.
@@ -1686,35 +1728,43 @@ impl BitBuf {
         self.bit_len() == 0
     }
 
-    /// Drop all buffered bytes and reset the bit cursor.
+    /// Drop all buffered bytes and reset the cursor.
     pub fn clear(&mut self) {
         self.buf.clear();
-        self.bit_off = 0;
+        self.cursor = 0;
     }
 
-    /// Decode the next complete message off the front, reclaiming the whole bytes it consumed.
+    /// Reclaim the fully-consumed whole bytes (drop everything before the cursor's byte), keeping
+    /// any partial trailing byte. [`pull`](Self::pull) does this for you; call it yourself when
+    /// consuming via the [`Source`] path (`decode(&mut bitbuf)`) to keep the buffer bounded.
+    pub fn compact(&mut self) {
+        let whole = self.cursor / 8;
+        self.buf.drain(..whole);
+        self.cursor -= whole * 8;
+    }
+
+    /// Decode the next complete message off the front, reclaiming the bytes it consumed.
     ///
     /// Returns `Ok(None)` when the buffer doesn't yet hold a whole message — push more bytes and
-    /// call again; the buffer is left untouched, so the retry is free. A malformed message is an
+    /// call again; the cursor is left untouched, so the retry is free. A malformed message is an
     /// `Err`. The byte/bit order is taken from `T`'s [`LAYOUT`](BitEncode::LAYOUT), so it decodes
-    /// `little`/`lsb` messages correctly.
+    /// `little`/`lsb` messages correctly regardless of [`with_layout`](Self::with_layout).
     ///
     /// # Errors
     /// A codec [`BitError`] for a malformed message.
     pub fn pull<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, BitError> {
-        if self.is_empty() {
+        if self.cursor >= self.buf.len() * 8 {
             return Ok(None);
         }
         let mut r = BitReader::with_layout(&self.buf, <T as BitEncode>::LAYOUT);
-        r.seek_to_bit(self.bit_off)?;
+        r.seek_to_bit(self.cursor)?;
         match T::bit_decode(&mut r) {
             Ok(msg) => {
-                let pos = r.bit_pos();
-                self.buf.drain(..pos / 8); // reclaim fully-consumed whole bytes
-                self.bit_off = pos % 8; // retain the partial trailing byte's offset
+                self.cursor = r.bit_pos();
+                self.compact(); // reclaim consumed whole bytes, keep any partial trailing byte
                 Ok(Some(msg))
             }
-            // Only a partial message is buffered — wait for more (leave the buffer as-is).
+            // Only a partial message is buffered — wait for more (cursor untouched, retry-safe).
             Err(e)
                 if matches!(
                     e.kind,
@@ -1727,6 +1777,34 @@ impl BitBuf {
         }
     }
 }
+
+impl Source for BitBuf {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        let mut r = BitReader::with_layout(&self.buf, self.layout);
+        r.seek_to_bit(self.cursor)?;
+        let v = r.read_bits(n)?;
+        self.cursor = r.bit_pos();
+        Ok(v)
+    }
+
+    fn bit_pos(&self) -> usize {
+        self.cursor
+    }
+
+    fn byte_order(&self) -> ByteOrder {
+        self.layout.byte
+    }
+
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        // Validate against the buffered bits (mirrors BitReader's bounds), then move the cursor.
+        let mut probe = BitReader::with_layout(&self.buf, self.layout);
+        probe.seek_to_bit(pos)?;
+        self.cursor = pos;
+        Ok(())
+    }
+}
+
+impl SeekSource for BitBuf {}
 
 /// A [`SeekSource`] over a seekable reader (`Read + Seek`, e.g. a `File`): it seeks
 /// via [`std::io::Seek`] to the byte holding the bit cursor, **without buffering** —
@@ -1744,7 +1822,7 @@ impl BitBuf {
 /// struct Word { value: u32 }
 ///
 /// let mut f = SeekReader::new(Cursor::new(vec![0x12u8, 0x34, 0x56, 0x78]));
-/// assert_eq!(Word::decode_from(&mut f).unwrap(), Word { value: 0x1234_5678 });
+/// assert_eq!(Word::decode(&mut f).unwrap(), Word { value: 0x1234_5678 });
 /// ```
 #[cfg(feature = "std")]
 #[derive(Clone, Debug)]

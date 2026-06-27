@@ -33,7 +33,7 @@ fn main() {
 
     // Decode straight from the owned `Bytes` — `BytesReader` takes it, no copy.
     let mut r = BytesReader::new(frame.clone());
-    let back = Packet::decode_from(&mut r).unwrap();
+    let back = Packet::decode(&mut r).unwrap();
     assert_eq!(back, pkt);
     println!("{back:#?}");
 

@@ -80,7 +80,7 @@
 //!
 //! // Only 2 of the 4 needed bytes are available so far.
 //! let mut s = StreamBitReader::new(&[0x12, 0x34][..]);
-//! let err = Quad::decode_from(&mut s).unwrap_err();
+//! let err = Quad::decode(&mut s).unwrap_err();
 //! assert!(err.is_incomplete()); // buffer more and try again — not a parse error
 //! ```
 //!

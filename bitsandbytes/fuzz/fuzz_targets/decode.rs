@@ -87,8 +87,8 @@ fuzz_target!(|data: &[u8]| {
     let _ = Magic::decode_exact(data);
     let _ = Header::peek(data);
     let _ = Counted::peek(data);
-    let mut cursor = data;
-    let _ = Counted::decode(&mut cursor);
+    let _ = Counted::decode_all(data);
+    let _ = Counted::decode_iter(data).count();
 
     // Property 3 — decode ∘ encode = id for the fixed-length total parsers. Any
     // byte string of the right length decodes (the parser is total) and re-encodes

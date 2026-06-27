@@ -50,7 +50,7 @@ fn main() {
     let mut r = StreamBitReader::new(wire.as_slice());
     let mut seen = 0;
     loop {
-        match Event::decode_from(&mut r) {
+        match Event::decode(&mut r) {
             Ok(ev) => {
                 println!("event: {ev:?}");
                 seen += 1;
@@ -64,9 +64,9 @@ fn main() {
     // A truncated tail reports `Incomplete` (read-more / EOF), not a panic.
     let truncated = &wire[..wire.len() - 2];
     let mut r = StreamBitReader::new(truncated);
-    let _ = Event::decode_from(&mut r); // event 1
-    let _ = Event::decode_from(&mut r); // event 2
-    let err = Event::decode_from(&mut r).unwrap_err(); // event 3 is cut short
+    let _ = Event::decode(&mut r); // event 1
+    let _ = Event::decode(&mut r); // event 2
+    let err = Event::decode(&mut r).unwrap_err(); // event 3 is cut short
     println!("truncated tail -> {err}");
     assert!(is_eof(&err.kind));
 
