@@ -23,12 +23,16 @@ struct Battery {
 #[derive(Debug, PartialEq, Clone)]
 struct Reading {
     sensor_id: u8,
+
     flags: u8, // bit0 = has_auth, bit1 = has_battery
+
     #[br(map = |raw: u16| Celsius(raw as i16 as f32 / 100.0))]
     #[bw(map = |c: &Celsius| ((c.0 * 100.0) as i16) as u16)]
     temp: Celsius,
+
     #[br(if(flags & 0x01 != 0))]
     auth_token: Option<u32>, // an optional scalar
+
     #[br(if(flags & 0x02 != 0))]
     battery: Option<Battery>, // an optional nested message
 }

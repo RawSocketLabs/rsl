@@ -14,8 +14,10 @@ use std::io::Read;
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Frame {
     flags: u8,
+
     #[br(restore_position)] // peek the next byte, then rewind so `value` re-reads it
     peek: u8,
+
     value: u16,
 }
 
@@ -23,13 +25,17 @@ struct Frame {
 struct Trickle<'a> {
     data: &'a [u8],
 }
+
 impl Read for Trickle<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.data.is_empty() || buf.is_empty() {
             return Ok(0);
         }
+
         buf[0] = self.data[0];
+
         self.data = &self.data[1..];
+
         Ok(1)
     }
 }

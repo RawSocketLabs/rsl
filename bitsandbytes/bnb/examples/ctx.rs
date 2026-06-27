@@ -14,15 +14,18 @@ use bnb::bin;
 enum Body {
     #[bin(tag = 1)]
     Login { user_id: u32 },
+
     #[bin(tag = 2)]
     Chat {
         #[br(temp)]
         #[bw(calc = text.len() as u8)]
         len: u8,
+
         #[br(count = len)]
         #[try_str]
         text: Vec<u8>,
     },
+
     #[bin(tag = 3)]
     Ping,
 }
@@ -35,7 +38,9 @@ struct Packet {
     #[br(temp)]
     #[bw(calc = self.body.tag())]
     kind: u8,
+
     seq: u16,
+
     #[br(ctx { kind })]
     body: Body,
 }

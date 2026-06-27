@@ -24,6 +24,7 @@ struct Index {
     #[br(temp)]
     #[bw(calc = self.entries.len() as u8)]
     count: u8,
+
     #[br(count = count)]
     entries: Vec<Entry>,
 }

@@ -167,14 +167,14 @@ struct Message {
     arcount: u16,
     #[br(count = qdcount)]
     questions: Vec<Question>,
+    #[builder(default)]
     #[br(count = ancount)]
-    #[builder(default)]
     answers: Vec<Record>,
+    #[builder(default)]
     #[br(count = nscount)]
-    #[builder(default)]
     authority: Vec<Record>,
-    #[br(count = arcount)]
     #[builder(default)]
+    #[br(count = arcount)]
     additional: Vec<Record>,
 }
 

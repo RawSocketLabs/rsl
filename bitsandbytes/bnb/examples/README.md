@@ -18,6 +18,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 |---|---|---|
 | `ipv4` | An IPv4 header: nested `#[bitfield]`s, `map`, **verbatim vs canonical** encode (`encode_mode`/`to_canonical_bytes`) | `--example ipv4` |
 | `bin_message` | The `#[bin]` fold end-to-end: bitfield + enum fields, `count`, `temp`/`calc`, `validate` | `--example bin_message` |
+| `arbitrary_width` | A 48-bit `#[derive(BitEnum)]` (a long sync/magic word) in a **non-byte-aligned 54-bit** `#[bin]` message; `#[catch_all]` keeps unknown syncs | `--example arbitrary_width` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
 | `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
 | `alignment` | `pad_before` + `align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
@@ -58,7 +59,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | Feature / capability | Examples |
 |---|---|
 | `#[bitfield]` | standalone, ipv4, enums, dns, telemetry, bin_message |
-| `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message |
+| `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message, arbitrary_width |
+| arbitrary bit widths / non-byte-aligned message | arbitrary_width |
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |

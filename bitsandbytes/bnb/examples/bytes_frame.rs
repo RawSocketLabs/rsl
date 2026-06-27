@@ -12,9 +12,11 @@ use bnb::{BitEncode, BytesReader, BytesWriter, bin};
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Packet {
     id: u32,
+
     #[br(temp)]
     #[bw(calc = self.payload.len() as u16)]
     len: u16,
+
     #[br(count = len)]
     payload: Vec<u8>,
 }
