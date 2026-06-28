@@ -87,7 +87,8 @@ the proc-macro.
 
 `#[bin]` is the crate's flagship: one attribute that
 folds the codec (`BitDecode`/`BitEncode`) and the required-by-default builder over
-a struct, generating `decode`/`peek`/`decode_exact`, `encode`/`to_bytes`,
+a struct, generating `decode` (cursor over a `Source`), `decode_all`/`decode_iter`/`decode_exact`/
+`peek` (slice/`Vec`, layout-baked), `encode`/`to_bytes`,
 `Foo::builder()`, and a positional `Foo::new(fields…)` (every stored field, in order — the
 struct-literal replacement, since a `reserved`/`calc` message's injected `encode_mode` field
 can't be named in a literal). It reads/writes fields at **arbitrary bit offsets**, so the same
@@ -106,7 +107,8 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   use the `prelude` typed helpers (`4.bits()`, `3.bytes()`).
 - **I/O ladder** (`bnb::bitstream`): `Source`/`Sink` (the bit cursors), the
   `SeekSource` marker for in-memory buffers, `BufSource<R: Read>` (bounded
-  retain-and-seek over a forward-only reader), `SeekReader<R: Read + Seek>`, and —
+  retain-and-seek over a forward-only reader), `BitBuf` (push/pull bit-aware in-memory
+  buffer — pushable, a `SeekSource`, `no_std`), `SeekReader<R: Read + Seek>`, and —
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
 
@@ -233,8 +235,8 @@ cargo +1.85.0 check --workspace
   `bin_if`, `bin_calc_temp`, `bin_reserved`, `bin_ignore`, `bin_parse_with`,
   `bin_positioning`/`bin_restore_position`, `bin_validate`, `bin_byte_order`
   (+ `bin_order_matrix`: the message-level endian × bit-order 2×2),
-  `bin_fold`, and the I/O ladder (`bin_buf_source`, `bin_seek_reader`,
-  `bin_bytes` — the last under `--features bytes`).
+  `bin_fold`, and the I/O ladder (`bin_buf_source`, `bin_seek_reader`, `bitbuf` — the
+  push/pull `BitBuf`, `bin_bytes` — the last under `--features bytes`).
 - `tests/bitstream_*.rs` — the low-level derives/runtime: `bitstream_dmr`(+`_frame`)
   (the `108|48|108` DMR burst that motivated bit offsets), `bitstream_nested`,
   `bitstream_payload`, `bitstream_bitorder`, `bitstream_source`, `bitstream_seek`,
