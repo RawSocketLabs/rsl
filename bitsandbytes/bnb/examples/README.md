@@ -21,6 +21,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `arbitrary_width` | A 48-bit `#[derive(BitEnum)]` (a long sync/magic word) in a **non-byte-aligned 54-bit** `#[bin]` message; `#[catch_all]` keeps unknown syncs | `--example arbitrary_width` |
 | `ais` | A real bit-packed format — an AIS marine Position Report: `u6`/`u2`/`u30`/`u4`/`u10` fields, **52-bit** non-byte-aligned total, `#[catch_all]` nav-status | `--example ais` |
 | `can_signals` | The same, **LSB-first** (`bit_order = lsb`, CAN/DBC "Intel" signals): `u3`/`u4`/`u14`/`bool` packed low-bit-first into a non-byte-aligned 22-bit frame | `--example can_signals` |
+| `wav` | **Little-endian** byte order (`#[bin(little)]`): a RIFF/WAVE `fmt ` chunk of multi-byte LE integers, with `#[try_str]` on the `[u8; 4]` tag | `--example wav` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
 | `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
 | `alignment` | `pad_before` + `align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
@@ -63,7 +64,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bitfield]` | standalone, ipv4, enums, dns, telemetry, bin_message |
 | `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message, arbitrary_width, ais, can_signals |
 | arbitrary bit widths / non-byte-aligned message | arbitrary_width, ais, can_signals |
-| byte/bit order (`little` / `lsb` packing) | can_signals |
+| byte/bit order (`little` / `lsb` packing) | wav, can_signals |
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
@@ -78,7 +79,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[reserved]` / `#[reserved_with]` | reserved, register, telemetry |
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
-| `#[try_str]` (Debug rendering) | try_str |
+| `#[try_str]` (Debug rendering) | try_str, checked, ctx, wav |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp, bufsource / archive, peek / framed, streaming |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
