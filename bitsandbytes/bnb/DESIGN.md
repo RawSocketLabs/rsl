@@ -211,16 +211,26 @@ stays a pure normalization (compose `validate()` before sending if you want the 
 
 ## 6. The I/O ladder
 
-The everyday entry points work on byte slices and `Vec`s. For other inputs,
-`decode` takes any `Source`, and `BitEncode::bit_encode` writes into any `Sink`:
+For a buffer already in hand, the slice entry points decode in the message's *own* byte/bit
+order: `decode_exact` (one message, reject trailing bytes), `decode_all`/`decode_iter` (every
+message in a `&[u8]`), and `peek` (no consume). For a cursor — a stream, a socket, a growable
+buffer — `decode(&mut Source)` is the single cursor decode (and `BitEncode::bit_encode` writes
+into any `Sink`):
 
 | Source | Backing | Seek | Use |
 |---|---|---|---|
 | `BitReader` | `&[u8]` | free (cursor math) | in-memory bytes |
 | `StreamBitReader` | any `Read` | no (forward only) | a stream read once |
 | `BufSource` | any `Read` | yes (bounded retain-and-seek) | a socket that also seeks |
+| `BitBuf` | owned `Vec<u8>` (pushable) | yes (cursor math) | incremental framing: push bytes, pull messages |
 | `SeekReader` | `Read + Seek` | yes (via `io::Seek`) | a large file/container |
 | `BytesReader`/`Writer` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
+
+A `Source` carries its own byte/bit order, so `decode(&mut Source)` reads in the *cursor's*
+order — correct for the msb/big default, but a `little`/`lsb` message wants a cursor built with
+its layout (`BitReader::with_layout(&v, Msg::LAYOUT)`). The slice entry points sidestep that by
+baking `Msg::LAYOUT` in, so they are the foolproof "decode this buffer" path; `decode(&mut Source)`
+is for streaming and custom sources.
 
 Seeking is only needed by a message that uses `restore_position`; everything else runs
 over the forward-only `StreamBitReader` too. **Seeking is a source capability, enforced
@@ -240,7 +250,7 @@ rows of the table above that are backed by `std::io` (`StreamBitReader`/`BufSour
 `SeekReader`, the `as_read`/`as_write` views), the `From<std::io::Error>` bridge +
 `ErrorKind::Io`, and the `encode(writer)` convenience. The
 forward-only/seekable distinction is unchanged; `no_std` simply has fewer `Source`
-implementations to feed `decode` (the in-memory `BitReader`, and `BytesReader`
+implementations to feed `decode` (the in-memory `BitReader` and `BitBuf`, and `BytesReader`
 under `bytes`).
 
 The chosen boundary is **buffer-at-a-time, not streaming** ("Option A"): `no_std`
@@ -317,6 +327,14 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   which Rust's coherence rejects against the per-message derives (no specialization, no
   negative bounds). The `Bits` *packing* role is untouched; only the stream-codec impls
   were added. `#[nested]` is still accepted as a no-op for backward compatibility.
+- **One cursor decode.** Decoding funnels through a single `decode(&mut Source)` over the I/O
+  ladder, plus the layout-baking slice helpers (`decode_exact`/`decode_all`/`decode_iter`/`peek`).
+  An earlier byte-cursor `decode(&mut &[u8])` was removed: a `&[u8]` cursor advances only whole
+  bytes, so it silently misframed messages that don't end on a byte boundary — the one thing a
+  *bit* codec must get right. `BitReader::new(&v)` is *also* zero-copy, so
+  `decode(&mut BitReader::new(&v))` replaces it at no cost with a bit-correct cursor. The price is
+  that a cursor carries its own byte/bit order (§6); the slice helpers bake the message's, keeping
+  the foolproof "decode this buffer" path foolproof.
 - **Position-aware errors.** A codec error records the absolute **bit offset** where it
   failed and the **field** being processed (the innermost wins, like a span), so a
   failure points at the exact place. A streaming source that runs out mid-message
