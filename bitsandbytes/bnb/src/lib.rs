@@ -91,8 +91,9 @@ ladder, with an opt-in `bytes` feature for async framing.
 - **`net`** — ergonomic `std` socket helpers: [`MessageStream`] (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and [`MessageDatagram`] (`send_message`/
   `recv_message` over a sealed [`DatagramSocket`] — `UdpSocket` or `UnixDatagram`). Implies `std`.
-- **`mock`** — a test-only [`MockDatagramSocket`] (an in-memory [`DatagramSocket`]) for exercising
-  `net` datagram code without a real socket; put it in your `[dev-dependencies]`. Implies `net`.
+- **`mock`** — test-only in-memory transports for exercising `net` code without a real socket:
+  [`MockDatagramSocket`] (a [`DatagramSocket`]) and [`MockStream`] (a `Read + Write`, with chunked
+  delivery to drive the read-more path). Put it in your `[dev-dependencies]`. Implies `net`.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
 ([`BitReader`], `Type::decode`/`decode_all`/`decode_iter`/`decode_exact`/`peek`) and encode to a
@@ -186,11 +187,11 @@ pub use bitstream::{BytesReader, BytesWriter};
 #[cfg(feature = "tokio")]
 pub use codec::BinCodec;
 
-#[cfg(feature = "mock")]
-pub use net::MockDatagramSocket;
 /// Ergonomic `std` socket helpers (the `net` feature).
 #[cfg(feature = "net")]
 pub use net::{DatagramSocket, MessageDatagram, MessageStream};
+#[cfg(feature = "mock")]
+pub use net::{MockDatagramSocket, MockStream};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
 /// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the [`EncodeExt`] trait that

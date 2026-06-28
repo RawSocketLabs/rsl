@@ -299,3 +299,99 @@ impl DatagramSocket for MockDatagramSocket {
         Ok(buf.len())
     }
 }
+
+/// A test-only `Read + Write` byte stream backed by in-memory buffers — exercise [`MessageStream`]
+/// code in unit tests with no real socket. Enabled by the **`mock`** feature (put it in your
+/// `[dev-dependencies]`). Queue inbound bytes with [`push_inbound`](Self::push_inbound) and inspect
+/// what was written with [`written`](Self::written).
+///
+/// Unlike `std::io::Cursor` it keeps **separate** read and write buffers (so it handles duplex
+/// request/reply cleanly), and it can deliver inbound bytes a few at a time
+/// ([`with_chunk_size`](Self::with_chunk_size)) — to exercise `read_message`'s buffer-more-and-retry
+/// loop, i.e. a message split across reads, which `Cursor` (one read = everything) cannot.
+///
+/// ```
+/// use bnb::{bin, MessageStream, MockStream};
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq, Eq)]
+/// struct Ping {
+///     seq: u16,
+/// }
+///
+/// // deliver the 2-byte Ping one byte per read — forces the read-more loop
+/// let mut conn = MessageStream::new(MockStream::with_chunk_size(1));
+/// conn.get_mut().push_inbound(&Ping { seq: 7 }.to_bytes().unwrap());
+///
+/// let ping: Ping = conn.read_message().unwrap();
+/// assert_eq!(ping, Ping { seq: 7 });
+/// conn.write_message(&Ping { seq: 8 }).unwrap();
+/// assert_eq!(conn.get_mut().written(), &Ping { seq: 8 }.to_bytes().unwrap()[..]);
+/// ```
+#[cfg(feature = "mock")]
+#[derive(Debug, Default, Clone)]
+pub struct MockStream {
+    inbound: VecDeque<u8>,
+    outbound: Vec<u8>,
+    chunk: usize,
+}
+
+#[cfg(feature = "mock")]
+impl MockStream {
+    /// An empty stream that delivers all available inbound bytes per `read`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Like [`new`](Self::new), but each `read` returns at most `n` bytes (`n > 0`) — to simulate a
+    /// stream that dribbles one message across several reads (the `Incomplete` / read-more path).
+    #[must_use]
+    pub fn with_chunk_size(n: usize) -> Self {
+        Self {
+            chunk: n,
+            ..Self::default()
+        }
+    }
+
+    /// Queue bytes to be returned by future `read`s.
+    pub fn push_inbound(&mut self, bytes: &[u8]) {
+        self.inbound.extend(bytes.iter().copied());
+    }
+
+    /// All bytes written to the stream so far.
+    #[must_use]
+    pub fn written(&self) -> &[u8] {
+        &self.outbound
+    }
+}
+
+#[cfg(feature = "mock")]
+impl Read for MockStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.inbound.is_empty() || buf.is_empty() {
+            return Ok(0); // EOF: no more inbound (as a closed connection would read)
+        }
+        let cap = if self.chunk == 0 {
+            buf.len()
+        } else {
+            buf.len().min(self.chunk)
+        };
+        let n = cap.min(self.inbound.len());
+        for slot in buf.iter_mut().take(n) {
+            *slot = self.inbound.pop_front().unwrap();
+        }
+        Ok(n)
+    }
+}
+
+#[cfg(feature = "mock")]
+impl Write for MockStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.outbound.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}

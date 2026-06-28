@@ -116,9 +116,13 @@ required-features = ["net"]
 name = "unix_stream"
 required-features = ["net"]
 
-# `mock_datagram` shows testing `net` datagram code with the `mock` feature's `MockDatagramSocket`.
+# `mock_datagram`/`mock_stream` show testing `net` code with the `mock` feature's in-memory transports.
 [[example]]
 name = "mock_datagram"
+required-features = ["mock"]
+
+[[example]]
+name = "mock_stream"
 required-features = ["mock"]
 
 [[bench]]

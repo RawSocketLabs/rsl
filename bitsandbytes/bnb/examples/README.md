@@ -56,6 +56,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `sockets` | The `net` feature: `MessageStream` (TCP) and `MessageDatagram` (UDP **and** Unix datagram — one API) | `--example sockets --features net` |
 | `unix_stream` | The `net` feature: `MessageStream` over a Unix-domain **stream** socket — generic beyond `TcpStream` | `--example unix_stream --features net` |
 | `mock_datagram` | The `mock` feature: unit-test `MessageDatagram` code with `MockDatagramSocket` (no real socket); the sealed-trait + generic-handler pattern | `--example mock_datagram --features mock` |
+| `mock_stream` | The `mock` feature: unit-test `MessageStream` code with `MockStream` (a `Read + Write`; **1 byte/read** drives the buffer-more-and-retry framing path `Cursor` can't) | `--example mock_stream --features mock` |
 | `tokio_framed` | The `tokio` feature: `BinCodec` over an async `Framed` TCP stream | `--example tokio_framed --features tokio` |
 | `tokio_udp` | The `tokio` feature: the *same* `BinCodec` over `UdpFramed` (async UDP datagrams) | `--example tokio_udp --features tokio` |
 
@@ -86,4 +87,4 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
 | `net` feature | sockets, unix_stream |
-| `mock` feature (test datagram code) | mock_datagram |
+| `mock` feature (test net code) | mock_datagram, mock_stream |

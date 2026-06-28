@@ -1467,6 +1467,54 @@ impl<T> core::convert::From<T> for bnb::net::MockDatagramSocket
 pub fn bnb::net::MockDatagramSocket::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
+pub struct bnb::net::MockStream
+impl bnb::net::MockStream
+pub fn bnb::net::MockStream::new() -> Self
+pub fn bnb::net::MockStream::push_inbound(&mut self, &[u8])
+pub fn bnb::net::MockStream::with_chunk_size(usize) -> Self
+pub fn bnb::net::MockStream::written(&self) -> &[u8]
+impl core::clone::Clone for bnb::net::MockStream
+pub fn bnb::net::MockStream::clone(&self) -> bnb::net::MockStream
+impl core::default::Default for bnb::net::MockStream
+pub fn bnb::net::MockStream::default() -> bnb::net::MockStream
+impl core::fmt::Debug for bnb::net::MockStream
+pub fn bnb::net::MockStream::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl std::io::Read for bnb::net::MockStream
+pub fn bnb::net::MockStream::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl std::io::Write for bnb::net::MockStream
+pub fn bnb::net::MockStream::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::net::MockStream::write(&mut self, &[u8]) -> std::io::error::Result<usize>
+impl core::marker::Freeze for bnb::net::MockStream
+impl core::marker::Send for bnb::net::MockStream
+impl core::marker::Sync for bnb::net::MockStream
+impl core::marker::Unpin for bnb::net::MockStream
+impl core::marker::UnsafeUnpin for bnb::net::MockStream
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::net::MockStream
+impl core::panic::unwind_safe::UnwindSafe for bnb::net::MockStream
+impl<T, U> core::convert::Into<U> for bnb::net::MockStream where U: core::convert::From<T>
+pub fn bnb::net::MockStream::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::net::MockStream where U: core::convert::Into<T>
+pub type bnb::net::MockStream::Error = core::convert::Infallible
+pub fn bnb::net::MockStream::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::net::MockStream where U: core::convert::TryFrom<T>
+pub type bnb::net::MockStream::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::net::MockStream::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::net::MockStream where T: core::clone::Clone
+pub type bnb::net::MockStream::Owned = T
+pub fn bnb::net::MockStream::clone_into(&self, &mut T)
+pub fn bnb::net::MockStream::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::net::MockStream where T: 'static + ?core::marker::Sized
+pub fn bnb::net::MockStream::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::net::MockStream where T: ?core::marker::Sized
+pub fn bnb::net::MockStream::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::net::MockStream where T: ?core::marker::Sized
+pub fn bnb::net::MockStream::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::net::MockStream where T: core::clone::Clone
+pub unsafe fn bnb::net::MockStream::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::net::MockStream
+pub fn bnb::net::MockStream::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::net::MockStream
+impl<T> tracing::instrument::WithSubscriber for bnb::net::MockStream
 pub trait bnb::net::DatagramSocket: bnb::net::sealed::Sealed
 pub type bnb::net::DatagramSocket::Addr
 pub fn bnb::net::DatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, Self::Addr)>
@@ -2365,6 +2413,54 @@ impl<T> core::convert::From<T> for bnb::net::MockDatagramSocket
 pub fn bnb::net::MockDatagramSocket::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
+pub struct bnb::MockStream
+impl bnb::net::MockStream
+pub fn bnb::net::MockStream::new() -> Self
+pub fn bnb::net::MockStream::push_inbound(&mut self, &[u8])
+pub fn bnb::net::MockStream::with_chunk_size(usize) -> Self
+pub fn bnb::net::MockStream::written(&self) -> &[u8]
+impl core::clone::Clone for bnb::net::MockStream
+pub fn bnb::net::MockStream::clone(&self) -> bnb::net::MockStream
+impl core::default::Default for bnb::net::MockStream
+pub fn bnb::net::MockStream::default() -> bnb::net::MockStream
+impl core::fmt::Debug for bnb::net::MockStream
+pub fn bnb::net::MockStream::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl std::io::Read for bnb::net::MockStream
+pub fn bnb::net::MockStream::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl std::io::Write for bnb::net::MockStream
+pub fn bnb::net::MockStream::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::net::MockStream::write(&mut self, &[u8]) -> std::io::error::Result<usize>
+impl core::marker::Freeze for bnb::net::MockStream
+impl core::marker::Send for bnb::net::MockStream
+impl core::marker::Sync for bnb::net::MockStream
+impl core::marker::Unpin for bnb::net::MockStream
+impl core::marker::UnsafeUnpin for bnb::net::MockStream
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::net::MockStream
+impl core::panic::unwind_safe::UnwindSafe for bnb::net::MockStream
+impl<T, U> core::convert::Into<U> for bnb::net::MockStream where U: core::convert::From<T>
+pub fn bnb::net::MockStream::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::net::MockStream where U: core::convert::Into<T>
+pub type bnb::net::MockStream::Error = core::convert::Infallible
+pub fn bnb::net::MockStream::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::net::MockStream where U: core::convert::TryFrom<T>
+pub type bnb::net::MockStream::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::net::MockStream::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::net::MockStream where T: core::clone::Clone
+pub type bnb::net::MockStream::Owned = T
+pub fn bnb::net::MockStream::clone_into(&self, &mut T)
+pub fn bnb::net::MockStream::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::net::MockStream where T: 'static + ?core::marker::Sized
+pub fn bnb::net::MockStream::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::net::MockStream where T: ?core::marker::Sized
+pub fn bnb::net::MockStream::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::net::MockStream where T: ?core::marker::Sized
+pub fn bnb::net::MockStream::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::net::MockStream where T: core::clone::Clone
+pub unsafe fn bnb::net::MockStream::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::net::MockStream
+pub fn bnb::net::MockStream::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::net::MockStream
+impl<T> tracing::instrument::WithSubscriber for bnb::net::MockStream
 pub struct bnb::SeekReader<R>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekReader<R>
 pub fn bnb::bitstream::SeekReader<R>::new(R) -> Self
