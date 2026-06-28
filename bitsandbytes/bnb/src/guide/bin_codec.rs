@@ -73,11 +73,32 @@
 //! | build | `builder()` | the required-by-default builder |
 //! | build | `new(fields…)` | positional constructor — every stored field, in declaration order |
 //!
-//! `decode`/`peek`/`decode_exact`/`to_bytes` are the everyday slice/`Vec` path;
+//! `decode_exact`/`decode_all`/`peek`/`to_bytes` are the everyday slice/`Vec` path;
 //! `decode`/`encode(&mut W)`/`bit_encode` open the door to the
 //! [I/O ladder](super::io). († `to_canonical_bytes`, the canonical helpers, and the settable
 //! `encode_mode` exist only when the message has a `reserved` or `calc` field — see
 //! [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
+//!
+//! ## Decoding a buffer of messages
+//!
+//! `decode_all` / `decode_iter` walk a `&[u8]` of back-to-back messages — bit-aware (a message
+//! needn't end on a byte boundary) and decoding in the message's own byte/bit order:
+//!
+//! ```
+//! use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq, Eq)]
+//! struct Ping { seq: u16 }
+//!
+//! let wire = [0x00, 0x01, 0x00, 0x02, 0x00, 0x03]; // three Pings, back to back
+//! assert_eq!(Ping::decode_all(&wire).unwrap(),
+//!            vec![Ping { seq: 1 }, Ping { seq: 2 }, Ping { seq: 3 }]);
+//! // decode_iter is the lazy form (yields Result per message):
+//! assert_eq!(Ping::decode_iter(&wire).filter_map(Result::ok).count(), 3);
+//! ```
+//!
+//! For a *cursor* — a stream, socket, or [`BitBuf`](crate::BitBuf) — reach for `decode(&mut S)`
+//! instead (see the [I/O ladder](super::io)).
 //!
 //! # Struct-level options
 //!

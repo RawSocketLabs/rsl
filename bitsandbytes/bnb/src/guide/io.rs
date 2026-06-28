@@ -1,8 +1,8 @@
 //! The I/O ladder — where the codec reads from and writes to.
 //!
-//! The everyday entry points (`decode`/`peek`/`decode_exact`/`to_bytes`) work on byte
-//! slices and `Vec`s. When you need to read from a socket or a file, `decode`
-//! takes any [`Source`](crate::Source); to write into an explicit [`Sink`](crate::Sink),
+//! The everyday entry points (`decode_exact`/`decode_all`/`peek`/`to_bytes`) work on byte
+//! slices and `Vec`s. When you need to read from a socket or a file, `decode` takes any
+//! [`Source`](crate::Source) cursor; to write into an explicit [`Sink`](crate::Sink),
 //! [`BitEncode::bit_encode`](crate::BitEncode::bit_encode) does the dual.
 //! Pick the source by what your input can do:
 //!
@@ -11,6 +11,7 @@
 //! | [`BitReader`](crate::BitReader) | `&[u8]` slice | yes (free cursor math) | in-memory bytes |
 //! | [`StreamBitReader`](crate::StreamBitReader) | any `Read` | no (forward only) | a stream you read once |
 //! | [`BufSource`](crate::BufSource) | any `Read` | yes (within a bounded buffer) | a socket that also needs to seek |
+//! | [`BitBuf`](crate::BitBuf) | owned `Vec<u8>` (pushable) | yes (cursor math) | incremental framing: push bytes, pull messages |
 //! | [`SeekReader`](crate::SeekReader) | `Read + Seek` | yes (via `io::Seek`) | a large file / container |
 //! | `BytesReader` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
 //!

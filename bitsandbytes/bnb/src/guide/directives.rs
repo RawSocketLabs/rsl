@@ -220,7 +220,7 @@
 //! re-read the same bytes (e.g. peek a discriminant, then read the full record). The
 //! field is not re-emitted on write — the overlapping field owns those bytes. It needs
 //! a seekable source, so `decode` on a forward-only stream is a compile error; the
-//! slice paths (`decode`/`peek`/`decode_exact`) always qualify.
+//! slice paths (`decode_exact`/`decode_all`/`peek`) always qualify.
 //!
 //! ```
 //! use bnb::bin;
