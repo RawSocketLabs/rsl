@@ -15,7 +15,7 @@
 //! for (a raw socket, a mock). Both wrappers bridge `std::io::Error` into [`BitError`] (the
 //! `std` feature), so a single `?` covers I/O *and* codec errors.
 
-use crate::{BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind};
+use crate::{BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter};
 use alloc::vec;
 use alloc::vec::Vec;
 use std::io::{self, Read, Write};
@@ -29,14 +29,6 @@ fn encode<T: BitEncode>(msg: &T) -> Result<Vec<u8>, BitError> {
     Ok(w.into_bytes())
 }
 
-/// Whether an error is "the buffer just ran out" (a partial frame) rather than a real fault.
-fn is_short(e: &BitError) -> bool {
-    matches!(
-        e.kind,
-        ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. }
-    )
-}
-
 /// A whole-message reader/writer over a byte stream (anything `Read + Write`, e.g. a
 /// `TcpStream`). It owns the stream and keeps a read buffer, so [`read_message`] and
 /// [`write_message`] exchange `#[bin]` values — and one `MessageStream` serves *both*
@@ -47,7 +39,7 @@ fn is_short(e: &BitError) -> bool {
 #[derive(Debug)]
 pub struct MessageStream<S> {
     inner: S,
-    buf: Vec<u8>,
+    buf: BitBuf,
 }
 
 impl<S> MessageStream<S> {
@@ -55,7 +47,7 @@ impl<S> MessageStream<S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            buf: Vec::new(),
+            buf: BitBuf::new(),
         }
     }
 
@@ -72,24 +64,18 @@ impl<S> MessageStream<S> {
 
 impl<S: Read> MessageStream<S> {
     /// Read exactly one `#[bin]` message, pulling more bytes from the stream as needed and
-    /// keeping any trailing bytes for the next call.
+    /// keeping any trailing bytes for the next call. The message's own byte/bit order is honored
+    /// (via [`BitBuf::pull`]).
     ///
     /// # Errors
-    /// A codec [`BitError`] for a malformed message, or an I/O error (an EOF mid-stream — a
-    /// closed connection — is [`ErrorKind::Io`]`(UnexpectedEof)`), so a read loop ends on `Err`.
-    pub fn read_message<T: BitDecode>(&mut self) -> Result<T, BitError> {
+    /// A codec [`BitError`] for a malformed message, or an I/O error — an EOF mid-stream (a
+    /// closed connection) surfaces as an `Io(UnexpectedEof)` error, so a read loop ends on `Err`.
+    pub fn read_message<T: BitDecode + BitEncode>(&mut self) -> Result<T, BitError> {
         loop {
-            if !self.buf.is_empty() {
-                let mut r = BitReader::new(&self.buf);
-                match <T as BitDecode>::bit_decode(&mut r) {
-                    Ok(item) => {
-                        let consumed = r.bit_pos() / 8;
-                        self.buf.drain(..consumed);
-                        return Ok(item);
-                    }
-                    Err(e) if is_short(&e) => {} // need more bytes — read on
-                    Err(e) => return Err(e),
-                }
+            // `pull` decodes in `T`'s own layout, returns `None` until a whole message is
+            // buffered, and reclaims consumed bytes — the framing logic lives in `BitBuf`.
+            if let Some(msg) = self.buf.pull::<T>()? {
+                return Ok(msg);
             }
             let mut chunk = [0u8; 4096];
             let n = self.inner.read(&mut chunk)?;
@@ -98,7 +84,7 @@ impl<S: Read> MessageStream<S> {
                     io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed").into(),
                 );
             }
-            self.buf.extend_from_slice(&chunk[..n]);
+            self.buf.push(&chunk[..n]);
         }
     }
 }
@@ -216,9 +202,10 @@ impl<D: DatagramSocket> MessageDatagram<D> {
     ///
     /// # Errors
     /// A codec [`BitError`] (the datagram wasn't a valid `T`) or an I/O receive error.
-    pub fn recv_message<T: BitDecode>(&mut self) -> Result<(T, D::Addr), BitError> {
+    pub fn recv_message<T: BitDecode + BitEncode>(&mut self) -> Result<(T, D::Addr), BitError> {
         let (n, from) = self.sock.recv_from(&mut self.buf)?;
-        let mut r = BitReader::new(&self.buf[..n]);
+        // Decode in `T`'s own byte/bit order (not the reader's default).
+        let mut r = BitReader::with_layout(&self.buf[..n], <T as BitEncode>::LAYOUT);
         let msg = <T as BitDecode>::bit_decode(&mut r)?;
         Ok((msg, from))
     }
