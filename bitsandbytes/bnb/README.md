@@ -124,10 +124,11 @@ let bytes = header.to_bytes()?;            // -> 12 bytes
 let parsed = Header::decode_exact(&bytes)?; // exact inverse
 ```
 
-The generated API per `#[bin]` type: `decode` / `peek` / `decode_exact` /
-`decode`, `encode` (to any `io::Write`) / `to_bytes` / `encode_into`, and
-`Type::builder()`. See [`examples/bin_message.rs`](examples/bin_message.rs) for a
-complete, runnable DNS-header + framed-payload round-trip.
+The generated API per `#[bin]` type: `decode` (over a `Source` cursor) / `decode_all` /
+`decode_iter` / `peek` / `decode_exact` to read; `to_bytes` / `encode` (to any `io::Write`) /
+`BitEncode::bit_encode` (to a `Sink`) to write; and `Type::builder()` / `Type::new(…)`. See
+[`examples/bin_message.rs`](examples/bin_message.rs) for a complete, runnable DNS-header +
+framed-payload round-trip.
 
 ### Directives & I/O
 
@@ -136,12 +137,13 @@ complete, runnable DNS-header + framed-payload round-trip.
   `validate = <path>`.
 - **Field-level** (`#[br]`/`#[bw]`): `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
   `map`/`try_map` (+ inverse `bw(map)`), `parse_with`/`write_with`, `ignore`,
-  `pad_before/after` / `align_before/after` / `restore_position`, and
-  `#[reserved]` / `#[reserved_with(…)]`.
+  `pad_before/after` / `align_before/after` / `restore_position`,
+  `#[reserved]` / `#[reserved_with(…)]`, and `#[try_str]` (a `Debug`-rendering hint —
+  a byte buffer prints as a string when valid UTF-8, else hex).
 - **I/O ladder:** decode from a `&[u8]` slice (`BitReader`), a forward `Read`
-  (`StreamBitReader`), a bounded retain-and-seek socket adapter (`BufSource`), or a
-  `Read + Seek` file (`SeekReader`); with the opt-in **`bytes`** feature, the
-  zero-copy `BytesReader`/`BytesWriter`.
+  (`StreamBitReader`), a bounded retain-and-seek socket adapter (`BufSource`), a pushable
+  in-memory buffer (`BitBuf`), or a `Read + Seek` file (`SeekReader`); with the opt-in
+  **`bytes`** feature, the zero-copy `BytesReader`/`BytesWriter`.
 
 `validate` gates `build()` only — the **parser stays permissive** (it never rejects
 representable input, per the dual-use rule), so deliberately malformed messages are
