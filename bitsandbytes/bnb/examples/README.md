@@ -49,6 +49,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `peek` | `SeekReader` + **`restore_position`** — read a discriminant, then rewind so a later field re-reads it | `--example peek` |
 | `streaming` | `StreamBitReader` — decode a *sequence* of messages off a forward-only stream; clean stop on `Incomplete` | `--example streaming` |
 | `bufsource` | `BufSource` retain-and-seek — a backward `restore_position` over a reader that **can't** seek (the socket+seek case) | `--example bufsource` |
+| `bitbuf` | `BitBuf` push/pull — feed chunks as they arrive, pull whole messages; compared against `decode_all`/`BitReader`/`BufSource` on the same buffer | `--example bitbuf` |
 | `framed` | The opt-in `bytes` adapters (`BytesReader`/`BytesWriter`) + the streaming `Incomplete` signal | `--example framed --features bytes` |
 | `bytes_frame` | The `bytes` feature: zero-copy framing — encode to a `Bytes`, decode from an owned `Bytes`, cheap slices | `--example bytes_frame --features bytes` |
 | `tcp` | Raw `std` TCP: `BufSource` + the `&TcpStream` duplex trick (read + write one socket, no `try_clone`) | `--example tcp` |
@@ -80,7 +81,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
 | `#[try_str]` (Debug rendering) | try_str, checked, ctx, wav |
-| I/O: `BufSource` / `SeekReader` / `StreamBitReader` | tcp, bufsource / archive, peek / framed, streaming |
+| I/O: `BufSource` / `SeekReader` / `StreamBitReader` / `BitBuf` | tcp, bufsource / archive, peek / framed, streaming / bitbuf |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
 | `net` feature | sockets, unix_stream |
