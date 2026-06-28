@@ -4,9 +4,9 @@
 [Road to 1.0](#road-to-10). `bnb` is an owned, bit-aware binary codec — the field
 types, macros, whole-message codec, and I/O ladder below are all built, tested, and
 benchmarked. This file is the capability checklist; for the design rationale see
-[`DESIGN.md`](DESIGN.md), for runnable walkthroughs the [`bnb::guide`] module, and for
-credit (binrw and the bit/int/enum crates that inspired this one)
-[`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md).
+[`DESIGN.md`](DESIGN.md), for runnable walkthroughs the [`bnb::guide`] module and the
+[`examples/`](examples/README.md) suite (indexed by feature), and for credit (binrw and the
+bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md).
 
 [`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
 
@@ -28,10 +28,11 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 
 ## The `#[bin]` whole-message codec
 
-- [x] Folds read + write codecs and the builder over one struct; generates the decode
-      entry points (`decode`/`decode_all`/`decode_iter`/`peek`/`decode_exact`), the encode entry points
-      (`to_bytes` + the `encode(writer)` convenience, plus `BitEncode::bit_encode` for a `Sink`),
-      and construction (`new(fields…)`, `builder()`).
+- [x] Folds read + write codecs and the builder over one struct; generates the decode entry
+      points — `decode(&mut Source)` (one cursor decode over the whole I/O ladder), `decode_all`/
+      `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), and `decode_exact`/`peek`
+      (one-shot) — the encode entry points (`to_bytes` + the `encode(writer)` convenience, plus
+      `BitEncode::bit_encode` for a `Sink`), and construction (`new(fields…)`, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
       byte-identical `decode → to_bytes`); `to_canonical_bytes` normalizes (`reserved` → spec,
       `calc` recomputed). Generated for a `reserved`/`calc` message, which also carries a
@@ -71,6 +72,10 @@ credit (binrw and the bit/int/enum crates that inspired this one)
 - [x] `StreamBitReader<R: Read>` — forward-only streaming; `Incomplete` ("read more")
       signal.
 - [x] `BufSource<R: Read>` — bounded retain-and-seek socket adapter.
+- [x] `BitBuf` — push/pull, bit-aware in-memory buffer: `push(&bytes)` as they arrive,
+      `pull::<T>()` takes whole messages off the front (`None` until complete, reclaims as it
+      goes). A `SeekSource`, so it also reads through plain `decode`; the pushable counterpart to
+      `BufSource` (`no_std` + `alloc`).
 - [x] `SeekReader<R: Read + Seek>` — large file / container.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
