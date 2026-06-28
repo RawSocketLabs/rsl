@@ -1429,10 +1429,52 @@ impl<T> core::convert::From<T> for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::net::MessageStream<S>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageStream<S>
-pub trait bnb::net::DatagramSocket
+pub struct bnb::net::MockDatagramSocket
+impl bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::new() -> Self
+pub fn bnb::net::MockDatagramSocket::push_inbound(&self, &[u8], core::net::socket_addr::SocketAddr)
+pub fn bnb::net::MockDatagramSocket::sent(&self) -> alloc::vec::Vec<(alloc::vec::Vec<u8>, core::net::socket_addr::SocketAddr)>
+impl bnb::net::DatagramSocket for bnb::net::MockDatagramSocket
+pub type bnb::net::MockDatagramSocket::Addr = core::net::socket_addr::SocketAddr
+pub fn bnb::net::MockDatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>
+pub fn bnb::net::MockDatagramSocket::send_to(&self, &[u8], &core::net::socket_addr::SocketAddr) -> std::io::error::Result<usize>
+impl core::default::Default for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::default() -> bnb::net::MockDatagramSocket
+impl core::fmt::Debug for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for bnb::net::MockDatagramSocket
+impl core::marker::Send for bnb::net::MockDatagramSocket
+impl !core::marker::Sync for bnb::net::MockDatagramSocket
+impl core::marker::Unpin for bnb::net::MockDatagramSocket
+impl core::marker::UnsafeUnpin for bnb::net::MockDatagramSocket
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::net::MockDatagramSocket
+impl core::panic::unwind_safe::UnwindSafe for bnb::net::MockDatagramSocket
+impl<T, U> core::convert::Into<U> for bnb::net::MockDatagramSocket where U: core::convert::From<T>
+pub fn bnb::net::MockDatagramSocket::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::net::MockDatagramSocket where U: core::convert::Into<T>
+pub type bnb::net::MockDatagramSocket::Error = core::convert::Infallible
+pub fn bnb::net::MockDatagramSocket::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::net::MockDatagramSocket where U: core::convert::TryFrom<T>
+pub type bnb::net::MockDatagramSocket::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::net::MockDatagramSocket::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::net::MockDatagramSocket where T: 'static + ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::net::MockDatagramSocket where T: ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::net::MockDatagramSocket where T: ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
+impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
+pub trait bnb::net::DatagramSocket: bnb::net::sealed::Sealed
 pub type bnb::net::DatagramSocket::Addr
 pub fn bnb::net::DatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, Self::Addr)>
 pub fn bnb::net::DatagramSocket::send_to(&self, &[u8], &Self::Addr) -> std::io::error::Result<usize>
+impl bnb::net::DatagramSocket for bnb::net::MockDatagramSocket
+pub type bnb::net::MockDatagramSocket::Addr = core::net::socket_addr::SocketAddr
+pub fn bnb::net::MockDatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>
+pub fn bnb::net::MockDatagramSocket::send_to(&self, &[u8], &core::net::socket_addr::SocketAddr) -> std::io::error::Result<usize>
 impl bnb::net::DatagramSocket for std::net::udp::UdpSocket
 pub type std::net::udp::UdpSocket::Addr = core::net::socket_addr::SocketAddr
 pub fn std::net::udp::UdpSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>
@@ -2285,6 +2327,44 @@ impl<T> core::convert::From<T> for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::net::MessageStream<S>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageStream<S>
+pub struct bnb::MockDatagramSocket
+impl bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::new() -> Self
+pub fn bnb::net::MockDatagramSocket::push_inbound(&self, &[u8], core::net::socket_addr::SocketAddr)
+pub fn bnb::net::MockDatagramSocket::sent(&self) -> alloc::vec::Vec<(alloc::vec::Vec<u8>, core::net::socket_addr::SocketAddr)>
+impl bnb::net::DatagramSocket for bnb::net::MockDatagramSocket
+pub type bnb::net::MockDatagramSocket::Addr = core::net::socket_addr::SocketAddr
+pub fn bnb::net::MockDatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>
+pub fn bnb::net::MockDatagramSocket::send_to(&self, &[u8], &core::net::socket_addr::SocketAddr) -> std::io::error::Result<usize>
+impl core::default::Default for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::default() -> bnb::net::MockDatagramSocket
+impl core::fmt::Debug for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for bnb::net::MockDatagramSocket
+impl core::marker::Send for bnb::net::MockDatagramSocket
+impl !core::marker::Sync for bnb::net::MockDatagramSocket
+impl core::marker::Unpin for bnb::net::MockDatagramSocket
+impl core::marker::UnsafeUnpin for bnb::net::MockDatagramSocket
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::net::MockDatagramSocket
+impl core::panic::unwind_safe::UnwindSafe for bnb::net::MockDatagramSocket
+impl<T, U> core::convert::Into<U> for bnb::net::MockDatagramSocket where U: core::convert::From<T>
+pub fn bnb::net::MockDatagramSocket::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::net::MockDatagramSocket where U: core::convert::Into<T>
+pub type bnb::net::MockDatagramSocket::Error = core::convert::Infallible
+pub fn bnb::net::MockDatagramSocket::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::net::MockDatagramSocket where U: core::convert::TryFrom<T>
+pub type bnb::net::MockDatagramSocket::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::net::MockDatagramSocket::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::net::MockDatagramSocket where T: 'static + ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::net::MockDatagramSocket where T: ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::net::MockDatagramSocket where T: ?core::marker::Sized
+pub fn bnb::net::MockDatagramSocket::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
+impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
 pub struct bnb::SeekReader<R>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekReader<R>
 pub fn bnb::bitstream::SeekReader<R>::new(R) -> Self
@@ -2973,10 +3053,14 @@ impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
 pub const bnb::UInt<u8, N>::BITS: u32
 pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
-pub trait bnb::DatagramSocket
+pub trait bnb::DatagramSocket: bnb::net::sealed::Sealed
 pub type bnb::DatagramSocket::Addr
 pub fn bnb::DatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, Self::Addr)>
 pub fn bnb::DatagramSocket::send_to(&self, &[u8], &Self::Addr) -> std::io::error::Result<usize>
+impl bnb::net::DatagramSocket for bnb::net::MockDatagramSocket
+pub type bnb::net::MockDatagramSocket::Addr = core::net::socket_addr::SocketAddr
+pub fn bnb::net::MockDatagramSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>
+pub fn bnb::net::MockDatagramSocket::send_to(&self, &[u8], &core::net::socket_addr::SocketAddr) -> std::io::error::Result<usize>
 impl bnb::net::DatagramSocket for std::net::udp::UdpSocket
 pub type std::net::udp::UdpSocket::Addr = core::net::socket_addr::SocketAddr
 pub fn std::net::udp::UdpSocket::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, core::net::socket_addr::SocketAddr)>

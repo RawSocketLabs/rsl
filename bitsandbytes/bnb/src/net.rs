@@ -11,15 +11,18 @@
 //!     `UnixDatagram`). It owns the socket and reuses one receive buffer.
 //!
 //! [`DatagramSocket`] is the datagram counterpart to `Read + Write` that std doesn't ship — so
-//! `MessageDatagram` is generic across UDP, Unix datagram sockets, and anything you implement it
-//! for (a raw socket, a mock). Both wrappers bridge `std::io::Error` into [`BitError`] (the
-//! `std` feature), so a single `?` covers I/O *and* codec errors.
+//! `MessageDatagram` is generic across UDP and Unix datagram sockets (and, under the `mock`
+//! feature, [`MockDatagramSocket`]; the trait is *sealed*, so those are the only impls). Both
+//! wrappers bridge `std::io::Error` into [`BitError`] (the `std` feature), so a single `?` covers
+//! I/O *and* codec errors.
 
 use crate::{BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter};
 use alloc::vec;
 use alloc::vec::Vec;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, UdpSocket};
+#[cfg(feature = "mock")]
+use std::{cell::RefCell, collections::VecDeque};
 
 /// Encode any message to a fresh `Vec` (generic over [`BitEncode`], unlike the inherent
 /// `to_bytes`).
@@ -102,11 +105,14 @@ impl<S: Write> MessageStream<S> {
 
 /// A message-oriented (datagram) socket: each `recv_from` yields exactly one whole message with
 /// its sender, and each `send_to` writes one message to a peer. This is the datagram counterpart
-/// to `Read + Write` (which std *does* ship but has no datagram analog of) — implementing it for
-/// a transport makes that transport usable with [`MessageDatagram`].
+/// to `Read + Write` (which std *does* ship but has no datagram analog of) — it makes a transport
+/// usable with [`MessageDatagram`].
 ///
-/// Implemented here for [`UdpSocket`] and (on Unix) `std::os::unix::net::UnixDatagram`.
-pub trait DatagramSocket {
+/// **Sealed:** `bnb` implements it for [`UdpSocket`], (on Unix) `std::os::unix::net::UnixDatagram`,
+/// and — under the `mock` feature — `MockDatagramSocket`. Downstream crates can't add their own
+/// impls, so `bnb` keeps the freedom to evolve the trait; to test datagram code, use
+/// `MockDatagramSocket` (the `mock` feature) or a loopback `UdpSocket`.
+pub trait DatagramSocket: sealed::Sealed {
     /// The peer-address type (`SocketAddr` for UDP; `std::os::unix::net::SocketAddr` for Unix).
     type Addr;
 
@@ -123,6 +129,12 @@ pub trait DatagramSocket {
     fn send_to(&self, buf: &[u8], addr: &Self::Addr) -> io::Result<usize>;
 }
 
+/// Seals [`DatagramSocket`] — only `bnb`'s own types can implement it (the module is private).
+mod sealed {
+    pub trait Sealed {}
+}
+
+impl sealed::Sealed for UdpSocket {}
 impl DatagramSocket for UdpSocket {
     type Addr = SocketAddr;
 
@@ -136,6 +148,8 @@ impl DatagramSocket for UdpSocket {
 }
 
 #[cfg(unix)]
+impl sealed::Sealed for std::os::unix::net::UnixDatagram {}
+#[cfg(unix)]
 impl DatagramSocket for std::os::unix::net::UnixDatagram {
     type Addr = std::os::unix::net::SocketAddr;
 
@@ -148,8 +162,9 @@ impl DatagramSocket for std::os::unix::net::UnixDatagram {
     }
 }
 
-/// A whole-message sender/receiver over a [`DatagramSocket`] (a `UdpSocket`, a `UnixDatagram`,
-/// or your own). It owns the socket and reuses one receive buffer, so each datagram is exchanged
+/// A whole-message sender/receiver over a [`DatagramSocket`] (a `UdpSocket`, a `UnixDatagram`, or
+/// — under the `mock` feature — a [`MockDatagramSocket`]). It owns the socket and reuses one
+/// receive buffer, so each datagram is exchanged
 /// as a `#[bin]` value — the datagram counterpart to [`MessageStream`]. Unlike a stream, a
 /// datagram socket talks to *many* peers, so every call carries the peer address.
 #[derive(Debug)]
@@ -208,5 +223,79 @@ impl<D: DatagramSocket> MessageDatagram<D> {
         let mut r = BitReader::with_layout(&self.buf[..n], <T as BitEncode>::LAYOUT);
         let msg = <T as BitDecode>::bit_decode(&mut r)?;
         Ok((msg, from))
+    }
+}
+
+/// A test-only [`DatagramSocket`] backed by in-memory queues — exchange datagrams with a
+/// [`MessageDatagram`] in unit tests, no real socket bound. Enabled by the **`mock`** feature
+/// (put it in your `[dev-dependencies]`). Queue inbound datagrams with
+/// [`push_inbound`](Self::push_inbound) (each is one `recv_from`) and inspect what was sent with
+/// [`sent`](Self::sent).
+///
+/// ```
+/// use bnb::{bin, MessageDatagram, MockDatagramSocket};
+/// #[bin(big)]
+/// #[derive(Debug, PartialEq, Eq)]
+/// struct Ping {
+///     seq: u16,
+/// }
+///
+/// let mut peer = MessageDatagram::new(MockDatagramSocket::new());
+/// let from = "127.0.0.1:5000".parse().unwrap();
+/// peer.get_ref().push_inbound(&Ping { seq: 7 }.to_bytes().unwrap(), from); // as if it arrived
+///
+/// let (ping, who): (Ping, _) = peer.recv_message().unwrap();
+/// assert_eq!(ping, Ping { seq: 7 });
+/// peer.send_message(&Ping { seq: 8 }, &who).unwrap(); // reply to the sender
+/// assert_eq!(peer.get_ref().sent()[0].0, Ping { seq: 8 }.to_bytes().unwrap());
+/// ```
+#[cfg(feature = "mock")]
+#[derive(Debug, Default)]
+pub struct MockDatagramSocket {
+    inbound: RefCell<VecDeque<(Vec<u8>, SocketAddr)>>,
+    sent: RefCell<Vec<(Vec<u8>, SocketAddr)>>,
+}
+
+#[cfg(feature = "mock")]
+impl MockDatagramSocket {
+    /// An empty mock with no queued datagrams.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queue one datagram (`bytes`, from `from`) to be returned by the next `recv_from`.
+    pub fn push_inbound(&self, bytes: &[u8], from: SocketAddr) {
+        self.inbound.borrow_mut().push_back((bytes.to_vec(), from));
+    }
+
+    /// Every datagram sent so far, as `(bytes, destination)`, in send order.
+    #[must_use]
+    pub fn sent(&self) -> Vec<(Vec<u8>, SocketAddr)> {
+        self.sent.borrow().clone()
+    }
+}
+
+#[cfg(feature = "mock")]
+impl sealed::Sealed for MockDatagramSocket {}
+
+#[cfg(feature = "mock")]
+impl DatagramSocket for MockDatagramSocket {
+    type Addr = SocketAddr;
+
+    fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        let (data, from) = self
+            .inbound
+            .borrow_mut()
+            .pop_front()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "no queued datagram"))?;
+        let n = data.len().min(buf.len());
+        buf[..n].copy_from_slice(&data[..n]);
+        Ok((n, from))
+    }
+
+    fn send_to(&self, buf: &[u8], addr: &SocketAddr) -> io::Result<usize> {
+        self.sent.borrow_mut().push((buf.to_vec(), *addr));
+        Ok(buf.len())
     }
 }

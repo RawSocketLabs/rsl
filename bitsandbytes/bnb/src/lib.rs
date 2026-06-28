@@ -90,10 +90,12 @@ ladder, with an opt-in `bytes` feature for async framing.
   datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
 - **`net`** — ergonomic `std` socket helpers: [`MessageStream`] (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and [`MessageDatagram`] (`send_message`/
-  `recv_message` over any [`DatagramSocket`] — `UdpSocket`, `UnixDatagram`, …). Implies `std`.
+  `recv_message` over a sealed [`DatagramSocket`] — `UdpSocket` or `UnixDatagram`). Implies `std`.
+- **`mock`** — a test-only [`MockDatagramSocket`] (an in-memory [`DatagramSocket`]) for exercising
+  `net` datagram code without a real socket; put it in your `[dev-dependencies]`. Implies `net`.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
-([`BitReader`], `Type::decode`/`decode_exact`/`peek`/`decode`) and encode to a
+([`BitReader`], `Type::decode`/`decode_all`/`decode_iter`/`decode_exact`/`peek`) and encode to a
 `Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, or [`BitEncode::bit_encode`] over a [`Sink`]). You lose
 only the streaming `std::io` adapters and `encode(&mut impl Write)`; on `no_std`,
 encode with `to_bytes()` and write the bytes to your transport yourself.
@@ -184,6 +186,8 @@ pub use bitstream::{BytesReader, BytesWriter};
 #[cfg(feature = "tokio")]
 pub use codec::BinCodec;
 
+#[cfg(feature = "mock")]
+pub use net::MockDatagramSocket;
 /// Ergonomic `std` socket helpers (the `net` feature).
 #[cfg(feature = "net")]
 pub use net::{DatagramSocket, MessageDatagram, MessageStream};

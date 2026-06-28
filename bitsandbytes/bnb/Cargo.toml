@@ -54,9 +54,12 @@ bytes = ["dep:bytes", "std"]
 # `BinCodec`: a `tokio_util::codec` Decoder/Encoder for any `#[bin]` message (async framing
 # over `tokio`). Needs the `bytes` adapters' `BytesMut`, so it implies `bytes`.
 tokio = ["dep:tokio-util", "bytes"]
-# Ergonomic std socket helpers (`MessageStream` over `TcpStream`, `UdpExt` on `UdpSocket`).
-# Pure std — no extra deps.
+# Ergonomic std socket helpers (`MessageStream` over a `Read + Write` stream, `MessageDatagram`
+# over a `DatagramSocket`). Pure std — no extra deps.
 net = ["std"]
+# Test-only mock transport (`MockDatagramSocket`) for exercising `net` code without real sockets.
+# Put it in your `[dev-dependencies]` features, not your release build.
+mock = ["net"]
 
 [dev-dependencies]
 # Real logging in the examples (instead of `println!`). `tracing` is also an optional
@@ -112,6 +115,11 @@ required-features = ["net"]
 [[example]]
 name = "unix_stream"
 required-features = ["net"]
+
+# `mock_datagram` shows testing `net` datagram code with the `mock` feature's `MockDatagramSocket`.
+[[example]]
+name = "mock_datagram"
+required-features = ["mock"]
 
 [[bench]]
 name = "bitfield_bench"
