@@ -2525,3 +2525,728 @@ mod unit {
         );
     }
 }
+
+#[cfg(test)]
+mod component {
+    //! Component tests: one runtime adapter in isolation (the I/O ladder over the
+    //! bit cursors). `cargo test component` runs these alongside the other layers.
+    /// `bitstream_source.rs` — Generic recursion over `Source` (ROADMAP Phase 1, chunk B1): one derived
+    mod source {
+
+        use bnb::{BitDecode, BitEncode, BitReader, BitWriter, StreamBitReader, u4, u12};
+
+        #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq)]
+        struct Word {
+            a: u4,
+            b: u12, // 16 bits; all <= 64 so the streaming reader handles it too
+        }
+
+        #[test]
+        fn decodes_over_slice_and_stream_identically() {
+            let word = Word {
+                a: u4::new(0xA),
+                b: u12::new(0xBCD),
+            };
+            let mut w = BitWriter::new();
+            word.bit_encode(&mut w).unwrap();
+            let bytes = w.into_bytes();
+            assert_eq!(bytes, [0xAB, 0xCD]);
+
+            // Source 1 — in-memory slice cursor (random-access, full power).
+            let mut slice = BitReader::new(&bytes);
+            assert_eq!(Word::bit_decode(&mut slice).unwrap(), word);
+
+            // Source 2 — a forward `Read` (`&[u8]` is `Read` but NOT `Seek`); same code,
+            // no rewrite, no Seek requirement.
+            let mut stream = StreamBitReader::new(&bytes[..]);
+            assert_eq!(Word::bit_decode(&mut stream).unwrap(), word);
+        }
+    }
+
+    /// `bitstream_seek.rs` — Spike (DESIGN §11): seeking is free on the in-memory cursor, and a
+    mod seek {
+
+        use bnb::{BitReader, StreamBitReader, u4};
+
+        #[test]
+        fn seek_and_align_need_no_seek_trait() {
+            // 3 bytes: 0xAB, 0xCD, 0xEF.
+            let bytes = [0xABu8, 0xCD, 0xEF];
+            let mut r = BitReader::new(&bytes);
+
+            // Read a nibble, jump to an absolute bit offset, read, then jump back —
+            // exactly the move DNS name-compression needs, with no Seek machinery.
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xA));
+            r.seek_to_bit(16).unwrap(); // -> third byte
+            assert_eq!(r.read_bits(8).unwrap(), 0xEF);
+            r.seek_to_bit(4).unwrap(); // back to the low nibble of byte 0
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xB));
+
+            // align_to_byte snaps the cursor forward to the next byte boundary.
+            r.seek_to_bit(9).unwrap();
+            r.align_to_byte();
+            assert_eq!(r.bit_pos(), 16);
+
+            // Seeking past the end is a clean error, not a panic.
+            assert!(r.seek_to_bit(999).is_err());
+        }
+
+        #[test]
+        fn forward_only_stream_reader_requires_only_read() {
+            // `&[u8]` implements `std::io::Read` but NOT `std::io::Seek`. That this
+            // compiles and runs is the whole point: forward bit parsing drops the Seek
+            // requirement binrw imposes uniformly.
+            let data = [0xABu8, 0xCD];
+            let src: &[u8] = &data;
+            let mut r = StreamBitReader::new(src);
+
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xA));
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xB));
+            assert_eq!(r.read_bits(8).unwrap(), 0xCD);
+            // Past the end -> error, not panic.
+            assert!(r.read_bits(1).is_err());
+        }
+    }
+
+    /// `bitstream_entry.rs` — Entry points (ROADMAP Phase 1, chunk B2): `decode`/`peek`/`decode_exact`/
+    mod entry {
+
+        use bnb::{
+            BitDecode, BitEncode, BitReader, EncodeExt, ErrorKind, StreamBitReader, u4, u12,
+        };
+        use std::io::Cursor;
+
+        #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
+        struct Word {
+            a: u4,
+            b: u12,
+        }
+
+        fn sample() -> (Word, [u8; 2]) {
+            (
+                Word {
+                    a: u4::new(0xA),
+                    b: u12::new(0xBCD),
+                },
+                [0xAB, 0xCD],
+            )
+        }
+
+        #[test]
+        fn to_bytes_peek_and_tail_tolerance() {
+            let (w, bytes) = sample();
+            assert_eq!(w.to_bytes().unwrap(), bytes);
+            assert_eq!(Word::peek(&bytes).unwrap(), w);
+
+            // peek is tail-tolerant: a trailing byte is ignored.
+            let mut padded = bytes.to_vec();
+            padded.push(0xFF);
+            assert_eq!(Word::peek(&padded).unwrap(), w);
+        }
+
+        #[test]
+        fn decode_advances_a_cursor() {
+            let (w, bytes) = sample();
+            let mut both = bytes.to_vec();
+            both.extend_from_slice(&bytes); // two messages back to back
+
+            let mut cur = BitReader::new(&both);
+            assert_eq!(Word::decode(&mut cur).unwrap(), w);
+            assert_eq!(cur.bit_pos(), 16, "advanced past the first message");
+            assert_eq!(Word::decode(&mut cur).unwrap(), w);
+            assert_eq!(cur.bit_pos(), both.len() * 8, "consumed both");
+        }
+
+        #[test]
+        fn decode_all_and_iter_collect_back_to_back() {
+            let (w, bytes) = sample();
+            let mut both = bytes.to_vec();
+            both.extend_from_slice(&bytes);
+
+            // decode_all — eager; decode_iter — lazy. Both layout-baked and bit-aware.
+            assert_eq!(Word::decode_all(&both).unwrap(), vec![w, w]);
+            let collected: Result<Vec<_>, _> = Word::decode_iter(&both).collect();
+            assert_eq!(collected.unwrap(), vec![w, w]);
+        }
+
+        #[test]
+        fn decode_errors_on_short_cursor() {
+            let short = [0xABu8]; // one byte; Word needs two
+            let mut cur = BitReader::new(&short);
+            let err = Word::decode(&mut cur).unwrap_err();
+            assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
+        }
+
+        #[test]
+        fn decode_exact_rejects_trailing_bytes() {
+            let (w, bytes) = sample();
+            assert_eq!(Word::decode_exact(&bytes).unwrap(), w);
+
+            let mut padded = bytes.to_vec();
+            padded.push(0xFF);
+            let err = Word::decode_exact(&padded).unwrap_err();
+            assert_eq!(err.kind, ErrorKind::TrailingBytes { remaining: 1 });
+        }
+
+        #[test]
+        fn encode_to_any_write() {
+            let (w, bytes) = sample();
+            let mut sink = Cursor::new(Vec::new());
+            w.encode(&mut sink).unwrap();
+            assert_eq!(sink.into_inner(), bytes);
+        }
+
+        #[test]
+        fn encode_io_error_is_reported() {
+            struct Full;
+            impl std::io::Write for Full {
+                fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                    Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "full"))
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let (w, _) = sample();
+            let err = w.encode(&mut Full).unwrap_err();
+            assert_eq!(err.kind, ErrorKind::Io(std::io::ErrorKind::WriteZero));
+        }
+
+        #[test]
+        fn decode_explicit_cursor() {
+            let (w, bytes) = sample();
+            let mut r = BitReader::new(&bytes);
+            assert_eq!(Word::decode(&mut r).unwrap(), w);
+        }
+
+        #[test]
+        fn streaming_shortfall_is_incomplete_not_eof() {
+            let (_, bytes) = sample();
+            // Only the first byte available over a stream: the shortfall is the retry
+            // signal, not a definitive EOF.
+            let mut stream = StreamBitReader::new(&bytes[..1]);
+            let err = Word::decode(&mut stream).unwrap_err();
+            assert!(err.is_incomplete(), "stream shortfall is incomplete: {err}");
+            assert!(matches!(err.kind, ErrorKind::Incomplete { .. }));
+            assert_eq!(err.field, Some("b"), "still records the field span");
+        }
+    }
+
+    /// `bitstream_errors.rs` — Position-aware errors (ROADMAP Phase 1): a decode/encode failure reports the
+    mod errors {
+
+        use bnb::{BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, u4, u12};
+
+        #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq)]
+        struct Header {
+            a: u4,
+            b: u12, // a + b = 16 bits
+        }
+
+        #[test]
+        fn round_trips() {
+            let h = Header {
+                a: u4::new(0xA),
+                b: u12::new(0xBCD),
+            };
+            let mut w = BitWriter::new();
+            h.bit_encode(&mut w).unwrap();
+            let bytes = w.into_bytes();
+            assert_eq!(bytes, [0xAB, 0xCD]);
+
+            let mut r = BitReader::new(&bytes);
+            assert_eq!(Header::bit_decode(&mut r).unwrap(), h);
+        }
+
+        #[test]
+        fn decode_eof_reports_offset_and_field() {
+            // One byte: `a` (4 bits) decodes; `b` (12 bits) runs off the end at bit 4.
+            let bytes = [0xAB];
+            let mut r = BitReader::new(&bytes);
+            let err: BitError = Header::bit_decode(&mut r).unwrap_err();
+
+            assert_eq!(err.field, Some("b"), "names the field that failed");
+            assert_eq!(err.at, 4, "records the bit offset where decoding stopped");
+            assert_eq!(
+                err.kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 12,
+                    remaining: 4
+                }
+            );
+
+            let msg = err.to_string();
+            assert!(msg.contains("field `b`"), "message names the field: {msg}");
+            assert!(msg.contains("at bit 4"), "message names the offset: {msg}");
+        }
+
+        #[test]
+        fn innermost_field_wins_the_span() {
+            // The error originates in `b`'s read; the outer struct must not overwrite it.
+            let mut r = BitReader::new(&[0xAB]);
+            let err = Header::bit_decode(&mut r).unwrap_err();
+            assert_eq!(err.field, Some("b"));
+        }
+    }
+
+    /// `bin_io_adapter.rs` — `Source::as_read` / `Sink::as_write`: hand a bnb cursor to `std::io`-based code
+    mod io_adapter {
+
+        use bnb::{BitError, Sink, Source, bin};
+        use std::io::{Read, Write};
+
+        // A length-prefixed blob, read and written through std::io::Read/Write *views* over the
+        // bnb cursor — exactly how you'd drop in a `Read`/`Write`-based parser or a stream
+        // wrapper (decompressor, checksummer, …) from a custom codec.
+        fn read_blob<S: Source>(r: &mut S) -> Result<Vec<u8>, BitError> {
+            let len: u8 = r.read()?;
+            let mut buf = vec![0u8; len as usize];
+            r.as_read().read_exact(&mut buf)?; // io::Error -> BitError via `?`
+            Ok(buf)
+        }
+
+        fn write_blob<K: Sink>(blob: &[u8], w: &mut K) -> Result<(), BitError> {
+            w.write(u8::try_from(blob.len()).unwrap())?;
+            w.as_write().write_all(blob)?;
+            Ok(())
+        }
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq)]
+        struct Msg {
+            #[br(parse_with = read_blob)]
+            #[bw(write_with = write_blob)]
+            data: Vec<u8>,
+        }
+
+        #[test]
+        fn as_read_as_write_roundtrip_through_std_io() {
+            let m = Msg {
+                data: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            };
+            let bytes = m.to_bytes().unwrap();
+            assert_eq!(bytes, [0x04, 0xDE, 0xAD, 0xBE, 0xEF]);
+            assert_eq!(Msg::decode_exact(&bytes).unwrap(), m);
+        }
+
+        #[test]
+        fn as_read_short_read_reports_eof() {
+            use bnb::BitReader;
+            // Only 2 bytes available but the length prefix claims 4 -> read_exact hits EOF,
+            // which surfaces as a BitError (not a panic).
+            let mut r = BitReader::new(&[0x04, 0xAA, 0xBB]);
+            assert!(read_blob(&mut r).is_err());
+        }
+    }
+
+    /// `bin_buf_source.rs` — `BufSource` (ROADMAP Phase 3): a seekable `Source` over a forward `Read`. It
+    mod buf_source {
+
+        use bnb::{BufSource, ErrorKind, Source, bin, u4};
+
+        // A forward-only reader (a socket-like stream) yielding one byte per `read`.
+        struct Chunked {
+            data: Vec<u8>,
+            pos: usize,
+        }
+        impl std::io::Read for Chunked {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.pos >= self.data.len() || buf.is_empty() {
+                    return Ok(0);
+                }
+                buf[0] = self.data[self.pos];
+                self.pos += 1;
+                Ok(1)
+            }
+        }
+
+        #[bin]
+        #[derive(Debug, PartialEq, Eq, Clone)]
+        struct Frame {
+            flags: u4,
+            #[br(restore_position)]
+            peek: u8,
+            value: u16,
+        }
+
+        #[test]
+        fn seek_using_message_over_a_nonseekable_stream() {
+            // Wire bytes from the restore_position round-trip: flags=5, value=0xABCD.
+            let wire = vec![0x5A, 0xBC, 0xD0];
+            let mut src = BufSource::new(Chunked { data: wire, pos: 0 });
+            let f = Frame::decode(&mut src).unwrap();
+            assert_eq!(f.value, 0xABCD);
+            assert_eq!(f.peek, 0xAB, "the rewind re-read retained bytes");
+        }
+
+        #[test]
+        fn retention_cap_bounds_the_buffer() {
+            // A 1-byte cap; reading a 16-bit value needs 2 bytes -> BufferFull.
+            let mut src = BufSource::with_cap(
+                Chunked {
+                    data: vec![0xFF; 8],
+                    pos: 0,
+                },
+                1,
+            );
+            let err = src.read_bits(16).unwrap_err();
+            assert!(matches!(err.kind, ErrorKind::BufferFull { cap: 1 }));
+        }
+
+        #[test]
+        fn over_wide_read_is_rejected() {
+            let mut src = BufSource::new(Chunked {
+                data: vec![0u8; 32],
+                pos: 0,
+            });
+            assert!(matches!(
+                src.read_bits(129).unwrap_err().kind,
+                ErrorKind::TooWide { width: 129 }
+            ));
+        }
+
+        #[test]
+        fn running_out_mid_field_is_incomplete() {
+            // Only one byte is available, but a 16-bit read needs two — the stream ends (EOF)
+            // partway through, which is the streaming "need more" signal, not a definitive EOF.
+            let mut src = BufSource::new(Chunked {
+                data: vec![0xAB],
+                pos: 0,
+            });
+            assert!(matches!(
+                src.read_bits(16).unwrap_err().kind,
+                ErrorKind::Incomplete { .. }
+            ));
+        }
+
+        #[test]
+        fn an_io_error_from_the_reader_propagates() {
+            struct Failing;
+            impl std::io::Read for Failing {
+                fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionReset,
+                        "boom",
+                    ))
+                }
+            }
+            let mut src = BufSource::new(Failing);
+            assert!(matches!(
+                src.read_bits(8).unwrap_err().kind,
+                ErrorKind::Io(_)
+            ));
+        }
+    }
+
+    /// `bin_seek_reader.rs` — `SeekReader` (ROADMAP Phase 3b): a `SeekSource` over a `Read + Seek` (a file-like)
+    mod seek_reader {
+
+        use bnb::{SeekReader, bin, u4};
+        use std::io::Cursor;
+
+        #[bin]
+        #[derive(Debug, PartialEq, Eq, Clone)]
+        struct Frame {
+            flags: u4,
+            #[br(restore_position)]
+            peek: u8,
+            value: u16,
+        }
+
+        #[test]
+        fn seek_reader_over_a_file_like_source() {
+            let wire = vec![0x5A, 0xBC, 0xD0]; // flags=5, value=0xABCD (restore_position layout)
+            let mut src = SeekReader::new(Cursor::new(wire));
+            let f = Frame::decode(&mut src).unwrap();
+            assert_eq!(f.value, 0xABCD);
+            assert_eq!(f.peek, 0xAB, "rewound and re-read via io::Seek");
+        }
+
+        #[test]
+        fn over_wide_read_is_rejected() {
+            use bnb::{ErrorKind, Source};
+            let mut src = SeekReader::new(Cursor::new(vec![0u8; 32]));
+            assert!(matches!(
+                src.read_bits(129).unwrap_err().kind,
+                ErrorKind::TooWide { width: 129 }
+            ));
+        }
+
+        #[test]
+        fn reading_past_the_end_is_unexpected_eof() {
+            use bnb::ErrorKind;
+            #[bin(big)]
+            #[derive(Debug)]
+            struct Quad {
+                v: u32,
+            }
+            // Only two of the four needed bytes are present.
+            let mut src = SeekReader::new(Cursor::new(vec![0x12, 0x34]));
+            assert!(matches!(
+                Quad::decode(&mut src).unwrap_err().kind,
+                ErrorKind::UnexpectedEof { .. }
+            ));
+        }
+
+        #[test]
+        fn little_endian_layout_is_honored() {
+            #[bin(little)]
+            #[derive(Debug, PartialEq)]
+            struct Le {
+                v: u32,
+            }
+            // `with_layout` carries the message's little-endian order onto the reader.
+            let mut src = SeekReader::with_layout(
+                Cursor::new(vec![0x78, 0x56, 0x34, 0x12]),
+                <Le as bnb::BitEncode>::LAYOUT,
+            );
+            assert_eq!(Le::decode(&mut src).unwrap(), Le { v: 0x1234_5678 });
+        }
+    }
+
+    /// `bitbuf.rs` — `BitBuf` — a push/pull, bit-aware incremental decode buffer.
+    mod bitbuf {
+
+        use bnb::{BitBuf, BitDecode, BitEncode, BitWriter, bin, u4};
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        struct Frame {
+            tag: u4,
+            val: u8,
+        } // 12 bits — a non-byte-aligned boundary
+
+        #[bin(little)]
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        struct LeMsg {
+            a: u16,
+            b: u32,
+        } // little-endian, byte-aligned (6 bytes)
+
+        #[test]
+        fn pull_is_none_until_a_whole_message_arrives_then_reclaims() {
+            let m = LeMsg {
+                a: 0x1234,
+                b: 0xDEAD_BEEF,
+            };
+            let bytes = m.to_bytes().unwrap();
+
+            let mut bb = BitBuf::new();
+            bb.push(&bytes[..3]); // only part of the message
+            assert_eq!(bb.pull::<LeMsg>().unwrap(), None); // wait for more — buffer untouched
+            assert_eq!(bb.bit_len(), 24);
+
+            bb.push(&bytes[3..]); // the rest
+            assert_eq!(bb.pull::<LeMsg>().unwrap(), Some(m)); // decodes (little-endian honored via LAYOUT)
+            assert!(bb.is_empty()); // consumed bytes reclaimed
+            assert_eq!(bb.pull::<LeMsg>().unwrap(), None);
+        }
+
+        #[test]
+        fn reassembles_sub_byte_boundary_messages_across_pushes() {
+            let f1 = Frame {
+                tag: u4::new(0xA),
+                val: 0x12,
+            };
+            let f2 = Frame {
+                tag: u4::new(0xB),
+                val: 0x34,
+            };
+            // Pack contiguously: 24 bits / 3 bytes, with f2 starting at bit 12 (mid-byte).
+            let mut w = BitWriter::new();
+            f1.bit_encode(&mut w).unwrap();
+            f2.bit_encode(&mut w).unwrap();
+            let wire = w.into_bytes();
+
+            let mut bb = BitBuf::new();
+            let mut out = Vec::new();
+            // f1 spans the chunk boundary; the bit cursor keeps f2's sub-byte alignment.
+            for chunk in [&wire[0..1], &wire[1..3]] {
+                bb.push(chunk);
+                while let Some(f) = bb.pull::<Frame>().unwrap() {
+                    out.push(f);
+                }
+            }
+            assert_eq!(out, vec![f1, f2]);
+            assert!(bb.is_empty());
+        }
+
+        #[test]
+        fn clear_and_capacity() {
+            let mut bb = BitBuf::with_capacity(64);
+            bb.push(&[1, 2, 3]);
+            assert_eq!(bb.bit_len(), 24);
+            bb.clear();
+            assert!(bb.is_empty());
+        }
+
+        // BitBuf is a Source: it reads through the same `bit_decode` entry the renamed `decode` uses.
+        // The default-order buffer reads a big message; `with_layout` reads a little one (this also
+        // proves byte order is applied exactly once — no double-ordering in the Source delegation).
+        #[test]
+        fn reads_as_a_source_respecting_layout() {
+            // big message via a default (msb/big) BitBuf
+            let f = Frame {
+                tag: u4::new(0xC),
+                val: 0x9A,
+            };
+            let mut bb = BitBuf::new();
+            bb.push(&f.to_bytes().unwrap());
+            assert_eq!(<Frame as BitDecode>::bit_decode(&mut bb).unwrap(), f);
+
+            // little message via a layout-configured BitBuf (byte-aligned, so compact fully drains)
+            let m = LeMsg {
+                a: 0x1234,
+                b: 0xDEAD_BEEF,
+            };
+            let mut bb = BitBuf::new().with_layout(<LeMsg as BitEncode>::LAYOUT);
+            bb.push(&m.to_bytes().unwrap());
+            let got = <LeMsg as BitDecode>::bit_decode(&mut bb).unwrap();
+            assert_eq!(got, m); // would be byte-swapped if ordering double-applied
+            bb.compact(); // Source path doesn't auto-reclaim
+            assert!(bb.is_empty());
+        }
+
+        // BitBuf is a `SeekSource`, so a `restore_position` message decodes over it through the
+        // `decode` cursor path — exercising BitBuf's `seek_to_bit` (the rewind).
+        #[test]
+        fn as_a_seek_source_a_restore_position_message_decodes() {
+            #[bin(big)]
+            #[derive(Debug, PartialEq, Eq)]
+            struct Peeked {
+                #[br(restore_position)]
+                tag: u8,
+                full: u16,
+            }
+            let mut bb = BitBuf::new();
+            bb.push(&[0xAB, 0xCD]);
+            let p = Peeked::decode(&mut bb).unwrap();
+            assert_eq!((p.tag, p.full), (0xAB, 0xABCD));
+        }
+
+        // --- bounded (alloc-once) mode -----------------------------------------------------
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq, Eq)]
+        struct Two {
+            v: u16,
+        }
+
+        #[test]
+        fn bounded_try_push_respects_capacity_then_reclaims_in_place() {
+            use bnb::CapacityError;
+            let mut bb = BitBuf::bounded(4);
+            assert_eq!(bb.capacity(), Some(4));
+            bb.try_push(&[0x00, 0x01]).unwrap(); // 2 bytes
+            bb.try_push(&[0x00, 0x02]).unwrap(); // 4 bytes — full
+            // a 5th byte can't fit until something is drained
+            assert!(matches!(
+                bb.try_push(&[0xFF]),
+                Err(CapacityError { cap: 4, .. })
+            ));
+            // drain one message → 2 live bytes; the dead prefix is reclaimed in place to fit more
+            assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 1 }));
+            bb.try_push(&[0x00, 0x03]).unwrap();
+            assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 2 }));
+            assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 3 }));
+            assert!(bb.is_empty());
+        }
+
+        #[test]
+        fn grow_raises_a_bounded_capacity() {
+            let mut bb = BitBuf::bounded(2);
+            bb.try_push(&[0x00, 0x01]).unwrap();
+            assert!(bb.try_push(&[0x02]).is_err()); // full at 2
+            bb.grow(2); // the one explicit allocation
+            assert_eq!(bb.capacity(), Some(4));
+            bb.try_push(&[0x02, 0x03]).unwrap();
+            assert_eq!(bb.bit_len(), 32);
+        }
+
+        #[test]
+        fn unbounded_try_push_never_fails() {
+            let mut bb = BitBuf::new();
+            assert_eq!(bb.capacity(), None);
+            bb.try_push(&[1, 2, 3]).unwrap(); // no cap → grows, never errors
+            assert_eq!(bb.bit_len(), 24);
+        }
+
+        #[test]
+        fn a_streaming_push_pull_loop_stays_within_a_tiny_cap() {
+            // Pushed one message at a time and drained immediately, a bounded buffer reuses the same
+            // allocation forever: each try_push fits because the prior message was reclaimed in place.
+            let mut bb = BitBuf::bounded(2);
+            for i in 0..100u16 {
+                bb.try_push(&i.to_be_bytes()).unwrap();
+                assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: i }));
+            }
+            assert!(bb.is_empty());
+        }
+    }
+
+    #[cfg(feature = "bytes")]
+    /// `bin_bytes.rs` — `bytes` integration (ROADMAP Phase 3, the `bytes` feature): zero-copy
+    mod bytes_adapters {
+
+        use bnb::{BitEncode, BytesReader, BytesWriter, bin, u4, u12};
+
+        #[bin]
+        #[derive(Debug, PartialEq, Eq, Clone)]
+        struct Frame {
+            a: u4,
+            b: u12,
+        }
+
+        #[test]
+        fn round_trip_through_bytes() {
+            let f = Frame {
+                a: u4::new(0xA),
+                b: u12::new(0x123),
+            };
+
+            // Encode into a BytesWriter, then freeze to a zero-copy Bytes.
+            let mut w = BytesWriter::new();
+            f.bit_encode(&mut w).unwrap();
+            let frozen = w.freeze();
+            assert_eq!(&frozen[..], &[0xA1, 0x23]);
+
+            // Decode from an owned Bytes via BytesReader.
+            let mut r = BytesReader::new(frozen.clone());
+            let decoded = Frame::decode(&mut r).unwrap();
+            assert_eq!(decoded, f);
+        }
+
+        // A `restore_position` message decodes over `BytesReader` (a `SeekSource`), exercising its
+        // `bit_pos`/`seek_to_bit`. The frame is produced via `BytesWriter::freeze` (no `bytes::` name).
+        #[test]
+        fn bytes_reader_seek_and_bit_pos() {
+            use bnb::{Sink, Source};
+            #[bin(big)]
+            #[derive(Debug, PartialEq, Eq)]
+            struct Peeked {
+                #[br(restore_position)]
+                tag: u8,
+                full: u16,
+            }
+            let mut w = BytesWriter::new();
+            w.write(0xABu8).unwrap();
+            w.write(0xCDu8).unwrap();
+            let mut r = BytesReader::new(w.freeze());
+            assert_eq!(r.bit_pos(), 0);
+            let p = Peeked::decode(&mut r).unwrap();
+            assert_eq!((p.tag, p.full), (0xAB, 0xABCD));
+        }
+
+        #[test]
+        fn bytes_writer_with_layout_and_bit_pos() {
+            use bnb::{BitOrder, ByteOrder, Layout, Sink};
+            let mut w = BytesWriter::with_layout(Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Big,
+            });
+            assert_eq!(w.bit_pos(), 0);
+            w.write(u4::new(0xA)).unwrap();
+            assert_eq!(w.bit_pos(), 4);
+        }
+    }
+}

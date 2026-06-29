@@ -226,19 +226,23 @@ confusion, not remove it).
 
 ## Testing
 
-**Six layers, by `mod` name** — every test lives in a named module so a level can be run
-on its own (`cargo test <layer>` filters by the test's module path). Put a new test in the
-layer that matches its subject:
+**Six layers, by `mod` name** — every test lives in a named module so a level can be run on
+its own (`cargo test <layer>` filters by the test's module path). **`unit` and `component`
+live inline in the `src/` file they exercise** (they have a logical home next to the code);
+`macro_`/`integration`/`e2e`/`property` live in `tests/` (no single src home). Put a new test
+in the layer that matches its subject:
 
 - **`unit`** — inline `#[cfg(test)] mod unit` in `src/*.rs`. Pure single-type logic, no macro
   expansion, no I/O (`UInt`, `Bits`/`Bitfield`, the `BitReader`/`BitWriter` cursor + `BitError`
   Display + the `Source`/`Sink` trait defaults via tiny in-test impls, `error`/`builder`).
+- **`component`** — inline `#[cfg(test)] mod component` in `src/*.rs`, next to the adapter it
+  exercises: `bitstream.rs` for the I/O ladder (`BufSource`/`SeekReader`/`StreamBitReader`/
+  `BitBuf`/the `bytes` adapters), `net.rs` for the `mock`-driven `Message*` wrappers, `codec.rs`
+  for the `tokio` `BinCodec`. (`#[bin]` works inside the crate's own test mods via
+  `extern crate self as bnb`.)
 - **`macro_`** — `tests/`, `mod macro_`. One generated surface over a slice (`#[bitfield]` /
   `BitEnum` / `bitflags` / `BitsBuilder` / bare derives / each `#[bin]` directive). `macro` is
   a keyword, hence `macro_`.
-- **`component`** — `tests/`, `mod component`. One runtime adapter in isolation (`BufSource`/
-  `SeekReader`/`StreamBitReader`/`BitBuf`-as-`Source`/the `bytes` adapters; `net` via the
-  `mock` feature; the `tokio` `BinCodec` via `BytesMut`).
 - **`integration`** — `tests/`, `mod integration`. Composed protocol shapes over slices
   (DNS/SMB in `protocol_shapes`, the DMR burst).
 - **`e2e`** — `tests/`, `mod e2e`. Full transport sessions (`MessageStream`/`MessageDatagram`
@@ -266,7 +270,10 @@ cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-e
 cargo +1.85.0 check --workspace
 ```
 
-- `src/{int,field}.rs` unit tests — int ranges/conversions, `Bits` impls.
+- Inline tests in `src/*.rs`: `mod unit` (int ranges/conversions, `Bits` impls, the
+  `BitReader`/`BitWriter` cursor + `BitError`, `error`/`builder`) and `mod component` (the I/O
+  ladder in `bitstream.rs`, the `mock`-driven wrappers in `net.rs`, the `tokio` `BinCodec` in
+  `codec.rs`).
 - `tests/protocol_shapes.rs` — the **real** DNS `State` (0x1002), nested
   `OpCode`/`Flags` positions, catch-all preservation, exhaustive `Op`, SMB
   `SecurityMode` (LSB) / `Capabilities` (LE), manual ranges, and the `Bitfield`
@@ -287,17 +294,17 @@ cargo +1.85.0 check --workspace
   `bin_if`, `bin_calc_temp`, `bin_reserved`, `bin_ignore`, `bin_parse_with`,
   `bin_positioning`/`bin_restore_position`, `bin_validate`, `bin_byte_order`
   (+ `bin_order_matrix`: the message-level endian × bit-order 2×2),
-  `bin_fold`, and the I/O ladder (`bin_buf_source`, `bin_seek_reader`, `bitbuf` — the
-  push/pull `BitBuf`, `bin_bytes` — the last under `--features bytes`).
+  `bin_fold`. (The low-level I/O-ladder adapter tests — `BufSource`/`SeekReader`/`BitBuf`/the
+  `bytes` adapters / `as_read`-`as_write` — moved to `src/bitstream.rs`'s `mod component`.)
 - `tests/bitstream_*.rs` — the low-level derives/runtime: `bitstream_dmr`(+`_frame`)
   (the `108|48|108` DMR burst that motivated bit offsets), `bitstream_nested`,
-  `bitstream_payload`, `bitstream_bitorder`, `bitstream_source`, `bitstream_seek`,
-  `bitstream_errors`, `bitstream_builder`, `bitstream_entry`, `bitstream_guard`
-  (the right-tool-guard override).
-- `tests/net.rs` (`--features net`, real sockets) + `tests/net_mock.rs` (`--features mock`,
-  the in-memory `MockStream`/`MockDatagramSocket`) + `tests/codec_tokio.rs` (`--features
-  tokio`, the async `BinCodec` over `Framed`/`UdpFramed`) — the transport layer, split
-  `component` (one call / error injection) vs `e2e` (full sessions).
+  `bitstream_payload`, `bitstream_bitorder`, `bitstream_builder`, `bitstream_guard`
+  (the right-tool-guard override). (`bitstream_source`/`_seek`/`_entry`/`_errors` moved to
+  `src/bitstream.rs`'s `mod component`.)
+- Transport `e2e` in `tests/`: `net.rs` (`--features net`, real sockets), `net_mock.rs`
+  (`--features mock`, mock-stream session + loopback UDP), `codec_tokio.rs` (`--features tokio`,
+  `Framed`/`UdpFramed` round-trips). The one-call `component` tests for these live inline in
+  `src/net.rs` and `src/codec.rs`.
 - `tests/compile_fail.rs` + `tests/ui/*` — trybuild snapshots proving `#[bin]` /
   `#[bitfield]` / derive misuse is rejected with a clear, well-spanned error
   (`bin_count_not_fixed`, `bin_ctx_needs_context`, `bin_forward_only_no_seek`,
