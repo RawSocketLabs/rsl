@@ -1633,6 +1633,27 @@ struct BinArgs {
     /// `bw_map = |s: &Self| Wire` (struct only) — the encode dual: map the logical type to
     /// its wire form, then encode that.
     bw_map: Option<syn::Expr>,
+    /// `wire = WireType` (struct only) — the conversion-trait form of [`map`](Self::map):
+    /// decode reads `WireType` then `Self::from(wire)` (needs `From<WireType> for Self`), encode
+    /// writes `WireType::from(&self)` (needs `From<&Self> for WireType`). The transitions live in
+    /// the user's `impl From` blocks (a clean home, reusable in-program).
+    wire: Option<Type>,
+    /// `try_wire = WireType` — the fallible form of [`wire`](Self::wire): decode is
+    /// `Self::try_from(wire)` (needs `TryFrom<WireType> for Self`, `Error: Display`).
+    try_wire: Option<Type>,
+}
+
+impl BinArgs {
+    /// Whether any wire-mapping option is set (the struct serializes via a separate wire type
+    /// rather than its own fields) — either the closure form (`map`/`try_map`/`bw_map`) or the
+    /// conversion-trait form (`wire`/`try_wire`).
+    fn is_mapped(&self) -> bool {
+        self.map.is_some()
+            || self.try_map.is_some()
+            || self.bw_map.is_some()
+            || self.wire.is_some()
+            || self.try_wire.is_some()
+    }
 }
 
 /// Entry for `#[bin(...)]`.
@@ -1682,12 +1703,16 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.try_map = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("bw_map") {
             args.bw_map = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("wire") {
+            args.wire = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("try_wire") {
+            args.try_wire = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
                  ctx(name: Ty, …), validate = <path>, tag = <ctx-param>, \
-                 map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire",
+                 map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType",
             ));
         }
         Ok(())
@@ -1703,11 +1728,12 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     match syn::parse::<syn::Item>(item)? {
         syn::Item::Struct(s) => bin_struct(&args, &s),
         syn::Item::Enum(e) => {
-            if args.map.is_some() || args.try_map.is_some() || args.bw_map.is_some() {
+            if args.is_mapped() {
                 return Err(syn::Error::new_spanned(
                     &e.ident,
-                    "struct-level `map`/`try_map`/`bw_map` applies to a `#[bin]` struct, not an \
-                     enum — map the enum's variant fields, or wrap the enum in a mapped struct",
+                    "struct-level wire mapping (`map`/`try_map`/`bw_map`/`wire`/`try_wire`) applies \
+                     to a `#[bin]` struct, not an enum — map the enum's variant fields, or wrap \
+                     the enum in a mapped struct",
                 ));
             }
             bin_enum(&args, &e)
@@ -1719,9 +1745,15 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     }
 }
 
-/// The wire **message** type for a mapped `#[bin]` struct: taken from the `map`/`try_map`
-/// closure's annotated parameter, or (write-only) the `bw_map` closure's annotated return.
+/// The wire **message** type for a mapped `#[bin]` struct: given directly by `wire`/`try_wire`,
+/// or (closure form) taken from the `map`/`try_map` closure's annotated parameter, or the
+/// `bw_map` closure's annotated return (write-only).
 fn mapped_wire_type(args: &BinArgs) -> syn::Result<Type> {
+    // Conversion-trait form: the wire type is named directly.
+    if let Some(w) = args.wire.as_ref().or(args.try_wire.as_ref()) {
+        return Ok(w.clone());
+    }
+    // Closure form: from the decode closure's annotated parameter…
     if let Some(expr) = args.map.as_ref().or(args.try_map.as_ref()) {
         if let syn::Expr::Closure(c) = expr {
             return match c.inputs.first() {
@@ -1738,11 +1770,11 @@ fn mapped_wire_type(args: &BinArgs) -> syn::Result<Type> {
             "struct-level `map`/`try_map` must be a closure, e.g. `map = |w: WireType| Self::from(w)`",
         ));
     }
-    // Write-only: derive the wire type from the encode closure's annotated return.
+    // …or (write-only) the encode closure's annotated return.
     let expr = args
         .bw_map
         .as_ref()
-        .expect("a mapped struct has at least one of map/try_map/bw_map");
+        .expect("a mapped struct sets at least one mapping option");
     if let syn::Expr::Closure(c) = expr {
         if let syn::ReturnType::Type(_, ty) = &c.output {
             return Ok((**ty).clone());
@@ -1760,15 +1792,33 @@ fn mapped_wire_type(args: &BinArgs) -> syn::Result<Type> {
 }
 
 /// The **mapped** `#[bin]` struct path: the logical type's wire form is another message type
-/// `Wire`, bridged by `map`/`try_map` (decode) and `bw_map` (encode). Bypasses the field
-/// codec — the struct's own fields are the *logical* data, never the wire. Because the
-/// generated `BitDecode`/`BitEncode` carry the mapping, the ordinary slice helpers
-/// (`decode_all`/`peek`/…) work directly at the wire type's layout.
+/// `Wire`, bridged either by closures (`map`/`try_map` decode, `bw_map` encode) or by the
+/// conversion traits (`wire`/`try_wire`: `From`/`TryFrom<Wire>` decode + `From<&Self>` encode).
+/// Bypasses the field codec — the struct's own fields are the *logical* data, never the wire.
+/// Because the generated `BitDecode`/`BitEncode` carry the mapping, the ordinary slice helpers
+/// (`decode_all`/`peek`/…) work at the wire type's layout. It does **not** emit `FixedBitLen`
+/// (so the wire type may be variable-length); add `impl FixedBitLen` by hand to nest a
+/// fixed-wire mapped type as a plain field.
 fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &s.ident;
     let vis = &s.vis;
 
+    let from_form = args.wire.is_some() || args.try_wire.is_some();
+    let closure_form = args.map.is_some() || args.try_map.is_some() || args.bw_map.is_some();
+    if from_form && closure_form {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`wire`/`try_wire` (conversion-trait mapping) can't be combined with \
+             `map`/`try_map`/`bw_map` (closure mapping) — pick one form",
+        ));
+    }
+    if args.wire.is_some() && args.try_wire.is_some() {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`wire` and `try_wire` are mutually exclusive",
+        ));
+    }
     if args.map.is_some() && args.try_map.is_some() {
         return Err(syn::Error::new_spanned(
             name,
@@ -1797,26 +1847,50 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
             ));
         }
     }
-    let has_decode = args.map.is_some() || args.try_map.is_some();
-    let has_encode = args.bw_map.is_some();
-    if args.read_only && has_encode {
-        return Err(syn::Error::new_spanned(
-            name,
-            "`read_only` conflicts with `bw_map` (drop one)",
-        ));
-    }
-    if args.write_only && has_decode {
-        return Err(syn::Error::new_spanned(
-            name,
-            "`write_only` conflicts with `map`/`try_map` (drop one)",
-        ));
+    // Directions: the `wire`/`try_wire` form is bidirectional unless `read_only`/`write_only`
+    // narrows it; the closure form is driven by which closures are present.
+    let (has_decode, has_encode) = if from_form {
+        (!args.write_only, !args.read_only)
+    } else {
+        (
+            args.map.is_some() || args.try_map.is_some(),
+            args.bw_map.is_some(),
+        )
+    };
+    if !from_form {
+        if args.read_only && has_encode {
+            return Err(syn::Error::new_spanned(
+                name,
+                "`read_only` conflicts with `bw_map` (drop one)",
+            ));
+        }
+        if args.write_only && has_decode {
+            return Err(syn::Error::new_spanned(
+                name,
+                "`write_only` conflicts with `map`/`try_map` (drop one)",
+            ));
+        }
     }
 
     let wire = mapped_wire_type(args)?;
     let layout = quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT);
 
     let decode_ts = if has_decode {
-        let decode_call = if let Some(map) = &args.map {
+        let decode_call = if from_form {
+            if args.wire.is_some() {
+                // decode: read the wire message, then `Self::from(wire)`.
+                quote!(#bnb::__private::decode_mapped_msg(
+                    __bnb_r,
+                    |__w: #wire| <#name as ::core::convert::From<#wire>>::from(__w)
+                ))
+            } else {
+                // try_wire: `Self::try_from(wire)` — a conversion error becomes a decode error.
+                quote!(#bnb::__private::decode_try_mapped_msg(
+                    __bnb_r,
+                    |__w: #wire| <#name as ::core::convert::TryFrom<#wire>>::try_from(__w)
+                ))
+            }
+        } else if let Some(map) = &args.map {
             quote!(#bnb::__private::decode_mapped_msg(__bnb_r, #map))
         } else {
             let tm = args.try_map.as_ref().unwrap();
@@ -1866,7 +1940,17 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     };
 
     let encode_ts = if has_encode {
-        let bw = args.bw_map.as_ref().unwrap();
+        let encode_call = if from_form {
+            // encode: map to the wire message via `WireType::from(&self)`, then write it.
+            quote!(#bnb::__private::encode_mapped_msg(
+                __bnb_w,
+                self,
+                |__v: &#name| -> #wire { ::core::convert::Into::into(__v) }
+            ))
+        } else {
+            let bw = args.bw_map.as_ref().unwrap();
+            quote!(#bnb::__private::encode_mapped_msg(__bnb_w, self, #bw))
+        };
         quote! {
             impl #bnb::__private::BitEncode for #name {
                 const LAYOUT: #bnb::__private::Layout = #layout;
@@ -1874,7 +1958,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
                     &self,
                     __bnb_w: &mut __K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                    #bnb::__private::encode_mapped_msg(__bnb_w, self, #bw)
+                    #encode_call
                 }
             }
 
@@ -1891,20 +1975,13 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
         quote!()
     };
 
-    // A mapped type's encoded size is exactly the wire type's, so it forwards `FixedBitLen`
-    // (which lets it nest as a sized region in another `#[bin]`). This requires the wire type
-    // to be fixed-length; map to a variable-length wire form via a hand-written codec instead.
-    let fixed_ts = quote! {
-        impl #bnb::__private::FixedBitLen for #name {
-            const BIT_LEN: u32 = <#wire as #bnb::__private::FixedBitLen>::BIT_LEN;
-        }
-    };
-
+    // No `FixedBitLen` is emitted: the wire type may be variable-length (so a variable-length
+    // logical format works out of the box). To nest a *fixed*-wire mapped type as a plain field,
+    // add a one-line `impl FixedBitLen for Self { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }`.
     Ok(quote! {
         #s
         #decode_ts
         #encode_ts
-        #fixed_ts
     })
 }
 
@@ -1912,7 +1989,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
 /// required-by-default builder, folded over a named-field struct.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
-    if args.map.is_some() || args.try_map.is_some() || args.bw_map.is_some() {
+    if args.is_mapped() {
         return bin_struct_mapped(args, s);
     }
     if args.tag.is_some() {

@@ -100,16 +100,21 @@ attribute handles byte-aligned headers and sub-byte frames alike.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
   `no_builder`, `bit_order = msb|lsb`, `bytes = be|le` (`big`/`little`),
   `allow_byte_aligned`.
-- **Struct-level wire mapping (`bin_struct_mapped`):** `map = |w: Wire| Self` /
-  `try_map = |w: Wire| Result<Self, E>` (decode) + `bw_map = |s: &Self| Wire` (encode) make a
-  *logical* struct serialize via a separate *wire* type — the whole-struct analogue of the
-  field-level `map`. It **bypasses the field codec**: the struct's fields are logical data, the
-  wire type owns the bytes. Generated impls delegate to the wire type (`decode_mapped_msg`/
-  `decode_try_mapped_msg`/`encode_mapped_msg` runtime helpers), so the ordinary slice surface
-  works at the wire layout, and it forwards `FixedBitLen` (so it nests; the **wire type must be
-  fixed-length**). Wire type is read from the `map`/`try_map` closure's annotated param (or the
-  `bw_map` return for a write-only type). Mutually exclusive with `magic`/`ctx`/`validate`/`tag`;
-  struct only (not enums). See `guide::mapping`, `tests/bin_wire_map.rs`.
+- **Struct-level wire mapping (`bin_struct_mapped`):** a *logical* struct serializes via a
+  separate *wire* type, two forms. **Closure form:** `map = |w: Wire| Self` / `try_map = |w:
+  Wire| Result<Self, E>` (decode) + `bw_map = |s: &Self| Wire` (encode). **Conversion-trait
+  form:** `wire = WireType` (needs `From<Wire> for Self` + `From<&Self> for Wire`) / `try_wire =
+  WireType` (`TryFrom<Wire> for Self`, `Error: Display`) — a clean named home for the transitions,
+  reusable in-program. It **bypasses the field codec**: the struct's fields are logical data, the
+  wire type owns the bytes. Both forms delegate to the wire type via the same runtime helpers
+  (`decode_mapped_msg`/`decode_try_mapped_msg`/`encode_mapped_msg`, passing the closure or
+  `From::from`/`TryFrom::try_from`), so the ordinary slice surface works at the wire layout.
+  **No `FixedBitLen` is emitted** (so the wire type may be **variable-length**); to nest a
+  *fixed*-wire mapped type as a plain field, hand-write `impl FixedBitLen for Self { const BIT_LEN
+  = <Wire as FixedBitLen>::BIT_LEN; }`. Wire type comes from `wire`/`try_wire` directly, or the
+  closure param/`bw_map` return. The two forms are mutually exclusive with each other; both reject
+  `magic`/`ctx`/`validate`/`tag`; struct only (not enums). `read_only`/`write_only` narrow the
+  direction. See `guide::mapping`, `tests/bin_wire_map.rs`.
 - **Field directives** (the inherited grammar): `#[br]`/`#[bw]`/`#[brw]` with
   `magic`, `count`, `ctx`/`args`, `map`/`try_map`, `if`, `calc`/`temp`,
   `reserved`/`reserved_with`, `parse_with`/`write_with`, `pad_before`/`pad_after`/
