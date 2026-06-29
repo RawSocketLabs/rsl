@@ -111,6 +111,17 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   buffer — pushable, a `SeekSource`, `no_std`), `SeekReader<R: Read + Seek>`, and —
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
+- **Opt-in transport helpers (all `std`).** `tokio`: `BinCodec<T>`, a `tokio_util::codec`
+  Decoder/Encoder over `Framed` (TCP) and `UdpFramed` (UDP). `net`: `MessageStream`
+  (`read_message`/`write_message` over any `Read + Write`; buffers reads with a `BitBuf` rather than
+  re-rolling the loop) and `MessageDatagram` (`send_message`/`recv_message` over a `DatagramSocket`)
+  — both decode in the message's own layout (bound `BitDecode + BitEncode`, to reach `T::LAYOUT`).
+  **`DatagramSocket` is sealed** via a private `sealed::Sealed` supertrait: `bnb` impls it for
+  `UdpSocket`/`UnixDatagram` (and `MockDatagramSocket` under `mock`) — a new impl needs
+  `impl sealed::Sealed` too, so downstream can't (locked by `tests/ui_seal`). `mock` (implies `net`,
+  for `[dev-dependencies]`): `MockDatagramSocket`/`MockStream` in-memory transports with scripted
+  inbound, captured outbound, chunked delivery, and error injection (`fail_after`/`fail_next_recv`)
+  — unit-test `net` code without a socket.
 
 ## `no_std` (Option A) — the `std` feature
 
@@ -206,6 +217,7 @@ confusion, not remove it).
 ```bash
 cargo test                                  # whole workspace (default features)
 cargo test -p bitsandbytes --features bytes # + the bytes-crate I/O adapters
+cargo test -p bitsandbytes --features mock  # + net socket helpers, mocks, the sealed-trait UI test
 # no_std proof: build the detached smoke crate for a bare-metal target (std off).
 # A host `--no-default-features` build still links std, so the cross target is the
 # one that actually fails on a leak.
@@ -247,7 +259,8 @@ cargo +1.85.0 check --workspace
   (`bin_count_not_fixed`, `bin_ctx_needs_context`, `bin_forward_only_no_seek`,
   `bin_if_needs_option`, `bin_map_needs_inverse`, `bin_temp_needs_calc`,
   `bin_validate_needs_builder`, `bitfield_range_reversed`,
-  `bitstream_byte_aligned`). Regenerate with `TRYBUILD=overwrite`.
+  `bitstream_byte_aligned`). `tests/ui_seal/*` (run under `--features mock`) proves the sealed
+  `DatagramSocket` rejects a downstream impl. Regenerate with `TRYBUILD=overwrite`.
 
 `#![deny(missing_docs)]` is on (both crates); the `uN` aliases are the one
 allowed exception. Keep the public surface fully documented.
