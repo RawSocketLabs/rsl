@@ -169,6 +169,7 @@
 //!
 //! For an ergonomic wrapper, the **`net` feature** adds `MessageStream` — it owns a `Read +
 //! Write` stream and exposes `read_message`/`write_message` (so you exchange `#[bin]` values,
-//! not bytes) — and `MessageDatagram`, the datagram counterpart over any `DatagramSocket`
-//! (`UdpSocket`, `UnixDatagram`, …) with `send_message`/`recv_message`. With **`tokio`**,
-//! `BinCodec` does the same for an async `Framed` stream.
+//! not bytes) — and `MessageDatagram`, the datagram counterpart over a sealed `DatagramSocket`
+//! (`UdpSocket` or `UnixDatagram`) with `send_message`/`recv_message`; both are unit-testable
+//! without a real socket via the **`mock`** feature. With **`tokio`**, `BinCodec` does the same
+//! for an async `Framed` stream.
