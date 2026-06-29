@@ -1,8 +1,8 @@
-//! `#[derive(BitEnum)]` in depth — the `num_enum` / `bitbybit::bitenum`
-//! replacement. Shows exhaustive enums, catch-all (dual-use) enums, nesting in a
-//! bitfield, and checked integer construction with error handling.
+//! **enums** — `#[derive(BitEnum)]` in depth: the `num_enum` / `bitbybit::bitenum` replacement.
+//! Exhaustive enums, catch-all (dual-use) enums, nesting in a bitfield, and checked integer
+//! construction with error handling.
 //!
-//!   `cargo run -p bnb --example enums`
+//! Run with: `cargo run -p bitsandbytes --example enums`
 
 use bnb::{BitEnum, Bits, bitfield, u2, u4};
 

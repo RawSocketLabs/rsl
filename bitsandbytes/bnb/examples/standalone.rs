@@ -1,7 +1,8 @@
-//! Using `bnb` as a dependency-light bit/byte library — no external codec deps,
-//! no sockets, just packing and unpacking a couple of IPv4-style header bytes.
+//! **standalone** — using `bnb` as a dependency-light bit/byte library: no external codec deps,
+//! no sockets, just packing and unpacking a couple of IPv4-style header bytes from the field
+//! types directly.
 //!
-//! Run with: `cargo run -p bnb --example standalone`
+//! Run with: `cargo run -p bitsandbytes --example standalone`
 
 use bnb::{BitEnum, bitfield, u2, u4, u6};
 

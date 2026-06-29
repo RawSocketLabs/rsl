@@ -1,4 +1,4 @@
-//! The `#[bin]` whole-message codec end to end — the flagship of the crate.
+//! **bin_message** — the `#[bin]` whole-message codec end to end (the flagship of the crate).
 //!
 //! Two real shapes:
 //!   1. a 12-byte **DNS header** (RFC 1035 §4.1.1): a `#[bitfield]` flags word with
@@ -8,7 +8,7 @@
 //!      on write (`#[bw(calc)]`) and *consumed* on read (`#[br(temp)]`) rather than
 //!      stored, and a `#[br(count = …)]` `Vec` driven by it.
 //!
-//! Run with: `cargo run -p bnb --example bin_message`
+//! Run with: `cargo run -p bitsandbytes --example bin_message`
 
 use bnb::{BitEnum, bin, bitfield, u3, u4};
 
