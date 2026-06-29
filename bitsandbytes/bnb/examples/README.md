@@ -11,6 +11,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `standalone` | `#[bitfield]` + `#[derive(BitEnum)]` packed/unpacked directly — the dependency-light path | `--example standalone` |
 | `enums` | `#[derive(BitEnum)]` in depth: exhaustive, `#[catch_all]` (the `num_enum` pattern), nesting, checked-int errors | `--example enums` |
 | `flags` | `#[bitflags]` in depth: set algebra, per-flag accessors, iteration, **retain-vs-truncate** of unknown bits, nesting in `#[bin]` | `--example flags` |
+| `bitfield_bytes` | `#[bitfield]` **byte order**: the declared `bytes = be\|le` drives `to_bytes()`/`from_bytes()`; `to_be_bytes`/`to_le_bytes` are the explicit override | `--example bitfield_bytes` |
 
 ## The `#[bin]` whole-message codec
 
@@ -35,6 +36,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `versioned_cells` | **`ctx`** + **`try_map`**: a `try_map`-validated version threaded into each cell to set its data width | `--example versioned_cells` |
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
+| `wire_map` | **Struct-level wire mapping** (`#[bin(wire = W)]`): a logical type serialized via a separate wire type through `From`/`From<&Self>` impls — reusable in-program, nests via a one-line `FixedBitLen` | `--example wire_map` |
+| `wire_map_dynamic` | The other wire-mapping forms: a **variable-length** wire (`String` over a length prefix), the inline **closure** form (`map`/`bw_map`), and the fallible **`try_wire`** (`TryFrom`) | `--example wire_map_dynamic` |
 | `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
 | `cstring` | **`parse_with`/`write_with`** — a NUL-terminated C string (a third custom-codec shape) | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
@@ -50,6 +53,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `streaming` | `StreamBitReader` — decode a *sequence* of messages off a forward-only stream; clean stop on `Incomplete` | `--example streaming` |
 | `bufsource` | `BufSource` retain-and-seek — a backward `restore_position` over a reader that **can't** seek (the socket+seek case) | `--example bufsource` |
 | `bitbuf` | `BitBuf` push/pull — feed chunks as they arrive, pull whole messages; compared against `decode_all`/`BitReader`/`BufSource` on the same buffer | `--example bitbuf` |
+| `bitbuf_bounded` | `BitBuf::bounded(cap)` — **alloc-once** fixed capacity: `try_push` (refuses to grow → `CapacityError`), deferred **in-place reclaim**, explicit `grow` | `--example bitbuf_bounded` |
 | `framed` | The opt-in `bytes` adapters (`BytesReader`/`BytesWriter`) + the streaming `Incomplete` signal | `--example framed --features bytes` |
 | `bytes_frame` | The `bytes` feature: zero-copy framing — encode to a `Bytes`, decode from an owned `Bytes`, cheap slices | `--example bytes_frame --features bytes` |
 | `tcp` | Raw `std` TCP: `BufSource` + the `&TcpStream` duplex trick (read + write one socket, no `try_clone`) | `--example tcp` |
@@ -68,12 +72,14 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message, arbitrary_width, ais, can_signals |
 | arbitrary bit widths / non-byte-aligned message | arbitrary_width, ais, can_signals |
 | byte/bit order (`little` / `lsb` packing) | wav, can_signals |
+| `#[bitfield]` byte order (`to_bytes`/`from_bytes`) | bitfield_bytes |
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
 | `temp`/`calc` | most `#[bin]` examples |
 | `map` | conditional, ipv4, heartbeat |
 | `try_map` | checked, versioned, versioned_cells |
+| struct-level wire mapping (`wire`/`try_wire`, struct `map`) | wire_map, wire_map_dynamic |
 | `if` (conditional) | conditional, versioned, heartbeat |
 | `ctx` + `tag` dispatch | ctx, ctx_length, versioned_cells |
 | `parse_with` / `write_with` | varint, cstring, dns |
@@ -83,7 +89,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
 | `#[try_str]` (Debug rendering) | try_str, checked, ctx, wav |
-| I/O: `BufSource` / `SeekReader` / `StreamBitReader` / `BitBuf` | tcp, bufsource / archive, peek / framed, streaming / bitbuf |
+| I/O: `BufSource` / `SeekReader` / `StreamBitReader` / `BitBuf` | tcp, bufsource / archive, peek / framed, streaming / bitbuf, bitbuf_bounded |
+| `BitBuf` bounded (alloc-once `try_push`/`grow`/`CapacityError`) | bitbuf_bounded |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
 | `net` feature | sockets, unix_stream |
