@@ -5,48 +5,51 @@
 //! hand-written combinator needs (the inherent `decode_with` call sites are
 //! unchanged).
 
-use bnb::{BitError, BitReader, DecodeWith, Source, bin, u4, u12};
+mod macro_ {
 
-#[bin]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct Plain {
-    a: u4,
-    b: u12,
-}
+    use bnb::{BitError, BitReader, DecodeWith, Source, bin, u4, u12};
 
-#[bin(ctx(n: u8))]
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct WithCtx {
-    flag: u4,
-    #[br(count = n)]
-    data: Vec<u8>,
-}
+    #[bin]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    struct Plain {
+        a: u4,
+        b: u12,
+    }
 
-// A generic combinator over *any* decodable-with-context message.
-fn decode_one<T: DecodeWith<A>, A, S: Source>(r: &mut S, args: A) -> Result<T, BitError> {
-    T::decode_with(r, args)
-}
+    #[bin(ctx(n: u8))]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct WithCtx {
+        flag: u4,
+        #[br(count = n)]
+        data: Vec<u8>,
+    }
 
-#[test]
-fn one_bound_spans_context_free_and_context_taking() {
-    // Context-free: A = ().
-    let plain = Plain {
-        a: u4::new(1),
-        b: u12::new(0x234),
-    };
-    let bytes = plain.to_bytes().unwrap();
-    let mut r = BitReader::new(&bytes);
-    let got: Plain = decode_one(&mut r, ()).unwrap();
-    assert_eq!(got, plain);
+    // A generic combinator over *any* decodable-with-context message.
+    fn decode_one<T: DecodeWith<A>, A, S: Source>(r: &mut S, args: A) -> Result<T, BitError> {
+        T::decode_with(r, args)
+    }
 
-    // Context-taking: A = WithCtxCtx.
-    let ctx = WithCtxCtx { n: 2 };
-    let wc = WithCtx {
-        flag: u4::new(0xF),
-        data: vec![0xAA, 0xBB],
-    };
-    let bytes = wc.to_bytes().unwrap();
-    let mut r = BitReader::new(&bytes);
-    let got: WithCtx = decode_one(&mut r, ctx).unwrap();
-    assert_eq!(got, wc);
+    #[test]
+    fn one_bound_spans_context_free_and_context_taking() {
+        // Context-free: A = ().
+        let plain = Plain {
+            a: u4::new(1),
+            b: u12::new(0x234),
+        };
+        let bytes = plain.to_bytes().unwrap();
+        let mut r = BitReader::new(&bytes);
+        let got: Plain = decode_one(&mut r, ()).unwrap();
+        assert_eq!(got, plain);
+
+        // Context-taking: A = WithCtxCtx.
+        let ctx = WithCtxCtx { n: 2 };
+        let wc = WithCtx {
+            flag: u4::new(0xF),
+            data: vec![0xAA, 0xBB],
+        };
+        let bytes = wc.to_bytes().unwrap();
+        let mut r = BitReader::new(&bytes);
+        let got: WithCtx = decode_one(&mut r, ctx).unwrap();
+        assert_eq!(got, wc);
+    }
 }

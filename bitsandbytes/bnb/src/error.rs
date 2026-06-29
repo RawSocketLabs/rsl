@@ -10,8 +10,8 @@ use core::fmt;
 ///
 /// Currently the only fallible operation is `UInt::try_new` (and the `TryFrom`
 /// impls built on it). Decoding never fails: the codec is dual-use, so unknown
-/// values are preserved as `Custom`/catch-all rather than rejected, and field
-/// access masks rather than validates.
+/// values are preserved via a `#[catch_all]` variant rather than rejected, and
+/// field access masks rather than validates.
 ///
 /// # Examples
 ///
@@ -90,3 +90,40 @@ impl fmt::Display for UnknownDiscriminant {
 }
 
 impl core::error::Error for UnknownDiscriminant {}
+
+#[cfg(test)]
+mod unit {
+    use super::*;
+    use alloc::string::ToString;
+
+    #[test]
+    fn value_too_large_carries_value_and_width() {
+        let e = Error::ValueTooLarge { value: 20, bits: 4 };
+        assert_eq!(e, Error::ValueTooLarge { value: 20, bits: 4 });
+    }
+
+    #[test]
+    fn value_too_large_display() {
+        let e = Error::ValueTooLarge { value: 20, bits: 4 };
+        assert_eq!(e.to_string(), "value 20 does not fit in 4 bits");
+    }
+
+    #[test]
+    fn unknown_discriminant_carries_value_and_name() {
+        let e = UnknownDiscriminant {
+            value: 9,
+            type_name: "Direction",
+        };
+        assert_eq!(e.value, 9);
+        assert_eq!(e.type_name, "Direction");
+    }
+
+    #[test]
+    fn unknown_discriminant_display() {
+        let e = UnknownDiscriminant {
+            value: 9,
+            type_name: "Direction",
+        };
+        assert_eq!(e.to_string(), "Direction has no variant for discriminant 9");
+    }
+}

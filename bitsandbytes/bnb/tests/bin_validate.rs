@@ -5,76 +5,79 @@
 //! **parser stays permissive** — `decode` never runs it, so a non-conformant value
 //! on the wire still parses (the dual-use rule).
 
-use bnb::{BuilderError, bin, u4};
+mod macro_ {
 
-#[bin(validate = check_header)]
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct Header {
-    version: u4,
-    flags: u4,
-    length: u8,
-}
+    use bnb::{BuilderError, bin, u4};
 
-fn check_header(h: &Header) -> Result<(), String> {
-    if h.length == 0 {
-        Err("length must be non-zero".to_string())
-    } else {
-        Ok(())
+    #[bin(validate = check_header)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct Header {
+        version: u4,
+        flags: u4,
+        length: u8,
     }
-}
 
-#[test]
-fn validate_passes_for_a_sound_value() {
-    let h = Header::builder()
-        .version(u4::new(1))
-        .flags(u4::new(0))
-        .length(8)
-        .build()
-        .unwrap();
-    assert_eq!(Header::decode_exact(&h.to_bytes().unwrap()).unwrap(), h);
-}
+    fn check_header(h: &Header) -> Result<(), String> {
+        if h.length == 0 {
+            Err("length must be non-zero".to_string())
+        } else {
+            Ok(())
+        }
+    }
 
-#[test]
-fn validate_rejects_an_unsound_value_at_build() {
-    let err = Header::builder()
-        .version(u4::new(1))
-        .flags(u4::new(0))
-        .length(0)
-        .build()
-        .unwrap_err();
-    assert!(matches!(err, BuilderError::Invalid(_)));
-}
+    #[test]
+    fn validate_passes_for_a_sound_value() {
+        let h = Header::builder()
+            .version(u4::new(1))
+            .flags(u4::new(0))
+            .length(8)
+            .build()
+            .unwrap();
+        assert_eq!(Header::decode_exact(&h.to_bytes().unwrap()).unwrap(), h);
+    }
 
-#[test]
-fn parser_stays_permissive() {
-    // A length-0 header (which `build()` would reject) is constructed via a struct
-    // literal and decodes fine — the parser never validates.
-    let unsound = Header {
-        version: u4::new(1),
-        flags: u4::new(0),
-        length: 0,
-    };
-    let bytes = unsound.to_bytes().unwrap();
-    assert_eq!(Header::decode_exact(&bytes).unwrap(), unsound);
-}
+    #[test]
+    fn validate_rejects_an_unsound_value_at_build() {
+        let err = Header::builder()
+            .version(u4::new(1))
+            .flags(u4::new(0))
+            .length(0)
+            .build()
+            .unwrap_err();
+        assert!(matches!(err, BuilderError::Invalid(_)));
+    }
 
-#[test]
-fn validate_and_is_valid_recheck_on_demand() {
-    // `build()` validates once; `validate()`/`is_valid()` re-check the *current* value, so a
-    // mutation that breaks the invariant before sending is caught (no stale "valid" flag).
-    let mut h = Header::builder()
-        .version(u4::new(1))
-        .flags(u4::new(0))
-        .length(8)
-        .build()
-        .unwrap();
-    assert!(h.is_valid());
-    assert!(h.validate().is_ok());
+    #[test]
+    fn parser_stays_permissive() {
+        // A length-0 header (which `build()` would reject) is constructed via a struct
+        // literal and decodes fine — the parser never validates.
+        let unsound = Header {
+            version: u4::new(1),
+            flags: u4::new(0),
+            length: 0,
+        };
+        let bytes = unsound.to_bytes().unwrap();
+        assert_eq!(Header::decode_exact(&bytes).unwrap(), unsound);
+    }
 
-    h.length = 0; // mutated into an unsound state after construction
-    assert!(!h.is_valid());
-    assert_eq!(
-        h.validate().unwrap_err().to_string(),
-        "length must be non-zero"
-    );
+    #[test]
+    fn validate_and_is_valid_recheck_on_demand() {
+        // `build()` validates once; `validate()`/`is_valid()` re-check the *current* value, so a
+        // mutation that breaks the invariant before sending is caught (no stale "valid" flag).
+        let mut h = Header::builder()
+            .version(u4::new(1))
+            .flags(u4::new(0))
+            .length(8)
+            .build()
+            .unwrap();
+        assert!(h.is_valid());
+        assert!(h.validate().is_ok());
+
+        h.length = 0; // mutated into an unsound state after construction
+        assert!(!h.is_valid());
+        assert_eq!(
+            h.validate().unwrap_err().to_string(),
+            "length must be non-zero"
+        );
+    }
 }

@@ -16,3 +16,6 @@
 !/fuzz/corpus/decode/optional_present
 !/fuzz/corpus/decode/tagged_catch_all
 !/fuzz/corpus/decode/tagged_known
+
+# Coverage instrumentation artifacts (cargo-llvm-cov)
+*.profraw

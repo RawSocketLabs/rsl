@@ -269,4 +269,18 @@ mod unit {
         assert_eq!(u127::MAX.value(), (1u128 << 127) - 1);
         assert_eq!(u1::MAX.value(), 1);
     }
+
+    #[test]
+    fn display_renders_the_plain_value() {
+        use alloc::string::ToString;
+        assert_eq!(u12::new(0xABC).to_string(), "2748");
+        assert_eq!(u5::new(0).to_string(), "0");
+    }
+
+    #[test]
+    fn debug_shows_the_width_and_value() {
+        use alloc::format;
+        assert_eq!(format!("{:?}", u4::new(0xA)), "u4(10)");
+        assert_eq!(format!("{:?}", u12::new(0xABC)), "u12(2748)");
+    }
 }

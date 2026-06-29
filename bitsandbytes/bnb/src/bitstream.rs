@@ -582,7 +582,8 @@ impl<'a> BitReader<'a> {
         self.bytes.len() * 8 - self.bit_pos
     }
 
-    /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, MSB-first.
+    /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, in the reader's
+    /// bit order (MSB-first by default).
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::UnexpectedEof`] if fewer
@@ -752,7 +753,8 @@ impl BitWriter {
 /// assert_eq!(first_nibble(&mut r), u4::new(0xA));
 /// ```
 pub trait Source {
-    /// Reads `n` (`<= 128`) bits MSB-first into the low bits of a `u128`.
+    /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, in the source's
+    /// bit order (MSB-first by default).
     ///
     /// # Errors
     /// Propagates the reader's [`BitError`].
@@ -858,7 +860,8 @@ impl SeekSource for BitReader<'_> {}
 /// assert_eq!(w.into_bytes(), [0xA5]);
 /// ```
 pub trait Sink {
-    /// Appends the low `n` (`<= 128`) bits of `value`, MSB-first.
+    /// Appends the low `n` (`<= 128`) bits of `value`, in the sink's bit order
+    /// (MSB-first by default).
     ///
     /// # Errors
     /// Propagates the writer's [`BitError`].
@@ -2076,5 +2079,269 @@ mod unit {
             s.read_bits(129).unwrap_err().kind,
             ErrorKind::TooWide { width: 129 }
         );
+    }
+
+    // --- BitError: Display for every ErrorKind, and the offset/field suffix --------
+
+    use alloc::string::{String, ToString};
+
+    #[test]
+    fn display_unexpected_eof() {
+        let e = BitError::new(
+            ErrorKind::UnexpectedEof {
+                needed: 16,
+                remaining: 8,
+            },
+            0,
+        );
+        assert_eq!(
+            e.to_string(),
+            "unexpected end of input: needed 16 bits, 8 remain at bit 0"
+        );
+    }
+
+    #[test]
+    fn display_incomplete_with_and_without_hint() {
+        assert_eq!(
+            BitError::new(ErrorKind::Incomplete { needed: Some(3) }, 8).to_string(),
+            "incomplete: need ~3 more bytes at bit 8",
+        );
+        assert_eq!(
+            BitError::new(ErrorKind::Incomplete { needed: None }, 8).to_string(),
+            "incomplete: need more bytes at bit 8",
+        );
+    }
+
+    #[test]
+    fn display_trailing_too_wide_not_seekable_buffer_full() {
+        assert_eq!(
+            BitError::new(ErrorKind::TrailingBytes { remaining: 2 }, 16).to_string(),
+            "2 trailing bytes after the message at bit 16",
+        );
+        assert_eq!(
+            BitError::new(ErrorKind::TooWide { width: 129 }, 0).to_string(),
+            "field width 129 exceeds the 128-bit carrier at bit 0",
+        );
+        assert_eq!(
+            BitError::new(ErrorKind::NotSeekable, 4).to_string(),
+            "a position directive ran on a non-seekable source at bit 4",
+        );
+        assert_eq!(
+            BitError::new(ErrorKind::BufferFull { cap: 64 }, 0).to_string(),
+            "buffered source exceeded its 64-byte cap at bit 0",
+        );
+    }
+
+    #[test]
+    fn display_bad_magic_and_convert() {
+        assert_eq!(
+            BitError::bad_magic(0xCAFE, 0x0000, 0).to_string(),
+            "bad magic: expected 0xcafe, found 0x0 at bit 0",
+        );
+        assert_eq!(
+            BitError::convert(String::from("nope"), 8).to_string(),
+            "conversion failed: nope at bit 8",
+        );
+    }
+
+    #[test]
+    fn display_appends_field_span_when_set() {
+        let e = BitError::new(ErrorKind::TooWide { width: 200 }, 12).in_field("payload");
+        assert_eq!(
+            e.to_string(),
+            "field width 200 exceeds the 128-bit carrier at bit 12 (field `payload`)"
+        );
+    }
+
+    #[test]
+    fn display_io_kind() {
+        let e = BitError::new(ErrorKind::Io(std::io::ErrorKind::BrokenPipe), 0);
+        assert!(e.to_string().starts_with("I/O error:"));
+    }
+
+    // --- BitError constructors and the two From bridges ----------------------------
+
+    #[test]
+    fn in_field_records_only_the_innermost() {
+        let e = BitError::new(ErrorKind::NotSeekable, 0)
+            .in_field("inner")
+            .in_field("outer"); // ignored — inner already set
+        assert_eq!(e.field, Some("inner"));
+    }
+
+    #[test]
+    fn is_incomplete_is_true_only_for_incomplete() {
+        assert!(BitError::new(ErrorKind::Incomplete { needed: None }, 0).is_incomplete());
+        assert!(!BitError::new(ErrorKind::NotSeekable, 0).is_incomplete());
+    }
+
+    #[test]
+    fn construction_error_bridges_to_a_convert_error() {
+        let e: BitError = crate::error::Error::ValueTooLarge { value: 99, bits: 4 }.into();
+        assert!(matches!(e.kind, ErrorKind::Convert { .. }));
+        assert_eq!(e.at, 0);
+        assert!(e.to_string().contains("does not fit in 4 bits"));
+    }
+
+    #[test]
+    fn io_error_bridges_to_an_io_kind() {
+        let e: BitError = std::io::Error::new(std::io::ErrorKind::TimedOut, "x").into();
+        assert_eq!(e.kind, ErrorKind::Io(std::io::ErrorKind::TimedOut));
+        assert_eq!(e.at, 0);
+    }
+
+    // --- BitWriter: the LSB-order constructor and the over-wide guard ---------------
+
+    #[test]
+    fn writer_with_order_lsb_packs_first_field_in_the_low_bits() {
+        let mut w = BitWriter::with_order(BitOrder::Lsb);
+        w.write(u4::new(0xA)).unwrap(); // -> low nibble
+        w.write(u4::new(0xB)).unwrap(); // -> high nibble
+        assert_eq!(w.into_bytes(), [0xBA]);
+    }
+
+    #[test]
+    fn write_bits_rejects_over_128() {
+        let mut w = BitWriter::new();
+        assert_eq!(
+            w.write_bits(0, 129).unwrap_err().kind,
+            ErrorKind::TooWide { width: 129 }
+        );
+    }
+
+    // --- Source/Sink trait DEFAULT methods, via minimal in-test impls --------------
+
+    /// A forward-only `Source` that overrides only the two required methods, so calling
+    /// the rest exercises the trait's default `byte_order`/`seek_to_bit`/`read`.
+    struct TinySource<'a> {
+        bytes: &'a [u8],
+        pos: usize,
+    }
+    impl Source for TinySource<'_> {
+        fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+            let n = n as usize;
+            let total = self.bytes.len() * 8;
+            if self.pos + n > total {
+                return Err(BitError::new(
+                    ErrorKind::UnexpectedEof {
+                        needed: n,
+                        remaining: total - self.pos,
+                    },
+                    self.pos,
+                ));
+            }
+            let mut acc = 0u128;
+            for k in 0..n {
+                let p = self.pos + k;
+                acc = (acc << 1) | u128::from((self.bytes[p >> 3] >> (7 - (p & 7))) & 1);
+            }
+            self.pos += n;
+            Ok(acc)
+        }
+        fn bit_pos(&self) -> usize {
+            self.pos
+        }
+    }
+
+    #[test]
+    fn source_default_byte_order_is_big() {
+        let s = TinySource {
+            bytes: &[0],
+            pos: 0,
+        };
+        assert_eq!(s.byte_order(), ByteOrder::Big);
+    }
+
+    #[test]
+    fn source_default_seek_is_not_seekable() {
+        let mut s = TinySource {
+            bytes: &[0, 0],
+            pos: 0,
+        };
+        assert_eq!(s.seek_to_bit(8).unwrap_err().kind, ErrorKind::NotSeekable);
+    }
+
+    #[test]
+    fn source_default_read_dispatches_through_read_bits() {
+        let mut s = TinySource {
+            bytes: &[0xAB, 0xCD],
+            pos: 0,
+        };
+        assert_eq!(s.read::<u8>().unwrap(), 0xAB);
+        assert_eq!(s.read::<u8>().unwrap(), 0xCD);
+    }
+
+    /// A `Sink` that overrides only the required methods, exercising the default
+    /// `byte_order`/`write`.
+    struct TinySink {
+        out: Vec<u8>,
+        bit: usize,
+    }
+    impl Sink for TinySink {
+        fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
+            let n = n as usize;
+            for k in 0..n {
+                let p = self.bit + k;
+                if p >> 3 == self.out.len() {
+                    self.out.push(0);
+                }
+                if (value >> (n - 1 - k)) & 1 != 0 {
+                    self.out[p >> 3] |= 1 << (7 - (p & 7));
+                }
+            }
+            self.bit += n;
+            Ok(())
+        }
+        fn bit_pos(&self) -> usize {
+            self.bit
+        }
+    }
+
+    #[test]
+    fn sink_default_byte_order_is_big() {
+        let s = TinySink {
+            out: Vec::new(),
+            bit: 0,
+        };
+        assert_eq!(s.byte_order(), ByteOrder::Big);
+    }
+
+    #[test]
+    fn sink_default_write_dispatches_through_write_bits() {
+        let mut s = TinySink {
+            out: Vec::new(),
+            bit: 0,
+        };
+        s.write(0xABu8).unwrap();
+        s.write(0xCDu8).unwrap();
+        assert_eq!(s.out, [0xAB, 0xCD]);
+    }
+
+    // --- BitEncode/DecodeWith defaults for a leaf type -----------------------------
+
+    #[test]
+    fn leaf_canonical_encode_defaults_to_verbatim() {
+        let mut a = BitWriter::new();
+        let mut b = BitWriter::new();
+        BitEncode::bit_encode(&0xABCDu16, &mut a).unwrap();
+        BitEncode::canonical_bit_encode(&0xABCDu16, &mut b).unwrap();
+        assert_eq!(a.into_bytes(), b.into_bytes());
+    }
+
+    #[test]
+    fn leaf_encode_mode_default_is_verbatim() {
+        assert_eq!(BitEncode::encode_mode(&0u16), EncodeMode::Verbatim);
+    }
+
+    #[test]
+    fn leaf_decode_with_and_encode_with_unit_args() {
+        let mut r = BitReader::new(&[0xAB, 0xCD]);
+        assert_eq!(
+            <u16 as DecodeWith<()>>::decode_with(&mut r, ()).unwrap(),
+            0xABCD
+        );
+        let mut w = BitWriter::new();
+        EncodeWith::encode_with(&0xABCDu16, &mut w, ()).unwrap();
+        assert_eq!(w.into_bytes(), [0xAB, 0xCD]);
     }
 }

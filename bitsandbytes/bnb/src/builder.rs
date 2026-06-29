@@ -69,3 +69,46 @@ impl fmt::Display for BuilderError {
 }
 
 impl core::error::Error for BuilderError {}
+
+#[cfg(test)]
+mod unit {
+    use super::*;
+    use alloc::string::ToString;
+
+    #[test]
+    fn missing_field_constructor_and_accessor() {
+        let e = BuilderError::missing_field("flags");
+        assert_eq!(e, BuilderError::MissingField("flags"));
+        assert_eq!(e.field(), Some("flags"));
+    }
+
+    #[test]
+    fn missing_field_display() {
+        assert_eq!(
+            BuilderError::missing_field("flags").to_string(),
+            "required field `flags` was not set",
+        );
+    }
+
+    #[test]
+    fn invalid_constructor_accepts_any_display() {
+        // `impl Into<String>` — a &str and a String both compose.
+        let from_str = BuilderError::invalid("bad");
+        let from_string = BuilderError::invalid(String::from("bad"));
+        assert_eq!(from_str, from_string);
+        assert_eq!(from_str, BuilderError::Invalid("bad".into()));
+    }
+
+    #[test]
+    fn invalid_has_no_field_name() {
+        assert_eq!(BuilderError::invalid("nope").field(), None);
+    }
+
+    #[test]
+    fn invalid_display_wraps_the_message() {
+        assert_eq!(
+            BuilderError::invalid("kind 0 is reserved").to_string(),
+            "soundness check failed: kind 0 is reserved",
+        );
+    }
+}

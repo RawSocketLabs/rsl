@@ -5,24 +5,27 @@
 //! `#[wire]`. The `#[bit_stream(allow_byte_aligned)]` escape hatch re-enables it
 //! for the caller who really means it — verified here.
 
-use bnb::{BitDecode, BitEncode, BitReader, BitWriter};
+mod macro_ {
 
-#[derive(BitDecode, BitEncode, Debug, PartialEq, Eq)]
-#[bit_stream(allow_byte_aligned)]
-struct ForcedBytes {
-    a: u8,
-    b: u16,
-}
+    use bnb::{BitDecode, BitEncode, BitReader, BitWriter};
 
-#[test]
-fn override_reenables_byte_aligned() {
-    let v = ForcedBytes { a: 0xAB, b: 0xCDEF };
+    #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq)]
+    #[bit_stream(allow_byte_aligned)]
+    struct ForcedBytes {
+        a: u8,
+        b: u16,
+    }
 
-    let mut w = BitWriter::new();
-    v.bit_encode(&mut w).unwrap();
-    let bytes = w.into_bytes();
-    assert_eq!(bytes, [0xAB, 0xCD, 0xEF], "big-endian, byte-for-byte");
+    #[test]
+    fn override_reenables_byte_aligned() {
+        let v = ForcedBytes { a: 0xAB, b: 0xCDEF };
 
-    let mut r = BitReader::new(&bytes);
-    assert_eq!(ForcedBytes::bit_decode(&mut r).unwrap(), v);
+        let mut w = BitWriter::new();
+        v.bit_encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(bytes, [0xAB, 0xCD, 0xEF], "big-endian, byte-for-byte");
+
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(ForcedBytes::bit_decode(&mut r).unwrap(), v);
+    }
 }

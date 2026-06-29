@@ -214,10 +214,38 @@ confusion, not remove it).
 
 ## Testing
 
+**Six layers, by `mod` name** — every test lives in a named module so a level can be run
+on its own (`cargo test <layer>` filters by the test's module path). Put a new test in the
+layer that matches its subject:
+
+- **`unit`** — inline `#[cfg(test)] mod unit` in `src/*.rs`. Pure single-type logic, no macro
+  expansion, no I/O (`UInt`, `Bits`/`Bitfield`, the `BitReader`/`BitWriter` cursor + `BitError`
+  Display + the `Source`/`Sink` trait defaults via tiny in-test impls, `error`/`builder`).
+- **`macro_`** — `tests/`, `mod macro_`. One generated surface over a slice (`#[bitfield]` /
+  `BitEnum` / `bitflags` / `BitsBuilder` / bare derives / each `#[bin]` directive). `macro` is
+  a keyword, hence `macro_`.
+- **`component`** — `tests/`, `mod component`. One runtime adapter in isolation (`BufSource`/
+  `SeekReader`/`StreamBitReader`/`BitBuf`-as-`Source`/the `bytes` adapters; `net` via the
+  `mock` feature; the `tokio` `BinCodec` via `BytesMut`).
+- **`integration`** — `tests/`, `mod integration`. Composed protocol shapes over slices
+  (DNS/SMB in `protocol_shapes`, the DMR burst).
+- **`e2e`** — `tests/`, `mod e2e`. Full transport sessions (`MessageStream`/`MessageDatagram`
+  round-trips, `tokio` `Framed`/`UdpFramed`).
+- **`property`** — `tests/`, `mod property`. `proptest` invariants (`fuzz_roundtrip`).
+
+`tests/compile_fail.rs` (trybuild) is the separate negative/UI harness, outside the layers.
+
 ```bash
 cargo test                                  # whole workspace (default features)
+cargo test unit                             # one layer at a time (filters by mod name):
+cargo test macro_                           #   unit · macro_ · component · integration · e2e · property
 cargo test -p bitsandbytes --features bytes # + the bytes-crate I/O adapters
 cargo test -p bitsandbytes --features mock  # + net socket helpers, mocks, the sealed-trait UI test
+cargo test -p bitsandbytes --features tokio # + the async BinCodec (Framed/UdpFramed)
+# Coverage (cargo-llvm-cov): the runtime crate `bnb/src` is 90–100% per file. The macro crate
+# reads lower because its diagnostic arms are exercised only by trybuild (separate rustc
+# processes llvm-cov can't instrument) — not a true gap; still test real generated paths.
+cargo llvm-cov --all-features --ignore-filename-regex 'guide/|nostd-check/'
 # no_std proof: build the detached smoke crate for a bare-metal target (std off).
 # A host `--no-default-features` build still links std, so the cross target is the
 # one that actually fails on a leak.
@@ -254,6 +282,10 @@ cargo +1.85.0 check --workspace
   `bitstream_payload`, `bitstream_bitorder`, `bitstream_source`, `bitstream_seek`,
   `bitstream_errors`, `bitstream_builder`, `bitstream_entry`, `bitstream_guard`
   (the right-tool-guard override).
+- `tests/net.rs` (`--features net`, real sockets) + `tests/net_mock.rs` (`--features mock`,
+  the in-memory `MockStream`/`MockDatagramSocket`) + `tests/codec_tokio.rs` (`--features
+  tokio`, the async `BinCodec` over `Framed`/`UdpFramed`) — the transport layer, split
+  `component` (one call / error injection) vs `e2e` (full sessions).
 - `tests/compile_fail.rs` + `tests/ui/*` — trybuild snapshots proving `#[bin]` /
   `#[bitfield]` / derive misuse is rejected with a clear, well-spanned error
   (`bin_count_not_fixed`, `bin_ctx_needs_context`, `bin_forward_only_no_seek`,
