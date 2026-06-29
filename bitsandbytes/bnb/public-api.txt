@@ -1431,6 +1431,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MessageStream<S>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageStream<S>
 pub struct bnb::net::MockDatagramSocket
 impl bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::fail_next_recv(self) -> Self
 pub fn bnb::net::MockDatagramSocket::new() -> Self
 pub fn bnb::net::MockDatagramSocket::push_inbound(&self, &[u8], core::net::socket_addr::SocketAddr)
 pub fn bnb::net::MockDatagramSocket::sent(&self) -> alloc::vec::Vec<(alloc::vec::Vec<u8>, core::net::socket_addr::SocketAddr)>
@@ -1469,6 +1470,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
 pub struct bnb::net::MockStream
 impl bnb::net::MockStream
+pub fn bnb::net::MockStream::fail_after(self, usize) -> Self
 pub fn bnb::net::MockStream::new() -> Self
 pub fn bnb::net::MockStream::push_inbound(&mut self, &[u8])
 pub fn bnb::net::MockStream::with_chunk_size(usize) -> Self
@@ -2377,6 +2379,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MessageStream<S>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageStream<S>
 pub struct bnb::MockDatagramSocket
 impl bnb::net::MockDatagramSocket
+pub fn bnb::net::MockDatagramSocket::fail_next_recv(self) -> Self
 pub fn bnb::net::MockDatagramSocket::new() -> Self
 pub fn bnb::net::MockDatagramSocket::push_inbound(&self, &[u8], core::net::socket_addr::SocketAddr)
 pub fn bnb::net::MockDatagramSocket::sent(&self) -> alloc::vec::Vec<(alloc::vec::Vec<u8>, core::net::socket_addr::SocketAddr)>
@@ -2415,6 +2418,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MockDatagramSocket
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MockDatagramSocket
 pub struct bnb::MockStream
 impl bnb::net::MockStream
+pub fn bnb::net::MockStream::fail_after(self, usize) -> Self
 pub fn bnb::net::MockStream::new() -> Self
 pub fn bnb::net::MockStream::push_inbound(&mut self, &[u8])
 pub fn bnb::net::MockStream::with_chunk_size(usize) -> Self

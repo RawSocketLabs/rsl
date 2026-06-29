@@ -54,5 +54,19 @@ fn main() {
     println!("served one request over a mock stream (1 byte per read, no TcpStream bound):");
     println!("  in : Request {{ id: 42, op: 1 }}");
     println!("  out: {reply:?}");
+
+    // --- error path: the connection drops mid-message ---
+    // Deliver only 2 of the request's 3 bytes, then reset — `read_message` surfaces the I/O error.
+    let mut dropped = MessageStream::new(MockStream::with_chunk_size(1).fail_after(2));
+    dropped
+        .get_mut()
+        .push_inbound(&Request { id: 9, op: 0 }.to_bytes().unwrap());
+    let err = dropped.read_message::<Request>().unwrap_err();
+    assert!(matches!(err.kind, bnb::ErrorKind::Io(_)));
+    println!(
+        "  error path: a mid-message reset surfaces as {:?}",
+        err.kind
+    );
+
     println!("all checks passed");
 }

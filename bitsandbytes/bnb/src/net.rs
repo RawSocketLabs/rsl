@@ -22,7 +22,10 @@ use alloc::vec::Vec;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, UdpSocket};
 #[cfg(feature = "mock")]
-use std::{cell::RefCell, collections::VecDeque};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+};
 
 /// Encode any message to a fresh `Vec` (generic over [`BitEncode`], unlike the inherent
 /// `to_bytes`).
@@ -254,6 +257,7 @@ impl<D: DatagramSocket> MessageDatagram<D> {
 pub struct MockDatagramSocket {
     inbound: RefCell<VecDeque<(Vec<u8>, SocketAddr)>>,
     sent: RefCell<Vec<(Vec<u8>, SocketAddr)>>,
+    fail_recv: Cell<bool>,
 }
 
 #[cfg(feature = "mock")]
@@ -274,6 +278,14 @@ impl MockDatagramSocket {
     pub fn sent(&self) -> Vec<(Vec<u8>, SocketAddr)> {
         self.sent.borrow().clone()
     }
+
+    /// Make the next `recv_from` fail with `ConnectionReset` instead of returning a datagram — to
+    /// test recv-error handling. One-shot: later recvs behave normally.
+    #[must_use]
+    pub fn fail_next_recv(self) -> Self {
+        self.fail_recv.set(true);
+        self
+    }
 }
 
 #[cfg(feature = "mock")]
@@ -284,6 +296,12 @@ impl DatagramSocket for MockDatagramSocket {
     type Addr = SocketAddr;
 
     fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        if self.fail_recv.replace(false) {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "mock: recv failed",
+            ));
+        }
         let (data, from) = self
             .inbound
             .borrow_mut()
@@ -333,6 +351,8 @@ pub struct MockStream {
     inbound: VecDeque<u8>,
     outbound: Vec<u8>,
     chunk: usize,
+    fail_after: Option<usize>,
+    read_total: usize,
 }
 
 #[cfg(feature = "mock")]
@@ -363,24 +383,44 @@ impl MockStream {
     pub fn written(&self) -> &[u8] {
         &self.outbound
     }
+
+    /// After `n` inbound bytes have been read, every further `read` fails with `ConnectionReset`
+    /// — to test a connection that drops mid-message (the error surfaces through `read_message`).
+    #[must_use]
+    pub fn fail_after(mut self, n: usize) -> Self {
+        self.fail_after = Some(n);
+        self
+    }
 }
 
 #[cfg(feature = "mock")]
 impl Read for MockStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Some(at) = self.fail_after {
+            if self.read_total >= at {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "mock: connection reset",
+                ));
+            }
+        }
         if self.inbound.is_empty() || buf.is_empty() {
             return Ok(0); // EOF: no more inbound (as a closed connection would read)
         }
-        let cap = if self.chunk == 0 {
+        let mut cap = if self.chunk == 0 {
             buf.len()
         } else {
             buf.len().min(self.chunk)
         };
-        let n = cap.min(self.inbound.len());
-        for slot in buf.iter_mut().take(n) {
+        cap = cap.min(self.inbound.len());
+        if let Some(at) = self.fail_after {
+            cap = cap.min(at - self.read_total); // stop exactly at the failure point
+        }
+        for slot in buf.iter_mut().take(cap) {
             *slot = self.inbound.pop_front().unwrap();
         }
-        Ok(n)
+        self.read_total += cap;
+        Ok(cap)
     }
 }
 

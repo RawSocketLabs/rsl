@@ -65,5 +65,13 @@ fn main() {
     println!("served one request over a mock socket (no UdpSocket bound):");
     println!("  in : Request {{ id: 42, op: 1 }} from {client}");
     println!("  out: {reply:?} -> {dest}");
+
+    // --- error path: the recv fails ---
+    // `fail_next_recv` makes the next `recv_from` error — `recv_message` surfaces the I/O error.
+    let mut down = MessageDatagram::new(MockDatagramSocket::new().fail_next_recv());
+    let err = down.recv_message::<Request>().unwrap_err();
+    assert!(matches!(err.kind, bnb::ErrorKind::Io(_)));
+    println!("  error path: a failed recv surfaces as {:?}", err.kind);
+
     println!("all checks passed");
 }
