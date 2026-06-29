@@ -118,4 +118,63 @@ mod component {
         let p = Peeked::decode(&mut bb).unwrap();
         assert_eq!((p.tag, p.full), (0xAB, 0xABCD));
     }
+
+    // --- bounded (alloc-once) mode -----------------------------------------------------
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct Two {
+        v: u16,
+    }
+
+    #[test]
+    fn bounded_try_push_respects_capacity_then_reclaims_in_place() {
+        use bnb::CapacityError;
+        let mut bb = BitBuf::bounded(4);
+        assert_eq!(bb.capacity(), Some(4));
+        bb.try_push(&[0x00, 0x01]).unwrap(); // 2 bytes
+        bb.try_push(&[0x00, 0x02]).unwrap(); // 4 bytes — full
+        // a 5th byte can't fit until something is drained
+        assert!(matches!(
+            bb.try_push(&[0xFF]),
+            Err(CapacityError { cap: 4, .. })
+        ));
+        // drain one message → 2 live bytes; the dead prefix is reclaimed in place to fit more
+        assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 1 }));
+        bb.try_push(&[0x00, 0x03]).unwrap();
+        assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 2 }));
+        assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 3 }));
+        assert!(bb.is_empty());
+    }
+
+    #[test]
+    fn grow_raises_a_bounded_capacity() {
+        let mut bb = BitBuf::bounded(2);
+        bb.try_push(&[0x00, 0x01]).unwrap();
+        assert!(bb.try_push(&[0x02]).is_err()); // full at 2
+        bb.grow(2); // the one explicit allocation
+        assert_eq!(bb.capacity(), Some(4));
+        bb.try_push(&[0x02, 0x03]).unwrap();
+        assert_eq!(bb.bit_len(), 32);
+    }
+
+    #[test]
+    fn unbounded_try_push_never_fails() {
+        let mut bb = BitBuf::new();
+        assert_eq!(bb.capacity(), None);
+        bb.try_push(&[1, 2, 3]).unwrap(); // no cap → grows, never errors
+        assert_eq!(bb.bit_len(), 24);
+    }
+
+    #[test]
+    fn a_streaming_push_pull_loop_stays_within_a_tiny_cap() {
+        // Pushed one message at a time and drained immediately, a bounded buffer reuses the same
+        // allocation forever: each try_push fits because the prior message was reclaimed in place.
+        let mut bb = BitBuf::bounded(2);
+        for i in 0..100u16 {
+            bb.try_push(&i.to_be_bytes()).unwrap();
+            assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: i }));
+        }
+        assert!(bb.is_empty());
+    }
 }

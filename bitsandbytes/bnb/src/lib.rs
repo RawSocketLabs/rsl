@@ -170,8 +170,8 @@ pub mod int;
 pub mod net;
 
 pub use bitstream::{
-    BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, DecodeWith,
-    EncodeMode, EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
+    BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
+    DecodeWith, EncodeMode, EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
 };
 
 /// The `std::io` I/O ladder and writer conveniences — only with the (default)

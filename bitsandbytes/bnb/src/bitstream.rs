@@ -1702,9 +1702,16 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 ///
 /// Unlike a byte cursor (`bytes::BytesMut::advance`), `BitBuf` tracks a **bit** position, so a
 /// stream of messages that *don't* end on byte boundaries (bit-packed frames) reassembles cleanly:
-/// it reclaims the fully-consumed whole bytes and retains any partial trailing byte for the next
-/// message. It's the *pushable*, in-memory counterpart to [`BufSource`] (which pulls from a
+/// `pull` advances past the consumed whole bytes and retains any partial trailing byte for the
+/// next message. It's the *pushable*, in-memory counterpart to [`BufSource`] (which pulls from a
 /// `Read`). `no_std`-compatible (`alloc` only).
+///
+/// **Reclaim is deferred and in place.** `pull` doesn't drain consumed bytes — the next
+/// [`push`](Self::push)/[`try_push`](Self::try_push) reclaims them in place (one memmove, only when
+/// it avoids a reallocation), so a steady push/pull loop reuses the same allocation without
+/// per-message churn. For a guaranteed-fixed footprint (real-time / `no_std`), construct a
+/// [`bounded`](Self::bounded) buffer: it allocates once, [`try_push`](Self::try_push) refuses bytes
+/// past the cap instead of growing, and [`grow`](Self::grow) is the only thing that reallocates.
 ///
 /// `BitBuf` is also a [`SeekSource`], so it reads through the same [`decode`](crate::BitDecode)
 /// entry points as every other cursor: `Type::decode(&mut bitbuf)` advances its cursor (then call
@@ -1730,27 +1737,49 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 ///
 #[derive(Debug, Default, Clone)]
 pub struct BitBuf {
-    /// Buffered bytes; everything before `cursor`'s byte is reclaimed by `pull`/`compact`.
+    /// Buffered bytes. The bytes before `cursor`'s byte are **consumed** (dead) — physically
+    /// reclaimed lazily (on a [`push`](Self::push) that would otherwise grow, or [`compact`](Self::compact)),
+    /// not on every [`pull`](Self::pull), so a push/pull loop doesn't churn memory.
     buf: Vec<u8>,
     /// Live read position, in bits, into `buf` (`0..=buf.len() * 8`).
     cursor: usize,
+    /// `Some(cap)` for a **bounded** buffer (alloc-once: [`try_push`](Self::try_push) never grows
+    /// past `cap`, [`grow`](Self::grow) raises it explicitly); `None` for an auto-growing buffer.
+    cap: Option<usize>,
     /// Byte/bit order for the [`Source`] impl (the `decode(&mut bitbuf)` path); default msb/big.
     layout: Layout,
 }
 
 impl BitBuf {
-    /// An empty buffer (msb/big order for the [`Source`] path).
+    /// An empty auto-growing buffer (msb/big order for the [`Source`] path).
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// An empty buffer with room for `cap` bytes before reallocating.
+    /// An empty auto-growing buffer with room for `cap` bytes before reallocating. Like
+    /// [`new`](Self::new) but pre-reserved; it still grows past `cap` on demand (use
+    /// [`bounded`](Self::bounded) for a hard cap).
     #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
             cursor: 0,
+            cap: None,
+            layout: Layout::default(),
+        }
+    }
+
+    /// An empty **bounded** buffer: it allocates `cap` bytes once and never reallocates on its own.
+    /// [`try_push`](Self::try_push) refuses bytes that would exceed `cap` (reclaiming consumed
+    /// bytes first), and [`grow`](Self::grow) is the only thing that allocates again — so a
+    /// real-time / `no_std` caller can guarantee a fixed footprint.
+    #[must_use]
+    pub fn bounded(cap: usize) -> Self {
+        Self {
+            buf: Vec::with_capacity(cap),
+            cursor: 0,
+            cap: Some(cap),
             layout: Layout::default(),
         }
     }
@@ -1763,9 +1792,66 @@ impl BitBuf {
         self
     }
 
-    /// Append freshly-received bytes to the back of the buffer.
+    /// The buffer's hard capacity in bytes for a [`bounded`](Self::bounded) buffer, or `None` if
+    /// it auto-grows.
+    #[must_use]
+    pub fn capacity(&self) -> Option<usize> {
+        self.cap
+    }
+
+    /// Reclaim consumed whole bytes (drain everything before the cursor's byte) when doing so
+    /// avoids a reallocation or the dead prefix has grown to dominate the live bytes. Keeps the
+    /// footprint near the working set without compacting on every push.
+    fn make_room(&mut self, additional: usize) {
+        let dead = self.cursor / 8;
+        if dead == 0 {
+            return;
+        }
+        let live = self.buf.len() - dead;
+        let would_grow = self.buf.len() + additional > self.buf.capacity();
+        if would_grow || dead >= live {
+            self.buf.drain(..dead);
+            self.cursor -= dead * 8;
+        }
+    }
+
+    /// Append freshly-received bytes to the back of the buffer, growing (reallocating) if needed.
+    /// Consumed bytes are reclaimed in place first when that avoids a reallocation. For a hard,
+    /// alloc-free cap, use [`bounded`](Self::bounded) + [`try_push`](Self::try_push).
     pub fn push(&mut self, bytes: &[u8]) {
+        self.make_room(bytes.len());
         self.buf.extend_from_slice(bytes);
+    }
+
+    /// Append bytes **without reallocating**, reclaiming consumed bytes in place to make room.
+    ///
+    /// # Errors
+    /// [`CapacityError`] if the bytes don't fit a [`bounded`](Self::bounded) buffer's capacity
+    /// (the live bytes plus the new bytes exceed `cap`). On an unbounded buffer it always
+    /// succeeds (growing if needed), so prefer [`push`](Self::push) there.
+    pub fn try_push(&mut self, bytes: &[u8]) -> Result<(), CapacityError> {
+        let live = self.buf.len() - self.cursor / 8;
+        if let Some(cap) = self.cap {
+            if live + bytes.len() > cap {
+                return Err(CapacityError {
+                    cap,
+                    requested: live + bytes.len(),
+                });
+            }
+        }
+        self.make_room(bytes.len());
+        self.buf.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    /// Grow a [`bounded`](Self::bounded) buffer's capacity by `additional` bytes (raising the cap
+    /// and reserving the space — the one operation that reallocates a bounded buffer). On an
+    /// unbounded buffer it just reserves.
+    pub fn grow(&mut self, additional: usize) {
+        if let Some(cap) = &mut self.cap {
+            *cap += additional;
+        }
+        self.buf.reserve(additional);
     }
 
     /// The number of unconsumed bits currently buffered.
@@ -1780,27 +1866,31 @@ impl BitBuf {
         self.bit_len() == 0
     }
 
-    /// Drop all buffered bytes and reset the cursor.
+    /// Drop all buffered bytes and reset the cursor (keeps the allocation and any bound).
     pub fn clear(&mut self) {
         self.buf.clear();
         self.cursor = 0;
     }
 
-    /// Reclaim the fully-consumed whole bytes (drop everything before the cursor's byte), keeping
-    /// any partial trailing byte. [`pull`](Self::pull) does this for you; call it yourself when
-    /// consuming via the [`Source`] path (`decode(&mut bitbuf)`) to keep the buffer bounded.
+    /// Physically reclaim the fully-consumed whole bytes now (drop everything before the cursor's
+    /// byte), keeping any partial trailing byte. [`pull`](Self::pull) defers this; call it
+    /// yourself when consuming via the [`Source`] path (`decode(&mut bitbuf)`) to bound the buffer.
     pub fn compact(&mut self) {
         let whole = self.cursor / 8;
         self.buf.drain(..whole);
         self.cursor -= whole * 8;
     }
 
-    /// Decode the next complete message off the front, reclaiming the bytes it consumed.
+    /// Decode the next complete message off the front, advancing past the bytes it consumed.
     ///
     /// Returns `Ok(None)` when the buffer doesn't yet hold a whole message — push more bytes and
     /// call again; the cursor is left untouched, so the retry is free. A malformed message is an
     /// `Err`. The byte/bit order is taken from `T`'s [`LAYOUT`](BitEncode::LAYOUT), so it decodes
     /// `little`/`lsb` messages correctly regardless of [`with_layout`](Self::with_layout).
+    ///
+    /// Consumed bytes are **not** drained here — they are reclaimed in place by the next
+    /// [`push`](Self::push)/[`try_push`](Self::try_push) (or an explicit [`compact`](Self::compact)),
+    /// so a steady push/pull loop reuses the same allocation without per-message memmoves.
     ///
     /// # Errors
     /// A codec [`BitError`] for a malformed message.
@@ -1812,8 +1902,7 @@ impl BitBuf {
         r.seek_to_bit(self.cursor)?;
         match T::bit_decode(&mut r) {
             Ok(msg) => {
-                self.cursor = r.bit_pos();
-                self.compact(); // reclaim consumed whole bytes, keep any partial trailing byte
+                self.cursor = r.bit_pos(); // advance past the message; reclaim is deferred
                 Ok(Some(msg))
             }
             // Only a partial message is buffered — wait for more (cursor untouched, retry-safe).
@@ -1829,6 +1918,29 @@ impl BitBuf {
         }
     }
 }
+
+/// The error [`BitBuf::try_push`] returns when bytes won't fit a [`bounded`](BitBuf::bounded)
+/// buffer — the live (unconsumed) bytes plus the new bytes exceed its fixed `cap`. Grow it with
+/// [`BitBuf::grow`], or drain messages with [`pull`](BitBuf::pull) before pushing more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CapacityError {
+    /// The buffer's fixed capacity, in bytes.
+    pub cap: usize,
+    /// The bytes that were needed (live bytes + the rejected push).
+    pub requested: usize,
+}
+
+impl fmt::Display for CapacityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "bitbuf is full: {} bytes needed exceeds the {}-byte capacity",
+            self.requested, self.cap
+        )
+    }
+}
+
+impl core::error::Error for CapacityError {}
 
 impl Source for BitBuf {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
@@ -2392,5 +2504,24 @@ mod unit {
         let mut w = BitWriter::new();
         EncodeWith::encode_with(&0xABCDu16, &mut w, ()).unwrap();
         assert_eq!(w.into_bytes(), [0xAB, 0xCD]);
+    }
+
+    #[test]
+    fn bitbuf_bounded_reports_its_capacity() {
+        assert_eq!(BitBuf::bounded(64).capacity(), Some(64));
+        assert_eq!(BitBuf::new().capacity(), None);
+        assert_eq!(BitBuf::with_capacity(64).capacity(), None); // pre-reserved, not a hard cap
+    }
+
+    #[test]
+    fn capacity_error_display() {
+        let e = CapacityError {
+            cap: 4,
+            requested: 5,
+        };
+        assert_eq!(
+            e.to_string(),
+            "bitbuf is full: 5 bytes needed exceeds the 4-byte capacity"
+        );
     }
 }

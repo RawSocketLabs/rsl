@@ -119,12 +119,16 @@ impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
 pub struct bnb::bitstream::BitBuf
 impl bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitBuf::bounded(usize) -> Self
+pub fn bnb::bitstream::BitBuf::capacity(&self) -> core::option::Option<usize>
 pub fn bnb::bitstream::BitBuf::clear(&mut self)
 pub fn bnb::bitstream::BitBuf::compact(&mut self)
+pub fn bnb::bitstream::BitBuf::grow(&mut self, usize)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
+pub fn bnb::bitstream::BitBuf::try_push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
 pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
@@ -479,6 +483,54 @@ impl<T> core::convert::From<T> for bnb::BytesWriter
 pub fn bnb::BytesWriter::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::BytesWriter
 impl<T> tracing::instrument::WithSubscriber for bnb::BytesWriter
+pub struct bnb::bitstream::CapacityError
+pub bnb::bitstream::CapacityError::cap: usize
+pub bnb::bitstream::CapacityError::requested: usize
+impl core::clone::Clone for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::clone(&self) -> bnb::bitstream::CapacityError
+impl core::cmp::Eq for bnb::bitstream::CapacityError
+impl core::cmp::PartialEq for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::eq(&self, &bnb::bitstream::CapacityError) -> bool
+impl core::error::Error for bnb::bitstream::CapacityError
+impl core::fmt::Debug for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::CapacityError
+impl core::marker::StructuralPartialEq for bnb::bitstream::CapacityError
+impl core::marker::Freeze for bnb::bitstream::CapacityError
+impl core::marker::Send for bnb::bitstream::CapacityError
+impl core::marker::Sync for bnb::bitstream::CapacityError
+impl core::marker::Unpin for bnb::bitstream::CapacityError
+impl core::marker::UnsafeUnpin for bnb::bitstream::CapacityError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::CapacityError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::CapacityError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::CapacityError where U: core::convert::From<T>
+pub fn bnb::bitstream::CapacityError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::CapacityError where U: core::convert::Into<T>
+pub type bnb::bitstream::CapacityError::Error = core::convert::Infallible
+pub fn bnb::bitstream::CapacityError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::CapacityError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::CapacityError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::CapacityError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::CapacityError where T: core::clone::Clone
+pub type bnb::bitstream::CapacityError::Owned = T
+pub fn bnb::bitstream::CapacityError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::CapacityError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::bitstream::CapacityError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::bitstream::CapacityError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::CapacityError where T: ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::CapacityError where T: ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::CapacityError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::CapacityError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::CapacityError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::CapacityError
 pub struct bnb::bitstream::Layout
 pub bnb::bitstream::Layout::bit: bnb::BitOrder
 pub bnb::bitstream::Layout::byte: bnb::ByteOrder
@@ -1900,12 +1952,16 @@ impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
 pub struct bnb::BitBuf
 impl bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
+pub fn bnb::bitstream::BitBuf::bounded(usize) -> Self
+pub fn bnb::bitstream::BitBuf::capacity(&self) -> core::option::Option<usize>
 pub fn bnb::bitstream::BitBuf::clear(&mut self)
 pub fn bnb::bitstream::BitBuf::compact(&mut self)
+pub fn bnb::bitstream::BitBuf::grow(&mut self, usize)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
+pub fn bnb::bitstream::BitBuf::try_push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
 pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
@@ -2260,6 +2316,54 @@ impl<T> core::convert::From<T> for bnb::BytesWriter
 pub fn bnb::BytesWriter::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::BytesWriter
 impl<T> tracing::instrument::WithSubscriber for bnb::BytesWriter
+pub struct bnb::CapacityError
+pub bnb::CapacityError::cap: usize
+pub bnb::CapacityError::requested: usize
+impl core::clone::Clone for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::clone(&self) -> bnb::bitstream::CapacityError
+impl core::cmp::Eq for bnb::bitstream::CapacityError
+impl core::cmp::PartialEq for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::eq(&self, &bnb::bitstream::CapacityError) -> bool
+impl core::error::Error for bnb::bitstream::CapacityError
+impl core::fmt::Debug for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::CapacityError
+impl core::marker::StructuralPartialEq for bnb::bitstream::CapacityError
+impl core::marker::Freeze for bnb::bitstream::CapacityError
+impl core::marker::Send for bnb::bitstream::CapacityError
+impl core::marker::Sync for bnb::bitstream::CapacityError
+impl core::marker::Unpin for bnb::bitstream::CapacityError
+impl core::marker::UnsafeUnpin for bnb::bitstream::CapacityError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::CapacityError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::CapacityError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::CapacityError where U: core::convert::From<T>
+pub fn bnb::bitstream::CapacityError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::CapacityError where U: core::convert::Into<T>
+pub type bnb::bitstream::CapacityError::Error = core::convert::Infallible
+pub fn bnb::bitstream::CapacityError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::CapacityError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::CapacityError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::CapacityError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::CapacityError where T: core::clone::Clone
+pub type bnb::bitstream::CapacityError::Owned = T
+pub fn bnb::bitstream::CapacityError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::CapacityError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::bitstream::CapacityError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::bitstream::CapacityError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::CapacityError where T: ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::CapacityError where T: ?core::marker::Sized
+pub fn bnb::bitstream::CapacityError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::CapacityError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::CapacityError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::CapacityError
+pub fn bnb::bitstream::CapacityError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::CapacityError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::CapacityError
 pub struct bnb::Layout
 pub bnb::Layout::bit: bnb::BitOrder
 pub bnb::Layout::byte: bnb::ByteOrder

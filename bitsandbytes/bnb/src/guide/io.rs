@@ -138,7 +138,10 @@
 //! they come, `pull::<T>()` to take whole messages off the front (it returns `None` until a full
 //! message is buffered). `BitBuf` is itself a [`SeekSource`](crate::SeekSource), so it also reads
 //! through plain [`decode`](crate::BitDecode) (`Type::decode(&mut bitbuf)`); `pull` adds the
-//! reclaim + layout-baking + `None`-on-incomplete on top.
+//! reclaim + layout-baking + `None`-on-incomplete on top. Reclaim is deferred and in place, so a
+//! push/pull loop reuses one allocation; for a guaranteed-fixed footprint use
+//! [`BitBuf::bounded(cap)`](crate::BitBuf::bounded) with [`try_push`](crate::BitBuf::try_push)
+//! (which refuses to grow) and [`grow`](crate::BitBuf::grow) for explicit resizing.
 //!
 //! # Reading *and* writing one connection (without `try_clone`)
 //!
