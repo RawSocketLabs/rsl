@@ -241,6 +241,14 @@ forbids seek directives outright. The in-memory cursor needs no `Seek` trait at 
 the whole buffer is in hand, so a seek is just cursor arithmetic (which also enables
 e.g. DNS name-compression pointer following).
 
+Above the cursor ladder, the opt-in **`net`** feature adds whole-message helpers over `std`
+sockets — `MessageStream` (`read_message`/`write_message` over any `Read + Write`: one value drives
+both directions of a `TcpStream`, no `try_clone`) and `MessageDatagram` (`send_message`/
+`recv_message` over a sealed `DatagramSocket` — see §8). Both decode in the message's own layout,
+and `MessageStream` reuses `BitBuf`'s framing rather than re-rolling it. The **`mock`** feature adds
+in-memory `MockDatagramSocket`/`MockStream` (scripted inbound, captured outbound, chunked delivery,
+error injection) so `net` code is unit-testable without a real socket.
+
 ### 6.1 `no_std` and the `std` feature (Option A)
 
 `bnb` is `no_std` + `alloc`. `alloc` is unconditional — the codec's output model *is*
@@ -346,6 +354,16 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   a caller can override them (dual-use); the builder defaults it to the spec value (so it
   isn't required), and the **canonical** encoder (`to_canonical_bytes`) writes the spec
   value instead. A *verified-on-read* constant is `magic` instead.
+- **Sealed extension trait where the genericity is internal.** `DatagramSocket` (the `net`
+  feature) exists only to make `MessageDatagram` generic over `UdpSocket` and `UnixDatagram` — std
+  ships no datagram analog of `Read + Write` — not as an open extension point. So it is *sealed* (a
+  private `Sealed` supertrait): downstream can still *use* it as a bound (a generic handler) but
+  can't *implement* it. That keeps the 1.0 promise to two methods rather than a frozen,
+  openly-implementable trait, and leaves bnb free to evolve it — or to ship the feature-gated
+  `MockDatagramSocket` itself. Testing was the one real reason to implement it downstream, and the
+  `mock` feature covers that; a trybuild test locks the seal in. (`MessageStream` needs no such
+  trait — it's generic over std's `Read + Write`, so a `std::io::Cursor` or `MockStream` already
+  mocks it.)
 
 ## 9. Performance
 
