@@ -1,6 +1,6 @@
 # `bnb` — status and capabilities
 
-**Status: feature-complete (`0.1.0`); on the road to 1.0** — see
+**Status: feature-complete, pre-1.0 (`0.x`); on the road to 1.0** — see
 [Road to 1.0](#road-to-10). `bnb` is an owned, bit-aware binary codec — the field
 types, macros, whole-message codec, and I/O ladder below are all built, tested, and
 benchmarked. This file is the capability checklist; for the design rationale see
