@@ -265,6 +265,14 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     };
     let bit_order_variant = if args.msb { quote!(Msb) } else { quote!(Lsb) };
 
+    // The declared byte order (`bytes = be|le`) drives `to_bytes`/`from_bytes`; the
+    // endianness-explicit `to_be_bytes`/`to_le_bytes` stay as overrides.
+    let (to_decl_bytes, from_decl_bytes, decl_order_lit) = if args.big {
+        (quote!(to_be_bytes), quote!(from_be_bytes), "be")
+    } else {
+        (quote!(to_le_bytes), quote!(from_le_bytes), "le")
+    };
+
     let builder_ts = if has_builder {
         let bfields: Vec<BField> = fields
             .iter()
@@ -356,6 +364,22 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             /// Constructs from little-endian bytes of the backing integer.
             #vis const fn from_le_bytes(bytes: [u8; #bytes_n]) -> Self {
                 Self { value: #backing::from_le_bytes(bytes) }
+            }
+
+            #[doc = concat!("The backing integer as bytes in the bitfield's **declared** byte order (`bytes = ", #decl_order_lit, "`).")]
+            ///
+            /// This is the order-respecting counterpart to the endianness-explicit
+            /// [`to_be_bytes`](Self::to_be_bytes)/[`to_le_bytes`](Self::to_le_bytes), which ignore
+            /// the declared `bytes =` and always emit the named endianness. Use `to_bytes` to
+            /// serialize a standalone bitfield the way it was declared; reach for the explicit
+            /// pair only to override that.
+            #vis const fn to_bytes(self) -> [u8; #bytes_n] {
+                self.#to_decl_bytes()
+            }
+
+            #[doc = concat!("Constructs from bytes in the bitfield's **declared** byte order (`bytes = ", #decl_order_lit, "`) — the inverse of [`to_bytes`](Self::to_bytes).")]
+            #vis const fn from_bytes(bytes: [u8; #bytes_n]) -> Self {
+                Self::#from_decl_bytes(bytes)
             }
 
             #(#accessors)*

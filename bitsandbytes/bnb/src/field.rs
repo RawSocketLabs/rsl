@@ -121,8 +121,9 @@ impl_bits_for_primitive!(u8, u16, u32, u64, u128);
 ///
 /// A bitfield is a thin wrapper over a single backing unsigned integer; this
 /// trait exposes that backing plus the declared layout metadata. The generated
-/// type also provides inherent `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/
-/// `from_le_bytes` for allocation-free (de)serialization.
+/// type also provides allocation-free byte conversions: inherent `to_bytes`/`from_bytes`
+/// (which use the declared [`BYTE_ORDER`](Bitfield::BYTE_ORDER)) plus the
+/// endianness-explicit `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`.
 ///
 /// # Examples
 ///

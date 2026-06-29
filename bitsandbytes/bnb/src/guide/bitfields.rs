@@ -24,9 +24,10 @@
 //!
 //! For a field `f: T`, you get `f() -> T`, `with_f(T) -> Self` (consuming, chainable),
 //! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `raw()`/`from_raw()`, and
-//! allocation-free `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`. The
-//! type also implements [`Bits`](crate::Bits) and [`Bitfield`](crate::Bitfield), so
-//! it nests in another bitfield or a `#[bin]` message.
+//! allocation-free byte conversions: `to_bytes`/`from_bytes` serialize in the **declared**
+//! byte order (`bytes = be|le`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
+//! force a specific endianness (the override). The type also implements [`Bits`](crate::Bits)
+//! and [`Bitfield`](crate::Bitfield), so it nests in another bitfield or a `#[bin]` message.
 //!
 //! ```
 //! use bnb::{bitfield, u4};
@@ -42,10 +43,11 @@
 //! - `bits = msb | lsb` (default `msb`): does the **first** declared field land in the
 //!   high or low bits of the backing integer. `msb` matches the ASCII-art layouts in
 //!   RFCs (first field drawn leftmost = most significant).
-//! - `bytes = be | le` (default `be`): the byte order of the backing integer when
-//!   serialized to bytes.
+//! - `bytes = be | le` (default `be`): the byte order `to_bytes`/`from_bytes` use when
+//!   serializing the backing integer.
 //!
-//! They are orthogonal. The same fields, packed `msb` but emitted `le`:
+//! They are orthogonal. The same fields, packed `msb`, declared with two different byte
+//! orders — `to_bytes` honors each declaration:
 //!
 //! ```
 //! use bnb::{bitfield, u4};
@@ -60,8 +62,11 @@
 //!
 //! let be = Be::new().with_hi(u4::new(0xA)).with_mid(0xBC).with_lo(u4::new(0xD));
 //! let le = Le::new().with_hi(u4::new(0xA)).with_mid(0xBC).with_lo(u4::new(0xD));
-//! assert_eq!(be.to_be_bytes(), [0xAB, 0xCD]); // same logical value...
-//! assert_eq!(le.to_le_bytes(), [0xCD, 0xAB]); // ...different wire bytes
+//! assert_eq!(be.to_bytes(), [0xAB, 0xCD]); // declared `be` -> big-endian bytes
+//! assert_eq!(le.to_bytes(), [0xCD, 0xAB]); // same logical value, declared `le`
+//!
+//! // `to_be_bytes`/`to_le_bytes` ignore the declaration — use them only to override it.
+//! assert_eq!(le.to_be_bytes(), [0xAB, 0xCD]);
 //! ```
 //!
 //! # Field widths: inferred, explicit, or ranged
