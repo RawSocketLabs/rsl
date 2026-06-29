@@ -12,6 +12,7 @@
 //! - [`builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
 //! - [`bin_codec`] — `#[bin]`: a whole protocol header, end to end.
 //! - [`directives`] — the field-directive reference, one example each.
+//! - [`mapping`] — `#[bin(map/bw_map = …)]`: a whole struct mapped to/from a wire type.
 //! - [`dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
 //! - [`io`] — the `Source`/`Sink` I/O ladder.
 //! - [`errors`] — position-aware errors and the streaming `Incomplete` signal.
@@ -47,5 +48,6 @@ pub mod enums;
 pub mod errors;
 pub mod flags;
 pub mod io;
+pub mod mapping;
 pub mod numbers;
 pub mod quick_start;

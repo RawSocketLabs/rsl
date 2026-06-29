@@ -305,6 +305,55 @@ where
     w.write(f(value))
 }
 
+/// Decodes a whole wire **message** `W` (a `BitDecode`, inferred from `f`'s argument) and
+/// maps it to the logical type — backs struct-level `#[bin(map = …)]`. The message dual of
+/// [`read_mapped`] (whose `W` is a single `Bits` field).
+///
+/// # Errors
+/// Propagates the decode [`BitError`].
+#[doc(hidden)]
+pub fn decode_mapped_msg<W, T, S, F>(r: &mut S, f: F) -> Result<T, BitError>
+where
+    W: BitDecode,
+    S: Source,
+    F: FnOnce(W) -> T,
+{
+    Ok(f(W::bit_decode(r)?))
+}
+
+/// Fallible message map — backs struct-level `#[bin(try_map = …)]`. A conversion error
+/// becomes an [`ErrorKind::Convert`] at the message's start offset.
+///
+/// # Errors
+/// The decode [`BitError`], or the converter's failure as [`ErrorKind::Convert`].
+#[doc(hidden)]
+pub fn decode_try_mapped_msg<W, T, E, S, F>(r: &mut S, f: F) -> Result<T, BitError>
+where
+    W: BitDecode,
+    S: Source,
+    E: fmt::Display,
+    F: FnOnce(W) -> Result<T, E>,
+{
+    let at = r.bit_pos();
+    let w = W::bit_decode(r)?;
+    f(w).map_err(|e| BitError::convert(e.to_string(), at))
+}
+
+/// Maps the logical type to its wire **message** `W` (a `BitEncode`) and encodes it —
+/// backs struct-level `#[bin(bw_map = …)]`. The message dual of [`write_mapped`].
+///
+/// # Errors
+/// Propagates the encode [`BitError`].
+#[doc(hidden)]
+pub fn encode_mapped_msg<W, T, K, F>(w: &mut K, value: &T, f: F) -> Result<(), BitError>
+where
+    W: BitEncode,
+    K: Sink,
+    F: FnOnce(&T) -> W,
+{
+    f(value).bit_encode(w)
+}
+
 /// A typed bit/byte amount for positioning directives — `4.bits()`, `3.bytes()` —
 /// resolving to a bit count. Bring it in with `use bnb::prelude::*`.
 ///

@@ -100,6 +100,16 @@ attribute handles byte-aligned headers and sub-byte frames alike.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
   `no_builder`, `bit_order = msb|lsb`, `bytes = be|le` (`big`/`little`),
   `allow_byte_aligned`.
+- **Struct-level wire mapping (`bin_struct_mapped`):** `map = |w: Wire| Self` /
+  `try_map = |w: Wire| Result<Self, E>` (decode) + `bw_map = |s: &Self| Wire` (encode) make a
+  *logical* struct serialize via a separate *wire* type — the whole-struct analogue of the
+  field-level `map`. It **bypasses the field codec**: the struct's fields are logical data, the
+  wire type owns the bytes. Generated impls delegate to the wire type (`decode_mapped_msg`/
+  `decode_try_mapped_msg`/`encode_mapped_msg` runtime helpers), so the ordinary slice surface
+  works at the wire layout, and it forwards `FixedBitLen` (so it nests; the **wire type must be
+  fixed-length**). Wire type is read from the `map`/`try_map` closure's annotated param (or the
+  `bw_map` return for a write-only type). Mutually exclusive with `magic`/`ctx`/`validate`/`tag`;
+  struct only (not enums). See `guide::mapping`, `tests/bin_wire_map.rs`.
 - **Field directives** (the inherited grammar): `#[br]`/`#[bw]`/`#[brw]` with
   `magic`, `count`, `ctx`/`args`, `map`/`try_map`, `if`, `calc`/`temp`,
   `reserved`/`reserved_with`, `parse_with`/`write_with`, `pad_before`/`pad_after`/

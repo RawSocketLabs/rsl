@@ -129,11 +129,12 @@ tour of the crate and the rationale behind each piece. Reading order:
 6. [`guide::builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
 7. [`guide::bin_codec`] — `#[bin]`: a whole protocol header, end to end.
 8. [`guide::directives`] — the field-directive reference, one example each.
-9. [`guide::dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
-10. [`guide::io`] — the `Source`/`Sink` I/O ladder (slice, stream, socket, file, `bytes`).
-11. [`guide::errors`] — position-aware errors and the streaming `Incomplete` signal.
-12. [`guide::dual_use`] — the compliant-by-default-but-violatable philosophy.
-13. [`guide::composition`] — how the pieces nest and size each other.
+9. [`guide::mapping`] — `#[bin(map/bw_map = …)]`: a whole struct mapped to/from a wire type.
+10. [`guide::dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
+11. [`guide::io`] — the `Source`/`Sink` I/O ladder (slice, stream, socket, file, `bytes`).
+12. [`guide::errors`] — position-aware errors and the streaming `Incomplete` signal.
+13. [`guide::dual_use`] — the compliant-by-default-but-violatable philosophy.
+14. [`guide::composition`] — how the pieces nest and size each other.
 */
 
 // Every public item must be documented (the `uN` aliases are the one self-
@@ -224,9 +225,10 @@ pub mod __private {
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, SeekSource,
         Sink, Source, align_read, align_write, bits_of, decode_all, decode_exact,
-        decode_exact_with, decode_iter, decode_peek, decode_peek_with, encode_to_vec,
-        encode_to_vec_with, peek_bytes, read_byte_array, read_mapped, read_try_mapped, skip_read,
-        skip_write, verify_magic, write_byte_array, write_mapped,
+        decode_exact_with, decode_iter, decode_mapped_msg, decode_peek, decode_peek_with,
+        decode_try_mapped_msg, encode_mapped_msg, encode_to_vec, encode_to_vec_with, peek_bytes,
+        read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write, verify_magic,
+        write_byte_array, write_mapped,
     };
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};

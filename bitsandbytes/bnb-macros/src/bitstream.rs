@@ -1624,6 +1624,15 @@ struct BinArgs {
     /// `tag = <ctx-param>` (enum only) — the **selector**: dispatch each `#[bin(tag =
     /// <value>)]` variant on this `ctx(...)` parameter (read-only, never on the wire).
     tag: Option<Ident>,
+    /// `map = |w: Wire| Self` (struct only) — the logical type's wire form is the message
+    /// type `Wire`; decode reads `Wire` then maps it. The wire type is taken from the
+    /// closure's annotated parameter.
+    map: Option<syn::Expr>,
+    /// `try_map = |w: Wire| Result<Self, E>` — the fallible form of [`map`](Self::map).
+    try_map: Option<syn::Expr>,
+    /// `bw_map = |s: &Self| Wire` (struct only) — the encode dual: map the logical type to
+    /// its wire form, then encode that.
+    bw_map: Option<syn::Expr>,
 }
 
 /// Entry for `#[bin(...)]`.
@@ -1667,11 +1676,18 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.validate = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("tag") {
             args.tag = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("map") {
+            args.map = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("try_map") {
+            args.try_map = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("bw_map") {
+            args.bw_map = Some(meta.value()?.parse()?);
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
-                 ctx(name: Ty, …), validate = <path>, tag = <ctx-param>",
+                 ctx(name: Ty, …), validate = <path>, tag = <ctx-param>, \
+                 map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire",
             ));
         }
         Ok(())
@@ -1686,7 +1702,16 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     }
     match syn::parse::<syn::Item>(item)? {
         syn::Item::Struct(s) => bin_struct(&args, &s),
-        syn::Item::Enum(e) => bin_enum(&args, &e),
+        syn::Item::Enum(e) => {
+            if args.map.is_some() || args.try_map.is_some() || args.bw_map.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &e.ident,
+                    "struct-level `map`/`try_map`/`bw_map` applies to a `#[bin]` struct, not an \
+                     enum — map the enum's variant fields, or wrap the enum in a mapped struct",
+                ));
+            }
+            bin_enum(&args, &e)
+        }
         other => Err(syn::Error::new_spanned(
             other,
             "#[bin] requires a struct or an enum",
@@ -1694,10 +1719,202 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
     }
 }
 
+/// The wire **message** type for a mapped `#[bin]` struct: taken from the `map`/`try_map`
+/// closure's annotated parameter, or (write-only) the `bw_map` closure's annotated return.
+fn mapped_wire_type(args: &BinArgs) -> syn::Result<Type> {
+    if let Some(expr) = args.map.as_ref().or(args.try_map.as_ref()) {
+        if let syn::Expr::Closure(c) = expr {
+            return match c.inputs.first() {
+                Some(syn::Pat::Type(pt)) => Ok((*pt.ty).clone()),
+                _ => Err(syn::Error::new_spanned(
+                    expr,
+                    "the `map`/`try_map` closure must annotate its wire-type parameter, \
+                     e.g. `map = |w: WireType| …`",
+                )),
+            };
+        }
+        return Err(syn::Error::new_spanned(
+            expr,
+            "struct-level `map`/`try_map` must be a closure, e.g. `map = |w: WireType| Self::from(w)`",
+        ));
+    }
+    // Write-only: derive the wire type from the encode closure's annotated return.
+    let expr = args
+        .bw_map
+        .as_ref()
+        .expect("a mapped struct has at least one of map/try_map/bw_map");
+    if let syn::Expr::Closure(c) = expr {
+        if let syn::ReturnType::Type(_, ty) = &c.output {
+            return Ok((**ty).clone());
+        }
+        return Err(syn::Error::new_spanned(
+            expr,
+            "a write-only mapped struct needs the wire type: annotate the `bw_map` return, \
+             e.g. `bw_map = |s: &Self| -> WireType { … }`",
+        ));
+    }
+    Err(syn::Error::new_spanned(
+        expr,
+        "struct-level `bw_map` must be a closure",
+    ))
+}
+
+/// The **mapped** `#[bin]` struct path: the logical type's wire form is another message type
+/// `Wire`, bridged by `map`/`try_map` (decode) and `bw_map` (encode). Bypasses the field
+/// codec — the struct's own fields are the *logical* data, never the wire. Because the
+/// generated `BitDecode`/`BitEncode` carry the mapping, the ordinary slice helpers
+/// (`decode_all`/`peek`/…) work directly at the wire type's layout.
+fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
+    let name = &s.ident;
+    let vis = &s.vis;
+
+    if args.map.is_some() && args.try_map.is_some() {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`map` and `try_map` are mutually exclusive",
+        ));
+    }
+    if !s.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &s.generics,
+            "#[bin] does not support generic parameters yet",
+        ));
+    }
+    for (opt, present) in [
+        ("magic", args.magic.is_some()),
+        ("ctx", !args.ctx.is_empty()),
+        ("validate", args.validate.is_some()),
+        ("tag", args.tag.is_some()),
+    ] {
+        if present {
+            return Err(syn::Error::new_spanned(
+                name,
+                format!(
+                    "`{opt}` is not supported on a mapped `#[bin]` struct — put it on the wire \
+                     type instead (the wire type owns the framing)"
+                ),
+            ));
+        }
+    }
+    let has_decode = args.map.is_some() || args.try_map.is_some();
+    let has_encode = args.bw_map.is_some();
+    if args.read_only && has_encode {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`read_only` conflicts with `bw_map` (drop one)",
+        ));
+    }
+    if args.write_only && has_decode {
+        return Err(syn::Error::new_spanned(
+            name,
+            "`write_only` conflicts with `map`/`try_map` (drop one)",
+        ));
+    }
+
+    let wire = mapped_wire_type(args)?;
+    let layout = quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT);
+
+    let decode_ts = if has_decode {
+        let decode_call = if let Some(map) = &args.map {
+            quote!(#bnb::__private::decode_mapped_msg(__bnb_r, #map))
+        } else {
+            let tm = args.try_map.as_ref().unwrap();
+            quote!(#bnb::__private::decode_try_mapped_msg(__bnb_r, #tm))
+        };
+        quote! {
+            impl #bnb::__private::BitDecode for #name {
+                fn bit_decode<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #decode_call
+                }
+            }
+
+            impl #name {
+                #[doc = "Decode one message from a `Source` cursor (mapping the wire type to this logical type)."]
+                #vis fn decode<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
+                }
+                #[doc = "Decode every message from `bytes` into a `Vec` (at the wire type's layout)."]
+                #vis fn decode_all(
+                    bytes: &[u8],
+                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
+                    #bnb::__private::decode_all(bytes, #layout)
+                }
+                #[doc = "A lazy iterator decoding successive messages from `bytes`."]
+                #vis fn decode_iter(
+                    bytes: &[u8],
+                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_
+                {
+                    #bnb::__private::decode_iter(bytes, #layout)
+                }
+                #[doc = "Decode one message without consuming the buffer (tail-tolerant)."]
+                #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_peek(bytes, #layout)
+                }
+                #[doc = "Decode and require every whole byte consumed."]
+                #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact(bytes, #layout)
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
+    let encode_ts = if has_encode {
+        let bw = args.bw_map.as_ref().unwrap();
+        quote! {
+            impl #bnb::__private::BitEncode for #name {
+                const LAYOUT: #bnb::__private::Layout = #layout;
+                fn bit_encode<__K: #bnb::__private::Sink>(
+                    &self,
+                    __bnb_w: &mut __K,
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                    #bnb::__private::encode_mapped_msg(__bnb_w, self, #bw)
+                }
+            }
+
+            impl #name {
+                #[doc = "Encode to a fresh `Vec` (mapping this logical type to its wire type)."]
+                #vis fn to_bytes(
+                    &self,
+                ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec(self, #layout)
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
+    // A mapped type's encoded size is exactly the wire type's, so it forwards `FixedBitLen`
+    // (which lets it nest as a sized region in another `#[bin]`). This requires the wire type
+    // to be fixed-length; map to a variable-length wire form via a hand-written codec instead.
+    let fixed_ts = quote! {
+        impl #bnb::__private::FixedBitLen for #name {
+            const BIT_LEN: u32 = <#wire as #bnb::__private::FixedBitLen>::BIT_LEN;
+        }
+    };
+
+    Ok(quote! {
+        #s
+        #decode_ts
+        #encode_ts
+        #fixed_ts
+    })
+}
+
 /// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
 /// required-by-default builder, folded over a named-field struct.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
+    if args.map.is_some() || args.try_map.is_some() || args.bw_map.is_some() {
+        return bin_struct_mapped(args, s);
+    }
     if args.tag.is_some() {
         return Err(syn::Error::new_spanned(
             &s.ident,
