@@ -85,8 +85,14 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `examples/tokio_udp.rs`).
 - [x] `MessageStream` / `MessageDatagram` — ergonomic `std` socket helpers: whole-message
       `read_message`/`write_message` over a `Read + Write` stream (`TcpStream`; owns it, both
-      directions, no `try_clone`) and `send_message`/`recv_message` over any `DatagramSocket`
-      (`UdpSocket`, `UnixDatagram`, …) (opt-in `net` feature; `examples/sockets.rs`).
+      directions, no `try_clone`) and `send_message`/`recv_message` over a **sealed**
+      `DatagramSocket` (`UdpSocket` or `UnixDatagram`); both decode in the message's own layout
+      (opt-in `net` feature; `examples/sockets.rs`, `examples/unix_stream.rs`).
+- [x] `MockDatagramSocket` / `MockStream` — test-only in-memory transports (opt-in `mock` feature,
+      for `[dev-dependencies]`) to unit-test `net` code without a real socket: scripted inbound,
+      captured outbound, chunked delivery (driving the framing path `std::io::Cursor` can't), and
+      error injection (`fail_after`/`fail_next_recv`). `mock` implies `net`; the `DatagramSocket`
+      seal keeps these the only impls. `examples/mock_datagram.rs`, `examples/mock_stream.rs`.
 - [x] Seeking enforced in the type system: a `restore_position` message's `decode`
       is bound on `SeekSource`, so a forward-only stream is a compile error.
 
