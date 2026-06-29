@@ -18,3 +18,13 @@ fn ui_seek() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui_seek/*.rs");
 }
+
+/// `DatagramSocket` (the `net` feature) is sealed: a downstream `impl` for an outside type is a
+/// compile error. Pinned to the `mock` feature so the diagnostic's in-scope impl set is stable
+/// (mock implies net and adds `MockDatagramSocket`).
+#[cfg(feature = "mock")]
+#[test]
+fn ui_seal() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui_seal/*.rs");
+}

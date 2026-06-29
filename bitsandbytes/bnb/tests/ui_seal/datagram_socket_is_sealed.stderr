@@ -1,0 +1,32 @@
+error[E0277]: the trait bound `MySocket: bnb::net::sealed::Sealed` is not satisfied
+ --> tests/ui_seal/datagram_socket_is_sealed.rs:8:25
+  |
+8 | impl DatagramSocket for MySocket {
+  |                         ^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `bnb::net::sealed::Sealed` is not implemented for `MySocket`
+ --> tests/ui_seal/datagram_socket_is_sealed.rs:6:1
+  |
+6 | struct MySocket;
+  | ^^^^^^^^^^^^^^^
+help: the following other types implement trait `bnb::net::sealed::Sealed`
+ --> src/net.rs
+  |
+  | impl sealed::Sealed for UdpSocket {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `UdpSocket`
+...
+  | impl sealed::Sealed for std::os::unix::net::UnixDatagram {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `UnixDatagram`
+...
+  | impl sealed::Sealed for MockDatagramSocket {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MockDatagramSocket`
+note: required by a bound in `DatagramSocket`
+ --> src/net.rs
+  |
+  | pub trait DatagramSocket: sealed::Sealed {
+  |                           ^^^^^^^^^^^^^^ required by this bound in `DatagramSocket`
+  = note: `DatagramSocket` is a "sealed trait", because to implement it you also need to implement `bnb::net::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+  = help: the following types implement the trait:
+            std::net::UdpSocket
+            std::os::unix::net::UnixDatagram
+            bnb::MockDatagramSocket

@@ -40,6 +40,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo test -p bitsandbytes --features bytes
+      # `mock` implies `net`, so this exercises both socket-helper features: the mock doctests,
+      # the net/mock example builds, and the sealed-`DatagramSocket` compile-fail test.
+      - run: cargo test -p bitsandbytes --features mock
 
   no_std:
     name: no_std (bare-metal target)
