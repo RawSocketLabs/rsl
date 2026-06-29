@@ -2362,6 +2362,49 @@ mod unit {
     }
 
     #[test]
+    fn cursor_layout_matrix_bit_and_byte_order_are_independent() {
+        // The two axes — `bit` (how a sub-byte field packs) and `byte` (how a byte-multiple
+        // value serializes) — must compose independently at the cursor level (`extract_bits`/
+        // `emit_bits`/`apply_byte_order`). Write a nibble pair (bit-order sensitive) then a u16
+        // word (byte-order sensitive) under each of the four layouts.
+        let combos = [
+            (BitOrder::Msb, ByteOrder::Big),
+            (BitOrder::Msb, ByteOrder::Little),
+            (BitOrder::Lsb, ByteOrder::Big),
+            (BitOrder::Lsb, ByteOrder::Little),
+        ];
+        let mut encs = Vec::new();
+        for (bit, byte) in combos {
+            let layout = Layout { bit, byte };
+            let mut w = BitWriter::with_layout(layout);
+            w.write(u4::new(0xA)).unwrap();
+            w.write(u4::new(0xB)).unwrap();
+            w.write(0x1234u16).unwrap();
+            let bytes = w.into_bytes();
+            // Every layout round-trips through a reader with the same layout.
+            let mut r = BitReader::with_layout(&bytes, layout);
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xA));
+            assert_eq!(r.read::<u4>().unwrap(), u4::new(0xB));
+            assert_eq!(r.read::<u16>().unwrap(), 0x1234);
+            encs.push(bytes);
+        }
+        // Golden for the two MSB layouts: nibbles 0xAB, then the word big- vs little-endian.
+        // (The LSB byte layout is subtle — see `bin_order_matrix` — so the LSB corners are
+        // pinned by round-trip + distinctness rather than a hand-asserted golden.)
+        assert_eq!(encs[0], [0xAB, 0x12, 0x34]); // msb / big
+        assert_eq!(encs[1], [0xAB, 0x34, 0x12]); // msb / little
+        // Under MSB, flipping byte order changes only the word's bytes, not the nibble byte.
+        assert_eq!(encs[0][0], encs[1][0]);
+        assert_ne!(encs[0][1..], encs[1][1..]);
+        // All four corners are pairwise distinct — neither axis aliases the other.
+        for i in 0..encs.len() {
+            for j in (i + 1)..encs.len() {
+                assert_ne!(encs[i], encs[j], "layout corners {i} and {j} alias");
+            }
+        }
+    }
+
+    #[test]
     fn write_bits_rejects_over_128() {
         let mut w = BitWriter::new();
         assert_eq!(

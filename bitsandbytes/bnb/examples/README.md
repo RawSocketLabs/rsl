@@ -22,6 +22,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `arbitrary_width` | A 48-bit `#[derive(BitEnum)]` (a long sync/magic word) in a **non-byte-aligned 54-bit** `#[bin]` message; `#[catch_all]` keeps unknown syncs | `--example arbitrary_width` |
 | `ais` | A real bit-packed format — an AIS marine Position Report: `u6`/`u2`/`u30`/`u4`/`u10` fields, **52-bit** non-byte-aligned total, `#[catch_all]` nav-status | `--example ais` |
 | `can_signals` | The same, **LSB-first** (`bit_order = lsb`, CAN/DBC "Intel" signals): `u3`/`u4`/`u14`/`bool` packed low-bit-first into a non-byte-aligned 22-bit frame | `--example can_signals` |
+| `endianness` | **Bit order × byte order are independent knobs**: the `#[bin]` 2×2 (`msb`/`lsb` × `big`/`little`) all distinct + round-trip, plus the low-level `BitReader`/`BitWriter` explicit `Layout` | `--example endianness` |
 | `wav` | **Little-endian** byte order (`#[bin(little)]`): a RIFF/WAVE `fmt ` chunk of multi-byte LE integers, with `#[try_str]` on the `[u8; 4]` tag | `--example wav` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
 | `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
@@ -71,7 +72,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bitfield]` | standalone, ipv4, enums, dns, telemetry, bin_message |
 | `#[derive(BitEnum)]` | enums, standalone, ipv4, dns, telemetry, bin_message, arbitrary_width, ais, can_signals |
 | arbitrary bit widths / non-byte-aligned message | arbitrary_width, ais, can_signals |
-| byte/bit order (`little` / `lsb` packing) | wav, can_signals |
+| byte/bit order (`little` / `lsb`, the 2×2 + low-level `Layout`) | wav, can_signals, endianness |
 | `#[bitfield]` byte order (`to_bytes`/`from_bytes`) | bitfield_bytes |
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
