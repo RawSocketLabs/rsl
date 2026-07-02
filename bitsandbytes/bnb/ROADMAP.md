@@ -336,5 +336,15 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       rule, validate it byte-identically during dogfooding (A), and document it in `DESIGN.md`. A
       potential correctness fix if a real tool disagrees (breaking → do on `0.x`). Surfaced by the
       examples review above.
-- [ ] **Scope line** — is `serde` interop / an `async` codec in scope for 1.0, or
-      explicitly out? Decide now so 1.0's surface is intentional.
+- [x] **Scope line** *(decided)* — **`serde` and a native async codec are OUT of 1.0 scope.**
+      - **serde:** bnb is wire-exact; serde's data model has no bit widths, byte order, magic, or
+        count (`binrw` reached the same conclusion) — bnb will not be a serde data format. What
+        *is* supported (pinned by `tests/serde_compat.rs`): user-side serde derives coexist with
+        **plain** `#[bin]` types, so one type carries both codecs (JSON for config/logs, bnb for
+        the wire). Documented boundaries: a `reserved`/`calc` message rejects serde derives (the
+        injected `encode_mode` field — same root cause as "no struct literals"; this boundary
+        *disappears* if the carried mode is cut at the C freeze), and bnb's own field types
+        (`uN`, bitfields) ship no serde impls (a post-1.0 additive `serde` feature, if demanded).
+      - **async:** `BinCodec` over `Framed`/`UdpFramed` (the `tokio` feature) **is** the 1.0
+        async story — the codec is in-memory and fast, framing is the async boundary, and
+        `BinCodec` covers it. A native async `Source`/`Sink` family is explicitly post-1.0.

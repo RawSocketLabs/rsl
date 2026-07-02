@@ -44,6 +44,10 @@ modular-bitfield-msb = "0.11"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["codec", "net"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# Dev-only, for `tests/serde_compat.rs`: pins the 1.0 scope-line decision that user-side
+# serde derives coexist with plain `#[bin]` types (serde-as-data-format is out of scope).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 # Zero `unsafe`, enforced as a guarantee rather than a convention: `forbid` (unlike

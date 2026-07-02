@@ -88,6 +88,8 @@ ladder, with an opt-in `bytes` feature for async framing.
 - **`tokio`** — [`BinCodec`], a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
   message: `Framed::new(tcp, BinCodec::<T>::new())` (a stream) or `UdpFramed::new(udp, …)` (a
   datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
+  This **is** bnb's async support: a native async `Source`/`Sink` family is deliberately out of
+  scope (the codec is in-memory and fast; framing is the async boundary, and `BinCodec` covers it).
 - **`net`** — ergonomic `std` socket helpers: [`MessageStream`] (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and [`MessageDatagram`] (`send_message`/
   `recv_message` over a sealed [`DatagramSocket`] — `UdpSocket` or `UnixDatagram`). Implies `std`.

@@ -308,7 +308,11 @@
 //! canonical. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render
 //! preference, not message data), and because the field can't appear in a struct literal,
 //! **construct these via the builder, `new(…)`, or `decode`** (every `#[bin]` type gets a
-//! positional `new(fields…)` over its stored fields).
+//! positional `new(fields…)` over its stored fields). The injected field has one more
+//! consequence: a `reserved`/`calc` message **rejects serde derives** (`EncodeMode` implements
+//! no `Serialize`), while a plain `#[bin]` message coexists with them fine — one type can
+//! carry both codecs (see `tests/serde_compat.rs`; bnb is deliberately *not* a serde data
+//! format, whose model has no bit widths or byte order).
 //!
 //! ```
 //! use bnb::{bin, EncodeExt, EncodeMode};

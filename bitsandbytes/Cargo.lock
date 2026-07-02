@@ -80,6 +80,8 @@ dependencies = [
  "futures-util",
  "modular-bitfield-msb",
  "proptest",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-util",
  "tracing",

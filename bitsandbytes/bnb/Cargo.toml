@@ -72,6 +72,10 @@ tracing-subscriber.workspace = true
 trybuild.workspace = true
 # Property-based round-trip stress testing.
 proptest.workspace = true
+# `tests/serde_compat.rs`: pins the 1.0 scope line — user-side serde derives coexist with
+# plain `#[bin]` types; serde-as-data-format is explicitly out of scope (see ROADMAP.md).
+serde.workspace = true
+serde_json.workspace = true
 # Statistical benchmarking with HTML reports. The benches use `Criterion::default()`
 # directly (no shared `testutil` harness) so `bnb` stays self-contained / publishable.
 criterion = { workspace = true, features = ["html_reports"] }
