@@ -116,9 +116,15 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `as_read`/`as_write`), `From<std::io::Error>`/`ErrorKind::Io`, and the
       `encode(writer)` extension trait (`EncodeExt`). `#[br(dbg)]` (a `tracing` event)
       is `std`-only.
-- [ ] **Option B** (deferred) — an in-house `bnb::io` `Read`/`Write`/`Seek` abstraction
-      to bring streaming I/O to `no_std` and unify the code path; revisit when an
-      embedded byte-stream transport (TCP/serial) needs it.
+- [x] **Option B** *(decided: post-1.0)* — streaming I/O without `std` is **explicitly not part
+      of the 1.0 contract**. The 1.0 `no_std` boundary is buffer-at-a-time plus **`BitBuf`
+      push/pull framing** (push bytes from any transport — UART ISR, radio, channel — pull whole
+      messages; the bounded/alloc-once mode gives a fixed footprint), which covers the realistic
+      embedded case; only can't-fit-in-memory messages and seek-over-stream remain out. When a
+      real embedded consumer needs those, the intended mechanism is **adapters over the
+      ecosystem's `embedded-io` traits** (the `embedded-hal` family's convergence point), *not*
+      an in-house `bnb::io` trait family — direction named so nobody builds the in-house version
+      by default; not prototyped. Additive either way.
 
 ## Cross-cutting
 
@@ -282,8 +288,10 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
 - [x] **`r` / `w` field-name collision** — *resolved*: the generated source/sink params are
       now `__bnb_r`/`__bnb_w`, so a user field named `r` or `w` no longer collides (the hard
       error is gone). Proof: `bin_macro.rs::fields_named_r_and_w_roundtrip`.
-- [ ] **Option B (no_std streaming I/O)** — a 1.0 requirement, or explicit post-1.0
-      (additive)? Document the boundary either way so it's an expectation, not a surprise.
+- [x] **Option B (no_std streaming I/O)** *(decided: explicit post-1.0)* — see the `no_std`
+      section above: the 1.0 boundary is buffer-at-a-time + `BitBuf` push/pull framing
+      (bounded/alloc-once for fixed footprints); future streaming, if demanded, comes as
+      additive adapters over `embedded-io`, not an in-house `bnb::io`.
 - [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(done — E1–E3 plus the
       runtime `EncodeMode`)*. `to_bytes` used to be an inconsistent hybrid (retained `reserved` but
       recomputed `calc`). **Shipped:**

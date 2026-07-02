@@ -98,10 +98,15 @@ ladder, with an opt-in `bytes` feature for async framing.
   delivery to drive the read-more path). Put it in your `[dev-dependencies]`. Implies `net`.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
-([`BitReader`], `Type::decode`/`decode_all`/`decode_iter`/`decode_exact`/`peek`) and encode to a
-`Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, or [`BitEncode::bit_encode`] over a [`Sink`]). You lose
-only the streaming `std::io` adapters and `encode(&mut impl Write)`; on `no_std`,
-encode with `to_bytes()` and write the bytes to your transport yourself.
+([`BitReader`], `Type::decode`/`decode_all`/`decode_iter`/`decode_exact`/`peek`), encode to a
+`Vec<u8>` (`Type::to_bytes`/`to_canonical_bytes`, or [`BitEncode::bit_encode`] over a [`Sink`]),
+and **incremental framing with [`BitBuf`]** — push bytes from any transport (a UART ISR, a
+radio, a channel), pull whole messages; [`BitBuf::bounded`] gives an alloc-once fixed
+footprint. You lose only the streaming `std::io` adapters and `encode(&mut impl Write)`; on
+`no_std`, encode with `to_bytes()` and write the bytes to your transport yourself. That is the
+deliberate `no_std` boundary: streaming reader adapters without `std` are out of scope for 1.0
+(if demanded later, they'd arrive as additive adapters over the ecosystem's `embedded-io`
+traits — see `ROADMAP.md`).
 
 # Inspiration
 
