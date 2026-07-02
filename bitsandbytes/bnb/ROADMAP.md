@@ -16,7 +16,8 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       integers; `new`/`try_new`/`from_raw`, `From`/`TryFrom`, `MIN`/`MAX`.
 - [x] **`#[bitfield]`** — integer-backed packing with independent `bits = msb|lsb` and
       `bytes = be|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
-      `with_*`/`set_*`, `*_bytes`; nests in other bitfields and in `#[bin]`.
+      `with_*`/`set_*`, order-respecting `to_bytes`/`from_bytes` (the declared `bytes`) plus the
+      endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`.
 - [x] **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width; `#[catch_all]`
       (lossless, dual-use) or `closed` (asserted closed set); a non-exhaustive enum
       with neither is a compile error; `num_enum`-parity `From`/`TryFrom` for
@@ -48,6 +49,12 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `pad_*`/`align_*`, `restore_position`, `#[reserved]`/`#[reserved_with(…)]`,
       `#[try_str]` (a `Debug`-rendering hint: a byte buffer prints as a string when valid
       UTF-8, else hex bytes — never lossy; codec unaffected).
+- [x] **Struct-level wire mapping** — a *logical* struct serializes via a separate *wire* type,
+      two forms: closures (`map`/`try_map` + `bw_map`) or the conversion traits
+      (`wire`/`try_wire` — `From`/`TryFrom<Wire>` decode + `From<&Self>` encode, the transitions in
+      named `impl` blocks, reusable in-program). Bypasses the field codec; handles a
+      **variable-length** wire form; emits no `FixedBitLen` (a fixed-wire mapped type nests as a
+      plain field via a one-line manual impl). See [`bnb::guide::mapping`].
 - [x] Lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`; the bare derives carry
       the all-byte-aligned right-tool guard (escape hatch
       `#[bit_stream(allow_byte_aligned)]`).
@@ -73,9 +80,11 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       signal.
 - [x] `BufSource<R: Read>` — bounded retain-and-seek socket adapter.
 - [x] `BitBuf` — push/pull, bit-aware in-memory buffer: `push(&bytes)` as they arrive,
-      `pull::<T>()` takes whole messages off the front (`None` until complete, reclaims as it
-      goes). A `SeekSource`, so it also reads through plain `decode`; the pushable counterpart to
-      `BufSource` (`no_std` + `alloc`).
+      `pull::<T>()` takes whole messages off the front (`None` until complete). A `SeekSource`, so
+      it also reads through plain `decode`; the pushable counterpart to `BufSource` (`no_std` +
+      `alloc`). **Reclaim is deferred + in place** (a push/pull loop reuses one allocation), and a
+      **bounded / alloc-once** mode — `BitBuf::bounded(cap)` + `try_push` (`CapacityError` on
+      overflow, never reallocates) + explicit `grow` — gives a fixed footprint for real-time/`no_std`.
 - [x] `SeekReader<R: Read + Seek>` — large file / container.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
@@ -169,8 +178,9 @@ passes with no breaking change needed.
 - [ ] Differential correctness vs `binrw`/`modular-bitfield` on shared shapes (the bench
       targets already exist).
 - [x] Boundary stress: `u127`/`u128` incl. all-ones (`edge_cases.rs`), the endian ×
-      bit-order matrix at both the bitfield layer (`comprehensive.rs`) and the message
-      layer (`bin_order_matrix.rs` — the 2×2 compose-without-aliasing), sub-byte straddles
+      bit-order matrix at the bitfield layer (`comprehensive.rs` + the combined `bits × bytes`
+      case), the message layer (`bin_order_matrix.rs` — the 2×2 compose-without-aliasing), **and
+      the low-level cursor** (`bitstream.rs::cursor_layout_matrix`), sub-byte straddles
       (`bitstream_dmr`), and **attacker-controlled `count`** (`bin_count_adversarial.rs`:
       over-count → graceful `UnexpectedEof`, `u32::MAX` count → no pre-alloc, under-count
       → `TrailingBytes`, nested over-read keeps the innermost span).
@@ -189,7 +199,11 @@ passes with no breaking change needed.
       trait's; sink-composition now uses the trait, symmetric with `encode(w)` needing `EncodeExt`).
       Still to weigh before the freeze: whether the full `encode_mode` trio (`set_`/`with_`/getter)
       and `canonical_diff` earn their slots, and — bigger — whether the carried-`encode_mode`
-      mechanism pays for its complexity once dogfooding shows real streaming use.
+      mechanism pays for its complexity once dogfooding shows real streaming use. **Newer surface to
+      scrutinize:** the **two struct-mapping forms** (closures `map`/`bw_map` vs the conversion-trait
+      `wire`/`try_wire`) deliver the same capability two ways — keep both or converge? — and the
+      `BitBuf` bounded quartet (`bounded`/`try_push`/`grow`/`capacity` + `CapacityError`) is fresh
+      surface to confirm earns its place.
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
       cargo-public-api `0.52` for reproducibility. Catches *unintended* surface drift; the
@@ -227,6 +241,41 @@ passes with no breaking change needed.
       — now enabled). CI also runs **fuzz**, **public-api**, and **semver-checks** alongside
       fmt/clippy/test/no_std/deny/MSRV. **Miri** is the only outstanding gate
       (de-prioritized — see Section B).
+
+### Findings from the examples review (a dogfooding proxy)
+
+The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN/DBC, WAV, TLV,
+…); reviewing it surfaced recurring friction plus one correctness question. Most are **additive**
+(they don't block 1.0), but they're the concrete "invest / decide" items real dogfooding
+(Section A) should confirm, and they should be weighed *before* the surface freeze (Section C).
+
+- [ ] **[additive · high-leverage] Length-prefixed `count` sugar.** The
+      `#[br(temp)] #[bw(calc = self.x.len() as N)] n: N;  #[br(count = n)] x: Vec<T>` triad is the
+      single most repeated `#[bin]` idiom (5× in `dns`, plus `ctx_length`/`telemetry`/`tlv`/
+      `bin_message`). A directive that injects the temp+calc — e.g. `#[br(count_prefixed = u16)]
+      x: Vec<T>` — collapses ~3 lines + a named field into one. The highest-value ergonomic win.
+- [ ] **[additive] A `bnb::codecs` of common field codecs.** `parse_with`/`write_with` is
+      hand-rolled for LEB128 (`varint`), a NUL-terminated string (`cstring`), and a length-prefixed
+      label list (`dns`). Ship ready-made codecs (varint, c-string, length-prefixed string/bytes),
+      referenced as `parse_with = bnb::codecs::leb128`, so users stop reinventing them.
+- [ ] **[additive · decision] Reusable *per-type* field codec.** `parse_with`/`write_with` must be
+      repeated on every field of the same shape (`varint` annotates both `length` and `timestamp`).
+      The new `wire`/`map` mapping is *struct*-level only — there is no "type `T` always encodes this
+      way" at *field* level. Decide: a reusable field-codec trait (impl once, reference by type) vs.
+      documenting the newtype-+-`wire` workaround.
+- [ ] **[additive · decision] Auto-`FixedBitLen` for fixed-wire mapped types.** Nesting a
+      fixed-wire mapped type as a plain field needs a hand-written
+      `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building
+      `examples/wire_map.rs`). Decide: an opt-in flag (`#[bin(wire = W, fixed)]`) that emits it, vs.
+      keeping the documented one-liner (chosen deliberately so variable-length wire forms work).
+- [ ] **[correctness · load-bearing] LSB × byte-order semantics are unspecified and
+      interop-unvalidated.** LSB-first packing interacts non-obviously with `big`/`little` for
+      byte-multiple values (LSB effectively inverts the byte layout) — which is *why*
+      `bin_order_matrix` and `can_signals` deliberately don't assert LSB golden bytes. bnb is
+      self-consistent (it round-trips), but whether its `lsb`+`little` bytes match a real CAN/DBC
+      "Intel" tool or SMB2 is **unverified**. This is exactly Section A's "interop vs a live peer /
+      real captured traffic": pin one real LSB-first format byte-identically, then specify the rule
+      — see the new open decision below. Treat as a potential correctness gap, not just docs.
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
@@ -281,5 +330,11 @@ passes with no breaking change needed.
       has a `reserved`/`calc` field. Decide before 1.0 whether to (a) bring parity (the enum
       delegates to its selected variant's canonical form / validity), or (b) keep it struct-only and
       document the boundary as intentional (done in the guide/DESIGN). Additive either way.
+- [ ] **LSB × byte-order semantics** — the interaction of `bit_order = lsb` with `big`/`little`
+      for byte-multiple values is self-consistent (it round-trips) but **unspecified and not
+      interop-checked** against a real LSB-first tool (CAN/DBC "Intel", SMB2). Decide the canonical
+      rule, validate it byte-identically during dogfooding (A), and document it in `DESIGN.md`. A
+      potential correctness fix if a real tool disagrees (breaking → do on `0.x`). Surfaced by the
+      examples review above.
 - [ ] **Scope line** — is `serde` interop / an `async` codec in scope for 1.0, or
       explicitly out? Decide now so 1.0's surface is intentional.
