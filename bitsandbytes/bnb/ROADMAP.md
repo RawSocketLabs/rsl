@@ -205,7 +205,9 @@ passes with no breaking change needed.
       trait's; sink-composition now uses the trait, symmetric with `encode(w)` needing `EncodeExt`).
       Still to weigh before the freeze: whether the full `encode_mode` trio (`set_`/`with_`/getter)
       and `canonical_diff` earn their slots, and — bigger — whether the carried-`encode_mode`
-      mechanism pays for its complexity once dogfooding shows real streaming use. **Newer surface to
+      mechanism pays for its complexity once dogfooding shows real streaming use (two downstream
+      decisions hang on this call: enum encode-model parity, and the serde-derive boundary on
+      `reserved`/`calc` types — both resolve themselves if the carried mode is cut). **Newer surface to
       scrutinize:** the **two struct-mapping forms** (closures `map`/`bw_map` vs the conversion-trait
       `wire`/`try_wire`) deliver the same capability two ways — keep both or converge? — and the
       `BitBuf` bounded quartet (`bounded`/`try_push`/`grow`/`capacity` + `CapacityError`) is fresh
@@ -333,11 +335,16 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
       real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
       `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
-- [ ] **Encode-model parity for tagged-union enums** — the canonical/`encode_mode`/`validate`/
-      `new` surface is currently **struct-only**; a `#[bin]` enum encodes verbatim even if a variant
-      has a `reserved`/`calc` field. Decide before 1.0 whether to (a) bring parity (the enum
-      delegates to its selected variant's canonical form / validity), or (b) keep it struct-only and
-      document the boundary as intentional (done in the guide/DESIGN). Additive either way.
+- [x] **Encode-model parity for tagged-union enums** *(decided: struct-only for now; re-decide
+      after the carried-mode question settles)* — the canonical/`encode_mode`/`validate`/`new`
+      surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the boundary is already
+      documented as intentional in the guide/DESIGN: canonical form and validity are properties
+      of a *record*; canonicalize the payload type, then dispatch). Full parity today would need
+      an enum-side carried mode — no field to inject it into, so a wrapper or per-variant
+      injection plus per-variant `PartialEq`/`Hash` interception — heavy machinery with zero
+      demonstrated demand. **Coupled to the C-freeze `encode_mode` review:** if dogfooding leads
+      to *cutting* the carried mode, parity collapses to a cheap delegating
+      `to_canonical_bytes`/`is_canonical` and gets re-evaluated then. Additive either way.
 - [ ] **LSB × byte-order semantics** — the interaction of `bit_order = lsb` with `big`/`little`
       for byte-multiple values is self-consistent (it round-trips) but **unspecified and not
       interop-checked** against a real LSB-first tool (CAN/DBC "Intel", SMB2). Decide the canonical
