@@ -271,11 +271,17 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       The new `wire`/`map` mapping is *struct*-level only — there is no "type `T` always encodes this
       way" at *field* level. Decide: a reusable field-codec trait (impl once, reference by type) vs.
       documenting the newtype-+-`wire` workaround.
-- [ ] **[additive · decision] Auto-`FixedBitLen` for fixed-wire mapped types.** Nesting a
-      fixed-wire mapped type as a plain field needs a hand-written
+- [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
+      Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building
-      `examples/wire_map.rs`). Decide: an opt-in flag (`#[bin(wire = W, fixed)]`) that emits it, vs.
-      keeping the documented one-liner (chosen deliberately so variable-length wire forms work).
+      `examples/wire_map.rs`), and that stays the mechanism: auto-detection is *impossible* (no
+      conditional impls/specialization — the macro can't know whether `Wire: FixedBitLen` holds),
+      the one-liner is self-documenting ("fixed *because* the wire is") and fails locally and
+      truthfully when the wire is variable. An opt-in `#[bin(wire = W, fixed)]` flag remains a
+      purely additive follow-up if the Section A ports show the one-liner is a recurring paper
+      cut. Note the interaction with the per-type-field-codec item above: a `#[brw(variable)]`
+      field marker attacks the same problem from the parent's side and would reduce how often
+      `FixedBitLen` matters at all.
 - [ ] **[correctness · load-bearing] LSB × byte-order semantics are unspecified and
       interop-unvalidated.** LSB-first packing interacts non-obviously with `big`/`little` for
       byte-multiple values (LSB effectively inverts the byte layout) — which is *why*
