@@ -36,7 +36,7 @@ pub mod record;
 pub use error::{DnsError, Result};
 pub use header::{Header, Op, RCode, State};
 pub use message::Message;
-pub use name::Name;
+pub use name::{CompressionDict, Name};
 pub use question::{QClass, QType, Question};
 pub use rdata::{Mx, RData, Soa};
 pub use record::{RClass, RType, Record};

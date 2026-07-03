@@ -25,8 +25,10 @@ table in [`AGENTS.md`](AGENTS.md) tracks per-crate stage.
 
 Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low coupling:
 
-1. [~] **`application/dns`** — Increment 1 done (see above). **Increment 2**: encode-side name
-       compression (blocked on the bnb mutable-state gap below); then a resolver client.
+1. [~] **`application/dns`** — Increments 1 **and 2** done: the pure codec plus encode-side
+       name compression (`to_compressed_bytes`, RFC §4.1.4 suffix pointers) riding on the bnb
+       `Sink::scratch` feature this port drove upstream. **Next**: a resolver client (needs
+       `rawsock`).
 2. [ ] **`transport/udp`, `transport/tcp`** — clean fixed headers; small `#[bin]` showcases.
        (UDP pulls in the `rawsock` extraction trigger — it implements the injection trait.)
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
@@ -39,10 +41,13 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
 Consuming bnb from git exists precisely to feed these back upstream. Each becomes a
 `bitsandbytes` ROADMAP item; fix in bnb rather than working around it here.
 
-- [ ] **Mutable, message-scoped, sibling-threaded scratch state** — a name-compression
-      dictionary shared across all sibling fields on *both* encode and decode. bnb `ctx` is
-      read-only parent→child today. **The headline gap** (DNS name compression can't be done
-      cleanly without it).
+- [x] **Mutable, message-scoped, sibling-threaded scratch state** — **fixed upstream**
+      (`bitsandbytes` #82): `Sink::scratch` — a type-erased scratch slot the `BitWriter` carries
+      (`with_scratch`), reachable from any codec via `w.scratch()` + `downcast_mut`, shared across
+      all a message's fields because the sink is the one `&mut` threaded through them. DNS
+      `to_compressed_bytes` seeds a `CompressionDict` into it. The headline gap, closed — and it's
+      **encode-only** for now (decode needs no dict: pointers are followed inline via `seek`); a
+      `Source` scratch is a trivial future addition if a decode use appears.
 - [ ] **Overridable stored-length field** — a stored count that defaults to a collection's
       `len()` but permits deliberate override (dual-use / malformed frames), decoupled from that
       collection's struct. Distinct from bnb's derive-always `count_prefix` (DNS header

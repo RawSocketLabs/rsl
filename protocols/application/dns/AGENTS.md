@@ -5,12 +5,13 @@ DNS message codec (RFC 1034/1035) on `bnb`. refcheck protocol name: **`dns`**.
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
 > [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
 
-## Status — Increment 1 (the pure codec)
+## Status — Increment 2 (compressing codec)
 
-**Decode** (following name-compression pointers inline) and **uncompressed encode**. This
-is the flagship `bnb` port. Deferred to later increments: **encode-side name compression**
-(needs a `bnb` feature — mutable message-scoped scratch state) and a **client/network
-layer** (needs the external `rawsock`). Both are tracked in the workspace ROADMAP.
+**Decode** (following name-compression pointers inline) plus **both encode forms**:
+`to_bytes` (uncompressed) and `to_compressed_bytes` (RFC 1035 §4.1.4 suffix compression).
+This is the flagship `bnb` port. Compression rides on the `bnb` `Sink::scratch` feature
+(a message-scoped [`CompressionDict`] in the sink's scratch) that this port drove upstream.
+Deferred: a **client/network layer** (needs the external `rawsock`), tracked in the ROADMAP.
 
 ## Architecture
 
@@ -21,8 +22,10 @@ A pure wire codec (no I/O yet). One module per wire concept, all `#[bin]`-based:
   sub-byte `OpCode`/`Flags` groupings are **flattened** into leaf fields (more RFC-faithful).
   `Op`/`RCode` are `#[derive(BitEnum)]` with `Other` catch-alls.
 - `name.rs` — `Name`, a **`#[bin(codec = …)]` newtype** whose label codec follows
-  compression pointers inline on decode (via `seek`, bounded against loops) and writes
-  uncompressed on encode. Used as a plain field everywhere via `#[brw(variable)]`.
+  compression pointers inline on decode (via `seek`, bounded against loops). On encode it
+  emits a suffix pointer when the sink carries a `CompressionDict` scratch, else writes
+  uncompressed — so the same codec serves both `to_bytes` and `to_compressed_bytes`. Used
+  as a plain field everywhere via `#[brw(variable)]`.
 - `question.rs` — `Question` + `QType`/`QClass` (BitEnum + catch-all).
 - `record.rs` — `Record` + the `RType`/`RClass` registries (BitEnum + catch-all).
 - `rdata.rs` — `RData`, a `tag`-dispatched (by `rtype`, with `rdlength` as aux ctx) union:
@@ -63,9 +66,10 @@ Four layers, each runnable on its own (`cargo test -p dns <layer>`):
   RDLENGTH, out-of-range pointers, and "decode of arbitrary bytes never panics".
 
 Plus runnable **examples** (`cargo run -p dns --example <name>`): `decode_response` (walk a real
-response; unknown types preserved), `build_query` (construct + encode a query), `dual_use_forge`
-(emit a header whose count deliberately disagrees with its section). `testutil` is deferred — the
-golden vectors are inline until a second crate would share the helpers.
+response; unknown types preserved), `build_query` (construct + encode a query), `compress_message`
+(`to_compressed_bytes` vs `to_bytes`, and both round-trip), `dual_use_forge` (emit a header whose
+count deliberately disagrees with its section). `testutil` is deferred — the golden vectors are
+inline until a second crate would share the helpers.
 
 Run everything: `cargo test -p dns`.
 

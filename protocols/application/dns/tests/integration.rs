@@ -92,4 +92,66 @@ mod integration {
         );
         assert_eq!(msg.to_bytes().unwrap(), wire); // raw bytes survive a round-trip
     }
+
+    // A `www.example.com` A response whose question and answer names are identical, so
+    // encode-side compression can point the answer's name at the question's.
+    fn repeated_name_response() -> Message {
+        use dns::{Header, QClass, QType, Question, RClass, Record, State};
+        let q = Question {
+            name: "www.example.com".parse().unwrap(),
+            qtype: QType::A,
+            qclass: QClass::Internet,
+        };
+        let a = Record {
+            name: "www.example.com".parse().unwrap(),
+            rtype: RType::A,
+            class: RClass::Internet,
+            ttl: 60,
+            rdlength: 4,
+            data: RData::A(Ipv4Addr::new(1, 2, 3, 4)),
+        };
+        let header = Header {
+            id: 0x1234,
+            state: State::new().with_response(true),
+            qdcount: 0,
+            ancount: 0,
+            nscount: 0,
+            arcount: 0,
+        };
+        Message::assemble(header, vec![q], vec![a], vec![], vec![])
+    }
+
+    #[test]
+    fn compressed_encode_is_shorter_and_round_trips() {
+        let msg = repeated_name_response();
+        let plain = msg.to_bytes().unwrap();
+        let compressed = msg.to_compressed_bytes().unwrap();
+
+        // The repeated name collapses to a pointer, so the compressed form is smaller.
+        assert!(
+            compressed.len() < plain.len(),
+            "compressed {} !< plain {}",
+            compressed.len(),
+            plain.len()
+        );
+        // Both forms decode to the same message (decode follows the pointer inline).
+        assert_eq!(Message::decode_exact(&compressed).unwrap(), msg);
+        assert_eq!(Message::decode_exact(&plain).unwrap(), msg);
+    }
+
+    #[test]
+    fn compressed_encode_points_the_answer_name_at_the_question() {
+        // A controlled golden: the answer's name (offset 33) becomes a 2-byte pointer to
+        // the question's name at offset 12 (0xc0 0x0c), not a repeated 17-byte name.
+        let compressed = repeated_name_response().to_compressed_bytes().unwrap();
+        let expected = [
+            0x12, 0x34, 0x80, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, // header
+            0x03, b'w', b'w', b'w', 0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c',
+            b'o', b'm', 0x00, 0x00, 0x01, 0x00, 0x01, // question www.example.com A IN
+            0xc0, 0x0c, // answer name = pointer to offset 12
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 0x01, 0x02, 0x03,
+            0x04, // A IN ttl=60 rdlen=4 1.2.3.4
+        ];
+        assert_eq!(compressed, expected);
+    }
 }

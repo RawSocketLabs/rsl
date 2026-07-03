@@ -1,9 +1,11 @@
 //! The whole DNS message (RFC 1035 §4.1).
 
 use crate::header::{Header, State};
+use crate::name::CompressionDict;
 use crate::question::Question;
 use crate::record::Record;
 use bnb::bin;
+use bnb::bitstream::{BitEncode, BitWriter};
 
 /// A complete DNS message: a header followed by the four sections, each sized by the
 /// header's corresponding count.
@@ -72,5 +74,24 @@ impl Message {
             arcount: 0,
         };
         Message::assemble(header, vec![question], vec![], vec![], vec![])
+    }
+
+    /// Encode with **name compression** (RFC 1035 §4.1.4): a name whose label-suffix
+    /// already appeared earlier in the message is written as a pointer to that first
+    /// occurrence. Seeds a fresh [`CompressionDict`] into the sink's scratch and drives the
+    /// ordinary codec — every name shares the one dictionary because they all write through
+    /// the same sink.
+    ///
+    /// The dual of [`to_bytes`](Self::to_bytes) (uncompressed): both decode back to the
+    /// same `Message` (decode follows pointers inline), but the compressed form is smaller
+    /// when names repeat.
+    ///
+    /// # Errors
+    /// Propagates any encode error (e.g. a label over 63 bytes).
+    pub fn to_compressed_bytes(&self) -> Result<Vec<u8>, bnb::bitstream::BitError> {
+        let mut w = BitWriter::with_layout(<Message as BitEncode>::LAYOUT)
+            .with_scratch(Box::new(CompressionDict::new()));
+        self.bit_encode(&mut w)?;
+        Ok(w.into_bytes())
     }
 }

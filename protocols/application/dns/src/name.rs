@@ -3,6 +3,7 @@
 
 use bnb::bin;
 use bnb::bitstream::{BitError, Sink, Source};
+use std::collections::HashMap;
 
 /// The maximum number of compression-pointer jumps to follow before declaring a loop.
 /// RFC 1035 allows arbitrarily-chained pointers, but a well-formed name resolves in far
@@ -14,7 +15,9 @@ const MAX_POINTER_HOPS: u32 = 128;
 /// Labels are kept as raw `Vec<u8>` (not `String`) — dual-use: a non-UTF-8 label is
 /// preserved rather than rejected. On decode, compression pointers (RFC 1035 §4.1.4) are
 /// followed inline, so a decoded `Name` is always fully resolved. On encode, names are
-/// written **uncompressed** (Increment 1); real pointer emission comes later.
+/// written **uncompressed** by default ([`to_bytes`](crate::Message::to_bytes)); the
+/// [`to_compressed_bytes`](crate::Message::to_compressed_bytes) path emits suffix pointers
+/// via a shared [`CompressionDict`] carried in the sink's scratch.
 ///
 /// Modeled as a `#[bin(codec = …)]` newtype: the label codec travels with the type, so a
 /// `Name` is a plain field anywhere (mark it `#[brw(variable)]` in a fixed parent).
@@ -157,21 +160,84 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
     Ok(labels)
 }
 
-/// The label-list encoder — **uncompressed** (each label length-prefixed, then a zero
-/// terminator). A label over 63 bytes cannot be represented and is refused (its length
-/// byte would collide with the pointer/marker bit space).
+/// A message-scoped **name-compression dictionary** (RFC 1035 §4.1.4): every label-suffix
+/// written during an encode is recorded at its byte offset, so a later name ending in the
+/// same suffix is emitted as a 14-bit pointer to the first occurrence instead of repeating
+/// the labels.
+///
+/// Seed one into the sink's scratch (via `BitWriter::with_scratch`) to make
+/// [`encode_labels`] compress — that's what [`Message::to_compressed_bytes`] does. Without
+/// it, encoding stays uncompressed. Matching is exact (case-sensitive) for now — always
+/// valid, if occasionally less compact than the RFC's case-insensitive comparison.
+///
+/// [`Message::to_compressed_bytes`]: crate::Message::to_compressed_bytes
+#[derive(Debug, Default)]
+pub struct CompressionDict {
+    offsets: HashMap<Vec<Vec<u8>>, u16>,
+}
+
+impl CompressionDict {
+    /// A fresh, empty dictionary.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The byte offset of a prior occurrence of exactly this label-suffix, if recorded.
+    fn lookup(&self, suffix: &[Vec<u8>]) -> Option<u16> {
+        self.offsets.get(suffix).copied()
+    }
+
+    /// Record this suffix at `offset` (keeping the first occurrence), but only when the
+    /// offset fits the 14-bit pointer field — a name past `0x3FFF` can't be pointed to
+    /// (it still encodes, just uncompressed, and earlier pointers remain valid).
+    fn record(&mut self, suffix: Vec<Vec<u8>>, offset: usize) {
+        if offset < 0x4000 {
+            self.offsets.entry(suffix).or_insert(offset as u16);
+        }
+    }
+}
+
+/// The label-list encoder. **Uncompressed** by default; if the sink carries a
+/// [`CompressionDict`] scratch, a label-suffix that was written earlier in the message is
+/// emitted as a 14-bit compression pointer instead (RFC 1035 §4.1.4). A label over 63
+/// bytes cannot be represented and is refused (its length byte would collide with the
+/// pointer/marker bit space).
+//~ implements rfc1035#4.1.4 part="Message compression — pointer emission"
 fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError> {
-    for label in labels {
+    for (i, label) in labels.iter().enumerate() {
         if label.len() > 63 {
             return Err(BitError::convert(
                 format!("DNS label is {} bytes; the maximum is 63", label.len()),
                 w.bit_pos(),
             ));
         }
+        let offset = w.bit_pos() / 8;
+        // Consult/extend the compression dictionary if the sink carries one. The scratch
+        // borrow is scoped (the pointer copied out) so it's dropped before writing to `w`.
+        let pointer = {
+            match w
+                .scratch()
+                .and_then(|s| s.downcast_mut::<CompressionDict>())
+            {
+                Some(dict) => match dict.lookup(&labels[i..]) {
+                    Some(off) => Some(off),
+                    None => {
+                        dict.record(labels[i..].to_vec(), offset);
+                        None
+                    }
+                },
+                None => None,
+            }
+        };
+        if let Some(off) = pointer {
+            // A pointer both replaces this suffix and terminates the name.
+            return w.write(0xC000u16 | off);
+        }
         w.write(label.len() as u8)?;
         w.write_bytes(label)?;
     }
-    w.write(0u8) // root terminator
+    w.write(0u8) // root terminator (no pointer taken)
 }
 
 /// Pure name logic — parsing/rendering dotted strings, no wire codec.
@@ -264,5 +330,41 @@ mod component {
         let n = Name(vec![vec![b'a'; 64]]);
         let mut w = BitWriter::new();
         assert!(encode_labels(n.labels(), &mut w).is_err());
+    }
+
+    #[test]
+    fn a_repeated_suffix_becomes_a_pointer() {
+        // Write "example.com" at offset 0, then "www.example.com": the shared
+        // "example.com" suffix must compress to a pointer back to offset 0.
+        let mut w = BitWriter::new().with_scratch(Box::new(CompressionDict::new()));
+        encode_labels("example.com".parse::<Name>().unwrap().labels(), &mut w).unwrap();
+        encode_labels("www.example.com".parse::<Name>().unwrap().labels(), &mut w).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(
+            &bytes[..13],
+            &[
+                0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00
+            ]
+        );
+        // "www" then a pointer (0xC0 0x00) to example.com at offset 0.
+        assert_eq!(&bytes[13..], &[0x03, b'w', b'w', b'w', 0xC0, 0x00]);
+    }
+
+    #[test]
+    fn with_scratch_but_no_repeat_matches_the_uncompressed_form() {
+        let name: Name = "example.com".parse().unwrap();
+        let mut compressed = BitWriter::new().with_scratch(Box::new(CompressionDict::new()));
+        encode_labels(name.labels(), &mut compressed).unwrap();
+        // A first, unique occurrence is written in full (nothing to point at yet).
+        assert_eq!(compressed.into_bytes(), name.to_bytes().unwrap());
+    }
+
+    #[test]
+    fn offsets_past_the_14_bit_limit_are_not_recorded() {
+        let mut dict = CompressionDict::new();
+        dict.record(vec![b"com".to_vec()], 0x4000); // just past the limit
+        assert_eq!(dict.lookup(&[b"com".to_vec()]), None);
+        dict.record(vec![b"net".to_vec()], 0x3FFF); // the last valid offset
+        assert_eq!(dict.lookup(&[b"net".to_vec()]), Some(0x3FFF));
     }
 }
