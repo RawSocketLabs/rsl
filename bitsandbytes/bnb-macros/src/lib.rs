@@ -280,15 +280,20 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// `big` / `little` (byte order), `bit_order = msb|lsb`, `magic = <expr>` (a leading
 /// constant verified on read / emitted on write), `read_only` / `write_only`
 /// (directional), `no_builder`, `forward_only` (bound decoding to a forward `Source`),
-/// `ctx(name: Ty, …)` (context from the parent), and `validate = <path>` (a soundness
-/// check run by `build()` — the parser stays permissive).
+/// `ctx(name: Ty, …)` (context from the parent), `validate = <path>` (a soundness
+/// check run by `build()` — the parser stays permissive), and — on a **single-field
+/// tuple newtype** — `codec = <module>` / `codec(parse = <f>, write = <f>)` (the
+/// per-type field codec: the type's wire form is owned by the fn pair; use it as a
+/// plain field anywhere, with `#[brw(variable)]` in a fixed parent).
 ///
 /// ## Field directives
 ///
 /// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`, `map`/`try_map`
 /// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `pad_before/after`,
 /// `align_before/after`, `seek = <bits>`, `restore_position`, `dbg` (trace a field as it
-/// decodes); `#[brw(ignore)]` (neither read nor written); `#[brw(count_prefix = <Ty>)]`
+/// decodes); `#[brw(ignore)]` (neither read nor written); `#[brw(variable)]` (the
+/// field's type is a variable-length custom codec — suppresses the parent's
+/// `FixedBitLen`); `#[brw(count_prefix = <Ty>)]`
 /// on a `Vec<_>` (the length-prefixed count sugar — generates the `temp`+`calc`+`count`
 /// triad: the prefix sizes the `Vec` on read and is recomputed, **checked**, from
 /// `len()` on write; any `Bits` prefix type incl. `uN`); plus `#[reserved]` /

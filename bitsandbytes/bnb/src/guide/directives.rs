@@ -202,6 +202,55 @@
 //! assert_eq!(Packet::decode_exact(&p.to_bytes().unwrap()).unwrap(), p);
 //! ```
 //!
+//! ## Per-type codecs — `#[bin(codec = …)]` newtypes
+//!
+//! When the same codec applies to *many* fields, hoist it onto a **newtype**: a
+//! single-field tuple struct whose wire form is owned by the fn pair. The type then
+//! carries its codec everywhere — fields need no attributes at all (just
+//! `#[brw(variable)]`, below).
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! /// A LEB128-encoded u64 — annotate once, use as a plain field forever.
+//! #[bin(codec = bnb::codecs::leb128)]           // the module's `parse`/`write` pair…
+//! #[derive(Debug, Clone, Copy, PartialEq)]
+//! pub struct Varint(pub u64);
+//! // …or any fns: #[bin(codec(parse = <f>, write = <f>))] — turbofish welcome,
+//! // e.g. parse = bnb::codecs::prefixed::parse_string::<_, u16>.
+//!
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Frame {
+//!     kind: u8,
+//!     #[brw(variable)]      // a variable-length type in an otherwise-fixed parent
+//!     length: Varint,       // ← the codec travels with the type
+//!     crc: u16,
+//! }
+//!
+//! let f = Frame { kind: 1, length: Varint(300), crc: 0xBEEF };
+//! assert_eq!(f.to_bytes().unwrap(), [0x01, 0xAC, 0x02, 0xBE, 0xEF]);
+//! assert_eq!(Frame::decode_exact(&f.to_bytes().unwrap()).unwrap(), f);
+//! assert_eq!(u64::from(Varint(300)), 300); // `From` both ways comes generated
+//! ```
+//!
+//! The newtype gets `BitDecode`/`BitEncode`, the slice entry points
+//! (`decode_exact`/`decode_all`/`to_bytes`, at its own declared `big`/`little`/
+//! `bit_order` — a *field* of this type decodes through the parent's cursor), and
+//! `From` conversions both ways. It emits **no `FixedBitLen`** — a codec's wire form
+//! is assumed variable; a genuinely fixed-width codec adds the one-line manual impl
+//! (see [`mapping`](super::mapping)). `read_only`/`write_only` narrow the direction
+//! (the paren form may then omit the unneeded fn). For a one-off field, plain
+//! `parse_with`/`write_with` stays the right tool.
+//!
+//! ## `#[brw(variable)]` — a variable-length field in a fixed parent
+//!
+//! A struct with no `Vec` or codec directives normally derives `FixedBitLen` by
+//! summing its fields — which fails to compile against a variable-length custom type
+//! (the error names the missing `FixedBitLen`). `#[brw(variable)]` declares the truth:
+//! this field's width isn't fixed, so the parent never claims to be. It's harmlessly
+//! redundant on a field that is already variable (a `Vec`, a directive-bearing field).
+//!
 //! # `brw(ignore)` — a field neither read nor written
 //!
 //! `#[brw(ignore)]` consumes no wire bits: the field is `Default::default()` on read and

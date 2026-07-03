@@ -1,7 +1,9 @@
 //! **varint** — the shipped **LEB128** codec, [`bnb::codecs::leb128`]: variable-length
-//! integers (the encoding protobuf, DWARF, WASM, and git use) as one attribute pair per
-//! field, no hand-rolled loop. The codec is generic over the width — the field's declared
-//! type (`u32` vs `u64` below) pins it — and decoding is **bounded and overflow-checked**:
+//! integers (the encoding protobuf, DWARF, WASM, and git use), two ways. Per **field**:
+//! one `parse_with`/`write_with` attribute pair, generic over the width (the field's
+//! declared type — `u32` vs `u64` below — pins it). Per **type**: a `#[bin(codec = …)]`
+//! newtype that carries the codec with it, so fields need no attributes at all (just
+//! `#[brw(variable)]` in a fixed parent). Decoding is **bounded and overflow-checked**:
 //! a hostile continuation run is a clean error, where a naive hand-rolled reader would
 //! shift unbounded and panic in debug builds.
 //!
@@ -23,6 +25,24 @@ struct Record {
     #[br(parse_with = bnb::codecs::leb128::parse)]
     #[bw(write_with = bnb::codecs::leb128::write)]
     timestamp: u64,
+}
+
+// --- the per-type form: annotate once, use as a plain field everywhere ----------
+
+/// A LEB128-encoded u64 — the codec travels with the type.
+#[bin(codec = bnb::codecs::leb128)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Varint(u64);
+
+/// `kind` and `crc` are fixed-width; `#[brw(variable)]` tells the parent its width
+/// isn't fixed (so it doesn't try to claim `FixedBitLen`).
+#[bin(big)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Frame {
+    kind: u8,
+    #[brw(variable)]
+    length: Varint, // no codec attributes — the type owns them
+    crc: u16,
 }
 
 fn main() {
@@ -55,6 +75,18 @@ fn main() {
     let err = Record::decode_exact(&too_wide).unwrap_err();
     assert_eq!(err.field, Some("length"));
     println!("overflowing u32 field  -> {err}");
+
+    // The per-type form: the newtype carries the codec, the field carries nothing.
+    let f = Frame {
+        kind: 1,
+        length: Varint(300),
+        crc: 0xBEEF,
+    };
+    let bytes = f.to_bytes().unwrap();
+    assert_eq!(bytes, [0x01, 0xAC, 0x02, 0xBE, 0xEF]); // kind | varint(300) | crc
+    assert_eq!(Frame::decode_exact(&bytes).unwrap(), f);
+    assert_eq!(u64::from(Varint(300)), 300); // From both ways comes generated
+    println!("codec-newtype frame    -> {bytes:02x?}");
 
     println!("all checks passed");
 }

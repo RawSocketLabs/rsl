@@ -284,11 +284,20 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       LEB128/zigzag deferred until a port demands them. Adopted by the `varint`/`cstring`
       examples; `dns` keeps its hand-rolled name codec (compression-pointer chasing is
       DNS-specific — the roll-your-own flagship).
-- [ ] **[additive · decision] Reusable *per-type* field codec.** `parse_with`/`write_with` must be
-      repeated on every field of the same shape (`varint` annotates both `length` and `timestamp`).
-      The new `wire`/`map` mapping is *struct*-level only — there is no "type `T` always encodes this
-      way" at *field* level. Decide: a reusable field-codec trait (impl once, reference by type) vs.
-      documenting the newtype-+-`wire` workaround.
+- [x] **[shipped] Reusable *per-type* field codec → codec newtypes + `#[brw(variable)]`.**
+      Decided as the **newtype form, not a trait** (a fn pair reused via the type system — no new
+      coherence surface, and the field codec was already uniformly `BitDecode`, so the mechanism
+      existed; the macro just removes the boilerplate). `#[bin(codec = <module>)]` (the module's
+      `parse`/`write`, e.g. `bnb::codecs::leb128`) or `#[bin(codec(parse = <f>, write = <f>))]`
+      on a single-field tuple struct generates the delegating `BitDecode`/`BitEncode`, the slice
+      entry points, and `From` both ways — annotate once, use as a plain field everywhere
+      (`varint`'s `length`/`timestamp` repetition collapses to a bare `Varint` field type). The
+      companion **`#[brw(variable)]`** field marker (anticipated by the finding below) suppresses
+      the parent's `FixedBitLen` so a variable-length newtype embeds in an otherwise-fixed
+      struct — and the missing-marker case is a clear, field-spanned compile error (pinned by
+      `ui/bin_codec_needs_variable`). No `FixedBitLen` on the newtype (variable assumed; fixed
+      codecs add the manual one-liner). Per-field `parse_with`/`write_with` stays the right tool
+      for one-offs. `tests/bin_codec_newtype.rs`; guide § "Per-type codecs".
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building
@@ -297,9 +306,9 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       the one-liner is self-documenting ("fixed *because* the wire is") and fails locally and
       truthfully when the wire is variable. An opt-in `#[bin(wire = W, fixed)]` flag remains a
       purely additive follow-up if the Section A ports show the one-liner is a recurring paper
-      cut. Note the interaction with the per-type-field-codec item above: a `#[brw(variable)]`
-      field marker attacks the same problem from the parent's side and would reduce how often
-      `FixedBitLen` matters at all.
+      cut. Note the interaction with the per-type-field-codec item above: the `#[brw(variable)]`
+      field marker (**since shipped**, alongside codec newtypes) attacks the same problem from
+      the parent's side and reduces how often `FixedBitLen` matters at all.
 - [x] **[correctness · RESOLVED — it was a real bug] LSB × byte-order semantics.** Validating
       against the *specified* DBC-Intel reference (`raw |= v << start; frame = raw.to_le_bytes()`
       — the formula embedded in the tests, not a tool's output) showed `lsb`+`little` did **not**

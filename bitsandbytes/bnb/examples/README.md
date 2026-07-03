@@ -39,7 +39,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `wire_map` | **Struct-level wire mapping** (`#[bin(wire = W)]`): a logical type serialized via a separate wire type through `From`/`From<&Self>` impls — reusable in-program, nests via a one-line `FixedBitLen` | `--example wire_map` |
 | `wire_map_dynamic` | The other wire-mapping forms: a **variable-length** wire (`String` over a length prefix), the inline **closure** form (`map`/`bw_map`), and the fallible **`try_wire`** (`TryFrom`) | `--example wire_map_dynamic` |
-| `varint` | **`bnb::codecs::leb128`** — the shipped LEB128 codec on two widths (`u32`/`u64`), plus the bounded-decode guarantee | `--example varint` |
+| `varint` | **`bnb::codecs::leb128`** — the shipped LEB128 codec per-field (two widths) and per-type (a `#[bin(codec = …)]` newtype + `#[brw(variable)]`), plus the bounded-decode guarantee | `--example varint` |
 | `cstring` | **`bnb::codecs::cstring`** — the shipped NUL-terminated codec, raw-bytes and UTF-8 `String` forms, checked embedded-NUL write | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
 | `try_str` | **`#[try_str]`** — a `Debug` hint: a byte buffer prints as a string when valid UTF-8, else hex bytes (never lossy) | `--example try_str` |
@@ -78,6 +78,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
 | `count_prefix` (the length-prefixed count sugar) | tlv, telemetry, bin_message, ctx_length |
+| `codec` newtypes + `#[brw(variable)]` (per-type field codecs) | varint |
 | `temp`/`calc` | most `#[bin]` examples |
 | `map` | conditional, ipv4, heartbeat |
 | `try_map` | checked, versioned, versioned_cells |

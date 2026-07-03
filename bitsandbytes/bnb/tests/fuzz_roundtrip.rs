@@ -86,6 +86,21 @@ mod property {
         body: u16,
     }
 
+    /// A codec newtype — the per-type dual of the per-field attrs in `Coded` below.
+    #[bin(codec = bnb::codecs::leb128)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct VarU64(u64);
+
+    /// The flagship embedding: a variable-length newtype in an otherwise-fixed parent.
+    #[bin(big)]
+    #[derive(Debug, Clone, PartialEq)]
+    struct VarFrame {
+        kind: u8,
+        #[brw(variable)]
+        length: VarU64,
+        crc: u16,
+    }
+
     /// The shipped `bnb::codecs` library through `#[bin]` — leb128 (two widths),
     /// a length-prefixed String, and a NUL-terminated byte run.
     #[bin(big)]
@@ -133,6 +148,33 @@ mod property {
             let c = Counted { items: items.clone() };
             let decoded = Counted::decode_exact(&c.to_bytes().unwrap()).unwrap();
             prop_assert_eq!(decoded.items, items);
+        }
+
+        #[test]
+        fn codec_newtype_roundtrips(v in any::<u64>()) {
+            let bytes = VarU64(v).to_bytes().unwrap();
+            prop_assert_eq!(VarU64::decode_exact(&bytes).unwrap(), VarU64(v));
+        }
+
+        #[test]
+        fn codec_newtype_matches_per_field_attrs(v in any::<u64>()) {
+            // The newtype's wire bytes are identical to the same value written through
+            // the per-field parse_with/write_with attrs (`Coded.big`) — pure reuse,
+            // not a different encoding.
+            let newtype_bytes = VarU64(v).to_bytes().unwrap();
+            let field = Coded {
+                small: 0, big: v, title: String::new(), tail: Vec::new()
+            };
+            let field_bytes = field.to_bytes().unwrap();
+            // Coded layout: small varint (1 byte for 0) | big varint | u16 title len (2) | NUL (1)
+            prop_assert_eq!(&field_bytes[1..1 + newtype_bytes.len()], &newtype_bytes[..]);
+        }
+
+        #[test]
+        fn variable_frame_roundtrips(kind in any::<u8>(), v in any::<u64>(), crc in any::<u16>()) {
+            let f = VarFrame { kind, length: VarU64(v), crc };
+            let bytes = f.to_bytes().unwrap();
+            prop_assert_eq!(VarFrame::decode_exact(&bytes).unwrap(), f);
         }
 
         #[test]

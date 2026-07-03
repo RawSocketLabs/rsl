@@ -1,0 +1,5 @@
+error: `codec` applies to a single-field tuple struct (a newtype), not an enum
+ --> tests/ui/bin_codec_on_enum.rs:5:6
+  |
+5 | enum Message {
+  |      ^^^^^^^

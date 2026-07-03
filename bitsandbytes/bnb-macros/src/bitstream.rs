@@ -241,6 +241,11 @@ struct FieldBr {
     /// only, `Default::default()` on read (no input consumed) and skipped on write.
     /// Spelled with `brw` because it applies to both directions.
     ignore: bool,
+    /// `#[brw(variable)]` — the field's type has a **variable-length** custom
+    /// `BitDecode`/`BitEncode` (e.g. a `#[bin(codec = …)]` newtype): marks the parent's
+    /// width indeterminate, so it never claims `FixedBitLen`. Redundant (and harmless)
+    /// on a field that is already indeterminate (a `Vec`, a directive-bearing field).
+    variable: bool,
     /// `#[br(map = <f>)]` — read the wire value `f`'s argument types, then `f(raw)`
     /// gives the field. `#[br(try_map = <f>)]` is the fallible form (`f` returns a
     /// `Result`); they are mutually exclusive.
@@ -414,6 +419,9 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 if meta.path.is_ident("ignore") {
                     br.ignore = true;
                     Ok(())
+                } else if meta.path.is_ident("variable") {
+                    br.variable = true;
+                    Ok(())
                 } else if meta.path.is_ident("count_prefix") {
                     // Under `#[bin]` the desugar strips this directive before the field
                     // ever reaches this parser — so reaching it means a bare derive.
@@ -425,7 +433,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     ))
                 } else {
                     Err(meta.error(
-                        "unknown `#[brw(...)]` directive; expected `ignore` or `count_prefix = <Ty>`",
+                        "unknown `#[brw(...)]` directive; expected `ignore`, `variable`, or `count_prefix = <Ty>`",
                     ))
                 }
             })?;
@@ -457,7 +465,8 @@ fn field_is_ignore(f: &syn::Field) -> bool {
 /// indeterminate, so it is exempt from the alignment guard and the message never
 /// implements `FixedBitLen`: a `ctx` child (not `Bits`/`FixedBitLen`), a conditional
 /// `if` (present or absent), a custom codec (`map`/`try_map`/`parse_with`/`write_with`,
-/// whose wire shape lives in the converter), or a positioning directive
+/// whose wire shape lives in the converter), an explicit `#[brw(variable)]` (a
+/// variable-length custom-`BitDecode` field type), or a positioning directive
 /// (`pad_*`/`align_*`/`seek`/`restore_position`, which shifts the cursor).
 fn br_indeterminate(br: &FieldBr) -> bool {
     br.ctx.is_some()
@@ -467,6 +476,7 @@ fn br_indeterminate(br: &FieldBr) -> bool {
         || br.bw_map.is_some()
         || br.parse_with.is_some()
         || br.write_with.is_some()
+        || br.variable
         || br.pad_before.is_some()
         || br.pad_after.is_some()
         || br.align_before
@@ -1655,6 +1665,13 @@ struct BinArgs {
     /// `try_wire = WireType` — the fallible form of [`wire`](Self::wire): decode is
     /// `Self::try_from(wire)` (needs `TryFrom<WireType> for Self`, `Error: Display`).
     try_wire: Option<Type>,
+    /// `codec = <module>` (desugared at parse time to `<module>::parse` /
+    /// `<module>::write`) or `codec(parse = <f>, write = <f>)` — a **per-type codec**:
+    /// this single-field tuple struct's wire form is owned by the fn pair (the reusable
+    /// dual of the per-field `parse_with`/`write_with`). Either fn may be absent under
+    /// the paren form when `read_only`/`write_only` narrows the direction.
+    codec_parse: Option<syn::Expr>,
+    codec_write: Option<syn::Expr>,
 }
 
 impl BinArgs {
@@ -1667,6 +1684,30 @@ impl BinArgs {
             || self.bw_map.is_some()
             || self.wire.is_some()
             || self.try_wire.is_some()
+    }
+
+    /// Whether a per-type codec is set (either form, either direction).
+    fn has_codec(&self) -> bool {
+        self.codec_parse.is_some() || self.codec_write.is_some()
+    }
+}
+
+/// One `parse = <expr>` / `write = <expr>` entry inside `#[bin(codec(...))]`. The expr
+/// swallows a full turbofish path (`prefixed::parse_string::<_, u16>` is one expression),
+/// so the comma-separated entries split correctly.
+struct CodecFn {
+    name: Ident,
+    expr: syn::Expr,
+}
+
+impl Parse for CodecFn {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+        Ok(CodecFn {
+            name,
+            expr: input.parse()?,
+        })
     }
 }
 
@@ -1721,12 +1762,57 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.wire = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("try_wire") {
             args.try_wire = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("codec") {
+            if args.has_codec() {
+                return Err(meta.error("duplicate `codec`"));
+            }
+            if meta.input.peek(Token![=]) {
+                // `codec = <module>` — shorthand for the module's `parse`/`write` pair.
+                let m: syn::Path = meta.value()?.parse()?;
+                args.codec_parse = Some(syn::parse_quote!(#m::parse));
+                args.codec_write = Some(syn::parse_quote!(#m::write));
+            } else {
+                // `codec(parse = <f>, write = <f>)` — the general form (any fn names,
+                // turbofish allowed); either entry may be omitted under a directional
+                // struct (checked in `bin_struct_codec`).
+                let content;
+                syn::parenthesized!(content in meta.input);
+                let fns = Punctuated::<CodecFn, Token![,]>::parse_terminated(&content)?;
+                for f in fns {
+                    match f.name.to_string().as_str() {
+                        "parse" => {
+                            if args.codec_parse.is_some() {
+                                return Err(syn::Error::new_spanned(&f.name, "duplicate `parse`"));
+                            }
+                            args.codec_parse = Some(f.expr);
+                        }
+                        "write" => {
+                            if args.codec_write.is_some() {
+                                return Err(syn::Error::new_spanned(&f.name, "duplicate `write`"));
+                            }
+                            args.codec_write = Some(f.expr);
+                        }
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                &f.name,
+                                "unknown `codec(...)` entry; expected `parse = <fn>` and/or `write = <fn>`",
+                            ));
+                        }
+                    }
+                }
+                if !args.has_codec() {
+                    return Err(meta.error(
+                        "empty `codec(...)`; expected `parse = <fn>` and/or `write = <fn>`",
+                    ));
+                }
+            }
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
                  ctx(name: Ty, …), validate = <path>, tag = <ctx-param>, \
-                 map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType",
+                 map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType, \
+                 codec = <module>, or codec(parse = <f>, write = <f>)",
             ));
         }
         Ok(())
@@ -1739,6 +1825,13 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             "`read_only` and `write_only` are mutually exclusive",
         ));
     }
+    if args.has_codec() && args.is_mapped() {
+        return Err(syn::Error::new(
+            ::proc_macro2::Span::call_site(),
+            "`codec` and struct-level wire mapping (`map`/`try_map`/`bw_map`/`wire`/`try_wire`) \
+             are mutually exclusive — a codec newtype's fns own its wire form",
+        ));
+    }
     match syn::parse::<syn::Item>(item)? {
         syn::Item::Struct(s) => bin_struct(&args, &s),
         syn::Item::Enum(e) => {
@@ -1748,6 +1841,12 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
                     "struct-level wire mapping (`map`/`try_map`/`bw_map`/`wire`/`try_wire`) applies \
                      to a `#[bin]` struct, not an enum — map the enum's variant fields, or wrap \
                      the enum in a mapped struct",
+                ));
+            }
+            if args.has_codec() {
+                return Err(syn::Error::new_spanned(
+                    &e.ident,
+                    "`codec` applies to a single-field tuple struct (a newtype), not an enum",
                 ));
             }
             bin_enum(&args, &e)
@@ -1999,10 +2098,190 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     })
 }
 
+/// The **codec newtype** `#[bin]` path: a single-field tuple struct whose wire form is
+/// owned by a `parse`/`write` fn pair — `#[bin(codec = <module>)]` (the module's
+/// `parse`/`write`) or `#[bin(codec(parse = <f>, write = <f>))]`. The reusable
+/// *per-type* dual of the per-field `parse_with`/`write_with` escape hatch: annotate
+/// once, use as a plain field everywhere. Like the mapped path it emits no
+/// `FixedBitLen` (a codec's wire form is assumed variable — a fixed-width codec adds
+/// the one-liner by hand); embed one in an otherwise-fixed parent with
+/// `#[brw(variable)]` on the field. Also emits `From<Inner> for Self` and
+/// `From<Self> for Inner` (in-memory conversions, both directions regardless of
+/// `read_only`/`write_only`).
+fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
+    let name = &s.ident;
+    let vis = &s.vis;
+
+    if !s.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &s.generics,
+            "#[bin] does not support generic parameters yet",
+        ));
+    }
+    // The codec fns own the framing — the whole-message options don't apply here.
+    for (opt, set) in [
+        ("magic", args.magic.is_some()),
+        ("ctx", !args.ctx.is_empty()),
+        ("validate", args.validate.is_some()),
+        ("tag", args.tag.is_some()),
+    ] {
+        if set {
+            return Err(syn::Error::new_spanned(
+                &s.ident,
+                format!(
+                    "`{opt}` is not supported on a `#[bin(codec = …)]` newtype — the codec \
+                     functions own the framing; move it into (or wrap) the codec fns, or use \
+                     a full `#[bin]` struct"
+                ),
+            ));
+        }
+    }
+    let inner_ty = match &s.fields {
+        Fields::Unnamed(u) if u.unnamed.len() == 1 => &u.unnamed.first().expect("len checked").ty,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &s.ident,
+                "`codec` applies to a single-field tuple struct (a newtype), e.g. \
+                 `#[bin(codec = bnb::codecs::leb128)] pub struct Varint(pub u64);` — for a \
+                 one-off field use `#[br(parse_with = …)]`/`#[bw(write_with = …)]` instead",
+            ));
+        }
+    };
+    // Directional narrowing: an unneeded fn is silently unused (the module shorthand
+    // always synthesizes both), but a *needed* one must be present.
+    let (has_decode, has_encode) = (!args.write_only, !args.read_only);
+    if has_decode && args.codec_parse.is_none() {
+        return Err(syn::Error::new_spanned(
+            &s.ident,
+            "this codec has no `parse` function — add `parse = <f>` inside `codec(...)`, \
+             or mark the struct `write_only`",
+        ));
+    }
+    if has_encode && args.codec_write.is_none() {
+        return Err(syn::Error::new_spanned(
+            &s.ident,
+            "this codec has no `write` function — add `write = <f>` inside `codec(...)`, \
+             or mark the struct `read_only`",
+        ));
+    }
+
+    // The newtype's own declared order backs its slice entry points (`decode_all`/
+    // `to_bytes`); a *field* of this type decodes through the parent's cursor, where
+    // the parent's layout governs. There is no wire type to borrow `LAYOUT` from.
+    let layout = layout_token(&BitStreamAttrs {
+        allow_byte_aligned: true, // inert here (no guard runs on this path)
+        lsb: args.lsb,
+        little: args.little,
+        magic: None,
+        ctx: Vec::new(),
+    });
+
+    let decode_ts = if has_decode {
+        let parse_fn = args.codec_parse.as_ref().expect("checked above");
+        quote! {
+            impl #bnb::__private::BitDecode for #name {
+                fn bit_decode<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    // The codec fn's `BitError` passes through untouched: the *parent's*
+                    // field read wraps it with `in_field` (innermost-wins), so wrapping
+                    // here would steal the parent's field name.
+                    ::core::result::Result::Ok(Self((#parse_fn)(__bnb_r)?))
+                }
+            }
+
+            impl #name {
+                #[doc = "Decode one value from a `Source` cursor (via this type's codec functions)."]
+                #vis fn decode<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
+                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
+                }
+                #[doc = "Decode every value from `bytes` into a `Vec` (at this type's declared layout)."]
+                #vis fn decode_all(
+                    bytes: &[u8],
+                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
+                    #bnb::__private::decode_all(bytes, #layout)
+                }
+                #[doc = "A lazy iterator decoding successive values from `bytes`."]
+                #vis fn decode_iter(
+                    bytes: &[u8],
+                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_
+                {
+                    #bnb::__private::decode_iter(bytes, #layout)
+                }
+                #[doc = "Decode one value without consuming the buffer (tail-tolerant)."]
+                #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_peek(bytes, #layout)
+                }
+                #[doc = "Decode and require every whole byte consumed."]
+                #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                    #bnb::__private::decode_exact(bytes, #layout)
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
+    let encode_ts = if has_encode {
+        let write_fn = args.codec_write.as_ref().expect("checked above");
+        quote! {
+            impl #bnb::__private::BitEncode for #name {
+                const LAYOUT: #bnb::__private::Layout = #layout;
+                fn bit_encode<__K: #bnb::__private::Sink>(
+                    &self,
+                    __bnb_w: &mut __K,
+                ) -> ::core::result::Result<(), #bnb::__private::BitError> {
+                    (#write_fn)(&self.0, __bnb_w)
+                }
+            }
+
+            impl #name {
+                #[doc = "Encode to a fresh `Vec` (via this type's codec functions)."]
+                #vis fn to_bytes(
+                    &self,
+                ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
+                    #bnb::__private::encode_to_vec(self, #layout)
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
+    // In-memory conversions, both directions regardless of the wire direction. Emitted
+    // in the struct's own module scope, so a private `.0` is still reachable.
+    let from_ts = quote! {
+        impl ::core::convert::From<#inner_ty> for #name {
+            fn from(v: #inner_ty) -> Self {
+                Self(v)
+            }
+        }
+        impl ::core::convert::From<#name> for #inner_ty {
+            fn from(v: #name) -> Self {
+                v.0
+            }
+        }
+    };
+
+    // No `FixedBitLen` is emitted: a codec's wire form is assumed variable-length. A
+    // fixed-width codec opts in with the one-line manual impl (same doctrine as the
+    // mapped path above); a variable one embeds in a fixed parent via `#[brw(variable)]`.
+    Ok(quote! {
+        #s
+        #decode_ts
+        #encode_ts
+        #from_ts
+    })
+}
+
 /// One `#[brw(...)]` directive — the bidirectional attr carries only the directives
-/// that genuinely act on both sides (`ignore`, `count_prefix`).
+/// that genuinely act on both sides (`ignore`, `variable`, `count_prefix`).
 enum BrwDirective {
     Ignore,
+    Variable,
     CountPrefix(Box<syn::Type>),
 }
 
@@ -2011,13 +2290,14 @@ impl Parse for BrwDirective {
         let kw: Ident = input.parse()?;
         match kw.to_string().as_str() {
             "ignore" => Ok(BrwDirective::Ignore),
+            "variable" => Ok(BrwDirective::Variable),
             "count_prefix" => {
                 input.parse::<Token![=]>()?;
                 Ok(BrwDirective::CountPrefix(Box::new(input.parse()?)))
             }
             _ => Err(syn::Error::new_spanned(
                 kw,
-                "unknown `#[brw(...)]` directive; expected `ignore` or `count_prefix = <Ty>`",
+                "unknown `#[brw(...)]` directive; expected `ignore`, `variable`, or `count_prefix = <Ty>`",
             )),
         }
     }
@@ -2054,6 +2334,7 @@ fn extract_count_prefix(f: &mut syn::Field) -> syn::Result<Option<syn::Type>> {
         for d in directives {
             match d {
                 BrwDirective::Ignore => rebuilt.push(syn::parse_quote!(#[brw(ignore)])),
+                BrwDirective::Variable => rebuilt.push(syn::parse_quote!(#[brw(variable)])),
                 BrwDirective::CountPrefix(ty) => {
                     if found.is_some() {
                         return Err(syn::Error::new_spanned(&attr, "duplicate `count_prefix`"));
@@ -2168,6 +2449,9 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     if args.is_mapped() {
         return bin_struct_mapped(args, s);
+    }
+    if args.has_codec() {
+        return bin_struct_codec(args, s);
     }
     if args.tag.is_some() {
         return Err(syn::Error::new_spanned(

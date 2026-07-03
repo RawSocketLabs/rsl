@@ -120,12 +120,25 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   closure param/`bw_map` return. The two forms are mutually exclusive with each other; both reject
   `magic`/`ctx`/`validate`/`tag`; struct only (not enums). `read_only`/`write_only` narrow the
   direction. See `guide::mapping`, `tests/bin_wire_map.rs`.
+- **Per-type codec newtypes (`bin_struct_codec`):** `#[bin(codec = <module>)]` (the module's
+  `parse`/`write` fns, e.g. `bnb::codecs::leb128`) or `#[bin(codec(parse = <f>, write = <f>))]`
+  (any fns, turbofish allowed) on a **single-field tuple struct** — the reusable per-type dual
+  of the per-field `parse_with`/`write_with`. Emits `BitDecode`/`BitEncode` delegating to the
+  fn pair, the slice entry points (at the newtype's own declared order; a *field* decodes
+  through the parent's cursor), and `From<Inner> for Self` / `From<Self> for Inner`. **No
+  `FixedBitLen`** (variable assumed — a fixed codec adds the manual one-liner); embed one in an
+  otherwise-fixed parent with **`#[brw(variable)]`** on the field (suppresses the parent's
+  `FixedBitLen` claim). Rejects `magic`/`ctx`/`validate`/`tag` and mixing with wire mapping;
+  `read_only`/`write_only` narrow (the paren form may then omit the unneeded fn). See
+  `tests/bin_codec_newtype.rs`.
 - **Field directives** (the inherited grammar): `#[br]`/`#[bw]`/`#[brw]` with
   `magic`, `count`, `count_prefix` (the length-prefixed count sugar: `#[brw(count_prefix
   = u16)]` on a `Vec` desugars to the temp+calc+count triad; any `Bits` prefix type incl.
   `uN`; checked at encode — an oversized `len()` is a `BitError`, never a wrapped
   prefix; `#[bin]`-only), `ctx`/`args`, `map`/`try_map`, `if`, `calc`/`temp`,
-  `reserved`/`reserved_with`, `parse_with`/`write_with`, `pad_before`/`pad_after`/
+  `reserved`/`reserved_with`, `parse_with`/`write_with`, `variable` (`#[brw(variable)]` —
+  the field's type is a variable-length custom codec; the parent skips `FixedBitLen`),
+  `pad_before`/`pad_after`/
   `align_*`/`seek`/`restore_position`, and `assert`/`validate`. Positioning amounts
   use the `prelude` typed helpers (`4.bits()`, `3.bytes()`).
 - **I/O ladder** (`bnb::bitstream`): `Source`/`Sink` (the bit cursors), the
