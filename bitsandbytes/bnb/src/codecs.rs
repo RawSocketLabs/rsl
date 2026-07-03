@@ -272,7 +272,6 @@ pub mod prefixed {
     use crate::bitstream::{BitError, CountPrefix, Sink, Source};
     use alloc::format;
     use alloc::string::{String, ToString};
-    use alloc::vec::Vec;
 
     /// Reads a `P` byte-length prefix, then that many bytes, UTF-8-validated.
     ///

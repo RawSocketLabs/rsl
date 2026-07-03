@@ -246,6 +246,39 @@
 //! assert_eq!(Packet::decode_exact(&p.to_bytes().unwrap()).unwrap(), p);
 //! ```
 //!
+//! ## Shared encode state — [`Sink::scratch`](crate::Sink::scratch)
+//!
+//! A `write_with` sees only its own field and the `Sink`. When a codec needs mutable state
+//! shared across *every* field of a message — a **back-reference / compression dictionary**
+//! (e.g. DNS name compression: a repeated name becomes a pointer to the first occurrence) —
+//! attach it to the sink with [`BitWriter::with_scratch`](crate::BitWriter::with_scratch) and
+//! reach it via `w.scratch()` + [`downcast_mut`](core::any::Any::downcast_mut). The sink is the
+//! one `&mut` threaded through all fields, so the value is visible to them all; it is dropped on
+//! `into_bytes` and never written. (Scope the borrow — copy what you need out before calling
+//! `w.write`.)
+//!
+//! ```
+//! use bnb::{bin, BitEncode, BitWriter, Sink, BitError, Source};
+//!
+//! // First write of a byte records its offset; a repeat emits a 0xFF marker + that offset.
+//! fn backref<K: Sink>(v: &u8, w: &mut K) -> Result<(), BitError> {
+//!     let at = (w.bit_pos() / 8) as u8;
+//!     let prior = w.scratch()
+//!         .and_then(|s| s.downcast_mut::<std::collections::HashMap<u8, u8>>())
+//!         .and_then(|d| match d.get(v).copied() { Some(o) => Some(o), None => { d.insert(*v, at); None } });
+//!     match prior { Some(o) => { w.write(0xFFu8)?; w.write(o) } None => w.write(*v) }
+//! }
+//! fn read<S: Source>(r: &mut S) -> Result<u8, BitError> { r.read() }
+//!
+//! #[bin(big)]
+//! struct M { #[bw(write_with = backref)] #[br(parse_with = read)] a: u8,
+//!            #[bw(write_with = backref)] #[br(parse_with = read)] b: u8 }
+//!
+//! let mut w = BitWriter::new().with_scratch(Box::new(std::collections::HashMap::<u8, u8>::new()));
+//! M { a: 7, b: 7 }.bit_encode(&mut w).unwrap();
+//! assert_eq!(w.into_bytes(), [7, 0xFF, 0x00]); // second 7 → back-reference to offset 0
+//! ```
+//!
 //! ## Per-type codecs — `#[bin(codec = …)]` newtypes
 //!
 //! When the same codec applies to *many* fields, hoist it onto a **newtype**: a

@@ -301,6 +301,7 @@ pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
 pub fn bnb::bitstream::BitWriter::new() -> Self
 pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
 pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
+pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
@@ -308,22 +309,23 @@ pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWri
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitWriter
-pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::clone(&self) -> Self
 impl core::default::Default for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
 impl core::fmt::Debug for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::bitstream::BitWriter
-impl core::marker::Send for bnb::bitstream::BitWriter
-impl core::marker::Sync for bnb::bitstream::BitWriter
+impl !core::marker::Send for bnb::bitstream::BitWriter
+impl !core::marker::Sync for bnb::bitstream::BitWriter
 impl core::marker::Unpin for bnb::bitstream::BitWriter
 impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
-impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
+impl !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
 impl<T, U> core::convert::Into<U> for bnb::bitstream::BitWriter where U: core::convert::From<T>
 pub fn bnb::bitstream::BitWriter::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitWriter where U: core::convert::Into<T>
@@ -459,6 +461,7 @@ pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, S
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -469,12 +472,12 @@ pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
 impl core::fmt::Debug for bnb::BytesWriter
 pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::BytesWriter
-impl core::marker::Send for bnb::BytesWriter
-impl core::marker::Sync for bnb::BytesWriter
+impl !core::marker::Send for bnb::BytesWriter
+impl !core::marker::Sync for bnb::BytesWriter
 impl core::marker::Unpin for bnb::BytesWriter
 impl core::marker::UnsafeUnpin for bnb::BytesWriter
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
-impl core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
+impl !core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
 impl<T, U> core::convert::Into<U> for bnb::BytesWriter where U: core::convert::From<T>
 pub fn bnb::BytesWriter::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for bnb::BytesWriter where U: core::convert::Into<T>
@@ -891,6 +894,7 @@ pub fn bnb::bitstream::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'
 pub fn bnb::bitstream::Sink::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::Sink::bit_pos(&self) -> usize
 pub fn bnb::bitstream::Sink::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::Sink::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::bitstream::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::Sink::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -899,6 +903,7 @@ pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, S
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -907,6 +912,7 @@ pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWri
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -2282,6 +2288,7 @@ pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
 pub fn bnb::bitstream::BitWriter::new() -> Self
 pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
 pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
+pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
@@ -2289,22 +2296,23 @@ pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWri
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitWriter
-pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
+pub fn bnb::bitstream::BitWriter::clone(&self) -> Self
 impl core::default::Default for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
 impl core::fmt::Debug for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::bitstream::BitWriter
-impl core::marker::Send for bnb::bitstream::BitWriter
-impl core::marker::Sync for bnb::bitstream::BitWriter
+impl !core::marker::Send for bnb::bitstream::BitWriter
+impl !core::marker::Sync for bnb::bitstream::BitWriter
 impl core::marker::Unpin for bnb::bitstream::BitWriter
 impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
-impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::BitWriter
+impl !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::BitWriter
 impl<T, U> core::convert::Into<U> for bnb::bitstream::BitWriter where U: core::convert::From<T>
 pub fn bnb::bitstream::BitWriter::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::BitWriter where U: core::convert::Into<T>
@@ -2440,6 +2448,7 @@ pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, S
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -2450,12 +2459,12 @@ pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
 impl core::fmt::Debug for bnb::BytesWriter
 pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::BytesWriter
-impl core::marker::Send for bnb::BytesWriter
-impl core::marker::Sync for bnb::BytesWriter
+impl !core::marker::Send for bnb::BytesWriter
+impl !core::marker::Sync for bnb::BytesWriter
 impl core::marker::Unpin for bnb::BytesWriter
 impl core::marker::UnsafeUnpin for bnb::BytesWriter
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
-impl core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::BytesWriter
+impl !core::panic::unwind_safe::UnwindSafe for bnb::BytesWriter
 impl<T, U> core::convert::Into<U> for bnb::BytesWriter where U: core::convert::From<T>
 pub fn bnb::BytesWriter::into(self) -> U
 impl<T, U> core::convert::TryFrom<U> for bnb::BytesWriter where U: core::convert::Into<T>
@@ -3513,6 +3522,7 @@ pub fn bnb::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> wh
 pub fn bnb::Sink::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::Sink::bit_pos(&self) -> usize
 pub fn bnb::Sink::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::Sink::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::Sink::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -3521,6 +3531,7 @@ pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, S
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -3529,6 +3540,7 @@ pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWri
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mut dyn core::any::Any>
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>

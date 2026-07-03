@@ -27,8 +27,10 @@
 //! assert_eq!(r.read::<u12>().unwrap(), u12::new(0xBCD));
 //! ```
 
+use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::any::Any;
 use core::fmt;
 
 use crate::field::{BitOrder, Bits, ByteOrder};
@@ -726,12 +728,41 @@ impl<'a> BitReader<'a> {
 /// assert_eq!(w.bit_len(), 16);
 /// assert_eq!(w.into_bytes(), [0xAB, 0xCD]);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Default)]
 pub struct BitWriter {
     bytes: Vec<u8>,
     bit_pos: usize,
     order: BitOrder,
     byte: ByteOrder,
+    /// Optional per-encode scratch (see [`Sink::scratch`]); not part of the written bytes.
+    scratch: Option<Box<dyn Any>>,
+}
+
+// Hand-written so the public `Clone`/`Debug` API survives the (un-`Clone`, un-`Debug`)
+// `scratch` slot. Cloning starts a fresh encode session, so the scratch is **not**
+// carried (a clone gets `None`); `Debug` reports only its presence.
+impl Clone for BitWriter {
+    fn clone(&self) -> Self {
+        Self {
+            bytes: self.bytes.clone(),
+            bit_pos: self.bit_pos,
+            order: self.order,
+            byte: self.byte,
+            scratch: None,
+        }
+    }
+}
+
+impl fmt::Debug for BitWriter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BitWriter")
+            .field("bytes", &self.bytes)
+            .field("bit_pos", &self.bit_pos)
+            .field("order", &self.order)
+            .field("byte", &self.byte)
+            .field("scratch", &self.scratch.is_some())
+            .finish()
+    }
 }
 
 impl BitWriter {
@@ -758,7 +789,31 @@ impl BitWriter {
             bit_pos: 0,
             order: layout.bit,
             byte: layout.byte,
+            scratch: None,
         }
+    }
+
+    /// Attach a type-erased **scratch** value, reachable from any codec during the encode
+    /// via [`Sink::scratch`] and recovered by [`downcast_mut`](Any::downcast_mut).
+    ///
+    /// The escape hatch for codecs that need mutable state shared across a whole message's
+    /// fields — a back-reference / compression dictionary (e.g. DNS name compression). The
+    /// scratch lives for the encode and is dropped by [`into_bytes`](Self::into_bytes); it
+    /// is never written to the output and is not carried by [`Clone`].
+    ///
+    /// ```
+    /// use bnb::{BitWriter, Sink};
+    ///
+    /// let mut w = BitWriter::new().with_scratch(Box::new(0u32));
+    /// if let Some(n) = w.scratch().and_then(|s| s.downcast_mut::<u32>()) {
+    ///     *n += 1;
+    /// }
+    /// assert_eq!(w.scratch().and_then(|s| s.downcast_ref::<u32>()), Some(&1));
+    /// ```
+    #[must_use]
+    pub fn with_scratch(mut self, scratch: Box<dyn Any>) -> Self {
+        self.scratch = Some(scratch);
+        self
     }
 
     /// Bits written so far.
@@ -990,6 +1045,19 @@ pub trait Sink {
         BitOrder::Msb
     }
 
+    /// A type-erased, **encode-scoped scratch** value for codecs that need mutable state
+    /// shared across a whole message's fields — a back-reference / compression dictionary
+    /// (e.g. DNS name compression). Recover the concrete type with
+    /// [`downcast_mut`](Any::downcast_mut).
+    ///
+    /// Returns `None` unless the sink was built carrying one (see
+    /// [`BitWriter::with_scratch`]); the default sink has none. The scratch is the shared
+    /// thread the `Sink` already provides — since one sink is passed by `&mut` through
+    /// every field's encode, a value stored here is visible to them all.
+    fn scratch(&mut self) -> Option<&mut dyn Any> {
+        None
+    }
+
     /// Appends one [`Bits`] value of its declared width, applying the byte order.
     ///
     /// # Errors
@@ -1090,6 +1158,10 @@ impl Sink for BitWriter {
     #[inline]
     fn bit_order(&self) -> BitOrder {
         self.order
+    }
+    #[inline]
+    fn scratch(&mut self) -> Option<&mut dyn Any> {
+        self.scratch.as_deref_mut()
     }
 }
 

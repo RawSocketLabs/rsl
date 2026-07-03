@@ -76,6 +76,12 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 - [x] `BitReader`/`BitWriter` — bit cursors over a byte buffer (seek is free cursor
       math; no `Seek` trait).
+- [x] **`Sink::scratch`** — a type-erased, encode-scoped scratch slot (`BitWriter::with_scratch`)
+      reachable from any `write_with`/codec fn, for codecs that need mutable state **shared across
+      a whole message's fields** — a back-reference / compression dictionary. The sink is already
+      the single `&mut` threaded through every field's encode, so a value stored on it is visible
+      to them all; recover it with `Any::downcast_mut`. Zero `unsafe`. Surfaced + driven by the DNS
+      name-compression port (the co-evolution headline gap).
 - [x] `StreamBitReader<R: Read>` — forward-only streaming; `Incomplete` ("read more")
       signal.
 - [x] `BufSource<R: Read>` — bounded retain-and-seek socket adapter.
