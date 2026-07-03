@@ -1,0 +1,42 @@
+# cargo-deny configuration — supply-chain + dependency hygiene.
+# Run: `cargo deny check`.
+
+[advisories]
+version = 2
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+# The load-bearing single-version rule: one version of each crate across the workspace.
+multiple-versions = "deny"
+wildcards = "warn"
+# No `skip` entries: the current tree has no duplicate versions. Add a crate here only
+# when a real transitive duplicate appears (cargo-deny warns on an unnecessary skip),
+# and remove it when it no longer does. The predecessor workspace's
+# `winnow`/`toml_edit`/`toml_datetime`/`num_enum`-tied skews are gone here.
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# bnb is consumed from git during co-evolution (see the workspace Cargo.toml note).
+allow-git = ["https://github.com/RawSocketLabs/bitsandbytes"]
