@@ -29,8 +29,9 @@ fn main() -> Result<(), bnb::BitError> {
     let blob_a = b"hello".as_slice();
     let blob_b = b"world!!".as_slice();
 
-    // header = count(1) + 2 * (offset u32 + len u16 = 6) = 13 bytes; blobs follow.
-    let header_len = 1 + 2 * 6;
+    // header = count-prefix byte + 2 entries — the entry size is DERIVED from the type
+    // (`Entry` is a fixed `#[bin]` message), so adding a field can't silently skew offsets.
+    let header_len = 1 + 2 * (<Entry as bnb::FixedBitLen>::BIT_LEN / 8) as usize;
     let off_a = header_len as u32;
     let off_b = off_a + blob_a.len() as u32;
     let index = Index {
@@ -59,10 +60,7 @@ fn main() -> Result<(), bnb::BitError> {
     // Random access: seek to each entry's offset and read its blob — reversed, to prove it.
     for entry in index.entries.iter().rev() {
         src.seek_to_bit(entry.offset as usize * 8)?;
-        let mut blob = Vec::with_capacity(entry.len as usize);
-        for _ in 0..entry.len {
-            blob.push(src.read::<u8>()?);
-        }
+        let blob = src.read_bytes(entry.len as usize)?; // bulk read at the seeked offset
         println!(
             "  @{:>2} ({} bytes): {:?}",
             entry.offset,

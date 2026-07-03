@@ -210,9 +210,7 @@ pub mod cstring {
                 w.bit_pos(),
             ));
         }
-        for &b in v {
-            w.write(b)?;
-        }
+        w.write_bytes(v)?;
         w.write(0u8)
     }
 
@@ -288,10 +286,8 @@ pub mod prefixed {
     pub fn parse_string<S: Source, P: CountPrefix>(r: &mut S) -> Result<String, BitError> {
         let start = r.bit_pos();
         let n = r.read::<P>()?.to_count();
-        let mut bytes = Vec::new();
-        for _ in 0..n {
-            bytes.push(r.read::<u8>()?);
-        }
+        // `read_bytes` pushes as it reads — nothing pre-allocated from the untrusted `n`.
+        let bytes = r.read_bytes(n)?;
         String::from_utf8(bytes)
             .map_err(|e| BitError::convert(format!("invalid UTF-8 in string field: {e}"), start))
     }
@@ -305,10 +301,7 @@ pub mod prefixed {
         let prefix =
             P::try_from_len(s.len()).map_err(|e| BitError::convert(e.to_string(), w.bit_pos()))?;
         w.write(prefix)?;
-        for &b in s.as_bytes() {
-            w.write(b)?;
-        }
-        Ok(())
+        w.write_bytes(s.as_bytes())
     }
 }
 

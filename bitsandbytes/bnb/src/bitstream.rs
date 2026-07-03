@@ -866,6 +866,39 @@ pub trait Source {
         )))
     }
 
+    /// Reads `n` bytes into a fresh `Vec` (at any bit offset — the bytes need not be
+    /// aligned). The bulk form of the per-byte `read::<u8>()` loop, for blob/payload
+    /// reads in custom codecs and container formats.
+    ///
+    /// `n` is often attacker-controlled, so **nothing is pre-allocated from it**: bytes
+    /// are pushed as they are read, bounded by the input — a hostile huge `n` against a
+    /// short source is a fast [`UnexpectedEof`](ErrorKind::UnexpectedEof), not an
+    /// allocation. (An implementation may override with a byte-aligned fast path; the
+    /// default is the correct-first per-byte loop.)
+    ///
+    /// # Errors
+    /// As [`read_bits`](Source::read_bits).
+    fn read_bytes(&mut self, n: usize) -> Result<alloc::vec::Vec<u8>, BitError> {
+        let mut v = alloc::vec::Vec::new();
+        for _ in 0..n {
+            v.push(self.read::<u8>()?);
+        }
+        Ok(v)
+    }
+
+    /// Fills `buf` with bytes from the source — the no-alloc dual of
+    /// [`read_bytes`](Source::read_bytes), for fixed scratch buffers and tight
+    /// `no_std` paths.
+    ///
+    /// # Errors
+    /// As [`read_bits`](Source::read_bits).
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        for slot in buf.iter_mut() {
+            *slot = self.read::<u8>()?;
+        }
+        Ok(())
+    }
+
     /// Borrows this source as a [`std::io::Read`] over its bytes — for handing the
     /// cursor to `std::io`-based code from a `#[br(parse_with = …)]` (e.g. a decoder, or
     /// a `Read`-based parser). Reads 8 bits per byte; see [`SourceReader`]. Only with
@@ -970,6 +1003,18 @@ pub trait Sink {
             self.byte_order(),
         );
         self.write_bits(raw, T::BITS)
+    }
+
+    /// Appends a run of bytes — the bulk dual of [`Source::read_bytes`], replacing the
+    /// per-byte `write(b)?` loop in custom codecs. Works at any bit offset.
+    ///
+    /// # Errors
+    /// As [`write_bits`](Sink::write_bits).
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
+        for &b in bytes {
+            self.write(b)?;
+        }
+        Ok(())
     }
 
     /// Borrows this sink as a [`std::io::Write`] — the dual of [`Source::as_read`], for
@@ -2775,6 +2820,52 @@ mod unit {
             assert_eq!(u16::try_from_len(len).unwrap().to_count(), len);
             assert_eq!(u12::try_from_len(len).unwrap().to_count(), len);
         }
+    }
+
+    #[test]
+    fn bulk_bytes_round_trip() {
+        let mut w = BitWriter::new();
+        w.write_bytes(&[0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(bytes, [0xDE, 0xAD, 0xBE, 0xEF]);
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(r.read_bytes(4).unwrap(), [0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(r.remaining_bits(), 0);
+    }
+
+    #[test]
+    fn bulk_bytes_work_at_a_bit_offset() {
+        // Bytes need not be aligned: write a nibble, then bytes straddling.
+        let mut w = BitWriter::new();
+        w.write(u4::new(0xF)).unwrap();
+        w.write_bytes(&[0xAB, 0xCD]).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(bytes, [0xFA, 0xBC, 0xD0]);
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(r.read::<u4>().unwrap(), u4::new(0xF));
+        assert_eq!(r.read_bytes(2).unwrap(), [0xAB, 0xCD]);
+    }
+
+    #[test]
+    fn read_bytes_hostile_length_is_eof_not_alloc() {
+        // A huge n against a 2-byte source: push-per-byte means a fast EOF, no
+        // pre-allocation from the untrusted length.
+        let mut r = BitReader::new(&[0x01, 0x02]);
+        let err = r.read_bytes(usize::MAX).unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
+    }
+
+    #[test]
+    fn read_into_fills_and_errors_short() {
+        let mut r = BitReader::new(&[0x0A, 0x0B, 0x0C]);
+        let mut buf = [0u8; 3];
+        r.read_into(&mut buf).unwrap();
+        assert_eq!(buf, [0x0A, 0x0B, 0x0C]);
+
+        let mut r = BitReader::new(&[0x0A]);
+        let mut buf = [0u8; 3];
+        let err = r.read_into(&mut buf).unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
     }
 }
 

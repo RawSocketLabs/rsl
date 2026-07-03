@@ -139,6 +139,8 @@ pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
@@ -254,6 +256,8 @@ pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<'a> core::clone::Clone for bnb::bitstream::BitReader<'a>
 pub fn bnb::bitstream::BitReader<'a>::clone(&self) -> bnb::bitstream::BitReader<'a>
@@ -306,6 +310,7 @@ pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
 impl core::default::Default for bnb::bitstream::BitWriter
@@ -360,6 +365,8 @@ pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::BufSource<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::BufSource<R> where R: core::marker::Send
@@ -404,6 +411,8 @@ pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::BytesReader
 pub fn bnb::BytesReader::clone(&self) -> bnb::BytesReader
@@ -452,6 +461,7 @@ pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::BytesWriter
 pub fn bnb::BytesWriter::clone(&self) -> bnb::BytesWriter
 impl core::default::Default for bnb::BytesWriter
@@ -598,6 +608,8 @@ pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::SeekReader<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::SeekReader<R> where R: core::marker::Send
@@ -702,6 +714,8 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::StreamBitReader<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::StreamBitReader<R> where R: core::marker::Send
@@ -879,6 +893,7 @@ pub fn bnb::bitstream::Sink::bit_pos(&self) -> usize
 pub fn bnb::bitstream::Sink::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::Sink::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::BytesWriter
 pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
@@ -886,6 +901,7 @@ pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
@@ -893,6 +909,7 @@ pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub trait bnb::bitstream::Source
 pub fn bnb::bitstream::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::Source::bit_order(&self) -> bnb::BitOrder
@@ -900,6 +917,8 @@ pub fn bnb::bitstream::Source::bit_pos(&self) -> usize
 pub fn bnb::bitstream::Source::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::Source::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::Source::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::Source::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::BytesReader
 pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -908,6 +927,8 @@ pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -916,6 +937,8 @@ pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
 pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -924,6 +947,8 @@ pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
 pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -932,6 +957,8 @@ pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -940,6 +967,8 @@ pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -948,6 +977,8 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub mod bnb::builder
 pub enum bnb::builder::BuilderError
@@ -2089,6 +2120,8 @@ pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
@@ -2204,6 +2237,8 @@ pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<'a> core::clone::Clone for bnb::bitstream::BitReader<'a>
 pub fn bnb::bitstream::BitReader<'a>::clone(&self) -> bnb::bitstream::BitReader<'a>
@@ -2256,6 +2291,7 @@ pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::clone(&self) -> bnb::bitstream::BitWriter
 impl core::default::Default for bnb::bitstream::BitWriter
@@ -2310,6 +2346,8 @@ pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::BufSource<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::BufSource<R> where R: core::marker::Send
@@ -2354,6 +2392,8 @@ pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::BytesReader
 pub fn bnb::BytesReader::clone(&self) -> bnb::BytesReader
@@ -2402,6 +2442,7 @@ pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::BytesWriter
 pub fn bnb::BytesWriter::clone(&self) -> bnb::BytesWriter
 impl core::default::Default for bnb::BytesWriter
@@ -2709,6 +2750,8 @@ pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::SeekReader<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::SeekReader<R> where R: core::marker::Send
@@ -2813,6 +2856,8 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R> core::marker::Freeze for bnb::bitstream::StreamBitReader<R> where R: core::marker::Freeze
 impl<R> core::marker::Send for bnb::bitstream::StreamBitReader<R> where R: core::marker::Send
@@ -3470,6 +3515,7 @@ pub fn bnb::Sink::bit_pos(&self) -> usize
 pub fn bnb::Sink::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::Sink::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::Sink::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::Sink::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::BytesWriter
 pub fn bnb::BytesWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::BytesWriter::bit_order(&self) -> bnb::BitOrder
@@ -3477,6 +3523,7 @@ pub fn bnb::BytesWriter::bit_pos(&self) -> usize
 pub fn bnb::BytesWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::BytesWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitWriter::bit_order(&self) -> bnb::BitOrder
@@ -3484,6 +3531,7 @@ pub fn bnb::bitstream::BitWriter::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitWriter::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub trait bnb::Source
 pub fn bnb::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::Source::bit_order(&self) -> bnb::BitOrder
@@ -3491,6 +3539,8 @@ pub fn bnb::Source::bit_pos(&self) -> usize
 pub fn bnb::Source::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::Source::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::Source::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::Source::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::BytesReader
 pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3499,6 +3549,8 @@ pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::BytesReader::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::BytesReader::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3507,6 +3559,8 @@ pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Source for bnb::bitstream::BitReader<'_>
 pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3515,6 +3569,8 @@ pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'_>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::Source for bnb::bitstream::SeekReader<R>
 pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3523,6 +3579,8 @@ pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::SeekReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3531,6 +3589,8 @@ pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BufSource<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
@@ -3539,6 +3599,8 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub type bnb::Result<T> = core::result::Result<T, bnb::error::Error>
 pub type bnb::u1 = bnb::UInt<u8, 1>

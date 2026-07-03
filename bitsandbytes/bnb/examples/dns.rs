@@ -120,9 +120,7 @@ fn write_name<K: Sink>(labels: &[String], w: &mut K) -> Result<(), bnb::BitError
             ));
         }
         w.write(label.len() as u8)?;
-        for &b in label.as_bytes() {
-            w.write(b)?;
-        }
+        w.write_bytes(label.as_bytes())?;
     }
     w.write(0u8) // root
 }

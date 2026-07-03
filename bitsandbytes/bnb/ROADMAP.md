@@ -321,12 +321,16 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       `versioned_cells::Cell` shapes). Decide: a generated encode-time check when the count
       expr names a ctx param (checked-write doctrine — refuse what can't round-trip, like
       `count_prefix` overflow) vs. documenting the caller obligation. Leans generated-check.
-- [ ] **[additive] Bulk byte reads on `Source`.**
-      `examples/archive.rs` reads a blob with a manual per-byte loop (`for _ in 0..len {
-      v.push(r.read::<u8>()?) }`) — the natural reach for any container/blob format. Ship a
-      `read_bytes(&mut self, n: usize) -> Result<Vec<u8>>` (push-based, no untrusted
-      pre-allocation) and/or `read_into(&mut [u8])` on `Source`; public-API addition, so
-      weigh the exact shape at the C freeze.
+- [x] **[shipped] Bulk byte I/O on `Source`/`Sink` → `read_bytes`/`read_into`/`write_bytes`.**
+      Three **defaulted** trait methods (additive; implementations may override with
+      byte-aligned fast paths later): `Source::read_bytes(n) -> Vec<u8>` (push-per-byte —
+      nothing pre-allocated from the untrusted `n`, a hostile length is a fast EOF),
+      `Source::read_into(&mut [u8])` (the no-alloc dual), and `Sink::write_bytes(&[u8])`.
+      All work at any bit offset. Adopted internally (`codecs::prefixed`/`cstring`) and in
+      the examples — `archive`'s blob loop became one `read_bytes` call (also dropping its
+      untrusted `with_capacity`), and its open-coded header size now derives from
+      `<Entry as FixedBitLen>::BIT_LEN` (drift-proof); `dns::write_name` labels via
+      `write_bytes`. Deliberate public-api addition (+3 methods).
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building
