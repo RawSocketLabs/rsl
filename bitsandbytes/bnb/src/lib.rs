@@ -178,11 +178,13 @@ pub mod int;
 /// Ergonomic `std` socket helpers — [`MessageStream`] + [`MessageDatagram`] (the `net` feature).
 #[cfg(feature = "net")]
 pub mod net;
+pub mod wirelen;
 
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
     DecodeWith, EncodeMode, EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
 };
+pub use wirelen::WireLen;
 
 /// The `std::io` I/O ladder and writer conveniences — only with the (default)
 /// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
@@ -242,6 +244,7 @@ pub mod __private {
     };
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
+    pub use crate::wirelen::WireLen;
     /// Owned-collection re-exports so macro-generated code names neither `std` nor
     /// `alloc` directly (the user crate need not declare `extern crate alloc`).
     pub use ::alloc::{format, string::String, vec, vec::Vec};

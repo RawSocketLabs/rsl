@@ -115,6 +115,9 @@ struct BitStreamAttrs {
     /// type gets `decode_with`/`encode_with` (it does **not** implement
     /// `BitDecode`/`BitEncode`, which take no context).
     ctx: Vec<(Ident, Type)>,
+    /// `auto_len(field.nested = kind(source), …)` — cross-struct `WireLen` derivation,
+    /// applied at the targeted field's encode. Empty for the bare derives (`#[bin]` only).
+    auto_len: Vec<AutoLenSpec>,
 }
 
 fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
@@ -294,6 +297,93 @@ struct FieldBr {
     /// stays permissive. Read-only: no `bw` inverse is needed, and encode is untouched.
     /// Multiple asserts run in order.
     asserts: Vec<(syn::Expr, Option<Punctuated<syn::Expr, Token![,]>>)>,
+    /// `#[bw(auto = count(<field>))]` / `#[bw(auto = bytes(<field>))]` — the field is a
+    /// [`WireLen<T>`](bnb::WireLen): on encode, an `Auto` value derives its length from the
+    /// named sibling (element count, or encoded byte length), while a `Set(n)` writes `n`
+    /// verbatim (dual-use). Decode reads it as `Set` transparently (via `WireLen`'s own
+    /// `BitDecode`), so no `br` side is needed here.
+    auto: Option<AutoTarget>,
+}
+
+/// The derivation target of a `#[bw(auto = …)]` [`WireLen`](bnb::WireLen) field — a sibling
+/// field measured by element count or encoded byte length.
+#[derive(Clone)]
+enum AutoTarget {
+    /// `count(<field>)` — the sibling's `.len()` (element count).
+    Count(Ident),
+    /// `bytes(<field>)` — the sibling's encoded byte length (measured by a probe encode).
+    Bytes(Ident),
+}
+
+/// Parse the `count(<field>)` / `bytes(<field>)` call-expression of a `#[bw(auto = …)]`.
+fn parse_auto_target(expr: &syn::Expr) -> syn::Result<AutoTarget> {
+    let err = || {
+        syn::Error::new_spanned(
+            expr,
+            "expected `count(<field>)` or `bytes(<field>)` naming a sibling field",
+        )
+    };
+    let syn::Expr::Call(call) = expr else {
+        return Err(err());
+    };
+    let syn::Expr::Path(func) = &*call.func else {
+        return Err(err());
+    };
+    let kind = func.path.get_ident().ok_or_else(err)?;
+    if call.args.len() != 1 {
+        return Err(err());
+    }
+    let syn::Expr::Path(arg) = &call.args[0] else {
+        return Err(err());
+    };
+    let field = arg.path.get_ident().ok_or_else(err)?.clone();
+    if kind == "count" {
+        Ok(AutoTarget::Count(field))
+    } else if kind == "bytes" {
+        Ok(AutoTarget::Bytes(field))
+    } else {
+        Err(err())
+    }
+}
+
+/// One entry of a struct-level `#[bin(auto_len(<field>.<nested> = count|bytes(<source>), …))]`
+/// directive — a cross-struct length rule: the `<nested>` [`WireLen`](bnb::WireLen) field of
+/// this struct's `<field>` derives (when `Auto`) from the sibling `<source>`.
+#[derive(Clone)]
+struct AutoLenSpec {
+    /// The immediate field holding the nested length (e.g. `header`).
+    field: Ident,
+    /// The nested `WireLen` field within it (e.g. `qdcount`).
+    nested: Ident,
+    /// `count` or `bytes`.
+    kind: Ident,
+    /// The sibling field measured (e.g. `questions`).
+    source: Ident,
+}
+
+impl syn::parse::Parse for AutoLenSpec {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let field: Ident = input.parse()?;
+        input.parse::<Token![.]>()?;
+        let nested: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let kind: Ident = input.parse()?;
+        if kind != "count" && kind != "bytes" {
+            return Err(syn::Error::new_spanned(
+                &kind,
+                "expected `count(<source>)` or `bytes(<source>)`",
+            ));
+        }
+        let content;
+        syn::parenthesized!(content in input);
+        let source: Ident = content.parse()?;
+        Ok(AutoLenSpec {
+            field,
+            nested,
+            kind,
+            source,
+        })
+    }
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -433,9 +523,12 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 } else if meta.path.is_ident("write_with") {
                     br.write_with = Some(meta.value()?.parse()?);
                     Ok(())
+                } else if meta.path.is_ident("auto") {
+                    br.auto = Some(parse_auto_target(&meta.value()?.parse()?)?);
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bw(...)]` directive; expected `calc = <expr>`, `map = <f>`, or `write_with = <f>`",
+                        "unknown `#[bw(...)]` directive; expected `calc = <expr>`, `map = <f>`, `write_with = <f>`, or `auto = count(<field>)|bytes(<field>)`",
                     ))
                 }
             })?;
@@ -1081,6 +1174,35 @@ fn field_write_core(
         return Ok(quote!((#f)(&self.#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
+    // `auto = count(x)|bytes(x)`: a `WireLen<T>` field. `Set(n)` writes `n` verbatim
+    // (dual-use); `Auto` derives its length from the named sibling — the element count
+    // (`count`) or the encoded byte length (`bytes`, a probe encode) — checked via
+    // `CountPrefix::try_from_len` (no silent truncation). `resolve_count` folds both:
+    // it fills an `Auto` with the checked length and passes a `Set` through unchanged, so
+    // the resolved `WireLen` (now always `Set`) writes through its own `BitEncode`. This
+    // fires on both the verbatim and canonical passes — an `Auto` has no stored scalar to
+    // preserve (like a `temp` `calc`), so deriving it on the verbatim path is correct.
+    if let Some(target) = &br.auto {
+        let measure = match target {
+            AutoTarget::Count(field) => quote!(self.#field.len()),
+            AutoTarget::Bytes(field) => quote! {{
+                // A probe encode: the byte length is independent of the writer's order.
+                let mut __probe = #bnb::__private::BitWriter::new();
+                #bnb::__private::BitEncode::bit_encode(&self.#field, &mut __probe)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                __probe.bit_len().div_ceil(8)
+            }},
+        };
+        return Ok(quote! {
+            {
+                let __len: usize = #measure;
+                let __resolved = self.#id.resolve_count(__len)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                <#ty as #bnb::__private::BitEncode>::bit_encode(&__resolved, __bnb_w)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            }
+        });
+    }
     if br.map.is_some() || br.try_map.is_some() {
         return Err(syn::Error::new_spanned(
             f,
@@ -1413,6 +1535,52 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// Generates the encode side (`BitEncode` + entry points, or `encode_with` for a
 /// `ctx` type). Shared by `#[derive(BitEncode)]` and `#[bin]`. `calc` fields write
 /// a computed value; `temp` fields (no `self` field) are written via their `calc`.
+/// [`field_write_stmt`], but for a field targeted by a struct-level `auto_len(...)` rule:
+/// emit a clone-and-fill that resolves each nested `Auto` [`WireLen`](bnb::WireLen) from its
+/// sibling before encoding the field. Untargeted fields fall through unchanged. The resolve
+/// is mode-independent — an `Auto` has no stored scalar to preserve on the verbatim path.
+fn field_write_stmt_auto(
+    f: &syn::Field,
+    br: &FieldBr,
+    field_set: &[&Ident],
+    spec: bool,
+    auto_len: &[AutoLenSpec],
+) -> syn::Result<TokenStream2> {
+    let id = f.ident.as_ref().expect("named field");
+    let targeting: Vec<&AutoLenSpec> = auto_len.iter().filter(|s| &s.field == id).collect();
+    if targeting.is_empty() {
+        return field_write_stmt(f, br, field_set, spec);
+    }
+    let bnb = crate::bnb_path();
+    let ty = &f.ty;
+    let fills = targeting.iter().map(|s| {
+        let nested = &s.nested;
+        let source = &s.source;
+        let measure = if s.kind == "bytes" {
+            quote! {{
+                let mut __probe = #bnb::__private::BitWriter::new();
+                #bnb::__private::BitEncode::bit_encode(&self.#source, &mut __probe)
+                    .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
+                __probe.bit_len().div_ceil(8)
+            }}
+        } else {
+            quote!(self.#source.len())
+        };
+        quote! {
+            __auto.#nested = __auto.#nested.resolve_count(#measure)
+                .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
+        }
+    });
+    Ok(quote! {
+        {
+            let mut __auto = ::core::clone::Clone::clone(&self.#id);
+            #(#fills)*
+            <#ty as #bnb::__private::BitEncode>::bit_encode(&__auto, __bnb_w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+        }
+    })
+}
+
 fn gen_encode(
     name: &Ident,
     fields: &FieldsNamed,
@@ -1453,7 +1621,7 @@ fn gen_encode(
         .named
         .iter()
         .zip(&brs)
-        .map(|(f, br)| field_write_stmt(f, br, &field_set, false))
+        .map(|(f, br)| field_write_stmt_auto(f, br, &field_set, false, &attrs.auto_len))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // `ctx` is **decode-only** by default: if the generated encode body references a ctx
@@ -1532,7 +1700,7 @@ fn gen_encode(
             .named
             .iter()
             .zip(&brs)
-            .map(|(f, br)| field_write_stmt(f, br, &field_set, true))
+            .map(|(f, br)| field_write_stmt_auto(f, br, &field_set, true, &attrs.auto_len))
             .collect::<syn::Result<Vec<_>>>()?;
 
         // In-memory canonicalization helpers (`to_canonical`/`canonical_diff`/
@@ -1693,6 +1861,11 @@ struct BinArgs {
     little: bool,
     magic: Option<syn::Expr>,
     ctx: Vec<(Ident, Type)>,
+    /// `auto_len(<field>.<nested> = count|bytes(<source>), …)` — cross-struct
+    /// [`WireLen`](bnb::WireLen) derivation: on encode, resolve each nested `Auto` length
+    /// from a sibling collection (DNS `header.qdcount = count(questions)`). A `Set` value is
+    /// still honored (dual-use).
+    auto_len: Vec<AutoLenSpec>,
     /// `validate = <path>` — a `fn(&Self) -> Result<(), impl Display>` run by
     /// `build()` (construction soundness; the parser stays permissive). A free
     /// function, not a method, so it isn't mistaken for protocol-context validity.
@@ -1800,6 +1973,11 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             syn::parenthesized!(content in meta.input);
             let params = Punctuated::<CtxParam, Token![,]>::parse_terminated(&content)?;
             args.ctx = params.into_iter().map(|p| (p.name, p.ty)).collect();
+        } else if meta.path.is_ident("auto_len") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            let specs = Punctuated::<AutoLenSpec, Token![,]>::parse_terminated(&content)?;
+            args.auto_len = specs.into_iter().collect();
         } else if meta.path.is_ident("validate") {
             args.validate = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("tag") {
@@ -2227,6 +2405,7 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
         little: args.little,
         magic: None,
         ctx: Vec::new(),
+        auto_len: Vec::new(),
     });
 
     let decode_ts = if has_decode {
@@ -2570,6 +2749,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         little: args.little,
         magic: args.magic.clone(),
         ctx: args.ctx.clone(),
+        auto_len: args.auto_len.clone(),
     };
     // A message with a verbatim/canonical distinction carries a settable, wire-ignored
     // `encode_mode` field (consulted by `encode`). Only inject it on the write side: a
@@ -2811,6 +2991,14 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
                 Some(spec) => crate::builder::FieldDefault::DefaultExpr(syn::parse2(spec)?),
                 None => crate::builder::FieldDefault::Required,
             };
+            // A `#[bw(auto = …)]` `WireLen` field is optional too, defaulting to
+            // `WireLen::auto()` — auto-derivation is the norm, so the builder omits it; a
+            // deliberate override passes `WireLen::set(n)` explicitly.
+            if parse_field_br(f)?.auto.is_some() {
+                default = crate::builder::FieldDefault::DefaultExpr(
+                    syn::parse_quote!(#bnb::__private::WireLen::auto()),
+                );
+            }
             for attr in &f.attrs {
                 if let Some(d) = crate::builder::parse_builder_attr(attr)? {
                     default = d;
@@ -3844,6 +4032,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         little: args.little,
         magic: None,
         ctx: args.ctx.clone(),
+        auto_len: args.auto_len.clone(),
     };
     let layout = layout_token(&attrs);
     let want_decode = !args.write_only;

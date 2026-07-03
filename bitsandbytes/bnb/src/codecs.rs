@@ -34,6 +34,7 @@
 //! [`write_with`]: crate::guide::directives
 
 pub use crate::bitstream::CountPrefix;
+pub use crate::wirelen::WireLen;
 
 /// Unsigned LEB128 (`varint`) — 7 payload bits per byte, low group first, high bit set
 /// while more bytes follow. The wire format of protobuf `varint`, WebAssembly, DWARF.

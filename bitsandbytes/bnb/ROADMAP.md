@@ -49,6 +49,14 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `pad_*`/`align_*`, `restore_position`, `#[reserved]`/`#[reserved_with(…)]`,
       `#[try_str]` (a `Debug`-rendering hint: a byte buffer prints as a string when valid
       UTF-8, else hex bytes — never lossy; codec unaffected).
+- [x] **`WireLen<T>` — auto-deriving, overridable length/count.** A length field that is
+      `auto()` (derive at encode, the default) or `set(n)` (explicit override); decode yields
+      `Set`, so plain `to_bytes()` is correct-by-default *and* round-trips byte-identically,
+      while a forged length survives. `#[bw(auto = count(x)|bytes(x))]` (same-struct, element
+      or byte length) and `#[bin(auto_len(field.nested = count(source), …))]` (cross-struct,
+      the DNS `qdcount`/`rdlength` shape). Checked (no truncation), builder-optional. The
+      non-adjacent, byte-length, dual-use counterpart to `count_prefix`; driven by the DNS
+      port (the co-evolution "overridable stored-length" gap).
 - [x] **Struct-level wire mapping** — a *logical* struct serializes via a separate *wire* type,
       two forms: closures (`map`/`try_map` + `bw_map`) or the conversion traits
       (`wire`/`try_wire` — `From`/`TryFrom<Wire>` decode + `From<&Self>` encode, the transitions in

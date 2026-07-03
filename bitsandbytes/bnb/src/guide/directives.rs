@@ -90,10 +90,46 @@
 //! assert!(too_long.to_bytes().is_err());                 // checked, not truncated
 //! ```
 //!
-//! The prefix must be *adjacent* (immediately before its `Vec`); counts grouped in a
-//! header away from their data — DNS's `qdcount`…`arcount` block — keep the explicit
-//! triad. The prefix is an **element count**; a byte-length prefix over variable-width
-//! elements (DNS's `rdlength`) is a different animal and stays hand-written.
+//! `count_prefix` is *adjacent* (immediately before its `Vec`) and derive-only (never
+//! stored, so never overridable). When the count sits **away from** its data (DNS's
+//! `qdcount`…`arcount` header block) or measures **bytes** rather than elements (DNS's
+//! `rdlength`), or when you want to *forge* a disagreeing length — reach for [`WireLen`],
+//! below.
+//!
+//! # `WireLen` — an auto-deriving, overridable length/count
+//!
+//! [`WireLen<T>`](crate::WireLen) is a length field that is either `auto()` (derive at
+//! encode — the default) or `set(n)` (an explicit value). Decode always yields `Set`, so a
+//! plain `to_bytes()` is correct by default *and* `decode → encode` is byte-identical (a
+//! forged length survives a round-trip). It's the dual-use, non-adjacent, byte-or-element
+//! counterpart to `count_prefix`:
+//!
+//! - **Same-struct**: `#[bw(auto = count(<field>))]` (element count) or
+//!   `#[bw(auto = bytes(<field>))]` (encoded byte length) on the `WireLen` field.
+//! - **Cross-struct**: `#[bin(auto_len(<field>.<nested> = count(<source>), …))]` on the
+//!   enclosing struct — a count nested in a sub-struct that sizes a sibling collection.
+//!
+//! ```
+//! use bnb::{bin, WireLen};
+//!
+//! #[bin(big)]
+//! # #[derive(Debug, PartialEq)]
+//! struct Framed {
+//!     #[bw(auto = count(items))]      // Auto → items.len(); Set(n) → n (a forgery)
+//!     len: WireLen<u16>,
+//!     #[br(count = len.to_count())]
+//!     items: Vec<u8>,
+//! }
+//!
+//! let m = Framed { len: WireLen::auto(), items: vec![1, 2, 3] };
+//! assert_eq!(m.to_bytes().unwrap(), [0, 3, 1, 2, 3]);      // auto-derived
+//! let forged = Framed { len: WireLen::set(9), items: vec![1, 2, 3] };
+//! assert_eq!(forged.to_bytes().unwrap(), [0, 9, 1, 2, 3]); // the lie is written
+//! ```
+//!
+//! Derivation is **checked** (a too-long collection is a [`BitError`](crate::BitError), never
+//! a truncation), and a `WireLen`-auto field is optional in the builder (defaults to
+//! `auto()`), so you never mention it unless forging.
 //!
 //! # `if` — a conditional `Option`
 //!

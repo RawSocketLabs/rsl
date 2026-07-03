@@ -11,6 +11,7 @@ help: the trait `FixedBitLen` is not implemented for `Msg`
    | ^^^^^^^^^^
    = help: the following other types implement trait `FixedBitLen`:
              UInt<T, N>
+             WireLen<T>
              bool
              u128
              u16
