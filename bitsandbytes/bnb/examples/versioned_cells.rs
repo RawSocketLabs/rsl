@@ -12,6 +12,9 @@ use bnb::{ErrorKind, bin};
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Cell {
     tag: u8,
+    // `version` sizes `data` on DECODE only; encode writes whatever `data` holds (there
+    // is no ctx at encode). Keeping `data.len() == version` is the constructor's job —
+    // see `ctx_length` for the `validate`-enforced version of this obligation.
     #[br(count = version)]
     data: Vec<u8>,
 }

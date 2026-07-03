@@ -9,7 +9,16 @@
 //!
 //! `#[br(count = <expr>)]` reads that many elements into a `Vec<T>`; the expression may
 //! name an earlier field. On write, every element is emitted (the length is the
-//! caller's to track — usually with `temp`+`calc`, below).
+//! caller's to track — usually with `temp`+`calc`, below, or the `count_prefix` sugar).
+//!
+//! **The count obligation.** The expression drives *decode* sizing only — encode trusts
+//! the `Vec` and writes everything it holds. If a stored count (or a `ctx` param, which
+//! doesn't even exist at encode time) disagrees with `len()`, the emitted bytes won't
+//! round-trip. Keeping them consistent is the constructor's job: derive the count
+//! (`count_prefix` / `temp`+`calc`) where the layout allows, or enforce it with
+//! construction-side `validate` (see the `ctx_length` example). The flip side is
+//! deliberate: a *stored* count field can disagree on purpose — that's how dual-use
+//! code forges adversarial frames.
 //!
 //! ```
 //! use bnb::bin;

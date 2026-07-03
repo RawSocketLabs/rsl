@@ -19,13 +19,34 @@ struct Row {
 
 /// A table: a column count and a row count in the header, then rows that each omit their own
 /// length — `columns` is threaded into every row via `ctx`.
-#[bin(big)]
+///
+/// **The ctx-count obligation.** `columns` sizes each row's `values` on *decode*; on
+/// *encode* there is no ctx — every element a row holds is written as-is. Keeping
+/// `values.len() == columns` is therefore the constructor's job, and `validate` is the
+/// layer for it: it gates `build()` (and stays re-runnable) without ever touching the
+/// parser. A mismatched value would otherwise encode bytes that don't round-trip —
+/// which is also exactly what lets dual-use code forge such frames deliberately.
+#[bin(big, validate = table_is_sound)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Table {
     columns: u8,
     #[brw(count_prefix = u8)] // the row count — sizes `rows`, recomputed on write
     #[br(ctx { columns })] // …and composes with threading `columns` into each Row
     rows: Vec<Row>,
+}
+
+/// Construction soundness: every row must hold exactly `columns` values.
+fn table_is_sound(t: &Table) -> Result<(), String> {
+    for (i, row) in t.rows.iter().enumerate() {
+        if row.values.len() != t.columns as usize {
+            return Err(format!(
+                "row {i} has {} values; columns says {}",
+                row.values.len(),
+                t.columns
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn main() {
@@ -62,6 +83,18 @@ fn main() {
             values: vec![10, 20, 30],
         }
     );
+
+    // The obligation, enforced where it belongs: a row whose `values` disagree with
+    // `columns` is caught by `validate` at build() — the parser stays permissive.
+    let lopsided = Table::builder()
+        .columns(3)
+        .rows(vec![Row {
+            id: 9,
+            values: vec![1, 2], // 2 values under columns = 3
+        }])
+        .build();
+    let err = lopsided.unwrap_err();
+    println!("mismatched row -> {err}");
 
     println!("all checks passed");
 }

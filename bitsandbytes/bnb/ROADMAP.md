@@ -314,13 +314,19 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       wire→domain conversion) with the guard-vs-conversion rule cross-referenced. Works on
       struct fields, enum-variant fields, `temp` fields, and through the bare derives
       (shared read path). `tests/bin_assert.rs`; guide § "assert".
-- [ ] **[additive · decision] Encode-side check for ctx-driven counts.**
-      `#[br(count = <ctx-param>)]` sizes a `Vec` from context on decode, but encode writes
-      *all* elements with nothing asserting `len == param` — a value built with a mismatched
-      length silently emits bytes that fail to round-trip (audit finding; `ctx_length::Row`,
-      `versioned_cells::Cell` shapes). Decide: a generated encode-time check when the count
-      expr names a ctx param (checked-write doctrine — refuse what can't round-trip, like
-      `count_prefix` overflow) vs. documenting the caller obligation. Leans generated-check.
+- [x] **[decided] Encode-side check for ctx-driven counts → document + `validate`, no codegen.**
+      A generated check turned out to be *impossible* for the ctx case — the ctx param does
+      not exist at encode time (`to_bytes` takes no context) — and undesirable for stored
+      counts: `bin_count_adversarial.rs` deliberately encodes disagreeing counts to forge
+      hostile frames, a dual-use feature a mandatory check would break. The crate already
+      has the right layer: **construction-side `validate`** (gates `build()`, never the
+      parser). Shipped as docs: the guide's `count` section states the obligation (decode
+      sizing only; encode trusts the value; consistency is the constructor's job — derive
+      the count where the layout allows, `validate` it where it doesn't), `ctx_length`
+      demonstrates the `validate`-enforced version (a lopsided row is rejected at
+      `build()`), and `versioned_cells` carries the obligation comment at its ctx-driven
+      count. Re-open only if the Section A ports show `validate` is not reaching real
+      mistakes.
 - [x] **[shipped] Bulk byte I/O on `Source`/`Sink` → `read_bytes`/`read_into`/`write_bytes`.**
       Three **defaulted** trait methods (additive; implementations may override with
       byte-aligned fast paths later): `Source::read_bytes(n) -> Vec<u8>` (push-per-byte —
