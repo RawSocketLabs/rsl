@@ -20,6 +20,9 @@ and the road to 1.0 in [`bnb/ROADMAP.md`](bnb/ROADMAP.md).
 - **One concern per change**, on a branch off `main` → PR → green CI → squash-merge.
 - **Conventional Commits** are enforced (commitlint); `release-plz` derives versions from
   them. `feat`/`fix` bump; most other types don't.
+- **No `Co-Authored-By:` trailer in commit messages** — do not append the line that makes
+  GitHub attribute a commit to a second author (applies to agent- and human-authored commits
+  alike). Write a plain subject + body.
 - **CI gates** (all must pass): fmt, clippy (`clippy::all` denied), test (+ `--features
   bytes`), `no_std` (bare-metal), cargo-deny, MSRV 1.85, fuzz, public-api, semver-checks.
 - **Zero `unsafe`** — `unsafe_code = "forbid"` workspace-wide; don't introduce any.

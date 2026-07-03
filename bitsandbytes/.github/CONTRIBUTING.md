@@ -46,6 +46,10 @@ commitlint enforces this in CI, and `release-plz` derives each crate's SemVer bu
 (minor) and `fix` (patch) move a version; a breaking change uses `!` or a
 `BREAKING CHANGE:` footer (on `0.x` that's a minor bump).
 
+Do **not** add a `Co-Authored-By:` trailer — that line makes GitHub attribute the commit to
+a second author, which this project doesn't use (applies to every commit, whoever or whatever
+writes it). Keep to a plain subject + body.
+
 ### Local checks (these mirror CI)
 
 ```bash
