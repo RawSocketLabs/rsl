@@ -298,6 +298,34 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       `ui/bin_codec_needs_variable`). No `FixedBitLen` on the newtype (variable assumed; fixed
       codecs add the manual one-liner). Per-field `parse_with`/`write_with` stays the right tool
       for one-offs. `tests/bin_codec_newtype.rs`; guide § "Per-type codecs".
+- [ ] **[additive · decision] A read-side guard directive (the `try_map`-as-guard wart).**
+      Surfaced by the *second* examples audit (2026-07-03): three examples used
+      `#[br(try_map = check_version)]` purely as a decode-time *guard* (the type never changes,
+      `u8`→`u8`), each forced to carry a no-op identity `#[bw(map = |v: &u8| *v)]` to satisfy
+      the map-needs-an-inverse rule — duplicated `check_version` fns included. A pure read
+      guard shouldn't demand a write closure. Related doc bug fixed in the same audit:
+      AGENTS.md's field-directive grammar listed `assert`/`validate` at field level, which
+      have never existed — evidence the gap is felt. The doctrinal tension is the real
+      question: a decode-time guard **rejects representable input**, which the dual-use
+      doctrine forbids plain parsers to do — `try_map` squares that circle only because a
+      failed *conversion* means the value is unrepresentable in the target domain type. So
+      decide: (a) a field-level `#[br(assert = …)]` as an explicitly-opt-in strictness escape
+      hatch (documented as intentionally anti-permissive), (b) bless `try_map` + ship an
+      identity-inverse helper so the guard stops costing a hand-written closure, or (c) status
+      quo with the pattern documented. Weigh at the C freeze; Section A ports will show demand.
+- [ ] **[additive · decision] Encode-side check for ctx-driven counts.**
+      `#[br(count = <ctx-param>)]` sizes a `Vec` from context on decode, but encode writes
+      *all* elements with nothing asserting `len == param` — a value built with a mismatched
+      length silently emits bytes that fail to round-trip (audit finding; `ctx_length::Row`,
+      `versioned_cells::Cell` shapes). Decide: a generated encode-time check when the count
+      expr names a ctx param (checked-write doctrine — refuse what can't round-trip, like
+      `count_prefix` overflow) vs. documenting the caller obligation. Leans generated-check.
+- [ ] **[additive] Bulk byte reads on `Source`.**
+      `examples/archive.rs` reads a blob with a manual per-byte loop (`for _ in 0..len {
+      v.push(r.read::<u8>()?) }`) — the natural reach for any container/blob format. Ship a
+      `read_bytes(&mut self, n: usize) -> Result<Vec<u8>>` (push-based, no untrusted
+      pre-allocation) and/or `read_into(&mut [u8])` on `Source`; public-API addition, so
+      weigh the exact shape at the C freeze.
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building

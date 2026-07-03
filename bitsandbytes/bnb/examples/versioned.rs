@@ -5,7 +5,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example versioned`
 
-use bnb::bin;
+use bnb::{ErrorKind, bin};
 
 /// Reject a version this build doesn't speak (a `try_map` used purely as a parse-time guard).
 fn check_version(raw: u8) -> Result<u8, String> {
@@ -20,10 +20,7 @@ fn check_version(raw: u8) -> Result<u8, String> {
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Label {
-    #[br(temp)]
-    #[bw(calc = self.text.len() as u8)]
-    len: u8,
-    #[br(count = len)]
+    #[brw(count_prefix = u8)] // derived, never stored, checked at encode
     #[try_str]
     text: Vec<u8>,
 }
@@ -67,6 +64,12 @@ fn main() {
     let bytes = v1.to_bytes().unwrap();
     println!("v1 event: {:>2} bytes  {bytes:02x?}", bytes.len());
     assert_eq!(Event::decode_exact(&bytes).unwrap(), v1);
+
+    // An unknown version is rejected at decode — `try_map` fails before any later field is read.
+    let err = Event::decode_exact(&[0x09, 0x00, 0x00, 0x03, 0xEA]).unwrap_err();
+    println!("decoding version=9 -> {err}");
+    assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+    assert_eq!(err.field, Some("version"));
 
     println!("all checks passed");
 }

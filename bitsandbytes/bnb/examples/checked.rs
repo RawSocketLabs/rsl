@@ -31,12 +31,8 @@ struct Header {
     #[bw(map = |v: &Version| match v { Version::V1 => 1u8, Version::V2 => 2u8 })]
     version: Version,
 
-    #[br(temp)]
-    #[bw(calc = self.name.len() as u8)]
-    name_len: u8,
-
+    #[brw(count_prefix = u8)] // derived, never stored, checked at encode
     #[try_str]
-    #[br(count = name_len)]
     name: Vec<u8>,
 }
 

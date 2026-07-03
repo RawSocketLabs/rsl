@@ -39,7 +39,9 @@ impl From<&Rgb> for WireColor {
         }
     }
 }
-// `WireColor` is fixed-size, so this one line lets `Rgb` nest as a plain field.
+// `WireColor` is fixed-size, so this one line lets `Rgb` nest as a plain field *and*
+// keeps the parent itself `FixedBitLen`. The dual: if the parent needn't stay fixed,
+// skip the impl and mark the field `#[brw(variable)]` instead (see `varint.rs`).
 impl bnb::FixedBitLen for Rgb {
     const BIT_LEN: u32 = <WireColor as bnb::FixedBitLen>::BIT_LEN;
 }

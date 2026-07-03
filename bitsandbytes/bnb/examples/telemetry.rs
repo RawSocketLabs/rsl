@@ -1,5 +1,5 @@
 //! **Telemetry packet** — a synthetic frame that stress-tests bnb's *composition*: three
-//! levels of nested bitfields, mixed sub-byte widths, two `BitEnum`s (one closed, one
+//! levels of nested bitfields, mixed sub-byte widths, two `BitEnum`s (one fully covered, one
 //! `catch_all`), a `#[bitflags]` set, a `#[reserved]` field, a `count`-driven sample
 //! array, a `calc`'d CRC, and a construction-side `validate`. It also exercises the two
 //! encode paths (verbatim `to_bytes` vs canonical `to_canonical_bytes`) and the canonical

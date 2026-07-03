@@ -1,4 +1,4 @@
-//! **TCP streaming** — a real client/server over a reliable byte stream, reading and writing
+//! **tcp** — a real client/server over a reliable byte stream, reading and writing
 //! framed messages on one connection, *without* `try_clone()`.
 //!
 //! A `#[bin]` enum is a self-delimiting RPC (magic-dispatched), so a reader pulls exactly one
@@ -15,7 +15,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example tcp`
 
-use bnb::{BufSource, bin};
+use bnb::{BufSource, Source, bin};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -31,10 +31,7 @@ enum Message {
     Pong { seq: u32 },
     #[bin(magic = 0x03u8)]
     Echo {
-        #[br(temp)]
-        #[bw(calc = text.len() as u8)]
-        len: u8,
-        #[br(count = len)]
+        #[brw(count_prefix = u8)] // derived, never stored, checked at encode
         #[try_str]
         text: Vec<u8>,
     },
@@ -63,9 +60,19 @@ fn reply_to(req: &Message) -> Option<Message> {
 fn serve(stream: TcpStream) -> std::io::Result<()> {
     let mut reader = BufSource::new(&stream); // &TcpStream: Read
     let mut writer = &stream; // &TcpStream: Write — the same underlying socket
-    // `decode` returns `Err` when the connection closes (or on a framing error) — that
-    // ends the read loop.
-    while let Ok(req) = Message::decode(&mut reader) {
+    loop {
+        // Distinguish a clean close from corruption. When the peer hangs up *between*
+        // messages, the next decode fails with `Incomplete` at exactly the bit position
+        // where the message would have started — no byte of it ever arrived. An
+        // `Incomplete` past that position means the connection died mid-message, and any
+        // other kind (`BadMagic`, `Io`, …) is a framing/transport fault — those are real
+        // errors and must be surfaced, not silently treated as end-of-stream.
+        let start = reader.bit_pos();
+        let req = match Message::decode(&mut reader) {
+            Ok(req) => req,
+            Err(e) if e.is_incomplete() && e.at == start => break, // clean close
+            Err(e) => panic!("server: framing/transport error: {e}"),
+        };
         info!(?req, "server ← request");
         match reply_to(&req) {
             Some(reply) => {

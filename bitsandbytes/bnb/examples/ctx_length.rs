@@ -6,7 +6,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example ctx_length`
 
-use bnb::bin;
+use bnb::{BitReader, bin};
 
 /// One row — its value count comes from the parent (the table's column count), not its bytes.
 #[bin(big, ctx(columns: u8))]
@@ -49,6 +49,19 @@ fn main() {
     println!("table: {} bytes  {bytes:02x?}", bytes.len());
     assert_eq!(Table::decode_exact(&bytes).unwrap(), table);
     println!("{table:#?}");
+
+    // A `ctx` type has no context-free entry points — decode one `Row` directly by passing the
+    // generated `RowCtx` to `decode_with`. The Ctx is built positionally, in declaration order.
+    let row_bytes = [0x00, 0x07, 0x0A, 0x14, 0x1E]; // id = 7, then `columns` (3) value bytes
+    let mut reader = BitReader::new(&row_bytes);
+    let row = Row::decode_with(&mut reader, RowCtx::new(3)).unwrap();
+    assert_eq!(
+        row,
+        Row {
+            id: 7,
+            values: vec![10, 20, 30],
+        }
+    );
 
     println!("all checks passed");
 }

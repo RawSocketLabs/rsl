@@ -139,7 +139,10 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `reserved`/`reserved_with`, `parse_with`/`write_with`, `variable` (`#[brw(variable)]` —
   the field's type is a variable-length custom codec; the parent skips `FixedBitLen`),
   `pad_before`/`pad_after`/
-  `align_*`/`seek`/`restore_position`, and `assert`/`validate`. Positioning amounts
+  `align_*`/`seek`/`restore_position`, and `dbg`. (There is **no field-level
+  `assert`/`validate`** — validation is the struct-level `validate = <path>`,
+  construction-side only; a decode-time guard is currently spelled `try_map` + an
+  identity `bw(map)`, an open ROADMAP wart.) Positioning amounts
   use the `prelude` typed helpers (`4.bits()`, `3.bytes()`).
 - **I/O ladder** (`bnb::bitstream`): `Source`/`Sink` (the bit cursors), the
   `SeekSource` marker for in-memory buffers, `BufSource<R: Read>` (bounded

@@ -13,11 +13,7 @@ use bnb::{BitEncode, BytesReader, BytesWriter, bin};
 struct Packet {
     id: u32,
 
-    #[br(temp)]
-    #[bw(calc = self.payload.len() as u16)]
-    len: u16,
-
-    #[br(count = len)]
+    #[brw(count_prefix = u16)] // the u16 length prefix — derived, never stored, checked at encode
     payload: Vec<u8>,
 }
 

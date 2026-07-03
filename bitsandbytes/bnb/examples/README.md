@@ -43,9 +43,19 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `cstring` | **`bnb::codecs::cstring`** — the shipped NUL-terminated codec, raw-bytes and UTF-8 `String` forms, checked embedded-NUL write | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
 | `try_str` | **`#[try_str]`** — a `Debug` hint: a byte buffer prints as a string when valid UTF-8, else hex bytes (never lossy) | `--example try_str` |
-| `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`-driven sections, enum dispatch, UDP loopback | `--example dns` |
+| `dns` | **Flagship** — a DNS message: a hand-rolled name codec (compression via seeking) attached per-type via a `#[bin(codec)]` newtype, checked label writes, `count`-driven sections, enum dispatch, UDP loopback | `--example dns` |
 
 ## I/O ladder & transports
+
+**Which framing tool?** Start from how the bytes arrive: **whole buffer in hand** →
+`decode_all`/`decode_iter` (or `peek`); **you push chunks as they arrive** (ISR, channel,
+reassembly) → `BitBuf` push/pull (`bounded` for a fixed footprint); **you own a blocking
+`Read`** → `BufSource` (needs backward seeks, e.g. `restore_position`) or `StreamBitReader`
+(forward-only, `Incomplete` = "read more"); **a `std` socket, whole messages** →
+`MessageStream`/`MessageDatagram` (the `net` feature); **async tokio** → `BinCodec` over
+`Framed`/`UdpFramed` (the `tokio` feature); **a `bytes`-crate pipeline** →
+`BytesReader`/`BytesWriter` (the `bytes` feature). They compose top-down: the transport
+helpers are built on the cursors, so dropping a level is always possible.
 
 | Example | Shows | Run |
 |---|---|---|
@@ -77,8 +87,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
-| `count_prefix` (the length-prefixed count sugar) | tlv, telemetry, bin_message, ctx_length |
-| `codec` newtypes + `#[brw(variable)]` (per-type field codecs) | varint |
+| `count_prefix` (the length-prefixed count sugar) | tlv, telemetry, bin_message, ctx_length, checked, versioned, versioned_cells, try_str, ctx, archive, streaming, bytes_frame, framed, tcp, unix_stream |
+| `codec` newtypes + `#[brw(variable)]` (per-type field codecs) | varint, dns |
 | `temp`/`calc` | most `#[bin]` examples |
 | `map` | conditional, ipv4, heartbeat |
 | `try_map` | checked, versioned, versioned_cells |

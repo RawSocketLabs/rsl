@@ -36,6 +36,8 @@ fn main() {
     let bytes = h.to_bytes().unwrap();
     // kind|pad = byte0, flags = byte1, pad = byte2, value = byte3..5, trailer|pad = byte5, extra = byte6.
     println!("encoded: {} bytes  {bytes:02x?}", bytes.len());
+    assert_eq!(bytes.len(), 7);
+    assert_eq!(bytes, [0x50, 0xAB, 0x00, 0x12, 0x34, 0x70, 0x80]);
     assert_eq!(Header::decode_exact(&bytes).unwrap(), h);
     println!("{h:#?}");
     println!("all checks passed");

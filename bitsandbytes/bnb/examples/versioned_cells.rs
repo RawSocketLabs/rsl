@@ -31,10 +31,8 @@ struct Table {
     #[br(try_map = check_version)]
     #[bw(map = |v: &u8| *v)]
     version: u8,
-    #[br(temp)]
-    #[bw(calc = self.cells.len() as u8)]
-    count: u8,
-    #[br(count = count, ctx { version })] // thread the validated version into each cell
+    #[brw(count_prefix = u8)] // the u8 count prefix — derived, never stored, checked at encode
+    #[br(ctx { version })] // thread the validated version into each cell
     cells: Vec<Cell>,
 }
 

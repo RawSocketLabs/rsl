@@ -46,6 +46,7 @@ fn main() {
         assert_eq!(stream.pull::<Tick>().unwrap(), Some(Tick { seq }));
     }
     assert!(stream.is_empty());
+    assert_eq!(stream.capacity(), Some(2)); // the cap never grew — genuinely one allocation
     println!("framed 1000 messages through a 2-byte bounded buffer (one allocation)");
 
     println!("all checks passed");

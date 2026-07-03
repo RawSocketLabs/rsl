@@ -17,11 +17,7 @@ enum Body {
 
     #[bin(tag = 2)]
     Chat {
-        #[br(temp)]
-        #[bw(calc = text.len() as u8)]
-        len: u8,
-
-        #[br(count = len)]
+        #[brw(count_prefix = u8)] // derived, never stored, checked at encode
         #[try_str]
         text: Vec<u8>,
     },

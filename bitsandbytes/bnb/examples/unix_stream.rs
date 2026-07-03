@@ -15,10 +15,7 @@ use bnb::bin;
 enum Message {
     #[bin(magic = 0x01u8)]
     Echo {
-        #[br(temp)]
-        #[bw(calc = text.len() as u8)]
-        len: u8,
-        #[br(count = len)]
+        #[brw(count_prefix = u8)] // derived, never stored, checked at encode
         #[try_str]
         text: Vec<u8>,
     },
@@ -46,7 +43,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept");
         let mut conn = MessageStream::new(stream); // MessageStream<UnixStream> — same API as TCP
-        while let Ok(req) = conn.read_message::<Message>() {
+        loop {
+            // `read_message` reports a closed connection as `Io(UnexpectedEof)` — that one
+            // kind means "the peer hung up" and ends the loop cleanly. Anything else
+            // (`BadMagic`, another `Io`, …) is a framing/transport fault and is surfaced,
+            // not silently treated as end-of-stream.
+            let req = match conn.read_message::<Message>() {
+                Ok(req) => req,
+                Err(bnb::BitError {
+                    kind: bnb::ErrorKind::Io(std::io::ErrorKind::UnexpectedEof),
+                    ..
+                }) => break, // clean close
+                Err(e) => panic!("unix server: framing/transport error: {e}"),
+            };
             info!(?req, "unix server ← request");
             match req {
                 Message::Echo { text } => {

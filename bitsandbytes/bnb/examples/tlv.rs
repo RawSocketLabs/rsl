@@ -1,8 +1,8 @@
 //! **tlv** — a Type-Length-Value-style codec: a document is a `count`-driven sequence of
 //! heterogeneous, self-describing records. A leading type byte (each variant's `magic`)
 //! dispatches the record; its body — fixed, or length-prefixed for the variable ones — follows.
-//! The "build your own extensible wire format" orchestration: enum `magic` dispatch + `count` +
-//! `temp`/`calc` lengths, composed into one message.
+//! The "build your own extensible wire format" orchestration: enum `magic` dispatch +
+//! `count_prefix` lengths (derived, never stored, checked at encode), composed into one message.
 //!
 //! Run with: `cargo run -p bitsandbytes --example tlv`
 

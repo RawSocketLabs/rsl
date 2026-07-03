@@ -21,11 +21,7 @@ struct Entry {
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Index {
-    #[br(temp)]
-    #[bw(calc = self.entries.len() as u8)]
-    count: u8,
-
-    #[br(count = count)]
+    #[brw(count_prefix = u8)] // the entry count — derived, never stored, checked at encode
     entries: Vec<Entry>,
 }
 

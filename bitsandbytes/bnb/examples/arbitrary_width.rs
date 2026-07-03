@@ -41,6 +41,8 @@ fn main() {
     let bytes = known.to_bytes().unwrap();
     // 54 bits packs into 7 bytes (the final 2 bits are padding); decode_exact tolerates them.
     println!("known sync : {} bytes  {bytes:02x?}", bytes.len());
+    // byte0 = u3(0b111)<<5 | top 5 bits of sync (0xF2 = 0b1111_0010 → 0b11110) = 0b111_11110 = 0xFE
+    assert_eq!(bytes, [0xFE, 0x46, 0x8A, 0xCF, 0x13, 0x57, 0x94]);
     assert_eq!(Frame::decode_exact(&bytes).unwrap(), known);
     assert_eq!(known.sync, SyncPat::T1);
 

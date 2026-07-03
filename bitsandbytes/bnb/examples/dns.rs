@@ -3,7 +3,9 @@
 //!
 //! It folds the bnb stack: the 16-bit flags word is a `#[bitfield]` of two `#[derive(BitEnum)]`s
 //! and six bools; the four sections are `count`-driven `Vec`s of nested `#[bin]` records; domain
-//! names are a length-prefixed label list parsed by a custom `parse_with`/`write_with` codec;
+//! names are a length-prefixed label list handled by a **codec newtype** (`DnsName`, hand-rolled
+//! `read_name`/`write_name` fns attached per-type via `#[bin(codec(...))]`, so every name field
+//! shares the codec without per-field `parse_with`/`write_with` noise);
 //! and a compressed answer name is a **pointer back to an earlier offset**, which the parser
 //! *follows by seeking* and then resumes — the in-memory cursor makes that pointer-chase free
 //! (`seek_to_bit`), no second pass.
@@ -101,8 +103,22 @@ fn read_name<S: Source>(r: &mut S) -> Result<Vec<String>, bnb::BitError> {
 
 /// Write a name as length-prefixed labels + a root terminator. We always emit the
 /// **uncompressed** form (valid, if larger) — compression is a decode-time optimization.
+///
+/// A label must be 1..=63 bytes: a length byte ≥ 64 would collide with the `0xC0`
+/// compression-pointer bit space, so an oversized label is *refused* with a `BitError`
+/// instead of being written as garbage — the crate's checked-write doctrine (the same
+/// way `bnb::codecs::cstring`'s `write` refuses a string with an embedded NUL).
 fn write_name<K: Sink>(labels: &[String], w: &mut K) -> Result<(), bnb::BitError> {
     for label in labels {
+        if label.len() > 63 {
+            return Err(bnb::BitError::convert(
+                format!(
+                    "DNS label '{label}' is {} bytes; the maximum is 63",
+                    label.len()
+                ),
+                w.bit_pos(),
+            ));
+        }
         w.write(label.len() as u8)?;
         for &b in label.as_bytes() {
             w.write(b)?;
@@ -110,6 +126,13 @@ fn write_name<K: Sink>(labels: &[String], w: &mut K) -> Result<(), bnb::BitError
     }
     w.write(0u8) // root
 }
+
+/// A domain name — the hand-rolled label-list codec above, attached **per-type**: every
+/// `DnsName` field decodes via `read_name` and encodes via `write_name`, with no
+/// per-field `parse_with`/`write_with` repetition at each use site.
+#[bin(codec(parse = read_name, write = write_name))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DnsName(Vec<String>);
 
 /// Join labels back into a dotted name for display.
 fn dotted(labels: &[String]) -> String {
@@ -122,9 +145,10 @@ fn dotted(labels: &[String]) -> String {
 #[bin(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Question {
-    #[br(parse_with = read_name)]
-    #[bw(write_with = write_name)]
-    name: Vec<String>,
+    // A codec newtype is variable-length; `variable` tells the otherwise-fixed parent
+    // (two u16s) not to claim `FixedBitLen`.
+    #[brw(variable)]
+    name: DnsName,
     qtype: u16,
     qclass: u16,
 }
@@ -133,9 +157,9 @@ struct Question {
 #[bin(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Record {
-    #[br(parse_with = read_name)]
-    #[bw(write_with = write_name)]
-    name: Vec<String>,
+    // No `variable` marker needed here: the `count`-driven `rdata` Vec already makes
+    // this struct variable-length, so it claims no `FixedBitLen` to suppress.
+    name: DnsName,
     rtype: u16,
     rclass: u16,
     ttl: u32,
@@ -148,6 +172,11 @@ struct Record {
 
 /// A whole DNS message: the header, then the four `count`-driven sections. Each `count` is read
 /// into a temp and recomputed on write from the matching `Vec`'s length, so they can't drift.
+/// These four can't use the `count_prefix` sugar because DNS groups them in the header, away
+/// from the `Vec`s they count — `count_prefix` is for a prefix immediately *adjacent* to its
+/// `Vec`. (`Record::rdlength` above stays hand-written too, deliberately: it is a **byte
+/// length**, not an element count; it only coincides with `rdata.len()` because rdata is
+/// `Vec<u8>`.)
 #[bin(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Message {
@@ -222,18 +251,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .id(0x1234)
         .flags(Flags::new().with_rd(true)) // standard recursive A? query
         .questions(vec![Question {
-            name: vec!["example".into(), "com".into()],
+            name: DnsName(vec!["example".into(), "com".into()]),
             qtype: 1,  // A
             qclass: 1, // IN
         }])
         .build()?;
     let q_bytes = query.to_bytes()?;
     info!(
-        question = %dotted(&query.questions[0].name),
+        question = %dotted(&query.questions[0].name.0),
         bytes = %hex(&q_bytes),
         "built query",
     );
     assert_eq!(Message::decode_exact(&q_bytes)?, query); // round-trips
+
+    // The checked write in action: a 64-byte label can't exist on the wire (its length
+    // byte would collide with the 0xC0 pointer bits), so `write_name` refuses it at
+    // encode time instead of emitting garbage.
+    let oversized = Question {
+        name: DnsName(vec!["x".repeat(64), "com".into()]),
+        qtype: 1,
+        qclass: 1,
+    };
+    let err = oversized.to_bytes().unwrap_err();
+    info!(%err, "a 64-byte label is refused at encode (checked write)");
 
     // ===== decode a real response that uses a compression pointer =====
     // id, flags(0x8180: response+RD+RA), qd=1 an=1 ns=0 ar=0, question "example.com" A IN, then
@@ -262,15 +302,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opcode = ?resp.flags.opcode(),
         ra = resp.flags.ra(),
         rcode = ?resp.flags.rcode(),
-        question = %dotted(&resp.questions[0].name),
+        question = %dotted(&resp.questions[0].name.0),
         // `name` was the 2-byte pointer `c0 0c` on the wire — the parser SEEKED back to
         // offset 12 and reconstructed the full name from there:
-        answer_name = %dotted(&answer.name),
+        answer_name = %dotted(&answer.name.0),
         ttl = answer.ttl,
         address = %format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]),
         "decoded response (compression pointer followed)",
     );
-    assert_eq!(dotted(&answer.name), "example.com"); // the pointer resolved to the question name
+    assert_eq!(dotted(&answer.name.0), "example.com"); // the pointer resolved to the question name
     assert_eq!(answer.rdata, vec![93, 184, 216, 34]);
 
     // The decoded value round-trips through a *re-encode* (now uncompressed — `c0 0c` becomes
@@ -308,7 +348,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(
         from = %from,
         id = %format!("0x{:04x}", reply.id),
-        name = %dotted(&a.name),
+        name = %dotted(&a.name.0),
         address = %format!("{}.{}.{}.{}", a.rdata[0], a.rdata[1], a.rdata[2], a.rdata[3]),
         "client ← response decoded",
     );

@@ -8,7 +8,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example sockets --features net`
 
-use bnb::{MessageDatagram, MessageStream, bin};
+use bnb::{BitError, ErrorKind, MessageDatagram, MessageStream, bin};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::Duration;
@@ -32,7 +32,19 @@ fn tcp_demo() -> Result<(), Box<dyn std::error::Error>> {
     let server = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept");
         let mut conn = MessageStream::new(stream); // owns the socket; both read + write
-        while let Ok(req) = conn.read_message::<Message>() {
+        loop {
+            // `read_message` reports a closed connection as `Io(UnexpectedEof)` — that one
+            // kind means "the peer hung up" and ends the loop cleanly. Anything else
+            // (`BadMagic`, another `Io`, …) is a framing/transport fault and is surfaced,
+            // not silently treated as end-of-stream.
+            let req = match conn.read_message::<Message>() {
+                Ok(req) => req,
+                Err(BitError {
+                    kind: ErrorKind::Io(std::io::ErrorKind::UnexpectedEof),
+                    ..
+                }) => break, // clean close
+                Err(e) => panic!("tcp server: framing/transport error: {e}"),
+            };
             info!(?req, "tcp server ← request");
             match req {
                 Message::Ping { seq } => conn.write_message(&Message::Pong { seq }).expect("write"),

@@ -44,6 +44,9 @@ fn main() {
     };
     let bytes = report.to_bytes().unwrap();
     println!("encoded: {} bytes  {bytes:02x?}", bytes.len()); // 52 bits -> 7 bytes (4 pad bits)
+    // byte0 = u6(1)<<2 | u2(0) = 0b000001_00 = 0x04;
+    // byte1 = top 8 bits of u30(227_006_760 = 0b00_1101_1000_0111_1101_1001_0010_1000) = 0x36.
+    assert_eq!(bytes, [0x04, 0x36, 0x1F, 0x64, 0xA0, 0x04, 0xA0]);
     assert_eq!(PositionReport::decode_exact(&bytes).unwrap(), report);
 
     // an unlisted nav-status code is preserved by #[catch_all], not rejected (dual-use)

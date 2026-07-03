@@ -1,4 +1,4 @@
-//! **Framed protocol** — a length-delimited, magic-synced message stream, both sides of a
+//! **framed** — a length-delimited, magic-synced message stream, both sides of a
 //! conversation, over the opt-in **`bytes`** zero-copy adapters.
 //!
 //! This is the example that exercises bnb's async-framing path. One `#[bin]` **enum** is a
@@ -26,10 +26,7 @@ enum Message {
     /// A text line — a `u8` length prefix (derived, never stored) then that many bytes.
     #[bin(magic = 0x02u8)]
     Say {
-        #[br(temp)]
-        #[bw(calc = text.len() as u8)]
-        len: u8,
-        #[br(count = len)]
+        #[brw(count_prefix = u8)] // derived, never stored, checked at encode
         #[try_str]
         text: Vec<u8>,
     },
