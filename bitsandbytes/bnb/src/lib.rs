@@ -244,7 +244,7 @@ pub mod __private {
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
     /// Owned-collection re-exports so macro-generated code names neither `std` nor
     /// `alloc` directly (the user crate need not declare `extern crate alloc`).
-    pub use ::alloc::{string::String, vec, vec::Vec};
+    pub use ::alloc::{format, string::String, vec, vec::Vec};
     /// Re-exported for the `#[br(dbg)]` directive's generated `trace!` call, so a user
     /// of the directive needs no direct `tracing` dependency. `#[br(dbg)]` is a
     /// `std`-only debugging aid (see the `tracing` dependency note in `Cargo.toml`).

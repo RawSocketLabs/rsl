@@ -286,6 +286,14 @@ struct FieldBr {
     /// the field's start offset and decoded value as it is read (the field type must be
     /// `Debug`). A read-only diagnostic: it consumes no extra bits and is inert on encode.
     dbg: bool,
+    /// `#[br(assert(<expr>))]` / `#[br(assert(<expr>, "fmt", args…))]` — a **decode-time
+    /// guard**: after the field is read (and mapped), the expression (over this and
+    /// earlier fields) must hold, else decode fails with `ErrorKind::Convert`. The
+    /// *explicit opt-in* strictness escape hatch (same rejection family as `magic`,
+    /// closed enums, and `try_map`: values unrepresentable in the domain) — the default
+    /// stays permissive. Read-only: no `bw` inverse is needed, and encode is untouched.
+    /// Multiple asserts run in order.
+    asserts: Vec<(syn::Expr, Option<Punctuated<syn::Expr, Token![,]>>)>,
 }
 
 /// One `#[br(...)]` directive. A hand-rolled parser (not `parse_nested_meta`)
@@ -305,6 +313,7 @@ enum BrDirective {
     RestorePosition,
     Seek(syn::Expr),
     Dbg,
+    Assert(Box<syn::Expr>, Option<Punctuated<syn::Expr, Token![,]>>),
 }
 
 impl Parse for BrDirective {
@@ -322,6 +331,21 @@ impl Parse for BrDirective {
                     Ok(BrDirective::Count(input.parse()?))
                 }
                 "temp" => Ok(BrDirective::Temp),
+                "assert" => {
+                    // `assert(<expr>)` or `assert(<expr>, "fmt", args…)` — binrw parity.
+                    let content;
+                    syn::parenthesized!(content in input);
+                    let cond: syn::Expr = content.parse()?;
+                    let msg = if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                        Some(Punctuated::<syn::Expr, Token![,]>::parse_terminated(
+                            &content,
+                        )?)
+                    } else {
+                        None
+                    };
+                    Ok(BrDirective::Assert(Box::new(cond), msg))
+                }
                 "ignore" => Err(syn::Error::new_spanned(
                     &kw,
                     "`ignore` marks a field as neither read nor written; write it as `#[brw(ignore)]`",
@@ -362,7 +386,7 @@ impl Parse for BrDirective {
                 "dbg" => Ok(BrDirective::Dbg),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, `restore_position`, `seek = <bits>`, or `dbg`",
+                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `assert(<expr>)`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, `restore_position`, `seek = <bits>`, or `dbg`",
                 )),
             }
         }
@@ -395,6 +419,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::RestorePosition => br.restore_position = true,
                     BrDirective::Seek(e) => br.seek = Some(e),
                     BrDirective::Dbg => br.dbg = true,
+                    BrDirective::Assert(cond, msg) => br.asserts.push((*cond, msg)),
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -815,6 +840,33 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                 value = ?#id,
             );
         };
+    }
+    // `assert(...)`: decode-time guards, run in order after the value is bound (and
+    // after any `map`, so they see the *mapped* value). Read-only — encode is untouched.
+    if !br.asserts.is_empty() {
+        let id = f.ident.as_ref().expect("named field");
+        let checks = br.asserts.iter().map(|(cond, msg)| {
+            let msg_ts = match msg {
+                Some(args) => quote!(#bnb::__private::format!(#args)),
+                None => quote!(#bnb::__private::String::from(::core::concat!(
+                    "assertion failed: `",
+                    ::core::stringify!(#cond),
+                    "`"
+                ))),
+            };
+            quote! {
+                if !(#cond) {
+                    return ::core::result::Result::Err(
+                        #bnb::__private::BitError::convert(
+                            #msg_ts,
+                            #bnb::__private::Source::bit_pos(__bnb_r),
+                        )
+                        .in_field(::core::stringify!(#id)),
+                    );
+                }
+            }
+        });
+        core = quote!(#core #(#checks)*);
     }
     let mut body = quote!(#seek #core);
     if br.restore_position {

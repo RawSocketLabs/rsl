@@ -3,6 +3,9 @@
 //! permissive defaults: use `try_map` for values that are genuinely *unrepresentable*, not
 //! merely *unknown* (for unknown-but-valid, keep `#[catch_all]` / flag retention). It also
 //! differs from construction-side `validate`, which gates `build()` but leaves the parser open.
+//! (For a pure *guard* — same type in and out, no conversion — use `#[br(assert(...))]`
+//! instead: no write inverse needed. See `versioned`. `try_map` earns its keep when the
+//! domain type genuinely differs from the wire type, as here.)
 //!
 //! Run with: `cargo run -p bitsandbytes --example checked`
 

@@ -1,20 +1,11 @@
 //! **versioned** — `#[bin]` `if` driven by a **version** field (a different driver than
 //! `conditional`'s per-bit flags): a v2 message carries fields a v1 message doesn't, so old and
-//! new peers share one wire type. The version is `try_map`-checked, so an unknown version is
-//! rejected at decode.
+//! new peers share one wire type. The version is guarded by `#[br(assert(...))]`, so an
+//! unknown version is rejected at decode — a pure read-side guard, no write inverse needed.
 //!
 //! Run with: `cargo run -p bitsandbytes --example versioned`
 
 use bnb::{ErrorKind, bin};
-
-/// Reject a version this build doesn't speak (a `try_map` used purely as a parse-time guard).
-fn check_version(raw: u8) -> Result<u8, String> {
-    if (1..=2).contains(&raw) {
-        Ok(raw)
-    } else {
-        Err(format!("unsupported version {raw}"))
-    }
-}
 
 /// A length-prefixed label (v2 only).
 #[bin(big)]
@@ -28,8 +19,9 @@ struct Label {
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Event {
-    #[br(try_map = check_version)]
-    #[bw(map = |v: &u8| *v)]
+    // The decode-time guard: reject a version this build doesn't speak. Read-only —
+    // encode still writes whatever is stored (you can forge what you wouldn't accept).
+    #[br(assert((1..=2).contains(&version), "unsupported version {}", version))]
     version: u8,
     id: u32,
     // v2 extended the event with a priority and a label; a v1 event stops after `id`.

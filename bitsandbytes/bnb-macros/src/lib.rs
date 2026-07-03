@@ -288,7 +288,9 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 ///
 /// ## Field directives
 ///
-/// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`, `map`/`try_map`
+/// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
+/// `assert(<expr>[, "fmt", args…])` (a decode-time guard over this and earlier fields —
+/// the explicit opt-in strictness escape hatch; read-only, no inverse), `map`/`try_map`
 /// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `pad_before/after`,
 /// `align_before/after`, `seek = <bits>`, `restore_position`, `dbg` (trace a field as it
 /// decodes); `#[brw(ignore)]` (neither read nor written); `#[brw(variable)]` (the

@@ -1,20 +1,11 @@
-//! **versioned_cells** — `ctx` + `try_map` together: a header `version` is **validated** by
-//! `try_map` (rejecting an unknown version at decode) and **threaded** into each cell as context,
-//! where it sets the cell's data width. A third `ctx` shape (after `ctx`'s off-wire tag dispatch
-//! and `ctx_length`'s column count) and a third `try_map` (after `checked`/`versioned`).
+//! **versioned_cells** — `ctx` + a decode-time guard together: a header `version` is **guarded**
+//! by `#[br(assert(...))]` (rejecting an unknown version at decode) and **threaded** into each
+//! cell as context, where it sets the cell's data width. A third `ctx` shape (after `ctx`'s
+//! off-wire tag dispatch and `ctx_length`'s column count).
 //!
 //! Run with: `cargo run -p bitsandbytes --example versioned_cells`
 
 use bnb::{ErrorKind, bin};
-
-/// Reject a version this build doesn't speak (a `try_map` parse-time guard).
-fn check_version(raw: u8) -> Result<u8, String> {
-    if (1..=2).contains(&raw) {
-        Ok(raw)
-    } else {
-        Err(format!("unsupported version {raw}"))
-    }
-}
 
 /// A cell whose data width comes from the parent's `version` context (v1 → 1 byte, v2 → 2).
 #[bin(big, ctx(version: u8))]
@@ -28,8 +19,9 @@ struct Cell {
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Table {
-    #[br(try_map = check_version)]
-    #[bw(map = |v: &u8| *v)]
+    // The decode-time guard: reject a version this build doesn't speak (read-only —
+    // no write inverse needed; encode still emits whatever is stored).
+    #[br(assert((1..=2).contains(&version), "unsupported version {}", version))]
     version: u8,
     #[brw(count_prefix = u8)] // the u8 count prefix — derived, never stored, checked at encode
     #[br(ctx { version })] // thread the validated version into each cell

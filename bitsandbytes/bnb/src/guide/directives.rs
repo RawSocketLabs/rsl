@@ -106,6 +106,41 @@
 //! assert_eq!(Opt::decode_exact(&[0x00]).unwrap(), without);
 //! ```
 //!
+//! # `assert` — a decode-time guard
+//!
+//! `#[br(assert(<expr>))]` runs after the field is read (and mapped): if the expression —
+//! over this and any earlier field — is false, decode fails with a position-aware
+//! [`Convert`](crate::bitstream::ErrorKind::Convert) error naming the field. An optional
+//! message takes format args: `assert(<expr>, "fmt {}", args…)`. Multiple asserts run in
+//! order.
+//!
+//! **Doctrine note.** The parser is permissive by default — it never rejects representable
+//! input. `assert` is the *explicit opt-in* for values that are unrepresentable in your
+//! domain (an impossible version, a violated framing invariant) — the same rejection family
+//! as `magic`, closed enums, and `try_map`. It is **read-only**: no `bw` inverse is needed,
+//! and encode still writes whatever is stored — you can forge what you would not accept
+//! (dual-use). For *semantic* validity, use struct-level `validate` (construction-side,
+//! never the parser); for a genuine type conversion, use `try_map`.
+//!
+//! ```
+//! use bnb::bin;
+//! use bnb::bitstream::ErrorKind;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Event {
+//!     #[br(assert((1..=2).contains(&version), "unsupported version {}", version))]
+//!     version: u8,
+//!     id: u16,
+//! }
+//!
+//! assert!(Event::decode_exact(&[0x02, 0x00, 0x07]).is_ok());
+//! let err = Event::decode_exact(&[0x09, 0x00, 0x07]).unwrap_err();
+//! assert_eq!(err.field, Some("version"));
+//! assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+//! // Encode is untouched by the guard — forging stays possible:
+//! assert_eq!(Event { version: 9, id: 7 }.to_bytes().unwrap(), [0x09, 0x00, 0x07]);
+//! ```
+//!
 //! # `map` / `try_map` — transform the wire value
 //!
 //! `#[br(map = <f>)]` reads the wire value (its type inferred from `f`'s argument) and

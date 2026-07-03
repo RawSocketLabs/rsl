@@ -298,21 +298,22 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       `ui/bin_codec_needs_variable`). No `FixedBitLen` on the newtype (variable assumed; fixed
       codecs add the manual one-liner). Per-field `parse_with`/`write_with` stays the right tool
       for one-offs. `tests/bin_codec_newtype.rs`; guide § "Per-type codecs".
-- [ ] **[additive · decision] A read-side guard directive (the `try_map`-as-guard wart).**
-      Surfaced by the *second* examples audit (2026-07-03): three examples used
-      `#[br(try_map = check_version)]` purely as a decode-time *guard* (the type never changes,
-      `u8`→`u8`), each forced to carry a no-op identity `#[bw(map = |v: &u8| *v)]` to satisfy
-      the map-needs-an-inverse rule — duplicated `check_version` fns included. A pure read
-      guard shouldn't demand a write closure. Related doc bug fixed in the same audit:
-      AGENTS.md's field-directive grammar listed `assert`/`validate` at field level, which
-      have never existed — evidence the gap is felt. The doctrinal tension is the real
-      question: a decode-time guard **rejects representable input**, which the dual-use
-      doctrine forbids plain parsers to do — `try_map` squares that circle only because a
-      failed *conversion* means the value is unrepresentable in the target domain type. So
-      decide: (a) a field-level `#[br(assert = …)]` as an explicitly-opt-in strictness escape
-      hatch (documented as intentionally anti-permissive), (b) bless `try_map` + ship an
-      identity-inverse helper so the guard stops costing a hand-written closure, or (c) status
-      quo with the pattern documented. Weigh at the C freeze; Section A ports will show demand.
+- [x] **[shipped] A read-side guard directive → `#[br(assert(<expr>[, "fmt", args…]))]`.**
+      Decided as (a), the binrw-parity spelling — which is also where AGENTS.md's phantom
+      `assert` grammar had come from (aspirational vocabulary from the inspiration crate).
+      Runs after the field is read *and mapped* (so it guards the domain value), over this
+      and earlier fields; multiple asserts run in order; fails with `ErrorKind::Convert`
+      (no new error surface) + the field name + a position. **Read-only** — no `bw` inverse
+      (killing the identity-`bw(map)` wart), and encode is untouched, so deliberate forging
+      stays possible (the dual-use resolution: the guard is the *explicit opt-in* for values
+      unrepresentable in the domain — the same rejection family as `magic`/closed
+      enums/`try_map` — while the default parser stays permissive; semantic validity stays
+      construction-side in `validate`). The identity-inverse-helper option was rejected as
+      still-boilerplate. Pure guards migrated: `versioned`/`versioned_cells` dropped their
+      duplicated `check_version` + identity inverses; `checked` stays `try_map` (a genuine
+      wire→domain conversion) with the guard-vs-conversion rule cross-referenced. Works on
+      struct fields, enum-variant fields, `temp` fields, and through the bare derives
+      (shared read path). `tests/bin_assert.rs`; guide § "assert".
 - [ ] **[additive · decision] Encode-side check for ctx-driven counts.**
       `#[br(count = <ctx-param>)]` sizes a `Vec` from context on decode, but encode writes
       *all* elements with nothing asserting `len == param` — a value built with a mismatched
