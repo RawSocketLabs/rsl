@@ -174,61 +174,10 @@ fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError>
     w.write(0u8) // root terminator
 }
 
+/// Pure name logic — parsing/rendering dotted strings, no wire codec.
 #[cfg(test)]
 mod unit {
     use super::*;
-    use bnb::bitstream::{BitReader, BitWriter};
-
-    fn decode(bytes: &[u8]) -> Result<Name, BitError> {
-        Name::decode_exact(bytes)
-    }
-
-    #[test]
-    fn simple_name_round_trips() {
-        // 7 'example' 3 'com' 0
-        let wire = [
-            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
-        ];
-        let n = decode(&wire).unwrap();
-        assert_eq!(n.to_dotted(), "example.com");
-        assert_eq!(n.to_bytes().unwrap(), wire);
-    }
-
-    #[test]
-    fn root_name() {
-        let n = decode(&[0x00]).unwrap();
-        assert!(n.is_root());
-        assert_eq!(n.to_dotted(), ".");
-        assert_eq!(n.to_bytes().unwrap(), [0x00]);
-    }
-
-    #[test]
-    fn follows_a_compression_pointer() {
-        // Message: at offset 0, "example.com\0"; at offset 13, "www" + pointer(0x0000).
-        let mut buf = vec![
-            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
-        ];
-        buf.extend_from_slice(&[0x03, b'w', b'w', b'w', 0xC0, 0x00]); // pointer to offset 0
-        // Decode the name starting at offset 13 by seeking there first.
-        let mut r = BitReader::new(&buf);
-        r.seek_to_bit(13 * 8).unwrap();
-        let labels = decode_labels(&mut r).unwrap();
-        let n = Name(labels);
-        assert_eq!(n.to_dotted(), "www.example.com");
-        // The cursor resumed right after the 2 pointer bytes (offset 19 = bit 152).
-        assert_eq!(r.bit_pos(), 19 * 8);
-    }
-
-    #[test]
-    fn pointer_loop_is_bounded_not_hung() {
-        // A pointer at offset 0 pointing to itself.
-        let buf = [0xC0, 0x00];
-        let err = decode(&buf).unwrap_err();
-        assert!(
-            matches!(&err.kind, bnb::bitstream::ErrorKind::Convert { message } if message.contains("loop")),
-            "got {err:?}"
-        );
-    }
 
     #[test]
     fn from_str_and_display() {
@@ -240,6 +189,74 @@ mod unit {
             "example.com"
         );
         assert!("".parse::<Name>().unwrap().is_root());
+    }
+
+    #[test]
+    fn root_is_a_single_dot() {
+        assert!(Name::root().is_root());
+        assert_eq!(Name::root().to_dotted(), ".");
+    }
+
+    #[test]
+    fn byte_len_counts_labels_plus_terminator() {
+        let n: Name = "a.bc".parse().unwrap();
+        // (1+1) + (1+2) + 1 terminator = 6
+        assert_eq!(n.byte_len(), 6);
+    }
+
+    #[test]
+    fn from_str_rejects_an_oversized_label() {
+        let long = "a".repeat(64);
+        assert!(long.parse::<Name>().is_err());
+    }
+}
+
+/// The label codec through the bnb `Source`/`Sink` seam — including compression-pointer
+/// following on decode and uncompressed encoding.
+#[cfg(test)]
+mod component {
+    use super::*;
+    use bnb::bitstream::{BitReader, BitWriter};
+
+    #[test]
+    fn simple_name_round_trips() {
+        let wire = [
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
+        ];
+        let n = Name::decode_exact(&wire).unwrap();
+        assert_eq!(n.to_dotted(), "example.com");
+        assert_eq!(n.to_bytes().unwrap(), wire);
+    }
+
+    #[test]
+    fn root_name_round_trips() {
+        let n = Name::decode_exact(&[0x00]).unwrap();
+        assert!(n.is_root());
+        assert_eq!(n.to_bytes().unwrap(), [0x00]);
+    }
+
+    #[test]
+    fn follows_a_compression_pointer_and_resumes() {
+        // offset 0: "example.com\0"; offset 13: "www" + pointer(0x0000).
+        let mut buf = vec![
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
+        ];
+        buf.extend_from_slice(&[0x03, b'w', b'w', b'w', 0xC0, 0x00]);
+        let mut r = BitReader::new(&buf);
+        r.seek_to_bit(13 * 8).unwrap();
+        let n = Name(decode_labels(&mut r).unwrap());
+        assert_eq!(n.to_dotted(), "www.example.com");
+        // Resumed right after the 2 pointer bytes (offset 19).
+        assert_eq!(r.bit_pos(), 19 * 8);
+    }
+
+    #[test]
+    fn pointer_loop_is_bounded_not_hung() {
+        let err = Name::decode_exact(&[0xC0, 0x00]).unwrap_err();
+        assert!(
+            matches!(&err.kind, bnb::bitstream::ErrorKind::Convert { message } if message.contains("loop")),
+            "got {err:?}"
+        );
     }
 
     #[test]

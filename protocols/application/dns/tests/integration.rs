@@ -2,7 +2,7 @@
 //! decode-fidelity anchor for the bnb rewrite. Real DNS bytes must decode to the correct
 //! structure; uncompressed messages must round-trip byte-identically.
 
-mod contract {
+mod integration {
     use dns::{Message, RData, RType};
     use std::net::Ipv4Addr;
 

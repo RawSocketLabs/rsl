@@ -47,22 +47,32 @@ purpose (forging a malformed frame). The parser never enforces policy.
 
 ## Testing
 
-- Inline `#[cfg(test)] mod unit` in `header.rs` (bit packing) and `name.rs` (compression,
-  loop bound, round-trip).
-- `tests/contract.rs` — **golden wire vectors** carried from the reference implementation
-  (the decode-fidelity anchor): the uncompressed + compressed `example.com` packets, and an
-  unknown-type raw-RDATA case. Uncompressed messages round-trip byte-identically; a
-  compressed message decodes with names resolved inline (re-encode is uncompressed).
-- `tests/adversarial.rs` — pointer loops/cycles, truncation, oversized RDLENGTH,
-  out-of-range pointers, and "decode of arbitrary bytes never panics".
+Four layers, each runnable on its own (`cargo test -p dns <layer>`):
 
-Run: `cargo test -p dns`.
+- **`unit`** — inline `mod unit` in each `src/*.rs`: pure type logic, no wire codec (State bit
+  packing, enum ⇄ int round-trips, `Name::from_str`/`byte_len`, `RData::txt_strings`).
+- **`component`** — inline `mod component` in each `src/*.rs`: a *single* wire type through the
+  bnb `Source`/`Sink` seam (`Header`/`Name`/`Record`/`Question` round-trips, `Name` compression
+  following, each `RData` variant via `RDataCtx`).
+- **`integration`** — `tests/integration.rs`: whole-`Message` **golden wire vectors** carried from
+  the reference implementation (the decode-fidelity anchor) — the uncompressed + compressed
+  `example.com` packets and an unknown-type raw-RDATA case. Uncompressed round-trips
+  byte-identically; a compressed message decodes with names resolved inline (re-encode is
+  uncompressed).
+- **`adversarial`** — `tests/adversarial.rs`: pointer loops/cycles, truncation, oversized
+  RDLENGTH, out-of-range pointers, and "decode of arbitrary bytes never panics".
+
+Plus runnable **examples** (`cargo run -p dns --example <name>`): `decode_response` (walk a real
+response; unknown types preserved), `build_query` (construct + encode a query), `dual_use_forge`
+(emit a header whose count deliberately disagrees with its section). `testutil` is deferred — the
+golden vectors are inline until a second crate would share the helpers.
+
+Run everything: `cargo test -p dns`.
 
 ## Scope notes
 
-- `missing_docs` stays at the workspace `warn` (not `deny`): `bnb`'s `#[bin(ctx(...))]`
-  generates a `…Ctx` struct with undocumented fields — a `bnb` finding tracked in the
-  ROADMAP. Every hand-written item is documented.
+- `#![deny(missing_docs)]` is on (the bnb `#[bin(ctx(...))]` ctx-field-docs finding is fixed
+  upstream).
 - Structured RDATA is the **common set** only; DNSSEC/exotic types are `Custom` (raw bytes)
   by design — add structured variants as demand warrants. TXT/OPT keep raw bytes with view
   helpers rather than a full character-string type (a later refinement).

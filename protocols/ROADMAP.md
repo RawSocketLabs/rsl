@@ -47,11 +47,10 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
       `len()` but permits deliberate override (dual-use / malformed frames), decoupled from that
       collection's struct. Distinct from bnb's derive-always `count_prefix` (DNS header
       qd/an/ns/ar counts + RDLENGTH).
-- [ ] **`#[bin(ctx(...))]` generates undocumented `…Ctx` fields** — surfaced by the DNS
-      Increment-1 port: the generated `RDataCtx { rtype, rdlength }` struct's fields carry no
-      doc comments, so a consumer running `#![deny(missing_docs)]` can't (dns stays at the
-      workspace `warn` because of it). bnb should emit `/// …` on the generated fields (e.g. pass
-      through the ctx-param position, or a generic "context value"). Small, real, additive.
+- [x] **`#[bin(ctx(...))]` generates undocumented `…Ctx` fields** — **fixed upstream**
+      (`bitsandbytes` #81): each generated field now carries a `/// The `<name>` context
+      parameter.` doc. The DNS crate runs `#![deny(missing_docs)]` again. The first bnb finding
+      fed back from real-protocol dogfooding.
 - [ ] **`#[bitfield]` sub-byte backing (minor)** — bnb bitfields need a byte-width backing
       (u8/u16/…), so the reference crate's u5 `OpCode` / u7 `Flags` sub-byte groupings had to be
       flattened into the parent `State`. Flattening is arguably cleaner (matches the RFC diagram),

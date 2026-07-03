@@ -23,11 +23,7 @@
 //! ```
 
 #![forbid(unsafe_code)]
-
-// Note: this crate does not yet run `#![deny(missing_docs)]`. bnb's `#[bin(ctx(...))]`
-// generates a `…Ctx` struct whose fields carry no docs, which trips the deny — a bnb
-// finding tracked in the workspace ROADMAP. The crate documents all of its own items;
-// the workspace default (`missing_docs = warn`) applies until the finding is resolved.
+#![deny(missing_docs)]
 
 pub mod error;
 pub mod header;

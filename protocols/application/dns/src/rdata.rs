@@ -155,3 +155,71 @@ impl RData {
         Some(out)
     }
 }
+
+/// Pure RDATA helpers — no wire codec.
+#[cfg(test)]
+mod unit {
+    use super::*;
+
+    #[test]
+    fn txt_strings_splits_length_prefixed_chunks() {
+        let d = RData::Txt {
+            bytes: vec![3, b'a', b'b', b'c', 2, b'h', b'i'],
+        };
+        assert_eq!(d.txt_strings(), Some(vec![b"abc".to_vec(), b"hi".to_vec()]));
+        // Non-TXT variants have no character-strings.
+        assert_eq!(RData::Ns(crate::Name::root()).txt_strings(), None);
+    }
+}
+
+/// RDATA dispatch + variant codecs through the bnb `ctx`-tag seam.
+#[cfg(test)]
+mod component {
+    use super::*;
+
+    fn decode(rtype: RType, bytes: &[u8]) -> RData {
+        let rdlength = bytes.len() as u16;
+        RData::decode_with_exact(bytes, RDataCtx::new(rtype, rdlength)).unwrap()
+    }
+
+    #[test]
+    fn a_dispatches_to_an_ipv4_address() {
+        assert_eq!(
+            decode(RType::A, &[0x08, 0x08, 0x08, 0x08]),
+            RData::A(Ipv4Addr::new(8, 8, 8, 8))
+        );
+    }
+
+    #[test]
+    fn aaaa_dispatches_to_an_ipv6_address() {
+        let bytes = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        assert_eq!(
+            decode(RType::AAAA, &bytes),
+            RData::Aaaa("2001:db8::1".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn mx_uses_a_structured_variant() {
+        // preference=10, exchange="mail" (then root).
+        let bytes = [0x00, 0x0a, 0x04, b'm', b'a', b'i', b'l', 0x00];
+        let RData::Mx(mx) = decode(RType::MX, &bytes) else {
+            panic!("expected MX");
+        };
+        assert_eq!(mx.preference, 10);
+        assert_eq!(mx.exchange.to_string(), "mail");
+    }
+
+    #[test]
+    fn unknown_type_falls_back_to_custom_raw_bytes() {
+        // TYPE=DNSKEY (48) is not structured here → raw bytes, tagged.
+        let d = decode(RType::DNSKEY, &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(
+            d,
+            RData::Custom {
+                rtype: RType::DNSKEY,
+                bytes: vec![0xAA, 0xBB, 0xCC],
+            }
+        );
+    }
+}

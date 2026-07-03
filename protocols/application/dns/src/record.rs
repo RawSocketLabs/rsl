@@ -128,3 +128,53 @@ pub struct Record {
     #[br(ctx { rtype, rdlength })]
     pub data: RData,
 }
+
+/// Pure registry logic — the type/class enum ⇄ integer round-trips.
+#[cfg(test)]
+mod unit {
+    use super::*;
+
+    #[test]
+    fn rtype_int_round_trips_and_preserves_unknown() {
+        assert_eq!(u16::from(RType::A), 1);
+        assert_eq!(u16::from(RType::CAA), 257);
+        assert_eq!(RType::from(28), RType::AAAA);
+        assert_eq!(RType::from(9999), RType::Custom(9999));
+        assert_eq!(u16::from(RType::Custom(9999)), 9999);
+    }
+
+    #[test]
+    fn rclass_int_round_trips_and_preserves_unknown() {
+        assert_eq!(u16::from(RClass::Internet), 1);
+        assert_eq!(RClass::from(1), RClass::Internet);
+        assert_eq!(RClass::from(42), RClass::Custom(42));
+    }
+}
+
+/// A single resource record through the bnb codec seam.
+#[cfg(test)]
+mod component {
+    use super::*;
+    use crate::rdata::RData;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn a_record_round_trips() {
+        // root name, TYPE=A, CLASS=IN, TTL=60, RDLENGTH=4, 1.2.3.4
+        let wire = [
+            0x00, // root name
+            0x00, 0x01, // A
+            0x00, 0x01, // IN
+            0x00, 0x00, 0x00, 0x3c, // TTL
+            0x00, 0x04, // RDLENGTH
+            0x01, 0x02, 0x03, 0x04,
+        ];
+        let r = Record::decode_exact(&wire).unwrap();
+        assert!(r.name.is_root());
+        assert_eq!(r.rtype, RType::A);
+        assert_eq!(r.class, RClass::Internet);
+        assert_eq!(r.ttl, 60);
+        assert_eq!(r.data, RData::A(Ipv4Addr::new(1, 2, 3, 4)));
+        assert_eq!(r.to_bytes().unwrap(), wire);
+    }
+}

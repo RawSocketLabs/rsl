@@ -67,3 +67,45 @@ pub struct Question {
     /// The class of records requested.
     pub qclass: QClass,
 }
+
+/// Pure QTYPE/QCLASS enum ⇄ integer logic.
+#[cfg(test)]
+mod unit {
+    use super::*;
+
+    #[test]
+    fn qtype_covers_records_and_pseudo_types() {
+        assert_eq!(u16::from(QType::A), 1);
+        assert_eq!(u16::from(QType::ANY), 255);
+        assert_eq!(u16::from(QType::AXFR), 252);
+        assert_eq!(QType::from(41), QType::OPT);
+        assert_eq!(QType::from(7777), QType::Custom(7777));
+    }
+
+    #[test]
+    fn qclass_round_trips_and_preserves_unknown() {
+        assert_eq!(u16::from(QClass::Internet), 1);
+        assert_eq!(QClass::from(255), QClass::Any);
+        assert_eq!(QClass::from(9), QClass::Custom(9));
+    }
+}
+
+/// A question entry through the bnb codec seam.
+#[cfg(test)]
+mod component {
+    use super::*;
+
+    #[test]
+    fn question_round_trips() {
+        // "example.com" A IN
+        let wire = [
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00,
+            0x01, 0x00, 0x01,
+        ];
+        let q = Question::decode_exact(&wire).unwrap();
+        assert_eq!(q.name.to_string(), "example.com");
+        assert_eq!(q.qtype, QType::A);
+        assert_eq!(q.qclass, QClass::Internet);
+        assert_eq!(q.to_bytes().unwrap(), wire);
+    }
+}

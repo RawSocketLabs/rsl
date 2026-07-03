@@ -115,28 +115,10 @@ impl Header {
     }
 }
 
+/// Pure bitfield/enum logic — no message codec.
 #[cfg(test)]
 mod unit {
     use super::*;
-
-    #[test]
-    fn decodes_a_standard_recursive_response() {
-        // id=0x1234, flags word=0x8180 (QR=1, opcode=0, RD=1, RA=1, rcode=0), qd=1 an=1.
-        let wire = [
-            0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-        ];
-        let h = Header::decode_exact(&wire).unwrap();
-        assert_eq!(h.id, 0x1234);
-        assert!(h.is_response());
-        assert_eq!(h.op(), Op::Query);
-        assert!(h.state.recursion_desired());
-        assert!(h.state.recursion_available());
-        assert!(!h.state.authoritative());
-        assert_eq!(h.rcode(), RCode::NoError);
-        assert_eq!((h.qdcount, h.ancount, h.nscount, h.arcount), (1, 1, 0, 0));
-        // Round-trips byte-identically.
-        assert_eq!(h.to_bytes().unwrap(), wire);
-    }
 
     #[test]
     fn state_packs_the_rfc_bit_order() {
@@ -160,5 +142,35 @@ mod unit {
         let back = State::from_be_bytes(bytes);
         assert_eq!(back.op(), Op::Other(u4::new(5)));
         assert_eq!(back.rcode(), RCode::Other(u4::new(9)));
+    }
+
+    #[test]
+    fn op_and_rcode_defaults() {
+        assert_eq!(Op::default(), Op::Query);
+        assert_eq!(RCode::default(), RCode::NoError);
+    }
+}
+
+/// The `Header` wire codec through the bnb `Source`/`Sink` seam.
+#[cfg(test)]
+mod component {
+    use super::*;
+
+    #[test]
+    fn header_round_trips_through_the_codec() {
+        // id=0x1234, flags word=0x8180 (QR=1, opcode=0, RD=1, RA=1, rcode=0), qd=1 an=1.
+        let wire = [
+            0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let h = Header::decode_exact(&wire).unwrap();
+        assert_eq!(h.id, 0x1234);
+        assert!(h.is_response());
+        assert_eq!(h.op(), Op::Query);
+        assert!(h.state.recursion_desired());
+        assert!(h.state.recursion_available());
+        assert!(!h.state.authoritative());
+        assert_eq!(h.rcode(), RCode::NoError);
+        assert_eq!((h.qdcount, h.ancount, h.nscount, h.arcount), (1, 1, 0, 0));
+        assert_eq!(h.to_bytes().unwrap(), wire);
     }
 }
