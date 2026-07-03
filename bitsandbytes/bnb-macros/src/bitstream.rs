@@ -414,8 +414,19 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 if meta.path.is_ident("ignore") {
                     br.ignore = true;
                     Ok(())
+                } else if meta.path.is_ident("count_prefix") {
+                    // Under `#[bin]` the desugar strips this directive before the field
+                    // ever reaches this parser — so reaching it means a bare derive.
+                    let _ = meta.value()?.parse::<syn::Type>()?; // consume for a clean span
+                    Err(meta.error(
+                        "`count_prefix` is only supported under `#[bin]` — the bare \
+                         `BitDecode`/`BitEncode` derives cannot inject the length field; write \
+                         the `#[br(temp)]`/`#[bw(calc = …)]`/`#[br(count = …)]` triad by hand",
+                    ))
                 } else {
-                    Err(meta.error("unknown `#[brw(...)]` directive; expected `ignore`"))
+                    Err(meta.error(
+                        "unknown `#[brw(...)]` directive; expected `ignore` or `count_prefix = <Ty>`",
+                    ))
                 }
             })?;
         }
@@ -1599,11 +1610,14 @@ fn gen_encode(
 // ---------------------------------------------------------------------------
 // `#[bin]` — the unified codec attribute.
 //
-// One macro that folds codec + builder. It *lowers* to the existing
-// `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream(...)]`, so the
-// field-directive logic lives in those derives and `#[bin]` is a thin, zero-
-// duplication front-end over them.
-// Field directives (`#[br]`/`#[bw]`/`#[brw]`) ride through as derive helper attrs.
+// One macro that folds codec + builder. It generates the codec **directly** from
+// the full field list (shared generators: `gen_decode`/`gen_encode`, the same
+// functions the bare derives call) — it does *not* lower to the derives, because
+// it needs the full list (`temp` fields included) while emitting a struct without
+// them. That struct ownership is also what enables field *injection*: the
+// `encode_mode` field, and the `count_prefix` desugar into the temp+calc+count
+// triad — neither possible from a derive, which cannot re-emit the item.
+// Field directives (`#[br]`/`#[bw]`/`#[brw]`) are stripped from the emitted struct.
 // ---------------------------------------------------------------------------
 
 /// Parsed struct-level `#[bin(...)]` options.
@@ -1985,6 +1999,169 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     })
 }
 
+/// One `#[brw(...)]` directive — the bidirectional attr carries only the directives
+/// that genuinely act on both sides (`ignore`, `count_prefix`).
+enum BrwDirective {
+    Ignore,
+    CountPrefix(Box<syn::Type>),
+}
+
+impl Parse for BrwDirective {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let kw: Ident = input.parse()?;
+        match kw.to_string().as_str() {
+            "ignore" => Ok(BrwDirective::Ignore),
+            "count_prefix" => {
+                input.parse::<Token![=]>()?;
+                Ok(BrwDirective::CountPrefix(Box::new(input.parse()?)))
+            }
+            _ => Err(syn::Error::new_spanned(
+                kw,
+                "unknown `#[brw(...)]` directive; expected `ignore` or `count_prefix = <Ty>`",
+            )),
+        }
+    }
+}
+
+/// How the desugared `count_prefix` calc addresses the counted collection: through
+/// `self.<id>` (a struct field) or the match-bound local `<id>` (an enum-variant field).
+#[derive(Clone, Copy)]
+enum CountPrefixSite {
+    Struct,
+    Variant,
+}
+
+/// Scans a field's `#[brw(...)]` attrs for `count_prefix = <Ty>`; removes the directive
+/// (keeping a co-listed `ignore`, though the pair is rejected downstream) and returns the
+/// prefix type. Duplicates are an error.
+fn extract_count_prefix(f: &mut syn::Field) -> syn::Result<Option<syn::Type>> {
+    let mut found: Option<syn::Type> = None;
+    let mut rebuilt: Vec<syn::Attribute> = Vec::with_capacity(f.attrs.len());
+    for attr in f.attrs.drain(..) {
+        if !attr.path().is_ident("brw") {
+            rebuilt.push(attr);
+            continue;
+        }
+        let directives =
+            attr.parse_args_with(Punctuated::<BrwDirective, Token![,]>::parse_terminated)?;
+        if !directives
+            .iter()
+            .any(|d| matches!(d, BrwDirective::CountPrefix(_)))
+        {
+            rebuilt.push(attr);
+            continue;
+        }
+        for d in directives {
+            match d {
+                BrwDirective::Ignore => rebuilt.push(syn::parse_quote!(#[brw(ignore)])),
+                BrwDirective::CountPrefix(ty) => {
+                    if found.is_some() {
+                        return Err(syn::Error::new_spanned(&attr, "duplicate `count_prefix`"));
+                    }
+                    found = Some(*ty);
+                }
+            }
+        }
+    }
+    f.attrs = rebuilt;
+    Ok(found)
+}
+
+/// The `#[bin]` `count_prefix` desugar: `#[brw(count_prefix = <Ty>)] items: Vec<T>`
+/// expands to the temp+calc+count triad —
+///
+/// ```text
+/// #[br(temp)]
+/// #[bw(calc = <checked Ty from items.len()>)]
+/// __bnb_count_items: Ty,
+/// #[br(count = <items count from __bnb_count_items>)]
+/// items: Vec<T>,
+/// ```
+///
+/// — so it rides the existing temp-local decode, calc write, count read, struct-emission
+/// temp-drop, and builder/`new` exclusion unchanged. Both conversions are checked through
+/// the runtime `CountPrefix` trait: encode never truncates (an oversized `len()` is a
+/// `BitError`, not a wrapped prefix), and a `uN` prefix reads/writes its declared width.
+fn desugar_count_prefix(
+    bnb: &TokenStream2,
+    fields: &mut Punctuated<syn::Field, Token![,]>,
+    site: CountPrefixSite,
+) -> syn::Result<()> {
+    let existing: Vec<String> = fields
+        .iter()
+        .filter_map(|f| f.ident.as_ref().map(ToString::to_string))
+        .collect();
+    let mut out: Punctuated<syn::Field, Token![,]> = Punctuated::new();
+    for mut f in core::mem::take(fields) {
+        let Some(pty) = extract_count_prefix(&mut f)? else {
+            out.push(f);
+            continue;
+        };
+        if vec_elem(&f).is_none() {
+            return Err(syn::Error::new_spanned(
+                &f,
+                "`#[brw(count_prefix = …)]` applies only to a `Vec<_>` field",
+            ));
+        }
+        // The directive *generates* the length field and the count expression; a
+        // directive that reads, stores, or replaces the same machinery conflicts.
+        let br = parse_field_br(&f)?;
+        if br.count.is_some()
+            || br.temp
+            || br.calc.is_some()
+            || br.ignore
+            || br.cond.is_some()
+            || br.map.is_some()
+            || br.try_map.is_some()
+            || br.bw_map.is_some()
+            || br.parse_with.is_some()
+            || br.write_with.is_some()
+        {
+            return Err(syn::Error::new_spanned(
+                &f,
+                "`count_prefix` generates the length field and the element count itself; it \
+                 can't be combined with `count`, `temp`, `calc`, `ignore`, `if`, \
+                 `map`/`try_map`, or `parse_with`/`write_with` on this field",
+            ));
+        }
+        let id = f.ident.clone().expect("checked: named fields only");
+        let count_id = format_ident!("__bnb_count_{}", id, span = id.span());
+        let count_name = count_id.to_string();
+        if existing.contains(&count_name) {
+            return Err(syn::Error::new_spanned(
+                &f,
+                format!(
+                    "`count_prefix` on `{id}` injects a length field named `{count_id}`; \
+                     rename that field"
+                ),
+            ));
+        }
+        // Encode: the prefix is derived from `len()` — checked, so an oversized
+        // collection is a `BitError` pinned to the *user's* field, never a wrapped count.
+        let len_expr = match site {
+            CountPrefixSite::Struct => quote!(self.#id.len()),
+            CountPrefixSite::Variant => quote!(#id.len()),
+        };
+        let calc_expr = quote! {
+            <#pty as #bnb::__private::CountPrefix>::try_from_len(#len_expr)
+                .map_err(|__e| #bnb::__private::BitError::from(__e)
+                    .in_field(::core::stringify!(#id)))?
+        };
+        out.push(syn::Field::parse_named.parse2(quote! {
+            #[br(temp)]
+            #[bw(calc = #calc_expr)]
+            #count_id: #pty
+        })?);
+        // Decode: a separate `#[br]` attr, so it merges with any user `#[br(ctx {…})]`.
+        f.attrs.push(syn::parse_quote!(
+            #[br(count = <#pty as #bnb::__private::CountPrefix>::to_count(#count_id))]
+        ));
+        out.push(f);
+    }
+    *fields = out;
+    Ok(())
+}
+
 /// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
 /// required-by-default builder, folded over a named-field struct.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
@@ -2004,6 +2181,13 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             "#[bin] does not support generic parameters yet",
         ));
     }
+    // Desugar `#[brw(count_prefix = <Ty>)]` into the temp+calc+count triad before any
+    // generator sees the fields (a tuple struct no-ops here and errors just below).
+    let mut s_desugared = s.clone();
+    if let Fields::Named(named) = &mut s_desugared.fields {
+        desugar_count_prefix(&bnb, &mut named.named, CountPrefixSite::Struct)?;
+    }
+    let s = &s_desugared;
     let full_fields = match &s.fields {
         Fields::Named(n) => n,
         _ => {
@@ -2984,6 +3168,31 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             "`validate` needs the builder; a `#[bin]` enum has none",
         ));
     }
+
+    // Desugar `#[brw(count_prefix = <Ty>)]` in each struct-style variant before dispatch
+    // parsing / codegen see the fields. Tuple variants are rejected: the injected length
+    // field must be nameable, and inserting into positional binds would renumber them.
+    let mut e_desugared = e.clone();
+    for v in &mut e_desugared.variants {
+        match &mut v.fields {
+            Fields::Named(named) => {
+                desugar_count_prefix(&bnb, &mut named.named, CountPrefixSite::Variant)?;
+            }
+            Fields::Unnamed(unnamed) => {
+                for f in &mut unnamed.unnamed {
+                    if extract_count_prefix(f)?.is_some() {
+                        return Err(syn::Error::new_spanned(
+                            &*f,
+                            "`count_prefix` needs a named field (the injected length field \
+                             must be nameable); use a struct-style variant",
+                        ));
+                    }
+                }
+            }
+            Fields::Unit => {}
+        }
+    }
+    let e = &e_desugared;
 
     // Enum-level `magic` is a leading prefix constant, verified on read / written on
     // encode before dispatch. Then parse + validate the per-variant dispatch model.

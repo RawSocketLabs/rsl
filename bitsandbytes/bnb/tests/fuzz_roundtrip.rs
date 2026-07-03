@@ -61,6 +61,15 @@ mod property {
         items: Vec<u16>,
     }
 
+    /// The same wire shape via the `count_prefix` sugar — must be a pure desugar of
+    /// `Counted` (byte-identical output on every input).
+    #[bin(big)]
+    #[derive(Debug, Clone, PartialEq)]
+    struct CountedPrefixed {
+        #[brw(count_prefix = u8)]
+        items: Vec<u16>,
+    }
+
     /// A conditional `Option`.
     #[bin(big)]
     #[derive(Debug, Clone, PartialEq)]
@@ -108,6 +117,17 @@ mod property {
         }
 
         #[test]
+        fn count_prefix_is_a_pure_desugar(items in prop::collection::vec(any::<u16>(), 0..50)) {
+            // The sugar and the manual triad emit byte-identical wire images…
+            let manual = Counted { items: items.clone() }.to_bytes().unwrap();
+            let sugar = CountedPrefixed { items: items.clone() }.to_bytes().unwrap();
+            prop_assert_eq!(&sugar, &manual);
+            // …and the sugar round-trips.
+            let decoded = CountedPrefixed::decode_exact(&sugar).unwrap();
+            prop_assert_eq!(decoded.items, items);
+        }
+
+        #[test]
         fn optional_roundtrips(present in any::<u8>(), v in any::<u16>()) {
             let ext = if present != 0 { Some(v) } else { None };
             let o = Optional { present, ext };
@@ -131,6 +151,7 @@ mod property {
             let _ = Frame::decode_exact(&bytes);
             let _ = Tagged::decode_exact(&bytes);
             let _ = Counted::decode_exact(&bytes);
+            let _ = CountedPrefixed::decode_exact(&bytes);
             let _ = Optional::decode_exact(&bytes);
             let _ = Magic::decode_exact(&bytes);
             // The other entry points must be equally robust.
@@ -138,6 +159,9 @@ mod property {
             let _ = Counted::peek(&bytes);
             let _ = Counted::decode_all(&bytes);
             let _ = Counted::decode_iter(&bytes).count();
+            let _ = CountedPrefixed::peek(&bytes);
+            let _ = CountedPrefixed::decode_all(&bytes);
+            let _ = CountedPrefixed::decode_iter(&bytes).count();
         }
 
         // --- 3. decode ∘ encode = id for fixed total parsers ---------------------

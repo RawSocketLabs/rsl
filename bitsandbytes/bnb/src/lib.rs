@@ -230,8 +230,8 @@ pub mod __private {
     #[cfg(feature = "std")]
     pub use crate::bitstream::encode_to_writer_with;
     pub use crate::bitstream::{
-        BitDecode, BitEncode, BitError, BitReader, BitWriter, FixedBitLen, Layout, SeekSource,
-        Sink, Source, align_read, align_write, bits_of, decode_all, decode_exact,
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, FixedBitLen, Layout,
+        SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all, decode_exact,
         decode_exact_with, decode_iter, decode_mapped_msg, decode_peek, decode_peek_with,
         decode_try_mapped_msg, encode_mapped_msg, encode_to_vec, encode_to_vec_with, peek_bytes,
         read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write, verify_magic,

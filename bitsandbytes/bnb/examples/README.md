@@ -77,6 +77,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `#[bitflags]` | flags, telemetry, heartbeat |
 | `#[bin]` magic dispatch | tlv, dns, framed, tcp, sockets, tokio_* |
 | `count` (`Vec` of leaves or messages — no marker) | tlv, dns, telemetry, bin_message, archive, framed |
+| `count_prefix` (the length-prefixed count sugar) | tlv, telemetry, bin_message, ctx_length |
 | `temp`/`calc` | most `#[bin]` examples |
 | `map` | conditional, ipv4, heartbeat |
 | `try_map` | checked, versioned, versioned_cells |

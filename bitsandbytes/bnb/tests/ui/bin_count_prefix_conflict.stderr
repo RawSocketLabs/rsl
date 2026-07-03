@@ -1,0 +1,6 @@
+error: `count_prefix` generates the length field and the element count itself; it can't be combined with `count`, `temp`, `calc`, `ignore`, `if`, `map`/`try_map`, or `parse_with`/`write_with` on this field
+  --> tests/ui/bin_count_prefix_conflict.rs:10:5
+   |
+10 | /     #[br(count = n)]
+11 | |     items: Vec<u8>,
+   | |__________________^

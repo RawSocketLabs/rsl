@@ -257,11 +257,20 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
 (they don't block 1.0), but they're the concrete "invest / decide" items real dogfooding
 (Section A) should confirm, and they should be weighed *before* the surface freeze (Section C).
 
-- [ ] **[additive · high-leverage] Length-prefixed `count` sugar.** The
-      `#[br(temp)] #[bw(calc = self.x.len() as N)] n: N;  #[br(count = n)] x: Vec<T>` triad is the
-      single most repeated `#[bin]` idiom (5× in `dns`, plus `ctx_length`/`telemetry`/`tlv`/
-      `bin_message`). A directive that injects the temp+calc — e.g. `#[br(count_prefixed = u16)]
-      x: Vec<T>` — collapses ~3 lines + a named field into one. The highest-value ergonomic win.
+- [x] **[shipped] Length-prefixed `count` sugar → `#[brw(count_prefix = <Ty>)]`.** The
+      `#[br(temp)] #[bw(calc = self.x.len() as N)] n: N;  #[br(count = n)] x: Vec<T>` triad was the
+      single most repeated `#[bin]` idiom; the directive (on the `Vec` itself) now generates the
+      whole triad — the prefix sizes the `Vec` on read and is recomputed from `len()` on write
+      (derived, never stored). Scope notes: **adjacent-prefix only** (DNS's grouped header counts
+      keep the triad — the counts aren't adjacent to their `Vec`s); **element-count semantics**
+      (a byte-length prefix — DNS `rdlength` — is a different read loop; a `size_prefix` sibling
+      is deferred until a port demands it). Bonuses over the hand-written triad: encode is
+      **checked** (`len() > prefix::MAX` is a `BitError::Convert`, where `as u8` silently
+      truncated) and **any `Bits` prefix type** works, incl. `uN` (a `u12` prefix is 12 bits on
+      the wire — the raw triad's `count = n` can't even compile for a `uN`). Pure desugar, so the
+      adversarial-count protections inherit; property-tested byte-identical to the triad
+      (`fuzz_roundtrip.rs`), full matrix in `tests/bin_count_prefix.rs`. Adopted by the
+      `tlv`/`telemetry`/`bin_message`/`ctx_length` examples.
 - [ ] **[additive] A `bnb::codecs` of common field codecs.** `parse_with`/`write_with` is
       hand-rolled for LEB128 (`varint`), a NUL-terminated string (`cstring`), and a length-prefixed
       label list (`dns`). Ship ready-made codecs (varint, c-string, length-prefixed string/bytes),

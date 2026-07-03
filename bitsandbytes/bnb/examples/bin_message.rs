@@ -77,16 +77,14 @@ fn header_soundness(h: &Header) -> Result<(), String> {
 
 // --- 2. A magic-framed, length-prefixed payload -------------------------------
 
-/// `magic(0xCAFE) | len(u8) | len bytes`. `len` is never stored: it is read into a
-/// temp local that drives the `Vec`, and recomputed from `payload.len()` on write —
-/// so the length can never drift from the data.
+/// `magic(0xCAFE) | len(u8) | len bytes`. The length is never stored: `count_prefix`
+/// reads it into a hidden local that sizes the `Vec`, and recomputes it — checked, never
+/// truncating — from `payload.len()` on write, so it can never drift from the data.
+/// (Sugar for the `#[br(temp)]` / `#[bw(calc = …)]` / `#[br(count = …)]` triad.)
 #[bin(big, magic = 0xCAFEu16)]
 #[derive(Debug, Clone, PartialEq)]
 struct Frame {
-    #[br(temp)]
-    #[bw(calc = self.payload.len() as u8)]
-    len: u8,
-    #[br(count = len)]
+    #[brw(count_prefix = u8)]
     payload: Vec<u8>,
 }
 

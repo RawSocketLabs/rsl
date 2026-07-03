@@ -45,6 +45,47 @@
 //! assert_eq!(Msg::decode_exact(&[0x02, 5, 6]).unwrap().items, vec![5, 6]);
 //! ```
 //!
+//! # `count_prefix` — the length-prefixed count, in one line
+//!
+//! A count immediately followed by the elements it counts is the most common shape of
+//! the `temp`+`calc`+`count` triad above — so `#[brw(count_prefix = <Ty>)]` on the `Vec`
+//! generates the whole triad. The prefix is read into a hidden local, sizes the `Vec`,
+//! and is recomputed from `len()` on write: derived, never stored, can never drift.
+//!
+//! ```
+//! use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Msg {
+//!     #[brw(count_prefix = u8)]
+//!     items: Vec<u8>,
+//! }
+//!
+//! let m = Msg { items: vec![10, 20, 30] };
+//! assert_eq!(m.to_bytes().unwrap(), [0x03, 10, 20, 30]);   // same wire as the triad
+//! assert_eq!(Msg::decode_exact(&[0x02, 5, 6]).unwrap().items, vec![5, 6]);
+//! ```
+//!
+//! Any [`Bits`](crate::Bits) type works as the prefix — a `uN` occupies its declared
+//! width, so a `count_prefix = u12` puts a true 12-bit count on the wire. Encode is
+//! **checked**: a collection too long for the prefix is a [`BitError`](crate::BitError)
+//! (`Convert`), never a silently wrapped count (which is what a hand-written
+//! `as u8` calc would do).
+//!
+//! ```
+//! # use bnb::bin;
+//! # #[bin(big)]
+//! # #[derive(Debug, PartialEq)]
+//! # struct Msg { #[brw(count_prefix = u8)] items: Vec<u8> }
+//! let too_long = Msg { items: vec![0; 300] };            // 300 > u8::MAX
+//! assert!(too_long.to_bytes().is_err());                 // checked, not truncated
+//! ```
+//!
+//! The prefix must be *adjacent* (immediately before its `Vec`); counts grouped in a
+//! header away from their data — DNS's `qdcount`…`arcount` block — keep the explicit
+//! triad. The prefix is an **element count**; a byte-length prefix over variable-width
+//! elements (DNS's `rdlength`) is a different animal and stays hand-written.
+//!
 //! # `if` — a conditional `Option`
 //!
 //! `#[br(if(<cond>))]` on an `Option<T>` reads `Some` when the condition (over earlier

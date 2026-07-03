@@ -94,9 +94,12 @@ struct-literal replacement, since a `reserved`/`calc` message's injected `encode
 can't be named in a literal). It reads/writes fields at **arbitrary bit offsets**, so the same
 attribute handles byte-aligned headers and sub-byte frames alike.
 
-- **Lowering.** `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`
-  + `#[bit_stream(...)]`; the field-directive logic lives in those derives, which
-  stay usable directly. `#[bin]` is a thin, zero-duplication front-end over them.
+- **Codegen model.** `#[bin]` generates the codec **directly** from the full field
+  list via the shared generators (`gen_decode`/`gen_encode` — the same functions
+  the bare derives call); it does *not* lower to the derives, because it owns the
+  emitted struct (drops `temp` fields, strips codec attrs, injects `encode_mode`,
+  desugars `count_prefix`) — a derive cannot re-emit the item. The bare derives
+  stay usable directly for read/write without the `#[bin]` sugar.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
   `no_builder`, `bit_order = msb|lsb`, `bytes = be|le` (`big`/`little`),
   `allow_byte_aligned`.
@@ -116,7 +119,10 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `magic`/`ctx`/`validate`/`tag`; struct only (not enums). `read_only`/`write_only` narrow the
   direction. See `guide::mapping`, `tests/bin_wire_map.rs`.
 - **Field directives** (the inherited grammar): `#[br]`/`#[bw]`/`#[brw]` with
-  `magic`, `count`, `ctx`/`args`, `map`/`try_map`, `if`, `calc`/`temp`,
+  `magic`, `count`, `count_prefix` (the length-prefixed count sugar: `#[brw(count_prefix
+  = u16)]` on a `Vec` desugars to the temp+calc+count triad; any `Bits` prefix type incl.
+  `uN`; checked at encode — an oversized `len()` is a `BitError`, never a wrapped
+  prefix; `#[bin]`-only), `ctx`/`args`, `map`/`try_map`, `if`, `calc`/`temp`,
   `reserved`/`reserved_with`, `parse_with`/`write_with`, `pad_before`/`pad_after`/
   `align_*`/`seek`/`restore_position`, and `assert`/`validate`. Positioning amounts
   use the `prelude` typed helpers (`4.bits()`, `3.bytes()`).

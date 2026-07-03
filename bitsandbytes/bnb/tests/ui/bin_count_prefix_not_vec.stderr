@@ -1,0 +1,5 @@
+error: `#[brw(count_prefix = …)]` applies only to a `Vec<_>` field
+ --> tests/ui/bin_count_prefix_not_vec.rs:9:5
+  |
+9 |     value: u32,
+  |     ^^^^^^^^^^

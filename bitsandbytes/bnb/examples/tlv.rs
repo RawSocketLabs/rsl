@@ -16,10 +16,7 @@ enum Field {
     Version(u16),
     #[bin(magic = 0x02u8)]
     Name {
-        #[br(temp)]
-        #[bw(calc = text.len() as u8)]
-        len: u8,
-        #[br(count = len)]
+        #[brw(count_prefix = u8)] // the length-prefixed value — works in a variant too
         #[try_str]
         text: Vec<u8>,
     },
@@ -33,10 +30,7 @@ enum Field {
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Document {
-    #[br(temp)]
-    #[bw(calc = self.fields.len() as u8)]
-    count: u8,
-    #[br(count = count)]
+    #[brw(count_prefix = u8)]
     fields: Vec<Field>,
 }
 

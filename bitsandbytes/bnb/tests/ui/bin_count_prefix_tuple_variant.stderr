@@ -1,0 +1,5 @@
+error: `count_prefix` needs a named field (the injected length field must be nameable); use a struct-style variant
+ --> tests/ui/bin_count_prefix_tuple_variant.rs:8:36
+  |
+8 |     Data(#[brw(count_prefix = u8)] Vec<u8>),
+  |                                    ^^^^^^^

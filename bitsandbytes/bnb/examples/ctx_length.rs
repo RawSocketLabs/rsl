@@ -23,10 +23,8 @@ struct Row {
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Table {
     columns: u8,
-    #[br(temp)]
-    #[bw(calc = self.rows.len() as u8)]
-    row_count: u8,
-    #[br(count = row_count, ctx { columns })] // thread `columns` into each Row
+    #[brw(count_prefix = u8)] // the row count — sizes `rows`, recomputed on write
+    #[br(ctx { columns })] // …and composes with threading `columns` into each Row
     rows: Vec<Row>,
 }
 

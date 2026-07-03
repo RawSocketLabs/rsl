@@ -261,6 +261,11 @@
 //! assert_eq!(Frame::decode_exact(&[0xCA, 0xFE, 0x02, 0x01, 0x02]).unwrap().payload, vec![1, 2]);
 //! ```
 //!
+//! When the count sits *immediately before* its `Vec` (as here), the whole triad
+//! collapses to one directive on the `Vec` — `#[brw(count_prefix = u8)] payload:
+//! Vec<u8>` — same wire bytes, plus a checked (never-truncating) length on encode.
+//! See [`directives`](super::directives) § `count_prefix`.
+//!
 //! ## `temp` + `calc` vs a stored `calc`
 //!
 //! Whether a `calc` field is also `temp` is the choice between *never keep it* and *keep it

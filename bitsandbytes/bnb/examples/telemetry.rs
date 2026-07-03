@@ -83,10 +83,7 @@ struct TelemetryFrame {
     status: Status,
     #[reserved]
     rsv: u8, // must-be-zero padding byte (spec value 0)
-    #[br(temp)]
-    #[bw(calc = self.samples.len() as u8)]
-    count: u8, // not stored — derived from `samples`
-    #[br(count = count)]
+    #[brw(count_prefix = u8)] // a u8 count on the wire — derived, never stored
     samples: Vec<u16>,
     #[bw(calc = self.crc())]
     #[builder(default)]

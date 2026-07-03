@@ -288,7 +288,10 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// `#[br]`/`#[bw]`: `count`, `ctx { … }`, `temp` + `calc`, `if(…)`, `map`/`try_map`
 /// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `pad_before/after`,
 /// `align_before/after`, `seek = <bits>`, `restore_position`, `dbg` (trace a field as it
-/// decodes); `#[brw(ignore)]` (neither read nor written); plus `#[reserved]` /
+/// decodes); `#[brw(ignore)]` (neither read nor written); `#[brw(count_prefix = <Ty>)]`
+/// on a `Vec<_>` (the length-prefixed count sugar — generates the `temp`+`calc`+`count`
+/// triad: the prefix sizes the `Vec` on read and is recomputed, **checked**, from
+/// `len()` on write; any `Bits` prefix type incl. `uN`); plus `#[reserved]` /
 /// `#[reserved_with(…)]`.
 ///
 /// ## On an enum — tagged-union dispatch
