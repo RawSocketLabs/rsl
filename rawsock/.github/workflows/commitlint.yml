@@ -1,0 +1,25 @@
+# Enforce Conventional Commits on every commit in a PR (the repo merges/rebases
+# real commits onto `main`, so each message must conform — that history is what
+# release-plz parses to compute version bumps). Config: ../../.config/commitlint.config.mjs.
+name: commit-lint
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commitlint:
+    name: commitlint (Conventional Commits)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the action can lint every commit in the PR range.
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .config/commitlint.config.mjs

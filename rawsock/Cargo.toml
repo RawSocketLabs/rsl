@@ -1,0 +1,44 @@
+[package]
+name = "rawsock"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/rawsock"
+rust-version = "1.85"
+description = "Dual-use, layered raw-packet I/O: transmit arbitrary bytes at L2/L3/L4 for spoofing, fuzzing, and interop testing."
+readme = "README.md"
+
+[features]
+# The dual-use power is opt-in by layer: a consumer that doesn't enable a layer
+# cannot construct that socket at all (misuse is a compile error, not a warning).
+# This first cut ships the unprivileged core; the privileged L3/L2 backends
+# (`network`, `link`) land with the header-forging protocols — see ROADMAP.md.
+default = ["transport", "compute"]
+# L4 — ordinary sockets; the kernel does IP/Ethernet/checksums.
+transport = ["dep:rustix"]
+# Compute derived fields (checksums/lengths) on the compliant encode path. A
+# signal consumed by protocol crates; off => they lay fields out verbatim.
+compute = []
+
+# rustix carries the actual syscalls, Linux-only, and is optional so a consumer
+# depending on rawsock only for the `compose` trait (a protocol encoder, via
+# `default-features = false`) pulls no socket code.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.0", features = ["net"], optional = true }
+
+[lints]
+workspace = true
+
+# rawsock is its own single-crate repo; the `[workspace]` table (with this package
+# as the implicit member) exists only to host the shared lint config the ecosystem
+# uses, and to leave room for a second member (e.g. split backends) later.
+[workspace]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# Groups get lower priority so the individual allows below override them.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+upper_case_acronyms = "allow"  # protocol acronyms (IP, UDP, L2, …)
