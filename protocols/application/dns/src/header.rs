@@ -1,6 +1,6 @@
 //! The 12-byte DNS message header (RFC 1035 §4.1.1).
 
-use bnb::{BitEnum, bin, bitfield, u3, u4};
+use bnb::{BitEnum, WireLen, bin, bitfield, u3, u4};
 
 /// The DNS operation code (RFC 1035 §4.1.1 OPCODE).
 ///
@@ -73,10 +73,12 @@ pub struct State {
 
 /// The 12-byte DNS message header (RFC 1035 §4.1.1).
 ///
-/// The four section counts are plain stored `u16`s: on decode they drive how many
-/// records each section holds; on encode they are written as stored. Keep them in sync
-/// with the section lengths via [`Message::assemble`](crate::Message::assemble) — a
-/// mismatch is representable on purpose (dual-use: forge a lying count deliberately).
+/// The four section counts are [`WireLen<u16>`]: left [`auto()`](WireLen::auto) (the
+/// default) they derive from their sections when the [`Message`](crate::Message) is
+/// encoded, so a freshly-built message is correct without a sync step. Set one explicitly
+/// with [`WireLen::set`] to forge a count that *disagrees* with its section (dual-use). A
+/// decoded header carries each count as [`Set`](WireLen::Set), so `decode → to_bytes`
+/// round-trips byte-for-byte (a forged count survives).
 //~ models rfc1035#4.1.1 part="Header section format"
 #[bin(big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,14 +87,14 @@ pub struct Header {
     pub id: u16,
     /// The packed QR/OPCODE/flags/RCODE word.
     pub state: State,
-    /// Number of entries in the question section.
-    pub qdcount: u16,
-    /// Number of resource records in the answer section.
-    pub ancount: u16,
-    /// Number of name-server resource records in the authority section.
-    pub nscount: u16,
-    /// Number of resource records in the additional section.
-    pub arcount: u16,
+    /// Number of entries in the question section (auto-derives from `Message::questions`).
+    pub qdcount: WireLen<u16>,
+    /// Number of resource records in the answer section (auto-derives from `answers`).
+    pub ancount: WireLen<u16>,
+    /// Number of name-server records in the authority section (auto-derives from `authorities`).
+    pub nscount: WireLen<u16>,
+    /// Number of resource records in the additional section (auto-derives from `additional`).
+    pub arcount: WireLen<u16>,
 }
 
 impl Header {
@@ -170,7 +172,15 @@ mod component {
         assert!(h.state.recursion_available());
         assert!(!h.state.authoritative());
         assert_eq!(h.rcode(), RCode::NoError);
-        assert_eq!((h.qdcount, h.ancount, h.nscount, h.arcount), (1, 1, 0, 0));
+        assert_eq!(
+            (
+                h.qdcount.to_count(),
+                h.ancount.to_count(),
+                h.nscount.to_count(),
+                h.arcount.to_count()
+            ),
+            (1, 1, 0, 0)
+        );
         assert_eq!(h.to_bytes().unwrap(), wire);
     }
 }

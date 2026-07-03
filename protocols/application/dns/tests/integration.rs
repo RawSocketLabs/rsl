@@ -96,7 +96,7 @@ mod integration {
     // A `www.example.com` A response whose question and answer names are identical, so
     // encode-side compression can point the answer's name at the question's.
     fn repeated_name_response() -> Message {
-        use dns::{Header, QClass, QType, Question, RClass, Record, State};
+        use dns::{Header, QClass, QType, Question, RClass, Record, State, WireLen};
         let q = Question {
             name: "www.example.com".parse().unwrap(),
             qtype: QType::A,
@@ -107,16 +107,16 @@ mod integration {
             rtype: RType::A,
             class: RClass::Internet,
             ttl: 60,
-            rdlength: 4,
+            rdlength: WireLen::auto(), // derives to 4 from the A record data
             data: RData::A(Ipv4Addr::new(1, 2, 3, 4)),
         };
         let header = Header {
             id: 0x1234,
             state: State::new().with_response(true),
-            qdcount: 0,
-            ancount: 0,
-            nscount: 0,
-            arcount: 0,
+            qdcount: WireLen::auto(),
+            ancount: WireLen::auto(),
+            nscount: WireLen::auto(),
+            arcount: WireLen::auto(),
         };
         Message::assemble(header, vec![q], vec![a], vec![], vec![])
     }
@@ -134,9 +134,20 @@ mod integration {
             compressed.len(),
             plain.len()
         );
-        // Both forms decode to the same message (decode follows the pointer inline).
-        assert_eq!(Message::decode_exact(&compressed).unwrap(), msg);
-        assert_eq!(Message::decode_exact(&plain).unwrap(), msg);
+        // Both forms decode to the same message. (A decoded message carries Set counts
+        // while `msg` carries Auto, so compare the round-tripped *bytes* — bnb's real
+        // round-trip contract — not the structs.)
+        assert_eq!(
+            Message::decode_exact(&compressed)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+            plain
+        );
+        assert_eq!(
+            Message::decode_exact(&plain).unwrap().to_bytes().unwrap(),
+            plain
+        );
     }
 
     #[test]

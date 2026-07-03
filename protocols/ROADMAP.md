@@ -48,10 +48,19 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
       `to_compressed_bytes` seeds a `CompressionDict` into it. The headline gap, closed — and it's
       **encode-only** for now (decode needs no dict: pointers are followed inline via `seek`); a
       `Source` scratch is a trivial future addition if a decode use appears.
-- [ ] **Overridable stored-length field** — a stored count that defaults to a collection's
-      `len()` but permits deliberate override (dual-use / malformed frames), decoupled from that
-      collection's struct. Distinct from bnb's derive-always `count_prefix` (DNS header
-      qd/an/ns/ar counts + RDLENGTH).
+- [x] **Overridable stored-length field** — **fixed upstream** (`bitsandbytes` #83):
+      `WireLen<T>`, either `auto()` (derive at encode) or `set(n)` (explicit override). Decode
+      yields `Set`, so `to_bytes()` is correct-by-default *and* round-trips byte-identically while
+      a forged length survives. `#[bw(auto = count(x)|bytes(x))]` (same-struct) +
+      `#[bin(auto_len(field.nested = count(source), …))]` (cross-struct). DNS now uses it for the
+      four header counts (cross-struct, element) and `rdlength` (same-struct, byte length),
+      deleting the manual `as u16` sync in `Message::assemble`.
+- [ ] **A `ctx`-dispatched type has no plain `BitEncode`** — surfaced by the `rdlength` migration:
+      `RData` is `#[bin(ctx(...))]` so bnb emits only `encode_with`, but `#[bw(auto = bytes(x))]`
+      probes a target's size via plain `bit_encode`. DNS works around it with a one-line local
+      `impl BitEncode for RData` (delegating to `encode_with` through a throwaway ctx, since
+      RData's *encode* ignores the ctx). bnb could emit a plain `BitEncode` for a ctx type whose
+      encode is context-free (or `bytes(x)` could probe via `encode_with`). Minor; low priority.
 - [x] **`#[bin(ctx(...))]` generates undocumented `…Ctx` fields** — **fixed upstream**
       (`bitsandbytes` #81): each generated field now carries a `/// The `<name>` context
       parameter.` doc. The DNS crate runs `#![deny(missing_docs)]` again. The first bnb finding

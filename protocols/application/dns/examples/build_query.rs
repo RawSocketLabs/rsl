@@ -21,7 +21,11 @@ fn main() {
     assert_eq!(&wire[..4], &[0x12, 0x34, 0x01, 0x00]);
     assert_eq!(&wire[4..6], &[0x00, 0x01]); // qdcount = 1
 
-    // Round-trips.
-    assert_eq!(Message::decode_exact(&wire).unwrap(), msg);
+    // Round-trips. (A decoded message carries `Set` counts while `msg` built them `Auto`,
+    // so compare the round-tripped bytes — bnb's real round-trip contract.)
+    assert_eq!(
+        Message::decode_exact(&wire).unwrap().to_bytes().unwrap(),
+        wire
+    );
     println!("\nround-trips ✓");
 }

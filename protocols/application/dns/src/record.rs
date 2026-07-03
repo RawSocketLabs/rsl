@@ -3,7 +3,7 @@
 
 use crate::name::Name;
 use crate::rdata::{RData, RDataCtx};
-use bnb::{BitEnum, bin};
+use bnb::{BitEnum, WireLen, bin};
 
 /// The DNS resource-record TYPE (the IANA RR-type registry).
 ///
@@ -122,8 +122,11 @@ pub struct Record {
     pub class: RClass,
     /// Time-to-live, in seconds.
     pub ttl: u32,
-    /// The RDATA length in bytes (`rdlength`).
-    pub rdlength: u16,
+    /// The RDATA length in bytes. Left [`auto()`](WireLen::auto) (the default) it derives
+    /// from the encoded size of `data`; [`set`](WireLen::set) it to forge a length that
+    /// disagrees (dual-use). Passed to `data`'s decode as its byte budget.
+    #[bw(auto = bytes(data))]
+    pub rdlength: WireLen<u16>,
     /// The typed record data, dispatched by `rtype`.
     #[br(ctx { rtype, rdlength })]
     pub data: RData,

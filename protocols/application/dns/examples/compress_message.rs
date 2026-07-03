@@ -4,7 +4,7 @@
 //!
 //! Run with: `cargo run -p dns --example compress_message`
 
-use dns::{Header, Message, QClass, QType, Question, RClass, RData, RType, Record, State};
+use dns::{Header, Message, QClass, QType, Question, RClass, RData, RType, Record, State, WireLen};
 use std::net::Ipv4Addr;
 
 fn main() {
@@ -20,16 +20,16 @@ fn main() {
         rtype: RType::A,
         class: RClass::Internet,
         ttl: 60,
-        rdlength: 4,
+        rdlength: WireLen::auto(),
         data: RData::A(Ipv4Addr::new(1, 2, 3, 4)),
     };
     let header = Header {
         id: 0x1234,
         state: State::new().with_response(true),
-        qdcount: 0,
-        ancount: 0,
-        nscount: 0,
-        arcount: 0,
+        qdcount: WireLen::auto(),
+        ancount: WireLen::auto(),
+        nscount: WireLen::auto(),
+        arcount: WireLen::auto(),
     };
     let msg = Message::assemble(header, vec![question], vec![answer], vec![], vec![]);
 
@@ -45,8 +45,19 @@ fn main() {
     let saved = plain.len() - compressed.len();
     println!("\nsaved {saved} bytes by pointing the answer name at the question");
 
-    // Both forms decode to the same message — decode follows the pointer inline.
-    assert_eq!(Message::decode_exact(&compressed).unwrap(), msg);
-    assert_eq!(Message::decode_exact(&plain).unwrap(), msg);
+    // Both forms decode to the same message — decode follows the pointer inline. (A
+    // decoded message carries `Set` counts while `msg` built them `Auto`, so compare the
+    // round-tripped bytes.)
+    assert_eq!(
+        Message::decode_exact(&compressed)
+            .unwrap()
+            .to_bytes()
+            .unwrap(),
+        plain
+    );
+    assert_eq!(
+        Message::decode_exact(&plain).unwrap().to_bytes().unwrap(),
+        plain
+    );
     println!("both forms round-trip to the same Message ✓");
 }

@@ -39,9 +39,11 @@ A pure wire codec (no I/O yet). One module per wire concept, all `#[bin]`-based:
 Never reject or corrupt representable input. Unknown record types / classes / opcodes are
 `Custom`/`Other` (value preserved); unknown RDATA is kept as raw bytes, **not** misparsed
 (the reference crate's 36 stubbed `Name`-typed records were a bug — fixed by the `Custom`
-fallback). Section counts are plain stored `u16`s: `Message::assemble` derives them from
-the sections, but a caller may set a header count that *disagrees* with its section on
-purpose (forging a malformed frame). The parser never enforces policy.
+fallback). The header section counts and `rdlength` are **`WireLen<u16>`** (bnb): left
+`auto()` they derive from their sections/data on encode (so a freshly-built message is
+correct with no sync step), but `WireLen::set(n)` pins a count that *disagrees* on purpose
+(a forged/malformed frame). A decoded message carries `Set` counts, so `decode → to_bytes`
+is byte-identical and a forged count survives. The parser never enforces policy.
 
 ## Entry points
 

@@ -6,7 +6,7 @@
 
 use crate::name::Name;
 use crate::record::RType;
-use bnb::bin;
+use bnb::{WireLen, bin};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// The SOA (Start Of Authority) record data (RFC 1035 §3.3.13).
@@ -47,7 +47,7 @@ pub struct Mx {
 /// Length-driven and unknown variants use `rdlength` (passed as context). Unmatched
 /// types land in [`RData::Custom`], carrying the type and the raw bytes.
 //~ models rfc1035#3.3 part="Standard RR RDATA formats"
-#[bin(big, ctx(rtype: RType, rdlength: u16), tag = rtype)]
+#[bin(big, ctx(rtype: RType, rdlength: WireLen<u16>), tag = rtype)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RData {
     /// An IPv4 host address (A).
@@ -84,7 +84,7 @@ pub enum RData {
     #[bin(tag = RType::TXT)]
     Txt {
         /// The raw RDATA bytes.
-        #[br(count = rdlength)]
+        #[br(count = rdlength.to_count())]
         bytes: Vec<u8>,
     },
     /// A service locator (SRV, RFC 2782): priority, weight, port, then the target host
@@ -98,7 +98,7 @@ pub enum RData {
         /// The service port.
         port: u16,
         /// The target host, as raw RDATA bytes (`rdlength - 6`).
-        #[br(count = rdlength - 6)]
+        #[br(count = rdlength.to_count() - 6)]
         target: Vec<u8>,
     },
     /// A Certification Authority Authorization record (CAA, RFC 8659).
@@ -112,7 +112,7 @@ pub enum RData {
         #[br(count = tag_length)]
         tag: Vec<u8>,
         /// The property value, `rdlength - tag_length - 2` bytes.
-        #[br(count = rdlength - u16::from(tag_length) - 2)]
+        #[br(count = rdlength.to_count() - usize::from(tag_length) - 2)]
         value: Vec<u8>,
     },
     /// EDNS(0) OPT pseudo-record RDATA — raw option bytes (RFC 6891). The OPT record's
@@ -120,7 +120,7 @@ pub enum RData {
     #[bin(tag = RType::OPT)]
     Opt {
         /// The raw concatenated EDNS options.
-        #[br(count = rdlength)]
+        #[br(count = rdlength.to_count())]
         bytes: Vec<u8>,
     },
     /// Any other record type — the raw RDATA bytes, tagged with the type. The dual-use
@@ -130,7 +130,7 @@ pub enum RData {
         /// The record type that was not structurally decoded.
         rtype: RType,
         /// The raw RDATA bytes.
-        #[br(count = rdlength)]
+        #[br(count = rdlength.to_count())]
         bytes: Vec<u8>,
     },
 }
@@ -156,6 +156,22 @@ impl RData {
     }
 }
 
+/// A context-free [`BitEncode`] for `RData`.
+///
+/// `RData` is `ctx`-dispatched, so bnb generates only `encode_with` — but the context
+/// (`rtype`/`rdlength`) selects the variant on *decode*; on *encode* the stored variant is
+/// written verbatim, ignoring the context. This plain `bit_encode` (delegating through a
+/// throwaway context) is what lets `Record`'s `#[bw(auto = bytes(data))]` probe the encoded
+/// length of an `RData` field.
+impl bnb::bitstream::BitEncode for RData {
+    fn bit_encode<K: bnb::bitstream::Sink>(
+        &self,
+        w: &mut K,
+    ) -> Result<(), bnb::bitstream::BitError> {
+        bnb::EncodeWith::encode_with(self, w, RDataCtx::new(RType::Custom(0), WireLen::set(0)))
+    }
+}
+
 /// Pure RDATA helpers — no wire codec.
 #[cfg(test)]
 mod unit {
@@ -178,7 +194,7 @@ mod component {
     use super::*;
 
     fn decode(rtype: RType, bytes: &[u8]) -> RData {
-        let rdlength = bytes.len() as u16;
+        let rdlength = WireLen::set(bytes.len() as u16);
         RData::decode_with_exact(bytes, RDataCtx::new(rtype, rdlength)).unwrap()
     }
 

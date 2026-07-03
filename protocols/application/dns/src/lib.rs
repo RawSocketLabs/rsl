@@ -33,6 +33,9 @@ pub mod question;
 pub mod rdata;
 pub mod record;
 
+/// Re-exported from `bnb`: the auto-deriving, overridable length type used for the header
+/// section counts and `rdlength` (`auto()` to derive, `set(n)` to forge — dual-use).
+pub use bnb::WireLen;
 pub use error::{DnsError, Result};
 pub use header::{Header, Op, RCode, State};
 pub use message::Message;

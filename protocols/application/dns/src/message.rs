@@ -11,33 +11,40 @@ use bnb::bitstream::{BitEncode, BitWriter};
 /// header's corresponding count.
 ///
 /// Decode follows name-compression pointers inline, so every `Name` in a decoded message
-/// is fully resolved. Encode writes names **uncompressed** (Increment 1). Construct via
-/// [`Message::new`] to keep the header counts in sync with the sections.
+/// is fully resolved. The header's four section counts are
+/// [`WireLen`](bnb::WireLen)-derived (`auto_len` below): a freshly-built message's counts
+/// fill themselves from the sections on encode — no sync step — while a
+/// [`set`](bnb::WireLen::set) count is honored verbatim (dual-use forging).
 //~ models rfc1035#4.1 part="Message format"
-#[bin(big)]
+#[bin(big, auto_len(
+    header.qdcount = count(questions),
+    header.ancount = count(answers),
+    header.nscount = count(authorities),
+    header.arcount = count(additional),
+))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     /// The 12-byte header.
     pub header: Header,
     /// The question section.
-    #[br(count = header.qdcount)]
+    #[br(count = header.qdcount.to_count())]
     pub questions: Vec<Question>,
     /// The answer section.
-    #[br(count = header.ancount)]
+    #[br(count = header.ancount.to_count())]
     pub answers: Vec<Record>,
     /// The authority (name-server) section.
-    #[br(count = header.nscount)]
+    #[br(count = header.nscount.to_count())]
     pub authorities: Vec<Record>,
     /// The additional section.
-    #[br(count = header.arcount)]
+    #[br(count = header.arcount.to_count())]
     pub additional: Vec<Record>,
 }
 
 impl Message {
-    /// Assemble a message, deriving the header's section counts from the sections
-    /// (overwriting whatever counts the passed-in header carried) so the wire form is
-    /// self-consistent. To forge a header whose counts *disagree* with the sections
-    /// (dual-use), use the generated [`Message::new`] and set the counts directly.
+    /// Assemble a message whose header counts auto-derive from its sections: it resets the
+    /// four counts to [`auto()`](bnb::WireLen::auto), so encoding fills them from the
+    /// section lengths. To forge a header whose counts *disagree* with the sections
+    /// (dual-use), build the `Message` directly and [`set`](bnb::WireLen::set) a count.
     #[must_use]
     pub fn assemble(
         mut header: Header,
@@ -46,10 +53,10 @@ impl Message {
         authorities: Vec<Record>,
         additional: Vec<Record>,
     ) -> Self {
-        header.qdcount = questions.len() as u16;
-        header.ancount = answers.len() as u16;
-        header.nscount = authorities.len() as u16;
-        header.arcount = additional.len() as u16;
+        header.qdcount = bnb::WireLen::auto();
+        header.ancount = bnb::WireLen::auto();
+        header.nscount = bnb::WireLen::auto();
+        header.arcount = bnb::WireLen::auto();
         Message {
             header,
             questions,
@@ -68,10 +75,10 @@ impl Message {
         let header = Header {
             id,
             state,
-            qdcount: 0,
-            ancount: 0,
-            nscount: 0,
-            arcount: 0,
+            qdcount: bnb::WireLen::auto(),
+            ancount: bnb::WireLen::auto(),
+            nscount: bnb::WireLen::auto(),
+            arcount: bnb::WireLen::auto(),
         };
         Message::assemble(header, vec![question], vec![], vec![], vec![])
     }
