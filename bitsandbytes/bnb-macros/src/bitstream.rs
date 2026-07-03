@@ -2844,7 +2844,10 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     } else {
         let ctx_name = ctx_struct_ident(&s.ident);
         let vis = &s.vis;
-        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let decls = args.ctx.iter().map(|(n, t)| {
+            let doc = format!("The `{n}` context parameter.");
+            quote!(#[doc = #doc] #vis #n: #t)
+        });
         let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
         let names = args.ctx.iter().map(|(n, _)| n);
         quote! {
@@ -4189,7 +4192,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     };
 
     let ctx_struct = if is_ctx_type {
-        let decls = args.ctx.iter().map(|(n, t)| quote!(#vis #n: #t));
+        let decls = args.ctx.iter().map(|(n, t)| {
+            let doc = format!("The `{n}` context parameter.");
+            quote!(#[doc = #doc] #vis #n: #t)
+        });
         let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
         let names = args.ctx.iter().map(|(n, _)| n);
         quote! {
