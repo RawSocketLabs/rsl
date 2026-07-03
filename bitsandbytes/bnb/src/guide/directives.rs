@@ -177,6 +177,31 @@
 //! assert_eq!(Named::decode_exact(&[0x02, b'H', b'i']).unwrap(), n);
 //! ```
 //!
+//! ## Ready-made codecs — [`bnb::codecs`](crate::codecs)
+//!
+//! Before rolling your own, check the shipped library: LEB128 varints, NUL-terminated
+//! C strings, and length-prefixed strings, all referenced by path. (The `read_pascal`
+//! above is exactly what [`codecs::prefixed`](crate::codecs::prefixed) ships — checked
+//! and UTF-8-validated.)
+//!
+//! ```
+//! use bnb::bin;
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Packet {
+//!     #[br(parse_with = bnb::codecs::leb128::parse)]
+//!     #[bw(write_with = bnb::codecs::leb128::write)]
+//!     length: u64,
+//!     #[br(parse_with = bnb::codecs::prefixed::parse_string::<_, u8>)]
+//!     #[bw(write_with = bnb::codecs::prefixed::write_string::<_, u8>)]
+//!     name: String,
+//! }
+//!
+//! let p = Packet { length: 300, name: "Hi".into() };
+//! assert_eq!(p.to_bytes().unwrap(), [0xAC, 0x02, 0x02, b'H', b'i']);
+//! assert_eq!(Packet::decode_exact(&p.to_bytes().unwrap()).unwrap(), p);
+//! ```
+//!
 //! # `brw(ignore)` — a field neither read nor written
 //!
 //! `#[brw(ignore)]` consumes no wire bits: the field is `Default::default()` on read and

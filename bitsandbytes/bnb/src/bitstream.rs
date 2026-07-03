@@ -1204,18 +1204,31 @@ where
     const BIT_LEN: u32 = <Self as Bits>::BITS;
 }
 
-/// Checked length ⇄ wire-prefix conversions backing `#[brw(count_prefix = <Ty>)]`.
+/// Seals [`CountPrefix`] and [`codecs::leb128::Varint`](crate::codecs::leb128::Varint):
+/// the impl set is crate-owned (all wire-integer widths are already covered), so growing
+/// it later is non-breaking while a downstream impl can never observe a bound change.
+pub(crate) mod sealed {
+    /// The sealing supertrait — unnameable downstream, so the traits above cannot be
+    /// implemented outside this crate.
+    pub trait Sealed {}
+}
+
+/// Checked length ⇄ wire-prefix conversions: the types usable as a length/count prefix —
+/// by the [`#[brw(count_prefix = <Ty>)]`](macro@crate::bin) directive and by the
+/// [`codecs::prefixed`](crate::codecs::prefixed) string codec.
 ///
-/// The desugared triad computes the prefix from `len()` on encode and turns it back into
-/// an element count on decode. `try_from_len` is **checked and never truncates**: the
-/// length is widened (never narrowed) before the range compare, so 300 elements against a
-/// `u8` prefix is [`Error::ValueTooLarge`] — not a silently wrapped `44`.
-#[doc(hidden)]
+/// The prefix is computed from `len()` on encode and turned back into an element count on
+/// decode. `try_from_len` is **checked and never truncates**: the length is widened (never
+/// narrowed) before the range compare, so 300 elements against a `u8` prefix is
+/// [`Error::ValueTooLarge`] — not a silently wrapped `44`.
+///
+/// [`Error::ValueTooLarge`]: crate::Error::ValueTooLarge
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a `count_prefix` type",
-    note = "supported prefix types: u8, u16, u32, u64, u128 and the arbitrary-width `uN` aliases (e.g. `u12`)"
+    note = "supported prefix types: u8, u16, u32, u64, u128 and the arbitrary-width `uN` aliases (e.g. `u12`)",
+    note = "this trait is sealed — the supported prefix types are built in"
 )]
-pub trait CountPrefix: Copy {
+pub trait CountPrefix: Bits + sealed::Sealed {
     /// The prefix for a collection of `len` elements, or [`Error::ValueTooLarge`] when
     /// `len` exceeds the prefix's range.
     fn try_from_len(len: usize) -> crate::error::Result<Self>
@@ -1232,6 +1245,8 @@ pub trait CountPrefix: Copy {
 
 macro_rules! count_prefix_prim {
     ($($t:ty),* $(,)?) => {$(
+        impl sealed::Sealed for $t {}
+
         impl CountPrefix for $t {
             #[inline]
             fn try_from_len(len: usize) -> crate::error::Result<Self> {
@@ -1252,6 +1267,8 @@ count_prefix_prim!(u8, u16, u32, u64, u128);
 
 macro_rules! count_prefix_uint {
     ($($t:ty),* $(,)?) => {$(
+        impl<const N: usize> sealed::Sealed for crate::int::UInt<$t, N> {}
+
         impl<const N: usize> CountPrefix for crate::int::UInt<$t, N> {
             #[inline]
             fn try_from_len(len: usize) -> crate::error::Result<Self> {

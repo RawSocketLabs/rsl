@@ -39,8 +39,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `wire_map` | **Struct-level wire mapping** (`#[bin(wire = W)]`): a logical type serialized via a separate wire type through `From`/`From<&Self>` impls — reusable in-program, nests via a one-line `FixedBitLen` | `--example wire_map` |
 | `wire_map_dynamic` | The other wire-mapping forms: a **variable-length** wire (`String` over a length prefix), the inline **closure** form (`map`/`bw_map`), and the fallible **`try_wire`** (`TryFrom`) | `--example wire_map_dynamic` |
-| `varint` | **`parse_with`/`write_with`** — a custom LEB128 variable-length integer field codec | `--example varint` |
-| `cstring` | **`parse_with`/`write_with`** — a NUL-terminated C string (a third custom-codec shape) | `--example cstring` |
+| `varint` | **`bnb::codecs::leb128`** — the shipped LEB128 codec on two widths (`u32`/`u64`), plus the bounded-decode guarantee | `--example varint` |
+| `cstring` | **`bnb::codecs::cstring`** — the shipped NUL-terminated codec, raw-bytes and UTF-8 `String` forms, checked embedded-NUL write | `--example cstring` |
 | `validate` | **`validate`** — a `build()`-gating predicate + re-runnable `is_valid()`; the parser stays permissive | `--example validate` |
 | `try_str` | **`#[try_str]`** — a `Debug` hint: a byte buffer prints as a string when valid UTF-8, else hex bytes (never lossy) | `--example try_str` |
 | `dns` | **Flagship** — a DNS message: `parse_with`, name compression via seeking, `count`-driven sections, enum dispatch, UDP loopback | `--example dns` |

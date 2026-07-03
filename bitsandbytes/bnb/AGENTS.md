@@ -22,8 +22,10 @@ is entirely in-house — `binrw` is an inspiration, not a dependency (see
   and `Bitfield` traits, `ByteOrder`/`BitOrder`), `error`, `builder`
   (`BuilderError`), `bitstream` (the codec runtime: `Source`/`Sink`,
   `BitReader`/`BitWriter`, `BitDecode`/`BitEncode`, the I/O ladder, the `bytes`
-  adapters), and the crate root (re-exports + the `BitEnum` marker trait +
-  `__private` for generated code).
+  adapters), `codecs` (ready-made `parse_with`/`write_with` field codecs: sealed
+  `leb128::Varint`, `cstring`, `prefixed` + the public sealed `CountPrefix`), and
+  the crate root (re-exports + the `BitEnum` marker trait + `__private` for
+  generated code).
 - `bnb-macros/` — proc-macro crate: `#[bitfield]`, `#[derive(BitEnum)]`,
   `#[bitflags]`, `#[derive(BitsBuilder)]` (the `builder` module is shared by the
   standalone derive and the `#[bitfield]` intercept), the low-level

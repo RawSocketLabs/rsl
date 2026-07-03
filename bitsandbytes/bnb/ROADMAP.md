@@ -271,10 +271,19 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       adversarial-count protections inherit; property-tested byte-identical to the triad
       (`fuzz_roundtrip.rs`), full matrix in `tests/bin_count_prefix.rs`. Adopted by the
       `tlv`/`telemetry`/`bin_message`/`ctx_length` examples.
-- [ ] **[additive] A `bnb::codecs` of common field codecs.** `parse_with`/`write_with` is
-      hand-rolled for LEB128 (`varint`), a NUL-terminated string (`cstring`), and a length-prefixed
-      label list (`dns`). Ship ready-made codecs (varint, c-string, length-prefixed string/bytes),
-      referenced as `parse_with = bnb::codecs::leb128`, so users stop reinventing them.
+- [x] **[shipped] `bnb::codecs` — ready-made field codecs.** Three codecs, referenced by path
+      (`#[br(parse_with = bnb::codecs::leb128::parse)]`): **`leb128`** (unsigned varint, generic
+      over `u8..u128` via the sealed `Varint` marker — the field type pins the width; decode is
+      bounded + overflow-checked, fixing the example's unbounded-`shift` debug panic on hostile
+      continuation runs; permissive on non-minimal encodings), **`cstring`** (NUL-terminated:
+      permissive `Vec<u8>` forms + UTF-8 `String` forms; write rejects an embedded NUL — it could
+      not round-trip), and **`prefixed`** (length-prefixed UTF-8 `String`, generic over the
+      now-**public sealed `CountPrefix`** — same prefix types as the `count_prefix` directive,
+      `uN` included; checked write, no pre-alloc from a hostile prefix). Length-prefixed *bytes*
+      deferred to `#[brw(count_prefix = …)]` (same wire form, one attribute); signed
+      LEB128/zigzag deferred until a port demands them. Adopted by the `varint`/`cstring`
+      examples; `dns` keeps its hand-rolled name codec (compression-pointer chasing is
+      DNS-specific — the roll-your-own flagship).
 - [ ] **[additive · decision] Reusable *per-type* field codec.** `parse_with`/`write_with` must be
       repeated on every field of the same shape (`varint` annotates both `length` and `timestamp`).
       The new `wire`/`map` mapping is *struct*-level only — there is no "type `T` always encodes this

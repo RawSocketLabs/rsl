@@ -18,10 +18,11 @@ error[E0277]: `String` cannot be a `count_prefix` type
  --> tests/ui/bin_count_prefix_bad_type.rs:8:26
   |
 8 |     #[brw(count_prefix = String)]
-  |                          ^^^^^^ the trait `bnb::bitstream::CountPrefix` is not implemented for `String`
+  |                          ^^^^^^ the trait `CountPrefix` is not implemented for `String`
   |
   = note: supported prefix types: u8, u16, u32, u64, u128 and the arbitrary-width `uN` aliases (e.g. `u12`)
-  = help: the following other types implement trait `bnb::bitstream::CountPrefix`:
+  = note: this trait is sealed — the supported prefix types are built in
+  = help: the following other types implement trait `CountPrefix`:
             UInt<u128, N>
             UInt<u16, N>
             UInt<u32, N>

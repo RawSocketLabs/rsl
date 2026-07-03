@@ -805,6 +805,39 @@ pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::UInt<T, N>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::UInt<T, N>::encode_mode(&self) -> bnb::bitstream::EncodeMode
+pub trait bnb::bitstream::CountPrefix: bnb::Bits + bnb::bitstream::sealed::Sealed
+pub fn bnb::bitstream::CountPrefix::to_count(self) -> usize
+pub fn bnb::bitstream::CountPrefix::try_from_len(usize) -> bnb::error::Result<Self> where Self: core::marker::Sized
+impl bnb::bitstream::CountPrefix for u128
+pub fn u128::to_count(self) -> usize
+pub fn u128::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u16
+pub fn u16::to_count(self) -> usize
+pub fn u16::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u32
+pub fn u32::to_count(self) -> usize
+pub fn u32::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u64
+pub fn u64::to_count(self) -> usize
+pub fn u64::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u8
+pub fn u8::to_count(self) -> usize
+pub fn u8::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::to_count(self) -> usize
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::to_count(self) -> usize
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::to_count(self) -> usize
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::to_count(self) -> usize
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::to_count(self) -> usize
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
 pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
 pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
@@ -1006,6 +1039,57 @@ impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
 pub fn bnb::codec::BinCodec<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
 impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
+pub mod bnb::codecs
+pub mod bnb::codecs::cstring
+pub fn bnb::codecs::cstring::parse<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::codecs::cstring::parse_utf8<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<alloc::string::String, bnb::bitstream::BitError>
+pub fn bnb::codecs::cstring::write<K: bnb::bitstream::Sink>(&[u8], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::codecs::cstring::write_utf8<K: bnb::bitstream::Sink>(&str, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub mod bnb::codecs::leb128
+pub trait bnb::codecs::leb128::Varint: bnb::Bits + bnb::bitstream::sealed::Sealed
+impl bnb::codecs::leb128::Varint for u128
+impl bnb::codecs::leb128::Varint for u16
+impl bnb::codecs::leb128::Varint for u32
+impl bnb::codecs::leb128::Varint for u64
+impl bnb::codecs::leb128::Varint for u8
+pub fn bnb::codecs::leb128::parse<S: bnb::bitstream::Source, T: bnb::codecs::leb128::Varint>(&mut S) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::codecs::leb128::write<K: bnb::bitstream::Sink, T: bnb::codecs::leb128::Varint>(&T, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub mod bnb::codecs::prefixed
+pub fn bnb::codecs::prefixed::parse_string<S: bnb::bitstream::Source, P: bnb::bitstream::CountPrefix>(&mut S) -> core::result::Result<alloc::string::String, bnb::bitstream::BitError>
+pub fn bnb::codecs::prefixed::write_string<K: bnb::bitstream::Sink, P: bnb::bitstream::CountPrefix>(&str, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub trait bnb::codecs::CountPrefix: bnb::Bits + bnb::bitstream::sealed::Sealed
+pub fn bnb::codecs::CountPrefix::to_count(self) -> usize
+pub fn bnb::codecs::CountPrefix::try_from_len(usize) -> bnb::error::Result<Self> where Self: core::marker::Sized
+impl bnb::bitstream::CountPrefix for u128
+pub fn u128::to_count(self) -> usize
+pub fn u128::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u16
+pub fn u16::to_count(self) -> usize
+pub fn u16::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u32
+pub fn u32::to_count(self) -> usize
+pub fn u32::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u64
+pub fn u64::to_count(self) -> usize
+pub fn u64::try_from_len(usize) -> bnb::error::Result<Self>
+impl bnb::bitstream::CountPrefix for u8
+pub fn u8::to_count(self) -> usize
+pub fn u8::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::to_count(self) -> usize
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::to_count(self) -> usize
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::to_count(self) -> usize
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::to_count(self) -> usize
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::to_count(self) -> usize
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
 pub mod bnb::error
 pub enum bnb::error::Error
 pub bnb::error::Error::ValueTooLarge
@@ -1209,6 +1293,21 @@ impl<const N: usize> bnb::Bits for bnb::UInt<u8, N>
 pub const bnb::UInt<u8, N>::BITS: u32
 pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::to_count(self) -> usize
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::to_count(self) -> usize
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::to_count(self) -> usize
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::to_count(self) -> usize
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::to_count(self) -> usize
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 pub fn u128::from(bnb::UInt<u128, N>) -> u128
 impl<const N: usize> core::convert::From<bnb::UInt<u16, N>> for u16
@@ -2916,6 +3015,36 @@ pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
+pub fn bnb::UInt<u128, N>::to_count(self) -> usize
+pub fn bnb::UInt<u128, N>::to_count(self) -> usize
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
+pub fn bnb::UInt<u16, N>::to_count(self) -> usize
+pub fn bnb::UInt<u16, N>::to_count(self) -> usize
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
+pub fn bnb::UInt<u32, N>::to_count(self) -> usize
+pub fn bnb::UInt<u32, N>::to_count(self) -> usize
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
+pub fn bnb::UInt<u64, N>::to_count(self) -> usize
+pub fn bnb::UInt<u64, N>::to_count(self) -> usize
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
+impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
+pub fn bnb::UInt<u8, N>::to_count(self) -> usize
+pub fn bnb::UInt<u8, N>::to_count(self) -> usize
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 pub fn u128::from(bnb::UInt<u128, N>) -> u128

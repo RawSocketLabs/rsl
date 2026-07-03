@@ -86,6 +86,25 @@ mod property {
         body: u16,
     }
 
+    /// The shipped `bnb::codecs` library through `#[bin]` — leb128 (two widths),
+    /// a length-prefixed String, and a NUL-terminated byte run.
+    #[bin(big)]
+    #[derive(Debug, Clone, PartialEq)]
+    struct Coded {
+        #[br(parse_with = bnb::codecs::leb128::parse)]
+        #[bw(write_with = bnb::codecs::leb128::write)]
+        small: u32,
+        #[br(parse_with = bnb::codecs::leb128::parse)]
+        #[bw(write_with = bnb::codecs::leb128::write)]
+        big: u64,
+        #[br(parse_with = bnb::codecs::prefixed::parse_string::<_, u16>)]
+        #[bw(write_with = bnb::codecs::prefixed::write_string::<_, u16>)]
+        title: String,
+        #[br(parse_with = bnb::codecs::cstring::parse)]
+        #[bw(write_with = bnb::codecs::cstring::write)]
+        tail: Vec<u8>,
+    }
+
     proptest! {
         // --- 1. encode ∘ decode = id over random values --------------------------
 
@@ -114,6 +133,18 @@ mod property {
             let c = Counted { items: items.clone() };
             let decoded = Counted::decode_exact(&c.to_bytes().unwrap()).unwrap();
             prop_assert_eq!(decoded.items, items);
+        }
+
+        #[test]
+        fn shipped_codecs_roundtrip(
+            small in any::<u32>(),
+            big in any::<u64>(),
+            title in "\\PC{0,120}",                                    // any printable chars
+            tail in prop::collection::vec(1u8..=255, 0..40),           // NUL-free bytes
+        ) {
+            let c = Coded { small, big, title: title.clone(), tail };
+            let bytes = c.to_bytes().unwrap();
+            prop_assert_eq!(Coded::decode_exact(&bytes).unwrap(), c);
         }
 
         #[test]
@@ -162,6 +193,8 @@ mod property {
             let _ = CountedPrefixed::peek(&bytes);
             let _ = CountedPrefixed::decode_all(&bytes);
             let _ = CountedPrefixed::decode_iter(&bytes).count();
+            let _ = Coded::decode_exact(&bytes);
+            let _ = Coded::peek(&bytes);
         }
 
         // --- 3. decode ∘ encode = id for fixed total parsers ---------------------

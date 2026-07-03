@@ -1,42 +1,25 @@
-//! **cstring** — a third `parse_with`/`write_with` shape: a **NUL-terminated** C string (read
-//! bytes until `0x00`, write them + a terminator). Distinct from `varint` (LEB128) and `dns`
-//! (compression pointers) — the point of the field-level escape hatch is that *you* decide the
-//! framing.
+//! **cstring** — the shipped **NUL-terminated** codec, [`bnb::codecs::cstring`]: read
+//! bytes until `0x00`, write them + a terminator. Two forms: raw bytes (`Vec<u8>`,
+//! permissive — pairs with `#[try_str]` for display) and UTF-8 (`String` — decode errors
+//! on invalid UTF-8, which a `String` physically can't hold). Write is **checked**: an
+//! embedded NUL can't round-trip through this wire form, so it's refused rather than
+//! silently truncated by the next decoder.
 //!
 //! Run with: `cargo run -p bitsandbytes --example cstring`
 
-use bnb::{BitError, Sink, Source, bin};
-
-/// Read bytes up to (and consuming) a `0x00` terminator.
-fn parse_cstr<S: Source>(r: &mut S) -> Result<Vec<u8>, BitError> {
-    let mut v = Vec::new();
-    loop {
-        let b: u8 = r.read()?;
-        if b == 0 {
-            break;
-        }
-        v.push(b);
-    }
-    Ok(v)
-}
-
-/// Write the bytes followed by the `0x00` terminator.
-fn write_cstr<K: Sink>(v: &[u8], w: &mut K) -> Result<(), BitError> {
-    for &b in v {
-        w.write(b)?;
-    }
-    w.write(0u8)?;
-    Ok(())
-}
+use bnb::bin;
 
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Entry {
     id: u16,
-    #[br(parse_with = parse_cstr)]
-    #[bw(write_with = write_cstr)]
+    #[br(parse_with = bnb::codecs::cstring::parse)]
+    #[bw(write_with = bnb::codecs::cstring::write)]
     #[try_str]
-    name: Vec<u8>,
+    name: Vec<u8>, // raw bytes: any non-NUL content, dual-use permissive
+    #[br(parse_with = bnb::codecs::cstring::parse_utf8)]
+    #[bw(write_with = bnb::codecs::cstring::write_utf8)]
+    title: String, // UTF-8: decode validates (a String can't hold invalid bytes)
     flags: u8,
 }
 
@@ -44,15 +27,28 @@ fn main() {
     let e = Entry {
         id: 42,
         name: b"alpha".to_vec(),
+        title: "héllo".into(),
         flags: 0x01,
     };
     let bytes = e.to_bytes().unwrap();
-    // id(2) | "alpha" | 00 (terminator) | flags(1)
+    // id(2) | "alpha" 00 | "héllo" (UTF-8) 00 | flags(1)
     println!("encoded: {bytes:02x?}");
     assert_eq!(bytes[2..8], *b"alpha\0");
     assert_eq!(Entry::decode_exact(&bytes).unwrap(), e);
 
-    // The name is a byte buffer; rendered as text it reads naturally.
-    println!("name = {:?}", String::from_utf8_lossy(&e.name));
+    // The raw form renders naturally via #[try_str].
+    println!("decoded: {:?}", Entry::decode_exact(&bytes).unwrap());
+
+    // Checked write: an embedded NUL would decode back truncated, so encoding refuses it.
+    let bad = Entry {
+        id: 1,
+        name: b"al\0pha".to_vec(),
+        title: "ok".into(),
+        flags: 0,
+    };
+    let err = bad.to_bytes().unwrap_err();
+    println!("embedded NUL -> {err}");
+    assert_eq!(err.field, Some("name"));
+
     println!("all checks passed");
 }

@@ -1,61 +1,33 @@
-//! **varint** — `parse_with`/`write_with`: a custom field codec for **LEB128** variable-length
-//! integers (the encoding protobuf, DWARF, WASM, and git use). The field-level escape hatch for
-//! a codec `bnb` doesn't build in — `parse_with` reads from the cursor, `write_with` writes to
-//! it, both at whatever bit offset the surrounding message left it. (A different `parse_with`
-//! shape from `dns`'s name compression.)
+//! **varint** — the shipped **LEB128** codec, [`bnb::codecs::leb128`]: variable-length
+//! integers (the encoding protobuf, DWARF, WASM, and git use) as one attribute pair per
+//! field, no hand-rolled loop. The codec is generic over the width — the field's declared
+//! type (`u32` vs `u64` below) pins it — and decoding is **bounded and overflow-checked**:
+//! a hostile continuation run is a clean error, where a naive hand-rolled reader would
+//! shift unbounded and panic in debug builds.
+//!
+//! (Rolling your own codec is still first-class — see the `parse_with` section of
+//! [`bnb::guide::directives`], and `dns.rs` for a real one with DNS name compression.)
 //!
 //! Run with: `cargo run -p bitsandbytes --example varint`
 
-use bnb::{BitError, Sink, Source, bin};
-
-/// Read an unsigned LEB128: 7 payload bits per byte, low group first; the high bit means
-/// "another byte follows".
-fn parse_varint<S: Source>(r: &mut S) -> Result<u64, BitError> {
-    let mut value = 0u64;
-    let mut shift = 0u32;
-    loop {
-        let byte: u8 = r.read()?;
-        value |= u64::from(byte & 0x7F) << shift;
-        if byte & 0x80 == 0 {
-            break;
-        }
-        shift += 7;
-    }
-    Ok(value)
-}
-
-/// Write an unsigned LEB128.
-fn write_varint<K: Sink>(v: &u64, w: &mut K) -> Result<(), BitError> {
-    let mut value = *v;
-    loop {
-        let mut byte = (value & 0x7F) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80; // more bytes follow
-        }
-        w.write(byte)?;
-        if value == 0 {
-            break;
-        }
-    }
-    Ok(())
-}
+use bnb::bin;
+use bnb::bitstream::ErrorKind;
 
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Record {
     kind: u8,
-    #[br(parse_with = parse_varint)]
-    #[bw(write_with = write_varint)]
-    length: u64,
-    #[br(parse_with = parse_varint)]
-    #[bw(write_with = write_varint)]
+    #[br(parse_with = bnb::codecs::leb128::parse)]
+    #[bw(write_with = bnb::codecs::leb128::write)]
+    length: u32, // one codec, two widths — the field type decides
+    #[br(parse_with = bnb::codecs::leb128::parse)]
+    #[bw(write_with = bnb::codecs::leb128::write)]
     timestamp: u64,
 }
 
 fn main() {
     // Small values pack into one byte; large ones grow only as needed — the point of LEB128.
-    for &(length, timestamp) in &[(0u64, 0u64), (127, 128), (300, 1_000_000), (u64::MAX, 1)] {
+    for &(length, timestamp) in &[(0u32, 0u64), (127, 128), (300, 1_000_000), (u32::MAX, 1)] {
         let r = Record {
             kind: 1,
             length,
@@ -68,5 +40,21 @@ fn main() {
         );
         assert_eq!(Record::decode_exact(&bytes).unwrap(), r);
     }
+
+    // Bounded decode: a continuation run longer than the width allows (a u32 fits in
+    // 5 LEB128 bytes) is a clean, position-aware error — never a panic, never a wrap.
+    let hostile = [0x01, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]; // kind, then 6×"more follows"
+    let err = Record::decode_exact(&hostile).unwrap_err();
+    assert!(
+        matches!(&err.kind, ErrorKind::Convert { message } if message.contains("unterminated"))
+    );
+    println!("hostile continuation run -> {err}");
+
+    // Overflow is checked per width: 5 full bytes overflow a u32 field.
+    let too_wide = [0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0x1F, 0x00];
+    let err = Record::decode_exact(&too_wide).unwrap_err();
+    assert_eq!(err.field, Some("length"));
+    println!("overflowing u32 field  -> {err}");
+
     println!("all checks passed");
 }

@@ -72,7 +72,9 @@ These are independent knobs, which is the whole point:
 
 Whole-message bit-aware codec: `#[bin]` (magic/count/ctx/map/if/calc·temp/reserved/
 positioning/validate) over a `Source`/`SeekSource`/`BufSource`/`SeekReader` I/O
-ladder, with an opt-in `bytes` feature for async framing.
+ladder, with an opt-in `bytes` feature for async framing. Common field codecs —
+LEB128 varints, NUL-terminated and length-prefixed strings — ship ready-made in
+[`codecs`] (referenced via `parse_with`/`write_with`).
 
 # Feature flags & `no_std`
 
@@ -168,6 +170,7 @@ pub mod builder;
 /// Async framing — a [`tokio_util::codec`] adapter (the `tokio` feature).
 #[cfg(feature = "tokio")]
 pub mod codec;
+pub mod codecs;
 pub mod error;
 mod field;
 pub mod guide;
