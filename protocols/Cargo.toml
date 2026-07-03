@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     # link layer
     "link/ethertype",
+    # application layer
+    "application/dns",
     # network / transport / session / application layers land here as each
     # protocol is (re)written on `bnb` — see the crate status table in AGENTS.md.
 ]

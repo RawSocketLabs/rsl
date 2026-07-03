@@ -1,0 +1,46 @@
+//! **dns** — a DNS (RFC 1034/1035) message codec on the [`bnb`] bit-aware codec.
+//!
+//! Dual-use and from-scratch: the guided path emits/parses RFC-correct messages, while
+//! unknown values (record types, opcodes, classes) are preserved as `Custom`/`Other`
+//! rather than rejected, and unknown RDATA is kept as raw bytes rather than misparsed.
+//!
+//! Increment 1 is the **pure codec** — decode (following compression pointers inline) and
+//! **uncompressed** encode. A real client and encode-side name compression come later.
+//!
+//! ```
+//! use dns::Message;
+//!
+//! // A `www.example.com` A-record response (uncompressed on the wire).
+//! let wire = [
+//!     0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x03,
+//!     b'w', b'w', b'w', 0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c',
+//!     b'o', b'm', 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01,
+//!     0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 0x5d, 0xb8, 0xd8, 0x22,
+//! ];
+//! let msg = Message::decode_exact(&wire).unwrap();
+//! assert_eq!(msg.questions[0].name.to_string(), "www.example.com");
+//! assert!(msg.header.is_response());
+//! ```
+
+#![forbid(unsafe_code)]
+
+// Note: this crate does not yet run `#![deny(missing_docs)]`. bnb's `#[bin(ctx(...))]`
+// generates a `…Ctx` struct whose fields carry no docs, which trips the deny — a bnb
+// finding tracked in the workspace ROADMAP. The crate documents all of its own items;
+// the workspace default (`missing_docs = warn`) applies until the finding is resolved.
+
+pub mod error;
+pub mod header;
+pub mod message;
+pub mod name;
+pub mod question;
+pub mod rdata;
+pub mod record;
+
+pub use error::{DnsError, Result};
+pub use header::{Header, Op, RCode, State};
+pub use message::Message;
+pub use name::Name;
+pub use question::{QClass, QType, Question};
+pub use rdata::{Mx, RData, Soa};
+pub use record::{RClass, RType, Record};

@@ -132,7 +132,7 @@ corpus name once compliance tracking is wired.
 | crate | layer | ver | stage | refcheck |
 |---|---|---|---|---|
 | `link/ethertype` | link | 0.1.0 | functional | — |
-| `application/dns` | application | — | planned (next — the bnb flagship port) | `dns` (RFC 1034/1035) |
+| `application/dns` | application | 0.1.0 | functional (Increment 1: pure codec) | `dns` (RFC 1034/1035) |
 | `transport/tcp`, `transport/udp` | transport | — | planned | — |
 | `network/ip`, `network/icmp` | network | — | planned | `icmp` |
 | `link/arp`, `link/ethernet` | link | — | planned | — |
