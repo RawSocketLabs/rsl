@@ -9,6 +9,9 @@ non-trivial, **open an issue first** so we can agree on scope before you write c
 - **Conventional Commits**, scope = the crate/protocol name (`feat(dns): …`). The breaking marker
   is `type(scope)!:` — after the scope, never `type!(scope):`. commitlint enforces this on every
   commit in a PR; release-plz derives versions from it. See [`../VERSIONING.md`](../VERSIONING.md).
+- **Do not add a `Co-Authored-By:` trailer** to commit messages — that trailer marks the commit
+  as dual-authored on GitHub, which this project does not use (applies to every commit, whoever
+  or whatever writes it). A plain subject + body is what we want.
 - **All CI gates must pass**: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`
   (`clippy::all` is denied), `cargo build`/`test --workspace`, `cargo deny check`, and the MSRV
   (1.85) check. Run them locally before pushing.

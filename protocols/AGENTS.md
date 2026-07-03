@@ -146,6 +146,9 @@ The roadmap of protocols-to-come lives here, not as empty member dirs — a crat
 - **One concern per change**, on a branch off `main` → PR → green CI → squash-merge.
 - **Conventional Commits**, scope = the crate/protocol name; commitlint enforces the format,
   release-plz derives versions. See [`VERSIONING.md`](VERSIONING.md).
+- **No `Co-Authored-By:` trailer in commit messages.** Do not append a `Co-Authored-By:` line
+  (the trailer that makes GitHub attribute the commit to a second author) — this applies to
+  agent- and human-authored commits alike. Write a plain subject + body.
 - **CI gates** (all must pass): fmt, clippy (`clippy::all` denied), build + test, cargo-deny,
   MSRV 1.85.
 - The codec is bnb — reach for `#[bin]` / `#[bitfield]` / `#[derive(BitEnum)]` / `#[bitflags]`
