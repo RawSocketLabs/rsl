@@ -282,14 +282,19 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       cut. Note the interaction with the per-type-field-codec item above: a `#[brw(variable)]`
       field marker attacks the same problem from the parent's side and would reduce how often
       `FixedBitLen` matters at all.
-- [ ] **[correctness · load-bearing] LSB × byte-order semantics are unspecified and
-      interop-unvalidated.** LSB-first packing interacts non-obviously with `big`/`little` for
-      byte-multiple values (LSB effectively inverts the byte layout) — which is *why*
-      `bin_order_matrix` and `can_signals` deliberately don't assert LSB golden bytes. bnb is
-      self-consistent (it round-trips), but whether its `lsb`+`little` bytes match a real CAN/DBC
-      "Intel" tool or SMB2 is **unverified**. This is exactly Section A's "interop vs a live peer /
-      real captured traffic": pin one real LSB-first format byte-identically, then specify the rule
-      — see the new open decision below. Treat as a potential correctness gap, not just docs.
+- [x] **[correctness · RESOLVED — it was a real bug] LSB × byte-order semantics.** Validating
+      against the *specified* DBC-Intel reference (`raw |= v << start; frame = raw.to_le_bytes()`
+      — the formula embedded in the tests, not a tool's output) showed `lsb`+`little` did **not**
+      match: the old order-agnostic transform ("big = no-op, little = swap") had its meaning
+      inverted under LSB, whose natural byte layout is already little-endian. **Fixed** with the
+      natural-layout rule (`apply_byte_order` is now bit-order-aware; `Source`/`Sink` grew a
+      defaulted `bit_order()`): the identity corners are the two real conventions — `big`+`msb` =
+      network order, `little`+`lsb` = DBC-Intel/SMB — and the mixed corners swap. Specified in
+      `DESIGN.md`, pinned in `tests/bin_lsb_dbc.rs` (golden + property vs the reference formula),
+      and all four corners now golden at the message (`bin_order_matrix`) and cursor
+      (`cursor_layout_matrix`) layers; `can_signals` asserts the DBC formula. Round-trips were
+      always symmetric — only `lsb` × byte-multiple wire output changed (breaking, on `0.x`,
+      zero consumers). The `#[bitfield]` layer already agreed by construction.
 
 ### Open decisions to settle before 1.0 (each is a potential breaking change — do on `0.x`)
 
@@ -351,12 +356,13 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       demonstrated demand. **Coupled to the C-freeze `encode_mode` review:** if dogfooding leads
       to *cutting* the carried mode, parity collapses to a cheap delegating
       `to_canonical_bytes`/`is_canonical` and gets re-evaluated then. Additive either way.
-- [ ] **LSB × byte-order semantics** — the interaction of `bit_order = lsb` with `big`/`little`
-      for byte-multiple values is self-consistent (it round-trips) but **unspecified and not
-      interop-checked** against a real LSB-first tool (CAN/DBC "Intel", SMB2). Decide the canonical
-      rule, validate it byte-identically during dogfooding (A), and document it in `DESIGN.md`. A
-      potential correctness fix if a real tool disagrees (breaking → do on `0.x`). Surfaced by the
-      examples review above.
+- [x] **LSB × byte-order semantics** *(resolved — specified, validated, and fixed)* — the
+      canonical rule is the **natural-layout rule**: each bit order has a natural byte layout
+      (big-endian under MSB, little-endian under LSB); the byte-order knob swaps a byte-multiple
+      value only when it differs. `little`+`lsb` is now byte-identical to the DBC-Intel reference
+      formula (property-tested in `tests/bin_lsb_dbc.rs`); documented in `DESIGN.md`. The fix was
+      a breaking wire change for `lsb` × byte-multiple fields, taken on `0.x` with zero consumers
+      — see the resolved finding in the examples-review section above.
 - [x] **Scope line** *(decided)* — **`serde` and a native async codec are OUT of 1.0 scope.**
       - **serde:** bnb is wire-exact; serde's data model has no bit widths, byte order, magic, or
         count (`binrw` reached the same conclusion) — bnb will not be a serde data format. What

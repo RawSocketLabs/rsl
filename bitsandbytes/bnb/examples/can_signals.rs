@@ -43,6 +43,12 @@ fn main() {
     println!("encoded: {} bytes  {bytes:02x?}", bytes.len()); // 22 bits -> 3 bytes (2 pad)
     assert_eq!(EngineFrame::decode_exact(&bytes).unwrap(), frame);
 
+    // `little` + `lsb` IS the DBC-Intel layout, byte-identically: signal value v at
+    // start-bit S occupies `raw |= v << S` of a little-endian integer. Prove it against
+    // the reference formula (mode@0, gear@3, rpm@7, mil@21):
+    let raw: u32 = 2 | (4 << 3) | (3500 << 7); // Sport=2, gear=4, rpm=3500, mil=0
+    assert_eq!(bytes, raw.to_le_bytes()[..3]);
+
     // an unlisted drive-mode code is preserved by #[catch_all], not rejected (dual-use)
     let unknown = EngineFrame {
         mode: DriveMode::Other(u3::new(6)),

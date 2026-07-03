@@ -457,13 +457,24 @@ pub struct Layout {
     pub byte: ByteOrder,
 }
 
-/// Reverses the low `bits / 8` bytes of `raw` when little-endian and the width is a
-/// whole number of bytes (byte order applies only to byte-multiple values); a
-/// no-op for big-endian or sub-byte widths. It is its own inverse, so read and
-/// write share it.
+/// Reverses the low `bits / 8` bytes of `raw` when the declared byte order differs from the
+/// bit order's **natural** layout, and the width is a whole number of bytes (byte order
+/// applies only to byte-multiple values); a no-op otherwise. It is its own inverse, so read
+/// and write share it.
+///
+/// The natural layout is what the bit cursor produces with no transform: MSB-first emits a
+/// value's high bits first, so its bytes land **big-endian**; LSB-first emits low bits first,
+/// so its bytes land **little-endian** (bit *k* of the value goes to stream bit *k* — exactly
+/// the DBC/"Intel" layout `raw |= v << start; frame = raw.to_le_bytes()`). So the transform
+/// swaps only for `Msb`+`Little` and `Lsb`+`Big`; `Msb`+`Big` (network order) and
+/// `Lsb`+`Little` (DBC Intel, SMB) are identities. See `DESIGN.md` § byte order × bit order.
 #[inline]
-fn apply_byte_order(raw: u128, bits: u32, byte: ByteOrder) -> u128 {
-    if byte == ByteOrder::Big || bits % 8 != 0 {
+fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u128 {
+    let natural = match bit {
+        BitOrder::Msb => ByteOrder::Big,
+        BitOrder::Lsb => ByteOrder::Little,
+    };
+    if byte == natural || bits % 8 != 0 {
         return raw;
     }
     let n = (bits / 8) as usize;
@@ -665,7 +676,12 @@ impl<'a> BitReader<'a> {
     #[inline]
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(apply_byte_order(raw, T::BITS, self.byte)))
+        Ok(T::from_bits(apply_byte_order(
+            raw,
+            T::BITS,
+            self.order,
+            self.byte,
+        )))
     }
 
     /// Moves the cursor to absolute bit `pos`. This needs no `Seek` trait — the whole
@@ -773,7 +789,7 @@ impl BitWriter {
     /// As [`write_bits`](Self::write_bits).
     #[inline]
     pub fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte);
+        let raw = apply_byte_order(value.into_bits(), T::BITS, self.order, self.byte);
         self.write_bits(raw, T::BITS)
     }
 
@@ -817,6 +833,14 @@ pub trait Source {
         ByteOrder::Big
     }
 
+    /// The bit order this source reads in (default MSB-first). Paired with
+    /// [`byte_order`](Source::byte_order) to decide whether a byte-multiple value needs its
+    /// bytes swapped — each bit order has a *natural* byte layout (big-endian under MSB,
+    /// little-endian under LSB), and only the opposite declaration swaps.
+    fn bit_order(&self) -> BitOrder {
+        BitOrder::Msb
+    }
+
     /// Moves the cursor to absolute bit `pos`. The default — for a forward-only
     /// source — fails with [`ErrorKind::NotSeekable`]; seekable sources (the slice
     /// [`BitReader`]) override it. A [`SeekSource`] guarantees this works.
@@ -837,6 +861,7 @@ pub trait Source {
         Ok(T::from_bits(apply_byte_order(
             raw,
             T::BITS,
+            self.bit_order(),
             self.byte_order(),
         )))
     }
@@ -924,13 +949,26 @@ pub trait Sink {
         ByteOrder::Big
     }
 
+    /// The bit order this sink writes in (default MSB-first). Paired with
+    /// [`byte_order`](Sink::byte_order) exactly as on [`Source`]: each bit order has a
+    /// *natural* byte layout (big-endian under MSB, little-endian under LSB), and only the
+    /// opposite declaration swaps a byte-multiple value.
+    fn bit_order(&self) -> BitOrder {
+        BitOrder::Msb
+    }
+
     /// Appends one [`Bits`] value of its declared width, applying the byte order.
     ///
     /// # Errors
     /// As [`write_bits`](Sink::write_bits).
     #[inline]
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = apply_byte_order(value.into_bits(), T::BITS, self.byte_order());
+        let raw = apply_byte_order(
+            value.into_bits(),
+            T::BITS,
+            self.bit_order(),
+            self.byte_order(),
+        );
         self.write_bits(raw, T::BITS)
     }
 
@@ -982,6 +1020,10 @@ impl Source for BitReader<'_> {
         self.byte
     }
     #[inline]
+    fn bit_order(&self) -> BitOrder {
+        self.order
+    }
+    #[inline]
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         BitReader::seek_to_bit(self, pos)
     }
@@ -999,6 +1041,10 @@ impl Sink for BitWriter {
     #[inline]
     fn byte_order(&self) -> ByteOrder {
         self.byte
+    }
+    #[inline]
+    fn bit_order(&self) -> BitOrder {
+        self.order
     }
 }
 
@@ -1683,6 +1729,9 @@ impl<R: std::io::Read> Source for BufSource<R> {
     fn byte_order(&self) -> ByteOrder {
         self.layout.byte
     }
+    fn bit_order(&self) -> BitOrder {
+        self.layout.bit
+    }
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         // Seek within the retained buffer; a later read fills more on demand.
         // Backward seeks (`restore_position`) hit already-retained bytes.
@@ -1958,6 +2007,9 @@ impl Source for BitBuf {
     fn byte_order(&self) -> ByteOrder {
         self.layout.byte
     }
+    fn bit_order(&self) -> BitOrder {
+        self.layout.bit
+    }
 
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         // Validate against the buffered bits (mirrors BitReader's bounds), then move the cursor.
@@ -2052,6 +2104,9 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
     fn byte_order(&self) -> ByteOrder {
         self.layout.byte
     }
+    fn bit_order(&self) -> BitOrder {
+        self.layout.bit
+    }
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         self.bit_pos = pos; // the actual `io::Seek` happens on the next read
         Ok(())
@@ -2066,7 +2121,9 @@ impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
 /// framing case. Off by default so the core stays dependency-light.
 #[cfg(feature = "bytes")]
 mod bytes_io {
-    use super::{BitError, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source};
+    use super::{
+        BitError, BitOrder, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source,
+    };
 
     /// A [`SeekSource`](super::SeekSource) that **owns** a `bytes::Bytes` frame (no
     /// borrow), decoding bits from it. Constructing it from a `Bytes` is a refcount
@@ -2109,6 +2166,9 @@ mod bytes_io {
         }
         fn byte_order(&self) -> ByteOrder {
             self.layout.byte
+        }
+        fn bit_order(&self) -> BitOrder {
+            self.layout.bit
         }
         fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
             self.bit_pos = pos;
@@ -2159,6 +2219,9 @@ mod bytes_io {
         }
         fn byte_order(&self) -> ByteOrder {
             Sink::byte_order(&self.inner)
+        }
+        fn bit_order(&self) -> BitOrder {
+            Sink::bit_order(&self.inner)
         }
     }
 }
@@ -2388,14 +2451,19 @@ mod unit {
             assert_eq!(r.read::<u16>().unwrap(), 0x1234);
             encs.push(bytes);
         }
-        // Golden for the two MSB layouts: nibbles 0xAB, then the word big- vs little-endian.
-        // (The LSB byte layout is subtle — see `bin_order_matrix` — so the LSB corners are
-        // pinned by round-trip + distinctness rather than a hand-asserted golden.)
-        assert_eq!(encs[0], [0xAB, 0x12, 0x34]); // msb / big
-        assert_eq!(encs[1], [0xAB, 0x34, 0x12]); // msb / little
-        // Under MSB, flipping byte order changes only the word's bytes, not the nibble byte.
+        // All four corners are golden under the natural-layout rule (`apply_byte_order`):
+        // each bit order has a natural byte layout — big-endian under MSB, little-endian
+        // under LSB (the DBC-Intel layout) — and the byte-order knob swaps a byte-multiple
+        // value only when it differs from that natural layout.
+        assert_eq!(encs[0], [0xAB, 0x12, 0x34]); // msb / big    (natural — no swap)
+        assert_eq!(encs[1], [0xAB, 0x34, 0x12]); // msb / little (differs — word swaps)
+        assert_eq!(encs[2], [0xBA, 0x12, 0x34]); // lsb / big    (differs — word swaps)
+        assert_eq!(encs[3], [0xBA, 0x34, 0x12]); // lsb / little (natural — no swap)
+        // Flipping byte order changes only the word's bytes, never the nibble byte.
         assert_eq!(encs[0][0], encs[1][0]);
         assert_ne!(encs[0][1..], encs[1][1..]);
+        assert_eq!(encs[2][0], encs[3][0]);
+        assert_ne!(encs[2][1..], encs[3][1..]);
         // All four corners are pairwise distinct — neither axis aliases the other.
         for i in 0..encs.len() {
             for j in (i + 1)..encs.len() {

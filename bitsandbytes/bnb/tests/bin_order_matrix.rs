@@ -3,10 +3,12 @@
 //! this pins the 2×2 combination on one shape that is sensitive to *both*: a sub-byte
 //! nibble pair (bit-order sensitive) followed by a `u16` word (byte-order sensitive).
 //!
-//! Golden bytes for the `lsb` combos are intentionally not hand-asserted (the packing
-//! is subtle and already golden-tested per-axis); instead each combo must round-trip,
-//! and flipping *either* axis must change the wire — proving the two options compose
-//! independently rather than aliasing.
+//! All four corners are golden-asserted under the **natural-layout rule** (specified in
+//! `DESIGN.md`, pinned against the DBC-Intel reference in `bin_lsb_dbc.rs`): each bit order
+//! has a natural byte layout — big-endian under MSB, little-endian under LSB — and the
+//! byte-order knob swaps a byte-multiple value only when it differs from that natural
+//! layout. Each combo must also round-trip, and flipping *either* axis must change the
+//! wire — proving the two options compose independently rather than aliasing.
 
 mod macro_ {
 
@@ -83,6 +85,17 @@ mod macro_ {
 
         // All four messages are exactly 24 bits = 3 bytes.
         assert_eq!(enc!(BeMsb).len(), 3);
+    }
+
+    #[test]
+    fn all_four_corners_golden() {
+        // MSB: nibbles pack high-first (0xAB); the natural layout is big-endian.
+        assert_eq!(enc!(BeMsb), [0xAB, 0x12, 0x34]); // natural (no swap)
+        assert_eq!(enc!(LeMsb), [0xAB, 0x34, 0x12]); // little differs -> word swaps
+        // LSB: nibbles pack low-first (0xBA); the natural layout is little-endian
+        // (the DBC-Intel layout — see bin_lsb_dbc.rs).
+        assert_eq!(enc!(LeLsb), [0xBA, 0x34, 0x12]); // natural (no swap)
+        assert_eq!(enc!(BeLsb), [0xBA, 0x12, 0x34]); // big differs -> word swaps
     }
 
     #[test]

@@ -232,6 +232,21 @@ its layout (`BitReader::with_layout(&v, Msg::LAYOUT)`). The slice entry points s
 baking `Msg::LAYOUT` in, so they are the foolproof "decode this buffer" path; `decode(&mut Source)`
 is for streaming and custom sources.
 
+**Byte order × bit order — the natural-layout rule.** The two knobs compose by one rule:
+each bit order has a *natural* byte layout — the bytes the bit cursor produces with no
+transform. MSB-first emits a value's high bits first, so its bytes land **big-endian**;
+LSB-first emits low bits first, so its bytes land **little-endian** (value bit *k* goes to
+stream bit *k*: exactly the CAN/DBC "Intel" layout, `raw |= v << start; frame =
+raw.to_le_bytes()`). The declared byte order swaps a **byte-multiple** value only when it
+*differs* from that natural layout; sub-byte widths are never byte-swapped. So the two
+identity corners are the two real-world conventions — `big`+`msb` is network order,
+`little`+`lsb` is DBC-Intel/SMB — and the mixed corners (`little`+`msb`, `big`+`lsb`) are
+the deliberate swaps. Pinned against the embedded DBC reference formula in
+`tests/bin_lsb_dbc.rs` (golden + property-tested), and golden at every layer in
+`bin_order_matrix.rs` (message) and `bitstream.rs::cursor_layout_matrix` (cursor). The
+`#[bitfield]` layer agrees by construction: `bits = lsb` packs `v << offset` into the
+backing integer and `bytes = le` emits `to_le_bytes` — the same DBC layout.
+
 Seeking is only needed by a message that uses `restore_position`; everything else runs
 over the forward-only `StreamBitReader` too. **Seeking is a source capability, enforced
 in the type system:** when a message uses `restore_position`, the generated
