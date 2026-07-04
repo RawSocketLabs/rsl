@@ -118,27 +118,27 @@ pub mod proto {
     feature = "protobuf",
 ))]
 pub mod ext {
-    /// Derive-based error types.
-    #[cfg(feature = "error")]
-    #[doc(inline)]
-    pub use ::thiserror;
     /// Boxed, contextual error handling for application code.
     #[cfg(feature = "error")]
     #[doc(inline)]
     pub use ::anyhow;
+    /// Derive-based error types.
+    #[cfg(feature = "error")]
+    #[doc(inline)]
+    pub use ::thiserror;
 
     /// Structured, leveled application logging/tracing.
     #[cfg(feature = "log")]
     #[doc(inline)]
     pub use ::tracing;
-    /// Tracing subscriber (fmt + env-filter + json) for binaries and tests.
-    #[cfg(feature = "log")]
-    #[doc(inline)]
-    pub use ::tracing_subscriber;
     /// Non-blocking file/rolling appender for `tracing`.
     #[cfg(feature = "log")]
     #[doc(inline)]
     pub use ::tracing_appender;
+    /// Tracing subscriber (fmt + env-filter + json) for binaries and tests.
+    #[cfg(feature = "log")]
+    #[doc(inline)]
+    pub use ::tracing_subscriber;
 
     /// Serialization framework (config, logs — wire formats use [`crate::codec`]).
     #[cfg(feature = "serde")]
@@ -164,14 +164,14 @@ pub mod ext {
     #[doc(inline)]
     pub use ::rand;
 
-    /// SHA-2 hashing.
-    #[cfg(feature = "hash")]
-    #[doc(inline)]
-    pub use ::sha2;
     /// CRC-32 checksums.
     #[cfg(feature = "hash")]
     #[doc(inline)]
     pub use ::crc32fast;
+    /// SHA-2 hashing.
+    #[cfg(feature = "hash")]
+    #[doc(inline)]
+    pub use ::sha2;
 
     /// MAC-address types.
     #[cfg(feature = "netutil")]
@@ -202,14 +202,14 @@ pub mod ext {
     #[doc(inline)]
     pub use ::rustfft;
 
-    /// Async runtime.
-    #[cfg(feature = "async")]
-    #[doc(inline)]
-    pub use ::tokio;
     /// Async combinators (streams, sinks) that pair with `tokio`.
     #[cfg(feature = "async")]
     #[doc(inline)]
     pub use ::futures_util;
+    /// Async runtime.
+    #[cfg(feature = "async")]
+    #[doc(inline)]
+    pub use ::tokio;
 
     /// NATS messaging client.
     #[cfg(feature = "nats")]
@@ -248,14 +248,14 @@ pub mod ext {
     #[doc(inline)]
     pub use ::reqwest;
 
-    /// Terminal UI framework.
-    #[cfg(feature = "tui")]
-    #[doc(inline)]
-    pub use ::ratatui;
     /// Colorful panic/error reports for TUI/CLI binaries.
     #[cfg(feature = "tui")]
     #[doc(inline)]
     pub use ::color_eyre;
+    /// Terminal UI framework.
+    #[cfg(feature = "tui")]
+    #[doc(inline)]
+    pub use ::ratatui;
 
     /// Date and time.
     #[cfg(feature = "time")]

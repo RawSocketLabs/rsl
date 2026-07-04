@@ -20,9 +20,11 @@ publish = false
 # opts into a feature. Versions here are the ecosystem-wide blessed pins; bump
 # them in ONE place and every application crate that consumes `rsl` moves together.
 #
-# Owned RSL crates are `git` deps to their public RawSocketLabs repos (pinned to a
-# branch for now; move to `rev`/`tag` as churn settles). Sourcing is an implementation
-# detail — the public `rsl::…` paths consumers import do not change when a pin moves.
+# Owned RSL crates are `git` deps to their public RawSocketLabs repos, PINNED to an exact
+# `rev` for reproducibility — a push to a sibling's `main` cannot silently change or break
+# `rsl` (or any consumer). Bump a pin deliberately (re-run `git ls-remote` and update the
+# rev here). Sourcing is an implementation detail — the public `rsl::…` paths consumers
+# import do not change when a pin moves.
 # ---------------------------------------------------------------------------
 [dependencies]
 
@@ -30,23 +32,23 @@ publish = false
 # The codec everything binary-on-the-wire is built on (published as `bitsandbytes`,
 # imported as `bnb`). Same git source the protocol crates use, so the tree unifies on
 # one codec with no `[patch]` needed.
-bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", branch = "main", optional = true }
+bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", rev = "09cdc912d6913c35f1a49dd89c8db9993d18f00f", optional = true }
 
 # Protocol implementations (members of the `protocols` workspace, selected by `package`).
-ethertype = { git = "https://github.com/RawSocketLabs/protocols", branch = "main", optional = true }
-tcp       = { git = "https://github.com/RawSocketLabs/protocols", branch = "main", optional = true }
-udp       = { git = "https://github.com/RawSocketLabs/protocols", branch = "main", optional = true }
-dns       = { git = "https://github.com/RawSocketLabs/protocols", branch = "main", optional = true }
+ethertype = { git = "https://github.com/RawSocketLabs/protocols", rev = "b87d9ba05ceabd1f17dc8726896d0b843af3bd69", optional = true }
+tcp       = { git = "https://github.com/RawSocketLabs/protocols", rev = "b87d9ba05ceabd1f17dc8726896d0b843af3bd69", optional = true }
+udp       = { git = "https://github.com/RawSocketLabs/protocols", rev = "b87d9ba05ceabd1f17dc8726896d0b843af3bd69", optional = true }
+dns       = { git = "https://github.com/RawSocketLabs/protocols", rev = "b87d9ba05ceabd1f17dc8726896d0b843af3bd69", optional = true }
 
 # Layered raw-packet I/O (L2/L3/L4).
-rawsock = { git = "https://github.com/RawSocketLabs/rawsock", branch = "main", optional = true }
+rawsock = { git = "https://github.com/RawSocketLabs/rawsock", rev = "055ec277d44f46af19efb78c83098d81216b8dbc", optional = true }
 
 # RF frequency / sample-rate / scan-target parsing.
-rfus = { git = "https://github.com/RawSocketLabs/rfus", branch = "main", optional = true }
+rfus = { git = "https://github.com/RawSocketLabs/rfus", rev = "9a98224a7f9da4a33758cd496805cb9952f442c7", optional = true }
 
 # USDR software-defined-radio bindings (FFI; needs a C++ toolchain + system libs to build,
 # so opt-in only and off by default).
-usdr = { git = "https://github.com/RawSocketLabs/usdr-lib-rs", branch = "main", optional = true }
+usdr = { git = "https://github.com/RawSocketLabs/usdr-lib-rs", rev = "4f016843bed292eeb0d8f96732350ab994a1883f", optional = true }
 
 # NOTE — owned crates intentionally absent from this PUBLIC facade:
 #   * rust-dsdcc, libsdr (`sdr`) — private repos; bless them in the private overlay crate.
@@ -77,7 +79,7 @@ rustfft            = { version = "6.4", optional = true }
 # async runtime & messaging
 tokio              = { version = "1.50", features = ["full"], optional = true }
 futures-util       = { version = "0.3", optional = true }
-async-nats         = { version = "0.46", optional = true }
+async-nats         = { version = "0.49", optional = true }
 
 # data parallelism
 rayon              = { version = "1.11", optional = true }

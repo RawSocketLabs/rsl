@@ -100,9 +100,11 @@ them under their own semantic paths — public/private boundary = repo boundary.
 
 ## Sourcing model & caveats
 
-- **Owned crates are `git` deps** to their public `RawSocketLabs` repos, pinned to `branch =
-  "main"` for now. Move to a `rev`/`tag` once churn settles. Sourcing is an implementation
-  detail — the public `rsl::…` paths consumers import do not change when a pin moves.
+- **Owned crates are `git` deps** to their public `RawSocketLabs` repos, **pinned to an exact
+  `rev`** so a push to a sibling's `main` can't silently change or break `rsl` or its
+  consumers. Bump a pin deliberately (`git ls-remote` → update the rev). Sourcing is an
+  implementation detail — the public `rsl::…` paths consumers import do not change when a
+  pin moves.
 - **One codec, no patch.** `bnb` is pulled from the same git source the protocol crates use,
   so a consumer enabling both `codec` and `proto` compiles exactly one `bitsandbytes` whose
   types unify.
