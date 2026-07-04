@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     # link layer
     "link/ethertype",
+    "link/ethernet",
     # transport layer
     "transport/tcp",
     "transport/udp",
