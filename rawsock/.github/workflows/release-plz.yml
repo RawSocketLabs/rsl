@@ -1,0 +1,63 @@
+# Conventional Commits -> SemVer, automated by release-plz.
+#
+# Two jobs run on every push to `main`:
+#   * release-plz-pr      — opens/updates a "release" PR that bumps the crate's
+#                           version (from the commits since its last tag) and
+#                           updates CHANGELOG.md. Merging that PR is what actually
+#                           cuts a release.
+#   * release-plz-release — when a release PR is merged (Cargo.toml version no
+#                           longer matches a tag), creates the git tag.
+#                           Publishing to crates.io and GitHub Releases is
+#                           disabled in release-plz.toml (`publish = false`,
+#                           `git_release_enable = false`), so this only tags.
+#
+# Token note: PRs opened with the default GITHUB_TOKEN do NOT trigger other
+# workflows (so CI won't run on the release PR). To get CI on the release PR,
+# add a Personal Access Token or GitHub App token as the `RELEASE_PLZ_TOKEN`
+# secret; the job falls back to GITHUB_TOKEN when it is absent.
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Create the git tag for a freshly merged release PR (no publish, no GH release).
+  release-plz-release:
+    name: release-plz release (tags only)
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'RawSocketLabs' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No CARGO_REGISTRY_TOKEN on purpose: `publish = false` in release-plz.toml.
+
+  # Open/update the version-bump + CHANGELOG PR.
+  release-plz-pr:
+    name: release-plz PR
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'RawSocketLabs' }}
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
