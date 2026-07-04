@@ -1,0 +1,24 @@
+# release-plz — derive the crate's SemVer + changelog from Conventional Commits.
+# https://release-plz.dev
+#
+# Posture (mirrors the protocols/bitsandbytes repos): manage the version + CHANGELOG and
+# tag releases in git, but DO NOT publish to crates.io yet (pre-1.0). `rawsock` is a single
+# crate today; the `[workspace]` table simply supplies its settings. If it later splits into
+# a multi-crate workspace (see ROADMAP.md), the name-prefixed tag scheme already scales.
+#
+# Only `feat`/`fix`/breaking commits move the version. release-plz's semver-check + the
+# type→bump table are the source of truth; see VERSIONING in the protocols repo.
+#
+# To start publishing to crates.io later:
+#   1. add a `CARGO_REGISTRY_TOKEN` repository secret (used by the release job),
+#   2. set `publish = true` below (and `git_release_enable = true` for GitHub Releases).
+
+[workspace]
+# Don't run `cargo publish` — nothing reaches a registry until this flips on.
+publish = false
+# Don't create GitHub Releases yet (turn on alongside publishing).
+git_release_enable = false
+# Still create git tags when a release PR merges, so each run's baseline advances and the
+# next diff is correct. Name-prefixed so a future multi-crate split can't collide.
+git_tag_enable = true
+git_tag_name = "{{ package }}-v{{ version }}"
