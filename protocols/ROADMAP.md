@@ -31,11 +31,11 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        resolver needs no raw sockets; a dual-use spoofing client is the `rawsock` case).
        The resolver now also does **DNS-over-TCP fallback** (UDP → TCP on a truncated response). **Remaining**: EDNS(0), caching.
 2. [~] **`transport/tcp`** done (header codec: `Control` `#[bitfield]` flags word, raw options
-       sized by `data_offset`, dual-use stored checksum/offset). **`transport/udp`** remains — it
-       pulls in the `rawsock` extraction trigger (implements the injection trait). TCP now also
-       has a **structured options view** (`TcpOption`: MSS/WScale/SACK/Timestamps/…). Remaining
-       TCP follow-ups: a checksum helper (with `rawsock` compose). (DNS-over-TCP fallback now
-       lives in the `dns` resolver.)
+       sized by `data_offset` + a `TcpOption` structured view, dual-use stored checksum/offset).
+       **`transport/udp`** done too as a header codec (`UdpHeader`, dual-use stored length/checksum).
+       Remaining transport follow-ups: a checksum helper (with `rawsock` compose) for both, and the
+       **`rawsock` injection-`Protocol` impl on UDP** — the socket layer's first on-the-wire
+       consumer (the `rawsock` extraction trigger), pending `rawsock` being published.
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.

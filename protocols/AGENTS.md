@@ -133,6 +133,7 @@ corpus name once compliance tracking is wired.
 |---|---|---|---|---|
 | `link/ethertype` | link | 0.1.0 | functional | — |
 | `transport/tcp` | transport | 0.1.0 | functional (header codec) | `tcp` (RFC 9293) |
+| `transport/udp` | transport | 0.1.0 | functional (header codec) | `udp` (RFC 768) |
 | `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
 | `transport/tcp`, `transport/udp` | transport | — | planned | — |
 | `network/ip`, `network/icmp` | network | — | planned | `icmp` |
