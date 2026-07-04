@@ -47,6 +47,11 @@ pub use rfus as rf;
 #[doc(inline)]
 pub use usdr;
 
+/// DSDcc digital-voice decoder bindings (FFI; requires a C++ toolchain to build).
+#[cfg(feature = "dsdcc")]
+#[doc(inline)]
+pub use rust_dsdcc as dsdcc;
+
 /// Network-protocol implementations, one submodule per protocol. Each is a from-scratch,
 /// dual-use (compliant-by-default, deliberately violatable) implementation built on
 /// [`crate::codec`].

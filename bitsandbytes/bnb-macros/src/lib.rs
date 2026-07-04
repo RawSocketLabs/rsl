@@ -13,6 +13,7 @@
 //!
 //! These are re-exported from `bnb`; depend on that crate, not this one.
 
+#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 mod bitenum;

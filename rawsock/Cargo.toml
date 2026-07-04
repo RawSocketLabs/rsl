@@ -31,17 +31,3 @@ rustix = { version = "1.0", features = ["net"], optional = true }
 
 [lints]
 workspace = true
-
-# rawsock is its own single-crate repo; the `[workspace]` table (with this package
-# as the implicit member) exists only to host the shared lint config the ecosystem
-# uses, and to leave room for a second member (e.g. split backends) later.
-[workspace]
-
-[workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
-
-[workspace.lints.clippy]
-# Groups get lower priority so the individual allows below override them.
-all = { level = "deny", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-upper_case_acronyms = "allow"  # protocol acronyms (IP, UDP, L2, …)

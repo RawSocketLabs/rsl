@@ -1,0 +1,10 @@
+/tmp/claude-1000/-home-msmythe-work-orgs-rsl-2-products-public/db9cff42-7c3e-4b49-81f8-2a99a3ad06bd/scratchpad/rsl-mono/monorepo/target/tests/trybuild/debug/deps/autocfg-5a61822e2bd09115.d: /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/tmp/claude-1000/-home-msmythe-work-orgs-rsl-2-products-public/db9cff42-7c3e-4b49-81f8-2a99a3ad06bd/scratchpad/rsl-mono/monorepo/target/tests/trybuild/debug/deps/libautocfg-5a61822e2bd09115.rlib: /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/tmp/claude-1000/-home-msmythe-work-orgs-rsl-2-products-public/db9cff42-7c3e-4b49-81f8-2a99a3ad06bd/scratchpad/rsl-mono/monorepo/target/tests/trybuild/debug/deps/libautocfg-5a61822e2bd09115.rmeta: /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs
+
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/lib.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/error.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/rustc.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1/src/version.rs:
