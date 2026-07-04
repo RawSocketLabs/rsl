@@ -48,7 +48,7 @@ rfus = { git = "https://github.com/RawSocketLabs/rfus", rev = "9a98224a7f9da4a33
 
 # USDR software-defined-radio bindings (FFI; needs a C++ toolchain + system libs to build,
 # so opt-in only and off by default).
-usdr = { git = "https://github.com/RawSocketLabs/usdr-lib-rs", rev = "4f016843bed292eeb0d8f96732350ab994a1883f", optional = true }
+usdr = { git = "https://github.com/RawSocketLabs/usdr-lib-rs", rev = "4592a4c229ad9e0ac50c144bf9d6f56ccfe61501", optional = true }
 
 # NOTE — owned crates intentionally absent from this PUBLIC facade:
 #   * rust-dsdcc, libsdr (`sdr`) — private repos; bless them in the private overlay crate.

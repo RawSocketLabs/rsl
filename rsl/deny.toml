@@ -25,14 +25,6 @@ allow = [
 ]
 confidence-threshold = 0.9
 
-# `usdr` (owned, FFI) ships no `license` field in its manifest yet. It is RSL property under
-# the ecosystem's MIT OR Apache-2.0 — assert that here. TODO: add the license field + LICENSE
-# files to usdr-lib-rs (same fix rfus received), then drop this clarification.
-[[licenses.clarify]]
-crate = "usdr"
-expression = "MIT OR Apache-2.0"
-license-files = []
-
 [bans]
 # rsl pulls whole framework trees; multiple versions are unavoidable, so warn (don't fail).
 multiple-versions = "warn"
