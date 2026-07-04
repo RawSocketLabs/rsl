@@ -9,7 +9,7 @@
 //!
 //! On **decode** it always yields `Set(decoded)`, so `decode → encode` stays byte-identical
 //! (a forged length survives a round-trip). On **encode**, an `Auto` is resolved from a
-//! declared target via the `#[bw(auto = count(x) | bytes(x))]` field directive (same-struct
+//! declared target via the `#[bw(auto_len = count(x) | bytes(x))]` field directive (same-struct
 //! target) or the `#[bin(auto_len(path = count(field), …))]` struct directive (cross-struct);
 //! a `Set` is written as-is. So plain `to_bytes()` is correct by default, yet
 //! `WireLen::set(n)` deliberately deviates. Derivation is checked ([`CountPrefix`]) — an

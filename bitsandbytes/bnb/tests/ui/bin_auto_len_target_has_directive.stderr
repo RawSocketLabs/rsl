@@ -1,4 +1,4 @@
-error: a field targeted by `#[bin(auto_len(...))]` cannot also carry a codec directive (`calc`/`map`/`write_with`/`parse_with`/`auto`/`if`/`count`/`ctx`/`temp`/`ignore`/`restore_position`); only positioning (`pad_*`/`align_*`) may accompany it
+error: a field targeted by `#[bin(auto_len(...))]` cannot also carry a codec directive (`calc`/`map`/`write_with`/`parse_with`/`auto_len`/`if`/`count`/`ctx`/`temp`/`ignore`/`restore_position`); only positioning (`pad_*`/`align_*`) may accompany it
   --> tests/ui/bin_auto_len_target_has_directive.rs:13:5
    |
 13 | /     #[bw(map = |h: &Hdr| h.clone())]

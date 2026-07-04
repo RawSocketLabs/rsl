@@ -52,7 +52,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [x] **`WireLen<T>` — auto-deriving, overridable length/count.** A length field that is
       `auto()` (derive at encode, the default) or `set(n)` (explicit override); decode yields
       `Set`, so plain `to_bytes()` is correct-by-default *and* round-trips byte-identically,
-      while a forged length survives. `#[bw(auto = count(x)|bytes(x))]` (same-struct, element
+      while a forged length survives. `#[bw(auto_len = count(x)|bytes(x))]` (same-struct, element
       or byte length) and `#[bin(auto_len(field.nested = count(source), …))]` (cross-struct,
       the DNS `qdcount`/`rdlength` shape). Checked (no truncation), builder-optional. The
       non-adjacent, byte-length, dual-use counterpart to `count_prefix`; driven by the DNS

@@ -1,4 +1,4 @@
-//! `WireLen<T>` + the `#[bw(auto = count(x)|bytes(x))]` field directive: a length/count
+//! `WireLen<T>` + the `#[bw(auto_len = count(x)|bytes(x))]` field directive: a length/count
 //! field that auto-derives by default, is overridable with `set(n)` (dual-use), and
 //! round-trips byte-identically (decode yields `Set`).
 
@@ -10,7 +10,7 @@ mod macro_ {
     #[bin(big)]
     #[derive(Debug, PartialEq)]
     struct Counted {
-        #[bw(auto = count(items))]
+        #[bw(auto_len = count(items))]
         len: WireLen<u16>,
         #[br(count = len.to_count())]
         items: Vec<u8>,
@@ -70,7 +70,7 @@ mod macro_ {
     #[bin(big)]
     #[derive(Debug, PartialEq)]
     struct SizedBytes {
-        #[bw(auto = bytes(inner))]
+        #[bw(auto_len = bytes(inner))]
         nbytes: WireLen<u16>,
         #[brw(variable)]
         inner: Inner,
@@ -96,7 +96,7 @@ mod macro_ {
     // Checked derivation: a `u8` count can't hold 300 elements — an error, not `44`.
     #[bin(big)]
     struct TinyCount {
-        #[bw(auto = count(items))]
+        #[bw(auto_len = count(items))]
         len: WireLen<u8>,
         #[br(count = len.to_count())]
         items: Vec<u8>,

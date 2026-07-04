@@ -1,8 +1,8 @@
 error: expected `count(<field>)` or `bytes(<field>)` naming a sibling field
- --> tests/ui/bin_auto_bad_kind.rs:6:17
+ --> tests/ui/bin_auto_bad_kind.rs:6:21
   |
-6 |     #[bw(auto = size(items))]
-  |                 ^^^^^^^^^^^
+6 |     #[bw(auto_len = size(items))]
+  |                     ^^^^^^^^^^^
 
 warning: unused import: `WireLen`
  --> tests/ui/bin_auto_bad_kind.rs:2:11

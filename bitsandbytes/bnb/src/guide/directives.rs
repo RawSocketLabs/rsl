@@ -104,8 +104,8 @@
 //! forged length survives a round-trip). It's the dual-use, non-adjacent, byte-or-element
 //! counterpart to `count_prefix`:
 //!
-//! - **Same-struct**: `#[bw(auto = count(<field>))]` (element count) or
-//!   `#[bw(auto = bytes(<field>))]` (encoded byte length) on the `WireLen` field.
+//! - **Same-struct**: `#[bw(auto_len = count(<field>))]` (element count) or
+//!   `#[bw(auto_len = bytes(<field>))]` (encoded byte length) on the `WireLen` field.
 //! - **Cross-struct**: `#[bin(auto_len(<field>.<nested> = count(<source>), …))]` on the
 //!   enclosing struct — a count nested in a sub-struct that sizes a sibling collection. The
 //!   targeted sub-struct must be `Clone` (it is filled through a clone at encode), and an
@@ -117,7 +117,7 @@
 //! #[bin(big)]
 //! # #[derive(Debug, PartialEq)]
 //! struct Framed {
-//!     #[bw(auto = count(items))]      // Auto → items.len(); Set(n) → n (a forgery)
+//!     #[bw(auto_len = count(items))]      // Auto → items.len(); Set(n) → n (a forgery)
 //!     len: WireLen<u16>,
 //!     #[br(count = len.to_count())]
 //!     items: Vec<u8>,
