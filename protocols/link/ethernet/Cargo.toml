@@ -1,0 +1,29 @@
+[package]
+name = "ethernet"
+version = "0.1.0"
+description = "Ethernet II (IEEE 802.3) frame-header codec on the bnb bit-aware codec — dual-use, from-scratch."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+ethertype = { path = "../ethertype" }
+rawsock = { workspace = true, optional = true }
+
+[features]
+# A `rawsock::Protocol` layer (`Ethernet<P>`) that frames an L3 payload for L2 injection.
+inject = ["dep:rawsock"]
+
+[[example]]
+name = "frame_stack"
+required-features = ["inject"]
+
+[dev-dependencies]
+# The full-stack example/tests frame a real IP + ICMP payload.
+ip = { path = "../../network/ip", features = ["inject"] }
+icmp = { path = "../../network/icmp", features = ["inject"] }
+
+[lints]
+workspace = true
