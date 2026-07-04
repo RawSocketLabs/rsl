@@ -25,10 +25,11 @@ table in [`AGENTS.md`](AGENTS.md) tracks per-crate stage.
 
 Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low coupling:
 
-1. [~] **`application/dns`** — Increments 1 **and 2** done: the pure codec plus encode-side
-       name compression (`to_compressed_bytes`, RFC §4.1.4 suffix pointers) riding on the bnb
-       `Sink::scratch` feature this port drove upstream. **Next**: a resolver client (needs
-       `rawsock`).
+1. [~] **`application/dns`** — the pure codec (Increments 1 + 2: decode, uncompressed +
+       compressed encode) **and a synchronous UDP resolver client** (the `client` feature,
+       `dns::Resolver`) built on bnb's `net` `MessageDatagram` — **not** `rawsock` (a normal
+       resolver needs no raw sockets; a dual-use spoofing client is the `rawsock` case).
+       **Remaining**: DNS-over-TCP fallback (waits on `transport/tcp`), EDNS(0), caching.
 2. [ ] **`transport/udp`, `transport/tcp`** — clean fixed headers; small `#[bin]` showcases.
        (UDP pulls in the `rawsock` extraction trigger — it implements the injection trait.)
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.

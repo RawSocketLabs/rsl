@@ -5,13 +5,16 @@ DNS message codec (RFC 1034/1035) on `bnb`. refcheck protocol name: **`dns`**.
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
 > [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
 
-## Status — Increment 2 (compressing codec)
+## Status — codec + resolver client
 
 **Decode** (following name-compression pointers inline) plus **both encode forms**:
 `to_bytes` (uncompressed) and `to_compressed_bytes` (RFC 1035 §4.1.4 suffix compression).
-This is the flagship `bnb` port. Compression rides on the `bnb` `Sink::scratch` feature
-(a message-scoped [`CompressionDict`] in the sink's scratch) that this port drove upstream.
-Deferred: a **client/network layer** (needs the external `rawsock`), tracked in the ROADMAP.
+Compression rides on the `bnb` `Sink::scratch` feature (a message-scoped [`CompressionDict`]
+in the sink's scratch) that this port drove upstream. The optional **`client` feature** adds
+a synchronous UDP resolver ([`Resolver`], `src/client.rs`) built on bnb's `net`
+`MessageDatagram` — **not** `rawsock` (a normal resolver needs no raw sockets; a dual-use
+spoofing client is a later, `rawsock`-based concern). Deferred: DNS-over-TCP fallback (waits
+on the `transport/tcp` crate), EDNS(0), caching.
 
 ## Architecture
 
@@ -73,7 +76,13 @@ response; unknown types preserved), `build_query` (construct + encode a query), 
 count deliberately disagrees with its section). `testutil` is deferred — the golden vectors are
 inline until a second crate would share the helpers.
 
-Run everything: `cargo test -p dns`.
+**Client** (`--features client`): `src/client.rs` — inline `mod component` drives the resolver's
+validation/retry logic against a `MockDatagramSocket` (matching/mismatched/off-path/truncated/
+timeout); `tests/client.rs` is a full `query()` round-trip over real loopback UDP (a server
+thread). Example `resolve` (`cargo run -p dns --features client --example resolve -- example.com`)
+is a tiny `dig` against a public resolver.
+
+Run everything: `cargo test -p dns` (add `--features client` for the resolver).
 
 ## Scope notes
 

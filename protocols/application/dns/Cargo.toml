@@ -10,6 +10,22 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 thiserror.workspace = true
+# Only for the resolver client (query-id randomization); off unless `client` is enabled.
+rand = { workspace = true, optional = true }
+
+[features]
+# A synchronous UDP resolver client (`dns::Resolver`), built on bnb's `net` socket helpers.
+# Off by default: the codec stays dependency-free (no sockets) unless you opt in.
+client = ["dep:rand", "bnb/net"]
+
+# `mock` (implies `net`) gives `MockDatagramSocket` so the resolver tests drive a scripted
+# datagram socket with no real server.
+[dev-dependencies]
+bnb = { workspace = true, features = ["mock"] }
+
+[[example]]
+name = "resolve"
+required-features = ["client"]
 
 [lints]
 workspace = true

@@ -35,9 +35,15 @@ pub mod question;
 pub mod rdata;
 pub mod record;
 
+/// A synchronous UDP resolver client — the `client` feature.
+#[cfg(feature = "client")]
+pub mod client;
+
 /// Re-exported from `bnb`: the auto-deriving, overridable length type used for the header
 /// section counts and `rdlength` (`auto()` to derive, `set(n)` to forge — dual-use).
 pub use bnb::WireLen;
+#[cfg(feature = "client")]
+pub use client::{ResolveError, Resolver};
 pub use error::{DnsError, Result};
 pub use header::{Header, Op, RCode, State};
 pub use message::Message;
