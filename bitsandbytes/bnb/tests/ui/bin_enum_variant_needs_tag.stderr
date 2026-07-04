@@ -1,0 +1,5 @@
+error: use either a typed fallback variant (no tag/magic) or a `#[catch_all]`, not both
+ --> tests/ui/bin_enum_variant_needs_tag.rs:6:6
+  |
+6 | enum E {
+  |      ^

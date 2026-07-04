@@ -1,0 +1,5 @@
+error: `count_prefix` is only supported under `#[bin]` — the bare `BitDecode`/`BitEncode` derives cannot inject the length field; write the `#[br(temp)]`/`#[bw(calc = …)]`/`#[br(count = …)]` triad by hand
+ --> tests/ui/bin_count_prefix_bare_derive.rs:8:11
+  |
+8 |     #[brw(count_prefix = u16)]
+  |           ^^^^^^^^^^^^^^^^^^

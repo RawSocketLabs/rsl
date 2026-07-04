@@ -1,0 +1,6 @@
+error: `#[br(restore_position)]` needs to seek, but the struct is `#[bin(forward_only)]`
+ --> tests/ui/bin_forward_only_no_seek.rs:8:5
+  |
+8 | /     #[br(restore_position)]
+9 | |     peek: u8,
+  | |____________^

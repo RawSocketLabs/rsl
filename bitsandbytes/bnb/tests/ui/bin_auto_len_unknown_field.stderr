@@ -1,0 +1,5 @@
+error: `auto_len` names `headr`, which is not a stored field of this struct
+  --> tests/ui/bin_auto_len_unknown_field.rs:11:21
+   |
+11 | #[bin(big, auto_len(headr.n = count(items)))]
+   |                     ^^^^^

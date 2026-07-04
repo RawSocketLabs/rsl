@@ -1,0 +1,7 @@
+# Workspace cargo config. Kept minimal on purpose.
+[alias]
+# `deny.toml` lives in `.config/` (not the root), so cargo-deny needs the path. In
+# cargo-deny 0.19 `--config` is a flag on the `check` subcommand, so it goes *after*
+# `check`. Run `cargo deny-check` (optionally with a target, e.g. `cargo deny-check bans`).
+# Named `deny-check` rather than `deny` to avoid shadowing the cargo-deny subcommand.
+deny-check = "deny check --config .config/deny.toml"

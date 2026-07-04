@@ -1,0 +1,6 @@
+error: `#[br(if(...))]` requires an `Option<_>` field
+ --> tests/ui/bin_if_needs_option.rs:7:5
+  |
+7 | /     #[br(if(flag != bnb::u4::new(0)))]
+8 | |     value: u16,
+  | |______________^

@@ -1,0 +1,13 @@
+error: mixing `#[bits(A..=B)]` ranges with inferred/`#[bits(N)]` widths is not allowed; use one style for the whole struct
+ --> tests/ui/bitfield_mixed_widths.rs:8:8
+  |
+8 | struct Mixed {
+  |        ^^^^^
+
+warning: unused import: `u4`
+ --> tests/ui/bitfield_mixed_widths.rs:4:21
+  |
+4 | use bnb::{bitfield, u4};
+  |                     ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

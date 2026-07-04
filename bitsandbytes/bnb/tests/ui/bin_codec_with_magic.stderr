@@ -1,0 +1,5 @@
+error: `magic` is not supported on a `#[bin(codec = …)]` newtype — the codec functions own the framing; move it into (or wrap) the codec fns, or use a full `#[bin]` struct
+ --> tests/ui/bin_codec_with_magic.rs:6:8
+  |
+6 | struct Varint(u64);
+  |        ^^^^^^

@@ -1,0 +1,5 @@
+error: this codec has no `write` function — add `write = <f>` inside `codec(...)`, or mark the struct `read_only`
+ --> tests/ui/bin_codec_missing_write.rs:6:8
+  |
+6 | struct Varint(u64);
+  |        ^^^^^^

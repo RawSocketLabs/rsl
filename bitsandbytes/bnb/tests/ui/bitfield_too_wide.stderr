@@ -1,0 +1,13 @@
+error[E0080]: evaluation panicked: bitfield fields are wider than the backing integer
+ --> tests/ui/bitfield_too_wide.rs:8:1
+  |
+8 | #[bitfield(u8, bits = msb)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `TooWide::__BITS_FIT` failed here
+
+note: erroneous constant encountered
+ --> tests/ui/bitfield_too_wide.rs:8:1
+  |
+8 | #[bitfield(u8, bits = msb)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this note originates in the attribute macro `bitfield` (in Nightly builds, run with -Z macro-backtrace for more info)

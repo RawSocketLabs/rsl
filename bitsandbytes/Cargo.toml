@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = ["bnb", "bnb-macros"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/bitsandbytes"
+rust-version = "1.85"
+
+# Single source of truth for dependency versions — members use `dep.workspace = true`
+# (and may add per-crate features / `default-features = false`).
+[workspace.dependencies]
+# The proc-macro crate. Published as `bitsandbytes-macros`, but imported as `bnb_macros`
+# (the dep key, = the lib name) and re-exported by the `bnb` runtime crate.
+bnb-macros = { package = "bitsandbytes-macros", path = "bnb-macros", version = "0.2.0" }
+# Structured diagnostics for the `#[br(dbg)]` directive (std-only; optional in `bnb`).
+tracing = "0.1"
+# Optional zero-copy `Source`/`Sink` adapters over the `bytes` crate.
+bytes = "1"
+
+# proc-macro
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+# Resolves the dependent crate's import name for `bnb` (so generated code works even
+# when a consumer renames the dependency, e.g. `bnb = { package = "bitsandbytes" }`).
+proc-macro-crate = "3"
+
+# dev-only
+trybuild = "1.0"
+proptest = "1"
+criterion = "0.5"
+# A tracing subscriber for the examples (real logging instead of `println!`). Minimal
+# features to keep the dependency tree small under the strict `multiple-versions` deny.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+# The crates `bnb` collapses — used *only* in benches to substantiate the perf claims.
+bitbybit = "1.3"
+arbitrary-int = "1.3"
+modular-bitfield-msb = "0.11"
+# The `tokio_framed` example's async runtime + codec framework (dev-only). Minimal features
+# to stay under the strict `multiple-versions` deny.
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+tokio-util = { version = "0.7", features = ["codec", "net"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# Dev-only, for `tests/serde_compat.rs`: pins the 1.0 scope-line decision that user-side
+# serde derives coexist with plain `#[bin]` types (serde-as-data-format is out of scope).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+# Zero `unsafe`, enforced as a guarantee rather than a convention: `forbid` (unlike
+# `deny`) cannot be locally re-enabled by an `#[allow]`. Subsumes the former
+# `unsafe_op_in_unsafe_fn = "deny"` (with no `unsafe`, there are no unsafe fns). The
+# macros never *emit* `unsafe` either, so `bnb` is usable from a consumer that also
+# `#![forbid(unsafe_code)]`.
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_docs = "warn"          # `bnb` upgrades to deny itself (`#![deny(missing_docs)]`)
+
+[workspace.lints.clippy]
+# Groups get lower priority so the individual allows below override them
+# (clippy::lint_groups_priority).
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_inception = "allow"     # files named after their single module
+upper_case_acronyms = "allow"  # protocol acronyms (ARP, TCP, OpCode, …)
+# Libraries should log via `tracing`, not print.
+print_stdout = "warn"
+print_stderr = "warn"

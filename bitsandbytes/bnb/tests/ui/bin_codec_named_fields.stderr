@@ -1,0 +1,5 @@
+error: `codec` applies to a single-field tuple struct (a newtype), e.g. `#[bin(codec = bnb::codecs::leb128)] pub struct Varint(pub u64);` — for a one-off field use `#[br(parse_with = …)]`/`#[bw(write_with = …)]` instead
+ --> tests/ui/bin_codec_named_fields.rs:6:8
+  |
+6 | struct Frame {
+  |        ^^^^^

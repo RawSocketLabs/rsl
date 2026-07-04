@@ -1,0 +1,7 @@
+error: `codec` and struct-level wire mapping (`map`/`try_map`/`bw_map`/`wire`/`try_wire`) are mutually exclusive — a codec newtype's fns own its wire form
+ --> tests/ui/bin_codec_and_wire_conflict.rs:5:1
+  |
+5 | #[bin(codec = bnb::codecs::leb128, wire = u64)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `bin` (in Nightly builds, run with -Z macro-backtrace for more info)

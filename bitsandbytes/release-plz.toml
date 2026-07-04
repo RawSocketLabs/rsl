@@ -1,0 +1,37 @@
+# release-plz — derive each crate's SemVer + changelog from Conventional Commits.
+# https://release-plz.dev
+#
+# Posture (chosen 2026-06-19): manage versions + per-crate CHANGELOGs and tag
+# releases in git, but DO NOT publish to crates.io yet (private repo, road to
+# 1.0). The two crates keep independent per-crate versions (a deliberate
+# workspace decision); release-plz bumps a dependent crate and rewrites its
+# `version = "…"` requirement automatically when the dependency changes.
+#
+# Only `feat`/`fix`/breaking commits move a version: `feat` -> minor (0.x: minor),
+# `fix` -> patch, and `feat!`/`fix!`/`BREAKING CHANGE:` -> major (0.x: minor).
+# `chore`/`ci`/`docs`/`refactor`/`test`/`style`/`perf` trigger no bump.
+#
+# To start publishing to crates.io later:
+#   1. add a `CARGO_REGISTRY_TOKEN` repository secret (used by the release job),
+#   2. set `publish = true` below (and `git_release_enable = true` for GitHub Releases).
+
+[workspace]
+# Don't run `cargo publish` — nothing reaches a registry until you flip this on.
+publish = false
+# Don't create GitHub Releases yet (turn on alongside publishing).
+git_release_enable = false
+# Still create git tags when a release PR merges, so each run's baseline advances
+# and the next diff is correct. The macro crate keeps a name-prefixed tag (so the
+# two crates' tags can never collide and release-plz can map a tag back to its
+# crate); the runtime crate is overridden below to a plain `v{version}`.
+git_tag_enable = true
+git_tag_name = "{{ package }}-v{{ version }}"
+
+# The runtime crate is the one users depend on, so it gets the headline tag
+# `v0.1.0` instead of `bitsandbytes-v0.1.0`. A bare `v{version}` can't be shared by
+# both crates (it would collide, and release-plz couldn't tell which crate a tag
+# belongs to), so only this package uses it — `bitsandbytes-macros` keeps the
+# prefixed form from `[workspace]` above.
+[[package]]
+name = "bitsandbytes"
+git_tag_name = "v{{ version }}"

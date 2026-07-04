@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `Varint: FixedBitLen` is not satisfied
+  --> tests/ui/bin_codec_needs_variable.rs:14:13
+   |
+14 |     length: Varint, // ← missing #[brw(variable)]
+   |             ^^^^^^ unsatisfied trait bound
+   |
+help: the trait `FixedBitLen` is not implemented for `Varint`
+  --> tests/ui/bin_codec_needs_variable.rs:8:1
+   |
+ 8 | struct Varint(u64);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `FixedBitLen`:
+             Frame
+             Ipv4Addr
+             Ipv6Addr
+             UInt<T, N>
+             WireLen<T>
+             bool
+             u128
+             u16
+           and $N others

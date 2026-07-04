@@ -1,0 +1,5 @@
+error: `validate` needs the builder; it is incompatible with `read_only`/`no_builder`
+ --> tests/ui/bin_validate_needs_builder.rs:6:8
+  |
+6 | struct Frame {
+  |        ^^^^^

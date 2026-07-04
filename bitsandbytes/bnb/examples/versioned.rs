@@ -1,0 +1,67 @@
+//! **versioned** — `#[bin]` `if` driven by a **version** field (a different driver than
+//! `conditional`'s per-bit flags): a v2 message carries fields a v1 message doesn't, so old and
+//! new peers share one wire type. The version is guarded by `#[br(assert(...))]`, so an
+//! unknown version is rejected at decode — a pure read-side guard, no write inverse needed.
+//!
+//! Run with: `cargo run -p bitsandbytes --example versioned`
+
+use bnb::{ErrorKind, bin};
+
+/// A length-prefixed label (v2 only).
+#[bin(big)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Label {
+    #[brw(count_prefix = u8)] // derived, never stored, checked at encode
+    #[try_str]
+    text: Vec<u8>,
+}
+
+#[bin(big)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Event {
+    // The decode-time guard: reject a version this build doesn't speak. Read-only —
+    // encode still writes whatever is stored (you can forge what you wouldn't accept).
+    #[br(assert((1..=2).contains(&version), "unsupported version {}", version))]
+    version: u8,
+    id: u32,
+    // v2 extended the event with a priority and a label; a v1 event stops after `id`.
+    #[br(if(version >= 2))]
+    priority: Option<u8>,
+    #[br(if(version >= 2))]
+    label: Option<Label>,
+}
+
+fn main() {
+    // A v2 event carries the extra fields.
+    let v2 = Event {
+        version: 2,
+        id: 1001,
+        priority: Some(5),
+        label: Some(Label {
+            text: b"deploy".to_vec(),
+        }),
+    };
+    let bytes = v2.to_bytes().unwrap();
+    println!("v2 event: {:>2} bytes  {bytes:02x?}", bytes.len());
+    assert_eq!(Event::decode_exact(&bytes).unwrap(), v2);
+    println!("{v2:#?}");
+
+    // A v1 event omits them entirely — they aren't on the wire.
+    let v1 = Event {
+        version: 1,
+        id: 1002,
+        priority: None,
+        label: None,
+    };
+    let bytes = v1.to_bytes().unwrap();
+    println!("v1 event: {:>2} bytes  {bytes:02x?}", bytes.len());
+    assert_eq!(Event::decode_exact(&bytes).unwrap(), v1);
+
+    // An unknown version is rejected at decode — `try_map` fails before any later field is read.
+    let err = Event::decode_exact(&[0x09, 0x00, 0x00, 0x03, 0xEA]).unwrap_err();
+    println!("decoding version=9 -> {err}");
+    assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+    assert_eq!(err.field, Some("version"));
+
+    println!("all checks passed");
+}

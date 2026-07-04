@@ -1,0 +1,5 @@
+error: a variant with `tag = …` needs the enum to declare the selector via `#[bin(tag = <ctx-param>)]`
+ --> tests/ui/bin_enum_no_tag.rs:8:5
+  |
+8 |     A(u8),
+  |     ^

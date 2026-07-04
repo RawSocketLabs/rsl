@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `Msg: FixedBitLen` is not satisfied
+  --> tests/ui/bin_count_not_fixed.rs:14:14
+   |
+14 |     let _ = <Msg as FixedBitLen>::BIT_LEN;
+   |              ^^^ unsatisfied trait bound
+   |
+help: the trait `FixedBitLen` is not implemented for `Msg`
+  --> tests/ui/bin_count_not_fixed.rs:6:1
+   |
+ 6 | struct Msg {
+   | ^^^^^^^^^^
+   = help: the following other types implement trait `FixedBitLen`:
+             Ipv4Addr
+             Ipv6Addr
+             UInt<T, N>
+             WireLen<T>
+             bool
+             u128
+             u16
+             u32
+           and $N others
