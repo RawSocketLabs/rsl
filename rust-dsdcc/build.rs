@@ -1,8 +1,8 @@
 use std::env;
 
 fn main() {
-    let dsdcc_include =
-        env::var("DSDCC_INCLUDE").expect("DSDCC_INCLUDE environment variable not set but required!");
+    let dsdcc_include = env::var("DSDCC_INCLUDE")
+        .expect("DSDCC_INCLUDE environment variable not set but required!");
 
     let _build = cxx_build::bridge("src/lib.rs")
         .include(dsdcc_include)

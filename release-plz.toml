@@ -1,0 +1,9 @@
+# release-plz — per-crate SemVer + CHANGELOG from Conventional Commits (scope = crate name).
+# Posture: version + tag in git, do NOT publish to crates.io yet. To start publishing: add a
+# CARGO_REGISTRY_TOKEN secret and set publish = true (and git_release_enable = true).
+[workspace]
+publish = false
+git_release_enable = false
+git_tag_enable = true
+# Name-prefixed tags so the many crates' tags never collide and map back to their crate.
+git_tag_name = "{{ package }}-v{{ version }}"
