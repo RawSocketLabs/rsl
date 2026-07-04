@@ -11,6 +11,7 @@ members = [
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
+    "protocols/link/arp",
     "protocols/transport/tcp",
     "protocols/transport/udp",
     "protocols/network/ip",

@@ -138,7 +138,7 @@ corpus name once compliance tracking is wired.
 | `network/ip` | network | 0.1.0 | functional (header codec + rawsock injection) | `ip` (RFC 791) |
 | `network/icmp` | network | 0.1.0 | functional (header codec + rawsock injection) | `icmp` (RFC 792) |
 | `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
-| `link/arp` | link | — | planned | `arp` |
+| `link/arp` | link | 0.1.0 | functional (packet codec + rawsock injection) | `arp` (RFC 826) |
 | `session/socks`; `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
 
 The roadmap of protocols-to-come lives here, not as empty member dirs — a crate joins
