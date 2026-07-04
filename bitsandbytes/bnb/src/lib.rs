@@ -148,6 +148,7 @@ tour of the crate and the rationale behind each piece. Reading order:
 
 // Every public item must be documented (the `uN` aliases are the one self-
 // evident exception, allowed at their module).
+#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 // On docs.rs (which sets `--cfg docsrs` and builds on nightly), annotate every
 // feature-gated item with an "Available on crate feature …" badge. A no-op on

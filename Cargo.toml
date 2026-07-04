@@ -1,0 +1,92 @@
+[workspace]
+resolver = "2"
+members = [
+    # codec (published as `bitsandbytes` + `bitsandbytes-macros`)
+    "bitsandbytes/bnb",
+    "bitsandbytes/bnb-macros",
+    # raw-packet I/O
+    "rawsock",
+    # RF parsing
+    "rfus",
+    # protocol implementations (by OSI layer)
+    "protocols/link/ethertype",
+    "protocols/link/ethernet",
+    "protocols/transport/tcp",
+    "protocols/transport/udp",
+    "protocols/network/ip",
+    "protocols/network/icmp",
+    "protocols/application/dns",
+    # facades
+    "rsl",
+    "rsl-deps",
+]
+# FFI crates (need a C++ toolchain + system libs) and bnb's fuzz/no_std helpers are excluded
+# from the default workspace build; each is built on its own in a dedicated CI job.
+exclude = [
+    "usdr",
+    "rust-dsdcc",
+    "bitsandbytes/fuzz",
+    "bitsandbytes/bnb/nostd-check",
+]
+
+# Shared package metadata — members inherit with `field.workspace = true`. All crates now live
+# in the `rsl` monorepo, so `repository` points there; individual crates keep their own
+# `version` (e.g. bitsandbytes is 0.2.0) by declaring it explicitly.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/rsl"
+rust-version = "1.85"
+
+# Single source of truth for dependency versions across the workspace. Inter-crate deps carry
+# BOTH `path` (used in-workspace) AND `version` (used by crates.io consumers once published).
+[workspace.dependencies]
+# --- owned, in-workspace (path + version) ---
+bnb = { package = "bitsandbytes", path = "bitsandbytes/bnb", version = "0.2.0" }
+bnb-macros = { package = "bitsandbytes-macros", path = "bitsandbytes/bnb-macros", version = "0.2.0" }
+rawsock = { path = "rawsock", version = "0.1.0", default-features = false }
+rsl-deps = { path = "rsl-deps", version = "0.1.0", default-features = false }
+
+# --- blessed externals used directly by owned crates ---
+# thiserror can't be routed through rsl-deps (its derive hardcodes the `thiserror` crate name).
+thiserror = "1.0"
+# bnb's optional runtime deps.
+tracing = "0.1"
+bytes = "1"
+
+# --- bnb proc-macro deps ---
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+proc-macro-crate = "3"
+
+# --- dev / bench / example deps (bnb) ---
+trybuild = "1.0"
+proptest = "1"
+criterion = "0.5"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+bitbybit = "1.3"
+arbitrary-int = "1.3"
+modular-bitfield-msb = "0.11"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+tokio-util = { version = "0.7", features = ["codec", "net"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Common lints. Unsafe policy is the softer `unsafe_op_in_unsafe_fn = deny` (protocols allows
+# isolated unsafe for future raw I/O); bnb/rawsock pin the stricter `#![forbid(unsafe_code)]`
+# at crate level, so a single shared table serves all three.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_inception = "allow"
+upper_case_acronyms = "allow"
+print_stdout = "warn"
+print_stderr = "warn"
