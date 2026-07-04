@@ -11,10 +11,11 @@ DNS message codec (RFC 1034/1035) on `bnb`. refcheck protocol name: **`dns`**.
 `to_bytes` (uncompressed) and `to_compressed_bytes` (RFC 1035 §4.1.4 suffix compression).
 Compression rides on the `bnb` `Sink::scratch` feature (a message-scoped [`CompressionDict`]
 in the sink's scratch) that this port drove upstream. The optional **`client` feature** adds
-a synchronous UDP resolver ([`Resolver`], `src/client.rs`) built on bnb's `net`
+a synchronous resolver ([`Resolver`], `src/client.rs`) built on bnb's `net`
 `MessageDatagram` — **not** `rawsock` (a normal resolver needs no raw sockets; a dual-use
-spoofing client is a later, `rawsock`-based concern). Deferred: DNS-over-TCP fallback (waits
-on the `transport/tcp` crate), EDNS(0), caching.
+spoofing client is a later, `rawsock`-based concern). `query` sends over **UDP** and
+automatically **falls back to TCP** on a truncated (TC) response (RFC 1035 §4.2.2, a 2-byte
+length prefix); `query_udp`/`query_tcp` force a single transport. Deferred: EDNS(0), caching.
 
 ## Architecture
 

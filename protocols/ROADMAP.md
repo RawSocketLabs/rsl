@@ -29,12 +29,13 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        compressed encode) **and a synchronous UDP resolver client** (the `client` feature,
        `dns::Resolver`) built on bnb's `net` `MessageDatagram` — **not** `rawsock` (a normal
        resolver needs no raw sockets; a dual-use spoofing client is the `rawsock` case).
-       **Remaining**: DNS-over-TCP fallback (waits on `transport/tcp`), EDNS(0), caching.
+       The resolver now also does **DNS-over-TCP fallback** (UDP → TCP on a truncated response). **Remaining**: EDNS(0), caching.
 2. [~] **`transport/tcp`** done (header codec: `Control` `#[bitfield]` flags word, raw options
        sized by `data_offset`, dual-use stored checksum/offset). **`transport/udp`** remains — it
        pulls in the `rawsock` extraction trigger (implements the injection trait). TCP now also
        has a **structured options view** (`TcpOption`: MSS/WScale/SACK/Timestamps/…). Remaining
-       TCP follow-ups: a checksum helper (with `rawsock` compose), DNS-over-TCP fallback.
+       TCP follow-ups: a checksum helper (with `rawsock` compose). (DNS-over-TCP fallback now
+       lives in the `dns` resolver.)
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.

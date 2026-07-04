@@ -22,7 +22,8 @@ use crate::{Message, QClass, QType, Question, RData};
 use bnb::bitstream::{BitError, ErrorKind};
 use bnb::{DatagramSocket, MessageDatagram};
 use rand::Rng;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::time::Duration;
 
 /// An error from a [`Resolver`] query.
@@ -41,10 +42,14 @@ pub enum ResolveError {
     /// No valid response arrived within the timeout, across all attempts.
     #[error("no response after {0} attempt(s) (timed out)")]
     Timeout(u32),
-    /// The response set the TC (truncated) bit — the answer didn't fit a UDP datagram and
-    /// should be retried over TCP (DNS-over-TCP fallback is not yet implemented).
+    /// The response set the TC (truncated) bit — the answer didn't fit a UDP datagram.
+    /// [`query`](Resolver::query) retries such a response over TCP automatically; this
+    /// surfaces only from [`query_udp`](Resolver::query_udp).
     #[error("response truncated (TC bit); retry over TCP")]
     Truncated,
+    /// A TCP response didn't echo the query id, or wasn't a response (QR unset).
+    #[error("TCP response did not match the query (id or QR mismatch)")]
+    Mismatch,
 }
 
 /// A synchronous UDP DNS resolver client. Configure a server (and optionally the timeout and
@@ -83,19 +88,28 @@ impl Resolver {
         self
     }
 
-    /// Query the server for `name`/`qtype` and return the decoded response.
+    /// Query the server for `name`/`qtype`, over UDP, **falling back to TCP** if the UDP
+    /// response is truncated (the TC bit) — a stub resolver's standard behavior (RFC 1035
+    /// §4.2). For a single transport use [`query_udp`](Self::query_udp) / [`query_tcp`](Self::query_tcp).
+    ///
+    /// # Errors
+    /// [`ResolveError`] on an invalid name, socket failure, timeout, or (from the TCP leg) a
+    /// mismatched response.
+    pub fn query(&self, name: &str, qtype: QType) -> Result<Message, ResolveError> {
+        match self.query_udp(name, qtype) {
+            Err(ResolveError::Truncated) => self.query_tcp(name, qtype),
+            other => other,
+        }
+    }
+
+    /// Query over **UDP only**. A truncated response is [`ResolveError::Truncated`] (it does
+    /// not fall back to TCP — use [`query`](Self::query) for that).
     ///
     /// # Errors
     /// [`ResolveError`] on an invalid name, socket failure, timeout across all attempts, or a
-    /// truncated (TC) response.
-    pub fn query(&self, name: &str, qtype: QType) -> Result<Message, ResolveError> {
-        let question = Question {
-            name: name.parse()?,
-            qtype,
-            qclass: QClass::Internet,
-        };
-        let id = rand::rng().random::<u16>();
-        let query = Message::query(id, question);
+    /// truncated response.
+    pub fn query_udp(&self, name: &str, qtype: QType) -> Result<Message, ResolveError> {
+        let query = self.build_query(name, qtype)?;
 
         // Bind an ephemeral local port in the server's address family.
         let bind: SocketAddr = if self.server.is_ipv6() {
@@ -108,6 +122,55 @@ impl Resolver {
 
         let mut datagram = MessageDatagram::new(sock);
         self.exchange(&mut datagram, &query)
+    }
+
+    /// Query over **TCP** (RFC 1035 §4.2.2: the message is framed by a 2-byte big-endian
+    /// length prefix). Used automatically by [`query`](Self::query) as the truncation
+    /// fallback, and directly when TCP is required (a large query/response, a zone transfer).
+    ///
+    /// # Errors
+    /// [`ResolveError`] on an invalid name, connection/timeout failure, a decode error, an
+    /// oversized query (over 65535 bytes), or a response that doesn't match the query.
+    pub fn query_tcp(&self, name: &str, qtype: QType) -> Result<Message, ResolveError> {
+        let query = self.build_query(name, qtype)?;
+        let query_bytes = query.to_bytes()?;
+        let len = u16::try_from(query_bytes.len()).map_err(|_| {
+            ResolveError::Codec(BitError::convert(
+                "DNS query exceeds the 65535-byte TCP frame limit".into(),
+                0,
+            ))
+        })?;
+
+        let mut stream = TcpStream::connect(self.server)?;
+        stream.set_read_timeout(Some(self.timeout))?;
+        stream.set_write_timeout(Some(self.timeout))?;
+        // Send: 2-byte length prefix, then the message.
+        stream.write_all(&len.to_be_bytes())?;
+        stream.write_all(&query_bytes)?;
+        stream.flush()?;
+
+        // Receive: 2-byte length prefix, then exactly that many message bytes.
+        let mut len_buf = [0u8; 2];
+        stream.read_exact(&mut len_buf)?;
+        let resp_len = usize::from(u16::from_be_bytes(len_buf));
+        let mut resp_buf = vec![0u8; resp_len];
+        stream.read_exact(&mut resp_buf)?;
+
+        let resp = Message::decode_exact(&resp_buf)?;
+        if resp.header.id != query.header.id || !resp.header.is_response() {
+            return Err(ResolveError::Mismatch);
+        }
+        Ok(resp)
+    }
+
+    /// Build a recursive query message (random id, RD set) for `name`/`qtype`.
+    fn build_query(&self, name: &str, qtype: QType) -> Result<Message, ResolveError> {
+        let question = Question {
+            name: name.parse()?,
+            qtype,
+            qclass: QClass::Internet,
+        };
+        Ok(Message::query(rand::rng().random::<u16>(), question))
     }
 
     /// The transport-agnostic query exchange: send, then read one response, validating it
