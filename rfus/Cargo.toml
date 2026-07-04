@@ -3,6 +3,9 @@ name = "rfus"
 version = "0.1.0"
 edition = "2024"
 description = "RF frequency, sample-rate, and scan-target parsing utilities"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/rfus"
+readme = "README.md"
 
 [dependencies]
 winnow = "0.7"
