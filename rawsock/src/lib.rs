@@ -50,6 +50,8 @@ pub use loopback::Loopback;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(all(target_os = "linux", feature = "network"))]
+pub use linux::network::NetworkSocket;
 #[cfg(all(target_os = "linux", feature = "transport"))]
 pub use linux::transport::TransportSocket;
 

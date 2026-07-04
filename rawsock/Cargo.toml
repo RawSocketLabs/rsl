@@ -19,6 +19,9 @@ transport = ["dep:rustix"]
 # Compute derived fields (checksums/lengths) on the compliant encode path. A
 # signal consumed by protocol crates; off => they lay fields out verbatim.
 compute = []
+# L3 — raw IPv4 sockets (IPPROTO_RAW / IP_HDRINCL); the caller supplies the whole IP
+# datagram. Privileged (needs CAP_NET_RAW).
+network = ["dep:rustix"]
 
 # rustix carries the actual syscalls, Linux-only, and is optional so a consumer
 # depending on rawsock only for the `compose` trait (a protocol encoder, via

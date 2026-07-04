@@ -8,12 +8,14 @@ layer. Single-crate repo (no proc-macros); `CLAUDE.md` is a symlink to this file
 > [`protocols`](https://github.com/RawSocketLabs/protocols) (the protocol crates that consume
 > both). This crate is bnb-**independent** — pure I/O + composition.
 
-## Status — the unprivileged core
+## Status — unprivileged core + L3 injection
 
 Shipped: `RawIo`/`Layer`/`OpenError`, the `compose` model (`Protocol`/`ProtocolExt`/
 `Context`/`Pseudo`/`internet_checksum`), the `Loopback` backend, `capabilities()` probing,
-and the `transport` (L4 UDP via rustix) backend. Deferred to the header-forging protocols:
-`network` (L3) and `link` (L2) — see `ROADMAP.md`.
+the `transport` (L4 UDP via rustix) backend, and — the `network` feature — the **L3
+`NetworkSocket`** (raw IPv4 via `SOCK_RAW`/`IPPROTO_RAW`, `IP_HDRINCL`; privileged, needs
+`CAP_NET_RAW`). It's the rung the `protocols` `ip` layer targets to put forged IP datagrams on
+the wire. Deferred: the `link` (L2, `AF_PACKET`) backend — see `ROADMAP.md`.
 
 ## Architecture
 

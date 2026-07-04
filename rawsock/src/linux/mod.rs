@@ -7,3 +7,6 @@
 
 #[cfg(feature = "transport")]
 pub mod transport;
+
+#[cfg(feature = "network")]
+pub mod network;

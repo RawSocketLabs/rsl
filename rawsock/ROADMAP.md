@@ -16,8 +16,10 @@ and re-homed as a bnb-independent repo.
 
 ## Next — the privileged backends (trigger: a header-forging protocol crate)
 
-- [ ] **`network` (L3)** — raw IP via `SOCK_RAW`/`IPPROTO_RAW` (`IP_HDRINCL` free). Lands with
-      the first crate that hand-builds IP headers (IP/ICMP). Namespace-gated tests.
+- [x] **`network` (L3)** — **done** (`network` feature): `NetworkSocket`, raw IPv4 via
+      `SOCK_RAW`/`IPPROTO_RAW` (`IP_HDRINCL` free), `send(&impl Protocol)` + `RawIo`. Triggered by
+      the `protocols` `ip` layer (the first crate to hand-build IP headers). Tested via a
+      capability-consistency check (runs in CI) + a `CAP_NET_RAW`-gated loopback send.
 - [ ] **`link` (L2)** — raw Ethernet via `AF_PACKET`. Lands with ARP/Ethernet. **Before
       writing it, re-evaluate rustix 1.x**: its `netdevice` module (`name_to_index`) and any
       link-address support may cover the `sockaddr_ll` bind + `if_nametoindex` that the
