@@ -983,10 +983,15 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
             match self.0.read_bits(8) {
                 Ok(b) => *slot = b as u8,
                 Err(e) if i == 0 => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        e.to_string(),
-                    ));
+                    // Map the actual failure — only a genuine end-of-input is `UnexpectedEof`;
+                    // a non-EOF error (e.g. `NotSeekable`, `Convert`) must not masquerade as one.
+                    let kind = match e.kind {
+                        ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. } => {
+                            std::io::ErrorKind::UnexpectedEof
+                        }
+                        _ => std::io::ErrorKind::InvalidData,
+                    };
+                    return Err(std::io::Error::new(kind, e.to_string()));
                 }
                 Err(_) => return Ok(i),
             }
@@ -1498,10 +1503,12 @@ pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, 
     let mut out = Vec::new();
     while r.remaining_bits() > 0 {
         let before = r.bit_pos();
-        out.push(T::bit_decode(&mut r)?);
+        let item = T::bit_decode(&mut r)?;
         if r.bit_pos() == before {
-            break; // a zero-width message would otherwise spin forever
+            break; // a zero-width `T` makes no progress — stop without pushing a spurious
+            // element (and without spinning forever).
         }
+        out.push(item);
     }
     Ok(out)
 }
@@ -3120,6 +3127,23 @@ mod component {
             assert_eq!(Word::decode_all(&both).unwrap(), vec![w, w]);
             let collected: Result<Vec<_>, _> = Word::decode_iter(&both).collect();
             assert_eq!(collected.unwrap(), vec![w, w]);
+        }
+
+        #[test]
+        fn decode_all_of_a_zero_width_type_yields_nothing() {
+            use bnb::{BitDecode, BitError, Layout, Source};
+            #[derive(Debug, PartialEq)]
+            struct Zero;
+            impl BitDecode for Zero {
+                fn bit_decode<S: Source>(_r: &mut S) -> Result<Self, BitError> {
+                    Ok(Zero)
+                }
+            }
+            // A zero-width type makes no progress; over a non-empty buffer `decode_all` must
+            // yield an empty `Vec` (not one spurious element) and not spin.
+            let out: Vec<Zero> =
+                bnb::__private::decode_all(&[0xFF, 0xFF], Layout::default()).unwrap();
+            assert!(out.is_empty());
         }
 
         #[test]

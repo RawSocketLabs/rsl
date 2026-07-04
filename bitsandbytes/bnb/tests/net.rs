@@ -36,6 +36,25 @@ mod e2e {
         assert!(inp.read_message::<Msg>().is_err());
     }
 
+    #[test]
+    fn message_stream_with_cap_bounds_a_never_completing_frame() {
+        use bnb::ErrorKind;
+        // A `Msg::Hi` is 4 bytes on the wire; a 2-byte cap can't buffer it, so instead of
+        // growing without bound the read fails cleanly with `BufferFull`.
+        let bytes = {
+            let mut out = MessageStream::new(Vec::new());
+            out.write_message(&Msg::Hi { n: 7 }).unwrap();
+            out.into_inner()
+        };
+        assert!(bytes.len() > 2);
+        let mut inp = MessageStream::with_cap(&bytes[..], 2);
+        let err = inp.read_message::<Msg>().unwrap_err();
+        assert!(
+            matches!(err.kind, ErrorKind::BufferFull { cap: 2 }),
+            "expected BufferFull, got {err:?}"
+        );
+    }
+
     /// A `Read` that yields at most `chunk` bytes per call — to exercise partial-frame buffering.
     struct Trickle<'a> {
         data: &'a [u8],

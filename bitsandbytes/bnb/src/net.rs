@@ -16,7 +16,7 @@
 //! wrappers bridge `std::io::Error` into [`BitError`] (the `std` feature), so a single `?` covers
 //! I/O *and* codec errors.
 
-use crate::{BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter};
+use crate::{BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind};
 use alloc::vec;
 use alloc::vec::Vec;
 use std::io::{self, Read, Write};
@@ -49,11 +49,25 @@ pub struct MessageStream<S> {
 }
 
 impl<S> MessageStream<S> {
-    /// Wrap a stream.
+    /// Wrap a stream with an **unbounded** read buffer. On an untrusted peer prefer
+    /// [`with_cap`](Self::with_cap) — a stream that never completes a frame would otherwise
+    /// grow the buffer without bound.
     pub fn new(inner: S) -> Self {
         Self {
             inner,
             buf: BitBuf::new(),
+        }
+    }
+
+    /// Wrap a stream with a **bounded** read buffer: a peer that streams bytes which never
+    /// complete a message can only grow the buffer to `cap` bytes before
+    /// [`read_message`](Self::read_message) fails with
+    /// [`ErrorKind::BufferFull`](crate::ErrorKind::BufferFull), rather than consuming memory
+    /// without bound. The bounded counterpart to [`new`](Self::new) for untrusted streams.
+    pub fn with_cap(inner: S, cap: usize) -> Self {
+        Self {
+            inner,
+            buf: BitBuf::bounded(cap),
         }
     }
 
@@ -90,7 +104,12 @@ impl<S: Read> MessageStream<S> {
                     io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed").into(),
                 );
             }
-            self.buf.push(&chunk[..n]);
+            // `try_push` is a no-op bound for an unbounded buffer (`new`) and enforces the
+            // `cap` for a bounded one (`with_cap`) — a never-completing frame is `BufferFull`,
+            // not unbounded growth.
+            self.buf.try_push(&chunk[..n]).map_err(|e| {
+                BitError::new(ErrorKind::BufferFull { cap: e.cap }, self.buf.bit_len())
+            })?;
         }
     }
 }

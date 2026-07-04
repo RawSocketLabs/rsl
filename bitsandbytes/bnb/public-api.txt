@@ -1689,6 +1689,7 @@ impl<S> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
 pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
+pub fn bnb::net::MessageStream<S>::with_cap(S, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
@@ -2849,6 +2850,7 @@ impl<S> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
 pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
+pub fn bnb::net::MessageStream<S>::with_cap(S, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
