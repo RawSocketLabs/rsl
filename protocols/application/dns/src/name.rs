@@ -276,7 +276,7 @@ fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError>
 /// written uncompressed even in [`Message::to_compressed_bytes`](crate::Message::to_compressed_bytes)
 /// — RFC 3597 §4: only the **owner** name (and the question name) are compression-eligible.
 /// If an RDATA name compressed, its `rdlength` (derived from the *uncompressed* size via
-/// `#[bw(auto = bytes(data))]`) would no longer match the bytes written, producing a frame
+/// `#[bw(auto_len = bytes(data))]`) would no longer match the bytes written, producing a frame
 /// that an RFC-compliant peer misparses. Writing them uncompressed keeps `rdlength` honest.
 ///
 /// # Errors

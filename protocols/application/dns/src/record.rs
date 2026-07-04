@@ -125,7 +125,7 @@ pub struct Record {
     /// The RDATA length in bytes. Left [`auto()`](WireLen::auto) (the default) it derives
     /// from the encoded size of `data`; [`set`](WireLen::set) it to forge a length that
     /// disagrees (dual-use). Passed to `data`'s decode as its byte budget.
-    #[bw(auto = bytes(data))]
+    #[bw(auto_len = bytes(data))]
     pub rdlength: WireLen<u16>,
     /// The typed record data, dispatched by `rtype`.
     #[br(ctx { rtype, rdlength })]

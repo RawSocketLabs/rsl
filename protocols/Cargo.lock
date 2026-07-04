@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "bitsandbytes"
 version = "0.2.0"
-source = "git+https://github.com/RawSocketLabs/bitsandbytes?branch=main#205934461f108e41a5d1c6f28dbcf297462c3351"
+source = "git+https://github.com/RawSocketLabs/bitsandbytes?branch=main#c39b19d77af9390192256279bdc9d40d29676312"
 dependencies = [
  "bitsandbytes-macros",
  "tracing",
@@ -14,7 +14,7 @@ dependencies = [
 [[package]]
 name = "bitsandbytes-macros"
 version = "0.2.0"
-source = "git+https://github.com/RawSocketLabs/bitsandbytes?branch=main#205934461f108e41a5d1c6f28dbcf297462c3351"
+source = "git+https://github.com/RawSocketLabs/bitsandbytes?branch=main#c39b19d77af9390192256279bdc9d40d29676312"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

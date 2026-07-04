@@ -185,7 +185,7 @@ impl RData {
 /// `RData` is `ctx`-dispatched, so bnb generates only `encode_with` — but the context
 /// (`rtype`/`rdlength`) selects the variant on *decode*; on *encode* the stored variant is
 /// written verbatim, ignoring the context. This plain `bit_encode` (delegating through a
-/// throwaway context) is what lets `Record`'s `#[bw(auto = bytes(data))]` probe the encoded
+/// throwaway context) is what lets `Record`'s `#[bw(auto_len = bytes(data))]` probe the encoded
 /// length of an `RData` field.
 impl bnb::bitstream::BitEncode for RData {
     fn bit_encode<K: bnb::bitstream::Sink>(
