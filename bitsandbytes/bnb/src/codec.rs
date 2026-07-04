@@ -21,6 +21,13 @@
 //! `magic`/length prefix bounds it) — `decode` reads exactly one message and returns `None`
 //! when only a partial frame has arrived, so `Framed` reads more and retries.
 //!
+//! **Byte alignment over `Framed`.** `Framed`'s buffer is byte-granular, so `BinCodec`
+//! advances by whole bytes and starts each `decode` at a byte boundary. A message whose
+//! encoded length is **not** a whole number of bytes (a sub-byte `#[bin]` frame) therefore
+//! cannot be packed back-to-back on a `Framed` byte *stream* — use a byte-aligned message, or
+//! carry the bit cursor yourself with [`BitBuf`](crate::BitBuf)/[`MessageStream`](crate::MessageStream).
+//! (Each `UdpFramed` datagram is framed independently, so sub-byte messages are fine there.)
+//!
 //! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
 //! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So
 //! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the
@@ -50,7 +57,11 @@ impl<T> Default for BinCodec<T> {
     }
 }
 
-impl<T: BitDecode> Decoder for BinCodec<T> {
+// `Decoder` also bounds `T: BitEncode` so it can read in the message's declared
+// [`LAYOUT`](BitEncode::LAYOUT) — a `#[bin(little)]`/`bit_order = lsb` message must decode in
+// the same order the paired `Encoder` writes it, or the round-trip silently corrupts. (A
+// `BinCodec` used over `Framed`/`UdpFramed` always implements both directions anyway.)
+impl<T: BitDecode + BitEncode> Decoder for BinCodec<T> {
     type Item = T;
     type Error = io::Error;
 
@@ -58,7 +69,7 @@ impl<T: BitDecode> Decoder for BinCodec<T> {
         if src.is_empty() {
             return Ok(None);
         }
-        let mut reader = BitReader::new(&src[..]);
+        let mut reader = BitReader::with_layout(&src[..], <T as BitEncode>::LAYOUT);
         match <T as BitDecode>::bit_decode(&mut reader) {
             Ok(item) => {
                 // Consume exactly what this message used; leave the rest for the next call.
@@ -115,6 +126,31 @@ mod component {
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct Magic {
         v: u8,
+    }
+
+    /// A **little-endian** message — the Decoder must read in the same order the Encoder
+    /// writes, or the round-trip silently corrupts.
+    #[bin(little)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct LeMsg {
+        a: u16,
+        b: u32,
+    }
+
+    #[test]
+    fn little_endian_message_round_trips() {
+        let mut codec = BinCodec::<LeMsg>::new();
+        let mut buf = BytesMut::new();
+        let m = LeMsg {
+            a: 0x1234,
+            b: 0xAABB_CCDD,
+        };
+        codec.encode(m.clone(), &mut buf).unwrap();
+        // Little-endian on the wire.
+        assert_eq!(&buf[..], &[0x34, 0x12, 0xDD, 0xCC, 0xBB, 0xAA]);
+        // And the Decoder reads it back in the same order.
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(m));
+        assert!(buf.is_empty());
     }
 
     #[test]

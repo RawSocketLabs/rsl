@@ -708,6 +708,7 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::new(R) -> Self
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::with_layout(R, bnb::bitstream::Layout) -> Self
 impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>
@@ -1051,7 +1052,7 @@ pub mod bnb::codec
 pub struct bnb::codec::BinCodec<T>(_)
 impl<T> bnb::codec::BinCodec<T>
 pub fn bnb::codec::BinCodec<T>::new() -> Self
-impl<T: bnb::bitstream::BitDecode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
+impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
 pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::codec::BinCodec<T>::Item = T
 pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
@@ -2289,7 +2290,7 @@ impl<T> tracing::instrument::WithSubscriber for bnb::wirelen::WireLen<T>
 pub struct bnb::BinCodec<T>(_)
 impl<T> bnb::codec::BinCodec<T>
 pub fn bnb::codec::BinCodec<T>::new() -> Self
-impl<T: bnb::bitstream::BitDecode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
+impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
 pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::codec::BinCodec<T>::Item = T
 pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
@@ -3076,6 +3077,7 @@ pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::new(R) -> Self
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::StreamBitReader<R>::with_layout(R, bnb::bitstream::Layout) -> Self
 impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<R: std::io::Read> bnb::bitstream::Source for bnb::bitstream::StreamBitReader<R>

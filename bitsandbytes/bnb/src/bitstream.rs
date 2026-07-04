@@ -1738,17 +1738,29 @@ pub struct StreamBitReader<R> {
     lead_bits: u32,
     /// Total bits consumed so far (for position-aware errors).
     pos: usize,
+    /// The bit/byte order this source reports (raw `read_bits` is always MSB-first; the
+    /// layout is applied to multi-byte values by `Source::read`).
+    layout: Layout,
 }
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read> StreamBitReader<R> {
-    /// Wraps a byte source.
+    /// Wraps a byte source, decoding in the default **MSB-first, big-endian** order. For a
+    /// `#[bin(little)]`/`bit_order = lsb` message, use [`with_layout`](Self::with_layout) with
+    /// that type's [`LAYOUT`](BitEncode::LAYOUT), or the decode reads the wrong order.
     pub fn new(inner: R) -> Self {
+        Self::with_layout(inner, Layout::default())
+    }
+
+    /// Wraps a byte source, decoding in the given [`Layout`] (bit + byte order) — pass a
+    /// message's `LAYOUT` so a non-default-order `#[bin]` type round-trips over a stream.
+    pub fn with_layout(inner: R, layout: Layout) -> Self {
         Self {
             inner,
             lead: 0,
             lead_bits: 0,
             pos: 0,
+            layout,
         }
     }
 
@@ -1818,6 +1830,12 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
     }
     fn bit_pos(&self) -> usize {
         self.pos
+    }
+    fn byte_order(&self) -> ByteOrder {
+        self.layout.byte
+    }
+    fn bit_order(&self) -> BitOrder {
+        self.layout.bit
     }
 }
 
@@ -2975,6 +2993,26 @@ mod component {
             // no rewrite, no Seek requirement.
             let mut stream = StreamBitReader::new(&bytes[..]);
             assert_eq!(Word::bit_decode(&mut stream).unwrap(), word);
+        }
+
+        #[test]
+        fn stream_reader_honors_a_little_endian_layout() {
+            use bnb::{Layout, bin};
+            #[bin(little)]
+            #[derive(Debug, PartialEq)]
+            struct Le {
+                v: u32,
+            }
+            let bytes = Le { v: 0x1122_3344 }.to_bytes().unwrap();
+            assert_eq!(bytes, [0x44, 0x33, 0x22, 0x11]); // little-endian on the wire
+
+            // A default stream reader would misread it big-endian; with the type's layout
+            // it decodes correctly over a forward `Read`.
+            let mut stream = StreamBitReader::with_layout(&bytes[..], <Le as BitEncode>::LAYOUT);
+            assert_eq!(Le::bit_decode(&mut stream).unwrap(), Le { v: 0x1122_3344 });
+            // (The default `new` reader, big-endian, would read the bytes reversed.)
+            let mut msb = StreamBitReader::with_layout(&bytes[..], Layout::default());
+            assert_ne!(Le::bit_decode(&mut msb).unwrap().v, 0x1122_3344);
         }
     }
 
