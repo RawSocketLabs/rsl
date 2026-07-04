@@ -1,0 +1,35 @@
+[package]
+name = "dns"
+version = "0.1.0"
+description = "DNS (RFC 1034/1035) message codec on the bnb bit-aware codec — dual-use, from-scratch."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+# thiserror stays a DIRECT dep, not via rsl-deps: its `#[derive(Error)]` emits code that
+# references `thiserror::__private` by hardcoded crate name, so it can't be used through a
+# re-export (`rsl_deps::thiserror`) — thiserror has no `crate = "…"` escape hatch.
+thiserror.workspace = true
+# Non-derive blessed externals come from the RSL deps stack. `rand` (query-id randomization)
+# is only needed by the resolver client, so pull rsl-deps optionally under that feature.
+rsl-deps = { workspace = true, optional = true }
+
+[features]
+# A synchronous UDP resolver client (`dns::Resolver`), built on bnb's `net` socket helpers.
+# Off by default: the codec stays dependency-free (no sockets) unless you opt in.
+client = ["dep:rsl-deps", "rsl-deps/rand", "bnb/net"]
+
+# `mock` (implies `net`) gives `MockDatagramSocket` so the resolver tests drive a scripted
+# datagram socket with no real server.
+[dev-dependencies]
+bnb = { workspace = true, features = ["mock"] }
+
+[[example]]
+name = "resolve"
+required-features = ["client"]
+
+[lints]
+workspace = true

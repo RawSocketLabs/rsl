@@ -1,0 +1,26 @@
+[package]
+name = "udp"
+version = "0.1.0"
+description = "UDP (RFC 768) datagram-header codec on the bnb bit-aware codec — dual-use, from-scratch."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+# Only for the `inject` feature (the rawsock composition/injection layer); off by default.
+rawsock = { workspace = true, optional = true }
+
+[features]
+# A `rawsock::Protocol` layer (`Udp<P>`) + UDP checksum, so a UDP header can be composed
+# with a payload and injected as a real packet. Off by default: the pure codec stays free
+# of the rawsock dependency unless you opt in.
+inject = ["dep:rawsock"]
+
+[[example]]
+name = "inject_packet"
+required-features = ["inject"]
+
+[lints]
+workspace = true

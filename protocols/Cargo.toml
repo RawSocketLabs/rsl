@@ -1,0 +1,73 @@
+[workspace]
+resolver = "2"
+members = [
+    # link layer
+    "link/ethertype",
+    "link/ethernet",
+    # transport layer
+    "transport/tcp",
+    "transport/udp",
+    # network layer
+    "network/ip",
+    "network/icmp",
+    # application layer
+    "application/dns",
+    # network / transport / session / application layers land here as each
+    # protocol is (re)written on `bnb` — see the crate status table in AGENTS.md.
+]
+
+# Shared package metadata — members inherit with `field.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/protocols"
+rust-version = "1.85"
+
+# Single source of truth for dependency versions — members use `dep.workspace = true`
+# (and may add per-crate features / `default-features = false`). One version per crate
+# here keeps the workspace from drifting (enforced by deny.toml's `multiple-versions`).
+[workspace.dependencies]
+# The codec. `bnb` (published as `bitsandbytes`) is the owned, bit-aware binary codec —
+# integer-backed bitfields / arbitrary-width ints / enums / flag-sets plus the unified
+# `#[bin]` whole-message codec. It replaces the whole `binrw` + `bitbybit` +
+# `modular-bitfield` + `num_enum` + `arbitrary-int` stack the predecessor workspace used.
+#
+# Consumed from git during co-evolution: the DNS port drives bnb feature work, so both
+# move together until bnb cuts a 1.0 crates.io release — then this becomes a version req.
+# Pin to a `rev = "…"` once churn settles so protocols CI can't be broken by bnb's main.
+bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", rev = "c39b19d77af9390192256279bdc9d40d29676312" }
+
+# Raw-packet I/O + the layered composition model (Protocol trait, pseudo-header checksum).
+# Consumed from git during co-evolution, like bnb; `default-features = false` pulls only the
+# `compose` trait + `Loopback` (no `rustix` socket code). Pin to a rev once churn settles.
+rawsock = { git = "https://github.com/RawSocketLabs/rawsock", branch = "main", default-features = false }
+
+# Blessed third-party crates come from the RSL external-dependency stack (`rsl-deps`), the
+# single source of truth for their versions. Members import them as `rsl_deps::<crate>` and
+# enable only the capability features they need (e.g. `rsl-deps = { workspace = true, features
+# = ["rand"] }`). Consumed from git during co-evolution; pinned to a rev like bnb/rawsock.
+rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", rev = "156531c00dac555623928198e87a4fa876565697", default-features = false }
+
+# thiserror is the ONE blessed external that can't come from rsl-deps: `#[derive(Error)]`
+# references `thiserror::__private` by hardcoded crate name, so it must be a direct dep (no
+# `crate = "…"` option to redirect it through a re-export). Keep its version aligned with
+# rsl-deps by hand. Any *non-derive* external (rand, bytes, socket2, …) goes through rsl-deps.
+thiserror = "1.0"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "warn"
+missing_docs = "warn"          # polished crates upgrade to deny themselves
+
+[workspace.lints.clippy]
+# Groups get lower priority so the individual allows below override them
+# (clippy::lint_groups_priority).
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_inception = "allow"     # files named after their single module (e.g. arp/src/arp.rs)
+upper_case_acronyms = "allow"  # protocol acronyms (ARP, TCP, OpCode, …)
+# Libraries should log via `tracing`, not print. `warn` (advisory) for now —
+# examples/binaries that legitimately print can `#[allow]` locally.
+print_stdout = "warn"
+print_stderr = "warn"

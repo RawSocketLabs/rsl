@@ -1,0 +1,5 @@
+# Track the stable channel; the MSRV floor (workspace.package.rust-version) is
+# checked separately in CI. Components ensure `cargo fmt`/`cargo clippy` are present.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
