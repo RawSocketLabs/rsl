@@ -41,8 +41,8 @@ fn header_bytes(h: &Ipv4Header) -> Vec<u8> {
     b.push(h.ttl);
     b.push(h.protocol);
     b.extend_from_slice(&h.header_checksum.to_be_bytes());
-    b.extend_from_slice(&h.src.to_be_bytes());
-    b.extend_from_slice(&h.dst.to_be_bytes());
+    b.extend_from_slice(&h.src.octets());
+    b.extend_from_slice(&h.dst.octets());
     b.extend_from_slice(&h.options);
     b
 }
@@ -68,8 +68,8 @@ impl<P: Protocol> Protocol for Ip<P> {
         // Hand the payload the pseudo-header so its checksum covers our addresses + protocol.
         let child = Context {
             pseudo: Some(Pseudo {
-                src: self.header.src_addr(),
-                dst: self.header.dst_addr(),
+                src: self.header.src,
+                dst: self.header.dst,
                 protocol,
             }),
         };

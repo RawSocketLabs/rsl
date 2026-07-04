@@ -25,8 +25,8 @@ mod integration {
         assert_eq!(h.ttl, 64);
         assert_eq!(h.protocol, 6);
         assert_eq!(h.header_checksum, 0xb1e6);
-        assert_eq!(h.src_addr(), Ipv4Addr::new(192, 168, 0, 1));
-        assert_eq!(h.dst_addr(), Ipv4Addr::new(192, 168, 0, 199));
+        assert_eq!(h.src, Ipv4Addr::new(192, 168, 0, 1));
+        assert_eq!(h.dst, Ipv4Addr::new(192, 168, 0, 199));
         assert!(h.options.is_empty());
         assert_eq!(h.to_bytes().unwrap(), wire);
     }

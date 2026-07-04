@@ -17,7 +17,7 @@
 //! let h = Ipv4Header::datagram(Ipv4Addr::new(10, 0, 0, 1), Ipv4Addr::new(10, 0, 0, 2), 17, 12);
 //! assert_eq!(h.total_length, 32); // 20-byte header + 12
 //! let wire = h.to_bytes().unwrap();
-//! assert_eq!(Ipv4Header::decode_exact(&wire).unwrap().dst_addr(), Ipv4Addr::new(10, 0, 0, 2));
+//! assert_eq!(Ipv4Header::decode_exact(&wire).unwrap().dst, Ipv4Addr::new(10, 0, 0, 2));
 //! ```
 
 #![forbid(unsafe_code)]
@@ -79,10 +79,10 @@ pub struct Ipv4Header {
     pub protocol: u8,
     /// The header checksum (stored verbatim — not recomputed or verified on decode).
     pub header_checksum: u16,
-    /// Source address, as raw big-endian bits (see [`src_addr`](Self::src_addr)).
-    pub src: u32,
-    /// Destination address (see [`dst_addr`](Self::dst_addr)).
-    pub dst: u32,
+    /// Source address (serialized as its 4 octets in network order).
+    pub src: Ipv4Addr,
+    /// Destination address.
+    pub dst: Ipv4Addr,
     /// Options, as raw bytes: `(ihl - 5) * 4`. `saturating_sub` keeps a malformed `ihl < 5`
     /// from underflow-panicking on untrusted input (it reads zero option bytes).
     #[br(count = usize::from(u8::from(version_ihl.ihl()).saturating_sub(5)) * 4)]
@@ -107,22 +107,10 @@ impl Ipv4Header {
             ttl: 64,
             protocol,
             header_checksum: 0,
-            src: src.to_bits(),
-            dst: dst.to_bits(),
+            src,
+            dst,
             options: Vec::new(),
         }
-    }
-
-    /// The source address.
-    #[must_use]
-    pub fn src_addr(&self) -> Ipv4Addr {
-        Ipv4Addr::from_bits(self.src)
-    }
-
-    /// The destination address.
-    #[must_use]
-    pub fn dst_addr(&self) -> Ipv4Addr {
-        Ipv4Addr::from_bits(self.dst)
     }
 
     /// The header length in bytes (`IHL * 4`).
@@ -149,7 +137,7 @@ mod unit {
         assert_eq!(h.total_length, 120);
         assert_eq!(h.ttl, 64);
         assert!(h.flags_fragment.dont_fragment());
-        assert_eq!(h.src_addr(), Ipv4Addr::new(1, 2, 3, 4));
-        assert_eq!(h.dst_addr(), Ipv4Addr::new(5, 6, 7, 8));
+        assert_eq!(h.src, Ipv4Addr::new(1, 2, 3, 4));
+        assert_eq!(h.dst, Ipv4Addr::new(5, 6, 7, 8));
     }
 }

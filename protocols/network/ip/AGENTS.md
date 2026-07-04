@@ -17,8 +17,8 @@ keystone: the IP layer is what supplies the pseudo-header a UDP/TCP checksum nee
 - **`FlagsFragment`** — bytes 6–7, `#[bitfield(u16)]`: `reserved`/`dont_fragment`/`more_fragments`
   bools + `fragment_offset: u13`.
 - **`Ipv4Header`** — `#[bin(big)]`: the two bitfields, `dscp_ecn`, `total_length`,
-  `identification`, `ttl`, `protocol`, `header_checksum`, `src`/`dst` (`u32`; `src_addr`/
-  `dst_addr` give `Ipv4Addr`), and `options: Vec<u8>` sized by `ihl` (`(ihl - 5) * 4`,
+  `identification`, `ttl`, `protocol`, `header_checksum`, `src`/`dst` (`Ipv4Addr` fields — bnb
+  encodes `std::net` addresses natively), and `options: Vec<u8>` sized by `ihl` (`(ihl - 5) * 4`,
   `saturating_sub` — a malformed `ihl < 5` reads zero option bytes, never panics).
   `Ipv4Header::datagram(src, dst, protocol, payload_len)` builds a standard header;
   `header_len()` = `IHL * 4`.
