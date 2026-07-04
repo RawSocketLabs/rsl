@@ -1,0 +1,5 @@
+error: `auto_len` targets `hdr.n` more than once
+  --> tests/ui/bin_auto_len_duplicate.rs:11:43
+   |
+11 | #[bin(big, auto_len(hdr.n = count(a), hdr.n = count(b)))]
+   |                                           ^

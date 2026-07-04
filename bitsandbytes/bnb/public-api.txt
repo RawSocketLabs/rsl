@@ -749,9 +749,18 @@ impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::StreamBitReader<
 pub trait bnb::bitstream::BitAmount: core::marker::Copy
 pub fn bnb::bitstream::BitAmount::bits(self) -> u32
 pub fn bnb::bitstream::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i16
+pub fn i16::bits(self) -> u32
+pub fn i16::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i32
 pub fn i32::bits(self) -> u32
 pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i64
+pub fn i64::bits(self) -> u32
+pub fn i64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for isize
+pub fn isize::bits(self) -> u32
+pub fn isize::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for u16
 pub fn u16::bits(self) -> u32
 pub fn u16::bytes(self) -> u32
@@ -1825,9 +1834,18 @@ pub mod bnb::prelude
 pub trait bnb::prelude::BitAmount: core::marker::Copy
 pub fn bnb::prelude::BitAmount::bits(self) -> u32
 pub fn bnb::prelude::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i16
+pub fn i16::bits(self) -> u32
+pub fn i16::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i32
 pub fn i32::bits(self) -> u32
 pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i64
+pub fn i64::bits(self) -> u32
+pub fn i64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for isize
+pub fn isize::bits(self) -> u32
+pub fn isize::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for u16
 pub fn u16::bits(self) -> u32
 pub fn u16::bytes(self) -> u32
@@ -3561,9 +3579,18 @@ impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
 pub trait bnb::BitAmount: core::marker::Copy
 pub fn bnb::BitAmount::bits(self) -> u32
 pub fn bnb::BitAmount::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i16
+pub fn i16::bits(self) -> u32
+pub fn i16::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i32
 pub fn i32::bits(self) -> u32
 pub fn i32::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for i64
+pub fn i64::bits(self) -> u32
+pub fn i64::bytes(self) -> u32
+impl bnb::bitstream::BitAmount for isize
+pub fn isize::bits(self) -> u32
+pub fn isize::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for u16
 pub fn u16::bits(self) -> u32
 pub fn u16::bytes(self) -> u32

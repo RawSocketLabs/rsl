@@ -1635,8 +1635,10 @@ fn gen_encode(
         .collect::<syn::Result<Vec<_>>>()?;
     // Validate each `auto_len(field.nested = …)` names a real, stored field of this struct —
     // a typo would otherwise vanish silently, leaving the nested `WireLen` unresolved (`Auto`)
-    // and failing only at encode with an opaque error.
-    for spec in &attrs.auto_len {
+    // and failing only at encode with an opaque error — and that no two specs target the same
+    // `field.nested` path (the second would be a silent no-op, since resolving passes an
+    // already-`Set` value through unchanged).
+    for (i, spec) in attrs.auto_len.iter().enumerate() {
         let exists = fields
             .named
             .iter()
@@ -1648,6 +1650,18 @@ fn gen_encode(
                 format!(
                     "`auto_len` names `{}`, which is not a stored field of this struct",
                     spec.field
+                ),
+            ));
+        }
+        if attrs.auto_len[..i]
+            .iter()
+            .any(|prev| prev.field == spec.field && prev.nested == spec.nested)
+        {
+            return Err(syn::Error::new_spanned(
+                &spec.nested,
+                format!(
+                    "`auto_len` targets `{}.{}` more than once",
+                    spec.field, spec.nested
                 ),
             ));
         }

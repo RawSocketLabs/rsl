@@ -107,7 +107,9 @@
 //! - **Same-struct**: `#[bw(auto = count(<field>))]` (element count) or
 //!   `#[bw(auto = bytes(<field>))]` (encoded byte length) on the `WireLen` field.
 //! - **Cross-struct**: `#[bin(auto_len(<field>.<nested> = count(<source>), …))]` on the
-//!   enclosing struct — a count nested in a sub-struct that sizes a sibling collection.
+//!   enclosing struct — a count nested in a sub-struct that sizes a sibling collection. The
+//!   targeted sub-struct must be `Clone` (it is filled through a clone at encode), and an
+//!   `auto_len` target may carry only positioning directives, no other codec directive.
 //!
 //! ```
 //! use bnb::{bin, WireLen};

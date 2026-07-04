@@ -384,7 +384,7 @@ macro_rules! impl_bit_amount {
         }
     )*};
 }
-impl_bit_amount!(u8, u16, u32, u64, usize, i32);
+impl_bit_amount!(u8, u16, u32, u64, usize, i16, i32, i64, isize);
 
 /// Skips `bits` forward (consuming and discarding) — backs `#[br(pad_before/after)]`.
 ///

@@ -1,0 +1,5 @@
+error: flag `too_high` uses bit 200, out of range for a 8-bit backing (valid bits are 0..8)
+ --> tests/ui/bitflags_bit_out_of_range.rs:9:5
+  |
+9 |     too_high: bool,
+  |     ^^^^^^^^

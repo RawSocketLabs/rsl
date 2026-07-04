@@ -63,10 +63,10 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
-    backing_byte_count(backing)?; // validate backing primitive
+    let backing_bits = backing_byte_count(backing)? as u32 * 8; // validates the backing primitive
     let outer: Vec<&Attribute> = item.attrs.iter().collect();
 
-    let flags = collect_flags(&item)?;
+    let flags = collect_flags(&item, backing_bits)?;
 
     let with_idents: Vec<Ident> = flags
         .iter()
@@ -232,7 +232,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     })
 }
 
-fn collect_flags(item: &ItemStruct) -> syn::Result<Vec<Flag>> {
+fn collect_flags(item: &ItemStruct, backing_bits: u32) -> syn::Result<Vec<Flag>> {
     let named = match &item.fields {
         syn::Fields::Named(n) => n,
         _ => {
@@ -263,6 +263,15 @@ fn collect_flags(item: &ItemStruct) -> syn::Result<Vec<Flag>> {
             }
         }
         let bit = explicit.unwrap_or(next_bit);
+        if bit >= backing_bits {
+            return Err(syn::Error::new_spanned(
+                &ident,
+                format!(
+                    "flag `{ident}` uses bit {bit}, out of range for a {backing_bits}-bit backing \
+                     (valid bits are 0..{backing_bits})"
+                ),
+            ));
+        }
         next_bit = bit + 1;
         let konst = Ident::new(&ident.to_string().to_ascii_uppercase(), ident.span());
         flags.push(Flag {
