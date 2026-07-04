@@ -32,10 +32,11 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        The resolver now also does **DNS-over-TCP fallback** (UDP → TCP on a truncated response). **Remaining**: EDNS(0), caching.
 2. [~] **`transport/tcp`** done (header codec: `Control` `#[bitfield]` flags word, raw options
        sized by `data_offset` + a `TcpOption` structured view, dual-use stored checksum/offset).
-       **`transport/udp`** done too as a header codec (`UdpHeader`, dual-use stored length/checksum).
-       Remaining transport follow-ups: a checksum helper (with `rawsock` compose) for both, and the
-       **`rawsock` injection-`Protocol` impl on UDP** — the socket layer's first on-the-wire
-       consumer (the `rawsock` extraction trigger), pending `rawsock` being published.
+       **`transport/udp`** done (header codec **plus** the `inject` feature: a `rawsock::Protocol`
+       `Udp<P>` layer + pseudo-header `udp_checksum` — the socket layer's first on-the-wire
+       consumer, the `rawsock` extraction trigger, now live). Remaining transport follow-ups: a TCP
+       checksum helper + TCP injection layer, and privileged L3 send (needs rawsock's `network`
+       backend + an IP layer to wrap `Udp` in).
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.
@@ -82,8 +83,10 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
 
 ## Open decisions
 
-- [ ] **`rawsock` extraction** — trigger: the first protocol that puts frames on the wire (UDP).
-      Decide the repo shape (mirror bnb's two-crate/single-crate layout) at that point.
+- [x] **`rawsock` extraction** — **done**: published at `github.com/RawSocketLabs/rawsock` as a
+      single crate, consumed here as a git dep behind `udp`'s `inject` feature
+      (`default-features = false` → the `compose` trait + `Loopback`, no `rustix`). UDP was the
+      trigger — the first protocol to compose real, checksummed packets.
 - [ ] **`refcheck` extraction + wiring** — trigger: DNS compliance tracking. The `//~` grammar is
       already kept in-source; decide the corpus-hosting and CI-integration shape then.
 - [ ] **bnb dependency: git → crates.io** — flip when bnb cuts a 1.0 (or a stable 0.x) release

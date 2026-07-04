@@ -25,6 +25,12 @@
 
 use bnb::bin;
 
+/// The rawsock injection layer — the `inject` feature.
+#[cfg(feature = "inject")]
+pub mod inject;
+#[cfg(feature = "inject")]
+pub use inject::{Udp, udp_checksum};
+
 /// A UDP datagram header (RFC 768): source port, destination port, length, and checksum —
 /// four 16-bit fields, an 8-byte fixed header.
 //~ models rfc768 part="UDP header format"

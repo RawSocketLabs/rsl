@@ -34,6 +34,11 @@ rust-version = "1.85"
 # Pin to a `rev = "…"` once churn settles so protocols CI can't be broken by bnb's main.
 bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", branch = "main" }
 
+# Raw-packet I/O + the layered composition model (Protocol trait, pseudo-header checksum).
+# Consumed from git during co-evolution, like bnb; `default-features = false` pulls only the
+# `compose` trait + `Loopback` (no `rustix` socket code). Pin to a rev once churn settles.
+rawsock = { git = "https://github.com/RawSocketLabs/rawsock", branch = "main", default-features = false }
+
 # error / logging
 thiserror = "1.0"
 anyhow = "1.0"
