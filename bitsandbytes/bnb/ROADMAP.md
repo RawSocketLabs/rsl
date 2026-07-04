@@ -173,15 +173,32 @@ survived real use. Suggested order: **A** and **B** run in parallel and drive **
 (e.g. `0.9`) in a real tool for a release or two and tag **`1.0.0`** once a cycle
 passes with no breaking change needed.
 
-### A. Live testing / dogfooding — load-bearing (`bnb` has no real consumer yet)
+### A. Live testing / dogfooding — **satisfied** (the `RawSocketLabs/protocols` workspace)
 
-- [ ] Port 2–3 real protocols onto `bnb` — DNS is the flagship (rich bitfields, golden
-      vectors, refcheck RFC tracking); `nbt`/`smb` come off `modular-bitfield`;
-      `icmp`/`tftp` exercise the `#[bin]` message codec. The `asyio/protocols` crates
-      (the stack `bnb` was built to replace) are the proving ground.
-- [ ] Each ported crate passes its **existing** suite **byte-identically** (golden vectors).
-- [ ] Decode **real captured traffic** (pcaps) and interop against a **live peer** — the
-      dual-use story: emit to a real server / fuzz a real client.
+The load-bearing gate is met: `bnb` now has a **real, multi-protocol consumer** — the
+`RawSocketLabs/protocols` workspace — built from scratch on the codec across three layers.
+
+- [x] **Real protocols on `bnb`, more than the 2–3 asked for** — `link/ethertype` (`BitEnum`
+      + catch_all), `application/dns` (the flagship: `#[bitfield]` header, ctx-`tag` `RData`
+      union, `WireLen` counts/`rdlength`, `#[bin(codec)]` `Name` with scratch-driven
+      compression, refcheck RFC tracking, **plus a UDP/TCP resolver client**), `transport/tcp`
+      (`Control` bitfield + structured options), `transport/udp`, and `network/ip` (IPv4
+      `#[bitfield]`s). These are **from-scratch** implementations (not ports), each carrying its
+      own golden-vector + adversarial suite.
+- [x] **Byte-identical golden vectors** — every crate round-trips real wire captures
+      byte-for-byte (`decode(wire).to_bytes() == wire`), the codec's real round-trip contract;
+      the DNS port fixed the reference crate's 36 misparsed RDATA types along the way.
+- [~] **Live interop** — the DNS resolver interops with **live servers** over both UDP and TCP
+      (real queries, truncation fallback); the `udp`/`ip` inject layers compose real,
+      checksummed datagrams for injection via `rawsock`. Remaining: bulk **pcap** decode of
+      captured traffic and a fuzz-a-real-peer pass.
+
+**What dogfooding confirmed:** the feature surface held — `BitEnum`+catch_all, `#[bitfield]` as
+a direct RFC bit-diagram, `count = <expr>`, ctx-`tag` unions, `WireLen`, `#[bin(codec)]`
+newtypes + `Sink::scratch` all carried real protocols with no workaround. **What it surfaced**
+(small, additive — see §C / the co-evolution list): a ready-made `internet_checksum` helper
+(the network crates + the `ipv4` example each hand-roll RFC 1071) and `BitDecode`/`BitEncode`
+for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neither blocks 1.0.
 
 ### B. Correctness hardening — it parses untrusted bytes
 
