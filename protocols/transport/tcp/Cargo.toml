@@ -1,0 +1,14 @@
+[package]
+name = "tcp"
+version = "0.1.0"
+description = "TCP (RFC 9293) segment-header codec on the bnb bit-aware codec — dual-use, from-scratch."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+
+[lints]
+workspace = true

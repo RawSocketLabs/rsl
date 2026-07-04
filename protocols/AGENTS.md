@@ -132,7 +132,8 @@ corpus name once compliance tracking is wired.
 | crate | layer | ver | stage | refcheck |
 |---|---|---|---|---|
 | `link/ethertype` | link | 0.1.0 | functional | — |
-| `application/dns` | application | 0.1.0 | functional (Increment 1: pure codec) | `dns` (RFC 1034/1035) |
+| `transport/tcp` | transport | 0.1.0 | functional (header codec) | `tcp` (RFC 9293) |
+| `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
 | `transport/tcp`, `transport/udp` | transport | — | planned | — |
 | `network/ip`, `network/icmp` | network | — | planned | `icmp` |
 | `link/arp`, `link/ethernet` | link | — | planned | — |
