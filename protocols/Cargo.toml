@@ -36,7 +36,7 @@ rust-version = "1.85"
 # Consumed from git during co-evolution: the DNS port drives bnb feature work, so both
 # move together until bnb cuts a 1.0 crates.io release — then this becomes a version req.
 # Pin to a `rev = "…"` once churn settles so protocols CI can't be broken by bnb's main.
-bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", branch = "main" }
+bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsandbytes", rev = "c39b19d77af9390192256279bdc9d40d29676312" }
 
 # Raw-packet I/O + the layered composition model (Protocol trait, pseudo-header checksum).
 # Consumed from git during co-evolution, like bnb; `default-features = false` pulls only the
