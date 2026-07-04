@@ -1,0 +1,27 @@
+# release-plz — derive each crate's SemVer + changelog from Conventional Commits.
+# https://release-plz.dev
+#
+# Posture: manage per-crate versions + CHANGELOGs and tag releases in git, but DO NOT
+# publish to crates.io yet (pre-1.0, co-evolving with bnb). Each protocol crate is
+# versioned independently — the commit SCOPE is the crate/protocol name
+# (`feat(dns): …` versions `application/dns`), so release-plz maps a commit to its crate.
+# See VERSIONING.md.
+#
+# Only `feat`/`fix`/breaking commits move a version: `feat` -> minor (0.x: minor —
+# wait, see VERSIONING.md: 0.x maps feat->patch, breaking->minor). release-plz's
+# semver-check + the type→bump table are the source of truth.
+#
+# To start publishing to crates.io later:
+#   1. add a `CARGO_REGISTRY_TOKEN` repository secret (used by the release job),
+#   2. set `publish = true` below (and `git_release_enable = true` for GitHub Releases).
+
+[workspace]
+# Don't run `cargo publish` — nothing reaches a registry until this flips on.
+publish = false
+# Don't create GitHub Releases yet (turn on alongside publishing).
+git_release_enable = false
+# Still create git tags when a release PR merges, so each run's baseline advances and
+# the next diff is correct. Per-crate name-prefixed tags so tags can never collide and
+# release-plz can map a tag back to its crate.
+git_tag_enable = true
+git_tag_name = "{{ package }}-v{{ version }}"
