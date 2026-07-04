@@ -1299,6 +1299,39 @@ macro_rules! bits_leaf_codec {
 }
 bits_leaf_codec!(u8, u16, u32, u64, u128, bool);
 
+// `std::net` address types as `#[bin]` fields — the network-codec convenience the protocols
+// dogfooding surfaced (IPv4 headers otherwise model addresses as a raw `u32`). An address
+// serializes as its `to_bits`/`from_bits` integer, so it follows the struct's byte order like
+// any other integer field: in a `#[bin(big)]` message that's the octets in network order
+// (`192.168.1.1` → `C0 A8 01 01`), which is what every real protocol wants. `std` only, since
+// the types are `std::net`.
+macro_rules! ip_addr_codec {
+    ($($t:ty => $int:ty, $bits:expr);* $(;)?) => {$(
+        #[cfg(feature = "std")]
+        impl BitDecode for $t {
+            #[inline]
+            fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
+                Ok(<$t>::from_bits(r.read::<$int>()?))
+            }
+        }
+        #[cfg(feature = "std")]
+        impl BitEncode for $t {
+            #[inline]
+            fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
+                w.write(self.to_bits())
+            }
+        }
+        #[cfg(feature = "std")]
+        impl FixedBitLen for $t {
+            const BIT_LEN: u32 = $bits;
+        }
+    )*};
+}
+ip_addr_codec!(
+    std::net::Ipv4Addr => u32, 32;
+    std::net::Ipv6Addr => u128, 128;
+);
+
 impl<T, const N: usize> BitDecode for crate::int::UInt<T, N>
 where
     crate::int::UInt<T, N>: Bits,

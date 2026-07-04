@@ -11,11 +11,11 @@ help: the trait `FixedBitLen` is not implemented for `Varint`
    | ^^^^^^^^^^^^^
    = help: the following other types implement trait `FixedBitLen`:
              Frame
+             Ipv4Addr
+             Ipv6Addr
              UInt<T, N>
              WireLen<T>
              bool
              u128
              u16
-             u32
-             u64
-             u8
+           and $N others

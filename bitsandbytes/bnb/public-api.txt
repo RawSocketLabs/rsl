@@ -780,6 +780,10 @@ pub trait bnb::bitstream::BitDecode: core::marker::Sized
 pub fn bnb::bitstream::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for bool
 pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv4Addr
+pub fn core::net::ip_addr::Ipv4Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv6Addr
+pub fn core::net::ip_addr::Ipv6Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u128
 pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u16
@@ -804,6 +808,16 @@ pub const bool::LAYOUT: bnb::bitstream::Layout
 pub fn bool::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bool::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bool::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for core::net::ip_addr::Ipv4Addr
+pub const core::net::ip_addr::Ipv4Addr::LAYOUT: bnb::bitstream::Layout
+pub fn core::net::ip_addr::Ipv4Addr::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for core::net::ip_addr::Ipv6Addr
+pub const core::net::ip_addr::Ipv6Addr::LAYOUT: bnb::bitstream::Layout
+pub fn core::net::ip_addr::Ipv6Addr::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::encode_mode(&self) -> bnb::bitstream::EncodeMode
 impl bnb::bitstream::BitEncode for u128
 pub const u128::LAYOUT: bnb::bitstream::Layout
 pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -888,6 +902,10 @@ pub trait bnb::bitstream::FixedBitLen
 pub const bnb::bitstream::FixedBitLen::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for bool
 pub const bool::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for core::net::ip_addr::Ipv4Addr
+pub const core::net::ip_addr::Ipv4Addr::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for core::net::ip_addr::Ipv6Addr
+pub const core::net::ip_addr::Ipv6Addr::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for u128
 pub const u128::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for u16
@@ -3610,6 +3628,10 @@ pub trait bnb::BitDecode: core::marker::Sized
 pub fn bnb::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for bool
 pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv4Addr
+pub fn core::net::ip_addr::Ipv4Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv6Addr
+pub fn core::net::ip_addr::Ipv6Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u128
 pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u16
@@ -3634,6 +3656,16 @@ pub const bool::LAYOUT: bnb::bitstream::Layout
 pub fn bool::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bool::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bool::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for core::net::ip_addr::Ipv4Addr
+pub const core::net::ip_addr::Ipv4Addr::LAYOUT: bnb::bitstream::Layout
+pub fn core::net::ip_addr::Ipv4Addr::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::encode_mode(&self) -> bnb::bitstream::EncodeMode
+impl bnb::bitstream::BitEncode for core::net::ip_addr::Ipv6Addr
+pub const core::net::ip_addr::Ipv6Addr::LAYOUT: bnb::bitstream::Layout
+pub fn core::net::ip_addr::Ipv6Addr::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::encode_mode(&self) -> bnb::bitstream::EncodeMode
 impl bnb::bitstream::BitEncode for u128
 pub const u128::LAYOUT: bnb::bitstream::Layout
 pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -3757,6 +3789,10 @@ pub trait bnb::FixedBitLen
 pub const bnb::FixedBitLen::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for bool
 pub const bool::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for core::net::ip_addr::Ipv4Addr
+pub const core::net::ip_addr::Ipv4Addr::BIT_LEN: u32
+impl bnb::bitstream::FixedBitLen for core::net::ip_addr::Ipv6Addr
+pub const core::net::ip_addr::Ipv6Addr::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for u128
 pub const u128::BIT_LEN: u32
 impl bnb::bitstream::FixedBitLen for u16
