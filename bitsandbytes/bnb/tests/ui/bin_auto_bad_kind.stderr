@@ -1,0 +1,13 @@
+error: expected `count(<field>)` or `bytes(<field>)` naming a sibling field
+ --> tests/ui/bin_auto_bad_kind.rs:6:17
+  |
+6 |     #[bw(auto = size(items))]
+  |                 ^^^^^^^^^^^
+
+warning: unused import: `WireLen`
+ --> tests/ui/bin_auto_bad_kind.rs:2:11
+  |
+2 | use bnb::{WireLen, bin};
+  |           ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

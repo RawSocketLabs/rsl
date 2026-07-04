@@ -1193,11 +1193,15 @@ fn field_write_core(
                 __probe.bit_len().div_ceil(8)
             }},
         };
+        // Only an `Auto` value computes the measure (a `bytes(x)` probe encode is not
+        // free); a `Set(n)` override is written verbatim, skipping the measure entirely.
         return Ok(quote! {
             {
-                let __len: usize = #measure;
-                let __resolved = self.#id.resolve_count(__len)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                let __resolved = match &self.#id {
+                    #bnb::__private::WireLen::Set(_) => ::core::clone::Clone::clone(&self.#id),
+                    #bnb::__private::WireLen::Auto => self.#id.resolve_count(#measure)
+                        .map_err(|e| e.in_field(::core::stringify!(#id)))?,
+                };
                 <#ty as #bnb::__private::BitEncode>::bit_encode(&__resolved, __bnb_w)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
@@ -1551,6 +1555,30 @@ fn field_write_stmt_auto(
     if targeting.is_empty() {
         return field_write_stmt(f, br, field_set, spec);
     }
+    // An `auto_len` target is written via a clone-and-fill, which can't compose with a
+    // codec-overriding directive on the same field (they'd be silently dropped, breaking the
+    // encode/decode symmetry). Positioning (`pad_*`/`align_*`) is fine — it wraps the write.
+    if br.calc.is_some()
+        || br.bw_map.is_some()
+        || br.write_with.is_some()
+        || br.map.is_some()
+        || br.try_map.is_some()
+        || br.parse_with.is_some()
+        || br.auto.is_some()
+        || br.cond.is_some()
+        || br.count.is_some()
+        || br.ctx.is_some()
+        || br.temp
+        || br.ignore
+        || br.restore_position
+    {
+        return Err(syn::Error::new_spanned(
+            f,
+            "a field targeted by `#[bin(auto_len(...))]` cannot also carry a codec directive \
+             (`calc`/`map`/`write_with`/`parse_with`/`auto`/`if`/`count`/`ctx`/`temp`/`ignore`/\
+             `restore_position`); only positioning (`pad_*`/`align_*`) may accompany it",
+        ));
+    }
     let bnb = crate::bnb_path();
     let ty = &f.ty;
     let fills = targeting.iter().map(|s| {
@@ -1566,18 +1594,28 @@ fn field_write_stmt_auto(
         } else {
             quote!(self.#source.len())
         };
+        // Only an `Auto` nested value computes the measure (a `bytes` probe isn't free); a
+        // `Set(n)` override is kept verbatim.
         quote! {
-            __auto.#nested = __auto.#nested.resolve_count(#measure)
-                .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
+            if #bnb::__private::WireLen::is_auto(&__auto.#nested) {
+                __auto.#nested = __auto.#nested.resolve_count(#measure)
+                    .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
+            }
         }
     });
+    // Preserve the field's positioning (the decode side applies it too — dropping it here
+    // would desync the streams).
+    let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
+    let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
     Ok(quote! {
+        #pre
         {
             let mut __auto = ::core::clone::Clone::clone(&self.#id);
             #(#fills)*
             <#ty as #bnb::__private::BitEncode>::bit_encode(&__auto, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;
         }
+        #post
     })
 }
 
@@ -1595,6 +1633,25 @@ fn gen_encode(
         .iter()
         .map(parse_field_br)
         .collect::<syn::Result<Vec<_>>>()?;
+    // Validate each `auto_len(field.nested = …)` names a real, stored field of this struct —
+    // a typo would otherwise vanish silently, leaving the nested `WireLen` unresolved (`Auto`)
+    // and failing only at encode with an opaque error.
+    for spec in &attrs.auto_len {
+        let exists = fields
+            .named
+            .iter()
+            .zip(&brs)
+            .any(|(f, br)| !br.temp && f.ident.as_ref() == Some(&spec.field));
+        if !exists {
+            return Err(syn::Error::new_spanned(
+                &spec.field,
+                format!(
+                    "`auto_len` names `{}`, which is not a stored field of this struct",
+                    spec.field
+                ),
+            ));
+        }
+    }
     let indeterminate = !attrs.ctx.is_empty() || brs.iter().any(br_indeterminate);
     let guard = alignment_guard(
         fields,

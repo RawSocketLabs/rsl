@@ -3,6 +3,7 @@
 //! round-trips byte-identically (decode yields `Set`).
 
 mod macro_ {
+    use bnb::prelude::*; // `.bytes()` positioning helper for the `pad_before` test
     use bnb::{WireLen, bin};
 
     // Element-count prefix: `len` auto-derives from `items.len()`.
@@ -155,6 +156,38 @@ mod macro_ {
         assert_eq!(back.header.qdcount, WireLen::set(3));
         assert_eq!(back.header.ancount, WireLen::set(1));
         assert_eq!(back.to_bytes().unwrap(), wire);
+    }
+
+    // An `auto_len` target that also carries positioning must keep it on BOTH sides —
+    // encode used to drop it (clone-and-fill bypassed the positioning wrapper), desyncing
+    // the streams.
+    #[bin(big)]
+    #[derive(Clone, Debug, PartialEq)]
+    struct Sub {
+        n: WireLen<u8>,
+    }
+
+    #[bin(big, auto_len(hdr.n = count(items)))]
+    #[derive(Debug, PartialEq)]
+    struct Padded {
+        #[br(pad_before = 1.bytes())]
+        hdr: Sub,
+        #[br(count = hdr.n.to_count())]
+        items: Vec<u8>,
+    }
+
+    #[test]
+    fn auto_len_target_keeps_positioning_symmetric() {
+        let p = Padded {
+            hdr: Sub { n: WireLen::auto() },
+            items: vec![9, 9, 9],
+        };
+        // 1 pad byte, then n=3 (auto-derived), then the 3 items.
+        assert_eq!(p.to_bytes().unwrap(), [0x00, 0x03, 9, 9, 9]);
+        // Decode applies the same `pad_before`, so it round-trips byte-identically.
+        let back = Padded::decode_exact(&[0x00, 0x03, 9, 9, 9]).unwrap();
+        assert_eq!(back.items, vec![9, 9, 9]);
+        assert_eq!(back.to_bytes().unwrap(), [0x00, 0x03, 9, 9, 9]);
     }
 
     #[test]
