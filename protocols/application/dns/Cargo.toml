@@ -9,14 +9,18 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
+# thiserror stays a DIRECT dep, not via rsl-deps: its `#[derive(Error)]` emits code that
+# references `thiserror::__private` by hardcoded crate name, so it can't be used through a
+# re-export (`rsl_deps::thiserror`) — thiserror has no `crate = "…"` escape hatch.
 thiserror.workspace = true
-# Only for the resolver client (query-id randomization); off unless `client` is enabled.
-rand = { workspace = true, optional = true }
+# Non-derive blessed externals come from the RSL deps stack. `rand` (query-id randomization)
+# is only needed by the resolver client, so pull rsl-deps optionally under that feature.
+rsl-deps = { workspace = true, optional = true }
 
 [features]
 # A synchronous UDP resolver client (`dns::Resolver`), built on bnb's `net` socket helpers.
 # Off by default: the codec stays dependency-free (no sockets) unless you opt in.
-client = ["dep:rand", "bnb/net"]
+client = ["dep:rsl-deps", "rsl-deps/rand", "bnb/net"]
 
 # `mock` (implies `net`) gives `MockDatagramSocket` so the resolver tests drive a scripted
 # datagram socket with no real server.

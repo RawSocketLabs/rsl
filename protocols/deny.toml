@@ -38,8 +38,10 @@ skip = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# bnb is consumed from git during co-evolution (see the workspace Cargo.toml note).
+# bnb, rawsock, and the blessed external stack (rsl-deps) are consumed from git during
+# co-evolution (see the workspace Cargo.toml note).
 allow-git = [
     "https://github.com/RawSocketLabs/bitsandbytes",
     "https://github.com/RawSocketLabs/rawsock",
+    "https://github.com/RawSocketLabs/rsl-deps",
 ]

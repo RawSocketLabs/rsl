@@ -21,7 +21,7 @@
 use crate::{Message, QClass, QType, Question, RData};
 use bnb::bitstream::{BitError, ErrorKind};
 use bnb::{DatagramSocket, MessageDatagram};
-use rand::Rng;
+use rsl_deps::rand::Rng;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::time::Duration;
@@ -170,7 +170,10 @@ impl Resolver {
             qtype,
             qclass: QClass::Internet,
         };
-        Ok(Message::query(rand::rng().random::<u16>(), question))
+        Ok(Message::query(
+            rsl_deps::rand::rng().random::<u16>(),
+            question,
+        ))
     }
 
     /// The transport-agnostic query exchange: send, then read one response, validating it

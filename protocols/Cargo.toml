@@ -43,30 +43,17 @@ bnb = { package = "bitsandbytes", git = "https://github.com/RawSocketLabs/bitsan
 # `compose` trait + `Loopback` (no `rustix` socket code). Pin to a rev once churn settles.
 rawsock = { git = "https://github.com/RawSocketLabs/rawsock", branch = "main", default-features = false }
 
-# error / logging
+# Blessed third-party crates come from the RSL external-dependency stack (`rsl-deps`), the
+# single source of truth for their versions. Members import them as `rsl_deps::<crate>` and
+# enable only the capability features they need (e.g. `rsl-deps = { workspace = true, features
+# = ["rand"] }`). Consumed from git during co-evolution; pinned to a rev like bnb/rawsock.
+rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", rev = "156531c00dac555623928198e87a4fa876565697", default-features = false }
+
+# thiserror is the ONE blessed external that can't come from rsl-deps: `#[derive(Error)]`
+# references `thiserror::__private` by hardcoded crate name, so it must be a direct dep (no
+# `crate = "…"` option to redirect it through a re-export). Keep its version aligned with
+# rsl-deps by hand. Any *non-derive* external (rand, bytes, socket2, …) goes through rsl-deps.
 thiserror = "1.0"
-anyhow = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# serde (opt-in per crate; wire codecs are bnb, serde is for config/logs)
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# builders (orthogonal to the codec; bnb also generates one, but derive_builder stays
-# available for plain non-`#[bin]` types)
-derive_builder = "0.20"
-
-# rng / hashing / framing / addressing
-rand = "0.9"
-sha2 = "0.10"
-crc32fast = "1.3"
-bytes = "1"
-macaddr = "1.0"
-socket2 = "0.5"
-
-# dev / bench
-criterion = "0.5"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
