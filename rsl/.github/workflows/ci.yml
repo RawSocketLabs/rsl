@@ -7,9 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # The pure-Rust feature surface CI exercises. Excludes `usdr` (FFI — needs a C++ toolchain
-  # and SDR system libraries). Owned crates are fetched from their pinned public git revs.
-  FEATURES: codec,proto,rawsock,rf,std-ext,bytes,cli,rand,hash,netutil,parse,num,audio,fft,async,nats,parallel,web-server,openapi,http,tui,time,protobuf
+  # The owned-library feature surface CI exercises. Excludes `usdr` (FFI — needs a C++
+  # toolchain and SDR system libraries). Owned crates are fetched from their pinned git revs.
+  FEATURES: codec,proto,rawsock,rf
 
 jobs:
   fmt:

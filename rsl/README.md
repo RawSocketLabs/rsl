@@ -1,37 +1,38 @@
-# `rsl` — the RawSocket Labs stack
+# `rsl` — the RawSocket Labs owned-library facade
 
-A single, feature-gated facade over the crates RSL application layers build on. Depend on
-`rsl`, enable the features you need, and get a curated, version-unified slice of the stack —
-instead of pinning a dozen internal and external crates by hand in every application repo.
+A single, feature-gated re-export of the public libraries RSL **owns** — the codec, the
+protocol implementations, raw-socket I/O, RF parsing, SDR bindings. Depend on `rsl` to consume
+RSL's own products through one crate with unified, pinned versions, instead of git-depending on
+each library by hand.
 
 ```toml
 [dependencies]
-rsl = { git = "https://github.com/RawSocketLabs/rsl", features = ["net", "std-ext"] }
+rsl = { git = "https://github.com/RawSocketLabs/rsl", features = ["net"] }
 ```
 
 ```rust
-use rsl::prelude::*;          // anyhow::Result, tracing macros, serde derives, codec…
-use rsl::proto::dns;          // owned protocol crate
-use rsl::codec;               // bnb (bitsandbytes)
-use rsl::ext::serde_json;     // blessed external, canonical name
+use rsl::codec;        // bnb (bitsandbytes)
+use rsl::proto::dns;   // owned protocol crate
+use rsl::rawsock;      // L2/L3/L4 raw-packet I/O
 ```
 
-## Why route the stack through one crate
+## Deps vs. libraries
 
-- **One place to change versions.** Every blessed pin lives in this crate's `Cargo.toml`.
-  Bump it once and every application crate that consumes `rsl` moves together. No more
-  per-repo version drift.
-- **Owned vs. external is explicit.** Crates RSL owns sit under semantic paths (`rsl::codec`,
-  `rsl::proto`, …). Blessed third-party crates sit under `rsl::ext::*`. That split
-  *is* the answer to "what do we depend on, and what might we replace?"
-- **Pick only what you compile.** Nothing builds until you enable a feature; `rsl` with
-  default features is empty.
+The RSL stack is split by concern — **what we own** vs. **what we rent**:
+
+- **`rsl`** (this crate) — the libraries we own, under semantic paths (`rsl::codec`,
+  `rsl::proto`, `rsl::rawsock`, `rsl::rf`, `rsl::usdr`).
+- **[`rsl-deps`](https://github.com/RawSocketLabs/rsl-deps)** — the blessed third-party crates
+  (`rsl_deps::tokio`, `rsl_deps::serde`, …). The version-pinned "rented" half.
+- **`rsl-private`** — the private owned libraries (`sdr`, `dsdcc`), layered on `rsl`.
+
+The two are **orthogonal**: a crate that needs both RSL libraries and blessed externals depends
+on both `rsl` and `rsl-deps`. That separation is the answer to "what do we own, and what might we
+replace?" — and it makes the graduation below a clean, one-move change.
 
 ## Namespace map
 
-### Owned RSL crates
-
-Sourced by `git` from their public `RawSocketLabs` repos.
+Owned crates, sourced by `git` (pinned rev) from their public `RawSocketLabs` repos:
 
 | Path | Backed by | Feature |
 |------|-----------|---------|
@@ -41,83 +42,36 @@ Sourced by `git` from their public `RawSocketLabs` repos.
 | `rsl::rf` | `rfus` — RF/sample-rate/scan-target parsing | `rf` |
 | `rsl::usdr` | `usdr` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
 
-**Not in this public facade** (by design): the private `libsdr` / `rust-dsdcc`. Bless those
-in a private overlay crate that depends on `rsl` — see "Public vs. private" below.
+Bundles: `net` (`codec`+`proto`+`rawsock`), `radio` (`rf`), `full` (`net`+`radio`). The FFI
+`usdr` is excluded from bundles — add it explicitly.
 
-### Blessed external crates (`rsl::ext::*`) — replacement candidates
+**Not here** (by design): the private `libsdr` / `rust-dsdcc` — they live in the private
+`rsl-private` overlay. Public/private boundary = repo boundary.
 
-| Feature | Re-exports |
-|---------|-----------|
-| `error` | `thiserror`, `anyhow` |
-| `log` | `tracing`, `tracing_subscriber`, `tracing_appender` |
-| `serde` | `serde`, `serde_json` |
-| `bytes` | `bytes` |
-| `cli` | `clap` |
-| `rand` | `rand` |
-| `hash` | `sha2`, `crc32fast` |
-| `netutil` | `macaddr`, `socket2` |
-| `parse` | `winnow` |
-| `num` | `num_complex` |
-| `audio` | `hound` |
-| `fft` | `rustfft` |
-| `async` | `tokio`, `futures_util` |
-| `nats` | `async_nats` |
-| `parallel` | `rayon` |
-| `web-server` | `axum`, `tower`, `tower_http` |
-| `openapi` | `utoipa`, `utoipa_swagger_ui` |
-| `http` | `reqwest` |
-| `tui` | `ratatui`, `color_eyre` |
-| `time` | `chrono` |
-| `protobuf` | `prost` |
+## The graduation path (rented → owned)
 
-### Convenience bundles
+When RSL writes an owned crate to supersede a blessed external, the pin **moves out of
+[`rsl-deps`] and the owned crate is added here**, under a semantic path. Consumers switch from
+`rsl_deps::foo` to `rsl::foo`. Keeping the two crates separate is what makes that replacement
+decision legible: `rsl-deps` is the standing shortlist of "things we rent"; `rsl` is what we own.
 
-| Feature | Pulls |
-|---------|-------|
-| `net` | `codec`, `proto`, `rawsock`, `bytes`, `error`, `log`, `netutil` |
-| `radio` | `rf`, `num`, `audio`, `fft` (RF parsing + SDR/DSP externals; add `usdr` explicitly — FFI) |
-| `service` | `async`, `nats`, `parallel`, `std-ext`, `bytes` (async daemons / API services) |
-| `web` | `web-server`, `openapi` |
-| `std-ext` | `error`, `log`, `serde` |
-| `full` | `net` + `radio` + `service` + `std-ext` |
+[`rsl-deps`]: https://github.com/RawSocketLabs/rsl-deps
 
-## The graduation path (external → owned)
+## Sourcing & caveats
 
-When RSL writes an owned crate to supersede a blessed external, it **graduates out of
-`ext`**: the re-export moves from `rsl::ext::foo` to a semantic path (e.g. `rsl::error`), the
-external pin is deleted from `Cargo.toml`, and the owned crate is added as a git dep.
-Consumers see the move in one place. Keeping externals quarantined under `ext` is what keeps
-that replacement decision legible — the `ext` namespace is the standing shortlist of "things
-we currently rent instead of own."
-
-## Public vs. private
-
-This is the **public** facade: blessed externals + owned crates that have **public**
-`RawSocketLabs` repos. The private owned crates (`libsdr`, `rust-dsdcc`) are intentionally
-excluded so nothing private is named or linked here. The intended
-pattern for private crates is a small **private overlay crate** that depends on `rsl` and adds
-them under their own semantic paths — public/private boundary = repo boundary.
-
-## Sourcing model & caveats
-
-- **Owned crates are `git` deps** to their public `RawSocketLabs` repos, **pinned to an exact
-  `rev`** so a push to a sibling's `main` can't silently change or break `rsl` or its
-  consumers. Bump a pin deliberately (`git ls-remote` → update the rev). Sourcing is an
-  implementation detail — the public `rsl::…` paths consumers import do not change when a
-  pin moves.
-- **One codec, no patch.** `bnb` is pulled from the same git source the protocol crates use,
-  so a consumer enabling both `codec` and `proto` compiles exactly one `bitsandbytes` whose
-  types unify.
+- **Owned crates are `git` deps pinned to an exact `rev`** so a push to a sibling's `main` can't
+  silently change or break `rsl` or its consumers. Bump a pin deliberately (`git ls-remote` →
+  update the rev). The public `rsl::…` paths don't change when a pin moves.
+- **One codec.** `bnb` and the `protocols` crates are pinned to the **same** `bitsandbytes` rev,
+  so enabling both `codec` and `proto` compiles exactly one codec whose types unify. (The
+  `protocols` repo rev-pins bnb for this reason — a floating pin there would reintroduce a
+  duplicate.)
 - **`publish = false`.** Git dependencies can't appear in a crates.io release, so `rsl` is
-  consumed directly as a git dependency, not published.
+  consumed directly as a git dependency.
 - **FFI feature `usdr` needs a C++ toolchain** and is off by default.
-- **MSRV floors on features.** The core stack is Rust 1.85. Some optional features pull crates
-  with a higher floor — notably `tui` (`ratatui`) and `time` (`chrono`) require **1.88**.
-  Enabling them raises the effective MSRV; the 1.85 floor applies to the feature-free core.
 
 ## Verify
 
 ```sh
-# pure-Rust slice (no FFI):
-cargo build --features codec,proto,rawsock,std-ext,bytes,netutil,hash,parse,num,audio,fft
+cargo build --features full   # codec, proto, rawsock, rf (excludes the FFI usdr)
 ```
