@@ -38,11 +38,11 @@ Sourced by `git` from their public `RawSocketLabs` repos.
 | `rsl::codec` | `bitsandbytes` (`bnb`) — bit-aware binary codec | `codec` |
 | `rsl::proto::{ethertype,tcp,udp,dns}` | the `protocols` workspace | `proto` (or `proto-<name>`) |
 | `rsl::rawsock` | `rawsock` — L2/L3/L4 raw-packet I/O | `rawsock` |
+| `rsl::rf` | `rfus` — RF/sample-rate/scan-target parsing | `rf` |
 | `rsl::usdr` | `usdr` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
 
-**Not in this public facade** (by design): `rfus` (no public repo yet), and the private
-`libsdr` / `rust-dsdcc`. Bless those in a private overlay crate that depends on `rsl` — see
-"Public vs. private" below.
+**Not in this public facade** (by design): the private `libsdr` / `rust-dsdcc`. Bless those
+in a private overlay crate that depends on `rsl` — see "Public vs. private" below.
 
 ### Blessed external crates (`rsl::ext::*`) — replacement candidates
 
@@ -75,7 +75,7 @@ Sourced by `git` from their public `RawSocketLabs` repos.
 | Feature | Pulls |
 |---------|-------|
 | `net` | `codec`, `proto`, `rawsock`, `bytes`, `error`, `log`, `netutil` |
-| `radio` | `num`, `audio`, `fft` (SDR/DSP externals; add `usdr` explicitly — FFI) |
+| `radio` | `rf`, `num`, `audio`, `fft` (RF parsing + SDR/DSP externals; add `usdr` explicitly — FFI) |
 | `service` | `async`, `nats`, `parallel`, `std-ext`, `bytes` (async daemons / API services) |
 | `web` | `web-server`, `openapi` |
 | `std-ext` | `error`, `log`, `serde` |
@@ -93,8 +93,8 @@ we currently rent instead of own."
 ## Public vs. private
 
 This is the **public** facade: blessed externals + owned crates that have **public**
-`RawSocketLabs` repos. Private and not-yet-published owned crates (`libsdr`, `rust-dsdcc`,
-`rfus`) are intentionally excluded so nothing private is named or linked here. The intended
+`RawSocketLabs` repos. The private owned crates (`libsdr`, `rust-dsdcc`) are intentionally
+excluded so nothing private is named or linked here. The intended
 pattern for private crates is a small **private overlay crate** that depends on `rsl` and adds
 them under their own semantic paths — public/private boundary = repo boundary.
 

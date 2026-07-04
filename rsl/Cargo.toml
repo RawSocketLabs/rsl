@@ -41,12 +41,14 @@ dns       = { git = "https://github.com/RawSocketLabs/protocols", branch = "main
 # Layered raw-packet I/O (L2/L3/L4).
 rawsock = { git = "https://github.com/RawSocketLabs/rawsock", branch = "main", optional = true }
 
+# RF frequency / sample-rate / scan-target parsing.
+rfus = { git = "https://github.com/RawSocketLabs/rfus", branch = "main", optional = true }
+
 # USDR software-defined-radio bindings (FFI; needs a C++ toolchain + system libs to build,
 # so opt-in only and off by default).
 usdr = { git = "https://github.com/RawSocketLabs/usdr-lib-rs", branch = "main", optional = true }
 
 # NOTE — owned crates intentionally absent from this PUBLIC facade:
-#   * rfus     — no public repo yet; add an `rf` feature once it is published.
 #   * rust-dsdcc, libsdr (`sdr`) — private repos; bless them in the private overlay crate.
 
 # ===== external: blessed third-party crates ================================
@@ -104,9 +106,9 @@ default = []
 full  = ["net", "radio", "service", "std-ext"]
 # Everything needed to build/parse/emit network traffic.
 net   = ["codec", "proto", "rawsock", "bytes", "error", "log", "netutil"]
-# SDR / DSP externals (complex math, FFT, WAV). Owned SDR crates (usdr) and RF parsing
-# (rfus) are opt-in/pending — add `usdr` explicitly; it needs a C++ toolchain.
-radio = ["num", "audio", "fft"]
+# SDR / DSP: RF parsing (rfus) + complex math / FFT / WAV externals. Add `usdr`
+# explicitly for the FFI SDR bindings (needs a C++ toolchain).
+radio = ["rf", "num", "audio", "fft"]
 # Async network-service stack for daemons and API services.
 service = ["async", "nats", "parallel", "std-ext", "bytes"]
 # HTTP API service (axum + OpenAPI).
@@ -124,6 +126,7 @@ proto-udp       = ["dep:udp", "codec"]
 proto-dns       = ["dep:dns", "codec"]
 
 rawsock = ["dep:rawsock"]
+rf      = ["dep:rfus"]
 
 # FFI-backed (needs a C++ toolchain + system libraries present to build).
 usdr = ["dep:usdr"]

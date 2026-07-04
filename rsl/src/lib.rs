@@ -4,9 +4,9 @@
 //! It re-exports two kinds of dependency under one namespace:
 //!
 //! - **Owned RSL crates** live under semantic paths — [`codec`], [`proto`], [`rawsock`],
-//!   and (FFI, opt-in) [`usdr`]. These are first-class members of the stack. Private and
-//!   not-yet-published owned crates (libsdr, rfus, rust-dsdcc) are deliberately absent
-//!   from this public facade; bless them in a private overlay crate that depends on `rsl`.
+//!   [`rf`], and (FFI, opt-in) [`usdr`]. These are first-class members of the stack. The
+//!   private owned crates (libsdr, rust-dsdcc) are deliberately absent from this public
+//!   facade; bless them in a private overlay crate that depends on `rsl`.
 //! - **Blessed external crates** live under [`ext`] (e.g. `rsl::ext::serde`). The `ext`
 //!   prefix marks them as *replacement candidates*: when RSL writes an owned crate to
 //!   supersede one, it graduates out of `ext` into a semantic path and the pin is dropped
@@ -45,6 +45,11 @@ pub use bnb as codec;
 #[cfg(feature = "rawsock")]
 #[doc(inline)]
 pub use rawsock;
+
+/// RF frequency, sample-rate, and scan-target parsing utilities (`rfus`).
+#[cfg(feature = "rf")]
+#[doc(inline)]
+pub use rfus as rf;
 
 /// USDR software-defined-radio bindings (FFI; requires a C++ toolchain to build).
 #[cfg(feature = "usdr")]
