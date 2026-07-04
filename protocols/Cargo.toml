@@ -6,6 +6,8 @@ members = [
     # transport layer
     "transport/tcp",
     "transport/udp",
+    # network layer
+    "network/ip",
     # application layer
     "application/dns",
     # network / transport / session / application layers land here as each

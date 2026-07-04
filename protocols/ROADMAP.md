@@ -34,10 +34,12 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        sized by `data_offset` + a `TcpOption` structured view, dual-use stored checksum/offset).
        **`transport/udp`** done (header codec **plus** the `inject` feature: a `rawsock::Protocol`
        `Udp<P>` layer + pseudo-header `udp_checksum` — the socket layer's first on-the-wire
-       consumer, the `rawsock` extraction trigger, now live). Remaining transport follow-ups: a TCP
-       checksum helper + TCP injection layer, and privileged L3 send (needs rawsock's `network`
-       backend + an IP layer to wrap `Udp` in).
-3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
+       consumer, the `rawsock` extraction trigger, now live). **TCP has the same `inject` layer**
+       (`Tcp<P>` + `tcp_checksum`). Remaining transport follow-up: privileged L3 send (needs
+       rawsock's `network` backend — in progress).
+3. [~] **`network/ip`** done — IPv4 header codec + the `inject` `Ip<P>` layer that supplies the
+       L4 pseudo-header and computes the header checksum, so a full `Ip(Udp/Tcp(..))` stack emits a
+       correct datagram (both checksums verify). **`network/icmp`** remains.
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.
 5. [ ] Application protocols as demand dictates: `tftp`, `socks`, `smb`, `nbt`, `ssh`, …
