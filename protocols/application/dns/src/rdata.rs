@@ -104,6 +104,7 @@ pub enum RData {
     },
     /// A service locator (SRV, RFC 2782): priority, weight, port, then the target host
     /// as raw bytes (a domain name that may itself be compressed — kept raw here).
+    //~ models rfc2782 part="SRV RR — priority/weight/port/target"
     #[bin(tag = RType::SRV)]
     Srv {
         /// Priority (lower is preferred).
@@ -119,6 +120,7 @@ pub enum RData {
         target: Vec<u8>,
     },
     /// A Certification Authority Authorization record (CAA, RFC 8659).
+    //~ models rfc8659#4.1 part="CAA RR — flags/tag/value"
     #[bin(tag = RType::CAA)]
     Caa {
         /// The flags byte (bit 7 = issuer-critical).
@@ -138,6 +140,7 @@ pub enum RData {
     },
     /// EDNS(0) OPT pseudo-record RDATA — raw option bytes (RFC 6891). The OPT record's
     /// header fields live in the enclosing record's CLASS/TTL; see the EDNS view.
+    //~ models rfc6891#6.1 part="OPT pseudo-RR RDATA"
     #[bin(tag = RType::OPT)]
     Opt {
         /// The raw concatenated EDNS options.

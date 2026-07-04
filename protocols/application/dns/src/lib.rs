@@ -4,8 +4,10 @@
 //! unknown values (record types, opcodes, classes) are preserved as `Custom`/`Other`
 //! rather than rejected, and unknown RDATA is kept as raw bytes rather than misparsed.
 //!
-//! Increment 1 is the **pure codec** — decode (following compression pointers inline) and
-//! **uncompressed** encode. A real client and encode-side name compression come later.
+//! The **pure codec**: decode (following compression pointers inline), plus both encode
+//! forms — [`to_bytes`](Message::to_bytes) (uncompressed) and
+//! [`to_compressed_bytes`](Message::to_compressed_bytes) (RFC 1035 §4.1.4 name compression).
+//! A network client (a resolver) is the remaining piece, pending the external `rawsock`.
 //!
 //! ```
 //! use dns::Message;
