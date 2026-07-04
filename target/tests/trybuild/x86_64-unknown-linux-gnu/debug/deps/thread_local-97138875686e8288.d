@@ -1,0 +1,8 @@
+/tmp/claude-1000/-home-msmythe-work-orgs-rsl-2-products-public/db9cff42-7c3e-4b49-81f8-2a99a3ad06bd/scratchpad/rsl-mono/monorepo/target/tests/trybuild/x86_64-unknown-linux-gnu/debug/deps/thread_local-97138875686e8288.d: /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs
+
+/tmp/claude-1000/-home-msmythe-work-orgs-rsl-2-products-public/db9cff42-7c3e-4b49-81f8-2a99a3ad06bd/scratchpad/rsl-mono/monorepo/target/tests/trybuild/x86_64-unknown-linux-gnu/debug/deps/libthread_local-97138875686e8288.rmeta: /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs /home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs
+
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs:
+/home/msmythe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs:
