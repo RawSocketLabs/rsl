@@ -41,4 +41,7 @@ fn main() {
         h.options.len(),
         h.options
     );
+    for opt in h.options_parsed() {
+        println!("  option: {opt:?}");
+    }
 }

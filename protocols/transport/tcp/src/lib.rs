@@ -28,6 +28,9 @@
 
 use bnb::{bin, bitfield, u4};
 
+pub mod options;
+pub use options::TcpOption;
+
 /// The data-offset + reserved + control-bits word — the 16 bits at RFC 9293 §3.1 byte 12–13.
 ///
 /// A flat `#[bitfield(u16)]`: `data_offset` (header length in 32-bit words) and the reserved
@@ -124,6 +127,14 @@ impl TcpHeader {
     #[must_use]
     pub fn header_len(&self) -> usize {
         usize::from(u8::from(self.control.data_offset())) * 4
+    }
+
+    /// A structured view of [`options`](Self::options) — the raw bytes parsed into typed
+    /// [`TcpOption`]s (MSS, window scale, SACK, timestamps, …), with unknown/malformed
+    /// options preserved verbatim. The raw field stays the source of truth for encode.
+    #[must_use]
+    pub fn options_parsed(&self) -> Vec<TcpOption> {
+        options::parse(&self.options)
     }
 
     /// Whether the SYN flag is set.

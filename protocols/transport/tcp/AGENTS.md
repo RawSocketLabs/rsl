@@ -28,10 +28,16 @@ retransmission, or I/O — this is a wire codec.
 verifies, or rejects them, so a forged checksum or a lying data-offset survives a round-trip.
 Options are raw bytes, preserved exactly. The parser enforces no policy.
 
+## Options — raw + a structured view
+
+`TcpHeader.options` stays **raw bytes** (dual-use: any/malformed options preserved exactly).
+`options.rs` adds a lens: `TcpOption` (Eol/Nop/Mss/WindowScale/SackPermitted/Sack/Timestamps/
+`Unknown{kind,value}`), `options_parsed()` to read them, and `options::encode` to build them.
+Parsing is bounded — a truncated/wrong-length option becomes `Unknown` and stops the scan,
+never panics.
+
 ## Scope / follow-ups
 
-- **Options are raw bytes.** A structured TLV view (MSS / WScale / SACK / Timestamps / NOP /
-  EOL + `Unknown{kind,bytes}`) is a clean follow-up on top.
 - **Checksum is stored, not computed.** A `tcp_checksum` (over the IPv4 pseudo-header, like
   UDP) lands with `rawsock`'s composition model (`internet_checksum`).
 - **DNS-over-TCP** (the `dns` resolver's TCP fallback) is a downstream consumer once a stream

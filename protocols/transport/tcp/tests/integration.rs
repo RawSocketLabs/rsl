@@ -2,7 +2,32 @@
 //! byte-identically.
 
 mod integration {
-    use tcp::TcpHeader;
+    use tcp::{TcpHeader, TcpOption};
+
+    #[test]
+    fn options_parse_into_a_typed_view() {
+        // data_offset=7 (0x7002 = SYN, 28-byte header) with 8 option bytes: MSS + WScale + NOP.
+        let wire = [
+            0x9c, 0x40, 0x00, 0x50, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00, 0x00, //
+            0x70, 0x02, // data_offset=7, SYN
+            0xff, 0xff, 0x00, 0x00, 0x00, 0x00, //
+            0x02, 0x04, 0x05, 0xb4, // MSS 1460
+            0x03, 0x03, 0x08, // WScale 8
+            0x01, // NOP (pads the options to a 4-byte boundary)
+        ];
+        let h = TcpHeader::decode_exact(&wire).unwrap();
+        assert_eq!(h.header_len(), 28);
+        assert_eq!(
+            h.options_parsed(),
+            vec![
+                TcpOption::Mss(1460),
+                TcpOption::WindowScale(8),
+                TcpOption::Nop,
+            ]
+        );
+        // The raw bytes are still the source of truth for a byte-identical round-trip.
+        assert_eq!(h.to_bytes().unwrap(), wire);
+    }
 
     #[test]
     fn decodes_a_syn_and_round_trips() {

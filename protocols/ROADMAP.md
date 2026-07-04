@@ -32,8 +32,9 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        **Remaining**: DNS-over-TCP fallback (waits on `transport/tcp`), EDNS(0), caching.
 2. [~] **`transport/tcp`** done (header codec: `Control` `#[bitfield]` flags word, raw options
        sized by `data_offset`, dual-use stored checksum/offset). **`transport/udp`** remains — it
-       pulls in the `rawsock` extraction trigger (implements the injection trait). Follow-ups on
-       TCP: structured options, a checksum helper (with `rawsock` compose), DNS-over-TCP fallback.
+       pulls in the `rawsock` extraction trigger (implements the injection trait). TCP now also
+       has a **structured options view** (`TcpOption`: MSS/WScale/SACK/Timestamps/…). Remaining
+       TCP follow-ups: a checksum helper (with `rawsock` compose), DNS-over-TCP fallback.
 3. [ ] **`network/ip`, `network/icmp`** — checksums, minimal IPv4.
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.
