@@ -5,6 +5,12 @@ use bnb::bin;
 use bnb::bitstream::{BitError, Sink, Source};
 use std::collections::HashMap;
 
+/// The RFC 1035 §3.1 hard cap on a domain name's total on-wire length (the label bytes plus
+/// their length octets plus the root terminator). Enforcing it on decode bounds the
+/// compression-amplification a hostile packet can achieve — pointers may chain across the
+/// whole message, but one resolved `Name` can never exceed 255 bytes of labels.
+const MAX_NAME_LEN: usize = 255;
+
 /// The maximum number of compression-pointer jumps to follow before declaring a loop.
 /// RFC 1035 allows arbitrarily-chained pointers, but a well-formed name resolves in far
 /// fewer hops than this; the bound turns a malicious pointer cycle into a clean error.
@@ -87,20 +93,34 @@ impl core::fmt::Display for Name {
 impl core::str::FromStr for Name {
     type Err = crate::DnsError;
 
-    /// Parse a dotted name (`"www.example.com"`). A trailing dot / the empty string is
-    /// the root. A label over 63 bytes is [`NotRepresentable`](crate::DnsError::NotRepresentable).
+    /// Parse a dotted name (`"www.example.com"`). A trailing dot / the empty string is the
+    /// root. Errors ([`NotRepresentable`](crate::DnsError::NotRepresentable)) on a label over
+    /// 63 bytes, an **empty interior label** (`"a..b"` — which wouldn't round-trip, since an
+    /// empty label is the on-wire root terminator), or a total name over 255 bytes.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_suffix('.').unwrap_or(s);
         if s.is_empty() {
             return Ok(Name::root());
         }
         let mut labels = Vec::new();
+        let mut name_len = 1usize; // the root terminator
         for part in s.split('.') {
             let bytes = part.as_bytes();
+            if bytes.is_empty() {
+                return Err(crate::DnsError::NotRepresentable(format!(
+                    "empty label in {s:?}: a name may not contain an empty interior label"
+                )));
+            }
             if bytes.len() > 63 {
                 return Err(crate::DnsError::NotRepresentable(format!(
                     "label {part:?} is {} bytes; the maximum is 63",
                     bytes.len()
+                )));
+            }
+            name_len += 1 + bytes.len();
+            if name_len > MAX_NAME_LEN {
+                return Err(crate::DnsError::NotRepresentable(format!(
+                    "name {s:?} exceeds the {MAX_NAME_LEN}-byte limit"
                 )));
             }
             labels.push(bytes.to_vec());
@@ -119,6 +139,7 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
     let mut labels = Vec::new();
     let mut return_pos: Option<usize> = None;
     let mut hops = 0u32;
+    let mut name_len = 1usize; // the root terminator that always ends the name
     loop {
         let first = r.read::<u8>()?;
         match first >> 6 {
@@ -142,6 +163,15 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
             0b00 => {
                 if first == 0 {
                     break; // root terminator
+                }
+                // Each label costs its length octet + its bytes; cap the running total at
+                // the RFC limit so compression can't amplify one name past 255 bytes.
+                name_len += 1 + usize::from(first);
+                if name_len > MAX_NAME_LEN {
+                    return Err(BitError::convert(
+                        format!("DNS name exceeds the {MAX_NAME_LEN}-byte limit (RFC 1035 §3.1)"),
+                        r.bit_pos(),
+                    ));
                 }
                 let label = r.read_bytes(usize::from(first))?;
                 labels.push(label);
@@ -299,6 +329,24 @@ mod unit {
     fn from_str_rejects_an_oversized_label() {
         let long = "a".repeat(64);
         assert!(long.parse::<Name>().is_err());
+    }
+
+    #[test]
+    fn from_str_rejects_empty_interior_labels() {
+        // An empty label is the wire root terminator, so "a..b" wouldn't round-trip.
+        assert!("a..b".parse::<Name>().is_err());
+        assert!(".a".parse::<Name>().is_err());
+        // A trailing dot is still the fully-qualified form, not an empty label.
+        assert_eq!("a.b.".parse::<Name>().unwrap().to_dotted(), "a.b");
+    }
+
+    #[test]
+    fn from_str_rejects_a_name_over_255_bytes() {
+        // Six 63-byte labels = 6 × 64 + 1 = 385 bytes > 255.
+        let big = std::iter::repeat_n("a".repeat(63), 6)
+            .collect::<Vec<_>>()
+            .join(".");
+        assert!(big.parse::<Name>().is_err());
     }
 }
 

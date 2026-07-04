@@ -55,6 +55,22 @@ mod adversarial {
     }
 
     #[test]
+    fn a_name_over_255_bytes_is_rejected() {
+        // Five 63-byte labels = 5 × 64 = 320 bytes of labels (> 255) then a terminator.
+        let mut wire = Vec::new();
+        for _ in 0..5 {
+            wire.push(63u8);
+            wire.extend(std::iter::repeat_n(b'a', 63));
+        }
+        wire.push(0x00);
+        let err = Name::decode_exact(&wire).unwrap_err();
+        assert!(
+            matches!(&err.kind, bnb::bitstream::ErrorKind::Convert { message } if message.contains("255")),
+            "expected a 255-byte-limit error, got {err:?}"
+        );
+    }
+
+    #[test]
     fn arbitrary_bytes_never_panic() {
         // A range of malformed inputs — the contract is "error, not panic".
         let cases: &[&[u8]] = &[
