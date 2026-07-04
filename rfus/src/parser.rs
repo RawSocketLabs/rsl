@@ -1,6 +1,3 @@
-// RawSocket Labs LLC Intellectual Property
-// Originally developed by Raw Socket Labs LLC
-
 use std::str::FromStr;
 
 use winnow::Parser;

@@ -1,6 +1,3 @@
-// RawSocket Labs LLC Intellectual Property
-// Originally developed by Raw Socket Labs LLC
-
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 

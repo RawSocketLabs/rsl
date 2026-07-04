@@ -1,6 +1,3 @@
-// RawSocket Labs LLC Intellectual Property
-// Originally developed by Raw Socket Labs LLC
-
 #![warn(missing_docs)]
 
 //! Human-readable RF unit parsing.
