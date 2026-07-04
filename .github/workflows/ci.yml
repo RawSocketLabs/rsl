@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy (workspace lints enforce clippy::all = deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets
+
+  test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+      # bnb feature ladders that aren't on the default path.
+      - run: cargo test -p bitsandbytes --features bytes
+      - run: cargo test -p bitsandbytes --features mock
+      # the rsl facade + rsl-deps blessed stack (pure-Rust slice; FFI excluded).
+      - run: cargo build -p rsl --features full
+      - run: cargo build -p rsl-deps --features full
+
+  no_std:
+    name: no_std (bare-metal target)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p bitsandbytes --no-default-features
+      - run: cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+
+  deny:
+    name: cargo-deny (advisories / licenses / bans / sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  msrv:
+    name: MSRV (rust-version = 1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+
+  public-api:
+    name: public-api (bitsandbytes surface unchanged)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-17
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-public-api --version 0.52.0 --locked
+      - name: Diff the public API against the committed snapshot
+        run: |
+          cargo public-api -p bitsandbytes --all-features > "$RUNNER_TEMP/public-api.txt"
+          if ! diff -u bitsandbytes/bnb/public-api.txt "$RUNNER_TEMP/public-api.txt"; then
+            echo "::error::Public API differs from bitsandbytes/bnb/public-api.txt (see diff above)."
+            echo "If intentional, regenerate:"
+            echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bitsandbytes/bnb/public-api.txt"
+            exit 1
+          fi
+
+  fuzz:
+    name: cargo-fuzz (bnb decode path, smoke run)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bitsandbytes
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm -f rust-toolchain.toml ../rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz build decode
+      - run: cargo fuzz run decode -- -max_total_time=60 -runs=2000000

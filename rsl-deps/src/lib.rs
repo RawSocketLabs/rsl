@@ -11,9 +11,9 @@
 //! rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
 //! ```
 //!
-//! ```rust
-//! use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives
-//! use rsl_deps::tokio;        // blessed async runtime, canonical name
+//! ```ignore
+//! use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives (feature "std-ext")
+//! use rsl_deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
 //! ## Rented, not owned

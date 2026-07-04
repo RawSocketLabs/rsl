@@ -9,7 +9,7 @@ pub mod ffi {
     pub enum DSDStationType {
         DSDStationTypeNotApplicable,
         DSDBaseStation,
-        DSDMobileStation
+        DSDMobileStation,
     }
 
     #[repr(u32)]
