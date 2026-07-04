@@ -70,4 +70,38 @@ mod adversarial {
             let _ = Name::decode_exact(bytes);
         }
     }
+
+    #[test]
+    fn srv_rdlength_under_six_does_not_underflow_panic() {
+        // an=1; SRV (TYPE=33) record with RDLENGTH=2 but 6 rdata bytes present, so the
+        // `count = rdlength - 6` expression is reached. Must not panic (saturates to 0).
+        let wire = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, // header
+            0x00, // root name
+            0x00, 0x21, // TYPE = SRV
+            0x00, 0x01, // CLASS = IN
+            0x00, 0x00, 0x00, 0x00, // TTL
+            0x00, 0x02, // RDLENGTH = 2  (< 6)
+            0x00, 0x0a, 0x00, 0x05, 0x13, 0x88, // priority/weight/port
+        ];
+        // A clean decode outcome (Ok or Err), never a panic.
+        let _ = Message::decode_exact(&wire);
+    }
+
+    #[test]
+    fn caa_tag_length_over_rdlength_does_not_underflow_panic() {
+        // an=1; CAA (TYPE=257) with tag_length=200 > rdlength, and enough trailing bytes to
+        // read the 200-byte tag, so `count = rdlength - tag_length - 2` is reached.
+        let mut wire = vec![
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, // header
+            0x00, // root name
+            0x01, 0x01, // TYPE = CAA (257)
+            0x00, 0x01, // CLASS = IN
+            0x00, 0x00, 0x00, 0x00, // TTL
+            0x00, 0x03, // RDLENGTH = 3
+            0x00, 0xC8, // flags=0, tag_length=200
+        ];
+        wire.extend(std::iter::repeat_n(0x61, 200)); // 200 tag bytes so the tag read succeeds
+        let _ = Message::decode_exact(&wire); // must not panic
+    }
 }

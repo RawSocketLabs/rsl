@@ -151,6 +151,61 @@ mod integration {
     }
 
     #[test]
+    fn compressed_encode_keeps_rdlength_honest_for_name_bearing_rdata() {
+        // A CNAME whose target (`example.com`) already appears as the question name, so the
+        // owner name compresses — but the RDATA name must NOT (RFC 3597), or `rdlength`
+        // (derived from the uncompressed size) would disagree with the written bytes.
+        use dns::{Header, QClass, QType, Question, RClass, Record, State, WireLen};
+        let q = Question {
+            name: "example.com".parse().unwrap(),
+            qtype: QType::A,
+            qclass: QClass::Internet,
+        };
+        let cname = Record {
+            name: "www.example.com".parse().unwrap(),
+            rtype: RType::CNAME,
+            class: RClass::Internet,
+            ttl: 60,
+            rdlength: WireLen::auto(),
+            data: RData::Cname("example.com".parse().unwrap()),
+        };
+        let msg = Message::assemble(
+            Header {
+                id: 1,
+                state: State::new().with_response(true),
+                qdcount: WireLen::auto(),
+                ancount: WireLen::auto(),
+                nscount: WireLen::auto(),
+                arcount: WireLen::auto(),
+            },
+            vec![q],
+            vec![cname],
+            vec![],
+            vec![],
+        );
+        let compressed = msg.to_compressed_bytes().unwrap();
+        let back = Message::decode_exact(&compressed).unwrap();
+        // `example.com` uncompressed = 07 e x a m p l e 03 c o m 00 = 13 bytes.
+        assert_eq!(
+            back.answers[0].rdlength.to_count(),
+            13,
+            "rdlength matches the uncompressed RDATA name it actually wrote"
+        );
+        assert_eq!(
+            back.answers[0].data,
+            RData::Cname("example.com".parse().unwrap())
+        );
+        // And the frame round-trips through a full decode/encode.
+        assert_eq!(
+            Message::decode_exact(&compressed)
+                .unwrap()
+                .to_bytes()
+                .unwrap(),
+            msg.to_bytes().unwrap()
+        );
+    }
+
+    #[test]
     fn compressed_encode_points_the_answer_name_at_the_question() {
         // A controlled golden: the answer's name (offset 33) becomes a 2-byte pointer to
         // the question's name at offset 12 (0xc0 0x0c), not a repeated 17-byte name.

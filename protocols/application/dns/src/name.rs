@@ -240,6 +240,31 @@ fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError>
     w.write(0u8) // root terminator (no pointer taken)
 }
 
+/// Write a [`Name`] **uncompressed**, ignoring any compression dictionary in the sink.
+///
+/// Names *inside RDATA* (a CNAME/NS/PTR target, an MX exchange, the SOA MNAME/RNAME) are
+/// written uncompressed even in [`Message::to_compressed_bytes`](crate::Message::to_compressed_bytes)
+/// — RFC 3597 §4: only the **owner** name (and the question name) are compression-eligible.
+/// If an RDATA name compressed, its `rdlength` (derived from the *uncompressed* size via
+/// `#[bw(auto = bytes(data))]`) would no longer match the bytes written, producing a frame
+/// that an RFC-compliant peer misparses. Writing them uncompressed keeps `rdlength` honest.
+///
+/// # Errors
+/// [`BitError`] on a label over 63 bytes, or a sink write failure.
+pub fn write_name_uncompressed<K: Sink>(name: &Name, w: &mut K) -> Result<(), BitError> {
+    for label in name.labels() {
+        if label.len() > 63 {
+            return Err(BitError::convert(
+                format!("DNS label is {} bytes; the maximum is 63", label.len()),
+                w.bit_pos(),
+            ));
+        }
+        w.write(label.len() as u8)?;
+        w.write_bytes(label)?;
+    }
+    w.write(0u8) // root terminator
+}
+
 /// Pure name logic — parsing/rendering dotted strings, no wire codec.
 #[cfg(test)]
 mod unit {

@@ -15,9 +15,11 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 pub struct Soa {
     /// The primary name server for the zone.
     #[brw(variable)]
+    #[bw(write_with = crate::name::write_name_uncompressed)]
     pub mname: Name,
     /// The mailbox of the zone administrator.
     #[brw(variable)]
+    #[bw(write_with = crate::name::write_name_uncompressed)]
     pub rname: Name,
     /// The zone serial number.
     pub serial: u32,
@@ -39,6 +41,7 @@ pub struct Mx {
     pub preference: u16,
     /// The mail-exchange host.
     #[brw(variable)]
+    #[bw(write_with = crate::name::write_name_uncompressed)]
     pub exchange: Name,
 }
 
@@ -66,13 +69,25 @@ pub enum RData {
     ),
     /// An authoritative name server (NS).
     #[bin(tag = RType::NS)]
-    Ns(#[brw(variable)] Name),
+    Ns(
+        #[brw(variable)]
+        #[bw(write_with = crate::name::write_name_uncompressed)]
+        Name,
+    ),
     /// The canonical name for an alias (CNAME).
     #[bin(tag = RType::CNAME)]
-    Cname(#[brw(variable)] Name),
+    Cname(
+        #[brw(variable)]
+        #[bw(write_with = crate::name::write_name_uncompressed)]
+        Name,
+    ),
     /// A domain-name pointer (PTR).
     #[bin(tag = RType::PTR)]
-    Ptr(#[brw(variable)] Name),
+    Ptr(
+        #[brw(variable)]
+        #[bw(write_with = crate::name::write_name_uncompressed)]
+        Name,
+    ),
     /// Start of a zone of authority (SOA).
     #[bin(tag = RType::SOA)]
     Soa(#[brw(variable)] Soa),
@@ -97,8 +112,10 @@ pub enum RData {
         weight: u16,
         /// The service port.
         port: u16,
-        /// The target host, as raw RDATA bytes (`rdlength - 6`).
-        #[br(count = rdlength.to_count() - 6)]
+        /// The target host, as raw RDATA bytes (`rdlength - 6`). `saturating_sub` keeps a
+        /// malformed `rdlength < 6` from underflow-panicking on untrusted input (it reads
+        /// zero target bytes and the trailing-bytes check flags the inconsistency).
+        #[br(count = rdlength.to_count().saturating_sub(6))]
         target: Vec<u8>,
     },
     /// A Certification Authority Authorization record (CAA, RFC 8659).
@@ -111,8 +128,12 @@ pub enum RData {
         /// The property tag (ASCII), `tag_length` bytes.
         #[br(count = tag_length)]
         tag: Vec<u8>,
-        /// The property value, `rdlength - tag_length - 2` bytes.
-        #[br(count = rdlength.to_count() - usize::from(tag_length) - 2)]
+        /// The property value, `rdlength - tag_length - 2` bytes. `saturating_sub` keeps a
+        /// malformed `tag_length`/`rdlength` (attacker-controlled) from underflow-panicking.
+        #[br(count = rdlength
+            .to_count()
+            .saturating_sub(usize::from(tag_length))
+            .saturating_sub(2))]
         value: Vec<u8>,
     },
     /// EDNS(0) OPT pseudo-record RDATA — raw option bytes (RFC 6891). The OPT record's
