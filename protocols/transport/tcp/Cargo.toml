@@ -9,6 +9,18 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
+# Only for the `inject` feature (the rawsock composition/injection layer); off by default.
+rawsock = { workspace = true, optional = true }
+
+[features]
+# A `rawsock::Protocol` layer (`Tcp<P>`) + TCP checksum, so a TCP header can be composed with
+# a payload and injected as a real segment. Off by default: the pure codec stays free of the
+# rawsock dependency unless you opt in.
+inject = ["dep:rawsock"]
+
+[[example]]
+name = "inject_segment"
+required-features = ["inject"]
 
 [lints]
 workspace = true

@@ -4,8 +4,9 @@
 //! options, preserving representable input exactly. `checksum`, the reserved bits, and
 //! `data_offset` are stored **verbatim** — decode never recomputes or rejects them, so a
 //! forged checksum or a lying data-offset survives a round-trip. Options are kept as raw
-//! bytes (a structured TLV parser is a later refinement); a checksum-compute helper (which
-//! needs the IP pseudo-header) will arrive with the `rawsock` composition model.
+//! bytes plus a structured [`TcpOption`] view (`options` module). The `inject` feature adds a
+//! `rawsock::Protocol` layer (`Tcp`) + a pseudo-header `tcp_checksum` for composing and
+//! injecting real segments.
 //!
 //! This is a **header codec**, not a connection: there is no state machine, retransmission,
 //! or I/O here.
@@ -30,6 +31,12 @@ use bnb::{bin, bitfield, u4};
 
 pub mod options;
 pub use options::TcpOption;
+
+/// The rawsock injection layer — the `inject` feature.
+#[cfg(feature = "inject")]
+pub mod inject;
+#[cfg(feature = "inject")]
+pub use inject::{Tcp, tcp_checksum};
 
 /// The data-offset + reserved + control-bits word — the 16 bits at RFC 9293 §3.1 byte 12–13.
 ///

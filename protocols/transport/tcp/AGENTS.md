@@ -5,10 +5,11 @@ TCP (RFC 9293) segment-**header** codec on `bnb`. refcheck protocol name: **`tcp
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
 > [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
 
-## Status — header codec
+## Status — header codec + rawsock injection
 
-Decode/encode of the 20-byte fixed header plus raw options. No connection state machine,
-retransmission, or I/O — this is a wire codec.
+Decode/encode of the 20-byte fixed header plus raw options, plus (the `inject` feature) a
+`rawsock::Protocol` layer that composes and injects real, checksummed segments. No connection
+state machine, retransmission, or I/O.
 
 ## Architecture
 
@@ -36,10 +37,18 @@ Options are raw bytes, preserved exactly. The parser enforces no policy.
 Parsing is bounded — a truncated/wrong-length option becomes `Unknown` and stops the scan,
 never panics.
 
+## Injection — the `inject` feature (`src/inject.rs`)
+
+`Tcp<P>` wraps a `TcpHeader` + payload and implements `rawsock::Protocol` (`protocol_id` → 6,
+`layer` → `Transport`). Dual-use: `encode` (compliant) computes the checksum from the enclosing
+IPv4 pseudo-header (`Context`); `encode_raw` (verbatim) emits `.header.checksum` as set (forge
+by writing it). `tcp_checksum(pseudo, tcp)` is RFC 9293 over the pseudo-header + segment on
+rawsock's `internet_checksum` — no UDP-style `0 → 0xFFFF` sentinel. rawsock is a git dep behind
+the feature (`default-features = false` → the `compose` trait + `Loopback`, no `rustix`). The IP
+layer (`network/ip`) supplies the pseudo-header in a full `Ip(Tcp(...))` stack.
+
 ## Scope / follow-ups
 
-- **Checksum is stored, not computed.** A `tcp_checksum` (over the IPv4 pseudo-header, like
-  UDP) lands with `rawsock`'s composition model (`internet_checksum`).
 - **DNS-over-TCP** (the `dns` resolver's TCP fallback) is a downstream consumer once a stream
   transport exists.
 
@@ -50,9 +59,13 @@ never panics.
   and byte-identical round-trips.
 - `tests/adversarial.rs`: `data_offset < 5` (no underflow panic), truncated header, options
   past the buffer, arbitrary-bytes-never-panic.
-- Examples: `decode_segment` (print ports/flags), `build_syn` (construct + round-trip).
+- `tests/inject.rs` (`--features inject`): `protocol_id`/`layer`; **the checksum verifies to 0**
+  (RFC 1071); raw preserves a forged checksum; segment data rides after the header; the composed
+  segment goes out a `Loopback` sink.
+- Examples: `decode_segment` (print ports/flags), `build_syn` (construct + round-trip),
+  `inject_segment` (`--features inject`: compose a SYN, checksum, send through a rawsock sink).
 
-Run: `cargo test -p tcp`.
+Run: `cargo test -p tcp` (add `--features inject` for the rawsock layer).
 
 ## Conventions
 
