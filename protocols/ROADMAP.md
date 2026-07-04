@@ -37,9 +37,11 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        consumer, the `rawsock` extraction trigger, now live). **TCP has the same `inject` layer**
        (`Tcp<P>` + `tcp_checksum`). Remaining transport follow-up: privileged L3 send (needs
        rawsock's `network` backend — in progress).
-3. [~] **`network/ip`** done — IPv4 header codec + the `inject` `Ip<P>` layer that supplies the
-       L4 pseudo-header and computes the header checksum, so a full `Ip(Udp/Tcp(..))` stack emits a
-       correct datagram (both checksums verify). **`network/icmp`** remains.
+3. [x] **`network/ip`** + **`network/icmp`** done. `ip`: IPv4 header codec + the `inject` `Ip<P>`
+       layer that supplies the L4 pseudo-header and computes the header checksum. `icmp`: RFC 792
+       header codec + an `Icmp<P>` inject layer whose checksum is **self-contained** (no
+       pseudo-header). A full `Ip(Udp/Tcp/Icmp(..))` stack emits a correct datagram — every
+       checksum verifies (a composed ping is a real, valid packet).
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.
 5. [ ] Application protocols as demand dictates: `tftp`, `socks`, `smb`, `nbt`, `ssh`, …

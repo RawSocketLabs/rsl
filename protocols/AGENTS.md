@@ -135,8 +135,8 @@ corpus name once compliance tracking is wired.
 | `transport/tcp` | transport | 0.1.0 | functional (header codec + options + rawsock injection) | `tcp` (RFC 9293) |
 | `transport/udp` | transport | 0.1.0 | functional (header codec + rawsock injection) | `udp` (RFC 768) |
 | `network/ip` | network | 0.1.0 | functional (header codec + rawsock injection) | `ip` (RFC 791) |
+| `network/icmp` | network | 0.1.0 | functional (header codec + rawsock injection) | `icmp` (RFC 792) |
 | `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
-| `network/icmp` | network | — | planned | `icmp` |
 | `link/arp`, `link/ethernet` | link | — | planned | — |
 | `session/socks`; `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
 
