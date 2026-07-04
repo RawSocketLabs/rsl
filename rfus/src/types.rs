@@ -1,6 +1,3 @@
-// Metrea LLC Intellectual Property
-// Originally developed by Raw Socket Labs LLC
-
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 

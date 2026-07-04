@@ -1,6 +1,3 @@
-// Metrea LLC Intellectual Property
-// Originally developed by Raw Socket Labs LLC
-
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;

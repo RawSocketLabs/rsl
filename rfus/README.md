@@ -1,6 +1,6 @@
 # rfus
 
-RF unit parsing utilities for Shrike ecosystem crates.
+RF frequency, sample-rate, and scan-target parsing utilities.
 
 The public API is intentionally centered on `FromStr`, small domain types, and
 optional serde support:
