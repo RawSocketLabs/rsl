@@ -268,10 +268,10 @@ fn conv_impls(
                     match u128::from(value) {
                         #(#arms,)*
                         other => ::core::result::Result::Err(
-                            #bnb::__private::UnknownDiscriminant {
-                                value: other,
-                                type_name: ::core::stringify!(#name),
-                            },
+                            #bnb::__private::UnknownDiscriminant::new(
+                                other,
+                                ::core::stringify!(#name),
+                            ),
                         ),
                     }
                 }

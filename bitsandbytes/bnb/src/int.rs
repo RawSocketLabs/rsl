@@ -49,7 +49,7 @@ macro_rules! impl_uint {
         $(
             impl<const N: usize> UInt<$t, N> {
                 /// The number of bits.
-                pub const BITS: usize = N;
+                pub const BITS: u32 = <Self as Bits>::BITS;
 
                 /// A mask with the low `N` bits set.
                 pub const MASK: $t = if N >= <$t>::BITS as usize {

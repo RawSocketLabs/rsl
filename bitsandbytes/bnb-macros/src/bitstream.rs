@@ -1120,7 +1120,7 @@ fn field_write_core(
     // `auto_len = count(x)|bytes(x)`: a `WireLen<T>` field. `Set(n)` writes `n` verbatim
     // (dual-use); `Auto` derives its length from the named sibling — the element count
     // (`count`) or the encoded byte length (`bytes`, a probe encode) — checked via
-    // `CountPrefix::try_from_len` (no silent truncation). `resolve_count` folds both:
+    // `CountPrefix::try_from_count` (no silent truncation). `resolve_count` folds both:
     // it fills an `Auto` with the checked length and passes a `Set` through unchanged, so
     // the resolved `WireLen` (now always `Set`) writes through its own `BitEncode`. This
     // fires on both the verbatim and canonical passes — an `Auto` has no stored scalar to
@@ -2650,7 +2650,7 @@ fn desugar_count_prefix(
             CountPrefixSite::Variant => quote!(#id.len()),
         };
         let calc_expr = quote! {
-            <#pty as #bnb::__private::CountPrefix>::try_from_len(#len_expr)
+            <#pty as #bnb::__private::CountPrefix>::try_from_count(#len_expr)
                 .map_err(|__e| #bnb::__private::BitError::from(__e)
                     .in_field(::core::stringify!(#id)))?
         };

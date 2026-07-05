@@ -1,13 +1,13 @@
 error[E0277]: the trait bound `MyPrefix: bitstream::sealed::Sealed` is not satisfied
-  --> tests/ui/codecs_seal.rs:19:22
+  --> tests/ui/codecs_seal.rs:20:22
    |
-19 | impl CountPrefix for MyPrefix {
+20 | impl CountPrefix for MyPrefix {
    |                      ^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `bitstream::sealed::Sealed` is not implemented for `MyPrefix`
-  --> tests/ui/codecs_seal.rs:7:1
+  --> tests/ui/codecs_seal.rs:8:1
    |
- 7 | struct MyPrefix(u8);
+ 8 | struct MyPrefix(u8);
    | ^^^^^^^^^^^^^^^
    = help: the following other types implement trait `bitstream::sealed::Sealed`:
              UInt<u128, N>
@@ -37,15 +37,15 @@ note: required by a bound in `CountPrefix`
            and $N others
 
 error[E0277]: the trait bound `MyPrefix: bitstream::sealed::Sealed` is not satisfied
-  --> tests/ui/codecs_seal.rs:28:17
+  --> tests/ui/codecs_seal.rs:29:17
    |
-28 | impl Varint for MyPrefix {}
+29 | impl Varint for MyPrefix {}
    |                 ^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `bitstream::sealed::Sealed` is not implemented for `MyPrefix`
-  --> tests/ui/codecs_seal.rs:7:1
+  --> tests/ui/codecs_seal.rs:8:1
    |
- 7 | struct MyPrefix(u8);
+ 8 | struct MyPrefix(u8);
    | ^^^^^^^^^^^^^^^
    = help: the following other types implement trait `bitstream::sealed::Sealed`:
              UInt<u128, N>

@@ -33,9 +33,6 @@
 //! [`parse_with`]: crate::guide::directives
 //! [`write_with`]: crate::guide::directives
 
-pub use crate::bitstream::CountPrefix;
-pub use crate::wirelen::WireLen;
-
 /// Unsigned LEB128 (`varint`) — 7 payload bits per byte, low group first, high bit set
 /// while more bytes follow. The wire format of protobuf `varint`, WebAssembly, DWARF.
 ///
@@ -238,7 +235,7 @@ pub mod cstring {
     }
 }
 
-/// Length-prefixed UTF-8 strings — a [`CountPrefix`](super::CountPrefix) integer
+/// Length-prefixed UTF-8 strings — a [`CountPrefix`](crate::bitstream::CountPrefix) integer
 /// counting the **bytes**, then that many bytes of UTF-8.
 ///
 /// Generic over the prefix type: any type the
@@ -268,7 +265,7 @@ pub mod cstring {
 /// one attribute. Write is **checked**: a string longer than the prefix's range is a
 /// [`BitError`](crate::BitError), never a wrapped length. (On 32-bit targets a `u64`/
 /// `u128` prefix narrows through `usize` on read — see
-/// [`CountPrefix::to_count`](super::CountPrefix::to_count).)
+/// [`CountPrefix::to_count`](crate::bitstream::CountPrefix::to_count).)
 pub mod prefixed {
     use crate::bitstream::{BitError, CountPrefix, Sink, Source};
     use alloc::format;
@@ -298,8 +295,8 @@ pub mod prefixed {
     /// [`Convert`](crate::bitstream::ErrorKind::Convert) when the byte length exceeds
     /// the prefix's range (checked — never a silently wrapped length).
     pub fn write_string<K: Sink, P: CountPrefix>(s: &str, w: &mut K) -> Result<(), BitError> {
-        let prefix =
-            P::try_from_len(s.len()).map_err(|e| BitError::convert(e.to_string(), w.bit_pos()))?;
+        let prefix = P::try_from_count(s.len())
+            .map_err(|e| BitError::convert(e.to_string(), w.bit_pos()))?;
         w.write(prefix)?;
         w.write_bytes(s.as_bytes())
     }
@@ -308,7 +305,7 @@ pub mod prefixed {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use crate::bitstream::{BitReader, BitWriter, ErrorKind};
+    use crate::bitstream::{BitReader, BitWriter, CountPrefix, ErrorKind};
     use crate::u12;
     use alloc::vec;
     use alloc::vec::Vec;

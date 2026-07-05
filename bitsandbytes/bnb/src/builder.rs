@@ -31,6 +31,7 @@ use core::fmt;
 /// assert_eq!(err.to_string(), "required field `lo` was not set");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BuilderError {
     /// A required field was not set; carries the field name.
     MissingField(&'static str),
