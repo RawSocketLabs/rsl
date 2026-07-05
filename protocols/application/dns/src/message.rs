@@ -1,11 +1,13 @@
 //! The whole DNS message (RFC 1035 §4.1).
 
 use crate::header::{Header, State};
-use crate::name::CompressionDict;
+use crate::name::{CompressionDict, Name};
 use crate::question::Question;
-use crate::record::Record;
+use crate::rdata::{Mx, RData};
+use crate::record::{RType, Record};
 use bnb::bin;
 use bnb::bitstream::{BitEncode, BitWriter};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// A complete DNS message: a header followed by the four sections, each sized by the
 /// header's corresponding count.
@@ -100,5 +102,76 @@ impl Message {
             .with_scratch(Box::new(CompressionDict::new()));
         self.bit_encode(&mut w)?;
         Ok(w.into_bytes())
+    }
+}
+
+/// Typed read accessors over the **answer** section — the common case for reading a response.
+/// `RData` is already a typed union; these save callers hand-matching it. Each extracts by the
+/// actual `RData` variant (not the record's `rtype` field), so a dual-use record whose `rtype`
+/// disagrees with its data is classified by what it *is*.
+impl Message {
+    /// Answer records whose `rtype` equals `rtype`.
+    pub fn records(&self, rtype: RType) -> impl Iterator<Item = &Record> {
+        self.answers.iter().filter(move |r| r.rtype == rtype)
+    }
+
+    /// The IPv4 addresses from the answer section's A records.
+    #[must_use]
+    pub fn a_records(&self) -> Vec<Ipv4Addr> {
+        self.answers
+            .iter()
+            .filter_map(|r| match &r.data {
+                RData::A(ip) => Some(*ip),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The IPv6 addresses from the answer section's AAAA records.
+    #[must_use]
+    pub fn aaaa_records(&self) -> Vec<Ipv6Addr> {
+        self.answers
+            .iter()
+            .filter_map(|r| match &r.data {
+                RData::Aaaa(ip) => Some(*ip),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The CNAME targets in the answer section.
+    #[must_use]
+    pub fn cnames(&self) -> Vec<&Name> {
+        self.answers
+            .iter()
+            .filter_map(|r| match &r.data {
+                RData::Cname(name) => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The NS names in the answer section.
+    #[must_use]
+    pub fn ns_records(&self) -> Vec<&Name> {
+        self.answers
+            .iter()
+            .filter_map(|r| match &r.data {
+                RData::Ns(name) => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The MX records in the answer section.
+    #[must_use]
+    pub fn mx_records(&self) -> Vec<&Mx> {
+        self.answers
+            .iter()
+            .filter_map(|r| match &r.data {
+                RData::Mx(mx) => Some(mx),
+                _ => None,
+            })
+            .collect()
     }
 }
