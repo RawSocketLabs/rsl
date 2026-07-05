@@ -1,23 +1,23 @@
 error[E0277]: the trait bound `MyPrefix: bitstream::sealed::Sealed` is not satisfied
-  --> tests/ui/codecs_seal.rs:20:22
+  --> tests/ui_countprefix_seal/codecs_seal.rs:20:22
    |
 20 | impl CountPrefix for MyPrefix {
    |                      ^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `bitstream::sealed::Sealed` is not implemented for `MyPrefix`
-  --> tests/ui/codecs_seal.rs:8:1
+  --> tests/ui_countprefix_seal/codecs_seal.rs:8:1
    |
  8 | struct MyPrefix(u8);
    | ^^^^^^^^^^^^^^^
    = help: the following other types implement trait `bitstream::sealed::Sealed`:
+             BitBuf
+             BitReader<'_>
+             BitWriter
+             BufSource<R>
+             SeekReader<R>
+             StreamBitReader<R>
              UInt<u128, N>
              UInt<u16, N>
-             UInt<u32, N>
-             UInt<u64, N>
-             UInt<u8, N>
-             u128
-             u16
-             u32
            and $N others
 note: required by a bound in `CountPrefix`
   --> src/bitstream.rs
@@ -26,36 +26,36 @@ note: required by a bound in `CountPrefix`
    |                               ^^^^^^^^^^^^^^ required by this bound in `CountPrefix`
    = note: `CountPrefix` is a "sealed trait", because to implement it you also need to implement `bnb::bitstream::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
    = help: the following types implement the trait:
+             usize
+             i16
+             i32
+             i64
+             isize
+             bnb::BitReader<'_>
+             bnb::BitWriter
              u8
-             u16
-             u32
-             u64
-             u128
-             bnb::UInt<u8, N>
-             bnb::UInt<u16, N>
-             bnb::UInt<u32, N>
            and $N others
 
 error[E0277]: the trait bound `MyPrefix: bitstream::sealed::Sealed` is not satisfied
-  --> tests/ui/codecs_seal.rs:29:17
+  --> tests/ui_countprefix_seal/codecs_seal.rs:29:17
    |
 29 | impl Varint for MyPrefix {}
    |                 ^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `bitstream::sealed::Sealed` is not implemented for `MyPrefix`
-  --> tests/ui/codecs_seal.rs:8:1
+  --> tests/ui_countprefix_seal/codecs_seal.rs:8:1
    |
  8 | struct MyPrefix(u8);
    | ^^^^^^^^^^^^^^^
    = help: the following other types implement trait `bitstream::sealed::Sealed`:
+             BitBuf
+             BitReader<'_>
+             BitWriter
+             BufSource<R>
+             SeekReader<R>
+             StreamBitReader<R>
              UInt<u128, N>
              UInt<u16, N>
-             UInt<u32, N>
-             UInt<u64, N>
-             UInt<u8, N>
-             u128
-             u16
-             u32
            and $N others
 note: required by a bound in `Varint`
   --> src/codecs.rs
@@ -64,12 +64,12 @@ note: required by a bound in `Varint`
    |                              ^^^^^^^^^^^^^^ required by this bound in `Varint`
    = note: `Varint` is a "sealed trait", because to implement it you also need to implement `bnb::bitstream::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
    = help: the following types implement the trait:
+             usize
+             i16
+             i32
+             i64
+             isize
+             bnb::BitReader<'_>
+             bnb::BitWriter
              u8
-             u16
-             u32
-             u64
-             u128
-             bnb::UInt<u8, N>
-             bnb::UInt<u16, N>
-             bnb::UInt<u32, N>
            and $N others
