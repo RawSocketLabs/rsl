@@ -22,6 +22,9 @@ compute = []
 # L3 — raw IPv4 sockets (IPPROTO_RAW / IP_HDRINCL); the caller supplies the whole IP
 # datagram. Privileged (needs CAP_NET_RAW).
 network = ["dep:rustix"]
+# L2 — raw Ethernet via AF_PACKET; the caller supplies the whole frame. Privileged (CAP_NET_RAW).
+# Needs one confined `unsafe` block (rustix has no safe link-layer address) — see linux/link.rs.
+link = ["dep:rustix"]
 
 # rustix carries the actual syscalls, Linux-only, and is optional so a consumer
 # depending on rawsock only for the `compose` trait (a protocol encoder, via

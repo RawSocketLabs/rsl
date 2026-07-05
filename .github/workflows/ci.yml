@@ -75,6 +75,14 @@ jobs:
       # bnb feature ladders that aren't on the default path.
       - run: cargo test -p bitsandbytes --features bytes
       - run: cargo test -p bitsandbytes --features mock
+      # rawsock's privileged L3/L2 backends + the protocols' rawsock-injection layers, plus the
+      # dns resolver client — all behind opt-in features, off the default path. The `inject`/
+      # `link`/`network` capability-consistency tests run unprivileged; the real sends skip.
+      - run: cargo test -p rawsock --all-features
+      - run: cargo test -p dns --features client
+      - run: >
+          cargo test --features inject
+          -p ip -p icmp -p tcp -p udp -p ethernet -p arp
       # the rsl facade + rsl-deps blessed stack (pure-Rust slice; FFI excluded).
       - run: cargo build -p rsl --features full
       - run: cargo build -p rsl-deps --features full
