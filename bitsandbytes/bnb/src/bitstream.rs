@@ -1212,25 +1212,9 @@ pub trait FixedBitLen {
     const BIT_LEN: u32;
 }
 
-/// Which form [`EncodeExt::encode`] writes. On a `#[bin]` message that has a `reserved` or
-/// `calc` field, this is a settable in-memory property (`encode_mode()`/`set_encode_mode()`,
-/// or the builder's `.encode_mode(…)`) that `encode` consults — never written to the wire.
-/// `to_bytes`/`to_canonical_bytes` ignore it and always encode verbatim/canonical respectively.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub enum EncodeMode {
-    /// **Verbatim** *(default)* — write exactly what's stored (retained `reserved` bits, the
-    /// stored value of a `calc` field). Never silently rewrites the caller's data, and is the
-    /// faithful dual of `decode` (so a decoded value re-encodes byte-for-byte).
-    #[default]
-    Verbatim,
-    /// **Canonical** — `reserved` fields written as their spec value and `calc` fields
-    /// recomputed, so the result is always spec-compliant.
-    Canonical,
-}
-
 /// A message encoded to a bit stream — the dual of [`BitDecode`].
 ///
-/// Encoding has two forms (see [`EncodeMode`]): the required [`bit_encode`](Self::bit_encode)
+/// Encoding has two forms: the required [`bit_encode`](Self::bit_encode)
 /// is **verbatim** (exactly what's stored), and [`canonical_bit_encode`](Self::canonical_bit_encode)
 /// is **canonical** (`reserved` → spec value, `calc` → recomputed). The default canonical
 /// impl just calls `bit_encode`, so the two are identical unless a `#[bin]` message has a
@@ -1259,13 +1243,6 @@ pub trait BitEncode {
     /// Propagates the sink's [`BitError`].
     fn canonical_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
         self.bit_encode(w)
-    }
-
-    /// The form [`EncodeExt::encode`] writes for this value. Defaults to
-    /// [`EncodeMode::Verbatim`]; a `#[bin]` message with a `reserved`/`calc` field carries a
-    /// settable `encode_mode` and overrides this to return it.
-    fn encode_mode(&self) -> EncodeMode {
-        EncodeMode::Verbatim
     }
 }
 
@@ -1449,18 +1426,17 @@ macro_rules! count_prefix_uint {
 count_prefix_uint!(u8, u16, u32, u64, u128);
 
 /// `encode(writer)` for any [`BitEncode`] message — encodes to a `Vec` (using the type's
-/// [`LAYOUT`](BitEncode::LAYOUT)) in `self`'s [`encode_mode`](BitEncode::encode_mode) and
-/// writes it to a [`std::io::Write`] sink. A blanket-implemented extension trait, so bring it
-/// into scope (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w)`. Only
+/// [`LAYOUT`](BitEncode::LAYOUT)) **verbatim** and writes it to a [`std::io::Write`] sink.
+/// A blanket-implemented extension trait, so bring it into scope
+/// (`use bnb::prelude::*` or `use bnb::EncodeExt`) to call `.encode(&mut w)`. Only
 /// with the `std` feature; in `no_std` use the generated `to_bytes`/`to_canonical_bytes`, or
 /// [`bit_encode`](BitEncode::bit_encode)/[`canonical_bit_encode`](BitEncode::canonical_bit_encode)
 /// over a [`Sink`].
 #[cfg(feature = "std")]
 pub trait EncodeExt: BitEncode {
-    /// Encodes `self` to any [`std::io::Write`] (socket, file, `Vec`) in the value's
-    /// [`encode_mode`](BitEncode::encode_mode) — verbatim unless its mode is set to
-    /// [`Canonical`](EncodeMode::Canonical). For an unconditional choice, use the inherent
-    /// `to_bytes` (verbatim) / `to_canonical_bytes` (canonical) instead.
+    /// Encodes `self` **verbatim** to any [`std::io::Write`] (socket, file, `Vec`) — exactly
+    /// what's stored. For the canonical form, encode `self.to_canonical().encode(&mut w)`, or
+    /// use the inherent `to_bytes` (verbatim) / `to_canonical_bytes` (canonical) instead.
     ///
     /// # Errors
     /// [`ErrorKind::Io`] on a write failure, else the encode error.
@@ -1468,14 +1444,7 @@ pub trait EncodeExt: BitEncode {
     where
         Self: Sized,
     {
-        match self.encode_mode() {
-            EncodeMode::Verbatim => {
-                encode_to_writer_with(w, Self::LAYOUT, |bw| self.bit_encode(bw))
-            }
-            EncodeMode::Canonical => {
-                encode_to_writer_with(w, Self::LAYOUT, |bw| self.canonical_bit_encode(bw))
-            }
-        }
+        encode_to_writer_with(w, Self::LAYOUT, |bw| self.bit_encode(bw))
     }
 }
 
@@ -1673,8 +1642,7 @@ pub fn encode_to_vec<T: BitEncode>(value: &T, layout: Layout) -> Result<Vec<u8>,
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the encode error.
 /// Encode to a [`std::io::Write`] over a caller-supplied encode closure — backs
-/// [`EncodeExt::encode`] in either [`EncodeMode`] (the closure picks `bit_encode` vs
-/// `canonical_bit_encode`).
+/// [`EncodeExt::encode`] (the closure picks `bit_encode` vs `canonical_bit_encode`).
 ///
 /// # Errors
 /// [`ErrorKind::Io`] on a write failure, else the closure's error.
@@ -2926,11 +2894,6 @@ mod unit {
         BitEncode::bit_encode(&0xABCDu16, &mut a).unwrap();
         BitEncode::canonical_bit_encode(&0xABCDu16, &mut b).unwrap();
         assert_eq!(a.into_bytes(), b.into_bytes());
-    }
-
-    #[test]
-    fn leaf_encode_mode_default_is_verbatim() {
-        assert_eq!(BitEncode::encode_mode(&0u16), EncodeMode::Verbatim);
     }
 
     #[test]

@@ -3,8 +3,6 @@
 //! must-be-one nibble — around a padded value word. Combines the verbatim-vs-canonical reserved
 //! model with forward padding — a third example for each of `reserved` and `pad`/`align`.
 //!
-//! Reserved-bearing types are builder/decode-constructed (the hidden `encode_mode` field).
-//!
 //! Run with: `cargo run -p bitsandbytes --example register`
 
 use bnb::prelude::*; // the `1.bytes()` amount helper

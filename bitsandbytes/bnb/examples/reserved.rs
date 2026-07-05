@@ -2,15 +2,12 @@
 //! field is a normal *stored* field with a known spec value: the decoder captures the actual
 //! wire bits (dual-use — observable and overridable), `to_bytes` re-emits them **verbatim**, and
 //! `to_canonical_bytes` **normalizes** them to spec. The in-memory helpers (`is_canonical`,
-//! `canonical_diff`, `to_canonical`) and the value-carried `encode_mode` round it out.
-//!
-//! Reserved-bearing types are builder/decode-constructed — a hidden `encode_mode` field means
-//! there's no struct literal.
+//! `canonical_diff`, `to_canonical`) round it out.
 //!
 //! Run with: `cargo run -p bitsandbytes --example reserved`
 
 use bnb::prelude::*; // brings `EncodeExt::encode(writer)` into scope
-use bnb::{EncodeMode, bin, u4};
+use bnb::{bin, u4};
 
 #[bin(big)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -38,18 +35,17 @@ fn main() {
     assert!(!received.is_canonical());
     assert_eq!(received.canonical_diff(), vec!["rsv"]);
 
-    // The mode rides on the value: set it to Canonical and the std `encode(writer)` follows.
-    let mut normalized = received.clone();
-    normalized.set_encode_mode(EncodeMode::Canonical);
-    let mut out = Vec::new();
-    normalized.encode(&mut out).unwrap(); // EncodeExt::encode -> canonical, per the mode
-    println!("encode() under Canonical mode -> {out:02x?}");
-    assert_eq!(out, [0x50, 0x12, 0x34]);
-
-    // Or get a fresh, normalized value directly.
+    // Get a fresh, normalized value directly...
     let canon = received.to_canonical();
     assert!(canon.is_canonical());
     assert!(canon.canonical_diff().is_empty());
+
+    // ...and encode it: the std `encode(writer)` is verbatim, so encoding the canonical copy
+    // emits the normalized bytes.
+    let mut out = Vec::new();
+    canon.encode(&mut out).unwrap();
+    println!("to_canonical().encode() -> {out:02x?}");
+    assert_eq!(out, [0x50, 0x12, 0x34]);
 
     // Built from scratch: the reserved field defaults to spec, so it's optional and canonical.
     let built = Frame::builder()

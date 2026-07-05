@@ -32,8 +32,11 @@ mod macro_ {
 
     #[test]
     fn round_trips_and_prefix_is_not_stored() {
-        // `new()` and the builder take no count argument — the prefix is invisible.
-        let m = Msg::new(u4::new(5), vec![0xAA, 0xBB, 0xCC]);
+        // A struct literal and the builder take no count argument — the prefix is invisible.
+        let m = Msg {
+            tag: u4::new(5),
+            items: vec![0xAA, 0xBB, 0xCC],
+        };
         let bytes = m.to_bytes().unwrap();
         let decoded = Msg::decode_exact(&bytes).unwrap();
         assert_eq!(decoded, m);
@@ -48,8 +51,14 @@ mod macro_ {
 
     #[test]
     fn golden_bytes_and_byte_identity_with_the_manual_triad() {
-        let sugar = Msg::new(u4::new(0xF), vec![0xAA, 0xBB]);
-        let manual = Manual::new(u4::new(0xF), vec![0xAA, 0xBB]);
+        let sugar = Msg {
+            tag: u4::new(0xF),
+            items: vec![0xAA, 0xBB],
+        };
+        let manual = Manual {
+            tag: u4::new(0xF),
+            items: vec![0xAA, 0xBB],
+        };
         let sugar_bytes = sugar.to_bytes().unwrap();
         assert_eq!(sugar_bytes, manual.to_bytes().unwrap());
         // tag(4) | count u16(16) | 2 elements — MSB packing: F, then 0x0002 straddling.
@@ -58,7 +67,10 @@ mod macro_ {
 
     #[test]
     fn zero_count_reads_empty() {
-        let m = Msg::new(u4::new(1), vec![]);
+        let m = Msg {
+            tag: u4::new(1),
+            items: vec![],
+        };
         let bytes = m.to_bytes().unwrap();
         let decoded = Msg::decode_exact(&bytes).unwrap();
         assert!(decoded.items.is_empty());
@@ -75,7 +87,10 @@ mod macro_ {
 
     #[test]
     fn uint_prefix_is_bit_native() {
-        let m = Packed::new(u4::new(0xA), vec![0x11, 0x22]);
+        let m = Packed {
+            tag: u4::new(0xA),
+            items: vec![0x11, 0x22],
+        };
         let bytes = m.to_bytes().unwrap();
         // tag(4) + u12 count(12) = exactly 2 bytes before the elements: 0xA002.
         assert_eq!(bytes, [0xA0, 0x02, 0x11, 0x22]);
@@ -92,7 +107,10 @@ mod macro_ {
             items: Vec<u8>,
         }
         // 300 items: `as u8` would silently wrap to 44 — the sugar must refuse instead.
-        let m = Tiny::new(u4::new(0), vec![0u8; 300]);
+        let m = Tiny {
+            tag: u4::new(0),
+            items: vec![0u8; 300],
+        };
         let err = m.to_bytes().unwrap_err();
         assert!(
             matches!(&err.kind, ErrorKind::Convert { message } if message.contains("300")),
@@ -143,7 +161,10 @@ mod macro_ {
 
     #[test]
     fn nested_elements_round_trip() {
-        let t = Table::new(u4::new(2), vec![Record::new(1, 2), Record::new(3, 4)]);
+        let t = Table {
+            tag: u4::new(2),
+            rows: vec![Record { a: 1, b: 2 }, Record { a: 3, b: 4 }],
+        };
         let bytes = t.to_bytes().unwrap();
         assert_eq!(Table::decode_exact(&bytes).unwrap(), t);
     }
@@ -198,7 +219,10 @@ mod macro_ {
 
     #[test]
     fn read_only_and_write_only_work() {
-        let tx = TxOnly::new(u4::new(3), vec![0x42]);
+        let tx = TxOnly {
+            tag: u4::new(3),
+            items: vec![0x42],
+        };
         let bytes = tx.to_bytes().unwrap();
         let rx = RxOnly::decode_exact(&bytes).unwrap();
         assert_eq!(rx.items, vec![0x42]);
