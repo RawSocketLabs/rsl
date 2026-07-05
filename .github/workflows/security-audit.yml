@@ -1,0 +1,20 @@
+name: Security audit
+
+# cargo-deny advisories only run inside CI on push/PR, so a CVE disclosed against an already-
+# pinned dependency goes unnoticed until someone happens to push. This weekly scan catches it.
+# Runs on the free GitHub-hosted runner (scheduled, not on the critical path — no need for
+# Blacksmith minutes).
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  advisories:
+    name: cargo-deny advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories

@@ -74,16 +74,15 @@ clean, on bnb, from the start.)
 
 ## External utilities & tooling
 
-Three utilities that used to live inside the predecessor workspace are (or will be) **their own
-repos**, each independently useful and pulled in as needed — the same extraction bnb went
-through:
+The codec and raw-I/O crates now live alongside `protocols` as members of the **`rsl` monorepo**
+(one Cargo workspace; inter-crate deps are `path` + `version`, so they move in lockstep — no
+git-rev pinning). The compliance tooling is still a separate external tool.
 
-- **`bnb`** (published `bitsandbytes`, `RawSocketLabs/bitsandbytes`) — **the codec.** In use
-  now, consumed from git while it co-evolves with the first protocol ports. `use bnb;`.
-- **`rawsock`** *(external, extract when a protocol needs the wire)* — dual-use layered
-  raw-packet I/O (AF_PACKET / raw sockets, checksum/length derivation, the `Protocol` injection
-  trait). A protocol that only encodes/decodes bytes needs none of it; a protocol that puts
-  frames on the wire depends on it. Not consumed yet.
+- **`bnb`** (published `bitsandbytes`) — **the codec.** A workspace member, consumed as a path
+  dep and evolved in lockstep with the protocol ports. `use bnb;`.
+- **`rawsock`** — dual-use layered raw-packet I/O (AF_PACKET / raw sockets, checksum/length
+  derivation, the `Protocol` injection trait). Also a workspace member; the crates that put
+  frames on the wire depend on it behind their `inject` feature (a pure codec needs none of it).
 - **`refcheck`** *(external tool, wire up when compliance tracking begins)* — the RFC-compliance
   tracker: it *records* compliance (including deliberate deviation) but never generates or
   constrains runtime behavior — an **observer, not an enforcer**. A requirement in its ledger is

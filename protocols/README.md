@@ -20,11 +20,11 @@ values become `Custom(..)`, never a hard error — and never enforce policy. See
   `session/`, `application/`). Current surface and the adoption roadmap are in the crate status
   table in [`AGENTS.md`](AGENTS.md); the first landed crate is `link/ethertype`, with
   `application/dns` the next (flagship) port.
-- **External utilities** (their own repos, pulled in as needed):
-  [`bnb`](https://github.com/RawSocketLabs/bitsandbytes) (the codec — in use now),
-  `rawsock` (dual-use raw-packet I/O — added when a protocol needs the wire), and
-  `refcheck` (an RFC-compliance *observer*, not an enforcer — wired when compliance tracking
-  begins).
+- **Sibling crates** in the [`rsl` monorepo](https://github.com/RawSocketLabs/rsl) (workspace
+  members, path deps): `bnb` (the codec, published as `bitsandbytes`) and `rawsock` (dual-use
+  raw-packet I/O, used by the crates that put frames on the wire). `refcheck` (an RFC-compliance
+  *observer*, not an enforcer) remains a separate external tool, wired when compliance tracking
+  begins.
 
 ## Standards
 
