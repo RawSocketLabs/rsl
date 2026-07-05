@@ -200,13 +200,28 @@ jobs:
           DSDCC_INCLUDE: ${{ runner.temp }}/dsdcc
         run: cargo check --manifest-path rust-dsdcc/Cargo.toml
 
+  blessed-sync:
+    name: blessed-versions in sync
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      # rsl-deps' pins are the source of truth; the committed blessed-versions.toml must match.
+      - run: python3 tools/gen-blessed.py
+      - run: |
+          git diff --exit-code rsl-deps/blessed-versions.toml || {
+            echo "::error::rsl-deps/blessed-versions.toml is stale — run tools/gen-blessed.py and commit."
+            exit 1
+          }
+
   # Single required check: green when every job passed or was legitimately skipped, red if any
   # failed or was cancelled. Point branch protection at this one job, not the individual gated
   # jobs (a skipped required check would otherwise block merges).
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, ffi]
+    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, ffi, blessed-sync]
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Fail if any needed job failed or was cancelled
