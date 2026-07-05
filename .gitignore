@@ -1,1 +1,3 @@
-/target
+target/
+/usdr/Cargo.lock
+/rust-dsdcc/Cargo.lock

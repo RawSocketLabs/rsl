@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Rust dependencies across the workspace (the shared [workspace.dependencies] + members).
+  # Minor/patch bumps are batched into one PR to cut noise; majors get their own PR.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+
+  # Keep the GitHub Actions (checkout, rust-toolchain, rust-cache, paths-filter, …) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]

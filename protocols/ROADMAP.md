@@ -93,7 +93,8 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
       trigger — the first protocol to compose real, checksummed packets.
 - [ ] **`refcheck` extraction + wiring** — trigger: DNS compliance tracking. The `//~` grammar is
       already kept in-source; decide the corpus-hosting and CI-integration shape then.
-- [ ] **bnb dependency: git → crates.io** — flip when bnb cuts a 1.0 (or a stable 0.x) release
-      and the DNS-driven churn settles. Pin to a rev in the interim.
+- [ ] **bnb: path dep → crates.io version req** — bnb is a workspace member (path + version)
+      today; switch the requirement to a plain crates.io version once bnb is published there
+      (see the workspace-wide crates.io naming/publishing decision).
 - [ ] **`testutil`** — introduce the shared test/bench/logging helper crate when the second
       protocol crate needs it (the seed crate's tests are self-contained).
