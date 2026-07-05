@@ -7,7 +7,7 @@
 //! Each bit order has a *natural* byte layout — MSB-first emits high bits first (bytes land
 //! big-endian), LSB-first emits low bits first (bytes land little-endian). The byte-order
 //! knob swaps a byte-multiple value only when it *differs* from that natural layout. So
-//! `#[bin(little, bit_order = lsb)]` — the intuitive "Intel" declaration — **is** the DBC
+//! `#[bin(little, bits = lsb)]` — the intuitive "Intel" declaration — **is** the DBC
 //! layout, byte-identically. The reference formula is embedded here (not a tool's output),
 //! so the assertion is against the *specified* semantics.
 
@@ -22,7 +22,7 @@ mod macro_ {
         [le[0], le[1], le[2], le[3]]
     }
 
-    #[bin(little, bit_order = lsb)]
+    #[bin(little, bits = lsb)]
     #[derive(Debug, PartialEq, Clone)]
     struct Intel {
         a: u3,
@@ -31,7 +31,7 @@ mod macro_ {
         tail: u3,
     }
 
-    #[bin(big, bit_order = lsb)]
+    #[bin(big, bits = lsb)]
     #[derive(Debug, PartialEq, Clone)]
     struct LsbSwapped {
         a: u3,
@@ -110,7 +110,7 @@ mod macro_ {
     /// the degenerate (no sub-byte fields) corner of the same rule.
     #[test]
     fn lsb_little_byte_multiple_is_plain_little_endian() {
-        #[bin(little, bit_order = lsb)]
+        #[bin(little, bits = lsb)]
         #[derive(Debug, PartialEq)]
         struct Words {
             x: u16,
@@ -128,7 +128,7 @@ mod property {
     use bnb::{bin, u3, u4};
     use proptest::prelude::*;
 
-    #[bin(little, bit_order = lsb)]
+    #[bin(little, bits = lsb)]
     #[derive(Debug, PartialEq, Clone)]
     struct Intel {
         a: u3,

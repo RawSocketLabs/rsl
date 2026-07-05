@@ -1,4 +1,4 @@
-//! **bitfield_bytes** — a `#[bitfield]`'s declared byte order (`bytes = be|le`) drives
+//! **bitfield_bytes** — a `#[bitfield]`'s declared byte order (`bytes = big|le`) drives
 //! `to_bytes()`/`from_bytes()`, while `to_be_bytes`/`to_le_bytes` are the explicit override.
 //!
 //! The *same* logical value, declared big- vs little-endian, serializes to *different* wire bytes
@@ -11,7 +11,7 @@
 use bnb::{bitfield, u4};
 
 /// A 16-bit field packed MSB-first, declared **big-endian**.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TagBe {
     hi: u4,
@@ -20,7 +20,7 @@ struct TagBe {
 }
 
 /// The same fields, declared **little-endian**.
-#[bitfield(u16, bits = msb, bytes = le)]
+#[bitfield(u16, bits = msb, bytes = little)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TagLe {
     hi: u4,

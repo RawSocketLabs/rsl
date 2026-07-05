@@ -11,7 +11,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `standalone` | `#[bitfield]` + `#[derive(BitEnum)]` packed/unpacked directly — the dependency-light path | `--example standalone` |
 | `enums` | `#[derive(BitEnum)]` in depth: exhaustive, `#[catch_all]` (the `num_enum` pattern), nesting, checked-int errors | `--example enums` |
 | `flags` | `#[bitflags]` in depth: set algebra, per-flag accessors, iteration, **retain-vs-truncate** of unknown bits, nesting in `#[bin]` | `--example flags` |
-| `bitfield_bytes` | `#[bitfield]` **byte order**: the declared `bytes = be\|le` drives `to_bytes()`/`from_bytes()`; `to_be_bytes`/`to_le_bytes` are the explicit override | `--example bitfield_bytes` |
+| `bitfield_bytes` | `#[bitfield]` **byte order**: the declared `bytes = big\|le` drives `to_bytes()`/`from_bytes()`; `to_be_bytes`/`to_le_bytes` are the explicit override | `--example bitfield_bytes` |
 
 ## The `#[bin]` whole-message codec
 
@@ -21,7 +21,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `bin_message` | The `#[bin]` fold end-to-end: bitfield + enum fields, `count`, `temp`/`calc`, `validate` | `--example bin_message` |
 | `arbitrary_width` | A 48-bit `#[derive(BitEnum)]` (a long sync/magic word) in a **non-byte-aligned 54-bit** `#[bin]` message; `#[catch_all]` keeps unknown syncs | `--example arbitrary_width` |
 | `ais` | A real bit-packed format — an AIS marine Position Report: `u6`/`u2`/`u30`/`u4`/`u10` fields, **52-bit** non-byte-aligned total, `#[catch_all]` nav-status | `--example ais` |
-| `can_signals` | The same, **LSB-first** (`bit_order = lsb`, CAN/DBC "Intel" signals): `u3`/`u4`/`u14`/`bool` packed low-bit-first into a non-byte-aligned 22-bit frame | `--example can_signals` |
+| `can_signals` | The same, **LSB-first** (`bits = lsb`, CAN/DBC "Intel" signals): `u3`/`u4`/`u14`/`bool` packed low-bit-first into a non-byte-aligned 22-bit frame | `--example can_signals` |
 | `endianness` | **Bit order × byte order are independent knobs**: the `#[bin]` 2×2 (`msb`/`lsb` × `big`/`little`) all distinct + round-trip, plus the low-level `BitReader`/`BitWriter` explicit `Layout` | `--example endianness` |
 | `wav` | **Little-endian** byte order (`#[bin(little)]`): a RIFF/WAVE `fmt ` chunk of multi-byte LE integers, with `#[try_str]` on the `[u8; 4]` tag | `--example wav` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |

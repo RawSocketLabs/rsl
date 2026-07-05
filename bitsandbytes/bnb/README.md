@@ -49,7 +49,7 @@ enum RCode {
 }
 
 // MSB-first packing (network order), big-endian on the wire.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct State {
     opcode: u4,
@@ -132,7 +132,7 @@ framed-payload round-trip.
 
 ### Directives & I/O
 
-- **Struct-level:** `big`/`little`, `bit_order = msb|lsb`, `read_only`/`write_only`,
+- **Struct-level:** `big`/`little`, `bits = msb|lsb`, `read_only`/`write_only`,
   `no_builder`, `forward_only`, `magic = <expr>`, `ctx(name: Ty, …)`,
   `validate = <path>`.
 - **Field-level** (`#[br]`/`#[bw]`): `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
@@ -153,7 +153,7 @@ still decodable.
 
 - `bits = msb | lsb` (default `msb`): does the **first** declared field land in the
   high or low bits of the backing integer.
-- `bytes = be | le` (default `be`): byte order of the backing integer on the wire.
+- `bytes = big | little` (default `big`): byte order of the backing integer on the wire.
 
 These are independent knobs — the whole point. MSB-first big-endian matches the
 ASCII-art layouts in RFCs.

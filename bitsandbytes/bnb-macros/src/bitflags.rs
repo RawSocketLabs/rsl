@@ -31,9 +31,14 @@ impl Parse for Args {
             input.parse::<Token![=]>()?;
             let val: Ident = input.parse()?;
             match (key.to_string().as_str(), val.to_string().as_str()) {
-                ("bytes", "be") => big = true,
-                ("bytes", "le") => big = false,
-                _ => return Err(syn::Error::new_spanned(&key, "expected `bytes = be|le`")),
+                ("bytes", "big") => big = true,
+                ("bytes", "little") => big = false,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        "expected `bytes = big|little`",
+                    ));
+                }
             }
         }
         Ok(Args { backing, big })

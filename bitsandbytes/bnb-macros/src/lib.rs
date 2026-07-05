@@ -87,7 +87,7 @@ pub(crate) fn bits_leaf_codec_impl(
 /// Packs the annotated struct's fields into a single backing integer.
 ///
 /// ```ignore
-/// #[bitfield(u16, bits = msb, bytes = be)]
+/// #[bitfield(u16, bits = msb, bytes = big)]
 /// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// struct State {
 ///     opcode: u5,    // first field -> high bits (msb)
@@ -102,7 +102,7 @@ pub(crate) fn bits_leaf_codec_impl(
 ///   `u64`, or `u128`. Must be at least as wide as the fields.
 /// - `bits = msb | lsb` (default `msb`): whether the first declared field lands
 ///   in the high or low bits.
-/// - `bytes = be | le` (default `be`): byte order of the backing integer when
+/// - `bytes = big | little` (default `big`): byte order of the backing integer when
 ///   serialized.
 ///
 /// ## Field widths
@@ -141,7 +141,7 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ## Attribute arguments
 ///
 /// - **backing** (first, required): `u8`/`u16`/`u32`/`u64`/`u128`.
-/// - `bytes = be | le` (default `be`): byte order when serialized.
+/// - `bytes = big | little` (default `big`): byte order when serialized.
 ///
 /// ## Generated API
 ///
@@ -278,7 +278,7 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 ///
 /// ## Struct-level options
 ///
-/// `big` / `little` (byte order), `bit_order = msb|lsb`, `magic = <expr>` (a leading
+/// `big` / `little` or `bytes = big|little` (byte order), `bits = msb|lsb`, `magic = <expr>` (a leading
 /// constant verified on read / emitted on write), `read_only` / `write_only`
 /// (directional), `no_builder`, `forward_only` (bound decoding to a forward `Source`),
 /// `ctx(name: Ty, …)` (context from the parent), `validate = <path>` (a soundness

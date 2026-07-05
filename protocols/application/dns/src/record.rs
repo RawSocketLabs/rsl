@@ -12,7 +12,7 @@ use bnb::{BitEnum, WireLen, bin};
 /// misparsed.
 //~ models rfc1035#3.2.2 part="TYPE values"
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 #[allow(missing_docs)] // the variants are the IANA registry names; self-documenting
 pub enum RType {
@@ -87,7 +87,7 @@ pub enum RType {
 /// OPT record this 16-bit field is reinterpreted as the requester's UDP payload size.
 //~ models rfc1035#3.2.4 part="CLASS values"
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 pub enum RClass {
     /// The Internet class (IN).

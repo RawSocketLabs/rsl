@@ -126,7 +126,7 @@ mod macro_ {
 
     // ——— layout options: they back the newtype's own slice entry points ———
 
-    #[bin(codec = bnb::codecs::leb128, little, bit_order = lsb)]
+    #[bin(codec = bnb::codecs::leb128, little, bits = lsb)]
     #[derive(Debug, PartialEq)]
     pub struct LsbVarint(pub u32);
 

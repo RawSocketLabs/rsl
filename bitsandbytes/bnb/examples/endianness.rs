@@ -22,13 +22,13 @@ struct WordLe {
 }
 
 // --- bit order: how a sub-byte field packs --------------------------------------
-#[bin(big, bit_order = msb)]
+#[bin(big, bits = msb)]
 #[derive(Debug, PartialEq)]
 struct NibblesMsb {
     a: u4,
     b: u4,
 }
-#[bin(big, bit_order = lsb)]
+#[bin(big, bits = lsb)]
 #[derive(Debug, PartialEq)]
 struct NibblesLsb {
     a: u4,
@@ -37,28 +37,28 @@ struct NibblesLsb {
 
 // --- both axes on one shape: a nibble pair (bit-order sensitive) + a u16 word
 //     (byte-order sensitive), one struct per (bit × byte) corner --------------------
-#[bin(big, bit_order = msb)]
+#[bin(big, bits = msb)]
 #[derive(Debug, PartialEq)]
 struct BeMsb {
     hi: u4,
     lo: u4,
     word: u16,
 }
-#[bin(little, bit_order = msb)]
+#[bin(little, bits = msb)]
 #[derive(Debug, PartialEq)]
 struct LeMsb {
     hi: u4,
     lo: u4,
     word: u16,
 }
-#[bin(big, bit_order = lsb)]
+#[bin(big, bits = lsb)]
 #[derive(Debug, PartialEq)]
 struct BeLsb {
     hi: u4,
     lo: u4,
     word: u16,
 }
-#[bin(little, bit_order = lsb)]
+#[bin(little, bits = lsb)]
 #[derive(Debug, PartialEq)]
 struct LeLsb {
     hi: u4,

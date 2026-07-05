@@ -7,7 +7,7 @@ use bnb::{BitEnum, bin};
 /// §3.2.2–3.2.3). Dual-use: any other value is preserved as [`QType::Custom`].
 //~ models rfc1035#4.1.2 part="QTYPE"
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 #[allow(missing_docs)] // registry names, self-documenting
 pub enum QType {
@@ -38,7 +38,7 @@ pub enum QType {
 /// A question's QCLASS (RFC 1035 §3.2.4–3.2.5). Dual-use: any other value is preserved.
 //~ models rfc1035#4.1.2 part="QCLASS"
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 pub enum QClass {
     /// The Internet class (IN).

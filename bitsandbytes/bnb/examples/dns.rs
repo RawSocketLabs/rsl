@@ -48,7 +48,7 @@ enum RCode {
 }
 
 /// The DNS header flags (RFC 1035 §4.1.1), MSB-first, big-endian — `QR Opcode AA TC RD RA Z RCODE`.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Flags {
     qr: bool,       // 0 = query, 1 = response

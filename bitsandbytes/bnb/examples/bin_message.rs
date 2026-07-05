@@ -38,7 +38,7 @@ enum RCode {
 }
 
 /// The 16-bit flags word: MSB-first packing (the RFC diagram order), big-endian.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Flags {
     qr: bool,       // query (0) / response (1)

@@ -24,7 +24,7 @@ use bnb::BitEnum;
 /// ```
 //~ models rfc0894#front part="EtherType field of an Ethernet II frame"
 #[derive(BitEnum, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 pub enum EtherType {
     /// Internet Protocol version 4.
