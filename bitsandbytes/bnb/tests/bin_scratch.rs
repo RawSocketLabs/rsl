@@ -5,7 +5,7 @@
 
 mod macro_ {
     use bnb::bitstream::BitError;
-    use bnb::{BitEncode, BitReader, BitWriter, Sink, Source, bin};
+    use bnb::{BitEncode, BitWriter, Sink, Source, bin};
     use std::collections::HashMap;
 
     // A field codec that adds each written value into a `u32` accumulator in the scratch
