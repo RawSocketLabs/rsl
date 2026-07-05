@@ -3,10 +3,8 @@
 //! reached the same conclusion), but user-side serde derives **coexist** with `#[bin]` on
 //! plain messages — one type can carry both codecs, JSON for config/logs and bnb for the wire.
 //!
-//! The documented boundaries (each verified, not snapshot-pinned — the error text belongs to
+//! The documented boundary (verified, not snapshot-pinned — the error text belongs to
 //! serde/rustc and drifts across versions):
-//! - a `reserved`/`calc` message rejects serde derives (the injected `encode_mode` field's
-//!   `EncodeMode` implements no `Serialize` — same root cause as "no struct literals");
 //! - bnb's own field types (`uN`, `#[bitfield]` structs) ship no serde impls (a post-1.0
 //!   additive `serde` feature, if ever demanded).
 

@@ -6,7 +6,7 @@
 
 mod macro_ {
 
-    use bnb::{EncodeExt, EncodeMode, bin, u4};
+    use bnb::{EncodeExt, bin, u4};
 
     #[bin(big)]
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,8 +22,7 @@ mod macro_ {
 
     #[test]
     fn to_canonical_recomputes_calc_and_normalizes_reserved() {
-        // A deliberately non-canonical value: reserved bits set, a stale checksum. (Construction
-        // is builder-only now — the injected `encode_mode` field can't be named in a literal.)
+        // A deliberately non-canonical value: reserved bits set, a stale checksum.
         let m = Msg::builder()
             .tag(u4::new(0xA))
             .rsv(u4::new(0xF))
@@ -71,9 +70,10 @@ mod macro_ {
     }
 
     #[test]
-    fn encode_follows_the_values_mode() {
-        // The std-writer `encode(w)` follows the value's `encode_mode`; the Vec methods stay
-        // explicit (`to_bytes` verbatim, `to_canonical_bytes` canonical).
+    fn encode_writer_is_verbatim_canonical_via_to_canonical() {
+        // The std-writer `encode(w)` is always **verbatim** (== `to_bytes`). The canonical form
+        // over a writer is `value.to_canonical().encode(&mut w)`; the Vec methods stay explicit
+        // (`to_bytes` verbatim, `to_canonical_bytes` canonical).
         let m = Msg::builder()
             .tag(u4::new(0xA))
             .rsv(u4::new(0xF))
@@ -82,50 +82,34 @@ mod macro_ {
             .build()
             .unwrap();
 
-        // The builder defaults the mode to Verbatim.
-        assert_eq!(m.encode_mode(), EncodeMode::Verbatim);
+        // `encode` writes exactly what's stored — the verbatim form.
         let mut verbatim = Vec::new();
         m.encode(&mut verbatim).unwrap();
         assert_eq!(verbatim, m.to_bytes().unwrap());
 
-        // `with_encode_mode(Canonical)` → `encode` now writes the canonical form.
+        // The canonical form over a writer: encode the canonical copy.
         let mut canonical = Vec::new();
-        m.clone()
-            .with_encode_mode(EncodeMode::Canonical)
-            .encode(&mut canonical)
-            .unwrap();
+        m.clone().to_canonical().encode(&mut canonical).unwrap();
         assert_eq!(canonical, m.to_canonical_bytes().unwrap());
         assert_ne!(verbatim, canonical); // reserved + stale calc → the two forms differ
 
-        // `set_encode_mode` (in place) and the builder's `.encode_mode(…)` reach the same state.
-        let mut m2 = m.clone();
-        m2.set_encode_mode(EncodeMode::Canonical);
-        assert_eq!(m2.encode_mode(), EncodeMode::Canonical);
-        let built = Msg::builder()
-            .tag(u4::new(0xA))
-            .payload(0x10)
-            .encode_mode(EncodeMode::Canonical)
-            .build()
-            .unwrap();
-        assert_eq!(built.encode_mode(), EncodeMode::Canonical);
-
-        // The mode is excluded from equality: two values differing only in mode are equal.
-        assert_eq!(m, m.clone().with_encode_mode(EncodeMode::Canonical));
-
-        // A decoded value defaults to Verbatim (so decode -> encode round-trips).
+        // A decoded value re-encodes byte-for-byte (decode -> encode round-trips).
         let decoded = Msg::decode_exact(&verbatim).unwrap();
-        assert_eq!(decoded.encode_mode(), EncodeMode::Verbatim);
         let mut re = Vec::new();
         decoded.encode(&mut re).unwrap();
         assert_eq!(re, verbatim);
     }
 
     #[test]
-    fn new_constructs_from_all_stored_fields() {
-        // `new` is the literal replacement: every stored field in declaration order (reserved +
-        // calc included), and the encode mode starts at Verbatim.
-        let m = Msg::new(u4::new(0xA), u4::new(0xF), 0x99, 0x10);
-        assert_eq!(m.encode_mode(), EncodeMode::Verbatim);
+    fn struct_literal_constructs_from_all_stored_fields() {
+        // A struct literal names every stored field (reserved + calc included) — the direct
+        // alternative to the builder now that there is no hidden injected field.
+        let m = Msg {
+            tag: u4::new(0xA),
+            rsv: u4::new(0xF),
+            check: 0x99,
+            payload: 0x10,
+        };
         assert_eq!(m.to_bytes().unwrap(), [0xAF, 0x99, 0x10]);
 
         // Same value as the all-fields-set builder.
@@ -137,21 +121,5 @@ mod macro_ {
             .build()
             .unwrap();
         assert_eq!(m, b);
-    }
-
-    #[test]
-    fn mode_is_excluded_from_debug() {
-        let m = Msg::builder()
-            .tag(u4::new(1))
-            .payload(2)
-            .encode_mode(EncodeMode::Canonical)
-            .build()
-            .unwrap();
-        let s = format!("{m:?}");
-        assert!(
-            !s.contains("encode_mode"),
-            "Debug must not show the render-preference field: {s}"
-        );
-        assert!(s.contains("tag") && s.contains("payload"), "{s}");
     }
 }

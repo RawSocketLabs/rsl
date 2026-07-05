@@ -65,10 +65,14 @@ fn main() {
     println!("{full:#?}");
 
     // A minimal reading: both optionals absent — they consume zero bytes on the wire.
-    // Built with the positional constructor — every stored field in order; the struct-literal
-    // replacement for types whose hidden `encode_mode` forbids literals.
     // (sub-zero temp round-trips via the i16 reinterpretation)
-    let minimal = Reading::new(7, Presence::empty(), Celsius(-3.0), None, None);
+    let minimal = Reading {
+        sensor_id: 7,
+        flags: Presence::empty(),
+        temp: Celsius(-3.0),
+        auth_token: None,
+        battery: None,
+    };
     let bytes = minimal.to_bytes().unwrap();
     println!("minimal reading: {:>2} bytes  {bytes:02x?}", bytes.len());
     assert_eq!(Reading::decode_exact(&bytes).unwrap(), minimal);

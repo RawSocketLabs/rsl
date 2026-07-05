@@ -73,9 +73,9 @@
 //!
 //! `to_bytes()` (the common case) returns a `Vec`; `encode(&mut impl Write)` writes straight
 //! to a socket or file, and [`bit_encode(&mut impl Sink)`](crate::BitEncode::bit_encode) targets
-//! an explicit bit sink (for composing into a cursor you already hold). `encode` follows the
-//! value's [`encode_mode`](crate::EncodeMode) — **verbatim** by default, or **canonical** if set
-//! — see [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
+//! an explicit bit sink (for composing into a cursor you already hold). `encode` is always
+//! **verbatim**; for the canonical form encode `value.to_canonical()` — see
+//! [Two encode forms](super::bin_codec#two-encode-forms-verbatim-vs-canonical).
 //!
 //! ```
 //! use bnb::bin;
