@@ -29,7 +29,7 @@ jobs:
   # Create the git tag for a freshly merged release PR (no publish, no GH release).
   release-plz-release:
     name: release-plz release (tags only)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: ${{ github.repository_owner == 'RawSocketLabs' }}
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
   # Open/update the version-bump + CHANGELOG PR.
   release-plz-pr:
     name: release-plz PR
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: ${{ github.repository_owner == 'RawSocketLabs' }}
     concurrency:
       group: release-plz-${{ github.ref }}
