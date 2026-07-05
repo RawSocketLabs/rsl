@@ -98,9 +98,9 @@
 //! let _ = Direction::from_bits(7);                            // infallible: panics
 //! ```
 //!
-//! # `num_enum` parity for byte-aligned enums
+//! # `num_enum` parity for primitive-width enums
 //!
-//! When the width is a whole-byte primitive (`u8`/`u16`/…), the derive also emits the
+//! When the width is a primitive (`u8`/`u16`/`u32`/`u64`/`u128`), the derive also emits the
 //! `num_enum`-style primitive conversions — so a magic-byte enum needs no hand-written
 //! `From` impl or round-trip test:
 //!
@@ -119,6 +119,7 @@
 //! assert_eq!(EtherType::from(0x99u8), EtherType::Other(0x99));
 //! ```
 //!
-//! A sub-byte enum (`u4`) gets only the [`Bits`](crate::Bits)/[`BitEnum`](crate::BitEnum)
-//! impls — it is meaningful only nested in a [`#[bitfield]`](super::bitfields) or a
-//! `#[bin]` message, where its 4 bits are placed in context.
+//! A non-primitive-width enum — a sub-byte `u4`, or even a byte-aligned but non-primitive
+//! `u24` — gets only the [`Bits`](crate::Bits)/[`BitEnum`](crate::BitEnum) impls: it is
+//! meaningful only nested in a [`#[bitfield]`](super::bitfields) or a `#[bin]` message,
+//! where its bits are placed in context.

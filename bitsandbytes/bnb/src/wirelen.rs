@@ -99,8 +99,9 @@ impl<T: Bits> BitEncode for WireLen<T> {
         match self {
             WireLen::Set(v) => w.write(*v),
             WireLen::Auto => Err(BitError::convert(
-                "unresolved `WireLen::Auto`: this field needs an `auto = …` / `auto_len(…)` \
-                 directive to derive its value, or set it explicitly with `WireLen::set(n)`"
+                "unresolved `WireLen::Auto`: this field needs a \
+                 `#[bw(auto_len = count(f)|bytes(f))]` (or `#[bin(auto_len(...))]`) directive \
+                 to derive its value, or set it explicitly with `WireLen::set(n)`"
                     .into(),
                 w.bit_pos(),
             )),

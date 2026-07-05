@@ -18,6 +18,21 @@
 //! Seeking is only needed by messages that use `#[br(restore_position)]`; everything
 //! else runs over the forward-only [`StreamBitReader`](crate::StreamBitReader) too.
 //!
+//! <div class="warning">
+//!
+//! **`decode` reads in the *source's* layout, not the message's.** A [`Source`](crate::Source)
+//! carries its own byte/bit order, and `Type::decode(&mut source)` reads in *that* order.
+//! The plain constructors ([`StreamBitReader::new`](crate::StreamBitReader::new),
+//! [`BufSource::new`](crate::BufSource::new), [`SeekReader::new`](crate::SeekReader::new))
+//! default to **msb/big** — correct for a default-layout message, but a non-default
+//! (`little`/`lsb`) message decoded through them is **silently misread**. Build the source
+//! with the message's layout: `StreamBitReader::with_layout(r, <Msg as bnb::BitEncode>::LAYOUT)`
+//! (likewise `SeekReader::with_layout` and `BufSource::with_capacity_and_layout`). The slice
+//! entry points (`decode_exact`/`decode_all`/`peek`) sidestep this — they bake `Msg`'s layout
+//! in — so they are the foolproof "decode this buffer" path.
+//!
+//! </div>
+//!
 //! # The low-level cursor
 //!
 //! [`BitReader`](crate::BitReader)/[`BitWriter`](crate::BitWriter) are the bit cursors
