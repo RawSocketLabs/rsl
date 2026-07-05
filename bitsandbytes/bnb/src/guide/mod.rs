@@ -18,6 +18,7 @@
 //! 12. [`errors`] — position-aware errors and the streaming `Incomplete` signal.
 //! 13. [`dual_use`] — compliant by default, deliberately violatable.
 //! 14. [`composition`] — how the pieces nest and size each other.
+//! 15. [`migrating`] — coming from `binrw` / `modular-bitfield` / `num_enum`.
 //!
 //! # How the crate fits together
 //!
@@ -49,5 +50,6 @@ pub mod errors;
 pub mod flags;
 pub mod io;
 pub mod mapping;
+pub mod migrating;
 pub mod numbers;
 pub mod quick_start;

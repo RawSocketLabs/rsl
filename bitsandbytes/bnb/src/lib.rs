@@ -144,6 +144,7 @@ tour of the crate and the rationale behind each piece. Reading order:
 12. [`guide::errors`] — position-aware errors and the streaming `Incomplete` signal.
 13. [`guide::dual_use`] — the compliant-by-default-but-violatable philosophy.
 14. [`guide::composition`] — how the pieces nest and size each other.
+15. [`guide::migrating`] — coming from `binrw` / `modular-bitfield` / `num_enum`.
 */
 
 // Every public item must be documented (the `uN` aliases are the one self-

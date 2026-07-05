@@ -1182,6 +1182,7 @@ pub mod bnb::guide::errors
 pub mod bnb::guide::flags
 pub mod bnb::guide::io
 pub mod bnb::guide::mapping
+pub mod bnb::guide::migrating
 pub mod bnb::guide::numbers
 pub mod bnb::guide::quick_start
 pub mod bnb::int
