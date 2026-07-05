@@ -695,7 +695,7 @@ impl<T> core::convert::From<T> for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::StreamBitReader<R>
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::StreamBitReader<R>
-pub trait bnb::bitstream::BitAmount: core::marker::Copy
+pub trait bnb::bitstream::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::BitAmount::bits(self) -> u32
 pub fn bnb::bitstream::BitAmount::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i16
@@ -864,7 +864,7 @@ impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
-pub trait bnb::bitstream::Sink
+pub trait bnb::bitstream::Sink: bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::Sink::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::Sink::bit_pos(&self) -> usize
@@ -891,7 +891,7 @@ pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mu
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::bitstream::Source
+pub trait bnb::bitstream::Source: bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::Source::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::Source::bit_pos(&self) -> usize
@@ -1685,7 +1685,7 @@ pub type std::os::unix::net::datagram::UnixDatagram::Addr = std::os::unix::net::
 pub fn std::os::unix::net::datagram::UnixDatagram::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, Self::Addr)>
 pub fn std::os::unix::net::datagram::UnixDatagram::send_to(&self, &[u8], &Self::Addr) -> std::io::error::Result<usize>
 pub mod bnb::prelude
-pub trait bnb::prelude::BitAmount: core::marker::Copy
+pub trait bnb::prelude::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::prelude::BitAmount::bits(self) -> u32
 pub fn bnb::prelude::BitAmount::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i16
@@ -3308,7 +3308,7 @@ impl<T> core::convert::From<T> for bnb::error::UnknownDiscriminant
 pub fn bnb::error::UnknownDiscriminant::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
 impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
-pub trait bnb::BitAmount: core::marker::Copy
+pub trait bnb::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::BitAmount::bits(self) -> u32
 pub fn bnb::BitAmount::bytes(self) -> u32
 impl bnb::bitstream::BitAmount for i16
@@ -3516,7 +3516,7 @@ impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
-pub trait bnb::Sink
+pub trait bnb::Sink: bnb::bitstream::sealed::Sealed
 pub fn bnb::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::Sink::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::Sink::bit_pos(&self) -> usize
@@ -3543,7 +3543,7 @@ pub fn bnb::bitstream::BitWriter::scratch(&mut self) -> core::option::Option<&mu
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bytes(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::BitError>
-pub trait bnb::Source
+pub trait bnb::Source: bnb::bitstream::sealed::Sealed
 pub fn bnb::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
 pub fn bnb::Source::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::Source::bit_pos(&self) -> usize
