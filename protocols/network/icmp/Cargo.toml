@@ -1,6 +1,6 @@
 [package]
 name = "icmp"
-version = "0.1.0"
+version = "0.1.1"
 description = "ICMP (RFC 792) message-header codec on the bnb bit-aware codec — dual-use, from-scratch."
 edition.workspace = true
 license.workspace = true

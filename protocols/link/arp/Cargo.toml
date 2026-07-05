@@ -1,6 +1,6 @@
 [package]
 name = "arp"
-version = "0.1.0"
+version = "0.1.1"
 description = "ARP (RFC 826) packet codec on the bnb bit-aware codec — dual-use, from-scratch."
 edition.workspace = true
 license.workspace = true
