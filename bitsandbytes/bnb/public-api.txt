@@ -143,8 +143,8 @@ pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
 impl core::cmp::Eq for bnb::bitstream::BitError
 impl core::cmp::PartialEq for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
-impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
-pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
 impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::from(std::io::error::Error) -> Self
 impl core::error::Error for bnb::bitstream::BitError
@@ -302,8 +302,8 @@ impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitWriter
 pub struct bnb::bitstream::BufSource<R>
 impl<R: std::io::Read> bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
-pub fn bnb::bitstream::BufSource<R>::with_cap(R, usize) -> Self
-pub fn bnb::bitstream::BufSource<R>::with_cap_and_layout(R, usize, bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_capacity(R, usize) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_capacity_and_layout(R, usize, bnb::bitstream::Layout) -> Self
 impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::clone(&self) -> bnb::bitstream::BufSource<R>
 impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::BufSource<R>
@@ -793,37 +793,37 @@ pub fn bnb::wirelen::WireLen<T>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut
 pub fn bnb::wirelen::WireLen<T>::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub trait bnb::bitstream::CountPrefix: bnb::Bits + bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::CountPrefix::to_count(self) -> usize
-pub fn bnb::bitstream::CountPrefix::try_from_len(usize) -> bnb::error::Result<Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::CountPrefix::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError> where Self: core::marker::Sized
 impl bnb::bitstream::CountPrefix for u128
 pub fn u128::to_count(self) -> usize
-pub fn u128::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u128::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u16
 pub fn u16::to_count(self) -> usize
-pub fn u16::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u16::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u32
 pub fn u32::to_count(self) -> usize
-pub fn u32::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u32::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u64
 pub fn u64::to_count(self) -> usize
-pub fn u64::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u64::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u8
 pub fn u8::to_count(self) -> usize
-pub fn u8::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u8::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::to_count(self) -> usize
-pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
 pub fn bnb::UInt<u16, N>::to_count(self) -> usize
-pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
 pub fn bnb::UInt<u32, N>::to_count(self) -> usize
-pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
 pub fn bnb::UInt<u64, N>::to_count(self) -> usize
-pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
 pub fn bnb::UInt<u8, N>::to_count(self) -> usize
-pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 pub trait bnb::bitstream::DecodeWith<A>: core::marker::Sized
 pub fn bnb::bitstream::DecodeWith::decode_with<S: bnb::bitstream::Source>(&mut S, A) -> core::result::Result<Self, bnb::bitstream::BitError>
 impl<T: bnb::bitstream::BitDecode> bnb::bitstream::DecodeWith<()> for T
@@ -1013,44 +1013,6 @@ impl<T> core::convert::From<T> for bnb::builder::BuilderError
 pub fn bnb::builder::BuilderError::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::builder::BuilderError
 impl<T> tracing::instrument::WithSubscriber for bnb::builder::BuilderError
-pub mod bnb::codec
-pub struct bnb::codec::BinCodec<T>(_)
-impl<T> bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::new() -> Self
-impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
-pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
-pub type bnb::codec::BinCodec<T>::Item = T
-pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
-impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::codec::BinCodec<T>
-pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
-pub fn bnb::codec::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
-impl<T> core::default::Default for bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::default() -> Self
-impl<T> core::marker::Freeze for bnb::codec::BinCodec<T>
-impl<T> core::marker::Send for bnb::codec::BinCodec<T> where T: core::marker::Send
-impl<T> core::marker::Sync for bnb::codec::BinCodec<T> where T: core::marker::Sync
-impl<T> core::marker::Unpin for bnb::codec::BinCodec<T> where T: core::marker::Unpin
-impl<T> core::marker::UnsafeUnpin for bnb::codec::BinCodec<T>
-impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
-impl<T> core::panic::unwind_safe::UnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
-impl<T, U> core::convert::Into<U> for bnb::codec::BinCodec<T> where U: core::convert::From<T>
-pub fn bnb::codec::BinCodec<T>::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for bnb::codec::BinCodec<T> where U: core::convert::Into<T>
-pub type bnb::codec::BinCodec<T>::Error = core::convert::Infallible
-pub fn bnb::codec::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for bnb::codec::BinCodec<T> where U: core::convert::TryFrom<T>
-pub type bnb::codec::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn bnb::codec::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for bnb::codec::BinCodec<T> where T: 'static + ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::from(T) -> T
-impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
-impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
 pub mod bnb::codecs
 pub mod bnb::codecs::cstring
 pub fn bnb::codecs::cstring::parse<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -1140,88 +1102,88 @@ impl<T> tracing::instrument::Instrument for bnb::wirelen::WireLen<T>
 impl<T> tracing::instrument::WithSubscriber for bnb::wirelen::WireLen<T>
 pub trait bnb::codecs::CountPrefix: bnb::Bits + bnb::bitstream::sealed::Sealed
 pub fn bnb::codecs::CountPrefix::to_count(self) -> usize
-pub fn bnb::codecs::CountPrefix::try_from_len(usize) -> bnb::error::Result<Self> where Self: core::marker::Sized
+pub fn bnb::codecs::CountPrefix::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError> where Self: core::marker::Sized
 impl bnb::bitstream::CountPrefix for u128
 pub fn u128::to_count(self) -> usize
-pub fn u128::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u128::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u16
 pub fn u16::to_count(self) -> usize
-pub fn u16::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u16::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u32
 pub fn u32::to_count(self) -> usize
-pub fn u32::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u32::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u64
 pub fn u64::to_count(self) -> usize
-pub fn u64::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u64::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl bnb::bitstream::CountPrefix for u8
 pub fn u8::to_count(self) -> usize
-pub fn u8::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn u8::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::to_count(self) -> usize
-pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
 pub fn bnb::UInt<u16, N>::to_count(self) -> usize
-pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
 pub fn bnb::UInt<u32, N>::to_count(self) -> usize
-pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
 pub fn bnb::UInt<u64, N>::to_count(self) -> usize
-pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
 pub fn bnb::UInt<u8, N>::to_count(self) -> usize
-pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 pub mod bnb::error
-pub enum bnb::error::Error
-pub bnb::error::Error::ValueTooLarge
-pub bnb::error::Error::ValueTooLarge::bits: u32
-pub bnb::error::Error::ValueTooLarge::value: u128
-impl core::clone::Clone for bnb::error::Error
-pub fn bnb::error::Error::clone(&self) -> bnb::error::Error
-impl core::cmp::Eq for bnb::error::Error
-impl core::cmp::PartialEq for bnb::error::Error
-pub fn bnb::error::Error::eq(&self, &bnb::error::Error) -> bool
-impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
-pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
-impl core::error::Error for bnb::error::Error
-impl core::fmt::Debug for bnb::error::Error
-pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for bnb::error::Error
-pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for bnb::error::Error
-impl core::marker::Freeze for bnb::error::Error
-impl core::marker::Send for bnb::error::Error
-impl core::marker::Sync for bnb::error::Error
-impl core::marker::Unpin for bnb::error::Error
-impl core::marker::UnsafeUnpin for bnb::error::Error
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::Error
-impl core::panic::unwind_safe::UnwindSafe for bnb::error::Error
-impl<T, U> core::convert::Into<U> for bnb::error::Error where U: core::convert::From<T>
-pub fn bnb::error::Error::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for bnb::error::Error where U: core::convert::Into<T>
-pub type bnb::error::Error::Error = core::convert::Infallible
-pub fn bnb::error::Error::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for bnb::error::Error where U: core::convert::TryFrom<T>
-pub type bnb::error::Error::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn bnb::error::Error::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for bnb::error::Error where T: core::clone::Clone
-pub type bnb::error::Error::Owned = T
-pub fn bnb::error::Error::clone_into(&self, &mut T)
-pub fn bnb::error::Error::to_owned(&self) -> T
-impl<T> alloc::string::ToString for bnb::error::Error where T: core::fmt::Display + ?core::marker::Sized
-pub fn bnb::error::Error::to_string(&self) -> alloc::string::String
-impl<T> core::any::Any for bnb::error::Error where T: 'static + ?core::marker::Sized
-pub fn bnb::error::Error::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for bnb::error::Error where T: ?core::marker::Sized
-pub fn bnb::error::Error::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for bnb::error::Error where T: ?core::marker::Sized
-pub fn bnb::error::Error::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for bnb::error::Error where T: core::clone::Clone
-pub unsafe fn bnb::error::Error::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for bnb::error::Error
-pub fn bnb::error::Error::from(T) -> T
-impl<T> tracing::instrument::Instrument for bnb::error::Error
-impl<T> tracing::instrument::WithSubscriber for bnb::error::Error
+pub enum bnb::error::WidthError
+pub bnb::error::WidthError::ValueTooLarge
+pub bnb::error::WidthError::ValueTooLarge::bits: u32
+pub bnb::error::WidthError::ValueTooLarge::value: u128
+impl core::clone::Clone for bnb::error::WidthError
+pub fn bnb::error::WidthError::clone(&self) -> bnb::error::WidthError
+impl core::cmp::Eq for bnb::error::WidthError
+impl core::cmp::PartialEq for bnb::error::WidthError
+pub fn bnb::error::WidthError::eq(&self, &bnb::error::WidthError) -> bool
+impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
+impl core::error::Error for bnb::error::WidthError
+impl core::fmt::Debug for bnb::error::WidthError
+pub fn bnb::error::WidthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::WidthError
+pub fn bnb::error::WidthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::WidthError
+impl core::marker::Freeze for bnb::error::WidthError
+impl core::marker::Send for bnb::error::WidthError
+impl core::marker::Sync for bnb::error::WidthError
+impl core::marker::Unpin for bnb::error::WidthError
+impl core::marker::UnsafeUnpin for bnb::error::WidthError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::WidthError
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::WidthError
+impl<T, U> core::convert::Into<U> for bnb::error::WidthError where U: core::convert::From<T>
+pub fn bnb::error::WidthError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::WidthError where U: core::convert::Into<T>
+pub type bnb::error::WidthError::Error = core::convert::Infallible
+pub fn bnb::error::WidthError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::WidthError where U: core::convert::TryFrom<T>
+pub type bnb::error::WidthError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::WidthError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::WidthError where T: core::clone::Clone
+pub type bnb::error::WidthError::Owned = T
+pub fn bnb::error::WidthError::clone_into(&self, &mut T)
+pub fn bnb::error::WidthError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::WidthError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::WidthError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::WidthError where T: 'static + ?core::marker::Sized
+pub fn bnb::error::WidthError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::WidthError where T: ?core::marker::Sized
+pub fn bnb::error::WidthError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::WidthError where T: ?core::marker::Sized
+pub fn bnb::error::WidthError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::WidthError where T: core::clone::Clone
+pub unsafe fn bnb::error::WidthError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::WidthError
+pub fn bnb::error::WidthError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::WidthError
+impl<T> tracing::instrument::WithSubscriber for bnb::error::WidthError
 pub struct bnb::error::UnknownDiscriminant
 pub bnb::error::UnknownDiscriminant::type_name: &'static str
 pub bnb::error::UnknownDiscriminant::value: u128
@@ -1269,7 +1231,44 @@ impl<T> core::convert::From<T> for bnb::error::UnknownDiscriminant
 pub fn bnb::error::UnknownDiscriminant::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
 impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
-pub type bnb::error::Result<T> = core::result::Result<T, bnb::error::Error>
+pub mod bnb::framing
+pub struct bnb::framing::BinCodec<T>(_)
+impl<T> bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::new() -> Self
+impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::framing::BinCodec<T>
+pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
+pub type bnb::framing::BinCodec<T>::Item = T
+pub fn bnb::framing::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
+pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
+pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::default::Default for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::default() -> Self
+impl<T> core::marker::Freeze for bnb::framing::BinCodec<T>
+impl<T> core::marker::Send for bnb::framing::BinCodec<T> where T: core::marker::Send
+impl<T> core::marker::Sync for bnb::framing::BinCodec<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for bnb::framing::BinCodec<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for bnb::framing::BinCodec<T>
+impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::framing::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for bnb::framing::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::framing::BinCodec<T> where U: core::convert::From<T>
+pub fn bnb::framing::BinCodec<T>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::framing::BinCodec<T> where U: core::convert::Into<T>
+pub type bnb::framing::BinCodec<T>::Error = core::convert::Infallible
+pub fn bnb::framing::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::framing::BinCodec<T> where U: core::convert::TryFrom<T>
+pub type bnb::framing::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::framing::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::framing::BinCodec<T> where T: 'static + ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::framing::BinCodec<T>
+impl<T> tracing::instrument::WithSubscriber for bnb::framing::BinCodec<T>
 pub mod bnb::guide
 pub mod bnb::guide::bin_codec
 pub mod bnb::guide::bitfields
@@ -1294,7 +1293,7 @@ pub const bnb::UInt<u128, N>::MAX: Self
 pub const bnb::UInt<u128, N>::MIN: Self
 pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
 pub const fn bnb::UInt<u128, N>::new(u128) -> Self
-pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_new(u128) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u128, N>::value(self) -> u128
 impl<const N: usize> bnb::UInt<u16, N>
 pub const bnb::UInt<u16, N>::BITS: usize
@@ -1303,7 +1302,7 @@ pub const bnb::UInt<u16, N>::MAX: Self
 pub const bnb::UInt<u16, N>::MIN: Self
 pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
 pub const fn bnb::UInt<u16, N>::new(u16) -> Self
-pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_new(u16) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u16, N>::value(self) -> u16
 impl<const N: usize> bnb::UInt<u32, N>
 pub const bnb::UInt<u32, N>::BITS: usize
@@ -1312,7 +1311,7 @@ pub const bnb::UInt<u32, N>::MAX: Self
 pub const bnb::UInt<u32, N>::MIN: Self
 pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
 pub const fn bnb::UInt<u32, N>::new(u32) -> Self
-pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_new(u32) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u32, N>::value(self) -> u32
 impl<const N: usize> bnb::UInt<u64, N>
 pub const bnb::UInt<u64, N>::BITS: usize
@@ -1321,7 +1320,7 @@ pub const bnb::UInt<u64, N>::MAX: Self
 pub const bnb::UInt<u64, N>::MIN: Self
 pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
 pub const fn bnb::UInt<u64, N>::new(u64) -> Self
-pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_new(u64) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u64, N>::value(self) -> u64
 impl<const N: usize> bnb::UInt<u8, N>
 pub const bnb::UInt<u8, N>::BITS: usize
@@ -1330,7 +1329,7 @@ pub const bnb::UInt<u8, N>::MAX: Self
 pub const bnb::UInt<u8, N>::MIN: Self
 pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
 pub const fn bnb::UInt<u8, N>::new(u8) -> Self
-pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_new(u8) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
@@ -1375,19 +1374,19 @@ pub fn bnb::UInt<u8, N>::from_bits(u128) -> Self
 pub fn bnb::UInt<u8, N>::into_bits(self) -> u128
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::to_count(self) -> usize
-pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
 pub fn bnb::UInt<u16, N>::to_count(self) -> usize
-pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
 pub fn bnb::UInt<u32, N>::to_count(self) -> usize
-pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
 pub fn bnb::UInt<u64, N>::to_count(self) -> usize
-pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
 pub fn bnb::UInt<u8, N>::to_count(self) -> usize
-pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 pub fn u128::from(bnb::UInt<u128, N>) -> u128
 impl<const N: usize> core::convert::From<bnb::UInt<u16, N>> for u16
@@ -1399,20 +1398,20 @@ pub fn u64::from(bnb::UInt<u64, N>) -> u64
 impl<const N: usize> core::convert::From<bnb::UInt<u8, N>> for u8
 pub fn u8::from(bnb::UInt<u8, N>) -> u8
 impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
-pub type bnb::UInt<u128, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
+pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u128, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
-pub type bnb::UInt<u16, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
+pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u16, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
-pub type bnb::UInt<u32, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
+pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u32, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
-pub type bnb::UInt<u64, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
+pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u64, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
-pub type bnb::UInt<u8, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
+pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u8, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::default() -> Self
 impl<const N: usize> core::default::Default for bnb::UInt<u16, N>
@@ -1649,10 +1648,11 @@ pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + b
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::bounded(S, usize) -> Self
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
+pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
 pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
-pub fn bnb::net::MessageStream<S>::with_cap(S, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
@@ -2030,56 +2030,6 @@ impl<T> core::convert::From<T> for bnb::ByteOrder
 pub fn bnb::ByteOrder::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::ByteOrder
 impl<T> tracing::instrument::WithSubscriber for bnb::ByteOrder
-pub enum bnb::Error
-pub bnb::Error::ValueTooLarge
-pub bnb::Error::ValueTooLarge::bits: u32
-pub bnb::Error::ValueTooLarge::value: u128
-impl core::clone::Clone for bnb::error::Error
-pub fn bnb::error::Error::clone(&self) -> bnb::error::Error
-impl core::cmp::Eq for bnb::error::Error
-impl core::cmp::PartialEq for bnb::error::Error
-pub fn bnb::error::Error::eq(&self, &bnb::error::Error) -> bool
-impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
-pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
-impl core::error::Error for bnb::error::Error
-impl core::fmt::Debug for bnb::error::Error
-pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for bnb::error::Error
-pub fn bnb::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for bnb::error::Error
-impl core::marker::Freeze for bnb::error::Error
-impl core::marker::Send for bnb::error::Error
-impl core::marker::Sync for bnb::error::Error
-impl core::marker::Unpin for bnb::error::Error
-impl core::marker::UnsafeUnpin for bnb::error::Error
-impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::Error
-impl core::panic::unwind_safe::UnwindSafe for bnb::error::Error
-impl<T, U> core::convert::Into<U> for bnb::error::Error where U: core::convert::From<T>
-pub fn bnb::error::Error::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for bnb::error::Error where U: core::convert::Into<T>
-pub type bnb::error::Error::Error = core::convert::Infallible
-pub fn bnb::error::Error::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for bnb::error::Error where U: core::convert::TryFrom<T>
-pub type bnb::error::Error::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn bnb::error::Error::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for bnb::error::Error where T: core::clone::Clone
-pub type bnb::error::Error::Owned = T
-pub fn bnb::error::Error::clone_into(&self, &mut T)
-pub fn bnb::error::Error::to_owned(&self) -> T
-impl<T> alloc::string::ToString for bnb::error::Error where T: core::fmt::Display + ?core::marker::Sized
-pub fn bnb::error::Error::to_string(&self) -> alloc::string::String
-impl<T> core::any::Any for bnb::error::Error where T: 'static + ?core::marker::Sized
-pub fn bnb::error::Error::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for bnb::error::Error where T: ?core::marker::Sized
-pub fn bnb::error::Error::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for bnb::error::Error where T: ?core::marker::Sized
-pub fn bnb::error::Error::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for bnb::error::Error where T: core::clone::Clone
-pub unsafe fn bnb::error::Error::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for bnb::error::Error
-pub fn bnb::error::Error::from(T) -> T
-impl<T> tracing::instrument::Instrument for bnb::error::Error
-impl<T> tracing::instrument::WithSubscriber for bnb::error::Error
 #[non_exhaustive] pub enum bnb::ErrorKind
 pub bnb::ErrorKind::BadMagic
 pub bnb::ErrorKind::BadMagic::expected: u128
@@ -2138,6 +2088,56 @@ impl<T> core::convert::From<T> for bnb::bitstream::ErrorKind
 pub fn bnb::bitstream::ErrorKind::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::ErrorKind
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::ErrorKind
+pub enum bnb::WidthError
+pub bnb::WidthError::ValueTooLarge
+pub bnb::WidthError::ValueTooLarge::bits: u32
+pub bnb::WidthError::ValueTooLarge::value: u128
+impl core::clone::Clone for bnb::error::WidthError
+pub fn bnb::error::WidthError::clone(&self) -> bnb::error::WidthError
+impl core::cmp::Eq for bnb::error::WidthError
+impl core::cmp::PartialEq for bnb::error::WidthError
+pub fn bnb::error::WidthError::eq(&self, &bnb::error::WidthError) -> bool
+impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
+impl core::error::Error for bnb::error::WidthError
+impl core::fmt::Debug for bnb::error::WidthError
+pub fn bnb::error::WidthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::error::WidthError
+pub fn bnb::error::WidthError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::error::WidthError
+impl core::marker::Freeze for bnb::error::WidthError
+impl core::marker::Send for bnb::error::WidthError
+impl core::marker::Sync for bnb::error::WidthError
+impl core::marker::Unpin for bnb::error::WidthError
+impl core::marker::UnsafeUnpin for bnb::error::WidthError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::error::WidthError
+impl core::panic::unwind_safe::UnwindSafe for bnb::error::WidthError
+impl<T, U> core::convert::Into<U> for bnb::error::WidthError where U: core::convert::From<T>
+pub fn bnb::error::WidthError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::error::WidthError where U: core::convert::Into<T>
+pub type bnb::error::WidthError::Error = core::convert::Infallible
+pub fn bnb::error::WidthError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::error::WidthError where U: core::convert::TryFrom<T>
+pub type bnb::error::WidthError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::error::WidthError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::error::WidthError where T: core::clone::Clone
+pub type bnb::error::WidthError::Owned = T
+pub fn bnb::error::WidthError::clone_into(&self, &mut T)
+pub fn bnb::error::WidthError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for bnb::error::WidthError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::error::WidthError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::error::WidthError where T: 'static + ?core::marker::Sized
+pub fn bnb::error::WidthError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::error::WidthError where T: ?core::marker::Sized
+pub fn bnb::error::WidthError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::error::WidthError where T: ?core::marker::Sized
+pub fn bnb::error::WidthError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::error::WidthError where T: core::clone::Clone
+pub unsafe fn bnb::error::WidthError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::error::WidthError
+pub fn bnb::error::WidthError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::error::WidthError
+impl<T> tracing::instrument::WithSubscriber for bnb::error::WidthError
 pub enum bnb::WireLen<T>
 pub bnb::WireLen::Auto
 pub bnb::WireLen::Set(T)
@@ -2208,42 +2208,42 @@ pub fn bnb::wirelen::WireLen<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::wirelen::WireLen<T>
 impl<T> tracing::instrument::WithSubscriber for bnb::wirelen::WireLen<T>
 pub struct bnb::BinCodec<T>(_)
-impl<T> bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::new() -> Self
-impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::codec::BinCodec<T>
-pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
-pub type bnb::codec::BinCodec<T>::Item = T
-pub fn bnb::codec::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
-impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::codec::BinCodec<T>
-pub type bnb::codec::BinCodec<T>::Error = std::io::error::Error
-pub fn bnb::codec::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
-impl<T> core::default::Default for bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::default() -> Self
-impl<T> core::marker::Freeze for bnb::codec::BinCodec<T>
-impl<T> core::marker::Send for bnb::codec::BinCodec<T> where T: core::marker::Send
-impl<T> core::marker::Sync for bnb::codec::BinCodec<T> where T: core::marker::Sync
-impl<T> core::marker::Unpin for bnb::codec::BinCodec<T> where T: core::marker::Unpin
-impl<T> core::marker::UnsafeUnpin for bnb::codec::BinCodec<T>
-impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
-impl<T> core::panic::unwind_safe::UnwindSafe for bnb::codec::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
-impl<T, U> core::convert::Into<U> for bnb::codec::BinCodec<T> where U: core::convert::From<T>
-pub fn bnb::codec::BinCodec<T>::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for bnb::codec::BinCodec<T> where U: core::convert::Into<T>
-pub type bnb::codec::BinCodec<T>::Error = core::convert::Infallible
-pub fn bnb::codec::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for bnb::codec::BinCodec<T> where U: core::convert::TryFrom<T>
-pub type bnb::codec::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn bnb::codec::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for bnb::codec::BinCodec<T> where T: 'static + ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for bnb::codec::BinCodec<T> where T: ?core::marker::Sized
-pub fn bnb::codec::BinCodec<T>::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for bnb::codec::BinCodec<T>
-pub fn bnb::codec::BinCodec<T>::from(T) -> T
-impl<T> tracing::instrument::Instrument for bnb::codec::BinCodec<T>
-impl<T> tracing::instrument::WithSubscriber for bnb::codec::BinCodec<T>
+impl<T> bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::new() -> Self
+impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::framing::BinCodec<T>
+pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
+pub type bnb::framing::BinCodec<T>::Item = T
+pub fn bnb::framing::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
+pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
+pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::default::Default for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::default() -> Self
+impl<T> core::marker::Freeze for bnb::framing::BinCodec<T>
+impl<T> core::marker::Send for bnb::framing::BinCodec<T> where T: core::marker::Send
+impl<T> core::marker::Sync for bnb::framing::BinCodec<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for bnb::framing::BinCodec<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for bnb::framing::BinCodec<T>
+impl<T> core::panic::unwind_safe::RefUnwindSafe for bnb::framing::BinCodec<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for bnb::framing::BinCodec<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T, U> core::convert::Into<U> for bnb::framing::BinCodec<T> where U: core::convert::From<T>
+pub fn bnb::framing::BinCodec<T>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::framing::BinCodec<T> where U: core::convert::Into<T>
+pub type bnb::framing::BinCodec<T>::Error = core::convert::Infallible
+pub fn bnb::framing::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::framing::BinCodec<T> where U: core::convert::TryFrom<T>
+pub type bnb::framing::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::framing::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::framing::BinCodec<T> where T: 'static + ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
+pub fn bnb::framing::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::framing::BinCodec<T>
+impl<T> tracing::instrument::WithSubscriber for bnb::framing::BinCodec<T>
 pub struct bnb::BitBuf
 impl bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::bit_len(&self) -> usize
@@ -2322,8 +2322,8 @@ pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
 impl core::cmp::Eq for bnb::bitstream::BitError
 impl core::cmp::PartialEq for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
-impl core::convert::From<bnb::error::Error> for bnb::bitstream::BitError
-pub fn bnb::bitstream::BitError::from(bnb::error::Error) -> Self
+impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
+pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
 impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::from(std::io::error::Error) -> Self
 impl core::error::Error for bnb::bitstream::BitError
@@ -2481,8 +2481,8 @@ impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BitWriter
 pub struct bnb::BufSource<R>
 impl<R: std::io::Read> bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
-pub fn bnb::bitstream::BufSource<R>::with_cap(R, usize) -> Self
-pub fn bnb::bitstream::BufSource<R>::with_cap_and_layout(R, usize, bnb::bitstream::Layout) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_capacity(R, usize) -> Self
+pub fn bnb::bitstream::BufSource<R>::with_capacity_and_layout(R, usize, bnb::bitstream::Layout) -> Self
 impl<R: core::clone::Clone> core::clone::Clone for bnb::bitstream::BufSource<R>
 pub fn bnb::bitstream::BufSource<R>::clone(&self) -> bnb::bitstream::BufSource<R>
 impl<R: core::fmt::Debug> core::fmt::Debug for bnb::bitstream::BufSource<R>
@@ -2766,10 +2766,11 @@ pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + b
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::bounded(S, usize) -> Self
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
+pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
 pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
-pub fn bnb::net::MessageStream<S>::with_cap(S, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
@@ -3052,8 +3053,8 @@ pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
 pub const fn bnb::UInt<u128, N>::from_raw(u128) -> Self
 pub const fn bnb::UInt<u128, N>::new(u128) -> Self
 pub const fn bnb::UInt<u128, N>::new(u128) -> Self
-pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u128, N>::try_new(u128) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_new(u128) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u128, N>::try_new(u128) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u128, N>::value(self) -> u128
 pub const fn bnb::UInt<u128, N>::value(self) -> u128
 impl<const N: usize> bnb::UInt<u16, N>
@@ -3070,8 +3071,8 @@ pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
 pub const fn bnb::UInt<u16, N>::from_raw(u16) -> Self
 pub const fn bnb::UInt<u16, N>::new(u16) -> Self
 pub const fn bnb::UInt<u16, N>::new(u16) -> Self
-pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u16, N>::try_new(u16) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_new(u16) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u16, N>::try_new(u16) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u16, N>::value(self) -> u16
 pub const fn bnb::UInt<u16, N>::value(self) -> u16
 impl<const N: usize> bnb::UInt<u32, N>
@@ -3088,8 +3089,8 @@ pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
 pub const fn bnb::UInt<u32, N>::from_raw(u32) -> Self
 pub const fn bnb::UInt<u32, N>::new(u32) -> Self
 pub const fn bnb::UInt<u32, N>::new(u32) -> Self
-pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u32, N>::try_new(u32) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_new(u32) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u32, N>::try_new(u32) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u32, N>::value(self) -> u32
 pub const fn bnb::UInt<u32, N>::value(self) -> u32
 impl<const N: usize> bnb::UInt<u64, N>
@@ -3106,8 +3107,8 @@ pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
 pub const fn bnb::UInt<u64, N>::from_raw(u64) -> Self
 pub const fn bnb::UInt<u64, N>::new(u64) -> Self
 pub const fn bnb::UInt<u64, N>::new(u64) -> Self
-pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u64, N>::try_new(u64) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_new(u64) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u64, N>::try_new(u64) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u64, N>::value(self) -> u64
 pub const fn bnb::UInt<u64, N>::value(self) -> u64
 impl<const N: usize> bnb::UInt<u8, N>
@@ -3124,8 +3125,8 @@ pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
 pub const fn bnb::UInt<u8, N>::from_raw(u8) -> Self
 pub const fn bnb::UInt<u8, N>::new(u8) -> Self
 pub const fn bnb::UInt<u8, N>::new(u8) -> Self
-pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u8, N>::try_new(u8) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_new(u8) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u8, N>::try_new(u8) -> core::result::Result<Self, bnb::error::WidthError>
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
@@ -3214,32 +3215,32 @@ impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::to_count(self) -> usize
 pub fn bnb::UInt<u128, N>::to_count(self) -> usize
-pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u128, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u128, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u16, N>
 pub fn bnb::UInt<u16, N>::to_count(self) -> usize
 pub fn bnb::UInt<u16, N>::to_count(self) -> usize
-pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u16, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u16, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u32, N>
 pub fn bnb::UInt<u32, N>::to_count(self) -> usize
 pub fn bnb::UInt<u32, N>::to_count(self) -> usize
-pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u32, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u32, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u64, N>
 pub fn bnb::UInt<u64, N>::to_count(self) -> usize
 pub fn bnb::UInt<u64, N>::to_count(self) -> usize
-pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u64, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u64, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
 impl<const N: usize> bnb::bitstream::CountPrefix for bnb::UInt<u8, N>
 pub fn bnb::UInt<u8, N>::to_count(self) -> usize
 pub fn bnb::UInt<u8, N>::to_count(self) -> usize
-pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u8, N>::try_from_len(usize) -> bnb::error::Result<Self>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u8, N>::try_from_len(usize) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 impl<const N: usize> core::convert::From<bnb::UInt<u128, N>> for u128
 pub fn u128::from(bnb::UInt<u128, N>) -> u128
@@ -3262,34 +3263,34 @@ pub fn u8::from(bnb::UInt<u8, N>) -> u8
 pub fn u8::from(bnb::UInt<u8, N>) -> u8
 impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
 impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u128, N>
-pub type bnb::UInt<u128, N>::Error = bnb::error::Error
-pub type bnb::UInt<u128, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u128, N>::try_from(u128) -> bnb::error::Result<Self>
+pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
+pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u128, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u128, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
 impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u16, N>
-pub type bnb::UInt<u16, N>::Error = bnb::error::Error
-pub type bnb::UInt<u16, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u16, N>::try_from(u16) -> bnb::error::Result<Self>
+pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
+pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u16, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u16, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
 impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u32, N>
-pub type bnb::UInt<u32, N>::Error = bnb::error::Error
-pub type bnb::UInt<u32, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u32, N>::try_from(u32) -> bnb::error::Result<Self>
+pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
+pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u32, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u32, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
 impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u64, N>
-pub type bnb::UInt<u64, N>::Error = bnb::error::Error
-pub type bnb::UInt<u64, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u64, N>::try_from(u64) -> bnb::error::Result<Self>
+pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
+pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u64, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u64, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
 impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u8, N>
-pub type bnb::UInt<u8, N>::Error = bnb::error::Error
-pub type bnb::UInt<u8, N>::Error = bnb::error::Error
-pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
-pub fn bnb::UInt<u8, N>::try_from(u8) -> bnb::error::Result<Self>
+pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
+pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
+pub fn bnb::UInt<u8, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
+pub fn bnb::UInt<u8, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
 impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
 impl<const N: usize> core::default::Default for bnb::UInt<u128, N>
 pub fn bnb::UInt<u128, N>::default() -> Self
@@ -3780,7 +3781,6 @@ pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::re
 pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
-pub type bnb::Result<T> = core::result::Result<T, bnb::error::Error>
 pub type bnb::u1 = bnb::UInt<u8, 1>
 pub type bnb::u10 = bnb::UInt<u16, 10>
 pub type bnb::u100 = bnb::UInt<u128, 100>

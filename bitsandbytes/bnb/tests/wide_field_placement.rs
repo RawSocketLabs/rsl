@@ -36,11 +36,11 @@ mod macro_ {
         let w = AutoWord::new()
             .with_hi(u17::new(0x1FFFF))
             .with_lo(u11::new(0));
-        assert_eq!(w.raw(), 0x1FFFF << 11);
+        assert_eq!(w.to_raw(), 0x1FFFF << 11);
         let w = AutoWord::new()
             .with_hi(u17::new(0))
             .with_lo(u11::new(0x7FF));
-        assert_eq!(w.raw(), 0x7FF);
+        assert_eq!(w.to_raw(), 0x7FF);
 
         // Round-trip through the backing bytes (the shift/mask is the macro's job).
         let w = AutoWord::new()
@@ -69,14 +69,18 @@ mod macro_ {
         assert_eq!(<PlacedWord as Bitfield>::WIDTH, 32); // full backing on the wire
 
         let w = PlacedWord::new().with_hi(u17::new(1)).with_lo(u11::new(1));
-        assert_eq!(w.raw(), (1u32 << 15) | 1); // hi at bit 15, lo at bit 0
+        assert_eq!(w.to_raw(), (1u32 << 15) | 1); // hi at bit 15, lo at bit 0
 
         // Even fully saturated, the 4-bit gap stays zero — the fields don't bleed.
         let full = PlacedWord::new()
             .with_hi(u17::new(0x1FFFF))
             .with_lo(u11::new(0x7FF));
-        assert_eq!(full.raw(), 0xFFFF_87FF);
-        assert_eq!(full.raw() & (0xF << 11), 0, "the reserved gap is untouched");
+        assert_eq!(full.to_raw(), 0xFFFF_87FF);
+        assert_eq!(
+            full.to_raw() & (0xF << 11),
+            0,
+            "the reserved gap is untouched"
+        );
         assert_eq!(full.hi(), u17::new(0x1FFFF));
         assert_eq!(full.lo(), u11::new(0x7FF));
     }

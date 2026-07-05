@@ -105,10 +105,10 @@ impl Ipv4Header {
     /// fields — never by re-encoding, which would recurse back through `calc`.
     fn header_checksum(&self) -> u16 {
         let words = [
-            (u16::from(self.ver_ihl.raw()) << 8) | u16::from(self.tos.raw()),
+            (u16::from(self.ver_ihl.to_raw()) << 8) | u16::from(self.tos.to_raw()),
             self.total_length,
             self.identification,
-            self.flags_frag.raw(),
+            self.flags_frag.to_raw(),
             (u16::from(self.ttl) << 8) | u16::from(u8::from(self.protocol)),
             // (checksum word is zero for the computation)
             (u32::from(self.src) >> 16) as u16,
