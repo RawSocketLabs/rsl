@@ -104,9 +104,9 @@ fn named_struct(input: &DeriveInput) -> syn::Result<&FieldsNamed> {
 struct BitStreamAttrs {
     /// `allow_byte_aligned` — opt out of the right-tool guard.
     allow_byte_aligned: bool,
-    /// `bit_order = lsb` (else MSB-first, the default).
+    /// `bits = lsb` (else MSB-first, the default).
     lsb: bool,
-    /// `little` / `byte_order = little` (else big-endian, the default).
+    /// `little` / `bytes = little` (else big-endian, the default).
     little: bool,
     /// `magic = <expr>` — a leading constant verified on read, emitted on write.
     /// Any `Bits` value, so it can even be sub-byte (`u3::new(0b110)`).
@@ -128,7 +128,7 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                 if meta.path.is_ident("allow_byte_aligned") {
                     attrs.allow_byte_aligned = true;
                     Ok(())
-                } else if meta.path.is_ident("bit_order") {
+                } else if meta.path.is_ident("bits") {
                     let val: Ident = meta.value()?.parse()?;
                     match val.to_string().as_str() {
                         "msb" => attrs.lsb = false,
@@ -136,7 +136,7 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                         _ => return Err(meta.error("expected `msb` or `lsb`")),
                     }
                     Ok(())
-                } else if meta.path.is_ident("byte_order") {
+                } else if meta.path.is_ident("bytes") {
                     let val: Ident = meta.value()?.parse()?;
                     match val.to_string().as_str() {
                         "big" => attrs.little = false,
@@ -155,7 +155,7 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bit_order = msb|lsb`, `byte_order = big|little`, `magic = <expr>`, or `ctx(name: Ty, …)`",
+                        "unknown `#[bit_stream(...)]` option; expected `allow_byte_aligned`, `bits = msb|lsb`, `bytes = big|little`, `magic = <expr>`, or `ctx(name: Ty, …)`",
                     ))
                 }
             })?;
@@ -1942,14 +1942,22 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.no_builder = true;
         } else if meta.path.is_ident("forward_only") {
             args.forward_only = true;
-        } else if meta.path.is_ident("bit_order") {
+        } else if meta.path.is_ident("bits") {
             let v: Ident = meta.value()?.parse()?;
             match v.to_string().as_str() {
                 "msb" => args.lsb = false,
                 "lsb" => args.lsb = true,
                 _ => return Err(meta.error("expected `msb` or `lsb`")),
             }
+        } else if meta.path.is_ident("bytes") {
+            let v: Ident = meta.value()?.parse()?;
+            match v.to_string().as_str() {
+                "big" => args.little = false,
+                "little" => args.little = true,
+                _ => return Err(meta.error("expected `big` or `little`")),
+            }
         } else if meta.path.is_ident("big") {
+            // Bare `big`/`little` is the terse `#[bin]` sugar for `bytes = big|little`.
             args.little = false;
         } else if meta.path.is_ident("little") {
             args.little = true;
@@ -2026,7 +2034,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, forward_only, big, little, bit_order = msb|lsb, magic = <expr>, \
+                 no_builder, forward_only, big, little, bytes = big|little, bits = msb|lsb, magic = <expr>, \
                  ctx(name: Ty, …), validate = <path>, tag = <ctx-param>, \
                  map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType, \
                  codec = <module>, or codec(parse = <f>, write = <f>)",

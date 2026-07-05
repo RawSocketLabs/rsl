@@ -25,7 +25,7 @@
 //! For a field `f: T`, you get `f() -> T`, `with_f(T) -> Self` (consuming, chainable),
 //! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `raw()`/`from_raw()`, and
 //! allocation-free byte conversions: `to_bytes`/`from_bytes` serialize in the **declared**
-//! byte order (`bytes = be|le`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
+//! byte order (`bytes = big|le`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
 //! force a specific endianness (the override). The type also implements [`Bits`](crate::Bits)
 //! and [`Bitfield`](crate::Bitfield), so it nests in another bitfield or a `#[bin]` message.
 //!
@@ -43,7 +43,7 @@
 //! - `bits = msb | lsb` (default `msb`): does the **first** declared field land in the
 //!   high or low bits of the backing integer. `msb` matches the ASCII-art layouts in
 //!   RFCs (first field drawn leftmost = most significant).
-//! - `bytes = be | le` (default `be`): the byte order `to_bytes`/`from_bytes` use when
+//! - `bytes = big | le` (default `be`): the byte order `to_bytes`/`from_bytes` use when
 //!   serializing the backing integer.
 //!
 //! They are orthogonal. The same fields, packed `msb`, declared with two different byte
@@ -52,11 +52,11 @@
 //! ```
 //! use bnb::{bitfield, u4};
 //!
-//! #[bitfield(u16, bits = msb, bytes = be)]
+//! #[bitfield(u16, bits = msb, bytes = big)]
 //! #[derive(Clone, Copy)]
 //! struct Be { hi: u4, mid: u8, lo: u4 }
 //!
-//! #[bitfield(u16, bits = msb, bytes = le)]
+//! #[bitfield(u16, bits = msb, bytes = little)]
 //! #[derive(Clone, Copy)]
 //! struct Le { hi: u4, mid: u8, lo: u4 }
 //!

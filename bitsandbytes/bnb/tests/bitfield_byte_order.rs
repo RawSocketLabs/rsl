@@ -1,4 +1,4 @@
-//! `#[bitfield]` standalone serialization honors the **declared** `bytes = be|le`:
+//! `#[bitfield]` standalone serialization honors the **declared** `bytes = big|le`:
 //! `to_bytes`/`from_bytes` use it, while the endianness-explicit
 //! `to_be_bytes`/`to_le_bytes` ignore it (an override). Same logical value, declared two
 //! ways, gives two wire encodings — the proof that the byte-order knob is observable.
@@ -7,7 +7,7 @@ mod macro_ {
 
     use bnb::{bitfield, u4};
 
-    #[bitfield(u16, bits = msb, bytes = be)]
+    #[bitfield(u16, bits = msb, bytes = big)]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     struct Be {
         hi: u4,
@@ -15,7 +15,7 @@ mod macro_ {
         lo: u4,
     }
 
-    #[bitfield(u16, bits = msb, bytes = le)]
+    #[bitfield(u16, bits = msb, bytes = little)]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     struct Le {
         hi: u4,
@@ -68,14 +68,14 @@ mod macro_ {
     // integer serializes) — compose independently. `bits = lsb` puts the first field in the LOW
     // bits, so the same logical fields pack to a different `raw`; `to_bytes` then serializes that
     // `raw` in the declared byte order.
-    #[bitfield(u16, bits = lsb, bytes = be)]
+    #[bitfield(u16, bits = lsb, bytes = big)]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     struct LsbBe {
         hi: u4,
         mid: u8,
         lo: u4,
     }
-    #[bitfield(u16, bits = lsb, bytes = le)]
+    #[bitfield(u16, bits = lsb, bytes = little)]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     struct LsbLe {
         hi: u4,

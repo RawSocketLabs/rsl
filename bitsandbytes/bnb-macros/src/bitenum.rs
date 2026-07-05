@@ -15,7 +15,7 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Data, DeriveInput, Fields, Ident, Token, Type, parse_macro_input};
 
-/// Parsed `#[bit_enum(WidthType, bytes = …, closed)]`. `bytes = be|le` is accepted
+/// Parsed `#[bit_enum(WidthType, bytes = …, closed)]`. `bytes = big|little` is accepted
 /// (for source compatibility) but byte order is meaningful only on the wire — a
 /// `BitEnum` is a discriminant value, so it is ignored here. `closed` asserts the
 /// enum is a closed set (see the exhaustiveness check in [`expand_inner`]).
@@ -43,11 +43,11 @@ impl Parse for Args {
                     input.parse::<Token![=]>()?;
                     let val: Ident = input.parse()?;
                     match val.to_string().as_str() {
-                        "be" | "le" => {}
+                        "big" | "little" => {}
                         other => {
                             return Err(syn::Error::new_spanned(
                                 &val,
-                                format!("expected `be` or `le`, got `{other}`"),
+                                format!("expected `big` or `little`, got `{other}`"),
                             ));
                         }
                     }
@@ -55,7 +55,7 @@ impl Parse for Args {
                 _ => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        "expected `bytes = be|le` or `closed`",
+                        "expected `bytes = big|little` or `closed`",
                     ));
                 }
             }

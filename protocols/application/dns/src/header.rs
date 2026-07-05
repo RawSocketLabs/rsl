@@ -50,7 +50,7 @@ pub enum RCode {
 /// The second 16-bit word of the header — QR/OPCODE/AA/TC/RD/RA/Z/RCODE, exactly the
 /// RFC 1035 §4.1.1 bit diagram (MSB-first). `bnb` bitfields carry a byte-width backing,
 /// so the sub-byte OPCODE/flags groupings are flattened into these leaf fields.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
     /// QR: `false` = query, `true` = response.

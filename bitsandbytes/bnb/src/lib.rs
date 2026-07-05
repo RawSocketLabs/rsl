@@ -43,7 +43,7 @@ enum RCode {
 }
 
 // MSB-first packing (network/RFC order), big-endian on the wire.
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct State {
     opcode: u5,   // first field -> high bits
@@ -65,7 +65,7 @@ These are independent knobs, which is the whole point:
 
 - `bits = msb | lsb` — does the **first** declared field land in the high or low
   bits of the backing integer. Default: `msb` (matches RFC ASCII-art layouts).
-- `bytes = be | le` — endianness of the backing integer when serialized.
+- `bytes = big | le` — endianness of the backing integer when serialized.
   Default: `be`.
 
 # The `#[bin]` codec

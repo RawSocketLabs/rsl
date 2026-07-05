@@ -18,7 +18,7 @@ mod macro_ {
         lo: u4,
     }
 
-    #[bitfield(u32, bits = msb, bytes = be)]
+    #[bitfield(u32, bits = msb, bytes = big)]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     struct B32 {
         a: u8,
@@ -221,14 +221,14 @@ mod macro_ {
     // Byte order matrix.
     // ---------------------------------------------------------------------------
 
-    #[bitfield(u32, bytes = be)]
+    #[bitfield(u32, bytes = big)]
     #[derive(Clone, Copy)]
     struct BeWord {
         #[bits(0..=31)]
         v: u32,
     }
 
-    #[bitfield(u32, bytes = le)]
+    #[bitfield(u32, bytes = little)]
     #[derive(Clone, Copy)]
     struct LeWord {
         #[bits(0..=31)]
@@ -319,7 +319,7 @@ mod macro_ {
     // A closed set (`closed`): named values with gaps, no catch-all, so primitive ->
     // enum is a checked `TryFrom`.
     #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
-    #[bit_enum(u16, bytes = be, closed)]
+    #[bit_enum(u16, bytes = big, closed)]
     #[repr(u16)]
     enum Sparse16 {
         A = 0,

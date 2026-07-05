@@ -113,7 +113,7 @@ impossible layout is a compile error rather than a silent miscompile.
   smallest sufficient primitive. Checked (`try_new`), panicking (`new`), and masking
   (`from_raw`) constructors.
 - **`#[bitfield]`** — packs typed `Bits` fields into one backing integer, with
-  `bits = msb|lsb` and `bytes = be|le` as independent knobs, and inferred /
+  `bits = msb|lsb` and `bytes = big|le` as independent knobs, and inferred /
   `#[bits(N)]` / `#[bits(A..=B)]` (manual range) width forms. Generates getters,
   immutable `with_*` setters, in-place `set_*`, and allocation-free `*_bytes`
   conversions.
@@ -141,7 +141,7 @@ offsets, so the same attribute handles byte-aligned headers and sub-byte frames,
 `Bits` type *or* nested `#[bin]` message drops in as a field — both decoded, encoded, and
 sized through one uniform codec path, with no marker (§8).
 
-**Struct-level options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
+**Struct-level options:** `big`/`little`, `bits = msb|lsb`, `magic = <expr>`
 (a leading constant verified on read, emitted on write — any `Bits` value, so it can be
 sub-byte), `read_only`/`write_only`, `no_builder`, `forward_only`, `ctx(name: Ty, …)`,
 and `validate = <path>`.
@@ -244,7 +244,7 @@ the deliberate swaps. Pinned against the embedded DBC reference formula in
 `tests/bin_lsb_dbc.rs` (golden + property-tested), and golden at every layer in
 `bin_order_matrix.rs` (message) and `bitstream.rs::cursor_layout_matrix` (cursor). The
 `#[bitfield]` layer agrees by construction: `bits = lsb` packs `v << offset` into the
-backing integer and `bytes = le` emits `to_le_bytes` — the same DBC layout.
+backing integer and `bytes = little` emits `to_le_bytes` — the same DBC layout.
 
 Seeking is only needed by a message that uses `restore_position`; everything else runs
 over the forward-only `StreamBitReader` too. **Seeking is a source capability, enforced

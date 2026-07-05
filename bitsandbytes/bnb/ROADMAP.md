@@ -15,7 +15,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [x] **`u1`..`u127`** (`UInt<T, N>`) — range-checked arbitrary-width unsigned
       integers; `new`/`try_new`/`from_raw`, `From`/`TryFrom`, `MIN`/`MAX`.
 - [x] **`#[bitfield]`** — integer-backed packing with independent `bits = msb|lsb` and
-      `bytes = be|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
+      `bytes = big|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
       `with_*`/`set_*`, order-respecting `to_bytes`/`from_bytes` (the declared `bytes`) plus the
       endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`.
 - [x] **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width; `#[catch_all]`
@@ -42,7 +42,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       via `value.to_canonical().encode(w)`). A `reserved`/`calc` message is an ordinary struct
       (struct literals, serde-compatible). **Struct-only** — a tagged-union enum encodes verbatim
       (no canonical/`validate`).
-- [x] **Struct options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
+- [x] **Struct options:** `big`/`little`, `bits = msb|lsb`, `magic = <expr>`
       (sub-byte allowed), `read_only`/`write_only`, `no_builder`, `forward_only`,
       `ctx(name: Ty, …)`, `validate = <path>`.
 - [x] **Field directives:** `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,

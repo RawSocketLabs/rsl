@@ -36,7 +36,7 @@ pub mod inject;
 
 /// The ARP operation code.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 pub enum Operation {
     /// Request (1) — "who has `tpa`? tell `spa`".

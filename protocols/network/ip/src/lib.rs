@@ -34,7 +34,7 @@ pub use inject::Ip;
 
 /// Version + IHL — byte 0 of the header, a flat `#[bitfield(u8)]`.
 //~ models rfc791#3.1 part="Version + IHL"
-#[bitfield(u8, bits = msb, bytes = be)]
+#[bitfield(u8, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VersionIhl {
     /// IP version (4 for IPv4).
@@ -45,7 +45,7 @@ pub struct VersionIhl {
 
 /// Flags + fragment offset — bytes 6–7, a flat `#[bitfield(u16)]`.
 //~ models rfc791#3.1 part="Flags + Fragment Offset"
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlagsFragment {
     /// Reserved (must be zero).

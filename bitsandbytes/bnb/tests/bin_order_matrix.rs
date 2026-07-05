@@ -15,7 +15,7 @@ mod macro_ {
     use bnb::{bin, u4};
 
     // Four identical shapes, one per (endian, bit-order) corner. Defaults are big + msb.
-    #[bin(big, bit_order = msb)]
+    #[bin(big, bits = msb)]
     #[derive(Debug, PartialEq, Clone)]
     struct BeMsb {
         hi: u4,
@@ -23,7 +23,7 @@ mod macro_ {
         word: u16,
     }
 
-    #[bin(big, bit_order = lsb)]
+    #[bin(big, bits = lsb)]
     #[derive(Debug, PartialEq, Clone)]
     struct BeLsb {
         hi: u4,
@@ -31,7 +31,7 @@ mod macro_ {
         word: u16,
     }
 
-    #[bin(little, bit_order = msb)]
+    #[bin(little, bits = msb)]
     #[derive(Debug, PartialEq, Clone)]
     struct LeMsb {
         hi: u4,
@@ -39,7 +39,7 @@ mod macro_ {
         word: u16,
     }
 
-    #[bin(little, bit_order = lsb)]
+    #[bin(little, bits = lsb)]
     #[derive(Debug, PartialEq, Clone)]
     struct LeLsb {
         hi: u4,

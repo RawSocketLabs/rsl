@@ -41,8 +41,8 @@ impl Parse for Args {
             match (key.to_string().as_str(), val.to_string().as_str()) {
                 ("bits", "msb") => msb = true,
                 ("bits", "lsb") => msb = false,
-                ("bytes", "be") => big = true,
-                ("bytes", "le") => big = false,
+                ("bytes", "big") => big = true,
+                ("bytes", "little") => big = false,
                 ("bits", other) => {
                     return Err(syn::Error::new_spanned(
                         &val,
@@ -52,7 +52,7 @@ impl Parse for Args {
                 ("bytes", other) => {
                     return Err(syn::Error::new_spanned(
                         &val,
-                        format!("expected `be` or `le`, got `{other}`"),
+                        format!("expected `big` or `little`, got `{other}`"),
                     ));
                 }
                 (other, _) => {
@@ -265,7 +265,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
     };
     let bit_order_variant = if args.msb { quote!(Msb) } else { quote!(Lsb) };
 
-    // The declared byte order (`bytes = be|le`) drives `to_bytes`/`from_bytes`; the
+    // The declared byte order (`bytes = big|little`) drives `to_bytes`/`from_bytes`; the
     // endianness-explicit `to_be_bytes`/`to_le_bytes` stay as overrides.
     let (to_decl_bytes, from_decl_bytes, decl_order_lit) = if args.big {
         (quote!(to_be_bytes), quote!(from_be_bytes), "be")
