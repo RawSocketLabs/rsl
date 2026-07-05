@@ -993,7 +993,7 @@ version = "0.1.0"
 dependencies = [
  "bitsandbytes",
  "rsl-deps",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2739,7 +2739,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "socket2 0.5.10",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tower",
  "tower-http",

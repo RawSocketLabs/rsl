@@ -53,7 +53,7 @@ rsl-deps = { path = "rsl-deps", version = "0.1.0", default-features = false }
 
 # --- blessed externals used directly by owned crates ---
 # thiserror can't be routed through rsl-deps (its derive hardcodes the `thiserror` crate name).
-thiserror = "1.0"
+thiserror = "2.0"
 # bnb's optional runtime deps.
 tracing = "0.1"
 bytes = "1"
