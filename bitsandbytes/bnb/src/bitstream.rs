@@ -223,14 +223,14 @@ impl fmt::Display for BitError {
 
 impl core::error::Error for BitError {}
 
-impl From<crate::error::Error> for BitError {
+impl From<crate::error::WidthError> for BitError {
     /// Bridges a construction error (e.g. `UInt::try_new`) into a codec error, so it
     /// `?`-propagates inside a custom `parse_with`/`write_with` fn or a converter
     /// that returns [`BitError`]. The offset is unknown (`0`) — the codec's own
     /// reads/writes carry the real bit offset; this is only for borrowed construction
     /// failures with no cursor context.
     #[inline]
-    fn from(e: crate::error::Error) -> Self {
+    fn from(e: crate::error::WidthError) -> Self {
         BitError::convert(e.to_string(), 0)
     }
 }
@@ -1352,18 +1352,18 @@ pub(crate) mod sealed {
 /// The prefix is computed from `len()` on encode and turned back into an element count on
 /// decode. `try_from_len` is **checked and never truncates**: the length is widened (never
 /// narrowed) before the range compare, so 300 elements against a `u8` prefix is
-/// [`Error::ValueTooLarge`] — not a silently wrapped `44`.
+/// [`WidthError::ValueTooLarge`] — not a silently wrapped `44`.
 ///
-/// [`Error::ValueTooLarge`]: crate::Error::ValueTooLarge
+/// [`WidthError::ValueTooLarge`]: crate::WidthError::ValueTooLarge
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a `count_prefix` type",
     note = "supported prefix types: u8, u16, u32, u64, u128 and the arbitrary-width `uN` aliases (e.g. `u12`)",
     note = "this trait is sealed — the supported prefix types are built in"
 )]
 pub trait CountPrefix: Bits + sealed::Sealed {
-    /// The prefix for a collection of `len` elements, or [`Error::ValueTooLarge`] when
+    /// The prefix for a collection of `len` elements, or [`WidthError::ValueTooLarge`] when
     /// `len` exceeds the prefix's range.
-    fn try_from_len(len: usize) -> crate::error::Result<Self>
+    fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError>
     where
         Self: Sized;
 
@@ -1381,8 +1381,8 @@ macro_rules! count_prefix_prim {
 
         impl CountPrefix for $t {
             #[inline]
-            fn try_from_len(len: usize) -> crate::error::Result<Self> {
-                <$t>::try_from(len).map_err(|_| crate::error::Error::ValueTooLarge {
+            fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
+                <$t>::try_from(len).map_err(|_| crate::error::WidthError::ValueTooLarge {
                     value: len as u128,
                     bits: <$t>::BITS,
                 })
@@ -1403,12 +1403,12 @@ macro_rules! count_prefix_uint {
 
         impl<const N: usize> CountPrefix for crate::int::UInt<$t, N> {
             #[inline]
-            fn try_from_len(len: usize) -> crate::error::Result<Self> {
+            fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
                 // Widen-then-compare: narrowing first (`len as $t`) would truncate
                 // *before* the range check and let an oversized length slip through.
                 let wide = len as u128;
                 if wide > Self::MASK as u128 {
-                    return Err(crate::error::Error::ValueTooLarge {
+                    return Err(crate::error::WidthError::ValueTooLarge {
                         value: wide,
                         bits: N as u32,
                     });
@@ -1906,18 +1906,18 @@ impl<R: std::io::Read> BufSource<R> {
     /// Wraps `inner` with the default 64 KiB retention cap, MSB-first big-endian.
     #[must_use]
     pub fn new(inner: R) -> Self {
-        Self::with_cap(inner, 64 * 1024)
+        Self::with_capacity(inner, 64 * 1024)
     }
 
     /// Wraps `inner` with a retention `cap` (bytes), MSB-first big-endian.
     #[must_use]
-    pub fn with_cap(inner: R, cap: usize) -> Self {
-        Self::with_cap_and_layout(inner, cap, Layout::default())
+    pub fn with_capacity(inner: R, cap: usize) -> Self {
+        Self::with_capacity_and_layout(inner, cap, Layout::default())
     }
 
     /// Wraps `inner` with a retention `cap` (bytes) and [`Layout`].
     #[must_use]
-    pub fn with_cap_and_layout(inner: R, cap: usize, layout: Layout) -> Self {
+    pub fn with_capacity_and_layout(inner: R, cap: usize, layout: Layout) -> Self {
         Self {
             inner,
             buf: Vec::new(),
@@ -2697,7 +2697,7 @@ mod unit {
 
     #[test]
     fn construction_error_bridges_to_a_convert_error() {
-        let e: BitError = crate::error::Error::ValueTooLarge { value: 99, bits: 4 }.into();
+        let e: BitError = crate::error::WidthError::ValueTooLarge { value: 99, bits: 4 }.into();
         assert!(matches!(e.kind, ErrorKind::Convert { .. }));
         assert_eq!(e.at, 0);
         assert!(e.to_string().contains("does not fit in 4 bits"));
@@ -2934,7 +2934,7 @@ mod unit {
         // Out of range: checked, not wrapped.
         assert_eq!(
             u8::try_from_len(256).unwrap_err(),
-            crate::error::Error::ValueTooLarge {
+            crate::error::WidthError::ValueTooLarge {
                 value: 256,
                 bits: 8
             }
@@ -2950,7 +2950,7 @@ mod unit {
         assert_eq!(u12::try_from_len(4095).unwrap(), u12::new(4095));
         assert_eq!(
             u12::try_from_len(4096).unwrap_err(),
-            crate::error::Error::ValueTooLarge {
+            crate::error::WidthError::ValueTooLarge {
                 value: 4096,
                 bits: 12
             }
@@ -2964,7 +2964,7 @@ mod unit {
         // would then accept it. The widen-then-compare must reject instead.
         assert_eq!(
             u4::try_from_len(300).unwrap_err(),
-            crate::error::Error::ValueTooLarge {
+            crate::error::WidthError::ValueTooLarge {
                 value: 300,
                 bits: 4
             }
@@ -3419,7 +3419,7 @@ mod component {
         #[test]
         fn retention_cap_bounds_the_buffer() {
             // A 1-byte cap; reading a 16-bit value needs 2 bytes -> BufferFull.
-            let mut src = BufSource::with_cap(
+            let mut src = BufSource::with_capacity(
                 Chunked {
                     data: vec![0xFF; 8],
                     pos: 0,

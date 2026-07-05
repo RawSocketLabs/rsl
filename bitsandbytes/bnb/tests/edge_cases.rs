@@ -1,16 +1,16 @@
-//! Edge cases and gaps not covered elsewhere: the `Error` → `BitError` bridge,
+//! Edge cases and gaps not covered elsewhere: the `WidthError` → `BitError` bridge,
 //! `restore_position` over a non-slice seekable source, full-width (128-bit) fields
 //! through the codec, and deep nesting.
 
 mod macro_ {
 
-    use bnb::{BitError, BufSource, Error, ErrorKind, Source, bin, u4, u127};
+    use bnb::{BitError, BufSource, ErrorKind, Source, WidthError, bin, u4, u127};
 
-    // --- the `From<Error> for BitError` bridge ------------------------------------
+    // --- the `From<WidthError> for BitError` bridge -------------------------------
 
     #[test]
     fn construction_error_bridges_into_bit_error() {
-        let e = Error::ValueTooLarge { value: 20, bits: 4 };
+        let e = WidthError::ValueTooLarge { value: 20, bits: 4 };
         let be: BitError = e.into();
         assert!(matches!(be.kind, ErrorKind::Convert { .. }));
         assert_eq!(be.at, 0); // no cursor context for a borrowed construction failure
@@ -20,7 +20,7 @@ mod macro_ {
     /// error `?`-propagate as a `BitError` (the bridge in action).
     fn read_nibble<S: Source>(r: &mut S) -> Result<u4, BitError> {
         let raw: u8 = r.read()?;
-        Ok(u4::try_new(raw)?) // bnb::Error -> BitError via `?`
+        Ok(u4::try_new(raw)?) // bnb::WidthError -> BitError via `?`
     }
 
     #[bin(big, read_only)]
