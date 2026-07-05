@@ -9,8 +9,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Detect what changed so we only run the jobs a change can actually affect. The heavy
+  # bnb-specific jobs (fuzz, public-api, no_std) run only when bitsandbytes changes; the
+  # workspace jobs run on any Rust/config change (skipped for docs-only pushes). A change to
+  # this workflow itself trips every filter, so CI changes are always fully validated.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      bnb: ${{ steps.filter.outputs.bnb }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
+              - 'deny.toml'
+              - '.github/workflows/ci.yml'
+            bnb:
+              - 'bitsandbytes/**'
+              - '.github/workflows/ci.yml'
+
   fmt:
     name: rustfmt
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +51,8 @@ jobs:
 
   clippy:
     name: clippy (workspace lints enforce clippy::all = deny)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +64,8 @@ jobs:
 
   test:
     name: build + test
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,8 +79,31 @@ jobs:
       - run: cargo build -p rsl --features full
       - run: cargo build -p rsl-deps --features full
 
+  deny:
+    name: cargo-deny (advisories / licenses / bans / sources)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  msrv:
+    name: MSRV (rust-version = 1.85)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+
   no_std:
     name: no_std (bare-metal target)
+    needs: changes
+    if: needs.changes.outputs.bnb == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,25 +114,10 @@ jobs:
       - run: cargo build -p bitsandbytes --no-default-features
       - run: cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
 
-  deny:
-    name: cargo-deny (advisories / licenses / bans / sources)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-
-  msrv:
-    name: MSRV (rust-version = 1.85)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@1.85.0
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
-
   public-api:
     name: public-api (bitsandbytes surface unchanged)
+    needs: changes
+    if: needs.changes.outputs.bnb == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +139,8 @@ jobs:
 
   fuzz:
     name: cargo-fuzz (bnb decode path, smoke run)
+    needs: changes
+    if: needs.changes.outputs.bnb == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,3 +152,23 @@ jobs:
       - run: cargo install cargo-fuzz --locked
       - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz -- -max_total_time=60 -runs=2000000
+
+  # Single required check: green when every job passed or was legitimately skipped, red if any
+  # failed or was cancelled. Point branch protection at this one job, not the individual gated
+  # jobs (a skipped required check would otherwise block merges).
+  ci-ok:
+    name: CI
+    if: always()
+    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any needed job failed or was cancelled
+        run: |
+          echo "results: ${{ join(needs.*.result, ' ') }}"
+          for r in ${{ join(needs.*.result, ' ') }}; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required job did not pass."
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped."
