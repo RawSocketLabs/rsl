@@ -66,8 +66,8 @@ pub struct BitError {
     pub field: Option<&'static str>,
 }
 
-/// The cause of a [`BitError`]. Non-exhaustive: later phases add variants
-/// (`BadMagic`, …).
+/// The cause of a [`BitError`]. `#[non_exhaustive]`: new variants may be added
+/// without a major version bump, so match with a wildcard arm.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ErrorKind {

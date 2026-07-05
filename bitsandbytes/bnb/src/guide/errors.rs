@@ -38,10 +38,16 @@
 //! - `UnexpectedEof { needed, remaining }` — ran off the end of a finite slice.
 //! - `TrailingBytes { remaining }` — `decode_exact` left whole bytes unconsumed.
 //! - `BadMagic { expected, found }` — a `magic` constant didn't match.
-//! - `Convert { message }` — a `try_map` converter failed.
+//! - `Convert { message }` — a conversion or guard rejected the value: a `try_map` /
+//!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
+//!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
+//!   `WidthError` bridged in from checked construction (`try_new`).
 //! - `Incomplete { needed }` — a stream ran out mid-message (read more and retry).
 //! - `NotSeekable` / `BufferFull` / `TooWide` / `Io` — seek-on-a-stream, buffer cap,
-//!   over-128-bit field, and underlying `io::Error`.
+//!   over-128-bit field, and an I/O failure (carrying just the [`std::io::ErrorKind`], not
+//!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
+//!   slices to streams (a `restore_position` on a forward stream; a message larger than a
+//!   [`BufSource`](crate::BufSource) cap).
 //!
 //! ```
 //! use bnb::{bin, ErrorKind};

@@ -115,8 +115,9 @@ pub(crate) fn bits_leaf_codec_impl(
 ///
 /// ## Generated API
 ///
-/// `new()`/`Default` (all-zero), `with_<field>`/`set_<field>`, `<field>()`
-/// getters, `raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
+/// `new()` (all-zero; derive `Default` yourself if you want it),
+/// `with_<field>`/`set_<field>`, `<field>()`
+/// getters, `to_raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
 /// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
 ///
 /// See the `bnb::guide::bitfields` page for runnable examples (bit/byte order,
@@ -184,16 +185,16 @@ pub fn bitflags(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ## Generated API
 ///
 /// Always: the `bnb::{Bits, BitEnum}` impls (so the enum nests in a
-/// `#[bitfield]`). For a **byte-aligned** width (`u8`/`u16`/…) additionally —
-/// for `num_enum` parity:
+/// `#[bitfield]`). For a **primitive** width (`u8`/`u16`/`u32`/`u64`/`u128`)
+/// additionally — for `num_enum` parity:
 ///
 /// - `From<Enum> for uN` (every variant maps to a value);
 /// - with `#[catch_all]`: `From<uN> for Enum` (total — unknowns absorbed);
 /// - without it: `TryFrom<uN> for Enum`, erroring with `bnb::UnknownDiscriminant` on an
 ///   unknown value.
 ///
-/// A sub-byte enum (`u4`) gets none of these — it is only meaningful nested in a
-/// `#[bitfield]`.
+/// A non-primitive width (`u4`, or even a byte-aligned `u24`) gets none of these — such an
+/// enum is only meaningful nested in a `#[bitfield]`.
 ///
 /// See the `bnb::guide::enums` page for runnable examples (catch-all, `closed`, the
 /// `num_enum` parity, and nesting).
@@ -282,10 +283,18 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// constant verified on read / emitted on write), `read_only` / `write_only`
 /// (directional), `no_builder`, `forward_only` (bound decoding to a forward `Source`),
 /// `ctx(name: Ty, …)` (context from the parent), `validate = <path>` (a soundness
-/// check run by `build()` — the parser stays permissive), and — on a **single-field
+/// check run by `build()` — the parser stays permissive),
+/// `map`/`try_map`/`wire`/`try_wire` (map the whole struct to/from a wire type — see
+/// `bnb::guide::mapping`), `auto_len(<field>.<nested> = count|bytes(<source>), …)`
+/// (cross-struct `WireLen` derivation), and — on a **single-field
 /// tuple newtype** — `codec = <module>` / `codec(parse = <f>, write = <f>)` (the
 /// per-type field codec: the type's wire form is owned by the fn pair; use it as a
 /// plain field anywhere, with `#[brw(variable)]` in a fixed parent).
+///
+/// `bits = msb` and `bytes = big` are the defaults, and `big`+`msb` is the natural
+/// pairing (network byte order); the declared byte order only swaps a **byte-multiple**
+/// value that *differs* from the bit order's natural layout, never a sub-byte field. See
+/// `bnb::guide::bin_codec` § "Byte order × bit order" for the rule.
 ///
 /// ## Field directives
 ///
@@ -294,13 +303,15 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// the explicit opt-in strictness escape hatch; read-only, no inverse), `map`/`try_map`
 /// (+ the inverse `bw(map)`), `parse_with`/`write_with`, `pad_before/after`,
 /// `align_before/after`, `seek = <bits>`, `restore_position`, `dbg` (trace a field as it
-/// decodes); `#[brw(ignore)]` (neither read nor written); `#[brw(variable)]` (the
+/// decodes), `#[bw(auto_len = count(<field>)|bytes(<field>))]` (derive a `WireLen<T>`
+/// field from a sibling target — the primary `WireLen` workflow); `#[brw(ignore)]`
+/// (neither read nor written); `#[brw(variable)]` (the
 /// field's type is a variable-length custom codec — suppresses the parent's
 /// `FixedBitLen`); `#[brw(count_prefix = <Ty>)]`
 /// on a `Vec<_>` (the length-prefixed count sugar — generates the `temp`+`calc`+`count`
 /// triad: the prefix sizes the `Vec` on read and is recomputed, **checked**, from
-/// `len()` on write; any `Bits` prefix type incl. `uN`); plus `#[reserved]` /
-/// `#[reserved_with(…)]`.
+/// `len()` on write; any `Bits` prefix type incl. `uN`); `#[try_str]` (render a
+/// byte-buffer field as text in `Debug`); plus `#[reserved]` / `#[reserved_with(…)]`.
 ///
 /// ## On an enum — tagged-union dispatch
 ///

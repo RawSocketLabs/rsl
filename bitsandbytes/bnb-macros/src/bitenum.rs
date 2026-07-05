@@ -213,8 +213,8 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-/// Emits primitive interop for a byte-aligned enum — the `num_enum`
-/// `IntoPrimitive`/`FromPrimitive`/`TryFromPrimitive` parity:
+/// Emits primitive interop for a primitive-width enum (`u8`/`u16`/`u32`/`u64`/`u128`) —
+/// the `num_enum` `IntoPrimitive`/`FromPrimitive`/`TryFromPrimitive` parity:
 ///
 /// - `From<Enum> for uN` — always (every variant maps to a value);
 /// - with a `#[catch_all]`, `From<uN> for Enum` — total, unknowns absorbed;

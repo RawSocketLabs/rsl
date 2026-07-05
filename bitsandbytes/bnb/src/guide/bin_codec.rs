@@ -132,6 +132,36 @@
 //! assert_eq!(Lsb { a: u4::new(0xA), b: u4::new(0xB) }.to_bytes().unwrap(), [0xBA]);
 //! ```
 //!
+//! ### Byte order × bit order — the natural-layout rule
+//!
+//! The two knobs aren't fully independent — they compose by one rule. Each bit order has
+//! a *natural* byte layout: MSB-first emits a value's high bits first, so its bytes land
+//! **big-endian**; LSB-first emits low bits first, so they land **little-endian** (value
+//! bit *k* → stream bit *k* — exactly the CAN/DBC "Intel" layout, `raw |= v << start;
+//! raw.to_le_bytes()`). The declared byte order swaps a **byte-multiple** value only when
+//! it *differs* from that natural layout; sub-byte widths are never byte-swapped. So the
+//! two identity corners are the real-world conventions — `big`+`msb` is network order,
+//! `little`+`lsb` is DBC-Intel/SMB — and the mixed corners (`little`+`msb`, `big`+`lsb`)
+//! are the deliberate byte swaps.
+//!
+//! ```
+//! use bnb::bin;
+//!
+//! // `little`+`lsb` is an identity corner: a byte-multiple value needs no swap, so it
+//! // lands in `to_le_bytes` order — the DBC-Intel convention.
+//! #[bin(little, bits = lsb)]
+//! #[derive(Debug, PartialEq)]
+//! struct Intel { v: u32 }
+//! assert_eq!(Intel { v: 0x1234_5678 }.to_bytes().unwrap(), 0x1234_5678u32.to_le_bytes());
+//! assert_eq!(Intel { v: 0x1234_5678 }.to_bytes().unwrap(), [0x78, 0x56, 0x34, 0x12]);
+//!
+//! // The `big`+`msb` identity corner is the mirror image: network byte order.
+//! #[bin(big, bits = msb)]
+//! #[derive(Debug, PartialEq)]
+//! struct Net { v: u32 }
+//! assert_eq!(Net { v: 0x1234_5678 }.to_bytes().unwrap(), [0x12, 0x34, 0x56, 0x78]);
+//! ```
+//!
 //! Directional codecs and the builder:
 //!
 //! ```

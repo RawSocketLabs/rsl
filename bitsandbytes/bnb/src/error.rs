@@ -9,9 +9,11 @@ use core::fmt;
 /// Errors from checked construction.
 ///
 /// Currently the only fallible operation is `UInt::try_new` (and the `TryFrom`
-/// impls built on it). Decoding never fails: the codec is dual-use, so unknown
-/// values are preserved via a `#[catch_all]` variant rather than rejected, and
-/// field access masks rather than validates.
+/// impls built on it). Decoding never *rejects an out-of-range value*: the codec is
+/// dual-use, so unknown values are preserved via a `#[catch_all]` variant rather than
+/// rejected, and field access masks rather than validates. (Structural decode failures —
+/// EOF, a bad `magic`, an `assert`, invalid UTF-8 — are the separate
+/// [`BitError`](crate::BitError), not a `WidthError`.)
 ///
 /// # Examples
 ///
@@ -47,8 +49,8 @@ impl fmt::Display for WidthError {
 impl core::error::Error for WidthError {}
 
 /// The error returned by the `TryFrom<uN>` impl that `#[derive(BitEnum)]`
-/// generates for a **byte-aligned enum without a `#[catch_all]` variant**: the
-/// value matched no known discriminant.
+/// generates for a **primitive-width enum without a `#[catch_all]` variant**
+/// (width `u8`/`u16`/`u32`/`u64`/`u128`): the value matched no known discriminant.
 ///
 /// A catch-all enum is total, so its primitive→enum conversion is an infallible
 /// `From` and never produces this. This mirrors `num_enum`'s

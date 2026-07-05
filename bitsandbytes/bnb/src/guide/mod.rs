@@ -1,23 +1,23 @@
 //! The `bnb` guide — worked, runnable walkthroughs.
 //!
 //! Every page here is a normal rustdoc module whose examples are compiled and run as
-//! doctests, so nothing in the guide can drift from the code. Read the pages in the
-//! order listed in the [crate root](crate), or jump to a topic:
+//! doctests, so nothing in the guide can drift from the code. Read the pages in this
+//! order (the same reading order given in the [crate root](crate)), or jump to a topic:
 //!
-//! - [`quick_start`] — a five-minute tour of every macro.
-//! - [`numbers`] — `u1`..`u127` and the [`Bits`](crate::Bits) trait.
-//! - [`bitfields`] — `#[bitfield]`: bit/byte order, widths, ranges, nesting.
-//! - [`enums`] — `#[derive(BitEnum)]`: catch-all, closed, `num_enum` parity.
-//! - [`flags`] — `#[bitflags]`: single-bit flag sets with set algebra.
-//! - [`builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
-//! - [`bin_codec`] — `#[bin]`: a whole protocol header, end to end.
-//! - [`directives`] — the field-directive reference, one example each.
-//! - [`mapping`] — `#[bin(map/bw_map = …)]`: a whole struct mapped to/from a wire type.
-//! - [`dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
-//! - [`io`] — the `Source`/`Sink` I/O ladder.
-//! - [`errors`] — position-aware errors and the streaming `Incomplete` signal.
-//! - [`dual_use`] — compliant by default, deliberately violatable.
-//! - [`composition`] — how the pieces nest and size each other.
+//! 1. [`quick_start`] — a five-minute tour of every macro.
+//! 2. [`numbers`] — `u1`..`u127` and the [`Bits`](crate::Bits) trait.
+//! 3. [`bitfields`] — `#[bitfield]`: bit/byte order, widths, ranges, nesting.
+//! 4. [`enums`] — `#[derive(BitEnum)]`: catch-all, closed, `num_enum` parity.
+//! 5. [`flags`] — `#[bitflags]`: single-bit flag sets with set algebra.
+//! 6. [`builders`] — `#[derive(BitsBuilder)]`: the required-by-default builder.
+//! 7. [`bin_codec`] — `#[bin]`: a whole protocol header, end to end.
+//! 8. [`directives`] — the field-directive reference, one example each.
+//! 9. [`mapping`] — `#[bin(map/bw_map = …)]`: a whole struct mapped to/from a wire type.
+//! 10. [`dispatch`] — `#[bin]` on an enum: tagged-union dispatch by wire `magic` or off-wire `tag`.
+//! 11. [`io`] — the `Source`/`Sink` I/O ladder.
+//! 12. [`errors`] — position-aware errors and the streaming `Incomplete` signal.
+//! 13. [`dual_use`] — compliant by default, deliberately violatable.
+//! 14. [`composition`] — how the pieces nest and size each other.
 //!
 //! # How the crate fits together
 //!

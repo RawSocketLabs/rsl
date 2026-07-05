@@ -23,9 +23,9 @@
 //! # Generated API
 //!
 //! For a field `f: T`, you get `f() -> T`, `with_f(T) -> Self` (consuming, chainable),
-//! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `raw()`/`from_raw()`, and
+//! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `to_raw()`/`from_raw()`, and
 //! allocation-free byte conversions: `to_bytes`/`from_bytes` serialize in the **declared**
-//! byte order (`bytes = big|le`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
+//! byte order (`bytes = big|little`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
 //! force a specific endianness (the override). The type also implements [`Bits`](crate::Bits)
 //! and [`Bitfield`](crate::Bitfield), so it nests in another bitfield or a `#[bin]` message.
 //!
@@ -43,11 +43,16 @@
 //! - `bits = msb | lsb` (default `msb`): does the **first** declared field land in the
 //!   high or low bits of the backing integer. `msb` matches the ASCII-art layouts in
 //!   RFCs (first field drawn leftmost = most significant).
-//! - `bytes = big | le` (default `be`): the byte order `to_bytes`/`from_bytes` use when
-//!   serializing the backing integer.
+//! - `bytes = big | little` (default `big`): the byte order `to_bytes`/`from_bytes` use
+//!   when serializing the backing integer.
 //!
-//! They are orthogonal. The same fields, packed `msb`, declared with two different byte
-//! orders — `to_bytes` honors each declaration:
+//! They are orthogonal *here*: a bitfield packs its fields into the backing integer (bit
+//! order), then serializes that whole integer with the declared byte order — two genuinely
+//! independent steps. (At the `#[bin]` *message* layer the two instead compose by the
+//! natural-layout rule — a byte-multiple value is byte-swapped only when the declared byte
+//! order differs from the bit order's natural layout; see the
+//! [`bin_codec`](super::bin_codec) guide.) The same fields, packed `msb`, declared with two
+//! different byte orders — `to_bytes` honors each declaration:
 //!
 //! ```
 //! use bnb::{bitfield, u4};
@@ -62,8 +67,8 @@
 //!
 //! let be = Be::new().with_hi(u4::new(0xA)).with_mid(0xBC).with_lo(u4::new(0xD));
 //! let le = Le::new().with_hi(u4::new(0xA)).with_mid(0xBC).with_lo(u4::new(0xD));
-//! assert_eq!(be.to_bytes(), [0xAB, 0xCD]); // declared `be` -> big-endian bytes
-//! assert_eq!(le.to_bytes(), [0xCD, 0xAB]); // same logical value, declared `le`
+//! assert_eq!(be.to_bytes(), [0xAB, 0xCD]); // declared `big` -> big-endian bytes
+//! assert_eq!(le.to_bytes(), [0xCD, 0xAB]); // same logical value, declared `little`
 //!
 //! // `to_be_bytes`/`to_le_bytes` ignore the declaration — use them only to override it.
 //! assert_eq!(le.to_be_bytes(), [0xAB, 0xCD]);
