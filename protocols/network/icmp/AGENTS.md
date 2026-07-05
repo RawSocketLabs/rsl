@@ -16,6 +16,11 @@ layer that wraps the message data and computes the **self-contained** checksum.
   type-specific). Type consts `ECHO_REQUEST` (8) / `ECHO_REPLY` (0) / `DEST_UNREACHABLE` (3) /
   `TIME_EXCEEDED` (11); `echo_request(id, seq)` / `echo_reply(id, seq)` constructors pack the
   identifier + sequence into `rest_of_header`; `identifier()` / `sequence()` read them back.
+- **`IcmpMessage`** (`message.rs`) — a typed **view** over `(IcmpHeader, data)`: `EchoRequest`/
+  `EchoReply { id, seq, data }`, `DestinationUnreachable`/`TimeExceeded { code, data }` (the
+  error's embedded datagram), and `Other` (raw, preserved). `header.message(data)` /
+  `IcmpMessage::parse` classify; `.header()` / `.data()` build back. A lens like `tcp`'s
+  `TcpOption` — a plain parse/build, not a `#[bin]` union (sidesteps bnb's ctx-dispatch gap).
 
 ## Injection — the `inject` feature (`src/inject.rs`)
 
