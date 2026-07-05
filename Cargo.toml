@@ -67,7 +67,7 @@ proc-macro-crate = "3"
 # --- dev / bench / example deps (bnb) ---
 trybuild = "1.0"
 proptest = "1"
-criterion = "0.5"
+criterion = "0.8"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 bitbybit = "1.3"
 arbitrary-int = "1.3"
