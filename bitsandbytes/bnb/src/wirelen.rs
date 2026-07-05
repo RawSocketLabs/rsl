@@ -79,7 +79,9 @@ impl<T: CountPrefix> WireLen<T> {
     pub fn resolve_count(&self, len: usize) -> Result<Self, BitError> {
         match self {
             WireLen::Set(v) => Ok(WireLen::Set(*v)),
-            WireLen::Auto => Ok(WireLen::Set(T::try_from_len(len).map_err(BitError::from)?)),
+            WireLen::Auto => Ok(WireLen::Set(
+                T::try_from_count(len).map_err(BitError::from)?,
+            )),
         }
     }
 }

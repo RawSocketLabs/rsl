@@ -1,7 +1,8 @@
 //! `CountPrefix` and `codecs::leb128::Varint` are sealed — the impl sets are
 //! crate-owned (all wire-integer widths are built in), so a downstream impl is a
 //! compile error: the `Sealed` supertrait is unnameable outside `bnb`.
-use bnb::codecs::{CountPrefix, leb128::Varint};
+use bnb::bitstream::CountPrefix;
+use bnb::codecs::leb128::Varint;
 
 #[derive(Clone, Copy)]
 struct MyPrefix(u8);
@@ -17,7 +18,7 @@ impl bnb::Bits for MyPrefix {
 }
 
 impl CountPrefix for MyPrefix {
-    fn try_from_len(_: usize) -> Result<Self, bnb::WidthError> {
+    fn try_from_count(_: usize) -> Result<Self, bnb::WidthError> {
         unimplemented!()
     }
     fn to_count(self) -> usize {
