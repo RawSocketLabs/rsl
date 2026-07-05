@@ -351,7 +351,7 @@
 //!
 //! The newtype gets `BitDecode`/`BitEncode`, the slice entry points
 //! (`decode_exact`/`decode_all`/`to_bytes`, at its own declared `big`/`little`/
-//! `bit_order` — a *field* of this type decodes through the parent's cursor), and
+//! `bits` — a *field* of this type decodes through the parent's cursor), and
 //! `From` conversions both ways. It emits **no `FixedBitLen`** — a codec's wire form
 //! is assumed variable; a genuinely fixed-width codec adds the one-line manual impl
 //! (see [`mapping`](super::mapping)). `read_only`/`write_only` narrow the direction

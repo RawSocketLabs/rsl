@@ -35,7 +35,7 @@ mod macro_ {
         assert_eq!(err, BuilderError::MissingField("payload_len"));
     }
 
-    #[bin(bit_order = lsb)]
+    #[bin(bits = lsb)]
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     struct LsbWord {
         a: u4,

@@ -43,7 +43,7 @@ pub use inject::{Tcp, tcp_checksum};
 /// A flat `#[bitfield(u16)]`: `data_offset` (header length in 32-bit words) and the reserved
 /// nibble, then the eight control bits MSB-first (`CWR ECE URG ACK PSH RST SYN FIN`).
 //~ models rfc9293#3.1 part="Data Offset + control bits"
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Control {
     /// Data offset — the header length in 32-bit words (5 = a 20-byte header, no options).

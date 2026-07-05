@@ -137,7 +137,7 @@
 //!
 //! - **One direction is fine.** For the closure form, give only `map`/`try_map` (decode-only) or
 //!   only `bw_map` (encode-only). For the conversion-trait form, add `read_only`/`write_only`.
-//! - **Byte/bit order comes from the wire type**, so `big`/`little`/`bit_order` on the mapped
+//! - **Byte/bit order comes from the wire type**, so `big`/`little`/`bits` on the mapped
 //!   struct itself don't apply, and `magic`/`ctx`/`validate` belong on the wire type.
 //! - **Pick a form:** reach for `wire`/`try_wire` when you want the transitions in a named,
 //!   reusable place or the wire form is variable-length; reach for `map`/`bw_map` for a quick

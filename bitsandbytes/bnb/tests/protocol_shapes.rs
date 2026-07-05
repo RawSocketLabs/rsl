@@ -74,7 +74,7 @@ mod integration {
         Other(u4), // dual-use: unknown rcodes preserved
     }
 
-    #[bitfield(u16, bits = msb, bytes = be)]
+    #[bitfield(u16, bits = msb, bytes = big)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct State {
         opcode: OpCode,
@@ -147,7 +147,7 @@ mod integration {
         reserved: u4,
     }
 
-    #[bitfield(u32, bits = lsb, bytes = le)]
+    #[bitfield(u32, bits = lsb, bytes = little)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct Capabilities {
         raw_mode: bool,
@@ -183,7 +183,7 @@ mod integration {
     // hatch for absolute control.
     // ---------------------------------------------------------------------------
 
-    #[bitfield(u16, bytes = be)]
+    #[bitfield(u16, bytes = big)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct ManualState {
         #[bits(11..=15)]

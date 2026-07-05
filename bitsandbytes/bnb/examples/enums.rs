@@ -23,7 +23,7 @@ enum Ecn {
 // one derive replaces a hand-written magic-byte enum *and* its
 // `impl From<…> for u16` *and* the round-trips-every-discriminant test.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u16, bytes = be)]
+#[bit_enum(u16, bytes = big)]
 #[repr(u16)]
 enum HardwareType {
     Ethernet = 1,
