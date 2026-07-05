@@ -21,7 +21,7 @@
 use crate::{Message, QClass, QType, Question, RData};
 use bnb::bitstream::{BitError, ErrorKind};
 use bnb::{DatagramSocket, MessageDatagram};
-use rsl_deps::rand::Rng;
+use rsl_deps::rand::RngExt;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::time::Duration;
