@@ -2730,7 +2730,7 @@ dependencies = [
  "macaddr",
  "num-complex",
  "prost",
- "rand 0.9.4",
+ "rand 0.10.2",
  "ratatui",
  "rayon",
  "reqwest",
