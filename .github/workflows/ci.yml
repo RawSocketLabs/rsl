@@ -126,7 +126,10 @@ jobs:
         with:
           toolchain: nightly-2026-06-17
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-public-api --version 0.52.0 --locked
+      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.52.0
       - name: Diff the public API against the committed snapshot
         run: |
           cargo public-api -p bitsandbytes --all-features > "$RUNNER_TEMP/public-api.txt"
@@ -149,7 +152,10 @@ jobs:
       - run: rm -f rust-toolchain.toml
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-fuzz --locked
+      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
       - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz -- -max_total_time=60 -runs=2000000
 
