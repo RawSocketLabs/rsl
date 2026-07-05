@@ -15,7 +15,7 @@ jobs:
   # this workflow itself trips every filter, so CI changes are always fully validated.
   changes:
     name: detect changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       bnb: ${{ steps.filter.outputs.bnb }}
@@ -41,7 +41,7 @@ jobs:
     name: rustfmt
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -53,7 +53,7 @@ jobs:
     name: clippy (workspace lints enforce clippy::all = deny)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -66,7 +66,7 @@ jobs:
     name: build + test
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -83,7 +83,7 @@ jobs:
     name: cargo-deny (advisories / licenses / bans / sources)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -92,7 +92,7 @@ jobs:
     name: MSRV (rust-version = 1.85)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - run: rm -f rust-toolchain.toml
@@ -104,7 +104,7 @@ jobs:
     name: no_std (bare-metal target)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -118,7 +118,7 @@ jobs:
     name: public-api (bitsandbytes surface unchanged)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - run: rm -f rust-toolchain.toml
@@ -141,7 +141,7 @@ jobs:
     name: cargo-fuzz (bnb decode path, smoke run)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       # bitsandbytes is no longer its own workspace root, so cargo-fuzz walks up to the
@@ -160,7 +160,7 @@ jobs:
     name: CI
     if: always()
     needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Fail if any needed job failed or was cancelled
         run: |
