@@ -23,7 +23,7 @@
 //! use bnb::{bitfield, u4};
 //!
 //! // A u16 split into three fields, most-significant-first (RFC order).
-//! #[bitfield(u16, bits = msb, bytes = be)]
+//! #[bitfield(u16, bits = msb, bytes = big)]
 //! #[derive(Clone, Copy)]
 //! struct VlanTag {
 //!     pcp: u4,   // high nibble

@@ -437,7 +437,7 @@ pub fn align_write<K: Sink>(w: &mut K) -> Result<(), BitError> {
 }
 
 /// The wire layout: bit packing order **and** byte order, threaded through the
-/// cursors and entry points. `#[bin(big|little)]` and `#[bin(bit_order = msb|lsb)]`
+/// cursors and entry points. `#[bin(big|little)]` and `#[bin(bits = msb|lsb)]`
 /// set it; the default is MSB-first, big-endian (RFC/network order).
 ///
 /// # Examples
@@ -1755,7 +1755,7 @@ pub struct StreamBitReader<R> {
 #[cfg(feature = "std")]
 impl<R: std::io::Read> StreamBitReader<R> {
     /// Wraps a byte source, decoding in the default **MSB-first, big-endian** order. For a
-    /// `#[bin(little)]`/`bit_order = lsb` message, use [`with_layout`](Self::with_layout) with
+    /// `#[bin(little)]`/`bits = lsb` message, use [`with_layout`](Self::with_layout) with
     /// that type's [`LAYOUT`](BitEncode::LAYOUT), or the decode reads the wrong order.
     pub fn new(inner: R) -> Self {
         Self::with_layout(inner, Layout::default())

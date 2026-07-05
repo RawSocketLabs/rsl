@@ -1,5 +1,5 @@
 //! LSB-first bit order (ROADMAP Phase 1, chunk F): a struct marked
-//! `#[bit_stream(bit_order = lsb)]` reads/writes least-significant-bit-first;
+//! `#[bit_stream(bits = lsb)]` reads/writes least-significant-bit-first;
 //! MSB-first is the default. Per-struct only (mixed order via nesting is Phase 2).
 
 mod macro_ {
@@ -13,7 +13,7 @@ mod macro_ {
     }
 
     #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
-    #[bit_stream(bit_order = lsb)]
+    #[bit_stream(bits = lsb)]
     struct LsbWord {
         a: u4,
         b: u12,

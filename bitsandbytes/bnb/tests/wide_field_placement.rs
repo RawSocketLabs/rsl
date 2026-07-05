@@ -20,7 +20,7 @@ mod macro_ {
     // (1a) Auto-layout: WIDTH = 17 + 11 = 28. MSB-first => first field in the high
     // bits. No need to say "where the bits land" — order + msb does it.
     // ---------------------------------------------------------------------------
-    #[bitfield(u32, bits = msb, bytes = be)]
+    #[bitfield(u32, bits = msb, bytes = big)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct AutoWord {
         hi: u17, // first field -> high 17 bits of the 28
@@ -54,7 +54,7 @@ mod macro_ {
     // intentional 4-bit gap (bits 14..=11) — exactly the bitbybit "specify which bits
     // are filled" use case, including non-contiguous fields.
     // ---------------------------------------------------------------------------
-    #[bitfield(u32, bytes = be)]
+    #[bitfield(u32, bytes = big)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct PlacedWord {
         #[bits(15..=31)] // top 17 bits (offset = low end = 15)

@@ -12,7 +12,7 @@ Decode/encode of the 28-byte IPv4-over-Ethernet ARP packet, plus (the `inject` f
 
 ## Architecture
 
-- **`Operation`** — `#[derive(BitEnum)]` `#[bit_enum(u16, bytes = be)]`: `Request` (1), `Reply`
+- **`Operation`** — `#[derive(BitEnum)]` `#[bit_enum(u16, bytes = big)]`: `Request` (1), `Reply`
   (2), `#[catch_all] Other(u16)` (dual-use — unknown ops preserved).
 - **`ArpPacket`** — `#[bin(big)]`: `htype`/`hlen`/`plen`/`oper`, `ptype` (the `ethertype`
   crate's `EtherType`), `sha`/`tha` (`[u8; 6]` MACs, bnb's native byte-array fields), and

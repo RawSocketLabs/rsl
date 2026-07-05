@@ -23,7 +23,7 @@
 //! enum RCode { NoError, FormErr, ServFail, NxDomain, #[catch_all] Other(u4) }
 //!
 //! // The 16-bit flags word, MSB-first (RFC diagram order), big-endian.
-//! #[bitfield(u16, bits = msb, bytes = be)]
+//! #[bitfield(u16, bits = msb, bytes = big)]
 //! #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 //! struct Flags {
 //!     qr: bool, opcode: OpCode, aa: bool, tc: bool,
@@ -105,7 +105,7 @@
 //! Inside `#[bin(...)]`:
 //!
 //! - `big` / `little` — byte order (default `big`).
-//! - `bit_order = msb | lsb` — bit order (default `msb`).
+//! - `bits = msb | lsb` — bit order (default `msb`).
 //! - `magic = <expr>` — a leading constant verified on read, emitted on write.
 //! - `read_only` / `write_only` — generate only one direction.
 //! - `no_builder` — skip the builder.
@@ -126,7 +126,7 @@
 //! struct Le { v: u32 }
 //! assert_eq!(Le { v: 0x1234_5678 }.to_bytes().unwrap(), [0x78, 0x56, 0x34, 0x12]);
 //!
-//! #[bin(big, bit_order = lsb)] // the first field lands in the LOW bits of the byte
+//! #[bin(big, bits = lsb)] // the first field lands in the LOW bits of the byte
 //! #[derive(Debug, PartialEq)]
 //! struct Lsb { a: u4, b: u4 }
 //! assert_eq!(Lsb { a: u4::new(0xA), b: u4::new(0xB) }.to_bytes().unwrap(), [0xBA]);

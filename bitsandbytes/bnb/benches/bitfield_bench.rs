@@ -16,7 +16,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 // --- `bnb` ----------------------------------------------------------------
 use bnb::{BitEnum, bitfield, u4, u5, u7};
 
-#[bitfield(u16, bits = msb, bytes = be)]
+#[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy)]
 struct BitsState {
     a: u5,

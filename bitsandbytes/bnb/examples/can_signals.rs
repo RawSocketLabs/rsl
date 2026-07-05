@@ -1,4 +1,4 @@
-//! **can_signals** — arbitrary-width fields packed **LSB-first** (`bit_order = lsb`).
+//! **can_signals** — arbitrary-width fields packed **LSB-first** (`bits = lsb`).
 //!
 //! `arbitrary_width` and `ais` both pack MSB-first (big-endian, the network convention). The other
 //! common convention puts the *first* field in the **low** bits — CAN/DBC "Intel" signals, SMB,
@@ -23,7 +23,7 @@ enum DriveMode {
 }
 
 /// A CAN-style engine status frame — 22 bits, little-endian / LSB-first ("Intel" signals).
-#[bin(little, bit_order = lsb)]
+#[bin(little, bits = lsb)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct EngineFrame {
     mode: DriveMode, // lands in the LOW 3 bits of byte 0 (LSB-first)

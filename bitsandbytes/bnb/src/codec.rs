@@ -58,7 +58,7 @@ impl<T> Default for BinCodec<T> {
 }
 
 // `Decoder` also bounds `T: BitEncode` so it can read in the message's declared
-// [`LAYOUT`](BitEncode::LAYOUT) — a `#[bin(little)]`/`bit_order = lsb` message must decode in
+// [`LAYOUT`](BitEncode::LAYOUT) — a `#[bin(little)]`/`bits = lsb` message must decode in
 // the same order the paired `Encoder` writes it, or the round-trip silently corrupts. (A
 // `BinCodec` used over `Framed`/`UdpFramed` always implements both directions anyway.)
 impl<T: BitDecode + BitEncode> Decoder for BinCodec<T> {

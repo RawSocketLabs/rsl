@@ -102,7 +102,7 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   — a derive cannot re-emit the item. The bare derives
   stay usable directly for read/write without the `#[bin]` sugar.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
-  `no_builder`, `bit_order = msb|lsb`, `bytes = be|le` (`big`/`little`),
+  `no_builder`, `bits = msb|lsb`, `bytes = big|le` (`big`/`little`),
   `allow_byte_aligned`.
 - **Struct-level wire mapping (`bin_struct_mapped`):** a *logical* struct serializes via a
   separate *wire* type, two forms. **Closure form:** `map = |w: Wire| Self` / `try_map = |w:

@@ -130,7 +130,7 @@ impl_bits_for_primitive!(u8, u16, u32, u64, u128);
 /// ```
 /// use bnb::{bitfield, u4, Bitfield, BitOrder, ByteOrder};
 ///
-/// #[bitfield(u8, bits = msb, bytes = be)]
+/// #[bitfield(u8, bits = msb, bytes = big)]
 /// #[derive(Clone, Copy)]
 /// struct Byte { hi: u4, lo: u4 }
 ///
