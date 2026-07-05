@@ -136,7 +136,7 @@ one struct, generating the decode entry points (`decode`/`decode_all`/`decode_it
 `peek`/`decode_exact`), the encode entry points (`to_bytes`, plus `to_canonical_bytes` for a
 message that has a `reserved`/`calc` field — see §5.2), the `encode(writer)` convenience
 (and `BitEncode::bit_encode` for writing into a `Sink`), and construction
-(`Type::new(fields…)`, `Type::builder()`). Fields are read and written at arbitrary bit
+(a struct literal or `Type::builder()`). Fields are read and written at arbitrary bit
 offsets, so the same attribute handles byte-aligned headers and sub-byte frames, and any
 `Bits` type *or* nested `#[bin]` message drops in as a field — both decoded, encoded, and
 sized through one uniform codec path, with no marker (§8).
@@ -179,7 +179,7 @@ positioning directives need — the bit cursor does the peeking, not a parallel 
 The worked encodings live in the `bnb::guide::dispatch` page.
 
 The encode model and construction surface below (§5.2) are **struct-only** — a
-tagged-union enum encodes verbatim (no `to_canonical_bytes`/`encode_mode`/`validate`/`new`).
+tagged-union enum encodes verbatim (no `to_canonical_bytes`/`validate`).
 Those are properties of a concrete record; an enum's per-variant payloads define them, not
 the union.
 
@@ -193,14 +193,13 @@ when a message has a `reserved` or non-`temp` `calc` field (a `temp`+`calc` fiel
 stored, so it always recomputes and creates no gap), so `to_canonical_bytes` and the
 in-memory helpers `to_canonical`/`canonical_diff`/`is_canonical` are generated only then.
 
-The verbatim/canonical choice can also be **carried on the value**: such a message gains a
-wire-ignored `encode_mode` field (default `Verbatim`; set via the builder, `with_encode_mode`,
-`set_encode_mode`). It is consulted by exactly one entry point — the `std`-writer
-`encode(w)` — so you can set the policy once and stream the value; the explicit `to_bytes`/
-`to_canonical_bytes` (and the `BitEncode` sink methods `bit_encode`/`canonical_bit_encode`)
-ignore it. The field is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (a render preference, not
-data — `#[bin]` intercepts those derives), which means such a type is constructed via the
-builder, `new(fields…)`, or `decode` rather than a struct literal.
+The verbatim/canonical choice is made **per call**, not carried on the value. The two `Vec`
+encoders are explicit (`to_bytes` vs `to_canonical_bytes`), and over a writer the `std`-writer
+`encode(w)` is **always verbatim** (== `to_bytes`); to stream the canonical form, normalize
+first — `value.to_canonical().encode(&mut w)`. There is no hidden mode field, so a
+`reserved`/`calc` message is an **ordinary struct**: it is constructed via a struct literal,
+the builder, or `decode`, and it **coexists with `serde` derives** (see §5 / the freeze note in
+[`ROADMAP.md`](ROADMAP.md)).
 
 `validate = path` (the construction-soundness check `build()` runs) is also exposed as
 re-runnable `validate()` / `is_valid()` methods: `build()` checks once, but a value can be
@@ -286,16 +285,13 @@ fall out of *a proc-macro cannot see the consumer crate's feature flags*:
   The single `EncodeExt` is `std`-gated and blanket-implemented over `BitEncode`, so it
   appears exactly when `bnb/std` is on — whereas a `#[cfg(feature = "std")]` emitted into a
   generated method would key off the *user crate's* feature name and silently vanish for a
-  default `cargo add bnb`. It dispatches to `bit_encode` vs `canonical_bit_encode` by the
-  value's [`encode_mode`](EncodeMode) — a settable, wire-ignored field that a `reserved`/`calc`
-  message carries (default `Verbatim`), rather than a call-time argument: set the policy once
-  (builder/`with_encode_mode`) and stream the value. Both the canonical path and `encode_mode`
-  are **defaulted methods on `BitEncode`** (no separate `CanonicalEncode` trait), so `encode`
-  works for every message — one without `reserved`/`calc` has no field and stays verbatim.
-  `#[bin]` intercepts `Debug`/`PartialEq`/`Hash` so the mode never affects equality (a render
-  preference, not data), which makes these types builder/`decode`-constructed. Cost: callers
-  bring the trait into scope (`use bnb::prelude::*`); the `to_bytes`/`to_canonical_bytes` `Vec`
-  encoders stay inherent and unconditional (sink-writing uses the `BitEncode` trait methods).
+  default `cargo add bnb`. `encode(w)` is **unconditionally verbatim** (== `to_bytes`, dispatching
+  to `bit_encode`); the form is chosen **per call**, not carried on the value, so streaming the
+  canonical form is `value.to_canonical().encode(&mut w)`. `canonical_bit_encode` remains a
+  **defaulted method on `BitEncode`** (no separate `CanonicalEncode` trait), overridden by the
+  derive only for a `reserved`/`calc` message. Cost: callers bring the trait into scope
+  (`use bnb::prelude::*`); the `to_bytes`/`to_canonical_bytes` `Vec` encoders stay inherent and
+  unconditional (sink-writing uses the `BitEncode` trait methods).
 - **`BitEncode` carries `const LAYOUT`** so the blanket `encode` can build a correctly
   ordered `BitWriter` without the per-type layout literal the old inherent method had.
 - **`#[br(dbg)]` is `std`-only.** It emits a `tracing` event, and `tracing`'s default

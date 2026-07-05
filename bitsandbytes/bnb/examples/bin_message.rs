@@ -91,9 +91,8 @@ struct Frame {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a response header with the required-by-default builder. Forget a field
     // and `build()` tells you which one — the infix `with_*` setters can't.
-    // (Construction menu: a plain type like `Header` also accepts a struct literal or the
-    // positional `Header::new(…)`; a `reserved`/`calc` type — see `telemetry.rs` — carries a
-    // hidden `encode_mode` field, so it MUST use the builder, `new()`, or `decode`.)
+    // (Construction menu: any `#[bin]` type also accepts a struct literal — `reserved`/`calc`
+    // fields are ordinary stored fields — or `decode`; the builder is the ergonomic default.)
     let flags = Flags::new()
         .with_qr(true)
         .with_opcode(OpCode::Query)

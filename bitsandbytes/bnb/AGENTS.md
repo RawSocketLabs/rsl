@@ -90,17 +90,16 @@ the proc-macro.
 `#[bin]` is the crate's flagship: one attribute that
 folds the codec (`BitDecode`/`BitEncode`) and the required-by-default builder over
 a struct, generating `decode` (cursor over a `Source`), `decode_all`/`decode_iter`/`decode_exact`/
-`peek` (slice/`Vec`, layout-baked), `encode`/`to_bytes`,
-`Foo::builder()`, and a positional `Foo::new(fields…)` (every stored field, in order — the
-struct-literal replacement, since a `reserved`/`calc` message's injected `encode_mode` field
-can't be named in a literal). It reads/writes fields at **arbitrary bit offsets**, so the same
+`peek` (slice/`Vec`, layout-baked), `encode`/`to_bytes`, and
+`Foo::builder()`. The emitted struct has no hidden fields, so it is also constructible via an
+ordinary **struct literal**. It reads/writes fields at **arbitrary bit offsets**, so the same
 attribute handles byte-aligned headers and sub-byte frames alike.
 
 - **Codegen model.** `#[bin]` generates the codec **directly** from the full field
   list via the shared generators (`gen_decode`/`gen_encode` — the same functions
   the bare derives call); it does *not* lower to the derives, because it owns the
-  emitted struct (drops `temp` fields, strips codec attrs, injects `encode_mode`,
-  desugars `count_prefix`) — a derive cannot re-emit the item. The bare derives
+  emitted struct (drops `temp` fields, strips codec attrs, desugars `count_prefix`)
+  — a derive cannot re-emit the item. The bare derives
   stay usable directly for read/write without the `#[bin]` sugar.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
   `no_builder`, `bit_order = msb|lsb`, `bytes = be|le` (`big`/`little`),
@@ -190,7 +189,7 @@ attribute handles byte-aligned headers and sub-byte frames alike.
 - Gate behind `#[cfg(feature = "std")]`: the reader/writer adapters (`StreamBitReader`/
   `BufSource`/`SeekReader`/`SourceReader`/`SinkWriter`, `as_read`/`as_write`),
   `encode_to_writer_with`, `From<std::io::Error>`, and `ErrorKind::Io`.
-- **Two encode forms — verbatim vs canonical** ([`EncodeMode`]). `to_bytes` and `bit_encode`
+- **Two encode forms — verbatim vs canonical, selected per call.** `to_bytes` and `bit_encode`
   are **verbatim**: they emit exactly what's stored (retained `reserved`, stored non-`temp`
   `calc`) — never silently rewriting the caller's bytes, and `decode → to_bytes` is
   byte-identical. `to_canonical_bytes` and `canonical_bit_encode` are **canonical**: reserved
@@ -204,20 +203,17 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   from canonical), and `is_canonical(&self) -> bool`. (Sink-writing is the `BitEncode` trait
   methods `bit_encode`/`canonical_bit_encode`, not an inherent `encode_into` — that wrapper was
   cut as redundant.)
-- **The mode is carried on the value, not passed to `encode`.** A `reserved`/`calc` message gets
-  a wire-ignored **`encode_mode`** field (default `Verbatim`): builder `.encode_mode(…)`,
-  `set_encode_mode`/`with_encode_mode`, getter `encode_mode()`. `BitEncode::encode_mode(&self)`
-  (default `Verbatim`) is overridden to return it, and the `std`-gated blanket `EncodeExt::encode(w)`
-  (no `mode` param) consults it to pick `bit_encode` vs `canonical_bit_encode`. `EncodeExt` is an ext
-  trait — **not** a generated inherent method — because a proc-macro can't see the consumer's
-  features, so a generated `#[cfg(feature="std")]` would key off the *wrong* crate's flag (bring it
-  in with `use bnb::prelude::*`). **`#[bin]` injects the field and intercepts `Debug`/`PartialEq`/
-  `Hash`** (custom impls over the user fields) so the mode is excluded from equality/hash/Debug — a
-  render preference, not data — which means these types are **builder/`decode`-constructed** (the
-  private field can't appear in a literal). Generated, portable (no `EncodeExt`) methods: `to_bytes`
-  (verbatim) and `to_canonical_bytes` (canonical); sink-writing is the trait methods on `impl
-  BitEncode { const LAYOUT; fn bit_encode; [fn canonical_bit_encode + fn encode_mode when
-  reserved/calc] }`.
+- **The form is chosen per call — there is no carried mode.** The `std`-gated blanket
+  `EncodeExt::encode(&self, w)` is **unconditionally verbatim** (== `to_bytes`); to write the
+  canonical form over a writer, normalize first: `value.to_canonical().encode(&mut w)`. `EncodeExt`
+  is an ext trait — **not** a generated inherent method — because a proc-macro can't see the
+  consumer's features, so a generated `#[cfg(feature="std")]` would key off the *wrong* crate's flag
+  (bring it in with `use bnb::prelude::*`). A `reserved`/`calc` message is now an **ordinary
+  struct** — no injected field — so it supports **struct literals** and **coexists with `serde`
+  derives** (the old "serde rejects `reserved`/`calc` messages" limitation is gone). Generated,
+  portable (no `EncodeExt`) methods: `to_bytes` (verbatim) and `to_canonical_bytes` (canonical);
+  sink-writing is the trait methods on `impl BitEncode { const LAYOUT; fn bit_encode; [fn
+  canonical_bit_encode when reserved/calc] }`.
 - `#[br(dbg)]` is `std`-only (`tracing` is an optional dep enabled by `std`); the
   `__private::tracing` re-export is `std`-gated.
 

@@ -33,14 +33,15 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       points — `decode(&mut Source)` (one cursor decode over the whole I/O ladder), `decode_all`/
       `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), and `decode_exact`/`peek`
       (one-shot) — the encode entry points (`to_bytes` + the `encode(writer)` convenience, plus
-      `BitEncode::bit_encode` for a `Sink`), and construction (`new(fields…)`, `builder()`).
+      `BitEncode::bit_encode` for a `Sink`), and construction (struct literal, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
       byte-identical `decode → to_bytes`); `to_canonical_bytes` normalizes (`reserved` → spec,
-      `calc` recomputed). Generated for a `reserved`/`calc` message, which also carries a
-      wire-ignored `encode_mode` field (default `Verbatim`; the `std`-writer `encode(w)` follows
-      it) and the in-memory helpers `to_canonical`/`canonical_diff`/`is_canonical`. The mode is
-      excluded from eq/hash/`Debug`, so these types are builder/`new`/`decode`-constructed.
-      **Struct-only** — a tagged-union enum encodes verbatim (no canonical/mode/`validate`/`new`).
+      `calc` recomputed). Generated for a `reserved`/`calc` message, alongside the in-memory
+      helpers `to_canonical`/`canonical_diff`/`is_canonical`. The form is chosen **per call** —
+      there is no carried mode (the `std`-writer `encode(w)` is always verbatim; stream canonical
+      via `value.to_canonical().encode(w)`). A `reserved`/`calc` message is an ordinary struct
+      (struct literals, serde-compatible). **Struct-only** — a tagged-union enum encodes verbatim
+      (no canonical/`validate`).
 - [x] **Struct options:** `big`/`little`, `bit_order = msb|lsb`, `magic = <expr>`
       (sub-byte allowed), `read_only`/`write_only`, `no_builder`, `forward_only`,
       `ctx(name: Ty, …)`, `validate = <path>`.
@@ -226,19 +227,21 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
 
 - [ ] Deliberate public-API review: trait shapes (`BitDecode`/`BitEncode`/`Source`/
       `Sink`/`Bits`/`Bitfield`), the directive vocabulary, error types, and the
-      `EncodeExt::encode(w)` / settable `encode_mode` / `EncodeMode` ergonomics — commit only to
+      `EncodeExt::encode(w)` ergonomics — commit only to
       what you'll keep. Mark growth points `#[non_exhaustive]` (errors already are).
       **Scrutinize the encode/construct surface breadth:** a `reserved`/`calc` `#[bin]` struct
-      exposes ~12 inherent methods here (`to_bytes`/`to_canonical_bytes` + `to_canonical`/
-      `canonical_diff`/`is_canonical` + the `encode_mode` trio + `new`/`builder` + `validate`/
+      exposes these inherent methods here (`to_bytes`/`to_canonical_bytes` + `to_canonical`/
+      `canonical_diff`/`is_canonical` + `builder` + `validate`/
       `is_valid`). The inherent `encode_into`/`canonical_encode_into` sink writers were **cut** as
       redundant over the `BitEncode::bit_encode`/`canonical_bit_encode` trait methods (0 uses vs the
       trait's; sink-composition now uses the trait, symmetric with `encode(w)` needing `EncodeExt`).
-      Still to weigh before the freeze: whether the full `encode_mode` trio (`set_`/`with_`/getter)
-      and `canonical_diff` earn their slots, and — bigger — whether the carried-`encode_mode`
-      mechanism pays for its complexity once dogfooding shows real streaming use (two downstream
-      decisions hang on this call: enum encode-model parity, and the serde-derive boundary on
-      `reserved`/`calc` types — both resolve themselves if the carried mode is cut). **Newer surface to
+      **Decided at the 1.0 freeze: the carried-`encode_mode` mechanism was CUT** — it did not pay for
+      its complexity (see the "Encode model" decision below), so the verbatim/canonical choice is now
+      purely per-call. That also resolved the two decisions that were coupled to it: **enum
+      encode-model parity** (#70 — collapses to a cheap delegating impl, since there's no carried mode
+      to mirror) and the **serde-derive boundary on `reserved`/`calc` types** (serde derives now work,
+      since there's no longer a non-`Serialize` injected field). Still to weigh before the freeze:
+      whether `canonical_diff` earns its slot. **Newer surface to
       scrutinize:** the **two struct-mapping forms** (closures `map`/`bw_map` vs the conversion-trait
       `wire`/`try_wire`) deliver the same capability two ways — keep both or converge? — and the
       `BitBuf` bounded quartet (`bounded`/`try_push`/`grow`/`capacity` + `CapacityError`) is fresh
@@ -402,8 +405,9 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       section above: the 1.0 boundary is buffer-at-a-time + `BitBuf` push/pull framing
       (bounded/alloc-once for fixed footprints); future streaming, if demanded, comes as
       additive adapters over `embedded-io`, not an in-house `bnb::io`.
-- [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(done — E1–E3 plus the
-      runtime `EncodeMode`)*. `to_bytes` used to be an inconsistent hybrid (retained `reserved` but
+- [x] **Encode model — `calc`/`reserved` handling, verbatim vs canonical** *(done — E1–E3; the
+      carried `EncodeMode` shipped and was then removed at the 1.0 freeze — see the marker below)*.
+      `to_bytes` used to be an inconsistent hybrid (retained `reserved` but
       recomputed `calc`). **Shipped:**
       - **`to_bytes()` = verbatim** — emit exactly what's stored (retained `reserved` + stored
         non-`temp` `calc`). Matches the `to_bytes`/`as_bytes` ecosystem idiom, is dual-use-honest
@@ -413,18 +417,25 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
         `calc`; always a valid, spec-compliant message. Generated whenever a struct has a `reserved`
         or non-`temp` `calc` field, alongside the in-memory helpers `to_canonical(self) -> Self` /
         `canonical_diff` / `is_canonical`.
-      - **Mode carried on the value:** a message with a `reserved`/`calc` field gains a settable,
-        wire-ignored `encode_mode` field (`EncodeMode { Verbatim, Canonical }`, default `Verbatim`)
-        — set via the builder's `.encode_mode(…)`, `set_encode_mode`/`with_encode_mode`; read via
-        `encode_mode()`. The std-writer `encode(w)` follows it (no `mode` parameter); `to_bytes`/
-        `to_canonical_bytes` stay explicit. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/
-        `Debug`** (a render preference, not data; `#[bin]` intercepts those derives), so these types
-        are **builder/`decode`-constructed** (the field can't appear in a literal). The canonical
-        path is a **defaulted method on `BitEncode`** (`canonical_bit_encode`, default = `bit_encode`),
-        so there is **no separate `CanonicalEncode`/`CanonicalEncodeExt` trait**. Decided against
-        `read`/`write` naming (collides with the `Source::read`/`Sink::write` cursor layer), against a
-        `bool`/Vec-dispatcher, and (after first shipping `encode(w, mode)`) against a call-time mode
-        parameter in favor of the carried field.
+      - **Mode carried on the value — Decision (1.0 freeze): REMOVED.** As shipped, a message with a
+        `reserved`/`calc` field gained a settable, wire-ignored `encode_mode` field
+        (`EncodeMode { Verbatim, Canonical }`, default `Verbatim`) — set via the builder's
+        `.encode_mode(…)`, `set_encode_mode`/`with_encode_mode`; read via `encode_mode()`. The
+        std-writer `encode(w)` followed it (no `mode` parameter); `to_bytes`/`to_canonical_bytes`
+        stayed explicit. The mode was excluded from `PartialEq`/`Eq`/`Hash`/`Debug` (`#[bin]`
+        intercepted those derives), so such types were builder/`decode`-constructed (the field
+        couldn't appear in a literal). The canonical path was a **defaulted method on `BitEncode`**
+        (`canonical_bit_encode`, default = `bit_encode`), so there was **no separate
+        `CanonicalEncode`/`CanonicalEncodeExt` trait**. Decided against `read`/`write` naming
+        (collides with the `Source::read`/`Sink::write` cursor layer), against a `bool`/Vec-dispatcher,
+        and (after first shipping `encode(w, mode)`) against a call-time mode parameter in favor of the
+        carried field. **Then, at the 1.0 freeze, the whole carried mechanism was cut** — zero real
+        users, and the maintenance cost (the injected wire-ignored field plus the hand-written
+        `Debug`/`PartialEq`/`Hash` it forced) wasn't earned; removing it also unblocked serde derives
+        and struct literals on `reserved`/`calc` types. **Now:** the verbatim/canonical choice is
+        purely **per call** — `to_bytes` vs `to_canonical_bytes` for a `Vec`, and over a writer
+        `encode(w)` is always verbatim (stream canonical via `value.to_canonical().encode(w)`).
+        `canonical_bit_encode` stays the defaulted `BitEncode` method.
       - **No `encode_mixed`** — per-field selection is covered by the value-level `#[brw(ignore)]` idiom.
       - **No `decode_canonical`** — one permissive `decode()` (verbatim) stays; normalize-on-read loses
         dual-use info and validate-on-read would reject input (both anti-dual-use).
@@ -443,16 +454,15 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
       real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
       `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
-- [x] **Encode-model parity for tagged-union enums** *(decided: struct-only for now; re-decide
-      after the carried-mode question settles)* — the canonical/`encode_mode`/`validate`/`new`
-      surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the boundary is already
-      documented as intentional in the guide/DESIGN: canonical form and validity are properties
-      of a *record*; canonicalize the payload type, then dispatch). Full parity today would need
-      an enum-side carried mode — no field to inject it into, so a wrapper or per-variant
-      injection plus per-variant `PartialEq`/`Hash` interception — heavy machinery with zero
-      demonstrated demand. **Coupled to the C-freeze `encode_mode` review:** if dogfooding leads
-      to *cutting* the carried mode, parity collapses to a cheap delegating
-      `to_canonical_bytes`/`is_canonical` and gets re-evaluated then. Additive either way.
+- [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
+      canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
+      boundary is already documented as intentional in the guide/DESIGN: canonical form and validity
+      are properties of a *record*; canonicalize the payload type, then dispatch). The old blocker —
+      full parity would have needed an enum-side *carried* mode (no field to inject it into, so a
+      wrapper or per-variant injection plus per-variant `PartialEq`/`Hash` interception) — is **gone
+      now that the carried mode was cut at the C freeze**: with the choice purely per-call, enum
+      parity collapses to a cheap delegating `to_canonical_bytes`/`is_canonical` and can be added
+      additively if a port ever demands it.
 - [x] **LSB × byte-order semantics** *(resolved — specified, validated, and fixed)* — the
       canonical rule is the **natural-layout rule**: each bit order has a natural byte layout
       (big-endian under MSB, little-endian under LSB); the byte-order knob swaps a byte-multiple
@@ -465,9 +475,10 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
         count (`binrw` reached the same conclusion) — bnb will not be a serde data format. What
         *is* supported (pinned by `tests/serde_compat.rs`): user-side serde derives coexist with
         **plain** `#[bin]` types, so one type carries both codecs (JSON for config/logs, bnb for
-        the wire). Documented boundaries: a `reserved`/`calc` message rejects serde derives (the
-        injected `encode_mode` field — same root cause as "no struct literals"; this boundary
-        *disappears* if the carried mode is cut at the C freeze), and bnb's own field types
+        the wire). Since the carried `encode_mode` field was cut at the 1.0 freeze, this now covers
+        **all** `#[bin]` structs — including `reserved`/`calc` messages, which are ordinary structs
+        again (the old "serde rejects `reserved`/`calc` messages" boundary is **gone**, along with the
+        "no struct literals" limitation it shared a root cause with). bnb's own field types
         (`uN`, bitfields) ship no serde impls (a post-1.0 additive `serde` feature, if demanded).
       - **async:** `BinCodec` over `Framed`/`UdpFramed` (the `tokio` feature) **is** the 1.0
         async story — the codec is in-memory and fast, framing is the async boundary, and
