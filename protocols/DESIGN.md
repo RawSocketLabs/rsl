@@ -53,8 +53,9 @@ and its rationale are in [`AGENTS.md`](AGENTS.md).
 
 ## §6 Open risks (tracked, not blocking)
 
-- **bnb git-dep churn** — pin to a rev once co-evolution settles so protocols CI can't break on
-  bnb's in-flight `main`.
+- **bnb co-evolution** — bnb is now a workspace member (path dep) in the `rsl` monorepo, so a
+  bnb change and its protocol consumers land in one atomic, CI-tested commit; there's no
+  cross-repo `main` that can drift out from under protocols.
 - **DNS surfaces real bnb gaps** (mutable message-scoped scratch state for name compression;
   overridable stored-length fields) — the co-evolution feature work; tracked in
   [`ROADMAP.md`](ROADMAP.md) and mirrored into bnb's own ROADMAP.
