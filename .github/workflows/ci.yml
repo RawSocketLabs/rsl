@@ -164,8 +164,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz
-      - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz -- -max_total_time=60 -runs=2000000
+      # Pin the gnu target: cargo-fuzz otherwise defaults to musl here, whose statically linked
+      # libc is incompatible with the ASan sanitizer (and musl std isn't installed).
+      - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
+      - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
   # Single required check: green when every job passed or was legitimately skipped, red if any
   # failed or was cancelled. Point branch protection at this one job, not the individual gated
