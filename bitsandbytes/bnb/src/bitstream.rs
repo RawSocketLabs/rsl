@@ -1772,14 +1772,15 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 pub struct StreamBitReader<R> {
     inner: R,
     /// Leftover bits from the last partially-consumed byte, right-aligned in the low
-    /// `lead_bits` bits (MSB-first, so they are the *high* bits of the next read).
-    /// Always fewer than 8.
+    /// `lead_bits` bits. Always fewer than 8. Consumed high-first under `Msb`, low-first
+    /// under `Lsb`.
     lead: u32,
     lead_bits: u32,
     /// Total bits consumed so far (for position-aware errors).
     pos: usize,
-    /// The bit/byte order this source reports (raw `read_bits` is always MSB-first; the
-    /// layout is applied to multi-byte values by `Source::read`).
+    /// The bit/byte order this source decodes in. `read_bits` honors the **bit** order
+    /// (like every other `Source`); **byte** order is applied to whole values by
+    /// [`read`](Self::read) / `Source::read`.
     layout: Layout,
 }
 
@@ -1810,7 +1811,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
         self.pos
     }
 
-    /// Reads `n` (`<= 128`) bits MSB-first, pulling bytes from the source as needed.
+    /// Reads `n` (`<= 128`) bits in the source's [bit order](Layout), pulling bytes from
+    /// the source as needed. This matches every other [`Source`]: byte order is applied to
+    /// whole values by [`read`](Self::read) / `Source::read`, not here.
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::Incomplete`] if the
@@ -1824,12 +1827,13 @@ impl<R: std::io::Read> StreamBitReader<R> {
             ));
         }
         let at = self.pos;
-        // Build the result MSB-first, consuming the leftover bits then whole bytes.
-        // The accumulator never holds more than `n` (<= 128) bits, so it can't
-        // overflow — unlike a "shift bytes in, mask out" buffer, which is why the old
-        // byte-accumulator capped at 64 and this caps at the full 128.
+        // Consume the leftover bits of the current byte, then whole bytes, honoring the
+        // source's bit order so a streaming read matches the slice-backed sources exactly
+        // (`extract_bits`). The accumulator never holds more than `n` (<= 128) bits, so it
+        // can't overflow.
         let mut result: u128 = 0;
         let mut need = n;
+        let mut placed = 0u32; // bits already placed (the LSB-path result cursor)
         while need > 0 {
             if self.lead_bits == 0 {
                 let mut b = [0u8; 1];
@@ -1842,24 +1846,44 @@ impl<R: std::io::Read> StreamBitReader<R> {
                 self.lead_bits = 8;
             }
             let take = need.min(self.lead_bits);
-            // The top `take` of the `lead_bits` leftover bits (MSB-first).
-            let shift = self.lead_bits - take;
-            let chunk = (self.lead >> shift) & ((1u32 << take) - 1);
-            result = (result << take) | u128::from(chunk);
-            self.lead_bits -= take;
-            self.lead &= (1u32 << self.lead_bits) - 1; // keep the unconsumed low bits
+            match self.layout.bit {
+                // MSB-first: consume the *high* `take` bits, accumulate high-to-low.
+                BitOrder::Msb => {
+                    let shift = self.lead_bits - take;
+                    let chunk = (self.lead >> shift) & ((1u32 << take) - 1);
+                    result = (result << take) | u128::from(chunk);
+                    self.lead_bits -= take;
+                    self.lead &= (1u32 << self.lead_bits) - 1; // keep the unconsumed low bits
+                }
+                // LSB-first: consume the *low* `take` bits, place them at the bit cursor.
+                BitOrder::Lsb => {
+                    let chunk = self.lead & ((1u32 << take) - 1);
+                    result |= u128::from(chunk) << placed;
+                    self.lead >>= take; // drop the consumed low bits
+                    self.lead_bits -= take;
+                }
+            }
+            placed += take;
             need -= take;
         }
         self.pos += n as usize;
         Ok(result)
     }
 
-    /// Reads one [`Bits`] value (width `<= 128`) of its declared width.
+    /// Reads one [`Bits`] value (width `<= 128`) of its declared width, applying the
+    /// source's byte order to whole values — matching [`BitReader::read`] and
+    /// `Source::read`, so `sr.read::<T>()` agrees with `T::decode(&mut sr)`.
     ///
     /// # Errors
     /// As [`read_bits`](Self::read_bits).
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
-        Ok(T::from_bits(self.read_bits(T::BITS)?))
+        let raw = self.read_bits(T::BITS)?;
+        Ok(T::from_bits(apply_byte_order(
+            raw,
+            T::BITS,
+            self.layout.bit,
+            self.layout.byte,
+        )))
     }
 }
 
@@ -2567,6 +2591,46 @@ mod unit {
             s.read_bits(129).unwrap_err().kind,
             ErrorKind::TooWide { width: 129 }
         );
+    }
+
+    #[test]
+    fn stream_reader_honors_every_layout() {
+        // The streaming reader must agree with the slice reader in *all four* bit/byte
+        // orders — not just the default `Msb`/`Big`. (An earlier `read_bits` hardcoded
+        // MSB-first extraction, so `Lsb` layouts decoded wrong here alone; and the
+        // inherent `read` skipped byte order, so it disagreed with `T::decode`.)
+        let bytes: Vec<u8> = (0u8..16).collect();
+        for bit in [BitOrder::Msb, BitOrder::Lsb] {
+            for byte in [ByteOrder::Big, ByteOrder::Little] {
+                let layout = Layout { bit, byte };
+
+                // `read_bits` parity across widths + a mid-byte split (byte-aligned and not).
+                let mut s = StreamBitReader::with_layout(&bytes[..], layout);
+                let mut r = BitReader::with_layout(&bytes, layout);
+                for n in [12u32, 20, 96] {
+                    assert_eq!(
+                        s.read_bits(n).unwrap(),
+                        r.read_bits(n).unwrap(),
+                        "read_bits({n}) diverged for {bit:?}/{byte:?}"
+                    );
+                }
+
+                // The inherent `read` must apply byte order, matching the slice reader's
+                // typed read (and therefore `T::decode`).
+                let mut s = StreamBitReader::with_layout(&bytes[..], layout);
+                let mut r = BitReader::with_layout(&bytes, layout);
+                assert_eq!(
+                    s.read::<u16>().unwrap(),
+                    r.read::<u16>().unwrap(),
+                    "read::<u16> diverged for {bit:?}/{byte:?}"
+                );
+                assert_eq!(
+                    s.read::<u32>().unwrap(),
+                    r.read::<u32>().unwrap(),
+                    "read::<u32> diverged for {bit:?}/{byte:?}"
+                );
+            }
+        }
     }
 
     // --- BitError: Display for every ErrorKind, and the offset/field suffix --------
