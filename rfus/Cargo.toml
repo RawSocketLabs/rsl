@@ -8,7 +8,7 @@ repository = "https://github.com/RawSocketLabs/rfus"
 readme = "README.md"
 
 [dependencies]
-winnow = "0.7"
+winnow = "1.0"
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]

@@ -16,7 +16,7 @@ jobs:
     name: commitlint (Conventional Commits)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history so the action can lint every commit in the PR range.
           fetch-depth: 0
