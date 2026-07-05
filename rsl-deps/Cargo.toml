@@ -52,7 +52,7 @@ rayon              = { version = "1.11", optional = true }
 # http server / client, OpenAPI
 axum               = { version = "0.8", optional = true }
 tower              = { version = "0.5", features = ["util"], optional = true }
-tower-http         = { version = "0.6", features = ["trace"], optional = true }
+tower-http         = { version = "0.7", features = ["trace"], optional = true }
 utoipa             = { version = "5", features = ["axum_extras"], optional = true }
 utoipa-swagger-ui  = { version = "9", features = ["axum", "vendored"], optional = true }
 reqwest            = { version = "0.13", default-features = false, features = ["json"], optional = true }
