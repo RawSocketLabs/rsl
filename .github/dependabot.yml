@@ -19,3 +19,6 @@ updates:
     groups:
       actions:
         update-types: [minor, patch]
+    ignore:
+      # This pin is the MSRV *Rust* version (1.85.0), not an action version — never bump it.
+      - dependency-name: "dtolnay/rust-toolchain"
