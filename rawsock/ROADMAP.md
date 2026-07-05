@@ -20,12 +20,13 @@ and re-homed as a bnb-independent repo.
       `SOCK_RAW`/`IPPROTO_RAW` (`IP_HDRINCL` free), `send(&impl Protocol)` + `RawIo`. Triggered by
       the `protocols` `ip` layer (the first crate to hand-build IP headers). Tested via a
       capability-consistency check (runs in CI) + a `CAP_NET_RAW`-gated loopback send.
-- [ ] **`link` (L2)** — raw Ethernet via `AF_PACKET`. Lands with ARP/Ethernet. **Before
-      writing it, re-evaluate rustix 1.x**: its `netdevice` module (`name_to_index`) and any
-      link-address support may cover the `sockaddr_ll` bind + `if_nametoindex` that the
-      reference used `libc` for — potentially keeping the whole crate libc-free. If `libc` is
-      unavoidable, relax the crate `forbid(unsafe_code)` → `deny` and confine `unsafe` to
-      `linux/link.rs`.
+- [x] **`link` (L2)** — **done** (`link` feature): `LinkSocket`, raw Ethernet via `AF_PACKET`,
+      bound to an interface by name. rustix's `netdevice::name_to_index` covers the interface
+      lookup, but rustix 1.1.4 (the latest) has **no safe link-layer socket address** — so
+      binding needs **one** `unsafe` call to build a `sockaddr_ll` via `SocketAddrAny::read`.
+      Per the plan below, the crate went `forbid(unsafe_code)` → `deny` with that single
+      `#[allow]` confined to `linux/link.rs`; **no `libc`** (rustix-only). Capability-consistency
+      test (CI) + a `CAP_NET_RAW`-gated loopback send.
 - [ ] **`spoof_udp` / `forge_arp` examples** — port from the reference once the L3/L2 backends
       and the `ip`/`udp`/`arp` protocol crates exist to compose real packets.
 - [ ] **Concrete compose tests** with the real IP/UDP `Protocol` impls (the current
