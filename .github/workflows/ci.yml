@@ -75,6 +75,14 @@ jobs:
       # bnb feature ladders that aren't on the default path.
       - run: cargo test -p bitsandbytes --features bytes
       - run: cargo test -p bitsandbytes --features mock
+      # rawsock's privileged L3/L2 backends + the protocols' rawsock-injection layers, plus the
+      # dns resolver client — all behind opt-in features, off the default path. The `inject`/
+      # `link`/`network` capability-consistency tests run unprivileged; the real sends skip.
+      - run: cargo test -p rawsock --all-features
+      - run: cargo test -p dns --features client
+      - run: >
+          cargo test --features inject
+          -p ip -p icmp -p tcp -p udp -p ethernet -p arp
       # the rsl facade + rsl-deps blessed stack (pure-Rust slice; FFI excluded).
       - run: cargo build -p rsl --features full
       - run: cargo build -p rsl-deps --features full
@@ -126,7 +134,10 @@ jobs:
         with:
           toolchain: nightly-2026-06-17
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-public-api --version 0.52.0 --locked
+      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.52.0
       - name: Diff the public API against the committed snapshot
         run: |
           cargo public-api -p bitsandbytes --all-features > "$RUNNER_TEMP/public-api.txt"
@@ -149,9 +160,14 @@ jobs:
       - run: rm -f rust-toolchain.toml
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-fuzz --locked
-      - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz
-      - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz -- -max_total_time=60 -runs=2000000
+      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # Pin the gnu target: cargo-fuzz otherwise defaults to musl here, whose statically linked
+      # libc is incompatible with the ASan sanitizer (and musl std isn't installed).
+      - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
+      - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
   # Single required check: green when every job passed or was legitimately skipped, red if any
   # failed or was cancelled. Point branch protection at this one job, not the individual gated

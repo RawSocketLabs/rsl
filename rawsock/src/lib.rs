@@ -26,15 +26,14 @@
 //! # Upstream crates
 //!
 //! Syscalls go through [`rustix`](https://docs.rs/rustix) (safe, Linux-only, optional) —
-//! **not** `libc`/`socket2`. The core here is 100% safe (`#![forbid(unsafe_code)]`). The
-//! future `link` backend needs `libc` only for the `AF_PACKET` `sockaddr_ll` bind +
-//! `if_nametoindex`; that is the sole planned FFI, isolated to that module, and to be
-//! re-checked against rustix's `netdevice`/link support first (it may eliminate `libc`
-//! entirely). See `DESIGN.md`.
+//! **not** `libc`/`socket2`. The crate is `#![deny(unsafe_code)]` with a **single** confined
+//! `unsafe` block, in [`linux::link`] (the `link` feature): rustix (1.1.4, the latest) exposes
+//! no safe link-layer socket address, so binding an `AF_PACKET` socket needs one call to
+//! construct a `sockaddr_ll` — no `libc`, and everything else stays safe. See `DESIGN.md`.
 //!
 //! [`bnb`]: https://github.com/RawSocketLabs/bitsandbytes
 //! [RawSocketLabs]: https://github.com/RawSocketLabs
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 use std::fmt;
@@ -50,6 +49,8 @@ pub use loopback::Loopback;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(all(target_os = "linux", feature = "link"))]
+pub use linux::link::LinkSocket;
 #[cfg(all(target_os = "linux", feature = "network"))]
 pub use linux::network::NetworkSocket;
 #[cfg(all(target_os = "linux", feature = "transport"))]
