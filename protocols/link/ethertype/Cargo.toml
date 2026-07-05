@@ -1,6 +1,6 @@
 [package]
 name = "ethertype"
-version = "0.1.1"
+version = "0.2.0"
 description = "EtherType — the 16-bit link-layer protocol identifier (IEEE 802.3), as a bnb BitEnum."
 edition.workspace = true
 license.workspace = true
