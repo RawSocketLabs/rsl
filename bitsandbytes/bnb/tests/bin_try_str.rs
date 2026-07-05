@@ -41,8 +41,7 @@ mod macro_ {
         assert_eq!(Msg::decode_exact(&m.to_bytes().unwrap()).unwrap(), m);
     }
 
-    // `#[try_str]` also works inside a canonical (`#[reserved]`-bearing) message, whose `Debug` is
-    // already custom (it excludes the hidden `encode_mode`).
+    // `#[try_str]` also works inside a canonical (`#[reserved]`-bearing) message.
     #[bin(big)]
     #[derive(Debug, PartialEq, Eq, Clone)]
     struct Frame {
@@ -66,7 +65,8 @@ mod macro_ {
             .unwrap();
         let dbg = format!("{f:?}");
         assert!(dbg.contains(r#"label: "hi""#), "got: {dbg}");
-        assert!(!dbg.contains("encode_mode"), "mode must stay hidden: {dbg}");
+        // The `#[br(temp)]` length field is not stored, so it never appears in Debug.
+        assert!(!dbg.contains("len"), "temp field must stay hidden: {dbg}");
     }
 
     // `#[try_str]` on an **enum** variant field (the dispatch case): the custom Debug renders the

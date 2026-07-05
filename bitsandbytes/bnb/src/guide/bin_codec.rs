@@ -68,15 +68,15 @@
 //! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation |
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
-//! | encode | `encode(&mut W)` | encode to any [`std::io::Write`], following the value's `encode_mode` |
+//! | encode | `encode(&mut W)` | encode to any [`std::io::Write`] (**verbatim**) |
 //! | encode | `bit_encode(&mut K)` | write into an explicit [`Sink`](crate::Sink) — a [`BitEncode`](crate::BitEncode) trait method (`canonical_bit_encode` for the canonical form) |
 //! | build | `builder()` | the required-by-default builder |
-//! | build | `new(fields…)` | positional constructor — every stored field, in declaration order |
+//! | build | `Name { … }` | a struct literal names every stored field directly |
 //!
 //! `decode_exact`/`decode_all`/`peek`/`to_bytes` are the everyday slice/`Vec` path;
 //! `decode`/`encode(&mut W)`/`bit_encode` open the door to the
-//! [I/O ladder](super::io). († `to_canonical_bytes`, the canonical helpers, and the settable
-//! `encode_mode` exist only when the message has a `reserved` or `calc` field — see
+//! [I/O ladder](super::io). († `to_canonical_bytes` and the canonical helpers exist only when
+//! the message has a `reserved` or `calc` field — see
 //! [Two encode forms](#two-encode-forms-verbatim-vs-canonical).)
 //!
 //! ## Decoding a buffer of messages
@@ -302,25 +302,19 @@
 //! `is_canonical()`, `canonical_diff()` (the names of the fields that differ from canonical),
 //! and `to_canonical(self) -> Self`.
 //!
-//! ## The `encode_mode` field
+//! ## Choosing a form
 //!
-//! Such a message also carries a wire-ignored **`encode_mode`** (defaulting to `Verbatim`),
-//! settable via `set_encode_mode`/`with_encode_mode` or the builder's `.encode_mode(…)`, and
-//! readable with `encode_mode()`. **Exactly one entry point consults it** — the std-writer
-//! [`encode`](crate::EncodeExt::encode), so you set the policy once and stream the value
-//! without re-specifying. Every *other* encoder ignores it and is explicit: `to_bytes` /
-//! `bit_encode` are always verbatim, `to_canonical_bytes` / `canonical_bit_encode` always
-//! canonical. The mode is **excluded from `PartialEq`/`Eq`/`Hash`/`Debug`** (it's a render
-//! preference, not message data), and because the field can't appear in a struct literal,
-//! **construct these via the builder, `new(…)`, or `decode`** (every `#[bin]` type gets a
-//! positional `new(fields…)` over its stored fields). The injected field has one more
-//! consequence: a `reserved`/`calc` message **rejects serde derives** (`EncodeMode` implements
-//! no `Serialize`), while a plain `#[bin]` message coexists with them fine — one type can
-//! carry both codecs (see `tests/serde_compat.rs`; bnb is deliberately *not* a serde data
-//! format, whose model has no bit widths or byte order).
+//! Every encoder is **explicit** — nothing silently rewrites your data. `to_bytes` /
+//! `bit_encode` / the std-writer [`encode`](crate::EncodeExt::encode) are always **verbatim**;
+//! `to_canonical_bytes` / `canonical_bit_encode` are always **canonical**. To stream the
+//! canonical form over a `std::io::Write`, encode the canonical copy:
+//! `value.to_canonical().encode(&mut w)`. A `reserved`/`calc` field is an ordinary stored field,
+//! so these messages construct via a struct literal, the builder, or `decode`, and coexist with
+//! serde derives fine — one type can carry both codecs (see `tests/serde_compat.rs`; bnb is
+//! deliberately *not* a serde data format, whose model has no bit widths or byte order).
 //!
 //! ```
-//! use bnb::{bin, EncodeExt, EncodeMode};
+//! use bnb::{bin, EncodeExt};
 //!
 //! #[bin(big)]
 //! #[derive(Debug, Clone, PartialEq)]
@@ -333,7 +327,7 @@
 //!     check: u8,                     // canonical value: tag ^ 0x5A
 //! }
 //!
-//! // A value a peer sent us with non-spec reserved bits and a stale checksum (builder-only):
+//! // A value a peer sent us with non-spec reserved bits and a stale checksum:
 //! let p = Packet::builder().tag(0x10).rsv(0xFF).check(0x99).build().unwrap();
 //!
 //! // VERBATIM — exactly what's stored (so decode -> to_bytes round-trips):
@@ -346,13 +340,10 @@
 //! assert!(!p.is_canonical());
 //! assert_eq!(p.canonical_diff(), ["rsv", "check"]);
 //!
-//! // `encode(w)` follows the value's mode (default Verbatim); set it to stream canonical:
+//! // Stream the canonical form over a writer: encode the canonical copy.
 //! let mut out: Vec<u8> = Vec::new();
-//! p.clone().with_encode_mode(EncodeMode::Canonical).encode(&mut out).unwrap();
+//! p.clone().to_canonical().encode(&mut out).unwrap();
 //! assert_eq!(out, [0x10, 0x00, 0x4A]);
-//!
-//! // The mode never affects equality — a value differs from its re-moded self only in render:
-//! assert_eq!(p, p.clone().with_encode_mode(EncodeMode::Canonical));
 //! ```
 //!
 //! See [`directives`](super::directives) for every field directive, and

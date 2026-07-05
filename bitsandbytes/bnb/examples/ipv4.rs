@@ -15,7 +15,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example ipv4`
 
-use bnb::{BitEnum, EncodeExt, EncodeMode, bin, bitfield, u2, u4, u6, u13};
+use bnb::{BitEnum, EncodeExt, bin, bitfield, u2, u4, u6, u13};
 use std::net::Ipv4Addr;
 use tracing::info;
 
@@ -228,17 +228,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `to_canonical()` is the same correction, in memory.
     assert!(tampered.clone().to_canonical().is_canonical());
 
-    // ===== mode carried on the value: encode(w) follows it ======================
-    // The verbatim/canonical choice can be set on the value (here per-iteration), and
-    // `encode(w)` — straight to any std::io::Write, a Vec standing in for a socket —
-    // follows it. (`to_bytes`/`to_canonical_bytes` are the explicit compile-time form.)
-    for mode in [EncodeMode::Verbatim, EncodeMode::Canonical] {
+    // ===== verbatim vs canonical over a writer ==================================
+    // `encode(w)` — straight to any std::io::Write, a Vec standing in for a socket — is always
+    // **verbatim**. Encode the value as-is for the verbatim form, or its `to_canonical()` copy
+    // for the normalized form. (`to_bytes`/`to_canonical_bytes` are the Vec equivalents.)
+    for (label, value) in [
+        ("verbatim", tampered.clone()),
+        ("canonical", tampered.clone().to_canonical()),
+    ] {
         let mut socket: Vec<u8> = Vec::new();
-        tampered
-            .clone()
-            .with_encode_mode(mode)
-            .encode(&mut socket)?;
-        info!(?mode, checksum = %format!("0x{:04x}", checksum_of(&socket)), "encode(w) follows the set mode");
+        value.encode(&mut socket)?;
+        info!(mode = label, checksum = %format!("0x{:04x}", checksum_of(&socket)), "encode(w)");
     }
 
     // ===== dual-use: an unknown protocol is preserved ===========================

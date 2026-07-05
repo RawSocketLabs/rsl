@@ -183,7 +183,7 @@ pub mod wirelen;
 
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
-    DecodeWith, EncodeMode, EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
+    DecodeWith, EncodeWith, ErrorKind, FixedBitLen, Layout, SeekSource, Sink, Source,
 };
 pub use wirelen::WireLen;
 

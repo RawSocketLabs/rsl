@@ -17,7 +17,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 
 | Example | Shows | Run |
 |---|---|---|
-| `ipv4` | An IPv4 header: nested `#[bitfield]`s, `map`, **verbatim vs canonical** encode (`encode_mode`/`to_canonical_bytes`) | `--example ipv4` |
+| `ipv4` | An IPv4 header: nested `#[bitfield]`s, `map`, **verbatim vs canonical** encode (`to_canonical`/`to_canonical_bytes`) | `--example ipv4` |
 | `bin_message` | The `#[bin]` fold end-to-end: bitfield + enum fields, `count`, `temp`/`calc`, `validate` | `--example bin_message` |
 | `arbitrary_width` | A 48-bit `#[derive(BitEnum)]` (a long sync/magic word) in a **non-byte-aligned 54-bit** `#[bin]` message; `#[catch_all]` keeps unknown syncs | `--example arbitrary_width` |
 | `ais` | A real bit-packed format — an AIS marine Position Report: `u6`/`u2`/`u30`/`u4`/`u10` fields, **52-bit** non-byte-aligned total, `#[catch_all]` nav-status | `--example ais` |
@@ -25,7 +25,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `endianness` | **Bit order × byte order are independent knobs**: the `#[bin]` 2×2 (`msb`/`lsb` × `big`/`little`) all distinct + round-trip, plus the low-level `BitReader`/`BitWriter` explicit `Layout` | `--example endianness` |
 | `wav` | **Little-endian** byte order (`#[bin(little)]`): a RIFF/WAVE `fmt ` chunk of multi-byte LE integers, with `#[try_str]` on the `[u8; 4]` tag | `--example wav` |
 | `telemetry` | A telemetry frame: `#[bitflags]`, `#[reserved]`, `count`, `validate`, canonical encode | `--example telemetry` |
-| `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, value-carried `encode_mode` | `--example reserved` |
+| `reserved` | `#[reserved]` + the **verbatim vs canonical** model: `to_canonical_bytes`, `is_canonical`/`canonical_diff`, `to_canonical` | `--example reserved` |
 | `alignment` | `pad_before` + `align_after` positioning with typed amounts (`4.bits()`, `1.bytes()`) | `--example alignment` |
 | `padding` | `align_before` + `pad_after` — realign after a sub-byte field, fixed-size trailing pad | `--example padding` |
 | `register` | `#[reserved]`/`#[reserved_with]` (must-be-zero + must-be-one) **and** `pad` in a fixed-layout control register | `--example register` |
@@ -99,7 +99,7 @@ helpers are built on the cursors, so dropping a level is always possible.
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
 | `pad` / `align` | alignment, padding, register |
 | `#[reserved]` / `#[reserved_with]` | reserved, register, telemetry |
-| verbatim vs canonical (`encode_mode`) | reserved, ipv4, telemetry |
+| verbatim vs canonical (`to_canonical`) | reserved, ipv4, telemetry |
 | `validate` | validate, bin_message, telemetry |
 | `#[try_str]` (Debug rendering) | try_str, checked, ctx, wav |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` / `BitBuf` | tcp, bufsource / archive, peek / framed, streaming / bitbuf, bitbuf_bounded |
