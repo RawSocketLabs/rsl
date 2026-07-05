@@ -1,0 +1,19 @@
+name: "RSL blessed-version drift check"
+description: "Warn (or fail) when a repo's DIRECT deps drift off rsl-deps' blessed major line."
+inputs:
+  ref:
+    description: "rsl monorepo ref to read blessed versions + checker from"
+    default: "main"
+  strict:
+    description: "Fail the step on drift (default: warn only)"
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      run: |
+        base="https://raw.githubusercontent.com/RawSocketLabs/rsl/${{ inputs.ref }}"
+        curl -sSfL "$base/tools/check-drift.py" -o "$RUNNER_TEMP/check-drift.py"
+        curl -sSfL "$base/rsl-deps/blessed-versions.toml" -o "$RUNNER_TEMP/blessed.toml"
+        python3 "$RUNNER_TEMP/check-drift.py" --blessed "$RUNNER_TEMP/blessed.toml" --repo . \
+          ${{ inputs.strict == 'true' && '--strict' || '' }}
