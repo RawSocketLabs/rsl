@@ -263,13 +263,28 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
 
 ### D. Docs & migration
 
-- [ ] Migration guide (`modular-bitfield`/`binrw`/`num_enum` → `bnb`) and a
-      `CHANGELOG.md` (the `guide` module, `DESIGN.md`, docs.rs + Pages are already done).
+- [x] Migration guide (`modular-bitfield`/`binrw`/`num_enum` → `bnb`) — shipped as
+      [`bnb::guide::migrating`](src/guide/migrating.rs), page 15 of the guide: a
+      directive-mapping table + the real differences for each "coming from X" crate, all
+      `bnb`-side examples runnable doctests (the external snippets are `ignore`d, since
+      those crates aren't deps). The three external APIs were re-verified against their
+      current docs.rs before writing. `CHANGELOG.md` already exists; the `guide` module,
+      `DESIGN.md`, and docs.rs + Pages were already done.
 
 ### E. Performance baseline
 
-- [ ] Throughput on **real whole-messages** (not just a 16-bit field); a CI
-      perf-regression gate; a macro compile-time / codegen-bloat sanity check.
+- [x] Throughput on **real whole-messages** — `benches/message_bench.rs` (criterion,
+      `harness = false`): encode (`to_bytes`) + decode (`decode_exact`) of a
+      self-contained IPv4-header-shaped `#[bin]` message (sub-byte `#[bitfield]`s incl. a
+      nested `BitEnum`, whole-byte/16-/32-bit scalars, two addresses, and a
+      `count_prefix` var-length tail). **Informational baseline only.**
+- [ ] **CI perf-regression gate — deliberately deferred post-1.0.** The whole-message
+      bench is an informational local baseline, not a gate: benchmark numbers are noisy on
+      shared CI runners and a hard perf gate would flake. Revisit once there's a stable,
+      dedicated bench runner. The bitfield-layer "as fast as hand-written shift/mask" claim
+      is already substantiated by `bitfield_bench.rs`.
+- [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
+      --timings` / expanded-output size pass on a representative multi-message crate).
 
 ### F. Release hygiene
 

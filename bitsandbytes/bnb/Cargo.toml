@@ -137,5 +137,9 @@ harness = false
 name = "bitstream_bench"
 harness = false
 
+[[bench]]
+name = "message_bench"
+harness = false
+
 [lints]
 workspace = true
