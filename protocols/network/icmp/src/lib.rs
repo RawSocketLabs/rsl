@@ -26,6 +26,10 @@
 
 use bnb::bin;
 
+/// A typed message view (`IcmpMessage`) over the flat header.
+pub mod message;
+pub use message::IcmpMessage;
+
 /// The rawsock injection layer — the `inject` feature.
 #[cfg(feature = "inject")]
 pub mod inject;
