@@ -370,7 +370,7 @@ where
 ///
 /// Used by the positioning directives, e.g. `#[br(pad_before = 2u32.bytes())]` — see
 /// [`guide::directives`](crate::guide::directives).
-pub trait BitAmount: Copy {
+pub trait BitAmount: Copy + sealed::Sealed {
     /// This many **bits**.
     fn bits(self) -> u32;
     /// This many **bytes** (× 8 bits).
@@ -386,6 +386,13 @@ macro_rules! impl_bit_amount {
     )*};
 }
 impl_bit_amount!(u8, u16, u32, u64, usize, i16, i32, i64, isize);
+// Seal the `BitAmount` types that aren't already sealed by `CountPrefix`
+// (`u8, u16, u32, u64` get their `Sealed` impl from `count_prefix_prim!`).
+impl sealed::Sealed for usize {}
+impl sealed::Sealed for i16 {}
+impl sealed::Sealed for i32 {}
+impl sealed::Sealed for i64 {}
+impl sealed::Sealed for isize {}
 
 /// Skips `bits` forward (consuming and discarding) — backs `#[br(pad_before/after)]`.
 ///
@@ -873,7 +880,7 @@ impl BitWriter {
 /// let mut r = BitReader::new(&[0xA5]);
 /// assert_eq!(first_nibble(&mut r), u4::new(0xA));
 /// ```
-pub trait Source {
+pub trait Source: sealed::Sealed {
     /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, in the source's
     /// bit order (MSB-first by default).
     ///
@@ -1027,7 +1034,7 @@ impl SeekSource for BitReader<'_> {}
 /// put_nibble(&mut w, u4::new(0x5));
 /// assert_eq!(w.into_bytes(), [0xA5]);
 /// ```
-pub trait Sink {
+pub trait Sink: sealed::Sealed {
     /// Appends the low `n` (`<= 128`) bits of `value`, in the sink's bit order
     /// (MSB-first by default).
     ///
@@ -1125,6 +1132,8 @@ impl<K: Sink> std::io::Write for SinkWriter<'_, K> {
     }
 }
 
+impl sealed::Sealed for BitReader<'_> {}
+
 impl Source for BitReader<'_> {
     #[inline]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
@@ -1147,6 +1156,8 @@ impl Source for BitReader<'_> {
         BitReader::seek_to_bit(self, pos)
     }
 }
+
+impl sealed::Sealed for BitWriter {}
 
 impl Sink for BitWriter {
     #[inline]
@@ -1857,6 +1868,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
 }
 
 #[cfg(feature = "std")]
+impl<R: std::io::Read> sealed::Sealed for StreamBitReader<R> {}
+
+#[cfg(feature = "std")]
 impl<R: std::io::Read> Source for StreamBitReader<R> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         StreamBitReader::read_bits(self, n)
@@ -1956,6 +1970,9 @@ impl<R: std::io::Read> BufSource<R> {
         Ok(())
     }
 }
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read> sealed::Sealed for BufSource<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read> Source for BufSource<R> {
@@ -2249,6 +2266,8 @@ impl fmt::Display for CapacityError {
 
 impl core::error::Error for CapacityError {}
 
+impl sealed::Sealed for BitBuf {}
+
 impl Source for BitBuf {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let mut r = BitReader::with_layout(&self.buf, self.layout);
@@ -2324,6 +2343,9 @@ impl<R: std::io::Read + std::io::Seek> SeekReader<R> {
         }
     }
 }
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read + std::io::Seek> sealed::Sealed for SeekReader<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
@@ -2411,6 +2433,8 @@ mod bytes_io {
         }
     }
 
+    impl super::sealed::Sealed for BytesReader {}
+
     impl Source for BytesReader {
         fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
             let mut br = BitReader::with_layout(&self.data, self.layout);
@@ -2467,6 +2491,8 @@ mod bytes_io {
             bytes::Bytes::from(self.inner.into_bytes())
         }
     }
+
+    impl super::sealed::Sealed for BytesWriter {}
 
     impl Sink for BytesWriter {
         fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
@@ -2787,6 +2813,8 @@ mod unit {
         bytes: &'a [u8],
         pos: usize,
     }
+    impl sealed::Sealed for TinySource<'_> {}
+
     impl Source for TinySource<'_> {
         fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
             let n = n as usize;
@@ -2847,6 +2875,8 @@ mod unit {
         out: Vec<u8>,
         bit: usize,
     }
+    impl sealed::Sealed for TinySink {}
+
     impl Sink for TinySink {
         fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
             let n = n as usize;

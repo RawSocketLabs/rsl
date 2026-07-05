@@ -28,3 +28,13 @@ fn ui_seal() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui_seal/*.rs");
 }
+
+/// `CountPrefix` is sealed, so a downstream type can't implement it. Its diagnostic's help note
+/// enumerates *every* `sealed::Sealed` implementor — a set the `std`/`bytes`/`mock`/`net`
+/// features extend — so pin it to the pure default feature set for a stable snapshot.
+#[cfg(not(any(feature = "bytes", feature = "mock", feature = "net")))]
+#[test]
+fn ui_countprefix_seal() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui_countprefix_seal/*.rs");
+}
