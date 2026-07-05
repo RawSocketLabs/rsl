@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
 
