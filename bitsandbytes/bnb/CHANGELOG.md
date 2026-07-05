@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.2.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.2.0...bitsandbytes-v0.2.1) - 2026-07-05
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.2.0](https://github.com/RawSocketLabs/bitsandbytes/compare/v0.1.0...v0.2.0) - 2026-06-22
 
 ### Added
