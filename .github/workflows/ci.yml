@@ -19,6 +19,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       bnb: ${{ steps.filter.outputs.bnb }}
+      ffi: ${{ steps.filter.outputs.ffi }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -35,6 +36,10 @@ jobs:
               - '.github/workflows/ci.yml'
             bnb:
               - 'bitsandbytes/**'
+              - '.github/workflows/ci.yml'
+            ffi:
+              - 'usdr/**'
+              - 'rust-dsdcc/**'
               - '.github/workflows/ci.yml'
 
   fmt:
@@ -171,13 +176,37 @@ jobs:
       - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
+  ffi:
+    name: FFI bridges (usdr, dsdcc) — cxx compile check
+    needs: changes
+    if: needs.changes.outputs.ffi == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      # The FFI crates are excluded workspace members, so check them by manifest path. `cargo
+      # check` compiles the cxx bridge (C++ ↔ Rust) and type-checks the Rust, but does NOT link
+      # the native libs (libusdr / libdsdcc), which aren't packaged — so this gates API/bridge
+      # drift without needing the SDR hardware libraries. usdr's headers are vendored; dsdcc
+      # needs DSDcc's headers, cloned here for DSDCC_INCLUDE.
+      - name: usdr — cxx bridge check
+        run: cargo check --manifest-path usdr/Cargo.toml
+      - name: Fetch DSDcc headers
+        run: git clone --depth 1 https://github.com/f4exb/dsdcc.git "$RUNNER_TEMP/dsdcc"
+      - name: dsdcc — cxx bridge check
+        env:
+          DSDCC_INCLUDE: ${{ runner.temp }}/dsdcc
+        run: cargo check --manifest-path rust-dsdcc/Cargo.toml
+
   # Single required check: green when every job passed or was legitimately skipped, red if any
   # failed or was cancelled. Point branch protection at this one job, not the individual gated
   # jobs (a skipped required check would otherwise block merges).
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz]
+    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, ffi]
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Fail if any needed job failed or was cancelled
