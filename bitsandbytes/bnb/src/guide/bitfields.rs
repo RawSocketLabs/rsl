@@ -16,7 +16,7 @@
 //! }
 //!
 //! let b = VersionIhl::new().with_version(u4::new(4)).with_ihl(u4::new(5));
-//! assert_eq!(b.raw(), 0x45);          // the classic IPv4 first byte
+//! assert_eq!(b.to_raw(), 0x45);          // the classic IPv4 first byte
 //! assert_eq!(b.version().value(), 4);
 //! ```
 //!

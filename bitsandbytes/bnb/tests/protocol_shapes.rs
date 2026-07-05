@@ -91,7 +91,7 @@ mod integration {
 
         // opcode occupies bits 11..=15, so op=2 lands at 2 << 11 = 0x1000;
         // rcode occupies bits 0..=3, so 2. Total 0x1002.
-        assert_eq!(state.raw(), 0x1002);
+        assert_eq!(state.to_raw(), 0x1002);
         assert_eq!(state.to_be_bytes(), [0x10, 0x02]);
 
         // Getters round-trip through the nested types.
@@ -106,12 +106,12 @@ mod integration {
         // 4..=10, and authoritative is the high bit of the 7-bit flags field (bit 6
         // of flags) -> state bit 4 + 6 = 10.
         let state = State::new().with_flags(Flags::new().with_authoritative(true));
-        assert_eq!(state.raw(), 1 << 10);
+        assert_eq!(state.to_raw(), 1 << 10);
         assert!(state.flags().authoritative());
 
         let state = State::new().with_flags(Flags::new().with_recursion_desired(true));
         // recursion_desired is the 3rd flag bit (bit 4 of flags) -> state bit 4+4=8.
-        assert_eq!(state.raw(), 1 << 8);
+        assert_eq!(state.to_raw(), 1 << 8);
     }
 
     #[test]
@@ -120,7 +120,10 @@ mod integration {
         let state = State::from_raw(0x000F);
         assert_eq!(state.rcode(), RCode::Other(u4::new(0xF)));
         // And re-encoding yields the same bits.
-        assert_eq!(state.with_rcode(RCode::Other(u4::new(0xF))).raw(), 0x000F);
+        assert_eq!(
+            state.with_rcode(RCode::Other(u4::new(0xF))).to_raw(),
+            0x000F
+        );
     }
 
     #[test]
@@ -163,7 +166,7 @@ mod integration {
             .with_user_mode(true)
             .with_signing_required(true);
         // LSB-first: user_mode = bit 0, signing_required = bit 3.
-        assert_eq!(mode.raw(), 0b0000_1001);
+        assert_eq!(mode.to_raw(), 0b0000_1001);
         assert!(mode.user_mode());
         assert!(mode.signing_required());
         assert!(!mode.signing_enabled());
@@ -172,7 +175,7 @@ mod integration {
     #[test]
     fn smb_capabilities_little_endian_bytes() {
         let caps = Capabilities::new().with_unicode(true); // bit 2
-        assert_eq!(caps.raw(), 0x0000_0004);
+        assert_eq!(caps.to_raw(), 0x0000_0004);
         // Little-endian: the low byte (0x04) comes first.
         assert_eq!(caps.to_le_bytes(), [0x04, 0x00, 0x00, 0x00]);
         assert_eq!(caps.to_be_bytes(), [0x00, 0x00, 0x00, 0x04]);
@@ -199,7 +202,7 @@ mod integration {
         let s = ManualState::new()
             .with_opcode(u5::new(2))
             .with_rcode(u4::new(2));
-        assert_eq!(s.raw(), 0x1002); // identical to the auto-laid-out DNS State
+        assert_eq!(s.to_raw(), 0x1002); // identical to the auto-laid-out DNS State
         assert_eq!(s.opcode(), u5::new(2));
     }
 
@@ -226,7 +229,7 @@ mod integration {
         assert_eq!(<Flags as bnb::Bits>::BITS, 7);
         let op = OpCode::new().with_response(true).with_op(Op::Update);
         // response is the high bit of the 5-bit field (bit 4); op=5 in the low 4.
-        assert_eq!(op.raw(), 0b1_0101);
+        assert_eq!(op.to_raw(), 0b1_0101);
         assert_eq!(bnb::Bits::into_bits(op), 0b1_0101);
     }
 }

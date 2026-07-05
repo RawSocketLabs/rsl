@@ -43,7 +43,7 @@ mod macro_ {
     #[test]
     fn all_backings_round_trip() {
         let b8 = B8::new().with_hi(u4::new(0xA)).with_lo(u4::new(0x5));
-        assert_eq!(b8.raw(), 0xA5);
+        assert_eq!(b8.to_raw(), 0xA5);
         assert_eq!(b8.hi(), u4::new(0xA));
 
         let b32 = B32::new()
@@ -51,7 +51,7 @@ mod macro_ {
             .with_b(u12::new(0xABC))
             .with_c(u12::new(0xDEF));
         // a in bits 24..=31, b in 12..=23, c in 0..=11.
-        assert_eq!(b32.raw(), 0xFF_ABC_DEF);
+        assert_eq!(b32.to_raw(), 0xFF_ABC_DEF);
         assert_eq!(b32.to_be_bytes(), [0xFF, 0xAB, 0xCD, 0xEF]);
 
         let b64 = B64::new()
@@ -62,7 +62,7 @@ mod macro_ {
 
         let b128 = B128::new().with_version(u4::new(6));
         assert_eq!(b128.version(), u4::new(6));
-        assert_eq!(b128.raw() >> 124, 6);
+        assert_eq!(b128.to_raw() >> 124, 6);
     }
 
     // ---------------------------------------------------------------------------
@@ -87,11 +87,11 @@ mod macro_ {
     fn bit_order_is_mirrored() {
         // MSB: `first` (0b101) lands in the high 3 bits (offset 5) -> 0b1010_0000.
         let m = Msb::new().with_first(u3::new(0b101));
-        assert_eq!(m.raw(), 0b1010_0000);
+        assert_eq!(m.to_raw(), 0b1010_0000);
 
         // LSB: the same value lands in the low 3 bits -> 0b0000_0101.
         let l = Lsb::new().with_first(u3::new(0b101));
-        assert_eq!(l.raw(), 0b0000_0101);
+        assert_eq!(l.to_raw(), 0b0000_0101);
     }
 
     // ---------------------------------------------------------------------------
@@ -133,9 +133,9 @@ mod macro_ {
         let i = Inferred::new().with_a(u5::new(2)).with_c(u4::new(3));
         let w = Widths::new().with_a(2).with_c(3);
         let r = Ranges::new().with_a(2).with_c(3);
-        assert_eq!(i.raw(), 0x1003);
-        assert_eq!(w.raw(), 0x1003);
-        assert_eq!(r.raw(), 0x1003);
+        assert_eq!(i.to_raw(), 0x1003);
+        assert_eq!(w.to_raw(), 0x1003);
+        assert_eq!(r.to_raw(), 0x1003);
     }
 
     // ---------------------------------------------------------------------------
@@ -146,10 +146,10 @@ mod macro_ {
     fn field_setters_mask_to_width() {
         // `with_` masks the incoming value, and never disturbs neighbours.
         let b = B8::new().with_hi(u4::new(0xF)).with_lo(u4::new(0xF));
-        assert_eq!(b.raw(), 0xFF);
+        assert_eq!(b.to_raw(), 0xFF);
         // Setting hi again does not touch lo.
         let b = b.with_hi(u4::new(0x3));
-        assert_eq!(b.raw(), 0x3F);
+        assert_eq!(b.to_raw(), 0x3F);
 
         // from_raw stores the whole backing; getters mask out their slice.
         let b = B8::from_raw(0xFF);
@@ -172,7 +172,7 @@ mod macro_ {
     fn partial_width_leaves_high_bits_clear() {
         let p = Partial::new().with_flag(true).with_value(u4::new(0xF));
         // 5 bits: flag at offset 4, value at 0..=3.
-        assert_eq!(p.raw(), 0b0001_1111);
+        assert_eq!(p.to_raw(), 0b0001_1111);
         assert_eq!(<Partial as Bits>::BITS, 5);
     }
 
@@ -370,7 +370,7 @@ mod macro_ {
     #[test]
     fn error_messages_are_informative() {
         let e = u4::try_new(99).unwrap_err();
-        assert_eq!(e, bnb::Error::ValueTooLarge { value: 99, bits: 4 });
+        assert_eq!(e, bnb::WidthError::ValueTooLarge { value: 99, bits: 4 });
         assert_eq!(e.to_string(), "value 99 does not fit in 4 bits");
     }
 }

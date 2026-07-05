@@ -37,7 +37,7 @@ mod e2e {
     }
 
     #[test]
-    fn message_stream_with_cap_bounds_a_never_completing_frame() {
+    fn message_stream_bounded_bounds_a_never_completing_frame() {
         use bnb::ErrorKind;
         // A `Msg::Hi` is 4 bytes on the wire; a 2-byte cap can't buffer it, so instead of
         // growing without bound the read fails cleanly with `BufferFull`.
@@ -47,7 +47,7 @@ mod e2e {
             out.into_inner()
         };
         assert!(bytes.len() > 2);
-        let mut inp = MessageStream::with_cap(&bytes[..], 2);
+        let mut inp = MessageStream::bounded(&bytes[..], 2);
         let err = inp.read_message::<Msg>().unwrap_err();
         assert!(
             matches!(err.kind, ErrorKind::BufferFull { cap: 2 }),

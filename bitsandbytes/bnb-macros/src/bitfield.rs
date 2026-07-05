@@ -337,7 +337,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             }
 
             /// The raw backing integer.
-            #vis const fn raw(self) -> #backing {
+            #vis const fn to_raw(self) -> #backing {
                 self.value
             }
 

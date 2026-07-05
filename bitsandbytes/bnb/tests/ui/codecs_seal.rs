@@ -17,7 +17,7 @@ impl bnb::Bits for MyPrefix {
 }
 
 impl CountPrefix for MyPrefix {
-    fn try_from_len(_: usize) -> bnb::Result<Self> {
+    fn try_from_len(_: usize) -> Result<Self, bnb::WidthError> {
         unimplemented!()
     }
     fn to_count(self) -> usize {

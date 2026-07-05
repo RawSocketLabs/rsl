@@ -1,4 +1,4 @@
-//! The crate's error type and result alias.
+//! The crate's checked-construction error types.
 //!
 //! Hand-rolled (no `thiserror`) to keep `bnb` dependency-light — protocol crates
 //! depend on `bnb` *instead of* a stack of external helpers, so `bnb` itself
@@ -16,14 +16,14 @@ use core::fmt;
 /// # Examples
 ///
 /// ```
-/// use bnb::{u4, Error};
+/// use bnb::{u4, WidthError};
 ///
 /// let err = u4::try_new(20).unwrap_err(); // 20 doesn't fit in 4 bits
-/// assert_eq!(err, Error::ValueTooLarge { value: 20, bits: 4 });
+/// assert_eq!(err, WidthError::ValueTooLarge { value: 20, bits: 4 });
 /// assert_eq!(err.to_string(), "value 20 does not fit in 4 bits");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Error {
+pub enum WidthError {
     /// A value did not fit in the target integer's bit width.
     ValueTooLarge {
         /// The offending value.
@@ -33,20 +33,17 @@ pub enum Error {
     },
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for WidthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::ValueTooLarge { value, bits } => {
+            WidthError::ValueTooLarge { value, bits } => {
                 write!(f, "value {value} does not fit in {bits} bits")
             }
         }
     }
 }
 
-impl core::error::Error for Error {}
-
-/// A `Result` specialized to [`Error`].
-pub type Result<T> = core::result::Result<T, Error>;
+impl core::error::Error for WidthError {}
 
 /// The error returned by the `TryFrom<uN>` impl that `#[derive(BitEnum)]`
 /// generates for a **byte-aligned enum without a `#[catch_all]` variant**: the
@@ -98,13 +95,13 @@ mod unit {
 
     #[test]
     fn value_too_large_carries_value_and_width() {
-        let e = Error::ValueTooLarge { value: 20, bits: 4 };
-        assert_eq!(e, Error::ValueTooLarge { value: 20, bits: 4 });
+        let e = WidthError::ValueTooLarge { value: 20, bits: 4 };
+        assert_eq!(e, WidthError::ValueTooLarge { value: 20, bits: 4 });
     }
 
     #[test]
     fn value_too_large_display() {
-        let e = Error::ValueTooLarge { value: 20, bits: 4 };
+        let e = WidthError::ValueTooLarge { value: 20, bits: 4 };
         assert_eq!(e.to_string(), "value 20 does not fit in 4 bits");
     }
 

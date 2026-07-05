@@ -96,7 +96,7 @@ fn main() {
         .with_flags(u4::new(0x5));
     println!(
         "command byte: {:#04x} (op={:?}, flags={})",
-        cmd.raw(),
+        cmd.to_raw(),
         cmd.op(),
         cmd.flags()
     );

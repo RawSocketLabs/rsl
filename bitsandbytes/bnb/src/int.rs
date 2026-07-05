@@ -17,7 +17,7 @@
 
 use core::fmt;
 
-use crate::error::{Error, Result};
+use crate::error::WidthError;
 use crate::field::Bits;
 
 /// An unsigned integer constrained to `N` bits, backed by primitive `T`.
@@ -74,14 +74,14 @@ macro_rules! impl_uint {
                     Self { value }
                 }
 
-                /// Creates a value, or [`Error::ValueTooLarge`] if it does not
+                /// Creates a value, or [`WidthError::ValueTooLarge`] if it does not
                 /// fit in `N` bits.
                 #[inline]
-                pub fn try_new(value: $t) -> Result<Self> {
+                pub fn try_new(value: $t) -> core::result::Result<Self, WidthError> {
                     if value <= Self::MASK {
                         Ok(Self { value })
                     } else {
-                        Err(Error::ValueTooLarge {
+                        Err(WidthError::ValueTooLarge {
                             value: value as u128,
                             bits: N as u32,
                         })
@@ -143,9 +143,9 @@ macro_rules! impl_uint {
             }
 
             impl<const N: usize> TryFrom<$t> for UInt<$t, N> {
-                type Error = Error;
+                type Error = WidthError;
                 #[inline]
-                fn try_from(value: $t) -> Result<Self> {
+                fn try_from(value: $t) -> core::result::Result<Self, WidthError> {
                     Self::try_new(value)
                 }
             }

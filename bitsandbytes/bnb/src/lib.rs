@@ -168,12 +168,12 @@ extern crate self as bnb;
 
 pub mod bitstream;
 pub mod builder;
-/// Async framing — a [`tokio_util::codec`] adapter (the `tokio` feature).
-#[cfg(feature = "tokio")]
-pub mod codec;
 pub mod codecs;
 pub mod error;
 mod field;
+/// Async framing — a [`tokio_util::codec`] adapter (the `tokio` feature).
+#[cfg(feature = "tokio")]
+pub mod framing;
 pub mod guide;
 pub mod int;
 /// Ergonomic `std` socket helpers — [`MessageStream`] + [`MessageDatagram`] (the `net` feature).
@@ -199,7 +199,7 @@ pub use bitstream::{BytesReader, BytesWriter};
 
 /// The async `tokio_util` codec adapter (the `tokio` feature).
 #[cfg(feature = "tokio")]
-pub use codec::BinCodec;
+pub use framing::BinCodec;
 
 /// Ergonomic `std` socket helpers (the `net` feature).
 #[cfg(feature = "net")]
@@ -216,7 +216,7 @@ pub mod prelude {
     pub use crate::EncodeExt;
 }
 pub use builder::BuilderError;
-pub use error::{Error, Result, UnknownDiscriminant};
+pub use error::{UnknownDiscriminant, WidthError};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
 pub use int::{UInt, *};
 

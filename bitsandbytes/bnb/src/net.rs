@@ -50,7 +50,7 @@ pub struct MessageStream<S> {
 
 impl<S> MessageStream<S> {
     /// Wrap a stream with an **unbounded** read buffer. On an untrusted peer prefer
-    /// [`with_cap`](Self::with_cap) — a stream that never completes a frame would otherwise
+    /// [`bounded`](Self::bounded) — a stream that never completes a frame would otherwise
     /// grow the buffer without bound.
     pub fn new(inner: S) -> Self {
         Self {
@@ -64,14 +64,19 @@ impl<S> MessageStream<S> {
     /// [`read_message`](Self::read_message) fails with
     /// [`ErrorKind::BufferFull`](crate::ErrorKind::BufferFull), rather than consuming memory
     /// without bound. The bounded counterpart to [`new`](Self::new) for untrusted streams.
-    pub fn with_cap(inner: S, cap: usize) -> Self {
+    pub fn bounded(inner: S, cap: usize) -> Self {
         Self {
             inner,
             buf: BitBuf::bounded(cap),
         }
     }
 
-    /// Borrow the underlying stream (e.g. to set a timeout).
+    /// Borrow the underlying stream.
+    pub fn get_ref(&self) -> &S {
+        &self.inner
+    }
+
+    /// Mutably borrow the underlying stream (e.g. to set a timeout).
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.inner
     }
@@ -105,7 +110,7 @@ impl<S: Read> MessageStream<S> {
                 );
             }
             // `try_push` is a no-op bound for an unbounded buffer (`new`) and enforces the
-            // `cap` for a bounded one (`with_cap`) — a never-completing frame is `BufferFull`,
+            // `cap` for a bounded one (`bounded`) — a never-completing frame is `BufferFull`,
             // not unbounded growth.
             self.buf.try_push(&chunk[..n]).map_err(|e| {
                 BitError::new(ErrorKind::BufferFull { cap: e.cap }, self.buf.bit_len())

@@ -118,7 +118,7 @@ mod macro_ {
         // kind in bits 12..=15, flags in 4..=11, rsvd in 0..=3.
         assert_eq!(frame.flags(), TcpFlags::SYN | TcpFlags::ACK);
         assert_eq!(
-            frame.raw(),
+            frame.to_raw(),
             (0xA << 12) | ((TcpFlags::SYN | TcpFlags::ACK).bits() as u16) << 4
         );
         assert!(frame.flags().ack());

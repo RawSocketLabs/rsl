@@ -37,12 +37,12 @@ fn main() {
         .with_version(u4::new(4))
         .with_ihl(u4::new(5));
     assert_eq!(vihl.to_be_bytes(), [0x45]); // the classic IPv4 first byte
-    println!("version/IHL byte: {:#04x}", vihl.raw());
+    println!("version/IHL byte: {:#04x}", vihl.to_raw());
 
     let tos = Tos::new().with_dscp(u6::new(46)).with_ecn(Ecn::Ce); // EF + CE
     println!(
         "ToS byte: {:#04x} (dscp={}, ecn={:?})",
-        tos.raw(),
+        tos.to_raw(),
         tos.dscp(),
         tos.ecn()
     );
@@ -57,5 +57,5 @@ fn main() {
     let mut tos = tos;
     tos.set_ecn(Ecn::NotEct);
     assert_eq!(tos.ecn(), Ecn::NotEct);
-    println!("after clearing ECN: {:#04x}", tos.raw());
+    println!("after clearing ECN: {:#04x}", tos.to_raw());
 }

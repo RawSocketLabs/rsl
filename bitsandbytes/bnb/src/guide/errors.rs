@@ -87,8 +87,8 @@
 //! # Two error types
 //!
 //! Decoding/encoding yields [`BitError`](crate::BitError). The separate
-//! [`Error`](crate::Error) covers *construction* (`UInt::try_new` and the `TryFrom`
-//! impls). A `From<Error> for BitError` bridges them, so a construction failure inside
+//! [`WidthError`](crate::WidthError) covers *construction* (`UInt::try_new` and the `TryFrom`
+//! impls). A `From<WidthError> for BitError` bridges them, so a construction failure inside
 //! a custom `parse_with`/converter can `?`-propagate:
 //!
 //! ```

@@ -1,6 +1,6 @@
 //! End-to-end `tokio` framing: the [`BinCodec`] driven over real async transports — a `Framed`
 //! duplex stream and `UdpFramed` datagrams. The synchronous Decoder/Encoder component tests
-//! live inline in `src/codec.rs`.
+//! live inline in `src/framing.rs`.
 #![cfg(feature = "tokio")]
 
 use bnb::{BinCodec, bin};
