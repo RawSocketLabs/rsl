@@ -27,8 +27,10 @@ and re-homed as a bnb-independent repo.
       Per the plan below, the crate went `forbid(unsafe_code)` → `deny` with that single
       `#[allow]` confined to `linux/link.rs`; **no `libc`** (rustix-only). Capability-consistency
       test (CI) + a `CAP_NET_RAW`-gated loopback send.
-- [ ] **`spoof_udp` / `forge_arp` examples** — port from the reference once the L3/L2 backends
-      and the `ip`/`udp`/`arp` protocol crates exist to compose real packets.
+- [x] **`spoof_udp` / `forge_arp` examples** — **done**, in the workspace `demos` crate:
+      `spoof_udp` composes an `Ip(Udp(..))` with a forged source IP and injects via `NetworkSocket`
+      (L3); `forge_arp` composes an `Ethernet(Arp reply)` cache-poisoning frame and injects via
+      `LinkSocket` (L2). Both fall back to compose-only when unprivileged.
 - [ ] **Concrete compose tests** with the real IP/UDP `Protocol` impls (the current
       `tests/compose.rs` uses an in-test toy stack).
 
