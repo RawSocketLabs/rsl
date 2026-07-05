@@ -54,6 +54,7 @@ use crate::field::{BitOrder, Bits, ByteOrder};
 /// assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BitError {
     /// The cause.
     pub kind: ErrorKind,
@@ -1350,7 +1351,7 @@ pub(crate) mod sealed {
 /// [`codecs::prefixed`](crate::codecs::prefixed) string codec.
 ///
 /// The prefix is computed from `len()` on encode and turned back into an element count on
-/// decode. `try_from_len` is **checked and never truncates**: the length is widened (never
+/// decode. `try_from_count` is **checked and never truncates**: the length is widened (never
 /// narrowed) before the range compare, so 300 elements against a `u8` prefix is
 /// [`WidthError::ValueTooLarge`] — not a silently wrapped `44`.
 ///
@@ -1363,7 +1364,7 @@ pub(crate) mod sealed {
 pub trait CountPrefix: Bits + sealed::Sealed {
     /// The prefix for a collection of `len` elements, or [`WidthError::ValueTooLarge`] when
     /// `len` exceeds the prefix's range.
-    fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError>
+    fn try_from_count(len: usize) -> core::result::Result<Self, crate::error::WidthError>
     where
         Self: Sized;
 
@@ -1381,7 +1382,7 @@ macro_rules! count_prefix_prim {
 
         impl CountPrefix for $t {
             #[inline]
-            fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
+            fn try_from_count(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
                 <$t>::try_from(len).map_err(|_| crate::error::WidthError::ValueTooLarge {
                     value: len as u128,
                     bits: <$t>::BITS,
@@ -1403,7 +1404,7 @@ macro_rules! count_prefix_uint {
 
         impl<const N: usize> CountPrefix for crate::int::UInt<$t, N> {
             #[inline]
-            fn try_from_len(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
+            fn try_from_count(len: usize) -> core::result::Result<Self, crate::error::WidthError> {
                 // Widen-then-compare: narrowing first (`len as $t`) would truncate
                 // *before* the range check and let an oversized length slip through.
                 let wide = len as u128;
@@ -2228,6 +2229,7 @@ impl BitBuf {
 /// buffer — the live (unconsumed) bytes plus the new bytes exceed its fixed `cap`. Grow it with
 /// [`BitBuf::grow`], or drain messages with [`pull`](BitBuf::pull) before pushing more.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CapacityError {
     /// The buffer's fixed capacity, in bytes.
     pub cap: usize,
@@ -2930,16 +2932,16 @@ mod unit {
     #[test]
     fn count_prefix_primitive_boundaries() {
         // In-range: exact fit at the top of the range.
-        assert_eq!(u8::try_from_len(255).unwrap(), 255u8);
+        assert_eq!(u8::try_from_count(255).unwrap(), 255u8);
         // Out of range: checked, not wrapped.
         assert_eq!(
-            u8::try_from_len(256).unwrap_err(),
+            u8::try_from_count(256).unwrap_err(),
             crate::error::WidthError::ValueTooLarge {
                 value: 256,
                 bits: 8
             }
         );
-        assert_eq!(u16::try_from_len(65_535).unwrap(), 65_535u16);
+        assert_eq!(u16::try_from_count(65_535).unwrap(), 65_535u16);
         assert_eq!(u8::to_count(200), 200);
         assert_eq!(u32::to_count(70_000), 70_000);
     }
@@ -2947,9 +2949,9 @@ mod unit {
     #[test]
     fn count_prefix_uint_boundaries() {
         // u12: 4095 fits, 4096 does not.
-        assert_eq!(u12::try_from_len(4095).unwrap(), u12::new(4095));
+        assert_eq!(u12::try_from_count(4095).unwrap(), u12::new(4095));
         assert_eq!(
-            u12::try_from_len(4096).unwrap_err(),
+            u12::try_from_count(4096).unwrap_err(),
             crate::error::WidthError::ValueTooLarge {
                 value: 4096,
                 bits: 12
@@ -2963,7 +2965,7 @@ mod unit {
         // 300 as u8 would wrap to 44 — a masked `from_raw`/`try_new(len as u8)` path
         // would then accept it. The widen-then-compare must reject instead.
         assert_eq!(
-            u4::try_from_len(300).unwrap_err(),
+            u4::try_from_count(300).unwrap_err(),
             crate::error::WidthError::ValueTooLarge {
                 value: 300,
                 bits: 4
@@ -2974,8 +2976,8 @@ mod unit {
     #[test]
     fn count_prefix_round_trips() {
         for len in [0usize, 1, 15, 255, 4095] {
-            assert_eq!(u16::try_from_len(len).unwrap().to_count(), len);
-            assert_eq!(u12::try_from_len(len).unwrap().to_count(), len);
+            assert_eq!(u16::try_from_count(len).unwrap().to_count(), len);
+            assert_eq!(u12::try_from_count(len).unwrap().to_count(), len);
         }
     }
 

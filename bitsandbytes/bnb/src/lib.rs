@@ -179,7 +179,7 @@ pub mod int;
 /// Ergonomic `std` socket helpers — [`MessageStream`] + [`MessageDatagram`] (the `net` feature).
 #[cfg(feature = "net")]
 pub mod net;
-pub mod wirelen;
+mod wirelen;
 
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,

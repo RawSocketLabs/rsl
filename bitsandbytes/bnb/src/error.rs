@@ -23,6 +23,7 @@ use core::fmt;
 /// assert_eq!(err.to_string(), "value 20 does not fit in 4 bits");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WidthError {
     /// A value did not fit in the target integer's bit width.
     ValueTooLarge {
@@ -69,11 +70,21 @@ impl core::error::Error for WidthError {}
 /// assert_eq!(err.to_string(), "Direction has no variant for discriminant 9");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct UnknownDiscriminant {
     /// The unrecognized value.
     pub value: u128,
     /// The name of the enum that rejected it.
     pub type_name: &'static str,
+}
+
+impl UnknownDiscriminant {
+    /// Builds the error for a `value` that matched no discriminant of the enum
+    /// named `type_name`. Called by `#[derive(BitEnum)]`-generated `TryFrom` impls.
+    #[must_use]
+    pub const fn new(value: u128, type_name: &'static str) -> Self {
+        Self { value, type_name }
+    }
 }
 
 impl fmt::Display for UnknownDiscriminant {
