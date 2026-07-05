@@ -86,12 +86,12 @@ mod macro_ {
     #[test]
     fn bit_and_byte_order_compose_independently() {
         // msb packing -> raw 0xABCD; lsb packing (first field low) -> raw 0xDBCA.
-        assert_eq!(be().raw(), 0xABCD);
+        assert_eq!(be().to_raw(), 0xABCD);
         let lsb = LsbBe::new()
             .with_hi(u4::new(0xA))
             .with_mid(0xBC)
             .with_lo(u4::new(0xD));
-        assert_eq!(lsb.raw(), 0xDBCA);
+        assert_eq!(lsb.to_raw(), 0xDBCA);
 
         // The four (bits × bytes) corners give four distinct wire encodings via `to_bytes`.
         let lsb_le = LsbLe::new()

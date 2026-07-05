@@ -39,8 +39,8 @@ fn main() {
         .with_lo(u4::new(0xD));
 
     // Same logical value (raw = 0xABCD), packed identically (both MSB-first)...
-    assert_eq!(be.raw(), 0xABCD);
-    assert_eq!(le.raw(), 0xABCD);
+    assert_eq!(be.to_raw(), 0xABCD);
+    assert_eq!(le.to_raw(), 0xABCD);
 
     // ...but `to_bytes()` serializes in each type's DECLARED byte order:
     assert_eq!(be.to_bytes(), [0xAB, 0xCD]); // big-endian

@@ -1,8 +1,5 @@
 //! Async framing via [`tokio_util::codec`] — the `tokio` feature.
 //!
-//! Naming note: not to be confused with [`codecs`](crate::codecs), the library of
-//! ready-made *field* codecs (`parse_with`/`write_with` helpers).
-//!
 //! [`BinCodec<T>`] implements [`Decoder`](tokio_util::codec::Decoder) +
 //! [`Encoder`](tokio_util::codec::Encoder) for **any** `#[bin]` message (anything that is
 //! [`BitDecode`]/[`BitEncode`]), so wrapping a tokio stream is one line:
