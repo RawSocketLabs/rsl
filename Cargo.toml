@@ -20,6 +20,8 @@ members = [
     # facades
     "rsl",
     "rsl-deps",
+    # runnable dual-use demos (privileged injection)
+    "demos",
 ]
 # FFI crates (need a C++ toolchain + system libs) and bnb's fuzz/no_std helpers are excluded
 # from the default workspace build; each is built on its own in a dedicated CI job.

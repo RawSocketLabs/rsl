@@ -86,6 +86,8 @@ jobs:
       # the rsl facade + rsl-deps blessed stack (pure-Rust slice; FFI excluded).
       - run: cargo build -p rsl --features full
       - run: cargo build -p rsl-deps --features full
+      # the dual-use demos (compile-check the examples; they run only with CAP_NET_RAW).
+      - run: cargo build -p demos --examples
 
   deny:
     name: cargo-deny (advisories / licenses / bans / sources)

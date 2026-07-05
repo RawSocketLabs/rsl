@@ -1,0 +1,22 @@
+[package]
+name = "demos"
+version = "0.1.0"
+description = "Runnable dual-use demos: compose forged packets with the RSL protocol stack and inject them via rawsock."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# Demos only — never published.
+publish = false
+
+[dependencies]
+ip = { path = "../protocols/network/ip", features = ["inject"] }
+udp = { path = "../protocols/transport/udp", features = ["inject"] }
+arp = { path = "../protocols/link/arp", features = ["inject"] }
+ethernet = { path = "../protocols/link/ethernet", features = ["inject"] }
+ethertype = { path = "../protocols/link/ethertype" }
+# The privileged socket backends (L3 NetworkSocket, L2 LinkSocket).
+rawsock = { workspace = true, features = ["network", "link"] }
+
+[lints]
+workspace = true
