@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.3.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.2.1...bitsandbytes-v0.3.0) - 2026-07-06
+
+### Fixed
+
+- *(bitstream)* honor bit order in StreamBitReader ([#21](https://github.com/RawSocketLabs/rsl/pull/21))
+
+### Other
+
+- *(bnb)* add the migration guide + a whole-message perf baseline ([#31](https://github.com/RawSocketLabs/rsl/pull/31))
+- *(bnb)* polish the guide + macro reference for 1.0 ([#30](https://github.com/RawSocketLabs/rsl/pull/30))
+- *(bnb)* [**breaking**] seal Source/Sink/SeekSource/BitAmount ([#27](https://github.com/RawSocketLabs/rsl/pull/27))
+- *(bnb)* [**breaking**] harden the public surface for the freeze ([#26](https://github.com/RawSocketLabs/rsl/pull/26))
+- *(bnb)* [**breaking**] pre-freeze naming fixes (Error, codec, raw, with_cap) ([#25](https://github.com/RawSocketLabs/rsl/pull/25))
+- *(bnb)* [**breaking**] unify the byte/bit-order vocabulary across all macros ([#23](https://github.com/RawSocketLabs/rsl/pull/23))
+- *(bnb)* [**breaking**] cut the carried encode_mode mechanism ([#22](https://github.com/RawSocketLabs/rsl/pull/22))
+
 ## [0.2.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.2.0...bitsandbytes-v0.2.1) - 2026-07-05
 
 ### Other
