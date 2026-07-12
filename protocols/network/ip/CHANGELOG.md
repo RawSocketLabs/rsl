@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/RawSocketLabs/rsl/compare/ip-v0.1.1...ip-v0.2.0) - 2026-07-06
+
+### Other
+
+- *(bnb)* [**breaking**] unify the byte/bit-order vocabulary across all macros ([#23](https://github.com/RawSocketLabs/rsl/pull/23))
+
 ## [0.1.1](https://github.com/RawSocketLabs/rsl/compare/ip-v0.1.0...ip-v0.1.1) - 2026-07-05
 
 ### Other
