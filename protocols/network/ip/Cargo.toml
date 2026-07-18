@@ -1,6 +1,6 @@
 [package]
 name = "ip"
-version = "0.2.0"
+version = "0.2.1"
 description = "IPv4 (RFC 791) header codec on the bnb bit-aware codec — dual-use, from-scratch."
 edition.workspace = true
 license.workspace = true
