@@ -1,0 +1,4 @@
+interface:
+  display_name: "RSL Rust Core"
+  short_description: "Risk-aware Rust implementation guidance"
+  default_prompt: "Use $rsl-rust-core to implement this Rust change under the repository profile and constraints."

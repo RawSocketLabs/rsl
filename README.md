@@ -18,6 +18,12 @@ no cross-repo version pinning to keep in sync.
 - **`usdr`, `rust-dsdcc`** — FFI/SDR bindings (excluded from the default build; need a C++
   toolchain).
 
+## Engineering tooling
+
+- **`tools/rust-skills`** — the canonical, independently versioned RSL Rust engineering
+  skills, adoption templates, generated agent adapters, and eval fixtures. It has its own
+  Cargo workspace and does not activate skills merely by being present in this repository.
+
 ## Consuming
 
 Depend on an individual crate, or on the `rsl` facade for the owned libraries and `rsl-deps`

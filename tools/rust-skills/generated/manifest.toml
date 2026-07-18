@@ -1,0 +1,99 @@
+schema = 1
+standards = "0.1.0"
+hash_algorithm = "fnv1a64"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/SKILL.md"
+hash = "299f83de55b2cf1f"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/agents/openai.yaml"
+hash = "30362b6c93002f09"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/api-ownership-and-errors.md"
+hash = "dca07c97c1800588"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/dependencies-and-change.md"
+hash = "623b44e05d027943"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/documentation-and-examples.md"
+hash = "d8c6afa21bad4b1e"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/profiles-and-priorities.md"
+hash = "1d981447bbf0ce2f"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/style.md"
+hash = "a66d4022463a8059"
+
+[[files]]
+path = "agent-skills/rsl-rust-core/references/verification.md"
+hash = "7155c612b6ee2deb"
+
+[[files]]
+path = "agent-skills/rsl-rust-review/SKILL.md"
+hash = "7076afe4ea52066f"
+
+[[files]]
+path = "agent-skills/rsl-rust-review/agents/openai.yaml"
+hash = "98e21929c5ae1a0c"
+
+[[files]]
+path = "agent-skills/rsl-rust-review/references/review-procedure.md"
+hash = "10afbfa05a15d1c4"
+
+[[files]]
+path = "agent-skills/rsl-rust-review/references/risk-checks.md"
+hash = "1bd2a9d11ea3787b"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/SKILL.md"
+hash = "299f83de55b2cf1f"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/api-ownership-and-errors.md"
+hash = "dca07c97c1800588"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/dependencies-and-change.md"
+hash = "623b44e05d027943"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/documentation-and-examples.md"
+hash = "d8c6afa21bad4b1e"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/profiles-and-priorities.md"
+hash = "1d981447bbf0ce2f"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/style.md"
+hash = "a66d4022463a8059"
+
+[[files]]
+path = "claude-skills/rsl-rust-core/references/verification.md"
+hash = "7155c612b6ee2deb"
+
+[[files]]
+path = "claude-skills/rsl-rust-review/SKILL.md"
+hash = "7076afe4ea52066f"
+
+[[files]]
+path = "claude-skills/rsl-rust-review/references/review-procedure.md"
+hash = "10afbfa05a15d1c4"
+
+[[files]]
+path = "claude-skills/rsl-rust-review/references/risk-checks.md"
+hash = "1bd2a9d11ea3787b"
+
+[[files]]
+path = "codex-overlay/rsl-rust-core/agents/openai.yaml"
+hash = "30362b6c93002f09"
+
+[[files]]
+path = "codex-overlay/rsl-rust-review/agents/openai.yaml"
+hash = "98e21929c5ae1a0c"

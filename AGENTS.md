@@ -20,6 +20,7 @@ deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `rsl-deps/` | `rsl-deps` | blessed external-dependency stack |
 | `usdr/`, `rust-dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
+| `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)
 

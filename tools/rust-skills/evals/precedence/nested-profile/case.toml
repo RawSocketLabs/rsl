@@ -1,0 +1,8 @@
+schema = 1
+id = "precedence-nested-profile"
+class = "precedence"
+skill = "rsl-rust-core"
+profile = "performance-application"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"
