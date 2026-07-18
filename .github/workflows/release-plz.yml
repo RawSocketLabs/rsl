@@ -46,6 +46,10 @@ jobs:
   # Open/update the version-bump + CHANGELOG PR.
   release-plz-pr:
     name: release-plz PR
+    # The release job creates tags after a release PR merge. Analyze the next
+    # release only after that job finishes so git-only version discovery never
+    # races against tag creation and regenerates the release that just merged.
+    needs: release-plz-release
     runs-on: blacksmith-4vcpu-ubuntu-2404
     if: ${{ github.repository_owner == 'RawSocketLabs' }}
     concurrency:

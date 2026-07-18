@@ -23,7 +23,7 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests compose ICMP inside a real IP layer.
-ip = { path = "../ip", features = ["inject"] }
+ip = { path = "../ip", version = "0.2.0", features = ["inject"] }
 
 [lints]
 workspace = true

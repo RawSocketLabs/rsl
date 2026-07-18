@@ -23,7 +23,7 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests compose IP over a real UDP layer.
-udp = { path = "../../transport/udp", features = ["inject"] }
+udp = { path = "../../transport/udp", version = "0.1.2", features = ["inject"] }
 
 [lints]
 workspace = true
