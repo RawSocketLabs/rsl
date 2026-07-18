@@ -1,0 +1,8 @@
+schema = 1
+id = "trigger-core-trivial"
+class = "trigger"
+skill = "rsl-rust-core"
+profile = "pragmatic-application"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

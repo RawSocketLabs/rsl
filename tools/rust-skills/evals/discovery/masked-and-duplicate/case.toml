@@ -1,0 +1,8 @@
+schema = 1
+id = "discovery-masked-and-duplicate"
+class = "discovery"
+skill = "none"
+profile = "public-library"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

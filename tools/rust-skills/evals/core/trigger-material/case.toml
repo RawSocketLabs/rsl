@@ -1,0 +1,8 @@
+schema = 1
+id = "trigger-core-material"
+class = "trigger"
+skill = "rsl-rust-core"
+profile = "public-library"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

@@ -1,0 +1,27 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index 1111111..2222222 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,12 +1,18 @@
+ pub enum Kind {
+     Data,
+     Unknown(u8),
+ }
+
+-pub fn decode(input: &[u8]) -> Result<Kind, DecodeError> {
+-    let byte = *input.first().ok_or(DecodeError::Incomplete)?;
++pub fn decode(input: &[u8]) -> Result<Kind, String> {
++    let byte = input[0];
+     match byte {
+         1 => Ok(Kind::Data),
+-        other => Ok(Kind::Unknown(other)),
++        _ => Ok(Kind::Data),
+     }
+ }
++
++pub fn display_kind(kind: &Kind) -> String {
++    match kind {
++        Kind::Data => "data".to_owned(),
++        Kind::Unknown(value) => format!("unknown({value})"),
++    }
++}

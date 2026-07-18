@@ -1,0 +1,8 @@
+schema = 1
+id = "core-unbounded-stream"
+class = "decision"
+skill = "rsl-rust-core"
+profile = "performance-application"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

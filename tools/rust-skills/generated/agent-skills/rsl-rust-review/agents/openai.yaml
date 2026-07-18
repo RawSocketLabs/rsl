@@ -1,0 +1,4 @@
+interface:
+  display_name: "RSL Rust Review"
+  short_description: "Evidence-led review of Rust changes"
+  default_prompt: "Use $rsl-rust-review to review this Rust change for actionable correctness and regression risks."

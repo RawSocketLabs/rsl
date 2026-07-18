@@ -1,0 +1,8 @@
+schema = 1
+id = "review-seeded-diff"
+class = "review"
+skill = "rsl-rust-review"
+profile = "public-library"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

@@ -1,0 +1,4 @@
+schema = 1
+standards = "0.1.0"
+profile = "public-library"
+skills = ["rsl-rust-core", "rsl-rust-review"]

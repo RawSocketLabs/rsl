@@ -1,0 +1,10 @@
+schema = 1
+standards = "0.1.0"
+profile = "public-library"
+skills = ["rsl-rust-core", "rsl-rust-review"]
+
+# Add only real component differences. Domain names reserve future routing; the
+# initial release implements only core and review skills.
+# [components."crates/example"]
+# profile = "internal-library"
+# domains = ["protocol"]

@@ -1,0 +1,8 @@
+schema = 1
+id = "core-unnecessary-clone"
+class = "decision"
+skill = "rsl-rust-core"
+profile = "internal-library"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"
