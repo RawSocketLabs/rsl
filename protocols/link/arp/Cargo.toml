@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
-ethertype = { path = "../ethertype" }
+ethertype = { path = "../ethertype", version = "0.2.0" }
 rawsock = { workspace = true, optional = true }
 
 [features]
@@ -22,7 +22,7 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests frame the ARP packet in a real Ethernet header.
-ethernet = { path = "../ethernet", features = ["inject"] }
+ethernet = { path = "../ethernet", version = "0.1.2", features = ["inject"] }
 
 [lints]
 workspace = true
