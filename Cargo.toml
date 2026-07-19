@@ -59,7 +59,7 @@ tracing = "0.1"
 bytes = "1"
 
 # --- bnb proc-macro deps ---
-syn = "2.0"
+syn = "3.0"
 quote = "1.0"
 proc-macro2 = "1.0"
 proc-macro-crate = "3"
