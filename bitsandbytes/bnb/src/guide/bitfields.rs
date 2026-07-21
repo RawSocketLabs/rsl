@@ -132,3 +132,54 @@
 //!
 //! See [`enums`](super::enums) and [`flags`](super::flags) for the field types that
 //! nest here, and [`composition`](super::composition) for the full picture.
+//!
+//! # `#[view]` — a contextual typed view whose meaning depends on a sibling
+//!
+//! Some fields can't be interpreted from their own bits alone — the same bits mean
+//! different things depending on a *sibling* field. (NXDN's LICH: two channel bits
+//! read one way outbound and another inbound, with the direction bit alongside them.)
+//! Because a `#[bitfield]` is random-access, a field's accessor can just read that
+//! sibling — no cursor look-ahead. `#[view(bits = N, read = |raw, s| …, write = |v| …)]`
+//! stores the raw `N` bits and materializes a typed value: `read` receives the raw bits
+//! and `&Self` (call sibling getters for context), and `write` maps the typed value back
+//! to raw bits (context-free). Both bridge through [`Bits`](crate::Bits), so the raw
+//! type is inferred from the closures' own annotations — a `uN`, an enum, anything.
+//!
+//! ```
+//! use bnb::{bitfield, u2, u3};
+//!
+//! #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+//! enum Kind { A, B, Other(u2) }
+//! impl Kind {
+//!     fn read(bits: u2, outbound: bool) -> Self {
+//!         match (outbound, bits.value()) {
+//!             (true, 0b00) => Kind::A,
+//!             (false, 0b01) => Kind::B,
+//!             _ => Kind::Other(bits),
+//!         }
+//!     }
+//!     fn bits(self) -> u2 {
+//!         match self { Kind::A => u2::new(0), Kind::B => u2::new(1), Kind::Other(b) => b }
+//!     }
+//! }
+//!
+//! #[bitfield(u8, bits = msb)]
+//! #[derive(Clone, Copy)]
+//! struct Lich {
+//!     header: u3,
+//!     #[view(
+//!         bits = 2,
+//!         read = |raw: u2, s: &Self| Kind::read(raw, s.outbound()),
+//!         write = |v: Kind| v.bits(),
+//!     )]
+//!     kind: Kind,
+//!     outbound: bool,   // the context `kind` reads — a sibling
+//!     trailing: u2,
+//! }
+//!
+//! let outbound = Lich::new().with_kind(Kind::A).with_outbound(true);
+//! assert_eq!(outbound.kind(), Kind::A);                     // outbound && bits 00 → A
+//! // Same stored bits (00), different sibling → different meaning:
+//! let inbound = Lich::new().with_kind(Kind::Other(u2::new(0))).with_outbound(false);
+//! assert_eq!(inbound.kind(), Kind::Other(u2::new(0)));
+//! ```
