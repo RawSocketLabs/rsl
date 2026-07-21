@@ -96,10 +96,65 @@ struct Field {
     ident: Ident,
     ty: Type,
     spec: Spec,
+    /// `#[view(...)]` — a contextual typed view over the field's raw bits (the
+    /// stored representation stays the raw bits; the accessor materializes the
+    /// typed value). `None` for an ordinary `Bits`-typed field.
+    view: Option<View>,
     /// How the builder (if any) treats this field when unset.
     builder_default: FieldDefault,
     /// Doc/cfg attributes to forward onto the generated getter.
     forward: Vec<Attribute>,
+}
+
+/// A `#[view(bits = N, read = |raw, s| …, write = |v| …)]` field: the raw `N` bits
+/// are stored, and the accessor bridges them to a typed value that may reference
+/// sibling fields on read. The `read` closure receives the raw bits and `&Self`
+/// (so it can call sibling getters — the context another wire field provides); the
+/// `write` closure maps the typed value back to raw bits (context-free). Both bridge
+/// through [`Bits`](bnb::Bits), so their raw type is whatever the closures annotate.
+struct View {
+    bits: u32,
+    read: syn::Expr,
+    write: syn::Expr,
+}
+
+/// Parses the arguments of a `#[view(bits = N, read = <closure>, write = <closure>)]`.
+fn parse_view(attr: &Attribute) -> syn::Result<View> {
+    let mut bits: Option<u32> = None;
+    let mut read: Option<syn::Expr> = None;
+    let mut write: Option<syn::Expr> = None;
+    attr.parse_args_with(|input: ParseStream| {
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "bits" => {
+                    let n: LitInt = input.parse()?;
+                    bits = Some(n.base10_parse()?);
+                }
+                "read" => read = Some(input.parse()?),
+                "write" => write = Some(input.parse()?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown `#[view]` argument `{other}` (expected `bits`, `read`, or `write`)"),
+                    ));
+                }
+            }
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        Ok(())
+    })?;
+    let bits = bits.ok_or_else(|| {
+        syn::Error::new_spanned(attr, "`#[view(...)]` needs a `bits = <N>` storage width")
+    })?;
+    let read = read
+        .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `read = |raw, s| …`"))?;
+    let write = write
+        .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `write = |v| …`"))?;
+    Ok(View { bits, read, write })
 }
 
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -231,6 +286,45 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         } else {
             quote!(#[doc = concat!("Returns the `", stringify!(#ident), "` field.")])
         };
+        // A `#[view]` field stores raw bits but presents a typed value: the getter
+        // reads the raw bits and hands them (plus `&self`, so it can read sibling
+        // fields for context) to the `read` closure; the setter maps the typed value
+        // back to raw bits with the context-free `write` closure. Both bridge through
+        // `Bits`, so the raw type is inferred from the closures' own annotations —
+        // any `Bits` type (a `uN`, an enum) works with no per-width plumbing here.
+        if let Some(view) = &f.view {
+            let read = &view.read;
+            let write = &view.write;
+            let store = quote! {
+                let __raw = (#write)(value);
+                let __bits: u128 = #bits_path::into_bits(__raw);
+                self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
+                    | ((__bits & Self::#mask) << Self::#off)) as #backing;
+            };
+            return quote! {
+                #getter_doc
+                #(#forward)*
+                #[inline]
+                #vis fn #ident(&self) -> #ty {
+                    let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
+                    let __raw = #bits_path::from_bits(__masked);
+                    (#read)(__raw, self)
+                }
+
+                #[doc = concat!("Returns a copy with `", stringify!(#ident), "` set.")]
+                #[inline]
+                #vis fn #with(mut self, value: #ty) -> Self {
+                    #store
+                    self
+                }
+
+                #[doc = concat!("Sets `", stringify!(#ident), "` in place.")]
+                #[inline]
+                #vis fn #set(&mut self, value: #ty) {
+                    #store
+                }
+            };
+        }
         quote! {
             #getter_doc
             #(#forward)*
@@ -437,21 +531,38 @@ fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
             let ident = f.ident.clone().expect("named field");
             let ty = f.ty.clone();
             let mut spec = Spec::Inferred;
+            let mut view: Option<View> = None;
+            let mut has_bits = false;
             let mut builder_default = FieldDefault::Required;
             let mut forward = Vec::new();
             for attr in &f.attrs {
                 if attr.path().is_ident("bits") {
                     spec = attr.parse_args::<Spec>()?;
+                    has_bits = true;
+                } else if attr.path().is_ident("view") {
+                    view = Some(parse_view(attr)?);
                 } else if let Some(d) = builder::parse_builder_attr(attr)? {
                     builder_default = d;
                 } else {
                     forward.push(attr.clone());
                 }
             }
+            // A view carries its own storage width, so it can't also take `#[bits]`;
+            // its width becomes an ordinary auto-placed `Width` for the layout machinery.
+            if let Some(v) = &view {
+                if has_bits {
+                    return Err(syn::Error::new_spanned(
+                        &ident,
+                        "a `#[view(...)]` field's width comes from its `bits = <N>`; drop the separate `#[bits(...)]`",
+                    ));
+                }
+                spec = Spec::Width(v.bits);
+            }
             Ok(Field {
                 ident,
                 ty,
                 spec,
+                view,
                 builder_default,
                 forward,
             })
