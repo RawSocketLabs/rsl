@@ -54,6 +54,47 @@
 //! assert_eq!(Msg::decode_exact(&[0x02, 5, 6]).unwrap().items, vec![5, 6]);
 //! ```
 //!
+//! # `br(calc)` — a decode-computed field (the read-side dual of `bw(calc)`)
+//!
+//! `#[br(calc = <expr>)]` binds a **stored** field from earlier fields on decode (no
+//! wire read) and writes **nothing** on encode — its bytes live in the raw fields it
+//! derives from. It resolves a field whose typed meaning depends on a field *later* on
+//! the wire without a look-ahead: read the raw bits into `temp`s in wire order, then
+//! `calc` the typed field from the full set. (The shape of NXDN's LICH and DMR's
+//! directional tables, where a direction bit read near the end selects how earlier
+//! bits are interpreted.)
+//!
+//! ```
+//! use bnb::{bin, u2, u3};
+//!
+//! #[bin]
+//! #[derive(Debug, PartialEq)]
+//! struct Frame {
+//!     header: u3,
+//!     #[br(temp)]
+//!     #[bw(calc = u2::new(self.level & 0b11))]   // raw bits, recomputed from `level`
+//!     raw: u2,
+//!     outbound: bool,                    // the context — read *after* `raw`
+//!     trailing: u2,
+//!     // `level` is the raw value when outbound, or that value plus four when inbound;
+//!     // it needs `outbound`, which is read after `raw`. Resolved after the whole
+//!     // record is read; writes nothing (its bytes are `raw`'s).
+//!     #[br(calc = if outbound { raw.value() } else { raw.value() + 4 })]
+//!     level: u8,
+//! }
+//!
+//! // `raw` is a temp, so the literal omits it and sets only the semantic `level`.
+//! let inbound = Frame { header: u3::new(0b101), outbound: false, trailing: u2::new(0), level: 6 };
+//! let bytes = inbound.to_bytes().unwrap();
+//! assert_eq!(bytes.len(), 1);
+//! assert_eq!(Frame::decode_exact(&bytes).unwrap(), inbound); // round-trips
+//!
+//! // The later `outbound` bit changes what the same raw bits mean: level 2 and level 6
+//! // both store raw `0b10`, distinguished only by `outbound`.
+//! let outbound = Frame { header: u3::new(0b101), outbound: true, trailing: u2::new(0), level: 2 };
+//! assert_eq!(Frame::decode_exact(&outbound.to_bytes().unwrap()).unwrap().level, 2);
+//! ```
+//!
 //! # `count_prefix` — the length-prefixed count, in one line
 //!
 //! A count immediately followed by the elements it counts is the most common shape of
