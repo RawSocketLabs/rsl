@@ -26,13 +26,16 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    `version = "…"` pin in the root `Cargo.toml`.
 
 3. **Merging the release PR cuts the release.** The `release-plz release` job then
-   creates the git tag(s) — `v0.2.0` for the runtime crate `bitsandbytes` (the one
-   users depend on, so it gets the headline tag) and `bitsandbytes-macros-v0.2.0`
-   for the macro crate.
+   creates the git tag(s) — name-prefixed per crate (`bitsandbytes-v0.3.1`,
+   `bitsandbytes-macros-v0.3.1`, …) — and publishes the crates that opt in to
+   crates.io (see below).
 
-**No crates.io publishing happens yet** — `release-plz.toml` sets `publish = false`
-and `git_release_enable = false`. Today this is version + `CHANGELOG` management
-plus git tags only.
+**crates.io publishing is opt-in per crate.** The workspace default in
+`release-plz.toml` stays `publish = false`; only `bitsandbytes` and
+`bitsandbytes-macros` carry `[[package]]` overrides with `publish = true`. Merging a
+release PR therefore tags every released crate but uploads only that pair to
+crates.io. GitHub Releases remain disabled (`git_release_enable = false`).
+(Versions up to 0.3.1 were published by hand before this automation existed.)
 
 ## Baseline tags (done)
 
@@ -80,10 +83,18 @@ Alternatively, a RawSocketLabs **org owner** can allow Actions to create PRs org
 (org Settings → Actions → General → "Allow GitHub Actions to create and approve pull
 requests"); then the default `GITHUB_TOKEN` suffices and no PAT is needed.
 
-## When you're ready to publish to crates.io
+## Publishing to crates.io
 
-1. Add a `CARGO_REGISTRY_TOKEN` repository secret.
-2. In `release-plz.toml`, set `publish = true` (and `git_release_enable = true` for
-   GitHub Releases).
-3. Add `CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}` to the
-   `release-plz-release` job's `env` in the workflow.
+The `release-plz-release` job reads the `CARGO_REGISTRY_TOKEN` repository secret — a
+crates.io token with publish scope for `bitsandbytes` and `bitsandbytes-macros`. The
+two crates are published together and in dependency order (the runtime crate cannot
+be published, or even verified, without the macro crate on the registry). If the
+secret is missing when a release PR merges, the publish step fails; tags are still
+created by the same run, so fix the secret and re-run the job.
+
+To start publishing **another** workspace crate, add its own `[[package]]` entry with
+`publish = true` in `release-plz.toml` — never flip the workspace default. Several
+workspace crate names (`ethernet`, `arp`, `udp`, `ip`, `dns`, …) already exist on
+crates.io as unrelated projects, so a blanket `publish = true` would attempt uploads
+to names we do not own. Check ownership of the crates.io name first
+(`cargo owner --list <name>`).

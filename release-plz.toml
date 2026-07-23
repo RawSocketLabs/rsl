@@ -1,6 +1,8 @@
 # release-plz — per-crate SemVer + CHANGELOG from Conventional Commits (scope = crate name).
-# Posture: version + tag in git, do NOT publish to crates.io yet. To start publishing: add a
-# CARGO_REGISTRY_TOKEN secret and set publish = true (and git_release_enable = true).
+# Posture: every crate versions + tags in git; crates.io publishing is opt-in per package
+# via the [[package]] overrides at the bottom — never flip the workspace default. Several
+# workspace crate names (ethernet, arp, udp, ip, dns, …) exist on crates.io as unrelated
+# projects, so a blanket publish would attempt uploads to names we do not own.
 [workspace]
 publish = false
 # TODO: migrate version discovery to `git_only = true` after establishing a
@@ -18,3 +20,15 @@ release_always = false
 # build(deps) and chore(deps) commits remain visible in git without cascading
 # patch releases through every dependent workspace crate.
 release_commits = '^(feat|fix|perf|docs|revert)[(:]|^[a-z]+(?:\([^)]*\))?!:'
+
+# The bitsandbytes pair is the only set published to crates.io today. Both must be
+# listed together: the runtime crate cannot be published (or verified) without its
+# proc-macro crate on the registry. The release job supplies the CARGO_REGISTRY_TOKEN
+# secret (see .github/workflows/release-plz.yml).
+[[package]]
+name = "bitsandbytes-macros"
+publish = true
+
+[[package]]
+name = "bitsandbytes"
+publish = true
