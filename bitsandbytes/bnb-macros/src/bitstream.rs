@@ -261,6 +261,15 @@ struct FieldBr {
     /// fields) instead of `self.field`. The matched read/write pair is generated
     /// together so the directions can't drift.
     calc: Option<syn::Expr>,
+    /// `#[br(calc = <expr>)]` — the read-side dual of `#[bw(calc)]`: on **decode**,
+    /// bind the field to `expr` (computed from earlier fields, as locals) instead of
+    /// reading wire bits, and on **encode** write nothing. The field is stored (so it
+    /// is a normal builder/struct field), but it consumes zero wire bits in both
+    /// directions — its bytes live in the raw fields it derives from (typically
+    /// `#[br(temp)]` + `#[bw(calc)]`). This lets a later field give context to a
+    /// stored typed field without a look-ahead: read the raw layout into temps in
+    /// wire order, then `calc` the typed fields from the full set.
+    br_calc: Option<syn::Expr>,
     /// `#[bw(map = <f>)]` — on encode, write `f(&self.field)` (the wire value).
     bw_map: Option<syn::Expr>,
     /// `#[bw(write_with = <f>)]` — the escape hatch: `f(&self.field, w) -> Result<(),
@@ -405,6 +414,7 @@ enum BrDirective {
     Seek(syn::Expr),
     Dbg,
     Assert(Box<syn::Expr>, Option<Punctuated<syn::Expr, Token![,]>>),
+    Calc(syn::Expr),
 }
 
 impl Parse for BrDirective {
@@ -420,6 +430,10 @@ impl Parse for BrDirective {
                 "count" => {
                     input.parse::<Token![=]>()?;
                     Ok(BrDirective::Count(input.parse()?))
+                }
+                "calc" => {
+                    input.parse::<Token![=]>()?;
+                    Ok(BrDirective::Calc(input.parse()?))
                 }
                 "temp" => Ok(BrDirective::Temp),
                 "assert" => {
@@ -477,7 +491,7 @@ impl Parse for BrDirective {
                 "dbg" => Ok(BrDirective::Dbg),
                 _ => Err(syn::Error::new_spanned(
                     kw,
-                    "unknown `#[br(...)]` directive; expected `count`, `ctx`, `temp`, `if`, `assert(<expr>)`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, `restore_position`, `seek = <bits>`, or `dbg`",
+                    "unknown `#[br(...)]` directive; expected `count`, `calc`, `ctx`, `temp`, `if`, `assert(<expr>)`, `map`, `try_map`, `parse_with`, `pad_before/after`, `align_before/after`, `restore_position`, `seek = <bits>`, or `dbg`",
                 )),
             }
         }
@@ -511,6 +525,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     BrDirective::Seek(e) => br.seek = Some(e),
                     BrDirective::Dbg => br.dbg = true,
                     BrDirective::Assert(cond, msg) => br.asserts.push((*cond, msg)),
+                    BrDirective::Calc(e) => br.br_calc = Some(e),
                 }
             }
         } else if attr.path().is_ident("bw") {
@@ -564,6 +579,30 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
             "`#[br(map = …)]` and `#[br(try_map = …)]` are mutually exclusive",
         ));
     }
+    // `#[br(calc)]` reads no wire bits and is not stored-to-wire, so it cannot combine
+    // with any directive that reads, maps, positions, or writes the same field.
+    if br.br_calc.is_some()
+        && (br.count.is_some()
+            || br.ctx.is_some()
+            || br.temp
+            || br.cond.is_some()
+            || br.map.is_some()
+            || br.try_map.is_some()
+            || br.parse_with.is_some()
+            || br.calc.is_some()
+            || br.bw_map.is_some()
+            || br.write_with.is_some()
+            || br.auto_len.is_some()
+            || br.ignore
+            || br.seek.is_some()
+            || br.restore_position)
+    {
+        return Err(syn::Error::new_spanned(
+            f,
+            "`#[br(calc = …)]` computes the field on decode and writes nothing on encode, \
+             so it cannot combine with a reading, mapping, positioning, or writing directive",
+        ));
+    }
     Ok(br)
 }
 
@@ -578,6 +617,12 @@ fn field_is_temp(f: &syn::Field) -> bool {
 /// written, zero wire bits). Read by [`field_width`], which has no parsed `br`.
 fn field_is_ignore(f: &syn::Field) -> bool {
     parse_field_br(f).is_ok_and(|br| br.ignore)
+}
+
+/// Whether a field is `#[br(calc = …)]` (decode-computed, zero wire bits, not written).
+/// Read by [`field_width`], which has no parsed `br`.
+fn field_is_br_calc(f: &syn::Field) -> bool {
+    parse_field_br(f).is_ok_and(|br| br.br_calc.is_some())
 }
 
 /// Whether a field's directives make the message variable-length / its width
@@ -817,8 +862,8 @@ fn ctx_literal(
 fn field_width(f: &syn::Field) -> TokenStream2 {
     let bnb = crate::bnb_path();
     let ty = &f.ty;
-    if field_is_ignore(f) {
-        return quote!(0u32); // in-memory only: zero wire bits
+    if field_is_ignore(f) || field_is_br_calc(f) {
+        return quote!(0u32); // in-memory only / decode-computed: zero wire bits
     }
     if let Some(elem) = vec_elem(f) {
         quote!(<#elem as #bnb::__private::FixedBitLen>::BIT_LEN)
@@ -927,6 +972,11 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     // `ignore`: in-memory only — `Default::default()` on read, no input consumed.
     if br.ignore {
         return Ok(quote!(let #id = ::core::default::Default::default();));
+    }
+    // `calc`: the read-side dual of `#[bw(calc)]` — bind `expr` (over earlier fields,
+    // as locals) with no wire read. Pinned to the declared type so inference can't drift.
+    if let Some(calc) = &br.br_calc {
+        return Ok(quote!(let #id: #ty = #calc;));
     }
     // `if(<cond>)`: a conditional `Option<T>`. `cond` is over earlier fields (as
     // locals). `Some(read)` when it holds, else `None` (consuming nothing).
@@ -1064,6 +1114,11 @@ fn field_write_core(
     }
     // `ignore`: in-memory only — emit nothing.
     if br.ignore {
+        return Ok(quote!());
+    }
+    // `#[br(calc)]`: a decode-computed field whose bits live in the raw fields it
+    // derives from — it is never on the wire, so it writes nothing (both passes).
+    if br.br_calc.is_some() {
         return Ok(quote!());
     }
     // `calc`: a value computed from the other fields. On the **canonical** path
@@ -2616,6 +2671,7 @@ fn desugar_count_prefix(
         if br.count.is_some()
             || br.temp
             || br.calc.is_some()
+            || br.br_calc.is_some()
             || br.ignore
             || br.cond.is_some()
             || br.map.is_some()
