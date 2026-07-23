@@ -2,6 +2,18 @@ use cxx::UniquePtr;
 
 #[cxx::bridge]
 mod ffi {
+    /// Outcome of one native receive. The stream delivers exactly one packet
+    /// (of `rx_packet_samples()` samples, fixed by `samples_per_packet` at
+    /// open) per call; these counts come from libusdr's `usdr_dms_recv_nfo_t`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct ReceivedPacket {
+        /// Valid samples written to the front of the buffer (`totsyms`).
+        valid_samples: u32,
+        /// Samples the device lost within this frame (`totlost`). A nonzero
+        /// value means the stream is discontinuous at this packet boundary.
+        lost_samples: u32,
+    }
+
     unsafe extern "C++" {
         include!("usdr_wrapper.hpp");
 
@@ -20,18 +32,25 @@ mod ffi {
         fn set_rx_bandwidth(self: Pin<&mut UsdrDevice>, hz: u32);
         fn get_temperature(self: Pin<&mut UsdrDevice>) -> Result<f32>;
 
+        /// # Safety
+        ///
+        /// `ch1` must point to a writable buffer of at least `buffer_samples`
+        /// ci16 IQ samples (4 bytes each). `ch2` is unused by the
+        /// single-channel stream and may be null.
         unsafe fn receive_data(
             self: Pin<&mut UsdrDevice>,
             ch1: *mut u8,
             ch2: *mut u8,
-            samples: u32,
-        );
+            buffer_samples: u32,
+            timeout_ms: u32,
+        ) -> Result<ReceivedPacket>;
 
         fn rx_bytes_per_sample(self: &UsdrDevice) -> u32;
+        fn rx_packet_samples(self: &UsdrDevice) -> u32;
     }
 }
 
-pub use ffi::UsdrDevice;
+pub use ffi::{ReceivedPacket, UsdrDevice};
 use num_complex::Complex;
 use std::pin::Pin;
 
@@ -76,6 +95,9 @@ pub enum UsdrError {
     SyncNone,
     /// Failed to get temperature
     GetTemperature,
+    /// Receive failed: native error, timeout, stopped stream, or a buffer
+    /// smaller than one stream packet
+    Receive(String),
 }
 
 const USDR_SUCCESS: u32 = 0;
@@ -103,6 +125,7 @@ impl std::fmt::Display for UsdrError {
                 )
             }
             UsdrError::NullDevice => write!(f, "Device is null"),
+            UsdrError::Receive(detail) => write!(f, "Receive failed: {}", detail),
             _ => write!(f, "{:?}", self),
         }
     }
@@ -132,7 +155,6 @@ fn map_usdr_result(code: u32) -> Result<(), UsdrError> {
 /// Safe wrapper around UsdrDevice
 pub struct Device {
     inner: UniquePtr<UsdrDevice>,
-    bytes_per_sample: u32,
 }
 
 impl Device {
@@ -148,16 +170,20 @@ impl Device {
         let mut inner = open_device(device, loglevel, spp).map_err(|_| UsdrError::NullDevice)?;
         let init_result = inner.as_mut().expect("Device is null").init(sample_rate);
         map_usdr_result(init_result)?;
-        let bytes_per_sample = inner.as_ref().unwrap().rx_bytes_per_sample();
-        Ok(Self {
-            inner,
-            bytes_per_sample,
-        })
+        Ok(Self { inner })
     }
 
-    /// Get bytes per sample for RX
+    /// Get bytes per sample for RX. Stream geometry exists only while
+    /// streaming, so this is 0 before `start()`.
     pub fn rx_bytes_per_sample(&self) -> u32 {
-        self.bytes_per_sample
+        self.inner().rx_bytes_per_sample()
+    }
+
+    /// Samples per stream packet — the exact amount one `receive()` call
+    /// delivers, fixed by `spp` at `open()`. Stream geometry exists only
+    /// while streaming, so this is 0 before `start()`.
+    pub fn rx_packet_samples(&self) -> u32 {
+        self.inner().rx_packet_samples()
     }
 
     /// Start streaming. If `rate` differs from the rate passed to `open()`,
@@ -186,22 +212,36 @@ impl Device {
             .map_err(|_| UsdrError::GetTemperature)
     }
 
-    /// Receive IQ samples into a slice
+    /// Receive one stream packet of IQ samples into the front of `samples`.
     ///
-    /// Each sample is 4 bytes (2 bytes I + 2 bytes Q for ci16 format).
-    pub fn receive(&mut self, samples: &mut [Complex<i16>]) -> Result<usize, UsdrError> {
-        let num_samples = samples.len() as u32;
+    /// Each sample is 4 bytes (2 bytes I + 2 bytes Q for ci16 format). The
+    /// native stream delivers exactly one packet per call, so `samples` must
+    /// hold at least [`rx_packet_samples()`](Self::rx_packet_samples); a
+    /// smaller buffer is rejected before the native call. Only the returned
+    /// [`ReceivedPacket::valid_samples`] prefix is written — the tail of the
+    /// buffer is untouched. A nonzero [`ReceivedPacket::lost_samples`] means
+    /// the device dropped samples and the stream is discontinuous at this
+    /// packet boundary. Errors and timeouts (bounded by `timeout_ms`) return
+    /// [`UsdrError::Receive`].
+    pub fn receive(
+        &mut self,
+        samples: &mut [Complex<i16>],
+        timeout_ms: u32,
+    ) -> Result<ReceivedPacket, UsdrError> {
+        // The native side writes at most one packet, so clamping an
+        // over-u32 buffer length only loosens the undersize guard.
+        let buffer_samples = u32::try_from(samples.len()).unwrap_or(u32::MAX);
         let ptr = samples.as_mut_ptr() as *mut u8;
 
         unsafe {
             self.inner.as_mut().expect("Device is null").receive_data(
                 ptr,
                 std::ptr::null_mut(),
-                num_samples,
-            );
+                buffer_samples,
+                timeout_ms,
+            )
         }
-
-        Ok(samples.len())
+        .map_err(|error| UsdrError::Receive(error.what().to_string()))
     }
 
     /// Get mutable access to the underlying device
@@ -244,7 +284,7 @@ mod tests {
 
         println!("RX bytes per sample: {}", device.rx_bytes_per_sample());
 
-        device.start(1_000_000);
+        device.start(1_000_000).expect("Failed to start streaming");
         device.set_rx_freq(104_100_000);
 
         let num_samples: usize = 1024;
@@ -260,16 +300,17 @@ mod tests {
         println!("Starting 10 second capture to /tmp/out...");
 
         while start_time.elapsed() < capture_duration {
-            device
-                .receive(&mut samples)
+            let packet = device
+                .receive(&mut samples, 1_000)
                 .expect("Failed to receive samples");
+            assert_eq!(packet.lost_samples, 0, "device dropped samples");
 
-            let bytes = samples_to_bytes(&samples);
+            let bytes = samples_to_bytes(&samples[..packet.valid_samples as usize]);
             output_file
                 .write_all(&bytes)
                 .expect("Failed to write to output file");
 
-            total_samples += num_samples as u64;
+            total_samples += u64::from(packet.valid_samples);
             total_bytes += bytes.len() as u64;
         }
 

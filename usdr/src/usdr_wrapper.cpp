@@ -246,18 +246,49 @@ float UsdrDevice::get_temperature() {
   return static_cast<float>(temp) / 256.0f;
 }
 
-void UsdrDevice::receive_data(uint8_t *ch1, uint8_t *ch2, uint32_t samples) {
+ReceivedPacket UsdrDevice::receive_data(uint8_t *ch1, uint8_t *ch2,
+                                        uint32_t buffer_samples,
+                                        uint32_t timeout_ms) {
   if (dev_.strms[0] == nullptr) {
     throw std::runtime_error("RX stream is null - call start() first");
   }
 
+  // usdr_dms_recv fills exactly one stream packet per call; a smaller
+  // destination would be a heap overflow, not a short read.
+  uint32_t packet_samples = dev_.snfo_rx.pktsyms;
+  if (buffer_samples < packet_samples) {
+    throw std::runtime_error("receive buffer holds " +
+                             std::to_string(buffer_samples) +
+                             " samples but the stream delivers packets of " +
+                             std::to_string(packet_samples));
+  }
+
+  usdr_dms_recv_nfo_t nfo{};
   void *buffers[2] = {ch1, ch2};
-  int res = usdr_dms_recv(dev_.strms[0], buffers, samples, nullptr);
+  int res = usdr_dms_recv(dev_.strms[0], buffers, timeout_ms, &nfo);
   check_or_throw(res, "receive data");
+
+  if (nfo.totsyms > buffer_samples) {
+    throw std::runtime_error("native receive reported " +
+                             std::to_string(nfo.totsyms) +
+                             " valid samples for a buffer of " +
+                             std::to_string(buffer_samples));
+  }
+
+  return ReceivedPacket{nfo.totsyms, nfo.totlost};
 }
 
 uint32_t UsdrDevice::rx_bytes_per_sample() const {
+  // Stream geometry exists only while streaming; before start() the info
+  // block is zeroed and the division would fault.
+  if (dev_.snfo_rx.pktsyms == 0) {
+    return 0;
+  }
   return dev_.snfo_rx.pktbszie / dev_.snfo_rx.pktsyms;
+}
+
+uint32_t UsdrDevice::rx_packet_samples() const {
+  return dev_.snfo_rx.pktsyms;
 }
 
 std::unique_ptr<UsdrDevice> make_usdr_device(const std::string &device_string,
