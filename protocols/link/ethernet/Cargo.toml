@@ -1,6 +1,6 @@
 [package]
 name = "ethernet"
-version = "0.1.2"
+version = "0.1.3"
 description = "Ethernet II (IEEE 802.3) frame-header codec on the bnb bit-aware codec — dual-use, from-scratch."
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
-ethertype = { path = "../ethertype", version = "0.2.0" }
+ethertype = { path = "../ethertype", version = "0.2.1" }
 rawsock = { workspace = true, optional = true }
 
 [features]
@@ -22,8 +22,8 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests frame a real IP + ICMP payload.
-ip = { path = "../../network/ip", version = "0.2.0", features = ["inject"] }
-icmp = { path = "../../network/icmp", version = "0.1.2", features = ["inject"] }
+ip = { path = "../../network/ip", version = "0.2.1", features = ["inject"] }
+icmp = { path = "../../network/icmp", version = "0.1.3", features = ["inject"] }
 
 [lints]
 workspace = true
