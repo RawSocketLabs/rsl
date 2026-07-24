@@ -120,9 +120,20 @@ called through a hidden inherent pair with the trait's exact contract —
 and every `Bits`-producing macro emit, and to which the real `Bits` impls
 delegate (single source of truth, so trait and const paths cannot drift). The
 trait keeps working everywhere else (codec, derives); a hand-written `Bits`
-field type adds the pair (documented on `Bits`). `#[view]` closures are inlined
-into the accessors when their raw type is annotated, with a `dynamic` opt-out
-for non-`const` bodies.
+field type gets the pair via `impl_bits!`, which emits the trait impl and the
+inherent pair from one definition (so they can't disagree, and the pair's
+naming stays an implementation detail). `#[view]` closures are inlined into the
+accessors when their raw type is annotated, with a `dynamic` opt-out for
+non-`const` bodies and a `const` argument that asserts const-ness (fallbacks
+become errors).
+
+**Watch: this dispatch is a stopgap, not the endgame.** Probed on rustc 1.97.1
+(2026-07): `const trait` impls (RFC 3762) and closure calls in `const fn` are
+both still unstable, so dispatching around the trait is the only design that
+works on stable at *any* MSRV today. When `const trait` stabilizes, the plan is
+to make `Bits` a `const trait`, delete the inherent-pair dispatch, and take the
+MSRV jump — a coordinated breaking release (custom field types change from
+`impl_bits!` to `impl const Bits`).
 
 ### 3.5 Layout: `repr(transparent)` (0.3.2)
 

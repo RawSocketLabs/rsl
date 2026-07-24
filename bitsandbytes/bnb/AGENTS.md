@@ -52,10 +52,15 @@ the proc-macro.
   `const_into_bits`): `bool`/primitives inline, everything else via the hidden
   inherent `__bnb_from_bits`/`__bnb_into_bits` pair that `UInt` and every
   `Bits`-producing macro emit — and the real `Bits` impls **delegate to that
-  pair** (never duplicate the logic). Don't emit a trait-method call in accessor
-  position; don't emit a formatted panic in a `const fn` (literal/`concat!`
-  only). `#[view]` closures are inlined when the raw type is annotated (or
-  `raw = <ty>` is given); `dynamic` keeps the runtime closure-call form.
+  pair** (never duplicate the logic; one deliberate exception: a no-catch-all
+  `BitEnum`'s *trait* `from_bits` keeps its own match so the runtime decode path
+  keeps the formatted, value-bearing panic a `const fn` can't express). Don't
+  emit a trait-method call in accessor position; don't emit a formatted panic in
+  a `const fn` (literal/`concat!` only). Downstream custom field types get the
+  pair via `bnb::impl_bits!` — point users there, never at the dunder names.
+  `#[view]` closures are inlined when the raw type is annotated (or `raw = <ty>`
+  is given); `dynamic` keeps the runtime closure-call form, `const` asserts
+  const-ness (fallbacks become errors).
 - **Generated structs are `#[repr(transparent)]`** over the backing (bitfields
   and bitflags), suppressed if the user writes any `#[repr(...)]` themselves.
   Rationale in `DESIGN.md` §3.4–3.5.

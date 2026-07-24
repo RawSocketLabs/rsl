@@ -152,7 +152,10 @@
 //! be `const` too (like `Kind`'s helpers below). For a body that needs non-`const`
 //! operations, add the `dynamic` argument: the closures are then called at runtime,
 //! the accessors are not `const`, and the raw type is inferred. Fully unannotated
-//! closures also keep that runtime form.
+//! closures also keep that runtime form — quietly, since they compiled before the
+//! accessors were `const`. To **assert** const-ness instead, add the `const`
+//! argument: any quiet fallback (invisible raw type, a `write` body that can't be
+//! inlined) becomes a compile error. `const` and `dynamic` are mutually exclusive.
 //!
 //! ```
 //! use bnb::{bitfield, u2, u3};
