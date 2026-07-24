@@ -9,6 +9,14 @@ Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
 ## [0.3.2](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.3.1...bitsandbytes-v0.3.2) - 2026-07-24
 
+Headline (in the re-exported `bitsandbytes-macros` 0.3.2): every generated
+accessor is now a `const fn`, and generated bitfield/bitflags structs are
+`#[repr(transparent)]` over their backing integer. Upgrading from 0.3.1: a
+hand-written `Bits` field type now needs `bnb::impl_bits!` (see the `Bits`
+docs), a `#[view]` closure calling non-`const` helpers needs `dynamic` (or
+`const` helpers), and a primitive `type` alias as a field type must become
+the bare primitive name.
+
 ### Added
 
 - *(bnb)* add impl_bits! — one-definition Bits impls for custom field types
