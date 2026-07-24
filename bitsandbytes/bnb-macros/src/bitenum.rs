@@ -176,7 +176,10 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 
     // from_bits: match each discriminant; unknown -> catch-all or a panic (a `const fn`
     // can only panic with a literal message, hence `concat!` and no `{}` for the value).
-    let from_unit = unit.iter().map(|(id, disc)| quote!(#disc => #name::#id));
+    let from_unit: Vec<TokenStream2> = unit
+        .iter()
+        .map(|(id, disc)| quote!(#disc => #name::#id))
+        .collect();
     let from_wild = match &catch_all {
         Some(id) => {
             let e = crate::const_from_bits(width, &quote!(other));
@@ -187,6 +190,25 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
             stringify!(#name),
             " has no variant for discriminant (and no #[catch_all])"
         ))),
+    };
+
+    // The trait `from_bits` delegates to the inherent const version — except for a
+    // no-catch-all enum, where it carries its own match so the *runtime* decode
+    // path (a `closed` enum fed hostile input through the codec) keeps the
+    // formatted, value-bearing panic a `const fn` cannot express. The arms are
+    // generated in this same expansion from the same `unit` list, so the two
+    // matches cannot drift.
+    let trait_from_bits_body = match &catch_all {
+        Some(_) => quote!(Self::__bnb_from_bits(raw)),
+        None => quote! {
+            match raw {
+                #(#from_unit,)*
+                other => unreachable!(
+                    "non-exhaustive BitEnum {} has no variant for discriminant {} and no #[catch_all]",
+                    stringify!(#name), other
+                ),
+            }
+        },
     };
 
     // `From`/`TryFrom` against the primitive — `num_enum` parity.
@@ -229,7 +251,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
 
             #[inline]
             fn from_bits(raw: u128) -> Self {
-                Self::__bnb_from_bits(raw)
+                #trait_from_bits_body
             }
         }
 
