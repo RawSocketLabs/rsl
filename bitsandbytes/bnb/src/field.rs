@@ -57,6 +57,27 @@ pub enum BitOrder {
 /// implement it out of the box; `#[bitfield]` and `#[derive(BitEnum)]` generate
 /// impls so those types nest as fields too.
 ///
+/// # Const dispatch (`#[bitfield]` field types)
+///
+/// The accessors `#[bitfield]` generates are `const fn`. A `const fn` cannot call
+/// trait methods on stable Rust, so the generated code does not go through this
+/// trait: `bool` and the primitive unsigned integers are converted inline, and
+/// every other field type is called through a pair of **inherent** associated
+/// functions with the same contract as `into_bits`/`from_bits`:
+///
+/// ```ignore
+/// pub const fn __bnb_from_bits(raw: u128) -> Self;
+/// pub const fn __bnb_into_bits(self) -> u128;
+/// ```
+///
+/// [`UInt`](crate::UInt) and every `#[bitfield]`/`#[derive(BitEnum)]`/`#[bitflags]`
+/// type provides the pair automatically (their `Bits` impls delegate to it, so the
+/// two can never disagree). A hand-written `Bits` type must add the pair itself to
+/// be usable as a `#[bitfield]` field; the trait alone still suffices everywhere
+/// else (the `#[bin]` codec and the bitstream derives). Field types must also be
+/// named directly — a `type` alias of a primitive is not recognized by the inline
+/// conversion.
+///
 /// ```
 /// use bnb::Bits;
 ///
