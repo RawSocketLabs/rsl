@@ -107,6 +107,33 @@ backing integer. The same principle sizes a fixed message's `FixedBitLen::BIT_LE
 The proc-macro never guesses a width — the compiler does the arithmetic, and an
 impossible layout is a compile error rather than a silent miscompile.
 
+### 3.4 Const accessors: dispatch around the trait (0.3.2)
+
+The generated accessors are `const fn` (parity with `bitbybit`, which we replace).
+A `const fn` cannot call trait methods on stable Rust, so accessor *values* cannot
+go through `Bits::from_bits`/`into_bits` the way the *widths* go through
+`Bits::BITS` (associated consts are fine in const-eval; method calls are not).
+The accessors therefore dispatch by type: `bool` and the primitive unsigned
+integers convert inline in the generated code, and every other field type is
+called through a hidden inherent pair with the trait's exact contract —
+`__bnb_from_bits(u128) -> Self` / `__bnb_into_bits(self) -> u128` — which `UInt`
+and every `Bits`-producing macro emit, and to which the real `Bits` impls
+delegate (single source of truth, so trait and const paths cannot drift). The
+trait keeps working everywhere else (codec, derives); a hand-written `Bits`
+field type adds the pair (documented on `Bits`). `#[view]` closures are inlined
+into the accessors when their raw type is annotated, with a `dynamic` opt-out
+for non-`const` bodies.
+
+### 3.5 Layout: `repr(transparent)` (0.3.2)
+
+The emitted struct wraps exactly one native integer, so it is emitted
+`#[repr(transparent)]`: size, alignment, and ABI are the backing type's —
+a claim `repr(Rust)` never made (before 0.3.2 the layout was formally
+unspecified) and the honest version of the `repr(C)` that `bitbybit` emitted
+(`transparent` is strictly stronger for a single-field struct, and what an FFI
+consumer actually wants). A user-supplied `#[repr(...)]` suppresses the
+generated one — `repr(C)`/`repr(align(N))` cannot combine with `transparent`.
+
 ## 4. Field types and macros
 
 - **`u1`..`u127`** (`UInt<T, N>`) — range-checked sub-byte integers backed by the

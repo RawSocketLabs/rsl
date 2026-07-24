@@ -46,6 +46,20 @@ const-eval; the generated accessors then shift/mask the single backing integer.
 If you change the macro, keep that invariant — don't try to compute widths in
 the proc-macro.
 
+- **Accessors are `const fn`, so they never call `Bits` methods** (trait calls
+  aren't const on stable; associated consts like `BITS` are fine). Value
+  conversions go through the const dispatch (`lib.rs::const_from_bits`/
+  `const_into_bits`): `bool`/primitives inline, everything else via the hidden
+  inherent `__bnb_from_bits`/`__bnb_into_bits` pair that `UInt` and every
+  `Bits`-producing macro emit — and the real `Bits` impls **delegate to that
+  pair** (never duplicate the logic). Don't emit a trait-method call in accessor
+  position; don't emit a formatted panic in a `const fn` (literal/`concat!`
+  only). `#[view]` closures are inlined when the raw type is annotated (or
+  `raw = <ty>` is given); `dynamic` keeps the runtime closure-call form.
+- **Generated structs are `#[repr(transparent)]`** over the backing (bitfields
+  and bitflags), suppressed if the user writes any `#[repr(...)]` themselves.
+  Rationale in `DESIGN.md` §3.4–3.5.
+
 - Layout consts: `Name::__bits_w_<field>` / `__bits_off_<field>` /
   `__bits_mask_<field>` and `Name::WIDTH` (the inherent impl carries
   `#[allow(non_upper_case_globals)]`).
