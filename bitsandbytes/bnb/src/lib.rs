@@ -27,17 +27,12 @@ use bnb::{bitfield, BitEnum, u4, u5, u7};
 
 # #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 # struct Flags(bnb::u7);
-# impl Flags {
-#     // The inherent const pair a custom `#[bitfield]` field type must provide
-#     // alongside `Bits` — the generated accessors are `const fn` and dispatch
-#     // here (a `const fn` cannot call trait methods). See `Bits`' docs.
-#     pub const fn __bnb_from_bits(raw: u128) -> Self { Flags(u7::from_raw(raw as u8)) }
-#     pub const fn __bnb_into_bits(self) -> u128 { self.0.value() as u128 }
-# }
-# impl bnb::Bits for Flags {
-#     const BITS: u32 = 7;
-#     fn into_bits(self) -> u128 { self.__bnb_into_bits() }
-#     fn from_bits(raw: u128) -> Self { Self::__bnb_from_bits(raw) }
+# bnb::impl_bits! {
+#     impl Bits for Flags {
+#         const BITS: u32 = 7;
+#         const fn into_bits(self) -> u128 { self.0.value() as u128 }
+#         const fn from_bits(raw: u128) -> Self { Flags(u7::from_raw(raw as u8)) }
+#     }
 # }
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u4)]
