@@ -100,6 +100,22 @@ macro_rules! impl_uint {
                 pub const fn value(self) -> $t {
                     self.value
                 }
+
+                // Const-dispatch seam for macro-generated accessors: the
+                // `Bits::from_bits`/`into_bits` contract as inherent `const fn`s,
+                // callable where trait methods cannot be (const trait impls are
+                // unstable). The `Bits` impl delegates here, so the two can't drift.
+                #[doc(hidden)]
+                #[inline]
+                pub const fn __bnb_from_bits(raw: u128) -> Self {
+                    Self::from_raw(raw as $t)
+                }
+
+                #[doc(hidden)]
+                #[inline]
+                pub const fn __bnb_into_bits(self) -> u128 {
+                    self.value as u128
+                }
             }
 
             impl<const N: usize> Default for UInt<$t, N> {
@@ -114,12 +130,12 @@ macro_rules! impl_uint {
 
                 #[inline]
                 fn into_bits(self) -> u128 {
-                    self.value as u128
+                    self.__bnb_into_bits()
                 }
 
                 #[inline]
                 fn from_bits(raw: u128) -> Self {
-                    Self::from_raw(raw as $t)
+                    Self::__bnb_from_bits(raw)
                 }
             }
 
