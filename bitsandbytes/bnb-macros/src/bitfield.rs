@@ -123,6 +123,10 @@ struct View {
     /// `dynamic` — opt out of `const` accessors and call the closures at runtime
     /// (for `read`/`write` bodies that use non-`const` operations).
     dynamic: bool,
+    /// `const` — *assert* `const` accessors: a hard error if the raw type isn't
+    /// visible (or the `write` body can't be inlined), instead of the quiet
+    /// fallback to the runtime closure-call form.
+    require_const: bool,
 }
 
 impl View {
@@ -160,15 +164,25 @@ fn contains_return(ts: &TokenStream2) -> bool {
 }
 
 /// Parses the arguments of a
-/// `#[view(bits = N, read = <closure>, write = <closure>[, raw = <ty>][, dynamic])]`.
+/// `#[view(bits = N, read = <closure>, write = <closure>[, raw = <ty>][, const | dynamic])]`.
 fn parse_view(attr: &Attribute) -> syn::Result<View> {
     let mut bits: Option<u32> = None;
     let mut read: Option<syn::Expr> = None;
     let mut write: Option<syn::Expr> = None;
     let mut raw: Option<Type> = None;
     let mut dynamic = false;
+    let mut require_const = false;
     attr.parse_args_with(|input: ParseStream| {
         while !input.is_empty() {
+            // `const` is a keyword, so it can't come out of the `Ident` parse below.
+            if input.peek(Token![const]) {
+                input.parse::<Token![const]>()?;
+                require_const = true;
+                if input.peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
+                }
+                continue;
+            }
             let key: Ident = input.parse()?;
             if key == "dynamic" {
                 dynamic = true;
@@ -206,12 +220,20 @@ fn parse_view(attr: &Attribute) -> syn::Result<View> {
         .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `read = |raw, s| …`"))?;
     let write = write
         .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `write = |v| …`"))?;
+    if require_const && dynamic {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "`#[view(const)]` and `dynamic` contradict each other: `const` asserts const \
+             accessors, `dynamic` opts out of them — keep one",
+        ));
+    }
     Ok(View {
         bits,
         read,
         write,
         raw,
         dynamic,
+        require_const,
     })
 }
 
@@ -359,6 +381,32 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             let read = &view.read;
             let write = &view.write;
             let raw_ty = if view.dynamic { None } else { view.raw_ty() };
+
+            // `const` asserts const accessors — turn the quiet runtime fallbacks
+            // into spanned errors. (`const` + `dynamic` is rejected at parse time.)
+            if view.require_const {
+                if raw_ty.is_none() {
+                    return syn::Error::new_spanned(
+                        ident,
+                        "`#[view(const)]` needs the raw type visible to the const dispatch: \
+                         annotate the `read` closure's first parameter (`|raw: u2, s| …`), \
+                         give the `write` closure a return type, or add `raw = <ty>`",
+                    )
+                    .to_compile_error();
+                }
+                if let syn::Expr::Closure(c) = write {
+                    let body = &c.body;
+                    if c.inputs.len() == 1 && contains_return(&quote!(#body)) {
+                        return syn::Error::new_spanned(
+                            ident,
+                            "`#[view(const)]`: the `write` closure body contains `return`, \
+                             which cannot be inlined into a `const` setter; rewrite it \
+                             without early `return` (or drop `const`)",
+                        )
+                        .to_compile_error();
+                    }
+                }
+            }
 
             let (getter_kw, getter_body) = match &raw_ty {
                 Some(rt) => {

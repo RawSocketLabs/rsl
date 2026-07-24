@@ -174,8 +174,9 @@ pub(crate) fn const_into_bits(
 /// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
 ///
 /// Every accessor is a **`const fn`** (`#[view]` accessors too, when their raw
-/// type is annotated — see `bnb::guide::bitfields`; a custom field type needs
-/// the inherent conversion pair documented on `bnb::Bits`).
+/// type is annotated — the view's `const` argument asserts it, `dynamic` opts
+/// out; see `bnb::guide::bitfields`. A custom field type is implemented with
+/// `bnb::impl_bits!` — see `bnb::Bits`).
 ///
 /// ## Layout
 ///
