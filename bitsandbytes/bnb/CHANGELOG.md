@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.3.2](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.3.1...bitsandbytes-v0.3.2) - 2026-07-24
+
+### Added
+
+- *(bnb)* add impl_bits! — one-definition Bits impls for custom field types
+- *(bnb)* add the inherent const conversion pair to UInt
+
+### Other
+
+- *(bnb)* cover every raw-type resolution rule and codegen arm of #[view]
+- *(bnb)* record the stopgap status of the const dispatch
+- *(bnb)* pin the alias failure mode, the view const assertion, impl_bits!
+- *(bnb)* record the const-dispatch and repr(transparent) decisions
+- *(bnb)* prove the generated accessors in const contexts
+
 ## [0.3.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.3.0...bitsandbytes-v0.3.1) - 2026-07-23
 
 ### Added

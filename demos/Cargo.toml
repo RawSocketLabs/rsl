@@ -10,11 +10,11 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-ip = { path = "../protocols/network/ip", version = "0.2.1", features = ["inject"] }
-udp = { path = "../protocols/transport/udp", version = "0.1.3", features = ["inject"] }
+ip = { path = "../protocols/network/ip", version = "0.2.2", features = ["inject"] }
+udp = { path = "../protocols/transport/udp", version = "0.1.4", features = ["inject"] }
 arp = { path = "../protocols/link/arp", version = "0.1.1", features = ["inject"] }
-ethernet = { path = "../protocols/link/ethernet", version = "0.1.3", features = ["inject"] }
-ethertype = { path = "../protocols/link/ethertype", version = "0.2.1" }
+ethernet = { path = "../protocols/link/ethernet", version = "0.1.4", features = ["inject"] }
+ethertype = { path = "../protocols/link/ethertype", version = "0.2.2" }
 # The privileged socket backends (L3 NetworkSocket, L2 LinkSocket).
 rawsock = { workspace = true, features = ["network", "link"] }
 
