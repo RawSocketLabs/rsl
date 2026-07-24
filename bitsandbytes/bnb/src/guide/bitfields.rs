@@ -142,8 +142,17 @@
 //! sibling — no cursor look-ahead. `#[view(bits = N, read = |raw, s| …, write = |v| …)]`
 //! stores the raw `N` bits and materializes a typed value: `read` receives the raw bits
 //! and `&Self` (call sibling getters for context), and `write` maps the typed value back
-//! to raw bits (context-free). Both bridge through [`Bits`](crate::Bits), so the raw
-//! type is inferred from the closures' own annotations — a `uN`, an enum, anything.
+//! to raw bits (context-free). The raw type may be a `uN`, an enum — any
+//! [`Bits`](crate::Bits) type.
+//!
+//! When the raw type is visible to the macro — the `read` closure's first-parameter
+//! annotation (`|raw: u2, s| …`), the `write` closure's return annotation, or an
+//! explicit `raw = <ty>` argument (for `read`/`write` given as fn paths) — the closure
+//! bodies are **inlined** and the accessors are `const fn`, so anything they call must
+//! be `const` too (like `Kind`'s helpers below). For a body that needs non-`const`
+//! operations, add the `dynamic` argument: the closures are then called at runtime,
+//! the accessors are not `const`, and the raw type is inferred. Fully unannotated
+//! closures also keep that runtime form.
 //!
 //! ```
 //! use bnb::{bitfield, u2, u3};
@@ -151,14 +160,14 @@
 //! #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 //! enum Kind { A, B, Other(u2) }
 //! impl Kind {
-//!     fn read(bits: u2, outbound: bool) -> Self {
+//!     const fn read(bits: u2, outbound: bool) -> Self {
 //!         match (outbound, bits.value()) {
 //!             (true, 0b00) => Kind::A,
 //!             (false, 0b01) => Kind::B,
 //!             _ => Kind::Other(bits),
 //!         }
 //!     }
-//!     fn bits(self) -> u2 {
+//!     const fn bits(self) -> u2 {
 //!         match self { Kind::A => u2::new(0), Kind::B => u2::new(1), Kind::Other(b) => b }
 //!     }
 //! }
