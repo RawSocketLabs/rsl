@@ -1720,6 +1720,7 @@ pub trait bnb::prelude::EncodeExt: bnb::bitstream::BitEncode
 pub fn bnb::prelude::EncodeExt::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
 impl<T: bnb::bitstream::BitEncode> bnb::bitstream::EncodeExt for T
 pub fn T::encode<W: std::io::Write>(&self, &mut W) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub macro bnb::impl_bits!
 pub enum bnb::BitOrder
 pub bnb::BitOrder::Lsb
 pub bnb::BitOrder::Msb

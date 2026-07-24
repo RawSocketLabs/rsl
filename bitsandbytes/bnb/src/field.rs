@@ -62,21 +62,16 @@ pub enum BitOrder {
 /// The accessors `#[bitfield]` generates are `const fn`. A `const fn` cannot call
 /// trait methods on stable Rust, so the generated code does not go through this
 /// trait: `bool` and the primitive unsigned integers are converted inline, and
-/// every other field type is called through a pair of **inherent** associated
-/// functions with the same contract as `into_bits`/`from_bits`:
-///
-/// ```ignore
-/// pub const fn __bnb_from_bits(raw: u128) -> Self;
-/// pub const fn __bnb_into_bits(self) -> u128;
-/// ```
-///
-/// [`UInt`](crate::UInt) and every `#[bitfield]`/`#[derive(BitEnum)]`/`#[bitflags]`
-/// type provides the pair automatically (their `Bits` impls delegate to it, so the
-/// two can never disagree). A hand-written `Bits` type must add the pair itself to
-/// be usable as a `#[bitfield]` field; the trait alone still suffices everywhere
-/// else (the `#[bin]` codec and the bitstream derives). Field types must also be
-/// named directly — a `type` alias of a primitive is not recognized by the inline
-/// conversion.
+/// every other field type is called through a pair of inherent `const fn`s with
+/// the same contract as `into_bits`/`from_bits`. [`UInt`](crate::UInt) and every
+/// `#[bitfield]`/`#[derive(BitEnum)]`/`#[bitflags]` type provides the pair
+/// automatically (their `Bits` impls delegate to it, so the two can never
+/// disagree). **Implement a hand-written field type with
+/// [`impl_bits!`](macro@crate::impl_bits)**, which emits the trait impl and the
+/// inherent pair from one definition — never write the pair by hand. The trait
+/// alone still suffices everywhere else (the `#[bin]` codec and the bitstream
+/// derives). Field types must be named directly — a `type` alias of a primitive
+/// is not recognized by the inline conversion.
 ///
 /// ```
 /// use bnb::Bits;
@@ -136,6 +131,84 @@ macro_rules! impl_bits_for_primitive {
 }
 
 impl_bits_for_primitive!(u8, u16, u32, u64, u128);
+
+/// Implements [`Bits`] for a hand-written field type from one pair of `const fn`
+/// conversion bodies — the supported way to make a custom type usable as a
+/// `#[bitfield]` field.
+///
+/// The accessors `#[bitfield]` generates are `const fn`, and a `const fn` cannot
+/// call trait methods on stable Rust — so alongside its [`Bits`] impl, a field
+/// type needs the same conversions reachable as inherent `const fn`s. This macro
+/// emits **both from one definition**: the trait impl delegates to the inherent
+/// pair, so the two can never disagree, and the pair's naming stays an
+/// implementation detail of the crate.
+///
+/// The bodies must satisfy the [`Bits`] contract: `into_bits` yields the value in
+/// the low `BITS` bits of a `u128`, `from_bits` reconstructs from the low `BITS`
+/// bits (higher bits ignored), and the two round-trip.
+///
+/// ```
+/// use bnb::{bitfield, u7};
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// struct Percent(u7);
+///
+/// bnb::impl_bits! {
+///     impl Bits for Percent {
+///         const BITS: u32 = 7;
+///         const fn into_bits(self) -> u128 { self.0.value() as u128 }
+///         const fn from_bits(raw: u128) -> Self { Percent(u7::from_raw(raw as u8)) }
+///     }
+/// }
+///
+/// // `Percent` now nests as a `#[bitfield]` field like any built-in `Bits` type.
+/// #[bitfield(u8, bits = msb)]
+/// #[derive(Clone, Copy)]
+/// struct Meter { pct: Percent, on: bool }
+///
+/// let m = Meter::new().with_pct(Percent(u7::new(42))).with_on(true);
+/// assert_eq!(m.pct(), Percent(u7::new(42)));
+/// assert!(m.on());
+/// ```
+#[macro_export]
+macro_rules! impl_bits {
+    (
+        impl Bits for $t:ty {
+            const BITS: u32 = $bits:expr;
+            const fn into_bits($self_:ident) -> u128 $into:block
+            const fn from_bits($raw:ident: u128) -> Self $from:block
+        }
+    ) => {
+        impl $t {
+            // The const-dispatch pair `#[bitfield]` accessors call (see `Bits`'
+            // docs). `pub` because a bitfield in any other module/crate must be
+            // able to reach it; `allow(unreachable_pub)` for crate-private types.
+            #[doc(hidden)]
+            #[allow(unreachable_pub)]
+            #[inline]
+            pub const fn __bnb_into_bits($self_) -> u128 $into
+
+            #[doc(hidden)]
+            #[allow(unreachable_pub)]
+            #[inline]
+            pub const fn __bnb_from_bits($raw: u128) -> Self $from
+        }
+
+        impl $crate::Bits for $t {
+            const BITS: u32 = $bits;
+
+            #[inline]
+            fn into_bits(self) -> u128 {
+                self.__bnb_into_bits()
+            }
+
+            #[inline]
+            fn from_bits(raw: u128) -> Self {
+                Self::__bnb_from_bits(raw)
+            }
+        }
+    };
+}
 
 /// The seam every `#[bitfield]` struct implements — the stable interface the
 /// `#[bin]` codec builds on, independent of how the fields are accessed.
@@ -210,5 +283,32 @@ mod unit {
         assert_eq!(u16::from_bits(0x3_1234), 0x1234);
         let v: u128 = 0xDEAD_BEEF_DEAD_BEEF_DEAD_BEEF_DEAD_BEEF;
         assert_eq!(u128::from_bits(v.into_bits()), v);
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Nibble(u8);
+
+    crate::impl_bits! {
+        impl Bits for Nibble {
+            const BITS: u32 = 4;
+            const fn into_bits(self) -> u128 {
+                self.0 as u128
+            }
+            const fn from_bits(raw: u128) -> Self {
+                Nibble((raw & 0xF) as u8)
+            }
+        }
+    }
+
+    #[test]
+    fn impl_bits_emits_a_delegating_trait_impl_and_a_const_pair() {
+        assert_eq!(<Nibble as Bits>::BITS, 4);
+        // The trait path routes through the user's bodies (masking preserved).
+        assert_eq!(Nibble::from_bits(0xAB), Nibble(0xB));
+        assert_eq!(Nibble(0x7).into_bits(), 0x7);
+        // The inherent pair is `const` — usable where the accessors need it.
+        const N: Nibble = Nibble::__bnb_from_bits(0x1C);
+        assert_eq!(N, Nibble(0xC));
+        const _: () = assert!(Nibble(0x3).__bnb_into_bits() == 0x3);
     }
 }
