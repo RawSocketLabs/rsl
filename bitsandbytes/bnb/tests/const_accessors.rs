@@ -268,6 +268,43 @@ mod macro_ {
         assert!(h.a() == 0x12 && h.b() == 0x34);
     };
 
+    // ---------------------------------------------------------------------------
+    // A hand-written field type via `impl_bits!` reads const like any built-in.
+    // ---------------------------------------------------------------------------
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Percent(u7);
+
+    bnb::impl_bits! {
+        impl Bits for Percent {
+            const BITS: u32 = 7;
+            const fn into_bits(self) -> u128 {
+                self.0.value() as u128
+            }
+            const fn from_bits(raw: u128) -> Self {
+                Percent(u7::from_raw(raw as u8))
+            }
+        }
+    }
+
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct Gauge {
+        pct: Percent,
+        on: bool,
+    }
+
+    const GAUGE: Gauge = Gauge::new().with_pct(Percent(u7::new(42))).with_on(true);
+    const _: () = {
+        assert!(GAUGE.pct().0.value() == 42);
+        assert!(GAUGE.on());
+    };
+
+    #[test]
+    fn impl_bits_field_layout_is_unchanged() {
+        assert_eq!(GAUGE.to_raw(), (42 << 1) | 1);
+    }
+
     // A user-supplied `#[repr(...)]` wins — the macro then emits none of its own
     // (`repr(C)` and `repr(transparent)` cannot combine).
     #[bitfield(u8, bits = msb)]

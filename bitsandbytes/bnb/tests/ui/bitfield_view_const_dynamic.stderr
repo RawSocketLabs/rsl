@@ -1,0 +1,11 @@
+error: `#[view(const)]` and `dynamic` contradict each other: `const` asserts const accessors, `dynamic` opts out of them — keep one
+  --> tests/ui/bitfield_view_const_dynamic.rs:8:5
+   |
+ 8 | /     #[view(
+ 9 | |         bits = 2,
+10 | |         const,
+11 | |         dynamic,
+12 | |         read = |raw: bnb::u2, _s: &Self| raw,
+13 | |         write = |v: bnb::u2| v
+14 | |     )]
+   | |______^

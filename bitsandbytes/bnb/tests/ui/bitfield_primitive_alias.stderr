@@ -1,0 +1,23 @@
+error[E0599]: no associated function or constant named `__bnb_from_bits` found for type `u8` in the current scope
+ --> tests/ui/bitfield_primitive_alias.rs:9:1
+  |
+9 | #[bitfield(u16, bits = msb)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `u8`
+  |
+  = note: this error originates in the attribute macro `bitfield` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: you are looking for the module in `std`, not the primitive type
+  |
+9 | std::#[bitfield(u16, bits = msb)]
+  | +++++
+
+error[E0599]: no associated function or constant named `__bnb_into_bits` found for type `u8` in the current scope
+ --> tests/ui/bitfield_primitive_alias.rs:9:1
+  |
+9 | #[bitfield(u16, bits = msb)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `u8`
+  |
+  = note: this error originates in the attribute macro `bitfield` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: you are looking for the module in `std`, not the primitive type
+  |
+9 | std::#[bitfield(u16, bits = msb)]
+  | +++++

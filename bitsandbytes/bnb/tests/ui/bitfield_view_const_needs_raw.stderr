@@ -1,0 +1,5 @@
+error: `#[view(const)]` needs the raw type visible to the const dispatch: annotate the `read` closure's first parameter (`|raw: u2, s| …`), give the `write` closure a return type, or add `raw = <ty>`
+  --> tests/ui/bitfield_view_const_needs_raw.rs:15:5
+   |
+15 |     kind: bnb::u2,
+   |     ^^^^

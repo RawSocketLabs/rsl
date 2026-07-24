@@ -41,8 +41,11 @@ mod macro_ {
         header: u3,
         // The raw two bits are stored; `kind()` materializes the typed value using the
         // `outbound` sibling. The raw type (`u2`) is inferred from the closures.
+        // `const` *asserts* const accessors (the annotations alone already enable
+        // them; the assertion turns any quiet fallback into a compile error).
         #[view(
             bits = 2,
+            const,
             read = |raw: u2, s: &Self| Kind::interpret(raw, s.outbound()),
             write = |v: Kind| v.bits()
         )]
