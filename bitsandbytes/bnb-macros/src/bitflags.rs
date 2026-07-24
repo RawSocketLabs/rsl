@@ -94,8 +94,17 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
     let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
 
+    // Layout guarantee, as for `#[bitfield]`: one native integer, so
+    // `repr(transparent)` is the honest claim; a user-supplied `#[repr(...)]` wins.
+    let repr_attr = if outer.iter().any(|a| a.path().is_ident("repr")) {
+        quote!()
+    } else {
+        quote!(#[repr(transparent)])
+    };
+
     Ok(quote! {
         #(#outer)*
+        #repr_attr
         #vis struct #name {
             value: #backing,
         }
@@ -124,6 +133,23 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
                 Self { value: value & Self::all().value }
             }
 
+            // Const-dispatch seam (see `Bits`): the `Bits::from_bits`/`into_bits`
+            // contract as inherent `const fn`s (unknown bits retained, like the
+            // trait), so a flag set works as a field of a `#[bitfield]` whose
+            // accessors are `const`. The trait impl delegates here. Distinct from
+            // the public `from_bits`, which takes the backing type.
+            #[doc(hidden)]
+            #[inline]
+            #vis const fn __bnb_from_bits(raw: u128) -> Self {
+                Self { value: raw as #backing }
+            }
+
+            #[doc(hidden)]
+            #[inline]
+            #vis const fn __bnb_into_bits(self) -> u128 {
+                self.value as u128
+            }
+
             /// Whether every flag in `other` is set in `self`.
             #vis const fn contains(&self, other: Self) -> bool {
                 (self.value & other.value) == other.value
@@ -138,13 +164,13 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             #vis const fn is_empty(&self) -> bool { self.value == 0 }
 
             /// Adds the flags in `other`.
-            #vis fn insert(&mut self, other: Self) { self.value |= other.value; }
+            #vis const fn insert(&mut self, other: Self) { self.value |= other.value; }
             /// Removes the flags in `other`.
-            #vis fn remove(&mut self, other: Self) { self.value &= !other.value; }
+            #vis const fn remove(&mut self, other: Self) { self.value &= !other.value; }
             /// Flips the flags in `other`.
-            #vis fn toggle(&mut self, other: Self) { self.value ^= other.value; }
+            #vis const fn toggle(&mut self, other: Self) { self.value ^= other.value; }
             /// Inserts or removes `flag` according to `value`.
-            #vis fn set(&mut self, flag: Self, value: bool) {
+            #vis const fn set(&mut self, flag: Self, value: bool) {
                 if value { self.insert(flag) } else { self.remove(flag) }
             }
 
@@ -162,13 +188,13 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
                 #vis const fn #getters(&self) -> bool { self.contains(Self::#consts) }
 
                 #[doc = concat!("Returns a copy with `", stringify!(#getters), "` set to `value`.")]
-                #vis fn #with_idents(mut self, value: bool) -> Self {
+                #vis const fn #with_idents(mut self, value: bool) -> Self {
                     self.set(Self::#consts, value);
                     self
                 }
 
                 #[doc = concat!("Sets `", stringify!(#getters), "` to `value` in place.")]
-                #vis fn #set_idents(&mut self, value: bool) { self.set(Self::#consts, value); }
+                #vis const fn #set_idents(&mut self, value: bool) { self.set(Self::#consts, value); }
             )*
 
             /// The list of every defined single-bit flag (used by `iter`).
@@ -217,9 +243,9 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         impl #bnb::__private::Bits for #name {
             const BITS: u32 = <#backing>::BITS;
             #[inline]
-            fn into_bits(self) -> u128 { self.value as u128 }
+            fn into_bits(self) -> u128 { self.__bnb_into_bits() }
             #[inline]
-            fn from_bits(raw: u128) -> Self { Self { value: raw as #backing } }
+            fn from_bits(raw: u128) -> Self { Self::__bnb_from_bits(raw) }
         }
 
         impl #bnb::__private::Bitfield for #name {

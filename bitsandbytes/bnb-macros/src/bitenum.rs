@@ -162,22 +162,31 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
     }
 
+    let vis = &input.vis;
     let bits_path = quote!(#bnb::__private::Bits);
 
-    // into_bits: discriminant for unit variants; inner value for catch-all.
+    // into_bits: discriminant for unit variants; inner value for catch-all. The
+    // conversions go through the const dispatch (not `Bits`) so the inherent pair
+    // below is `const fn`; the trait impl delegates to it.
     let into_unit = unit.iter().map(|(id, disc)| quote!(#name::#id => #disc));
-    let into_catch = catch_all
-        .as_ref()
-        .map(|id| quote!(#name::#id(v) => <#width as #bits_path>::into_bits(v),));
+    let into_catch = catch_all.as_ref().map(|id| {
+        let e = crate::const_into_bits(width, &quote!(v));
+        quote!(#name::#id(v) => #e,)
+    });
 
-    // from_bits: match each discriminant; unknown -> catch-all or unreachable.
+    // from_bits: match each discriminant; unknown -> catch-all or a panic (a `const fn`
+    // can only panic with a literal message, hence `concat!` and no `{}` for the value).
     let from_unit = unit.iter().map(|(id, disc)| quote!(#disc => #name::#id));
     let from_wild = match &catch_all {
-        Some(id) => quote!(other => #name::#id(<#width as #bits_path>::from_bits(other))),
-        None => quote!(other => unreachable!(
-            "non-exhaustive BitEnum {} has no variant for discriminant {} and no #[catch_all]",
-            stringify!(#name), other
-        )),
+        Some(id) => {
+            let e = crate::const_from_bits(width, &quote!(other));
+            quote!(other => #name::#id(#e))
+        }
+        None => quote!(_ => panic!(concat!(
+            "non-exhaustive BitEnum ",
+            stringify!(#name),
+            " has no variant for discriminant (and no #[catch_all])"
+        ))),
     };
 
     // `From`/`TryFrom` against the primitive — `num_enum` parity.
@@ -186,23 +195,41 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
     let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
 
     Ok(quote! {
-        impl #bits_path for #name {
-            const BITS: u32 = <#width as #bits_path>::BITS;
-
+        impl #name {
+            // Const-dispatch seam (see `Bits`): the `Bits::from_bits`/`into_bits`
+            // contract as inherent `const fn`s, so this enum works as a field of a
+            // `#[bitfield]` whose accessors are `const`. The trait impl delegates
+            // here, so the two can't drift.
+            #[doc(hidden)]
             #[inline]
-            fn into_bits(self) -> u128 {
+            #vis const fn __bnb_into_bits(self) -> u128 {
                 match self {
                     #(#into_unit,)*
                     #into_catch
                 }
             }
 
+            #[doc(hidden)]
             #[inline]
-            fn from_bits(raw: u128) -> Self {
+            #vis const fn __bnb_from_bits(raw: u128) -> Self {
                 match raw {
                     #(#from_unit,)*
                     #from_wild,
                 }
+            }
+        }
+
+        impl #bits_path for #name {
+            const BITS: u32 = <#width as #bits_path>::BITS;
+
+            #[inline]
+            fn into_bits(self) -> u128 {
+                self.__bnb_into_bits()
+            }
+
+            #[inline]
+            fn from_bits(raw: u128) -> Self {
+                Self::__bnb_from_bits(raw)
             }
         }
 
