@@ -84,6 +84,59 @@ pub(crate) fn bits_leaf_codec_impl(
     }
 }
 
+/// Whether `ty` is exactly the bare single-segment path `name` (no qualifier, no
+/// generics) — the only shape the const-dispatch helpers may convert inline.
+fn is_bare_ident(ty: &syn::Type, name: &str) -> bool {
+    if let syn::Type::Path(p) = ty {
+        p.qself.is_none()
+            && p.path.leading_colon.is_none()
+            && p.path.segments.len() == 1
+            && p.path.segments[0].arguments.is_none()
+            && p.path.segments[0].ident == name
+    } else {
+        false
+    }
+}
+
+/// The `Bits::from_bits` contract as a `const`-evaluable expression over `#raw: u128`.
+///
+/// A `const fn` cannot call trait methods on stable Rust, so generated accessors
+/// dispatch by type instead of through `Bits`: `bool` and the primitive unsigned
+/// integers convert inline, everything else through the hidden inherent
+/// `__bnb_from_bits` pair that every `Bits`-producing macro (and `UInt`) provides.
+/// The trait impls delegate to the same pair, so the two can never disagree.
+pub(crate) fn const_from_bits(
+    ty: &syn::Type,
+    raw: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    if is_bare_ident(ty, "bool") {
+        return quote::quote!(((#raw & 1) != 0));
+    }
+    for prim in ["u8", "u16", "u32", "u64", "u128"] {
+        if is_bare_ident(ty, prim) {
+            return quote::quote!((#raw as #ty));
+        }
+    }
+    quote::quote!(<#ty>::__bnb_from_bits(#raw))
+}
+
+/// The `Bits::into_bits` contract as a `const`-evaluable expression over a `#value`
+/// of type `ty` — the write-side dual of [`const_from_bits`].
+pub(crate) fn const_into_bits(
+    ty: &syn::Type,
+    value: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    if is_bare_ident(ty, "bool") {
+        return quote::quote!((#value as u128));
+    }
+    for prim in ["u8", "u16", "u32", "u64", "u128"] {
+        if is_bare_ident(ty, prim) {
+            return quote::quote!((#value as u128));
+        }
+    }
+    quote::quote!(<#ty>::__bnb_into_bits(#value))
+}
+
 /// Packs the annotated struct's fields into a single backing integer.
 ///
 /// ```ignore
@@ -120,6 +173,20 @@ pub(crate) fn bits_leaf_codec_impl(
 /// getters, `to_raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
 /// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
 ///
+/// Every accessor is a **`const fn`** (`#[view]` accessors too, when their raw
+/// type is annotated — see `bnb::guide::bitfields`; a custom field type needs
+/// the inherent conversion pair documented on `bnb::Bits`).
+///
+/// ## Layout
+///
+/// The emitted struct is **`#[repr(transparent)]`** over its backing integer:
+/// its size, alignment, and ABI are exactly the backing type's. (`transparent`,
+/// not `repr(C)`, because the struct wraps a single native integer — that is
+/// the honest guarantee; before 0.3.2 the layout was formally unspecified.)
+/// Writing your own `#[repr(...)]` on the struct suppresses the generated one
+/// — e.g. `repr(C)`, or `repr(align(N))`, neither of which can combine with
+/// `transparent`.
+///
 /// See the `bnb::guide::bitfields` page for runnable examples (bit/byte order,
 /// inferred vs. ranged widths, nesting).
 #[proc_macro_attribute]
@@ -149,10 +216,13 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// A `const` per flag (upper-cased: `fin` → `TcpFlags::FIN`); `empty()`/`all()`/
 /// `bits()`/`from_bits` (retains unknown bits) / `from_bits_truncate`;
 /// `contains`/`intersects`/`is_empty`/`insert`/`remove`/`toggle`/`set`;
-/// const `union`/`intersection`/`difference`/`complement` (for combination
+/// `union`/`intersection`/`difference`/`complement` (for combination
 /// consts); per-flag `fin()`/`with_fin(bool)`/`set_fin(bool)`; `iter()`; the
 /// `| & ^ - !` (+ assign) operators; and `Bits`/`Bitfield` impls so a
-/// flag set nests in a `#[bitfield]` and serializes.
+/// flag set nests in a `#[bitfield]` and serializes. Everything except `iter()`
+/// and the operator impls is a **`const fn`**, and the emitted struct is
+/// **`#[repr(transparent)]`** over its backing (suppressed by writing your own
+/// `#[repr(...)]`), as for `#[bitfield]`.
 ///
 /// See the `bnb::guide::flags` page for runnable examples (set algebra, iteration,
 /// retain-vs-truncate, nesting).

@@ -116,16 +116,67 @@ struct View {
     bits: u32,
     read: syn::Expr,
     write: syn::Expr,
+    /// Explicit `raw = <ty>` — the stored raw type, for the const dispatch. Usually
+    /// unnecessary: the type is recovered from the `read` closure's first-parameter
+    /// annotation or the `write` closure's return annotation.
+    raw: Option<Type>,
+    /// `dynamic` — opt out of `const` accessors and call the closures at runtime
+    /// (for `read`/`write` bodies that use non-`const` operations).
+    dynamic: bool,
 }
 
-/// Parses the arguments of a `#[view(bits = N, read = <closure>, write = <closure>)]`.
+impl View {
+    /// The stored raw type, if the const dispatch can see one: the explicit
+    /// `raw = <ty>`, else the `read` closure's first-parameter annotation, else the
+    /// `write` closure's return annotation. `None` means the accessors fall back to
+    /// the closure-calling (non-`const`) form, where the type is inferred.
+    fn raw_ty(&self) -> Option<Type> {
+        if let Some(t) = &self.raw {
+            return Some(t.clone());
+        }
+        if let syn::Expr::Closure(c) = &self.read {
+            if let Some(syn::Pat::Type(pt)) = c.inputs.first() {
+                return Some((*pt.ty).clone());
+            }
+        }
+        if let syn::Expr::Closure(c) = &self.write {
+            if let syn::ReturnType::Type(_, t) = &c.output {
+                return Some((**t).clone());
+            }
+        }
+        None
+    }
+}
+
+/// Whether the token stream contains the `return` keyword at any nesting depth.
+/// Inlining a `write` closure body that early-returns would turn "map the value"
+/// into "skip the store", so such a body keeps the closure-calling form.
+fn contains_return(ts: &TokenStream2) -> bool {
+    ts.clone().into_iter().any(|tt| match tt {
+        proc_macro2::TokenTree::Ident(i) => i == "return",
+        proc_macro2::TokenTree::Group(g) => contains_return(&g.stream()),
+        _ => false,
+    })
+}
+
+/// Parses the arguments of a
+/// `#[view(bits = N, read = <closure>, write = <closure>[, raw = <ty>][, dynamic])]`.
 fn parse_view(attr: &Attribute) -> syn::Result<View> {
     let mut bits: Option<u32> = None;
     let mut read: Option<syn::Expr> = None;
     let mut write: Option<syn::Expr> = None;
+    let mut raw: Option<Type> = None;
+    let mut dynamic = false;
     attr.parse_args_with(|input: ParseStream| {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
+            if key == "dynamic" {
+                dynamic = true;
+                if input.peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
+                }
+                continue;
+            }
             input.parse::<Token![=]>()?;
             match key.to_string().as_str() {
                 "bits" => {
@@ -134,10 +185,11 @@ fn parse_view(attr: &Attribute) -> syn::Result<View> {
                 }
                 "read" => read = Some(input.parse()?),
                 "write" => write = Some(input.parse()?),
+                "raw" => raw = Some(input.parse()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown `#[view]` argument `{other}` (expected `bits`, `read`, or `write`)"),
+                        format!("unknown `#[view]` argument `{other}` (expected `bits`, `read`, `write`, `raw`, or `dynamic`)"),
                     ));
                 }
             }
@@ -154,7 +206,13 @@ fn parse_view(attr: &Attribute) -> syn::Result<View> {
         .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `read = |raw, s| …`"))?;
     let write = write
         .ok_or_else(|| syn::Error::new_spanned(attr, "`#[view(...)]` needs `write = |v| …`"))?;
-    Ok(View { bits, read, write })
+    Ok(View {
+        bits,
+        read,
+        write,
+        raw,
+        dynamic,
+    })
 }
 
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -289,63 +347,140 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         // A `#[view]` field stores raw bits but presents a typed value: the getter
         // reads the raw bits and hands them (plus `&self`, so it can read sibling
         // fields for context) to the `read` closure; the setter maps the typed value
-        // back to raw bits with the context-free `write` closure. Both bridge through
-        // `Bits`, so the raw type is inferred from the closures' own annotations —
-        // any `Bits` type (a `uN`, an enum) works with no per-width plumbing here.
+        // back to raw bits with the context-free `write` closure.
+        //
+        // When the raw type is visible (`raw = <ty>` or a closure annotation) and the
+        // field isn't `dynamic`, the closure bodies are inlined so the accessors can
+        // be `const fn` — a `const fn` can neither call a closure nor a trait method,
+        // so the conversion also goes through the const dispatch rather than `Bits`.
+        // Otherwise the closures are called at runtime and the raw type is inferred
+        // from their own annotations — any `Bits` type works with no plumbing here.
         if let Some(view) = &f.view {
             let read = &view.read;
             let write = &view.write;
-            let store = quote! {
-                let __raw = (#write)(value);
-                let __bits: u128 = #bits_path::into_bits(__raw);
-                self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
-                    | ((__bits & Self::#mask) << Self::#off)) as #backing;
+            let raw_ty = if view.dynamic { None } else { view.raw_ty() };
+
+            let (getter_kw, getter_body) = match &raw_ty {
+                Some(rt) => {
+                    let from_expr = crate::const_from_bits(rt, &quote!(__masked));
+                    let tail = match read {
+                        syn::Expr::Closure(c) if c.inputs.len() == 2 => {
+                            let p0 = &c.inputs[0];
+                            let p1 = &c.inputs[1];
+                            let body = &c.body;
+                            quote! {
+                                let #p0 = #from_expr;
+                                let #p1 = self;
+                                #body
+                            }
+                        }
+                        // A path to a fn: a direct call is `const`-compatible when
+                        // the target is a `const fn`.
+                        _ => quote! {
+                            let __raw = #from_expr;
+                            (#read)(__raw, self)
+                        },
+                    };
+                    (
+                        quote!(const fn),
+                        quote! {
+                            let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
+                            #tail
+                        },
+                    )
+                }
+                None => (
+                    quote!(fn),
+                    quote! {
+                        let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
+                        let __raw = #bits_path::from_bits(__masked);
+                        (#read)(__raw, self)
+                    },
+                ),
             };
+
+            // The store (shared by `with_*`/`set_*`): typed value -> raw bits -> merge.
+            let const_raw_expr = raw_ty.as_ref().and_then(|_| match write {
+                syn::Expr::Closure(c) if c.inputs.len() == 1 => {
+                    let body = &c.body;
+                    if contains_return(&quote!(#body)) {
+                        None
+                    } else {
+                        let p = &c.inputs[0];
+                        Some(quote! {{ let #p = value; #body }})
+                    }
+                }
+                _ => Some(quote!((#write)(value))),
+            });
+            let (store_kw, store) = match (&raw_ty, const_raw_expr) {
+                (Some(rt), Some(raw_expr)) => {
+                    let into_expr = crate::const_into_bits(rt, &quote!(__raw));
+                    (
+                        quote!(const fn),
+                        quote! {
+                            let __raw = #raw_expr;
+                            let __bits: u128 = #into_expr;
+                            self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
+                                | ((__bits & Self::#mask) << Self::#off)) as #backing;
+                        },
+                    )
+                }
+                _ => (
+                    quote!(fn),
+                    quote! {
+                        let __raw = (#write)(value);
+                        let __bits: u128 = #bits_path::into_bits(__raw);
+                        self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
+                            | ((__bits & Self::#mask) << Self::#off)) as #backing;
+                    },
+                ),
+            };
+
             return quote! {
                 #getter_doc
                 #(#forward)*
                 #[inline]
-                #vis fn #ident(&self) -> #ty {
-                    let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
-                    let __raw = #bits_path::from_bits(__masked);
-                    (#read)(__raw, self)
+                #vis #getter_kw #ident(&self) -> #ty {
+                    #getter_body
                 }
 
                 #[doc = concat!("Returns a copy with `", stringify!(#ident), "` set.")]
                 #[inline]
-                #vis fn #with(mut self, value: #ty) -> Self {
+                #vis #store_kw #with(mut self, value: #ty) -> Self {
                     #store
                     self
                 }
 
                 #[doc = concat!("Sets `", stringify!(#ident), "` in place.")]
                 #[inline]
-                #vis fn #set(&mut self, value: #ty) {
+                #vis #store_kw #set(&mut self, value: #ty) {
                     #store
                 }
             };
         }
+        let from_expr = crate::const_from_bits(ty, &quote!(raw));
+        let into_expr = crate::const_into_bits(ty, &quote!(value));
         quote! {
             #getter_doc
             #(#forward)*
             #[inline]
-            #vis fn #ident(&self) -> #ty {
+            #vis const fn #ident(&self) -> #ty {
                 let raw = ((self.value as u128) >> Self::#off) & Self::#mask;
-                <#ty as #bits_path>::from_bits(raw)
+                #from_expr
             }
 
             #[doc = concat!("Returns a copy with `", stringify!(#ident), "` set.")]
             #[inline]
-            #vis fn #with(mut self, value: #ty) -> Self {
-                let field = (<#ty as #bits_path>::into_bits(value) & Self::#mask) << Self::#off;
+            #vis const fn #with(mut self, value: #ty) -> Self {
+                let field = (#into_expr & Self::#mask) << Self::#off;
                 self.value = ((self.value as u128 & !(Self::#mask << Self::#off)) | field) as #backing;
                 self
             }
 
             #[doc = concat!("Sets `", stringify!(#ident), "` in place.")]
             #[inline]
-            #vis fn #set(&mut self, value: #ty) {
-                let field = (<#ty as #bits_path>::into_bits(value) & Self::#mask) << Self::#off;
+            #vis const fn #set(&mut self, value: #ty) {
+                let field = (#into_expr & Self::#mask) << Self::#off;
                 self.value = ((self.value as u128 & !(Self::#mask << Self::#off)) | field) as #backing;
             }
         }
@@ -400,9 +535,21 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
     let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
 
+    // Layout guarantee: the struct wraps exactly one native integer, so
+    // `repr(transparent)` is the honest claim (size/align/ABI of the backing type)
+    // — stronger and truer than `repr(C)` would be. A user-supplied `#[repr(...)]`
+    // wins (e.g. `repr(C)` for bit-for-bit `bitbybit` parity, or `repr(align(N))`,
+    // neither of which can combine with `transparent`).
+    let repr_attr = if other_attrs.iter().any(|a| a.path().is_ident("repr")) {
+        quote!()
+    } else {
+        quote!(#[repr(transparent)])
+    };
+
     Ok(quote! {
         #(#other_attrs)*
         #derive_attr
+        #repr_attr
         #vis struct #name {
             value: #backing,
         }
@@ -438,6 +585,23 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             /// Constructs directly from a raw backing integer (no validation).
             #vis const fn from_raw(value: #backing) -> Self {
                 Self { value }
+            }
+
+            // Const-dispatch seam (see `Bits`): the `Bits::from_bits`/`into_bits`
+            // contract as inherent `const fn`s, so this type nests as a field of
+            // another `#[bitfield]` whose accessors are `const`. The trait impl
+            // delegates here, so the two can't drift.
+            #[doc(hidden)]
+            #[inline]
+            #vis const fn __bnb_from_bits(raw: u128) -> Self {
+                Self { value: raw as #backing }
+            }
+
+            #[doc(hidden)]
+            #[inline]
+            #vis const fn __bnb_into_bits(self) -> u128 {
+                let m: u128 = if Self::WIDTH >= 128 { u128::MAX } else { (1u128 << Self::WIDTH) - 1 };
+                (self.value as u128) & m
             }
 
             /// The backing integer as big-endian bytes.
@@ -483,12 +647,11 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
             const BITS: u32 = Self::WIDTH;
             #[inline]
             fn into_bits(self) -> u128 {
-                let m: u128 = if Self::WIDTH >= 128 { u128::MAX } else { (1u128 << Self::WIDTH) - 1 };
-                (self.value as u128) & m
+                self.__bnb_into_bits()
             }
             #[inline]
             fn from_bits(raw: u128) -> Self {
-                Self { value: raw as #backing }
+                Self::__bnb_from_bits(raw)
             }
         }
 
