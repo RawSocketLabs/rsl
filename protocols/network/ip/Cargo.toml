@@ -1,6 +1,6 @@
 [package]
 name = "ip"
-version = "0.2.1"
+version = "0.2.2"
 description = "IPv4 (RFC 791) header codec on the bnb bit-aware codec — dual-use, from-scratch."
 edition.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests compose IP over a real UDP layer.
-udp = { path = "../../transport/udp", version = "0.1.3", features = ["inject"] }
+udp = { path = "../../transport/udp", version = "0.1.4", features = ["inject"] }
 
 [lints]
 workspace = true

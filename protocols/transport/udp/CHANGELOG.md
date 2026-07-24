@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/RawSocketLabs/rsl/compare/udp-v0.1.3...udp-v0.1.4) - 2026-07-24
+
+### Other
+
+- updated the following local packages: bitsandbytes
+
 ## [0.1.3](https://github.com/RawSocketLabs/rsl/compare/udp-v0.1.2...udp-v0.1.3) - 2026-07-23
 
 ### Other
