@@ -119,25 +119,38 @@ mod macro_ {
         Other(u3),
     }
 
+    // `closed`: no catch-all, variants don't cover the width — the author asserts
+    // the set. Its const getter materializes in-range values like any other enum
+    // (the out-of-range wildcard panics; hitting it in const eval is a compile
+    // error, which is the desired behavior for a bad constant).
+    #[derive(BitEnum, Clone, Copy, PartialEq, Eq, Debug)]
+    #[bit_enum(u2, closed)]
+    enum Tri {
+        Lo = 0,
+        Mid = 1,
+        Hi = 2,
+    }
+
     #[bitfield(u8, bits = msb)]
     #[derive(Clone, Copy)]
     struct Ctl {
         quad: Quad,
         on: bool,
         mode: Mode,
-        pad: u2,
+        tri: Tri,
     }
 
     const CTL: Ctl = Ctl::new()
         .with_quad(Quad::S)
         .with_on(true)
         .with_mode(Mode::Run)
-        .with_pad(u2::new(0));
+        .with_tri(Tri::Hi);
 
     const _: () = {
         assert!(matches!(CTL.quad(), Quad::S));
         assert!(CTL.on());
         assert!(matches!(CTL.mode(), Mode::Run));
+        assert!(matches!(CTL.tri(), Tri::Hi));
         // An unknown discriminant materializes the catch-all variant in const eval.
         let unknown = CTL.with_mode(Mode::Other(u3::new(0b110)));
         assert!(matches!(unknown.mode(), Mode::Other(v) if v.value() == 0b110));
@@ -147,8 +160,9 @@ mod macro_ {
     fn enum_fields_round_trip_at_runtime() {
         assert_eq!(CTL.quad(), Quad::S);
         assert_eq!(CTL.mode(), Mode::Run);
-        // quad@6 (S=2 → 10) | on@5 (1) | mode@2 (Run → 001) | pad@0 (00)
-        assert_eq!(CTL.to_raw(), 0b1010_0100);
+        assert_eq!(CTL.tri(), Tri::Hi);
+        // quad@6 (S=2 → 10) | on@5 (1) | mode@2 (Run → 001) | tri@0 (Hi → 10)
+        assert_eq!(CTL.to_raw(), 0b1010_0110);
     }
 
     // ---------------------------------------------------------------------------

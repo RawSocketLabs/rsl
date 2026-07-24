@@ -170,4 +170,89 @@ mod macro_ {
         let u = Unannotated::new().with_kind(Kind::A);
         assert_eq!(u.kind(), Kind::A);
     }
+
+    // `read`/`write` as *paths to const fns* (not closures) plus `raw = <ty>` —
+    // the direct-call const form: paths carry no annotation, so `raw` is the only
+    // way the macro can see the stored type.
+    const fn path_read(raw: u2, s: &PathView) -> Kind {
+        Kind::interpret(raw, s.outbound())
+    }
+
+    const fn path_write(v: Kind) -> u2 {
+        v.bits()
+    }
+
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct PathView {
+        header: u3,
+        #[view(bits = 2, const, raw = u2, read = path_read, write = path_write)]
+        kind: Kind,
+        outbound: bool,
+        pad: u2,
+    }
+
+    #[test]
+    fn path_fns_with_raw_key_are_const() {
+        const P: PathView = PathView::new().with_kind(Kind::B).with_outbound(false);
+        const KIND: Kind = P.kind();
+        assert_eq!(KIND, Kind::B); // inbound && bits 01 → B
+        const _: () = {
+            let mut p = P;
+            p.set_kind(Kind::Reserved(u2::new(0b11)));
+            assert!(matches!(p.kind(), Kind::Reserved(v) if v.value() == 0b11));
+        };
+    }
+
+    // The `write` closure's *return annotation* as the only raw-type source (the
+    // third resolution rule, after `raw =` and the `read` param annotation).
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct WriteAnnotated {
+        header: u3,
+        #[view(
+            bits = 2,
+            const,
+            read = |raw, _s| raw,
+            write = |v: u2| -> u2 { v }
+        )]
+        val: u2,
+        pad: u3,
+    }
+
+    #[test]
+    fn write_return_annotation_resolves_the_raw_type() {
+        const W: WriteAnnotated = WriteAnnotated::new().with_val(u2::new(0b10));
+        const V: u2 = W.val();
+        assert_eq!(V, u2::new(0b10));
+    }
+
+    // A `write` body with an early `return`: inlining it would turn "map the
+    // value" into "skip the store", so the store conservatively keeps the
+    // closure-calling (non-`const`) form — closure semantics preserved. The
+    // getter (no `return` concern) stays const.
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct RetWrite {
+        header: u3,
+        #[view(
+            bits = 2,
+            read = |raw: u2, _s: &Self| raw,
+            write = |v: u2| { if v.value() == 3 { return u2::new(0); } v }
+        )]
+        clamped: u2,
+        pad: u3,
+    }
+
+    #[test]
+    fn write_body_with_return_keeps_closure_semantics() {
+        // The early `return` exits the closure, not the setter: the store runs.
+        let clamped = RetWrite::new().with_clamped(u2::new(3));
+        assert_eq!(clamped.clamped(), u2::new(0));
+        let plain = RetWrite::new().with_clamped(u2::new(2));
+        assert_eq!(plain.clamped(), u2::new(2));
+        // The getter is still const (its inlining is unaffected by `return`).
+        const G: u2 = RetWrite::new().clamped();
+        assert_eq!(G, u2::new(0));
+    }
 }
