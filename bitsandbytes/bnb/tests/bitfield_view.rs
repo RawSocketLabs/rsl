@@ -15,7 +15,10 @@ mod macro_ {
     }
 
     impl Kind {
-        fn interpret(bits: u2, outbound: bool) -> Self {
+        // `const`, so the generated view accessors (which inline the closure
+        // bodies) can themselves be `const fn`. A non-`const` helper needs the
+        // view's `dynamic` opt-out instead — see `dynamic_view_calls_closures`.
+        const fn interpret(bits: u2, outbound: bool) -> Self {
             match (outbound, bits.value()) {
                 (true, 0b00) => Kind::A,
                 (false, 0b01) => Kind::B,
@@ -23,7 +26,7 @@ mod macro_ {
             }
         }
 
-        fn bits(self) -> u2 {
+        const fn bits(self) -> u2 {
             match self {
                 Kind::A => u2::new(0b00),
                 Kind::B => u2::new(0b01),
@@ -97,5 +100,71 @@ mod macro_ {
         // The intercepted Debug renders the logical getters, so `kind` shows the
         // resolved `Kind`, not the raw bits.
         assert!(format!("{l:?}").contains("kind: A"));
+    }
+
+    #[test]
+    fn annotated_view_accessors_are_const() {
+        // The whole build-and-read path in const eval — the only real proof of
+        // const-ness (a runtime call proves nothing).
+        const L: Lich = Lich::new()
+            .with_header(u3::new(0b101))
+            .with_kind(Kind::A)
+            .with_outbound(true);
+        const KIND: Kind = L.kind();
+        assert_eq!(KIND, Kind::A);
+        const _: () = {
+            let mut l = Lich::new().with_outbound(false);
+            l.set_kind(Kind::B);
+            assert!(matches!(l.kind(), Kind::B));
+        };
+    }
+
+    // A helper the const dispatch cannot inline into a `const fn` (it isn't one).
+    fn parity(bits: u2) -> bool {
+        bits.value().count_ones() % 2 == 1
+    }
+
+    // `dynamic` opts a view out of `const` accessors: the closures are called at
+    // runtime, so they may use non-`const` operations.
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct DynLich {
+        header: u3,
+        #[view(
+            bits = 2,
+            dynamic,
+            read = |raw: u2, _s: &Self| parity(raw),
+            write = |v: bool| u2::new(v as u8)
+        )]
+        odd: bool,
+        pad: u3,
+    }
+
+    #[test]
+    fn dynamic_view_calls_closures() {
+        let d = DynLich::new().with_odd(true);
+        assert!(d.odd()); // stored 0b01 → one bit set → odd parity
+    }
+
+    // No `raw =`, no closure annotations: the raw type is invisible to the const
+    // dispatch, so the accessors quietly keep the closure-calling (non-`const`)
+    // form and the raw type is inferred — the 0.3.1 behavior.
+    #[bitfield(u8, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct Unannotated {
+        header: u3,
+        #[view(
+            bits = 2,
+            read = |raw, _s| Kind::interpret(raw, true),
+            write = |v: Kind| v.bits()
+        )]
+        kind: Kind,
+        pad: u3,
+    }
+
+    #[test]
+    fn unannotated_read_still_infers() {
+        let u = Unannotated::new().with_kind(Kind::A);
+        assert_eq!(u.kind(), Kind::A);
     }
 }
