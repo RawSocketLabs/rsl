@@ -1,0 +1,15 @@
+schema = 2
+id = "async-cancellation-safe-framing"
+class = "decision"
+skill = "rust-async-concurrency"
+profile = "application"
+expected_skills = ["rust-async-concurrency", "rust-protocol", "rust-testing"]
+required_commands = []
+hard_gates = ["cancellation-safety", "framing-state-ownership", "bounded-resource-contract"]
+forbidden_regressions = ["silent-byte-loss", "unbounded-buffer", "cancellation-safety-assumed-from-syntax"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

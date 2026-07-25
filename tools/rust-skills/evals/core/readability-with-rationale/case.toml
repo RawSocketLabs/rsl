@@ -1,0 +1,15 @@
+schema = 2
+id = "core-readability-with-rationale"
+class = "decision"
+skill = "rust-implement"
+profile = "application"
+expected_skills = ["rust-implement", "rust-testing"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "behavior-preservation", "local-conventions"]
+forbidden_regressions = ["blanket-style-rewrite", "lost-durable-rationale", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

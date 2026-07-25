@@ -1,0 +1,15 @@
+schema = 2
+id = "dsp-discontinuity-contract"
+class = "decision"
+skill = "rust-dsp"
+profile = "application"
+expected_skills = ["rust-dsp", "rust-testing", "rust-performance"]
+required_commands = []
+hard_gates = ["stream-continuity", "state-reset-contract", "reference-validation"]
+forbidden_regressions = ["silent-gap", "state-carries-across-epoch-without-policy", "round-trip-only-evidence"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

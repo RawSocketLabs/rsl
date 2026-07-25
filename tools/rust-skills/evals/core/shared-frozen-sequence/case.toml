@@ -1,0 +1,15 @@
+schema = 2
+id = "core-shared-frozen-sequence"
+class = "decision"
+skill = "rust-api-design"
+profile = "application"
+expected_skills = ["rust-api-design", "rust-performance"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "ownership-model"]
+forbidden_regressions = ["blanket-arc-conversion", "needless-mutable-capacity", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

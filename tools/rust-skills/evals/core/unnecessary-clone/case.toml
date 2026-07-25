@@ -1,8 +1,15 @@
-schema = 1
+schema = 2
 id = "core-unnecessary-clone"
 class = "decision"
-skill = "rsl-rust-core"
+skill = "rust-performance"
 profile = "internal-library"
+expected_skills = ["rust-performance", "rust-api-design"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "ownership-justification"]
+forbidden_regressions = ["treat-all-clones-as-defects", "complex-borrowing-without-benefit", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
 prompt = "prompt.md"
 fixture = "fixture"
 grader = "grader.md"

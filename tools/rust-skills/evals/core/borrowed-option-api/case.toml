@@ -1,0 +1,15 @@
+schema = 2
+id = "core-borrowed-option-api"
+class = "decision"
+skill = "rust-api-design"
+profile = "public-library"
+expected_skills = ["rust-api-design"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "api-quality"]
+forbidden_regressions = ["ownership-without-need", "public-api-break-without-analysis", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

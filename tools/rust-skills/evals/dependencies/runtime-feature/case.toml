@@ -1,0 +1,15 @@
+schema = 2
+id = "dependencies-runtime-feature"
+class = "review"
+skill = "rust-dependencies-security"
+profile = "public-library"
+expected_skills = ["rust-dependencies-security", "rust-review", "rust-api-design"]
+required_commands = []
+hard_gates = ["feature-contract", "dependency-review", "public-api-compatibility"]
+forbidden_regressions = ["manifest-only-feature-analysis", "default-feature-assumption", "unsupported-supply-chain-claim"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

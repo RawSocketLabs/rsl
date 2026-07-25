@@ -1,0 +1,15 @@
+schema = 2
+id = "embedded-target-evidence"
+class = "decision"
+skill = "rust-embedded"
+profile = "internal-library"
+expected_skills = ["rust-embedded", "rust-testing", "rust-unsafe-ffi"]
+required_commands = []
+hard_gates = ["target-compatibility", "resource-contract", "hardware-evidence"]
+forbidden_regressions = ["host-test-equals-target-proof", "assume-allocator", "unsupported-hardware-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"
