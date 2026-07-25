@@ -28,7 +28,7 @@ hash = "8434b314672a35de"
 
 [[files]]
 path = "agent-skills/rust-api-design/SKILL.md"
-hash = "96d9906b7a49abc3"
+hash = "e5ddf12e57d2c2f6"
 
 [[files]]
 path = "agent-skills/rust-api-design/agents/openai.yaml"
@@ -44,7 +44,7 @@ hash = "00fc5026ee837676"
 
 [[files]]
 path = "agent-skills/rust-api-design/references/ownership-patterns.md"
-hash = "e3d8c34ed8949c09"
+hash = "891f141f86d408ca"
 
 [[files]]
 path = "agent-skills/rust-api-design/skill.toml"
@@ -324,7 +324,7 @@ hash = "8434b314672a35de"
 
 [[files]]
 path = "claude-skills/rust-api-design/SKILL.md"
-hash = "96d9906b7a49abc3"
+hash = "e5ddf12e57d2c2f6"
 
 [[files]]
 path = "claude-skills/rust-api-design/references/api-ownership-and-errors.md"
@@ -336,7 +336,7 @@ hash = "00fc5026ee837676"
 
 [[files]]
 path = "claude-skills/rust-api-design/references/ownership-patterns.md"
-hash = "e3d8c34ed8949c09"
+hash = "891f141f86d408ca"
 
 [[files]]
 path = "claude-skills/rust-api-design/skill.toml"

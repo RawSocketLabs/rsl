@@ -3083,6 +3083,92 @@ authoritative.
 - **Sources:** CodeAesthetic `Premature Optimization`, qualified by R5,
   R35-R43, R47, R110, R133, R172, and R174.
 
+## Post-interview synthesis: compile-time state modeling
+
+The owner approved codifying the `How to write peak Rust` transformation from
+the Let's Get Rusty catalog: replacing repeated runtime guards with types that
+cannot express the guarded-against state. The channel remains advisory. The
+video presents enum modeling, validated newtypes, and type-state as three
+ascending levels of the same idea; this record adopts the first two as defaults
+and keeps type-state conditional on a consequential misuse, because a state
+parameter charges every caller, signature, and diagnostic for staging that only
+pays when the prevented mistake matters. Existing R8-R15, R91, and the builder
+guidance remain authoritative on that point.
+
+#### R207. Encode mutually exclusive states in one enum
+
+- **Strength:** SHOULD
+- **Scope:** domain and public types whose fields record lifecycle, outcome, or
+  mode
+- **Rule:** When fields are meaningful only in particular combinations, replace
+  them with one enum whose variants own exactly the data each state carries.
+  Keep genuinely independent attributes as ordinary fields. Where a flag-and-
+  payload representation must survive for a wire, storage, or FFI contract,
+  convert to the enum at that boundary and keep the raw form out of domain
+  logic.
+- **Why:** Parallel flags and optional payloads make the representable state
+  space the product of the fields rather than the number of real states, so
+  every contradictory combination is constructible and each reader re-derives
+  which ones are legal.
+- **Sources:** Let's Get Rusty `How to write peak Rust`, qualified by R11, R12,
+  R89, R151, and R159.
+
+#### R208. Give a validated type one construction path
+
+- **Strength:** SHOULD
+- **Scope:** newtypes and domain wrappers that carry an invariant
+- **Rule:** Keep the fields private and make one fallible constructor the only
+  way to obtain the type. Do not add a public field, setter, mutable deref, or
+  unchecked constructor that re-admits an invalid value. Remove the downstream
+  checks the invariant now proves, and state that invariant in the public
+  documentation. Name and confine an unchecked constructor when one is genuinely
+  required.
+- **Why:** The benefit of a validated wrapper is that every later holder may
+  skip the check. A second construction path returns the invariant to
+  convention, and the deleted checks are no longer there to catch the value that
+  slipped through.
+- **Sources:** Let's Get Rusty `How to write peak Rust`, qualified by R11, R12,
+  R91, and R175.
+
+#### R209. Represent exact quantities exactly and carry their unit
+
+- **Strength:** SHOULD
+- **Scope:** monetary amounts, counts, sizes, offsets, indices, and other
+  domain quantities whose value must be exact or whose unit is ambiguous
+- **Rule:** Represent a quantity that must compare, sum, or round-trip exactly
+  as an integer in its smallest meaningful unit or as an exact rational, and
+  carry the unit, scale, or currency in the type rather than in a name or a
+  comment. Do not use binary floating point for an exact discrete quantity.
+  Define rounding, overflow, and mixed-unit behavior on the type using checked
+  arithmetic.
+- **Why:** Binary floating point cannot represent most decimal fractions, so
+  equality, summation order, and round trips drift by amounts small enough to
+  pass casual tests, and an unqualified numeric type lets two different units
+  mix without complaint.
+- **Sources:** Let's Get Rusty `How to write peak Rust`, qualified by R97,
+  R102-R106, R156, and R203.
+
+#### R210. Adopt type-state only for a consequential transition
+
+- **Strength:** SHOULD
+- **Scope:** resources with a staged lifecycle, such as connection, session,
+  authentication, and acquisition handles
+- **Rule:** Keep the runtime state field until a misuse is consequential and the
+  state graph is small and understandable. When type-state is justified, use
+  zero-sized markers to name the states, make the state a type parameter rather
+  than a field, bind each operation to the impl block for the state that permits
+  it, and make each transition consume the value so a stale handle cannot be
+  reused. Remove the runtime guard the staging now proves, and keep a runtime
+  check wherever the real state depends on data, peers, or failures the type
+  cannot observe.
+- **Why:** Compile-time staging removes a class of misuse from the language
+  rather than from the test suite, but it also multiplies types, generics,
+  diagnostics, and compile cost, and it cannot model a state an external system
+  changes underneath the handle.
+- **Sources:** Let's Get Rusty `How to write peak Rust`, qualified by R8-R15 and
+  R91; the video's presentation of type-state as a universal third level is not
+  adopted.
+
 ## Round 6: Dependencies, linting, and change discipline
 
 ### Confirmed preferences
@@ -4369,6 +4455,11 @@ the constraints in R124.
   transformations, and measured optimization. Rejected blanket bans on
   comments, abbreviations, nesting, `else`, loops, and trait-free or
   trait-required designs; strengthened R163 to preserve durable rationale.
+- 2026-07-25: Reviewed Let's Get Rusty `How to write peak Rust` and added
+  R207-R210 for enum state modeling, single validated construction paths, exact
+  quantity representation, and type-state mechanics. Adopted the first two as
+  defaults, kept type-state conditional on a consequential misuse, and rejected
+  the video's ordering in which type-state is a universal third level.
 - 2026-07-18: Completed repository and cross-agent research; resolved the roles
   and locations of `rsl-deps` and `bitsandbytes`, confirmed caller-controlled
   Rayon policy, and narrowed discovery/precedence questions to adapter drift

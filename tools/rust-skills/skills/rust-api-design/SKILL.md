@@ -14,8 +14,9 @@ description: Design and review Rust APIs, type invariants, ownership, traits, co
    generated, or layout-sensitive.
 3. Read [API, ownership, and errors](references/api-ownership-and-errors.md) for
    type and trait decisions. Read
-   [ownership patterns](references/ownership-patterns.md) for borrowed options,
-   frozen shared sequences, builders, type-state, and error-library boundaries.
+   [ownership patterns](references/ownership-patterns.md) for state modeling,
+   validated construction, exact quantities, borrowed options, frozen shared
+   sequences, builders, type-state, and error-library boundaries.
    Read
    [documentation and examples](references/documentation-and-examples.md) when
    the public teaching or compatibility surface changes.
@@ -26,6 +27,9 @@ description: Design and review Rust APIs, type invariants, ownership, traits, co
   dynamic dispatch, type-state, or a macro.
 - Make fallibility, ownership transfer, allocation, panic, and error loss
   explicit.
+- Treat a repeated runtime guard as a modeling question: decide whether the
+  state belongs in an enum variant, a validated constructor, or a type
+  parameter, and delete the checks the chosen type proves.
 - Treat builders, newtypes, enums, traits, and validated wrappers as tools for
   real invariants, not universal patterns.
 - Route tests and SemVer evidence to `$rust-testing`, Cargo feature and
