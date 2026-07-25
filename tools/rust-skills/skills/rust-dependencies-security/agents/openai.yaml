@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Dependencies and Security"
+  short_description: "Review Cargo and supply-chain changes"
+  default_prompt: "Use $rust-dependencies-security to assess this dependency or Cargo feature change and its supply-chain impact."

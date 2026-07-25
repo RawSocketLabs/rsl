@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-api-design"
+package = "rust-api-design"
+status = "implemented"
+kind = "technique"
+summary = "Design public and internal APIs, errors, documentation, compatibility, and type invariants."
+requires = ["rust-core"]
+routes_to = ["rust-testing", "rust-dependencies-security"]
+related = ["rust-implement", "rust-review"]
+profiles = ["public-library", "public-api"]
+packs = ["rust-standard", "rust-protocol-systems", "rsl-rust-default"]
+references = ["rust-reference", "rust-api-guidelines", "rust-trait-coherence", "rust-deref-and-borrow-documentation", "rust-generic-parameter-documentation", "rust-conversion-trait-documentation", "rust-formatting-trait-documentation", "rust-non-exhaustive-documentation", "rust-must-use-documentation", "official-rust-style-guide", "clippy-documentation", "rust-option-documentation", "effective-rust", "rust-design-patterns", "logan-smith-everyday-rust", "lets-get-rusty-design-videos"]
+validation = ["Documentation tests", "Validated-wrapper boundary and mutation-freshness tests when applicable", "Semantic version checks when required"]
+outputs = ["Documented API, borrow, generic-parameter, representation, and diagnostic contracts, trust-boundary invariants, validated-form and evidence-lifecycle contracts where applicable, truthful trait, extension-trait, and deref commitments, explicit error-loss policy, compatibility analysis, and tests"]
+legacy_ids = []

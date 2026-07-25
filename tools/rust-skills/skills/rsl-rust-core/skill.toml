@@ -1,0 +1,15 @@
+schema = 1
+id = "rsl-rust-core"
+package = "rsl-rust-core"
+status = "compatibility"
+kind = "foundation"
+summary = "Compatibility router from the legacy RSL Rust core package to the canonical modular skills."
+requires = ["rust-core"]
+routes_to = ["rust-implement", "rust-review", "rust-repository-onboarding", "rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]
+related = []
+profiles = ["all"]
+packs = []
+references = ["agent-skills-specification"]
+validation = ["cargo xtask validate", "cargo xtask generate --check"]
+outputs = ["Disclosure that the legacy router was activated and the canonical skills actually applied"]
+legacy_ids = ["rsl-rust-core"]

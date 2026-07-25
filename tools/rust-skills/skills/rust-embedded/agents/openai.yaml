@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Embedded"
+  short_description: "Engineer no-std and hardware-targeted Rust"
+  default_prompt: "Use $rust-embedded to analyze this no-std or firmware change against its target, memory, interrupt, and hardware contracts."

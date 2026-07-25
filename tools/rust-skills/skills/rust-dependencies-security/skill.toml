@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-dependencies-security"
+package = "rust-dependencies-security"
+status = "implemented"
+kind = "technique"
+summary = "Review dependency necessity, provenance, licensing, advisories, build surfaces, and supply-chain risk."
+requires = ["rust-core"]
+routes_to = ["rust-api-design", "rust-testing", "rust-unsafe-ffi", "rust-embedded"]
+related = ["rust-review"]
+profiles = ["all"]
+packs = ["rust-standard", "rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["cargo-reference", "cargo-features-documentation", "rust-api-guidelines", "microsoft-pragmatic-rust", "anssi-secure-rust", "tracing-documentation"]
+validation = ["Repository-declared dependency and license checks", "Meaningful Cargo feature matrix and resolved feature graph inspection", "Observability dependency, feature, MSRV, and sensitive-data review when applicable"]
+outputs = ["Dependency rationale, truthful feature contract, graph impact, license and advisory status, observability ecosystem impact when applicable, and verification"]
+legacy_ids = []

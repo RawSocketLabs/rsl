@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Skill Maintenance"
+  short_description: "Maintain versioned modular Rust skills"
+  default_prompt: "Use $rust-skill-maintenance to update this Rust skills system with provenance, migration, generation, and evaluation discipline."

@@ -1,0 +1,15 @@
+schema = 1
+id = "rsl-rust-review"
+package = "rsl-rust-review"
+status = "compatibility"
+kind = "task"
+summary = "Compatibility router from the legacy RSL Rust review package to the canonical modular skills."
+requires = ["rust-core"]
+routes_to = ["rust-review", "rust-repository-onboarding", "rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]
+related = ["rust-implement"]
+profiles = ["all"]
+packs = []
+references = ["agent-skills-specification"]
+validation = ["cargo xtask validate", "cargo xtask generate --check"]
+outputs = ["Prioritized findings produced by the canonical review skill and the affected capability owners"]
+legacy_ids = ["rsl-rust-review"]

@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-protocol"
+package = "rust-protocol"
+status = "implemented"
+kind = "domain"
+summary = "Engineer binary protocols, wire formats, parsers, encoders, framing, and conformance evidence."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-api-design", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi"]
+related = ["rust-review"]
+profiles = ["protocol", "parser-serializer", "networking"]
+packs = ["rust-protocol-systems", "rsl-rust-default"]
+references = ["rawsocketlabs-rsl", "rawsocketlabs-libsdr", "rust-formatting-trait-documentation", "rust-non-exhaustive-documentation"]
+validation = ["Strict-default and independently relaxed validation-policy tests", "Below/at/above finite per-item and aggregate resource-budget tests across every validation policy", "Checked size, count, offset, expansion, nesting, recursion, retained-input, allocation, reset, reconfiguration, and input-controlled-bypass tests", "Policy-exclusion tests for message equality, hashing, persistence, and wire identity", "Passed, failed, skipped or not checked, and inapplicable evidence-state tests", "Trusted-input boundary and mutation-freshness tests", "Exact immutable received-evidence and separate recovered-output known-answer tests", "Independent integrity-observation and correction-outcome tests with truthful extent and units", "Complete/incomplete/malformed split-at-every-boundary tests", "Zero stateless incomplete consumption, stateful accepted-versus-completed ownership, retained-buffer limit, retry-equivalence, justified-resynchronization, and progress tests", "Faithful intentionally invalid protocol vectors", "Post-build validation and trust-status tests", "Property tests", "Fuzzing when required", "Interoperability tests when available"]
+outputs = ["Explicit wire and received-versus-recovered vocabulary, strict typed validation contract, finite repository-owned parser budgets and overrides, policy-independent message identity, exact immutable received evidence, separate recovered output and integrity/correction status, fresh validation evidence, trusted-input boundary, complete/incomplete/malformed and byte-consumption contract, protocol-justified resynchronization, non-disableable safety and resource boundary, conformance evidence, malformed-input behavior, and measured optimizations"]
+legacy_ids = []
