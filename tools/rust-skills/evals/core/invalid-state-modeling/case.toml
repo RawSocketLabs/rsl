@@ -1,0 +1,15 @@
+schema = 2
+id = "core-invalid-state-modeling"
+class = "decision"
+skill = "rust-api-design"
+profile = "internal-library"
+expected_skills = ["rust-api-design"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "state-modeling", "quantity-exactness"]
+forbidden_regressions = ["mechanical-enum-rewrite", "speculative-type-state", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"
