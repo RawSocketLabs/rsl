@@ -1,0 +1,11 @@
+schema = 1
+id = "rawsocketlabs-libsdr"
+tier = "curated-examples"
+title = "Raw Socket Labs libsdr vocabulary and receiver model"
+locator = "Raw Socket Labs proprietary libsdr repository; no public locator"
+revision = "15dc4625e1dea2ae64e800a83ade78f24090be36 (consolidated-work)"
+license = "Proprietary; owner-authorized conceptual extraction into this repository on 2026-07-24"
+use = "Reviewed vocabulary and metadata placement for samples, chunks, blocks, dwells, continuity, StreamEpoch/SampleIndex/SampleBlockStart/SampleDiscontinuity, selected channels, directed L/M rate changes, receiver stages, evidence, and Rust API naming."
+limitations = "Extract only the named vocabulary and design lessons. Do not copy implementation details, protocol status, fixtures, or treat the repository as uniformly exemplary."
+reviewed = "2026-07-24"
+refresh = "Refresh when the consolidated-work pull request is rebased or merged and during formal libsdr onboarding."

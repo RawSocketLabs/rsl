@@ -1,0 +1,11 @@
+schema = 1
+id = "anssi-secure-rust"
+tier = "approved-guidance"
+title = "ANSSI Rust secure-coding guide"
+locator = "https://github.com/ANSSI-FR/rust-guide/tree/3f9e2e28095d0eeb35ed61e212a82be12fde4884"
+revision = "3f9e2e28095d0eeb35ed61e212a82be12fde4884"
+license = "Open Licence 2.0"
+use = "Threat modeling, unsafe containment, dependency review, hostile-input panic behavior, and FFI boundaries."
+limitations = "Security-sensitive scope is narrower than ordinary Rust work and some reviewed sections were incomplete."
+reviewed = "2026-07-18"
+refresh = "Review before materially changing security-sensitive or FFI guidance."

@@ -1,0 +1,10 @@
+schema = 1
+id = "frozen-shared-sequence"
+title = "Choose ownership for a frozen shared sequence"
+skills = ["rust-api-design", "rust-performance", "rust-review"]
+profiles = ["performance-sensitive"]
+source = "rust-shared-ownership-documentation"
+revision = "2026-07-24"
+provenance = "Independent synthesis of standard library semantics with advisory influence recorded in the source ledger"
+validation = ["Preserve coefficient behavior tests", "Measure the declared clone-heavy workload before making a performance claim"]
+document = "example.md"

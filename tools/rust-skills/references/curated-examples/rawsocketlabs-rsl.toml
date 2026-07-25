@@ -1,0 +1,11 @@
+schema = 1
+id = "rawsocketlabs-rsl"
+tier = "curated-examples"
+title = "RawSocketLabs rsl"
+locator = "https://github.com/RawSocketLabs/rsl/tree/ae83b80307a4941ec88e84bbb91e444977923885"
+revision = "ae83b80307a4941ec88e84bbb91e444977923885"
+license = "MIT OR Apache-2.0 in reviewed repository"
+use = "Selected repository facts and lessons from rsl-deps, bitsandbytes, protocol crates, and nested instructions."
+limitations = "Only explicitly extracted aspects are examples; the repository is not uniformly exemplary."
+reviewed = "2026-07-18"
+refresh = "Refresh during formal RSL pilot onboarding."

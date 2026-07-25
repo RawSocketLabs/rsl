@@ -1,0 +1,8 @@
+schema = 1
+id = "service"
+kind = "base"
+summary = "Long-running service with explicit lifecycle, operational error, and resource behavior."
+base = ""
+capabilities = []
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-testing", "rust-dependencies-security"]
+implies = []

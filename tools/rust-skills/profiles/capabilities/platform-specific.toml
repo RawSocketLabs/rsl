@@ -1,0 +1,8 @@
+schema = 1
+id = "platform-specific"
+kind = "capability"
+summary = "Operating-system, architecture, driver, or toolchain-specific behavior."
+base = ""
+capabilities = []
+skills = ["rust-testing", "rust-dependencies-security"]
+implies = []

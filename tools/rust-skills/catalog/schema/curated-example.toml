@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["id", "title", "source", "revision", "provenance", "document"]
+required_array_fields = ["skills", "profiles", "validation"]
+required_document_sections = ["Before", "Review", "After", "Tests", "Lesson", "Applies when", "Does not apply when", "Source and provenance", "Validation"]

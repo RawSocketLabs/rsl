@@ -1,0 +1,11 @@
+schema = 1
+id = "cargo-features-documentation"
+tier = "authoritative"
+title = "Cargo features and SemVer documentation"
+locator = "https://doc.rust-lang.org/cargo/reference/features.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish additive feature behavior, optional dependency naming, feature inspection, documentation, and compatibility consequences."
+limitations = "Cargo defines mechanics and compatibility guidance but does not decide whether a repository's feature contract is capability-neutral or ecosystem-specific."
+reviewed = "2026-07-24"
+refresh = "Review on Cargo feature or SemVer guidance changes and during the normal reference refresh cycle."

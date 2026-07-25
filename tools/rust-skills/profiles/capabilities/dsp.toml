@@ -1,0 +1,8 @@
+schema = 1
+id = "dsp"
+kind = "capability"
+summary = "Digital signal-processing algorithms or streaming signal pipelines."
+base = ""
+capabilities = []
+skills = ["rust-dsp", "rust-testing"]
+implies = []

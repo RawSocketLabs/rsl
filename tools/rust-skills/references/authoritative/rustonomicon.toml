@@ -1,0 +1,11 @@
+schema = 1
+id = "rustonomicon"
+tier = "authoritative"
+title = "The Rustonomicon"
+locator = "https://doc.rust-lang.org/nomicon/"
+revision = "accessed-2026-07-18"
+license = "Official Rust documentation linked but not copied"
+use = "Unsafe Rust invariants, ownership, aliasing, initialization, layout, and FFI review."
+limitations = "Not a substitute for the current Rust Reference, Miri results, or a local safety argument."
+reviewed = "2026-07-18"
+refresh = "Review before changing unsafe or FFI proof obligations."

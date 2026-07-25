@@ -1,0 +1,11 @@
+schema = 1
+id = "logan-smith-everyday-rust"
+tier = "advisory"
+title = "Logan Smith everyday Rust API and ownership videos"
+locator = "https://www.youtube.com/@_noisecode"
+revision = "videos-6c7pZYP_iIE-A4cKi7PTJSs-8j_FbjiowvE-reviewed-2026-07-24"
+license = "No reusable text license identified; linked and independently summarized"
+use = "Challenge borrowed-container APIs and prompt deliberate immutable sequence ownership choices."
+limitations = "Opinionated guidance rather than an authority; absolute wording, memory claims, and performance claims require qualification."
+reviewed = "2026-07-24"
+refresh = "Re-review the named videos before changing a derived rule or quotation."

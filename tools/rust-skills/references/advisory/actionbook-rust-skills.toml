@@ -1,0 +1,11 @@
+schema = 1
+id = "actionbook-rust-skills"
+tier = "advisory"
+title = "actionbook rust-skills"
+locator = "https://github.com/actionbook/rust-skills/tree/fa60f7931223646fb71c4586b4a6c8545016076a"
+revision = "fa60f7931223646fb71c4586b4a6c8545016076a"
+license = "Ambiguous in reviewed revision"
+use = "Domain-to-design-to-mechanics ordering and baseline comparison concepts."
+limitations = "Structural ideas only; do not copy wording without a license decision."
+reviewed = "2026-07-18"
+refresh = "Refresh only after license and provenance review."

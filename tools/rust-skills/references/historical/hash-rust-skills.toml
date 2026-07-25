@@ -1,0 +1,11 @@
+schema = 1
+id = "hash-rust-skills"
+tier = "historical"
+title = "HASH Rust skills"
+locator = "https://github.com/hashintel/hash/tree/f421c643cc9a16288488a4db8a12547050632333/.claude/skills"
+revision = "f421c643cc9a16288488a4db8a12547050632333"
+license = "AGPL-3.0"
+use = "Historical structural comparison for progressive disclosure."
+limitations = "No wording is copied into permissively licensed runtime artifacts."
+reviewed = "2026-07-18"
+refresh = "No periodic refresh; revisit only for a documented research question."

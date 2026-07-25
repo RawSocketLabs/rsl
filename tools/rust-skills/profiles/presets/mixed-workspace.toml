@@ -1,0 +1,8 @@
+schema = 1
+id = "mixed-workspace"
+kind = "preset"
+summary = "Internal-library defaults with root policy and component-specific overlays."
+base = "internal-library"
+capabilities = ["workspace"]
+skills = []
+implies = []

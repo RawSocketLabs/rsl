@@ -1,0 +1,11 @@
+schema = 1
+id = "agent-skills-specification"
+tier = "authoritative"
+title = "Agent Skills specification"
+locator = "https://agentskills.io/specification"
+revision = "accessed-2026-07-18"
+license = "Specification linked but not copied"
+use = "Portable skill package shape, frontmatter, and progressive disclosure."
+limitations = "Authoritative for package interoperability, not Rust engineering policy."
+reviewed = "2026-07-18"
+refresh = "Review before changing generated adapter or package contracts."

@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-time-documentation"
+tier = "authoritative"
+title = "Rust standard library time documentation"
+locator = "https://doc.rust-lang.org/std/time/struct.Instant.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish Instant opacity, monotonic but not necessarily steady behavior, platform dependence, and Duration-based elapsed-time measurement."
+limitations = "Named event boundaries, process-local use, persistence policy, and separation from stream continuity are local engineering decisions rather than standard-library rules."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV changes or the timing and observability rules materially change."

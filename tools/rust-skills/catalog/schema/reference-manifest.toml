@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["id", "tier", "title", "locator", "revision", "license", "use", "limitations", "reviewed", "refresh"]
+tiers = ["authoritative", "approved-guidance", "curated-examples", "advisory", "historical"]
+repository_override = "Explicit repository decisions have precedence over every reference tier."

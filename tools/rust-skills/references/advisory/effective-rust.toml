@@ -1,0 +1,11 @@
+schema = 1
+id = "effective-rust"
+tier = "advisory"
+title = "Effective Rust"
+locator = "https://effective-rust.com/"
+revision = "web-edition-accessed-2026-07-24"
+license = "CC BY-NC-ND 4.0; linked and not copied"
+use = "Advisory index of API, ownership, trait, tooling, testing, no-std, and FFI design topics."
+limitations = "A single author's general guidance, not language authority or repository policy. Validate recommendations against primary documentation, measured constraints, and local decisions."
+reviewed = "2026-07-24"
+refresh = "Re-review the specific item and its primary sources before deriving or changing a rule."

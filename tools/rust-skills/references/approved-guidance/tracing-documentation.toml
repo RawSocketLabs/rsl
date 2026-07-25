@@ -1,0 +1,11 @@
+schema = 1
+id = "tracing-documentation"
+tier = "approved-guidance"
+title = "Tracing structured diagnostics documentation"
+locator = "https://docs.rs/tracing/0.1.44/tracing/"
+revision = "tracing-0.1.44-tracing-subscriber-0.3.23-accessed-2026-07-24"
+license = "MIT; official project documentation linked but not copied"
+use = "Establish structured span/event instrumentation, subscriber-owned collection and filtering, library-versus-executable setup, log compatibility, and feature costs."
+limitations = "The recommendation to prefer tracing, keep core diagnostics typed, and avoid a mandatory observability ecosystem is local engineering policy. Recheck versions, MSRV, features, and dependency cost during repository adoption."
+reviewed = "2026-07-24"
+refresh = "Review when tracing or tracing-subscriber changes MSRV, library guidance, feature behavior, or subscriber APIs."

@@ -1,0 +1,10 @@
+schema = 1
+id = "truthful-runtime-feature"
+title = "Name a Cargo feature for its runtime commitment"
+skills = ["rust-dependencies-security", "rust-api-design", "rust-async-concurrency"]
+profiles = ["public-library"]
+source = "cargo-features-documentation"
+revision = "2026-07-24"
+provenance = "Independent Cargo feature-contract example"
+validation = ["Default-feature build", "Individual runtime-feature build", "Public API and feature graph review"]
+document = "example.md"

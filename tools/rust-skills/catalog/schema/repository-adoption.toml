@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["standards", "source", "adopted", "base", "organization", "adapter", "installation_mode", "migration", "generated_manifest_hash", "skill_hash_algorithm"]
+required_array_fields = ["capabilities", "skills", "local_instruction_paths", "skill_hashes"]
+component_fields = ["base", "capabilities", "skills", "rationale"]

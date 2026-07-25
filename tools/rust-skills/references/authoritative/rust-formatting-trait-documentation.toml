@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-formatting-trait-documentation"
+tier = "authoritative"
+title = "Rust standard-library Display, Debug, and FromStr documentation"
+locator = "https://doc.rust-lang.org/std/fmt/trait.Display.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish user-facing Display intent, programmer-facing and unstable Debug behavior, and documented Display-FromStr round-trip expectations."
+limitations = "The manifest links the Display entry point; derived rules also use the companion Debug and FromStr pages. Stability, secrecy, persistence, and wire-format policy remain explicit repository or protocol decisions."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV or standard formatting and parsing guidance materially changes."

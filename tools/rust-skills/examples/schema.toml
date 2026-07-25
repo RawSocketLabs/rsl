@@ -1,0 +1,4 @@
+schema = 1
+metadata_fields = ["id", "title", "skills", "profiles", "source", "revision", "provenance", "validation", "document"]
+required_sections = ["before", "review", "after", "tests", "lesson", "applies-when", "does-not-apply-when"]
+source_policy = "Record a source and extract only the explicitly reviewed lesson."

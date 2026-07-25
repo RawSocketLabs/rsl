@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-non-exhaustive-documentation"
+tier = "authoritative"
+title = "Rust non_exhaustive and Cargo SemVer documentation"
+locator = "https://doc.rust-lang.org/reference/attributes/type_system.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish the downstream construction and matching effects, source-evolution intent, and compatibility consequences of non_exhaustive."
+limitations = "The manifest links the Rust Reference; derived rules also use the Cargo SemVer Compatibility guide. These sources do not make non_exhaustive a runtime unknown-value or serialization mechanism."
+reviewed = "2026-07-24"
+refresh = "Review on Rust Reference or Cargo SemVer guidance changes and during the normal reference refresh cycle."

@@ -1,0 +1,2 @@
+schema = 1
+manifests = ["skills/rsl-rust-core/skill.toml", "skills/rsl-rust-review/skill.toml"]

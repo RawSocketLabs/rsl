@@ -1,0 +1,2 @@
+schema = 1
+manifests = ["skills/rust-core/skill.toml", "skills/rust-implement/skill.toml", "skills/rust-review/skill.toml", "skills/rust-repository-onboarding/skill.toml", "skills/rust-api-design/skill.toml", "skills/rust-testing/skill.toml", "skills/rust-protocol/skill.toml", "skills/rust-dsp/skill.toml", "skills/rust-performance/skill.toml", "skills/rust-async-concurrency/skill.toml", "skills/rust-unsafe-ffi/skill.toml", "skills/rust-dependencies-security/skill.toml", "skills/rust-embedded/skill.toml", "skills/rust-skill-maintenance/skill.toml"]

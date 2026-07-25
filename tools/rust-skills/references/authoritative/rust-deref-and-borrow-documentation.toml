@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-deref-and-borrow-documentation"
+tier = "authoritative"
+title = "Rust standard-library Deref, AsRef, and Borrow documentation"
+locator = "https://doc.rust-lang.org/std/ops/trait.Deref.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish implicit deref-coercion effects, pointer-like implementation criteria, reference-conversion behavior, and Borrow equivalence requirements."
+limitations = "The manifest links the Deref entry point; derived rules also rely on the companion DerefMut, AsRef, AsMut, Borrow, and BorrowMut pages. Repository compatibility decisions take precedence over new-API preferences."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV changes or the standard-library contracts and guidance materially change."

@@ -1,0 +1,9 @@
+schema = 1
+id = "libsdr-discontinuity"
+title = "RSL libsdr discontinuity vocabulary"
+strength = "MUST"
+scope = "Raw Socket Labs sample APIs that use, expose, or interoperate with libsdr continuity metadata"
+rule = "Preserve StreamEpoch, SampleIndex, SampleBlockStart, and SampleDiscontinuity vocabulary; treat SampleDiscontinuity as a reason that a fill did not produce one contiguous complete block rather than as complete loss-extent evidence; represent within-epoch gaps with the next absolute SampleIndex and a known half-open or explicitly unknown extent; and begin a new StreamEpoch for source restart, retune, sample-rate change, or equivalent reconfiguration instead of fabricating a cross-epoch range."
+applies_when = ["Designing or reviewing libsdr acquisition and queue boundaries", "Propagating sample loss into stateful DSP", "Mapping libsdr continuity metadata into another RSL repository"]
+exceptions = ["A higher-precedence repository decision uses equivalent typed names", "A device exposes less precise evidence, which must remain explicitly unknown", "Compatibility material retains an older shape while documenting the migration"]
+source_rules = ["R28", "R99", "R102", "R105", "R188", "R189"]

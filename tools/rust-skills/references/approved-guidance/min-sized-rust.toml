@@ -1,0 +1,11 @@
+schema = 1
+id = "min-sized-rust"
+tier = "approved-guidance"
+title = "Minimizing Rust Binary Size"
+locator = "https://github.com/johnthagen/min-sized-rust/tree/24233f98d9a8a484302408ed6b5431ed8f720321"
+revision = "24233f98d9a8a484302408ed6b5431ed8f720321"
+license = "MIT"
+use = "Provide a measured escalation ladder for executable, firmware, WebAssembly, and deployed-artifact size work."
+limitations = "Techniques are target-, toolchain-, and workload-specific. Nightly build-std, removed diagnostics, panic changes, no_std/no_main, packing, and added unsafe code require separate approval and validation."
+reviewed = "2026-07-24"
+refresh = "Review when Cargo profile behavior, supported toolchains, target packaging, or the upstream guide materially changes."

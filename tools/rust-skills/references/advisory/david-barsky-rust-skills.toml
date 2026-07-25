@@ -1,0 +1,11 @@
+schema = 1
+id = "david-barsky-rust-skills"
+tier = "advisory"
+title = "David Barsky Rust skills gist"
+locator = "https://gist.github.com/davidbarsky/8fae6dc45c294297db582378284bd1f2"
+revision = "accessed-2026-07-18"
+license = "No visible license"
+use = "Compact trigger comparison."
+limitations = "No text may be copied without permission or a license."
+reviewed = "2026-07-18"
+refresh = "Refresh only if reconsidering skill boundaries."

@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-design-patterns"
+tier = "advisory"
+title = "Rust Design Patterns"
+locator = "https://github.com/rust-unofficial/patterns"
+revision = "main-accessed-2026-07-24"
+license = "MPL-2.0; linked and not copied"
+use = "Searchable advisory catalog of patterns, idioms, and anti-patterns for comparison with demonstrated repository needs."
+limitations = "Unofficial and uneven by topic; a named pattern does not establish a second use case, performance benefit, API fit, or local approval."
+reviewed = "2026-07-24"
+refresh = "Pin and review the specific pattern plus primary Rust documentation before using it as rule evidence."

@@ -1,0 +1,10 @@
+schema = 1
+id = "guarded-success-path"
+title = "Flatten preconditions without deleting durable rationale"
+skills = ["rust-implement", "rust-testing", "rust-review"]
+profiles = ["application"]
+source = "codeaesthetic-development-videos"
+revision = "2026-07-25"
+provenance = "Independent Rust transformation applying qualified control-flow and comment guidance"
+validation = ["Behavior tests for every rejection and success path", "Review retained rationale and diff scope"]
+document = "example.md"

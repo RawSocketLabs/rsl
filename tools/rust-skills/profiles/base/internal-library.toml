@@ -1,0 +1,8 @@
+schema = 1
+id = "internal-library"
+kind = "base"
+summary = "Reusable library with controlled consumers and locally defined compatibility commitments."
+base = ""
+capabilities = []
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-testing", "rust-dependencies-security"]
+implies = []

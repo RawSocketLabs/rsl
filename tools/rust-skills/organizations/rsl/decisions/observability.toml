@@ -1,0 +1,9 @@
+schema = 1
+id = "observability"
+title = "RSL observability ecosystem preference"
+strength = "SHOULD"
+scope = "Raw Socket Labs Rust libraries, applications, and services that emit logs, structured diagnostics, metrics, or telemetry"
+rule = "Prefer tracing for structured logging and diagnostics when repository dependency review permits it, but do not require tracing universally; keep reusable core evidence typed and bounded; let applications own tracing-subscriber and process-wide initialization; and select metrics, OpenTelemetry, or other export adapters per repository rather than imposing one organization-wide facade."
+applies_when = ["Adding or changing Rust logging or structured diagnostics", "Designing operational counters, snapshots, metrics, or telemetry adapters", "Configuring application-wide subscribers, filters, formatting, or export"]
+exceptions = ["A repository already uses log or another ecosystem and migration has insufficient benefit", "A framework, no_std target, embedded target, FFI boundary, or external consumer imposes another integration", "A higher-precedence repository decision selects a different backend or prohibits the dependency"]
+source_rules = ["R107", "R108", "R176", "R194"]

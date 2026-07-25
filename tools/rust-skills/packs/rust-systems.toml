@@ -1,0 +1,4 @@
+schema = 1
+id = "rust-systems"
+summary = "Portable systems foundation for performance, concurrency, unsafe boundaries, and constrained targets."
+skills = ["rust-core", "rust-implement", "rust-review", "rust-testing", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]

@@ -1,0 +1,11 @@
+schema = 1
+id = "leonardomso-rust-skills"
+tier = "advisory"
+title = "leonardomso rust-skills"
+locator = "https://github.com/leonardomso/rust-skills/tree/fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9"
+revision = "fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9"
+license = "MIT"
+use = "Topic coverage and counterexample concepts."
+limitations = "No runtime wording is imported and local evidence decides adoption."
+reviewed = "2026-07-18"
+refresh = "Refresh only when revisiting topic or evaluation coverage."

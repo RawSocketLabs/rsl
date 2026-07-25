@@ -1,0 +1,11 @@
+schema = 1
+id = "tokio-cancellation-safety"
+tier = "approved-guidance"
+title = "Tokio cancellation and task lifecycle documentation"
+locator = "https://docs.rs/tokio/1.53.1/tokio/macro.select.html"
+revision = "tokio-1.53.1-accessed-2026-07-24"
+license = "MIT"
+use = "Define operation-level cancellation analysis for select loops, partial I/O, task handles, abort, and bounded blocking work."
+limitations = "Tokio-specific API behavior and method lists are not universal Rust rules. Recheck the repository's selected runtime and version; dropping a future, dropping a JoinHandle, aborting an async task, and attempting to abort started blocking work have different semantics."
+reviewed = "2026-07-24"
+refresh = "Review when the selected Tokio version or its select, JoinHandle, abort, or spawn_blocking documentation changes."

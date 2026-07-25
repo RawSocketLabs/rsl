@@ -1,0 +1,10 @@
+schema = 1
+id = "rsl"
+name = "Raw Socket Labs"
+default_pack = "rsl-rust-default"
+portable_skill_prefix = "rust-"
+compatibility_skill_prefix = "rsl-rust-"
+local_rule_strategy = "preserve-and-index"
+precedence = "repository-over-organization"
+source = "docs/preference-record.md"
+decisions = ["organizations/rsl/decisions/frozen-sequence-ownership.toml", "organizations/rsl/decisions/libsdr-domain-vocabulary.toml", "organizations/rsl/decisions/libsdr-rust-naming.toml", "organizations/rsl/decisions/libsdr-stream-metadata.toml", "organizations/rsl/decisions/libsdr-rate-relationship.toml", "organizations/rsl/decisions/libsdr-discontinuity.toml", "organizations/rsl/decisions/observability.toml"]

@@ -1,0 +1,8 @@
+schema = 1
+id = "networking"
+kind = "capability"
+summary = "Network transport, packet, or connection behavior."
+base = ""
+capabilities = []
+skills = ["rust-protocol", "rust-testing"]
+implies = []

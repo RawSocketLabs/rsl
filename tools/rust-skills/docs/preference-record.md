@@ -397,7 +397,12 @@ From most to least preferred:
   third-party DSP implementations are not a primary goal.
 - **Acceptable exceptions:** a trait object materially simplifies application
   composition or isolates a boundary without harming the relevant performance
-  path.
+  path. A runtime-configurable DSP or audio pipeline may use a heterogeneous
+  trait-object stage collection when runtime reordering, plugins, or genuinely
+  open-ended stage types are requirements. Prefer concrete composition or an
+  enum when the stage set is closed, and keep dynamic dispatch outside measured
+  kernels where practical. Any shared processing trait must satisfy R101 and
+  R190 rather than erasing unlike stage contracts.
 
 #### R18. Return typed library errors
 
@@ -479,9 +484,6 @@ From most to least preferred:
 
 - Which protocol validation aspects must be independently configurable and how
   opt-outs should appear in builder method names.
-- Whether a built message records which validations were skipped.
-- Whether encoding revalidates a message after construction or respects the
-  builder's validation policy.
 - How owned protocol values preserve unknown fields and exact wire
   representations when round-tripping matters.
 - How prominently allocating DSP adapters must signal allocation behavior.
@@ -519,6 +521,10 @@ From most to least preferred:
 - Apply backpressure on reusable-buffer return paths.
 - Protocol-message overload policy remains to be selected by transport and
   message semantics.
+- Define the required queue semantics centrally, but select the concrete channel
+  or queue implementation per repository through normal dependency review.
+- Put nontrivial overload, recycling, and lifecycle behavior behind a small
+  domain queue type instead of scattering ad hoc send/receive logic.
 
 #### Buffer recycling
 
@@ -541,10 +547,11 @@ From most to least preferred:
 
 #### Lifecycle and shutdown
 
-- Task/thread ownership, shutdown, joining, draining, and discard behavior are
-  application-specific decisions.
-- Repositories applying the general standards should answer these questions
-  explicitly rather than inheriting one universal drain policy.
+- Production tasks and threads are owned and joined by default; detached work
+  requires an explicit, bounded process-lifetime or external-supervisor policy.
+- Repositories record shutdown, joining, draining, discard, buffer return,
+  timeout, and escalation behavior per class of spawned work rather than
+  inheriting one universal drain policy.
 
 ### Draft rules
 
@@ -587,17 +594,37 @@ From most to least preferred:
 
 #### R26. Bound pipeline queues
 
-- **Strength:** SHOULD
+- **Strength:** MUST
 - **Scope:** async and threaded production pipelines
-- **Rule:** Use bounded channels and select capacity from an explicit memory,
-  burst, throughput, or latency rationale.
+- **Rule:** Use bounded channels. Give each production data-path capacity a named
+  unit and derive it from a declared burst, throughput, memory, or latency
+  requirement. Record the limit in items and translate it into worst-case
+  retained bytes and queue-time implications at the declared rates. Do not use a
+  universal capacity value across unrelated repositories or pipelines.
+- **Memory accounting:** Include variable-size owned payloads, shared backing
+  allocations retained by queued handles, queue metadata, reserved permits, and
+  other material in-flight storage. If item size is not bounded, enforce a byte
+  or payload limit or cite the separate invariant that bounds it.
+- **Time accounting:** State the assumptions behind the calculation. Minimum
+  service rate bounds backlog drain and FIFO waiting; arrival and service rates
+  together bound overload fill time. If consumers can stall indefinitely,
+  capacity alone does not establish a finite queue-time guarantee.
+- **Pipeline accounting:** Consider the sum of material queue and buffer-pool
+  budgets along an end-to-end path. Validate user-configurable capacities
+  against the repository's resource constraints.
 - **Rationale:** bounded queues expose overload and place a limit on memory and
-  queueing latency.
+  queued work, but the bound is meaningful only when related to payload size,
+  rates, and the other buffers in the path.
 - **Acceptable exceptions:** low-volume control traffic whose possible growth is
   demonstrably bounded by another invariant; record that invariant near channel
-  creation.
+  creation. Zero-capacity rendezvous and externally bounded queues should cite
+  their actual bounding mechanism.
 - **Review questions:** What happens when the queue fills? How much memory and
-  latency can the configured capacity retain?
+  delay can the configured capacity retain under the stated assumptions? What
+  finite guarantee disappears when a consumer stalls?
+- **Mechanical enforcement:** configuration validation, below/at/above-capacity
+  tests, deterministic overload tests, occupancy and full-event metrics, and
+  load tests where declared rates matter.
 
 #### R27. Define overload behavior explicitly
 
@@ -616,13 +643,21 @@ From most to least preferred:
 - **Strength:** PREFER
 - **Scope:** real-time or near-real-time sample queues
 - **Rule:** When overload requires loss, discard the oldest queued samples so the
-  consumer works on fresher data.
+  consumer works on fresher data. Attach a discontinuity to the next delivered
+  buffer with at least the known missing sample count or half-open index range
+  and the absolute index of the next sample. Coalesce multiple drops before the
+  next delivery without losing the total known loss.
+- **Units:** Define whether indices count per-channel samples, interleaved scalar
+  values, sample frames, symbols, or another domain unit, including origin and
+  wrap/restart behavior. Represent an unknown loss extent explicitly rather than
+  fabricating precision.
 - **Rationale:** stale samples increase end-to-end latency and may be less useful
-  than current samples.
+  than current samples, while explicit sequence metadata prevents freshness from
+  masquerading as continuity.
 - **Acceptable exceptions:** an algorithm requires continuity or complete sample
   history; in that case apply backpressure or fail the stream explicitly.
 - **Review questions:** How are discontinuities signaled to stateful DSP stages?
-  Are dropped sample counts observable?
+  Are dropped sample counts observable without replacing the per-buffer signal?
 
 #### R29. Coalesce replaceable control updates
 
@@ -683,13 +718,40 @@ From most to least preferred:
 
 - **Strength:** MUST
 - **Scope:** repositories or components that spawn tasks or threads
-- **Rule:** State who owns spawned work, how cancellation or shutdown is
-  signaled, whether queued work drains or is discarded, how resources and
-  buffers are returned, and which work is joined.
+- **Rule:** Record a lifecycle contract for every class of spawned work: who
+  starts and owns it; which task, thread, or supervisor handle represents it;
+  how new admission stops; how cancellation or shutdown is signaled; whether
+  queued and in-progress work drains or is discarded; how resources and buffers
+  are returned; the join deadline; the timeout fallback; and who observes
+  completion, returned errors, and panics.
+- **Default sequence:** Keep production work owned and joinable. Stop admission,
+  signal shutdown, apply the locally selected drain-or-discard policy, return
+  owned resources, and wait for completion within a declared bound. Treat the
+  timeout fallback as part of the contract: abort, detach, force-close a
+  resource, terminate the process, or report an incomplete shutdown only when
+  its consequences are explicit.
+- **Local decisions:** Drain versus discard depends on the work's semantics.
+  State whether accepted work promises completion, whether partial progress is
+  resumable, what data may be lost or duplicated, and whether a deadline has
+  precedence over graceful completion.
+- **Detached work:** Do not detach production work by dropping or discarding its
+  handle. An explicit long-lived supervisor may assume ownership. Truly
+  unjoined process-lifetime or best-effort work requires repository approval,
+  bounded resource use, observable failure policy, and documented process-exit
+  behavior.
 - **Rationale:** shutdown correctness depends on application semantics and cannot
-  be selected safely by a universal Rust rule.
-- **Acceptable exceptions:** none when spawned work can outlive the initiating
-  scope; a simple scoped thread construct may encode ownership directly.
+  be selected safely by a universal drain rule. A consistent ownership and join
+  default prevents work, failures, buffers, and partial side effects from
+  silently outliving their public owner.
+- **Verification:** Test clean shutdown, shutdown with queued and in-progress
+  work, saturated return paths, worker error or panic, and a worker that misses
+  its deadline. Assert admission closure, declared loss or completion, resource
+  return, timeout escalation, join results, and absence of leaked background
+  work without relying on timing sleeps.
+- **Acceptable exceptions:** A scoped concurrency primitive may encode ownership
+  and joining directly. Test-only fault tasks and process-terminating paths may
+  use narrower handling when their lifetime and cleanup consequences are
+  explicit.
 
 ### Protocol overload default
 
@@ -721,20 +783,6 @@ From most to least preferred:
 - **General concurrency rules versus shutdown semantics:** ownership must be
   explicit everywhere, but drain-versus-discard and join behavior remain local
   policy choices.
-
-### Unresolved decisions
-
-- Whether optional features should be named after capabilities (`async`,
-  `parallel`) or ecosystems (`tokio`, `rayon`).
-- Whether Tokio adapters accept an existing runtime handle or remain runtime-
-  agnostic futures that the caller spawns.
-- Exact caller-provided Rayon pool API and measured minimum grain-size contract.
-- Queue capacity selection and whether repositories must state numerical memory
-  or latency budgets.
-- How drop-oldest sample queues signal gaps and reset or preserve DSP state.
-- Which queue and channel crates best express drop-oldest and recycle behavior.
-- Repository-template questions for shutdown, cancellation, draining, joining,
-  and detached work.
 
 ## Round 4: Performance, unsafe Rust, and FFI
 
@@ -1860,8 +1908,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Scope:** source comments
 - **Rule:** Explain invariants, units, protocol authority, performance
   constraints, safety reasoning, and non-obvious decisions rather than narrating
-  syntax. Give a significant `TODO` or `FIXME` enough context plus a tracking
-  reference or removal condition to make the deferred work actionable.
+  syntax. First improve names, types, functions, and control flow where they can
+  express the behavior directly, but do not remove a durable explanation merely
+  because code is described as self-documenting. Give a significant `TODO` or
+  `FIXME` enough context plus a tracking reference or removal condition to make
+  the deferred work actionable.
 - **Why:** Comments should preserve information the code cannot express and
   should not become unowned wish lists.
 
@@ -1900,6 +1951,1022 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Why:** Narrow visibility preserves design freedom, while checked, local lint
   exceptions resist silent policy decay.
 
+#### R167. Borrow the optional referent at API boundaries
+
+- **Strength:** SHOULD
+- **Scope:** new read-only function parameters and return values
+- **Rule:** Represent an optional borrowed value as `Option<&T>` or
+  `Option<&mut T>` rather than `&Option<T>`. Borrow the deepest useful referent,
+  such as `Option<&str>` instead of `Option<&String>`. Use `as_ref`,
+  `as_deref`, and their mutable forms when adapting stored optional values.
+- **Why:** The API should expose the conceptual optional value rather than the
+  owner's storage container. This accepts direct values, stored options, and
+  absence without coupling the callee to `Option<T>`, and it lets the callee use
+  `Option` combinators without repeatedly reborrowing the container.
+- **Exceptions:** Use `&mut Option<T>` when the operation changes presence or
+  transfers the contained value, such as `take` or replacement. Pinning,
+  required trait or FFI signatures, compatibility, and a rare contract about
+  the exact container may also require a container reference. Do not
+  mechanically rewrite transient internal `&Option<T>` values. Treat a public
+  signature migration as a compatibility change.
+
+#### R168. Select frozen sequence ownership by required capability
+
+- **Strength:** MUST
+- **Scope:** material long-lived sequences whose shape is immutable after
+  construction
+- **Rule:** Explicitly choose among `Vec<T>`, `Box<[T]>`, `Rc<[T]>`, and
+  `Arc<[T]>` from the required capabilities. Retain `Vec<T>` for building,
+  mutation, growth, capacity reuse, or an API that requires it. Use
+  `Box<[T]>` for unique frozen ownership, `Rc<[T]>` for shared single-threaded
+  ownership, and `Arc<[T]>` for shared ownership that crosses threads or must
+  satisfy `Send` and `Sync`.
+- **Why:** These types communicate materially different mutation, sharing, and
+  thread-safety contracts. The choice should follow the ownership topology
+  rather than a blanket preference for one container.
+- **Exceptions:** Small, short-lived, or non-material values do not need a
+  design ceremony. Interoperability, construction cost, conversion cost,
+  copy-on-write, or measured behavior may justify a different representation.
+
+#### R169. Prefer shared frozen slices in RSL when shared cloning is the design
+
+- **Strength:** PREFER
+- **Scope:** Raw Socket Labs repositories and components with long-lived,
+  immutable sequence data
+- **Rule:** When multiple logical owners intentionally share the same immutable
+  sequence, prefer `Rc<[T]>` within one thread and `Arc<[T]>` across threads.
+  Prefer `Box<[T]>` when ownership remains unique. Preserve `Vec<T>` when
+  mutation, capacity, or buffer reuse is part of the contract.
+- **Why:** RSL protocol, DSP, and systems code frequently retains tables,
+  coefficients, or other frozen data across processing objects. Cheap shared
+  clones can express that topology without deep-copying the elements.
+- **Exceptions:** Do not introduce reference counting merely because cloning
+  exists. Independent snapshots, small values, short lifetimes, and measured
+  reference-count overhead may favor `Vec<T>` or `Box<[T]>`.
+
+#### R170. Require evidence before criticizing a sequence container
+
+- **Strength:** MUST
+- **Scope:** implementation and review findings about `Vec`, `Box`, `Rc`, or
+  `Arc`
+- **Rule:** Do not treat a `Vec<T>` or a clone as a defect without establishing
+  the value lifetime, mutation needs, clone frequency, ownership topology,
+  thread boundary, workload, and consequence. Performance changes require
+  before-and-after evidence when performance is the justification.
+- **Why:** Replacing a deep clone with reference counting changes independent
+  ownership into sharing and introduces allocation, count-update, cycle, and
+  lifetime tradeoffs. The type alone does not prove a defect.
+
+#### R171. Avoid a redundant owned container beneath frozen shared ownership
+
+- **Strength:** PREFER
+- **Scope:** immutable shared strings and sequences
+- **Rule:** Prefer `Rc<[T]>` or `Arc<[T]>` to `Rc<Vec<T>>` or `Arc<Vec<T>>`, and
+  prefer `Rc<str>` or `Arc<str>` to reference-counting a `String`, when spare
+  capacity, growth, and the inner owned-container API are not part of the
+  contract.
+- **Why:** The unsized form states the frozen-shape contract and avoids retaining
+  an extra owned-container layer solely to reach its contents.
+- **Exceptions:** Keep the inner `Vec<T>` or `String` when mutation through
+  unique access, capacity, conversion behavior, or an external API is required
+  and justified.
+
+#### R172. Optimize binary size against a defined shipped artifact
+
+- **Strength:** MUST
+- **Scope:** executable, firmware, WebAssembly, package, and container-size work
+- **Rule:** Define what is being minimized, including the artifact boundary,
+  target triple, toolchain, features, profile, and whether the measurement is
+  stripped, compressed, or packaged. Record reproducible before-and-after byte
+  counts and preserve correctness tests. Start with stable, reversible profile
+  choices and measure each one: release mode, symbol stripping, `"s"` versus
+  `"z"` size optimization, LTO modes, and codegen units can have
+  workload-specific results.
+- **Why:** An unqualified “smaller binary” claim can compare different targets,
+  features, debug information, or packaging. Size-oriented settings can also
+  trade runtime performance, compile time, observability, portability, and
+  operational behavior for fewer bytes.
+- **Escalation:** Inspect contributors with target-appropriate tools such as
+  `cargo-bloat`, `cargo-llvm-lines`, or Twiggy when available. Require an
+  explicit repository decision before changing panic behavior, removing
+  diagnostic or location information, requiring nightly `build-std`, replacing
+  `std` with `no_std`, using `no_main`, changing linking or allocation strategy,
+  packing the binary, or adding unsafe code. Document the lost capability and
+  deployment or security consequence.
+- **Exceptions:** Repositories without a material size requirement do not need
+  to optimize or continuously gate artifact size. A constrained target may
+  adopt aggressive settings as a profile decision after recording the required
+  toolchain, platform, diagnostics, and validation.
+
+#### R173. Parse durable trust-boundary values into invariant-preserving types
+
+- **Strength:** SHOULD
+- **Scope:** values that enter through public, wire, configuration, storage,
+  FFI, or other trust boundaries and remain meaningful downstream
+- **Rule:** Convert an untrusted representation once into a domain type whose
+  normal constructors establish the relevant durable invariants. Keep its
+  invariant-bearing fields private when practical, return a structured parsing
+  failure, and let downstream APIs accept the parsed type instead of raw data
+  plus repeated validation.
+- **Why:** A successful parse changes what downstream code may assume. Carrying
+  that fact in the type localizes validation, prevents accidental bypass, and
+  removes duplicated checks that can drift apart.
+- **Exceptions:** Keep raw or partially parsed representations when the value is
+  transient, the check is local and inexpensive, lossless diagnostics or round
+  trips require original data, unknown values must be preserved, or testing
+  deliberately constructs malformed protocol data. Do not claim permanent
+  validity for invariants that depend on mutable state, time, external
+  resources, or a later application context. In protocol code, keep framing,
+  structural parsing, integrity checking, semantic validation, and application
+  interpretation distinguishable even when types carry results between layers.
+
+#### R174. Block performance claims supported by invalid benchmark state
+
+- **Strength:** MUST
+- **Scope:** benchmarks used to justify or verify performance-motivated changes
+- **Rule:** Make every measured sample exercise the declared representative
+  workload. Regenerate or reset mutating and consuming input outside the timed
+  operation, use the harness's appropriate setup or batching facility, and keep
+  setup and destruction outside the measurement unless the named metric includes
+  them. Verify enough input and output behavior to show that optimization or
+  stale state did not remove the intended work.
+- **Why:** A benchmark can silently measure a different operation after its
+  first iteration, such as repeatedly sorting an already-sorted buffer. Precise
+  timing of the wrong workload is not performance evidence.
+- **Review consequence:** Treat a state-invalid benchmark as a blocking finding
+  whenever it supports a performance claim or performance-motivated change.
+  Withdraw the claim, repair the harness, or provide independent valid evidence
+  before accepting the change.
+- **Exceptions:** A cumulative or stateful benchmark may evolve state when that
+  evolution is the documented production workload. An end-to-end metric may
+  intentionally include construction, teardown, allocation, or I/O when those
+  costs are named and consistently measured.
+
+#### R175. Implement common capability traits only when their contracts are true
+
+- **Strength:** MUST
+- **Scope:** public and domain types
+- **Rule:** Evaluate `Clone`, `Default`, `Serialize`, `Deserialize`, `Send`, and
+  `Sync` from the type's semantics and consumers rather than treating them as a
+  required checklist. `Clone` must produce the intended logical duplicate and
+  may carry a documented material cost. `Default` must represent a valid,
+  unsurprising baseline rather than inventing sentinel identifiers or invalid
+  empty state. Serialization traits establish a data-format and compatibility
+  surface; deserialization must not bypass the type's invariants.
+- **Thread safety:** Let `Send` and `Sync` emerge from the actual fields and
+  safety model. Do not replace `Rc` with `Arc`, add locks, or otherwise redesign
+  ownership solely to force these auto traits. A genuine cross-thread
+  requirement may justify such a redesign, but it must preserve the type's
+  semantics and operational behavior. Any manual `unsafe impl Send` or
+  `unsafe impl Sync` requires the full written safety argument and validation
+  expected for unsafe code.
+- **Why:** These traits grant capabilities and make promises to generic and
+  downstream code. A convenient derive can create invalid values, expose a
+  costly or surprising operation, freeze a wire/storage representation, or make
+  an unsound concurrency assertion.
+- **Exceptions:** Implement a trait when a concrete repository or consumer
+  contract requires it and the design truthfully supports it. Feature-gate
+  ecosystem integrations such as Serde when they are optional and preserve
+  invariant checks through validated intermediates or custom implementations.
+
+#### R176. Make intentional error loss explicit and observable
+
+- **Strength:** MUST
+- **Scope:** fallible iterators, parsers, streams, tasks, message delivery, and
+  batch or record processing
+- **Rule:** Propagate or handle failures by default. Do not silently turn a
+  `Result` into absence through `Result::ok`, `filter_map`, `flatten`, ignored
+  return values, or equivalent shorthand unless discarding that failure is an
+  explicit part of the operation's contract. Name the behavior as best-effort,
+  lossy, skip-invalid, or other repository vocabulary rather than hiding it in
+  control flow.
+- **Observability:** Expose suitable aggregate counts, structured diagnostics,
+  quarantine output, a returned summary, or another repository-appropriate
+  signal. Preserve incomplete, malformed, retryable, overload, cancellation, and
+  shutdown distinctions when they imply different recovery. Avoid unbounded or
+  per-item hot-path logging; aggregate at a controlled boundary.
+- **Why:** Mapping errors to `None` can make corrupted input, data loss, closed
+  consumers, or operational failures indistinguishable from an ordinary filter.
+  Iterator concision does not justify erasing behavior callers or operators need.
+- **Exceptions:** Deliberately lossy telemetry, probes, caches, sampling, and
+  best-effort importers may discard individual failures when the consequence,
+  scope, and observability policy are explicit and tested.
+
+#### R177. Match borrows to the capability and scope actually required
+
+- **Strength:** SHOULD
+- **Scope:** function and method parameters, receivers, helpers, and returned
+  borrows
+- **Rule:** Express only the ownership and access capability the operation
+  requires. Prefer shared access over mutable access, borrow the deepest useful
+  referent, and accept `&[T]` or `&str` when ownership, growth, capacity, or the
+  concrete container is irrelevant. Avoid retaining a borrow beyond the work
+  that uses it.
+- **Field-level composition:** Extract a helper over the affected field or
+  component when a whole `&self` or `&mut self` receiver overstates access,
+  prevents independent field borrows, or couples otherwise separable operations.
+  Keep the higher-level method as an orchestration wrapper when that preserves a
+  useful API.
+- **Why:** Signatures are capability contracts. Narrow borrows make independent
+  state easier to compose, reduce accidental mutation authority, and localize
+  borrow-checker conflicts without cloning or shared-ownership escape hatches.
+- **Exceptions:** Keep a whole-object receiver when an invariant spans multiple
+  fields, representation hiding is important, a trait or compatible public API
+  requires it, or extraction reduces clarity. Do not contort code merely to
+  shorten a lexical borrow, expose private representation, or make an unmeasured
+  compile-time claim.
+
+#### R178. Analyze what cancellation drops at every race
+
+- **Strength:** MUST
+- **Scope:** `select` operations, timeouts, task abort, future races, dropped
+  futures, and equivalent cancellation paths
+- **Rule:** For every race, identify the losing operation and analyze what
+  dropping it does at each suspension point. Account for partial I/O, consumed
+  messages, external side effects, locks, permits, owned buffers, and protocol or
+  application state. State whether restarting the operation is safe.
+- **Non-resumable work:** If partial progress cannot be resumed without loss,
+  duplication, or state corruption, move progress into durable owned state,
+  complete or roll back before racing, or abandon and reset the affected
+  connection, stream, or state machine. Do not assume encode/decode or framed I/O
+  remains synchronized after a cancelled partial operation.
+- **Task semantics:** Distinguish dropping a future from dropping a task handle.
+  Verify the selected runtime's detach, abort, completion, and blocking-task
+  behavior. Keep result, cleanup, and shutdown ownership explicit.
+- **Verification:** Inject cancellation before and after relevant suspension
+  points and during partial reads or writes. Assert resource return, observable
+  errors, state-machine behavior, and whether work continues in the background.
+- **Why:** Cancellation occurs at operation-specific suspension boundaries.
+  Paired operations can appear correct on the happy path while a losing branch
+  silently consumes bytes, loses a message, leaves background work running, or
+  corrupts subsequent framing.
+- **Exceptions:** Application shutdown may intentionally discard progress when
+  the operation contract allows it and the associated resource and state are
+  conclusively abandoned. A current library guarantee of cancellation safety may
+  satisfy the restart question, but not task ownership or cleanup.
+
+#### R179. Use extension traits only for a coherent foreign-type capability
+
+- **Strength:** SHOULD
+- **Scope:** traits that add callable methods to types the crate does not own
+- **Rule:** Create an extension trait only when its methods form one named,
+  reusable capability and method syntax materially improves use or generic
+  composition. Prefer inherent methods for owned types, free functions for an
+  isolated operation, and a newtype or wrapper when behavior needs distinct
+  semantics, state, or invariants. Do not accumulate unrelated helpers in a
+  miscellaneous `*Ext` trait.
+- **Receiver and implementation scope:** Define the intended receiver set.
+  Justify broad blanket implementations and check their coherence implications.
+  Document whether downstream crates may implement the trait. Seal it, and
+  document the sealing, when implementation must remain under the defining
+  crate's control.
+- **Compatibility:** Treat public extension methods, supertraits, required
+  items, blanket implementations, and downstream implementation freedom as API
+  commitments. Check proposed method names against inherent methods and likely
+  traits in scope; collisions can cause ambiguity or silently select an inherent
+  method. Provide a stable, discoverable import path.
+- **Prelude policy:** A repository may expose a narrow, opt-in prelude containing
+  a cohesive extension-trait vocabulary. A prelude is not permission to hide
+  unrelated imports or export a growing convenience grab bag.
+- **Verification:** Compile public consumer fixtures and documentation tests that
+  import and call the trait as users will. Exercise fully qualified trait syntax
+  when collision, generic inference, or receiver resolution is material, and run
+  semantic-version checks where the repository requires them.
+- **Exceptions:** Retain compatibility extension traits while migrating callers,
+  and allow tightly scoped internal traits when their local capability remains
+  obvious. Do not introduce a public trait merely to make a single helper look
+  like a method.
+
+#### R180. Reserve deref coercion for transparent pointer behavior
+
+- **Strength:** SHOULD
+- **Scope:** implementations of `Deref`, `DerefMut`, `AsRef`, `AsMut`, `Borrow`,
+  and `BorrowMut`
+- **Rule:** Implement `Deref` only when a wrapper transparently and cheaply acts
+  as a stable target type and implicit coercion is unsurprising. Do not use
+  deref coercion to simulate inheritance, expose a convenient inner field, or
+  obtain another type's methods for an ordinary domain newtype.
+- **Alternatives:** Prefer explicit domain methods when the wrapper has distinct
+  semantics or invariants. Use `AsRef` for an infallible, cheap
+  reference-to-reference conversion. Use `Borrow` only when the owned value and
+  borrowed form have equivalent `Eq`, `Ord`, and `Hash` behavior; otherwise use
+  `AsRef` or an explicit accessor.
+- **Mutable access:** Implement `DerefMut`, `AsMut`, or `BorrowMut` only if every
+  mutation available through the target preserves the wrapper's invariants and
+  does not bypass required validation. Read-only transparency does not imply
+  mutable transparency.
+- **Compatibility:** Treat the target type and implicit target-method surface as
+  public API. Changing or removing them can break callers, while wrapper methods
+  can collide with target methods. Dereferencing should not perform surprising
+  work or fail unexpectedly.
+- **Verification:** Test invariant preservation through every exposed mutable
+  conversion. Compile representative downstream coercions and method calls when
+  adding or changing a public implementation.
+- **Exceptions:** Purpose-built smart pointers, guards, storage wrappers, and
+  transparent collection or string wrappers may implement deref traits when
+  they satisfy the complete contract. Preserve a legacy public implementation
+  when compatibility costs outweigh removal, but do not copy it into new APIs
+  without fresh justification.
+
+#### R181. Add generic input bounds for demonstrated flexibility
+
+- **Strength:** SHOULD
+- **Scope:** public function and constructor parameters
+- **Rule:** Use a concrete parameter type or ordinary borrow when one
+  representation is the real contract. Add `impl Trait` or a named generic
+  parameter when its bound accurately states the capability the implementation
+  needs and multiple natural caller forms provide a demonstrated ergonomic or
+  compositional benefit. Do not add generic conversion bounds solely because a
+  public API might someday need another input form.
+- **Conversion contracts:** Use `AsRef` for an infallible, cheap borrowed
+  conversion and `Into` only for an infallible consuming conversion. Use
+  `TryInto` or a named conversion when failure or domain interpretation matters.
+  Document ownership transfer and any allocation, normalization, or validation
+  performed after conversion.
+- **Capability exception:** Prefer a meaningful capability bound such as
+  `IntoIterator` when iteration is genuinely the complete input requirement.
+  This is a narrower semantic contract, not genericity for its own sake.
+- **Costs:** Evaluate inference, call-site readability, the breadth of accepted
+  implementations, code size, compile time, and optimization opportunity.
+  Measure these costs when they decide the design rather than assuming every
+  monomorphization is harmful. A thin generic adapter may normalize input and
+  delegate to a concrete body to contain generated code.
+- **Compatibility:** Treat the bound and parameter form as public API.
+  Argument-position `impl Trait` is an anonymous generic parameter; switching to
+  or from a named parameter can break callers that explicitly specify generic
+  arguments. Adding bounds or narrowing accepted implementations can also break
+  downstream code.
+- **Verification:** Compile documentation tests and external consumer fixtures
+  for each intended caller form, including ambiguous conversion and inference
+  cases. Run semantic-version checks where required.
+- **External-guidance tradeoff:** Rust API Guidelines recommend minimizing input
+  assumptions with generics. This decision retains that advice for real
+  capability boundaries while preferring a smaller concrete surface over
+  speculative convenience.
+
+#### R182. Separate human formatting from machine encoding
+
+- **Strength:** MUST
+- **Scope:** `Display`, `Debug`, `FromStr`, logs, persistence formats, and wire
+  representations
+- **Rule:** Use `Display` for the type's single obvious human-facing
+  representation and `Debug` for programmer-facing diagnostics. Do not parse
+  either output for program logic or silently treat it as a stable persistence,
+  interchange, or protocol format. Use dedicated serialization or encoding APIs
+  for machine contracts.
+- **Stability:** Assume derived and dependency `Debug` output can change.
+  `Display` may intentionally omit precision or state and is not lossless or
+  stable unless its documentation makes that promise. Keep secrets and other
+  sensitive fields out of both surfaces.
+- **Round trips:** When `Display` is intentionally lossless and
+  machine-parseable, document the grammar, normalization, and compatibility
+  policy; make `FromStr` accept it; and test `value.to_string().parse()` across
+  representative and boundary values. Having both traits does not imply they are
+  inverses unless documented.
+- **Multiple formats:** Use named display adapters or explicit formatters when a
+  type has multiple useful textual representations rather than making one
+  context-dependent `Display` implementation.
+- **Structured behavior:** Return variants, fields, error codes, or dedicated
+  encoded values when callers need machine-actionable data. Do not require
+  callers, tests, metrics, or automation to parse presentation text.
+- **Protocol evidence:** A specification may define a canonical textual machine
+  representation. Treat it as a versioned protocol surface and test independent
+  known-answer or interoperability examples because self-round trips can hide
+  paired defects.
+- **Exceptions:** Exact `Display` or `Debug` assertions are appropriate when the
+  representation is the explicitly declared contract or when a focused test is
+  verifying redaction. Otherwise assert semantic structure.
+
+#### R183. Apply `#[non_exhaustive]` selectively for intended source evolution
+
+- **Strength:** SHOULD
+- **Scope:** public enums, structs, and enum variants
+- **Rule:** Use `#[non_exhaustive]` when future variants or fields are an
+  intended public evolution path, preferably from the item's first release. Do
+  not use it as a blanket marker for all public types. Keep genuinely closed
+  domain sets exhaustive, and keep matches within the defining crate
+  meaningfully exhaustive so local additions require deliberate handling.
+- **Compatibility:** The attribute restricts downstream construction and
+  exhaustive matching, so adding it to an existing public item can itself be a
+  breaking source change. Adding a variant to an already non-exhaustive enum can
+  preserve downstream source compatibility, but behavior, layout, FFI,
+  serialization, and generated representations still require review.
+- **Unknown values:** `#[non_exhaustive]` is not a runtime unknown-value
+  mechanism. Protocols and durable formats that must preserve unrecognized
+  values should use an explicit raw-preserving representation such as
+  `Unknown(raw)` and test it independently. Do not infer serializer behavior
+  from the attribute.
+- **Tradeoff:** Closed public domains may intentionally permit exhaustive
+  downstream matches. Open domains trade some downstream exhaustiveness for an
+  explicit source-evolution promise.
+- **Verification:** Compile a downstream consumer fixture or run
+  semantic-version checks when changing a public item; preserve meaningful
+  internal exhaustive matches; test unknown runtime values with independent
+  vectors.
+
+#### R184. Use `#[must_use]` selectively where discard likely indicates a defect
+
+- **Strength:** SHOULD
+- **Scope:** value-returning types, functions, methods, and traits
+- **Rule:** Add `#[must_use]` when discarding the result usually means the caller
+  missed an error, lost a transformation or configuration, or left an operation
+  unfinished. Annotate a type when nearly every value requires observation and
+  an operation when only that call carries the obligation. Include an actionable
+  reason when it improves on the default diagnostic.
+- **Noise control:** Do not annotate APIs mechanically or accept every Clippy
+  candidate. Avoid redundant function annotations for already must-use return
+  types unless a specific message adds useful context. Warning fatigue weakens
+  the signal for consequential mistakes.
+- **Correctness boundary:** `#[must_use]` is a suppressible lint, not enforcement
+  of safety, soundness, transaction completion, resource lifetime, or security.
+  APIs must remain safe when values are ignored. Use explicit discard syntax
+  such as `let _ = value` or `_ = value` when ignoring a result is intentional,
+  while still following R176 for error observability.
+- **Trait placement:** Put method policy on the trait declaration. An attribute
+  added only to a trait implementation method does not enforce the diagnostic.
+- **Compatibility:** Treat adding the attribute as a generally compatible lint
+  change that can still fail direct consumers which deny warnings. Consider
+  representative consumer builds and release notes for broad changes to
+  established APIs.
+- **Exceptions:** Cheap queries, ordinary returned data, internal helpers,
+  generated code, and side-effecting operations may remain unannotated when
+  intentional discard is common or the warning supplies no useful correction.
+- **Verification:** Exercise an intentionally ignored call under
+  `unused_must_use`; run the curated Clippy policy; inspect downstream consumers
+  when broadening an established public diagnostic contract.
+
+#### R185. Name Cargo features for capability or ecosystem truthfully
+
+- **Strength:** SHOULD
+- **Scope:** public Cargo features for optional capabilities and ecosystem
+  integrations
+- **Rule:** Use a capability name such as `async` or `parallel` only when the
+  enabled API, required runtime or pool, observable semantics, and compatibility
+  promise are genuinely ecosystem-neutral. Use the concrete ecosystem name such
+  as `tokio`, `rayon`, or `serde` when callers opt into that ecosystem's types,
+  traits, runtime, pool, or semantics.
+- **Manifest design:** Keep features positive and additive, avoid empty
+  `use-*`/`with-*` wording, and use `dep:dependency` when an optional dependency
+  is an implementation detail that should not create an implicit public feature.
+  Document what every public feature enables, including dependency and runtime
+  consequences.
+- **Compatibility:** Feature names and promised behavior are public API. Adding
+  one is usually compatible; removing, renaming, or gating existing public
+  behavior is normally breaking. Use a documented forwarding alias for staged
+  migrations when compatibility policy requires it.
+- **Tradeoff:** A capability feature may have a private implementation dependency
+  only when consumers do not inherit that dependency's API, runtime ownership,
+  or observable semantics. Do not use a broad name merely because an
+  implementation might become neutral later.
+- **Verification:** Test meaningful features independently plus default,
+  no-default, and interaction-prone combinations. Inspect activation with
+  `cargo tree -e features`; do not treat an all-features build as sufficient
+  evidence.
+
+#### R186. Return async work for the caller to drive by default
+
+- **Strength:** SHOULD
+- **Scope:** reusable async libraries, drivers, streams, and runtime-specific
+  adapters
+- **Rule:** Prefer returning an async result, `Future`, `Stream`, or explicit
+  driver future so the caller decides whether and where to await, compose, race,
+  or spawn it. Keep the reusable core free of ambient runtime lookup and private
+  runtime creation.
+- **Runtime adapters:** A Tokio-specific adapter may return work that requires
+  Tokio, but must name and document that coupling. Spawn internally only when a
+  background lifecycle is intrinsic to the abstraction and returning the work
+  cannot express its supervision. Accept an explicit caller-provided
+  `tokio::runtime::Handle` or spawner rather than calling `Handle::current` or
+  capturing an ambient runtime implicitly.
+- **Lifecycle:** Return or retain a task or supervisor handle and document who
+  observes completion, output, errors, panics, cancellation, and cleanup. Define
+  whether drop aborts, joins, requests shutdown, detaches, or leaves work
+  running. Do not discard a join handle unless another documented supervisor
+  owns those responsibilities.
+- **Blocking work:** Apply the same ownership rule to `spawn_blocking` and local
+  executors. Keep sustained DSP compute on the repository's explicit compute
+  path rather than executor blocking pools.
+- **Exceptions:** An application crate may own a fixed ambient runtime under
+  local policy. A framework callback may rely on a guaranteed entered runtime or
+  local executor when that requirement and its panic behavior are explicit.
+- **Verification:** Construct reusable APIs without ambient runtime context;
+  exercise explicit-runtime adapters; deterministically test completion,
+  cancellation, shutdown, handle drop, errors, panics, and cleanup.
+
+#### R187. Specify queue semantics before selecting a queue implementation
+
+- **Strength:** MUST
+- **Scope:** production queues, channels, mailboxes, admission buffers, and
+  reusable-buffer pools
+- **Rule:** Define the required behavior before choosing a crate or primitive:
+  bounded capacity and its unit, full-queue result, ordering, producer and
+  consumer multiplicity, blocking or async wakeup behavior, fairness where it
+  matters, cancellation, closure, shutdown and drain behavior, buffer return,
+  and observability. Shared Rust guidance defines these semantics but does not
+  bless one queue crate for every repository.
+- **Repository selection:** During onboarding or a material dependency review,
+  evaluate the candidate against the repository's runtime, synchronization
+  model, targets, MSRV, dependency and unsafe policy, maintenance requirements,
+  and the exact semantics above. Record the selected implementation and any
+  semantic mismatch or adapter responsibility locally.
+- **Domain boundary:** When drop-oldest, coalescing, recycling, metadata
+  attachment, or multi-step shutdown is not one atomic operation of the selected
+  primitive, encapsulate it behind a small domain-specific queue type. That type
+  owns the race behavior and returns explicit outcomes such as accepted,
+  replaced, rejected, closed, or backpressured. Do not scatter ad hoc
+  `try_send`, receive, and retry sequences across producers and consumers.
+- **Why:** Similar-looking channel APIs make different guarantees, and a
+  repository's runtime, target, and dependency constraints legitimately change
+  the best implementation. A narrow wrapper can make composite behavior
+  consistent without inventing a universal queue framework.
+- **Exceptions:** Direct use is preferable when one primitive already expresses
+  the complete local contract clearly and the behavior is not duplicated. A
+  repository may standardize one implementation locally after review; that
+  choice does not become an organization-wide default.
+- **Verification:** Test below, at, and above capacity; exact ordering and
+  overload outcomes; closure and shutdown; buffer return; discontinuity or
+  coalescing metadata; and relevant concurrent races. Do not infer composite
+  atomicity, fairness, cancellation safety, or wakeup behavior from an API name.
+
+#### R188. Keep streaming and receiver vocabulary semantically precise
+
+- **Strength:** SHOULD
+- **Scope:** SDR, DSP, streaming, receiver, and protocol-facing APIs,
+  documentation, tests, metrics, and reviews
+- **Rule:** Inspect and follow the repository glossary. Where no repository term
+  overrides it, use the reviewed `libsdr` distinctions: a sample is one scalar
+  or complex measurement at one instant; an IQ sample is one complex I/Q
+  measurement; native IQ combines a source representation with normalization
+  metadata; a capture may span blocks and is not necessarily gap-free; a chunk
+  is one call-sized piece of a continuous stream; a block is a complete
+  contiguous span and ownership-transfer unit whose continuity-sensitive uses
+  bind explicit start metadata; and a dwell is an application-selected
+  observation interval rather than a DSP buffer.
+- **Stage boundaries:** Keep channelization, demodulation, symbol recovery,
+  synchronization, detection, and decoding distinct. A selected channel carries
+  a rate/passband/guard input contract. Demodulation produces a modulation
+  waveform, recovery produces symbol decisions, synchronization matches or
+  tracks symbol patterns, detection chooses among supported hypotheses or
+  complete receiver paths, and decoding frames, corrects, validates, and
+  interprets wire structure.
+- **Evidence claims:** Use received for exact pre-correction evidence and
+  recovered for post-recovery or post-FEC values, qualifying the layer where
+  needed. Do not let configuration fabricate observation evidence. A detector
+  reports; retuning, persistence, and policy belong to the caller or an
+  explicitly broader controller.
+- **Repository mapping:** Define ambiguous sample units, multichannel frames,
+  algorithmic blocks, and local type mappings. Repository terminology has
+  precedence. Treat a public vocabulary change as a coordinated API migration
+  across code, docs, examples, tests, errors, metrics, snapshots, and known
+  consumers rather than a mechanical rename.
+- **RSL adoption:** RSL repositories using or interoperating with `libsdr`
+  adopt its final `IqSample`, `IqBlock`, `Ci16Sample`, receiver/evidence
+  vocabulary, title-cased acronym convention, `as_u64` newtype accessors, and
+  established `Options`/`Profile`/`Spec`/`Config`/`Policy` suffix meanings unless
+  a higher-precedence local or specification-owned term applies.
+- **Why:** Adjacent pipeline concepts can share the same underlying Rust types
+  while carrying different timing, continuity, evidence, and ownership
+  promises. Stable language makes those contracts reviewable.
+- **Verification:** Review public vocabulary and source-to-guide consistency;
+  test chunking and continuity claims; run semantic-version and known-consumer
+  checks for renames.
+- **Source:** Owner-approved extraction from the proprietary RSL `libsdr`
+  `consolidated-work` branch at
+  `15dc4625e1dea2ae64e800a83ade78f24090be36`, reviewed 2026-07-24.
+
+#### R189. Bind metadata at continuity-sensitive stream boundaries
+
+- **Strength:** MUST
+- **Scope:** sample acquisition, capture, queues, streaming transports,
+  continuity-sensitive stages, and rate- or channel-changing boundaries
+- **Rule:** Do not force every data buffer to carry universal metadata. A simple
+  finite or offline block may own only contiguous samples when its context is
+  explicit. When an API claims stream position, adjacency, sample rate, channel
+  geometry, or discontinuity behavior, bind its payload to the metadata required
+  for that claim so safe callers cannot accidentally reorder, discard, or
+  misassociate them.
+- **Metadata selection:** A continuity-aware block normally identifies its
+  stream epoch or restart, first sample and index unit, sample rate, and
+  discontinuity state. Include block sequence, channel selection, timestamps,
+  or diagnostic timing only when the contract needs them. Do not create one
+  universal envelope filled with irrelevant optional fields.
+- **Kernel boundary:** Let kernels borrow samples plus only the narrow context
+  required for computation. The enclosing stream stage retains responsibility
+  for metadata propagation and transformation. Do not place authoritative
+  payload and metadata in independent queues or separately mutable records.
+- **Provenance and transformations:** Metadata is established by the boundary
+  that knows it, not invented downstream. Incomplete or discontinuous data must
+  not use an accessor that promises a complete continuous block. Rate-changing,
+  channel-changing, length-changing, and time-mapping stages construct correct
+  output metadata rather than copying stale values.
+- **RSL adoption:** In `libsdr`, `IqBlock` remains suitable data-only finite
+  storage. Timed sample buffers bind complete sample spans to
+  `SampleBlockStart`/`SampleBlockMetadata` and discontinuity state;
+  selected-channel buffers bind samples to their channel-selection contract.
+- **Why:** Universal metadata bloats simple kernels and invites meaningless
+  optionals, while separate parallel metadata can drift from the data it
+  describes. Binding only at semantic boundaries preserves both ergonomics and
+  correctness.
+- **Verification:** Exercise complete, partial, discontinuous, reordered,
+  restarted, rate-changed, and channel-changed paths. Use API or compile-fail
+  tests where types are intended to prevent separation.
+
+#### R190. Require a complete contract from shared processing traits
+
+- **Strength:** SHOULD
+- **Scope:** shared traits and trait objects for DSP, audio, streaming, parsing,
+  and receiver stages
+- **Rule:** Do not define a universal processing trait. Introduce a shared trait
+  only for a demonstrated composition boundary whose real implementations
+  perform one coherent operation. The contract defines input representation and
+  ownership, output ownership or destination, consumed and produced units,
+  output capacity or size bounds, latency, internal buffering, empty-input and
+  arbitrary-chunk behavior, reset, discontinuity, flush/end-of-stream, errors,
+  and post-error state. Mark a concern inapplicable rather than leaving it
+  accidentally undefined.
+- **Dispatch:** Use concrete types, generics, and associated types for static
+  composition. Prefer an enum for a closed runtime-selected set. Reserve trait
+  objects for genuinely runtime-configurable or open heterogeneity such as
+  plugins, runtime stage reordering, or application-selected stage types. Keep
+  dynamic dispatch outside measured per-sample kernels where practical and
+  measure it when relevant.
+- **Object safety and adapters:** Decide object safety deliberately. A dynamic
+  adapter may normalize richer concrete APIs but must preserve counts, bounds,
+  metadata, errors, and lifecycle. Do not allocate, clone buffers, weaken error
+  types, or erase discontinuity behavior merely to fit object-safe dispatch.
+- **Compatibility:** Public required methods, associated types, supertraits,
+  object-safety, implementor freedom, and defaults are API commitments. Seal the
+  trait when downstream implementations are not supported; otherwise compile an
+  external-style implementor.
+- **Why:** A small common denominator can make incompatible stage semantics look
+  interchangeable and move correctness obligations into undocumented caller
+  convention. Purpose-specific capabilities retain useful composition without
+  flattening the domain.
+- **Verification:** Run one shared conformance suite against every
+  implementation, including one-shot/chunked, reset, flush, discontinuity,
+  output-bound, and error-state behavior as applicable. Compare concrete and
+  dynamic paths for correctness and measured cost when both exist.
+
+#### R191. Represent exact rate relationships as reduced output/input rationals
+
+- **Strength:** MUST
+- **Scope:** decimators, interpolators, rational resamplers, framers,
+  clock-domain conversions, and cross-rate metadata
+- **Rule:** Represent an exact constant rate relationship as a positive reduced
+  rational in the explicit direction `output/input`. Name numerator and
+  denominator for that direction, or document the conventional `L/M` relation
+  `output_rate = input_rate × L/M`. Preserve absolute input/output rates as
+  separate domain values and validate agreement when both forms are supplied.
+- **Arithmetic:** Reject zero terms, reduce by the greatest common divisor, and
+  use checked integer arithmetic for sizes, capacities, positions, durations,
+  and metadata. Do not use floating point to establish exact bounds. Return an
+  error for overflow or unrepresentable results rather than wrapping, silently
+  saturating, or truncating an allocation.
+- **State-aware bounds:** Sizing APIs account for fractional phase, buffered
+  input, pending output, startup latency, and flush/tail behavior. Provide
+  equivalents of `max_output_for(input_len)` and
+  `input_needed_for(output_len)` where callers allocate or schedule work, and
+  name whether each result applies to current, reset, steady, or final state.
+  Return actual consumed/produced counts when processing does not make them
+  otherwise unambiguous.
+- **Chunking and mapping:** Carry fractional phase rather than rounding each
+  chunk independently. Apply the same relationship, with declared latency and
+  reference offsets, when mapping positions and discontinuities.
+- **Variable-rate exception:** Adaptive/asynchronous conversion exposes its time
+  base, control or estimation state, supported range, and conservative bounds;
+  it must not present an estimate as an exact rational.
+- **RSL adoption:** `libsdr` documents `L` as interpolation/output numerator and
+  `M` as decimation/input denominator in `F_out = F_in × L/M`. Preserve that
+  wording. Treat reduction, checked state-aware sizing, and explicit bound APIs
+  as requirements to verify rather than assumptions inferred from the type name.
+- **Why:** Directionless factors and per-chunk floating-point rounding create
+  reciprocal mistakes, capacity errors, and chunk-dependent sample counts.
+- **Verification:** Test zero, reduction, identity, near-overflow, floor/ceil
+  boundaries, every retained phase, one-shot versus arbitrary partitions,
+  flush, discontinuity, and absolute-rate/metadata consistency.
+
+#### R192. Separate reset from finite-stream completion
+
+- **Strength:** MUST
+- **Scope:** stateful streaming processors, filters, resamplers, framers,
+  encoders, decoders, parsers, and pipelines with buffered or delayed output
+- **Reset:** Reset discards buffered input, pending output, fractional phase,
+  history, and stream-local progress without emitting it. It restores the
+  documented initial state while retaining configuration unless stated
+  otherwise. Empty input does not imply reset or end-of-stream.
+- **Finish:** `finish`, `close`, or a terminal `flush` declares finite
+  end-of-input. It emits every remaining output justified by one explicit tail
+  policy or reports the declared incomplete-tail error. The policy states
+  whether to drop an incomplete tail, emit a semantically valid partial result,
+  pad or synthesize input, or fail.
+- **Completed state:** Completion must not duplicate output when repeated. It is
+  either idempotent after all output is observed or reports an already-finished
+  state. Further input is rejected until reset or explicit reinitialization.
+- **Provenance:** Padding, extrapolation, filter warm-down, and other synthetic
+  tail material must not be presented as received input. Retain a valid-input
+  length, provenance marker, degraded interval, or equivalent evidence when a
+  consumer could otherwise confuse them.
+- **Live streams and shutdown:** Ordinary chunks in an infinite or live stream
+  do not imply completion. At shutdown, the owner explicitly chooses to
+  finish/drain the accepted finite prefix or discard/reset pending state. An
+  operation that merely exposes currently ready output is named separately from
+  finite completion.
+- **Why:** Conflating reset, ready-output draining, and end-of-input loses valid
+  tail output, leaks state across streams, duplicates output, or fabricates the
+  provenance of padded samples.
+- **Verification:** Compare reset with a fresh instance and prove it emits
+  nothing. Test one-shot and arbitrarily chunked completion, every material tail
+  length, repeated completion, input after completion, reset-and-reuse,
+  synthetic-tail provenance, and both declared shutdown choices.
+- **Acceptable exceptions:** A stateless stage with no buffered or delayed
+  output may omit both operations. A stage with no possible tail may make
+  completion a documented no-op state transition. Protocol or transactional
+  APIs may use domain terms such as `finalize`, `commit`, or `close` while
+  preserving the semantic distinction.
+
+#### R193. Name monotonic timing events and export durations
+
+- **Strength:** MUST
+- **Scope:** streaming metadata, queue and pipeline instrumentation, latency
+  measurement, diagnostics, and APIs exposing monotonic time
+- **Events:** Do not attach an ambiguous `timestamp` or `Instant` to every
+  buffer. Name the event, such as acquisition start or completion, enqueue
+  acceptance, dequeue receipt, processing start or completion, successful
+  handoff, or transmission start or completion, and capture time at that event.
+  An attempt or pre-await sample is not successful completion.
+- **Clock domains:** Use sample positions, rates, epochs, and discontinuities as
+  authoritative continuity. Keep hardware/source time, monotonic operational
+  time, and wall-clock correlation distinct, stating clock, epoch, and
+  uncertainty where applicable.
+- **Representation:** Treat `std::time::Instant` and equivalent monotonic
+  handles as process-local and opaque. Compare named endpoints from the same
+  clock domain, then expose, aggregate, or persist the resulting `Duration`,
+  counters, or histograms. Do not serialize an `Instant`, use it as a
+  cross-process timestamp, or imply a calendar epoch. Prefer checked duration
+  calculation when reversed ordering or clock anomalies are material evidence.
+- **Placement and cost:** Keep operational timing in diagnostic sidecars or
+  boundary instrumentation unless the consumer's semantic contract needs it.
+  Avoid unused per-payload and per-hot-loop timing. Measure timing overhead when
+  it could perturb the latency being observed and use bounded sampling or
+  aggregation when appropriate.
+- **Why:** A generic timestamp hides which latency is measured, pre-send capture
+  can mislabel blocking time, and an opaque monotonic handle is not a portable
+  event time. Distinct clock domains prevent diagnostics from masquerading as
+  sample continuity.
+- **Verification:** Use a fake clock or deterministic event source to test
+  endpoint ordering and duration labels. Exercise blocked, failed, and
+  successful handoffs; reject process-local handles from persisted schemas; and
+  measure instrumentation overhead on relevant hot paths.
+- **Acceptable exceptions:** Authoritative hardware or protocol timestamps
+  remain semantic metadata under their own clock contract. Cross-process
+  correlation may use a declared external clock with explicit non-monotonic and
+  uncertainty handling. `no_std` code may use a supplied tick source or clock
+  trait with equivalent event and scope semantics.
+
+#### R194. Keep library observability typed and caller-routed
+
+- **Strength:** SHOULD
+- **Scope:** reusable libraries, applications, services, logging, metrics,
+  operational snapshots, structured diagnostics, and telemetry
+- **Core contract:** Define operational facts before choosing an ecosystem.
+  Expose only the typed, bounded events, snapshots, counters, gauges, or
+  histograms that real consumers need. Do not invent a universal observability
+  facade or backend trait without demonstrated substitution.
+- **Correctness boundary:** Logs and aggregate metrics supplement but never
+  replace typed errors, operation results, protocol evidence, per-stream
+  discontinuities, or other correctness-bearing state. Emitting a log or metric
+  does not handle an error.
+- **Logging recommendation:** Prefer `tracing` when a repository chooses
+  structured Rust logging and diagnostics, subject to local dependency, MSRV,
+  feature, performance, and target policy. A reusable library may instrument
+  directly with `tracing` or expose an optional adapter, but it must not install
+  a global subscriber or exporter. Applications own `tracing-subscriber`,
+  filtering, formatting, export, and process initialization. `tracing` is
+  recommended, not required; retain an established `log` or other local
+  ecosystem when migration lacks sufficient benefit.
+- **Metrics and snapshots:** Do not mandate `metrics`, OpenTelemetry, or another
+  exporter across repositories. Let applications adapt typed core evidence.
+  Define each instrument's unit, counter monotonicity and
+  reset/wrap/saturation behavior, gauge meaning, histogram population and
+  buckets, bounded label set and cardinality, aggregation scope, concurrency
+  consistency, and export interval where relevant.
+- **Cost and data policy:** Avoid unbounded labels and per-item hot-path
+  logging. Use filtering, sampling, aggregation, or boundary events; measure
+  material instrumentation overhead. Apply repository policy before recording
+  secrets, payloads, personal data, or high-volume evidence.
+- **Why:** Backend-neutral typed evidence remains testable and reusable, while
+  application-owned export avoids global initialization conflicts and forced
+  dependency ecosystems. A recommended structured logger gives new repositories
+  a good default without erasing legitimate constraints.
+- **Verification:** Test typed snapshots and counter semantics, operation
+  equivalence with instrumentation disabled or no subscriber installed,
+  enabled instrumentation, relevant feature matrices, bounded cardinality,
+  application subscriber initialization, sensitive fields, and hot-path cost.
+- **Acceptable exceptions:** Applications may standardize a subscriber,
+  recorder, or exporter locally. Frameworks may require their facade.
+  `no_std`, embedded, FFI, and externally constrained libraries may use compact
+  callbacks or snapshots. A second proven backend may justify a narrow adapter
+  trait.
+
+#### R195. Keep protocol policy separate from fresh validation evidence
+
+- **Strength:** MUST
+- **Scope:** built and parsed protocol messages, validation reports, integrity
+  and correction status, trusted wrappers, mutation APIs, and downstream
+  operations that require validated input
+- **Rule:** Treat construction or parsing policy as input to the operation, not
+  as part of message identity. Do not normally store that policy in every built
+  value or include it in equality, hashing, or wire encoding. Preserve
+  validation evidence separately when callers need to know what was checked and
+  observed.
+- **Evidence states:** Distinguish passed, failed, skipped or not checked, and
+  inapplicable checks wherever those states change caller behavior. Preserve
+  protocol-native evidence such as received integrity status, correction
+  outcome, unknown or reserved representation, and received versus corrected
+  data when the use case needs it. Use a `ValidationReport`, status companion,
+  immutable validated form, or domain-specific equivalent rather than treating
+  the builder policy as message data.
+- **Trust and mutation:** An API that requires trusted input validates at its
+  boundary or accepts a validated domain type or wrapper. The validated form
+  makes unrestricted safe mutation impossible or exposes only
+  invariant-preserving changes. Unrestricted mutation invalidates prior
+  evidence and requires revalidation; a stale `validated` flag is a defect.
+- **Persistence:** Serialize evidence only under an explicit storage,
+  interchange, audit, or protocol contract. Record enough specification and
+  validation-version context to interpret persisted results. Do not persist an
+  ephemeral construction policy accidentally.
+- **Why:** A message's semantic and wire identity should not depend on how a
+  caller happened to construct it, while consumers that enforce trust,
+  investigate damaged traffic, or measure correction still need precise,
+  representation-bound evidence.
+- **Verification:** Test equality, hashing, and encoding independently of
+  construction policy; passed, failed, skipped, and inapplicable evidence
+  states; trusted-input API boundaries; mutation invalidation or compile-time
+  prevention; revalidation; received and corrected evidence; and persistence
+  compatibility when reports are serialized.
+- **Acceptable exceptions:** An immutable message may retain current validation
+  status when it is a meaningful domain property. Inspection, forensic,
+  safety-critical, or regulated systems may retain both the policy and a full
+  report as provenance, provided the record remains distinct from message
+  identity and tied to the exact checked representation. A tiny strict-only
+  builder may need no report type.
+
+#### R196. Preserve received evidence across protocol correction
+
+- **Strength:** MUST
+- **Scope:** decoders with checksums, CRCs, FEC, erasure recovery, damaged-frame
+  inspection, channel-quality measurement, and interoperability diagnostics
+- **Rule:** When received wire data is retained as evidence, keep the exact
+  bytes or symbols immutable and lossless. Produce corrected or recovered data
+  separately and keep it associated with the same frame and report. Do not
+  overwrite received evidence in place. Use `received`, not `original`, unless
+  the transmitter's original representation is independently known.
+- **Status model:** Keep scoped integrity observations separate from correction
+  outcomes. Represent applicable states such as not checked, passed, and failed
+  for the named integrity check, and not attempted, not needed, corrected, and
+  uncorrectable for the named recovery operation. Use separate enums, a
+  structured report, or an equivalent protocol-specific type. Include
+  correction counts, locations, units, confidence, or unknown extent only when
+  the implementation can report them truthfully.
+- **Meaning boundary:** Successful correction does not make the received
+  representation valid, prove recovery of unknowable transmitter-original
+  data, or establish semantic validity. An integrity pass likewise does not
+  imply that semantic checks passed. Preserve each observation under its
+  accurate name and scope.
+- **Consumer surfaces:** Inspection and quality-analysis APIs may expose
+  received data, recovered data, and the complete report. Ordinary consumers
+  may receive the recovered semantic value plus the status needed by their
+  trust policy. Treat dropping received evidence as deliberate information loss,
+  not as permission to relabel recovered output.
+- **Verification:** Use known-answer tests for exact received and recovered
+  forms; exercise every applicable integrity and correction state; verify
+  correction extents and units; prove received evidence remains unchanged;
+  prove correction success does not rewrite integrity history; and prevent
+  cross-frame association or stale evidence after mutation.
+- **Acceptable exceptions:** A strict decoder that rejects every damaged input
+  and has no inspection or quality consumer need not retain received bytes.
+  In-place correction is acceptable in a measured constrained path only when
+  the API makes that information loss explicit and no promised consumer needs
+  received evidence.
+
+#### R197. Make incremental parser outcomes and consumption explicit
+
+- **Strength:** MUST
+- **Scope:** stateless parsers, incremental decoders, stream framers, buffered
+  protocol readers, resynchronization, and partial-delivery tests
+- **Rule:** Distinguish complete, incomplete, and malformed outcomes. Treat
+  incomplete input as a normal request for more data rather than malformed input
+  or an opaque parse failure. Keep the concrete Rust result type
+  repository-specific when these semantics remain explicit.
+- **Stateless contract:** A complete result reports its exact consumed prefix
+  when trailing data is allowed. An incomplete result consumes nothing; the
+  caller retains the full input for retry. If the parser reports how much more
+  data it needs, state whether that value is exact or a lower bound and report
+  only what the format can determine truthfully.
+- **Stateful contract:** A stateful decoder may accept and retain a prefix it
+  owns. Distinguish bytes accepted into internal storage from bytes belonging to
+  a completed frame, bound retained input, and prevent retry from duplicating or
+  losing data.
+- **Malformed and recovery:** Keep the failure offset separate from a prefix the
+  caller may discard safely. Report a discard or resynchronization count only
+  when a protocol-defined marker, length boundary, or other documented
+  invariant justifies it. Otherwise let explicit repository policy choose
+  recovery.
+- **Progress and safety:** Do not spin indefinitely without accepting input,
+  requesting more input, consuming a justified prefix, or returning control.
+  Continue enforcing non-disableable size, checked-arithmetic, nesting, and
+  allocation limits while awaiting completion.
+- **Verification:** Split valid frames at every practical byte boundary and
+  compare incremental retry with one-shot parsing. Test zero stateless
+  consumption on incomplete input, stateful accepted-versus-completed counts,
+  retained-buffer limits, malformed offsets, justified resynchronization,
+  trailing data, repeated calls, and zero-progress prevention.
+- **Acceptable exceptions:** A whole-buffer fixed-size parser may use ordinary
+  `Result` when truncation remains directly and unambiguously distinguishable in
+  its error type. An adopted parsing framework may use equivalent outcome and
+  consumption vocabulary.
+
+#### R198. Give hostile-input parsing finite resource budgets
+
+- **Strength:** MUST
+- **Scope:** variable-size frames and messages, recursive or nested formats,
+  length- and count-prefixed fields, decoded expansion, incremental buffering,
+  allocation, and attacker-influenced parser work
+- **Rule:** Define finite limits for every applicable resource dimension,
+  including input or frame bytes, field or item counts, nesting or recursion,
+  decoded expansion or output bytes, retained incomplete input, and allocation.
+  Derive and document repository defaults from protocol maxima and deployment
+  needs rather than accidental integer or container limits.
+- **Policy boundary:** Keep resource budgets separate from selectable
+  protocol-validity checks. Accept caller overrides only through explicit
+  validated configuration whose values remain finite. Untrusted fields may be
+  compared with a budget but never select, disable, or expand it.
+- **Enforcement:** Check declared sizes, counts, cumulative totals, and
+  arithmetic before indexing, reserving, allocating, recursing, or performing
+  proportional work. Bound per-item and aggregate state where either can grow.
+  Return a structured limit-exceeded result instead of waiting for, retaining,
+  or allocating an attacker-selected amount.
+- **Lifecycle and ownership:** State whether each limit applies per field,
+  frame, message, connection, decoder instance, or time window and when it
+  resets. Incremental calls cannot evade an aggregate limit. Record defaults,
+  units, rationale, hard protocol maxima, deployment overrides, and the owner of
+  each choice in repository configuration.
+- **Verification:** Test immediately below, at, and above every limit;
+  aggregate-versus-per-item growth; checked arithmetic overflow; expansion;
+  nesting and recursion; incremental retained input; reset and reconfiguration;
+  every validation-policy combination; and attempts by untrusted input to alter
+  the active budget.
+- **Acceptable exceptions:** Fixed-size, statically bounded formats need no
+  runtime policy object when their effective limits are evident and tested.
+  Embedded systems may use compile-time capacities. An authoritative protocol
+  maximum may be a non-configurable hard limit.
+
+#### R199. Preserve extensible unknown wire values by default
+
+- **Strength:** SHOULD
+- **Scope:** extensible protocol discriminants, proxies, inspectors, gateways,
+  persisted wire evidence, and forward-compatible decoders
+- **Rule:** Preserve unknown non-reserved values losslessly by default when the
+  protocol is extensible or consumers proxy, inspect, persist, or round-trip
+  them. Keep unknown, reserved, malformed, unsupported, and semantically
+  rejected states distinct. Continue rejecting reserved values during strict
+  construction unless a named protocol-testing policy permits them.
+- **Verification:** Test raw unknown preservation, verbatim re-encoding,
+  strict reserved rejection, and every explicitly lossy semantic view.
+- **Acceptable exceptions:** A deliberately closed API may reject unknown values
+  explicitly. A normalized lossy view may discard them when its inability to
+  round-trip is documented.
+
+#### R200. Build protocol corpora from attributed independent evidence
+
+- **Strength:** MUST
+- **Scope:** fuzz seeds, known-answer vectors, captured traffic,
+  interoperability fixtures, and minimized protocol regressions
+- **Rule:** Combine specification-derived vectors, independently implemented
+  examples, synthetic boundaries, licensed or internally owned captures, and
+  minimized regressions as available. Record origin, revision, license or
+  redistribution posture, transformations, expected result, and size limits.
+  Keep a short committed smoke corpus separate from sustained or externally
+  stored corpora.
+- **Verification:** Validate corpus metadata, expected outcomes, fuzz-target
+  compilation, smoke execution, and regression promotion.
+- **Acceptable exceptions:** A format with an exhaustively testable input space
+  may not need a fuzz corpus, but still needs independent conformance evidence.
+
+#### R201. Pin adopted codec implementations in repository policy
+
+- **Strength:** MUST
+- **Scope:** adopted protocol libraries, codec frameworks, `bitsandbytes`, and
+  reference implementations used as executable evidence
+- **Rule:** Record the exact released version or source revision used by each
+  repository, its selected features, compatibility expectations, and reviewed
+  conventions. The shared skill records the selection method and reference
+  lineage rather than imposing one global crate version on every repository.
+- **Verification:** Inspect manifests and lockfiles, feature graphs, local
+  adoption records, and conformance tests at the pinned version.
+- **Acceptable exceptions:** A workspace path dependency may use the exact
+  workspace revision and version contract instead of a registry release.
+
 ### Scope distinctions and tensions
 
 - **Beginner guidance versus expert directness:** use progressive documentation,
@@ -1934,6 +3001,87 @@ The owner confirmed the following additional choices in refinement round 2:
 - Canonical glossary location and vocabulary-change process.
 - Placement and format for longer guides outside module rustdoc.
 - ADR threshold and storage convention.
+
+## Post-interview synthesis: CodeAesthetic readability
+
+The owner approved extracting general development guidance from the
+CodeAesthetic video catalog while explicitly rejecting the blanket conclusion
+of `Don't Write Comments`. The channel is advisory. The repository's language,
+Rust contracts, measured evidence, and the existing preference record remain
+authoritative.
+
+#### R202. Treat shallow control flow as a readability signal, not a law
+
+- **Strength:** SHOULD
+- **Scope:** implementation control flow and function extraction
+- **Rule:** Use guard clauses, `let ... else`, and concept-level helpers when
+  they keep preconditions and the successful path visible. Do not impose a
+  numeric indentation or function-length limit, ban every `else`, or fragment a
+  cohesive `match` or state transition merely to look flatter.
+- **Why:** Visual shape can reduce the number of conditions a reader must retain,
+  but a slogan is not a substitute for preserving one understandable decision.
+- **Sources:** CodeAesthetic `Why You Shouldn't Nest Your Code`, qualified by
+  existing R152-R154 and R159.
+
+#### R203. Prefer domain vocabulary over blanket naming prohibitions
+
+- **Strength:** SHOULD
+- **Scope:** identifiers, type names, modules, and public vocabulary
+- **Rule:** Name a value or component for its domain role and use unit types or
+  unit suffixes when units are otherwise ambiguous. Avoid vague dumping grounds
+  such as broad `utils`, `common`, or `helpers` modules. Preserve conventional
+  Rust, protocol, mathematical, and repository abbreviations when expanding
+  them would make the vocabulary less familiar or precise.
+- **Why:** A name should reduce required context. Both opaque shorthand and
+  mechanically expanded established terms can make code harder to understand.
+- **Sources:** CodeAesthetic `Naming Things in Code`, qualified by R156-R158 and
+  the RSL/libsdr vocabulary record.
+
+#### R204. Make useful dependency boundaries explicit without trait inflation
+
+- **Strength:** SHOULD
+- **Scope:** components that use replaceable services, policies, resources, or
+  algorithms
+- **Rule:** Pass dependencies into a component when that separates construction
+  policy from use, clarifies ownership, or supports demonstrated configuration,
+  substitution, or testing. Choose a concrete type, generic, enum, closure, or
+  trait from the real variability and lifetime contract. Do not create an
+  interface framework or one trait per dependency solely to enable mocks.
+- **Why:** Explicit dependencies can localize configuration and effects, while
+  unnecessary interfaces replace hidden coupling with public contract and
+  dispatch complexity.
+- **Sources:** CodeAesthetic `Dependency Injection, The Best Pattern`, qualified
+  by R3, R17, R101, R175, R179, and R181.
+
+#### R205. Charge every abstraction for the coupling it creates
+
+- **Strength:** SHOULD
+- **Scope:** shared interfaces, traits, helpers, modules, and generic frameworks
+- **Rule:** Add an abstraction when it names a domain concept, contains an
+  invariant, removes meaningful duplication, or separates a decision that must
+  vary independently from its use. Identify the shared contract and the changes
+  it couples. Prefer small duplication when the proposed common boundary joins
+  concepts that do not evolve together.
+- **Why:** Reuse and substitution can simplify change, but a shared contract also
+  constrains inputs, implementors, ownership, and future evolution.
+- **Sources:** CodeAesthetic `Abstraction Can Make Your Code Worse` and `The
+  Flaws of Inheritance`, translated to Rust composition and qualified by R3,
+  R17, R154, R175, and R179-R181.
+
+#### R206. Require workload evidence before trading clarity for speed
+
+- **Strength:** MUST
+- **Scope:** performance-motivated review and implementation
+- **Rule:** Do not demand a less clear expression, removed helper boundary,
+  different collection, allocation trick, or lower-level implementation based
+  only on a general speed claim. Identify the shipped workload and requirement,
+  profile when applicable, measure a baseline, preserve correctness evidence,
+  and measure the proposed change. Prefer material algorithm, data-structure,
+  and data-layout improvements before low-impact syntax folklore.
+- **Why:** Optimizer behavior and real workloads routinely invalidate
+  context-free performance claims.
+- **Sources:** CodeAesthetic `Premature Optimization`, qualified by R5,
+  R35-R43, R47, R110, R133, R172, and R174.
 
 ## Round 6: Dependencies, linting, and change discipline
 
@@ -2216,11 +3364,19 @@ The owner confirmed the following additional choices in refinement round 2:
   trusted devices.
 - Check lengths, counts, offsets, arithmetic overflow, recursion or nesting
   depth, and allocation limits before indexing or reserving memory.
+- Declare finite repository defaults for applicable frame bytes, field counts,
+  nesting, decoded expansion, retained incomplete input, and allocation. Keep
+  caller overrides explicit and finite; untrusted input cannot alter the active
+  budget.
 - Separate transport buffering, framing, structural decoding, integrity checks,
   semantic validation, and application interpretation conceptually.
 - Simple protocols may combine layers in code, but their responsibilities and
   error locations remain distinguishable.
-- Distinguish incomplete input from malformed input.
+- Distinguish complete, incomplete, and malformed outcomes. Stateless incomplete
+  results consume nothing; stateful decoders report accepted and completed bytes
+  separately.
+- Keep parse failure locations separate from prefixes callers may safely
+  discard.
 - Resynchronize only when the protocol provides a reliable marker or boundary;
   choose scan, discard, or connection termination through repository-local
   policy.
@@ -2236,9 +3392,21 @@ The owner confirmed the following additional choices in refinement round 2:
 
 #### Validation lifecycle
 
-- Give the builder a named validation policy with all checks enabled by default.
+- Give the builder a strict typed validation policy with all protocol checks
+  enabled by default.
+- Group relaxable checks by domain meaning and expose named policy methods or
+  profiles rather than positional booleans or `validate(false)`.
+- Never allow protocol-validity policy to disable memory safety, checked
+  arithmetic, internal representation invariants, or finite resource limits.
 - Apply the policy during `build()`.
+- Treat that policy as operation input rather than message identity; do not
+  normally retain it in the built message, equality, hashing, or wire encoding.
+- Preserve relevant results as fresh evidence through a validation report,
+  protocol status, or validated domain form that distinguishes passed, failed,
+  skipped or not checked, and inapplicable checks.
 - Do not claim that the resulting owned message remains permanently validated.
+- Require trusted-input APIs to validate at the boundary or accept a validated
+  form, and invalidate prior evidence after unrestricted mutation.
 - Encode the message faithfully without silently restoring disabled validation.
 - Provide an explicit `validate()` operation.
 - Protect Rust memory and internal representation invariants even when protocol
@@ -2256,8 +3424,14 @@ The owner confirmed the following additional choices in refinement round 2:
   messages.
 - Keep integrity validation, error correction, structural parsing, and semantic
   validation conceptually separate.
-- When correction occurs, expose whether correction happened, its extent, and
-  received versus corrected representations when relevant.
+- When received evidence is retained, keep it exact, immutable, and distinct
+  from corrected or recovered output. Do not call received data `original`
+  unless the transmitter's original representation is independently known.
+- Keep named integrity observations and correction outcomes separate. Expose
+  whether correction happened, its truthful extent and units, and received
+  versus recovered representations when relevant.
+- Do not infer received integrity, transmitter-original equality, or semantic
+  validity from successful correction.
 
 ### Draft rules
 
@@ -2287,7 +3461,9 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Scope:** framing, parsing, decoding, and validation
 - **Rule:** Validate lengths, counts, offsets, arithmetic, nesting, and resource
   limits before indexing, copying, or allocating. Return structured failures
-  without panicking.
+  without panicking. Under R198, declare finite defaults for every applicable
+  resource dimension, scope and reset each budget, and prevent untrusted input
+  or validation relaxations from changing it.
 - **Rationale:** trust in the current sender does not constrain malformed data,
   corruption, future integrations, or adversarial input.
 
@@ -2308,8 +3484,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Strength:** MUST
 - **Scope:** streaming and incremental decoders
 - **Rule:** Report that additional bytes are required separately from reporting a
-  structurally invalid frame. Preserve enough state or consumption information
-  for the caller to continue safely.
+  structurally invalid frame. Under R197, distinguish complete, incomplete, and
+  malformed outcomes; consume nothing on stateless incomplete input; and make
+  stateful accepted-versus-completed byte ownership explicit. Preserve enough
+  state or consumption information for the caller to continue safely, and keep
+  failure location separate from an authorized discard prefix.
 - **Rationale:** partial delivery is normal for streams and is not a protocol
   error.
 
@@ -2327,8 +3506,10 @@ The owner confirmed the following additional choices in refinement round 2:
 
 - **Strength:** SHOULD
 - **Scope:** extensible protocol fields
-- **Rule:** Represent unknown values losslessly, such as `Unknown(raw)`, when
-  forward compatibility, proxying, inspection, or round-trip fidelity matters.
+- **Rule:** Under R199, represent unknown values losslessly, such as
+  `Unknown(raw)`, by default when forward compatibility, proxying, inspection,
+  persistence, or round-trip fidelity matters. Keep them distinct from reserved,
+  malformed, unsupported, and semantically rejected values.
 - **Rationale:** rejecting or collapsing unknown values prevents compatible
   evolution and faithful tooling.
 - **Acceptable exceptions:** the repository deliberately rejects unknown values,
@@ -2346,15 +3527,45 @@ The owner confirmed the following additional choices in refinement round 2:
 
 #### R91. Make validation policy explicit
 
-- **Strength:** SHOULD
-- **Scope:** protocol construction
-- **Rule:** Represent construction checks with a named policy owned by the
-  builder. Enable all checks by default, apply selected checks during `build()`,
-  and provide explicit validation after construction.
+- **Strength:** MUST
+- **Scope:** protocol construction, parsing, mutation, and intentionally invalid
+  message workflows
+- **Rule:** Default construction to a strict typed `ValidationPolicy` or
+  equivalent named policy owned by the builder. Group selectable checks by
+  domain meaning, such as wire conformance and reserved values, integrity,
+  canonical representation, and contextual semantics. Use named policy methods
+  or profiles rather than `validate(false)`, positional booleans, or an
+  unrelated public boolean bag.
+- **Safety boundary:** Protocol-validity relaxations never disable memory
+  safety, bounds checks, checked length/count/offset arithmetic, internal
+  representation invariants, or finite frame, nesting, recursion, and
+  allocation limits. Repositories may configure documented finite budgets but
+  not remove the boundary through safe input.
+- **Independence and trust:** Disabling one validation group does not silently
+  disable another. Keep structural parsing, integrity status, semantic validity,
+  and application trust distinct. Skipping integrity or authentication must not
+  yield a type that falsely claims trusted validation; preserve status or use a
+  distinctly unchecked result.
+- **Lifecycle:** Apply the selected construction policy during `build()`,
+  provide explicit validation after construction, and encode the represented
+  message faithfully under R92. Under R195, do not normally retain the policy as
+  message identity; retain results separately only when callers need evidence.
+  Do not assume a mutable built value remains permanently validated. Use
+  separate policy types when hostile-input parsing and construction expose
+  materially different choices.
+- **Evolution:** Keep policy fields private or otherwise controlled so new checks
+  do not force caller struct-literal churn. Document defaults and treat changed
+  meanings as behavior changes.
 - **Rationale:** a named policy makes deliberate invalid construction readable
-  and adaptable without splitting the entire model into valid and raw families.
-- **Acceptable exceptions:** repository-local rules may choose a different clear
-  lifecycle or a simpler builder for a small protocol.
+  and adaptable without allowing protocol-invalid test cases to compromise
+  safety or masquerade as trusted data.
+- **Verification:** Test strict rejection for every class, each named relaxation
+  in isolation, material combinations, hostile resource inputs under every
+  policy, post-build validation, and faithful invalid-message encoding.
+- **Acceptable exceptions:** A small protocol may use a few precisely named
+  builder methods. An authoritative protocol or adopted library may provide
+  equivalent vocabulary. Security-sensitive repositories may make integrity or
+  authentication non-relaxable outside dedicated test or inspection APIs.
 
 #### R92. Encode the represented message faithfully
 
@@ -2371,8 +3582,10 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Strength:** MUST
 - **Scope:** protocol escape hatches
 - **Rule:** Validation opt-outs may violate protocol rules but must never permit
-  invalid Rust memory, unchecked indexing, impossible internal layout, or other
-  soundness failures through safe code.
+  invalid Rust memory, unchecked indexing, arithmetic overflow, impossible
+  internal layout, unbounded frame/nesting/allocation growth, or other soundness
+  and resource failures through safe code. Apply the non-disableable boundary in
+  R91 under every policy.
 - **Rationale:** an invalid packet is a supported domain value; memory unsafety is
   not.
 
@@ -2404,8 +3617,12 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Scope:** protocols with CRCs, checksums, or error correction
 - **Rule:** Keep structural parse results, received integrity status, correction
   results, and semantic validation distinguishable. Expose whether correction
-  occurred, its meaningful extent, and original versus corrected data when the
-  use case needs both.
+  occurred, its meaningful extent, and received versus corrected or recovered
+  data when the use case needs both. Under R196, keep retained received evidence
+  exact and immutable, use `received` rather than `original` when the
+  transmitter's value is unknown, and never rewrite integrity history after
+  correction. Represent this evidence as a status, report, or validated form
+  under R195 rather than retaining an ephemeral builder policy.
 - **Rationale:** callers may need to inspect damaged traffic, measure channel
   quality, or distinguish corrected data from originally valid data.
 
@@ -2430,19 +3647,10 @@ The owner confirmed the following additional choices in refinement round 2:
   inspection and DSP pipelines may also need the original received form and
   correction metadata.
 
-### Unresolved decisions
+### Repository-specific decisions
 
-- Exact released `bitsandbytes` versions to support and how standards material
-  pins or tracks them; repository research confirmed the crates and current
-  contracts in `RawSocketLabs/rsl`.
-- Standard `ValidationPolicy` shape, naming, and granularity.
-- Whether messages retain construction-policy or validation-result metadata.
-- Exact incomplete-input result type and byte-consumption contract.
-- Default maximum frame, nesting, and allocation limits and where repositories
-  declare them.
-- Default behavior for unknown values when repository instructions are silent.
-- Standard representation for original, corrected, and integrity-status data.
-- Fuzz corpus and interoperability-vector sources for protocol implementations.
+- Exact adopted `bitsandbytes` version or workspace revision and features.
+- External sustained-fuzz corpus storage, cadence, and licensed capture sources.
 
 ## Round 8: DSP and streaming design
 
@@ -2459,8 +3667,10 @@ The owner confirmed the following additional choices in refinement round 2:
 #### Pipeline buffers
 
 - Move an owned domain buffer through pipeline APIs.
-- Allow buffers to carry relevant sample rate, channel, timestamp or sample
-  index, discontinuity, capacity, and related metadata.
+- Keep simple finite buffers data-only when their context is explicit. At
+  continuity-sensitive capture and transport boundaries, bind the payload to
+  the relevant sample rate, channel geometry, timestamp or sample index,
+  discontinuity, and related metadata.
 - Let processing kernels obtain slices for direct computation.
 - Use fixed arrays or const-generic buffers only when size is a genuine compile-
   time invariant.
@@ -2478,6 +3688,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - Define input consumption, output production, algorithmic latency, internal
   buffering, arbitrary chunk-boundary behavior, reset behavior, flush behavior,
   empty-input behavior, and chunking equivalence for stateful stages.
+- Keep reset distinct from finite completion. Reset emits nothing and discards
+  stream-local state. Finishing applies an explicit tail policy exactly once;
+  live streams finish only when their owner deliberately ends a finite prefix.
+- Keep padding and other synthetic tail material distinguishable from received
+  input.
 
 #### Rate-changing stages
 
@@ -2490,10 +3705,15 @@ The owner confirmed the following additional choices in refinement round 2:
 
 - Mark sample loss or discontinuities explicitly and carry a lost count or sample
   index range when known.
+- Represent a within-epoch gap with the next absolute index and a known half-open
+  loss range or explicit unknown extent. Represent restart, retune, or rate
+  change with a new stream epoch rather than a fabricated cross-epoch range.
+- Keep the reason for discontinuity separate from evidence of its exact extent.
 - Require stateful stages to declare whether they reset, continue with degraded
   output, or return an error after discontinuity.
-- Optionally attach a monotonic `Instant` or derived interval describing send
-  timing relative to the prior sent buffer.
+- Name every measured timing event and capture it at that event. Keep monotonic
+  `Instant` values process-local and export or persist derived durations rather
+  than ambiguous raw timestamps.
 - Treat timing deltas as diagnostic corroboration, not authoritative proof of
   sample loss.
 
@@ -2503,6 +3723,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - Collect cheap measurements and report them at pipeline boundaries.
 - Observe dropped samples, queue saturation, processing duration, high-water
   marks, buffer starvation, and allocation fallback where relevant.
+- Prefer `tracing` for structured logging and diagnostics when a repository
+  chooses that dependency, but do not require it universally or let a reusable
+  library install the process subscriber.
+- Keep reusable operational evidence typed and bounded, and let applications
+  adapt it to their chosen logging, metrics, or telemetry backend.
 
 ### Draft rules
 
@@ -2522,24 +3747,39 @@ The owner confirmed the following additional choices in refinement round 2:
 
 - **Strength:** SHOULD
 - **Scope:** domain-type conversions
-- **Rule:** Implement `From` for clear, infallible conversions whose result does
-  not conceal an important choice. Use named methods for conversions whose
-  representation, reference, rounding, normalization, or domain meaning should
-  be visible. Use `TryFrom` for validation or failure.
+- **Rule:** Implement `From<T>` only when the conversion is infallible,
+  semantically lossless, value-preserving, and the single obvious conversion
+  between the types. Do not panic, silently discard meaningful information,
+  reinterpret the conceptual value, or conceal a choice in `From`.
+- **Alternatives:** Use `TryFrom` for validation or any other possible failure.
+  Use a named method or constructor when representation, reference frame, byte
+  order, rounding, normalization, policy, or domain interpretation should remain
+  visible at the call site.
+- **Trait direction:** Implement `From` rather than `Into` directly so the
+  standard blanket implementation provides `Into`. Direct `Into`
+  implementations are legacy compatibility for toolchains predating the relaxed
+  orphan rules and are not needed under the current MSRV.
 - **Rationale:** standard traits improve ergonomics, while named operations keep
   consequential semantics readable.
-- **Acceptable exceptions:** repository vocabulary may establish an unambiguous
-  conventional conversion suitable for `From`.
+- **Verification:** Test recovery or invariant preservation when it is part of
+  the semantic-loss claim, and test every failure class for `TryFrom`.
+- **Acceptable exceptions:** repository vocabulary may establish one
+  unambiguous conventional conversion suitable for `From`. Incidental
+  representation details that are not semantically meaningful, such as spare
+  container capacity, need not be preserved.
 
 #### R99. Move owned domain buffers through pipelines
 
 - **Strength:** PREFER
 - **Scope:** DSP and streaming pipeline boundaries
-- **Rule:** Transfer an owned domain buffer that can retain storage and relevant
-  stream metadata. Give kernels efficient slice access and provide plain-`Vec`
-  adapters for simple consumers.
+- **Rule:** Transfer an owned domain buffer that can retain storage. Bind it to
+  relevant stream metadata at continuity-sensitive boundaries, but allow a
+  simple finite buffer to remain data-only when rate, position, and geometry are
+  explicit in its call context. Give kernels efficient slice access and provide
+  plain-`Vec` adapters for simple consumers.
 - **Rationale:** ownership transfer supports buffer reuse without globally shared
-  mutation, while a domain buffer carries continuity and timing context.
+  mutation, while boundary-specific wrappers preserve continuity and timing
+  context without burdening every buffer.
 
 #### R100. Use fixed-size types only for real invariants
 
@@ -2556,8 +3796,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Strength:** PREFER
 - **Scope:** DSP processors and pipelines
 - **Rule:** Compose concrete processor types or statically dispatched generics.
-  Define a shared trait only when it expresses a useful contract implemented by
-  multiple stages.
+  Define a shared trait only when multiple real implementations perform one
+  coherent operation at a demonstrated composition boundary. Do not place
+  unrelated in-place, rate-changing, framing, and sink stages behind one
+  universal processor interface merely because their method signatures can be
+  normalized.
 - **Rationale:** uniform traits should serve actual composition rather than erase
   meaningful differences among DSP operations.
 
@@ -2567,6 +3810,9 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Scope:** stateful streaming stages
 - **Rule:** Define consumed and produced quantities, latency, buffering, chunk-
   boundary behavior, empty input, reset, flush, and end-of-stream behavior.
+  Apply R192: reset and finite completion are not synonyms, and empty input is
+  neither unless the API explicitly and unambiguously establishes that domain
+  convention.
 - **Rationale:** hidden streaming state makes otherwise correct kernels fail when
   integrated with arbitrary chunking or shutdown.
 
@@ -2586,8 +3832,11 @@ The owner confirmed the following additional choices in refinement round 2:
 - **Strength:** MUST
 - **Scope:** rate-changing and framing stages
 - **Rule:** Provide a way to determine required capacity or a safe output bound
-  before processing. Represent rate relationships explicitly and avoid
-  unannounced steady-state growth.
+  before processing. Represent an exact constant relationship as a reduced
+  rational in the named `output/input` direction and keep absolute rates
+  separate. Make bounds account for current fractional phase, buffered state,
+  startup latency, and flush behavior; distinguish current-state, reset-state,
+  steady-state, and final bounds. Avoid unannounced steady-state growth.
 - **Rationale:** callers need to size and recycle buffers without speculative
   allocation.
 
@@ -2595,19 +3844,47 @@ The owner confirmed the following additional choices in refinement round 2:
 
 - **Strength:** MUST
 - **Scope:** lossy streaming pipelines
-- **Rule:** Mark a discontinuity after dropped samples and include the known loss
-  count or sample-index range. Require each stateful consumer to define reset,
-  degraded continuation, or error behavior.
+- **Rule:** Bind a discontinuity to the next delivered buffer. Represent a
+  within-epoch gap with the stream epoch, the absolute index of the next
+  delivered sample, and a loss extent that is either one known half-open range
+  `[start, end)` or explicitly unknown. Represent a restart, retune, sample-rate
+  change, or equivalent reconfiguration with a new epoch and its first delivered
+  index rather than fabricating a cross-epoch loss range.
+- **Evidence and reason:** Keep the extent separate from the cause. A device
+  overrun, queue overflow, source restart, counter gap, or unknown reason does
+  not prove exact lost indices. Derive a known count from the range with checked
+  arithmetic rather than storing inconsistent evidence. A zero-length range is
+  not loss.
+- **Units and accumulation:** Encode or name the index unit, origin, and rollover
+  behavior. Coalesce repeated losses before the next delivery only when evidence
+  proves one exact within-epoch union. Otherwise retain multiple ranges when
+  supported and useful, or report an unknown aggregate extent; do not guess.
+- **State policy:** Require each stateful consumer to define reset or
+  reinitialization, error, or domain-justified gap-aware continuation. Reset
+  before processing the next samples by default; never silently bridge a gap
+  with stale filter, synchronization, decoder, or timing state.
+- **Propagation:** Forward or transform discontinuity metadata through every
+  stage. Rate-changing stages define the input-to-output index mapping, and
+  stages with warm-up or reacquisition mark affected output invalid or degraded
+  until their normal contract resumes.
+- **Observability:** Aggregate drop and reset metrics supplement but do not
+  replace the discontinuity carried with stream data. Wall-clock timing remains
+  diagnostic rather than proof of an exact sample range.
 - **Rationale:** silently bridging a gap can corrupt filter state, timing,
   demodulation, and downstream interpretation.
+- **Verification:** Inject known, unknown, repeated, and zero-length loss
+  extents before and across buffers; test checked range/count arithmetic;
+  distinguish new-epoch restarts from within-epoch gaps; compare reset behavior
+  with fresh state; and exercise rate-changing mappings and reacquisition
+  boundaries.
 
 #### R106. Keep timing evidence separate from sample continuity
 
 - **Strength:** SHOULD
 - **Scope:** streaming metadata and diagnostics
-- **Rule:** Optionally record a monotonic send `Instant` or interval from the
-  preceding sent buffer. Use it to detect suspicious timing gaps, but do not infer
-  exact sample loss from wall-clock delay alone.
+- **Rule:** Instrument timing only at a named event boundary and apply R193.
+  Use derived monotonic intervals to detect suspicious delay, but do not infer
+  exact sample loss from operational or wall-clock timing alone.
 - **Rationale:** scheduling and queueing jitter can change send intervals without
   changing the sample sequence.
 
@@ -2647,21 +3924,6 @@ The owner confirmed the following additional choices in refinement round 2:
   prove loss by itself.
 - **Observability versus hot-path cost:** collect bounded cheap measurements in
   the hot path and emit or aggregate them outside it.
-
-### Unresolved decisions
-
-- Canonical buffer vocabulary and type shape (`SampleBuffer`, `SampleBlock`, or
-  another established term).
-- Which stream metadata belongs on every buffer versus optional wrapper/context
-  types.
-- Standard trait shape, if any, for composing heterogeneous processing stages.
-- Representation of rate relationships and fractional production bounds.
-- Flush behavior for infinite streams and stages with irreducible tail state.
-- Monotonic timestamp capture point and whether to attach `Instant`, a duration,
-  or both.
-- Standard discontinuity and loss-range representation.
-- Metrics facade and how applications opt into tracing or metrics ecosystems.
-- Exact minimum grain-size evidence and pool-passing API for parallel DSP.
 
 ## Round 9: Agent behavior, precedence, and adoption
 
@@ -2751,19 +4013,37 @@ Each adopting repository declares:
 
 - **Strength:** MUST
 - **Scope:** optional parallel DSP integrations
-- **Rule:** Let the application select the Rayon pool or equivalent parallel
-  execution context and concurrency level. Do not create uncontrolled nested
-  parallelism.
+- **Rule:** Retain a sequential entry point. Under a `rayon` feature, make the
+  parallel entry point accept a caller-owned `&rayon::ThreadPool` and run its
+  parallel iterators, joins, or scopes inside `ThreadPool::install`. Do not
+  initialize, configure, or silently rely on Rayon's global pool from reusable
+  library code.
+- **Abstraction:** The concrete pool is truthful for a Rayon-specific feature.
+  Introduce an executor trait only after a demonstrated second backend or
+  repository boundary requires substitution.
+- **Nesting:** Analyze calls from existing Rayon pools because installing into a
+  different pool may yield and interleave other work on the waiting pool. Avoid
+  uncontrolled nesting, recursive parallelization, and oversubscription.
 - **Rationale:** applications need to coordinate CPU budgets across DSP and other
   workloads.
+- **Acceptable exceptions:** an application crate may own and configure the
+  global pool under explicit local policy.
 
 #### R110. Measure parallelization granularity
 
 - **Strength:** MUST
 - **Scope:** parallel DSP implementations
-- **Rule:** Establish a representative minimum grain size at which scheduling and
-  synchronization overhead are justified. Preserve required output ordering and
-  the scalar numerical contract.
+- **Rule:** Select the parallel path only above a workload-specific threshold
+  established by size-sweep benchmarks across representative targets, pool
+  widths, and production features. Name the threshold's unit and record the
+  evidence and hardware assumptions. Do not define one universal grain-size
+  constant.
+- **Correctness:** Preserve required output ordering and the scalar numerical
+  contract through one shared conformance suite. Retain a way for benchmarks to
+  force both paths without making forced parallelism the ordinary default.
+- **Configuration:** Expose a threshold override only when real consumers need
+  materially different cutoffs; otherwise keep a named, documented internal
+  decision that can evolve with evidence.
 - **Rationale:** parallelism can reduce performance and reproducibility for small
   blocks or poorly partitioned state.
 
@@ -3008,6 +4288,87 @@ the constraints in R124.
 - 2026-07-18: Added parallel execution, agent inspection, verification,
   precedence, adapter, and repository-adoption preferences from interview Round
   9.
+- 2026-07-24: Added borrowed-optional API and frozen-sequence ownership
+  decisions after reviewing owner preferences, official standard-library
+  documentation, Clippy's `ref_option` guidance, and Logan Smith's advisory
+  videos.
+- 2026-07-24: Confirmed a narrow runtime-heterogeneity exception for DSP and
+  audio pipeline trait objects, and added measured, profile-specific binary-size
+  guidance informed by Cargo documentation and `min-sized-rust`.
+- 2026-07-24: Confirmed “parse, don't validate” as an organization-wide
+  preference for durable trust-boundary invariants, with explicit raw,
+  transient, protocol-testing, and context-dependent exceptions.
+- 2026-07-24: Made representative per-sample benchmark state mandatory and
+  classified invalid state setup as blocking when it supports a performance
+  claim.
+- 2026-07-24: Rejected common capability traits as a checklist; required
+  meaningful clone/default/serialization semantics and truthful `Send`/`Sync`
+  properties.
+- 2026-07-24: Prohibited silent `Result`-to-absence conversion unless error loss
+  is an explicit, documented, observable, and tested policy.
+- 2026-07-24: Preferred the narrowest meaningful borrow capability and approved
+  field-level helpers when whole-object receivers create concrete coupling,
+  while preserving multi-field invariants, compatibility, and clarity.
+- 2026-07-24: Required queue semantics to be specified independently of a
+  concrete crate, selected implementations to pass repository dependency review,
+  and nontrivial composite behavior to live behind a small domain queue type.
+- 2026-07-24: Made production work owned and joined by default and required a
+  per-work-class lifecycle record covering admission, shutdown, drain or discard,
+  buffer return, bounded join, timeout escalation, results, panics, and explicit
+  detachment exceptions.
+- 2026-07-24: Adopted the reviewed `libsdr` sample/chunk/block/dwell, receiver
+  stage, and evidence distinctions as portable defaults while preserving exact
+  `libsdr` type spellings and naming conventions in the RSL organization layer.
+- 2026-07-24: Kept simple finite sample buffers data-only while requiring
+  continuity-sensitive capture and transport boundaries to bind payloads to the
+  metadata needed for their stream, rate, channel, and discontinuity claims.
+- 2026-07-24: Rejected a universal processing trait; retained concrete/static
+  composition by default and required any shared stage trait to define a
+  coherent, complete streaming contract, with trait objects reserved for real
+  runtime heterogeneity.
+- 2026-07-24: Required exact rate relationships to use a reduced, directed
+  `output/input` rational with checked state-aware capacity bounds, retained
+  fractional phase, explicit flush scope, and a separate variable-rate contract.
+- 2026-07-24: Separated reset from finite-stream completion, required an explicit
+  tail policy and nonduplicating completed state, and kept synthetic tail data
+  distinguishable from received input.
+- 2026-07-24: Replaced ambiguous per-buffer timestamps with named timing events,
+  process-local monotonic handles, derived duration exports, and explicit
+  separation from source clocks and stream continuity.
+- 2026-07-24: Standardized discontinuity evidence as a typed within-epoch gap
+  with next absolute index and known half-open or unknown loss extent, while
+  representing restart and reconfiguration with a new stream epoch.
+- 2026-07-24: Kept reusable observability typed, bounded, and caller-routed;
+  recommended but did not require `tracing` for structured logging; left
+  subscriber, metrics, and telemetry backend selection to applications.
+- 2026-07-24: Made protocol validation policies strict and typed by default,
+  grouped relaxations by domain meaning, and prohibited every policy from
+  disabling safety, checked arithmetic, internal invariants, or finite resource
+  limits.
+- 2026-07-24: Kept construction and parsing policy outside normal message
+  identity, preserved relevant validation and correction evidence separately,
+  and required trusted wrappers or boundary validation whose evidence cannot
+  become stale after mutation.
+- 2026-07-24: Required retained received wire evidence to remain exact and
+  immutable across correction, separated integrity observations from correction
+  outcomes, and prohibited successful recovery from being treated as proof of
+  received, transmitter-original, or semantic validity.
+- 2026-07-24: Distinguished complete, incomplete, and malformed parser outcomes;
+  required zero stateless consumption on incomplete input, explicit stateful
+  accepted-versus-completed ownership, and protocol-justified discard or
+  resynchronization.
+- 2026-07-24: Required finite repository-owned parser budgets for applicable
+  frame, count, nesting, expansion, retained-input, allocation, and aggregate
+  dimensions, with explicit finite overrides and no input-controlled bypass.
+- 2026-07-24: Defaulted extensible unknown wire values to lossless preservation,
+  required attributed layered protocol corpora, and made adopted codec versions
+  and features explicit repository pins rather than one global standards pin.
+- 2026-07-25: Reviewed the complete eight-video CodeAesthetic catalog and
+  adopted qualified guidance for domain naming, legible control flow,
+  composition, explicit dependencies, abstraction cost, functional
+  transformations, and measured optimization. Rejected blanket bans on
+  comments, abbreviations, nesting, `else`, loops, and trait-free or
+  trait-required designs; strengthened R163 to preserve durable rationale.
 - 2026-07-18: Completed repository and cross-agent research; resolved the roles
   and locations of `rsl-deps` and `bitsandbytes`, confirmed caller-controlled
   Rayon policy, and narrowed discovery/precedence questions to adapter drift

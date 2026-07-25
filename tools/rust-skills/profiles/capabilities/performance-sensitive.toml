@@ -1,0 +1,8 @@
+schema = 1
+id = "performance-sensitive"
+kind = "capability"
+summary = "Measured latency, throughput, allocation, memory, or size requirements."
+base = ""
+capabilities = []
+skills = ["rust-performance", "rust-testing"]
+implies = []

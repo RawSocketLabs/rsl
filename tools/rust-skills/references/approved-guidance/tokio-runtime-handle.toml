@@ -1,0 +1,11 @@
+schema = 1
+id = "tokio-runtime-handle"
+tier = "approved-guidance"
+title = "Tokio runtime Handle and task spawning documentation"
+locator = "https://docs.rs/tokio/1.53.1/tokio/runtime/struct.Handle.html"
+revision = "tokio-1.53.1-accessed-2026-07-24"
+license = "MIT"
+use = "Establish explicit runtime-handle spawning, ambient runtime panic behavior, immediate background execution, and spawned-task ownership questions."
+limitations = "Tokio-specific APIs are not universal async Rust rules. Recheck the repository's selected runtime and version, and do not infer structured concurrency or automatic cancellation from a JoinHandle."
+reviewed = "2026-07-24"
+refresh = "Review when the selected Tokio version or its Handle, spawn, JoinHandle, local-task, or runtime shutdown documentation changes."

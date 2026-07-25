@@ -1,5 +1,11 @@
 # Rust Engineering Standards System: Architecture Proposal
 
+> Historical note: this document records the approved v0.1 two-skill design.
+> The owner approved the modular successor on 2026-07-24. See
+> [Modular Rust Engineering System](architecture.md) and the
+> [v0.1 migration](migrations/0.1-to-modular.md). Preserve this document as
+> design history; do not use its deferred-domain status as the current roadmap.
+
 Status: bounded Stage 3 implementation approved and completed; independent
 baseline-versus-skill runs and publication acceptance remain pending
 
@@ -417,11 +423,48 @@ The root template should ask maintainers to fill only relevant sections:
 4. Dependency policy, including `rsl-deps` adoption and approval rules.
 5. MSRV and first-class targets.
 6. Architecture and ownership boundaries.
-7. Trust boundaries and authoritative protocol specifications.
+7. Trust boundaries, authoritative protocol specifications, strict validation
+   defaults, named relaxable groups, construction-versus-parsing policy,
+   non-disableable safety, finite parser-budget dimensions, units, scope, reset,
+   rationale, and approved overrides, post-build validation,
+   construction-policy exclusion from message identity, validation and
+   correction evidence states and retention, trusted-input boundaries or
+   wrappers, mutation invalidation, evidence persistence, exact
+   received-versus-recovered representation, separate integrity and correction
+   status, integrity or authentication trust status,
+   complete/incomplete/malformed outcomes, stateless and stateful
+   byte-consumption contracts, resynchronization authority, and intentionally
+   invalid encoding.
 8. Hot paths, performance budgets, and allocation constraints.
-9. Queue overload, lifecycle, and shutdown policy when concurrency exists.
+9. Queue capacities in items, worst-case retained bytes, queue-time assumptions,
+   overload, sample-discontinuity propagation, locally selected queue
+   implementation and domain-wrapper responsibility, lifecycle, and shutdown
+   policy when concurrency exists. For each spawned-work class, record its
+   owner/handle, admission stop, shutdown signal, drain/discard behavior,
+   resource return, join deadline, timeout fallback, result/panic observer, and
+   any approved detachment.
 10. Unsafe and FFI locations and their verification commands.
-11. Documentation, examples, generated-code, fixture, and changelog rules.
+11. Documentation, examples, generated-code, fixture, and changelog rules,
+    including the domain glossary and mappings for ambiguous stream units,
+    receiver stages, received/recovered evidence, and the split between
+    data-only buffers and continuity-bearing stream boundaries. For lossy
+    streams, record epoch and index units, within-epoch known-half-open or
+    unknown loss extent, next delivered position, discontinuity reasons,
+    restart/reconfiguration behavior, and repeated-loss accumulation. Where
+    processors compose, record concrete/generic, enum, shared-trait, and
+    dynamic-dispatch boundaries. For rate-changing stages, record rational
+    direction, absolute rates, state-dependent capacity bounds,
+    latency/reference mapping, and any variable-rate exception. For stateful
+    streaming stages, record reset
+    semantics, finite tail policy, post-completion behavior, synthetic-tail
+    provenance, and live-stream finish/drain versus discard/reset ownership.
+    When timing is instrumented, record named event capture points, clock
+    domains, process-local monotonic representation, exported durations,
+    external correlation or persistence policy, and hot-path sampling. When
+    operational diagnostics exist, record typed evidence, logging ecosystem,
+    application-owned subscriber and export configuration, instrument semantics
+    and lifecycle, cardinality, sensitive-field policy, optional adapters, and
+    overhead budget.
 12. Local exceptions with scope and rationale.
 
 Omit irrelevant sections rather than filling them with generic text.

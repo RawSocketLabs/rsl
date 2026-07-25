@@ -1,0 +1,8 @@
+schema = 1
+id = "research"
+kind = "preset"
+summary = "Experimental defaults that retain explicit evidence and deferred-decision records."
+base = "experimental"
+capabilities = []
+skills = []
+implies = []

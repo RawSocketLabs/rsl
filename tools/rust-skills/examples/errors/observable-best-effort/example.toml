@@ -1,0 +1,10 @@
+schema = 1
+id = "observable-best-effort"
+title = "Make iterator error loss an explicit policy"
+skills = ["rust-api-design", "rust-implement", "rust-testing"]
+profiles = ["application"]
+source = "microsoft-pragmatic-rust"
+revision = "2026-07-24"
+provenance = "Independent error-policy example"
+validation = ["Success, failure, and mixed-batch tests", "Bounded aggregate observability test"]
+document = "example.md"
