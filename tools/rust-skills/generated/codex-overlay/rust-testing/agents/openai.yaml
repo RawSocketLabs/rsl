@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Testing"
+  short_description: "Select risk-matched Rust verification evidence"
+  default_prompt: "Use $rust-testing to choose and implement the smallest sufficient evidence for this Rust change."

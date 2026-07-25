@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-dsp"
+package = "rust-dsp"
+status = "implemented"
+kind = "domain"
+summary = "Engineer numeric and streaming DSP with explicit contracts, reference forms, and signal evidence."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-protocol", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi"]
+related = ["rust-review"]
+profiles = ["dsp", "real-time"]
+packs = ["rust-protocol-systems", "rust-systems", "rsl-rust-default"]
+references = ["rawsocketlabs-rsl", "rawsocketlabs-libsdr", "rust-time-documentation", "rayon-thread-pool"]
+validation = ["Vocabulary and public-documentation consistency review", "Numeric known-answer tests", "Property tests", "Chunking equivalence", "Received-versus-recovered evidence and correction-status propagation tests when channel quality is consumed", "Reduced-ratio, checked current/reset/steady/final sizing, one-shot/partitioned count, flush, and rate-metadata mapping tests", "Reset-without-output, finite-tail policy, repeated completion, post-completion input, reset-and-reuse, synthetic-tail provenance, and live-stream shutdown tests", "Named-event, clock-domain, blocked/failed/successful handoff, duration-export, persistence-schema, and timing-overhead tests", "Known, unknown, repeated, zero-length, checked-count, new-epoch, downstream-mapping, and reset-equivalence discontinuity tests", "Complete, partial, reordered, restart, channel-change, and reset-equivalence tests", "Shared conformance tests for every processing-trait implementation", "Concrete-versus-dynamic equivalence and benchmarks when both exist", "Shared sequential/parallel conformance tests", "Benchmarks for optimized paths"]
+outputs = ["Repository vocabulary, stream-metadata placement, discontinuity, received-versus-recovered channel-quality evidence when applicable, processing-composition, directed rate-relationship, streaming-completion, and timing-instrumentation contracts; numeric contract, reference evidence, tolerances, explicit state behavior, caller-owned parallel policy, and performance evidence"]
+legacy_ids = []

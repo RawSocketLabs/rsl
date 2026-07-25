@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Repository Onboarding"
+  short_description: "Inspect and configure repository Rust skills"
+  default_prompt: "Use $rust-repository-onboarding to inspect this repository, conduct the adaptive interview, and propose an approved Rust skills adoption."

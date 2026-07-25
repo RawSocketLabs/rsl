@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-skill-maintenance"
+package = "rust-skill-maintenance"
+status = "implemented"
+kind = "maintenance"
+summary = "Maintain skill contracts, references, generated adapters, migrations, evaluations, and releases."
+requires = ["rust-core"]
+routes_to = []
+related = ["rust-repository-onboarding"]
+profiles = ["skills-repository"]
+packs = []
+references = ["agent-skills-specification", "rust-rfcs"]
+validation = ["cargo xtask validate", "cargo xtask generate --check", "Comparative evaluations"]
+outputs = ["Versioned skill change, provenance, migration notes, generated adapters, and evaluation evidence"]
+legacy_ids = []

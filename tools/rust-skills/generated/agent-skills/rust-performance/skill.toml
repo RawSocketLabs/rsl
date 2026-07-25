@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-performance"
+package = "rust-performance"
+status = "implemented"
+kind = "technique"
+summary = "Measure and optimize latency, throughput, allocation, memory, cache, SIMD, branches, and code size."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-async-concurrency", "rust-unsafe-ffi"]
+related = ["rust-dsp", "rust-protocol", "rust-review"]
+profiles = ["performance-sensitive", "real-time"]
+packs = ["rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["microsoft-pragmatic-rust", "rust-shared-ownership-documentation", "rust-time-documentation", "tracing-documentation", "logan-smith-everyday-rust", "min-sized-rust", "criterion-timing-loops", "rayon-thread-pool", "codeaesthetic-development-videos"]
+validation = ["Reproducible before-and-after benchmark or artifact measurement", "Named timing endpoints and disabled/enabled instrumentation-overhead evidence", "Workload-size sweep for adaptive parallel cutoffs", "Preserved correctness tests"]
+outputs = ["Measurement brief with named events and clock domains, benchmark or artifact evidence, instrumentation cost, tradeoffs, and readable reference behavior"]
+legacy_ids = []

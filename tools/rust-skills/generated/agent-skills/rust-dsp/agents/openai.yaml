@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust DSP Engineering"
+  short_description: "Engineer DSP streams with explicit signal contracts"
+  default_prompt: "Use $rust-dsp to implement or review this DSP or SDR change with explicit numeric, streaming, and evidence contracts."

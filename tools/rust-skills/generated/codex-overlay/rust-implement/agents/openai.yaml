@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Implement"
+  short_description: "Implement scoped, validated Rust changes"
+  default_prompt: "Use $rust-implement to implement this Rust change under the repository's local rules and validation workflow."

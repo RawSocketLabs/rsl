@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-unsafe-ffi"
+package = "rust-unsafe-ffi"
+status = "implemented"
+kind = "technique"
+summary = "Review unsafe invariants, safe boundaries, ABI contracts, FFI wrappers, and validation evidence."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-performance", "rust-async-concurrency", "rust-dependencies-security", "rust-embedded"]
+related = ["rust-review"]
+profiles = ["ffi", "safety-critical"]
+packs = ["rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["rustonomicon"]
+validation = ["Miri when feasible", "Sanitizers when feasible", "Target ABI tests"]
+outputs = ["Written safety argument, boundary analysis, caller contract, and validation status"]
+legacy_ids = []

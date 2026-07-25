@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-core"
+package = "rust-core"
+status = "implemented"
+kind = "foundation"
+summary = "Universal Rust priorities, precedence, evidence discipline, and engineering judgment."
+requires = []
+routes_to = ["rust-implement", "rust-review", "rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]
+related = ["rust-repository-onboarding"]
+profiles = ["all"]
+packs = ["rust-standard", "rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["agent-skills-specification", "official-rust-style-guide", "rustonomicon", "rust-api-guidelines", "microsoft-pragmatic-rust", "tracing-documentation", "rawsocketlabs-libsdr", "codeaesthetic-development-videos"]
+validation = ["cargo xtask validate", "cargo xtask generate --check"]
+outputs = ["Evidence-based Rust engineering decision with explicit local precedence and verification status"]
+legacy_ids = ["rsl-rust-core"]

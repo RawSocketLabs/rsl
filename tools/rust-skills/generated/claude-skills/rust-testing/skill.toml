@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-testing"
+package = "rust-testing"
+status = "implemented"
+kind = "technique"
+summary = "Select and implement tests, properties, fuzzing, fixtures, snapshots, and verification."
+requires = ["rust-core"]
+routes_to = ["rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-embedded"]
+related = ["rust-implement", "rust-review"]
+profiles = ["all"]
+packs = ["rust-standard", "rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["rustonomicon", "criterion-timing-loops", "lets-get-rusty-design-videos"]
+validation = ["Repository-declared test workflow"]
+outputs = ["Risk-matched tests, representative benchmark harnesses, and explicit pass, fail, skipped, unavailable, or inapplicable status"]
+legacy_ids = []

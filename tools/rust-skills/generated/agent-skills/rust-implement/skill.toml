@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-implement"
+package = "rust-implement"
+status = "implemented"
+kind = "task"
+summary = "Implement material Rust changes under repository policy and route to relevant capabilities."
+requires = ["rust-core"]
+routes_to = ["rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]
+related = ["rust-review", "rust-repository-onboarding"]
+profiles = ["all"]
+packs = ["rust-standard", "rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["official-rust-style-guide", "rust-api-guidelines", "codeaesthetic-development-videos"]
+validation = ["Repository-declared required validation"]
+outputs = ["Scoped implementation, tests, validation evidence, and unresolved risks"]
+legacy_ids = []
