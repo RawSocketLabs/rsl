@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Protocol Engineering"
+  short_description: "Engineer binary protocols with conformance evidence"
+  default_prompt: "Use $rust-protocol to implement or review this binary protocol against its declared specification and vectors."

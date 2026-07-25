@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Async and Concurrency"
+  short_description: "Design owned, bounded concurrent Rust systems"
+  default_prompt: "Use $rust-async-concurrency to analyze ownership, cancellation, queues, overload, and shutdown for this Rust change."

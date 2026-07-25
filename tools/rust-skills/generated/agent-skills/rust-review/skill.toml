@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-review"
+package = "rust-review"
+status = "implemented"
+kind = "task"
+summary = "Evidence-based review of Rust diffs, branches, commits, and designs."
+requires = ["rust-core"]
+routes_to = ["rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded", "rust-skill-maintenance"]
+related = ["rust-implement", "rust-repository-onboarding"]
+profiles = ["all"]
+packs = ["rust-standard", "rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["rust-api-guidelines", "rustonomicon", "microsoft-pragmatic-rust", "codeaesthetic-development-videos"]
+validation = ["Repository-declared review diagnostics", "Finding evidence and command-truthfulness check"]
+outputs = ["Prioritized actionable findings with severity, confidence, evidence, correction, verification, and related skill"]
+legacy_ids = ["rsl-rust-review"]

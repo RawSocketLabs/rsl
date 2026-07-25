@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Review"
+  short_description: "Review Rust changes with actionable evidence"
+  default_prompt: "Use $rust-review to review this Rust change and report only prioritized, actionable, evidence-based findings."

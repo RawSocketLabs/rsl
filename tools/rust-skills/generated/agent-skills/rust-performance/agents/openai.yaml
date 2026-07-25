@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Performance"
+  short_description: "Measure and optimize real Rust workloads"
+  default_prompt: "Use $rust-performance to define, measure, and evaluate this Rust performance claim without weakening correctness."

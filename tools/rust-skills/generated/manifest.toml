@@ -4,96 +4,608 @@ hash_algorithm = "fnv1a64"
 
 [[files]]
 path = "agent-skills/rsl-rust-core/SKILL.md"
-hash = "299f83de55b2cf1f"
+hash = "25c92d2cbba2b667"
 
 [[files]]
 path = "agent-skills/rsl-rust-core/agents/openai.yaml"
-hash = "30362b6c93002f09"
+hash = "1c7fa35635380e0a"
 
 [[files]]
-path = "agent-skills/rsl-rust-core/references/api-ownership-and-errors.md"
-hash = "dca07c97c1800588"
-
-[[files]]
-path = "agent-skills/rsl-rust-core/references/dependencies-and-change.md"
-hash = "623b44e05d027943"
-
-[[files]]
-path = "agent-skills/rsl-rust-core/references/documentation-and-examples.md"
-hash = "d8c6afa21bad4b1e"
-
-[[files]]
-path = "agent-skills/rsl-rust-core/references/profiles-and-priorities.md"
-hash = "1d981447bbf0ce2f"
-
-[[files]]
-path = "agent-skills/rsl-rust-core/references/style.md"
-hash = "a66d4022463a8059"
-
-[[files]]
-path = "agent-skills/rsl-rust-core/references/verification.md"
-hash = "7155c612b6ee2deb"
+path = "agent-skills/rsl-rust-core/skill.toml"
+hash = "ffcc9ecf695eb80b"
 
 [[files]]
 path = "agent-skills/rsl-rust-review/SKILL.md"
-hash = "7076afe4ea52066f"
+hash = "00800f67965dee5d"
 
 [[files]]
 path = "agent-skills/rsl-rust-review/agents/openai.yaml"
-hash = "98e21929c5ae1a0c"
+hash = "a57242e277cf9129"
 
 [[files]]
-path = "agent-skills/rsl-rust-review/references/review-procedure.md"
-hash = "10afbfa05a15d1c4"
+path = "agent-skills/rsl-rust-review/skill.toml"
+hash = "8434b314672a35de"
 
 [[files]]
-path = "agent-skills/rsl-rust-review/references/risk-checks.md"
-hash = "1bd2a9d11ea3787b"
+path = "agent-skills/rust-api-design/SKILL.md"
+hash = "96d9906b7a49abc3"
+
+[[files]]
+path = "agent-skills/rust-api-design/agents/openai.yaml"
+hash = "218828e2c00bcf29"
+
+[[files]]
+path = "agent-skills/rust-api-design/references/api-ownership-and-errors.md"
+hash = "cb9ac475228f02fd"
+
+[[files]]
+path = "agent-skills/rust-api-design/references/documentation-and-examples.md"
+hash = "00fc5026ee837676"
+
+[[files]]
+path = "agent-skills/rust-api-design/references/ownership-patterns.md"
+hash = "e3d8c34ed8949c09"
+
+[[files]]
+path = "agent-skills/rust-api-design/skill.toml"
+hash = "31154abc5645be39"
+
+[[files]]
+path = "agent-skills/rust-async-concurrency/SKILL.md"
+hash = "1864f37d180adcbf"
+
+[[files]]
+path = "agent-skills/rust-async-concurrency/agents/openai.yaml"
+hash = "0eef2b24b7cd8789"
+
+[[files]]
+path = "agent-skills/rust-async-concurrency/references/concurrency.md"
+hash = "88097bebdf1224f7"
+
+[[files]]
+path = "agent-skills/rust-async-concurrency/skill.toml"
+hash = "25305ec11f512133"
+
+[[files]]
+path = "agent-skills/rust-core/SKILL.md"
+hash = "b8bc599d86835817"
+
+[[files]]
+path = "agent-skills/rust-core/agents/openai.yaml"
+hash = "72884a3f2841192e"
+
+[[files]]
+path = "agent-skills/rust-core/references/observability.md"
+hash = "2227c6057b036994"
+
+[[files]]
+path = "agent-skills/rust-core/references/principles.md"
+hash = "8308783bc0c94371"
+
+[[files]]
+path = "agent-skills/rust-core/skill.toml"
+hash = "a19833f33019a416"
+
+[[files]]
+path = "agent-skills/rust-dependencies-security/SKILL.md"
+hash = "185561b1e2a3ef7b"
+
+[[files]]
+path = "agent-skills/rust-dependencies-security/agents/openai.yaml"
+hash = "c6320313533c1229"
+
+[[files]]
+path = "agent-skills/rust-dependencies-security/references/dependencies-and-change.md"
+hash = "6c75df0322be47c0"
+
+[[files]]
+path = "agent-skills/rust-dependencies-security/references/security.md"
+hash = "f662e44566e2940e"
+
+[[files]]
+path = "agent-skills/rust-dependencies-security/skill.toml"
+hash = "ac005f47166e8059"
+
+[[files]]
+path = "agent-skills/rust-dsp/SKILL.md"
+hash = "32098101379e4302"
+
+[[files]]
+path = "agent-skills/rust-dsp/agents/openai.yaml"
+hash = "36b2f515e1e4de2a"
+
+[[files]]
+path = "agent-skills/rust-dsp/references/dsp-and-streaming.md"
+hash = "4459891e6881525c"
+
+[[files]]
+path = "agent-skills/rust-dsp/skill.toml"
+hash = "3857138d085a0150"
+
+[[files]]
+path = "agent-skills/rust-embedded/SKILL.md"
+hash = "73efd80036eb57b3"
+
+[[files]]
+path = "agent-skills/rust-embedded/agents/openai.yaml"
+hash = "e7e1506828d07285"
+
+[[files]]
+path = "agent-skills/rust-embedded/references/embedded.md"
+hash = "ff52667bf7282a23"
+
+[[files]]
+path = "agent-skills/rust-embedded/skill.toml"
+hash = "6f663cd21346ac69"
+
+[[files]]
+path = "agent-skills/rust-implement/SKILL.md"
+hash = "29b71827131dbd29"
+
+[[files]]
+path = "agent-skills/rust-implement/agents/openai.yaml"
+hash = "4288fc6198247695"
+
+[[files]]
+path = "agent-skills/rust-implement/references/style.md"
+hash = "79c814c4311f9ec3"
+
+[[files]]
+path = "agent-skills/rust-implement/skill.toml"
+hash = "f630d64bc1e18854"
+
+[[files]]
+path = "agent-skills/rust-performance/SKILL.md"
+hash = "385218a2cf847209"
+
+[[files]]
+path = "agent-skills/rust-performance/agents/openai.yaml"
+hash = "e30b075055b9f4b9"
+
+[[files]]
+path = "agent-skills/rust-performance/references/performance.md"
+hash = "52c521a0e1f54878"
+
+[[files]]
+path = "agent-skills/rust-performance/skill.toml"
+hash = "cc152821934b33e1"
+
+[[files]]
+path = "agent-skills/rust-protocol/SKILL.md"
+hash = "66dce27f8d8761cf"
+
+[[files]]
+path = "agent-skills/rust-protocol/agents/openai.yaml"
+hash = "40d0a6aca2da3dfc"
+
+[[files]]
+path = "agent-skills/rust-protocol/references/protocol.md"
+hash = "996dd463bfc0b2a1"
+
+[[files]]
+path = "agent-skills/rust-protocol/references/wire-and-conformance.md"
+hash = "97aeea93e684c467"
+
+[[files]]
+path = "agent-skills/rust-protocol/skill.toml"
+hash = "03d4f309e4a7fab4"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/SKILL.md"
+hash = "427512a57b28a4c0"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/agents/openai.yaml"
+hash = "66547ca7fd2c70ff"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/assets/approved-answers.example.json"
+hash = "c0ccaf9f92bc83ca"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/assets/validate-rust.py"
+hash = "ee02767a78299056"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/references/inspection.md"
+hash = "22f844d56b20c88b"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/references/interview.md"
+hash = "23b1571d40be2481"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/references/outputs.md"
+hash = "cd9a70737ce76ce0"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/references/validation-catalog.md"
+hash = "1ce4aee703972788"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/scripts/inspect_repository.py"
+hash = "3f73be44885fc052"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/scripts/render_adoption.py"
+hash = "c09dfc3742ea3e02"
+
+[[files]]
+path = "agent-skills/rust-repository-onboarding/skill.toml"
+hash = "d54e0da5a3051009"
+
+[[files]]
+path = "agent-skills/rust-review/SKILL.md"
+hash = "a959f75eebb489cd"
+
+[[files]]
+path = "agent-skills/rust-review/agents/openai.yaml"
+hash = "e835b659bc638b75"
+
+[[files]]
+path = "agent-skills/rust-review/references/review-procedure.md"
+hash = "d0bfe57d101eef58"
+
+[[files]]
+path = "agent-skills/rust-review/references/risk-checks.md"
+hash = "ed36f5846755aec0"
+
+[[files]]
+path = "agent-skills/rust-review/skill.toml"
+hash = "134eeb51ad1ce078"
+
+[[files]]
+path = "agent-skills/rust-skill-maintenance/SKILL.md"
+hash = "1d805f2748b5e22a"
+
+[[files]]
+path = "agent-skills/rust-skill-maintenance/agents/openai.yaml"
+hash = "640a9d6337578f13"
+
+[[files]]
+path = "agent-skills/rust-skill-maintenance/references/maintenance.md"
+hash = "fa02a629c1251a24"
+
+[[files]]
+path = "agent-skills/rust-skill-maintenance/skill.toml"
+hash = "0ef49e963f603de4"
+
+[[files]]
+path = "agent-skills/rust-testing/SKILL.md"
+hash = "2f152e59d66de426"
+
+[[files]]
+path = "agent-skills/rust-testing/agents/openai.yaml"
+hash = "45fa830b465cf025"
+
+[[files]]
+path = "agent-skills/rust-testing/references/techniques.md"
+hash = "11b577322995e421"
+
+[[files]]
+path = "agent-skills/rust-testing/references/verification.md"
+hash = "04f18ea53662bce9"
+
+[[files]]
+path = "agent-skills/rust-testing/skill.toml"
+hash = "7f5be765befc2778"
+
+[[files]]
+path = "agent-skills/rust-unsafe-ffi/SKILL.md"
+hash = "ed1ed19dc9d3df47"
+
+[[files]]
+path = "agent-skills/rust-unsafe-ffi/agents/openai.yaml"
+hash = "f2e053af445c0179"
+
+[[files]]
+path = "agent-skills/rust-unsafe-ffi/references/unsafe-and-ffi.md"
+hash = "d3894d7647387040"
+
+[[files]]
+path = "agent-skills/rust-unsafe-ffi/skill.toml"
+hash = "09fc0adf6dabf1b6"
 
 [[files]]
 path = "claude-skills/rsl-rust-core/SKILL.md"
-hash = "299f83de55b2cf1f"
+hash = "25c92d2cbba2b667"
 
 [[files]]
-path = "claude-skills/rsl-rust-core/references/api-ownership-and-errors.md"
-hash = "dca07c97c1800588"
-
-[[files]]
-path = "claude-skills/rsl-rust-core/references/dependencies-and-change.md"
-hash = "623b44e05d027943"
-
-[[files]]
-path = "claude-skills/rsl-rust-core/references/documentation-and-examples.md"
-hash = "d8c6afa21bad4b1e"
-
-[[files]]
-path = "claude-skills/rsl-rust-core/references/profiles-and-priorities.md"
-hash = "1d981447bbf0ce2f"
-
-[[files]]
-path = "claude-skills/rsl-rust-core/references/style.md"
-hash = "a66d4022463a8059"
-
-[[files]]
-path = "claude-skills/rsl-rust-core/references/verification.md"
-hash = "7155c612b6ee2deb"
+path = "claude-skills/rsl-rust-core/skill.toml"
+hash = "ffcc9ecf695eb80b"
 
 [[files]]
 path = "claude-skills/rsl-rust-review/SKILL.md"
-hash = "7076afe4ea52066f"
+hash = "00800f67965dee5d"
 
 [[files]]
-path = "claude-skills/rsl-rust-review/references/review-procedure.md"
-hash = "10afbfa05a15d1c4"
+path = "claude-skills/rsl-rust-review/skill.toml"
+hash = "8434b314672a35de"
 
 [[files]]
-path = "claude-skills/rsl-rust-review/references/risk-checks.md"
-hash = "1bd2a9d11ea3787b"
+path = "claude-skills/rust-api-design/SKILL.md"
+hash = "96d9906b7a49abc3"
+
+[[files]]
+path = "claude-skills/rust-api-design/references/api-ownership-and-errors.md"
+hash = "cb9ac475228f02fd"
+
+[[files]]
+path = "claude-skills/rust-api-design/references/documentation-and-examples.md"
+hash = "00fc5026ee837676"
+
+[[files]]
+path = "claude-skills/rust-api-design/references/ownership-patterns.md"
+hash = "e3d8c34ed8949c09"
+
+[[files]]
+path = "claude-skills/rust-api-design/skill.toml"
+hash = "31154abc5645be39"
+
+[[files]]
+path = "claude-skills/rust-async-concurrency/SKILL.md"
+hash = "1864f37d180adcbf"
+
+[[files]]
+path = "claude-skills/rust-async-concurrency/references/concurrency.md"
+hash = "88097bebdf1224f7"
+
+[[files]]
+path = "claude-skills/rust-async-concurrency/skill.toml"
+hash = "25305ec11f512133"
+
+[[files]]
+path = "claude-skills/rust-core/SKILL.md"
+hash = "b8bc599d86835817"
+
+[[files]]
+path = "claude-skills/rust-core/references/observability.md"
+hash = "2227c6057b036994"
+
+[[files]]
+path = "claude-skills/rust-core/references/principles.md"
+hash = "8308783bc0c94371"
+
+[[files]]
+path = "claude-skills/rust-core/skill.toml"
+hash = "a19833f33019a416"
+
+[[files]]
+path = "claude-skills/rust-dependencies-security/SKILL.md"
+hash = "185561b1e2a3ef7b"
+
+[[files]]
+path = "claude-skills/rust-dependencies-security/references/dependencies-and-change.md"
+hash = "6c75df0322be47c0"
+
+[[files]]
+path = "claude-skills/rust-dependencies-security/references/security.md"
+hash = "f662e44566e2940e"
+
+[[files]]
+path = "claude-skills/rust-dependencies-security/skill.toml"
+hash = "ac005f47166e8059"
+
+[[files]]
+path = "claude-skills/rust-dsp/SKILL.md"
+hash = "32098101379e4302"
+
+[[files]]
+path = "claude-skills/rust-dsp/references/dsp-and-streaming.md"
+hash = "4459891e6881525c"
+
+[[files]]
+path = "claude-skills/rust-dsp/skill.toml"
+hash = "3857138d085a0150"
+
+[[files]]
+path = "claude-skills/rust-embedded/SKILL.md"
+hash = "73efd80036eb57b3"
+
+[[files]]
+path = "claude-skills/rust-embedded/references/embedded.md"
+hash = "ff52667bf7282a23"
+
+[[files]]
+path = "claude-skills/rust-embedded/skill.toml"
+hash = "6f663cd21346ac69"
+
+[[files]]
+path = "claude-skills/rust-implement/SKILL.md"
+hash = "29b71827131dbd29"
+
+[[files]]
+path = "claude-skills/rust-implement/references/style.md"
+hash = "79c814c4311f9ec3"
+
+[[files]]
+path = "claude-skills/rust-implement/skill.toml"
+hash = "f630d64bc1e18854"
+
+[[files]]
+path = "claude-skills/rust-performance/SKILL.md"
+hash = "385218a2cf847209"
+
+[[files]]
+path = "claude-skills/rust-performance/references/performance.md"
+hash = "52c521a0e1f54878"
+
+[[files]]
+path = "claude-skills/rust-performance/skill.toml"
+hash = "cc152821934b33e1"
+
+[[files]]
+path = "claude-skills/rust-protocol/SKILL.md"
+hash = "66dce27f8d8761cf"
+
+[[files]]
+path = "claude-skills/rust-protocol/references/protocol.md"
+hash = "996dd463bfc0b2a1"
+
+[[files]]
+path = "claude-skills/rust-protocol/references/wire-and-conformance.md"
+hash = "97aeea93e684c467"
+
+[[files]]
+path = "claude-skills/rust-protocol/skill.toml"
+hash = "03d4f309e4a7fab4"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/SKILL.md"
+hash = "427512a57b28a4c0"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/assets/approved-answers.example.json"
+hash = "c0ccaf9f92bc83ca"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/assets/validate-rust.py"
+hash = "ee02767a78299056"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/references/inspection.md"
+hash = "22f844d56b20c88b"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/references/interview.md"
+hash = "23b1571d40be2481"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/references/outputs.md"
+hash = "cd9a70737ce76ce0"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/references/validation-catalog.md"
+hash = "1ce4aee703972788"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/scripts/inspect_repository.py"
+hash = "3f73be44885fc052"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/scripts/render_adoption.py"
+hash = "c09dfc3742ea3e02"
+
+[[files]]
+path = "claude-skills/rust-repository-onboarding/skill.toml"
+hash = "d54e0da5a3051009"
+
+[[files]]
+path = "claude-skills/rust-review/SKILL.md"
+hash = "a959f75eebb489cd"
+
+[[files]]
+path = "claude-skills/rust-review/references/review-procedure.md"
+hash = "d0bfe57d101eef58"
+
+[[files]]
+path = "claude-skills/rust-review/references/risk-checks.md"
+hash = "ed36f5846755aec0"
+
+[[files]]
+path = "claude-skills/rust-review/skill.toml"
+hash = "134eeb51ad1ce078"
+
+[[files]]
+path = "claude-skills/rust-skill-maintenance/SKILL.md"
+hash = "1d805f2748b5e22a"
+
+[[files]]
+path = "claude-skills/rust-skill-maintenance/references/maintenance.md"
+hash = "fa02a629c1251a24"
+
+[[files]]
+path = "claude-skills/rust-skill-maintenance/skill.toml"
+hash = "0ef49e963f603de4"
+
+[[files]]
+path = "claude-skills/rust-testing/SKILL.md"
+hash = "2f152e59d66de426"
+
+[[files]]
+path = "claude-skills/rust-testing/references/techniques.md"
+hash = "11b577322995e421"
+
+[[files]]
+path = "claude-skills/rust-testing/references/verification.md"
+hash = "04f18ea53662bce9"
+
+[[files]]
+path = "claude-skills/rust-testing/skill.toml"
+hash = "7f5be765befc2778"
+
+[[files]]
+path = "claude-skills/rust-unsafe-ffi/SKILL.md"
+hash = "ed1ed19dc9d3df47"
+
+[[files]]
+path = "claude-skills/rust-unsafe-ffi/references/unsafe-and-ffi.md"
+hash = "d3894d7647387040"
+
+[[files]]
+path = "claude-skills/rust-unsafe-ffi/skill.toml"
+hash = "09fc0adf6dabf1b6"
 
 [[files]]
 path = "codex-overlay/rsl-rust-core/agents/openai.yaml"
-hash = "30362b6c93002f09"
+hash = "1c7fa35635380e0a"
 
 [[files]]
 path = "codex-overlay/rsl-rust-review/agents/openai.yaml"
-hash = "98e21929c5ae1a0c"
+hash = "a57242e277cf9129"
+
+[[files]]
+path = "codex-overlay/rust-api-design/agents/openai.yaml"
+hash = "218828e2c00bcf29"
+
+[[files]]
+path = "codex-overlay/rust-async-concurrency/agents/openai.yaml"
+hash = "0eef2b24b7cd8789"
+
+[[files]]
+path = "codex-overlay/rust-core/agents/openai.yaml"
+hash = "72884a3f2841192e"
+
+[[files]]
+path = "codex-overlay/rust-dependencies-security/agents/openai.yaml"
+hash = "c6320313533c1229"
+
+[[files]]
+path = "codex-overlay/rust-dsp/agents/openai.yaml"
+hash = "36b2f515e1e4de2a"
+
+[[files]]
+path = "codex-overlay/rust-embedded/agents/openai.yaml"
+hash = "e7e1506828d07285"
+
+[[files]]
+path = "codex-overlay/rust-implement/agents/openai.yaml"
+hash = "4288fc6198247695"
+
+[[files]]
+path = "codex-overlay/rust-performance/agents/openai.yaml"
+hash = "e30b075055b9f4b9"
+
+[[files]]
+path = "codex-overlay/rust-protocol/agents/openai.yaml"
+hash = "40d0a6aca2da3dfc"
+
+[[files]]
+path = "codex-overlay/rust-repository-onboarding/agents/openai.yaml"
+hash = "66547ca7fd2c70ff"
+
+[[files]]
+path = "codex-overlay/rust-review/agents/openai.yaml"
+hash = "e835b659bc638b75"
+
+[[files]]
+path = "codex-overlay/rust-skill-maintenance/agents/openai.yaml"
+hash = "640a9d6337578f13"
+
+[[files]]
+path = "codex-overlay/rust-testing/agents/openai.yaml"
+hash = "45fa830b465cf025"
+
+[[files]]
+path = "codex-overlay/rust-unsafe-ffi/agents/openai.yaml"
+hash = "f2e053af445c0179"

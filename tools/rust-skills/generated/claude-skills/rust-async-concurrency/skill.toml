@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-async-concurrency"
+package = "rust-async-concurrency"
+status = "implemented"
+kind = "technique"
+summary = "Design asynchronous and concurrent ownership, cancellation, backpressure, shutdown, and synchronization."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-protocol", "rust-dsp", "rust-performance", "rust-unsafe-ffi"]
+related = ["rust-embedded", "rust-review"]
+profiles = ["async", "concurrent", "real-time"]
+packs = ["rust-systems", "rust-protocol-systems", "rsl-rust-default"]
+references = ["rustonomicon", "rust-time-documentation", "tracing-documentation", "cargo-features-documentation", "tokio-cancellation-safety", "tokio-runtime-handle", "rayon-thread-pool", "lets-get-rusty-design-videos"]
+validation = ["Construction without ambient runtime context", "Caller-owned Rayon pool and nested-execution tests", "Below/at/above queue-capacity, deterministic overload, selected-primitive race, loss-metadata, named-event timing, and bounded observability tests", "Clean, busy, saturated-return-path, panic, and missed-deadline lifecycle tests", "Cancellation injection around suspension and partial I/O", "Loom when relevant", "Soak or load tests when required"]
+outputs = ["Caller-driving, spawn, and parallel-pool contract, quantified queue and overload contract, local queue-implementation and wrapper decision, per-work-class ownership and lifecycle records, named queue and handoff timing events, bounded operational evidence, shutdown behavior, and tests"]
+legacy_ids = []

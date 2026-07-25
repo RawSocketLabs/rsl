@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust API Design"
+  short_description: "Design durable and misuse-resistant Rust APIs"
+  default_prompt: "Use $rust-api-design to design or review this Rust API, including invariants, errors, documentation, and compatibility."

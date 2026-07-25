@@ -1,4 +1,4 @@
 interface:
-  display_name: "RSL Rust Core"
-  short_description: "Risk-aware Rust implementation guidance"
-  default_prompt: "Use $rsl-rust-core to implement this Rust change under the repository profile and constraints."
+  display_name: "RSL Rust Core Compatibility"
+  short_description: "Route legacy RSL Rust core activations"
+  default_prompt: "Use $rsl-rust-core to route this legacy activation to $rust-core and the applicable modular Rust skills."
