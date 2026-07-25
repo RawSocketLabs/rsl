@@ -1,0 +1,15 @@
+schema = 2
+id = "performance-invalid-benchmark"
+class = "regression"
+skill = "rust-performance"
+profile = "application"
+expected_skills = ["rust-performance", "rust-testing"]
+required_commands = []
+hard_gates = ["benchmark-validity", "correctness-preservation", "tradeoff-analysis"]
+forbidden_regressions = ["accept-optimized-away-work", "performance-claim-without-measurement", "remove-readable-reference-without-need"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

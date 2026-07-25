@@ -1,8 +1,15 @@
-schema = 1
+schema = 2
 id = "trigger-core-material"
 class = "trigger"
-skill = "rsl-rust-core"
+skill = "rust-core"
 profile = "public-library"
+expected_skills = ["rust-core", "rust-implement"]
+required_commands = []
+hard_gates = ["correct-skill-activation"]
+forbidden_regressions = ["miss-material-rust-change", "activate-unrelated-domain-skill"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
 prompt = "prompt.md"
 fixture = "fixture"
 grader = "grader.md"

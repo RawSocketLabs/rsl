@@ -1,0 +1,15 @@
+schema = 2
+id = "protocol-wire-order-known-answer"
+class = "decision"
+skill = "rust-protocol"
+profile = "public-library"
+expected_skills = ["rust-protocol", "rust-testing"]
+required_commands = []
+hard_gates = ["protocol-conformance", "known-answer-evidence", "terminology-precision"]
+forbidden_regressions = ["round-trip-only-evidence", "host-endianness-confusion", "invented-specification-fact"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

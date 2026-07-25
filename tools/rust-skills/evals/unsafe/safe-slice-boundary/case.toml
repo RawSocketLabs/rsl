@@ -1,0 +1,15 @@
+schema = 2
+id = "unsafe-safe-slice-boundary"
+class = "review"
+skill = "rust-unsafe-ffi"
+profile = "public-library"
+expected_skills = ["rust-unsafe-ffi", "rust-review", "rust-testing"]
+required_commands = []
+hard_gates = ["soundness", "safety-argument", "safe-boundary"]
+forbidden_regressions = ["safe-caller-can-violate-invariant", "missing-null-empty-analysis", "unsupported-miri-claim"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

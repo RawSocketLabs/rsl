@@ -1,0 +1,15 @@
+schema = 2
+id = "core-reusable-vec-buffer"
+class = "regression"
+skill = "rust-performance"
+profile = "application"
+expected_skills = ["rust-performance", "rust-testing"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "tests", "allocation-contract"]
+forbidden_regressions = ["replace-reusable-buffer-with-shared-slice", "unmeasured-performance-claim", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

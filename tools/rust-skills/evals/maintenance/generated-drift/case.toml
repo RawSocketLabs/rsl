@@ -1,0 +1,15 @@
+schema = 2
+id = "maintenance-generated-drift"
+class = "regression"
+skill = "rust-skill-maintenance"
+profile = "internal-library"
+expected_skills = ["rust-skill-maintenance", "rust-testing"]
+required_commands = ["cargo xtask generate --check", "cargo xtask validate"]
+hard_gates = ["canonical-owner-edit", "deterministic-generation", "migration-record"]
+forbidden_regressions = ["hand-edit-generated-adapter", "duplicate-rule-owner", "unsupported-validation-claim"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

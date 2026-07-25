@@ -1,0 +1,15 @@
+schema = 2
+id = "onboarding-mixed-workspace"
+class = "discovery"
+skill = "rust-repository-onboarding"
+profile = "internal-library"
+expected_skills = ["rust-repository-onboarding", "rust-protocol", "rust-unsafe-ffi", "rust-embedded"]
+required_commands = []
+hard_gates = ["repository-inspection", "component-overlays", "approval-before-write"]
+forbidden_regressions = ["one-rigid-profile", "overwrite-existing-instructions", "finalize-rules-before-interview"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
+prompt = "prompt.md"
+fixture = "fixture"
+grader = "grader.md"

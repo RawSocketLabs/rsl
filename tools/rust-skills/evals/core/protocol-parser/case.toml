@@ -1,8 +1,15 @@
-schema = 1
+schema = 2
 id = "core-protocol-parser"
 class = "decision"
-skill = "rsl-rust-core"
+skill = "rust-protocol"
 profile = "internal-library"
+expected_skills = ["rust-protocol", "rust-testing"]
+required_commands = ["cargo test"]
+hard_gates = ["compilation", "known-answer-tests", "malformed-input-tests", "protocol-conformance"]
+forbidden_regressions = ["round-trip-only-evidence", "ambiguous-wire-order", "panic-on-input", "unsupported-validation-claim"]
+hidden_tests = "external"
+baseline_results = "external"
+current_results = "external"
 prompt = "prompt.md"
 fixture = "fixture"
 grader = "grader.md"

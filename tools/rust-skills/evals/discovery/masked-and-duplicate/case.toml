@@ -1,8 +1,15 @@
-schema = 1
+schema = 2
 id = "discovery-masked-and-duplicate"
 class = "discovery"
 skill = "none"
 profile = "public-library"
+expected_skills = ["rust-repository-onboarding"]
+required_commands = []
+hard_gates = ["discover-effective-instructions", "detect-duplicate-install"]
+forbidden_regressions = ["silently-ignore-masked-skill", "write-before-approval"]
+hidden_tests = "none"
+baseline_results = "external"
+current_results = "external"
 prompt = "prompt.md"
 fixture = "fixture"
 grader = "grader.md"
