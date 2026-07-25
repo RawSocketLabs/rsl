@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Unsafe and FFI"
+  short_description: "Prove unsafe and FFI boundary invariants"
+  default_prompt: "Use $rust-unsafe-ffi to review this unsafe or FFI boundary and produce a complete safety argument."

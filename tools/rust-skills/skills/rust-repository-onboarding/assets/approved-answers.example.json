@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "approved": true,
+  "base": "public-library",
+  "capabilities": [
+    "protocol",
+    "performance-sensitive",
+    "public-api"
+  ],
+  "enabled_skills": [
+    "rust-core",
+    "rust-implement",
+    "rust-review",
+    "rust-api-design",
+    "rust-testing",
+    "rust-protocol",
+    "rust-performance",
+    "rust-dependencies-security"
+  ],
+  "organization": "",
+  "adapter": "common",
+  "installation_mode": "copy",
+  "migration": "new-adoption",
+  "agents_mode": "create",
+  "local_instruction_paths": [
+    "AGENTS.md",
+    ".rust-skills/decisions"
+  ],
+  "components": {},
+  "purpose": "Decode and encode a versioned telemetry wire format.",
+  "consumers": "Public Rust applications and protocol inspection tools.",
+  "lifecycle": "Maintained public library with backward-compatible releases.",
+  "profile_rationale": "Public API, hostile wire input, and measured decoding paths.",
+  "decisions": {
+    "compatibility": "# Compatibility\n\nStable Rust; MSRV and SemVer are declared in repository configuration.",
+    "protocol": "# Protocol\n\nStrict construction, finite parser budgets, and independent known-answer vectors are required.",
+    "testing": "# Testing\n\nUnit, integration, doctest, boundary, property, and protocol vector tests are required."
+  },
+  "validation": [
+    {
+      "id": "format",
+      "tier": "required",
+      "description": "Check Rust formatting.",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "prerequisites": [
+        "Repository-pinned Rust toolchain with rustfmt component"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "test",
+      "tier": "required",
+      "description": "Run the workspace test suite.",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace"
+      ],
+      "prerequisites": [
+        "Repository-pinned Rust toolchain",
+        "Any native libraries documented by the repository"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "miri",
+      "tier": "optional",
+      "description": "Run Miri when the component and toolchain support it.",
+      "command": [
+        "cargo",
+        "miri",
+        "test"
+      ],
+      "prerequisites": [
+        "Nightly-compatible toolchain with the Miri component"
+      ],
+      "required_tools": [
+        "cargo-miri"
+      ],
+      "enabled": false,
+      "reason": "No unsafe code is currently permitted."
+    }
+  ],
+  "unresolved": [
+    "Confirm the sustained fuzzing cadence before the first public release."
+  ]
+}

@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-repository-onboarding"
+package = "rust-repository-onboarding"
+status = "implemented"
+kind = "task"
+summary = "Inspect, interview, profile, configure, and validate a Rust repository adoption."
+requires = ["rust-core"]
+routes_to = ["rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security", "rust-embedded"]
+related = ["rust-implement", "rust-review", "rust-skill-maintenance"]
+profiles = ["all"]
+packs = ["rust-standard", "rsl-rust-default"]
+references = ["agent-skills-specification"]
+validation = ["cargo xtask validate", "Repository adoption validation"]
+outputs = ["Approved repository profile, provenance, routing, domain-vocabulary, stream-metadata, discontinuity, processing-composition, rate-relationship, streaming-completion, timing-instrumentation, observability, and protocol-validation policy, finite parser-budget dimensions, units, scope, reset, rationale, and approved overrides, exact received-evidence retention, recovered-output and integrity/correction status, trusted-boundary, mutation-freshness, persistence, incomplete-input, byte-consumption, and resynchronization decisions when applicable, local queue-implementation and wrapper decisions, per-work-class lifecycle records when concurrent, validation, and unresolved decisions"]
+legacy_ids = []

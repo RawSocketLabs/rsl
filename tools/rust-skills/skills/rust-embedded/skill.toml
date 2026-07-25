@@ -1,0 +1,15 @@
+schema = 1
+id = "rust-embedded"
+package = "rust-embedded"
+status = "implemented"
+kind = "environment"
+summary = "Engineer no-std and firmware code under target, allocator, interrupt, size, and hardware constraints."
+requires = ["rust-core", "rust-testing"]
+routes_to = ["rust-api-design", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security"]
+related = ["rust-review"]
+profiles = ["embedded", "no-std", "real-time"]
+packs = ["rust-systems"]
+references = ["rustonomicon"]
+validation = ["Real target build", "Target-specific tests", "Size checks when required"]
+outputs = ["Capability contract, target evidence, panic and allocation policy, and hardware validation"]
+legacy_ids = []

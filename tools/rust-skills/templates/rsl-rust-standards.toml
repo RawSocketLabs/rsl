@@ -1,10 +1,17 @@
+# v0.1 (schema 1) consumer format, retained so `cargo xtask inspect-adoption`
+# can read pre-modular installations. Its `profile` and `domains` vocabularies
+# are the legacy ones and are deliberately frozen; the modular bases,
+# capabilities, and canonical skill set are not valid here.
+#
+# New adoptions do not use this file. `rust-repository-onboarding` renders
+# `.rust-skills/adoption.toml` instead, after inspection and approval. See
+# docs/adoption.md and docs/migrations/0.1-to-modular.md.
 schema = 1
 standards = "0.1.0"
 profile = "public-library"
 skills = ["rsl-rust-core", "rsl-rust-review"]
 
-# Add only real component differences. Domain names reserve future routing; the
-# initial release implements only core and review skills.
+# Add only real component differences. Domain names reserve legacy routing.
 # [components."crates/example"]
 # profile = "internal-library"
 # domains = ["protocol"]

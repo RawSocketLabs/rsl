@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Core"
+  short_description: "Apply universal Rust engineering judgment"
+  default_prompt: "Use $rust-core to establish repository precedence, engineering constraints, and evidence requirements for this Rust task."
