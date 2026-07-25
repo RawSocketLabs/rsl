@@ -1,3 +1,5 @@
+mod foundation;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::error::Error;
@@ -9,14 +11,54 @@ use std::process;
 type TaskResult<T> = Result<T, Box<dyn Error>>;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const PROFILES: &[&str] = &[
+const LEGACY_PROFILES: &[&str] = &[
     "public-library",
     "internal-library",
     "performance-application",
     "pragmatic-application",
     "prototype",
 ];
-const SKILLS: &[&str] = &["rsl-rust-core", "rsl-rust-review"];
+const EVAL_PROFILES: &[&str] = &[
+    "public-library",
+    "internal-library",
+    "application",
+    "service",
+    "experimental",
+];
+const CANONICAL_SKILLS: &[&str] = &[
+    "rust-core",
+    "rust-implement",
+    "rust-review",
+    "rust-repository-onboarding",
+    "rust-api-design",
+    "rust-testing",
+    "rust-protocol",
+    "rust-dsp",
+    "rust-performance",
+    "rust-async-concurrency",
+    "rust-unsafe-ffi",
+    "rust-dependencies-security",
+    "rust-embedded",
+    "rust-skill-maintenance",
+];
+const SKILLS: &[&str] = &[
+    "rsl-rust-core",
+    "rsl-rust-review",
+    "rust-core",
+    "rust-implement",
+    "rust-review",
+    "rust-repository-onboarding",
+    "rust-api-design",
+    "rust-testing",
+    "rust-protocol",
+    "rust-dsp",
+    "rust-performance",
+    "rust-async-concurrency",
+    "rust-unsafe-ffi",
+    "rust-dependencies-security",
+    "rust-embedded",
+    "rust-skill-maintenance",
+];
 const DOMAINS: &[&str] = &["protocol", "dsp", "systems"];
 
 #[derive(Debug)]
@@ -52,6 +94,13 @@ struct EvalCase {
     class: String,
     skill: String,
     profile: String,
+    expected_skills: Vec<String>,
+    required_commands: Vec<String>,
+    hard_gates: Vec<String>,
+    forbidden_regressions: Vec<String>,
+    hidden_tests: String,
+    baseline_results: String,
+    current_results: String,
     prompt: String,
     fixture: String,
     grader: String,
@@ -163,6 +212,7 @@ fn command_install(arguments: &[String]) -> TaskResult<()> {
     let mut scope = None;
     let mut target = None;
     let mut replace = false;
+    let mut selected_skills = None;
     let mut index = 0;
 
     while index < arguments.len() {
@@ -194,6 +244,32 @@ fn command_install(arguments: &[String]) -> TaskResult<()> {
                 target = Some(PathBuf::from(required_value(arguments, index, "--target")?));
                 index += 2;
             }
+            "--skills" => {
+                if selected_skills.is_some() {
+                    return fail("install accepts --skills only once");
+                }
+                let value = required_value(arguments, index, "--skills")?;
+                let parsed = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|skill| !skill.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<String>>();
+                if parsed.is_empty() {
+                    return fail("install --skills requires a comma-separated skill list");
+                }
+                let mut unique = BTreeSet::new();
+                for skill in &parsed {
+                    if !SKILLS.contains(&skill.as_str()) {
+                        return fail(format!("unknown install skill `{skill}`"));
+                    }
+                    if !unique.insert(skill.clone()) {
+                        return fail(format!("duplicate install skill `{skill}`"));
+                    }
+                }
+                selected_skills = Some(parsed);
+                index += 2;
+            }
             "--replace" if !replace => {
                 replace = true;
                 index += 1;
@@ -206,9 +282,15 @@ fn command_install(arguments: &[String]) -> TaskResult<()> {
     let scope = scope.ok_or_else(|| task_error("install requires --scope"))?;
     let base = install_base(scope, target)?;
     let root = project_root()?;
+    let selected_skills = selected_skills.unwrap_or_else(|| {
+        CANONICAL_SKILLS
+            .iter()
+            .map(|skill| (*skill).to_owned())
+            .collect()
+    });
     validate_source(&root)?;
     check_generated(&root)?;
-    install_generated(&root, &base, agent, scope, replace)
+    install_generated(&root, &base, agent, scope, replace, &selected_skills)
 }
 
 fn print_usage() {
@@ -218,7 +300,7 @@ fn print_usage() {
          cargo xtask validate [--root PATH]\n\
          cargo xtask generate [--check] [--root PATH]\n\
          cargo xtask inspect-adoption REPOSITORY\n\
-         cargo xtask install --agent common|claude|multi-agent --scope repo|user [--target PATH] [--replace]"
+         cargo xtask install --agent common|claude|multi-agent --scope repo|user [--target PATH] [--skills a,b] [--replace]"
     );
 }
 
@@ -286,7 +368,13 @@ fn validate_source(root: &Path) -> TaskResult<()> {
         "Cargo.toml",
         "LICENSE-APACHE",
         "LICENSE-MIT",
+        "docs/audit-2026-07-24.md",
+        "docs/architecture.md",
+        "docs/gap-analysis.md",
+        "docs/migrations/0.1-to-modular.md",
+        "docs/onboarding-example.md",
         "docs/source-ledger.md",
+        "docs/task-to-skill-map.md",
         "docs/authoring-conventions.md",
         "docs/evaluation-guide.md",
         "templates/AGENTS.root.md",
@@ -298,6 +386,7 @@ fn validate_source(root: &Path) -> TaskResult<()> {
     }
 
     validate_licenses(root)?;
+    foundation::validate(root).map_err(task_error)?;
     validate_skills(root)?;
     let adoption_path = root.join("templates/rsl-rust-standards.toml");
     let adoption_text = read_text(&adoption_path)?;
@@ -319,23 +408,32 @@ fn validate_evals(root: &Path) -> TaskResult<()> {
         .into_iter()
         .filter(|path| path.file_name().is_some_and(|name| name == "case.toml"))
         .collect();
-    if case_paths.len() < 4 {
-        return fail("eval suite must contain at least four cases");
+    if case_paths.len() < 20 {
+        return fail("eval suite must contain at least 20 cases");
     }
 
     let mut ids = BTreeSet::new();
     let mut classes = BTreeSet::new();
+    let mut expected_skill_coverage = BTreeSet::new();
     for case_path in case_paths {
         let case = parse_eval_case(&read_text(&case_path)?, &case_path)?;
         if !ids.insert(case.id.clone()) {
             return fail(format!("duplicate eval ID `{}`", case.id));
         }
         classes.insert(case.class.clone());
+        expected_skill_coverage.extend(case.expected_skills.iter().cloned());
         validate_eval_artifacts(&case, &case_path)?;
     }
     for required in ["decision", "review", "precedence", "discovery"] {
         if !classes.contains(required) {
             return fail(format!("eval suite is missing `{required}` coverage"));
+        }
+    }
+    for skill in CANONICAL_SKILLS {
+        if !expected_skill_coverage.contains(*skill) {
+            return fail(format!(
+                "eval suite is missing expected-skill coverage for `{skill}`"
+            ));
         }
     }
     Ok(())
@@ -370,6 +468,15 @@ fn parse_eval_case(text: &str, path: &Path) -> TaskResult<EvalCase> {
             "class" => case.class = parse_string(value, path)?,
             "skill" => case.skill = parse_string(value, path)?,
             "profile" => case.profile = parse_string(value, path)?,
+            "expected_skills" => case.expected_skills = parse_string_array(value, path)?,
+            "required_commands" => case.required_commands = parse_string_array(value, path)?,
+            "hard_gates" => case.hard_gates = parse_string_array(value, path)?,
+            "forbidden_regressions" => {
+                case.forbidden_regressions = parse_string_array(value, path)?;
+            }
+            "hidden_tests" => case.hidden_tests = parse_string(value, path)?,
+            "baseline_results" => case.baseline_results = parse_string(value, path)?,
+            "current_results" => case.current_results = parse_string(value, path)?,
             "prompt" => case.prompt = parse_string(value, path)?,
             "fixture" => case.fixture = parse_string(value, path)?,
             "grader" => case.grader = parse_string(value, path)?,
@@ -377,8 +484,8 @@ fn parse_eval_case(text: &str, path: &Path) -> TaskResult<EvalCase> {
         }
     }
 
-    if case.schema != 1 {
-        return fail(format!("{} must use eval schema 1", path.display()));
+    if case.schema != 2 {
+        return fail(format!("{} must use eval schema 2", path.display()));
     }
     if !valid_eval_id(&case.id) {
         return fail(format!(
@@ -404,12 +511,51 @@ fn parse_eval_case(text: &str, path: &Path) -> TaskResult<EvalCase> {
             path.display()
         ));
     }
-    if !PROFILES.contains(&case.profile.as_str()) {
+    if !EVAL_PROFILES.contains(&case.profile.as_str()) {
         return fail(format!(
             "unknown eval profile `{}` in {}",
             case.profile,
             path.display()
         ));
+    }
+    for skill in &case.expected_skills {
+        if !CANONICAL_SKILLS.contains(&skill.as_str()) {
+            return fail(format!(
+                "unknown expected eval skill `{skill}` in {}",
+                path.display()
+            ));
+        }
+    }
+    if case.skill != "none"
+        && CANONICAL_SKILLS.contains(&case.skill.as_str())
+        && !case.expected_skills.contains(&case.skill)
+    {
+        return fail(format!(
+            "primary eval skill `{}` must appear in expected_skills in {}",
+            case.skill,
+            path.display()
+        ));
+    }
+    if case.hard_gates.is_empty() {
+        return fail(format!(
+            "{} must declare at least one hard gate",
+            path.display()
+        ));
+    }
+    if case.forbidden_regressions.is_empty() {
+        return fail(format!(
+            "{} must declare at least one forbidden regression",
+            path.display()
+        ));
+    }
+    for (label, value) in [
+        ("hidden_tests", case.hidden_tests.as_str()),
+        ("baseline_results", case.baseline_results.as_str()),
+        ("current_results", case.current_results.as_str()),
+    ] {
+        if value.is_empty() {
+            return fail(format!("{} is missing `{label}`", path.display()));
+        }
     }
     Ok(case)
 }
@@ -433,6 +579,19 @@ fn validate_eval_artifacts(case: &EvalCase, case_path: &Path) -> TaskResult<()> 
         ));
     }
     require_file(&grader)?;
+    validate_optional_eval_artifact(case_root, &case.hidden_tests, "hidden_tests", case_path)?;
+    validate_optional_eval_artifact(
+        case_root,
+        &case.baseline_results,
+        "baseline_results",
+        case_path,
+    )?;
+    validate_optional_eval_artifact(
+        case_root,
+        &case.current_results,
+        "current_results",
+        case_path,
+    )?;
 
     let prompt_text = read_text(&prompt)?;
     if prompt_text.contains("Expected observations")
@@ -449,6 +608,25 @@ fn validate_eval_artifacts(case: &EvalCase, case_path: &Path) -> TaskResult<()> 
         return fail(format!(
             "{} is missing its grader heading",
             grader.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_eval_artifact(
+    case_root: &Path,
+    value: &str,
+    label: &str,
+    metadata: &Path,
+) -> TaskResult<()> {
+    if matches!(value, "none" | "external") {
+        return Ok(());
+    }
+    let artifact = confined_case_path(case_root, value, metadata)?;
+    if !artifact.exists() {
+        return fail(format!(
+            "missing eval {label} artifact {}",
+            artifact.display()
         ));
     }
     Ok(())
@@ -660,6 +838,7 @@ fn validate_rule_blocks(
             "- **Strength:**",
             "- **Applies to:**",
             "- **Directive:**",
+            "- **Why:**",
             "- **Exceptions:**",
             "- **Mechanical owner:**",
             "- **Sources:**",
@@ -864,7 +1043,7 @@ fn validate_adoption(adoption: &Adoption, path: &Path) -> TaskResult<()> {
             path.display()
         ));
     }
-    if !PROFILES.contains(&adoption.profile.as_str()) {
+    if !LEGACY_PROFILES.contains(&adoption.profile.as_str()) {
         return fail(format!(
             "unknown default profile `{}` in {}",
             adoption.profile,
@@ -884,7 +1063,7 @@ fn validate_adoption(adoption: &Adoption, path: &Path) -> TaskResult<()> {
         }
     }
     for (component_path, component) in &adoption.components {
-        if !PROFILES.contains(&component.profile.as_str()) {
+        if !LEGACY_PROFILES.contains(&component.profile.as_str()) {
             return fail(format!(
                 "unknown profile `{}` for component `{component_path}`",
                 component.profile
@@ -1071,6 +1250,7 @@ fn install_generated(
     agent: InstallAgent,
     scope: InstallScope,
     replace: bool,
+    selected_skills: &[String],
 ) -> TaskResult<()> {
     let (source_name, destination_relative) = match agent {
         InstallAgent::Common => ("agent-skills", ".agents/skills"),
@@ -1082,7 +1262,7 @@ fn install_generated(
     remove_directory_if_present(&staging)?;
     fs::create_dir_all(&staging)?;
 
-    for skill in SKILLS {
+    for skill in selected_skills {
         let destination = destination_root.join(skill);
         if destination.exists() && !replace {
             remove_directory_if_present(&staging)?;
@@ -1095,7 +1275,7 @@ fn install_generated(
     }
 
     fs::create_dir_all(&destination_root)?;
-    for skill in SKILLS {
+    for skill in selected_skills {
         let destination = destination_root.join(skill);
         if destination.exists() {
             remove_directory_if_present(&destination)?;
@@ -1205,7 +1385,7 @@ fn direct_directories(root: &Path) -> TaskResult<Vec<PathBuf>> {
 
 fn direct_files(root: &Path) -> TaskResult<Vec<PathBuf>> {
     let mut files = Vec::new();
-    for entry in sorted_entries(root)? {
+    for entry in optional_entries(root)? {
         if entry.file_type()?.is_file() {
             files.push(entry.path());
         }
@@ -1214,7 +1394,7 @@ fn direct_files(root: &Path) -> TaskResult<Vec<PathBuf>> {
 }
 
 fn reject_nested_directories(root: &Path) -> TaskResult<()> {
-    for entry in sorted_entries(root)? {
+    for entry in optional_entries(root)? {
         if entry.file_type()?.is_dir() {
             return fail(format!(
                 "references must remain one level deep: {}",
@@ -1223,6 +1403,18 @@ fn reject_nested_directories(root: &Path) -> TaskResult<()> {
         }
     }
     Ok(())
+}
+
+/// Reads a directory a skill package may legitimately omit.
+///
+/// Git cannot store an empty directory, so a package that carries no references
+/// has no `references/` directory at all in a fresh clone.
+fn optional_entries(root: &Path) -> TaskResult<Vec<fs::DirEntry>> {
+    if root.exists() {
+        sorted_entries(root)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 fn sorted_entries(root: &Path) -> TaskResult<Vec<fs::DirEntry>> {
@@ -1285,7 +1477,9 @@ fn fail<T>(message: impl Into<String>) -> TaskResult<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{fnv1a64, parse_adoption, parse_frontmatter, project_root, validate_source};
+    use super::{
+        fnv1a64, optional_entries, parse_adoption, parse_frontmatter, project_root, validate_source,
+    };
     use std::path::Path;
 
     #[test]
@@ -1302,6 +1496,14 @@ mod tests {
         assert_eq!(adoption.schema, 1);
         assert_eq!(adoption.skills.len(), 2);
         assert!(adoption.components.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_reference_directory_reads_as_empty() -> Result<(), Box<dyn std::error::Error>> {
+        let skill = project_root()?.join("skills/rust-core");
+        assert!(!optional_entries(&skill.join("references"))?.is_empty());
+        assert!(optional_entries(&skill.join("no-such-directory"))?.is_empty());
         Ok(())
     }
 
