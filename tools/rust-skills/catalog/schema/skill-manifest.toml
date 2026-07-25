@@ -1,0 +1,7 @@
+schema = 1
+required_string_fields = ["id", "package", "status", "kind", "summary"]
+required_array_fields = ["requires", "routes_to", "related", "profiles", "packs", "references", "validation", "outputs", "legacy_ids"]
+statuses = ["implemented", "compatibility", "planned"]
+kinds = ["foundation", "task", "domain", "technique", "environment", "maintenance"]
+relation_kinds = ["requires", "routes_to", "related"]
+acyclic_relations = ["requires"]

@@ -1,0 +1,10 @@
+schema = 1
+id = "reusable-output-buffer"
+title = "Reuse output capacity on a measured hot path"
+skills = ["rust-performance", "rust-api-design", "rust-testing"]
+profiles = ["performance-sensitive"]
+source = "criterion-timing-loops"
+revision = "2026-07-24"
+provenance = "Independent buffer-reuse transformation with representative-iteration safeguards"
+validation = ["Allocation measurement", "Before-and-after representative benchmark", "Shared correctness tests"]
+document = "example.md"

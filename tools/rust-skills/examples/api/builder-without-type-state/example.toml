@@ -1,0 +1,10 @@
+schema = 1
+id = "builder-without-type-state"
+title = "Use a simple builder before speculative type-state"
+skills = ["rust-api-design", "rust-testing", "rust-review"]
+profiles = ["public-api"]
+source = "rust-api-guidelines"
+revision = "2026-07-24"
+provenance = "Independent API-design transformation using approved builder guidance"
+validation = ["Consumer example", "Strict-default validation tests", "Compatibility review"]
+document = "example.md"

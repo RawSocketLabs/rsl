@@ -1,0 +1,8 @@
+schema = 1
+id = "security-sensitive"
+kind = "capability"
+summary = "Hostile-input, privilege, confidentiality, integrity, or supply-chain risk."
+base = ""
+capabilities = []
+skills = ["rust-dependencies-security", "rust-testing"]
+implies = []

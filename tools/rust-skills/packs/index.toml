@@ -1,0 +1,2 @@
+schema = 1
+manifests = ["packs/rust-standard.toml", "packs/rust-systems.toml", "packs/rust-protocol-systems.toml", "packs/rsl-rust-default.toml"]

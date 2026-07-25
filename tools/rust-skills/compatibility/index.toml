@@ -1,0 +1,2 @@
+schema = 1
+manifests = ["compatibility/rsl-v0/rsl-rust-core.toml", "compatibility/rsl-v0/rsl-rust-review.toml"]

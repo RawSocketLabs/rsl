@@ -1,0 +1,10 @@
+schema = 1
+id = "borrowed-optional-value"
+title = "Borrow the optional referent at an API boundary"
+skills = ["rust-api-design", "rust-review"]
+profiles = ["all"]
+source = "rust-option-documentation"
+revision = "2026-07-24"
+provenance = "Independent synthesis of official Option APIs with advisory influence recorded in the source ledger"
+validation = ["Compile and test the companion borrowed-option API evaluation", "Review exceptions before changing an existing public signature"]
+document = "example.md"

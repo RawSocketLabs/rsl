@@ -1,0 +1,8 @@
+schema = 1
+id = "real-time"
+kind = "capability"
+summary = "Deadline-sensitive execution with bounded latency and resource behavior."
+base = ""
+capabilities = []
+skills = ["rust-performance", "rust-async-concurrency", "rust-testing"]
+implies = ["performance-sensitive"]

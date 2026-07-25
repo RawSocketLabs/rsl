@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["id", "summary"]
+required_array_fields = ["skills"]
+selection_semantics = "union-and-deduplicate"

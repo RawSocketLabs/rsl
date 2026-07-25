@@ -1,0 +1,11 @@
+schema = 1
+id = "official-rust-style-guide"
+tier = "authoritative"
+title = "Official Rust Style Guide"
+locator = "https://doc.rust-lang.org/style-guide/"
+revision = "accessed-2026-07-18"
+license = "Official Rust documentation linked but not copied"
+use = "Assign mechanical source formatting to rustfmt."
+limitations = "Does not define repository architecture or engineering tradeoffs."
+reviewed = "2026-07-18"
+refresh = "Review annually or when rustfmt policy materially changes."

@@ -1,0 +1,9 @@
+schema = 1
+id = "libsdr-domain-vocabulary"
+title = "RSL libsdr domain vocabulary"
+strength = "SHOULD"
+scope = "Raw Socket Labs SDR, DSP, receiver, and integration repositories that use or interoperate with libsdr"
+rule = "Adopt the reviewed libsdr lexicon: distinguish sample, IQ sample, native IQ, capture, chunk, block, dwell, and discontinuity; distinguish channelization, selected channels, demodulation, symbol recovery, synchronization, detection, and decoding; use ReceiverMode for a complete physical recovery design; keep DetectedSignal, SavedSignal, DetectionEvidence, and SignalObservation semantically distinct; use received for exact pre-correction evidence and recovered for post-correction results; and preserve the doctrine that the detector reports while the caller decides."
+applies_when = ["The repository is libsdr", "A public API consumes, produces, or documents libsdr types", "An RSL receiver or DSP component deliberately adopts the libsdr pipeline model"]
+exceptions = ["A higher-precedence repository glossary explicitly defines another term", "An authoritative protocol specification owns a narrower term in its protocol layer", "Compatibility or migration documentation must preserve a historical spelling"]
+source_rules = ["R64", "R97", "R102", "R103", "R156", "R188"]

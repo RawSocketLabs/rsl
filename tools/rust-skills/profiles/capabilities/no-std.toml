@@ -1,0 +1,8 @@
+schema = 1
+id = "no-std"
+kind = "capability"
+summary = "Code that must preserve an explicit core, alloc, and std capability boundary."
+base = ""
+capabilities = []
+skills = ["rust-embedded", "rust-api-design", "rust-testing"]
+implies = []

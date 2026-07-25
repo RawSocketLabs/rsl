@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-must-use-documentation"
+tier = "authoritative"
+title = "Rust must_use and Cargo SemVer documentation"
+locator = "https://doc.rust-lang.org/reference/attributes/diagnostics.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish must_use placement, diagnostic behavior, explicit-discard syntax, trait-method behavior, and downstream lint compatibility."
+limitations = "The attribute emits a suppressible lint and does not enforce correctness or safety. Selection guidance also considers Clippy's documented false-positive and redundancy behavior."
+reviewed = "2026-07-24"
+refresh = "Review on Rust Reference, Cargo SemVer, or relevant Clippy lint changes and during the normal reference refresh cycle."

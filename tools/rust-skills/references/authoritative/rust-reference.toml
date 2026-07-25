@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-reference"
+tier = "authoritative"
+title = "The Rust Reference"
+locator = "https://doc.rust-lang.org/reference/"
+revision = "stable-docs-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Primary language reference for syntax, types, attributes, unsafe boundaries, ABI, and other language semantics."
+limitations = "The Reference documents known omissions and follows Rust releases; use the repository toolchain's matching version and verify compiler behavior when material."
+reviewed = "2026-07-24"
+refresh = "Review against the repository MSRV and current toolchain before changing a language-semantics rule."

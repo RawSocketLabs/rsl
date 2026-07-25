@@ -1,0 +1,11 @@
+schema = 1
+id = "criterion-timing-loops"
+tier = "approved-guidance"
+title = "Criterion.rs Timing Loops"
+locator = "https://bheisler.github.io/criterion.rs/book/user_guide/timing_loops.html"
+revision = "accessed-2026-07-24"
+license = "Official Criterion.rs documentation linked but not copied"
+use = "Establish correct setup, batching, input regeneration, and timing boundaries for mutating or consuming benchmarks."
+limitations = "Criterion-specific APIs are examples; representative-state and measurement-boundary requirements apply to every benchmark harness."
+reviewed = "2026-07-24"
+refresh = "Review when Criterion timing-loop APIs or benchmark-harness guidance materially changes."

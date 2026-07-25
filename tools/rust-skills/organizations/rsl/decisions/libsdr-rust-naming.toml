@@ -1,0 +1,9 @@
+schema = 1
+id = "libsdr-rust-naming"
+title = "RSL libsdr Rust naming"
+strength = "SHOULD"
+scope = "Raw Socket Labs Rust APIs that expose or mirror libsdr concepts"
+rule = "Use the final libsdr spellings IqSample, IqBlock, Ci16Sample, IqInput, NativeIqBuffer, and ChannelIqBuffer; title-case acronyms inside UpperCamelCase names; use as_u64 for u64 newtype accessors and no get_ prefix; and preserve the established suffix meanings that Options are source-open knobs, Profile is a complete validated per-rate parameterization, Spec is design-time generation input, Config is validated processing geometry, and Policy is a decision rule."
+applies_when = ["Adding or changing a libsdr public type or method", "Designing an RSL API intended to align with libsdr", "Reviewing a terminology migration across code, rustdoc, guides, tests, examples, errors, and snapshots"]
+exceptions = ["An existing public compatibility contract retains an old spelling during its migration window", "A protocol specification or foreign API requires another exact name", "A higher-precedence repository convention deliberately chooses another suffix or accessor vocabulary"]
+source_rules = ["R156", "R188"]

@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-shared-ownership-documentation"
+tier = "authoritative"
+title = "Rust standard library Arc and Rc documentation"
+locator = "https://doc.rust-lang.org/std/sync/struct.Arc.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish shared ownership, thread-safety, mutation, cycle, and clone semantics for Arc and Rc."
+limitations = "Container selection remains workload and repository specific; layout and performance claims require target-specific measurement."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV changes or shared ownership guidance changes."

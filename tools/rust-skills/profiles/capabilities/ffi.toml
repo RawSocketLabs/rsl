@@ -1,0 +1,8 @@
+schema = 1
+id = "ffi"
+kind = "capability"
+summary = "Foreign-function interface with raw ABI and safe-wrapper responsibilities."
+base = ""
+capabilities = []
+skills = ["rust-unsafe-ffi", "rust-testing", "rust-dependencies-security"]
+implies = []

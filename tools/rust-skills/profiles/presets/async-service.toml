@@ -1,0 +1,8 @@
+schema = 1
+id = "async-service"
+kind = "preset"
+summary = "Service defaults plus asynchronous and concurrent execution guidance."
+base = "service"
+capabilities = ["async", "concurrent"]
+skills = []
+implies = []

@@ -1,0 +1,5 @@
+schema = 1
+required_string_fields = ["id", "kind", "summary", "base"]
+required_array_fields = ["capabilities", "skills", "implies"]
+kinds = ["base", "capability", "preset"]
+exactly_one_base_per_repository = ["public-library", "internal-library", "application", "service", "experimental"]

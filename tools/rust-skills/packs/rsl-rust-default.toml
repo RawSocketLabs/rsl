@@ -1,0 +1,4 @@
+schema = 1
+id = "rsl-rust-default"
+summary = "RSL default selection before repository profile expansion and local overrides."
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security"]

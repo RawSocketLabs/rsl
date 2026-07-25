@@ -1,0 +1,5 @@
+schema = 1
+check_string_fields = ["id", "tier", "description", "applicability", "working_directory"]
+check_array_fields = ["command", "prerequisites", "required_tools"]
+tiers = ["required", "optional"]
+statuses = ["passed", "failed", "skipped", "unavailable", "inapplicable"]

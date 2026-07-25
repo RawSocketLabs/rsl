@@ -1,0 +1,10 @@
+schema = 1
+id = "rsl-rust-core-to-rust-core"
+from = "rsl-rust-core"
+to = "rust-core"
+status = "available"
+introduced = "modular-runtime"
+behavior_change = "The legacy package is now a thin router; canonical rules are selectively owned by rust-core and capability skills."
+install_action = "Preserve existing installs until an approval-gated onboarding confirms canonical skills and local overlays; do not install the legacy identity in new repositories."
+retained = ["Legacy package identity", "Stable rule IDs under canonical owners", "Compatibility adapter availability"]
+changed = ["Rule references moved to one canonical owner", "Default installation selects rust-* packages", "RSL-only preferences live in the organization layer"]

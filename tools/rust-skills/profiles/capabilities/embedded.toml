@@ -1,0 +1,8 @@
+schema = 1
+id = "embedded"
+kind = "capability"
+summary = "Firmware or target-constrained systems with hardware-specific validation."
+base = ""
+capabilities = []
+skills = ["rust-embedded", "rust-testing", "rust-dependencies-security"]
+implies = []

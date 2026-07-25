@@ -1,0 +1,8 @@
+schema = 1
+id = "application"
+kind = "base"
+summary = "User-facing or operational binary whose application layer owns integration policy."
+base = ""
+capabilities = []
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-testing", "rust-dependencies-security"]
+implies = []

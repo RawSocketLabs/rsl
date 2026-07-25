@@ -1,0 +1,8 @@
+schema = 1
+id = "infrastructure"
+kind = "preset"
+summary = "Application defaults for privileged or platform-specific operational tooling."
+base = "application"
+capabilities = ["platform-specific", "security-sensitive"]
+skills = []
+implies = []

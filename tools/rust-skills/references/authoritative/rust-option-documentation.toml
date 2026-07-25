@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-option-documentation"
+tier = "authoritative"
+title = "Rust standard library Option documentation"
+locator = "https://doc.rust-lang.org/std/option/index.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish Option borrowing adapters, consuming combinators, and null pointer optimization guarantees."
+limitations = "The API boundary recommendation is a local engineering decision, not a rule stated by the standard library."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV changes or the derived API rule changes."

@@ -1,0 +1,4 @@
+schema = 1
+id = "rust-standard"
+summary = "Portable implementation and review foundation for ordinary Rust repositories."
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-api-design", "rust-testing", "rust-dependencies-security"]

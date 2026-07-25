@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["id", "from", "to", "status", "introduced", "behavior_change", "install_action"]
+required_array_fields = ["retained", "changed"]
+statuses = ["planned", "available", "retired"]

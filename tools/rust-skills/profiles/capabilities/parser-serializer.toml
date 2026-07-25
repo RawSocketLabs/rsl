@@ -1,0 +1,8 @@
+schema = 1
+id = "parser-serializer"
+kind = "capability"
+summary = "Parser or serializer with explicit input, representation, and malformed-data contracts."
+base = ""
+capabilities = []
+skills = ["rust-protocol", "rust-testing", "rust-api-design"]
+implies = []

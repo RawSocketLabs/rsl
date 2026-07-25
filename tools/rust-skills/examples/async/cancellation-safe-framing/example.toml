@@ -1,0 +1,10 @@
+schema = 1
+id = "cancellation-safe-framing"
+title = "Preserve framing state across cancellation"
+skills = ["rust-async-concurrency", "rust-protocol", "rust-testing"]
+profiles = ["async"]
+source = "tokio-cancellation-safety"
+revision = "2026-07-24"
+provenance = "Independent framing example based on documented cancellation hazards"
+validation = ["Inject cancellation at every suspension boundary", "Verify resumed frame equality or explicit connection reset"]
+document = "example.md"

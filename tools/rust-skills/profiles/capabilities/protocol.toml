@@ -1,0 +1,8 @@
+schema = 1
+id = "protocol"
+kind = "capability"
+summary = "Binary or stateful wire-protocol implementation."
+base = ""
+capabilities = []
+skills = ["rust-protocol", "rust-testing"]
+implies = []

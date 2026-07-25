@@ -1,0 +1,6 @@
+schema = 1
+case_schema = 2
+required_string_fields = ["id", "class", "skill", "profile", "hidden_tests", "baseline_results", "current_results", "prompt", "fixture", "grader"]
+required_array_fields = ["expected_skills", "required_commands", "hard_gates", "forbidden_regressions"]
+classes = ["trigger", "decision", "review", "precedence", "discovery", "cost", "regression"]
+external_artifact_sentinels = ["none", "external"]

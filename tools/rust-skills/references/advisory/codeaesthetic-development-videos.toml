@@ -1,0 +1,11 @@
+schema = 1
+id = "codeaesthetic-development-videos"
+tier = "advisory"
+title = "CodeAesthetic development videos"
+locator = "https://www.youtube.com/@CodeAesthetic/videos"
+revision = "videos-rQlMtztiAoA--J3wNP6u5YU-CFRhGnuXG-4-hxGOiiR9ZKg-Bf7vDBBOBUA-tKbV6BpH-C8-J1f5b4vcxCQ-nuML9SmdbJ4-reviewed-2026-07-25"
+license = "No reusable text license identified; linked and independently summarized"
+use = "Prompt domain-centered naming, legible control-flow shape, composition, explicit dependency boundaries, abstraction-cost review, measured optimization, and selective functional transformations."
+limitations = "Advisory language-neutral essays rather than Rust authority. Absolute claims about abbreviations, nesting, interfaces, functional style, and comments are not adopted. The blanket no-comments thesis is explicitly rejected; durable rationale, contracts, specification citations, and safety arguments remain required."
+reviewed = "2026-07-25"
+refresh = "Re-review the channel catalog and named videos before changing a derived rule or adding a newly published video."

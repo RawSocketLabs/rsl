@@ -1,0 +1,8 @@
+schema = 1
+id = "cryptography"
+kind = "capability"
+summary = "Cryptographic construction, integration, or sensitive key and secret handling."
+base = ""
+capabilities = []
+skills = ["rust-testing", "rust-dependencies-security"]
+implies = ["security-sensitive"]

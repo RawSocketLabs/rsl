@@ -1,0 +1,9 @@
+schema = 1
+id = "libsdr-rate-relationship"
+title = "RSL libsdr rate-relationship vocabulary"
+strength = "MUST"
+scope = "Raw Socket Labs rate-changing DSP APIs that use or interoperate with libsdr"
+rule = "Document exact rational resampling as F_out = F_in × L/M, where interpolation L is the output numerator and decimation M is the input denominator; keep absolute sample rates separate; normalize stored relationships; carry streaming phase across chunks; and expose checked state-aware input/output bounds when callers allocate or schedule work."
+applies_when = ["Constructing or documenting a rational resampler", "Calculating output capacity or required input across a rate-changing stage", "Mapping sample positions, discontinuities, or latency across rates"]
+exceptions = ["An authoritative specification owns equivalent numerator/denominator names", "An adaptive or asynchronous converter uses an explicitly variable time-base contract", "A higher-precedence repository decision provides an equivalent directed representation"]
+source_rules = ["R97", "R102", "R103", "R104", "R105", "R106", "R191"]

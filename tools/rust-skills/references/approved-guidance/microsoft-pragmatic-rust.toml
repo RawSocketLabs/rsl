@@ -1,0 +1,11 @@
+schema = 1
+id = "microsoft-pragmatic-rust"
+tier = "approved-guidance"
+title = "Microsoft Pragmatic Rust Guidelines"
+locator = "https://github.com/microsoft/rust-guidelines/tree/95ac4c828fb8034853f332c729207a9fe5ab9cdc"
+revision = "95ac4c828fb8034853f332c729207a9fe5ab9cdc"
+license = "MIT"
+use = "Stable rule IDs, normative strength, rationale, and mechanical ownership."
+limitations = "Organization-specific engineering choices are evaluated before adoption."
+reviewed = "2026-07-18"
+refresh = "Review periodically and before adopting a new rule-shape convention."

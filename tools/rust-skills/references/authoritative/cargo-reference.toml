@@ -1,0 +1,11 @@
+schema = 1
+id = "cargo-reference"
+tier = "authoritative"
+title = "The Cargo Reference"
+locator = "https://doc.rust-lang.org/cargo/reference/"
+revision = "stable-docs-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Authoritative Cargo behavior for manifests, workspaces, dependencies, features, profiles, build scripts, registries, SemVer, and configuration."
+limitations = "Cargo behavior and unstable features vary by toolchain; repository policy still decides which supported combinations and tools are required."
+reviewed = "2026-07-24"
+refresh = "Review against the repository Cargo version before changing manifest, feature, profile, or SemVer guidance."

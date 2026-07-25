@@ -1,0 +1,10 @@
+schema = 1
+id = "rsl-rust-review-to-rust-review"
+from = "rsl-rust-review"
+to = "rust-review"
+status = "available"
+introduced = "modular-runtime"
+behavior_change = "The legacy package is now a thin router; rust-review owns finding quality and routes domain analysis to canonical capability owners."
+install_action = "Preserve existing installs until an approval-gated migration; use rust-review for new repositories."
+retained = ["Legacy package identity", "Consequence-first review behavior", "Actionable evidence gate", "Compatibility adapter availability"]
+changed = ["Detailed domain checks moved to owning skills", "Review routing is machine-readable", "Default installation selects rust-review"]

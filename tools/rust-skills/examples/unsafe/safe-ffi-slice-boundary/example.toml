@@ -1,0 +1,10 @@
+schema = 1
+id = "safe-ffi-slice-boundary"
+title = "Keep foreign pointer obligations at the unsafe boundary"
+skills = ["rust-unsafe-ffi", "rust-api-design", "rust-testing"]
+profiles = ["ffi"]
+source = "rustonomicon"
+revision = "2026-07-24"
+provenance = "Independent synthesis of raw-slice and FFI safety obligations"
+validation = ["Null and zero-length cases", "Target ABI integration", "Miri for Rust-owned test allocations", "Sanitizer run when available"]
+document = "example.md"

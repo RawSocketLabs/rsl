@@ -1,0 +1,9 @@
+schema = 1
+id = "frozen-sequence-ownership"
+title = "RSL frozen sequence ownership"
+strength = "PREFER"
+scope = "Long-lived immutable sequence data in Raw Socket Labs repositories"
+rule = "Prefer Rc slices for intentional single-thread sharing, Arc slices for intentional cross-thread sharing, and Box slices for unique frozen ownership while retaining Vec when mutation, capacity, or buffer reuse is required."
+applies_when = ["Sequence shape is frozen after construction", "Cloning or multiple logical owners are material to the design"]
+exceptions = ["Independent snapshots are required", "The value is small or short lived", "Measured reference counting cost is worse", "An external API requires another representation"]
+source_rules = ["R168", "R169", "R170", "R171"]

@@ -1,0 +1,11 @@
+schema = 1
+id = "rayon-thread-pool"
+tier = "approved-guidance"
+title = "Rayon ThreadPool and ThreadPoolBuilder documentation"
+locator = "https://docs.rs/rayon/1.12.0/rayon/struct.ThreadPool.html"
+revision = "rayon-1.12.0-accessed-2026-07-24"
+license = "MIT OR Apache-2.0"
+use = "Establish caller-created pool execution through install, global-pool configuration consequences, cross-pool scheduling caveats, and pool lifetime behavior."
+limitations = "Rayon-specific APIs are not universal parallel-execution rules. Optimal granularity depends on workload, target, pool width, hardware, features, and surrounding application scheduling."
+reviewed = "2026-07-24"
+refresh = "Review when the selected Rayon version or its ThreadPool, install, ThreadPoolBuilder, global-pool, or scheduling documentation changes."

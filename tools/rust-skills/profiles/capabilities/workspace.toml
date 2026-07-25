@@ -1,0 +1,8 @@
+schema = 1
+id = "workspace"
+kind = "capability"
+summary = "Multi-package Cargo workspace with component-specific overlays."
+base = ""
+capabilities = []
+skills = ["rust-repository-onboarding", "rust-dependencies-security", "rust-testing"]
+implies = []

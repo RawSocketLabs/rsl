@@ -1,0 +1,11 @@
+schema = 1
+id = "clippy-documentation"
+tier = "authoritative"
+title = "Clippy documentation"
+locator = "https://doc.rust-lang.org/clippy/"
+revision = "accessed-2026-07-18"
+license = "Official Rust documentation linked but not copied"
+use = "Define mechanical lint ownership and repository-selected lint policy."
+limitations = "Lint availability and behavior depend on the pinned Rust toolchain."
+reviewed = "2026-07-18"
+refresh = "Review with MSRV or toolchain policy changes."

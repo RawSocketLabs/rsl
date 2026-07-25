@@ -1,0 +1,10 @@
+schema = 1
+id = "bit-order-and-vectors"
+title = "Make bit order explicit and test it independently"
+skills = ["rust-protocol", "rust-testing", "rust-review"]
+profiles = ["protocol"]
+source = "rawsocketlabs-rsl"
+revision = "2026-07-24"
+provenance = "Independent protocol lesson informed by reviewed bitsandbytes conventions"
+validation = ["Known-answer vector", "Individual-bit and cross-byte tests", "Round-trip property as supplemental evidence"]
+document = "example.md"

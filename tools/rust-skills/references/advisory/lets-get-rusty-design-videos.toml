@@ -1,0 +1,11 @@
+schema = 1
+id = "lets-get-rusty-design-videos"
+tier = "advisory"
+title = "Let's Get Rusty selected development videos"
+locator = "https://www.youtube.com/@letsgetrusty/videos"
+revision = "videos-NDIU1GSBrVI-lspU84fuItQ-eIB3Pd5LBkc-Nzclc6MswaI-qY9j4dRaMjU-sVJZaFEM9NE-wXtngLBkK4Q-reviewed-2026-07-24"
+license = "No reusable text license identified; linked and independently summarized"
+use = "Prompt trust-boundary parsing, narrow borrow contracts, deliberate pipeline boundaries, and cancellation review; retain benchmark-state, mandatory-trait, and silently discarded parse-error claims only as negative examples."
+limitations = "Advisory tutorial and review material rather than an authority; broad type-state, trait-object, performance, compiler, and runtime-specific cancellation claims require qualification against primary documentation."
+reviewed = "2026-07-24"
+refresh = "Re-review the named videos before changing a derived rule or quotation."

@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-conversion-trait-documentation"
+tier = "authoritative"
+title = "Rust standard-library From, Into, and TryFrom documentation"
+locator = "https://doc.rust-lang.org/std/convert/trait.From.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish infallible, lossless, value-preserving, obvious From expectations; blanket Into behavior; and fallible TryFrom semantics."
+limitations = "Semantic relevance and obviousness require domain judgment. Repository vocabulary and compatibility decisions can refine which representation details matter."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV or the standard conversion-trait guidance materially changes."

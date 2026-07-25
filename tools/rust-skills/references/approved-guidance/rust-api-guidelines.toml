@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-api-guidelines"
+tier = "approved-guidance"
+title = "Rust API Guidelines"
+locator = "https://github.com/rust-lang/api-guidelines/tree/97a0969cb07fe4cabb0eed8a56234053f47d83dc"
+revision = "97a0969cb07fe4cabb0eed8a56234053f47d83dc"
+license = "MIT OR Apache-2.0"
+use = "Public API review topics and conventional trait vocabulary."
+limitations = "Repository compatibility and usability decisions take precedence."
+reviewed = "2026-07-18"
+refresh = "Review a newer revision before changing API rules derived from it."

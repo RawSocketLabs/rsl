@@ -1,0 +1,8 @@
+schema = 1
+id = "public-api"
+kind = "capability"
+summary = "Externally consumed API with explicit compatibility and documentation obligations."
+base = ""
+capabilities = []
+skills = ["rust-api-design", "rust-testing"]
+implies = []

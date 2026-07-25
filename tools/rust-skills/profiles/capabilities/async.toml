@@ -1,0 +1,8 @@
+schema = 1
+id = "async"
+kind = "capability"
+summary = "Asynchronous tasks, runtimes, cancellation, and backpressure."
+base = ""
+capabilities = []
+skills = ["rust-async-concurrency", "rust-testing"]
+implies = []

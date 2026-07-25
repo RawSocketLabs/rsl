@@ -1,0 +1,8 @@
+schema = 1
+id = "safety-critical"
+kind = "capability"
+summary = "Code whose failure can create serious physical, operational, or human harm."
+base = ""
+capabilities = []
+skills = ["rust-testing", "rust-unsafe-ffi", "rust-dependencies-security"]
+implies = ["security-sensitive"]

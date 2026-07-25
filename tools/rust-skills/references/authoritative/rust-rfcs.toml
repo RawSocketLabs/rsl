@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-rfcs"
+tier = "authoritative"
+title = "Rust RFC repository and RFC Book"
+locator = "https://github.com/rust-lang/rfcs"
+revision = "master-accessed-2026-07-24"
+license = "MIT OR Apache-2.0 for licensed portions; linked but not copied"
+use = "Historical design rationale and accepted proposals for substantial Rust, Cargo, library, and process changes."
+limitations = "Acceptance does not prove implementation, stabilization, current behavior, or unchanged final design; verify the current Reference, standard library, Cargo documentation, and compiler."
+reviewed = "2026-07-24"
+refresh = "Pin a specific RFC and re-check current implementation sources whenever an RFC materially affects a rule."

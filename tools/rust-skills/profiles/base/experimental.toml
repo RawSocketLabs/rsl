@@ -1,0 +1,8 @@
+schema = 1
+id = "experimental"
+kind = "base"
+summary = "Research or prototype code with deliberately recorded quality and compatibility relaxations."
+base = ""
+capabilities = []
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-testing"]
+implies = []

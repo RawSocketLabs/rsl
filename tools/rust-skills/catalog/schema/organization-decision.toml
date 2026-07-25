@@ -1,0 +1,4 @@
+schema = 1
+required_string_fields = ["id", "title", "strength", "scope", "rule"]
+required_array_fields = ["applies_when", "exceptions", "source_rules"]
+strengths = ["MUST", "MUST-NOT", "SHOULD", "SHOULD-NOT", "PREFER", "CONSIDER", "MAY"]

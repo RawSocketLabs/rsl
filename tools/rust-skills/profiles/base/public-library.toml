@@ -1,0 +1,8 @@
+schema = 1
+id = "public-library"
+kind = "base"
+summary = "Reusable published or externally consumed library with explicit compatibility and documentation."
+base = ""
+capabilities = []
+skills = ["rust-core", "rust-implement", "rust-review", "rust-repository-onboarding", "rust-api-design", "rust-testing", "rust-dependencies-security"]
+implies = []

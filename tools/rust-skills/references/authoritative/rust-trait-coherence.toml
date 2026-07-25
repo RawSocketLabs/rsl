@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-trait-coherence"
+tier = "authoritative"
+title = "Rust trait implementation coherence and method disambiguation"
+locator = "https://doc.rust-lang.org/reference/items/implementations.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish trait implementation coherence and orphan-rule facts used when reviewing extension traits and blanket implementations."
+limitations = "The recommendation to create an extension trait only for a coherent capability is a local API decision. Method-name usability and sealing policy also require API review beyond compiler coherence."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV, coherence rules, or derived extension-trait policy changes."

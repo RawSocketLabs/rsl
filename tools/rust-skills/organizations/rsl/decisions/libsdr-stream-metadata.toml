@@ -1,0 +1,9 @@
+schema = 1
+id = "libsdr-stream-metadata"
+title = "RSL libsdr stream metadata placement"
+strength = "MUST"
+scope = "Raw Socket Labs sample APIs that use or interoperate with libsdr"
+rule = "Keep IqBlock available as data-only finite contiguous storage; use timed sample buffers to bind complete spans to SampleBlockStart, SampleBlockMetadata, and discontinuity state; use selected-channel buffers to bind samples to their ChannelSelection contract; and require other continuity-sensitive transport boundaries to keep the metadata needed for their claim inseparable from the payload."
+applies_when = ["Designing sample acquisition or transport APIs", "Moving sample ownership across queues or threads", "Implementing a stage that claims continuity or changes rate, position, time mapping, or channel geometry"]
+exceptions = ["A finite algorithm receives all required context explicitly at the call site", "A stateless kernel is independent of transport metadata", "A higher-precedence repository decision names an equivalent type boundary"]
+source_rules = ["R99", "R102", "R105", "R188", "R189"]

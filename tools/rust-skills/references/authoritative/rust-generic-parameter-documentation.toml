@@ -1,0 +1,11 @@
+schema = 1
+id = "rust-generic-parameter-documentation"
+tier = "authoritative"
+title = "Rust impl Trait and conversion-trait documentation"
+locator = "https://doc.rust-lang.org/reference/types/impl-trait.html"
+revision = "rust-1.97.1-accessed-2026-07-24"
+license = "Official Rust documentation linked but not copied"
+use = "Establish argument-position impl Trait semantics, named-parameter compatibility differences, and Into conversion facts."
+limitations = "The manifest links the Rust Reference entry point; derived rules also use standard-library Into, TryInto, and AsRef documentation. Concrete-versus-generic API preference remains a local decision."
+reviewed = "2026-07-24"
+refresh = "Review when the repository MSRV, impl Trait behavior, conversion-trait guidance, or the derived API rule changes."

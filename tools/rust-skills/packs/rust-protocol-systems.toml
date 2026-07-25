@@ -1,0 +1,4 @@
+schema = 1
+id = "rust-protocol-systems"
+summary = "Portable protocol, DSP, testing, performance, concurrency, and unsafe-boundary guidance."
+skills = ["rust-core", "rust-implement", "rust-review", "rust-api-design", "rust-testing", "rust-protocol", "rust-dsp", "rust-performance", "rust-async-concurrency", "rust-unsafe-ffi", "rust-dependencies-security"]
