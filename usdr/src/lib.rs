@@ -2,18 +2,6 @@ use cxx::UniquePtr;
 
 #[cxx::bridge]
 mod ffi {
-    /// Outcome of one native receive. The stream delivers exactly one packet
-    /// (of `rx_packet_samples()` samples, fixed by `samples_per_packet` at
-    /// open) per call; these counts come from libusdr's `usdr_dms_recv_nfo_t`.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct ReceivedPacket {
-        /// Valid samples written to the front of the buffer (`totsyms`).
-        valid_samples: u32,
-        /// Samples the device lost within this frame (`totlost`). A nonzero
-        /// value means the stream is discontinuous at this packet boundary.
-        lost_samples: u32,
-    }
-
     unsafe extern "C++" {
         include!("usdr_wrapper.hpp");
 
@@ -43,14 +31,14 @@ mod ffi {
             ch2: *mut u8,
             buffer_samples: u32,
             timeout_ms: u32,
-        ) -> Result<ReceivedPacket>;
+        ) -> Result<()>;
 
         fn rx_bytes_per_sample(self: &UsdrDevice) -> u32;
         fn rx_packet_samples(self: &UsdrDevice) -> u32;
     }
 }
 
-pub use ffi::{ReceivedPacket, UsdrDevice};
+pub use ffi::UsdrDevice;
 use num_complex::Complex;
 use std::pin::Pin;
 
@@ -217,17 +205,15 @@ impl Device {
     /// Each sample is 4 bytes (2 bytes I + 2 bytes Q for ci16 format). The
     /// native stream delivers exactly one packet per call, so `samples` must
     /// hold at least [`rx_packet_samples()`](Self::rx_packet_samples); a
-    /// smaller buffer is rejected before the native call. Only the returned
-    /// [`ReceivedPacket::valid_samples`] prefix is written — the tail of the
-    /// buffer is untouched. A nonzero [`ReceivedPacket::lost_samples`] means
-    /// the device dropped samples and the stream is discontinuous at this
-    /// packet boundary. Errors and timeouts (bounded by `timeout_ms`) return
+    /// smaller buffer is rejected before the native call. On success that
+    /// many samples are written to the front of `samples` and the tail is
+    /// untouched. Errors and timeouts (bounded by `timeout_ms`) return
     /// [`UsdrError::Receive`].
     pub fn receive(
         &mut self,
         samples: &mut [Complex<i16>],
         timeout_ms: u32,
-    ) -> Result<ReceivedPacket, UsdrError> {
+    ) -> Result<(), UsdrError> {
         // The native side writes at most one packet, so clamping an
         // over-u32 buffer length only loosens the undersize guard.
         let buffer_samples = u32::try_from(samples.len()).unwrap_or(u32::MAX);
@@ -299,18 +285,25 @@ mod tests {
 
         println!("Starting 10 second capture to /tmp/out...");
 
+        // Every receive fills exactly one packet, so the caller sizes its
+        // accounting from the stream geometry rather than a per-call count.
+        let packet_samples = device.rx_packet_samples() as usize;
+        assert!(
+            packet_samples > 0 && packet_samples <= num_samples,
+            "buffer must hold one whole stream packet"
+        );
+
         while start_time.elapsed() < capture_duration {
-            let packet = device
+            device
                 .receive(&mut samples, 1_000)
                 .expect("Failed to receive samples");
-            assert_eq!(packet.lost_samples, 0, "device dropped samples");
 
-            let bytes = samples_to_bytes(&samples[..packet.valid_samples as usize]);
+            let bytes = samples_to_bytes(&samples[..packet_samples]);
             output_file
                 .write_all(&bytes)
                 .expect("Failed to write to output file");
 
-            total_samples += u64::from(packet.valid_samples);
+            total_samples += packet_samples as u64;
             total_bytes += bytes.len() as u64;
         }
 

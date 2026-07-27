@@ -246,9 +246,8 @@ float UsdrDevice::get_temperature() {
   return static_cast<float>(temp) / 256.0f;
 }
 
-ReceivedPacket UsdrDevice::receive_data(uint8_t *ch1, uint8_t *ch2,
-                                        uint32_t buffer_samples,
-                                        uint32_t timeout_ms) {
+void UsdrDevice::receive_data(uint8_t *ch1, uint8_t *ch2,
+                              uint32_t buffer_samples, uint32_t timeout_ms) {
   if (dev_.strms[0] == nullptr) {
     throw std::runtime_error("RX stream is null - call start() first");
   }
@@ -263,19 +262,9 @@ ReceivedPacket UsdrDevice::receive_data(uint8_t *ch1, uint8_t *ch2,
                              std::to_string(packet_samples));
   }
 
-  usdr_dms_recv_nfo_t nfo{};
   void *buffers[2] = {ch1, ch2};
-  int res = usdr_dms_recv(dev_.strms[0], buffers, timeout_ms, &nfo);
+  int res = usdr_dms_recv(dev_.strms[0], buffers, timeout_ms, nullptr);
   check_or_throw(res, "receive data");
-
-  if (nfo.totsyms > buffer_samples) {
-    throw std::runtime_error("native receive reported " +
-                             std::to_string(nfo.totsyms) +
-                             " valid samples for a buffer of " +
-                             std::to_string(buffer_samples));
-  }
-
-  return ReceivedPacket{nfo.totsyms, nfo.totlost};
 }
 
 uint32_t UsdrDevice::rx_bytes_per_sample() const {
