@@ -146,7 +146,7 @@ jobs:
           toolchain: nightly-2026-06-17
       - uses: Swatinem/rust-cache@v2
       # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-public-api@0.52.0
       - name: Diff the public API against the committed snapshot
@@ -172,7 +172,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-fuzz
       # Pin the gnu target: cargo-fuzz otherwise defaults to musl here, whose statically linked
