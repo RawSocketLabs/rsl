@@ -44,7 +44,7 @@ rustfft            = { version = "6.4", optional = true }
 # async runtime & messaging
 tokio              = { version = "1.50", features = ["full"], optional = true }
 futures-util       = { version = "0.3", optional = true }
-async-nats         = { version = "0.49", optional = true }
+async-nats         = { version = "0.50", optional = true }
 
 # data parallelism
 rayon              = { version = "1.11", optional = true }
