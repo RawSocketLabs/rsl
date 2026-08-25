@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: >-
+          Runner for all jobs. `beefy` targets the on-demand self-hosted
+          runner — start it with `ci-runner RawSocketLabs/rsl -j N`.
+        type: choice
+        options: [blacksmith-4vcpu-ubuntu-2404, beefy]
+        default: blacksmith-4vcpu-ubuntu-2404
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,7 +24,7 @@ jobs:
   # this workflow itself trips every filter, so CI changes are always fully validated.
   changes:
     name: detect changes
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       bnb: ${{ steps.filter.outputs.bnb }}
@@ -50,7 +59,7 @@ jobs:
     name: rustfmt
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -62,7 +71,7 @@ jobs:
     name: clippy (workspace lints enforce clippy::all = deny)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -75,7 +84,7 @@ jobs:
     name: build + test
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -102,7 +111,7 @@ jobs:
     name: cargo-deny (advisories / licenses / bans / sources)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -111,7 +120,7 @@ jobs:
     name: MSRV (rust-version = 1.85)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - run: rm -f rust-toolchain.toml
@@ -123,7 +132,7 @@ jobs:
     name: no_std (bare-metal target)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -137,7 +146,7 @@ jobs:
     name: public-api (bitsandbytes surface unchanged)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - run: rm -f rust-toolchain.toml
@@ -163,7 +172,7 @@ jobs:
     name: cargo-fuzz (bnb decode path, smoke run)
     needs: changes
     if: needs.changes.outputs.bnb == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       # bitsandbytes is no longer its own workspace root, so cargo-fuzz walks up to the
@@ -184,12 +193,13 @@ jobs:
     name: FFI bridges (usdr, dsdcc) — cxx compile check
     needs: changes
     if: needs.changes.outputs.ffi == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      - if: inputs.runner != 'beefy'  # the beefy host has a native toolchain (no apt)
+        run: sudo apt-get update && sudo apt-get install -y build-essential
       # The FFI crates are excluded workspace members, so check them by manifest path. `cargo
       # check` compiles the cxx bridge (C++ ↔ Rust) and type-checks the Rust, but does NOT link
       # the native libs (libusdr / libdsdcc), which aren't packaged — so this gates API/bridge
@@ -208,7 +218,7 @@ jobs:
     name: blessed-versions in sync
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       # rsl-deps' pins are the source of truth; the committed blessed-versions.toml must match.
@@ -223,7 +233,7 @@ jobs:
     name: Rust engineering skills
     needs: changes
     if: needs.changes.outputs.rust_skills == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -247,7 +257,7 @@ jobs:
     name: CI
     if: always()
     needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, ffi, blessed-sync, rust-skills]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Fail if any needed job failed or was cancelled
         run: |
