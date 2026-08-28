@@ -3070,7 +3070,7 @@ dependencies = [
  "bitsandbytes",
  "libc",
  "rustix",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "zeroize",
 ]
