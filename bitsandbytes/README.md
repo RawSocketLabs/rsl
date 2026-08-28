@@ -10,10 +10,6 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/bitsandbytes-hero-v6.webp" alt="raw bits and bytes being assembled into RTSP, HTTP, and DMR protocol messages" width="100%">
-</p>
-
-<p align="center">
   <a href="https://crates.io/crates/bitsandbytes"><img alt="crates.io" src="https://img.shields.io/crates/v/bitsandbytes?style=flat-square&logo=rust&color=F97316"></a>
   <a href="https://docs.rs/bitsandbytes"><img alt="docs.rs" src="https://img.shields.io/docsrs/bitsandbytes?style=flat-square&color=8B5CF6"></a>
   <a href="https://github.com/RawSocketLabs/rsl/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RawSocketLabs/rsl/ci.yml?style=flat-square&label=CI&color=06B6D4"></a>
