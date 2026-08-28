@@ -5,8 +5,9 @@ use rsl_crypto_legacy::{
     rsa::{
         RSA_PRIMITIVE_SECURITY_STATUS, RsaPrivateKey, RsaPublicKey,
         pkcs1v15::{
-            RSAES_SECURITY_STATUS, RSASSA_SHA1_SECURITY_STATUS, RSASSA_SHA256_SECURITY_STATUS,
-            RsaPkcs1v15Ciphertext, RsaPkcs1v15Signature,
+            Pkcs1v15PrivateOperations, Pkcs1v15PublicOperations, RSAES_SECURITY_STATUS,
+            RSASSA_SHA1_SECURITY_STATUS, RSASSA_SHA256_SECURITY_STATUS, RsaPkcs1v15Ciphertext,
+            RsaPkcs1v15Signature,
         },
     },
 };

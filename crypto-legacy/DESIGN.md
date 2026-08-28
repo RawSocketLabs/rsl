@@ -23,8 +23,9 @@ Security-failure demonstrations supplement correctness evidence; they do not rep
 
 ## RSA-specific boundary
 
-The crate imports raw unsigned RSA components and owns only the integer primitive and explicitly
-named PKCS #1 v1.5 encodings. Key generation, primality validation, CRT acceleration, ASN.1,
+The crate imports raw unsigned RSA components through the `rsl_crypto::rsa` primitive, which
+`rsl-crypto` owns so that contemporary RSASSA-PSS verification and this package share one integer
+engine; this crate owns only the explicitly named PKCS #1 v1.5 encodings. Key generation, primality validation, CRT acceleration, ASN.1,
 certificates, SSH key blobs, TLS premaster-secret handling, and negotiation remain outside this
 crate. The teaching integer engine is variable-time and unblinded, so a uniform padding-error enum
 must not be represented as complete oracle resistance.

@@ -271,8 +271,8 @@ therefore [`Broken`](src/rsa/pkcs1v15.rs).
 
 SHA-1's practical collision failure makes RSASSA-PKCS1-v1_5 with SHA-1 [`Broken`](src/rsa/pkcs1v15.rs).
 The exact SHA-256 encoding is retained as [`Legacy`](src/rsa/pkcs1v15.rs) inside this opt-in
-package rather than presented as a modern default. Independently, this implementation's raw RSA
-primitive is [`EducationalOnly`](src/rsa/mod.rs): its integer operations are variable-time,
+package rather than presented as a modern default. Independently, the shared raw RSA
+primitive in `rsl-crypto` is [`EducationalOnly`](src/rsa/mod.rs): its integer operations are variable-time,
 branch on private exponent bits, and perform no RSA blinding. These labels distinguish compatible
 output from both algorithm policy and implementation assurance.
 
@@ -280,14 +280,14 @@ output from both algorithm policy and implementation assurance.
 
 | RFC 8017 operation | Implementation |
 | --- | --- |
-| §4.1 `I2OSP` / §4.2 `OS2IP` unsigned big-endian conversion | `src/rsa/integer.rs::{from_be_bytes,to_be_bytes_padded}` |
-| §§5.1–5.2 `m^e mod n` / `c^d mod n` primitives | `src/rsa/key.rs::apply_primitive` and `src/rsa/integer.rs::modpow` |
-| Base-`2^32` multiplication and Montgomery reduction supporting the primitive | `src/rsa/integer.rs::Montgomery` |
+| §4.1 `I2OSP` / §4.2 `OS2IP` unsigned big-endian conversion | `rsl-crypto` `src/rsa/integer.rs::{from_be_bytes,to_be_bytes_padded}` (shared engine) |
+| §§5.1–5.2 `m^e mod n` / `c^d mod n` primitives | `rsl-crypto` `src/rsa/key.rs::apply_primitive` and `src/rsa/integer.rs::modpow`, re-exported as `rsa::{RsaPublicKey,RsaPrivateKey}` |
+| Base-`2^32` multiplication and Montgomery reduction supporting the primitive | `rsl-crypto` `src/rsa/integer.rs::Montgomery` |
 | §7.2.1 EME encoding `00 || 02 || PS || 00 || M` | `src/rsa/pkcs1v15.rs::encode_encryption` |
 | §7.2.2 EME decoding and consolidated rejection | `src/rsa/pkcs1v15.rs::{decode_encryption,decrypt_pkcs1v15}` |
 | §§8.2 and 9.2 EMSA `00 || 01 || FF... || 00 || T` | `src/rsa/pkcs1v15.rs::{encode_signature,sign_encoded,verify_encoded_signature}` |
 | Appendix B.1 SHA-1 and SHA-256 `DigestInfo` DER encodings | `src/rsa/pkcs1v15.rs::{SHA1_DIGEST_INFO_PREFIX,SHA256_DIGEST_INFO_PREFIX}` |
-| Explicit lifecycle classifications for the primitive and three profiles | `src/rsa/{mod.rs,pkcs1v15.rs}` |
+| Explicit lifecycle classifications for the primitive and three profiles | `rsl-crypto` `src/rsa/mod.rs` (primitive, re-exported) and `src/rsa/pkcs1v15.rs` |
 
 ### Evidence and exclusions
 
@@ -295,7 +295,7 @@ output from both algorithm policy and implementation assurance.
 | --- | --- |
 | Exact NIST CAVP 2048-bit SHA-256 signature generation and verification | `tests/rsa_pkcs1v15.rs::nist_cavp_sha256_signature_is_generated_and_verified_exactly` |
 | Wycheproof valid RSAES decryption and invalid seven-byte padding boundary | `tests/rsa_pkcs1v15.rs::wycheproof_accepts_valid_encoding_and_uniformly_rejects_short_padding` |
-| RSA modular exponentiation differential evidence against `num-bigint-dig` over 32–512-bit limb boundaries | `src/rsa/integer.rs::unit::montgomery_modpow_matches_independent_bigint_across_boundaries` |
+| RSA modular exponentiation differential evidence against `num-bigint-dig` over 32–512-bit limb boundaries | `rsl-crypto` `src/rsa/integer.rs::unit::montgomery_modpow_matches_independent_bigint_across_boundaries` |
 | SHA-1 sign/verify profile and machine-readable broken status | `tests/rsa_pkcs1v15.rs::sha1_profile_round_trips_but_remains_machine_readably_broken` |
 | Encoding intermediates for EME, EMSA, complete `DigestInfo`, and eight-byte padding minimum | `src/rsa/pkcs1v15.rs::unit` |
 | Invalid component, signature length, ciphertext length, block type, separator, and bounded zero-entropy cases | `tests/rsa_pkcs1v15.rs` and `src/rsa/pkcs1v15.rs::unit` |

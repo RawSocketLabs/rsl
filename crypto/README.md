@@ -37,7 +37,10 @@ scalar layers. The NIST P-256 group is implemented once under [`src/curve/p256/`
 and consumed by [`EcdhP256`](src/agreement/ecdh_p256/api.rs) (SP 800-56A ECC CDH with full
 public-key validation) and [`EcdsaP256SigningKey`](src/signature/ecdsa_p256/api.rs) /
 [`EcdsaP256VerifyingKey`](src/signature/ecdsa_p256/api.rs) (FIPS 186-5 signing with RFC 6979
-deterministic `k` and verification, both with SHA-256).
+deterministic `k` and verification, both with SHA-256). The RFC 8017 RSA integer engine lives in
+[`src/rsa/`](src/rsa/) and backs [`RsaPssSha256VerifyingKey`](src/signature/rsa_pss/api.rs)
+(RSASSA-PSS verification for TLS certificates) as well as the opt-in PKCS #1 v1.5 encodings in
+`rsl-crypto-legacy`.
 
 SHA-256 is tested at several levels: private formula and intermediate-state tests,
 NIST-published known answers, NIST CAVP padding/block-boundary vectors, awkward input
@@ -59,7 +62,8 @@ and 32 strict differential cases. ECDH P-256 adds the RFC 5903 exchange, all 25 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures.
+signatures. RSASSA-PSS adds all 18 CAVP SigVer and 10 CAVP SigGen 2048/SHA-256 cases and all 108
+Wycheproof `rsa_pss_2048_sha256_mgf1_32` results.
 
 This is an implementation milestone, not a production-security claim. Side-channel analysis,
 fuzzing, broader interoperability work, and independent cryptographic audit are still required

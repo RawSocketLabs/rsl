@@ -10,11 +10,11 @@
 //! # The visible layers
 //!
 //! 1. [`RsaPublicKey`] and [`RsaPrivateKey`] import unsigned big-endian `n`, `e`, and `d`
-//!    components. This package does not hide key generation, primality testing, CRT parameters,
-//!    or ASN.1 behind a convenient constructor.
-//! 2. The private `integer` module implements unsigned integers and Montgomery modular
-//!    multiplication with small, named operations.
-//! 3. [`pkcs1v15`] applies the historical encryption and signature encodings before the RSA
+//!    components. They are re-exported from [`rsl_crypto::rsa`], which owns the integer engine
+//!    and the RFC 8017 primitives so that contemporary RSASSA-PSS verification and this
+//!    historical package share one exponentiation. Nothing hides key generation, primality
+//!    testing, CRT parameters, or ASN.1 behind a convenient constructor.
+//! 2. [`pkcs1v15`] applies the historical encryption and signature encodings before the RSA
 //!    permutation.
 //!
 //! The split is important: PKCS #1 padding is not a transport record format, and RSA is not a TLS
@@ -23,10 +23,11 @@
 //!
 //! # Side-channel boundary
 //!
-//! The integer engine branches on exponent bits, uses data-dependent vector lengths, performs no
-//! RSA blinding, and has not undergone compiler-level timing analysis. The underlying private-key
-//! operation is consequently [`EducationalOnly`](crate::SecurityStatus::EducationalOnly), even
-//! where a historical encoding is classified separately. The uniform public error returned by
+//! The shared integer engine branches on exponent bits, uses data-dependent vector lengths,
+//! performs no RSA blinding, and has not undergone compiler-level timing analysis. The
+//! underlying private-key operation is consequently
+//! [`EducationalOnly`](crate::SecurityStatus::EducationalOnly), even where a historical encoding
+//! is classified separately. The uniform public error returned by
 //! decryption prevents callers from learning a named padding defect; it does **not** make this
 //! implementation resistant to Bleichenbacher-style timing or protocol oracles.
 //!
@@ -38,13 +39,6 @@
 //!
 //! [RFC 8017]: https://www.rfc-editor.org/rfc/rfc8017.html
 
-mod integer;
-mod key;
-
 pub mod pkcs1v15;
 
-pub use key::{RsaPrivateKey, RsaPublicKey};
-
-/// Lifecycle status of this package's readable, variable-time RSA primitive.
-pub const RSA_PRIMITIVE_SECURITY_STATUS: crate::SecurityStatus =
-    crate::SecurityStatus::EducationalOnly;
+pub use rsl_crypto::rsa::{RSA_PRIMITIVE_SECURITY_STATUS, RsaPrivateKey, RsaPublicKey};

@@ -9,12 +9,14 @@
 //! verification while keeping message encoding, identity binding, certificate formats, and
 //! handshake transcript construction in the consuming protocol. [`ecdsa_p256`] adds FIPS 186-5
 //! ECDSA over NIST P-256 with SHA-256: deterministic RFC 6979 signing and verification for
-//! certificate and handshake interoperability.
+//! certificate and handshake interoperability. [`rsa_pss`] adds RFC 8017 RSASSA-PSS verification
+//! with SHA-256 for RSA certificates.
 
 use crate::{Result, random::RandomSource};
 
 pub mod ecdsa_p256;
 pub mod ed25519;
+pub mod rsa_pss;
 
 /// A private-key signing operation.
 pub trait Signer {

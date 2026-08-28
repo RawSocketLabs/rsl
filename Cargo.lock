@@ -3141,6 +3141,7 @@ dependencies = [
  "ghash",
  "hkdf",
  "hmac",
+ "num-bigint-dig",
  "p256",
  "sha2 0.11.0",
  "x25519-dalek",
@@ -3153,7 +3154,6 @@ version = "0.1.0"
 dependencies = [
  "des",
  "md-5",
- "num-bigint-dig",
  "rc4",
  "rsl-crypto",
  "sha1",

@@ -108,9 +108,19 @@ Each algorithm change must include:
    crate 0.14.0. Randomized `k`, DER signature framing, compressed points, and other curves
    and hashes remain deliberately unsupported.
 
+10. **RSA primitive and RSASSA-PSS verification** — the RFC 8017 integer engine (`BigUint`,
+    Montgomery `modpow`) and `RsaPublicKey`/`RsaPrivateKey` owners moved from `rsl-crypto-legacy`
+    into `rsl-crypto::rsa` so one exponentiation serves both contemporary PSS verification and
+    the opt-in historical PKCS #1 v1.5 encodings, which now attach through extension traits.
+    `signature::rsa_pss` exposes `RsaPssSha256VerifyingKey` and `RsaPssSignature` with §8.1.2
+    verification, §9.1.2 EMSA-PSS-VERIFY in numbered steps, Appendix B.2.1 MGF1, a 2048-bit
+    modulus floor, and a default `sLen = hLen` with explicit-salt-length entry points. Evidence
+    covers all 18 CAVP `SigVerPSS` 2048/SHA-256 verdicts, all 10 CAVP `SigGenPSS` 2048/SHA-256
+    signatures with their 20-byte salts, and all 108 Wycheproof `rsa_pss_2048_sha256_mgf1_32`
+    cases. Signing, other hashes/MGFs, and `RSASSA-PSS-params` ASN.1 remain unsupported.
+
 ## After the first vertical slice
 
-- RSA-PSS verification needed by TLS certificates.
 - Ed25519ctx and Ed25519ph only as explicit variant APIs rather than flags on pure Ed25519.
 - The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.
 - Optional optimized implementations beside, never in place of, the readable reference path.

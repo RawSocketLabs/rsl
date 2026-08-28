@@ -39,6 +39,9 @@
 //!    reduction, and a complete addition law. [`EcdhP256`](agreement::ecdh_p256::EcdhP256)
 //!    and [`EcdsaP256SigningKey`](signature::ecdsa_p256::EcdsaP256SigningKey) then show how
 //!    one group serves both key agreement and deterministic signatures.
+//! 10. [`rsa`] imports RSA components and applies the RFC 8017 primitives;
+//!     [`RsaPssSha256VerifyingKey`](signature::rsa_pss::RsaPssSha256VerifyingKey) shows how an
+//!     encoding method turns that integer permutation into a signature scheme.
 //!
 //! Follow the links above for the mental model, standard notation, algorithm steps, worked
 //! examples, common mistakes, and exact evidence for each construction.
@@ -121,6 +124,7 @@ pub mod error;
 pub mod kdf;
 pub mod mac;
 pub mod random;
+pub mod rsa;
 pub mod secret;
 pub mod security;
 pub mod signature;

@@ -616,6 +616,58 @@ The `p256` crate 0.14.0 is used only in development tests as a differential orac
 The `p256` crate 0.14.0 is used only in development tests. Its RFC 6979 signatures are
 byte-identical to this implementation's over 32 cases, and each side accepts the other's output.
 
+## RSA source baseline
+
+The RSA integer primitive is implemented once in `src/rsa/` and consumed by RSASSA-PSS
+verification here and by the opt-in PKCS #1 v1.5 encodings in `rsl-crypto-legacy`.
+
+- **Publication:** RFC 8017, *PKCS #1: RSA Cryptography Specifications Version 2.2*,
+  November 2016, Informational. [RFC Editor record](https://www.rfc-editor.org/info/rfc8017/);
+  [doi:10.17487/RFC8017](https://doi.org/10.17487/RFC8017).
+- **Sections owned by `src/rsa/`:** §3 (key representation as `(n, e)` and `(n, d)`), §4.1
+  `I2OSP`, §4.2 `OS2IP`, §5.1.1 RSAEP, §5.1.2 RSADP, §5.2.1 RSASP1, §5.2.2 RSAVP1.
+- **Baseline last checked:** 2026-08-28; no errata affect the sections used.
+
+### RSA notation mapping and coverage
+
+| RFC 8017 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §3.1–§3.2 | Public key `(n, e)`, private key `(n, d)`; structural bounds. | `rsa::RsaPublicKey`/`RsaPrivateKey::from_components` reject zero, one, even `n`, and exponents outside `1 < x < n`. | Implemented and tested; no primality or pair validation. |
+| §4.1, §4.2 | Unsigned big-endian integer/octet-string conversion with leading zeros. | `integer::BigUint::from_be_bytes`, `to_be_bytes_padded`; leading-zero test. | Implemented and tested. |
+| §5.1, §5.2 | `m^e mod n` and `c^d mod n` over a `k`-byte representative below `n`. | `key::apply_primitive` and `integer::modpow` (Montgomery, base `2^32`); differential test against `num-bigint-dig` across 32–512-bit limb boundaries. | Implemented and tested; variable-time. |
+| §5 (security) | Private operations need constant-time, blinded arithmetic. | `RSA_PRIMITIVE_SECURITY_STATUS = EducationalOnly`; this crate exposes no private-key RSA scheme. | Documented limitation. |
+
+## RSASSA-PSS source baseline
+
+- **Publication:** RFC 8017 (above), §8.1.2 RSASSA-PSS-VERIFY, §9.1.2 EMSA-PSS-VERIFY,
+  Appendix B.2.1 MGF1.
+- **Profile:** RFC 8446 §4.2.3 `rsa_pss_rsae_sha256` / `rsa_pss_pss_sha256` (SHA-256,
+  MGF1-SHA-256, salt length equal to the digest length); FIPS 186-5 §5.4 (PSS parameters) and
+  §5.1 with RFC 9325 (2048-bit minimum modulus).
+- **Baseline last checked:** 2026-08-28.
+- **Published validation material:** NIST CAVP `SigVerPSS_186-3.rsp` `[mod = 2048]` SHA-256
+  (18 cases across several moduli, printed verdicts, 32-byte salts); NIST CAVP
+  `SigGenPSS_186-3.txt` `[mod = 2048]` SHA-256 (10 cases, 20-byte salts); Project Wycheproof
+  `rsa_pss_2048_sha256_mgf1_32_test.json` (108 cases). Checksums and conversion policy are in
+  `tests/vectors/rsa-pss/README.md`.
+
+### RSASSA-PSS coverage
+
+| Location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §8.1.2 step 1 | Reject unless `len(S) = k`. | `RsaPssSha256VerifyingKey::verify_sha256_digest_with_salt_len`; short-signature unit test. | Implemented and tested. |
+| §8.1.2 step 2 | `s = OS2IP(S)`; `m = RSAVP1((n, e), s)`, out-of-range is invalid; `EM = I2OSP(m, emLen)`, `emLen = ceil((modBits − 1) / 8)`. | `RsaPublicKey::apply` plus the leading-zero check when `emLen < k`; all-ones representative unit test; Wycheproof and CAVP suites. | Implemented and tested. |
+| §8.1.2 step 3; §9.1.2 steps 2–14 | EMSA-PSS-VERIFY with `Hash = SHA-256`, `MGF = MGF1-SHA-256`, verifier-supplied `sLen`. | `emsa::emsa_pss_verify_sha256` with numbered steps; locally encoded defect-by-defect unit tests; 18 CAVP verdicts; 10 CAVP `sLen = 20` signatures; 108 Wycheproof results including changed-salt-length, modified-padding, special-case-hash, and wrong-primitive cases. | Implemented and tested. |
+| Appendix B.2.1 | `MGF1(mgfSeed, maskLen)` with a four-byte big-endian counter. | `mgf1::mgf1_sha256`; block/truncation unit test; exercised by every PSS vector. | Implemented and tested. |
+| RFC 8446 §4.2.3 | Salt length equals digest length for the TLS profile. | `verify_sha256` fixes `sLen = 32`; explicit-length entry points exist for other fixed profiles. | Implemented as the default. |
+| FIPS 186-5 §5.1; RFC 9325 | Refuse moduli below 2048 bits. | `MIN_MODULUS_BITS`; `from_public_key` rejection test. | Implemented as profile policy. |
+| §8.1.1; §9.1.1 | RSASSA-PSS signing and EMSA-PSS-ENCODE. | Not exposed (the private primitive is educational-only). A test-local encoder exists to exercise verify checks. | Deliberately not implemented. |
+
+Scheme-level independent evidence for RSASSA-PSS is Wycheproof's independently generated suite;
+a RustCrypto `rsa` development oracle was evaluated and not adopted because its component import
+is impractically slow in unoptimized test builds. The modular exponentiation retains its
+`num-bigint-dig` differential test.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

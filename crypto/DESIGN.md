@@ -58,6 +58,10 @@ SHA-512
   -> P-256 field, scalar, and complete projective points
       -> ECDH P-256 validated agreement
       -> ECDSA P-256 verification (+ SHA-256)
+
+RFC 8017 integer engine (shared with rsl-crypto-legacy)
+  -> RSA public/private primitives
+      -> RSASSA-PSS verification (+ SHA-256, MGF1)
 ```
 
 Higher-level protocol key schedules consume these primitives without becoming dependencies of

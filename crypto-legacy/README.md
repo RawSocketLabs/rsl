@@ -31,8 +31,8 @@ DES and Triple-DES expose only typed block permutations. CBC is a separate state
 over that block-cipher contract. It accepts complete blocks and intentionally has no padding, MAC,
 record, or negotiation behavior.
 
-RSA imports raw unsigned `n`, `e`, and `d` components so the integer primitive and PKCS #1
-encoding remain visible. It intentionally has no key generation, CRT, ASN.1, certificate, TLS, or
+RSA imports raw unsigned `n`, `e`, and `d` components through the shared `rsl_crypto::rsa`
+primitive so the integer engine and PKCS #1 encoding remain visible. It intentionally has no key generation, CRT, ASN.1, certificate, TLS, or
 SSH behavior. Its private operation is variable-time and unblinded; a uniform decryption error is
 not a claim of padding-oracle resistance.
 

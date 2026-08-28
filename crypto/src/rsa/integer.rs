@@ -8,7 +8,8 @@
 //! Montgomery multiplication represents `x` as `xR mod n`, where `R = 2^(32L)` and `L` is the
 //! modulus limb count. One reduction then replaces division by the odd modulus with limb-local
 //! multiplication and carry propagation. This is still variable-time teaching code, not a
-//! side-channel-hardened bignum implementation.
+//! side-channel-hardened bignum implementation: it is adequate for public-key operations such as
+//! signature verification, whose inputs are public, and only educational for private-key use.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -21,12 +22,12 @@ const LIMB_BITS: usize = u32::BITS as usize;
 const LIMB_MASK: u128 = u32::MAX as u128;
 
 /// A normalized, unsigned, little-endian base-`2^32` integer.
-pub(super) struct BigUint {
+pub(crate) struct BigUint {
     limbs: Vec<u32>,
 }
 
 impl BigUint {
-    pub(super) fn from_be_bytes(bytes: &[u8]) -> Self {
+    pub(crate) fn from_be_bytes(bytes: &[u8]) -> Self {
         let first_nonzero = bytes
             .iter()
             .position(|byte| *byte != 0)
@@ -43,11 +44,11 @@ impl BigUint {
         Self { limbs }
     }
 
-    pub(super) fn one() -> Self {
+    pub(crate) fn one() -> Self {
         Self { limbs: vec![1] }
     }
 
-    pub(super) fn bit_len(&self) -> usize {
+    pub(crate) fn bit_len(&self) -> usize {
         self.limbs.last().map_or(0, |last| {
             (self.limbs.len() - 1) * LIMB_BITS
                 + usize::try_from(u32::BITS - last.leading_zeros())
@@ -55,11 +56,11 @@ impl BigUint {
         })
     }
 
-    pub(super) fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         self.bit_len().div_ceil(8)
     }
 
-    pub(super) fn bit(&self, index: usize) -> bool {
+    pub(crate) fn bit(&self, index: usize) -> bool {
         let limb_index = index / LIMB_BITS;
         let bit_index = index % LIMB_BITS;
         self.limbs
@@ -67,19 +68,19 @@ impl BigUint {
             .is_some_and(|limb| (limb >> bit_index) & 1 == 1)
     }
 
-    pub(super) fn is_odd(&self) -> bool {
+    pub(crate) fn is_odd(&self) -> bool {
         self.limbs.first().is_some_and(|limb| limb & 1 == 1)
     }
 
-    pub(super) fn is_zero(&self) -> bool {
+    pub(crate) fn is_zero(&self) -> bool {
         self.limbs.is_empty()
     }
 
-    pub(super) fn is_one(&self) -> bool {
+    pub(crate) fn is_one(&self) -> bool {
         self.limbs.as_slice() == [1]
     }
 
-    pub(super) fn to_be_bytes_padded(&self, output_len: usize) -> Option<Vec<u8>> {
+    pub(crate) fn to_be_bytes_padded(&self, output_len: usize) -> Option<Vec<u8>> {
         if self.byte_len() > output_len {
             return None;
         }
@@ -143,7 +144,7 @@ impl BigUint {
         }
     }
 
-    pub(super) fn compare(&self, other: &Self) -> Ordering {
+    pub(crate) fn compare(&self, other: &Self) -> Ordering {
         match self.limbs.len().cmp(&other.limbs.len()) {
             Ordering::Equal => self.limbs.iter().rev().cmp(other.limbs.iter().rev()),
             ordering => ordering,
@@ -257,7 +258,7 @@ fn add_carry(words: &mut [u32], mut index: usize, mut carry: u128) {
 }
 
 /// Compute `base^exponent mod modulus` with left-to-right Montgomery exponentiation.
-pub(super) fn modpow(base: &BigUint, exponent: &BigUint, modulus: &BigUint) -> Result<BigUint> {
+pub(crate) fn modpow(base: &BigUint, exponent: &BigUint, modulus: &BigUint) -> Result<BigUint> {
     if modulus.is_zero() || !modulus.is_odd() || base.compare(modulus) != Ordering::Less {
         return Err(CryptoError::InvalidKey);
     }

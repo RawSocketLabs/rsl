@@ -1,4 +1,13 @@
 //! Imported RSA component ownership and the RFC 8017 primitive boundary.
+//!
+//! ## Standards ownership
+//!
+//! RFC 8017 §3 defines public keys `(n, e)` and private keys `(n, d)`; §4 defines the
+//! `I2OSP`/`OS2IP` conversions; §5.1 and §5.2 define the primitives RSAEP, RSADP, RSASP1, and
+//! RSAVP1, which are all the same modular exponentiation with different roles. This module owns
+//! structural component checks and that exponentiation. Encoding methods (PSS, PKCS #1 v1.5,
+//! OAEP) live in their own modules, and key generation, CRT, ASN.1, and certificates are out of
+//! scope.
 
 use alloc::vec::Vec;
 use core::{cmp::Ordering, fmt};
@@ -56,8 +65,17 @@ impl RsaPublicKey {
         self.modulus.byte_len()
     }
 
-    pub(super) fn apply(&self, encoded: &[u8]) -> Result<Vec<u8>> {
-        apply_primitive(&self.modulus, &self.exponent, encoded)
+    /// RFC 8017 §5.1.1 RSAEP / §5.2.2 RSAVP1: `m = s^e mod n` over a `k`-byte representative.
+    ///
+    /// The result is the `k`-byte big-endian encoding of the transformed integer. Public-key
+    /// operations act on public data, so the variable-time integer engine is acceptable here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::InvalidLength`] when the input is not exactly `k` bytes and
+    /// [`CryptoError::InvalidKey`] when it does not encode an integer below `n`.
+    pub fn apply(&self, representative: &[u8]) -> Result<Vec<u8>> {
+        apply_primitive(&self.modulus, &self.exponent, representative)
     }
 }
 
@@ -76,7 +94,8 @@ impl fmt::Debug for RsaPublicKey {
 /// This intentionally minimal owner stores no prime factors and performs the unoptimized RFC 8017
 /// RSADP/RSASP1 exponentiation directly. The exponent is zeroized on drop by the internal integer
 /// owner, but this implementation is variable-time and unblinded. See the [`rsa`](super) module's
-/// side-channel warning.
+/// side-channel warning; this crate exposes no private-key RSA scheme, and `rsl-crypto-legacy`
+/// consumes this owner only for explicitly opt-in historical PKCS #1 v1.5 operations.
 pub struct RsaPrivateKey {
     modulus: BigUint,
     private_exponent: BigUint,
@@ -123,8 +142,18 @@ impl RsaPrivateKey {
         self.modulus.byte_len()
     }
 
-    pub(super) fn apply(&self, encoded: &[u8]) -> Result<Vec<u8>> {
-        apply_primitive(&self.modulus, &self.private_exponent, encoded)
+    /// RFC 8017 §5.1.2 RSADP / §5.2.1 RSASP1: `m = c^d mod n` over a `k`-byte representative.
+    ///
+    /// This is the variable-time, unblinded teaching primitive classified
+    /// [`EducationalOnly`](crate::security::SecurityStatus::EducationalOnly) by
+    /// [`RSA_PRIMITIVE_SECURITY_STATUS`](super::RSA_PRIMITIVE_SECURITY_STATUS).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::InvalidLength`] when the input is not exactly `k` bytes and
+    /// [`CryptoError::InvalidKey`] when it does not encode an integer below `n`.
+    pub fn apply(&self, representative: &[u8]) -> Result<Vec<u8>> {
+        apply_primitive(&self.modulus, &self.private_exponent, representative)
     }
 }
 

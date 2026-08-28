@@ -48,7 +48,13 @@ rsl-crypto/
 │   ├── agreement/x25519/field.rs  private `GF(2^255 - 19)` encoding and arithmetic
 │   ├── agreement/x25519/scalar.rs private RFC 7748 scalar preparation
 │   ├── agreement/x25519/ladder.rs private fixed-structure Montgomery ladder
+│   ├── rsa/mod.rs                 RFC 8017 component owners and primitive boundary
+│   ├── rsa/integer.rs             private base-2^32 integers and Montgomery `modpow`
+│   ├── rsa/key.rs                 `RsaPublicKey`/`RsaPrivateKey` and RSAEP/RSADP/RSASP1/RSAVP1
 │   ├── signature.rs               generic signing and verification contracts
+│   ├── signature/rsa_pss/api.rs   typed PSS verifying key, signature, §8.1.2, modulus floor
+│   ├── signature/rsa_pss/emsa.rs  §9.1.2 EMSA-PSS-VERIFY in numbered steps
+│   ├── signature/rsa_pss/mgf1.rs  Appendix B.2.1 MGF1-SHA-256
 │   ├── signature/ecdsa_p256/api.rs typed signing/verifying keys and raw `r || s` signature
 │   ├── signature/ecdsa_p256/nonce.rs RFC 6979 §3.2 deterministic `k` generator
 │   ├── signature/ecdsa_p256/sign.rs FIPS 186-5 §6.4.1 signing equation and retry loop
@@ -89,7 +95,10 @@ rsl-crypto/
 │   ├── vectors/ecdh-p256/         SP 800-56A, RFC 5903, and CAVP provenance
 │   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
 │   ├── ecdsa_p256/                RFC 6979, CAVP SigGen/SigVer fixtures, boundaries, differential
-│   └── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
+│   ├── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
+│   ├── rsa_pss.rs                 public RSASSA-PSS evidence harness
+│   ├── rsa_pss/                   CAVP SigVer/SigGen and Wycheproof fixtures and verdict tests
+│   └── vectors/rsa-pss/           RFC 8017, CAVP, and Wycheproof provenance
 ├── DESIGN.md                      crate-wide architectural decisions
 ├── ROADMAP.md                     primitive implementation order
 └── STANDARDS.md                   sources, notation, coverage, and evidence ledger

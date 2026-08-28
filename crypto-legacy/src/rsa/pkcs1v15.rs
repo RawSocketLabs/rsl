@@ -19,7 +19,10 @@
 //! # Encryption walkthrough
 //!
 //! ```
-//! use rsl_crypto_legacy::{RandomSource, Result, rsa::RsaPublicKey};
+//! use rsl_crypto_legacy::{
+//!     RandomSource, Result,
+//!     rsa::{RsaPublicKey, pkcs1v15::Pkcs1v15PublicOperations},
+//! };
 //!
 //! struct NonzeroExampleSource(u8);
 //! impl RandomSource for NonzeroExampleSource {
@@ -45,7 +48,7 @@
 //!
 //! # Oracle warning
 //!
-//! [`RsaPrivateKey::decrypt_pkcs1v15`] maps every ciphertext/encoding defect to one
+//! [`Pkcs1v15PrivateOperations::decrypt_pkcs1v15`] maps every ciphertext/encoding defect to one
 //! [`CryptoError::AuthenticationFailed`] value and scans
 //! the whole decoded block for the separator. That API shape follows RFC 8017's warning against
 //! distinguishable errors. It is **not sufficient oracle resistance**: input length, integer
@@ -170,7 +173,74 @@ impl fmt::Debug for RsaPkcs1v15Signature {
     }
 }
 
-impl RsaPublicKey {
+/// Historical RSAES-PKCS1-v1_5 encryption and RSASSA-PKCS1-v1_5 verification on the shared
+/// [`RsaPublicKey`].
+///
+/// The key type lives in `rsl_crypto::rsa`; this extension trait keeps the historical encodings
+/// inside the opt-in package. Import it to call these methods.
+pub trait Pkcs1v15PublicOperations {
+    /// Encrypt a message with RFC 8017 §7.2 RSAES-PKCS1-v1_5.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPublicKey`]'s implementation.
+    fn encrypt_pkcs1v15<R: RandomSource>(
+        &self,
+        random: &mut R,
+        message: impl AsRef<[u8]>,
+    ) -> Result<RsaPkcs1v15Ciphertext>;
+
+    /// Verify RSASSA-PKCS1-v1_5 with SHA-1 and exact RFC 8017 `DigestInfo` encoding.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPublicKey`]'s implementation.
+    fn verify_pkcs1v15_sha1(
+        &self,
+        message: impl AsRef<[u8]>,
+        signature: &RsaPkcs1v15Signature,
+    ) -> Result<()>;
+
+    /// Verify RSASSA-PKCS1-v1_5 with SHA-256 and exact RFC 8017 `DigestInfo` encoding.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPublicKey`]'s implementation.
+    fn verify_pkcs1v15_sha256(
+        &self,
+        message: impl AsRef<[u8]>,
+        signature: &RsaPkcs1v15Signature,
+    ) -> Result<()>;
+}
+
+/// Historical RSAES-PKCS1-v1_5 decryption and RSASSA-PKCS1-v1_5 signing on the shared
+/// [`RsaPrivateKey`].
+///
+/// Import it to call these methods. The private primitive is variable-time and unblinded.
+pub trait Pkcs1v15PrivateOperations {
+    /// Decrypt RFC 8017 §7.2 RSAES-PKCS1-v1_5 and return only the recovered message.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPrivateKey`]'s implementation.
+    fn decrypt_pkcs1v15(&self, ciphertext: &RsaPkcs1v15Ciphertext) -> Result<Vec<u8>>;
+
+    /// Sign a message with RSASSA-PKCS1-v1_5 and SHA-1.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPrivateKey`]'s implementation.
+    fn sign_pkcs1v15_sha1(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature>;
+
+    /// Sign a message with RSASSA-PKCS1-v1_5 and SHA-256.
+    ///
+    /// # Errors
+    ///
+    /// See [`RsaPrivateKey`]'s implementation.
+    fn sign_pkcs1v15_sha256(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature>;
+}
+
+impl Pkcs1v15PublicOperations for RsaPublicKey {
     /// Encrypt a message with RFC 8017 §7.2 RSAES-PKCS1-v1_5.
     ///
     /// `random` fills the padding string. Zero bytes are rejected and resampled because zero is
@@ -183,7 +253,7 @@ impl RsaPublicKey {
     /// [`CryptoError::InvalidKey`] when the modulus is too short for this encoding, or propagates
     /// an entropy-source failure. A source returning zero forever is eventually rejected with
     /// [`CryptoError::EntropyUnavailable`] instead of causing an infinite loop.
-    pub fn encrypt_pkcs1v15<R: RandomSource>(
+    fn encrypt_pkcs1v15<R: RandomSource>(
         &self,
         random: &mut R,
         message: impl AsRef<[u8]>,
@@ -200,13 +270,13 @@ impl RsaPublicKey {
     ///
     /// Returns [`CryptoError::MessageTooLong`] only if SHA-1 cannot represent the message length,
     /// or [`CryptoError::InvalidSignature`] for every signature/key/encoding mismatch.
-    pub fn verify_pkcs1v15_sha1(
+    fn verify_pkcs1v15_sha1(
         &self,
         message: impl AsRef<[u8]>,
         signature: &RsaPkcs1v15Signature,
     ) -> Result<()> {
         let digest = Sha1::digest(message)?;
-        self.verify_encoded_signature(signature, &SHA1_DIGEST_INFO_PREFIX, digest.as_ref())
+        verify_encoded_signature(self, signature, &SHA1_DIGEST_INFO_PREFIX, digest.as_ref())
     }
 
     /// Verify RSASSA-PKCS1-v1_5 with SHA-256 and exact RFC 8017 `DigestInfo` encoding.
@@ -215,36 +285,36 @@ impl RsaPublicKey {
     ///
     /// Returns [`CryptoError::MessageTooLong`] only if SHA-256 cannot represent the message
     /// length, or [`CryptoError::InvalidSignature`] for every signature/key/encoding mismatch.
-    pub fn verify_pkcs1v15_sha256(
+    fn verify_pkcs1v15_sha256(
         &self,
         message: impl AsRef<[u8]>,
         signature: &RsaPkcs1v15Signature,
     ) -> Result<()> {
         let digest = Sha256::digest(message)?;
-        self.verify_encoded_signature(signature, &SHA256_DIGEST_INFO_PREFIX, digest.as_ref())
-    }
-
-    fn verify_encoded_signature(
-        &self,
-        signature: &RsaPkcs1v15Signature,
-        digest_info_prefix: &[u8],
-        digest: &[u8],
-    ) -> Result<()> {
-        let expected = encode_signature(self.modulus_len(), digest_info_prefix, digest)
-            .map_err(|_| CryptoError::InvalidSignature)?;
-        let actual = self
-            .apply(signature.as_bytes())
-            .map_err(|_| CryptoError::InvalidSignature)?;
-
-        if bytes_equal(&actual, &expected) {
-            Ok(())
-        } else {
-            Err(CryptoError::InvalidSignature)
-        }
+        verify_encoded_signature(self, signature, &SHA256_DIGEST_INFO_PREFIX, digest.as_ref())
     }
 }
 
-impl RsaPrivateKey {
+fn verify_encoded_signature(
+    key: &RsaPublicKey,
+    signature: &RsaPkcs1v15Signature,
+    digest_info_prefix: &[u8],
+    digest: &[u8],
+) -> Result<()> {
+    let expected = encode_signature(key.modulus_len(), digest_info_prefix, digest)
+        .map_err(|_| CryptoError::InvalidSignature)?;
+    let actual = key
+        .apply(signature.as_bytes())
+        .map_err(|_| CryptoError::InvalidSignature)?;
+
+    if bytes_equal(&actual, &expected) {
+        Ok(())
+    } else {
+        Err(CryptoError::InvalidSignature)
+    }
+}
+
+impl Pkcs1v15PrivateOperations for RsaPrivateKey {
     /// Decrypt RFC 8017 §7.2 RSAES-PKCS1-v1_5 and return only the recovered message.
     ///
     /// # Errors
@@ -252,7 +322,7 @@ impl RsaPrivateKey {
     /// Every ciphertext length, representative, prefix, padding-string, and delimiter failure
     /// maps to [`CryptoError::AuthenticationFailed`]. See the module-level warning: a uniform enum
     /// is necessary but not sufficient protection against a padding oracle.
-    pub fn decrypt_pkcs1v15(&self, ciphertext: &RsaPkcs1v15Ciphertext) -> Result<Vec<u8>> {
+    fn decrypt_pkcs1v15(&self, ciphertext: &RsaPkcs1v15Ciphertext) -> Result<Vec<u8>> {
         if ciphertext.as_bytes().len() != self.modulus_len() {
             return Err(CryptoError::AuthenticationFailed);
         }
@@ -270,9 +340,9 @@ impl RsaPrivateKey {
     /// Returns [`CryptoError::InvalidKey`] if the modulus cannot contain the complete SHA-1
     /// `DigestInfo` and required padding, or [`CryptoError::MessageTooLong`] at SHA-1's length
     /// boundary. This method is variable-time and SHA-1 is broken for collision-resistant use.
-    pub fn sign_pkcs1v15_sha1(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature> {
+    fn sign_pkcs1v15_sha1(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature> {
         let digest = Sha1::digest(message)?;
-        self.sign_encoded(&SHA1_DIGEST_INFO_PREFIX, digest.as_ref())
+        sign_encoded(self, &SHA1_DIGEST_INFO_PREFIX, digest.as_ref())
     }
 
     /// Sign a message with RSASSA-PKCS1-v1_5 and SHA-256.
@@ -282,17 +352,17 @@ impl RsaPrivateKey {
     /// Returns [`CryptoError::InvalidKey`] if the modulus cannot contain the complete SHA-256
     /// `DigestInfo` and required padding, or [`CryptoError::MessageTooLong`] at SHA-256's length
     /// boundary. The private operation remains variable-time and unblinded.
-    pub fn sign_pkcs1v15_sha256(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature> {
+    fn sign_pkcs1v15_sha256(&self, message: impl AsRef<[u8]>) -> Result<RsaPkcs1v15Signature> {
         let digest = Sha256::digest(message)?;
-        self.sign_encoded(&SHA256_DIGEST_INFO_PREFIX, digest.as_ref())
+        sign_encoded(self, &SHA256_DIGEST_INFO_PREFIX, digest.as_ref())
     }
+}
 
-    fn sign_encoded(&self, prefix: &[u8], digest: &[u8]) -> Result<RsaPkcs1v15Signature> {
-        let mut encoded = encode_signature(self.modulus_len(), prefix, digest)?;
-        let result = self.apply(&encoded).map(RsaPkcs1v15Signature);
-        encoded.zeroize();
-        result
-    }
+fn sign_encoded(key: &RsaPrivateKey, prefix: &[u8], digest: &[u8]) -> Result<RsaPkcs1v15Signature> {
+    let mut encoded = encode_signature(key.modulus_len(), prefix, digest)?;
+    let result = key.apply(&encoded).map(RsaPkcs1v15Signature);
+    encoded.zeroize();
+    result
 }
 
 // RFC 8017 Appendix B.1's DER DigestInfo encodings, through the OCTET STRING length byte.

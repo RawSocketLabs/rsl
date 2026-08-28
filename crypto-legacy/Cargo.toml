@@ -17,7 +17,6 @@ sha1.workspace = true
 md5.workspace = true
 rc4.workspace = true
 des.workspace = true
-num-bigint-dig.workspace = true
 
 [lints]
 workspace = true
