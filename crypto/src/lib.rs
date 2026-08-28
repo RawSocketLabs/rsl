@@ -27,6 +27,7 @@
 //! 4. [`X25519`](agreement::x25519::X25519) combines private random bytes with a peer's public
 //!    coordinate to establish a shared secret. It demonstrates finite-field arithmetic and the
 //!    fixed-structure Montgomery ladder without claiming peer authentication.
+//!    [`X448`](agreement::x448::X448) is the same ladder at the ~224-bit level.
 //! 5. [`Sha512`](digest::sha2::sha512::Sha512) extends the SHA-2 model to 64-bit words and is the
 //!    exact digest prerequisite used by Ed25519. [`Sha384`](digest::sha2::sha384::Sha384) is its
 //!    truncated sibling, with [`HmacSha384`](mac::hmac::sha384::HmacSha384) and

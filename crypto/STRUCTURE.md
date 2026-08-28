@@ -71,6 +71,7 @@ rsl-crypto/
 │   ├── agreement/x25519/field.rs  private `GF(2^255 - 19)` encoding and arithmetic
 │   ├── agreement/x25519/scalar.rs private RFC 7748 scalar preparation
 │   ├── agreement/x25519/ladder.rs private fixed-structure Montgomery ladder
+│   ├── agreement/x448/            the same four layers over curve448 (56-bit limbs, a24 = 39081)
 │   ├── rsa/mod.rs                 RFC 8017 component owners and primitive boundary
 │   ├── rsa/integer.rs             private base-2^32 integers and Montgomery `modpow`
 │   ├── rsa/key.rs                 `RsaPublicKey`/`RsaPrivateKey` and RSAEP/RSADP/RSASP1/RSAVP1
@@ -107,6 +108,8 @@ rsl-crypto/
 │   ├── aes256.rs                  NIST core blocks and differential AES-256 evidence
 │   ├── vectors/aes-256/           FIPS 197 A.3 and AES_Core256 provenance
 │   ├── aes256_gcm.rs, aes256_gcm/ NIST GCM-AES256, Wycheproof, and differential evidence
+│   ├── x448.rs, x448/             RFC 7748 X448 vectors, Wycheproof cases, boundaries
+│   ├── vectors/x448/              RFC 7748 X448 and Wycheproof provenance
 │   ├── x25519.rs                  public X25519 integration-test harness
 │   ├── x25519/                    known-answer, boundary, and differential tests
 │   ├── vectors/ghash/             SP 800-38D GHASH evidence provenance

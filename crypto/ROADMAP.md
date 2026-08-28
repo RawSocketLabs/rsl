@@ -155,6 +155,11 @@ Each algorithm change must include:
     prerequisite). Evidence: NIST per-step intermediate states, NIST and CAVP vectors including
     variable-length SHAKE output, and differential comparison with the `sha3` crate.
 
+16. **X448** — the RFC 7748 ladder over curve448 with an eight-limb `GF(2^448 - 2^224 - 1)`
+    field, `decodeScalar448`, and the same all-zero rejection as X25519. Evidence: §5.2 direct
+    and iterated vectors (the million-iteration checkpoint as an ignored test), §6.2 exchange,
+    and all 510 Wycheproof cases.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed

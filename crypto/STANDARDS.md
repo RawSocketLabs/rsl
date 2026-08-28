@@ -796,6 +796,22 @@ parameter set for the same executable specification. Baselines re-checked 2026-0
 | §6.2 | SHAKE256(M, d) = KECCAK[512](M ‖ 1111, d). | `Shake256` with suffix `0x1f`, incremental squeeze; NIST 0-bit example; CAVP ShortMsg and VariableOut; differential. | Implemented and tested. |
 | §6.1–§6.2 (other members) | SHA3-224/384/512, SHAKE128. | Not provided. | Deliberately not implemented. |
 
+## X448
+
+The RFC 7748 baseline recorded for X25519 applies; X448 is the same ladder over curve448.
+Re-checked 2026-08-28.
+
+| RFC 7748 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §4.2 | curve448 over `GF(2^448 - 2^224 - 1)`, `A = 156326`, base u-coordinate 5. | `x448::field` (eight 56-bit limbs, fold `2^448 ≡ 2^224 + 1` with the double fold for weights `>= 12`), `ladder::A24 = 39081`, `api::BASE_COORDINATE`. | Implemented and tested. |
+| §5 coordinate decoding/encoding | 56 little-endian bytes, no masked bit, non-canonical values accepted as residues, canonical output. | `FieldElement::from_bytes`/`to_bytes`; `p -> 0`, `p + 5 -> 5`, `2^448 - 1 -> 2^224`. | Implemented and tested. |
+| §5 `decodeScalar448` | Clear bits 0–1, set bit 447. | `scalar::PreparedScalar`; bit tests. | Implemented and tested. |
+| §5 ladder, `cswap`, Errata 7625 | Same printed ladder over bits 447..0 with `a24 = 39081`; XOR swap with `0 - swap` mask. | `ladder::scalar_multiply`; §5.2 direct vectors, 1 and 1,000 iterations (1,000,000 ignored), §6.2 exchange. | Implemented and tested. |
+| §6.2 | Public key `X448(a, 5)`; optional all-zero check. | `X448::public_key`/`agree` with the all-zero rejection; 510 Wycheproof `x448` cases (eleven all-zero results rejected, twelve over-long keys unrepresentable, all others reproduced). | Implemented and tested. |
+
+No differential crate is used for X448 (the RustCrypto `x448` crate is pre-release only);
+Wycheproof is the independent scheme-level oracle.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

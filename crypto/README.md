@@ -38,7 +38,7 @@ distinct [`X25519PrivateKey`](src/agreement/x25519/api.rs),
 [`X25519PublicKey`](src/agreement/x25519/api.rs),
 [`X25519SharedSecret`](src/agreement/x25519/api.rs), and
 [`X25519`](src/agreement/x25519/api.rs) types over a fully inspectable RFC 7748 field and
-Montgomery-ladder path. The first signature implementation exposes
+Montgomery-ladder path, with [`X448`](src/agreement/x448/api.rs) as the curve448 sibling. The first signature implementation exposes
 [`Ed25519SigningKey`](src/signature/ed25519/api.rs),
 [`Ed25519VerifyingKey`](src/signature/ed25519/api.rs), and
 [`Ed25519Signature`](src/signature/ed25519/api.rs) over readable RFC 8032 Edwards and subgroup
@@ -74,7 +74,7 @@ evidence, context-length and cross-variant rejection, deterministic and generic 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures. SHA-3 adds NIST per-step intermediate states, NIST and CAVP vectors, XOF streaming, and differential
+signatures. X448 adds RFC 7748 §5.2/§6.2 vectors and all 510 Wycheproof cases. SHA-3 adds NIST per-step intermediate states, NIST and CAVP vectors, XOF streaming, and differential
 cases. P-384 adds SP 800-186 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all CAVP CDH/PKV/SigGen/SigVer P-384
 cases, and differential `p384` comparison. AES-256 adds all 60 Appendix A.3 words, the four NIST core blocks, and differential cases;
 AES-256-GCM adds NIST GCM-AES256 Examples 1–5, 105 Wycheproof cases, and 32 differential cases.
