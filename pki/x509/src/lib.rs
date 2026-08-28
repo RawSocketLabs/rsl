@@ -1,4 +1,4 @@
-//! Borrowed X.509 certificate structures with exact signed-byte preservation.
+//! Borrowed X.509 certificate structures and canonical construction.
 //!
 //! ## Standards ownership
 //!
@@ -8,6 +8,9 @@
 //!
 //! Parsing is strict DER through `rsl-asn1`. [`TbsCertificate::encoded`] returns the original
 //! complete DER element that an issuer signed; callers must verify those bytes directly.
+//! [`builder::CertificateBuilder`] constructs new V3 certificates through mandatory validity and
+//! public-key typestates. Construction yields syntax, never trusted state; trust decisions remain
+//! in `rsl-pki`.
 //!
 //! This implementation is unaudited and makes no production-security claim.
 
@@ -16,6 +19,9 @@
 #![deny(missing_docs)]
 
 extern crate alloc;
+
+/// Canonical X.509 certificate construction and signing contracts.
+pub mod builder;
 
 use alloc::{vec, vec::Vec};
 use core::{fmt, str};

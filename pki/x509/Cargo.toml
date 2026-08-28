@@ -1,7 +1,7 @@
 [package]
 name = "rsl-x509"
 version = "0.1.0"
-description = "Borrowed X.509 certificate structures for the RSL stack."
+description = "Borrowed X.509 structures and canonical certificate construction for RSL."
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

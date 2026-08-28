@@ -3,8 +3,10 @@
 > Inherits the workspace-root `../AGENTS.md`.
 
 - `asn1/` owns strict DER transport mechanics and uses `bitsandbytes` directly.
-- `x509/` owns certificate syntax and exact signed-byte preservation.
-- `validation/` owns trust, path construction, constraints, and signature verification.
+- `x509/` owns certificate syntax, canonical construction, and exact signed-byte preservation.
+- `validation/` owns supported signing-key adapters, trust, path construction, constraints, and
+  signature verification. CA authorization, serial allocation, and private-key custody remain
+  caller policy.
 - Decode attacker-controlled lengths without preallocating from them.
 - Reject non-canonical DER; do not silently normalize signed input.
 - Preserve the exact `TBSCertificate` encoding used for signature verification.

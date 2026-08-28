@@ -15,3 +15,10 @@ The 1,024-check default path-search budget is an implementation resource limit, 
 RFC 5280; callers may select a different explicit budget.
 
 Tests create standard-derived local Ed25519 certificates and are not published vectors.
+
+`issuance` implements no new signature primitive. It maps `rsl-crypto`'s pure Ed25519/Ed448 and
+ECDSA P-256/SHA-256/P-384/SHA-384 signing operations to the exact RFC 8410/RFC 5480 identifiers and
+X.509 ECDSA signature framing owned by `rsl-x509`. Standard-derived tests construct and verify all
+four profiles, validate a guided CA/leaf chain, and prove that a raw critical extension remains
+fail-closed. The detached parser fuzz target compares constructed certificates with an independent
+X.509 parser. These are engineering tests, not published certificate vectors or audit evidence.

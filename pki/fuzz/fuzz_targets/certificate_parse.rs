@@ -7,10 +7,15 @@
 use std::sync::LazyLock;
 
 use libfuzzer_sys::fuzz_target;
-use rsl_x509::Certificate;
+use rsl_crypto::signature::ed25519::Ed25519SigningKey;
+use rsl_pki::issuance::Ed25519CertificateSigner;
+use rsl_x509::{
+    Certificate, Time,
+    builder::{CertificateBuilder, NameDer},
+};
 use x509_parser::parse_x509_certificate;
 
-static FIXTURES: LazyLock<[Vec<u8>; 3]> = LazyLock::new(|| {
+static FIXTURES: LazyLock<[Vec<u8>; 4]> = LazyLock::new(|| {
     [
         decode_hex(include_str!(
             "../../tests/vectors/nist-pkits/TrustAnchorRootCertificate.hex"
@@ -21,8 +26,30 @@ static FIXTURES: LazyLock<[Vec<u8>; 3]> = LazyLock::new(|| {
         decode_hex(include_str!(
             "../../tests/vectors/nist-pkits/ValidCertificatePathTest1EE.hex"
         )),
+        constructed_certificate(),
     ]
 });
+
+fn constructed_certificate() -> Vec<u8> {
+    let key = Ed25519SigningKey::from_seed([0x42; 32]);
+    let signer = Ed25519CertificateSigner::new(&key);
+    let name = NameDer::common_name("RSL differential fixture").unwrap();
+    let certificate = CertificateBuilder::certificate_authority(&[1], name.clone(), name, Some(0))
+        .unwrap()
+        .validity(
+            Time::new(2026, 1, 1, 0, 0, 0).unwrap(),
+            Time::new(2027, 1, 1, 0, 0, 0).unwrap(),
+        )
+        .unwrap()
+        .subject_public_key_info(signer.subject_public_key_info().unwrap())
+        .sign(&signer)
+        .unwrap()
+        .into_bytes();
+    let (remaining, independent) = parse_x509_certificate(&certificate).unwrap();
+    assert!(remaining.is_empty());
+    assert_eq!(independent.as_ref(), certificate);
+    certificate
+}
 
 fn decode_hex(input: &str) -> Vec<u8> {
     let digits: Vec<u8> = input

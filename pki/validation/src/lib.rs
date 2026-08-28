@@ -14,6 +14,10 @@
 //! matching. Signature encodings come from RFC 5480, RFC 8410, and RFC 4055 through `rsl-x509`.
 //! See `STANDARDS.md`.
 //!
+//! [`issuance`] joins `rsl-x509`'s syntax-only builder to supported `rsl-crypto` signing keys.
+//! It deliberately does not allocate serials, authorize identities, choose lifetimes, or produce
+//! [`ValidatedPath`].
+//!
 //! This implementation is unaudited and makes no production-security claim. It deliberately
 //! implements a fail-closed profile rather than claiming the complete RFC 5280 policy tree or
 //! name-constraints algorithm: unsupported critical extensions are rejected.
@@ -23,6 +27,9 @@
 #![deny(missing_docs)]
 
 extern crate alloc;
+
+/// Certificate-signing adapters for the algorithms implemented by `rsl-crypto`.
+pub mod issuance;
 
 use alloc::{vec, vec::Vec};
 use core::fmt;

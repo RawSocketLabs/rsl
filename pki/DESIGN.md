@@ -20,6 +20,8 @@ Experimentation stays possible through lower layers:
 | Inspect unsupported certificate fields | `Certificate`, raw `AlgorithmIdentifier` parameters, `Extension::value`, and exact `TBSCertificate` bytes | Algorithm support or certificate validity |
 | Test one signature relationship | `rsl_pki::verify_certificate_signature` | A path, purpose, identity, time, or revocation decision |
 | Explore unusual path graphs | `intermediates`, `max_depth`, and `max_candidate_checks` | Permission to silently exceed the caller-selected work budget |
+| Construct an ordinary certificate | `CertificateBuilder::end_entity` / `certificate_authority` plus a built-in `rsl_pki::issuance` signer | CA authorization, serial allocation, key custody, or trust |
+| Construct or externally sign an unusual certificate | `custom`, raw DER names/SPKIs/algorithms/extensions, `CertificateSigner`, and staged `build_tbs` / `finish` | Validation support, profile compliance, or permission to bypass critical-extension handling |
 
 Unlike a general protocol codec, signed-certificate parsing cannot preserve and accept arbitrary
 non-canonical BER as if it were DER: canonical encoding is part of the authenticated format. A
