@@ -14,20 +14,13 @@ use crate::{
     CryptoError, Result, SecretBytes,
     agreement::KeyAgreement,
     curve::p256::{
-        arithmetic,
         point::{AffinePoint, ENCODED_LEN, ProjectivePoint},
-        scalar::{ORDER, Scalar},
+        scalar::{Scalar, generate_private_bytes},
     },
     random::RandomSource,
 };
 
 const SCALAR_BYTES: usize = 32;
-
-/// Candidate draws permitted before generation reports the entropy source as unusable.
-///
-/// A candidate exceeds `n - 2` with probability about `2^-32`, so a conforming source never
-/// approaches this bound.
-const MAX_CANDIDATES: usize = 64;
 
 /// One owned P-256 private scalar `d` in `[1, n-1]`.
 ///
@@ -64,29 +57,9 @@ impl EcdhP256PrivateKey {
     /// Returns the source's error, or [`CryptoError::EntropyUnavailable`] if every permitted
     /// candidate is out of range, which indicates a non-uniform source.
     pub fn generate<R: RandomSource>(random: &mut R) -> Result<Self> {
-        let (n_minus_two, _) = arithmetic::subtract_limbs(&ORDER.value, &[2, 0, 0, 0]);
-        for _ in 0..MAX_CANDIDATES {
-            let mut candidate = [0_u8; SCALAR_BYTES];
-            if let Err(error) = random.fill_bytes(&mut candidate) {
-                candidate.zeroize();
-                return Err(error);
-            }
-            let mut limbs = arithmetic::from_be_bytes(&candidate);
-            candidate.zeroize();
-            // Accept exactly the candidates `c <= n - 2`, then return `d = c + 1`.
-            if arithmetic::is_less_than(&n_minus_two, &limbs) {
-                limbs.zeroize();
-                continue;
-            }
-            let (mut d, _) = arithmetic::add_limbs(&limbs, &[1, 0, 0, 0]);
-            limbs.zeroize();
-            let bytes = arithmetic::to_be_bytes(&d);
-            d.zeroize();
-            return Ok(Self {
-                bytes: SecretBytes::new(bytes),
-            });
-        }
-        Err(CryptoError::EntropyUnavailable)
+        Ok(Self {
+            bytes: SecretBytes::new(generate_private_bytes(random)?),
+        })
     }
 
     fn scalar_bytes(&self) -> &[u8; SCALAR_BYTES] {

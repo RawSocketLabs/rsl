@@ -1,8 +1,11 @@
-//! Published ECDSA P-256/SHA-256 evidence from RFC 6979 A.2.5 and NIST CAVP SigVer.
+//! Published ECDSA P-256/SHA-256 evidence from RFC 6979 A.2.5 and NIST CAVP SigVer/SigGen.
 
-use rsl_crypto::{CryptoError, signature::Verifier};
+use rsl_crypto::{
+    CryptoError,
+    signature::{Verifier, ecdsa_p256::EcdsaP256SigningKey},
+};
 
-use crate::{cavp_sigver_fixtures::CASES, support};
+use crate::{cavp_siggen_fixtures::CASES as SIGGEN_CASES, cavp_sigver_fixtures::CASES, support};
 
 /// RFC 6979 A.2.5 public key `U = xG` for the published private key `x`.
 const RFC_6979_UX: &str = "60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6";
@@ -40,7 +43,7 @@ fn rfc_6979_signatures_do_not_verify_over_the_other_message() {
     );
 }
 
-/// Published evidence: all 15 CAVP SigVer `[P-256,SHA-256]` verdicts are reproduced.
+/// Published evidence: all 15 CAVP `SigVer` `[P-256,SHA-256]` verdicts are reproduced.
 #[test]
 fn cavp_sigver_verdicts_are_reproduced() {
     let mut accepted = 0;
@@ -48,7 +51,7 @@ fn cavp_sigver_verdicts_are_reproduced() {
         let key = support::verifying_key(case.x, case.y);
         let message = support::decode_vec(case.message);
         let result = key.verify_sha256(&message, &support::signature(case.r, case.s));
-        let expected_pass = case.verdict.starts_with("P");
+        let expected_pass = case.verdict.starts_with('P');
         assert_eq!(
             result.is_ok(),
             expected_pass,
@@ -77,4 +80,55 @@ fn generic_and_prehashed_paths_match_the_message_path() {
     let digest = rsl_crypto::digest::sha2::sha256::Sha256::digest(b"sample").unwrap();
     key.verify_sha256_digest(&digest, &signature)
         .expect("caller-computed digest verifies");
+}
+
+/// RFC 6979 A.2.5 private key `x`.
+const RFC_6979_X: &str = "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721";
+
+/// Published evidence: deterministic signing reproduces RFC 6979 A.2.5's SHA-256 signatures
+/// byte for byte and derives the published public key.
+#[test]
+fn rfc_6979_deterministic_signatures_are_reproduced_exactly() {
+    let key = EcdsaP256SigningKey::from_bytes(support::decode(RFC_6979_X)).unwrap();
+    assert_eq!(
+        key.verifying_key().as_bytes(),
+        &support::uncompressed(RFC_6979_UX, RFC_6979_UY)
+    );
+    assert_eq!(
+        key.sign_sha256(b"sample").unwrap(),
+        support::signature(SAMPLE_R, SAMPLE_S)
+    );
+    assert_eq!(
+        key.sign_sha256(b"test").unwrap(),
+        support::signature(TEST_R, TEST_S)
+    );
+}
+
+/// Published evidence: every CAVP `SigGen` case's private key derives the published point, and
+/// the published signature verifies. The published random `k` is checked white-box.
+#[test]
+fn cavp_siggen_keys_derive_published_points_and_signatures_verify() {
+    for case in &SIGGEN_CASES {
+        let signing = EcdsaP256SigningKey::from_bytes(support::decode(case.d)).unwrap();
+        let verifying = signing.verifying_key();
+        assert_eq!(
+            verifying.as_bytes(),
+            &support::uncompressed(case.qx, case.qy),
+            "public point for d={}",
+            case.d
+        );
+        let message = support::decode_vec(case.message);
+        verifying
+            .verify_sha256(&message, &support::signature(case.r, case.s))
+            .unwrap_or_else(|_| panic!("published signature verifies for d={}", case.d));
+        let ours = signing.sign_sha256(&message).unwrap();
+        verifying
+            .verify_sha256(&message, &ours)
+            .expect("deterministic signature verifies");
+        assert_ne!(
+            ours,
+            support::signature(case.r, case.s),
+            "CAVP used a random k"
+        );
+    }
 }

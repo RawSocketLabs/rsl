@@ -147,3 +147,69 @@ fn signature_wire_parsing_preserves_bytes_and_checks_length() {
         })
     );
 }
+
+struct CountingSource {
+    fills: Vec<u8>,
+}
+
+impl rsl_crypto::RandomSource for CountingSource {
+    fn fill_bytes(&mut self, output: &mut [u8]) -> rsl_crypto::Result<()> {
+        let value = self.fills.pop().ok_or(CryptoError::EntropyUnavailable)?;
+        output.fill(value);
+        Ok(())
+    }
+}
+
+/// Standard-derived evidence: signing scalars must lie in `[1, n-1]`, and candidate testing
+/// skips `c > n - 2` then returns `d = c + 1`.
+#[test]
+fn signing_key_range_and_candidate_testing_generation() {
+    use rsl_crypto::signature::ecdsa_p256::EcdsaP256SigningKey;
+
+    let n: [u8; 32] = support::decode(ORDER);
+    assert!(EcdsaP256SigningKey::from_bytes([0; 32]).is_err());
+    assert!(EcdsaP256SigningKey::from_bytes(n).is_err());
+    let mut n_minus_one = n;
+    n_minus_one[31] -= 1;
+    assert!(EcdsaP256SigningKey::from_bytes(n_minus_one).is_ok());
+
+    let mut source = CountingSource {
+        fills: vec![0x10, 0xff],
+    };
+    let generated = EcdsaP256SigningKey::generate(&mut source).unwrap();
+    let mut expected = [0x10_u8; 32];
+    expected[31] = 0x11;
+    assert_eq!(
+        generated.verifying_key(),
+        EcdsaP256SigningKey::from_bytes(expected)
+            .unwrap()
+            .verifying_key()
+    );
+    assert_eq!(
+        EcdsaP256SigningKey::generate(&mut CountingSource { fills: vec![] }).err(),
+        Some(CryptoError::EntropyUnavailable)
+    );
+}
+
+/// Regression evidence: the generic `Signer` path ignores randomness and matches the inherent
+/// deterministic path; the prehashed path matches the message path.
+#[test]
+fn generic_signer_and_prehashed_signing_match_the_message_path() {
+    use rsl_crypto::signature::{Signer, ecdsa_p256::EcdsaP256SigningKey};
+
+    let key = EcdsaP256SigningKey::from_bytes([0x42; 32]).unwrap();
+    let inherent = key.sign_sha256(b"message").unwrap();
+    let mut source = CountingSource {
+        fills: vec![0x01, 0x02, 0x03],
+    };
+    let generic = Signer::sign(&key, &mut source, b"message").unwrap();
+    assert_eq!(generic, inherent);
+    assert_eq!(
+        source.fills.len(),
+        3,
+        "deterministic signing consumed no entropy"
+    );
+    let digest = rsl_crypto::digest::sha2::sha256::Sha256::digest(b"message").unwrap();
+    assert_eq!(key.sign_sha256_digest(&digest).unwrap(), inherent);
+    assert_ne!(key.sign_sha256(b"messagf").unwrap(), inherent);
+}

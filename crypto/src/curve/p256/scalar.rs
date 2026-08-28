@@ -11,6 +11,7 @@
 use zeroize::Zeroize;
 
 use super::arithmetic::{self, Limbs, Modulus};
+use crate::{CryptoError, Result, random::RandomSource};
 
 /// SP 800-186 §3.2.1.3 group order `n`, little-endian limbs.
 pub(crate) const ORDER: Modulus = Modulus::new([
@@ -74,6 +75,12 @@ impl Scalar {
         arithmetic::to_be_bytes(&self.limbs)
     }
 
+    pub(crate) fn add(&self, right: &Self) -> Self {
+        Self {
+            limbs: ORDER.add(&self.limbs, &right.limbs),
+        }
+    }
+
     pub(crate) fn multiply(&self, right: &Self) -> Self {
         Self {
             limbs: ORDER.multiply(&self.limbs, &right.limbs),
@@ -100,6 +107,42 @@ impl Drop for Scalar {
     fn drop(&mut self) {
         self.limbs.zeroize();
     }
+}
+
+/// Candidate draws permitted before generation reports the entropy source as unusable.
+///
+/// A candidate exceeds `n - 2` with probability about `2^-32`, so a conforming source never
+/// approaches this bound.
+const MAX_CANDIDATES: usize = 64;
+
+/// FIPS 186-5 Appendix A.2.2 / SP 800-56A Rev. 3 §5.6.1.2.2 private-scalar generation by
+/// testing candidates: draw 256 bits `c`, retry while `c > n - 2`, and return `d = c + 1`.
+///
+/// # Errors
+///
+/// Returns the source's error, or [`CryptoError::EntropyUnavailable`] if every permitted
+/// candidate is out of range, which indicates a non-uniform source.
+pub(crate) fn generate_private_bytes<R: RandomSource>(random: &mut R) -> Result<[u8; 32]> {
+    let (n_minus_two, _) = arithmetic::subtract_limbs(&ORDER.value, &[2, 0, 0, 0]);
+    for _ in 0..MAX_CANDIDATES {
+        let mut candidate = [0_u8; 32];
+        if let Err(error) = random.fill_bytes(&mut candidate) {
+            candidate.zeroize();
+            return Err(error);
+        }
+        let mut limbs = arithmetic::from_be_bytes(&candidate);
+        candidate.zeroize();
+        if arithmetic::is_less_than(&n_minus_two, &limbs) {
+            limbs.zeroize();
+            continue;
+        }
+        let (mut d, _) = arithmetic::add_limbs(&limbs, &[1, 0, 0, 0]);
+        limbs.zeroize();
+        let bytes = arithmetic::to_be_bytes(&d);
+        d.zeroize();
+        return Ok(bytes);
+    }
+    Err(CryptoError::EntropyUnavailable)
 }
 
 #[cfg(test)]
@@ -143,6 +186,18 @@ mod unit {
             arithmetic::to_be_bytes(&value)
         };
         assert_eq!(Scalar::reduce_bytes(&[0xff; 32]).to_bytes(), expected);
+    }
+
+    #[test]
+    fn addition_wraps_at_the_order() {
+        let mut n_minus_one = n_bytes();
+        n_minus_one[31] -= 1;
+        let mut one = [0_u8; 32];
+        one[31] = 1;
+        let top = Scalar::from_canonical_bytes(&n_minus_one).unwrap();
+        let unit = Scalar::from_canonical_bytes(&one).unwrap();
+        assert!(top.add(&unit).is_zero());
+        assert_eq!(unit.add(&unit).to_bytes()[31], 2);
     }
 
     #[test]

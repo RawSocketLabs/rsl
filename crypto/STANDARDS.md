@@ -576,14 +576,22 @@ The `p256` crate 0.14.0 is used only in development tests as a differential orac
 - **Publication:** NIST FIPS 186-5, *Digital Signature Standard (DSS)*, February 2023.
   [Publication record](https://csrc.nist.gov/pubs/fips/186-5/final);
   [doi:10.6028/NIST.FIPS.186-5](https://doi.org/10.6028/NIST.FIPS.186-5).
-- **Sections owned:** §6.4.2 (ECDSA signature verification) with SHA-256 over P-256.
-  §6.4.1 (signature generation) and §6.3 (per-message secret number) are deliberately not
-  implemented in this profile.
+- **Sections owned:** §6.4.1 (signature generation), §6.4.2 (signature verification), and
+  Appendix A.2.2 (key generation by testing candidates), with SHA-256 over P-256. §6.3's
+  per-message secret is supplied by the deterministic method below, which §6.3 permits.
+- **Deterministic `k`:** RFC 6979, *Deterministic Usage of the Digital Signature Algorithm
+  (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)*, August 2013, Informational,
+  §2.3 (conversions) and §3.2 (generation of `k`) with HMAC-SHA-256.
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc6979/);
+  [doi:10.17487/RFC6979](https://doi.org/10.17487/RFC6979). Errata checked 2026-08-28: none
+  affect §2.3 or §3.2 for `qlen = hlen = 256`.
 - **Baseline last checked:** 2026-08-28; final. FIPS 186-5 supersedes FIPS 186-4 (withdrawn
-  February 2024); the verification steps are unchanged between the two.
+  February 2024); the signing and verification steps are unchanged between the two.
 - **Published validation material:** RFC 6979 A.2.5 (P-256, SHA-256, messages `sample` and
-  `test`); NIST CAVP `SigVer.rsp` `[P-256,SHA-256]` (15 cases with printed verdicts). Archive
-  checksum and conversion policy are in `tests/vectors/ecdsa-p256/README.md`.
+  `test`, including the intermediate `k` values); NIST CAVP `SigGen.txt` `[P-256,SHA-256]`
+  (15 cases with `d`, `k`, `Qx`, `Qy`, `R`, `S`); NIST CAVP `SigVer.rsp` `[P-256,SHA-256]`
+  (15 cases with printed verdicts). Archive checksum and conversion policy are in
+  `tests/vectors/ecdsa-p256/README.md`.
 
 ### ECDSA P-256 coverage
 
@@ -596,11 +604,17 @@ The `p256` crate 0.14.0 is used only in development tests as a differential orac
 | §6.4.2 step 5 | `R = [u1]G + [u2]Q`; reject `O`. | `ProjectivePoint::multiply` and `add`; `to_affine` returns `None` for `O`. | Implemented and tested. |
 | §6.4.2 step 6 | `v = x_R mod n`; accept iff `v == r`. | `Scalar::reduce_limbs` and `equals`; RFC 6979, 15 CAVP verdicts, `(r, n - s)` acceptance, tampering rejection, 32 differential cases. | Implemented and tested. |
 | §6.4.2 public-key input | `Q` must be a valid point. | `EcdsaP256VerifyingKey::from_bytes` performs SEC 1 decoding with the curve-equation check. | Implemented and tested. |
-| §6.4.1; §6.3; Appendix A.3 | Signing and per-message secret generation. | Not exposed. | Deliberately not implemented in this profile. |
+| Appendix A.2.2 | Private key by testing candidates: `c` in 256 bits, retry while `c > n - 2`, `d = c + 1`. | `scalar::generate_private_bytes` shared with ECDH; `EcdsaP256SigningKey::generate`; deterministic-source tests. | Implemented and tested. |
+| §6.4.1 steps 1–3 | `e` from `H(M)`; `R = [k]G`; `r = x_R mod n`; retry if `r = 0`. | `sign::sign_with_nonce`; all 15 CAVP `SigGen` `(d, k) -> (r, s)` white-box cases. | Implemented and tested. |
+| §6.4.1 step 4 | `s = k^-1 (e + r d) mod n`; retry if `s = 0`. | `sign::sign_with_nonce` via `Scalar::invert`, `add`, `multiply`; CAVP `SigGen`, RFC 6979 exact signatures, 32 byte-identical differential cases. | Implemented and tested. |
+| §6.3 | Per-message secret `k` in `[1, n-1]`, unique per signature. | Deterministic RFC 6979 derivation below; no random `k` path is exposed. | Implemented as the deterministic profile only. |
+| RFC 6979 §2.3.2–§2.3.4 | `bits2int` keeps 256 bits; `int2octets` is 32-byte big-endian; `bits2octets(h1) = int2octets(h1 mod n)`. | `nonce::NonceGenerator::new` via `Scalar::reduce_bytes`/`to_bytes`. | Implemented and tested. |
+| RFC 6979 §3.2 steps a–g | Seed `V`, `K`; two HMAC key updates with internal octets `0x00` and `0x01`. | `NonceGenerator::new` with lettered comments; A.2.5 published `k` values. | Implemented and tested. |
+| RFC 6979 §3.2 step h | Generate `T`; compare (not reduce) with `n`; retry update `K = HMAC_K(V || 0x00)`, `V = HMAC_K(V)` on rejection or `r = 0`/`s = 0`. | `NonceGenerator::candidate`/`reject` and the loop in `sign::sign_digest`; retry-state test. | Implemented and tested at source level; the retry path has no published vector. |
 | Encoding of `(r, s)` | Raw `r || s` (RFC 7515 style). | `EcdsaP256Signature`; DER `ECDSA-Sig-Value` parsing is assigned to certificate/protocol layers. | Implemented as a fixed-size profile. |
 
-The `p256` crate 0.14.0 is used only in development tests as a signing oracle whose output this
-verifier must accept.
+The `p256` crate 0.14.0 is used only in development tests. Its RFC 6979 signatures are
+byte-identical to this implementation's over 32 cases, and each side accepts the other's output.
 
 ## Traceability requirements for later primitives
 

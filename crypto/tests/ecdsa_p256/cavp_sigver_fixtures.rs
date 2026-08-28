@@ -1,4 +1,4 @@
-//! NIST CAVP ECDSA SigVer `[P-256,SHA-256]` cases, copied from `SigVer.rsp`.
+//! NIST CAVP ECDSA `SigVer` `[P-256,SHA-256]` cases, copied from `SigVer.rsp`.
 //!
 //! Provenance: `tests/vectors/ecdsa-p256/README.md`. Every field keeps its printed big-endian
 //! byte order; the message is the raw bytes that were hashed.

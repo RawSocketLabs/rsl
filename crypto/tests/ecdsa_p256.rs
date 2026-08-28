@@ -5,6 +5,8 @@
 
 #[path = "ecdsa_p256/boundaries.rs"]
 mod boundaries;
+#[path = "ecdsa_p256/cavp_siggen_fixtures.rs"]
+mod cavp_siggen_fixtures;
 #[path = "ecdsa_p256/cavp_sigver_fixtures.rs"]
 mod cavp_sigver_fixtures;
 #[path = "ecdsa_p256/differential.rs"]

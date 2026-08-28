@@ -99,17 +99,17 @@ Each algorithm change must include:
    in its printed 43-step order, and fixed-structure scalar multiplication. ECDH exposes
    `EcdhP256PrivateKey`, `EcdhP256PublicKey`, `EcdhP256SharedSecret`, and `EcdhP256` with
    SP 800-56A Rev. 3 candidate-testing generation, full public-key validation, and the ECC CDH
-   primitive. ECDSA exposes `EcdsaP256VerifyingKey` and `EcdsaP256Signature` with FIPS 186-5
-   §6.4.2 verification over SHA-256 and a raw `r || s` encoding. Evidence covers RFC 5903 §8.1,
-   all 25 CAVP ECC CDH and 12 CAVP PKV P-256 cases, RFC 6979 A.2.5, all 15 CAVP SigVer
-   P-256/SHA-256 verdicts, range and tampering boundaries, and development-only differential
-   comparison with the `p256` crate 0.14.0. ECDSA signing, DER signature framing, compressed
-   points, and other curves and hashes remain deliberately unsupported.
+   primitive. ECDSA exposes `EcdsaP256SigningKey`, `EcdsaP256VerifyingKey`, and `EcdsaP256Signature`
+   with FIPS 186-5 §6.4.1 signing under RFC 6979 deterministic `k`, §6.4.2 verification over
+   SHA-256, and a raw `r || s` encoding. Evidence covers RFC 5903 §8.1, all 25 CAVP ECC CDH and
+   12 CAVP PKV P-256 cases, RFC 6979 A.2.5 (published `k` values and exact signatures), all 15
+   CAVP SigGen `(d, k) -> (r, s)` cases and 15 CAVP SigVer verdicts, range and tampering
+   boundaries, and development-only byte-identical differential comparison with the `p256`
+   crate 0.14.0. Randomized `k`, DER signature framing, compressed points, and other curves
+   and hashes remain deliberately unsupported.
 
 ## After the first vertical slice
 
-- ECDSA P-256 signing with RFC 6979 deterministic nonces, as a distinct profile from
-  verification.
 - RSA-PSS verification needed by TLS certificates.
 - Ed25519ctx and Ed25519ph only as explicit variant APIs rather than flags on pure Ed25519.
 - The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.

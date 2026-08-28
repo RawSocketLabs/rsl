@@ -37,8 +37,8 @@
 //!    authenticated encryption with associated data.
 //! 9. [`curve::p256`] builds the NIST P-256 group from 256-bit limbs, a shared modular
 //!    reduction, and a complete addition law. [`EcdhP256`](agreement::ecdh_p256::EcdhP256)
-//!    and [`EcdsaP256VerifyingKey`](signature::ecdsa_p256::EcdsaP256VerifyingKey) then show how
-//!    one group serves both key agreement and signature verification.
+//!    and [`EcdsaP256SigningKey`](signature::ecdsa_p256::EcdsaP256SigningKey) then show how
+//!    one group serves both key agreement and deterministic signatures.
 //!
 //! Follow the links above for the mental model, standard notation, algorithm steps, worked
 //! examples, common mistakes, and exact evidence for each construction.

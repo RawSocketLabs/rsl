@@ -49,7 +49,9 @@ rsl-crypto/
 │   ├── agreement/x25519/scalar.rs private RFC 7748 scalar preparation
 │   ├── agreement/x25519/ladder.rs private fixed-structure Montgomery ladder
 │   ├── signature.rs               generic signing and verification contracts
-│   ├── signature/ecdsa_p256/api.rs typed verifying key and raw `r || s` signature
+│   ├── signature/ecdsa_p256/api.rs typed signing/verifying keys and raw `r || s` signature
+│   ├── signature/ecdsa_p256/nonce.rs RFC 6979 §3.2 deterministic `k` generator
+│   ├── signature/ecdsa_p256/sign.rs FIPS 186-5 §6.4.1 signing equation and retry loop
 │   ├── signature/ecdsa_p256/verify.rs FIPS 186-5 §6.4.2 step sequence
 │   ├── signature/ed25519/api.rs   typed keys, signing, and strict verification
 │   ├── signature/ed25519/field.rs Edwards field encoding and root recovery
@@ -86,7 +88,7 @@ rsl-crypto/
 │   ├── ecdh_p256/                 RFC 5903, CAVP CDH/PKV fixtures, boundaries, differential
 │   ├── vectors/ecdh-p256/         SP 800-56A, RFC 5903, and CAVP provenance
 │   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
-│   ├── ecdsa_p256/                RFC 6979, CAVP SigVer fixtures, boundaries, differential
+│   ├── ecdsa_p256/                RFC 6979, CAVP SigGen/SigVer fixtures, boundaries, differential
 │   └── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
 ├── DESIGN.md                      crate-wide architectural decisions
 ├── ROADMAP.md                     primitive implementation order

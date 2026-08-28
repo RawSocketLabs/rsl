@@ -25,7 +25,7 @@ fn cavp_public_key_validation_verdicts_are_reproduced() {
             Err(CryptoError::InvalidPublicKey)
         };
         let accepted = parsed.is_ok();
-        let expected = case.verdict.starts_with("P");
+        let expected = case.verdict.starts_with('P');
         assert_eq!(accepted, expected, "x={} verdict {}", case.x, case.verdict);
     }
 }

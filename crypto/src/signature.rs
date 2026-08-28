@@ -8,8 +8,8 @@
 //! [`ed25519`] is the first concrete implementation. It provides deterministic signing and strict
 //! verification while keeping message encoding, identity binding, certificate formats, and
 //! handshake transcript construction in the consuming protocol. [`ecdsa_p256`] adds FIPS 186-5
-//! ECDSA verification with SHA-256 over NIST P-256 for certificate and handshake
-//! interoperability; signing is a separate future profile.
+//! ECDSA over NIST P-256 with SHA-256: deterministic RFC 6979 signing and verification for
+//! certificate and handshake interoperability.
 
 use crate::{Result, random::RandomSource};
 
