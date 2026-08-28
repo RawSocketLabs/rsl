@@ -4,9 +4,10 @@
 > crate-specific detail; this root file holds the workspace-wide rules.
 
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs
-stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), RF parsing (`rfus`), the
-protocol crates (`protocols/*`), the facades (`rsl`, `rsl-deps`), and (excluded, FFI) `usdr`
-and `rust-dsdcc`. Crates are **published independently** but developed **in lockstep** — inter-crate
+stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
+compression (`compression`), error correction (`error-correction`), RF parsing (`rfus`), the
+protocol crates (`protocols/*`), the facades (`rsl`, `rsl-deps`), and (excluded, FFI) `usdr` and
+`rust-dsdcc`. Crates are **published independently** but developed **in lockstep** — inter-crate
 deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
 
 ## Layout
@@ -15,6 +16,11 @@ deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
 |------|----------|-------|
 | `bitsandbytes/bnb`, `bitsandbytes/bnb-macros` | `bitsandbytes`, `bitsandbytes-macros` | the codec; `#![forbid(unsafe_code)]` |
 | `rawsock/` | `rawsock` | L2/L3/L4 raw I/O; `#![forbid(unsafe_code)]` (safe via `rustix`) |
+| `netlink/` | `rsl-netlink` | strict route/generic-netlink transport and typed WireGuard APIs |
+| `crypto/` | `rsl-crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
+| `crypto-legacy/` | `rsl-crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
+| `compression/` | `rsl-compression` | accuracy-first compression algorithms; `no_std + alloc`, zero `unsafe` |
+| `error-correction/` | `rsl-error-correction` | accuracy-first redundancy coding; `no_std + alloc`, zero `unsafe` |
 | `rfus/` | `rfus` | RF/sample-rate parsing |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `dns` | dual-use protocol codecs on `bnb` |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |

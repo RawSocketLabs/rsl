@@ -1,7 +1,8 @@
-//! # `rsl` — the RawSocket Labs owned-library facade
+//! # `rsl` — the `RawSocket` Labs owned-library facade
 //!
 //! A single, feature-gated re-export of the public libraries RSL *owns*, under semantic
-//! paths — [`codec`], [`proto`], [`rawsock`], [`rf`], and (FFI, opt-in) [`usdr`]. Depend on
+//! paths — [`codec`], [`crypto`], explicitly opt-in [`crypto_legacy`], [`compression`],
+//! [`error_correction`], [`proto`], [`rawsock`], [`rf`], and (FFI, opt-in) [`usdr`]. Depend on
 //! `rsl` to consume RSL's own products through one crate with unified, pinned versions.
 //!
 //! This is the **owned** half of the stack. The **rented** third-party half lives in the
@@ -31,6 +32,29 @@
 #[cfg(feature = "codec")]
 #[doc(inline)]
 pub use bnb as codec;
+
+/// Accuracy-first cryptographic primitives and protection contracts.
+#[cfg(feature = "crypto")]
+#[doc(inline)]
+pub use rsl_crypto as crypto;
+
+/// Explicitly opt-in historical and broken cryptographic primitives.
+///
+/// This namespace is never enabled by `full` or `transforms` and must not participate in an
+/// implicit protocol fallback.
+#[cfg(feature = "legacy-crypto")]
+#[doc(inline)]
+pub use rsl_crypto_legacy as crypto_legacy;
+
+/// Stateful compression and decompression contracts.
+#[cfg(feature = "compression")]
+#[doc(inline)]
+pub use rsl_compression as compression;
+
+/// Error-correction encoding, decoding, and correction reports.
+#[cfg(feature = "error-correction")]
+#[doc(inline)]
+pub use rsl_error_correction as error_correction;
 
 /// Layered raw-packet I/O: transmit arbitrary bytes at L2/L3/L4.
 #[cfg(feature = "rawsock")]
@@ -90,4 +114,20 @@ pub mod prelude {
     #[cfg(feature = "codec")]
     #[doc(no_inline)]
     pub use crate::codec;
+
+    #[cfg(feature = "crypto")]
+    #[doc(no_inline)]
+    pub use crate::crypto;
+
+    #[cfg(feature = "legacy-crypto")]
+    #[doc(no_inline)]
+    pub use crate::crypto_legacy;
+
+    #[cfg(feature = "compression")]
+    #[doc(no_inline)]
+    pub use crate::compression;
+
+    #[cfg(feature = "error-correction")]
+    #[doc(no_inline)]
+    pub use crate::error_correction;
 }
