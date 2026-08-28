@@ -13,7 +13,6 @@
 pub mod core;
 pub mod generic;
 pub mod route;
-#[cfg(feature = "tokio")]
 pub mod transport;
 pub mod wireguard;
 

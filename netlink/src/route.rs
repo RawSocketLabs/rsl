@@ -9,7 +9,6 @@ use crate::core::{
 };
 use crate::{Error, Result};
 
-#[cfg(feature = "tokio")]
 use crate::transport::{Client, Protocol};
 
 const RTM_NEWLINK: u16 = 16;
@@ -150,14 +149,12 @@ pub struct Rule {
     pub suppress_prefix_length: Option<u32>,
 }
 
-#[cfg(feature = "tokio")]
 #[derive(Clone)]
-/// Typed Tokio client for `NETLINK_ROUTE`.
+/// Typed blocking client for `NETLINK_ROUTE`.
 pub struct RouteClient {
     transport: Client,
 }
 
-#[cfg(feature = "tokio")]
 impl RouteClient {
     /// Open a route-netlink socket in the caller's current network namespace.
     pub fn open() -> Result<Self> {
@@ -172,15 +169,12 @@ impl RouteClient {
     }
 
     /// Dump all links visible to the socket.
-    pub async fn links(&self) -> Result<Vec<Link>> {
-        let responses = self
-            .transport
-            .request(Message::new(
-                RTM_GETLINK,
-                NLM_F_REQUEST | NLM_F_DUMP,
-                ifinfo_payload(0, 0, 0, &[])?,
-            ))
-            .await?;
+    pub fn links(&self) -> Result<Vec<Link>> {
+        let responses = self.transport.request(Message::new(
+            RTM_GETLINK,
+            NLM_F_REQUEST | NLM_F_DUMP,
+            ifinfo_payload(0, 0, 0, &[])?,
+        ))?;
         responses
             .into_iter()
             .filter(|message| message.header.message_type == RTM_NEWLINK)
@@ -189,24 +183,20 @@ impl RouteClient {
     }
 
     /// Find a link by its kernel name.
-    pub async fn link_by_name(&self, name: &str) -> Result<Link> {
-        self.links()
-            .await?
+    pub fn link_by_name(&self, name: &str) -> Result<Link> {
+        self.links()?
             .into_iter()
             .find(|link| link.name == name)
             .ok_or_else(|| Error::Protocol(format!("link {name:?} not found")))
     }
 
     /// Dump all addresses visible to the socket.
-    pub async fn addresses(&self) -> Result<Vec<Address>> {
-        let responses = self
-            .transport
-            .request(Message::new(
-                RTM_GETADDR,
-                NLM_F_REQUEST | NLM_F_DUMP,
-                ifaddr_payload(0, 0, 0, 0, 0, &[])?,
-            ))
-            .await?;
+    pub fn addresses(&self) -> Result<Vec<Address>> {
+        let responses = self.transport.request(Message::new(
+            RTM_GETADDR,
+            NLM_F_REQUEST | NLM_F_DUMP,
+            ifaddr_payload(0, 0, 0, 0, 0, &[])?,
+        ))?;
         responses
             .into_iter()
             .filter(|message| message.header.message_type == RTM_NEWADDR)
@@ -215,15 +205,12 @@ impl RouteClient {
     }
 
     /// Dump all IPv4 and IPv6 routes visible to the socket.
-    pub async fn routes(&self) -> Result<Vec<Route>> {
-        let responses = self
-            .transport
-            .request(Message::new(
-                RTM_GETROUTE,
-                NLM_F_REQUEST | NLM_F_DUMP,
-                route_payload(0, 0, 0, 0, 0, 0, 0, 0, 0, &[])?,
-            ))
-            .await?;
+    pub fn routes(&self) -> Result<Vec<Route>> {
+        let responses = self.transport.request(Message::new(
+            RTM_GETROUTE,
+            NLM_F_REQUEST | NLM_F_DUMP,
+            route_payload(0, 0, 0, 0, 0, 0, 0, 0, 0, &[])?,
+        ))?;
         responses
             .into_iter()
             .filter(|message| message.header.message_type == RTM_NEWROUTE)
@@ -232,15 +219,12 @@ impl RouteClient {
     }
 
     /// Dump all IPv4 and IPv6 policy rules visible to the socket.
-    pub async fn rules(&self) -> Result<Vec<Rule>> {
-        let responses = self
-            .transport
-            .request(Message::new(
-                RTM_GETRULE,
-                NLM_F_REQUEST | NLM_F_DUMP,
-                rule_payload(0, 0, 0, 0, 0, 0, &[])?,
-            ))
-            .await?;
+    pub fn rules(&self) -> Result<Vec<Rule>> {
+        let responses = self.transport.request(Message::new(
+            RTM_GETRULE,
+            NLM_F_REQUEST | NLM_F_DUMP,
+            rule_payload(0, 0, 0, 0, 0, 0, &[])?,
+        ))?;
         responses
             .into_iter()
             .filter(|message| message.header.message_type == RTM_NEWRULE)
@@ -249,120 +233,107 @@ impl RouteClient {
     }
 
     /// Move an interface to the namespace identified by an open fd.
-    pub async fn set_link_namespace(&self, index: u32, namespace: BorrowedFd<'_>) -> Result<()> {
+    pub fn set_link_namespace(&self, index: u32, namespace: BorrowedFd<'_>) -> Result<()> {
         let raw_fd = namespace.as_raw_fd();
         self.set_link(index, 0, 0, &[Attribute::i32(IFLA_NET_NS_FD, raw_fd)])
-            .await
     }
 
     /// Set or clear `IFF_UP` without disturbing other flags.
-    pub async fn set_link_up(&self, index: u32, up: bool) -> Result<()> {
+    pub fn set_link_up(&self, index: u32, up: bool) -> Result<()> {
         self.set_link(index, if up { IFF_UP } else { 0 }, IFF_UP, &[])
-            .await
     }
 
     /// Set an interface MTU.
-    pub async fn set_mtu(&self, index: u32, mtu: u32) -> Result<()> {
+    pub fn set_mtu(&self, index: u32, mtu: u32) -> Result<()> {
         self.set_link(index, 0, 0, &[Attribute::u32(IFLA_MTU, mtu)])
-            .await
     }
 
-    async fn set_link(
+    fn set_link(
         &self,
         index: u32,
         flags: u32,
         change: u32,
         attributes: &[Attribute],
     ) -> Result<()> {
-        self.transport
-            .request(Message::new(
-                RTM_SETLINK,
-                NLM_F_REQUEST,
-                ifinfo_payload(index, flags, change, attributes)?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_SETLINK,
+            NLM_F_REQUEST,
+            ifinfo_payload(index, flags, change, attributes)?,
+        ))?;
         Ok(())
     }
 
     /// Create a WireGuard-kind link.
-    pub async fn create_wireguard(&self, name: &str) -> Result<()> {
-        self.create_link(name, "wireguard").await
+    pub fn create_wireguard(&self, name: &str) -> Result<()> {
+        self.create_link(name, "wireguard")
     }
 
     /// Create a link with a kernel `IFLA_INFO_KIND`, such as `dummy`.
-    pub async fn create_link(&self, name: &str, kind: &str) -> Result<()> {
+    pub fn create_link(&self, name: &str, kind: &str) -> Result<()> {
         let link_info =
             Attribute::nested(IFLA_LINKINFO, &[Attribute::string(IFLA_INFO_KIND, kind)])?;
-        self.transport
-            .request(Message::new(
-                RTM_NEWLINK,
-                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
-                ifinfo_payload(0, 0, 0, &[Attribute::string(IFLA_IFNAME, name), link_info])?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_NEWLINK,
+            NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
+            ifinfo_payload(0, 0, 0, &[Attribute::string(IFLA_IFNAME, name), link_info])?,
+        ))?;
         Ok(())
     }
 
     /// Delete a link by index.
-    pub async fn delete_link(&self, index: u32) -> Result<()> {
-        self.transport
-            .request(Message::new(
-                RTM_DELLINK,
-                NLM_F_REQUEST,
-                ifinfo_payload(index, 0, 0, &[])?,
-            ))
-            .await?;
+    pub fn delete_link(&self, index: u32) -> Result<()> {
+        self.transport.request(Message::new(
+            RTM_DELLINK,
+            NLM_F_REQUEST,
+            ifinfo_payload(index, 0, 0, &[])?,
+        ))?;
         Ok(())
     }
 
     /// Add or replace an address.
-    pub async fn add_address(&self, address: &Address) -> Result<()> {
+    pub fn add_address(&self, address: &Address) -> Result<()> {
         let mut attributes = vec![Attribute::new(IFA_ADDRESS, ip_bytes(address.address))];
         if let Some(local) = address.local {
             attributes.push(Attribute::new(IFA_LOCAL, ip_bytes(local)));
         }
-        self.transport
-            .request(Message::new(
-                RTM_NEWADDR,
-                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
-                ifaddr_payload(
-                    address_family(address.address),
-                    address.prefix_len,
-                    address.flags,
-                    address.scope,
-                    address.interface,
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_NEWADDR,
+            NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
+            ifaddr_payload(
+                address_family(address.address),
+                address.prefix_len,
+                address.flags,
+                address.scope,
+                address.interface,
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 
     /// Delete an exact address assignment.
-    pub async fn delete_address(&self, address: &Address) -> Result<()> {
+    pub fn delete_address(&self, address: &Address) -> Result<()> {
         let mut attributes = vec![Attribute::new(IFA_ADDRESS, ip_bytes(address.address))];
         if let Some(local) = address.local {
             attributes.push(Attribute::new(IFA_LOCAL, ip_bytes(local)));
         }
-        self.transport
-            .request(Message::new(
-                RTM_DELADDR,
-                NLM_F_REQUEST,
-                ifaddr_payload(
-                    address_family(address.address),
-                    address.prefix_len,
-                    address.flags,
-                    address.scope,
-                    address.interface,
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_DELADDR,
+            NLM_F_REQUEST,
+            ifaddr_payload(
+                address_family(address.address),
+                address.prefix_len,
+                address.flags,
+                address.scope,
+                address.interface,
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 
     /// Add or replace a route.
-    pub async fn add_route(&self, route: &Route) -> Result<()> {
+    pub fn add_route(&self, route: &Route) -> Result<()> {
         let mut attributes = Vec::new();
         if let Some(destination) = route.destination {
             attributes.push(Attribute::new(RTA_DST, ip_bytes(destination)));
@@ -385,90 +356,82 @@ impl RouteClient {
             attributes.push(Attribute::u32(RTA_TABLE, route.table));
             RT_TABLE_UNSPEC
         };
-        self.transport
-            .request(Message::new(
-                RTM_NEWROUTE,
-                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
-                route_payload(
-                    route.family,
-                    route.destination_prefix,
-                    route.source_prefix,
-                    table,
-                    route.protocol,
-                    route.scope,
-                    route.route_type,
-                    0,
-                    0,
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_NEWROUTE,
+            NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
+            route_payload(
+                route.family,
+                route.destination_prefix,
+                route.source_prefix,
+                table,
+                route.protocol,
+                route.scope,
+                route.route_type,
+                0,
+                0,
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 
     /// Delete an exact route.
-    pub async fn delete_route(&self, route: &Route) -> Result<()> {
+    pub fn delete_route(&self, route: &Route) -> Result<()> {
         let (table, attributes) = encode_route_attributes(route);
-        self.transport
-            .request(Message::new(
-                RTM_DELROUTE,
-                NLM_F_REQUEST,
-                route_payload(
-                    route.family,
-                    route.destination_prefix,
-                    route.source_prefix,
-                    table,
-                    route.protocol,
-                    route.scope,
-                    route.route_type,
-                    0,
-                    0,
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_DELROUTE,
+            NLM_F_REQUEST,
+            route_payload(
+                route.family,
+                route.destination_prefix,
+                route.source_prefix,
+                table,
+                route.protocol,
+                route.scope,
+                route.route_type,
+                0,
+                0,
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 
     /// Add or replace a policy rule.
-    pub async fn add_rule(&self, rule: &Rule) -> Result<()> {
+    pub fn add_rule(&self, rule: &Rule) -> Result<()> {
         let (table, attributes) = encode_rule_attributes(rule);
-        self.transport
-            .request(Message::new(
-                RTM_NEWRULE,
-                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
-                rule_payload(
-                    rule.family,
-                    rule.destination_prefix,
-                    rule.source_prefix,
-                    table,
-                    rule.action,
-                    rule_flags(rule),
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_NEWRULE,
+            NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE,
+            rule_payload(
+                rule.family,
+                rule.destination_prefix,
+                rule.source_prefix,
+                table,
+                rule.action,
+                rule_flags(rule),
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 
     /// Delete an exact policy-routing rule.
-    pub async fn delete_rule(&self, rule: &Rule) -> Result<()> {
+    pub fn delete_rule(&self, rule: &Rule) -> Result<()> {
         let (table, attributes) = encode_rule_attributes(rule);
-        self.transport
-            .request(Message::new(
-                RTM_DELRULE,
-                NLM_F_REQUEST,
-                rule_payload(
-                    rule.family,
-                    rule.destination_prefix,
-                    rule.source_prefix,
-                    table,
-                    rule.action,
-                    rule_flags(rule),
-                    &attributes,
-                )?,
-            ))
-            .await?;
+        self.transport.request(Message::new(
+            RTM_DELRULE,
+            NLM_F_REQUEST,
+            rule_payload(
+                rule.family,
+                rule.destination_prefix,
+                rule.source_prefix,
+                table,
+                rule.action,
+                rule_flags(rule),
+                &attributes,
+            )?,
+        ))?;
         Ok(())
     }
 }
@@ -811,7 +774,7 @@ fn ip_bytes(address: IpAddr) -> Vec<u8> {
     }
 }
 
-#[cfg(all(test, feature = "tokio"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -861,19 +824,12 @@ mod tests {
         assert_eq!(decoded.suppress_prefix_length, None);
     }
 
-    #[tokio::test]
-    async fn dumps_live_route_state() {
+    #[test]
+    fn dumps_live_route_state() {
         let client = RouteClient::open().unwrap();
-        assert!(
-            client
-                .links()
-                .await
-                .unwrap()
-                .iter()
-                .any(|link| link.name == "lo")
-        );
-        client.addresses().await.unwrap();
-        client.routes().await.unwrap();
-        client.rules().await.unwrap();
+        assert!(client.links().unwrap().iter().any(|link| link.name == "lo"));
+        client.addresses().unwrap();
+        client.routes().unwrap();
+        client.rules().unwrap();
     }
 }

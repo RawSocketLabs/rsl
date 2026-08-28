@@ -9,7 +9,6 @@ use crate::core::{Attribute, Message, NLM_F_DUMP, NLM_F_REQUEST};
 use crate::generic::Header;
 use crate::{Error, Result};
 
-#[cfg(feature = "tokio")]
 use crate::generic::GenericClient;
 
 const FAMILY_NAME: &str = "wireguard";
@@ -168,44 +167,38 @@ pub struct DeviceUpdate {
     pub peers: Vec<PeerUpdate>,
 }
 
-#[cfg(feature = "tokio")]
 #[derive(Clone)]
-/// Typed Tokio client for the kernel `WireGuard` generic-netlink family.
+/// Typed blocking client for the kernel `WireGuard` generic-netlink family.
 pub struct WireGuardClient {
     generic: GenericClient,
     family: u16,
 }
 
-#[cfg(feature = "tokio")]
 impl WireGuardClient {
     /// Open generic netlink and resolve the `WireGuard` family.
-    pub async fn open() -> Result<Self> {
+    pub fn open() -> Result<Self> {
         let generic = GenericClient::open()?;
-        Self::from_generic(generic).await
+        Self::from_generic(generic)
     }
 
     /// Resolve the `WireGuard` family on an existing generic-netlink client.
-    pub async fn from_generic(generic: GenericClient) -> Result<Self> {
-        let family = generic.family_id(FAMILY_NAME).await?;
+    pub fn from_generic(generic: GenericClient) -> Result<Self> {
+        let family = generic.family_id(FAMILY_NAME)?;
         Ok(Self { generic, family })
     }
 
     /// Read and merge complete device and peer state by interface name.
-    pub async fn get_device(&self, name: &str) -> Result<Device> {
+    pub fn get_device(&self, name: &str) -> Result<Device> {
         let payload = Header {
             command: CMD_GET_DEVICE,
             version: VERSION,
         }
         .encode(&[Attribute::string(DEVICE_IFNAME, name)])?;
-        let responses = self
-            .generic
-            .transport()
-            .request(Message::new(
-                self.family,
-                NLM_F_REQUEST | NLM_F_DUMP,
-                payload,
-            ))
-            .await?;
+        let responses = self.generic.transport().request(Message::new(
+            self.family,
+            NLM_F_REQUEST | NLM_F_DUMP,
+            payload,
+        ))?;
         let mut device = None;
         for response in responses {
             let (_, attributes) = Header::decode(&response.payload)?;
@@ -215,7 +208,7 @@ impl WireGuardClient {
     }
 
     /// Apply a selective update while preserving unspecified peers and fields.
-    pub async fn set_device(&self, update: &DeviceUpdate) -> Result<()> {
+    pub fn set_device(&self, update: &DeviceUpdate) -> Result<()> {
         let mut attributes = vec![Attribute::string(DEVICE_IFNAME, &update.name)];
         if let Some(private_key) = &update.private_key {
             attributes.push(Attribute::new(
@@ -252,8 +245,7 @@ impl WireGuardClient {
         .encode(&attributes)?;
         self.generic
             .transport()
-            .request(Message::new(self.family, NLM_F_REQUEST, payload))
-            .await?;
+            .request(Message::new(self.family, NLM_F_REQUEST, payload))?;
         Ok(())
     }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Replace the Tokio transport with a blocking one: netlink is a local kernel
+  round-trip, so every client API is now synchronous and the `tokio` feature and
+  dependency are gone. A bounded `poll` (5 s) guards against a kernel that never
+  answers.
+- Support `not` (inverted) policy rules and `suppress_prefixlength`.
+
 ## 0.1.0 - 2026-08-25
 
 - Add strict native-endian netlink and attribute framing using `bitsandbytes`.

@@ -1,19 +1,25 @@
-//! Tokio netlink request transport.
+//! Blocking netlink request transport.
+//!
+//! Netlink is a request/reply exchange with the local kernel: replies are
+//! queued before `recv` is even called, so the transport is deliberately
+//! synchronous. A bounded wait guards against a kernel that never answers.
 
 use std::os::fd::{AsRawFd, OwnedFd};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use rustix::event::{PollFd, PollFlags};
 use rustix::net::{
     AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType, netlink, recv, send,
 };
-use tokio::io::unix::AsyncFd;
-use tokio::sync::Mutex;
 
 use crate::core::{self, Attribute, Message, NLM_F_ACK, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP};
 use crate::{Error, Result};
 
 const RECEIVE_BUFFER: usize = 1024 * 1024;
 const NLMSGERR_ATTR_MSG: u16 = 1;
+/// Longest wait for any single datagram from the kernel.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Kernel netlink protocol used to open a request socket.
@@ -25,13 +31,13 @@ pub enum Protocol {
 }
 
 #[derive(Clone)]
-/// Serialized Tokio request/reply transport over one netlink socket.
+/// Serialized request/reply transport over one netlink socket.
 pub struct Client {
     inner: Arc<Mutex<Inner>>,
 }
 
 struct Inner {
-    socket: AsyncFd<OwnedFd>,
+    socket: OwnedFd,
     port: u32,
     sequence: u32,
 }
@@ -42,7 +48,7 @@ impl Client {
         Self::from_socket(open_socket(protocol)?)
     }
 
-    /// Wrap an already bound and connected nonblocking netlink socket.
+    /// Wrap an already bound and connected netlink socket.
     ///
     /// This is useful when the socket must be opened on a dedicated thread while
     /// that thread is temporarily entered into another network namespace.
@@ -55,7 +61,7 @@ impl Client {
             })?;
         Ok(Self {
             inner: Arc::new(Mutex::new(Inner {
-                socket: AsyncFd::new(socket)?,
+                socket,
                 port: local.pid(),
                 sequence: 0,
             })),
@@ -63,18 +69,21 @@ impl Client {
     }
 
     /// Send one request and collect its validated multipart response.
-    pub async fn request(&self, mut message: Message) -> Result<Vec<Message>> {
+    pub fn request(&self, mut message: Message) -> Result<Vec<Message>> {
         message.header.flags |= NLM_F_ACK;
-        let mut inner = self.inner.lock().await;
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         inner.sequence = inner.sequence.wrapping_add(1).max(1);
         let sequence = inner.sequence;
         let port = inner.port;
         let encoded = message.encode(sequence, port)?;
-        send_datagram(&inner.socket, &encoded).await?;
+        send_datagram(&inner.socket, &encoded)?;
 
         let mut responses = Vec::new();
         loop {
-            let datagram = receive_datagram(&inner.socket).await?;
+            let datagram = receive_datagram(&inner.socket)?;
             for response in Message::decode_all(&datagram)? {
                 if response.header.sequence != sequence {
                     return Err(Error::Protocol(format!(
@@ -105,11 +114,10 @@ impl Client {
     }
 }
 
-/// Open, bind, connect, and configure a nonblocking netlink socket.
+/// Open, bind, connect, and configure a netlink socket.
 ///
 /// The descriptor belongs to the current network namespace at the time this
-/// function runs. It can subsequently be moved to an async executor without
-/// changing that association.
+/// function runs and keeps that association wherever it is used afterwards.
 pub fn open_socket(protocol: Protocol) -> Result<OwnedFd> {
     let socket = rustix::net::socket_with(
         AddressFamily::NETLINK,
@@ -130,10 +138,25 @@ pub fn open_socket(protocol: Protocol) -> Result<OwnedFd> {
     Ok(socket)
 }
 
-async fn send_datagram(socket: &AsyncFd<OwnedFd>, bytes: &[u8]) -> Result<()> {
+fn wait(socket: &OwnedFd, flags: PollFlags) -> Result<()> {
     loop {
-        let mut ready = socket.writable().await?;
-        match send(socket.get_ref(), bytes, SendFlags::empty()) {
+        let mut fds = [PollFd::new(socket, flags)];
+        match rustix::event::poll(&mut fds, Some(&REPLY_TIMEOUT.try_into().unwrap())) {
+            Ok(0) => {
+                return Err(Error::Protocol(format!(
+                    "kernel did not answer within {REPLY_TIMEOUT:?}"
+                )));
+            }
+            Ok(_) => return Ok(()),
+            Err(rustix::io::Errno::INTR) => {}
+            Err(error) => return Err(os_error(error)),
+        }
+    }
+}
+
+fn send_datagram(socket: &OwnedFd, bytes: &[u8]) -> Result<()> {
+    loop {
+        match send(socket, bytes, SendFlags::empty()) {
             Ok(sent) if sent == bytes.len() => return Ok(()),
             Ok(sent) => {
                 return Err(Error::Protocol(format!(
@@ -141,18 +164,17 @@ async fn send_datagram(socket: &AsyncFd<OwnedFd>, bytes: &[u8]) -> Result<()> {
                     bytes.len()
                 )));
             }
-            Err(rustix::io::Errno::AGAIN) => ready.clear_ready(),
+            Err(rustix::io::Errno::AGAIN) => wait(socket, PollFlags::OUT)?,
             Err(rustix::io::Errno::INTR) => {}
             Err(error) => return Err(os_error(error)),
         }
     }
 }
 
-async fn receive_datagram(socket: &AsyncFd<OwnedFd>) -> Result<Vec<u8>> {
+fn receive_datagram(socket: &OwnedFd) -> Result<Vec<u8>> {
     loop {
-        let mut ready = socket.readable().await?;
         let mut bytes = vec![0_u8; RECEIVE_BUFFER];
-        match recv(socket.get_ref(), &mut bytes, RecvFlags::TRUNC) {
+        match recv(socket, &mut bytes, RecvFlags::TRUNC) {
             Ok((initialized, received)) if received <= bytes.len() => {
                 debug_assert_eq!(initialized, received);
                 bytes.truncate(initialized);
@@ -163,7 +185,7 @@ async fn receive_datagram(socket: &AsyncFd<OwnedFd>) -> Result<Vec<u8>> {
                     "netlink datagram of {received} bytes exceeds receive limit {RECEIVE_BUFFER}"
                 )));
             }
-            Err(rustix::io::Errno::AGAIN) => ready.clear_ready(),
+            Err(rustix::io::Errno::AGAIN) => wait(socket, PollFlags::IN)?,
             Err(rustix::io::Errno::INTR) => {}
             Err(rustix::io::Errno::NOBUFS) => {
                 return Err(Error::Protocol(
@@ -228,8 +250,11 @@ fn os_error(error: rustix::io::Errno) -> Error {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn route_socket_opens() {
-        Client::open(Protocol::Route).unwrap();
+    #[test]
+    fn route_socket_opens_and_answers() {
+        let client = Client::open(Protocol::Route).unwrap();
+        // An empty dump request still yields a terminating reply.
+        let message = Message::new(core::NLMSG_NOOP, 0, Vec::new());
+        let _ = client.request(message);
     }
 }

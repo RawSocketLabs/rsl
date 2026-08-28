@@ -3,7 +3,6 @@
 use crate::core::{Attribute, Message, NLM_F_REQUEST, decode_attributes, encode_attributes};
 use crate::{Error, Result};
 
-#[cfg(feature = "tokio")]
 use crate::transport::{Client, Protocol};
 
 const GENL_ID_CTRL: u16 = 0x10;
@@ -38,14 +37,12 @@ impl Header {
     }
 }
 
-#[cfg(feature = "tokio")]
 #[derive(Clone)]
 /// Generic-netlink client and controller-family resolver.
 pub struct GenericClient {
     transport: Client,
 }
 
-#[cfg(feature = "tokio")]
 impl GenericClient {
     /// Open a nonblocking `NETLINK_GENERIC` socket.
     pub fn open() -> Result<Self> {
@@ -65,16 +62,15 @@ impl GenericClient {
     }
 
     /// Resolve a generic-netlink family name to its kernel-assigned ID.
-    pub async fn family_id(&self, name: &str) -> Result<u16> {
+    pub fn family_id(&self, name: &str) -> Result<u16> {
         let payload = Header {
             command: CTRL_CMD_GETFAMILY,
             version: 1,
         }
         .encode(&[Attribute::string(CTRL_ATTR_FAMILY_NAME, name)])?;
-        let responses = self
-            .transport
-            .request(Message::new(GENL_ID_CTRL, NLM_F_REQUEST, payload))
-            .await?;
+        let responses =
+            self.transport
+                .request(Message::new(GENL_ID_CTRL, NLM_F_REQUEST, payload))?;
         for response in responses {
             let (_, attributes) = Header::decode(&response.payload)?;
             if let Some(attribute) = attributes
@@ -90,13 +86,13 @@ impl GenericClient {
     }
 }
 
-#[cfg(all(test, feature = "tokio"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn resolves_controller_family() {
+    #[test]
+    fn resolves_controller_family() {
         let client = GenericClient::open().unwrap();
-        assert_eq!(client.family_id("nlctrl").await.unwrap(), GENL_ID_CTRL);
+        assert_eq!(client.family_id("nlctrl").unwrap(), GENL_ID_CTRL);
     }
 }
