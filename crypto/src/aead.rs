@@ -7,7 +7,8 @@
 //! # Implemented algorithm
 //!
 //! [`gcm`] provides the readable AES-128-GCM profile and [`chacha20poly1305`] the RFC 8439
-//! `AEAD_CHACHA20_POLY1305` profile; both satisfy [`Aead`].
+//! `AEAD_CHACHA20_POLY1305` profile; both satisfy [`Aead`]. [`record`] adds bounded incremental
+//! protection when a complete value should not be held in memory.
 //!
 //! # Generic use
 //!
@@ -32,6 +33,12 @@
 
 pub mod chacha20poly1305;
 pub mod gcm;
+pub mod record;
+
+pub use record::{
+    CounterNonceSequence, DataRecord, FinalRecord, Nonce96, NonceSequence, ReadyRecordBuilder,
+    RecordBuilder, RecordBuilderWithSequence, RecordOpener, RecordSealer,
+};
 
 use alloc::vec::Vec;
 

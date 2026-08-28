@@ -13,7 +13,7 @@ use super::{
     key::{KEY_BYTES, OneTimeKey},
     state::{Accumulator, BLOCK_BYTES},
 };
-use crate::{CryptoError, Result, SecretBytes, mac::Mac};
+use crate::{CryptoError, Result, SecretBytes, block_buffer::BlockBuffer, mac::Mac};
 
 /// One owned 32-byte Poly1305 one-time key.
 ///
@@ -96,8 +96,7 @@ impl TryFrom<&[u8]> for Poly1305Tag {
 pub struct Poly1305 {
     key: OneTimeKey,
     accumulator: Accumulator,
-    pending: [u8; BLOCK_BYTES],
-    pending_len: usize,
+    pending: BlockBuffer<BLOCK_BYTES>,
 }
 
 impl Poly1305 {
@@ -110,42 +109,24 @@ impl Poly1305 {
         Self {
             key: one_time,
             accumulator: Accumulator::new(),
-            pending: [0; BLOCK_BYTES],
-            pending_len: 0,
+            pending: BlockBuffer::new(),
         }
     }
 
     /// Incorporate more message bytes.
     pub fn update(&mut self, input: impl AsRef<[u8]>) {
-        let mut input = input.as_ref();
-        if self.pending_len > 0 {
-            let take = (BLOCK_BYTES - self.pending_len).min(input.len());
-            self.pending[self.pending_len..self.pending_len + take].copy_from_slice(&input[..take]);
-            self.pending_len += take;
-            input = &input[take..];
-            if self.pending_len < BLOCK_BYTES {
-                return;
-            }
-            self.accumulator.absorb(&self.key, &self.pending);
-            self.pending_len = 0;
-        }
-        let mut chunks = input.chunks_exact(BLOCK_BYTES);
-        for block in &mut chunks {
-            self.accumulator.absorb(&self.key, block);
-        }
-        let remainder = chunks.remainder();
-        self.pending[..remainder.len()].copy_from_slice(remainder);
-        self.pending_len = remainder.len();
+        let key = &self.key;
+        let accumulator = &mut self.accumulator;
+        self.pending
+            .push(input, |block| accumulator.absorb(key, block));
     }
 
     /// Absorb any partial final block and produce the tag.
     #[must_use]
     pub fn finalize(mut self) -> Poly1305Tag {
-        if self.pending_len > 0 {
-            let pending_len = self.pending_len;
-            self.accumulator
-                .absorb(&self.key, &self.pending[..pending_len]);
-            self.pending_len = 0;
+        if !self.pending.is_empty() {
+            self.accumulator.absorb(&self.key, self.pending.remainder());
+            self.pending.clear();
         }
         let accumulator = core::mem::replace(&mut self.accumulator, Accumulator::new());
         Poly1305Tag(accumulator.finalize(&self.key))
@@ -216,12 +197,6 @@ impl Mac for Poly1305 {
 impl fmt::Debug for Poly1305 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Poly1305([REDACTED])")
-    }
-}
-
-impl Drop for Poly1305 {
-    fn drop(&mut self) {
-        self.pending.zeroize();
     }
 }
 

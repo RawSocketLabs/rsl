@@ -13,6 +13,7 @@ evidence.
 | Task | Choose | Do not substitute | Mechanics and citations |
 | --- | --- | --- | --- |
 | Confidentiality **and** integrity for messages, records, or packets | An AEAD: AES-GCM or ChaCha20-Poly1305 | A raw block or stream cipher | [`aead`](src/aead.rs); [GCM](src/aead/gcm/mod.rs) / [ChaCha20-Poly1305](src/aead/chacha20poly1305/mod.rs); [ledger](STANDARDS.md#aes-128-gcm-coverage) |
+| Bounded-memory confidentiality and integrity for one large byte stream | The generic AEAD record sealer/opener around a selected AEAD, when its local record contract fits the format | Splitting raw AES blocks, or encrypting chunks with one repeated nonce | [AEAD records](src/aead/record.rs); [ledger](STANDARDS.md#generic-aead-record-source-baseline) |
 | Establish a secret with a peer | X25519, X448, or validated ECDH | An unauthenticated agreement as proof of peer identity | [`agreement`](src/agreement.rs); [X25519](src/agreement/x25519/mod.rs) / [X448](src/agreement/x448/mod.rs) / [P-256](src/agreement/ecdh_p256/mod.rs) / [P-384](src/agreement/ecdh_p384/mod.rs); [ledger](STANDARDS.md#x25519-source-baseline) |
 | Authenticate a peer or signed object | A protocol-selected signature scheme | A MAC when verifiers do not share one secret | [`signature`](src/signature.rs); [Ed25519](src/signature/ed25519/mod.rs) / [ECDSA P-256](src/signature/ecdsa_p256/mod.rs) / [RSA-PSS](src/signature/rsa_pss/mod.rs); [ledger](STANDARDS.md#ed25519-source-baseline) |
 | Derive traffic keys, IVs, or purpose-separated subkeys | HKDF with the suite's hash | Hashing concatenated inputs and slicing the digest | [`kdf`](src/kdf.rs); [HKDF-SHA-256](src/kdf/hkdf/sha256/mod.rs) / [HKDF-SHA-384](src/kdf/hkdf/sha384/mod.rs); [ledger](STANDARDS.md#hkdf-sha-256-source-baseline) |
@@ -37,6 +38,11 @@ evidence.
 This crate currently exposes readable reference paths, not an advertised hardware-accelerated
 backend. Use the distinction above for protocol and deployment selection, then measure the actual
 backend rather than assuming acceleration from the algorithm name.
+
+`Aead::seal` accepts any supported contiguous byte slice and performs internal AES/ChaCha block
+processing itself. Use [`aead::record`](src/aead/record.rs) only for bounded incremental input or
+when the `aead-record/v1` data/final contract is explicitly part of the format; it is not TLS or
+SSH record protection.
 
 ### Key agreement
 
@@ -124,6 +130,7 @@ retain RSA-PSS here for existing certificate-verification paths only. See the
 | Rule | Required handling | Mechanics and citations |
 | --- | --- | --- |
 | AEAD nonce/IV uniqueness | Never repeat a nonce under one key. Random generation does not track reuse. TLS derives a static write IV and XORs it with the padded record sequence number; SSH AES-GCM derives an initial IV and increments its invocation counter. | [GCM](src/aead/gcm/mod.rs) / [ChaCha20-Poly1305](src/aead/chacha20poly1305/mod.rs); [primitive ledger](STANDARDS.md#aes-128-gcm-coverage) / [protocol ledger](STANDARDS.md#protocol-selection-source-baselines) |
+| Generic AEAD record completion | `RecordSealer::write` accepts arbitrary fragments; `finish` consumes it and emits a separately typed authenticated final record. A decoder must require exactly one valid final record. Fixed fields must remain unique across streams under one key. | [AEAD records](src/aead/record.rs); [ledger](STANDARDS.md#generic-aead-record-source-baseline) |
 | HKDF `salt` versus `info` | `salt` belongs to Extract and may strengthen/separate extraction; `info` belongs to Expand and binds purpose, direction, transcript, identities, and labels. Neither substitutes for the other. | [HKDF-SHA-256](src/kdf/hkdf/sha256/mod.rs); [ledger](STANDARDS.md#hkdf-sha-256-notation-mapping-and-coverage) |
 | EdDSA contexts | Ed25519ctx uses nonempty `dom2` context separation; pure Ed25519 has no context. Ed448 always applies `dom4`, including an empty default context. Signer and verifier must select the same variant and exact protocol-defined context. | [Ed25519](src/signature/ed25519/mod.rs) / [Ed448](src/signature/ed448/mod.rs); [ledger](STANDARDS.md#ed25519-notation-mapping-and-coverage) |
 | PSS salt length | The verifier receives the expected salt length from its profile; never infer it from the signature. The implemented TLS SHA-256 default is 32 bytes. | [RSA-PSS](src/signature/rsa_pss/mod.rs); [ledger](STANDARDS.md#rsassa-pss-source-baseline) |
@@ -134,7 +141,7 @@ retain RSA-PSS here for existing certificate-verification paths only. See the
 | Protocol decision | Owner | Primitive boundary and citations |
 | --- | --- | --- |
 | Negotiation, preference order, downgrade handling, and explicit legacy allowlists | TLS/SSH protocol state machine | [`SecurityStatus`](src/security.rs) supplies labels only; [protocol ledger](STANDARDS.md#protocol-selection-source-baselines) |
-| Key generation policy, key lifetimes, rekey thresholds, sequence exhaustion, and destruction of caller-owned output | Protocol/key-management layer | [`RandomSource`](src/random.rs) and secret owners expose narrow contracts; [GCM ledger](STANDARDS.md#aes-128-gcm-coverage) |
+| Key generation policy, key lifetimes, rekey thresholds, protocol-specific sequence exhaustion, and destruction of caller-owned output | Protocol/key-management layer | [`RandomSource`](src/random.rs), secret owners, and the generic [record counter](src/aead/record.rs) expose narrow contracts; [GCM ledger](STANDARDS.md#aes-128-gcm-coverage) / [record ledger](STANDARDS.md#generic-aead-record-source-baseline) |
 | Transcript construction, canonical wire encoding, identity binding, certificate parsing, and signature algorithm identifiers | Protocol and certificate codecs | [`agreement`](src/agreement.rs) and [`signature`](src/signature.rs) consume exact bytes/keys; [protocol ledger](STANDARDS.md#protocol-selection-source-baselines) |
 | Replay detection, receive windows, packet/record ordering, and encryption activation state | Protocol connection state | [`aead`](src/aead.rs) authenticates one invocation only; [GCM ledger](STANDARDS.md#aes-128-gcm-coverage) |
 

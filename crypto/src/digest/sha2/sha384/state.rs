@@ -10,6 +10,7 @@ use zeroize::Zeroize;
 
 use crate::{
     CryptoError, Result,
+    block_buffer::BlockBuffer,
     digest::{
         Digest,
         sha2::sha512::{BLOCK_LEN, FinalBlocks, compress_block, final_blocks},
@@ -79,8 +80,7 @@ impl fmt::Debug for Sha384Digest {
 /// ```
 pub struct Sha384 {
     chaining_value: [u64; 8],
-    buffer: [u8; BLOCK_LEN],
-    buffer_len: usize,
+    blocks: BlockBuffer<BLOCK_LEN>,
     message_len_bytes: u128,
 }
 
@@ -90,8 +90,7 @@ impl Sha384 {
     pub const fn new() -> Self {
         Self {
             chaining_value: INITIAL_HASH_VALUE,
-            buffer: [0; BLOCK_LEN],
-            buffer_len: 0,
+            blocks: BlockBuffer::new(),
             message_len_bytes: 0,
         }
     }
@@ -135,7 +134,7 @@ impl Sha384 {
     }
 
     fn finish_compression(&mut self) {
-        let padded = final_blocks(&self.buffer[..self.buffer_len], self.message_len_bytes * 8);
+        let padded = final_blocks(self.blocks.remainder(), self.message_len_bytes * 8);
         match padded {
             FinalBlocks::One(block) => self.compress(&block),
             FinalBlocks::Two(first, second) => {
@@ -153,37 +152,11 @@ impl Sha384 {
             .checked_add(input_len)
             .filter(|length| *length <= MAX_MESSAGE_LEN_BYTES)
             .ok_or(CryptoError::MessageTooLong)?;
-        let mut remaining = input;
 
-        if self.buffer_len != 0 {
-            let copied = (BLOCK_LEN - self.buffer_len).min(remaining.len());
-            self.buffer[self.buffer_len..self.buffer_len + copied]
-                .copy_from_slice(&remaining[..copied]);
-            self.buffer_len += copied;
-            remaining = &remaining[copied..];
-            if self.buffer_len == BLOCK_LEN {
-                let block = self.buffer;
-                self.compress(&block);
-                self.buffer.fill(0);
-                self.buffer_len = 0;
-            } else {
-                self.message_len_bytes = new_len;
-                return Ok(());
-            }
-        }
-
-        while remaining.len() >= BLOCK_LEN {
-            let (block, rest) = remaining.split_at(BLOCK_LEN);
-            self.compress(
-                block
-                    .try_into()
-                    .expect("split selects one complete SHA-512-size block"),
-            );
-            remaining = rest;
-        }
-
-        self.buffer[..remaining.len()].copy_from_slice(remaining);
-        self.buffer_len = remaining.len();
+        let chaining_value = &mut self.chaining_value;
+        self.blocks.push(input, |block| {
+            *chaining_value = compress_block(*chaining_value, block);
+        });
         self.message_len_bytes = new_len;
         Ok(())
     }
@@ -202,8 +175,6 @@ impl Default for Sha384 {
 impl Drop for Sha384 {
     fn drop(&mut self) {
         self.chaining_value.zeroize();
-        self.buffer.zeroize();
-        self.buffer_len.zeroize();
         self.message_len_bytes.zeroize();
     }
 }

@@ -120,6 +120,16 @@
 //! their repositories retain record/packet framing, transcript rules, nonce construction,
 //! sequence numbers, key schedules, replay policy, and encryption activation state.
 //!
+//! # Protecting large byte streams
+//!
+//! [`Aead::seal`](aead::Aead::seal) protects any supported contiguous byte slice; callers never
+//! split input into AES blocks. When the whole value should not be held in memory,
+//! [`aead::record`] provides a staged [`RecordBuilder`](aead::RecordBuilder), automatic
+//! fixed-size record splitting through [`RecordSealer::write`](aead::RecordSealer::write), and a
+//! consuming authenticated [`RecordSealer::finish`](aead::RecordSealer::finish) transition. The
+//! record contract remains wire-independent. Protocol crates still own negotiation, framing, key
+//! lifetimes, transcript rules, and replay policy.
+//!
 //! # Type and lifetime policy
 //!
 //! Equal-sized values are different types when their meanings differ: an AES key is not an AES
@@ -139,6 +149,8 @@
 #![deny(missing_docs)]
 
 extern crate alloc;
+
+mod block_buffer;
 
 pub mod aead;
 pub mod agreement;

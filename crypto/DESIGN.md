@@ -8,8 +8,9 @@ performance project second.
 
 ## 2. Boundaries
 
-This crate owns primitives and secret-bearing value types. A protocol crate owns negotiation,
-transcript/session state, nonce construction, record or packet framing, sequence advancement,
+This crate owns primitives, secret-bearing value types, and narrowly defined wire-independent
+contracts such as generic AEAD record streaming. A protocol crate owns negotiation,
+transcript/session state, its selected nonce and AAD profile, record or packet framing, replay,
 and key activation. AES-GCM may be shared by TLS and SSH; their use of AES-GCM may not.
 
 `bitsandbytes` remains the wire-format layer. Typed protocol data is encoded to bytes before it
@@ -78,3 +79,16 @@ The status describes lifecycle, not audit readiness. Historical primitives live 
 `rsl-crypto-legacy` package, are never included in a default protocol allowlist, and cannot be
 selected by an implicit fallback. Protocol crates own the explicit act of enabling a historical
 cipher suite; primitive crates only perform the named transformation.
+
+## 7. Builders, lifecycle states, and fragmentation
+
+Public lifecycle APIs use semantic stage types, not generic field wrappers. The AEAD record API
+starts with `RecordBuilder`, advances to `RecordBuilderWithSequence`, and exposes `build_sealer`
+or `build_opener` only on `ReadyRecordBuilder`. `RecordSealer::finish(self)` consumes the open
+writer, while `DataRecord` and `FinalRecord` make the authenticated end state explicit. The
+stages therefore prevent invalid calls without asking users to manipulate typestate markers.
+
+Callers provide arbitrary fragments through `RecordSealer::write`; output boundaries depend on
+the concatenated byte stream and configured record size, not on call boundaries. Fixed-size
+algorithm blocks remain internal to digest, MAC, cipher, and AEAD implementations. Protocol
+crates still define their own semantic phases and wire encodings.

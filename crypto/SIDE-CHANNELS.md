@@ -25,6 +25,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 
 | Module | Site | Class | Note |
 | --- | --- | --- | --- |
+| `block_buffer` | internal fragment buffering | Public | Branches and indices depend only on public input lengths; buffered bytes are redacted and zeroized. |
 | `digest::sha2::*`, `digest::sha3::*` | none secret | Public | Digests process public or key-derived data with fixed round structure; block boundaries depend only on lengths. |
 | `mac::hmac::*::state` | `tags_match` | Public | OR-folds every byte, including a length mismatch, before one comparison. |
 | `mac::hmac::*::key` | key longer than block → hash | Public | Branches on key *length*, not content. |
@@ -35,6 +36,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `cipher::chacha20` | ARX only; counter checks | Public | Counter exhaustion branches on public counts. |
 | `aead::gcm` | GHASH multiplication | Secret, masked | §6.3 Algorithm 1 iterates 128 fixed steps with masked conditional XOR. |
 | `aead::gcm::tag` / `aead::chacha20poly1305` | tag verification | Public | OR-fold then one comparison; plaintext is produced only after success. |
+| `aead::record` | builder stages; record splitting, numbering, and opening | Public | Branches depend on configured sizes, fragment lengths, record metadata, errors, and authentication outcomes. Pending plaintext is redacted and zeroized; the underlying AEAD produces plaintext only after tag verification. |
 | `agreement::x25519::*`, `agreement::x448::*` | ladder, `cswap`, inversion | Secret, masked | Fixed 255/448-iteration ladder; RFC `0 - swap` masks; inversion exponent is public. |
 | `agreement::{x25519,x448}::api` | all-zero check | Public | The result is what the peer could compute; RFC 7748 §6 explicitly permits the check. |
 | `signature::ed25519::{field, point}`, `signature::ed448::{field, point}` | scalar multiplication | Secret, masked | 256/456 unconditional add+double+select steps. |

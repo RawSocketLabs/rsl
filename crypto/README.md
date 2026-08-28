@@ -98,6 +98,14 @@ use.
 real TLS/SSH pairings, and marks combinations that must never be assembled. The module pages remain
 the source for mechanics; the guide is only the selection layer.
 
+## Protect a large byte stream
+
+[`Aead::seal`](src/aead.rs) already accepts an arbitrary-length in-memory byte slice; callers do
+not split text into AES blocks. For bounded-memory input, [`aead::record`](src/aead/record.rs)
+provides a staged builder, `write` over arbitrary fragments, fixed-size authenticated records, and
+a consuming `finish` transition. It defines no wire encoding. Protocol crates still own
+negotiation, framing, key derivation and lifetime, transcript binding, replay, and rekeying.
+
 ## Read the teaching reference
 
 The crate-level rustdoc is the intended starting point. It gives a dependency-ordered learning

@@ -307,6 +307,34 @@ exposes only the raw block permutation and clearly documents that it supplies no
 authentication, padding, framing, or arbitrary-length message encryption. Those properties come
 from a separately specified construction such as the public AES-128-GCM layer below.
 
+## Generic AEAD record source baseline
+
+- **Controlling publication:** RFC 5116, *An Interface and Algorithms for Authenticated
+  Encryption*.
+- **Publication date and status:** January 2008, IETF Proposed Standard.
+- **Publication record:** [RFC Editor: RFC 5116](https://www.rfc-editor.org/info/rfc5116/).
+- **Persistent identifier:** [doi:10.17487/RFC5116](https://doi.org/10.17487/RFC5116).
+- **Document:** [RFC Editor HTML](https://www.rfc-editor.org/rfc/rfc5116.html).
+- **Baseline and errata last checked:** 2026-08-28.
+- **Supersession and errata state when checked:** the publication record lists no update or
+  obsolescence. Errata 4008 and 4268 are verified editorial corrections; four other reports are
+  unverified. Reported Errata 6415 disputes the recommended four-octet counter-field wording in
+  §3.2. `CounterNonceSequence` follows the published text's eight-octet Fixed field and
+  four-octet Counter field; the report is recorded but not treated as a controlling correction.
+
+RFC 5116 controls the AEAD invocation, nonce-uniqueness, counter-nonce, and unambiguous-AAD rules
+used by `aead::record`. It does **not** define this crate's domain separator, record-size policy,
+data/final distinction, or structured record containers. Those are a versioned local composition,
+tested as local regression behavior rather than described as RFC vectors or an IETF protocol.
+
+| RFC 5116 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §§1.2, 2.1–2.3 | Expose authenticated encryption/decryption over nonce, AAD, and variable-length plaintext/ciphertext while leaving wire encoding and anti-replay outside the AEAD interface. | `Aead`; `record::{RecordSealer,RecordOpener}` invokes that contract and returns structured detached records. `RecordOpener` never returns plaintext before `Aead::open` succeeds. Public round-trip and changed-input rejection tests. | Implemented for the crate's AEAD profiles; wire encoding and replay remain protocol-owned. |
+| §§2.1, 3.1 | Use a distinct nonce for every encryption under one key and stop before a counter repeats. | `NonceSequence` contract; `RecordSealer` owns monotonically increasing record numbers and reserves a usable nonce for the final record before consuming more input. Counter-exhaustion tests include atomic final-record reservation. | Implemented as a state-machine invariant; uniqueness of the fixed field across streams using one key remains a caller obligation. |
+| §3.2 | Form a 12-octet nonce as a fixed field followed by a monotonically increasing, network-byte-order counter; the published text recommends a four-octet Counter field. | `CounterNonceSequence<N: Nonce96>` encodes `fixed[8] || u32::to_be_bytes(record_number)` and rejects the first number above `u32::MAX`. Source-derived layout and exhaustion tests. | Implemented for built-in 96-bit AEAD nonce types; protocol-specific nonce rules implement `NonceSequence` instead. |
+| §3.3 | Make multi-element AAD injective; length-prefix any variable-length string. | `record_aad` uses a fixed domain separator, a 64-bit context length, exact context bytes, then fixed-width record size, record number, kind, and plaintext length. White-box layout test and public context/number/length/kind rejection evidence. | Implemented as the crate-local `aead-record/v1` AAD contract. |
+| Local record contract | Fragmentation must not change records; a complete stream ends with one authenticated final record, including an empty final record at an exact boundary. | Staged `RecordBuilder`; `RecordSealer::{write,finish}`; distinct `DataRecord`/`FinalRecord`; public one-shot-versus-fragmented, exact-boundary, order, and round-trip tests plus `aead_open` fuzz coverage. | Implemented and locally tested; not attributed to RFC 5116. |
+
 ## GHASH source baseline
 
 - **Controlling publication:** NIST SP 800-38D, *Recommendation for Block Cipher Modes of
@@ -715,7 +743,7 @@ is impractically slow in unoptimized test builds. The modular exponentiation ret
 | RFC 8439 location | Requirement represented | Code and evidence | Status |
 | --- | --- | --- | --- |
 | §2.5 | Split the key into `r` and `s`; clamp `r`. | `key::OneTimeKey`; §2.5.2 clamped `r` and `s`. | Implemented and tested. |
-| §2.5.1 | Per block: append `0x01`, add to `Acc`, multiply by `r` mod `P`; finally add `s` and take 128 bits. | `state::Accumulator::absorb`/`finalize`; §2.5.2 every intermediate `Acc` and the tag; A.3 vectors 1–11 including all reduction edge cases. | Implemented and tested. |
+| §2.5.1 | Per block: append `0x01`, add to `Acc`, multiply by `r` mod `P`; finally add `s` and take 128 bits. | `api::Poly1305` uses private `block_buffer::BlockBuffer<16>` to present complete blocks and the exact final tail to `state::Accumulator::absorb`; `Accumulator::finalize` adds `s`. Evidence: §2.5.2 every intermediate `Acc` and the tag; A.3 vectors 1–11 including all reduction edge cases; fragmentation invariants. | Implemented and tested. |
 | §2.5 (one-time) | A key authenticates one message only. | Documented; the AEAD derives a fresh key per nonce. | Documented obligation. |
 | §4 | Compare tags without early exit. | `Poly1305::verify` ORs all byte differences. | Implemented at source level. |
 
@@ -741,7 +769,7 @@ evidence are listed here. Baselines re-checked 2026-08-28.
 | Location | Requirement represented | Code and evidence | Status |
 | --- | --- | --- | --- |
 | FIPS 180-4 §5.3.4 | SHA-384 initial hash words. | `sha384::constants::INITIAL_HASH_VALUE`; NIST SHA-384 example initial words. | Implemented and tested. |
-| FIPS 180-4 §6.5 | SHA-384 = SHA-512 preprocessing and compression from the §5.3.4 words, output `H_0 ‖ … ‖ H_5`. | `sha384::state` reuses `sha512::{final_blocks, compress_block}`; NIST one- and two-block examples including the discarded `H_6`, `H_7` (white-box); CAVP `SHA384ShortMsg.rsp` lengths 0, 8, 888, 896, 1016, 1024 bits; differential `sha2::Sha384` with fragmentation. | Implemented and tested. |
+| FIPS 180-4 §6.5 | SHA-384 = SHA-512 preprocessing and compression from the §5.3.4 words, output `H_0 ‖ … ‖ H_5`. | `sha384::state` uses private `block_buffer::BlockBuffer<128>` and reuses `sha512::{final_blocks, compress_block}`; NIST one- and two-block examples including the discarded `H_6`, `H_7` (white-box); CAVP `SHA384ShortMsg.rsp` lengths 0, 8, 888, 896, 1016, 1024 bits; differential `sha2::Sha384` with fragmentation. | Implemented and tested. |
 | FIPS 198-1 §2.3, Table 1 (B = 128, L = 48) | HMAC over SHA-384: 128-byte `K0`, hash keys longer than 128 bytes to 48. | `hmac::sha384::{key, state}`; Table 1 step tests (long-key digest from the `sha2` oracle, labeled differential); RFC 4231 §4.2–§4.8 cases 1–7 (case 5 as a 128-bit prefix); streaming, verification, and differential `hmac` cases. | Implemented and tested. |
 | RFC 5869 §2.2–§2.3 (HashLen = 48) | HKDF-Extract and HKDF-Expand with HMAC-SHA-384; `L <= 255 · 48 = 12,240`. | `hkdf::sha384::{extract, expand, derive}`; all 83 Wycheproof `hkdf_sha384` cases (80 valid, 3 over-length rejected atomically); 12,240-byte boundary; differential `hkdf` cases. RFC 5869 publishes no SHA-384 vectors. | Implemented and tested. |
 

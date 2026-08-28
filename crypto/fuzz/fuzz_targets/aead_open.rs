@@ -7,7 +7,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use rsl_crypto::aead::{
-    Aead,
+    Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder,
     chacha20poly1305::{
         ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
     },
@@ -69,4 +69,55 @@ fuzz_target!(|data: &[u8]| {
         Aead::open(&chacha, &ChaCha20Poly1305Nonce::new(nonce), aad, sealed.ciphertext(), sealed.tag()).unwrap(),
         payload
     );
+
+    // The record layer must preserve plaintext across arbitrary source fragmentation and reject
+    // arbitrary parsed records without panicking or advancing before authentication.
+    let record_size = aad_len % 31 + 1;
+    let fixed: [u8; 8] = nonce[..8].try_into().unwrap();
+    let mut sealer = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+        .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+        .record_size(record_size)
+        .context(aad)
+        .build_sealer()
+        .unwrap();
+    let split = payload.len() / 2;
+    let mut records = sealer.write(&payload[..split]).unwrap();
+    records.extend(sealer.write(&payload[split..]).unwrap());
+    let final_record = sealer.finish().unwrap();
+
+    let mut opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+        .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+        .record_size(record_size)
+        .context(aad)
+        .build_opener()
+        .unwrap();
+    let mut recovered = Vec::new();
+    for record in &records {
+        recovered.extend(opener.open_data(record).unwrap());
+    }
+    recovered.extend(opener.open_final(&final_record).unwrap());
+    assert_eq!(recovered, payload);
+
+    let arbitrary_data = DataRecord::from_parts(
+        0,
+        record_size,
+        payload.to_vec(),
+        Aes256GcmTag::new(tag),
+    );
+    let mut arbitrary_opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+        .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+        .record_size(record_size)
+        .context(aad)
+        .build_opener()
+        .unwrap();
+    let _ = arbitrary_opener.open_data(&arbitrary_data);
+
+    let arbitrary_final = FinalRecord::from_parts(0, 0, payload.to_vec(), Aes256GcmTag::new(tag));
+    let arbitrary_opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+        .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+        .record_size(record_size)
+        .context(aad)
+        .build_opener()
+        .unwrap();
+    let _ = arbitrary_opener.open_final(&arbitrary_final);
 });

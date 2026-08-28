@@ -32,6 +32,7 @@ rsl-crypto/
 │   ├── kdf/hkdf/sha256/           HKDF-SHA-256 Extract/Expand layers
 │   ├── kdf/hkdf/sha384/           HKDF-SHA-384 Extract/Expand layers (HashLen = 48)
 │   ├── cipher.rs                  block and stream cipher contracts
+│   ├── block_buffer.rs            private zeroizing complete-block buffering
 │   ├── cipher/aes/aes128/         public AES-128 boundary over private specification layers
 │   ├── cipher/aes/aes256/         AES-256 key schedule and boundary over the shared AES layers
 │   ├── cipher/chacha20/quarter_round.rs RFC 8439 §2.1–§2.2 quarter round
@@ -41,6 +42,7 @@ rsl-crypto/
 │   ├── mac/poly1305/state.rs      §2.5.1 accumulator modulo `2^130 - 5`
 │   ├── mac/poly1305/api.rs        typed one-time key/tag, buffering, `Mac` contract
 │   ├── aead.rs                    authenticated-encryption contract and mode boundary
+│   ├── aead/record.rs             staged builder and bounded authenticated-record streaming
 │   ├── aead/chacha20poly1305/construction.rs §2.6 key derivation and §2.8 composition
 │   ├── aead/chacha20poly1305/limits.rs counter-derived payload limit
 │   ├── aead/chacha20poly1305/api.rs typed AEAD key/nonce/tag and `Aead` contract
@@ -125,6 +127,7 @@ rsl-crypto/
 │   ├── hkdf_sha384.rs, hkdf_sha384/ Wycheproof HKDF-SHA-384 cases, bounds, differential
 │   ├── vectors/hkdf-sha384/       Wycheproof provenance
 │   ├── sha512.rs                  published and differential SHA-512 evidence
+│   ├── aead_records.rs            record lifecycle, fragmentation, and rejection evidence
 │   ├── vectors/sha512/            FIPS 180-4 SHA-512 provenance
 │   ├── ed25519.rs                 public Ed25519 evidence harness
 │   ├── ed25519/                   RFC vectors, strict boundaries, and differential evidence
