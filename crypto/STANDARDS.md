@@ -673,6 +673,65 @@ a RustCrypto `rsa` development oracle was evaluated and not adopted because its 
 is impractically slow in unoptimized test builds. The modular exponentiation retains its
 `num-bigint-dig` differential test.
 
+## ChaCha20, Poly1305, and AEAD_CHACHA20_POLY1305 source baseline
+
+- **Publication:** RFC 8439, *ChaCha20 and Poly1305 for IETF Protocols*, June 2018,
+  Informational (obsoletes RFC 7539).
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc8439/);
+  [doi:10.17487/RFC8439](https://doi.org/10.17487/RFC8439).
+- **Errata record:** [RFC 8439 errata](https://errata.rfc-editor.org/search/?rfc_number=8439).
+  Checked 2026-08-28; no verified erratum changes a vector or step used here.
+- **Profile references:** RFC 8446 §5.2–§5.3 (`TLS_CHACHA20_POLY1305_SHA256`, nonce from
+  sequence number); the SSH `chacha20-poly1305@openssh.com` construction is different and is
+  deliberately not implemented.
+- **Published validation material:** every worked example in §2.1.1, §2.2.1, §2.3.2, §2.4.2,
+  §2.5.2, §2.6.2, and §2.8.2; Appendix A.1 (5), A.2 (3), A.3 (11), A.4 (3), and A.5; Project
+  Wycheproof `chacha20_poly1305_test.json` (325 cases). Provenance and conversion are in
+  `tests/vectors/chacha20-poly1305/README.md`.
+
+### Notation mapping
+
+| RFC 8439 notation | Rust representation | Meaning |
+| --- | --- | --- |
+| 32-bit word, `+`, `^`, `<<<` | `u32`, `wrapping_add`, `^`, `rotate_left` | §2.1 quarter-round operations. |
+| state words 0–15 | `[u32; 16]` | §2.3 little-endian layout: constants, key, counter, nonce. |
+| `chacha20_block` serialization | `u32::to_le_bytes` | §2.3 output bytes. |
+| Poly1305 `r`, `s`, `Acc` | three 44/44/42-bit `u64` limbs; `u128` `s` and products | §2.5 integers modulo `2^130 - 5`; fold via `2^130 ≡ 5`. |
+| `pad16`, `num_to_8_le_bytes` | zero slice, `u64::to_le_bytes` | §2.8 MAC input layout. |
+
+### ChaCha20 coverage
+
+| RFC 8439 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §2.1 | `QUARTERROUND(a, b, c, d)` in printed order with rotations 16, 12, 8, 7. | `quarter_round::quarter_round`; §2.1.1 vector. | Implemented and tested. |
+| §2.2 | Quarter round on state positions. | `quarter_round_on_state`; §2.2.1 diagonal-round vector with unchanged-word check. | Implemented and tested. |
+| §2.3 | State layout, ten double rounds, feed-forward, little-endian serialization. | `block::State`; §2.3.2 setup, after-20-rounds, and serialized block; A.1 vectors 1–5. | Implemented and tested. |
+| §2.4 | Block-by-block keystream XOR from an initial counter; partial final block. | `ChaCha20::apply_keystream`/`encrypt`, `ChaCha20Stream`; §2.4.2 block states and ciphertext; A.2 vectors 1–3; split-agreement test. | Implemented and tested. |
+| §2.4; §4 | The 32-bit counter must not wrap within one nonce. | `CounterExhausted` before any transformation; boundary tests at `2^32 - 1`. | Implemented as a hard refusal. |
+| §4 | (key, nonce) uniqueness. | Typed nonce; uniqueness assigned to the protocol in rustdoc. | Protocol obligation. |
+
+### Poly1305 coverage
+
+| RFC 8439 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §2.5 | Split the key into `r` and `s`; clamp `r`. | `key::OneTimeKey`; §2.5.2 clamped `r` and `s`. | Implemented and tested. |
+| §2.5.1 | Per block: append `0x01`, add to `Acc`, multiply by `r` mod `P`; finally add `s` and take 128 bits. | `state::Accumulator::absorb`/`finalize`; §2.5.2 every intermediate `Acc` and the tag; A.3 vectors 1–11 including all reduction edge cases. | Implemented and tested. |
+| §2.5 (one-time) | A key authenticates one message only. | Documented; the AEAD derives a fresh key per nonce. | Documented obligation. |
+| §4 | Compare tags without early exit. | `Poly1305::verify` ORs all byte differences. | Implemented at source level. |
+
+### AEAD_CHACHA20_POLY1305 coverage
+
+| RFC 8439 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §2.6 | One-time key = first 32 bytes of block counter 0. | `construction::one_time_key`; §2.6.2 and A.4 vectors 1–3. | Implemented and tested. |
+| §2.8 | Encrypt from counter 1; MAC over `AAD || pad16 || C || pad16 || len(AAD) || len(C)`. | `construction::seal`/`authenticate`; §2.8.2 ciphertext and tag; A.5; 256 valid Wycheproof cases re-sealed byte-exact. | Implemented and tested. |
+| §2.8 (decryption) | Verify the tag before releasing plaintext; uniform failure. | `construction::open`; A.5 changed tag; every-byte tampering tests; 69 invalid Wycheproof cases. | Implemented and tested. |
+| §2.8; counter bound | Payload at most `(2^32 - 1) · 64` bytes. | `limits::validate_input_lengths`; boundary test. | Implemented and tested. |
+| §2.8 nonce | 96-bit IETF nonce as one value. | `ChaCha20Poly1305Nonce`; other sizes unrepresentable (Wycheproof's nine wrong-size groups reject). | Implemented as a fixed profile. |
+
+The `chacha20poly1305` crate 0.11.0 is used only in development tests: 32 varied cases agree in
+both directions.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

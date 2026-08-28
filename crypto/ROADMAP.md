@@ -121,7 +121,33 @@ Each algorithm change must include:
     signatures with their 20-byte salts, and all 108 Wycheproof `rsa_pss_2048_sha256_mgf1_32`
     cases. Signing, other hashes/MGFs, and `RSASSA-PSS-params` ASN.1 remain unsupported.
 
+11. **ChaCha20, Poly1305, and AEAD_CHACHA20_POLY1305** — RFC 8439 in three public layers:
+    `cipher::chacha20` (quarter round, block function, one-shot and stateful keystream with a
+    hard counter-wrap refusal), `mac::poly1305` (clamping, 44-bit-limb accumulation folding
+    `2^130 ≡ 5`, uniform verification), and `aead::chacha20poly1305` (§2.6 key derivation and
+    the §2.8 composition behind the shared `Aead` contract, tag verified before decryption).
+    Evidence covers every RFC body intermediate, all Appendix A vectors, all 325 Wycheproof
+    cases, tampering boundaries, and differential comparison with `chacha20poly1305` 0.11.0.
+
+## Performance policy
+
+Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
+tables. Speed only needs to be adequate for real TLS and SSH clients and servers; readability,
+API clarity, and flexibility come first, so no optimized implementation is planned beside the
+reference path. Simple algorithmic choices (limb arithmetic instead of bit-serial loops) are
+acceptable when they keep the code and its tests clear and fast.
+
+## Widening the TLS 1.3 / SSH algorithm set
+
+The next slices add the remaining commonly negotiated algorithms, each with the same evidence
+bar:
+
+1. SHA-384 and HKDF-SHA-384 (TLS 1.3 `*_SHA384` suites, P-384 signatures).
+2. AES-256-GCM (`TLS_AES_256_GCM_SHA384`, SSH `aes256-gcm@openssh.com`), reusing the GCM layers
+   over an AES-256 key schedule.
+3. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
+4. X448 and Ed448 as lower-priority interoperability profiles.
+
 ## After the first vertical slice
 
 - The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.
-- Optional optimized implementations beside, never in place of, the readable reference path.

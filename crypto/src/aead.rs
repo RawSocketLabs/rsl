@@ -6,7 +6,8 @@
 //!
 //! # Implemented algorithm
 //!
-//! [`gcm`] provides the readable AES-128-GCM profile.
+//! [`gcm`] provides the readable AES-128-GCM profile and [`chacha20poly1305`] the RFC 8439
+//! `AEAD_CHACHA20_POLY1305` profile; both satisfy [`Aead`].
 //!
 //! # Generic use
 //!
@@ -29,6 +30,7 @@
 //! # Ok::<(), rsl_crypto::CryptoError>(())
 //! ```
 
+pub mod chacha20poly1305;
 pub mod gcm;
 
 use alloc::vec::Vec;

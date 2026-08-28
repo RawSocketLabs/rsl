@@ -31,6 +31,7 @@
 use crate::Result;
 
 pub mod hmac;
+pub mod poly1305;
 
 /// An incremental keyed message-authentication code.
 ///

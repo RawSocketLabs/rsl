@@ -25,7 +25,16 @@ rsl-crypto/
 │   ├── kdf/hkdf/sha256/           HKDF-SHA-256 Extract/Expand layers
 │   ├── cipher.rs                  block and stream cipher contracts
 │   ├── cipher/aes/aes128/         public AES-128 boundary over private specification layers
+│   ├── cipher/chacha20/quarter_round.rs RFC 8439 §2.1–§2.2 quarter round
+│   ├── cipher/chacha20/block.rs   §2.3 state and block function
+│   ├── cipher/chacha20/api.rs     typed key/nonce, §2.4 keystream, stateful stream contract
+│   ├── mac/poly1305/key.rs        §2.5 `r` clamping and `s`
+│   ├── mac/poly1305/state.rs      §2.5.1 accumulator modulo `2^130 - 5`
+│   ├── mac/poly1305/api.rs        typed one-time key/tag, buffering, `Mac` contract
 │   ├── aead.rs                    authenticated-encryption contract and mode boundary
+│   ├── aead/chacha20poly1305/construction.rs §2.6 key derivation and §2.8 composition
+│   ├── aead/chacha20poly1305/limits.rs counter-derived payload limit
+│   ├── aead/chacha20poly1305/api.rs typed AEAD key/nonce/tag and `Aead` contract
 │   ├── aead/gcm/api.rs            public typed AES-128-GCM profile
 │   ├── aead/gcm/counter.rs        private SP 800-38D `inc32` counter operation
 │   ├── aead/gcm/gctr.rs           private byte-aligned GCTR composition
@@ -96,6 +105,10 @@ rsl-crypto/
 │   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
 │   ├── ecdsa_p256/                RFC 6979, CAVP SigGen/SigVer fixtures, boundaries, differential
 │   ├── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
+│   ├── chacha20.rs                public ChaCha20 harness (Appendix A.1–A.2)
+│   ├── poly1305.rs                public Poly1305 harness (Appendix A.3)
+│   ├── chacha20poly1305.rs        public AEAD harness (§2.8.2, A.4–A.5, Wycheproof, differential)
+│   ├── vectors/chacha20-poly1305/ RFC 8439 and Wycheproof provenance
 │   ├── rsa_pss.rs                 public RSASSA-PSS evidence harness
 │   ├── rsa_pss/                   CAVP SigVer/SigGen and Wycheproof fixtures and verdict tests
 │   └── vectors/rsa-pss/           RFC 8017, CAVP, and Wycheproof provenance

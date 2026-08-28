@@ -45,6 +45,10 @@ AES-128
   + GHASH
       -> AES-128-GCM
 
+ChaCha20 quarter round -> block function -> keystream
+  + Poly1305 one-time authenticator
+      -> AEAD_CHACHA20_POLY1305
+
 GF(2^255 - 19) arithmetic
   -> X25519 Montgomery ladder
       -> checked shared secret
