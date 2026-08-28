@@ -63,7 +63,10 @@ fn perform_round(current: WorkingVariables, constant: u64, word: u64) -> Working
 
 /// Compress one 128-byte block into the supplied chaining value.
 #[must_use]
-pub(super) fn compress_block(chaining_value: [u64; 8], block: &[u8; BLOCK_LEN]) -> [u64; 8] {
+pub(in crate::digest::sha2) fn compress_block(
+    chaining_value: [u64; 8],
+    block: &[u8; BLOCK_LEN],
+) -> [u64; 8] {
     let schedule = build_schedule(block);
     let mut working = WorkingVariables::from_chaining_value(chaining_value);
 

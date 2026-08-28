@@ -18,11 +18,14 @@ rsl-crypto/
 │   │           ├── schedule.rs    tested parsing and complete 64-word schedule
 │   │           ├── compression.rs 64 rounds and feed-forward
 │   │           └── state.rs       streaming, length, padding, and output
-│   │       └── sha512/             independent 64-bit SHA-2 specification layers
+│   │       ├── sha512/             independent 64-bit SHA-2 specification layers
+│   │       └── sha384/             SHA-384 initial words and truncated state over SHA-512 layers
 │   ├── mac.rs                     generic MAC contract and family boundary
 │   ├── mac/hmac/sha256/           HMAC-SHA-256 key and state layers
+│   ├── mac/hmac/sha384/           HMAC-SHA-384 key and state layers (B = 128, L = 48)
 │   ├── kdf.rs                     generic key-expansion contract and family boundary
 │   ├── kdf/hkdf/sha256/           HKDF-SHA-256 Extract/Expand layers
+│   ├── kdf/hkdf/sha384/           HKDF-SHA-384 Extract/Expand layers (HashLen = 48)
 │   ├── cipher.rs                  block and stream cipher contracts
 │   ├── cipher/aes/aes128/         public AES-128 boundary over private specification layers
 │   ├── cipher/chacha20/quarter_round.rs RFC 8439 §2.1–§2.2 quarter round
@@ -94,6 +97,12 @@ rsl-crypto/
 │   ├── vectors/ghash/             SP 800-38D GHASH evidence provenance
 │   ├── vectors/gcm/               SP 800-38D GCM composition evidence provenance
 │   ├── vectors/x25519/            RFC 7748 vector and errata provenance
+│   ├── sha384.rs                  NIST, CAVP boundary, and differential SHA-384 evidence
+│   ├── vectors/sha384/            FIPS 180-4 SHA-384 and CAVP provenance
+│   ├── hmac_sha384.rs, hmac_sha384/ RFC 4231 SHA-384 cases, streaming, verification, differential
+│   ├── vectors/hmac-sha384/       RFC 4231 provenance
+│   ├── hkdf_sha384.rs, hkdf_sha384/ Wycheproof HKDF-SHA-384 cases, bounds, differential
+│   ├── vectors/hkdf-sha384/       Wycheproof provenance
 │   ├── sha512.rs                  published and differential SHA-512 evidence
 │   ├── vectors/sha512/            FIPS 180-4 SHA-512 provenance
 │   ├── ed25519.rs                 public Ed25519 evidence harness

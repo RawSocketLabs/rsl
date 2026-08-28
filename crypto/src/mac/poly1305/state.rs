@@ -156,10 +156,11 @@ mod unit {
     }
 
     fn acc_hex(accumulator: &Accumulator) -> alloc::string::String {
+        use core::fmt::Write as _;
         let bytes = accumulator.to_canonical_bytes();
         let mut text = alloc::string::String::new();
         for byte in bytes.iter().rev() {
-            text.push_str(&alloc::format!("{byte:02x}"));
+            write!(text, "{byte:02x}").expect("formatting into a String cannot fail");
         }
         text.trim_start_matches('0').into()
     }

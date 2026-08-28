@@ -28,7 +28,9 @@
 //!    coordinate to establish a shared secret. It demonstrates finite-field arithmetic and the
 //!    fixed-structure Montgomery ladder without claiming peer authentication.
 //! 5. [`Sha512`](digest::sha2::sha512::Sha512) extends the SHA-2 model to 64-bit words and is the
-//!    exact digest prerequisite used by Ed25519.
+//!    exact digest prerequisite used by Ed25519. [`Sha384`](digest::sha2::sha384::Sha384) is its
+//!    truncated sibling, with [`HmacSha384`](mac::hmac::sha384::HmacSha384) and
+//!    [`HkdfSha384Prk`](kdf::hkdf::sha384::HkdfSha384Prk) for the TLS 1.3 `SHA384` suites.
 //! 6. [`Ed25519SigningKey`](signature::ed25519::Ed25519SigningKey) derives an authenticated public
 //!    identity and deterministic signatures from a private seed.
 //! 7. [`Aes128`](cipher::aes::aes128::Aes128) exposes the raw 128-bit block permutation for

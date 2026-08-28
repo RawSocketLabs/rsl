@@ -3,6 +3,7 @@
 //! SHA-512 is the 64-bit-word member of the SHA-2 family. It processes 128-byte blocks through
 //! eighty compression rounds and emits all eight final 64-bit chaining words. Ed25519 uses this
 //! exact digest during key expansion, deterministic nonce derivation, and challenge derivation.
+//! [`sha384`](crate::digest::sha2::sha384) reuses these layers with its own initial words.
 //!
 //! # How to read this implementation
 //!
@@ -43,6 +44,12 @@ mod schedule;
 mod state;
 
 pub use state::{Sha512, Sha512Digest};
+
+// SHA-384 (FIPS 180-4 §6.5) is SHA-512 with different initial words and a truncated output, so
+// the sibling module reuses these layers instead of transcribing them a second time.
+pub(super) use compression::compress_block;
+pub(super) use schedule::BLOCK_LEN;
+pub(super) use state::{FinalBlocks, final_blocks};
 
 /// Current project lifecycle classification for SHA-512.
 pub const SECURITY_STATUS: crate::security::SecurityStatus =

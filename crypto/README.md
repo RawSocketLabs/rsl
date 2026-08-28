@@ -17,7 +17,10 @@ exports complete readable
 [`Sha512`](src/digest/sha2/sha512/state.rs), and
 [`HmacSha256`](src/mac/hmac/sha256/state.rs) reference paths with one-shot and incremental input,
 checked length accounting, and distinct digest/tag output types. It also exports visibly separate
-HKDF-SHA-256 Extract and Expand stages with a zeroizing PRK type and bounded caller output. The
+HKDF-SHA-256 Extract and Expand stages with a zeroizing PRK type and bounded caller output, and
+the SHA-384 family ([`Sha384`](src/digest/sha2/sha384/state.rs),
+[`HmacSha384`](src/mac/hmac/sha384/state.rs), [`HkdfSha384Prk`](src/kdf/hkdf/sha384/extract.rs))
+for the TLS 1.3 `SHA384` suites. The
 first raw block-cipher API now exposes distinct [`Aes128Key`](src/cipher/aes/aes128/api.rs),
 [`Aes128Block`](src/cipher/aes/aes128/api.rs), and
 [`Aes128`](src/cipher/aes/aes128/api.rs) types over the fully inspectable FIPS 197-upd1
@@ -66,7 +69,9 @@ evidence, context-length and cross-variant rejection, deterministic and generic 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures. ChaCha20-Poly1305 adds every RFC 8439 body intermediate, all Appendix A vectors, all 325
+signatures. SHA-384 adds NIST examples (including the two discarded words), CAVP boundary lengths, and
+differential cases; HMAC-SHA-384 adds RFC 4231 cases 1–7; HKDF-SHA-384 adds all 83 Wycheproof
+cases. ChaCha20-Poly1305 adds every RFC 8439 body intermediate, all Appendix A vectors, all 325
 Wycheproof cases, per-byte tampering, and 32 differential cases. RSASSA-PSS adds all 18 CAVP SigVer and 10 CAVP SigGen 2048/SHA-256 cases and all 108
 Wycheproof `rsa_pss_2048_sha256_mgf1_32` results.
 

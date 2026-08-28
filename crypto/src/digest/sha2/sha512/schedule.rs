@@ -6,7 +6,7 @@
 use super::functions::{small_sigma_0, small_sigma_1};
 
 /// Bytes in one 1024-bit SHA-512 block.
-pub(super) const BLOCK_LEN: usize = 128;
+pub(in crate::digest::sha2) const BLOCK_LEN: usize = 128;
 
 /// Words in the complete SHA-512 schedule.
 pub(super) const SCHEDULE_WORDS: usize = 80;

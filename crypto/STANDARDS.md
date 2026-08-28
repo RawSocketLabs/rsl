@@ -732,6 +732,19 @@ is impractically slow in unoptimized test builds. The modular exponentiation ret
 The `chacha20poly1305` crate 0.11.0 is used only in development tests: 32 varied cases agree in
 both directions.
 
+## SHA-384, HMAC-SHA-384, and HKDF-SHA-384
+
+These three profiles reuse controlling publications already recorded above (FIPS 180-4,
+FIPS 198-1 / RFC 2104, RFC 5869) with the hash parameters changed; only the deltas and their
+evidence are listed here. Baselines re-checked 2026-08-28.
+
+| Location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| FIPS 180-4 §5.3.4 | SHA-384 initial hash words. | `sha384::constants::INITIAL_HASH_VALUE`; NIST SHA-384 example initial words. | Implemented and tested. |
+| FIPS 180-4 §6.5 | SHA-384 = SHA-512 preprocessing and compression from the §5.3.4 words, output `H_0 ‖ … ‖ H_5`. | `sha384::state` reuses `sha512::{final_blocks, compress_block}`; NIST one- and two-block examples including the discarded `H_6`, `H_7` (white-box); CAVP `SHA384ShortMsg.rsp` lengths 0, 8, 888, 896, 1016, 1024 bits; differential `sha2::Sha384` with fragmentation. | Implemented and tested. |
+| FIPS 198-1 §2.3, Table 1 (B = 128, L = 48) | HMAC over SHA-384: 128-byte `K0`, hash keys longer than 128 bytes to 48. | `hmac::sha384::{key, state}`; Table 1 step tests (long-key digest from the `sha2` oracle, labeled differential); RFC 4231 §4.2–§4.8 cases 1–7 (case 5 as a 128-bit prefix); streaming, verification, and differential `hmac` cases. | Implemented and tested. |
+| RFC 5869 §2.2–§2.3 (HashLen = 48) | HKDF-Extract and HKDF-Expand with HMAC-SHA-384; `L <= 255 · 48 = 12,240`. | `hkdf::sha384::{extract, expand, derive}`; all 83 Wycheproof `hkdf_sha384` cases (80 valid, 3 over-length rejected atomically); 12,240-byte boundary; differential `hkdf` cases. RFC 5869 publishes no SHA-384 vectors. | Implemented and tested. |
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

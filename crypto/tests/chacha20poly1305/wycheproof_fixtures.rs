@@ -17,7 +17,7 @@ pub(crate) struct WycheproofCase {
     pub(crate) flags: &'static str,
 }
 
-pub(crate) const CASES: [WycheproofCase; 325] = [
+pub(crate) static CASES: [WycheproofCase; 325] = [
     WycheproofCase {
         tc_id: 1,
         comment: "RFC 7539",

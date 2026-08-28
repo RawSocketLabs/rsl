@@ -68,7 +68,7 @@ fn prehashed_signatures_match_dalek_in_both_directions() {
                 case.wrapping_add(index.wrapping_mul(0x5b))
             })
             .collect();
-        let context_bytes: Vec<u8> = (0..usize::from(case % 5) + 1)
+        let context_bytes: Vec<u8> = (0..=usize::from(case % 5))
             .map(|index| 0x61 + u8::try_from(index).unwrap())
             .collect();
         let context = Ed25519Context::new(&context_bytes).unwrap();

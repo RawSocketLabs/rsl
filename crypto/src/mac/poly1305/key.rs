@@ -12,6 +12,9 @@ use zeroize::Zeroize;
 /// Number of bytes in a Poly1305 one-time key.
 pub(super) const KEY_BYTES: usize = 32;
 
+/// Low 44 bits, the width of the first two limbs.
+const MASK_44: u128 = (1 << 44) - 1;
+
 /// §2.5 `clamp(r)`: `r &= 0x0ffffffc0ffffffc0ffffffc0fffffff` expressed per byte.
 ///
 /// The RFC writes the masks in decimal (`&= 15` clears the top four bits, `&= 252` clears the
@@ -43,7 +46,6 @@ impl OneTimeKey {
         clamp(&mut r_bytes);
         let r_value = u128::from_le_bytes(r_bytes);
         r_bytes.zeroize();
-        const MASK_44: u128 = (1 << 44) - 1;
         let r = [
             u64::try_from(r_value & MASK_44).expect("44-bit limb"),
             u64::try_from((r_value >> 44) & MASK_44).expect("44-bit limb"),

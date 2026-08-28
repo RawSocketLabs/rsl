@@ -11,3 +11,4 @@
 //! [rfc-5869]: https://www.rfc-editor.org/rfc/rfc5869.html
 
 pub mod sha256;
+pub mod sha384;

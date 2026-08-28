@@ -12,3 +12,4 @@
 //! [rfc-2104]: https://www.rfc-editor.org/rfc/rfc2104.html
 
 pub mod sha256;
+pub mod sha384;

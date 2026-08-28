@@ -20,7 +20,7 @@ const LENGTH_FIELD_START: usize = BLOCK_LEN - 16;
 const MAX_MESSAGE_LEN_BYTES: u128 = u128::MAX / 8;
 
 /// One or two blocks produced by final padding.
-enum FinalBlocks {
+pub(in crate::digest::sha2) enum FinalBlocks {
     /// Marker and length fit in one block.
     One([u8; BLOCK_LEN]),
     /// The length needs a second block.
@@ -29,7 +29,7 @@ enum FinalBlocks {
 
 /// Apply FIPS 180-4 §5.1.2 to the uncompressed tail.
 #[must_use]
-fn final_blocks(tail: &[u8], bit_length: u128) -> FinalBlocks {
+pub(in crate::digest::sha2) fn final_blocks(tail: &[u8], bit_length: u128) -> FinalBlocks {
     let mut first = [0_u8; BLOCK_LEN];
     first[..tail.len()].copy_from_slice(tail);
     first[tail.len()] = 0x80;

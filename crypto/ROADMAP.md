@@ -129,6 +129,12 @@ Each algorithm change must include:
     Evidence covers every RFC body intermediate, all Appendix A vectors, all 325 Wycheproof
     cases, tampering boundaries, and differential comparison with `chacha20poly1305` 0.11.0.
 
+12. **SHA-384, HMAC-SHA-384, HKDF-SHA-384** — SHA-384 reuses SHA-512's padding and compression
+    with its own initial words and a truncated output (the one deliberate sharing in the SHA-2
+    family, because FIPS 180-4 §6.5 defines it that way); HMAC and HKDF are parameter clones of
+    the SHA-256 profiles. Evidence: NIST examples including the discarded words, CAVP boundary
+    lengths, RFC 4231 cases 1–7, all 83 Wycheproof HKDF-SHA-384 cases, and differential tests.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
@@ -142,11 +148,10 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. SHA-384 and HKDF-SHA-384 (TLS 1.3 `*_SHA384` suites, P-384 signatures).
-2. AES-256-GCM (`TLS_AES_256_GCM_SHA384`, SSH `aes256-gcm@openssh.com`), reusing the GCM layers
+1. AES-256-GCM (`TLS_AES_256_GCM_SHA384`, SSH `aes256-gcm@openssh.com`), reusing the GCM layers
    over an AES-256 key schedule.
-3. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
-4. X448 and Ed448 as lower-priority interoperability profiles.
+2. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
+3. X448 and Ed448 as lower-priority interoperability profiles.
 
 ## After the first vertical slice
 
