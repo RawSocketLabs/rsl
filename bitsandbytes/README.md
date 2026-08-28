@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/bitsandbytes-hero-v4.webp" alt="binary bits and bytes being decoded into text, image, and telemetry messages" width="100%">
+  <img src="docs/assets/bitsandbytes-hero-v6.webp" alt="raw bits and bytes being assembled into RTSP, HTTP, and DMR protocol messages" width="100%">
 </p>
 
 <p align="center">
