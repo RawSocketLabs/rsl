@@ -1,0 +1,23 @@
+[package]
+name = "rsl-netlink"
+description = "Strict Linux netlink codecs with route, generic-netlink, and WireGuard APIs"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
+
+[dependencies]
+bnb.workspace = true
+libc.workspace = true
+rustix.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+zeroize.workspace = true
+
+[lints]
+workspace = true

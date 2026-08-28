@@ -9,7 +9,7 @@
 #                           longer matches a tag), creates the git tag(s) and
 #                           publishes the crates that opt in via [[package]]
 #                           `publish = true` in release-plz.toml (today: the
-#                           bitsandbytes pair). GitHub Releases stay disabled
+#                           bitsandbytes pair and rsl-netlink). GitHub Releases stay disabled
 #                           (`git_release_enable = false`).
 #
 # Token note: PRs opened with the default GITHUB_TOKEN do NOT trigger other
@@ -42,8 +42,9 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # crates.io token for the opted-in packages (bitsandbytes, bitsandbytes-macros).
-          # Scope the token to those two crates; publishing stays off for everything else
+          # crates.io token for the opted-in packages (bitsandbytes,
+          # bitsandbytes-macros, and rsl-netlink). Scope the token to those crates;
+          # publishing stays off for everything else
           # via release-plz.toml, not via this token.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
