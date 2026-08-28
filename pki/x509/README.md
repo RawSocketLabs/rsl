@@ -19,4 +19,8 @@ extension encodings needed by `rsl-pki`. It does not choose trust anchors or cla
 certificate is trusted. Verification must use `TbsCertificate::encoded()` directly; parsing never
 re-encodes signed input.
 
+Parser interoperability tests include the published NIST PKITS §4.1.1 root, intermediate, and
+end-entity certificates. Their provenance and byte hashes are recorded under
+`../tests/vectors/nist-pkits/`.
+
 This implementation is unaudited. It makes no production-security claim.

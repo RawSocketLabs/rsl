@@ -35,6 +35,8 @@ use rsl_crypto::signature::{
 };
 use rsl_x509::{Certificate, GeneralName, PublicKey, SignatureAlgorithm, Time, oid};
 
+const DEFAULT_MAX_CANDIDATE_CHECKS: usize = 1_024;
+
 /// Result type for path construction and validation.
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -61,6 +63,8 @@ pub enum ErrorKind {
     PathNotFound,
     /// The configured maximum path depth was exceeded.
     PathTooDeep,
+    /// Path construction exhausted its configured issuer-candidate work budget.
+    PathSearchLimitExceeded,
     /// The issuer public key or certificate signature is malformed or does not verify.
     InvalidSignature,
     /// A well-formed signature or key algorithm is unsupported.
@@ -201,6 +205,7 @@ impl PathValidator {
             required_key_usage: None,
             dns_name: None,
             max_depth: 8,
+            max_candidate_checks: DEFAULT_MAX_CANDIDATE_CHECKS,
             revocation: None,
             revocation_mode: RevocationMode::SoftFail,
         }
@@ -218,6 +223,7 @@ pub struct PathBuilder<'cert, 'der, Leaf, Anchors, AtTime> {
     required_key_usage: Option<RequiredKeyUsage>,
     dns_name: Option<&'cert str>,
     max_depth: usize,
+    max_candidate_checks: usize,
     revocation: Option<&'cert dyn RevocationChecker>,
     revocation_mode: RevocationMode,
 }
@@ -238,6 +244,7 @@ impl<'cert, 'der, Anchors, AtTime> PathBuilder<'cert, 'der, MissingLeaf, Anchors
             required_key_usage: self.required_key_usage,
             dns_name: self.dns_name,
             max_depth: self.max_depth,
+            max_candidate_checks: self.max_candidate_checks,
             revocation: self.revocation,
             revocation_mode: self.revocation_mode,
         }
@@ -260,6 +267,7 @@ impl<'cert, 'der, Leaf, AtTime> PathBuilder<'cert, 'der, Leaf, MissingAnchors, A
             required_key_usage: self.required_key_usage,
             dns_name: self.dns_name,
             max_depth: self.max_depth,
+            max_candidate_checks: self.max_candidate_checks,
             revocation: self.revocation,
             revocation_mode: self.revocation_mode,
         }
@@ -279,6 +287,7 @@ impl<'cert, 'der, Leaf, Anchors> PathBuilder<'cert, 'der, Leaf, Anchors, Missing
             required_key_usage: self.required_key_usage,
             dns_name: self.dns_name,
             max_depth: self.max_depth,
+            max_candidate_checks: self.max_candidate_checks,
             revocation: self.revocation,
             revocation_mode: self.revocation_mode,
         }
@@ -322,6 +331,16 @@ impl<'cert, 'der, Leaf, Anchors, AtTime> PathBuilder<'cert, 'der, Leaf, Anchors,
         self
     }
 
+    /// Sets the maximum number of issuer candidates path construction may inspect.
+    ///
+    /// This bounds work independently of the number of certificates supplied by an untrusted
+    /// peer. The default is 1,024 candidate checks.
+    #[must_use]
+    pub const fn max_candidate_checks(mut self, max_candidate_checks: usize) -> Self {
+        self.max_candidate_checks = max_candidate_checks;
+        self
+    }
+
     /// Supplies revocation status and chooses whether unknown status is fatal.
     #[must_use]
     pub fn revocation(
@@ -353,11 +372,13 @@ impl<'cert, 'der> PathBuilder<'cert, 'der, HasLeaf<'cert, 'der>, HasAnchors<'cer
             return Err(Error::new(ErrorKind::PathNotFound));
         }
         let mut chain = vec![self.leaf.0];
+        let mut remaining_candidate_checks = self.max_candidate_checks;
         if !build_path(
             self.leaf.0,
             self.intermediates,
             self.anchors.0,
             self.max_depth,
+            &mut remaining_candidate_checks,
             &mut chain,
         )? {
             return Err(Error::new(ErrorKind::PathNotFound));
@@ -408,18 +429,17 @@ fn build_path<'cert, 'der>(
     intermediates: &'cert [Certificate<'der>],
     anchors: &'cert [Certificate<'der>],
     max_depth: usize,
+    remaining_candidate_checks: &mut usize,
     chain: &mut Vec<&'cert Certificate<'der>>,
 ) -> Result<bool> {
     if chain.len() > max_depth {
         return Err(Error::new(ErrorKind::PathTooDeep));
     }
-    if anchors
-        .iter()
-        .any(|anchor| anchor.encoded() == child.encoded())
-    {
-        return Ok(true);
-    }
     for issuer in anchors {
+        take_candidate_check(remaining_candidate_checks)?;
+        if issuer.encoded() == child.encoded() {
+            return Ok(true);
+        }
         if issuer_matches(child, issuer)? && verify_certificate_signature(child, issuer).is_ok() {
             if chain.len() == max_depth {
                 return Err(Error::new(ErrorKind::PathTooDeep));
@@ -429,6 +449,7 @@ fn build_path<'cert, 'der>(
         }
     }
     for issuer in intermediates {
+        take_candidate_check(remaining_candidate_checks)?;
         if chain.iter().any(|seen| seen.encoded() == issuer.encoded())
             || !issuer_matches(child, issuer)?
             || verify_certificate_signature(child, issuer).is_err()
@@ -436,12 +457,27 @@ fn build_path<'cert, 'der>(
             continue;
         }
         chain.push(issuer);
-        if build_path(issuer, intermediates, anchors, max_depth, chain)? {
+        if build_path(
+            issuer,
+            intermediates,
+            anchors,
+            max_depth,
+            remaining_candidate_checks,
+            chain,
+        )? {
             return Ok(true);
         }
         chain.pop();
     }
     Ok(false)
+}
+
+fn take_candidate_check(remaining: &mut usize) -> Result<()> {
+    let Some(next) = remaining.checked_sub(1) else {
+        return Err(Error::new(ErrorKind::PathSearchLimitExceeded));
+    };
+    *remaining = next;
+    Ok(())
 }
 
 fn issuer_matches(child: &Certificate<'_>, issuer: &Certificate<'_>) -> Result<bool> {
@@ -1039,6 +1075,194 @@ mod tests {
                 .unwrap_err()
                 .kind,
             ErrorKind::UnsupportedCriticalExtension
+        );
+    }
+
+    #[test]
+    fn negative_policy_inputs_fail_closed() {
+        let root_key = Ed25519SigningKey::from_seed([1; 32]);
+        let leaf_key = Ed25519SigningKey::from_seed([2; 32]);
+        let root_der = certificate(
+            "Root",
+            "Root",
+            root_key.verifying_key().as_bytes(),
+            &root_key,
+            true,
+            None,
+            &[],
+        );
+        let leaf_der = certificate(
+            "Leaf",
+            "Root",
+            leaf_key.verifying_key().as_bytes(),
+            &root_key,
+            false,
+            Some("leaf.test"),
+            &[],
+        );
+        let leaf = Certificate::from_der(&leaf_der).unwrap();
+        let anchors = [Certificate::from_der(&root_der).unwrap()];
+        let validation = |time| {
+            PathValidator::builder()
+                .leaf(&leaf)
+                .trust_anchors(&anchors)
+                .at_time(time)
+        };
+
+        assert_eq!(
+            validation(Time::new(2025, 12, 31, 23, 59, 59).unwrap())
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::NotYetValid
+        );
+        assert_eq!(
+            validation(Time::new(2027, 1, 1, 0, 0, 1).unwrap())
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::Expired
+        );
+        assert_eq!(
+            validation(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .purpose(Purpose::ClientAuth)
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::PurposeMismatch
+        );
+        assert_eq!(
+            validation(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .required_key_usage(RequiredKeyUsage::KeyAgreement)
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::RequiredKeyUsageMissing
+        );
+        assert_eq!(
+            validation(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .dns_name("other.test")
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::ServiceIdentityMismatch
+        );
+        assert_eq!(
+            validation(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .max_depth(1)
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::PathTooDeep
+        );
+    }
+
+    #[test]
+    fn negative_non_ca_intermediate_is_rejected() {
+        let root_key = Ed25519SigningKey::from_seed([1; 32]);
+        let intermediate_key = Ed25519SigningKey::from_seed([2; 32]);
+        let leaf_key = Ed25519SigningKey::from_seed([3; 32]);
+        let root_der = certificate(
+            "Root",
+            "Root",
+            root_key.verifying_key().as_bytes(),
+            &root_key,
+            true,
+            None,
+            &[],
+        );
+        let intermediate_der = certificate(
+            "Intermediate",
+            "Root",
+            intermediate_key.verifying_key().as_bytes(),
+            &root_key,
+            false,
+            None,
+            &[],
+        );
+        let leaf_der = certificate(
+            "Leaf",
+            "Intermediate",
+            leaf_key.verifying_key().as_bytes(),
+            &intermediate_key,
+            false,
+            Some("leaf.test"),
+            &[],
+        );
+        let leaf = Certificate::from_der(&leaf_der).unwrap();
+        let intermediates = [Certificate::from_der(&intermediate_der).unwrap()];
+        let anchors = [Certificate::from_der(&root_der).unwrap()];
+
+        assert_eq!(
+            PathValidator::builder()
+                .leaf(&leaf)
+                .intermediates(&intermediates)
+                .trust_anchors(&anchors)
+                .at_time(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::NotCertificateAuthority
+        );
+    }
+
+    #[test]
+    fn candidate_check_budget_bounds_path_search() {
+        let root_key = Ed25519SigningKey::from_seed([1; 32]);
+        let leaf_key = Ed25519SigningKey::from_seed([2; 32]);
+        let decoy_key = Ed25519SigningKey::from_seed([3; 32]);
+        let root_der = certificate(
+            "Root",
+            "Root",
+            root_key.verifying_key().as_bytes(),
+            &root_key,
+            true,
+            None,
+            &[],
+        );
+        let decoy_der = certificate(
+            "Root",
+            "Root",
+            decoy_key.verifying_key().as_bytes(),
+            &decoy_key,
+            true,
+            None,
+            &[],
+        );
+        let leaf_der = certificate(
+            "Leaf",
+            "Root",
+            leaf_key.verifying_key().as_bytes(),
+            &root_key,
+            false,
+            None,
+            &[],
+        );
+        let leaf = Certificate::from_der(&leaf_der).unwrap();
+        let anchors = [
+            Certificate::from_der(&decoy_der).unwrap(),
+            Certificate::from_der(&root_der).unwrap(),
+        ];
+
+        assert_eq!(
+            PathValidator::builder()
+                .leaf(&leaf)
+                .trust_anchors(&anchors)
+                .at_time(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .max_candidate_checks(1)
+                .validate()
+                .unwrap_err()
+                .kind,
+            ErrorKind::PathSearchLimitExceeded
+        );
+        assert!(
+            PathValidator::builder()
+                .leaf(&leaf)
+                .trust_anchors(&anchors)
+                .at_time(Time::new(2026, 6, 1, 0, 0, 0).unwrap())
+                .max_candidate_checks(2)
+                .validate()
+                .is_ok()
         );
     }
 }

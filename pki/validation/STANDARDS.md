@@ -11,5 +11,7 @@ Accessed 2026-08-28.
 This profile does not implement the RFC 5280 certificate-policy tree, policy mapping, or name
 constraints. A critical extension outside the explicit supported set is rejected. Revocation
 evidence is supplied through `RevocationChecker`; fetching and freshness policy are external.
+The 1,024-check default path-search budget is an implementation resource limit, not a rule from
+RFC 5280; callers may select a different explicit budget.
 
 Tests create standard-derived local Ed25519 certificates and are not published vectors.

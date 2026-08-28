@@ -1,0 +1,50 @@
+# Separate cargo-fuzz workspace: libfuzzer-sys and the independent comparison parser must not
+# enter the parent workspace's stable dependency graph or Cargo.lock.
+[package]
+name = "rsl-pki-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+x509-parser = { version = "0.18.1", default-features = false }
+
+[dependencies.rsl-asn1]
+path = "../asn1"
+
+[dependencies.rsl-crypto]
+path = "../../crypto"
+
+[dependencies.rsl-pki]
+path = "../validation"
+
+[dependencies.rsl-x509]
+path = "../x509"
+
+[[bin]]
+name = "der_decode"
+path = "fuzz_targets/der_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "certificate_parse"
+path = "fuzz_targets/certificate_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_validation"
+path = "fuzz_targets/path_validation.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -8,5 +8,8 @@ Accessed 2026-08-28.
 | RFC 5480 | March 2009, Standards Track | <https://www.rfc-editor.org/rfc/rfc5480> | §2 EC `SubjectPublicKeyInfo`; §2.1 named-curve identifiers |
 | RFC 8410 | August 2018, Standards Track | <https://www.rfc-editor.org/rfc/rfc8410> | §§3–4 Ed25519/Ed448 algorithm identifiers and public-key encoding |
 | RFC 4055 | June 2005, Standards Track | <https://www.rfc-editor.org/rfc/rfc4055> | §§2–3 RSASSA-PSS algorithm identifiers and parameters |
+| NIST PKITS | Version 1.0.1, April 2011 | <https://csrc.nist.gov/Projects/pki-testing> | Imported parser-interoperability certificates from §4.1.1 Valid Signatures Test1; provenance and byte hashes are under `../tests/vectors/nist-pkits/` |
 
-The compact test certificate is standard-derived local evidence, not a published vector.
+The compact unit-test certificate is standard-derived local evidence, not a published vector.
+The three PKITS certificates are published external parser fixtures; their RSA-with-SHA-256
+signatures are outside the current validation profile.

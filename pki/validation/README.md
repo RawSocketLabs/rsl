@@ -19,6 +19,7 @@ let path = PathValidator::builder()
     .purpose(Purpose::ServerAuth)
     .required_key_usage(RequiredKeyUsage::DigitalSignature)
     .dns_name("www.example.test")
+    .max_candidate_checks(1_024)
     .validate()?;
 ```
 
@@ -30,5 +31,9 @@ those inputs explicit.
 Implemented policy is deliberately narrower than all of RFC 5280: unsupported critical
 extensions fail closed; policy-tree, name-constraints, root-store loading, clocks, and revocation
 transport are not inferred. Candidate paths use conservative exact-DER name matching.
+
+Path construction defaults to at most 1,024 issuer-candidate checks, independently of the number
+of untrusted intermediates supplied by a peer. `max_candidate_checks` selects an explicit CPU-work
+budget; exhausting it fails closed.
 
 This implementation is unaudited. It makes no production-security claim.

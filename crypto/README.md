@@ -110,6 +110,14 @@ opener. A plaintext-sink failure invalidates the opener so a record cannot be de
 collecting methods remain conveniences. This layer defines no wire encoding. Protocol crates still
 own negotiation, framing, key derivation and lifetime, transcript binding, replay, and rekeying.
 
+## Guided APIs and escape hatches
+
+Complete constructions are the short path, while raw ciphers, incremental hash/MAC/KDF stages,
+detached AEAD parts, algorithm-specific key import, caller-selected contexts, record sizing, and
+explicit secret exposure remain available for test vectors and new protocol research. These
+lower-level APIs retain narrow result types: using an escape hatch never silently turns raw output
+into an authenticated or protocol-validated value. [`DESIGN.md`](DESIGN.md) records the rule.
+
 ## Read the teaching reference
 
 The crate-level rustdoc is the intended starting point. It gives a dependency-ordered learning

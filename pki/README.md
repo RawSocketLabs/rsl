@@ -14,5 +14,14 @@ borrowed spans and bounded cursors without turning the codec into a certificate-
 TLS/SSH certificate negotiation, transcript binding, clocks, root-store loading, replay, and
 revocation transport remain protocol or platform responsibilities.
 
+[`DESIGN.md`](DESIGN.md) defines the guided-path/escape-hatch contract. Normal trust decisions use
+the typestate validator; exact DER spans, raw extension values, individual signature checks, and
+configurable path-search budgets remain available for interoperability work and experiments
+without being mislabeled as validated trust.
+
+[`fuzz/`](fuzz/README.md) covers strict DER, differential certificate parsing against an
+independent implementation, and structured path-validation mutations. Published NIST PKITS
+fixtures and byte-level provenance live under [`tests/vectors/`](tests/vectors/).
+
 All three crates are `no_std + alloc`, forbid unsafe code, and are unaudited. They make no
 production-security claim.

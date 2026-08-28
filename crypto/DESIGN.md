@@ -98,3 +98,22 @@ authentication it advances and invalidates itself before calling the sink, so an
 panic cannot redeliver plaintext. The collecting methods adapt the same state machines. Fixed-size
 algorithm blocks remain internal to digest, MAC, cipher, and AEAD implementations. Protocol crates
 still define their own semantic phases and wire encodings.
+
+## 8. Guided path and explicit escape hatches
+
+The obvious path uses complete constructions: AEAD rather than a raw cipher, HKDF rather than
+ad-hoc hashing, strict verifying-key/signature types, and the staged record builder when bounded
+streaming is needed. Defaults and semantic types should make that path short.
+
+Research, test-vector work, and unusual standards still need deliberate lower-level access. Raw
+AES block and ChaCha20 stream APIs, incremental digest/MAC/KDF stages, detached AEAD parts,
+algorithm-specific key import, caller-selected contexts, configurable record sizing, and explicit
+secret exposure are the escape hatches. They remain named for the narrower property they provide;
+a raw cipher never returns an authenticated-message type, and a shared secret never becomes a
+traffic key without an explicit KDF step.
+
+Internal steps whose standalone output has no sound general contract may stay private and be
+covered by in-crate vector tests. If protocol research establishes a legitimate reusable contract,
+promote it through an explicit low-level or experimental namespace with its own typed inputs,
+standards ownership, evidence, and misuse documentation. Do not add boolean switches that quietly
+disable authentication, validation, or nonce-exhaustion invariants on the guided API.
