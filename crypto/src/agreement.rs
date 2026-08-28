@@ -5,9 +5,10 @@
 //! result should not be used directly as an encryption key.
 //!
 //! [`x25519`] provides the first concrete agreement algorithm. Its primitive performs only the
-//! RFC 7748 scalar multiplication and contributory-behavior check. TLS and SSH still own
-//! ephemeral-key generation, encoded key-share framing, transcript authentication, and the key
-//! schedule that consumes the shared secret.
+//! RFC 7748 scalar multiplication and contributory-behavior check. [`ecdh_p256`] provides the
+//! SP 800-56A ECC CDH primitive over NIST P-256 with full public-key validation. TLS and SSH
+//! still own ephemeral-key generation, encoded key-share framing, transcript authentication, and
+//! the key schedule that consumes the shared secret.
 //!
 //! # Generic use
 //!
@@ -32,6 +33,7 @@
 
 use crate::Result;
 
+pub mod ecdh_p256;
 pub mod x25519;
 
 /// A public-key agreement primitive such as an elliptic-curve Diffie-Hellman function.

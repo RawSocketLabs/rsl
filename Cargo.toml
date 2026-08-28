@@ -108,6 +108,8 @@ aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
 x25519-dalek = { version = "3.0.0", default-features = false }
 # Independent Ed25519 oracle used only by rsl-crypto's differential tests.
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["signature"] }
+# Independent P-256 ECDH/ECDSA oracle used only by rsl-crypto's differential tests.
+p256 = { version = "0.14.0", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
 # Independent historical-digest oracles used only by rsl-crypto-legacy tests.
 sha1 = { version = "0.11.0", default-features = false }
 md5 = { package = "md-5", version = "0.11.0", default-features = false }

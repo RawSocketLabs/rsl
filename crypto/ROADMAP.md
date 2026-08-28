@@ -93,9 +93,23 @@ Each algorithm change must include:
    3.0.0. Context and prehash variants remain distinct future profiles. TLS/SSH transcript
    construction, key identifiers, certificates, and negotiation remain protocol-owned.
 
+9. **P-256, ECDH, and ECDSA verification** — the SP 800-186 curve is implemented once as
+   readable 256-bit limb arithmetic with a fold-based reduction derived from the prime's form,
+   distinct field and scalar residue types, Renes–Costello–Batina complete projective addition
+   in its printed 43-step order, and fixed-structure scalar multiplication. ECDH exposes
+   `EcdhP256PrivateKey`, `EcdhP256PublicKey`, `EcdhP256SharedSecret`, and `EcdhP256` with
+   SP 800-56A Rev. 3 candidate-testing generation, full public-key validation, and the ECC CDH
+   primitive. ECDSA exposes `EcdsaP256VerifyingKey` and `EcdsaP256Signature` with FIPS 186-5
+   §6.4.2 verification over SHA-256 and a raw `r || s` encoding. Evidence covers RFC 5903 §8.1,
+   all 25 CAVP ECC CDH and 12 CAVP PKV P-256 cases, RFC 6979 A.2.5, all 15 CAVP SigVer
+   P-256/SHA-256 verdicts, range and tampering boundaries, and development-only differential
+   comparison with the `p256` crate 0.14.0. ECDSA signing, DER signature framing, compressed
+   points, and other curves and hashes remain deliberately unsupported.
+
 ## After the first vertical slice
 
-- P-256 field/group arithmetic, ECDH, and ECDSA verification for broader TLS interoperability.
+- ECDSA P-256 signing with RFC 6979 deterministic nonces, as a distinct profile from
+  verification.
 - RSA-PSS verification needed by TLS certificates.
 - Ed25519ctx and Ed25519ph only as explicit variant APIs rather than flags on pure Ed25519.
 - The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.

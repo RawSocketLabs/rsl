@@ -37,12 +37,20 @@ rsl-crypto/
 │   ├── aead/gcm/open.rs           private verify-before-decrypt Algorithm 5 composition
 │   ├── aead/gcm/ghash/field.rs    private SP 800-38D `GF(2^128)` multiplication
 │   ├── aead/gcm/ghash/state.rs    private complete-block Algorithm 2 recurrence
+│   ├── curve.rs                   shared elliptic-curve group boundary
+│   ├── curve/p256/arithmetic.rs   private 256-bit limbs and fold-based modular reduction
+│   ├── curve/p256/field.rs        private residues modulo `p` and canonical encoding
+│   ├── curve/p256/scalar.rs       private residues modulo `n` and range rules
+│   ├── curve/p256/point.rs        private complete addition, fixed multiplication, SEC 1 encoding
 │   ├── agreement.rs               generic key-agreement contract and family boundary
+│   ├── agreement/ecdh_p256/api.rs public typed ECDH P-256 keys, generation, and agreement
 │   ├── agreement/x25519/api.rs    public typed X25519 agreement boundary
 │   ├── agreement/x25519/field.rs  private `GF(2^255 - 19)` encoding and arithmetic
 │   ├── agreement/x25519/scalar.rs private RFC 7748 scalar preparation
 │   ├── agreement/x25519/ladder.rs private fixed-structure Montgomery ladder
 │   ├── signature.rs               generic signing and verification contracts
+│   ├── signature/ecdsa_p256/api.rs typed verifying key and raw `r || s` signature
+│   ├── signature/ecdsa_p256/verify.rs FIPS 186-5 §6.4.2 step sequence
 │   ├── signature/ed25519/api.rs   typed keys, signing, and strict verification
 │   ├── signature/ed25519/field.rs Edwards field encoding and root recovery
 │   ├── signature/ed25519/point.rs point arithmetic and fixed scalar multiplication
@@ -73,7 +81,13 @@ rsl-crypto/
 │   ├── vectors/sha512/            FIPS 180-4 SHA-512 provenance
 │   ├── ed25519.rs                 public Ed25519 evidence harness
 │   ├── ed25519/                   RFC vectors, strict boundaries, and differential evidence
-│   └── vectors/ed25519/           RFC 8032 vector and errata provenance
+│   ├── vectors/ed25519/           RFC 8032 vector and errata provenance
+│   ├── ecdh_p256.rs               public ECDH P-256 evidence harness
+│   ├── ecdh_p256/                 RFC 5903, CAVP CDH/PKV fixtures, boundaries, differential
+│   ├── vectors/ecdh-p256/         SP 800-56A, RFC 5903, and CAVP provenance
+│   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
+│   ├── ecdsa_p256/                RFC 6979, CAVP SigVer fixtures, boundaries, differential
+│   └── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
 ├── DESIGN.md                      crate-wide architectural decisions
 ├── ROADMAP.md                     primitive implementation order
 └── STANDARDS.md                   sources, notation, coverage, and evidence ledger

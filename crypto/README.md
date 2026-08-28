@@ -33,7 +33,10 @@ Montgomery-ladder path. The first signature implementation exposes
 [`Ed25519SigningKey`](src/signature/ed25519/api.rs),
 [`Ed25519VerifyingKey`](src/signature/ed25519/api.rs), and
 [`Ed25519Signature`](src/signature/ed25519/api.rs) over readable RFC 8032 Edwards and subgroup
-scalar layers.
+scalar layers. The NIST P-256 group is implemented once under [`src/curve/p256/`](src/curve/p256/)
+and consumed by [`EcdhP256`](src/agreement/ecdh_p256/api.rs) (SP 800-56A ECC CDH with full
+public-key validation) and [`EcdsaP256VerifyingKey`](src/signature/ecdsa_p256/api.rs)
+(FIPS 186-5 verification with SHA-256).
 
 SHA-256 is tested at several levels: private formula and intermediate-state tests,
 NIST-published known answers, NIST CAVP padding/block-boundary vectors, awkward input
@@ -51,7 +54,10 @@ the published two-party exchange, encoding/rejection boundaries, and 128 develop
 differential cases. SHA-512 adds published one- and two-block examples, 128-bit padding boundaries,
 fragmentation, and independent differential cases. Ed25519 adds RFC 8032 §7.1 key/signature
 vectors, canonical and small-order rejection evidence, deterministic and generic signing paths,
-and 32 strict differential cases.
+and 32 strict differential cases. ECDH P-256 adds the RFC 5903 exchange, all 25 CAVP ECC CDH and
+12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
+adds RFC 6979 A.2.5, all 15 CAVP SigVer P-256/SHA-256 verdicts, range and tampering boundaries,
+and 32 differential signatures.
 
 This is an implementation milestone, not a production-security claim. Side-channel analysis,
 fuzzing, broader interoperability work, and independent cryptographic audit are still required

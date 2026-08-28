@@ -35,6 +35,10 @@
 //!    studying AES rounds. It is deliberately not a message-encryption API.
 //! 8. [`Aes128Gcm`](aead::gcm::Aes128Gcm) composes AES, counter mode, and GHASH into
 //!    authenticated encryption with associated data.
+//! 9. [`curve::p256`] builds the NIST P-256 group from 256-bit limbs, a shared modular
+//!    reduction, and a complete addition law. [`EcdhP256`](agreement::ecdh_p256::EcdhP256)
+//!    and [`EcdsaP256VerifyingKey`](signature::ecdsa_p256::EcdsaP256VerifyingKey) then show how
+//!    one group serves both key agreement and signature verification.
 //!
 //! Follow the links above for the mental model, standard notation, algorithm steps, worked
 //! examples, common mistakes, and exact evidence for each construction.
@@ -111,6 +115,7 @@ extern crate alloc;
 pub mod aead;
 pub mod agreement;
 pub mod cipher;
+pub mod curve;
 pub mod digest;
 pub mod error;
 pub mod kdf;

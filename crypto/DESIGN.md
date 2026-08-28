@@ -53,6 +53,11 @@ SHA-512
   + GF(2^255 - 19) arithmetic
       -> Edwards25519 points
           -> Ed25519 key derivation, signing, and strict verification
+
+256-bit limb arithmetic modulo p and n
+  -> P-256 field, scalar, and complete projective points
+      -> ECDH P-256 validated agreement
+      -> ECDSA P-256 verification (+ SHA-256)
 ```
 
 Higher-level protocol key schedules consume these primitives without becoming dependencies of

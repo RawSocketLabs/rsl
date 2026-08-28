@@ -7,10 +7,13 @@
 //!
 //! [`ed25519`] is the first concrete implementation. It provides deterministic signing and strict
 //! verification while keeping message encoding, identity binding, certificate formats, and
-//! handshake transcript construction in the consuming protocol.
+//! handshake transcript construction in the consuming protocol. [`ecdsa_p256`] adds FIPS 186-5
+//! ECDSA verification with SHA-256 over NIST P-256 for certificate and handshake
+//! interoperability; signing is a separate future profile.
 
 use crate::{Result, random::RandomSource};
 
+pub mod ecdsa_p256;
 pub mod ed25519;
 
 /// A private-key signing operation.

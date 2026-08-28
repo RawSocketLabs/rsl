@@ -504,6 +504,104 @@ signatures, and `verify_strict` behavior agree over 32 deterministic cases. TLS 
 `CertificateVerify` encodings, SSH public-key blobs and exchange hashes, key identifiers,
 transcript construction, and negotiation remain in their protocol repositories.
 
+## P-256 source baseline
+
+The NIST P-256 group is shared by ECDH and ECDSA and is implemented once under `src/curve/p256/`.
+
+- **Curve parameters:** NIST SP 800-186, *Recommendations for Discrete Logarithm-based
+  Cryptography: Elliptic Curve Domain Parameters*, February 2023, §3.2.1.3.
+  [Publication record](https://csrc.nist.gov/pubs/sp/800/186/final);
+  [doi:10.6028/NIST.SP.800-186](https://doi.org/10.6028/NIST.SP.800-186).
+- **Point encoding:** SEC 1 v2.0, *Elliptic Curve Cryptography*, Certicom Research, May 2009,
+  §2.3.3 (point to octet string), §2.3.4 (octet string to point), §2.3.5–§2.3.6 (field element
+  and octet string conversion). [Document](https://www.secg.org/sec1-v2.pdf).
+- **Group law:** J. Renes, C. Costello, L. Batina, *Complete addition formulas for prime order
+  elliptic curves*, EUROCRYPT 2016, Algorithm 4 (`a = -3`).
+  [IACR ePrint 2015/1060](https://eprint.iacr.org/2015/1060). This is a peer-reviewed formula
+  source, not a standard; SP 800-186 defines the group but prescribes no formulas.
+- **Baseline last checked:** 2026-08-28. SP 800-186 is final and supersedes the curve
+  definitions formerly in FIPS 186-4 Appendix D. FIPS 186-4's fast-reduction appendix is not
+  used; reduction is derived from the prime's form as documented in `arithmetic.rs`.
+
+### P-256 notation mapping
+
+| Publication notation | Rust representation | Meaning |
+| --- | --- | --- |
+| `p`, `n` | `arithmetic::Modulus` with `value` and `complement = 2^256 - m` | Four little-endian `u64` limbs; `u128` products and carries. |
+| integer to octet string | `arithmetic::to_be_bytes` | 32 bytes, most significant first. |
+| field element `x` | `field::FieldElement` | Residue below `p`; non-`Clone`, zeroizing. |
+| scalar `d`, `r`, `s`, `e` | `scalar::Scalar` | Residue below `n`; non-`Clone`, zeroizing. |
+| `(X : Y : Z)` | `point::ProjectivePoint` | Homogeneous projective coordinates; `O = (0 : 1 : 0)`. |
+| `(x, y)` | `point::AffinePoint` | Validated finite point. |
+| `[k]P` | `ProjectivePoint::multiply` | 256 fixed additions, doublings, and masked selections. |
+
+### P-256 coverage
+
+| Location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| SP 800-186 §3.2.1.3 | `p`, `b`, `n`, `G`, `h = 1`. | `field::MODULUS`, `field::CURVE_B`, `scalar::ORDER`, `point::GENERATOR_X/Y`; hexadecimal-form tests, generator-on-curve test, `[n]G = O` test. | Implemented and tested. |
+| SP 800-186 §3.2.1.3 (`a = -3`) | Curve equation `y^2 = x^3 - 3x + b`. | `AffinePoint::satisfies_curve_equation`; generator accept, one-bit change reject, CAVP PKV cases. | Implemented and tested. |
+| SEC 1 §2.3.5–§2.3.6 | Field elements encode as 32 big-endian bytes; decoding rejects `>= p`. | `FieldElement::from_canonical_bytes`/`to_bytes`; `p - 1` accept, `p` and all-ones reject. | Implemented and tested. |
+| SEC 1 §2.3.3–§2.3.4 | Uncompressed `04 || x || y`; reject other prefixes and off-curve points. | `AffinePoint::from_bytes`/`to_bytes`; prefix, range, and curve tests, public PKV fixtures. | Implemented and tested; compressed forms deliberately unsupported. |
+| Renes–Costello–Batina Algorithm 4 | Complete projective addition for `a = -3` in printed order. | `ProjectivePoint::add` with the paper's `t0..t4` names and 43 numbered steps; identity, doubling-equals-multiplication, negation, `[n]G = O`, and all downstream vectors. | Implemented and tested. |
+| Fixed-structure scalar multiplication | Same operation sequence for every scalar; no secret-indexed memory. | `ProjectivePoint::multiply` uses 256 unconditional additions, doublings, and masked selects. | Implemented as a source policy; compiler/platform timing not certified. |
+
+## ECDH P-256 source baseline
+
+- **Publication:** NIST SP 800-56A Rev. 3, *Recommendation for Pair-Wise Key-Establishment
+  Schemes Using Discrete Logarithm Cryptography*, April 2018.
+  [Publication record](https://csrc.nist.gov/pubs/sp/800/56/a/r3/final);
+  [doi:10.6028/NIST.SP.800-56Ar3](https://doi.org/10.6028/NIST.SP.800-56Ar3).
+- **Sections owned:** §5.6.1.2.2 (key generation by testing candidates), §5.6.2.3.3 (full
+  public-key validation), §5.7.1.2 (ECC CDH primitive).
+- **Baseline last checked:** 2026-08-28; final, not withdrawn.
+- **Published validation material:** RFC 5903 §8.1 (group 19 exchange); NIST CAVP
+  `KAS_ECC_CDH_PrimitiveTest.txt` `[P-256]` (25 cases); NIST CAVP `PKV.rsp` `[P-256]`
+  (12 cases). Archive checksums and conversion policy are in `tests/vectors/ecdh-p256/README.md`.
+
+### ECDH P-256 coverage
+
+| SP 800-56A Rev. 3 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §5.6.1.2.2 | Draw a 256-bit candidate `c`; retry while `c > n - 2`; set `d = c + 1`. | `EcdhP256PrivateKey::generate`; deterministic-source tests for `c = 0 -> d = 1`, retry after an all-ones candidate, and bounded retries. | Implemented and tested; bounded to 64 candidates. |
+| §5.6.1.2 | Private key `d` in `[1, n-1]`. | `EcdhP256PrivateKey::from_bytes` via `Scalar::from_nonzero_canonical_bytes`; zero, `n`, `n - 1`, all-ones tests. | Implemented and tested. |
+| §5.6.2.3.3 | Full public-key validation: not `O`, coordinates in range, curve equation, order `n`. | `EcdhP256PublicKey::from_bytes`; the uncompressed form cannot encode `O`; order `n` follows from `h = 1` and prime `n` (documented, not recomputed). Public PKV fixtures and per-cause rejection tests. | Implemented and tested. |
+| §5.7.1.2 | `P = [h d]Q`, error on `O`, output `Z = x_P` as a field-element octet string. | `EcdhP256::agree`; RFC 5903 exchange, 25 CAVP CDH cases, 32 differential cases. | Implemented and tested. |
+| §5.8; §6 | Derive keys from `Z` with an approved KDF and bind identities and context. | `EcdhP256SharedSecret` requires explicit exposure; rustdoc assigns KDF, transcript, and framing to TLS/SSH. | Explicit protocol obligation; not implemented in this primitive. |
+
+The `p256` crate 0.14.0 is used only in development tests as a differential oracle.
+
+## ECDSA P-256 source baseline
+
+- **Publication:** NIST FIPS 186-5, *Digital Signature Standard (DSS)*, February 2023.
+  [Publication record](https://csrc.nist.gov/pubs/fips/186-5/final);
+  [doi:10.6028/NIST.FIPS.186-5](https://doi.org/10.6028/NIST.FIPS.186-5).
+- **Sections owned:** §6.4.2 (ECDSA signature verification) with SHA-256 over P-256.
+  §6.4.1 (signature generation) and §6.3 (per-message secret number) are deliberately not
+  implemented in this profile.
+- **Baseline last checked:** 2026-08-28; final. FIPS 186-5 supersedes FIPS 186-4 (withdrawn
+  February 2024); the verification steps are unchanged between the two.
+- **Published validation material:** RFC 6979 A.2.5 (P-256, SHA-256, messages `sample` and
+  `test`); NIST CAVP `SigVer.rsp` `[P-256,SHA-256]` (15 cases with printed verdicts). Archive
+  checksum and conversion policy are in `tests/vectors/ecdsa-p256/README.md`.
+
+### ECDSA P-256 coverage
+
+| FIPS 186-5 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §6.4.2 step 1 | Reject unless `1 <= r <= n-1` and `1 <= s <= n-1`. | `verify::verify_digest` via `Scalar::from_nonzero_canonical_bytes`; zero, `n`, and all-ones tests for each of `r` and `s`. | Implemented and tested. |
+| §6.4.2 step 2 | `e` = leftmost `min(N, outlen)` bits of `H(M)`; with SHA-256 the entire digest. | `Sha256::digest` then `Scalar::reduce_bytes`; `verify_sha256` and `verify_sha256_digest` paths agree. | Implemented and tested for SHA-256 only. |
+| §6.4.2 step 3 | `w = s^-1 mod n`. | `Scalar::invert` by `s^(n-2)`; inversion unit test. | Implemented and tested. |
+| §6.4.2 step 4 | `u1 = e w mod n`, `u2 = r w mod n`. | `Scalar::multiply`; all published signature vectors. | Implemented and tested. |
+| §6.4.2 step 5 | `R = [u1]G + [u2]Q`; reject `O`. | `ProjectivePoint::multiply` and `add`; `to_affine` returns `None` for `O`. | Implemented and tested. |
+| §6.4.2 step 6 | `v = x_R mod n`; accept iff `v == r`. | `Scalar::reduce_limbs` and `equals`; RFC 6979, 15 CAVP verdicts, `(r, n - s)` acceptance, tampering rejection, 32 differential cases. | Implemented and tested. |
+| §6.4.2 public-key input | `Q` must be a valid point. | `EcdsaP256VerifyingKey::from_bytes` performs SEC 1 decoding with the curve-equation check. | Implemented and tested. |
+| §6.4.1; §6.3; Appendix A.3 | Signing and per-message secret generation. | Not exposed. | Deliberately not implemented in this profile. |
+| Encoding of `(r, s)` | Raw `r || s` (RFC 7515 style). | `EcdsaP256Signature`; DER `ECDSA-Sig-Value` parsing is assigned to certificate/protocol layers. | Implemented as a fixed-size profile. |
+
+The `p256` crate 0.14.0 is used only in development tests as a signing oracle whose output this
+verifier must accept.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,
