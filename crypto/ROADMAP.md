@@ -135,6 +135,13 @@ Each algorithm change must include:
     the SHA-256 profiles. Evidence: NIST examples including the discarded words, CAVP boundary
     lengths, RFC 4231 cases 1–7, all 83 Wycheproof HKDF-SHA-384 cases, and differential tests.
 
+13. **AES-256 and AES-256-GCM** — AES-256 adds only the `Nk = 8` key schedule (with Algorithm
+    2's AES-256-only `SUBWORD` step) over the shared AES layers, whose `CIPHER()`/`INVCIPHER()`
+    bodies are now generic over a round-key source. GCM's private layers became generic over a
+    crate-private `CIPH_K` trait, so `Aes256Gcm` is a second typed profile of the same code.
+    Evidence: all 60 Appendix A.3 words, the four `AES_Core256` blocks, NIST GCM-AES256
+    Examples 1–5, 105 Wycheproof cases, and differential `aes`/`aes-gcm` comparison.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
@@ -148,10 +155,8 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. AES-256-GCM (`TLS_AES_256_GCM_SHA384`, SSH `aes256-gcm@openssh.com`), reusing the GCM layers
-   over an AES-256 key schedule.
-2. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
-3. X448 and Ed448 as lower-priority interoperability profiles.
+1. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
+2. X448 and Ed448 as lower-priority interoperability profiles.
 
 ## After the first vertical slice
 

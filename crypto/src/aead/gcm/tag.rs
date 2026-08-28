@@ -34,8 +34,8 @@
 
 use zeroize::Zeroize;
 
-use super::{gctr, ghash::GhashResult, setup::PreCounterBlock};
-use crate::{CryptoError, Result, cipher::aes::aes128::Aes128};
+use super::{block_cipher::GcmBlockCipher, gctr, ghash::GhashResult, setup::PreCounterBlock};
+use crate::{CryptoError, Result};
 
 /// Number of bytes in the initial GCM profile's full authentication tag.
 const TAG_BYTES: usize = 16;
@@ -99,8 +99,8 @@ impl Drop for FullTag {
 
 /// Calculate the full `GCTR_K(J_0, S)` tag without truncation.
 #[must_use]
-pub(super) fn mask(
-    cipher: &Aes128,
+pub(super) fn mask<C: GcmBlockCipher>(
+    cipher: &C,
     pre_counter: PreCounterBlock,
     ghash_result: GhashResult,
 ) -> FullTag {
@@ -113,7 +113,8 @@ pub(super) fn mask(
 
 #[cfg(test)]
 mod unit {
-    use super::{Aes128, FullTag, GhashResult, PreCounterBlock, mask};
+    use super::{FullTag, GhashResult, PreCounterBlock, mask};
+    use crate::cipher::aes::aes128::Aes128;
     use crate::{
         CryptoError,
         aead::gcm::ghash::{Ghash, HashSubkey},

@@ -95,6 +95,11 @@ impl Aes128Block {
         &self.bytes
     }
 
+    /// Mutable access for the sibling AES-256 implementation, which shares this block type.
+    pub(in crate::cipher::aes) fn bytes_mut(&mut self) -> &mut [u8; BLOCK_LEN] {
+        &mut self.bytes
+    }
+
     /// Consume the block and return its bytes to the caller.
     ///
     /// The caller becomes responsible for the returned array's lifetime and destruction. The

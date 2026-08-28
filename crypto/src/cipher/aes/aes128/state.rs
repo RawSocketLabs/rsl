@@ -22,18 +22,18 @@ use zeroize::Zeroize;
 /// Number of rows in the AES state.
 ///
 /// FIPS 197 §3.4 fixes row index `r` to `0 <= r < 4`.
-pub(super) const STATE_ROWS: usize = 4;
+pub(in crate::cipher::aes) const STATE_ROWS: usize = 4;
 
 /// Number of columns in the AES state.
 ///
 /// FIPS 197 §2.3 assigns `Nb = 4`, and §3.4 fixes column index `c` to `0 <= c < 4`.
-pub(super) const STATE_COLUMNS: usize = 4;
+pub(in crate::cipher::aes) const STATE_COLUMNS: usize = 4;
 
 /// Size of every AES input and output block in bytes.
 ///
 /// FIPS 197 §3.1 specifies a 128-bit block. Using `[u8; BLOCK_LEN]` makes a partial or oversized
 /// block unrepresentable at this layer.
-pub(super) const BLOCK_LEN: usize = 16;
+pub(in crate::cipher::aes) const BLOCK_LEN: usize = 16;
 
 /// AES's internal four-by-four byte state.
 ///
@@ -43,7 +43,7 @@ pub(super) const BLOCK_LEN: usize = 16;
 ///
 /// The type remains private so the public API cannot bypass the exact-size block boundary or
 /// couple callers to this explanatory storage layout.
-pub(super) struct State {
+pub(in crate::cipher::aes) struct State {
     rows: [[u8; STATE_COLUMNS]; STATE_ROWS],
 }
 
@@ -54,7 +54,7 @@ impl State {
     /// columns, not rows. For example, bytes `0`, `1`, `2`, and `3` become `s[0,0]`, `s[1,0]`,
     /// `s[2,0]`, and `s[3,0]`; byte `4` begins the second column at `s[0,1]`.
     #[must_use]
-    pub(super) fn from_block(input: &[u8; BLOCK_LEN]) -> Self {
+    pub(in crate::cipher::aes) fn from_block(input: &[u8; BLOCK_LEN]) -> Self {
         let mut rows = [[0_u8; STATE_COLUMNS]; STATE_ROWS];
 
         for column in 0..STATE_COLUMNS {
@@ -70,7 +70,7 @@ impl State {
     ///
     /// Every output position is overwritten. The same `row + 4 * column` index used while
     /// loading makes the operation the exact inverse representation mapping.
-    pub(super) fn write_block(&self, output: &mut [u8; BLOCK_LEN]) {
+    pub(in crate::cipher::aes) fn write_block(&self, output: &mut [u8; BLOCK_LEN]) {
         for column in 0..STATE_COLUMNS {
             for row in 0..STATE_ROWS {
                 output[row + STATE_ROWS * column] = self.rows[row][column];
@@ -83,7 +83,7 @@ impl State {
     /// This private-layer accessor keeps the underlying row-major Rust storage from leaking into
     /// a transformation's indexing equations. AES layers call it only with indices in `0..4`.
     #[must_use]
-    pub(super) fn byte(&self, row: usize, column: usize) -> u8 {
+    pub(in crate::cipher::aes) fn byte(&self, row: usize, column: usize) -> u8 {
         self.rows[row][column]
     }
 
@@ -91,7 +91,7 @@ impl State {
     ///
     /// AES transformations call this only with indices in `0..4`; the fixed-size arrays retain a
     /// bounds check if an internal indexing error is introduced.
-    pub(super) fn set_byte(&mut self, row: usize, column: usize, value: u8) {
+    pub(in crate::cipher::aes) fn set_byte(&mut self, row: usize, column: usize, value: u8) {
         self.rows[row][column] = value;
     }
 }

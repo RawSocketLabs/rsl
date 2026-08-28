@@ -3,7 +3,8 @@
 //! # What GCM protects
 //!
 //! Galois/Counter Mode (GCM) is an authenticated-encryption-with-associated-data construction
-//! specified by [NIST SP 800-38D][sp-800-38d]. This profile combines AES-128 with:
+//! specified by [NIST SP 800-38D][sp-800-38d]. This profile combines AES-128 with (and
+//! [`Aes256Gcm`] combines AES-256 with, through the same private layers):
 //!
 //! - a dedicated 16-byte secret [`Aes128GcmKey`];
 //! - a 12-byte [`Aes128GcmNonce`] that must be unique for every encryption under that key; and
@@ -187,7 +188,9 @@
 //! [sp-800-38d]: https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-38d.pdf
 
 mod api;
+mod api256;
 mod authentication;
+mod block_cipher;
 mod counter;
 mod gctr;
 mod ghash;
@@ -198,6 +201,7 @@ mod setup;
 mod tag;
 
 pub use api::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
+pub use api256::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag};
 
 /// Current project lifecycle classification for the supported full-tag AES-128-GCM profile.
 pub const SECURITY_STATUS: crate::security::SecurityStatus =

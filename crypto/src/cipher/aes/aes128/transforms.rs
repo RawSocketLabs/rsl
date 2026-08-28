@@ -138,7 +138,7 @@ fn inverse_mix_column(mut input: [u8; STATE_ROWS]) -> [u8; STATE_ROWS] {
 /// `SBOX(s[r, c])`. The nested loops visit every permitted `r` and `c` exactly once. Reading the
 /// old byte into a named value before replacement makes the non-crossing, byte-independent nature
 /// of this transformation explicit.
-pub(super) fn sub_bytes(state: &mut State) {
+pub(in crate::cipher::aes) fn sub_bytes(state: &mut State) {
     for row in 0..STATE_ROWS {
         for column in 0..STATE_COLUMNS {
             let original_byte = state.byte(row, column);
@@ -154,7 +154,7 @@ pub(super) fn sub_bytes(state: &mut State) {
 /// **Standard mapping:** FIPS 197 §5.3.2 defines `INVSUBBYTES()` as replacement of every state
 /// byte with `INVSBOX()`. The traversal mirrors [`sub_bytes`] and delegates the individual
 /// calculation to the exhaustively Table-6-tested inverse substitution layer.
-pub(super) fn inverse_sub_bytes(state: &mut State) {
+pub(in crate::cipher::aes) fn inverse_sub_bytes(state: &mut State) {
     for row in 0..STATE_ROWS {
         for column in 0..STATE_COLUMNS {
             let original_byte = state.byte(row, column);
@@ -175,7 +175,7 @@ pub(super) fn inverse_sub_bytes(state: &mut State) {
 ///
 /// The temporary row may contain sensitive intermediate state and is explicitly zeroized after
 /// its four output positions have been written.
-pub(super) fn shift_rows(state: &mut State) {
+pub(in crate::cipher::aes) fn shift_rows(state: &mut State) {
     for row in 0..STATE_ROWS {
         let mut original_row: [u8; STATE_COLUMNS] =
             core::array::from_fn(|column| state.byte(row, column));
@@ -195,7 +195,7 @@ pub(super) fn shift_rows(state: &mut State) {
 /// `s'[r,c] = s[r,(c-r) mod 4]`. Adding four before subtracting `row` keeps the Rust `usize`
 /// expression nonnegative; the final remainder implements the standard's modulo-four index.
 /// Each temporary row is zeroized after all four outputs are installed.
-pub(super) fn inverse_shift_rows(state: &mut State) {
+pub(in crate::cipher::aes) fn inverse_shift_rows(state: &mut State) {
     for row in 0..STATE_ROWS {
         let mut original_row: [u8; STATE_COLUMNS] =
             core::array::from_fn(|column| state.byte(row, column));
@@ -218,7 +218,7 @@ pub(super) fn inverse_shift_rows(state: &mut State) {
 ///
 /// Both temporary input and output columns may contain sensitive intermediate values. The helper
 /// zeroizes the input copy, and this function zeroizes the output copy after writing it to state.
-pub(super) fn mix_columns(state: &mut State) {
+pub(in crate::cipher::aes) fn mix_columns(state: &mut State) {
     for column in 0..STATE_COLUMNS {
         let original_column: [u8; STATE_ROWS] = core::array::from_fn(|row| state.byte(row, column));
         let mut mixed_column = mix_column(original_column);
@@ -236,7 +236,7 @@ pub(super) fn mix_columns(state: &mut State) {
 /// **Standard mapping:** FIPS 197 §5.3.3 equations 5.13–5.15 give the inverse matrix and its four
 /// output equations. Column traversal and temporary zeroization mirror [`mix_columns`], while
 /// [`inverse_mix_column`] owns the different coefficients.
-pub(super) fn inverse_mix_columns(state: &mut State) {
+pub(in crate::cipher::aes) fn inverse_mix_columns(state: &mut State) {
     for column in 0..STATE_COLUMNS {
         let original_column: [u8; STATE_ROWS] = core::array::from_fn(|row| state.byte(row, column));
         let mut mixed_column = inverse_mix_column(original_column);
@@ -258,7 +258,7 @@ pub(super) fn inverse_mix_columns(state: &mut State) {
 ///
 /// Every state position is replaced exactly once. The round key is borrowed and unchanged so one
 /// expanded schedule can protect multiple blocks later.
-pub(super) fn add_round_key(state: &mut State, round_key: &RoundKey) {
+pub(in crate::cipher::aes) fn add_round_key(state: &mut State, round_key: &RoundKey) {
     for column in 0..STATE_COLUMNS {
         for row in 0..STATE_ROWS {
             let state_byte = state.byte(row, column);

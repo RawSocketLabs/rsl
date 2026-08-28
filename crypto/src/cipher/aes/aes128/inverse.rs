@@ -15,14 +15,10 @@
 //! [fips-197]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
 use super::{
-    key::RoundKey,
-    key_schedule::KeySchedule,
+    key::{RoundKey, RoundKeySource},
     state::{BLOCK_LEN, State},
     transforms::{add_round_key, inverse_mix_columns, inverse_shift_rows, inverse_sub_bytes},
 };
-
-/// Number of rounds in AES-128 according to FIPS 197 Table 3.
-const ROUND_COUNT: usize = 10;
 
 /// Apply one complete inverse round for round indices nine through one.
 ///
@@ -46,13 +42,16 @@ fn apply_final_inverse_round(state: &mut State, round_key: &RoundKey) {
 }
 
 /// Apply FIPS 197 `INVCIPHER()` to one block in place with an expanded AES-128 key.
-pub(super) fn decrypt_block(block: &mut [u8; BLOCK_LEN], schedule: &KeySchedule) {
+pub(in crate::cipher::aes) fn decrypt_block<S: RoundKeySource>(
+    block: &mut [u8; BLOCK_LEN],
+    schedule: &S,
+) {
     let mut state = State::from_block(block);
-    let final_round_key = schedule.round_key(ROUND_COUNT);
+    let final_round_key = schedule.round_key(S::ROUND_COUNT);
 
     add_round_key(&mut state, &final_round_key);
 
-    for round in (1..ROUND_COUNT).rev() {
+    for round in (1..S::ROUND_COUNT).rev() {
         let round_key = schedule.round_key(round);
         apply_complete_inverse_round(&mut state, &round_key);
     }
@@ -64,7 +63,7 @@ pub(super) fn decrypt_block(block: &mut [u8; BLOCK_LEN], schedule: &KeySchedule)
 
 #[cfg(test)]
 mod unit {
-    use super::{KeySchedule, decrypt_block};
+    use super::{super::key_schedule::KeySchedule, decrypt_block};
     use crate::cipher::aes::aes128::forward::encrypt_block;
 
     /// Published complete inverse-cipher evidence from FIPS 197-upd1 Appendix B.

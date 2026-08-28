@@ -745,6 +745,18 @@ evidence are listed here. Baselines re-checked 2026-08-28.
 | FIPS 198-1 §2.3, Table 1 (B = 128, L = 48) | HMAC over SHA-384: 128-byte `K0`, hash keys longer than 128 bytes to 48. | `hmac::sha384::{key, state}`; Table 1 step tests (long-key digest from the `sha2` oracle, labeled differential); RFC 4231 §4.2–§4.8 cases 1–7 (case 5 as a 128-bit prefix); streaming, verification, and differential `hmac` cases. | Implemented and tested. |
 | RFC 5869 §2.2–§2.3 (HashLen = 48) | HKDF-Extract and HKDF-Expand with HMAC-SHA-384; `L <= 255 · 48 = 12,240`. | `hkdf::sha384::{extract, expand, derive}`; all 83 Wycheproof `hkdf_sha384` cases (80 valid, 3 over-length rejected atomically); 12,240-byte boundary; differential `hkdf` cases. RFC 5869 publishes no SHA-384 vectors. | Implemented and tested. |
 
+## AES-256 and AES-256-GCM
+
+These profiles reuse the FIPS 197-upd1 and SP 800-38D baselines recorded above; only the deltas
+are listed. Baselines re-checked 2026-08-28.
+
+| Location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| FIPS 197 §5.2 Algorithm 2, `Nk = 8` | Key expansion to 60 words; `SUBWORD(ROTWORD())` with `Rcon` every eight words and the AES-256-only `SUBWORD()` when `i mod 8 = 4`. | `aes256::key_schedule::KeySchedule::expand`; all 60 Appendix A.3 words white-box. | Implemented and tested. |
+| FIPS 197 Table 3, Algorithms 1 and 3, `Nr = 14` | Fourteen rounds over the unchanged state, transformations, and S-box. | `aes128::{forward, inverse}` made generic over `RoundKeySource`; `Aes256` supplies `ROUND_COUNT = 14`. All four `AES_Core256.pdf` blocks both directions; differential `aes::Aes256`. | Implemented and tested. |
+| SP 800-38D §5.1 | GCM over any approved 128-bit block cipher using only `CIPH_K`. | Crate-private `gcm::block_cipher::GcmBlockCipher` implemented for `Aes128` and `Aes256`; GCTR, hash-subkey, tag, seal, and open layers are generic over it. AES-128 evidence unchanged. | Implemented and tested. |
+| SP 800-38D §7–§8 (256-bit key) | Same 96-bit-IV, 128-bit-tag profile with a 32-byte key. | `gcm::api256::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag}`; NIST GCM-AES256 Examples 1–5 (seal, open, changed tag); 105 Wycheproof 256-bit cases (39 valid re-sealed byte-exact, 27 invalid, 39 non-96-bit nonces refused); 32 differential `aes-gcm` cases. | Implemented and tested. |
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

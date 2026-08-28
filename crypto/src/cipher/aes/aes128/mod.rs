@@ -106,10 +106,10 @@
 
 mod api;
 mod field;
-mod forward;
-mod inverse;
-mod key;
-mod key_schedule;
+pub(in crate::cipher::aes) mod forward;
+pub(in crate::cipher::aes) mod inverse;
+pub(in crate::cipher::aes) mod key;
+pub(in crate::cipher::aes) mod key_schedule;
 mod state;
 mod substitution;
 mod transforms;

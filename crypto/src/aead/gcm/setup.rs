@@ -32,8 +32,8 @@
 
 use zeroize::Zeroize;
 
+use super::block_cipher::GcmBlockCipher;
 use super::{counter::CounterBlock, ghash::HashSubkey};
-use crate::cipher::aes::aes128::{Aes128, Aes128Block};
 
 /// Number of bytes in GCM's directly supported 96-bit IV profile.
 const IV_BYTES: usize = 12;
@@ -112,17 +112,17 @@ impl Drop for PreCounterBlock {
 
 /// Derive `H = CIPH_K(0^128)` into its distinct secret owner.
 #[must_use]
-pub(super) fn derive_hash_subkey(cipher: &Aes128) -> HashSubkey {
-    let mut encrypted_zero = Aes128Block::new([0_u8; BLOCK_BYTES]);
-    cipher.encrypt_block(&mut encrypted_zero);
+pub(super) fn derive_hash_subkey<C: GcmBlockCipher>(cipher: &C) -> HashSubkey {
+    let mut encrypted_zero = [0_u8; BLOCK_BYTES];
+    cipher.encrypt_block_in_place(&mut encrypted_zero);
 
-    HashSubkey::new(encrypted_zero.into_bytes())
+    HashSubkey::new(encrypted_zero)
 }
 
 #[cfg(test)]
 mod unit {
-    use super::{Aes128, GcmIv96, PreCounterBlock, derive_hash_subkey};
-    use crate::cipher::aes::aes128::Aes128Key;
+    use super::{GcmIv96, PreCounterBlock, derive_hash_subkey};
+    use crate::cipher::aes::aes128::{Aes128, Aes128Key};
 
     /// Construct the common AES key from NIST `AES_GCM.pdf` GCM-AES128 Examples 1–6.
     fn nist_example_cipher() -> Aes128 {

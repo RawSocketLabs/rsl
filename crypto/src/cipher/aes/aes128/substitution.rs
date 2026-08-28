@@ -82,7 +82,7 @@ const fn affine_transform(inverse: u8) -> u8 {
 /// case), and equation 5.3 transforms that inverse into the substituted byte. Keeping these two
 /// calls separate preserves the composition that the standard describes.
 #[must_use]
-pub(super) const fn substitute_byte(byte: u8) -> u8 {
+pub(in crate::cipher::aes) const fn substitute_byte(byte: u8) -> u8 {
     let inverse = multiplicative_inverse_or_zero(byte);
 
     affine_transform(inverse)
@@ -106,7 +106,7 @@ const fn inverse_affine_transform(byte: u8) -> u8 {
 /// transform, then uses the self-inverse field-inversion operation from equation 5.2. Zero follows
 /// the same explicit zero-to-zero field boundary.
 #[must_use]
-pub(super) const fn inverse_substitute_byte(byte: u8) -> u8 {
+pub(in crate::cipher::aes) const fn inverse_substitute_byte(byte: u8) -> u8 {
     let inverse_affine = inverse_affine_transform(byte);
 
     multiplicative_inverse_or_zero(inverse_affine)

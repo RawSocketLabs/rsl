@@ -15,9 +15,12 @@
 //! independent differential comparison were added. Export records that initial evidence
 //! milestone; it is not a production-security or side-channel-resistance claim.
 //!
+//! [`aes256`] adds the fourteen-round key size over the same layers.
+//!
 //! Start with [`aes128`] for a guided explanation of the 4-by-4 byte state, key expansion,
 //! forward and inverse rounds, and the boundary between raw AES and AES-GCM.
 //!
 //! [fips-197]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
 pub mod aes128;
+pub mod aes256;

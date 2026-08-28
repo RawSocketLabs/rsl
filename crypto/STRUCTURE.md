@@ -28,6 +28,7 @@ rsl-crypto/
 │   ├── kdf/hkdf/sha384/           HKDF-SHA-384 Extract/Expand layers (HashLen = 48)
 │   ├── cipher.rs                  block and stream cipher contracts
 │   ├── cipher/aes/aes128/         public AES-128 boundary over private specification layers
+│   ├── cipher/aes/aes256/         AES-256 key schedule and boundary over the shared AES layers
 │   ├── cipher/chacha20/quarter_round.rs RFC 8439 §2.1–§2.2 quarter round
 │   ├── cipher/chacha20/block.rs   §2.3 state and block function
 │   ├── cipher/chacha20/api.rs     typed key/nonce, §2.4 keystream, stateful stream contract
@@ -39,6 +40,8 @@ rsl-crypto/
 │   ├── aead/chacha20poly1305/limits.rs counter-derived payload limit
 │   ├── aead/chacha20poly1305/api.rs typed AEAD key/nonce/tag and `Aead` contract
 │   ├── aead/gcm/api.rs            public typed AES-128-GCM profile
+│   ├── aead/gcm/api256.rs         public typed AES-256-GCM profile
+│   ├── aead/gcm/block_cipher.rs   private `CIPH_K` trait over AES-128 and AES-256
 │   ├── aead/gcm/counter.rs        private SP 800-38D `inc32` counter operation
 │   ├── aead/gcm/gctr.rs           private byte-aligned GCTR composition
 │   ├── aead/gcm/setup.rs          private hash-subkey and 96-bit-IV setup
@@ -92,6 +95,9 @@ rsl-crypto/
 │   ├── vectors/aes-128/           FIPS 197 and NIST AES vector provenance
 │   ├── aes128_gcm.rs              public AES-128-GCM integration-test harness
 │   ├── aes128_gcm/                known-answer, failure, and differential tests
+│   ├── aes256.rs                  NIST core blocks and differential AES-256 evidence
+│   ├── vectors/aes-256/           FIPS 197 A.3 and AES_Core256 provenance
+│   ├── aes256_gcm.rs, aes256_gcm/ NIST GCM-AES256, Wycheproof, and differential evidence
 │   ├── x25519.rs                  public X25519 integration-test harness
 │   ├── x25519/                    known-answer, boundary, and differential tests
 │   ├── vectors/ghash/             SP 800-38D GHASH evidence provenance

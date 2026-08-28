@@ -39,6 +39,7 @@
     )
 )]
 
+use super::block_cipher::GcmBlockCipher;
 use super::{
     authentication::calculate_s,
     gctr,
@@ -46,7 +47,7 @@ use super::{
     setup::{GcmIv96, PreCounterBlock, derive_hash_subkey},
     tag::{self, FullTag},
 };
-use crate::{Result, cipher::aes::aes128::Aes128};
+use crate::Result;
 use alloc::vec::Vec;
 
 /// Ciphertext and a detached full tag produced by the private GCM composition.
@@ -84,8 +85,8 @@ impl EncryptionResult {
 ///
 /// Returns [`crate::CryptoError::MessageTooLong`] before transformation if the AAD or plaintext
 /// exceeds the limits defined by SP 800-38D §5.2.1.1.
-pub(super) fn seal(
-    cipher: &Aes128,
+pub(super) fn seal<C: GcmBlockCipher>(
+    cipher: &C,
     iv: &GcmIv96,
     associated_data: &[u8],
     plaintext: &[u8],
@@ -114,7 +115,8 @@ pub(super) fn seal(
 
 #[cfg(test)]
 mod unit {
-    use super::{Aes128, GcmIv96, seal};
+    use super::{GcmIv96, seal};
+    use crate::cipher::aes::aes128::Aes128;
     use crate::cipher::aes::aes128::Aes128Key;
 
     const PLAINTEXT: [u8; 64] = [

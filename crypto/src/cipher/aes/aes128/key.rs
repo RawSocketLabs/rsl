@@ -34,7 +34,20 @@ const WORD_BYTES: usize = 4;
 /// `words[column][row]` is arranged deliberately: FIPS 197 equation 3.8 makes the word index the
 /// state column and the byte-within-word index the state row. This lets `ADDROUNDKEY()` visibly
 /// combine state `s[row, column]` with `words[column][row]`.
-pub(super) struct RoundKey {
+/// A source of FIPS 197 round keys: the expanded schedule of one AES key size.
+///
+/// `ROUND_COUNT` is `Nr` from FIPS 197 Table 3 (10 for AES-128, 14 for AES-256); `round_key(0)`
+/// is the pre-round key and `round_key(ROUND_COUNT)` the final-round key. The shared
+/// `CIPHER()`/`INVCIPHER()` bodies are generic over this trait so each key size supplies only its
+/// own key expansion.
+pub(in crate::cipher::aes) trait RoundKeySource {
+    /// `Nr`, the number of rounds.
+    const ROUND_COUNT: usize;
+    /// Copy round key `round` into a distinct zeroizing value.
+    fn round_key(&self, round: usize) -> RoundKey;
+}
+
+pub(in crate::cipher::aes) struct RoundKey {
     words: [[u8; WORD_BYTES]; WORDS_PER_ROUND_KEY],
 }
 
@@ -46,7 +59,7 @@ impl RoundKey {
     /// mapping without integer reinterpretation or host-endian behavior.
     #[cfg(test)]
     #[must_use]
-    pub(super) fn from_block(key: &[u8; BLOCK_LEN]) -> Self {
+    pub(in crate::cipher::aes) fn from_block(key: &[u8; BLOCK_LEN]) -> Self {
         let words = core::array::from_fn(|word_index| {
             core::array::from_fn(|byte_index| key[word_index * WORD_BYTES + byte_index])
         });
@@ -60,7 +73,9 @@ impl RoundKey {
     /// slice `w[4 * round..4 * round + 3]`. [`super::key_schedule::KeySchedule`] uses this
     /// constructor to give the state transform a distinct, zeroizing copy of exactly that slice.
     #[must_use]
-    pub(super) fn from_words(words: [[u8; WORD_BYTES]; WORDS_PER_ROUND_KEY]) -> Self {
+    pub(in crate::cipher::aes) fn from_words(
+        words: [[u8; WORD_BYTES]; WORDS_PER_ROUND_KEY],
+    ) -> Self {
         Self { words }
     }
 
@@ -69,7 +84,7 @@ impl RoundKey {
     /// `ADDROUNDKEY()` supplies the state column as `word_index` and the state row as
     /// `byte_index`, matching FIPS 197 equations 3.8 and 5.9.
     #[must_use]
-    pub(super) fn byte(&self, word_index: usize, byte_index: usize) -> u8 {
+    pub(in crate::cipher::aes) fn byte(&self, word_index: usize, byte_index: usize) -> u8 {
         self.words[word_index][byte_index]
     }
 }

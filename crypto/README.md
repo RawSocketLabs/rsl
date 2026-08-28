@@ -27,7 +27,9 @@ first raw block-cipher API now exposes distinct [`Aes128Key`](src/cipher/aes/aes
 transformation layers. The first authenticated-encryption API exposes distinct
 [`Aes128GcmKey`](src/aead/gcm/api.rs), [`Aes128GcmNonce`](src/aead/gcm/api.rs),
 [`Aes128GcmTag`](src/aead/gcm/api.rs), and [`Aes128Gcm`](src/aead/gcm/api.rs) types for the
-SP 800-38D profile with a 96-bit nonce and full 128-bit tag. The RFC 8439 family adds [`ChaCha20`](src/cipher/chacha20/api.rs) (with a stateful
+SP 800-38D profile with a 96-bit nonce and full 128-bit tag, and
+[`Aes256`](src/cipher/aes/aes256/api.rs) / [`Aes256Gcm`](src/aead/gcm/api256.rs) as the
+fourteen-round profiles over the same layers. The RFC 8439 family adds [`ChaCha20`](src/cipher/chacha20/api.rs) (with a stateful
 [`ChaCha20Stream`](src/cipher/chacha20/api.rs)), [`Poly1305`](src/mac/poly1305/api.rs), and
 [`ChaCha20Poly1305`](src/aead/chacha20poly1305/api.rs) behind the same `Aead` contract as GCM.
 The first key-agreement API exposes
@@ -69,7 +71,9 @@ evidence, context-length and cross-variant rejection, deterministic and generic 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures. SHA-384 adds NIST examples (including the two discarded words), CAVP boundary lengths, and
+signatures. AES-256 adds all 60 Appendix A.3 words, the four NIST core blocks, and differential cases;
+AES-256-GCM adds NIST GCM-AES256 Examples 1–5, 105 Wycheproof cases, and 32 differential cases.
+SHA-384 adds NIST examples (including the two discarded words), CAVP boundary lengths, and
 differential cases; HMAC-SHA-384 adds RFC 4231 cases 1–7; HKDF-SHA-384 adds all 83 Wycheproof
 cases. ChaCha20-Poly1305 adds every RFC 8439 body intermediate, all Appendix A vectors, all 325
 Wycheproof cases, per-byte tampering, and 32 differential cases. RSASSA-PSS adds all 18 CAVP SigVer and 10 CAVP SigGen 2048/SHA-256 cases and all 108

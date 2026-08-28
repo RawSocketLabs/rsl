@@ -39,6 +39,7 @@
 
 use alloc::vec::Vec;
 
+use super::block_cipher::GcmBlockCipher;
 use super::{
     authentication::calculate_s,
     gctr,
@@ -46,7 +47,7 @@ use super::{
     setup::{GcmIv96, PreCounterBlock, derive_hash_subkey},
     tag,
 };
-use crate::{Result, cipher::aes::aes128::Aes128};
+use crate::Result;
 
 /// Authenticate and decrypt one byte-oriented input under the private 96-bit-IV profile.
 ///
@@ -56,8 +57,8 @@ use crate::{Result, cipher::aes::aes128::Aes128};
 /// exceeds the limits defined by SP 800-38D §5.2.1.1. Returns
 /// [`crate::CryptoError::AuthenticationFailed`] without allocating or transforming plaintext when
 /// the received tag does not authenticate the exact IV, AAD, and ciphertext.
-pub(super) fn open(
-    cipher: &Aes128,
+pub(super) fn open<C: GcmBlockCipher>(
+    cipher: &C,
     iv: &GcmIv96,
     associated_data: &[u8],
     ciphertext: &[u8],
@@ -85,7 +86,8 @@ pub(super) fn open(
 
 #[cfg(test)]
 mod unit {
-    use super::{Aes128, GcmIv96, open};
+    use super::{GcmIv96, open};
+    use crate::cipher::aes::aes128::Aes128;
     use crate::{CryptoError, cipher::aes::aes128::Aes128Key};
 
     const PLAINTEXT: [u8; 64] = [

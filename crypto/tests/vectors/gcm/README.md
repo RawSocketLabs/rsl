@@ -80,3 +80,19 @@ ciphertext from opening.
   129-byte multi-block value.
 
 The oracle is a development dependency only. Production `rsl-crypto` code does not call it.
+
+## GCM-AES256 examples
+
+- **Document:** the same `AES_GCM.pdf`, section *GCM-AES256*, Examples 1–5 (`K`, `IV`, `A`,
+  `P`, `C`, `Tag`), copied mechanically into `tests/aes256_gcm/nist_fixtures.rs`. Example 6
+  publishes a 96-bit tag and is outside the full-tag profile, so it is not used.
+- **Checked:** 2026-08-28.
+
+## Project Wycheproof (256-bit keys)
+
+- **File:** `testvectors_v1/aes_gcm_test.json` from <https://github.com/C2SP/wycheproof>.
+- **SHA-256 of file as downloaded 2026-08-28 from the `master` branch:**
+  `985e5ecc172e181eaf49e89508b9470dcf478002eb7e8559c707eb42dc97dfe7`.
+- **Cases:** the 105 cases in groups with `keySize = 256` (39 valid and 27 invalid with 96-bit
+  nonces; the remaining groups use other nonce sizes, which the typed 96-bit nonce refuses).
+- **License:** Apache License 2.0.

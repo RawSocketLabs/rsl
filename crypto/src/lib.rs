@@ -35,8 +35,10 @@
 //!    identity and deterministic signatures from a private seed.
 //! 7. [`Aes128`](cipher::aes::aes128::Aes128) exposes the raw 128-bit block permutation for
 //!    studying AES rounds. It is deliberately not a message-encryption API.
-//! 8. [`Aes128Gcm`](aead::gcm::Aes128Gcm) composes AES, counter mode, and GHASH into
-//!    authenticated encryption with associated data.
+//!    [`Aes256`](cipher::aes::aes256::Aes256) shows that only the key schedule and round count
+//!    change with key size.
+//! 8. [`Aes128Gcm`](aead::gcm::Aes128Gcm) and [`Aes256Gcm`](aead::gcm::Aes256Gcm) compose AES,
+//!    counter mode, and GHASH into authenticated encryption with associated data.
 //!    [`ChaCha20Poly1305`](aead::chacha20poly1305::ChaCha20Poly1305) reaches the same contract
 //!    from a stream cipher ([`ChaCha20`](cipher::chacha20::ChaCha20)) and a one-time
 //!    authenticator ([`Poly1305`](mac::poly1305::Poly1305)).

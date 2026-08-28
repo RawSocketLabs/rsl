@@ -18,14 +18,10 @@
 //! [fips-197]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
 use super::{
-    key::RoundKey,
-    key_schedule::KeySchedule,
+    key::{RoundKey, RoundKeySource},
     state::{BLOCK_LEN, State},
     transforms::{add_round_key, mix_columns, shift_rows, sub_bytes},
 };
-
-/// Number of rounds in AES-128 according to FIPS 197 Table 3.
-const ROUND_COUNT: usize = 10;
 
 /// Apply one of AES-128's nine complete forward rounds.
 ///
@@ -54,25 +50,28 @@ fn apply_final_round(state: &mut State, round_key: &RoundKey) {
 /// **Standard mapping:** state loading is Algorithm 1 line 2; round-key zero is line 3; the loop
 /// covers rounds one through nine; the named final-round helper covers round ten; and
 /// [`State::write_block`] implements line 13 through §3.4 equation 3.7.
-pub(super) fn encrypt_block(block: &mut [u8; BLOCK_LEN], schedule: &KeySchedule) {
+pub(in crate::cipher::aes) fn encrypt_block<S: RoundKeySource>(
+    block: &mut [u8; BLOCK_LEN],
+    schedule: &S,
+) {
     let mut state = State::from_block(block);
     let initial_round_key = schedule.round_key(0);
 
     add_round_key(&mut state, &initial_round_key);
 
-    for round in 1..ROUND_COUNT {
+    for round in 1..S::ROUND_COUNT {
         let round_key = schedule.round_key(round);
         apply_complete_round(&mut state, &round_key);
     }
 
-    let final_round_key = schedule.round_key(ROUND_COUNT);
+    let final_round_key = schedule.round_key(S::ROUND_COUNT);
     apply_final_round(&mut state, &final_round_key);
     state.write_block(block);
 }
 
 #[cfg(test)]
 mod unit {
-    use super::{KeySchedule, encrypt_block};
+    use super::{super::key_schedule::KeySchedule, encrypt_block};
 
     /// Published complete-cipher evidence from FIPS 197-upd1 Appendix B.
     #[test]

@@ -24,7 +24,7 @@ use zeroize::Zeroize;
 const WORD_BYTES: usize = 4;
 
 /// One transient key-schedule word in the byte order printed by FIPS 197.
-type Word = [u8; WORD_BYTES];
+pub(in crate::cipher::aes) type Word = [u8; WORD_BYTES];
 
 /// Number of input-key words in AES-128, called `Nk` by FIPS 197.
 const KEY_WORDS: usize = 4;
@@ -45,7 +45,7 @@ const EXPANDED_WORDS: usize = WORD_BYTES * ROUND_KEY_COUNT;
 /// Array index zero represents the standard's one-based `Rcon[1]`. Only the leftmost byte is
 /// nonzero; Table 5 defines it as `x^(j-1)` in `GF(2^8)` for `1 <= j <= 10`. Literal published
 /// values keep this transcription reviewable independently from the field arithmetic layer.
-const ROUND_CONSTANTS: [Word; 10] = [
+pub(in crate::cipher::aes) const ROUND_CONSTANTS: [Word; 10] = [
     [0x01, 0x00, 0x00, 0x00],
     [0x02, 0x00, 0x00, 0x00],
     [0x04, 0x00, 0x00, 0x00],
@@ -64,7 +64,7 @@ const ROUND_CONSTANTS: [Word; 10] = [
 /// `ROTWORD([a0,a1,a2,a3]) = [a1,a2,a3,a0]`. The fixed array's `rotate_left(1)` operation is that
 /// byte permutation exactly; it does not reinterpret the word as an endian-dependent integer.
 #[must_use]
-fn rotate_word(mut word: Word) -> Word {
+pub(in crate::cipher::aes) fn rotate_word(mut word: Word) -> Word {
     word.rotate_left(1);
     word
 }
@@ -75,7 +75,7 @@ fn rotate_word(mut word: Word) -> Word {
 /// `SUBWORD([a0,...,a3]) = [SBOX(a0),...,SBOX(a3)]`. The loop preserves all four byte positions
 /// and calls the exhaustively Table-4-tested substitution layer independently at each one.
 #[must_use]
-fn substitute_word(mut word: Word) -> Word {
+pub(in crate::cipher::aes) fn substitute_word(mut word: Word) -> Word {
     for byte in &mut word {
         *byte = substitute_byte(*byte);
     }
@@ -91,7 +91,7 @@ fn substitute_word(mut word: Word) -> Word {
 ///
 /// Both input copies are transient secret material and are zeroized before the result is returned.
 #[must_use]
-fn add_words(mut left: Word, mut right: Word) -> Word {
+pub(in crate::cipher::aes) fn add_words(mut left: Word, mut right: Word) -> Word {
     let result = core::array::from_fn(|byte_index| add(left[byte_index], right[byte_index]));
 
     left.zeroize();
@@ -156,6 +156,14 @@ impl KeySchedule {
         let words = core::array::from_fn(|offset| self.words[first_word + offset]);
 
         RoundKey::from_words(words)
+    }
+}
+
+impl super::key::RoundKeySource for KeySchedule {
+    const ROUND_COUNT: usize = ROUND_COUNT;
+
+    fn round_key(&self, round: usize) -> RoundKey {
+        Self::round_key(self, round)
     }
 }
 

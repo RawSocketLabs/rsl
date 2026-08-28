@@ -20,7 +20,8 @@
 //!
 //! ## Representation and lifetime
 //!
-//! [`CounterBlock`] retains counter semantics until each block is copied into an [`Aes128Block`].
+//! [`CounterBlock`] retains counter semantics until each block is encrypted in place through
+//! the private `CIPH_K` trait.
 //! The AES block then owns and clears the counter or keystream bytes when dropped. The caller owns
 //! the transformed slice and remains responsible for its lifetime and destruction.
 //!
@@ -34,8 +35,7 @@
     )
 )]
 
-use super::counter::CounterBlock;
-use crate::cipher::aes::aes128::{Aes128, Aes128Block};
+use super::{block_cipher::GcmBlockCipher, counter::CounterBlock};
 
 /// Number of bytes transformed by one AES counter block.
 const BLOCK_BYTES: usize = 16;
@@ -46,18 +46,20 @@ const BLOCK_BYTES: usize = 16;
 /// the supplied counter unchanged; incrementing happens immediately before each later chunk. For
 /// the final partial chunk, `zip` consumes only the leftmost cipher-output bytes required by
 /// Algorithm 3 step 7.
-pub(super) fn apply(cipher: &Aes128, mut counter: CounterBlock, input_output: &mut [u8]) {
+pub(super) fn apply<C: GcmBlockCipher>(
+    cipher: &C,
+    mut counter: CounterBlock,
+    input_output: &mut [u8],
+) {
     for (block_index, chunk) in input_output.chunks_mut(BLOCK_BYTES).enumerate() {
         if block_index != 0 {
             counter.increment();
         }
 
-        let mut encrypted_counter = Aes128Block::new(*counter.as_block());
-        cipher.encrypt_block(&mut encrypted_counter);
+        let mut encrypted_counter = *counter.as_block();
+        cipher.encrypt_block_in_place(&mut encrypted_counter);
 
-        for (data_byte, key_stream_byte) in
-            chunk.iter_mut().zip(encrypted_counter.as_bytes().iter())
-        {
+        for (data_byte, key_stream_byte) in chunk.iter_mut().zip(encrypted_counter.iter()) {
             *data_byte ^= key_stream_byte;
         }
     }
@@ -65,8 +67,8 @@ pub(super) fn apply(cipher: &Aes128, mut counter: CounterBlock, input_output: &m
 
 #[cfg(test)]
 mod unit {
-    use super::{Aes128, Aes128Block, CounterBlock, apply};
-    use crate::cipher::aes::aes128::Aes128Key;
+    use super::{CounterBlock, apply};
+    use crate::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 
     /// Construct NIST `AES_GCM.pdf`'s common GCM-AES128 example cipher and first counter block.
     fn nist_example_cipher_and_counter() -> (Aes128, CounterBlock) {
