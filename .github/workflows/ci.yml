@@ -19,8 +19,8 @@ env:
 
 jobs:
   # Detect what changed so we only run the jobs a change can actually affect. The heavy
-  # bnb-specific jobs (fuzz, public-api, no_std) run only when bitsandbytes changes, the crypto
-  # fuzz smoke run only when crypto changes; the
+  # bnb-specific jobs (fuzz and public-api) run only when bitsandbytes changes; no_std covers bnb
+  # and the certificate stack; the crypto fuzz smoke run only when crypto changes; the
   # workspace jobs run on any Rust/config change (skipped for docs-only pushes). A change to
   # this workflow itself trips every filter, so CI changes are always fully validated.
   changes:
@@ -30,6 +30,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       bnb: ${{ steps.filter.outputs.bnb }}
       crypto: ${{ steps.filter.outputs.crypto }}
+      pki: ${{ steps.filter.outputs.pki }}
       ffi: ${{ steps.filter.outputs.ffi }}
       rust_skills: ${{ steps.filter.outputs.rust_skills }}
     steps:
@@ -51,6 +52,9 @@ jobs:
               - '.github/workflows/ci.yml'
             crypto:
               - 'crypto/**'
+              - '.github/workflows/ci.yml'
+            pki:
+              - 'pki/**'
               - '.github/workflows/ci.yml'
             ffi:
               - 'usdr/**'
@@ -136,7 +140,7 @@ jobs:
   no_std:
     name: no_std (bare-metal target)
     needs: changes
-    if: needs.changes.outputs.bnb == 'true'
+    if: needs.changes.outputs.bnb == 'true' || needs.changes.outputs.pki == 'true'
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -146,6 +150,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p bitsandbytes --no-default-features
       - run: cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+      - run: cargo build -p rsl-asn1 -p rsl-x509 -p rsl-pki --target thumbv7em-none-eabi
 
   public-api:
     name: public-api (bitsandbytes surface unchanged)

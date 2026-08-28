@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/RawSocketLabs/rsl"
-description = "The RSL owned-library facade: a single, feature-gated re-export of the public libraries RawSocket Labs authors (codec, protocols, rawsock, rf, usdr)."
+description = "Feature-gated facade for RSL's codec, crypto, PKI, protocols, raw I/O, and RF crates."
 readme = "README.md"
 # Not published to a registry: it depends on the owned crates by `git`, which crates.io
 # forbids in a published package. Consumed directly as a git dependency by RSL application
@@ -19,9 +19,8 @@ publish = false
 # needs both depends on both.
 #
 # Every dependency is `optional`, so `rsl` compiles to nothing until a consumer opts into a
-# feature. Owned crates are `git` deps to their public RawSocketLabs repos, PINNED to an exact
-# `rev` for reproducibility — a push to a sibling's `main` cannot silently change or break
-# `rsl` (or any consumer). Bump a pin deliberately (`git ls-remote` → update the rev here).
+# feature. Owned crates use workspace `path` + `version` dependencies and are developed in
+# lockstep; published consumers may still select individual crates directly.
 # ---------------------------------------------------------------------------
 [dependencies]
 
@@ -37,6 +36,11 @@ rsl-crypto = { workspace = true, optional = true }
 rsl-crypto-legacy = { workspace = true, optional = true }
 rsl-compression = { workspace = true, optional = true }
 rsl-error-correction = { workspace = true, optional = true }
+
+# DER transport, X.509 syntax, and certificate-path validation.
+rsl-asn1 = { workspace = true, optional = true }
+rsl-x509 = { workspace = true, optional = true }
+rsl-pki = { workspace = true, optional = true }
 
 # Protocol implementations.
 ethertype = { path = "../protocols/link/ethertype", version = "0.2.2", optional = true }
@@ -62,7 +66,7 @@ default = []
 
 # ---- convenience bundles (owned libraries) --------------------------------
 # All the owned public libraries (excludes the FFI `usdr` — add it explicitly).
-full = ["net", "radio", "transforms"]
+full = ["net", "radio", "transforms", "pki"]
 # Build/parse/emit network traffic.
 net  = ["codec", "proto", "rawsock"]
 # RF parsing. (Add `usdr` explicitly for the FFI SDR bindings — needs a C++ toolchain.)
@@ -77,6 +81,10 @@ crypto = ["dep:rsl-crypto"]
 legacy-crypto = ["dep:rsl-crypto-legacy"]
 compression = ["dep:rsl-compression"]
 error-correction = ["dep:rsl-error-correction"]
+
+# Certificate stack. The facade exposes each layer; downstream users can still depend on an
+# individual crate directly when they do not want the bundle.
+pki = ["dep:rsl-asn1", "dep:rsl-x509", "dep:rsl-pki"]
 
 proto           = ["proto-ethertype", "proto-tcp", "proto-udp", "proto-dns"]
 proto-ethertype = ["dep:ethertype", "codec"]

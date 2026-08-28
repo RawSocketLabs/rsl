@@ -1,0 +1,15 @@
+[package]
+name = "rsl-x509"
+version = "0.1.0"
+description = "Borrowed X.509 certificate structures for the RSL stack."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[dependencies]
+rsl-asn1.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "rsl-pki"
+version = "0.1.0"
+description = "Fail-closed X.509 path validation for the RSL stack."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[dependencies]
+rsl-crypto.workspace = true
+rsl-x509.workspace = true
+
+[dev-dependencies]
+rsl-asn1.workspace = true
+
+[lints]
+workspace = true

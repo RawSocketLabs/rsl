@@ -1,0 +1,15 @@
+[package]
+name = "rsl-asn1"
+version = "0.1.0"
+description = "Strict, accuracy-first ASN.1 DER transport for the RSL stack."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[dependencies]
+bnb = { workspace = true, default-features = false }
+
+[lints]
+workspace = true

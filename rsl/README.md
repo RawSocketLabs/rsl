@@ -2,7 +2,8 @@
 
 A single, feature-gated re-export of the public libraries RSL **owns** — the codec,
 accuracy-first transformations, protocol implementations, raw-socket I/O, RF parsing, and SDR
-bindings. Depend on `rsl` to consume RSL's own products through one crate with unified versions.
+bindings, plus DER/X.509/PKI. Depend on `rsl` to consume RSL's own products through one crate with
+unified versions.
 
 ```toml
 [dependencies]
@@ -12,6 +13,8 @@ rsl = { git = "https://github.com/RawSocketLabs/rsl", features = ["net"] }
 ```rust
 use rsl::codec;        // bnb (bitsandbytes)
 use rsl::crypto;       // readable contemporary cryptographic foundations
+use rsl::{asn1, x509}; // DER transport and borrowed certificate syntax
+use rsl::pki;          // certificate-path and service-identity validation
 use rsl::proto::dns;   // owned protocol crate
 use rsl::rawsock;      // L2/L3/L4 raw-packet I/O
 ```
@@ -22,7 +25,8 @@ The RSL stack is split by concern — **what we own** vs. **what we rent**:
 
 - **`rsl`** (this crate) — the libraries we own, under semantic paths (`rsl::codec`,
   `rsl::crypto`, explicitly opt-in `rsl::crypto_legacy`, `rsl::compression`,
-  `rsl::error_correction`, `rsl::proto`, `rsl::rawsock`, `rsl::rf`, `rsl::usdr`).
+  `rsl::error_correction`, `rsl::asn1`, `rsl::x509`, `rsl::pki`, `rsl::proto`,
+  `rsl::rawsock`, `rsl::rf`, `rsl::usdr`).
 - **[`rsl-deps`](https://github.com/RawSocketLabs/rsl-deps)** — the blessed third-party crates
   (`rsl_deps::tokio`, `rsl_deps::serde`, …). The version-pinned "rented" half.
 - **`rsl-private`** — the private owned libraries (`sdr`, `dsdcc`), layered on `rsl`.
@@ -33,13 +37,16 @@ replace?" — and it makes the graduation below a clean, one-move change.
 
 ## Namespace map
 
-Owned crates, sourced by `git` (pinned rev) from their public `RawSocketLabs` repos:
+Owned crates, sourced from this lockstep workspace through `path` + `version` dependencies:
 
 | Path | Backed by | Feature |
 |------|-----------|---------|
 | `rsl::codec` | `bitsandbytes` (`bnb`) — bit-aware binary codec | `codec` |
 | `rsl::crypto` | `rsl-crypto` — cryptographic primitives and protection contracts | `crypto` |
 | `rsl::crypto_legacy` | `rsl-crypto-legacy` — historical/broken primitives; never bundled | `legacy-crypto` |
+| `rsl::asn1` | `rsl-asn1` — strict ASN.1 DER transport | `pki` |
+| `rsl::x509` | `rsl-x509` — borrowed certificate syntax | `pki` |
+| `rsl::pki` | `rsl-pki` — certificate-path and identity validation | `pki` |
 | `rsl::compression` | `rsl-compression` — stateful compression contracts | `compression` |
 | `rsl::error_correction` | `rsl-error-correction` — coding and correction reports | `error-correction` |
 | `rsl::proto::{ethertype,tcp,udp,dns}` | the `protocols` workspace | `proto` (or `proto-<name>`) |
@@ -48,8 +55,8 @@ Owned crates, sourced by `git` (pinned rev) from their public `RawSocketLabs` re
 | `rsl::usdr` | `usdr` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
 
 Bundles: `net` (`codec`+`proto`+`rawsock`), `radio` (`rf`), `transforms`
-(`crypto`+`compression`+`error-correction`), and `full` (all three bundles). The FFI `usdr` is
-excluded from bundles — add it explicitly.
+(`crypto`+`compression`+`error-correction`), `pki` (DER+X.509+validation), and `full` (all four
+bundles). The FFI `usdr` is excluded from bundles — add it explicitly.
 
 The `legacy-crypto` feature is also excluded from every bundle. Historical algorithms require a
 separate, visible opt-in and must never become a negotiation fallback.
@@ -68,15 +75,12 @@ decision legible: `rsl-deps` is the standing shortlist of "things we rent"; `rsl
 
 ## Sourcing & caveats
 
-- **Owned crates are `git` deps pinned to an exact `rev`** so a push to a sibling's `main` can't
-  silently change or break `rsl` or its consumers. Bump a pin deliberately (`git ls-remote` →
-  update the rev). The public `rsl::…` paths don't change when a pin moves.
-- **One codec.** `bnb` and the `protocols` crates are pinned to the **same** `bitsandbytes` rev,
-  so enabling both `codec` and `proto` compiles exactly one codec whose types unify. (The
-  `protocols` repo rev-pins bnb for this reason — a floating pin there would reintroduce a
-  duplicate.)
-- **`publish = false`.** Git dependencies can't appear in a crates.io release, so `rsl` is
-  consumed directly as a git dependency.
+- **Owned crates are workspace dependencies.** Each carries both a local path and a version, so
+  development uses one source tree and published consumers retain normal version metadata.
+- **One codec.** The facade, ASN.1 transport, and protocol crates resolve the same workspace
+  `bitsandbytes` package, so their types unify.
+- **`publish = false`.** The facade remains a repository-level convenience; individual owned
+  crates carry the publication boundary.
 - **FFI feature `usdr` needs a C++ toolchain** and is off by default.
 
 ## Verify

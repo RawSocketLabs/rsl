@@ -5,10 +5,11 @@
 
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs
 stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
-compression (`compression`), error correction (`error-correction`), RF parsing (`rfus`), the
-protocol crates (`protocols/*`), the facades (`rsl`, `rsl-deps`), and (excluded, FFI) `usdr` and
-`rust-dsdcc`. Crates are **published independently** but developed **in lockstep** — inter-crate
-deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
+ASN.1/X.509/PKI (`pki/*`), compression (`compression`), error correction (`error-correction`),
+RF parsing (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `rsl-deps`), and
+(excluded, FFI) `usdr` and `rust-dsdcc`. Crates are **published independently** but developed
+**in lockstep** — inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no
+git-rev pinning.
 
 ## Layout
 
@@ -19,6 +20,7 @@ deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
 | `netlink/` | `rsl-netlink` | strict route/generic-netlink transport and typed WireGuard APIs |
 | `crypto/` | `rsl-crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
 | `crypto-legacy/` | `rsl-crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
+| `pki/asn1`, `pki/x509`, `pki/validation` | `rsl-asn1`, `rsl-x509`, `rsl-pki` | strict DER transport, certificate syntax, and path validation; `no_std + alloc`, zero `unsafe` |
 | `compression/` | `rsl-compression` | accuracy-first compression algorithms; `no_std + alloc`, zero `unsafe` |
 | `error-correction/` | `rsl-error-correction` | accuracy-first redundancy coding; `no_std + alloc`, zero `unsafe` |
 | `rfus/` | `rfus` | RF/sample-rate parsing |

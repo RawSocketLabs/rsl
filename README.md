@@ -18,6 +18,8 @@ no cross-repo version pinning to keep in sync.
 - **`rsl-crypto-legacy`** (`crypto-legacy/`) — separately opted-in historical and broken
   primitives for controlled interoperability, capture decoding, fixtures, and teaching; it is
   never included by the facade's bundles.
+- **`rsl-asn1`**, **`rsl-x509`**, **`rsl-pki`** (`pki/*`) — strict DER transport, borrowed
+  certificate syntax with exact signed-byte preservation, and fail-closed path validation.
 - **`rsl-compression`** (`compression/`) — explicit stateful compression/decompression contracts.
 - **`rsl-error-correction`** (`error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.

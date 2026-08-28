@@ -1,9 +1,10 @@
 //! # `rsl` — the `RawSocket` Labs owned-library facade
 //!
 //! A single, feature-gated re-export of the public libraries RSL *owns*, under semantic
-//! paths — [`codec`], [`crypto`], explicitly opt-in [`crypto_legacy`], [`compression`],
-//! [`error_correction`], [`proto`], [`rawsock`], [`rf`], and (FFI, opt-in) [`usdr`]. Depend on
-//! `rsl` to consume RSL's own products through one crate with unified, pinned versions.
+//! paths — [`codec`], [`crypto`], explicitly opt-in `crypto_legacy`, [`asn1`], [`x509`],
+//! [`pki`], [`compression`], [`error_correction`], [`proto`], [`rawsock`], [`rf`], and (FFI,
+//! opt-in) `usdr`. Depend on `rsl` to consume RSL's own products through one crate with
+//! unified, pinned versions.
 //!
 //! This is the **owned** half of the stack. The **rented** third-party half lives in the
 //! separate [`rsl-deps`] crate (`rsl_deps::tokio`, `rsl_deps::serde`, …). The two are
@@ -45,6 +46,21 @@ pub use rsl_crypto as crypto;
 #[cfg(feature = "legacy-crypto")]
 #[doc(inline)]
 pub use rsl_crypto_legacy as crypto_legacy;
+
+/// Strict ASN.1 DER transport.
+#[cfg(feature = "pki")]
+#[doc(inline)]
+pub use rsl_asn1 as asn1;
+
+/// Borrowed X.509 certificate syntax with exact signed-byte preservation.
+#[cfg(feature = "pki")]
+#[doc(inline)]
+pub use rsl_x509 as x509;
+
+/// Trust-anchor, certificate-path, and service-identity validation.
+#[cfg(feature = "pki")]
+#[doc(inline)]
+pub use rsl_pki as pki;
 
 /// Stateful compression and decompression contracts.
 #[cfg(feature = "compression")]
@@ -122,6 +138,10 @@ pub mod prelude {
     #[cfg(feature = "legacy-crypto")]
     #[doc(no_inline)]
     pub use crate::crypto_legacy;
+
+    #[cfg(feature = "pki")]
+    #[doc(no_inline)]
+    pub use crate::{asn1, pki, x509};
 
     #[cfg(feature = "compression")]
     #[doc(no_inline)]

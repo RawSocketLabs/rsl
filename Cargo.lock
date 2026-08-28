@@ -3164,14 +3164,24 @@ dependencies = [
  "ethertype",
  "rawsock",
  "rfus",
+ "rsl-asn1",
  "rsl-compression",
  "rsl-crypto",
  "rsl-crypto-legacy",
  "rsl-error-correction",
+ "rsl-pki",
+ "rsl-x509",
  "rust-dsdcc",
  "tcp",
  "udp",
  "usdr",
+]
+
+[[package]]
+name = "rsl-asn1"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
 ]
 
 [[package]]
@@ -3263,6 +3273,22 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "zeroize",
+]
+
+[[package]]
+name = "rsl-pki"
+version = "0.1.0"
+dependencies = [
+ "rsl-asn1",
+ "rsl-crypto",
+ "rsl-x509",
+]
+
+[[package]]
+name = "rsl-x509"
+version = "0.1.0"
+dependencies = [
+ "rsl-asn1",
 ]
 
 [[package]]
