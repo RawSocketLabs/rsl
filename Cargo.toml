@@ -94,6 +94,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Independent SHA-256 oracle used only by rsl-crypto's differential tests.
 sha2 = { version = "0.11.0", default-features = false }
+# Independent SHA-3/SHAKE oracle used only by rsl-crypto's differential tests.
+sha3 = { version = "0.12.0", default-features = false }
+shake = { version = "0.1.0", default-features = false }
 # Independent HMAC oracle used only by rsl-crypto's differential tests.
 hmac = { version = "0.13.0", default-features = false }
 # Independent HKDF oracle used only by rsl-crypto's differential tests.

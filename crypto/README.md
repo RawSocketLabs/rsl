@@ -20,7 +20,8 @@ checked length accounting, and distinct digest/tag output types. It also exports
 HKDF-SHA-256 Extract and Expand stages with a zeroizing PRK type and bounded caller output, and
 the SHA-384 family ([`Sha384`](src/digest/sha2/sha384/state.rs),
 [`HmacSha384`](src/mac/hmac/sha384/state.rs), [`HkdfSha384Prk`](src/kdf/hkdf/sha384/extract.rs))
-for the TLS 1.3 `SHA384` suites. The
+for the TLS 1.3 `SHA384` suites, plus the FIPS 202 sponge family
+([`Sha3_256`](src/digest/sha3/sha3_256.rs), [`Shake256`](src/digest/sha3/shake256.rs)). The
 first raw block-cipher API now exposes distinct [`Aes128Key`](src/cipher/aes/aes128/api.rs),
 [`Aes128Block`](src/cipher/aes/aes128/api.rs), and
 [`Aes128`](src/cipher/aes/aes128/api.rs) types over the fully inspectable FIPS 197-upd1
@@ -73,7 +74,8 @@ evidence, context-length and cross-variant rejection, deterministic and generic 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures. P-384 adds SP 800-186 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all CAVP CDH/PKV/SigGen/SigVer P-384
+signatures. SHA-3 adds NIST per-step intermediate states, NIST and CAVP vectors, XOF streaming, and differential
+cases. P-384 adds SP 800-186 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all CAVP CDH/PKV/SigGen/SigVer P-384
 cases, and differential `p384` comparison. AES-256 adds all 60 Appendix A.3 words, the four NIST core blocks, and differential cases;
 AES-256-GCM adds NIST GCM-AES256 Examples 1–5, 105 Wycheproof cases, and 32 differential cases.
 SHA-384 adds NIST examples (including the two discarded words), CAVP boundary lengths, and

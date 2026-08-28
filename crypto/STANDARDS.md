@@ -770,6 +770,32 @@ parameter set for the same executable specification. Baselines re-checked 2026-0
 | SP 800-56A Rev. 3 §§5.6.1.2.2, 5.6.2.3.3, 5.7.1.2 (P-384) | Candidate-testing generation, full public-key validation, ECC CDH over 48-byte scalars and 97-byte points. | `agreement::ecdh_p384`; RFC 5903 §8.2 exchange; all 25 CAVP ECC CDH P-384 cases; 12 CAVP PKV P-384 cases; boundaries; 32 differential `p384` cases. | Implemented and tested. |
 | FIPS 186-5 §6.4.1–§6.4.2, A.2.2; RFC 6979 §3.2 (P-384, SHA-384) | Deterministic signing with HMAC-SHA-384 and verification with `e` = the full 384-bit digest. | `signature::ecdsa_p384`; RFC 6979 A.2.6 `k` values and exact signatures; all 15 CAVP `SigGen` `(d, k) -> (r, s)` P-384/SHA-384 cases; all 15 CAVP `SigVer` verdicts; range and tampering boundaries; byte-identical differential signatures with `p384`. | Implemented and tested. |
 
+## SHA3-256 and SHAKE256 source baseline
+
+- **Publication:** NIST FIPS 202, *SHA-3 Standard: Permutation-Based Hash and Extendable-Output
+  Functions*, August 2015. [Publication record](https://csrc.nist.gov/pubs/fips/202/final);
+  [doi:10.6028/NIST.FIPS.202](https://doi.org/10.6028/NIST.FIPS.202).
+- **Baseline last checked:** 2026-08-28; final. Motivation: RFC 8032 Ed448 requires SHAKE256.
+- **Published validation material:** NIST `SHA3-256_Msg0`, `SHA3-256_1600`, `SHAKE256_Msg0`
+  example documents; CAVP SHA-3 and SHAKE byte-oriented vectors. Provenance in
+  `tests/vectors/sha3/README.md`.
+
+### FIPS 202 coverage
+
+| FIPS 202 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §3.1, Algorithm 10 | State array `A[x, y, z]`; byte string ↔ lanes, little-endian within a lane, lane order `5y + x`. | `keccak::State::{absorb_bytes, squeeze_bytes}`; round-trip test with known lane values. | Implemented and tested. |
+| §3.2.1 Algorithm 1 | `θ`. | `State::theta`; NIST round-0 "After Theta" state. | Implemented and tested. |
+| §3.2.2 Algorithm 2, Table 2 | `ρ` offsets. | `RHO_OFFSETS`, regenerated from step 3a in a test; NIST "After Rho". | Implemented and tested. |
+| §3.2.3 Algorithm 3 | `π`. | `State::pi`; NIST "After Pi". | Implemented and tested. |
+| §3.2.4 Algorithm 4 | `χ`. | `State::chi`; NIST "After Chi". | Implemented and tested. |
+| §3.2.5 Algorithms 5–6 | `rc(t)` LFSR and `ι`. | `ROUND_CONSTANTS` regenerated from the LFSR in a test; `State::iota`; NIST "After Iota". | Implemented and tested. |
+| §3.3–§3.4 Algorithm 7 | 24 rounds of `Rnd`. | `State::permute`; NIST state after round 23. | Implemented and tested. |
+| §4 Algorithm 8; §5.1 | Sponge absorb/squeeze with `pad10*1`. | `sponge::Sponge<RATE>`; padding unit test; CAVP lengths at and across the rate; multi-block squeeze cases. | Implemented and tested. |
+| §6.1 | SHA3-256 = KECCAK[512](M ‖ 01, 256). | `Sha3_256` with suffix `0x06`; NIST 0-bit and 1600-bit examples; CAVP; differential. | Implemented and tested. |
+| §6.2 | SHAKE256(M, d) = KECCAK[512](M ‖ 1111, d). | `Shake256` with suffix `0x1f`, incremental squeeze; NIST 0-bit example; CAVP ShortMsg and VariableOut; differential. | Implemented and tested. |
+| §6.1–§6.2 (other members) | SHA3-224/384/512, SHAKE128. | Not provided. | Deliberately not implemented. |
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

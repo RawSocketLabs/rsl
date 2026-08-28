@@ -31,6 +31,8 @@
 //!    exact digest prerequisite used by Ed25519. [`Sha384`](digest::sha2::sha384::Sha384) is its
 //!    truncated sibling, with [`HmacSha384`](mac::hmac::sha384::HmacSha384) and
 //!    [`HkdfSha384Prk`](kdf::hkdf::sha384::HkdfSha384Prk) for the TLS 1.3 `SHA384` suites.
+//!    [`Sha3_256`](digest::sha3::Sha3_256) and [`Shake256`](digest::sha3::Shake256) show a
+//!    completely different design, the sponge, whose extendable output Ed448 relies on.
 //! 6. [`Ed25519SigningKey`](signature::ed25519::Ed25519SigningKey) derives an authenticated public
 //!    identity and deterministic signatures from a private seed.
 //! 7. [`Aes128`](cipher::aes::aes128::Aes128) exposes the raw 128-bit block permutation for

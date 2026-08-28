@@ -20,6 +20,11 @@ rsl-crypto/
 │   │           └── state.rs       streaming, length, padding, and output
 │   │       ├── sha512/             independent 64-bit SHA-2 specification layers
 │   │       └── sha384/             SHA-384 initial words and truncated state over SHA-512 layers
+│   │   └── sha3/
+│   │       ├── keccak.rs          FIPS 202 state, θ/ρ/π/χ/ι, and the 24-round permutation
+│   │       ├── sponge.rs          rate-generic sponge with pad10*1 and domain suffix
+│   │       ├── sha3_256.rs        fixed-output SHA3-256
+│   │       └── shake256.rs        incrementally squeezable SHAKE256
 │   ├── mac.rs                     generic MAC contract and family boundary
 │   ├── mac/hmac/sha256/           HMAC-SHA-256 key and state layers
 │   ├── mac/hmac/sha384/           HMAC-SHA-384 key and state layers (B = 128, L = 48)
@@ -107,6 +112,8 @@ rsl-crypto/
 │   ├── vectors/ghash/             SP 800-38D GHASH evidence provenance
 │   ├── vectors/gcm/               SP 800-38D GCM composition evidence provenance
 │   ├── vectors/x25519/            RFC 7748 vector and errata provenance
+│   ├── sha3.rs                    NIST examples, CAVP, XOF streaming, differential SHA-3 evidence
+│   ├── vectors/sha3/              FIPS 202, NIST examples, and CAVP provenance
 │   ├── sha384.rs                  NIST, CAVP boundary, and differential SHA-384 evidence
 │   ├── vectors/sha384/            FIPS 180-4 SHA-384 and CAVP provenance
 │   ├── hmac_sha384.rs, hmac_sha384/ RFC 4231 SHA-384 cases, streaming, verification, differential

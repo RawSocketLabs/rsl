@@ -31,6 +31,7 @@
 use crate::Result;
 
 pub mod sha2;
+pub mod sha3;
 
 /// An incremental fixed-output cryptographic digest.
 ///

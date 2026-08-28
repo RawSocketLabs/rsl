@@ -149,6 +149,12 @@ Each algorithm change must include:
     each. Evidence for P-384: SP 800-186 §3.2.1.4 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all
     CAVP ECC CDH, PKV, SigGen, and SigVer P-384 cases, and differential `p384` comparison.
 
+15. **SHA3-256 and SHAKE256** — FIPS 202 as separate `θ`/`ρ`/`π`/`χ`/`ι` step mappings whose
+    constants are regenerated from the standard's own algorithms in tests, a rate-generic sponge
+    with `pad10*1`, a fixed-output SHA3-256, and an incrementally squeezable SHAKE256 (the Ed448
+    prerequisite). Evidence: NIST per-step intermediate states, NIST and CAVP vectors including
+    variable-length SHAKE output, and differential comparison with the `sha3` crate.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
@@ -162,7 +168,8 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. X448 and Ed448 as lower-priority interoperability profiles.
+1. X448 and Ed448 (approved 2026-08-28), with SHA3/SHAKE256 as the Ed448 prerequisite.
+2. Assurance work: fuzz targets, a constant-time review pass, and the X25519 one-million-iteration checkpoint as an ignored test.
 
 ## After the first vertical slice
 
