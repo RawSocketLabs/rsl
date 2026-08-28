@@ -1,4 +1,4 @@
-//! Ed448 signatures: EdDSA over edwards448 with SHAKE256.
+//! Ed448 signatures: `EdDSA` over edwards448 with SHAKE256.
 //!
 //! # What Ed448 does
 //!
@@ -63,7 +63,7 @@
 //! All RFC 8032 §7.4 Ed448 vectors (including contexts and the 1023-byte message) and both
 //! §7.5 Ed448ph vectors are reproduced exactly and verified; all Wycheproof `ed448` cases are
 //! reproduced; boundaries cover contexts, small order, non-canonical `S`, and wire lengths. No
-//! differential crate is used (the RustCrypto Ed448 implementation is pre-release only). No
+//! differential crate is used (the `RustCrypto` Ed448 implementation is pre-release only). No
 //! side-channel or audit claim is made.
 
 #![allow(rustdoc::private_intra_doc_links)]
