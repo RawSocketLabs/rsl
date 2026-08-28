@@ -46,8 +46,11 @@ const FRA_DST: u16 = 1;
 const FRA_SRC: u16 = 2;
 const FRA_PRIORITY: u16 = 6;
 const FRA_FWMARK: u16 = 10;
+const FRA_SUPPRESS_PREFIXLEN: u16 = 14;
 const FRA_TABLE: u16 = 15;
 const FRA_FWMASK: u16 = 16;
+/// `fib_rule_hdr.flags`: match packets that do NOT satisfy the selectors.
+const FIB_RULE_INVERT: u32 = 0x2;
 
 const IFF_UP: u32 = 1;
 const RT_TABLE_UNSPEC: u8 = 0;
@@ -140,6 +143,11 @@ pub struct Rule {
     pub fwmask: Option<u32>,
     /// Kernel rule action.
     pub action: u8,
+    /// Negate the selectors (`ip rule add not ...`).
+    pub invert: bool,
+    /// Reject lookups whose result prefix is at most this long
+    /// (`suppress_prefixlength N`).
+    pub suppress_prefix_length: Option<u32>,
 }
 
 #[cfg(feature = "tokio")]
@@ -424,28 +432,7 @@ impl RouteClient {
 
     /// Add or replace a policy rule.
     pub async fn add_rule(&self, rule: &Rule) -> Result<()> {
-        let mut attributes = Vec::new();
-        if let Some(destination) = rule.destination {
-            attributes.push(Attribute::new(FRA_DST, ip_bytes(destination)));
-        }
-        if let Some(source) = rule.source {
-            attributes.push(Attribute::new(FRA_SRC, ip_bytes(source)));
-        }
-        if let Some(priority) = rule.priority {
-            attributes.push(Attribute::u32(FRA_PRIORITY, priority));
-        }
-        if let Some(mark) = rule.fwmark {
-            attributes.push(Attribute::u32(FRA_FWMARK, mark));
-        }
-        if let Some(mask) = rule.fwmask {
-            attributes.push(Attribute::u32(FRA_FWMASK, mask));
-        }
-        let table = if rule.table <= u8::MAX.into() {
-            rule.table as u8
-        } else {
-            attributes.push(Attribute::u32(FRA_TABLE, rule.table));
-            RT_TABLE_UNSPEC
-        };
+        let (table, attributes) = encode_rule_attributes(rule);
         self.transport
             .request(Message::new(
                 RTM_NEWRULE,
@@ -456,7 +443,7 @@ impl RouteClient {
                     rule.source_prefix,
                     table,
                     rule.action,
-                    0,
+                    rule_flags(rule),
                     &attributes,
                 )?,
             ))
@@ -477,7 +464,7 @@ impl RouteClient {
                     rule.source_prefix,
                     table,
                     rule.action,
-                    0,
+                    rule_flags(rule),
                     &attributes,
                 )?,
             ))
@@ -529,6 +516,9 @@ fn encode_rule_attributes(rule: &Rule) -> (u8, Vec<Attribute>) {
     if let Some(mask) = rule.fwmask {
         attributes.push(Attribute::u32(FRA_FWMASK, mask));
     }
+    if let Some(length) = rule.suppress_prefix_length {
+        attributes.push(Attribute::u32(FRA_SUPPRESS_PREFIXLEN, length));
+    }
     let table = if rule.table <= u8::MAX.into() {
         rule.table as u8
     } else {
@@ -536,6 +526,10 @@ fn encode_rule_attributes(rule: &Rule) -> (u8, Vec<Attribute>) {
         RT_TABLE_UNSPEC
     };
     (table, attributes)
+}
+
+fn rule_flags(rule: &Rule) -> u32 {
+    if rule.invert { FIB_RULE_INVERT } else { 0 }
 }
 
 impl Default for Route {
@@ -570,6 +564,8 @@ impl Default for Rule {
             fwmark: None,
             fwmask: None,
             action: FR_ACT_TO_TBL,
+            invert: false,
+            suppress_prefix_length: None,
         }
     }
 }
@@ -762,6 +758,10 @@ fn decode_rule(payload: &[u8]) -> Result<Rule> {
         fwmark: optional_u32(&attributes, FRA_FWMARK)?,
         fwmask: optional_u32(&attributes, FRA_FWMASK)?,
         action: payload[7],
+        invert: read_u32(payload, 8)? & FIB_RULE_INVERT != 0,
+        // The kernel omits the attribute while its internal value is -1.
+        suppress_prefix_length: optional_u32(&attributes, FRA_SUPPRESS_PREFIXLEN)?
+            .filter(|length| *length != u32::MAX),
     })
 }
 
@@ -814,6 +814,52 @@ fn ip_bytes(address: IpAddr) -> Vec<u8> {
 #[cfg(all(test, feature = "tokio"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rule_payload_round_trips_invert_and_suppress_prefixlength() {
+        let rule = Rule {
+            family: libc::AF_INET as u8,
+            table: 51820,
+            priority: Some(32765),
+            fwmark: Some(51820),
+            fwmask: Some(u32::MAX),
+            invert: true,
+            suppress_prefix_length: Some(0),
+            ..Rule::default()
+        };
+        let (table, attributes) = encode_rule_attributes(&rule);
+        let payload = rule_payload(
+            rule.family,
+            rule.destination_prefix,
+            rule.source_prefix,
+            table,
+            rule.action,
+            rule_flags(&rule),
+            &attributes,
+        )
+        .unwrap();
+        let decoded = decode_rule(&payload).unwrap();
+        assert!(decoded.invert);
+        assert_eq!(decoded.suppress_prefix_length, Some(0));
+        assert_eq!(decoded.table, 51820);
+        assert_eq!(decoded.fwmark, Some(51820));
+
+        let plain = Rule::default();
+        let (table, attributes) = encode_rule_attributes(&plain);
+        let payload = rule_payload(
+            plain.family,
+            0,
+            0,
+            table,
+            plain.action,
+            rule_flags(&plain),
+            &attributes,
+        )
+        .unwrap();
+        let decoded = decode_rule(&payload).unwrap();
+        assert!(!decoded.invert);
+        assert_eq!(decoded.suppress_prefix_length, None);
+    }
 
     #[tokio::test]
     async fn dumps_live_route_state() {
