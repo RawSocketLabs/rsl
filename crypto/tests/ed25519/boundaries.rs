@@ -105,3 +105,74 @@ fn caller_entropy_source_generates_the_seed() {
     }));
     assert_eq!(generated.verifying_key(), expected.verifying_key());
 }
+
+/// RFC 8032 §5.1-derived evidence: context length limits and variant separation.
+#[test]
+fn context_length_limits_and_variant_separation_are_enforced() {
+    use rsl_crypto::digest::sha2::sha512::Sha512;
+
+    assert_eq!(
+        Ed25519Context::new(b"").err(),
+        Some(CryptoError::InvalidLength {
+            name: "Ed25519 context",
+            expected: 1,
+            actual: 0,
+        })
+    );
+    assert_eq!(
+        Ed25519Context::new(&[0x61; 256]).err(),
+        Some(CryptoError::InvalidLength {
+            name: "Ed25519 context",
+            expected: 255,
+            actual: 256,
+        })
+    );
+    let longest = Ed25519Context::new(&[0x61; 255]).unwrap();
+    assert_eq!(longest.as_bytes().len(), 255);
+
+    let signing = Ed25519SigningKey::from_seed([0x24; 32]);
+    let verifying = signing.verifying_key();
+    let foo = Ed25519Context::new(b"foo").unwrap();
+    let bar = Ed25519Context::new(b"bar").unwrap();
+    let message = b"same message";
+    let digest = Sha512::digest(message).unwrap();
+
+    let pure = signing.sign(message).unwrap();
+    let with_foo = signing.sign_with_context(&foo, message).unwrap();
+    let prehashed = signing.sign_prehashed(&digest, None).unwrap();
+    let prehashed_foo = signing.sign_prehashed(&digest, Some(&foo)).unwrap();
+
+    assert!(
+        verifying
+            .verify_with_context(&foo, message, &with_foo)
+            .is_ok()
+    );
+    assert!(
+        verifying
+            .verify_with_context(&bar, message, &with_foo)
+            .is_err()
+    );
+    assert!(verifying.verify(message, &with_foo).is_err());
+    assert!(
+        verifying
+            .verify_prehashed(&digest, None, &prehashed)
+            .is_ok()
+    );
+    assert!(
+        verifying
+            .verify_prehashed(&digest, Some(&foo), &prehashed)
+            .is_err()
+    );
+    assert!(
+        verifying
+            .verify_prehashed(&digest, Some(&foo), &prehashed_foo)
+            .is_ok()
+    );
+    assert!(verifying.verify_prehashed(&digest, None, &pure).is_err());
+    assert!(verifying.verify(message, &prehashed).is_err());
+    assert!(
+        verifying
+            .verify_with_context(&longest, message, &with_foo)
+            .is_err()
+    );
+}

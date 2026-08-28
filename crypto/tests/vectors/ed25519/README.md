@@ -7,11 +7,13 @@
 - **Publication date and stream:** January 2017, IRTF Informational.
 - **Accessed:** 2026-08-27.
 
-The known-answer tests copy §7.1 tests 1–3 exactly. Printed line breaks and spaces are removed;
+The known-answer tests copy §7.1 tests 1–3 (pure), §7.2's four Ed25519ctx vectors (`foo`,
+`bar`, `foo2`, `foo3`), and §7.3's Ed25519ph vector (`abc`) exactly. Printed line breaks and spaces are removed;
 hexadecimal pairs remain in their published byte order. Verified Errata 5968 clarifies that an
 encoded scalar may be any integer `0 <= S <= L-1`; the implementation accepts exactly that range.
 Verified Errata 5930 fixes a missing `raise` in the illustrative verifier and reinforces exact
 signature-length rejection. Other verified and held errata are tracked in `STANDARDS.md`.
 
 `ed25519-dalek` 3.0.0 is a development-only differential oracle, not an implementation dependency
-or standards authority. Differential verification uses its explicit strict path.
+or standards authority. Differential verification uses its explicit strict path; Ed25519ph uses
+its `sign_prehashed`/`verify_prehashed` path. It has no Ed25519ctx oracle.

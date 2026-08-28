@@ -90,8 +90,10 @@ Each algorithm change must include:
    fixed-structure scalar multiplication, scalar reduction modulo `L`, private-seed expansion,
    deterministic signing, strict verification, typed wire values, caller-provided seed entropy,
    RFC §7.1 vectors, malformed-input tests, and differential comparison with `ed25519-dalek`
-   3.0.0. Context and prehash variants remain distinct future profiles. TLS/SSH transcript
-   construction, key identifiers, certificates, and negotiation remain protocol-owned.
+   3.0.0. Ed25519ctx and Ed25519ph are exposed as distinct methods over the same signing core
+   with a validated `Ed25519Context`, covered by the RFC §7.2 and §7.3 vectors and a differential
+   prehashed suite. TLS/SSH transcript construction, key identifiers, certificates, and
+   negotiation remain protocol-owned.
 
 9. **P-256, ECDH, and ECDSA verification** — the SP 800-186 curve is implemented once as
    readable 256-bit limb arithmetic with a fold-based reduction derived from the prime's form,
@@ -121,6 +123,5 @@ Each algorithm change must include:
 
 ## After the first vertical slice
 
-- Ed25519ctx and Ed25519ph only as explicit variant APIs rather than flags on pure Ed25519.
 - The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.
 - Optional optimized implementations beside, never in place of, the readable reference path.

@@ -57,8 +57,9 @@ development-only differential cases. X25519 adds both direct RFC vectors, iterat
 the published two-party exchange, encoding/rejection boundaries, and 128 development-only
 differential cases. SHA-512 adds published one- and two-block examples, 128-bit padding boundaries,
 fragmentation, and independent differential cases. Ed25519 adds RFC 8032 §7.1 key/signature
-vectors, canonical and small-order rejection evidence, deterministic and generic signing paths,
-and 32 strict differential cases. ECDH P-256 adds the RFC 5903 exchange, all 25 CAVP ECC CDH and
+vectors, the §7.2 Ed25519ctx and §7.3 Ed25519ph vectors, canonical and small-order rejection
+evidence, context-length and cross-variant rejection, deterministic and generic signing paths,
+32 strict differential cases, and 32 differential Ed25519ph cases. ECDH P-256 adds the RFC 5903 exchange, all 25 CAVP ECC CDH and
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential

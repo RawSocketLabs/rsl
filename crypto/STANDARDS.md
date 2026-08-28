@@ -496,11 +496,16 @@ message, and complete signature. Conversion and oracle provenance are recorded i
 | §5.1.5 | Hash and prune the 32-byte seed, then derive `A=[s]B`. | `prepare_secret_scalar`, `verifying_key`; all three §7.1 public keys and differential cases. | Implemented and tested. |
 | §5.1.6 | Derive deterministic `r`, encode `R`, derive challenge `k`, and compute `S=(r+k*s) mod L`. | `sign_bytes`, `hash_to_scalar`, and scalar modular arithmetic; all three §7.1 signatures and 32 differential signatures. | Implemented and tested for pure Ed25519. |
 | §5.1.7 | Parse `R`, `S`, and `A`; hash `R||A||M`; verify a permitted group equation. | `verify_bytes` rejects malformed/non-canonical/small-order inputs and checks the sufficient uncofactored equation; published, changed-input, strict-boundary, generic-trait, and differential tests. | Implemented and tested with documented strict hardening. |
-| §§5.1.6–5.1.7 domain input | Pure Ed25519 uses empty `dom2`; Ed25519ctx and Ed25519ph use distinct domain/prehash rules. | Public API exposes only pure Ed25519 and accepts no context/prehash flag. | Pure Ed25519 implemented; ctx/ph deliberately not exposed. |
+| §5.1 `dom2(F, C)`; §§5.1.6–5.1.7 domain input | Pure Ed25519 uses the empty string; Ed25519ctx prefixes `dom2(0, C)` with non-empty `C`; Ed25519ph prefixes `dom2(1, C)` and signs `PH(M) = SHA-512(M)`. | Private `api::dom2` and one shared signing/verification core; `Ed25519Context` enforces `1 <= len(C) <= 255`; distinct `sign_with_context`/`verify_with_context` and `sign_prehashed`/`verify_prehashed` methods rather than flags. Layout unit test; cross-variant rejection tests. | Implemented and tested. |
+| §7.2 | Ed25519ctx vectors `foo`, `bar`, `foo2`, `foo3`. | All four public keys, signatures, and verifications. | Implemented and tested. |
+| §7.3 | Ed25519ph vector `abc` with empty context. | Public key, signature, and verification; 32 differential Ed25519ph cases (with and without context) against `ed25519-dalek`'s prehashed path. | Implemented and tested. |
+| §8.5 | Prehashing weakens collision resilience; pure Ed25519 is preferred. | Rustdoc states the preference; Ed25519ph is an explicit opt-in method. | Documented. |
 | §8 | Address private-key secrecy, side channels, message semantics, and random seed generation. | Secret seed/scalars/points are non-`Clone` owners where public API permits, redacted, and zeroized; fixed scalar schedules and explicit `RandomSource` seed generation are visible. No compiler-level constant-time or audit claim. | Source-level measures implemented; production assurance incomplete. |
 
 `ed25519-dalek` 3.0.0 is used only in development tests. Its public-key derivation, deterministic
-signatures, and `verify_strict` behavior agree over 32 deterministic cases. TLS certificate and
+signatures, and `verify_strict` behavior agree over 32 deterministic pure cases, and its
+`sign_prehashed`/`verify_prehashed` path agrees over 32 Ed25519ph cases. It offers no Ed25519ctx
+oracle; the four RFC vectors are the independent evidence for that variant. TLS certificate and
 `CertificateVerify` encodings, SSH public-key blobs and exchange hashes, key identifiers,
 transcript construction, and negotiation remain in their protocol repositories.
 
