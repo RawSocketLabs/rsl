@@ -53,12 +53,15 @@ rsl-crypto/
 │   ├── aead/gcm/ghash/field.rs    private SP 800-38D `GF(2^128)` multiplication
 │   ├── aead/gcm/ghash/state.rs    private complete-block Algorithm 2 recurrence
 │   ├── curve.rs                   shared elliptic-curve group boundary
-│   ├── curve/p256/arithmetic.rs   private 256-bit limbs and fold-based modular reduction
-│   ├── curve/p256/field.rs        private residues modulo `p` and canonical encoding
-│   ├── curve/p256/scalar.rs       private residues modulo `n` and range rules
-│   ├── curve/p256/point.rs        private complete addition, fixed multiplication, SEC 1 encoding
+│   ├── curve/weierstrass/arithmetic.rs const-generic limbs and fold-based modular reduction
+│   ├── curve/weierstrass/field.rs residues modulo `p` and canonical encoding
+│   ├── curve/weierstrass/scalar.rs residues modulo `n`, range rules, candidate-testing keygen
+│   ├── curve/weierstrass/point.rs complete addition, fixed multiplication, SEC 1 encoding
+│   ├── curve/p256/mod.rs          P-256 parameter set (`Curve<4>`) and evidence
+│   ├── curve/p384/mod.rs          P-384 parameter set (`Curve<6>`) and evidence
 │   ├── agreement.rs               generic key-agreement contract and family boundary
 │   ├── agreement/ecdh_p256/api.rs public typed ECDH P-256 keys, generation, and agreement
+│   ├── agreement/ecdh_p384/api.rs public typed ECDH P-384 keys, generation, and agreement
 │   ├── agreement/x25519/api.rs    public typed X25519 agreement boundary
 │   ├── agreement/x25519/field.rs  private `GF(2^255 - 19)` encoding and arithmetic
 │   ├── agreement/x25519/scalar.rs private RFC 7748 scalar preparation
@@ -74,6 +77,7 @@ rsl-crypto/
 │   ├── signature/ecdsa_p256/nonce.rs RFC 6979 §3.2 deterministic `k` generator
 │   ├── signature/ecdsa_p256/sign.rs FIPS 186-5 §6.4.1 signing equation and retry loop
 │   ├── signature/ecdsa_p256/verify.rs FIPS 186-5 §6.4.2 step sequence
+│   ├── signature/ecdsa_p384/      the same four layers over P-384 with SHA-384/HMAC-SHA-384
 │   ├── signature/ed25519/api.rs   typed keys, signing, and strict verification
 │   ├── signature/ed25519/field.rs Edwards field encoding and root recovery
 │   ├── signature/ed25519/point.rs point arithmetic and fixed scalar multiplication
@@ -117,6 +121,10 @@ rsl-crypto/
 │   ├── ecdh_p256.rs               public ECDH P-256 evidence harness
 │   ├── ecdh_p256/                 RFC 5903, CAVP CDH/PKV fixtures, boundaries, differential
 │   ├── vectors/ecdh-p256/         SP 800-56A, RFC 5903, and CAVP provenance
+│   ├── ecdh_p384.rs, ecdh_p384/   RFC 5903 §8.2, CAVP CDH/PKV P-384, boundaries, differential
+│   ├── vectors/ecdh-p384/         P-384 agreement provenance
+│   ├── ecdsa_p384.rs, ecdsa_p384/ RFC 6979 A.2.6, CAVP SigGen/SigVer P-384, differential
+│   ├── vectors/ecdsa-p384/        P-384 signature provenance
 │   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
 │   ├── ecdsa_p256/                RFC 6979, CAVP SigGen/SigVer fixtures, boundaries, differential
 │   ├── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance

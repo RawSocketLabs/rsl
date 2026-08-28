@@ -41,8 +41,10 @@ Montgomery-ladder path. The first signature implementation exposes
 [`Ed25519SigningKey`](src/signature/ed25519/api.rs),
 [`Ed25519VerifyingKey`](src/signature/ed25519/api.rs), and
 [`Ed25519Signature`](src/signature/ed25519/api.rs) over readable RFC 8032 Edwards and subgroup
-scalar layers. The NIST P-256 group is implemented once under [`src/curve/p256/`](src/curve/p256/)
-and consumed by [`EcdhP256`](src/agreement/ecdh_p256/api.rs) (SP 800-56A ECC CDH with full
+scalar layers. The NIST prime-order curves are implemented once, generically, under
+[`src/curve/weierstrass/`](src/curve/weierstrass/), with P-256 and P-384 as parameter sets under
+[`src/curve/`](src/curve/) and matching `EcdhP384` / `EcdsaP384SigningKey` profiles; P-256 is
+consumed by [`EcdhP256`](src/agreement/ecdh_p256/api.rs) (SP 800-56A ECC CDH with full
 public-key validation) and [`EcdsaP256SigningKey`](src/signature/ecdsa_p256/api.rs) /
 [`EcdsaP256VerifyingKey`](src/signature/ecdsa_p256/api.rs) (FIPS 186-5 signing with RFC 6979
 deterministic `k` and verification, both with SHA-256). The RFC 8017 RSA integer engine lives in
@@ -71,7 +73,8 @@ evidence, context-length and cross-variant rejection, deterministic and generic 
 12 CAVP PKV P-256 cases, range and validation boundaries, and 32 differential cases. ECDSA P-256
 adds RFC 6979 A.2.5 `k` values and exact signatures, all 15 CAVP SigGen `(d, k) -> (r, s)` cases,
 all 15 CAVP SigVer verdicts, range and tampering boundaries, and 32 byte-identical differential
-signatures. AES-256 adds all 60 Appendix A.3 words, the four NIST core blocks, and differential cases;
+signatures. P-384 adds SP 800-186 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all CAVP CDH/PKV/SigGen/SigVer P-384
+cases, and differential `p384` comparison. AES-256 adds all 60 Appendix A.3 words, the four NIST core blocks, and differential cases;
 AES-256-GCM adds NIST GCM-AES256 Examples 1–5, 105 Wycheproof cases, and 32 differential cases.
 SHA-384 adds NIST examples (including the two discarded words), CAVP boundary lengths, and
 differential cases; HMAC-SHA-384 adds RFC 4231 cases 1–7; HKDF-SHA-384 adds all 83 Wycheproof

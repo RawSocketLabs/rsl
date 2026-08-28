@@ -1,4 +1,4 @@
-//! Typed public boundary for ECDH over P-256.
+//! Typed public boundary for ECDH over P-384.
 //!
 //! ## Standards ownership
 //!
@@ -13,21 +13,21 @@ use zeroize::Zeroize;
 use crate::{
     CryptoError, Result, SecretBytes,
     agreement::KeyAgreement,
-    curve::p256::{AffinePoint, ENCODED_LEN, ProjectivePoint, Scalar, generate_private_bytes},
+    curve::p384::{AffinePoint, ENCODED_LEN, ProjectivePoint, Scalar, generate_private_bytes},
     random::RandomSource,
 };
 
-const SCALAR_BYTES: usize = 32;
+const SCALAR_BYTES: usize = 48;
 
-/// One owned P-256 private scalar `d` in `[1, n-1]`.
+/// One owned P-384 private scalar `d` in `[1, n-1]`.
 ///
 /// The owner is non-`Clone`, redacted, and zeroized on drop. See the
-/// [`ecdh_p256` teaching page](crate::agreement::ecdh_p256) for a published example.
-pub struct EcdhP256PrivateKey {
+/// [`ecdh_p384` teaching page](crate::agreement::ecdh_p384) for a published example.
+pub struct EcdhP384PrivateKey {
     bytes: SecretBytes<SCALAR_BYTES>,
 }
 
-impl EcdhP256PrivateKey {
+impl EcdhP384PrivateKey {
     /// Size of the big-endian scalar encoding in bytes.
     pub const LEN: usize = SCALAR_BYTES;
 
@@ -78,36 +78,36 @@ impl EcdhP256PrivateKey {
     }
 }
 
-impl fmt::Debug for EcdhP256PrivateKey {
+impl fmt::Debug for EcdhP384PrivateKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("EcdhP256PrivateKey([REDACTED])")
+        formatter.write_str("EcdhP384PrivateKey([REDACTED])")
     }
 }
 
-/// A fully validated P-256 public point in SEC 1 uncompressed form `04 || x || y`.
+/// A fully validated P-384 public point in SEC 1 uncompressed form `04 || x || y`.
 ///
 /// Malformed, out-of-range, and off-curve encodings cannot inhabit this type.
 ///
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::{CryptoError, agreement::ecdh_p256::EcdhP256PublicKey};
+/// use rsl_crypto::{CryptoError, agreement::ecdh_p384::EcdhP384PublicKey};
 ///
 /// assert_eq!(
-///     EcdhP256PublicKey::try_from([0_u8; 64].as_slice()),
-///     Err(CryptoError::InvalidLength { name: "ECDH P-256 public key", expected: 65, actual: 64 }),
+///     EcdhP384PublicKey::try_from([0_u8; 96].as_slice()),
+///     Err(CryptoError::InvalidLength { name: "ECDH P-384 public key", expected: 97, actual: 96 }),
 /// );
 /// assert_eq!(
-///     EcdhP256PublicKey::from_bytes([0_u8; 65]),
+///     EcdhP384PublicKey::from_bytes([0_u8; 97]),
 ///     Err(CryptoError::InvalidPublicKey),
 /// );
 /// ```
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct EcdhP256PublicKey {
+pub struct EcdhP384PublicKey {
     bytes: [u8; ENCODED_LEN],
 }
 
-impl EcdhP256PublicKey {
+impl EcdhP384PublicKey {
     /// Size of the uncompressed encoding in bytes.
     pub const LEN: usize = ENCODED_LEN;
 
@@ -139,35 +139,35 @@ impl EcdhP256PublicKey {
     }
 }
 
-impl fmt::Debug for EcdhP256PublicKey {
+impl fmt::Debug for EcdhP384PublicKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_tuple("EcdhP256PublicKey")
+            .debug_tuple("EcdhP384PublicKey")
             .field(&self.bytes)
             .finish()
     }
 }
 
-impl AsRef<[u8]> for EcdhP256PublicKey {
+impl AsRef<[u8]> for EcdhP384PublicKey {
     fn as_ref(&self) -> &[u8] {
         &self.bytes
     }
 }
 
-impl TryFrom<&[u8]> for EcdhP256PublicKey {
+impl TryFrom<&[u8]> for EcdhP384PublicKey {
     type Error = CryptoError;
 
-    /// Copy and validate an exact 65-byte wire slice.
+    /// Copy and validate an exact 97-byte wire slice.
     ///
     /// # Errors
     ///
     /// Returns [`CryptoError::InvalidLength`] for any other length, then the errors of
-    /// [`EcdhP256PublicKey::from_bytes`].
+    /// [`EcdhP384PublicKey::from_bytes`].
     fn try_from(bytes: &[u8]) -> Result<Self> {
         let actual = bytes.len();
         let exact =
             <[u8; ENCODED_LEN]>::try_from(bytes).map_err(|_| CryptoError::InvalidLength {
-                name: "ECDH P-256 public key",
+                name: "ECDH P-384 public key",
                 expected: ENCODED_LEN,
                 actual,
             })?;
@@ -175,15 +175,15 @@ impl TryFrom<&[u8]> for EcdhP256PublicKey {
     }
 }
 
-/// The 32-byte big-endian shared secret `Z = x_P`.
+/// The 48-byte big-endian shared secret `Z = x_P`.
 ///
 /// This owner is non-`Clone`, redacted, and zeroized on drop. It has no `AsRef` implementation
 /// so exposure is visible at the KDF boundary.
-pub struct EcdhP256SharedSecret {
+pub struct EcdhP384SharedSecret {
     bytes: SecretBytes<SCALAR_BYTES>,
 }
 
-impl EcdhP256SharedSecret {
+impl EcdhP384SharedSecret {
     /// Size of the shared secret in bytes.
     pub const LEN: usize = SCALAR_BYTES;
 
@@ -196,25 +196,27 @@ impl EcdhP256SharedSecret {
     /// Transfer the bytes to the caller, who becomes responsible for clearing them.
     #[must_use]
     pub fn into_inner(self) -> [u8; SCALAR_BYTES] {
-        self.bytes.into_inner()
+        // 48-byte arrays have no `Default`, so the value is copied out and the owner's drop
+        // zeroizes the original before this function returns.
+        *self.bytes.expose_secret()
     }
 }
 
-impl fmt::Debug for EcdhP256SharedSecret {
+impl fmt::Debug for EcdhP384SharedSecret {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("EcdhP256SharedSecret([REDACTED])")
+        formatter.write_str("EcdhP384SharedSecret([REDACTED])")
     }
 }
 
-/// SP 800-56A Rev. 3 ECC CDH public-key derivation and agreement over P-256.
+/// SP 800-56A Rev. 3 ECC CDH public-key derivation and agreement over P-384.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct EcdhP256;
+pub struct EcdhP384;
 
-impl EcdhP256 {
+impl EcdhP384 {
     /// Derive `Q = [d]G`.
     #[must_use]
-    pub fn public_key(private_key: &EcdhP256PrivateKey) -> EcdhP256PublicKey {
-        EcdhP256PublicKey {
+    pub fn public_key(private_key: &EcdhP384PrivateKey) -> EcdhP384PublicKey {
+        EcdhP384PublicKey {
             bytes: private_key.public_bytes(),
         }
     }
@@ -225,9 +227,9 @@ impl EcdhP256 {
     ///
     /// Returns [`CryptoError::InvalidPublicKey`] if `P` is the point at infinity.
     pub fn agree(
-        private_key: &EcdhP256PrivateKey,
-        peer_public_key: &EcdhP256PublicKey,
-    ) -> Result<EcdhP256SharedSecret> {
+        private_key: &EcdhP384PrivateKey,
+        peer_public_key: &EcdhP384PublicKey,
+    ) -> Result<EcdhP384SharedSecret> {
         let product = peer_public_key
             .point()
             .to_projective()
@@ -235,16 +237,16 @@ impl EcdhP256 {
         let affine = product.to_affine().ok_or(CryptoError::InvalidPublicKey)?;
         let mut shared = [0_u8; SCALAR_BYTES];
         affine.x().write_bytes(&mut shared);
-        Ok(EcdhP256SharedSecret {
+        Ok(EcdhP384SharedSecret {
             bytes: SecretBytes::new(shared),
         })
     }
 }
 
-impl KeyAgreement for EcdhP256 {
-    type PrivateKey = EcdhP256PrivateKey;
-    type PublicKey = EcdhP256PublicKey;
-    type SharedSecret = EcdhP256SharedSecret;
+impl KeyAgreement for EcdhP384 {
+    type PrivateKey = EcdhP384PrivateKey;
+    type PublicKey = EcdhP384PublicKey;
+    type SharedSecret = EcdhP384SharedSecret;
 
     fn public_key(private_key: &Self::PrivateKey) -> Self::PublicKey {
         Self::public_key(private_key)
@@ -274,26 +276,26 @@ mod unit {
 
     #[test]
     fn secret_owners_are_redacted_and_sizes_are_exact() {
-        let private_key = EcdhP256PrivateKey::from_bytes([0x42; 32]).unwrap();
-        let public_key = EcdhP256::public_key(&private_key);
-        let shared = EcdhP256::agree(&private_key, &public_key).unwrap();
-        assert_eq!(format!("{private_key:?}"), "EcdhP256PrivateKey([REDACTED])");
-        assert_eq!(format!("{shared:?}"), "EcdhP256SharedSecret([REDACTED])");
-        assert_eq!(public_key.as_bytes().len(), 65);
-        assert_eq!(shared.expose_secret().len(), 32);
+        let private_key = EcdhP384PrivateKey::from_bytes([0x42; 48]).unwrap();
+        let public_key = EcdhP384::public_key(&private_key);
+        let shared = EcdhP384::agree(&private_key, &public_key).unwrap();
+        assert_eq!(format!("{private_key:?}"), "EcdhP384PrivateKey([REDACTED])");
+        assert_eq!(format!("{shared:?}"), "EcdhP384SharedSecret([REDACTED])");
+        assert_eq!(public_key.as_bytes().len(), 97);
+        assert_eq!(shared.expose_secret().len(), 48);
     }
 
     #[test]
     fn candidate_testing_adds_one_and_rejects_out_of_range_sources() {
         let mut one_source = FixedSource(0);
-        let key = EcdhP256PrivateKey::generate(&mut one_source).unwrap();
-        let mut one = [0_u8; 32];
-        one[31] = 1;
+        let key = EcdhP384PrivateKey::generate(&mut one_source).unwrap();
+        let mut one = [0_u8; 48];
+        one[47] = 1;
         assert_eq!(key.scalar_bytes(), &one);
 
         let mut saturated = FixedSource(0xff);
         assert_eq!(
-            EcdhP256PrivateKey::generate(&mut saturated).err(),
+            EcdhP384PrivateKey::generate(&mut saturated).err(),
             Some(CryptoError::EntropyUnavailable)
         );
     }

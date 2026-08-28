@@ -42,10 +42,13 @@
 //!    [`ChaCha20Poly1305`](aead::chacha20poly1305::ChaCha20Poly1305) reaches the same contract
 //!    from a stream cipher ([`ChaCha20`](cipher::chacha20::ChaCha20)) and a one-time
 //!    authenticator ([`Poly1305`](mac::poly1305::Poly1305)).
-//! 9. [`curve::p256`] builds the NIST P-256 group from 256-bit limbs, a shared modular
-//!    reduction, and a complete addition law. [`EcdhP256`](agreement::ecdh_p256::EcdhP256)
-//!    and [`EcdsaP256SigningKey`](signature::ecdsa_p256::EcdsaP256SigningKey) then show how
-//!    one group serves both key agreement and deterministic signatures.
+//! 9. [`curve::p256`] and [`curve::p384`] instantiate one generic short-Weierstrass group
+//!    ([`curve::weierstrass`]) from limb arithmetic, a shared modular reduction, and a complete
+//!    addition law. [`EcdhP256`](agreement::ecdh_p256::EcdhP256),
+//!    [`EcdhP384`](agreement::ecdh_p384::EcdhP384),
+//!    [`EcdsaP256SigningKey`](signature::ecdsa_p256::EcdsaP256SigningKey), and
+//!    [`EcdsaP384SigningKey`](signature::ecdsa_p384::EcdsaP384SigningKey) then show how one
+//!    group serves both key agreement and deterministic signatures.
 //! 10. [`rsa`] imports RSA components and applies the RFC 8017 primitives;
 //!     [`RsaPssSha256VerifyingKey`](signature::rsa_pss::RsaPssSha256VerifyingKey) shows how an
 //!     encoding method turns that integer permutation into a signature scheme.

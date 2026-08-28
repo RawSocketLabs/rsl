@@ -15,6 +15,7 @@
 use crate::{Result, random::RandomSource};
 
 pub mod ecdsa_p256;
+pub mod ecdsa_p384;
 pub mod ed25519;
 pub mod rsa_pss;
 

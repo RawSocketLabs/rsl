@@ -34,6 +34,7 @@
 use crate::Result;
 
 pub mod ecdh_p256;
+pub mod ecdh_p384;
 pub mod x25519;
 
 /// A public-key agreement primitive such as an elliptic-curve Diffie-Hellman function.

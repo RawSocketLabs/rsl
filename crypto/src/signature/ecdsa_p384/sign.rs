@@ -1,4 +1,4 @@
-//! FIPS 186-5 §6.4.1 ECDSA signature generation steps for P-256.
+//! FIPS 186-5 §6.4.1 ECDSA signature generation steps for P-384.
 //!
 //! The per-message secret `k` comes from the RFC 6979 generator in [`super::nonce`], which
 //! FIPS 186-5 §6.3 permits as a deterministic alternative to random `k`. The signing equation
@@ -10,7 +10,7 @@ use zeroize::Zeroize;
 use super::nonce::NonceGenerator;
 use crate::{
     Result,
-    curve::p256::{ProjectivePoint, Scalar},
+    curve::p384::{ProjectivePoint, Scalar},
 };
 
 /// Sign a 256-bit digest under private scalar `d`, deriving `k` deterministically.
@@ -18,7 +18,7 @@ use crate::{
 /// # Errors
 ///
 /// Propagates HMAC length errors only, which fixed-size RFC 6979 inputs cannot trigger.
-pub(super) fn sign_digest(private_scalar: &[u8; 32], digest: &[u8; 32]) -> Result<[u8; 64]> {
+pub(super) fn sign_digest(private_scalar: &[u8; 48], digest: &[u8; 48]) -> Result<[u8; 96]> {
     let d = Scalar::from_nonzero_canonical_bytes(private_scalar)
         .expect("a validated signing key holds a scalar in [1, n-1]");
     let mut generator = NonceGenerator::new(private_scalar, digest)?;
@@ -31,9 +31,9 @@ pub(super) fn sign_digest(private_scalar: &[u8; 32], digest: &[u8; 32]) -> Resul
         let outcome = k.and_then(|k| sign_with_nonce(&d, digest, &k));
         match outcome {
             Some((r, s)) => {
-                let mut signature = [0_u8; 64];
-                r.write_bytes(&mut signature[..32]);
-                s.write_bytes(&mut signature[32..]);
+                let mut signature = [0_u8; 96];
+                r.write_bytes(&mut signature[..48]);
+                s.write_bytes(&mut signature[48..]);
                 return Ok(signature);
             }
             None => generator.reject()?,
@@ -45,14 +45,14 @@ pub(super) fn sign_digest(private_scalar: &[u8; 32], digest: &[u8; 32]) -> Resul
 #[allow(clippy::many_single_char_names)] // `d`, `k`, `e`, `r`, and `s` are FIPS 186-5's names.
 pub(super) fn sign_with_nonce(
     d: &Scalar,
-    digest: &[u8; 32],
+    digest: &[u8; 48],
     k: &Scalar,
 ) -> Option<(Scalar, Scalar)> {
     // Step 2 (via §6.4.1 and §6.4.2 notation): `e` is the whole 256-bit digest.
-    let e = Scalar::reduce_bytes(digest).expect("a SHA-256 digest is exactly 32 bytes");
+    let e = Scalar::reduce_bytes(digest).expect("a SHA-384 digest is exactly 32 bytes");
 
     // Step 3: `R = [k]G`; `r = x_R mod n`.
-    let mut k_bytes = [0_u8; 32];
+    let mut k_bytes = [0_u8; 48];
     k.write_bytes(&mut k_bytes);
     let r_point = ProjectivePoint::generator()
         .multiply(&k_bytes)
@@ -74,9 +74,9 @@ pub(super) fn sign_with_nonce(
 #[cfg(test)]
 mod unit {
     use super::*;
-    use crate::{digest::sha2::sha256::Sha256, signature::ecdsa_p256::cavp_siggen_fixtures::CASES};
+    use crate::{digest::sha2::sha384::Sha384, signature::ecdsa_p384::cavp_siggen_fixtures::CASES};
 
-    fn decode(hex: &str) -> [u8; 32] {
+    fn decode(hex: &str) -> [u8; 48] {
         core::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
     }
 
@@ -86,20 +86,20 @@ mod unit {
             .collect()
     }
 
-    /// Published evidence: all 15 CAVP `SigGen` `[P-256,SHA-256]` cases reproduce `(r, s)` from
+    /// Published evidence: all 15 CAVP `SigGen` `[P-384,SHA-384]` cases reproduce `(r, s)` from
     /// the published `d`, `k`, and message.
     #[test]
     fn cavp_siggen_cases_reproduce_r_and_s_from_the_published_nonce() {
         for case in &CASES {
             let d = Scalar::from_nonzero_canonical_bytes(&decode(case.d)).unwrap();
             let k = Scalar::from_nonzero_canonical_bytes(&decode(case.k)).unwrap();
-            let digest = Sha256::digest(decode_message(case.message))
+            let digest = Sha384::digest(decode_message(case.message))
                 .unwrap()
                 .into_bytes();
             let (r, s) = sign_with_nonce(&d, &digest, &k).expect("published k is usable");
-            let mut r_bytes = [0_u8; 32];
+            let mut r_bytes = [0_u8; 48];
             r.write_bytes(&mut r_bytes);
-            let mut s_bytes = [0_u8; 32];
+            let mut s_bytes = [0_u8; 48];
             s.write_bytes(&mut s_bytes);
             assert_eq!(r_bytes, decode(case.r), "r for d={}", case.d);
             assert_eq!(s_bytes, decode(case.s), "s for d={}", case.d);

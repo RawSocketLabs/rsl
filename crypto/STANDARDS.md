@@ -757,6 +757,19 @@ are listed. Baselines re-checked 2026-08-28.
 | SP 800-38D §5.1 | GCM over any approved 128-bit block cipher using only `CIPH_K`. | Crate-private `gcm::block_cipher::GcmBlockCipher` implemented for `Aes128` and `Aes256`; GCTR, hash-subkey, tag, seal, and open layers are generic over it. AES-128 evidence unchanged. | Implemented and tested. |
 | SP 800-38D §7–§8 (256-bit key) | Same 96-bit-IV, 128-bit-tag profile with a 32-byte key. | `gcm::api256::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag}`; NIST GCM-AES256 Examples 1–5 (seal, open, changed tag); 105 Wycheproof 256-bit cases (39 valid re-sealed byte-exact, 27 invalid, 39 non-96-bit nonces refused); 32 differential `aes-gcm` cases. | Implemented and tested. |
 
+## P-384, ECDH P-384, and ECDSA P-384/SHA-384
+
+The P-256 sections above record the controlling publications (SP 800-186, SEC 1, the
+Renes–Costello–Batina formula, SP 800-56A Rev. 3, FIPS 186-5, RFC 6979); P-384 is a second
+parameter set for the same executable specification. Baselines re-checked 2026-08-28.
+
+| Location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| SP 800-186 §3.2.1.4 | `p = 2^384 - 2^128 - 2^96 + 2^32 - 1`, `n`, `b`, `G`, `h = 1`. | `curve::p384::P384` implementing the `weierstrass::Curve<6>` trait; hexadecimal-form tests for `p`, `n`, `b`, `G`; generator on curve; `[n]G = O`; RFC 5903 §8.2 initiator point from its private key. | Implemented and tested. |
+| Shared arithmetic | Limb arithmetic, field and scalar residues, complete addition, fixed multiplication, SEC 1 encoding, generic over the limb count. | `curve::weierstrass::{arithmetic, field, scalar, point}`; `Modulus::new` counts reduction folds from the published prime form (9 for P-256, 2 for P-384) and the unit tests check both widths. P-256 evidence is unchanged after the refactor. | Implemented and tested. |
+| SP 800-56A Rev. 3 §§5.6.1.2.2, 5.6.2.3.3, 5.7.1.2 (P-384) | Candidate-testing generation, full public-key validation, ECC CDH over 48-byte scalars and 97-byte points. | `agreement::ecdh_p384`; RFC 5903 §8.2 exchange; all 25 CAVP ECC CDH P-384 cases; 12 CAVP PKV P-384 cases; boundaries; 32 differential `p384` cases. | Implemented and tested. |
+| FIPS 186-5 §6.4.1–§6.4.2, A.2.2; RFC 6979 §3.2 (P-384, SHA-384) | Deterministic signing with HMAC-SHA-384 and verification with `e` = the full 384-bit digest. | `signature::ecdsa_p384`; RFC 6979 A.2.6 `k` values and exact signatures; all 15 CAVP `SigGen` `(d, k) -> (r, s)` P-384/SHA-384 cases; all 15 CAVP `SigVer` verdicts; range and tampering boundaries; byte-identical differential signatures with `p384`. | Implemented and tested. |
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

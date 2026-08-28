@@ -1,11 +1,11 @@
-//! RFC 6979 §3.2 deterministic per-signature secret `k` for P-256 with SHA-256.
+//! RFC 6979 §3.2 deterministic per-signature secret `k` for P-384 with SHA-384.
 //!
 //! ## Standards ownership
 //!
 //! RFC 6979 §3.2 derives `k` from the private key `x` and the message digest `h1` using an
-//! HMAC_DRBG-style construction keyed by the same hash. With SHA-256 and P-256, `hlen = qlen =
-//! 256` bits, so §2.3.2 `bits2int` keeps the whole 32-byte string, §2.3.3 `int2octets` is the
-//! 32-byte big-endian scalar encoding, and §2.3.4 `bits2octets(h1)` is `int2octets(h1 mod n)`.
+//! HMAC_DRBG-style construction keyed by the same hash. With SHA-384 and P-384, `hlen = qlen =
+//! 384` bits, so §2.3.2 `bits2int` keeps the whole 48-byte string, §2.3.3 `int2octets` is the
+//! 48-byte big-endian scalar encoding, and §2.3.4 `bits2octets(h1)` is `int2octets(h1 mod n)`.
 //! Every step is written out with the RFC's letters so it can be checked line by line.
 //!
 //! §3.2 step h.3 compares the candidate with `n` instead of reducing it; a rejected candidate
@@ -13,10 +13,10 @@
 
 use zeroize::Zeroize;
 
-use crate::{Result, curve::p256::Scalar, mac::hmac::sha256::HmacSha256};
+use crate::{Result, curve::p384::Scalar, mac::hmac::sha384::HmacSha384};
 
-/// `8 * ceil(hlen / 8)` bits of SHA-256 output, in bytes.
-const HLEN_BYTES: usize = 32;
+/// `8 * ceil(hlen / 8)` bits of SHA-384 output, in bytes.
+const HLEN_BYTES: usize = 48;
 
 /// RFC 6979 §3.2 state `(K, V)`; zeroized on drop because it determines `k`.
 pub(super) struct NonceGenerator {
@@ -29,12 +29,12 @@ impl NonceGenerator {
     ///
     /// # Errors
     ///
-    /// Propagates the HMAC length error, which the fixed 97-byte inputs cannot trigger.
-    pub(super) fn new(private_scalar: &[u8; 32], digest: &[u8; 32]) -> Result<Self> {
+    /// Propagates the HMAC length error, which the fixed 129-byte inputs cannot trigger.
+    pub(super) fn new(private_scalar: &[u8; 48], digest: &[u8; 48]) -> Result<Self> {
         // §2.3.4: bits2octets(h1) = int2octets(bits2int(h1) mod q).
-        let mut reduced_digest = [0_u8; 32];
+        let mut reduced_digest = [0_u8; 48];
         Scalar::reduce_bytes(digest)
-            .expect("a SHA-256 digest is exactly 32 bytes")
+            .expect("a SHA-384 digest is exactly 32 bytes")
             .write_bytes(&mut reduced_digest);
 
         // b, c.
@@ -59,7 +59,7 @@ impl NonceGenerator {
     ///
     /// The caller applies step h.3's range and `r`/`s` checks and, on rejection, calls
     /// [`Self::reject`].
-    pub(super) fn candidate(&mut self) -> Result<[u8; 32]> {
+    pub(super) fn candidate(&mut self) -> Result<[u8; 48]> {
         self.v = self.hmac(&[&self.v])?;
         Ok(self.v)
     }
@@ -72,7 +72,7 @@ impl NonceGenerator {
     }
 
     fn hmac(&self, parts: &[&[u8]]) -> Result<[u8; HLEN_BYTES]> {
-        let mut mac = HmacSha256::new(&self.k)?;
+        let mut mac = HmacSha384::new(&self.k)?;
         for part in parts {
             mac.update(part)?;
         }
@@ -90,30 +90,30 @@ impl Drop for NonceGenerator {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use crate::digest::sha2::sha256::Sha256;
+    use crate::digest::sha2::sha384::Sha384;
 
-    fn decode(hex: &str) -> [u8; 32] {
+    fn decode(hex: &str) -> [u8; 48] {
         core::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
     }
 
-    /// RFC 6979 A.2.5 private key `x`.
-    const X: &str = "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721";
+    /// RFC 6979 A.2.6 private key `x`.
+    const X: &str = "6b9d3dad2e1b8c1c05b19875b6659f4de23c3b667bf297ba9aa47740787137d896d5724e4c70a825f872c9ea60d2edf5";
 
-    /// Published evidence: A.2.5's SHA-256 `k` values for "sample" and "test" are reproduced.
+    /// Published evidence: A.2.6's SHA-384 `k` values for "sample" and "test" are reproduced.
     #[test]
     fn rfc_6979_published_k_values_are_reproduced() {
         let cases = [
             (
                 &b"sample"[..],
-                "A6E3C57DD01ABE90086538398355DD4C3B17AA873382B0F24D6129493D8AAD60",
+                "94ed910d1a099dad3254e9242ae85abde4ba15168eaf0ca87a555fd56d10fbca2907e3e83ba95368623b8c4686915cf9",
             ),
             (
                 &b"test"[..],
-                "D16B6AE827F17175E040871A1C7EC3500192C4C92677336EC2537ACAEE0008E0",
+                "015ee46a5bf88773ed9123a5ab0807962d193719503c527b031b4c2d225092ada71f4a459bc0da98adb95837db8312ea",
             ),
         ];
         for (message, expected_k) in cases {
-            let digest = Sha256::digest(message).unwrap().into_bytes();
+            let digest = Sha384::digest(message).unwrap().into_bytes();
             let mut generator = NonceGenerator::new(&decode(X), &digest).unwrap();
             assert_eq!(generator.candidate().unwrap(), decode(expected_k));
         }
@@ -122,7 +122,7 @@ mod unit {
     /// Standard-derived evidence: the retry update yields a different candidate.
     #[test]
     fn rejection_advances_the_generator_state() {
-        let digest = Sha256::digest(b"sample").unwrap().into_bytes();
+        let digest = Sha384::digest(b"sample").unwrap().into_bytes();
         let mut generator = NonceGenerator::new(&decode(X), &digest).unwrap();
         let first = generator.candidate().unwrap();
         generator.reject().unwrap();

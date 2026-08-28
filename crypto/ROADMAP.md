@@ -142,6 +142,13 @@ Each algorithm change must include:
     Evidence: all 60 Appendix A.3 words, the four `AES_Core256` blocks, NIST GCM-AES256
     Examples 1–5, 105 Wycheproof cases, and differential `aes`/`aes-gcm` comparison.
 
+14. **P-384, ECDH P-384, ECDSA P-384/SHA-384** — the P-256 field, scalar, and point layers
+    became `curve::weierstrass`, generic over the limb count and a `Curve` parameter trait; the
+    reduction fold count is derived from each prime's form. P-256 and P-384 are now parameter
+    sets with their own published evidence, and the ECDH/ECDSA schemes are typed profiles over
+    each. Evidence for P-384: SP 800-186 §3.2.1.4 forms, RFC 5903 §8.2, RFC 6979 A.2.6, all
+    CAVP ECC CDH, PKV, SigGen, and SigVer P-384 cases, and differential `p384` comparison.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
@@ -155,8 +162,7 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. P-384 ECDH and ECDSA-SHA-384, reusing the P-256 module structure.
-2. X448 and Ed448 as lower-priority interoperability profiles.
+1. X448 and Ed448 as lower-priority interoperability profiles.
 
 ## After the first vertical slice
 
