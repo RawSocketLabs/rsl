@@ -15,6 +15,15 @@
 //! secret-dependent control flow (the repository's `SIDE-CHANNELS.md` records every reviewed
 //! site), but that is not a constant-time guarantee.
 //!
+//! # Choosing an algorithm
+//!
+//! The repository's [algorithm-selection guide][selection-guide] starts from a task, compares
+//! choices within each implemented family, records TLS/SSH pairings, and marks combinations that
+//! must never be assembled. Use it to choose; use the learning path below to study the selected
+//! implementation.
+//!
+//! [selection-guide]: https://github.com/RawSocketLabs/rsl/blob/main/crypto/GUIDE.md
+//!
 //! # Learning path
 //!
 //! The public implementations form a dependency ladder:

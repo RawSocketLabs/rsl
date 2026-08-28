@@ -57,9 +57,10 @@ deterministic `k` and verification, both with SHA-256). The RFC 8017 RSA integer
 SHA-256 is tested at several levels: private formula and intermediate-state tests,
 NIST-published known answers, NIST CAVP padding/block-boundary vectors, awkward input
 fragmentation, and differential comparison with a development-only established implementation.
-See [`STRUCTURE.md`](STRUCTURE.md) for code boundaries, [`STANDARDS.md`](STANDARDS.md) for exact
-section coverage, and [`tests/vectors/sha256/README.md`](tests/vectors/sha256/README.md) for vector
-provenance. HMAC-SHA-256 adds focused secret-key normalization/pad tests, every RFC 4231 case,
+See [`GUIDE.md`](GUIDE.md) for task-to-algorithm selection, [`STRUCTURE.md`](STRUCTURE.md) for code
+boundaries, [`STANDARDS.md`](STANDARDS.md) for exact section coverage, and
+[`tests/vectors/sha256/README.md`](tests/vectors/sha256/README.md) for vector provenance.
+HMAC-SHA-256 adds focused secret-key normalization/pad tests, every RFC 4231 case,
 full-tag verification failures, message fragmentation, and an independent differential oracle.
 AES-128 adds every Appendix A.1 expanded-key word, Appendix B and supplementary NIST published
 block examples, inspectable round boundaries, forward/inverse cancellation, and a development-only
@@ -90,6 +91,12 @@ records a source-level review of every secret-dependent branch, and [`fuzz/`](fu
 holds libFuzzer targets for every untrusted-input boundary; measured timing analysis, broader
 interoperability work, and independent cryptographic audit are still required before production
 use.
+
+## Choose an algorithm
+
+[`GUIDE.md`](GUIDE.md) starts from the protocol task, compares the implemented families, records
+real TLS/SSH pairings, and marks combinations that must never be assembled. The module pages remain
+the source for mechanics; the guide is only the selection layer.
 
 ## Read the teaching reference
 

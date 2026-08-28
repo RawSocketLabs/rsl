@@ -832,6 +832,74 @@ Re-checked 2026-08-28.
 No differential crate is used for Ed448 (the RustCrypto implementation is pre-release only);
 Wycheproof is the independent scheme-level oracle.
 
+## Protocol selection source baselines
+
+This section is a citation index for `GUIDE.md`, not an expansion of this crate's implementation
+boundary. TLS records, SSH packets, negotiation, transcript binding, sequence state, and replay
+policy remain protocol-crate work.
+
+TLS names and construction rules were originally checked against:
+
+- **Publication:** RFC 8446, *The Transport Layer Security (TLS) Protocol Version 1.3*, August
+  2018, Standards Track. [RFC Editor record](https://www.rfc-editor.org/info/rfc8446/);
+  [doi:10.17487/RFC8446](https://doi.org/10.17487/RFC8446).
+- **Locations used:** §4.1.1 (independent selection of cipher suite, key-share group, and
+  signature/certificate pair), §4.2.3 (signature schemes), §4.2.7 (supported groups), §5.3
+  (per-record nonce), §7.1 (HKDF key schedule and labels), §9.1 (mandatory algorithms), and
+  Appendix B.4 (cipher suites).
+- **Supersession:** RFC 9846, *The Transport Layer Security (TLS) Protocol Version 1.3*, July
+  2026, Standards Track, [obsoletes RFC 8446](https://www.rfc-editor.org/info/rfc9846/) as a
+  backward-compatible minor update. Its §1.2 records the relationship; its current signature,
+  group, and Appendix B.4 suite values retain the choices cited here.
+- **Baseline last checked:** 2026-08-28.
+
+SSH names and construction rules were checked against:
+
+- **Selection guidance:** RFC 9142, *Key Exchange (KEX) Method Updates and Recommendations for
+  Secure Shell (SSH)*, January 2022, Standards Track.
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc9142/);
+  [doi:10.17487/RFC9142](https://doi.org/10.17487/RFC9142). §1 and Tables 1–3 state the
+  cross-component security-level rule; §§3.1 and 4 assign `curve25519-sha256` `SHOULD` and
+  `curve448-sha512` `MAY`.
+- **Curve25519/448 KEX names:** RFC 8731, *Secure Shell (SSH) Key Exchange Method Using
+  Curve25519 and Curve448*, February 2020, Standards Track, §§3–4.
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc8731/);
+  [doi:10.17487/RFC8731](https://doi.org/10.17487/RFC8731).
+- **Exchange-hash and key-derivation boundary:** RFC 4253, *The Secure Shell (SSH) Transport
+  Layer Protocol*, January 2006, Standards Track, §§7.2 and 8. The exchange hash binds the
+  transcript and shared secret; `K` and `H` feed the SSH key derivation.
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc4253/);
+  [doi:10.17487/RFC4253](https://doi.org/10.17487/RFC4253).
+- **NIST-curve KEX and signature names:** RFC 5656, *Elliptic Curve Algorithm Integration in the
+  Secure Shell Transport Layer*, December 2009, Standards Track, §6.2
+  (`ecdsa-sha2-nistp*`) and §6.3 (`ecdh-sha2-nistp*`).
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc5656/);
+  [doi:10.17487/RFC5656](https://doi.org/10.17487/RFC5656).
+- **EdDSA names:** RFC 8709, *Ed25519 and Ed448 Public Key Algorithms for the Secure Shell (SSH)
+  Protocol*, February 2020, Standards Track, §§3–7 (`ssh-ed25519`, `ssh-ed448`).
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc8709/);
+  [doi:10.17487/RFC8709](https://doi.org/10.17487/RFC8709).
+- **AES-GCM packet construction:** RFC 5647, *AES Galois Counter Mode for the Secure Shell
+  Transport Layer Protocol*, August 2009, Informational, §§5–7. Its §5.1 derives a 12-byte
+  initial IV through the SSH KDF; §7.1 splits it into a four-byte fixed field and eight-byte
+  invocation counter and increments the counter per packet.
+  [RFC Editor record](https://www.rfc-editor.org/info/rfc5647/);
+  [doi:10.17487/RFC5647](https://doi.org/10.17487/RFC5647). OpenSSH uses the construction under
+  `aes128-gcm@openssh.com` / `aes256-gcm@openssh.com` with different negotiation; the
+  [OpenSSH specification index](https://www.openbsd.org/openssh/specs.html) and current
+  [OpenSSH `PROTOCOL`](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL) point to
+  the profile source.
+- **OpenSSH ChaCha20-Poly1305:** current OpenSSH `PROTOCOL` points to
+  [the SSHM work in progress](https://datatracker.ietf.org/doc/draft-ietf-sshm-chacha20-poly1305/),
+  whose construction documents two independent 256-bit ChaCha20 keys and the SSH packet sequence
+  number encoded as a 64-bit nonce. This is not RFC 8439 `AEAD_CHACHA20_POLY1305`.
+- **Interoperability evidence for the 448 tier:** RFC 9142 makes curve448 optional while
+  curve25519 is recommended. The current OpenSSH specification index lists only the Ed25519 and
+  Curve25519 members of RFC 8709 and RFC 8731 as implemented. `GUIDE.md` therefore labels the
+  X448/Ed448 tier as rarely negotiated rather than claiming a protocol prohibition.
+- **Baseline last checked:** 2026-08-28. Internet-Drafts are work in progress, not final RFCs;
+  the exact OpenSSH vendor constructions are cited as implementation profiles.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,
