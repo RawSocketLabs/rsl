@@ -104,9 +104,11 @@ the source for mechanics; the guide is only the selection layer.
 not split text into AES blocks. For bounded-memory input, [`aead::record`](src/aead/record.rs)
 provides a staged builder, `write_to` over arbitrary fragments, one-at-a-time delivery to a
 caller-selected fallible `RecordSink`, and a consuming `finish_to` transition. Sink failure
-invalidates the stream so a nonce cannot be retried. The collecting `write`/`finish` methods remain
-conveniences. This layer defines no wire encoding. Protocol crates still own negotiation,
-framing, key derivation and lifetime, transcript binding, replay, and rekeying.
+invalidates the stream so a nonce cannot be retried. On receipt, `open_data_to` authenticates each
+record before moving plaintext into a fallible `RecordPlaintextSink`; `open_final_to` consumes the
+opener. A plaintext-sink failure invalidates the opener so a record cannot be delivered twice. The
+collecting methods remain conveniences. This layer defines no wire encoding. Protocol crates still
+own negotiation, framing, key derivation and lifetime, transcript binding, replay, and rekeying.
 
 ## Read the teaching reference
 

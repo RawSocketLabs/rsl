@@ -5,8 +5,8 @@ use core::convert::Infallible;
 use rsl_crypto::{
     CryptoError, Result,
     aead::{
-        CounterNonceSequence, DataRecord, FinalRecord, NonceSequence, RecordBuilder, RecordSink,
-        RecordWriteError,
+        CounterNonceSequence, DataRecord, FinalRecord, NonceSequence, RecordBuilder,
+        RecordOpenError, RecordPlaintextSink, RecordSink, RecordWriteError,
         gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
     },
 };
@@ -64,6 +64,26 @@ impl RecordSink<Aes256GcmTag> for RecordingSink {
     }
 }
 
+#[derive(Default)]
+struct RecordingPlaintextSink {
+    data: Vec<Vec<u8>>,
+    final_plaintext: Option<Vec<u8>>,
+}
+
+impl RecordPlaintextSink for RecordingPlaintextSink {
+    type Error = Infallible;
+
+    fn write_data(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.data.push(plaintext);
+        Ok(())
+    }
+
+    fn write_final(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.final_plaintext = Some(plaintext);
+        Ok(())
+    }
+}
+
 #[test]
 fn arbitrary_write_fragmentation_produces_identical_records() {
     let message = b"fragmentation does not change authenticated record boundaries";
@@ -110,6 +130,57 @@ fn matching_opener_recovers_only_authenticated_ordered_records() {
     recovered.extend(opener.open_final(&final_record).unwrap());
 
     assert_eq!(recovered, message);
+}
+
+#[test]
+fn open_to_streams_the_same_plaintext_as_collecting_open() {
+    let message = b"authenticated plaintext moves through one bounded chunk at a time";
+    let (records, final_record) = seal_fragments(&[message]);
+    let mut opener = builder().build_opener().unwrap();
+    let mut sink = RecordingPlaintextSink::default();
+
+    for record in &records {
+        opener.open_data_to(record, &mut sink).unwrap();
+    }
+    opener.open_final_to(&final_record, &mut sink).unwrap();
+
+    let recovered: Vec<u8> = sink
+        .data
+        .iter()
+        .map(Vec::as_slice)
+        .chain(sink.final_plaintext.as_deref())
+        .flatten()
+        .copied()
+        .collect();
+    assert_eq!(recovered, message);
+}
+
+#[test]
+fn authentication_failure_never_invokes_the_plaintext_sink_or_advances() {
+    let (records, _) = seal_fragments(&[b"1234567"]);
+    let record = &records[0];
+    let mut changed_ciphertext = record.ciphertext().to_vec();
+    changed_ciphertext[0] ^= 1;
+    let changed = DataRecord::from_parts(
+        record.record_number(),
+        record.plaintext_len(),
+        changed_ciphertext,
+        *record.tag(),
+    );
+    let mut opener = builder().build_opener().unwrap();
+    let mut sink = RecordingPlaintextSink::default();
+
+    assert_eq!(
+        opener.open_data_to(&changed, &mut sink),
+        Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed))
+    );
+    assert!(sink.data.is_empty());
+    assert!(sink.final_plaintext.is_none());
+    assert_eq!(opener.next_record_number(), 0);
+
+    opener.open_data_to(record, &mut sink).unwrap();
+    assert_eq!(sink.data, [b"1234567".to_vec()]);
+    assert_eq!(opener.next_record_number(), 1);
 }
 
 #[test]
@@ -385,6 +456,133 @@ fn finish_to_reports_final_sink_failure_after_consuming_the_sealer() {
     assert_eq!(
         sealer.finish_to(&mut sink),
         Err(RecordWriteError::Sink("selected final-record failure"))
+    );
+}
+
+struct FailingPlaintextSink {
+    accepted: Vec<Vec<u8>>,
+    calls: usize,
+    fail_on: usize,
+}
+
+impl RecordPlaintextSink for FailingPlaintextSink {
+    type Error = &'static str;
+
+    fn write_data(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        let call = self.calls;
+        self.calls += 1;
+        if call == self.fail_on {
+            return Err("selected plaintext failure");
+        }
+        self.accepted.push(plaintext);
+        Ok(())
+    }
+
+    fn write_final(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn every_plaintext_sink_failure_boundary_invalidates_the_opener() {
+    let (records, final_record) = seal_fragments(&[b"123456712345671234567"]);
+    assert_eq!(records.len(), 3);
+
+    for fail_on in 0..records.len() {
+        let mut opener = builder().build_opener().unwrap();
+        let mut sink = FailingPlaintextSink {
+            accepted: Vec::new(),
+            calls: 0,
+            fail_on,
+        };
+
+        for (index, record) in records.iter().enumerate() {
+            let result = opener.open_data_to(record, &mut sink);
+            if index == fail_on {
+                assert_eq!(
+                    result,
+                    Err(RecordOpenError::Sink("selected plaintext failure"))
+                );
+                break;
+            }
+            result.unwrap();
+        }
+
+        assert_eq!(sink.accepted.len(), fail_on);
+        assert_eq!(sink.calls, fail_on + 1);
+        assert_eq!(opener.next_record_number(), (fail_on + 1) as u64);
+
+        let mut later_sink = RecordingPlaintextSink::default();
+        assert_eq!(
+            opener.open_data_to(&records[0], &mut later_sink),
+            Err(RecordOpenError::Crypto(CryptoError::StateInvalidated))
+        );
+        assert_eq!(
+            opener.open_data(&records[0]),
+            Err(CryptoError::StateInvalidated)
+        );
+        assert_eq!(
+            opener.open_final(&final_record),
+            Err(CryptoError::StateInvalidated)
+        );
+    }
+}
+
+struct PanickingPlaintextSink;
+
+impl RecordPlaintextSink for PanickingPlaintextSink {
+    type Error = Infallible;
+
+    fn write_data(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        panic!("selected plaintext sink panic")
+    }
+
+    fn write_final(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_caught_plaintext_sink_panic_cannot_redeliver_a_record() {
+    let (records, _) = seal_fragments(&[b"1234567"]);
+    let mut opener = builder().build_opener().unwrap();
+    let mut sink = PanickingPlaintextSink;
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = opener.open_data_to(&records[0], &mut sink);
+    }));
+
+    assert!(panic.is_err());
+    assert_eq!(opener.next_record_number(), 1);
+    assert_eq!(
+        opener.open_data(&records[0]),
+        Err(CryptoError::StateInvalidated)
+    );
+}
+
+struct FinalFailingPlaintextSink;
+
+impl RecordPlaintextSink for FinalFailingPlaintextSink {
+    type Error = &'static str;
+
+    fn write_data(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn write_final(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        Err("selected final-plaintext failure")
+    }
+}
+
+#[test]
+fn open_final_to_reports_sink_failure_after_consuming_the_opener() {
+    let (_, final_record) = seal_fragments(&[b"tail"]);
+    let opener = builder().build_opener().unwrap();
+    let mut sink = FinalFailingPlaintextSink;
+
+    assert_eq!(
+        opener.open_final_to(&final_record, &mut sink),
+        Err(RecordOpenError::Sink("selected final-plaintext failure"))
     );
 }
 

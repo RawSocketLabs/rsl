@@ -22,7 +22,7 @@ A crash drops a reproducer in `crypto/fuzz/artifacts/<target>/`; replay it by pa
 
 | Target | Boundary | Invariants |
 | --- | --- | --- |
-| `aead_open` | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305, and AEAD record opening with arbitrary nonce/AAD/ciphertext/tag/record fields | no panic; genuine one-shot and fragmented `RecordSink` round-trips; a rejected handoff invalidates the sealer; flipped tag fails |
+| `aead_open` | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305, and AEAD record opening with arbitrary nonce/AAD/ciphertext/tag/record fields | no panic; genuine fragmented record/plaintext-sink round-trips; rejected handoffs invalidate sealers/openers; flipped tag fails |
 | `signature_verify` | Ed25519, Ed448, ECDSA P-256, ECDSA P-384 key/signature parsing and verification | no panic |
 | `public_key_parse` | SEC 1 points (P-256/P-384), Edwards points (Ed25519/Ed448), Montgomery coordinates (X25519/X448) and agreement over them | no panic |
 | `digest_fragmentation` | SHA-256/384/512, SHA3-256, SHAKE256, HMAC, Poly1305, and HKDF with arbitrary fragmentation | fragmented equals one-shot |

@@ -12,7 +12,7 @@ use rsl_crypto::{
     CryptoError,
     aead::{
         Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordSink,
-        RecordWriteError,
+        RecordOpenError, RecordPlaintextSink, RecordWriteError,
         chacha20poly1305::{
             ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
         },
@@ -74,6 +74,48 @@ impl RecordSink<Aes256GcmTag> for RejectingSink {
         &mut self,
         _record: FinalRecord<Aes256GcmTag>,
     ) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct CollectingPlaintextSink {
+    chunks: Vec<Vec<u8>>,
+}
+
+impl RecordPlaintextSink for CollectingPlaintextSink {
+    type Error = Infallible;
+
+    fn write_data(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.chunks.push(plaintext);
+        Ok(())
+    }
+
+    fn write_final(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.chunks.push(plaintext);
+        Ok(())
+    }
+}
+
+struct RejectingPlaintextSink {
+    calls: usize,
+    reject_on: usize,
+}
+
+impl RecordPlaintextSink for RejectingPlaintextSink {
+    type Error = ();
+
+    fn write_data(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        let call = self.calls;
+        self.calls += 1;
+        if call == self.reject_on {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn write_final(&mut self, _plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -154,11 +196,16 @@ fuzz_target!(|data: &[u8]| {
         .context(aad)
         .build_opener()
         .unwrap();
-    let mut recovered = Vec::new();
+    let mut plaintext_sink = CollectingPlaintextSink::default();
     for record in &sink.data {
-        recovered.extend(opener.open_data(record).unwrap());
+        opener
+            .open_data_to(record, &mut plaintext_sink)
+            .unwrap();
     }
-    recovered.extend(opener.open_final(final_record).unwrap());
+    opener
+        .open_final_to(final_record, &mut plaintext_sink)
+        .unwrap();
+    let recovered: Vec<u8> = plaintext_sink.chunks.into_iter().flatten().collect();
     assert_eq!(recovered, payload);
 
     let completed_records = payload.len() / record_size;
@@ -182,6 +229,30 @@ fuzz_target!(|data: &[u8]| {
             failing_sealer.write_to([], &mut failing_sink),
             Err(RecordWriteError::Crypto(CryptoError::StateInvalidated))
         ));
+
+        let mut failing_opener =
+            RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+                .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+                .record_size(record_size)
+                .context(aad)
+                .build_opener()
+                .unwrap();
+        let mut failing_plaintext_sink = RejectingPlaintextSink {
+            calls: 0,
+            reject_on: usize::from(tag[1]) % completed_records,
+        };
+        for (index, record) in sink.data.iter().enumerate() {
+            let result = failing_opener.open_data_to(record, &mut failing_plaintext_sink);
+            if index == failing_plaintext_sink.reject_on {
+                assert!(matches!(result, Err(RecordOpenError::Sink(()))));
+                break;
+            }
+            result.unwrap();
+        }
+        assert!(matches!(
+            failing_opener.open_data_to(&sink.data[0], &mut failing_plaintext_sink),
+            Err(RecordOpenError::Crypto(CryptoError::StateInvalidated))
+        ));
     }
 
     let arbitrary_data = DataRecord::from_parts(
@@ -196,7 +267,8 @@ fuzz_target!(|data: &[u8]| {
         .context(aad)
         .build_opener()
         .unwrap();
-    let _ = arbitrary_opener.open_data(&arbitrary_data);
+    let mut arbitrary_plaintext_sink = CollectingPlaintextSink::default();
+    let _ = arbitrary_opener.open_data_to(&arbitrary_data, &mut arbitrary_plaintext_sink);
 
     let arbitrary_final = FinalRecord::from_parts(0, 0, payload.to_vec(), Aes256GcmTag::new(tag));
     let arbitrary_opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
@@ -205,5 +277,6 @@ fuzz_target!(|data: &[u8]| {
         .context(aad)
         .build_opener()
         .unwrap();
-    let _ = arbitrary_opener.open_final(&arbitrary_final);
+    let mut arbitrary_final_sink = CollectingPlaintextSink::default();
+    let _ = arbitrary_opener.open_final_to(&arbitrary_final, &mut arbitrary_final_sink);
 });

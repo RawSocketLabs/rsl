@@ -128,9 +128,12 @@
 //! fixed-size record splitting through [`RecordSealer::write_to`](aead::RecordSealer::write_to),
 //! one-at-a-time delivery to a fallible [`RecordSink`](aead::RecordSink), and a consuming
 //! authenticated [`RecordSealer::finish_to`](aead::RecordSealer::finish_to) transition. A sink
-//! failure invalidates the stream rather than retrying a used nonce. The record contract remains
-//! wire-independent. Protocol crates still own negotiation, framing, key lifetimes, transcript
-//! rules, and replay policy.
+//! failure invalidates the stream rather than retrying a used nonce. On receipt,
+//! [`RecordOpener::open_data_to`](aead::RecordOpener::open_data_to) authenticates before moving
+//! each chunk into a fallible [`RecordPlaintextSink`](aead::RecordPlaintextSink), and
+//! [`RecordOpener::open_final_to`](aead::RecordOpener::open_final_to) consumes the opener. The
+//! record contract remains wire-independent. Protocol crates still own negotiation, framing, key
+//! lifetimes, transcript rules, and replay policy.
 //!
 //! # Type and lifetime policy
 //!

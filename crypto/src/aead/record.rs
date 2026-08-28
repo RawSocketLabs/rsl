@@ -4,7 +4,8 @@
 //! module is for input that should be processed incrementally: [`RecordSealer::write_to`] accepts
 //! fragments of any size, sends full authenticated records to a caller-selected [`RecordSink`],
 //! and retains only the final partial record. [`RecordSealer::finish_to`] consumes the sealer and
-//! sends the authenticated end record.
+//! sends the authenticated end record. [`RecordOpener::open_data_to`] authenticates each record
+//! before moving its plaintext into a [`RecordPlaintextSink`].
 //!
 //! The API exposes the useful state transitions directly. There are no public `Missing` or
 //! `Present` marker values:
@@ -12,6 +13,7 @@
 //! - [`RecordBuilder::new`] returns a stage that can accept a nonce sequence;
 //! - [`RecordBuilderWithSequence::record_size`] returns the only stage with `build_*` methods;
 //! - [`RecordSealer::finish_to`] consumes the sealer, so no more input can be written afterward;
+//! - [`RecordOpener::open_final_to`] consumes the opener after the authenticated end record;
 //! - data and final records have distinct [`DataRecord`] and [`FinalRecord`] types.
 //!
 //! This is a wire-independent record contract, not TLS, SSH, or a file format. It does not encode
@@ -43,14 +45,31 @@
 //! ```
 //! use core::convert::Infallible;
 //! use rsl_crypto::aead::{
-//!     CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordSink,
-//!     gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
+//!     CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordPlaintextSink,
+//!     RecordSink, gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
 //! };
 //!
 //! #[derive(Default)]
 //! struct Records {
 //!     data: Vec<DataRecord<Aes256GcmTag>>,
 //!     final_record: Option<FinalRecord<Aes256GcmTag>>,
+//! }
+//!
+//! #[derive(Default)]
+//! struct Plaintext(Vec<u8>);
+//!
+//! impl RecordPlaintextSink for Plaintext {
+//!     type Error = Infallible;
+//!
+//!     fn write_data(&mut self, plaintext: Vec<u8>) -> Result<(), Self::Error> {
+//!         self.0.extend(plaintext);
+//!         Ok(())
+//!     }
+//!
+//!     fn write_final(&mut self, plaintext: Vec<u8>) -> Result<(), Self::Error> {
+//!         self.0.extend(plaintext);
+//!         Ok(())
+//!     }
 //! }
 //!
 //! impl RecordSink<Aes256GcmTag> for Records {
@@ -89,19 +108,22 @@
 //!     .context(b"document format v1")
 //!     .build_opener()?;
 //!
-//! let mut recovered = Vec::new();
+//! let mut recovered = Plaintext::default();
 //! for record in &records.data {
-//!     recovered.extend(opener.open_data(record)?);
+//!     opener.open_data_to(record, &mut recovered).unwrap();
 //! }
-//! recovered.extend(opener.open_final(records.final_record.as_ref().unwrap())?);
-//! assert_eq!(recovered, b"a very large piece of text");
+//! opener
+//!     .open_final_to(records.final_record.as_ref().unwrap(), &mut recovered)
+//!     .unwrap();
+//! assert_eq!(recovered.0, b"a very large piece of text");
 //! # Ok::<(), rsl_crypto::CryptoError>(())
 //! ```
 //!
 //! [`RecordSealer::write_to`] owns at most one completed record at a time; the sink chooses the
 //! wire encoding and output destination. [`RecordSealer::write`] remains a convenience that
 //! collects all records completed by one call and therefore allocates output proportional to that
-//! call's input.
+//! call's input. [`RecordOpener::open_data_to`] similarly authenticates and delivers one bounded
+//! plaintext chunk at a time; [`RecordOpener::open_data`] returns that chunk directly.
 
 use alloc::vec::Vec;
 use core::{convert::Infallible, fmt, marker::PhantomData};
@@ -331,6 +353,7 @@ where
             record_size: self.record_size,
             context: self.context,
             next_record: 0,
+            failure: None,
         })
     }
 }
@@ -527,6 +550,67 @@ where
     }
 }
 
+/// A fallible destination for authenticated record plaintext.
+///
+/// The opener calls these methods only after authenticating the record and its metadata. A
+/// successful call means the sink has accepted ownership of the plaintext; this crate does not
+/// define whether acceptance means processing, buffering, durable storage, or delivery onward.
+pub trait RecordPlaintextSink {
+    /// The destination-specific output error.
+    type Error;
+
+    /// Accept the plaintext of one full, non-final record.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink's error when it cannot accept the authenticated plaintext.
+    fn write_data(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error>;
+
+    /// Accept the plaintext of the one final record that terminates the stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink's error when it cannot accept the authenticated plaintext.
+    fn write_final(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error>;
+}
+
+/// A cryptographic or destination error from streamed record opening.
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RecordOpenError<E> {
+    /// Record authentication or opening failed.
+    Crypto(CryptoError),
+    /// The destination rejected authenticated plaintext.
+    Sink(E),
+}
+
+impl<E> From<CryptoError> for RecordOpenError<E> {
+    fn from(error: CryptoError) -> Self {
+        Self::Crypto(error)
+    }
+}
+
+impl<E: fmt::Display> fmt::Display for RecordOpenError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Crypto(error) => write!(formatter, "record opening failed: {error}"),
+            Self::Sink(error) => write!(formatter, "plaintext sink failed: {error}"),
+        }
+    }
+}
+
+impl<E> core::error::Error for RecordOpenError<E>
+where
+    E: core::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Crypto(error) => Some(error),
+            Self::Sink(error) => Some(error),
+        }
+    }
+}
+
 struct DataRecordCollector<Tag> {
     records: Vec<DataRecord<Tag>>,
 }
@@ -540,6 +624,24 @@ impl<Tag> RecordSink<Tag> for DataRecordCollector<Tag> {
     }
 
     fn write_final(&mut self, _record: FinalRecord<Tag>) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+struct PlaintextCollector {
+    plaintext: Vec<u8>,
+}
+
+impl RecordPlaintextSink for PlaintextCollector {
+    type Error = Infallible;
+
+    fn write_data(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.plaintext = plaintext;
+        Ok(())
+    }
+
+    fn write_final(&mut self, plaintext: Vec<u8>) -> core::result::Result<(), Self::Error> {
+        self.plaintext = plaintext;
         Ok(())
     }
 }
@@ -825,15 +927,17 @@ impl<A, S> Drop for RecordSealer<A, S> {
 
 /// Authenticate and open a sequence of [`DataRecord`] values followed by one [`FinalRecord`].
 ///
-/// [`open_data`](Self::open_data) advances only after successful authentication.
-/// [`open_final`](Self::open_final) consumes the opener whether authentication succeeds or fails,
-/// preventing accidental use after an asserted end-of-stream record.
+/// Use [`open_data_to`](Self::open_data_to) to deliver each authenticated plaintext chunk directly
+/// to a [`RecordPlaintextSink`], then call [`open_final_to`](Self::open_final_to) exactly once.
+/// [`open_data`](Self::open_data) and [`open_final`](Self::open_final) are collecting conveniences.
+/// Final opening consumes the opener whether authentication or output succeeds or fails.
 pub struct RecordOpener<A, S> {
     algorithm: A,
     nonces: S,
     record_size: usize,
     context: Vec<u8>,
     next_record: u64,
+    failure: Option<CryptoError>,
 }
 
 impl<A, S> RecordOpener<A, S>
@@ -861,18 +965,56 @@ where
     /// # Errors
     ///
     /// Returns [`CryptoError::AuthenticationFailed`] for wrong order, kind, length, context,
-    /// ciphertext, or tag; otherwise returns a nonce-sequence or AEAD configuration error.
+    /// ciphertext, or tag; [`CryptoError::StateInvalidated`] after an earlier plaintext-sink
+    /// failure; otherwise returns a nonce-sequence or AEAD configuration error.
     pub fn open_data(&mut self, record: &DataRecord<A::Tag>) -> Result<Vec<u8>> {
+        let mut collector = PlaintextCollector {
+            plaintext: Vec::new(),
+        };
+        match self.open_data_to(record, &mut collector) {
+            Ok(()) => Ok(collector.plaintext),
+            Err(RecordOpenError::Crypto(error)) => Err(error),
+            Err(RecordOpenError::Sink(error)) => match error {},
+        }
+    }
+
+    /// Authenticate one full data record and send its plaintext to `sink`.
+    ///
+    /// Record number, full-record length, metadata, and tag are verified before `sink` receives
+    /// plaintext. Authentication failures do not invoke the sink or advance the opener, allowing
+    /// a caller to reject one invalid candidate and supply the required record.
+    ///
+    /// After authentication succeeds, the opener advances and invalidates itself before external
+    /// sink code runs. If the sink returns an error or panics, the plaintext cannot safely be
+    /// delivered again; subsequent operations return [`CryptoError::StateInvalidated`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordOpenError::Crypto`] for wrong order, kind, length, context, ciphertext,
+    /// tag, nonce-sequence, or AEAD configuration. Returns [`RecordOpenError::Sink`] when `sink`
+    /// rejects authenticated plaintext.
+    pub fn open_data_to<R>(
+        &mut self,
+        record: &DataRecord<A::Tag>,
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordOpenError<R::Error>>
+    where
+        R: RecordPlaintextSink,
+    {
+        if let Some(error) = self.failure {
+            return Err(RecordOpenError::Crypto(error));
+        }
+
         if record.record_number != self.next_record || record.plaintext_len != self.record_size {
-            return Err(CryptoError::AuthenticationFailed);
+            return Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed));
         }
 
         let next = self
             .next_record
             .checked_add(1)
-            .ok_or(CryptoError::CounterExhausted)?;
+            .ok_or(RecordOpenError::Crypto(CryptoError::CounterExhausted))?;
         // A data record is accepted only if the sequence still has room for the final record.
-        let _ = self.nonces.nonce(next)?;
+        let _ = self.nonces.nonce(next).map_err(RecordOpenError::Crypto)?;
 
         let mut plaintext = open_payload(
             &self.algorithm,
@@ -884,14 +1026,34 @@ where
             record.plaintext_len,
             &record.ciphertext,
             &record.tag,
-        )?;
+        )
+        .map_err(RecordOpenError::Crypto)?;
         if plaintext.len() != record.plaintext_len {
             plaintext.zeroize();
-            return Err(CryptoError::AuthenticationFailed);
+            return Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed));
         }
 
         self.next_record = next;
-        Ok(plaintext)
+        self.emit_plaintext(plaintext, sink)
+    }
+
+    fn emit_plaintext<R>(
+        &mut self,
+        plaintext: Vec<u8>,
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordOpenError<R::Error>>
+    where
+        R: RecordPlaintextSink,
+    {
+        // Set this before invoking external code so a caught panic cannot redeliver plaintext.
+        self.failure = Some(CryptoError::StateInvalidated);
+        match sink.write_data(plaintext) {
+            Ok(()) => {
+                self.failure = None;
+                Ok(())
+            }
+            Err(error) => Err(RecordOpenError::Sink(error)),
+        }
     }
 
     /// Authenticate and open the final partial record, consuming the opener.
@@ -902,10 +1064,44 @@ where
     /// # Errors
     ///
     /// Returns [`CryptoError::AuthenticationFailed`] for wrong order, kind, length, context,
-    /// ciphertext, or tag; otherwise returns a nonce-sequence or AEAD configuration error.
+    /// ciphertext, or tag; [`CryptoError::StateInvalidated`] after an earlier plaintext-sink
+    /// failure; otherwise returns a nonce-sequence or AEAD configuration error.
     pub fn open_final(self, record: &FinalRecord<A::Tag>) -> Result<Vec<u8>> {
+        let mut collector = PlaintextCollector {
+            plaintext: Vec::new(),
+        };
+        match self.open_final_to(record, &mut collector) {
+            Ok(()) => Ok(collector.plaintext),
+            Err(RecordOpenError::Crypto(error)) => Err(error),
+            Err(RecordOpenError::Sink(error)) => match error {},
+        }
+    }
+
+    /// Authenticate the final record, send its plaintext to `sink`, and consume the opener.
+    ///
+    /// The final plaintext length must be strictly smaller than the configured record size; an
+    /// exact-boundary stream therefore sends an authenticated empty chunk. The opener is consumed
+    /// before external sink code runs, so rejected final plaintext cannot be delivered twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordOpenError::Crypto`] for a retained sink failure, wrong order, kind, length,
+    /// context, ciphertext, tag, nonce-sequence, or AEAD configuration. Returns
+    /// [`RecordOpenError::Sink`] when `sink` rejects authenticated final plaintext.
+    pub fn open_final_to<R>(
+        self,
+        record: &FinalRecord<A::Tag>,
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordOpenError<R::Error>>
+    where
+        R: RecordPlaintextSink,
+    {
+        if let Some(error) = self.failure {
+            return Err(RecordOpenError::Crypto(error));
+        }
+
         if record.record_number != self.next_record || record.plaintext_len >= self.record_size {
-            return Err(CryptoError::AuthenticationFailed);
+            return Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed));
         }
 
         let mut plaintext = open_payload(
@@ -918,13 +1114,14 @@ where
             record.plaintext_len,
             &record.ciphertext,
             &record.tag,
-        )?;
+        )
+        .map_err(RecordOpenError::Crypto)?;
         if plaintext.len() != record.plaintext_len {
             plaintext.zeroize();
-            return Err(CryptoError::AuthenticationFailed);
+            return Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed));
         }
 
-        Ok(plaintext)
+        sink.write_final(plaintext).map_err(RecordOpenError::Sink)
     }
 }
 
@@ -935,6 +1132,7 @@ impl<A, S> fmt::Debug for RecordOpener<A, S> {
             .field("algorithm", &"[REDACTED]")
             .field("record_size", &self.record_size)
             .field("next_record", &self.next_record)
+            .field("failed", &self.failure.is_some())
             .finish_non_exhaustive()
     }
 }

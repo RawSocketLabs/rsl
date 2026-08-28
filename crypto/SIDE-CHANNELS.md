@@ -36,7 +36,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `cipher::chacha20` | ARX only; counter checks | Public | Counter exhaustion branches on public counts. |
 | `aead::gcm` | GHASH multiplication | Secret, masked | §6.3 Algorithm 1 iterates 128 fixed steps with masked conditional XOR. |
 | `aead::gcm::tag` / `aead::chacha20poly1305` | tag verification | Public | OR-fold then one comparison; plaintext is produced only after success. |
-| `aead::record` | builder stages; record splitting, sink output, numbering, and opening | Public | Branches depend on configured sizes, fragment lengths, record metadata, sink results, errors, and authentication outcomes. State is invalidated before external sink code runs. Pending plaintext is redacted and zeroized; the underlying AEAD produces plaintext only after tag verification. |
+| `aead::record` | builder stages; record splitting, protected/plaintext sink output, numbering, and opening | Public | Branches depend on configured sizes, fragment lengths, record metadata, sink results, errors, and authentication outcomes. Live state is invalidated before external sink code runs. Pending plaintext is redacted and zeroized; plaintext sinks are called only after the underlying AEAD verifies the tag. |
 | `agreement::x25519::*`, `agreement::x448::*` | ladder, `cswap`, inversion | Secret, masked | Fixed 255/448-iteration ladder; RFC `0 - swap` masks; inversion exponent is public. |
 | `agreement::{x25519,x448}::api` | all-zero check | Public | The result is what the peer could compute; RFC 7748 §6 explicitly permits the check. |
 | `signature::ed25519::{field, point}`, `signature::ed448::{field, point}` | scalar multiplication | Secret, masked | 256/456 unconditional add+double+select steps. |

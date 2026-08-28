@@ -37,8 +37,8 @@ pub mod record;
 
 pub use record::{
     CounterNonceSequence, DataRecord, FinalRecord, Nonce96, NonceSequence, ReadyRecordBuilder,
-    RecordBuilder, RecordBuilderWithSequence, RecordOpener, RecordSealer, RecordSink,
-    RecordWriteError,
+    RecordBuilder, RecordBuilderWithSequence, RecordOpenError, RecordOpener, RecordPlaintextSink,
+    RecordSealer, RecordSink, RecordWriteError,
 };
 
 use alloc::vec::Vec;
