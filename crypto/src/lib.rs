@@ -125,10 +125,12 @@
 //! [`Aead::seal`](aead::Aead::seal) protects any supported contiguous byte slice; callers never
 //! split input into AES blocks. When the whole value should not be held in memory,
 //! [`aead::record`] provides a staged [`RecordBuilder`](aead::RecordBuilder), automatic
-//! fixed-size record splitting through [`RecordSealer::write`](aead::RecordSealer::write), and a
-//! consuming authenticated [`RecordSealer::finish`](aead::RecordSealer::finish) transition. The
-//! record contract remains wire-independent. Protocol crates still own negotiation, framing, key
-//! lifetimes, transcript rules, and replay policy.
+//! fixed-size record splitting through [`RecordSealer::write_to`](aead::RecordSealer::write_to),
+//! one-at-a-time delivery to a fallible [`RecordSink`](aead::RecordSink), and a consuming
+//! authenticated [`RecordSealer::finish_to`](aead::RecordSealer::finish_to) transition. A sink
+//! failure invalidates the stream rather than retrying a used nonce. The record contract remains
+//! wire-independent. Protocol crates still own negotiation, framing, key lifetimes, transcript
+//! rules, and replay policy.
 //!
 //! # Type and lifetime policy
 //!

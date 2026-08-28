@@ -5,17 +5,78 @@
 //! Run: `cargo +nightly fuzz run aead_open --fuzz-dir crypto/fuzz`.
 #![no_main]
 
+use core::convert::Infallible;
+
 use libfuzzer_sys::fuzz_target;
-use rsl_crypto::aead::{
-    Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder,
-    chacha20poly1305::{
-        ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
-    },
-    gcm::{
-        Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag, Aes256Gcm, Aes256GcmKey,
-        Aes256GcmNonce, Aes256GcmTag,
+use rsl_crypto::{
+    CryptoError,
+    aead::{
+        Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordSink,
+        RecordWriteError,
+        chacha20poly1305::{
+            ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
+        },
+        gcm::{
+            Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag, Aes256Gcm, Aes256GcmKey,
+            Aes256GcmNonce, Aes256GcmTag,
+        },
     },
 };
+
+#[derive(Default)]
+struct CollectingSink {
+    data: Vec<DataRecord<Aes256GcmTag>>,
+    final_record: Option<FinalRecord<Aes256GcmTag>>,
+}
+
+impl RecordSink<Aes256GcmTag> for CollectingSink {
+    type Error = Infallible;
+
+    fn write_data(
+        &mut self,
+        record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        self.data.push(record);
+        Ok(())
+    }
+
+    fn write_final(
+        &mut self,
+        record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        self.final_record = Some(record);
+        Ok(())
+    }
+}
+
+struct RejectingSink {
+    calls: usize,
+    reject_on: usize,
+}
+
+impl RecordSink<Aes256GcmTag> for RejectingSink {
+    type Error = ();
+
+    fn write_data(
+        &mut self,
+        _record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        let call = self.calls;
+        self.calls += 1;
+        if call == self.reject_on {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn write_final(
+        &mut self,
+        _record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
 
 fn split(data: &[u8]) -> Option<([u8; 32], [u8; 12], [u8; 16], usize, &[u8])> {
     if data.len() < 32 + 12 + 16 + 1 {
@@ -81,9 +142,11 @@ fuzz_target!(|data: &[u8]| {
         .build_sealer()
         .unwrap();
     let split = payload.len() / 2;
-    let mut records = sealer.write(&payload[..split]).unwrap();
-    records.extend(sealer.write(&payload[split..]).unwrap());
-    let final_record = sealer.finish().unwrap();
+    let mut sink = CollectingSink::default();
+    sealer.write_to(&payload[..split], &mut sink).unwrap();
+    sealer.write_to(&payload[split..], &mut sink).unwrap();
+    sealer.finish_to(&mut sink).unwrap();
+    let final_record = sink.final_record.as_ref().unwrap();
 
     let mut opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
         .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
@@ -92,11 +155,34 @@ fuzz_target!(|data: &[u8]| {
         .build_opener()
         .unwrap();
     let mut recovered = Vec::new();
-    for record in &records {
+    for record in &sink.data {
         recovered.extend(opener.open_data(record).unwrap());
     }
-    recovered.extend(opener.open_final(&final_record).unwrap());
+    recovered.extend(opener.open_final(final_record).unwrap());
     assert_eq!(recovered, payload);
+
+    let completed_records = payload.len() / record_size;
+    if completed_records != 0 {
+        let mut failing_sealer =
+            RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+                .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+                .record_size(record_size)
+                .context(aad)
+                .build_sealer()
+                .unwrap();
+        let mut failing_sink = RejectingSink {
+            calls: 0,
+            reject_on: usize::from(tag[0]) % completed_records,
+        };
+        assert!(matches!(
+            failing_sealer.write_to(payload, &mut failing_sink),
+            Err(RecordWriteError::Sink(()))
+        ));
+        assert!(matches!(
+            failing_sealer.write_to([], &mut failing_sink),
+            Err(RecordWriteError::Crypto(CryptoError::StateInvalidated))
+        ));
+    }
 
     let arbitrary_data = DataRecord::from_parts(
         0,

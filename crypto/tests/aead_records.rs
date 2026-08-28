@@ -1,9 +1,12 @@
 //! Public AEAD-record lifecycle, fragmentation, and rejection evidence.
 
+use core::convert::Infallible;
+
 use rsl_crypto::{
     CryptoError, Result,
     aead::{
-        CounterNonceSequence, DataRecord, FinalRecord, NonceSequence, RecordBuilder,
+        CounterNonceSequence, DataRecord, FinalRecord, NonceSequence, RecordBuilder, RecordSink,
+        RecordWriteError,
         gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
     },
 };
@@ -35,6 +38,32 @@ fn seal_fragments(
     (records, sealer.finish().unwrap())
 }
 
+#[derive(Default)]
+struct RecordingSink {
+    data: Vec<DataRecord<Aes256GcmTag>>,
+    final_record: Option<FinalRecord<Aes256GcmTag>>,
+}
+
+impl RecordSink<Aes256GcmTag> for RecordingSink {
+    type Error = Infallible;
+
+    fn write_data(
+        &mut self,
+        record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        self.data.push(record);
+        Ok(())
+    }
+
+    fn write_final(
+        &mut self,
+        record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        self.final_record = Some(record);
+        Ok(())
+    }
+}
+
 #[test]
 fn arbitrary_write_fragmentation_produces_identical_records() {
     let message = b"fragmentation does not change authenticated record boundaries";
@@ -50,6 +79,22 @@ fn arbitrary_write_fragmentation_produces_identical_records() {
     assert_eq!(fragmented, one_shot);
     assert!(one_shot.0.iter().all(|record| record.plaintext_len() == 7));
     assert!(one_shot.1.plaintext_len() < 7);
+}
+
+#[test]
+fn write_to_streams_the_same_records_as_collecting_write() {
+    let message = b"fallible output does not change authenticated records";
+    let expected = seal_fragments(&[message]);
+    let mut sealer = builder().build_sealer().unwrap();
+    let mut sink = RecordingSink::default();
+
+    sealer.write_to(&message[..5], &mut sink).unwrap();
+    sealer.write_to(&message[5..17], &mut sink).unwrap();
+    sealer.write_to(&message[17..], &mut sink).unwrap();
+    sealer.finish_to(&mut sink).unwrap();
+
+    assert_eq!(sink.data, expected.0);
+    assert_eq!(sink.final_record.unwrap(), expected.1);
 }
 
 #[test]
@@ -215,6 +260,132 @@ fn write_reserves_a_nonce_for_the_final_record_before_consuming_input() {
     let final_record = sealer.finish().unwrap();
     assert_eq!(final_record.record_number(), 1);
     assert_eq!(final_record.plaintext_len(), 0);
+}
+
+struct FailingSink {
+    accepted: Vec<DataRecord<Aes256GcmTag>>,
+    calls: usize,
+    fail_on: usize,
+}
+
+impl RecordSink<Aes256GcmTag> for FailingSink {
+    type Error = &'static str;
+
+    fn write_data(
+        &mut self,
+        record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        let call = self.calls;
+        self.calls += 1;
+        if call == self.fail_on {
+            return Err("selected data-record failure");
+        }
+        self.accepted.push(record);
+        Ok(())
+    }
+
+    fn write_final(
+        &mut self,
+        _record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn every_sink_failure_boundary_invalidates_the_sealer() {
+    let message = b"123456712345671234567";
+
+    for fail_on in 0..3 {
+        let mut sealer = builder().build_sealer().unwrap();
+        let mut sink = FailingSink {
+            accepted: Vec::new(),
+            calls: 0,
+            fail_on,
+        };
+
+        assert_eq!(
+            sealer.write_to(message, &mut sink),
+            Err(RecordWriteError::Sink("selected data-record failure"))
+        );
+        assert_eq!(sink.accepted.len(), fail_on);
+        assert_eq!(sink.calls, fail_on + 1);
+        assert_eq!(sealer.next_record_number(), (fail_on + 1) as u64);
+
+        let mut later_sink = RecordingSink::default();
+        assert_eq!(
+            sealer.write_to(b"later", &mut later_sink),
+            Err(RecordWriteError::Crypto(CryptoError::StateInvalidated))
+        );
+        assert_eq!(sealer.write(b"later"), Err(CryptoError::StateInvalidated));
+        assert_eq!(sealer.finish(), Err(CryptoError::StateInvalidated));
+    }
+}
+
+struct PanickingSink;
+
+impl RecordSink<Aes256GcmTag> for PanickingSink {
+    type Error = Infallible;
+
+    fn write_data(
+        &mut self,
+        _record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        panic!("selected sink panic")
+    }
+
+    fn write_final(
+        &mut self,
+        _record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_caught_sink_panic_cannot_leave_reusable_nonce_state() {
+    let mut sealer = builder().build_sealer().unwrap();
+    let mut sink = PanickingSink;
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = sealer.write_to(b"1234567", &mut sink);
+    }));
+
+    assert!(panic.is_err());
+    assert_eq!(sealer.next_record_number(), 1);
+    assert_eq!(sealer.write(b"later"), Err(CryptoError::StateInvalidated));
+}
+
+struct FinalFailingSink;
+
+impl RecordSink<Aes256GcmTag> for FinalFailingSink {
+    type Error = &'static str;
+
+    fn write_data(
+        &mut self,
+        _record: DataRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn write_final(
+        &mut self,
+        _record: FinalRecord<Aes256GcmTag>,
+    ) -> core::result::Result<(), Self::Error> {
+        Err("selected final-record failure")
+    }
+}
+
+#[test]
+fn finish_to_reports_final_sink_failure_after_consuming_the_sealer() {
+    let mut sealer = builder().build_sealer().unwrap();
+    let mut sink = FinalFailingSink;
+    sealer.write_to(b"tail", &mut sink).unwrap();
+
+    assert_eq!(
+        sealer.finish_to(&mut sink),
+        Err(RecordWriteError::Sink("selected final-record failure"))
+    );
 }
 
 #[test]

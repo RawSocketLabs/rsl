@@ -102,9 +102,11 @@ the source for mechanics; the guide is only the selection layer.
 
 [`Aead::seal`](src/aead.rs) already accepts an arbitrary-length in-memory byte slice; callers do
 not split text into AES blocks. For bounded-memory input, [`aead::record`](src/aead/record.rs)
-provides a staged builder, `write` over arbitrary fragments, fixed-size authenticated records, and
-a consuming `finish` transition. It defines no wire encoding. Protocol crates still own
-negotiation, framing, key derivation and lifetime, transcript binding, replay, and rekeying.
+provides a staged builder, `write_to` over arbitrary fragments, one-at-a-time delivery to a
+caller-selected fallible `RecordSink`, and a consuming `finish_to` transition. Sink failure
+invalidates the stream so a nonce cannot be retried. The collecting `write`/`finish` methods remain
+conveniences. This layer defines no wire encoding. Protocol crates still own negotiation,
+framing, key derivation and lifetime, transcript binding, replay, and rekeying.
 
 ## Read the teaching reference
 

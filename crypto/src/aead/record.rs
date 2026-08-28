@@ -1,16 +1,17 @@
 //! Bounded-memory AEAD records for a byte stream.
 //!
 //! [`Aead::seal`] already accepts an arbitrary-length in-memory message. This
-//! module is for input that should be processed incrementally: [`RecordSealer::write`] accepts
-//! fragments of any size, emits full authenticated records, and retains only the final partial
-//! record. [`RecordSealer::finish`] consumes the sealer and emits the authenticated end record.
+//! module is for input that should be processed incrementally: [`RecordSealer::write_to`] accepts
+//! fragments of any size, sends full authenticated records to a caller-selected [`RecordSink`],
+//! and retains only the final partial record. [`RecordSealer::finish_to`] consumes the sealer and
+//! sends the authenticated end record.
 //!
 //! The API exposes the useful state transitions directly. There are no public `Missing` or
 //! `Present` marker values:
 //!
 //! - [`RecordBuilder::new`] returns a stage that can accept a nonce sequence;
 //! - [`RecordBuilderWithSequence::record_size`] returns the only stage with `build_*` methods;
-//! - [`RecordSealer::finish`] consumes the sealer, so `write` cannot be called afterward;
+//! - [`RecordSealer::finish_to`] consumes the sealer, so no more input can be written afterward;
 //! - data and final records have distinct [`DataRecord`] and [`FinalRecord`] types.
 //!
 //! This is a wire-independent record contract, not TLS, SSH, or a file format. It does not encode
@@ -40,10 +41,31 @@
 //! # AES-256-GCM example
 //!
 //! ```
+//! use core::convert::Infallible;
 //! use rsl_crypto::aead::{
-//!     CounterNonceSequence, RecordBuilder,
-//!     gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce},
+//!     CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordSink,
+//!     gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
 //! };
+//!
+//! #[derive(Default)]
+//! struct Records {
+//!     data: Vec<DataRecord<Aes256GcmTag>>,
+//!     final_record: Option<FinalRecord<Aes256GcmTag>>,
+//! }
+//!
+//! impl RecordSink<Aes256GcmTag> for Records {
+//!     type Error = Infallible;
+//!
+//!     fn write_data(&mut self, record: DataRecord<Aes256GcmTag>) -> Result<(), Self::Error> {
+//!         self.data.push(record);
+//!         Ok(())
+//!     }
+//!
+//!     fn write_final(&mut self, record: FinalRecord<Aes256GcmTag>) -> Result<(), Self::Error> {
+//!         self.final_record = Some(record);
+//!         Ok(())
+//!     }
+//! }
 //!
 //! let key_bytes = [0x42; 32];
 //! // This fixed field must be distinct for every record stream encrypted under this key.
@@ -56,9 +78,10 @@
 //!     .build_sealer()?;
 //!
 //! // Fragment boundaries do not affect the resulting 8-byte data records.
-//! let mut data_records = sealer.write(b"a very ")?;
-//! data_records.extend(sealer.write(b"large piece of text")?);
-//! let final_record = sealer.finish()?;
+//! let mut records = Records::default();
+//! sealer.write_to(b"a very ", &mut records).unwrap();
+//! sealer.write_to(b"large piece of text", &mut records).unwrap();
+//! sealer.finish_to(&mut records).unwrap();
 //!
 //! let mut opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key_bytes)))
 //!     .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
@@ -67,20 +90,21 @@
 //!     .build_opener()?;
 //!
 //! let mut recovered = Vec::new();
-//! for record in &data_records {
+//! for record in &records.data {
 //!     recovered.extend(opener.open_data(record)?);
 //! }
-//! recovered.extend(opener.open_final(&final_record)?);
+//! recovered.extend(opener.open_final(records.final_record.as_ref().unwrap())?);
 //! assert_eq!(recovered, b"a very large piece of text");
 //! # Ok::<(), rsl_crypto::CryptoError>(())
 //! ```
 //!
-//! `write` returns owned records so a `no_std` caller can hand them to its own storage or network
-//! sink. For bounded memory, feed it bounded read buffers and encode each returned record before
-//! reading the next buffer.
+//! [`RecordSealer::write_to`] owns at most one completed record at a time; the sink chooses the
+//! wire encoding and output destination. [`RecordSealer::write`] remains a convenience that
+//! collects all records completed by one call and therefore allocates output proportional to that
+//! call's input.
 
 use alloc::vec::Vec;
-use core::{fmt, marker::PhantomData};
+use core::{convert::Infallible, fmt, marker::PhantomData};
 
 use zeroize::Zeroize;
 
@@ -442,11 +466,90 @@ impl<Tag> FinalRecord<Tag> {
     }
 }
 
+/// A fallible destination for protected records.
+///
+/// Implementations choose storage, transport, and wire encoding. A successful method call means
+/// the sink has accepted ownership of that record; this crate does not define whether acceptance
+/// means buffering, durable storage, or delivery to a peer.
+pub trait RecordSink<Tag> {
+    /// The destination-specific output error.
+    type Error;
+
+    /// Accept one full, non-final record.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink's error when it cannot accept the record.
+    fn write_data(&mut self, record: DataRecord<Tag>) -> core::result::Result<(), Self::Error>;
+
+    /// Accept the one final record that terminates the stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns the sink's error when it cannot accept the record.
+    fn write_final(&mut self, record: FinalRecord<Tag>) -> core::result::Result<(), Self::Error>;
+}
+
+/// A cryptographic or destination error from streamed record output.
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RecordWriteError<E> {
+    /// Record protection failed.
+    Crypto(CryptoError),
+    /// The destination rejected a protected record.
+    Sink(E),
+}
+
+impl<E> From<CryptoError> for RecordWriteError<E> {
+    fn from(error: CryptoError) -> Self {
+        Self::Crypto(error)
+    }
+}
+
+impl<E: fmt::Display> fmt::Display for RecordWriteError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Crypto(error) => write!(formatter, "record protection failed: {error}"),
+            Self::Sink(error) => write!(formatter, "record sink failed: {error}"),
+        }
+    }
+}
+
+impl<E> core::error::Error for RecordWriteError<E>
+where
+    E: core::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Crypto(error) => Some(error),
+            Self::Sink(error) => Some(error),
+        }
+    }
+}
+
+struct DataRecordCollector<Tag> {
+    records: Vec<DataRecord<Tag>>,
+}
+
+impl<Tag> RecordSink<Tag> for DataRecordCollector<Tag> {
+    type Error = Infallible;
+
+    fn write_data(&mut self, record: DataRecord<Tag>) -> core::result::Result<(), Self::Error> {
+        self.records.push(record);
+        Ok(())
+    }
+
+    fn write_final(&mut self, _record: FinalRecord<Tag>) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 /// Incrementally split plaintext and seal bounded authenticated records.
 ///
-/// Feed bounded source buffers to [`write`](Self::write), encode every returned [`DataRecord`],
-/// then call [`finish`](Self::finish) exactly once. The object owns an AEAD key and is therefore
-/// non-`Clone`; its diagnostic formatting redacts the algorithm.
+/// Use [`write_to`](Self::write_to) to deliver each completed record directly to a [`RecordSink`],
+/// then call [`finish_to`](Self::finish_to) exactly once. [`write`](Self::write) and
+/// [`finish`](Self::finish) are collecting conveniences. The object owns an AEAD key and is
+/// therefore non-`Clone`; its diagnostic formatting redacts the algorithm.
 pub struct RecordSealer<A, S> {
     algorithm: A,
     nonces: S,
@@ -488,15 +591,70 @@ where
     ///
     /// Returns a length, allocation, nonce-sequence, counter, or AEAD error.
     pub fn write(&mut self, input: impl AsRef<[u8]>) -> Result<Vec<DataRecord<A::Tag>>> {
+        let input = input.as_ref();
+        let record_count = self.preflight_write(input.len())?;
+
+        let mut records = Vec::new();
+        records
+            .try_reserve_exact(record_count)
+            .map_err(|_| CryptoError::OutputTooLong)?;
+        let mut collector = DataRecordCollector { records };
+
+        match self.write_to(input, &mut collector) {
+            Ok(()) => Ok(collector.records),
+            Err(RecordWriteError::Crypto(error)) => Err(error),
+            Err(RecordWriteError::Sink(error)) => match error {},
+        }
+    }
+
+    /// Buffer arbitrary plaintext fragments and send each completed record to `sink`.
+    ///
+    /// Output depends only on the concatenated bytes, not on call boundaries. At most one
+    /// completed record is owned by this method at a time, in addition to the final partial
+    /// plaintext retained by the sealer.
+    ///
+    /// The stream is invalidated before external sink code runs. If a sink call returns an error
+    /// or panics, the sealer cannot safely retry that record; subsequent operations return
+    /// [`CryptoError::StateInvalidated`]. Drop it and start a fresh stream with a fresh
+    /// key/fixed-field pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordWriteError::Crypto`] for a length, allocation, nonce-sequence, counter, or
+    /// AEAD failure. Returns [`RecordWriteError::Sink`] when `sink` rejects a completed record.
+    pub fn write_to<R>(
+        &mut self,
+        input: impl AsRef<[u8]>,
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordWriteError<R::Error>>
+    where
+        R: RecordSink<A::Tag>,
+    {
+        let input = input.as_ref();
+        self.preflight_write(input.len())
+            .map_err(RecordWriteError::Crypto)?;
+
+        match self.write_to_inner(input, sink) {
+            Ok(()) => Ok(()),
+            Err(RecordWriteError::Crypto(error)) => {
+                self.pending.zeroize();
+                self.pending.clear();
+                self.failure = Some(error);
+                Err(RecordWriteError::Crypto(error))
+            }
+            Err(error @ RecordWriteError::Sink(_)) => Err(error),
+        }
+    }
+
+    fn preflight_write(&self, input_len: usize) -> Result<usize> {
         if let Some(error) = self.failure {
             return Err(error);
         }
 
-        let input = input.as_ref();
         let total = self
             .pending
             .len()
-            .checked_add(input.len())
+            .checked_add(input_len)
             .ok_or(CryptoError::MessageTooLong)?;
         let record_count = total / self.record_size;
         let record_count_u64 =
@@ -508,28 +666,17 @@ where
 
         // Reserve one usable nonce for the final record before mutating stream state.
         let _ = self.nonces.nonce(final_record_number)?;
-
-        let mut records = Vec::new();
-        records
-            .try_reserve_exact(record_count)
-            .map_err(|_| CryptoError::OutputTooLong)?;
-
-        let result = self.write_inner(input, &mut records);
-        if let Err(error) = result {
-            self.pending.zeroize();
-            self.pending.clear();
-            self.failure = Some(error);
-            return Err(error);
-        }
-
-        Ok(records)
+        Ok(record_count)
     }
 
-    fn write_inner(
+    fn write_to_inner<R>(
         &mut self,
         mut input: &[u8],
-        records: &mut Vec<DataRecord<A::Tag>>,
-    ) -> Result<()> {
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordWriteError<R::Error>>
+    where
+        R: RecordSink<A::Tag>,
+    {
         if !self.pending.is_empty() {
             let needed = self.record_size - self.pending.len();
             let copied = needed.min(input.len());
@@ -546,19 +693,16 @@ where
                     sequence,
                     DATA_RECORD,
                     &self.pending,
-                )?;
+                )
+                .map_err(RecordWriteError::Crypto)?;
                 let (ciphertext, tag) = sealed.into_parts();
-                records.push(DataRecord::from_parts(
-                    sequence,
-                    self.record_size,
-                    ciphertext,
-                    tag,
-                ));
+                let record = DataRecord::from_parts(sequence, self.record_size, ciphertext, tag);
                 self.next_record = sequence
                     .checked_add(1)
                     .expect("write preflight reserved the final record number");
                 self.pending.zeroize();
                 self.pending.clear();
+                self.emit_data(record, sink)?;
             }
         }
 
@@ -573,22 +717,38 @@ where
                 sequence,
                 DATA_RECORD,
                 plaintext,
-            )?;
+            )
+            .map_err(RecordWriteError::Crypto)?;
             let (ciphertext, tag) = sealed.into_parts();
-            records.push(DataRecord::from_parts(
-                sequence,
-                self.record_size,
-                ciphertext,
-                tag,
-            ));
+            let record = DataRecord::from_parts(sequence, self.record_size, ciphertext, tag);
             self.next_record = sequence
                 .checked_add(1)
                 .expect("write preflight reserved the final record number");
             input = rest;
+            self.emit_data(record, sink)?;
         }
 
         self.pending.extend_from_slice(input);
         Ok(())
+    }
+
+    fn emit_data<R>(
+        &mut self,
+        record: DataRecord<A::Tag>,
+        sink: &mut R,
+    ) -> core::result::Result<(), RecordWriteError<R::Error>>
+    where
+        R: RecordSink<A::Tag>,
+    {
+        // Set this before invoking external code so a caught panic cannot leave reusable state.
+        self.failure = Some(CryptoError::StateInvalidated);
+        match sink.write_data(record) {
+            Ok(()) => {
+                self.failure = None;
+                Ok(())
+            }
+            Err(error) => Err(RecordWriteError::Sink(error)),
+        }
     }
 
     /// Seal the final partial record and consume the sealer.
@@ -622,6 +782,24 @@ where
             ciphertext,
             tag,
         ))
+    }
+
+    /// Seal the final partial record, send it to `sink`, and consume the sealer.
+    ///
+    /// The sealer is consumed before external sink code runs, so a rejected final record cannot
+    /// be retried with the same nonce. An empty final record is sent when no plaintext remains.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordWriteError::Crypto`] for a retained write error or a nonce-sequence,
+    /// length, allocation, or AEAD error. Returns [`RecordWriteError::Sink`] when `sink` rejects
+    /// the final record.
+    pub fn finish_to<R>(self, sink: &mut R) -> core::result::Result<(), RecordWriteError<R::Error>>
+    where
+        R: RecordSink<A::Tag>,
+    {
+        let record = self.finish().map_err(RecordWriteError::Crypto)?;
+        sink.write_final(record).map_err(RecordWriteError::Sink)
     }
 }
 

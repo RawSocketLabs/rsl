@@ -127,7 +127,7 @@ rsl-crypto/
 │   ├── hkdf_sha384.rs, hkdf_sha384/ Wycheproof HKDF-SHA-384 cases, bounds, differential
 │   ├── vectors/hkdf-sha384/       Wycheproof provenance
 │   ├── sha512.rs                  published and differential SHA-512 evidence
-│   ├── aead_records.rs            record lifecycle, fragmentation, and rejection evidence
+│   ├── aead_records.rs            record lifecycle, sink failure, fragmentation, and rejection evidence
 │   ├── vectors/sha512/            FIPS 180-4 SHA-512 provenance
 │   ├── ed25519.rs                 public Ed25519 evidence harness
 │   ├── ed25519/                   RFC vectors, strict boundaries, and differential evidence

@@ -84,11 +84,14 @@ cipher suite; primitive crates only perform the named transformation.
 
 Public lifecycle APIs use semantic stage types, not generic field wrappers. The AEAD record API
 starts with `RecordBuilder`, advances to `RecordBuilderWithSequence`, and exposes `build_sealer`
-or `build_opener` only on `ReadyRecordBuilder`. `RecordSealer::finish(self)` consumes the open
-writer, while `DataRecord` and `FinalRecord` make the authenticated end state explicit. The
+or `build_opener` only on `ReadyRecordBuilder`. `RecordSealer::finish_to(self, sink)` consumes the
+open writer, while `DataRecord` and `FinalRecord` make the authenticated end state explicit. The
 stages therefore prevent invalid calls without asking users to manipulate typestate markers.
 
-Callers provide arbitrary fragments through `RecordSealer::write`; output boundaries depend on
-the concatenated byte stream and configured record size, not on call boundaries. Fixed-size
-algorithm blocks remain internal to digest, MAC, cipher, and AEAD implementations. Protocol
-crates still define their own semantic phases and wire encodings.
+Callers provide arbitrary fragments through `RecordSealer::write_to`; output boundaries depend on
+the concatenated byte stream and configured record size, not on call boundaries. Each completed
+record is moved into a caller-selected fallible `RecordSink`. The sealer invalidates itself before
+external sink code runs, so an error or caught panic cannot retry an already used nonce. The
+collecting `write`/`finish` methods adapt the same state machine. Fixed-size algorithm blocks
+remain internal to digest, MAC, cipher, and AEAD implementations. Protocol crates still define
+their own semantic phases and wire encodings.

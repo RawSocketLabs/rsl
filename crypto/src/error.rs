@@ -68,6 +68,8 @@ pub enum CryptoError {
     MessageTooLong,
     /// A nonce, block, or record counter would repeat or wrap.
     CounterExhausted,
+    /// An incremental state was invalidated by an earlier output or processing failure.
+    StateInvalidated,
     /// The configured randomness source could not fill the requested output.
     EntropyUnavailable,
 }
@@ -92,6 +94,9 @@ impl fmt::Display for CryptoError {
                 f.write_str("message is too long for this cryptographic construction")
             }
             Self::CounterExhausted => f.write_str("cryptographic counter exhausted"),
+            Self::StateInvalidated => {
+                f.write_str("cryptographic state was invalidated by an earlier failure")
+            }
             Self::EntropyUnavailable => f.write_str("randomness source unavailable"),
         }
     }
@@ -123,6 +128,14 @@ mod unit {
         assert_eq!(
             CryptoError::MessageTooLong.to_string(),
             "message is too long for this cryptographic construction"
+        );
+    }
+
+    #[test]
+    fn invalidated_state_has_a_stable_public_error() {
+        assert_eq!(
+            CryptoError::StateInvalidated.to_string(),
+            "cryptographic state was invalidated by an earlier failure"
         );
     }
 }
