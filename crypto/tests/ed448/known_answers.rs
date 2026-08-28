@@ -23,6 +23,14 @@ fn decode<const N: usize>(hex: &str) -> [u8; N] {
         .unwrap_or_else(|_| panic!("fixture has {N} bytes"))
 }
 
+struct NoEntropy;
+
+impl rsl_crypto::RandomSource for NoEntropy {
+    fn fill_bytes(&mut self, _: &mut [u8]) -> rsl_crypto::Result<()> {
+        Err(CryptoError::EntropyUnavailable)
+    }
+}
+
 struct RfcCase {
     name: &'static str,
     prehashed: bool,
@@ -36,6 +44,7 @@ struct RfcCase {
 /// Published evidence: every RFC 8032 §7.4 Ed448 and §7.5 Ed448ph vector is reproduced exactly
 /// (key derivation and signature) and verifies.
 #[test]
+#[allow(clippy::too_many_lines)] // The published fixtures are long.
 fn rfc_8032_ed448_and_ed448ph_vectors() {
     let cases = [
         RfcCase {
@@ -227,12 +236,6 @@ fn boundaries_and_generic_contracts() {
     let verifying = signing.verifying_key();
     let message = b"same message";
     let signature = signing.sign(None, message).unwrap();
-    struct NoEntropy;
-    impl rsl_crypto::RandomSource for NoEntropy {
-        fn fill_bytes(&mut self, _: &mut [u8]) -> rsl_crypto::Result<()> {
-            Err(CryptoError::EntropyUnavailable)
-        }
-    }
     assert_eq!(
         Signer::sign(&signing, &mut NoEntropy, message).unwrap(),
         signature

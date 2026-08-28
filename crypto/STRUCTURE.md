@@ -148,6 +148,8 @@ rsl-crypto/
 │   ├── rsa_pss.rs                 public RSASSA-PSS evidence harness
 │   ├── rsa_pss/                   CAVP SigVer/SigGen and Wycheproof fixtures and verdict tests
 │   └── vectors/rsa-pss/           RFC 8017, CAVP, and Wycheproof provenance
+├── fuzz/                          separate-workspace cargo-fuzz crate (see fuzz/README.md)
+├── SIDE-CHANNELS.md               source-level constant-time review record
 ├── DESIGN.md                      crate-wide architectural decisions
 ├── ROADMAP.md                     primitive implementation order
 └── STANDARDS.md                   sources, notation, coverage, and evidence ledger

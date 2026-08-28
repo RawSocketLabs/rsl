@@ -12,7 +12,8 @@
 //! and development-only differential comparisons. They have not received an independent
 //! cryptographic audit, formal NIST validation, or complete compiler-output and platform-level
 //! side-channel analysis. The documentation says where source code avoids obvious
-//! secret-dependent control flow, but that is not a constant-time guarantee.
+//! secret-dependent control flow (the repository's `SIDE-CHANNELS.md` records every reviewed
+//! site), but that is not a constant-time guarantee.
 //!
 //! # Learning path
 //!

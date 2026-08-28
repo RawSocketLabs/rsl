@@ -17,9 +17,9 @@
 - §6.1's Alice and Bob private inputs, public coordinates, and common shared secret.
 
 Section 5.2 also publishes a one-million-iteration result. Its value is retained here for review:
-`7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424`. It is not part of the
-routine debug test suite because it repeats the complete deliberately unoptimized scalar
-multiplication one million times; the two direct vectors, one- and 1,000-iteration checkpoints,
+`7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424`. It is an `#[ignore]`d test
+(`one_million_iterations_match_the_published_result`, run with `--ignored`) because it repeats
+the complete deliberately unoptimized scalar multiplication one million times; the two direct vectors, one- and 1,000-iteration checkpoints,
 complete exchange, and independent differential suite provide routine composition evidence.
 
 ## Conversion policy

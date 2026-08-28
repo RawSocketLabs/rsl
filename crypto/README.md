@@ -85,9 +85,11 @@ cases. ChaCha20-Poly1305 adds every RFC 8439 body intermediate, all Appendix A v
 Wycheproof cases, per-byte tampering, and 32 differential cases. RSASSA-PSS adds all 18 CAVP SigVer and 10 CAVP SigGen 2048/SHA-256 cases and all 108
 Wycheproof `rsa_pss_2048_sha256_mgf1_32` results.
 
-This is an implementation milestone, not a production-security claim. Side-channel analysis,
-fuzzing, broader interoperability work, and independent cryptographic audit are still required
-before production use.
+This is an implementation milestone, not a production-security claim. [`SIDE-CHANNELS.md`](SIDE-CHANNELS.md)
+records a source-level review of every secret-dependent branch, and [`fuzz/`](fuzz/README.md)
+holds libFuzzer targets for every untrusted-input boundary; measured timing analysis, broader
+interoperability work, and independent cryptographic audit are still required before production
+use.
 
 ## Read the teaching reference
 

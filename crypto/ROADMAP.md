@@ -179,7 +179,13 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. Assurance work: fuzz targets, a constant-time review pass, and the X25519 one-million-iteration checkpoint as an ignored test.
+1. Assurance work — **done 2026-08-28**: `fuzz/` (five libFuzzer targets over every
+   untrusted-input boundary plus fragmentation/round-trip invariants, smoke-run in CI),
+   `SIDE-CHANNELS.md` (a source-level constant-time review of every branch and early exit,
+   classified public / secret-masked / secret-one-shot / variable-time), and the X25519 and
+   X448 one-million-iteration checkpoints as `#[ignore]`d tests. Still required for a
+   production claim: measured timing analysis, compiler-output inspection, and an independent
+   audit.
 
 ## After the first vertical slice
 

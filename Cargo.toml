@@ -30,13 +30,14 @@ members = [
     # runnable dual-use demos (privileged injection)
     "demos",
 ]
-# FFI crates (need a C++ toolchain + system libs) and bnb's fuzz/no_std helpers are excluded
+# FFI crates (need a C++ toolchain + system libs) and the bnb/crypto fuzz and no_std helpers are excluded
 # from the default workspace build; each is built on its own in a dedicated CI job.
 exclude = [
     "usdr",
     "rust-dsdcc",
     "bitsandbytes/fuzz",
     "bitsandbytes/bnb/nostd-check",
+    "crypto/fuzz",
 ]
 
 # Shared package metadata — members inherit with `field.workspace = true`. All crates now live

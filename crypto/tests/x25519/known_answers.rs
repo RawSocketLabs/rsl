@@ -82,6 +82,17 @@ fn assert_scalar_multiplication(scalar: &str, coordinate: &str, expected: &str) 
 }
 
 /// Reproduce RFC 7748 §5.2's iterative `k = X25519(k, u); u = old_k` process.
+/// Published iterative evidence from RFC 7748 §5.2 after 1,000,000 applications. Ignored by
+/// default because the deliberately unoptimized ladder takes minutes; run with `--ignored`.
+#[test]
+#[ignore = "one million ladder iterations; run explicitly"]
+fn one_million_iterations_match_the_published_result() {
+    assert_eq!(
+        iterate(1_000_000),
+        decode_32("7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424")
+    );
+}
+
 fn iterate(iterations: usize) -> [u8; 32] {
     let mut scalar = decode_32("0900000000000000000000000000000000000000000000000000000000000000");
     let mut coordinate = scalar;

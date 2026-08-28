@@ -29,4 +29,6 @@ obvious operations over table tricks, SIMD, assembly, or clever fusion.
 - Performance work must not obscure the readable reference path. Add an optimized implementation
   beside it rather than rewriting away the reference implementation.
 - No production-security claim without side-channel review, fuzzing, differential testing, and
-  an independent cryptographic audit.
+  an independent cryptographic audit. `SIDE-CHANNELS.md` is the review record: update its row
+  for any module whose branches change. `fuzz/` holds the libFuzzer targets; add a target when
+  a new untrusted-input boundary is added.

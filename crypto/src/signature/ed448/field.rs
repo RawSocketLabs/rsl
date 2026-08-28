@@ -283,15 +283,5 @@ mod unit {
             .subtract(&FieldElement::ONE);
         let x = FieldElement::square_root_ratio(&u, &v).unwrap();
         assert!(v.multiply(&x.square()).equals(&u));
-        assert!(
-            FieldElement::square_root_ratio(
-                &FieldElement::from_limbs([2, 0, 0, 0, 0, 0, 0, 0])
-                    .negate()
-                    .multiply(&u),
-                &v
-            )
-            .is_none()
-                || true
-        );
     }
 }

@@ -19,7 +19,8 @@ env:
 
 jobs:
   # Detect what changed so we only run the jobs a change can actually affect. The heavy
-  # bnb-specific jobs (fuzz, public-api, no_std) run only when bitsandbytes changes; the
+  # bnb-specific jobs (fuzz, public-api, no_std) run only when bitsandbytes changes, the crypto
+  # fuzz smoke run only when crypto changes; the
   # workspace jobs run on any Rust/config change (skipped for docs-only pushes). A change to
   # this workflow itself trips every filter, so CI changes are always fully validated.
   changes:
@@ -28,6 +29,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       bnb: ${{ steps.filter.outputs.bnb }}
+      crypto: ${{ steps.filter.outputs.crypto }}
       ffi: ${{ steps.filter.outputs.ffi }}
       rust_skills: ${{ steps.filter.outputs.rust_skills }}
     steps:
@@ -46,6 +48,9 @@ jobs:
               - '.github/workflows/ci.yml'
             bnb:
               - 'bitsandbytes/**'
+              - '.github/workflows/ci.yml'
+            crypto:
+              - 'crypto/**'
               - '.github/workflows/ci.yml'
             ffi:
               - 'usdr/**'
@@ -189,6 +194,26 @@ jobs:
       - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
+  fuzz-crypto:
+    name: cargo-fuzz (rsl-crypto boundaries, smoke run)
+    needs: changes
+    if: needs.changes.outputs.crypto == 'true'
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rm -f rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - run: cargo fuzz build --fuzz-dir crypto/fuzz --target x86_64-unknown-linux-gnu
+      - name: Smoke-run every crypto fuzz target
+        run: |
+          for target in aead_open signature_verify public_key_parse digest_fragmentation rsa_pss_verify; do
+            cargo fuzz run "$target" --fuzz-dir crypto/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=45 -runs=500000
+          done
+
   ffi:
     name: FFI bridges (usdr, dsdcc) — cxx compile check
     needs: changes
@@ -256,7 +281,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, ffi, blessed-sync, rust-skills]
+    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, fuzz-crypto, ffi, blessed-sync, rust-skills]
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Fail if any needed job failed or was cancelled
