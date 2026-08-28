@@ -1,0 +1,12 @@
+[package]
+name = "rsl-error-correction"
+version = "0.1.0"
+description = "Accuracy-first error-correction contracts and correction reports for the RSL stack."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true

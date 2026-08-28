@@ -1,0 +1,12 @@
+[package]
+name = "rsl-compression"
+version = "0.1.0"
+description = "Accuracy-first compression and decompression contracts for the RSL stack."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true
