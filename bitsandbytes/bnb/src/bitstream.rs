@@ -123,6 +123,15 @@ pub enum ErrorKind {
         /// The cap, in bytes.
         cap: usize,
     },
+    /// A byte-only operation was attempted while the cursor was between bytes.
+    NotByteAligned,
+    /// Computing a bounded region's end position overflowed `usize`.
+    PositionOverflow,
+    /// A bounded region was not consumed exactly.
+    TrailingBits {
+        /// Number of bits left inside the region.
+        remaining: usize,
+    },
 }
 
 impl BitError {
@@ -212,6 +221,15 @@ impl fmt::Display for BitError {
             }
             ErrorKind::BufferFull { cap } => {
                 write!(f, "buffered source exceeded its {cap}-byte cap")?;
+            }
+            ErrorKind::NotByteAligned => {
+                f.write_str("operation requires a byte-aligned cursor")?;
+            }
+            ErrorKind::PositionOverflow => {
+                f.write_str("bounded source position overflowed")?;
+            }
+            ErrorKind::TrailingBits { remaining } => {
+                write!(f, "{remaining} trailing bits in the bounded region")?;
             }
         }
         write!(f, " at bit {}", self.at)?;
@@ -652,6 +670,38 @@ impl<'a> BitReader<'a> {
         self.bytes.len() * 8 - self.bit_pos
     }
 
+    /// Borrows and consumes the next `n` whole bytes without copying.
+    ///
+    /// This is the exact-span boundary for formats whose signed or hashed representation must be
+    /// retained byte-for-byte. Unlike [`Source::read_bytes`], the returned slice aliases the
+    /// original input and therefore exists only on the slice-backed reader.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::NotByteAligned`] when the cursor is between bytes,
+    /// [`ErrorKind::UnexpectedEof`] when fewer than `n` bytes remain, or
+    /// [`ErrorKind::PositionOverflow`] when the requested end cannot be represented.
+    pub fn read_slice(&mut self, n: usize) -> Result<&'a [u8], BitError> {
+        if self.bit_pos % 8 != 0 {
+            return Err(BitError::new(ErrorKind::NotByteAligned, self.bit_pos));
+        }
+        let start = self.bit_pos / 8;
+        let end = start
+            .checked_add(n)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
+        if end > self.bytes.len() {
+            return Err(BitError::new(
+                ErrorKind::UnexpectedEof {
+                    needed: n.saturating_mul(8),
+                    remaining: self.remaining_bits(),
+                },
+                self.bit_pos,
+            ));
+        }
+        self.bit_pos = end * 8;
+        Ok(&self.bytes[start..end])
+    }
+
     /// Reads `n` (`<= 128`) bits into the low bits of a `u128`, in the reader's
     /// bit order (MSB-first by default).
     ///
@@ -962,6 +1012,24 @@ pub trait Source: sealed::Sealed {
         Ok(())
     }
 
+    /// Lends this source through a window of exactly `n` bytes.
+    ///
+    /// Reads and seeks through the returned [`LimitedSource`] cannot cross the declared region.
+    /// Call [`LimitedSource::finish`] after decoding a nested value to require exact consumption.
+    /// This is useful for length-delimited containers: the child decoder cannot accidentally
+    /// consume bytes belonging to its parent.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::NotByteAligned`] when the source is between bytes, or
+    /// [`ErrorKind::PositionOverflow`] when the region's end cannot be represented.
+    fn limit_bytes(&mut self, n: usize) -> Result<LimitedSource<'_, Self>, BitError>
+    where
+        Self: Sized,
+    {
+        LimitedSource::bytes(self, n)
+    }
+
     /// Borrows this source as a [`std::io::Read`] over its bytes — for handing the
     /// cursor to `std::io`-based code from a `#[br(parse_with = …)]` (e.g. a decoder, or
     /// a `Read`-based parser). Reads 8 bits per byte; see [`SourceReader`]. Only with
@@ -974,6 +1042,124 @@ pub trait Source: sealed::Sealed {
         SourceReader(self)
     }
 }
+
+/// A borrowed [`Source`] window that prevents a nested decoder from crossing its declared length.
+///
+/// Positions remain absolute offsets in the parent source, so errors retain their original wire
+/// location. Dropping a window permits unconsumed input; call [`finish`](Self::finish) when the
+/// nested grammar requires exact consumption.
+pub struct LimitedSource<'a, S: Source> {
+    source: &'a mut S,
+    start: usize,
+    end: usize,
+}
+
+impl<'a, S: Source> LimitedSource<'a, S> {
+    fn bytes(source: &'a mut S, n: usize) -> Result<Self, BitError> {
+        let start = source.bit_pos();
+        if start % 8 != 0 {
+            return Err(BitError::new(ErrorKind::NotByteAligned, start));
+        }
+        let bits = n
+            .checked_mul(8)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, start))?;
+        let end = start
+            .checked_add(bits)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, start))?;
+        Ok(Self { source, start, end })
+    }
+
+    /// Absolute bit offset at which this window begins.
+    #[must_use]
+    pub const fn start_bit(&self) -> usize {
+        self.start
+    }
+
+    /// Absolute bit offset immediately after this window.
+    #[must_use]
+    pub const fn end_bit(&self) -> usize {
+        self.end
+    }
+
+    /// Bits not yet consumed inside this window.
+    #[must_use]
+    pub fn remaining_bits(&self) -> usize {
+        self.end.saturating_sub(self.source.bit_pos())
+    }
+
+    /// Ends the borrow only if the child consumed its complete declared region.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::TrailingBits`] when bytes or bits remain in the window.
+    pub fn finish(self) -> Result<(), BitError> {
+        let remaining = self.remaining_bits();
+        if remaining == 0 {
+            Ok(())
+        } else {
+            Err(BitError::new(
+                ErrorKind::TrailingBits { remaining },
+                self.source.bit_pos(),
+            ))
+        }
+    }
+}
+
+impl<S: Source> fmt::Debug for LimitedSource<'_, S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LimitedSource")
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .field("position", &self.source.bit_pos())
+            .finish()
+    }
+}
+
+impl<S: Source> sealed::Sealed for LimitedSource<'_, S> {}
+
+impl<S: Source> Source for LimitedSource<'_, S> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        let remaining = self.remaining_bits();
+        if n as usize > remaining {
+            return Err(BitError::new(
+                ErrorKind::UnexpectedEof {
+                    needed: n as usize,
+                    remaining,
+                },
+                self.source.bit_pos(),
+            ));
+        }
+        self.source.read_bits(n)
+    }
+
+    fn bit_pos(&self) -> usize {
+        self.source.bit_pos()
+    }
+
+    fn byte_order(&self) -> ByteOrder {
+        self.source.byte_order()
+    }
+
+    fn bit_order(&self) -> BitOrder {
+        self.source.bit_order()
+    }
+
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        if pos < self.start || pos > self.end {
+            return Err(BitError::new(
+                ErrorKind::UnexpectedEof {
+                    needed: pos.saturating_sub(self.start),
+                    remaining: self.end - self.start,
+                },
+                self.source.bit_pos(),
+            ));
+        }
+        self.source.seek_to_bit(pos)
+    }
+}
+
+impl<S: SeekSource> SeekSource for LimitedSource<'_, S> {}
 
 /// A [`std::io::Read`] view over a [`Source`], from [`Source::as_read`]. Each `read`
 /// pulls 8 bits per byte through [`Source::read_bits`], so it works at any bit
@@ -2867,6 +3053,68 @@ mod unit {
         };
         assert_eq!(s.read::<u8>().unwrap(), 0xAB);
         assert_eq!(s.read::<u8>().unwrap(), 0xCD);
+    }
+
+    #[test]
+    fn limited_source_confines_nested_reads_and_requires_exact_consumption() {
+        let mut source = BitReader::new(&[0xAA, 0xBB, 0xCC]);
+        {
+            let mut child = source.limit_bytes(2).unwrap();
+            assert_eq!((child.start_bit(), child.end_bit()), (0, 16));
+            assert_eq!(child.read::<u8>().unwrap(), 0xAA);
+            assert_eq!(child.remaining_bits(), 8);
+            assert_eq!(
+                child.finish().unwrap_err().kind,
+                ErrorKind::TrailingBits { remaining: 8 }
+            );
+        }
+
+        let mut child = source.limit_bytes(1).unwrap();
+        assert_eq!(child.read::<u8>().unwrap(), 0xBB);
+        assert_eq!(
+            child.read::<u8>().unwrap_err().kind,
+            ErrorKind::UnexpectedEof {
+                needed: 8,
+                remaining: 0,
+            }
+        );
+        child.finish().unwrap();
+        assert_eq!(source.read::<u8>().unwrap(), 0xCC);
+    }
+
+    #[test]
+    fn limited_seek_source_rejects_positions_outside_its_window() {
+        let mut source = BitReader::new(&[0x00, 0x11, 0x22]);
+        source.read::<u8>().unwrap();
+        let mut child = source.limit_bytes(1).unwrap();
+        child.seek_to_bit(16).unwrap();
+        assert_eq!(
+            child.read::<u8>().unwrap_err().kind,
+            ErrorKind::UnexpectedEof {
+                needed: 8,
+                remaining: 0,
+            }
+        );
+        assert!(matches!(
+            child.seek_to_bit(0).unwrap_err().kind,
+            ErrorKind::UnexpectedEof { .. }
+        ));
+    }
+
+    #[test]
+    fn bit_reader_borrows_exact_aligned_input_spans() {
+        let bytes = [0x30, 0x03, 0x02, 0x01, 0x07];
+        let mut source = BitReader::new(&bytes);
+        assert_eq!(source.read_slice(2).unwrap(), &bytes[..2]);
+        assert_eq!(source.read_slice(3).unwrap(), &bytes[2..]);
+        assert_eq!(source.remaining_bits(), 0);
+
+        let mut unaligned = BitReader::new(&bytes);
+        unaligned.read_bits(1).unwrap();
+        assert_eq!(
+            unaligned.read_slice(1).unwrap_err().kind,
+            ErrorKind::NotByteAligned
+        );
     }
 
     /// A `Sink` that overrides only the required methods, exercising the default

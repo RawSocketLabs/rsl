@@ -6,20 +6,12 @@ error[E0277]: the trait bound `StreamBitReader<&[u8]>: SeekSource` is not satisf
    |             |
    |             required by a bound introduced by this call
    |
-help: the following other types implement trait `SeekSource`
-  --> src/bitstream.rs
-   |
-   | impl SeekSource for BitReader<'_> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `BitReader<'_>`
-...
-   | impl<R: std::io::Read> SeekSource for BufSource<R> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `BufSource<R>`
-...
-   | impl SeekSource for BitBuf {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `BitBuf`
-...
-   | impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `SeekReader<R>`
+   = help: the following other types implement trait `SeekSource`:
+             BitBuf
+             BitReader<'_>
+             BufSource<R>
+             LimitedSource<'_, S>
+             SeekReader<R>
 note: required by a bound in `Peeked::decode`
   --> tests/ui_seek/restore_position_needs_seek.rs:8:1
    |

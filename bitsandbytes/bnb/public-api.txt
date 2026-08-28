@@ -18,9 +18,13 @@ pub bnb::bitstream::ErrorKind::Convert::message: alloc::string::String
 pub bnb::bitstream::ErrorKind::Incomplete
 pub bnb::bitstream::ErrorKind::Incomplete::needed: core::option::Option<usize>
 pub bnb::bitstream::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::bitstream::ErrorKind::NotByteAligned
 pub bnb::bitstream::ErrorKind::NotSeekable
+pub bnb::bitstream::ErrorKind::PositionOverflow
 pub bnb::bitstream::ErrorKind::TooWide
 pub bnb::bitstream::ErrorKind::TooWide::width: usize
+pub bnb::bitstream::ErrorKind::TrailingBits
+pub bnb::bitstream::ErrorKind::TrailingBits::remaining: usize
 pub bnb::bitstream::ErrorKind::TrailingBytes
 pub bnb::bitstream::ErrorKind::TrailingBytes::remaining: usize
 pub bnb::bitstream::ErrorKind::UnexpectedEof
@@ -86,6 +90,7 @@ pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReade
 pub fn bnb::bitstream::BitBuf::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -193,6 +198,7 @@ pub fn bnb::bitstream::BitReader<'a>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'a>::new(&'a [u8]) -> Self
 pub fn bnb::bitstream::BitReader<'a>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::read_slice(&mut self, usize) -> core::result::Result<&'a [u8], bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::remaining_bits(&self) -> usize
 pub fn bnb::bitstream::BitReader<'a>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::with_layout(&'a [u8], bnb::bitstream::Layout) -> Self
@@ -203,6 +209,7 @@ pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::BitReader<'_>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -314,6 +321,7 @@ pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::Sourc
 pub fn bnb::bitstream::BufSource<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -360,6 +368,7 @@ pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, 
 pub fn bnb::BytesReader::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -544,6 +553,51 @@ impl<T> core::convert::From<T> for bnb::bitstream::Layout
 pub fn bnb::bitstream::Layout::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::Layout
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::Layout
+pub struct bnb::bitstream::LimitedSource<'a, S: bnb::bitstream::Source>
+impl<'a, S: bnb::bitstream::Source> bnb::bitstream::LimitedSource<'a, S>
+pub const fn bnb::bitstream::LimitedSource<'a, S>::end_bit(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'a, S>::finish(self) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'a, S>::remaining_bits(&self) -> usize
+pub const fn bnb::bitstream::LimitedSource<'a, S>::start_bit(&self) -> usize
+impl<S: bnb::bitstream::SeekSource> bnb::bitstream::SeekSource for bnb::bitstream::LimitedSource<'_, S>
+impl<S: bnb::bitstream::Source> bnb::bitstream::Source for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_order(&self) -> bnb::BitOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'_, S>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<S: bnb::bitstream::Source> core::fmt::Debug for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a, S> core::marker::Freeze for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::marker::Send for bnb::bitstream::LimitedSource<'a, S> where S: core::marker::Send
+impl<'a, S> core::marker::Sync for bnb::bitstream::LimitedSource<'a, S> where S: core::marker::Sync
+impl<'a, S> core::marker::Unpin for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::marker::UnsafeUnpin for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::LimitedSource<'a, S> where S: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::LimitedSource<'a, S>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::From<T>
+pub fn bnb::bitstream::LimitedSource<'a, S>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::Into<T>
+pub type bnb::bitstream::LimitedSource<'a, S>::Error = core::convert::Infallible
+pub fn bnb::bitstream::LimitedSource<'a, S>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::LimitedSource<'a, S>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::LimitedSource<'a, S>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::LimitedSource<'a, S> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::LimitedSource<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::LimitedSource<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::LimitedSource<'a, S>
+pub fn bnb::bitstream::LimitedSource<'a, S>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::LimitedSource<'a, S>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::LimitedSource<'a, S>
 pub struct bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekReader<R>
 pub fn bnb::bitstream::SeekReader<R>::new(R) -> Self
@@ -558,6 +612,7 @@ pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::SeekReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -665,6 +720,7 @@ pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream:
 pub fn bnb::bitstream::StreamBitReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -864,6 +920,7 @@ impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+impl<S: bnb::bitstream::SeekSource> bnb::bitstream::SeekSource for bnb::bitstream::LimitedSource<'_, S>
 pub trait bnb::bitstream::Sink: bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::bitstream::Sink::bit_order(&self) -> bnb::BitOrder
@@ -896,6 +953,7 @@ pub fn bnb::bitstream::Source::as_read(&mut self) -> bnb::bitstream::SourceReade
 pub fn bnb::bitstream::Source::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::Source::bit_pos(&self) -> usize
 pub fn bnb::bitstream::Source::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::Source::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::Source::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -906,6 +964,7 @@ pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, 
 pub fn bnb::BytesReader::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -916,6 +975,7 @@ pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReade
 pub fn bnb::bitstream::BitBuf::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -926,6 +986,7 @@ pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::BitReader<'_>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -936,6 +997,7 @@ pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::SeekReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -946,6 +1008,7 @@ pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::Sourc
 pub fn bnb::bitstream::BufSource<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -956,11 +1019,23 @@ pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream:
 pub fn bnb::bitstream::StreamBitReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<S: bnb::bitstream::Source> bnb::bitstream::Source for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_order(&self) -> bnb::BitOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'_, S>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub mod bnb::builder
 #[non_exhaustive] pub enum bnb::builder::BuilderError
 pub bnb::builder::BuilderError::Invalid(alloc::string::String)
@@ -1873,9 +1948,13 @@ pub bnb::ErrorKind::Convert::message: alloc::string::String
 pub bnb::ErrorKind::Incomplete
 pub bnb::ErrorKind::Incomplete::needed: core::option::Option<usize>
 pub bnb::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::ErrorKind::NotByteAligned
 pub bnb::ErrorKind::NotSeekable
+pub bnb::ErrorKind::PositionOverflow
 pub bnb::ErrorKind::TooWide
 pub bnb::ErrorKind::TooWide::width: usize
+pub bnb::ErrorKind::TrailingBits
+pub bnb::ErrorKind::TrailingBits::remaining: usize
 pub bnb::ErrorKind::TrailingBytes
 pub bnb::ErrorKind::TrailingBytes::remaining: usize
 pub bnb::ErrorKind::UnexpectedEof
@@ -2097,6 +2176,7 @@ pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReade
 pub fn bnb::bitstream::BitBuf::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -2204,6 +2284,7 @@ pub fn bnb::bitstream::BitReader<'a>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'a>::new(&'a [u8]) -> Self
 pub fn bnb::bitstream::BitReader<'a>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitReader<'a>::read_slice(&mut self, usize) -> core::result::Result<&'a [u8], bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::remaining_bits(&self) -> usize
 pub fn bnb::bitstream::BitReader<'a>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'a>::with_layout(&'a [u8], bnb::bitstream::Layout) -> Self
@@ -2214,6 +2295,7 @@ pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::BitReader<'_>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -2325,6 +2407,7 @@ pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::Sourc
 pub fn bnb::bitstream::BufSource<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -2371,6 +2454,7 @@ pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, 
 pub fn bnb::BytesReader::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -2555,6 +2639,51 @@ impl<T> core::convert::From<T> for bnb::bitstream::Layout
 pub fn bnb::bitstream::Layout::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::Layout
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::Layout
+pub struct bnb::LimitedSource<'a, S: bnb::bitstream::Source>
+impl<'a, S: bnb::bitstream::Source> bnb::bitstream::LimitedSource<'a, S>
+pub const fn bnb::bitstream::LimitedSource<'a, S>::end_bit(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'a, S>::finish(self) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'a, S>::remaining_bits(&self) -> usize
+pub const fn bnb::bitstream::LimitedSource<'a, S>::start_bit(&self) -> usize
+impl<S: bnb::bitstream::SeekSource> bnb::bitstream::SeekSource for bnb::bitstream::LimitedSource<'_, S>
+impl<S: bnb::bitstream::Source> bnb::bitstream::Source for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_order(&self) -> bnb::BitOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'_, S>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<S: bnb::bitstream::Source> core::fmt::Debug for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a, S> core::marker::Freeze for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::marker::Send for bnb::bitstream::LimitedSource<'a, S> where S: core::marker::Send
+impl<'a, S> core::marker::Sync for bnb::bitstream::LimitedSource<'a, S> where S: core::marker::Sync
+impl<'a, S> core::marker::Unpin for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::marker::UnsafeUnpin for bnb::bitstream::LimitedSource<'a, S>
+impl<'a, S> core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::LimitedSource<'a, S> where S: core::panic::unwind_safe::RefUnwindSafe
+impl<'a, S> !core::panic::unwind_safe::UnwindSafe for bnb::bitstream::LimitedSource<'a, S>
+impl<T, U> core::convert::Into<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::From<T>
+pub fn bnb::bitstream::LimitedSource<'a, S>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::Into<T>
+pub type bnb::bitstream::LimitedSource<'a, S>::Error = core::convert::Infallible
+pub fn bnb::bitstream::LimitedSource<'a, S>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::LimitedSource<'a, S> where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::LimitedSource<'a, S>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::LimitedSource<'a, S>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for bnb::bitstream::LimitedSource<'a, S> where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::LimitedSource<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::LimitedSource<'a, S> where T: ?core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'a, S>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::bitstream::LimitedSource<'a, S>
+pub fn bnb::bitstream::LimitedSource<'a, S>::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::LimitedSource<'a, S>
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::LimitedSource<'a, S>
 pub struct bnb::MessageDatagram<D>
 impl<D: bnb::net::DatagramSocket> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::recv_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
@@ -2732,6 +2861,7 @@ pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::SeekReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -2839,6 +2969,7 @@ pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream:
 pub fn bnb::bitstream::StreamBitReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3518,6 +3649,7 @@ impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitReader<'_>
 impl<R: std::io::Read + std::io::Seek> bnb::bitstream::SeekSource for bnb::bitstream::SeekReader<R>
 impl<R: std::io::Read> bnb::bitstream::SeekSource for bnb::bitstream::BufSource<R>
+impl<S: bnb::bitstream::SeekSource> bnb::bitstream::SeekSource for bnb::bitstream::LimitedSource<'_, S>
 pub trait bnb::Sink: bnb::bitstream::sealed::Sealed
 pub fn bnb::Sink::as_write(&mut self) -> bnb::bitstream::SinkWriter<'_, Self> where Self: core::marker::Sized
 pub fn bnb::Sink::bit_order(&self) -> bnb::BitOrder
@@ -3550,6 +3682,7 @@ pub fn bnb::Source::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self>
 pub fn bnb::Source::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::Source::bit_pos(&self) -> usize
 pub fn bnb::Source::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::Source::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::Source::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::Source::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::Source::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3560,6 +3693,7 @@ pub fn bnb::BytesReader::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, 
 pub fn bnb::BytesReader::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::BytesReader::bit_pos(&self) -> usize
 pub fn bnb::BytesReader::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::BytesReader::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::BytesReader::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::BytesReader::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3570,6 +3704,7 @@ pub fn bnb::bitstream::BitBuf::as_read(&mut self) -> bnb::bitstream::SourceReade
 pub fn bnb::bitstream::BitBuf::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitBuf::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitBuf::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitBuf::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitBuf::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3580,6 +3715,7 @@ pub fn bnb::bitstream::BitReader<'_>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::BitReader<'_>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BitReader<'_>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BitReader<'_>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BitReader<'_>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BitReader<'_>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitReader<'_>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3590,6 +3726,7 @@ pub fn bnb::bitstream::SeekReader<R>::as_read(&mut self) -> bnb::bitstream::Sour
 pub fn bnb::bitstream::SeekReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::SeekReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::SeekReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::SeekReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::SeekReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::SeekReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3600,6 +3737,7 @@ pub fn bnb::bitstream::BufSource<R>::as_read(&mut self) -> bnb::bitstream::Sourc
 pub fn bnb::bitstream::BufSource<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::BufSource<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::BufSource<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::BufSource<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::BufSource<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BufSource<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
@@ -3610,11 +3748,23 @@ pub fn bnb::bitstream::StreamBitReader<R>::as_read(&mut self) -> bnb::bitstream:
 pub fn bnb::bitstream::StreamBitReader<R>::bit_order(&self) -> bnb::BitOrder
 pub fn bnb::bitstream::StreamBitReader<R>::bit_pos(&self) -> usize
 pub fn bnb::bitstream::StreamBitReader<R>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::StreamBitReader<R>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
 pub fn bnb::bitstream::StreamBitReader<R>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::StreamBitReader<R>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
+impl<S: bnb::bitstream::Source> bnb::bitstream::Source for bnb::bitstream::LimitedSource<'_, S>
+pub fn bnb::bitstream::LimitedSource<'_, S>::as_read(&mut self) -> bnb::bitstream::SourceReader<'_, Self> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_order(&self) -> bnb::BitOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::bit_pos(&self) -> usize
+pub fn bnb::bitstream::LimitedSource<'_, S>::byte_order(&self) -> bnb::ByteOrder
+pub fn bnb::bitstream::LimitedSource<'_, S>::limit_bytes(&mut self, usize) -> core::result::Result<bnb::bitstream::LimitedSource<'_, Self>, bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn bnb::bitstream::LimitedSource<'_, S>::read<T: bnb::Bits>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bits(&mut self, u32) -> core::result::Result<u128, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_bytes(&mut self, usize) -> core::result::Result<alloc::vec::Vec<u8>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
+pub fn bnb::bitstream::LimitedSource<'_, S>::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 pub type bnb::u1 = bnb::UInt<u8, 1>
 pub type bnb::u10 = bnb::UInt<u16, 10>
 pub type bnb::u100 = bnb::UInt<u128, 100>
