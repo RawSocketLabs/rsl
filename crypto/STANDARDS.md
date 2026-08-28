@@ -812,6 +812,26 @@ Re-checked 2026-08-28.
 No differential crate is used for X448 (the RustCrypto `x448` crate is pre-release only);
 Wycheproof is the independent scheme-level oracle.
 
+## Ed448
+
+The RFC 8032 baseline recorded for Ed25519 applies. Curve constants come from RFC 7748 §4.2.
+Re-checked 2026-08-28.
+
+| RFC 8032 location | Requirement represented | Code and evidence | Status |
+| --- | --- | --- | --- |
+| §5.2 Table 2; RFC 7748 §4.2 | `p = 2^448 - 2^224 - 1`, `d = -39081`, base point, `L`, `c = 2`, `H = SHAKE256(·, 114)`. | `ed448::{field, point, scalar}` constants converted from the printed decimals; base point on-curve and round-trip tests; `L` boundary tests. | Implemented and tested. |
+| §5.2.1 | Inversion by `p - 2`; root candidate `(u/v)^((p+1)/4)`. | `FieldElement::invert`, `square_root_ratio` using the §5.2.3 `u^3 v (u^5 v^3)^((p-3)/4)` form; base-point root test. | Implemented and tested. |
+| §5.2.2–§5.2.3 | 57-byte little-endian `y` with the sign of `x` in bit 455; reject `y >= p`, stray bits, missing roots, negative zero. | `EdwardsPoint::compress`/`decompress`; boundary tests. | Implemented and tested. |
+| §5.2.4 | Projective addition and doubling in the printed `A..H` / `B..J` order (complete for non-square `d`). | `EdwardsPoint::add`/`double`; doubling-equals-addition test; all RFC vectors. | Implemented and tested. |
+| §5.2 `dom4(F, C)` | `"SigEd448" ‖ F ‖ len(C) ‖ C`, always present; `C` at most 255 bytes, default empty. | `api::dom4`, `Ed448Context`; layout test; context vectors. | Implemented and tested. |
+| §5.2.5 | `SHAKE256(k, 114)`; prune bits 0–1, clear byte 56, set bit 447; `A = [s]B`. | `prepare_secret_scalar`, `verifying_key`; all §7.4/§7.5 public keys. | Implemented and tested. |
+| §5.2.6 | `r = H(dom4 ‖ prefix ‖ PH(M))`, `R = [r]B`, `k = H(dom4 ‖ R ‖ A ‖ PH(M))`, `S = r + k·s mod L`. | `sign_domain`, `hash_to_scalar` with 114-byte reduction; all §7.4 signatures byte-exact. | Implemented and tested. |
+| §5.2 Ed448ph | `PH(M) = SHAKE256(M, 64)`, `F = 1`. | `sign_prehashed`/`verify_prehashed`; both §7.5 vectors. | Implemented and tested. |
+| §5.2.7 | Decode `R`, `S < L`, `A`; recompute `k`; sufficient equation `[S]B = R + [k]A`. | `verify_domain` with small-order rejection of `R` and `A` (strict hardening, as for Ed25519); 87 Wycheproof `ed448` cases; tampering and non-canonical-`S` tests. | Implemented and tested with documented strict hardening. |
+
+No differential crate is used for Ed448 (the RustCrypto implementation is pre-release only);
+Wycheproof is the independent scheme-level oracle.
+
 ## Traceability requirements for later primitives
 
 Before implementation begins, each primitive must add its authoritative document, exact revision,

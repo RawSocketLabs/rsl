@@ -88,6 +88,7 @@ rsl-crypto/
 │   ├── signature/ed25519/field.rs Edwards field encoding and root recovery
 │   ├── signature/ed25519/point.rs point arithmetic and fixed scalar multiplication
 │   ├── signature/ed25519/scalar.rs canonical and reduced subgroup scalars
+│   ├── signature/ed448/           edwards448 field, projective points, scalars, dom4 API
 │   ├── security.rs                lifecycle taxonomy, separate from audit status
 │   └── ...
 ├── tests/
@@ -131,6 +132,8 @@ rsl-crypto/
 │   ├── ecdh_p256.rs               public ECDH P-256 evidence harness
 │   ├── ecdh_p256/                 RFC 5903, CAVP CDH/PKV fixtures, boundaries, differential
 │   ├── vectors/ecdh-p256/         SP 800-56A, RFC 5903, and CAVP provenance
+│   ├── ed448.rs, ed448/           RFC 8032 §7.4/§7.5 vectors, Wycheproof cases, boundaries
+│   ├── vectors/ed448/             RFC 8032/7748 Ed448 and Wycheproof provenance
 │   ├── ecdh_p384.rs, ecdh_p384/   RFC 5903 §8.2, CAVP CDH/PKV P-384, boundaries, differential
 │   ├── vectors/ecdh-p384/         P-384 agreement provenance
 │   ├── ecdsa_p384.rs, ecdsa_p384/ RFC 6979 A.2.6, CAVP SigGen/SigVer P-384, differential

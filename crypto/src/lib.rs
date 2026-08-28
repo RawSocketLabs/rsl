@@ -36,6 +36,8 @@
 //!    completely different design, the sponge, whose extendable output Ed448 relies on.
 //! 6. [`Ed25519SigningKey`](signature::ed25519::Ed25519SigningKey) derives an authenticated public
 //!    identity and deterministic signatures from a private seed.
+//!    [`Ed448SigningKey`](signature::ed448::Ed448SigningKey) repeats the design over edwards448
+//!    with SHAKE256.
 //! 7. [`Aes128`](cipher::aes::aes128::Aes128) exposes the raw 128-bit block permutation for
 //!    studying AES rounds. It is deliberately not a message-encryption API.
 //!    [`Aes256`](cipher::aes::aes256::Aes256) shows that only the key schedule and round count

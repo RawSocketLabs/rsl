@@ -160,6 +160,12 @@ Each algorithm change must include:
     and iterated vectors (the million-iteration checkpoint as an ignored test), §6.2 exchange,
     and all 510 Wycheproof cases.
 
+17. **Ed448 and Ed448ph** — RFC 8032 §5.2 over edwards448 with SHAKE256: an eight-limb field
+    with the §5.2.3 root-candidate trick, projective §5.2.4 formulas in printed order, 114-byte
+    scalar reduction, the always-present `dom4` prefix with a typed context, and the same
+    strict verification policy as Ed25519. Evidence: every §7.4 and §7.5 vector byte-exact and
+    all 87 Wycheproof cases.
+
 ## Performance policy
 
 Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
@@ -173,8 +179,7 @@ acceptable when they keep the code and its tests clear and fast.
 The next slices add the remaining commonly negotiated algorithms, each with the same evidence
 bar:
 
-1. X448 and Ed448 (approved 2026-08-28), with SHA3/SHAKE256 as the Ed448 prerequisite.
-2. Assurance work: fuzz targets, a constant-time review pass, and the X25519 one-million-iteration checkpoint as an ignored test.
+1. Assurance work: fuzz targets, a constant-time review pass, and the X25519 one-million-iteration checkpoint as an ignored test.
 
 ## After the first vertical slice
 
