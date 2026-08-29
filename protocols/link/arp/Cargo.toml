@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 # `Ipv4Addr`'s bnb codec is available with the standard-library type support.
 bnb = { workspace = true, features = ["std"] }
-ethertype = { path = "../ethertype", version = "0.2.2" }
+ethertype = { path = "../ethertype", version = "0.2.3" }
 rawsock = { workspace = true, optional = true }
 
 [features]
@@ -23,7 +23,7 @@ required-features = ["inject"]
 
 [dev-dependencies]
 # The full-stack example/tests frame the ARP packet in a real Ethernet header.
-ethernet = { path = "../ethernet", version = "0.1.4", features = ["inject"] }
+ethernet = { path = "../ethernet", version = "0.1.5", features = ["inject"] }
 
 [lints]
 workspace = true

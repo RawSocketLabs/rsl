@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.3.3](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.3.2...bitsandbytes-v0.3.3) - 2026-08-29
+
+### Added
+
+- *(bitsandbytes)* add bounded source windows
+
 ## [0.3.2](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.3.1...bitsandbytes-v0.3.2) - 2026-07-24
 
 Headline (in the re-exported `bitsandbytes-macros` 0.3.2): every generated
