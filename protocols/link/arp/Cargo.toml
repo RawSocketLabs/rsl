@@ -8,7 +8,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bnb.workspace = true
+# `Ipv4Addr`'s bnb codec is available with the standard-library type support.
+bnb = { workspace = true, features = ["std"] }
 ethertype = { path = "../ethertype", version = "0.2.2" }
 rawsock = { workspace = true, optional = true }
 
