@@ -20,6 +20,10 @@ table in [`AGENTS.md`](AGENTS.md) tracks per-crate stage.
       dispatch + aux ctx + bytes catch-all, `count = expr`, nested-bitfield flattening, absolute
       `seek`. **Increment 2** (encode compression, needs the bnb mutable-state gap) and a
       client (needs `rawsock`) remain.
+- [x] **`system/netlink`** — strict native-endian Netlink and attribute framing, route and
+      generic-netlink clients, typed link/address/route/rule operations, and WireGuard family
+      support. Its blocking `rustix` transport owns sequence/ACK/multipart/extack validation and
+      stays with the protocol because those rules define the kernel/userspace exchange.
 
 ## Protocol adoption order
 

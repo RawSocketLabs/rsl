@@ -21,8 +21,8 @@ release_always = false
 # patch releases through every dependent workspace crate.
 release_commits = '^(feat|fix|perf|docs|revert)[(:]|^[a-z]+(?:\([^)]*\))?!:'
 
-# The codec pair and the standalone netlink crate publish to crates.io. The
-# bitsandbytes runtime cannot be published (or verified) without its proc-macro
+# The codec pair and the independently consumable netlink protocol crate publish to crates.io.
+# The bitsandbytes runtime cannot be published (or verified) without its proc-macro
 # crate on the registry. The release job supplies the CARGO_REGISTRY_TOKEN secret
 # (see .github/workflows/release-plz.yml).
 [[package]]
