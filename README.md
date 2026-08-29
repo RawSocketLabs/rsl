@@ -10,8 +10,6 @@ no cross-repo version pinning to keep in sync.
 - **`bitsandbytes`** (`bitsandbytes/bnb`) + **`bitsandbytes-macros`** — the owned, bit-aware
   binary codec (imported as `bnb`). `no_std`, zero `unsafe`.
 - **`rawsock`** — dual-use, layered raw-packet I/O (L2/L3/L4).
-- **`rsl-netlink`** — strict Linux route/generic-netlink transport with typed link,
-  address, route, rule, and WireGuard operations; fixed wire framing uses `bitsandbytes`.
 - **`rsl-crypto`** (`crypto/`) — accuracy-first cryptographic primitives and protection
   contracts, including a readable AES-128-GCM path designed to make every byte transformation
   inspectable and independently testable.
@@ -24,8 +22,10 @@ no cross-repo version pinning to keep in sync.
 - **`rsl-error-correction`** (`error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
 - **`rfus`** — RF frequency / sample-rate / scan-target parsing.
-- **`protocols/*`** — from-scratch, dual-use protocol codecs on `bnb`: `ethertype`, `ethernet`,
-  `arp`, `tcp`, `udp`, `ip`, `icmp`, `dns`.
+- **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
+  crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, and `dns`, plus
+  **`rsl-netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
+  transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
 - **`rsl-deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
 - **`usdr`, `rust-dsdcc`** — FFI/SDR bindings (excluded from the default build; need a C++

@@ -6,8 +6,6 @@ members = [
     "bitsandbytes/bnb-macros",
     # raw-packet I/O
     "rawsock",
-    # Linux netlink protocol and transports
-    "netlink",
     # independent accuracy-first domains
     "crypto",
     "crypto-legacy",
@@ -28,6 +26,8 @@ members = [
     "protocols/network/ip",
     "protocols/network/icmp",
     "protocols/application/dns",
+    # Linux kernel/userspace protocols
+    "protocols/system/netlink",
     # facades
     "rsl",
     "rsl-deps",
@@ -62,7 +62,7 @@ bnb = { package = "bitsandbytes", path = "bitsandbytes/bnb", version = "0.3.2", 
 bnb-macros = { package = "bitsandbytes-macros", path = "bitsandbytes/bnb-macros", version = "0.3.2" }
 rawsock = { path = "rawsock", version = "0.1.2", default-features = false }
 rsl-deps = { path = "rsl-deps", version = "0.1.0", default-features = false }
-rsl-netlink = { path = "netlink", version = "0.1.0", default-features = false }
+rsl-netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
 rsl-crypto = { path = "crypto", version = "0.1.0", default-features = false }
 rsl-crypto-legacy = { path = "crypto-legacy", version = "0.1.0", default-features = false }
 rsl-asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }

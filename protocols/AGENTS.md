@@ -5,10 +5,12 @@
 > own `AGENTS.md` (+ `CLAUDE.md` symlink) for crate-specific detail; this root file holds
 > the workspace-wide rules that apply everywhere.
 
-**What this is.** A Cargo workspace of **from-scratch network-protocol implementations** in
-Rust — a typed, compiled, dual-use alternative to Scapy / Impacket. Each protocol is its
-own independently-versioned crate, organized by OSI layer (`link/` → `network/` →
-`transport/` → `session/` → `application/`). The wire codec throughout is
+**What this is.** A Cargo workspace of **from-scratch protocol implementations** in Rust — a
+typed, compiled, dual-use alternative to Scapy / Impacket. Each protocol is its own
+independently-versioned crate. Network protocols are organized by OSI layer (`link/` →
+`network/` → `transport/` → `session/` → `application/`); local kernel/userspace protocols
+live under `system/` rather than being forced into a fictitious OSI layer. The wire codec
+throughout is
 [`bnb`](https://github.com/RawSocketLabs/bitsandbytes) (published as `bitsandbytes`) — its
 `#[bin]` whole-message macro plus integer-backed bitfields / arbitrary-width ints / enums /
 flag-sets. See [`DESIGN.md`](DESIGN.md) for the rationale and [`ROADMAP.md`](ROADMAP.md) for
@@ -138,6 +140,7 @@ corpus name once compliance tracking is wired.
 | `network/icmp` | network | 0.1.0 | functional (header codec + rawsock injection) | `icmp` (RFC 792) |
 | `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
 | `link/arp` | link | 0.1.0 | functional (packet codec + rawsock injection) | `arp` (RFC 826) |
+| `system/netlink` | system | 0.1.0 | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
 | `session/socks`; `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
 
 The roadmap of protocols-to-come lives here, not as empty member dirs — a crate joins

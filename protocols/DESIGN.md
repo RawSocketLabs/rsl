@@ -5,10 +5,11 @@ land incrementally on `bnb`; see [`ROADMAP.md`](ROADMAP.md).
 
 ## §1 What and why
 
-A workspace of typed, from-scratch network-protocol codecs — the compiled, dual-use answer to
-Scapy/Impacket. Two goals in tension, both served: **learn the protocols deeply** (the types
-mirror the RFC wire format exactly) and **ship fast tooling** (real encoders/decoders, not
-inspection scripts).
+A workspace of typed, from-scratch protocol codecs — the compiled, dual-use answer to
+Scapy/Impacket. Network protocols follow OSI-layer directories; kernel/userspace protocols that
+do not belong to the OSI model live under `system/`. Two goals in tension, both served: **learn
+the protocols deeply** (the types mirror the RFC wire format exactly) and **ship fast tooling**
+(real encoders/decoders, not inspection scripts).
 
 **Non-goals.** Not a packet-capture framework (that's the transport layer's job, via the external
 `rawsock`). Not a compliance *enforcer* (compliance is observed, never imposed — see the dual-use
@@ -20,8 +21,10 @@ order — same conclusion bnb reached).
 Each protocol is independently versioned and independently useful: a consumer wanting only DNS
 pulls only `dns`, not a monolith. The OSI-layer directory structure (`link/network/transport/
 session/application`) makes the dependency direction legible (lower layers don't depend on higher
-ones) and mirrors how the protocols actually stack. Cross-cutting concerns (raw I/O, compliance
-tracking, test helpers) are *external* crates so they stay independently useful too.
+ones) and mirrors how network protocols actually stack. The parallel `system/` category keeps
+local protocols such as Linux Netlink visible without misclassifying them as an OSI layer.
+Cross-cutting concerns (raw I/O, compliance tracking, test helpers) are *external* crates so they
+stay independently useful too.
 
 ## §3 Why `bnb` as the codec
 

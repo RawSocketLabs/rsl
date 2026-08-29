@@ -3271,7 +3271,6 @@ dependencies = [
  "libc",
  "rustix",
  "thiserror 2.0.20",
- "tokio",
  "zeroize",
 ]
 
