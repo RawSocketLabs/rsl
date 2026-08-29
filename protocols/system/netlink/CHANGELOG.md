@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.1.1](https://github.com/RawSocketLabs/rsl/compare/rsl-netlink-v0.1.0...rsl-netlink-v0.1.1) - 2026-08-29
+
+### Other
+
+- updated the following local packages: bitsandbytes
+
 - Replace the Tokio transport with a blocking one: netlink is a local kernel
   round-trip, so every client API is now synchronous and the `tokio` feature and
   dependency are gone. A bounded `poll` (5 s) guards against a kernel that never
