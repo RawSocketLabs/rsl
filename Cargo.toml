@@ -37,6 +37,7 @@ members = [
 # FFI crates (need a C++ toolchain + system libs) and the bnb/crypto fuzz and no_std helpers are excluded
 # from the default workspace build; each is built on its own in a dedicated CI job.
 exclude = [
+    "protocols/application/tftp",
     "usdr",
     "rust-dsdcc",
     "bitsandbytes/fuzz",
