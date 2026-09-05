@@ -1,0 +1,2 @@
+# Run the public monorepo's Ubuntu 24.04 GitHub workflow locally.
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-24.04

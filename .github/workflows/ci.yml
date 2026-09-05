@@ -13,6 +13,10 @@ on:
         type: choice
         options: [blacksmith-4vcpu-ubuntu-2404, beefy]
         default: blacksmith-4vcpu-ubuntu-2404
+      full:
+        description: Run every validation surface for a local pre-push check.
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,6 +29,7 @@ jobs:
   # this workflow itself trips every filter, so CI changes are always fully validated.
   changes:
     name: detect changes
+    if: ${{ !inputs.full }}
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
@@ -67,7 +72,7 @@ jobs:
   fmt:
     name: rustfmt
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -79,7 +84,7 @@ jobs:
   clippy:
     name: clippy (workspace lints enforce clippy::all = deny)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -92,7 +97,7 @@ jobs:
   test:
     name: build + test
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -119,7 +124,7 @@ jobs:
   deny:
     name: cargo-deny (advisories / licenses / bans / sources)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -128,7 +133,7 @@ jobs:
   msrv:
     name: MSRV (rust-version = 1.85)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -140,7 +145,7 @@ jobs:
   no_std:
     name: no_std (bare-metal target)
     needs: changes
-    if: needs.changes.outputs.bnb == 'true' || needs.changes.outputs.pki == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true' || needs.changes.outputs.pki == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -155,7 +160,7 @@ jobs:
   public-api:
     name: public-api (bitsandbytes surface unchanged)
     needs: changes
-    if: needs.changes.outputs.bnb == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -181,7 +186,7 @@ jobs:
   fuzz:
     name: cargo-fuzz (bnb decode path, smoke run)
     needs: changes
-    if: needs.changes.outputs.bnb == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -202,7 +207,7 @@ jobs:
   fuzz-crypto:
     name: cargo-fuzz (rsl-crypto boundaries, smoke run)
     needs: changes
-    if: needs.changes.outputs.crypto == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.crypto == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -222,7 +227,7 @@ jobs:
   fuzz-pki:
     name: cargo-fuzz (PKI boundaries, smoke run)
     needs: changes
-    if: needs.changes.outputs.pki == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.pki == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -242,7 +247,7 @@ jobs:
   ffi:
     name: FFI bridges (usdr, dsdcc) — cxx compile check
     needs: changes
-    if: needs.changes.outputs.ffi == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.ffi == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
@@ -267,14 +272,16 @@ jobs:
   blessed-sync:
     name: blessed-versions in sync
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       # rsl-deps' pins are the source of truth; the committed blessed-versions.toml must match.
-      - run: python3 tools/gen-blessed.py
       - run: |
-          git diff --exit-code rsl-deps/blessed-versions.toml || {
+          snapshot="$RUNNER_TEMP/blessed-versions.toml"
+          cp rsl-deps/blessed-versions.toml "$snapshot"
+          python3 tools/gen-blessed.py
+          diff -u "$snapshot" rsl-deps/blessed-versions.toml || {
             echo "::error::rsl-deps/blessed-versions.toml is stale — run tools/gen-blessed.py and commit."
             exit 1
           }
@@ -282,7 +289,7 @@ jobs:
   rust-skills:
     name: Rust engineering skills
     needs: changes
-    if: needs.changes.outputs.rust_skills == 'true'
+    if: always() && (inputs.full || needs.changes.outputs.rust_skills == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7

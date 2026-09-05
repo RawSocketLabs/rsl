@@ -56,3 +56,9 @@ cargo clippy --workspace --all-targets
 cargo test --workspace
 cargo deny check
 ```
+
+Before pushing a large source, dependency, API, FFI, or workflow change, run
+`scripts/ci-act.sh pre-push` from a clean, committed worktree. It executes
+every validation job from the checked-in GitHub Actions workflow in rootless
+Podman. Set `ACT_CONCURRENT_JOBS` to limit local container load; hosted CI
+remains the final authority.
