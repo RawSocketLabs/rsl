@@ -108,6 +108,10 @@ tui      = ["dep:ratatui", "dep:color-eyre"]
 time     = ["dep:chrono"]
 protobuf = ["dep:prost"]
 
+[[test]]
+name = "pod"
+required-features = ["pod"]
+
 [lints.rust]
 unreachable_pub = "warn"
 
