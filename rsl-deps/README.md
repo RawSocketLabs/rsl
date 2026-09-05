@@ -40,6 +40,7 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 | `log` | `tracing`, `tracing_subscriber`, `tracing_appender` |
 | `serde` | `serde`, `serde_json` |
 | `bytes` | `bytes` |
+| `pod` | `bytemuck`; also enables `num-complex/bytemuck` when combined with `num` |
 | `cli` | `clap` |
 | `rand` | `rand` |
 | `hash` | `sha2`, `crc32fast` |
@@ -60,6 +61,18 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 
 Bundles: `std-ext` (`error`+`log`+`serde`), `service` (`async`+`nats`+`parallel`+`std-ext`+`bytes`),
 `web` (`web-server`+`openapi`), and `full` (everything).
+
+Bytemuck derives support the facade explicitly:
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, rsl_deps::bytemuck::Pod, rsl_deps::bytemuck::Zeroable)]
+#[bytemuck(crate = "rsl_deps::bytemuck")]
+struct Pair {
+    first: i16,
+    second: i16,
+}
+```
 
 ## Notes
 

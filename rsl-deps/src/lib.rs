@@ -63,6 +63,11 @@ pub use serde_json;
 #[doc(inline)]
 pub use bytes;
 
+/// Plain-data layout validation and safe memory casts.
+#[cfg(feature = "pod")]
+#[doc(inline)]
+pub use bytemuck;
+
 /// Command-line argument parsing (derive-based) for binary crates.
 #[cfg(feature = "cli")]
 #[doc(inline)]

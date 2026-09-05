@@ -7,6 +7,7 @@
 anyhow = "1.0"
 async-nats = "0.50"
 axum = "0.8"
+bytemuck = "1.25"
 bytes = "1"
 chrono = "0.4"
 clap = "4"
