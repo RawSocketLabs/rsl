@@ -1,0 +1,16 @@
+# Coverage configuration for cargo-tarpaulin.
+#   cargo install cargo-tarpaulin
+#   cargo tarpaulin --config tarpaulin.toml      # run from session/socks/
+#
+# Covers the unit/component/sanity tests in src/** plus every integration
+# binary in tests/**; the benchmark harness is excluded (it measures, it does
+# not assert). HTML + LCOV land in target/coverage/ for local viewing and CI
+# upload respectively.
+[default]
+engine = "llvm"
+out = ["Html", "Lcov", "Stdout"]
+output-dir = "target/coverage"
+exclude-files = ["benches/*"]
+# The networked integration/e2e tests bind real loopback sockets and use short
+# internal deadlines; give the whole run generous headroom.
+timeout = "180s"

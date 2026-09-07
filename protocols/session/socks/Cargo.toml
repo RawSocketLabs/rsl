@@ -1,0 +1,63 @@
+[package]
+name = "socks"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+[dependencies]
+binrw.workspace = true
+derive_builder.workspace = true
+thiserror.workspace = true
+# Structured logging/spans via the tracing facade. With no subscriber
+# installed the instrumentation is near-free (a cached atomic check per call
+# site). Consumers who want it fully compiled out can set, in their own
+# manifest: tracing = { version = "0.1", features = ["release_max_level_off"] }
+tracing.workspace = true
+
+[features]
+# Protocol versions are feature-gated so a consumer compiles in only the
+# variants they use. `v5` is on by default (this crate began as SOCKS5-only);
+# slim down with `default-features = false` and re-enable exactly what you need:
+#
+#   socks = { version = "0.1", default-features = false, features = ["v4"] }   # SOCKS4 only
+#   socks = { version = "0.1", default-features = false, features = ["v4a"] }  # SOCKS4 + 4A
+#   socks = { version = "0.1", features = ["v4a"] }                            # all three
+#
+# At least one version feature must be enabled for the crate to be useful; the
+# error type and a couple of shared internals are the only version-agnostic
+# parts.
+default = ["v5"]
+
+# SOCKS version 5 (RFC 1928/1929): CONNECT, BIND, UDP ASSOCIATE, method
+# negotiation, username/password auth. The original surface of this crate.
+v5 = []
+
+# SOCKS version 4 (the 1992 Ying-Da Lee memo): CONNECT and BIND over IPv4 with
+# a userid field, no method negotiation. The `client::v4` / `server::v4` types.
+v4 = []
+
+# SOCKS version 4A: the 4 wire format extended so a client that cannot resolve
+# DNS may pass a destination *domain name* for the proxy to resolve. Implies
+# `v4`; adds `connect_domain` on the client and domain resolution on the server.
+v4a = ["v4"]
+
+# Adds the deliberately-slow Nagle baseline arm to the relay benchmark
+# (~37ms/iter at 64 KiB). Off by default so `cargo bench` stays fast; enable
+# with `cargo bench --features bench-nagle` to quantify the TCP_NODELAY win.
+bench-nagle = []
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+# Statistical benchmarking with HTML reports.
+criterion = { workspace = true, features = ["html_reports"] }
+# Shared bench harness (testutil::bench::criterion); criterion stays a
+# direct dev-dep for its macros/types.
+testutil = { workspace = true, features = ["bench"] }
+
+[[bench]]
+name = "socks_bench"
+harness = false
+
+[lints]
+workspace = true
