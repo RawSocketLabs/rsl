@@ -112,6 +112,15 @@
 //! builders. Alias normalization does not repair reserved fields or derived lengths;
 //! canonical encoding remains a separate operation.
 //!
+//! For an explicit operation, use `value.normalize_enum_aliases()` to mutate in
+//! place or `value.into_normalized_enum_aliases()` to consume and return the value.
+//! Import [`NormalizeEnumAliases`](crate::NormalizeEnumAliases) to call either.
+//! The consuming form adds no allocation and needs neither `Clone` nor `Copy`;
+//! use `.clone().into_normalized_enum_aliases()` explicitly to retain an owned
+//! original. For a `Copy` enum, an immutable validator can compare
+//! `method.into_normalized_enum_aliases() == Method::Named` without changing the
+//! stored variant. See the trait method's executable ownership examples.
+//!
 //! Dispatch is generated at concrete field types, preserving the existing macro
 //! generic-parameter limitations. A handwritten generic wrapper must use an explicit
 //! `T: NormalizeEnumAliases` bound to recurse; the internal fallback cannot discover

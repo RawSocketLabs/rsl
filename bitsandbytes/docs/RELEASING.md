@@ -19,10 +19,14 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    | commit                                   | bump          |
    | ---------------------------------------- | ------------- |
    | `fix:`                                   | patch         |
-   | `feat:`                                  | minor         |
+   | `feat:`                                  | patch (`0.x` default) |
    | `feat!:` / `fix!:` / `BREAKING CHANGE:`  | minor (`0.x`) |
    | `docs:`                                  | release-eligible; inspect generated PR |
    | non-breaking `chore`/`ci`/`refactor`/`test`/… | no bump    |
+
+   This uses release-plz's default `features_always_increment_minor = false`:
+   an additive feature on `0.4.0` selects `0.4.1`, not `0.5.0`. Inspect the
+   generated candidate; version numbers remain automation-owned.
 
    The two crates use **independent versions**; if `bitsandbytes-macros` bumps,
    release-plz also bumps `bitsandbytes` (it depends on it) and rewrites the
@@ -54,7 +58,8 @@ Dependency, policy, and workflow changes trigger bnb's full CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
-baseline is explicitly `0.3.2`; advance it deliberately after the next release.
+baseline is explicitly published `0.4.0`; advance it deliberately after releases.
+All three feature modes enforce `--release-type patch` for compatible additions.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
 
@@ -103,7 +108,21 @@ crates.io as unrelated projects, so a blanket `publish = true` would attempt upl
 to names we do not own. Check ownership of the crates.io name first
 (`cargo owner --list <name>`).
 
-## Preparing 0.4.0
+## Additive runtime release after 0.4.0
+
+Both `0.4.0` crates were published successfully under `michael-smythe` after
+PR #65 merged as `a8d1bc5`; hosted CI and release automation passed. This confirms
+the registry token's publication path, superseding the historical token blocker
+below. Keep the release allowlist restricted to the bnb pair.
+
+The consuming enum-alias helper adds only a default runtime trait method. Expect
+`bitsandbytes 0.4.1` with `bitsandbytes-macros 0.4.0`; review the generated versions,
+changelog, dependency pin, and archive before merging its release PR. Verify the
+runtime archive against the already-published macro crate with `cargo package
+-p bitsandbytes --all-features --allow-dirty`. No macro release is warranted by
+this feature, and no manifest or changelog is hand-bumped for delivery.
+
+## Historical 0.4.0 preparation
 
 Builder enum-alias normalization changes observable construction behavior, even
 though the public trait is additive and decoding/verbatim encoding retain their

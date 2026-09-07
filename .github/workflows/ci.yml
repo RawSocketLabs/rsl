@@ -225,7 +225,7 @@ jobs:
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
   semver:
-    name: bnb source compatibility (0.3.2 baseline)
+    name: bnb source compatibility (0.4.0 baseline)
     needs: changes
     if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
@@ -236,11 +236,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-semver-checks@0.50.0
-      # 0.4.0 changes builder behavior, but promises additive source API changes.
+      # Enforce patch compatibility against the latest published API.
       # Macro expansion/behavior remains covered by the consumer and UI tests.
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --all-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --default-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --only-explicit-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type patch --all-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type patch --default-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type patch --only-explicit-features
 
   workflow-lint:
     name: workflow syntax

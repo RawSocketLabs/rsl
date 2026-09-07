@@ -57,6 +57,10 @@ mod macro_ {
             assert_eq!(u8::from(value), raw);
             value.normalize_enum_aliases();
             assert_eq!(value, expected, "idempotence at {raw}");
+            let consumed = Kind::Other(raw).into_normalized_enum_aliases();
+            assert_eq!(consumed, expected, "consuming discriminant {raw}");
+            assert_eq!(u8::from(consumed), raw);
+            assert_eq!(consumed.into_normalized_enum_aliases(), expected);
         }
     }
 
@@ -163,6 +167,50 @@ mod macro_ {
         assert_eq!(empty_vec.capacity(), 0);
     }
 
+    #[test]
+    fn consuming_normalization_preserves_nested_container_storage_and_opaque_fields() {
+        let values = vec![
+            [Kind::Other(2), Kind::Other(99)],
+            [Kind::Other(255), Kind::Named],
+        ];
+        let pointer = values.as_ptr();
+        let capacity = values.capacity();
+        let outer = Outer {
+            children: vec![Plain {
+                values: Some(values),
+                opaque: Opaque("retained".into()),
+            }],
+        }
+        .into_normalized_enum_aliases();
+        let values = outer.children[0].values.as_ref().unwrap();
+        assert_eq!(
+            values.as_slice(),
+            [
+                [Kind::Named, Kind::Other(99)],
+                [Kind::Sentinel, Kind::Named]
+            ]
+        );
+        assert_eq!(values.as_ptr(), pointer);
+        assert_eq!(values.capacity(), capacity);
+        assert_eq!(outer.children[0].opaque.0, "retained");
+        assert_eq!(None::<Kind>.into_normalized_enum_aliases(), None);
+        assert_eq!([Kind::Other(2); 0].into_normalized_enum_aliases(), []);
+        let empty = Vec::<Kind>::new().into_normalized_enum_aliases();
+        assert!(empty.is_empty());
+        assert_eq!(empty.capacity(), 0);
+    }
+
+    #[test]
+    fn consuming_normalization_does_not_validate_or_change_message_bytes() {
+        let value = Checked {
+            kind: Kind::Other(99),
+            required: 7,
+        }
+        .into_normalized_enum_aliases();
+        assert!(value.validate().is_err());
+        assert_eq!(value.to_bytes().unwrap(), [99, 7]);
+    }
+
     #[bitfield(u8)]
     #[derive(BitsBuilder, Clone, Copy)]
     struct Packed {
@@ -265,7 +313,7 @@ mod macro_ {
 
     #[test]
     fn callback_and_logical_fields_are_opaque_and_canonical_repair_stays_separate() {
-        let value = Boundaries::builder()
+        let mut value = Boundaries::builder()
             .ordinary(Kind::Other(2))
             .mapped(Kind::Other(2))
             .custom(Kind::Other(2))
@@ -275,6 +323,10 @@ mod macro_ {
             .reserved(Kind::Other(99))
             .build()
             .unwrap();
+        value.ordinary = Kind::Other(2);
+        let before = value.to_bytes().unwrap();
+        let value = value.into_normalized_enum_aliases();
+        assert_eq!(value.to_bytes().unwrap(), before);
         assert_eq!(value.ordinary, Kind::Named);
         assert_eq!(value.mapped, Kind::Other(2));
         assert_eq!(value.custom, Kind::Other(2));
