@@ -1,7 +1,7 @@
 # rsl-netlink
 
 Strict Linux Netlink message codecs and a blocking `rustix` transport. The crate implements the
-route-netlink and generic-netlink operations needed by `nesos`, including sequence/ACK/multipart
+route-netlink and generic-netlink operations, including sequence/ACK/multipart
 validation, extended acknowledgements, typed network configuration, and WireGuard device state.
 
 Netlink is a Linux kernel/userspace socket protocol rather than an OSI network layer, so the crate

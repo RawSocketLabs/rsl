@@ -29,7 +29,7 @@ the Linux kernel Netlink documentation; its future refcheck corpus name is `netl
   constraints into codec restrictions.
 - Never accept a response for the wrong request sequence. Surface kernel extended acknowledgement
   text when present, and never silently treat interrupted or overrun dumps as complete state.
-- Keep socket creation separable from `Client`; callers such as `nesos` must be able to open a
+- Keep socket creation separable from `Client`; callers must be able to open a
   socket inside a temporary network namespace and use it after returning to the original one.
 - `SecretKey` remains non-`Clone`, redacts `Debug`, and zeroizes on drop. Apply the same posture to
   any new secret-bearing type.
@@ -49,4 +49,4 @@ the Linux kernel Netlink documentation; its future refcheck corpus name is `netl
 
 Protocol codecs, reply-contract validation, and narrowly typed family clients belong here.
 Namespace lifecycle, daemon policy, reconciliation ownership, and application-specific workflows
-belong in consumers such as `nesos`.
+belong in consumers.
