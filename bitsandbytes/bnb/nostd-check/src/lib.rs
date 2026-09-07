@@ -19,7 +19,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 // `renamed_bnb` is `bnb` under a `package = "…"` alias (see Cargo.toml) — proving
 // the macro-generated `::renamed_bnb::…` paths resolve via `proc-macro-crate`.
-use renamed_bnb::{BitEnum, BitError, bin, bitfield, u4};
+use renamed_bnb::{BitEnum, BitError, NormalizeEnumAliases, bin, bitfield, u4};
 
 #[bitfield(u8, bits = msb)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,4 +94,9 @@ pub fn normalize_aliases() -> Result<Aliases, renamed_bnb::BuilderError> {
         .values(Some(alloc::vec![[OpenKind::Other(2), OpenKind::Other(99)]]))
         .opaque(alloc::vec![1, 2])
         .build()
+}
+
+/// Consuming normalization on a moved, non-Clone message under a renamed dependency.
+pub fn into_normalized_aliases(value: Aliases) -> Aliases {
+    value.into_normalized_enum_aliases()
 }

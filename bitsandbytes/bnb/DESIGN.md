@@ -475,6 +475,34 @@ by local preparation.
 Independent final review approved after unifying bare-derive field exclusions and confining
 autoref helpers to the explicitly unstable `__private` export path; no findings remain.
 
+### 9.1 Consuming alias normalization
+
+`NormalizeEnumAliases::into_normalized_enum_aliases(self) -> Self` delegates to
+the existing in-place operation and returns the moved value. Only this default
+method requires `Self: Sized`; the trait remains dyn-compatible and imposes no
+`Clone` or `Copy` bound. Copy enums support expression-style comparisons;
+non-Copy messages and collections move, with an explicit caller-side clone when
+the original must survive. No borrowed `as_` view or implicit-clone helper is added.
+
+The helper does not allocate, validate, repair lengths/reserved fields, or expand
+traversal through opaque fields. Generated builders, macros, and wire behavior
+are unchanged. This is a runtime-only additive release, expected as `0.4.1` with
+macros remaining `0.4.0`. CI's source baseline advances to published `0.4.0` in
+all/default/no-default feature modes with `--release-type patch`; release-plz still
+selects actual versions.
+
+Local verification (2026-09-07): eleven focused macro tests, seven builder unit
+tests, doctests, workspace and bytes/mock/all-feature suites pass. Removing the
+delegation makes the non-Clone unit test fail; restoring it passes. Strict bnb/macros
+Clippy, configured workspace Clippy, denied-warning all-feature/no-default docs,
+Rust 1.85 workspace/all-feature/renamed-consumer checks, and bare-metal compilation
+pass. The pinned API snapshot is additive; all three 0.4.0 compatibility checks,
+cargo-deny, benchmark smoke, and two million fuzz inputs pass. Hosted CI and the
+generated release candidate remain delivery gates. Independent review found no
+remaining issues after tightening compatibility checks to the patch release class.
+The next smallest consumer change is SOCKS immutable method validation using the
+consuming helper on copied methods; no protocol surface expansion is needed.
+
 ## 10. Performance
 
 Bitfields are plain shift/mask on a single backing integer — fully monomorphized, no

@@ -17,6 +17,53 @@ use core::fmt;
 pub trait NormalizeEnumAliases {
     /// Normalize aliases in place without allocating or performing validation.
     fn normalize_enum_aliases(&mut self);
+
+    /// Consume this value and return it with enum aliases normalized.
+    ///
+    /// Delegates to [`normalize_enum_aliases`](Self::normalize_enum_aliases): no
+    /// cloning, allocation, validation, or reserved-field/length repair is added.
+    /// Unknown discriminants, collection shape, and opaque boundaries are retained.
+    /// Neither `Clone` nor `Copy` is required. The `Self: Sized` bound leaves the
+    /// in-place method callable through `&mut dyn NormalizeEnumAliases`.
+    ///
+    /// # Examples
+    ///
+    /// A `Copy` enum can be normalized for comparison without changing the original:
+    ///
+    /// ```
+    /// use bnb::{BitEnum, NormalizeEnumAliases};
+    ///
+    /// #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+    /// #[bit_enum(u8)]
+    /// #[repr(u8)]
+    /// enum Kind {
+    ///     Named = 2,
+    ///     #[catch_all]
+    ///     Other(u8),
+    /// }
+    ///
+    /// let alias = Kind::Other(2);
+    /// assert_eq!(alias.into_normalized_enum_aliases(), Kind::Named);
+    /// assert_eq!(alias, Kind::Other(2));
+    ///
+    /// // Owned collections move; their elements normalize in place.
+    /// let values = vec![alias, Kind::Other(99)].into_normalized_enum_aliases();
+    /// assert_eq!(values, [Kind::Named, Kind::Other(99)]);
+    ///
+    /// // Clone explicitly when you need to retain a non-Copy original.
+    /// let original = vec![alias];
+    /// let normalized = original.clone().into_normalized_enum_aliases();
+    /// assert_eq!(original, [Kind::Other(2)]);
+    /// assert_eq!(normalized, [Kind::Named]);
+    /// ```
+    #[must_use]
+    fn into_normalized_enum_aliases(mut self) -> Self
+    where
+        Self: Sized,
+    {
+        self.normalize_enum_aliases();
+        self
+    }
 }
 
 impl<T: NormalizeEnumAliases> NormalizeEnumAliases for alloc::vec::Vec<T> {
@@ -141,6 +188,40 @@ impl core::error::Error for BuilderError {}
 mod unit {
     use super::*;
     use alloc::string::ToString;
+
+    // Deliberately neither Clone nor Copy: the consuming default must only move.
+    enum OwnedKind {
+        Named,
+        Other(u8),
+    }
+
+    impl NormalizeEnumAliases for OwnedKind {
+        fn normalize_enum_aliases(&mut self) {
+            if matches!(self, Self::Other(2)) {
+                *self = Self::Named;
+            }
+        }
+    }
+
+    #[test]
+    fn consuming_normalization_needs_neither_clone_nor_copy() {
+        assert!(matches!(
+            OwnedKind::Other(2).into_normalized_enum_aliases(),
+            OwnedKind::Named
+        ));
+        assert!(matches!(
+            OwnedKind::Other(99).into_normalized_enum_aliases(),
+            OwnedKind::Other(99)
+        ));
+    }
+
+    #[test]
+    fn normalization_remains_dyn_compatible() {
+        let mut value = OwnedKind::Other(2);
+        let erased: &mut dyn NormalizeEnumAliases = &mut value;
+        erased.normalize_enum_aliases();
+        assert!(matches!(value, OwnedKind::Named));
+    }
 
     #[test]
     fn missing_field_constructor_and_accessor() {

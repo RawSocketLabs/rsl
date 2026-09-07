@@ -257,9 +257,9 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
 - [x] `cargo-semver-checks` in CI (`semver` job, pinned to `0.50.0`) — blocking
-      source-compatibility comparisons against published `0.3.2`, with all features
-      and separately default and no default features. Explicit `--release-type minor` allows additive API
-      without hand-editing versions; release-plz still owns version bumps. The 0.4
+      source-compatibility comparisons against published `0.4.0`, with all features
+      and separately default and no default features. Explicit `--release-type patch` checks the
+      intended compatible release class without hand-editing versions; release-plz still owns bumps. The 0.4
       builder behavior change needs a breaking commit marker and consumer/UI tests:
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
       Advance the explicit baseline deliberately after release.

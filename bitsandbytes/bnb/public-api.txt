@@ -1089,12 +1089,16 @@ pub fn bnb::builder::BuilderError::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::builder::BuilderError
 impl<T> tracing::instrument::WithSubscriber for bnb::builder::BuilderError
 pub trait bnb::builder::NormalizeEnumAliases
+pub fn bnb::builder::NormalizeEnumAliases::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn bnb::builder::NormalizeEnumAliases::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases, const N: usize> bnb::builder::NormalizeEnumAliases for [T; N]
+pub fn [T; N]::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn [T; N]::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases> bnb::builder::NormalizeEnumAliases for alloc::vec::Vec<T>
+pub fn alloc::vec::Vec<T>::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn alloc::vec::Vec<T>::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases> bnb::builder::NormalizeEnumAliases for core::option::Option<T>
+pub fn core::option::Option<T>::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn core::option::Option<T>::normalize_enum_aliases(&mut self)
 pub mod bnb::codecs
 pub mod bnb::codecs::cstring
@@ -3652,12 +3656,16 @@ pub const bnb::UInt<T, N>::BIT_LEN: u32
 impl<T: bnb::Bits> bnb::bitstream::FixedBitLen for bnb::WireLen<T>
 pub const bnb::WireLen<T>::BIT_LEN: u32
 pub trait bnb::NormalizeEnumAliases
+pub fn bnb::NormalizeEnumAliases::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn bnb::NormalizeEnumAliases::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases, const N: usize> bnb::builder::NormalizeEnumAliases for [T; N]
+pub fn [T; N]::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn [T; N]::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases> bnb::builder::NormalizeEnumAliases for alloc::vec::Vec<T>
+pub fn alloc::vec::Vec<T>::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn alloc::vec::Vec<T>::normalize_enum_aliases(&mut self)
 impl<T: bnb::builder::NormalizeEnumAliases> bnb::builder::NormalizeEnumAliases for core::option::Option<T>
+pub fn core::option::Option<T>::into_normalized_enum_aliases(self) -> Self where Self: core::marker::Sized
 pub fn core::option::Option<T>::normalize_enum_aliases(&mut self)
 pub trait bnb::SeekSource: bnb::bitstream::Source
 impl bnb::bitstream::SeekSource for bnb::BytesReader
