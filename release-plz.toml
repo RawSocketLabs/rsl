@@ -1,9 +1,12 @@
 # release-plz — per-crate SemVer + CHANGELOG from Conventional Commits (scope = crate name).
-# Posture: every crate versions + tags in git; crates.io publishing is opt-in per package
-# via the [[package]] overrides at the bottom — never flip the workspace default. Several
+# Posture: release processing and crates.io publishing are opt-in per package
+# via the [[package]] overrides below — never flip the workspace defaults. Several
 # workspace crate names (ethernet, arp, udp, ip, dns, …) exist on crates.io as unrelated
 # projects, so a blanket publish would attempt uploads to names we do not own.
 [workspace]
+# Isolate the bnb 0.4 release. Other pending releases remain in history until
+# their versions, changelogs, ownership, and release scope are reviewed.
+release = false
 publish = false
 # TODO: migrate version discovery to `git_only = true` after establishing a
 # packageable tag baseline. The latest tags predate the path + version manifest
@@ -21,18 +24,22 @@ release_always = false
 # patch releases through every dependent workspace crate.
 release_commits = '^(feat|fix|perf|docs|revert)[(:]|^[a-z]+(?:\([^)]*\))?!:'
 
-# The codec pair and the independently consumable netlink protocol crate publish to crates.io.
+# Only the codec pair is currently enabled for release processing.
 # The bitsandbytes runtime cannot be published (or verified) without its proc-macro
 # crate on the registry. The release job supplies the CARGO_REGISTRY_TOKEN secret
 # (see .github/workflows/release-plz.yml).
 [[package]]
 name = "bitsandbytes-macros"
+release = true
 publish = true
 
 [[package]]
 name = "bitsandbytes"
+release = true
 publish = true
 
+# Preserve netlink's registry opt-in, but inherit release = false. Re-enabling
+# requires review of its breaking synchronous-transport change and version.
 [[package]]
 name = "rsl-netlink"
 publish = true

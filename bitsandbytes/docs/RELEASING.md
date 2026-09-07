@@ -13,7 +13,7 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
 2. **Successful CI unlocks release automation.** After push CI succeeds for the
    exact current `main` SHA,
    `.github/workflows/release-plz.yml` opens (or updates) a **release PR** that, for
-   each crate, bumps its version from the commits since its last tag and updates its
+   each enabled crate, bumps its version from the commits since its last tag and updates its
    `CHANGELOG.md`. The bump rule (pre-1.0, i.e. `0.x`):
 
    | commit                                   | bump          |
@@ -33,11 +33,12 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    `bitsandbytes-macros-v0.3.1`, …) — and publishes the crates that opt in to
    crates.io (see below).
 
-**crates.io publishing is opt-in per crate.** The workspace default in
-`release-plz.toml` stays `publish = false`; only `bitsandbytes`,
-`bitsandbytes-macros`, and `rsl-netlink` carry `[[package]]` overrides with
-`publish = true`. Merging a release PR tags released crates but uploads only those opted in to
-crates.io. GitHub Releases remain disabled (`git_release_enable = false`).
+**Release processing and crates.io publishing are independently opt-in.** The
+workspace defaults in `release-plz.toml` are `release = false` and `publish = false`.
+Only `bitsandbytes` and `bitsandbytes-macros` enable both. Netlink retains its
+`publish = true` setting but inherits `release = false`, so it is not versioned,
+tagged, or published. Other pending releases are held, not discarded from history.
+GitHub Releases remain disabled (`git_release_enable = false`).
 (Versions up to 0.3.1 were published by hand before this automation existed.)
 
 ## CI and release ordering
@@ -81,8 +82,7 @@ operations that do not need to trigger a PR's CI.
 ## Publishing to crates.io
 
 The `release-plz-release` job reads the `CARGO_REGISTRY_TOKEN` repository secret — a
-crates.io token with publish scope for `bitsandbytes`, `bitsandbytes-macros`, and
-`rsl-netlink`. The
+crates.io token with publish scope for `bitsandbytes` and `bitsandbytes-macros`. The
 two crates are published in dependency order: the macro version must exist on the
 registry before the runtime is published. Locally, verify both unpublished archives
 together with `cargo package -p bitsandbytes-macros -p bitsandbytes --all-features
@@ -94,8 +94,10 @@ secret is missing, preflight fails before release-plz runs. Publication across
 crates is not transactional; after a registry or credential failure inspect the
 actual tags and registry versions before deciding how to retry.
 
-To start publishing **another** workspace crate, add its own `[[package]]` entry with
-`publish = true` in `release-plz.toml` — never flip the workspace default. Several
+To release **another** workspace crate, review its pending changes, version,
+changelog, and ownership, then explicitly enable `release = true` in its
+`[[package]]` entry. Also enable `publish = true` if registry publication is intended.
+Never flip either workspace default. Several
 workspace crate names (`ethernet`, `arp`, `udp`, `ip`, `dns`, …) already exist on
 crates.io as unrelated projects, so a blanket `publish = true` would attempt uploads
 to names we do not own. Check ownership of the crates.io name first
@@ -156,11 +158,9 @@ Remaining gates:
   other protocol lint debt). The strict IP/ARP all-target/all-feature check also
   stops at the existing `ethertype` documentation lint. The documented bnb/macros warnings are resolved, not
   waived. A workspace-wide cleanup is a separate change.
-- Read-only GitHub inspection found successful existing main CI and release-plz
-  runs, but they do not cover this uncommitted candidate. Repository-secret
-  inspection returned HTTP 403, so credential presence/scope/validity remains
-  unverified. The checkout's review branch must be reconciled with current trunk
-  through an approved delivery workflow before hosted candidate CI can be proven.
+- Before publishing, require the regenerated release PR to contain only the bnb
+  pair, with successful CI and verified archives. Secret presence and crate ownership
+  are confirmed; registry-token validity and scope still require verification.
 
 ### Isolated delivery candidate
 
@@ -171,7 +171,13 @@ documentation commits. Main already contains the IP/ARP `bnb/std` fixes and
 pre-push checks are retained. The new semver and workflow-lint jobs participate in
 the existing `full=true` validation path, including local pre-push checks.
 
-Delivery remains review-branch based. The currently installed `repo-guard` can
-verify this candidate but only publishes directly to the configured trunk; it has
-no review-branch adapter. Resolve that tooling/policy mismatch explicitly before
-pushing. Existing release PR #65 predates these changes and is not the 0.4 candidate.
+PR #70 was squash-merged as `52e0d1a` under `michael-smythe`; hosted main CI and
+release automation passed. The approved review-branch delivery used normal Git
+hooks because `repo-guard` currently supports only direct-trunk publication.
+
+The regenerated release PR #65 correctly selected `0.4.0` for both bnb crates, but
+also scheduled netlink publication and unrelated workspace tags. The release hold
+above isolates the bnb pair without hand-editing versions or release changelogs.
+Netlink needs a separate version/changelog decision for its breaking move from
+Tokio to synchronous APIs. Re-enable other packages only through explicit review;
+do not automatically remove the hold after bnb publication.
