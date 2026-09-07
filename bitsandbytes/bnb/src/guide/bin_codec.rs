@@ -68,7 +68,7 @@
 //! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation |
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
-//! | encode | `encode(&mut W)` | encode to any [`std::io::Write`] (**verbatim**) |
+//! | encode | `encode(&mut W)` | encode to any `std::io::Write` (**verbatim**, requires `std`) |
 //! | encode | `bit_encode(&mut K)` | write into an explicit [`Sink`](crate::Sink) — a [`BitEncode`](crate::BitEncode) trait method (`canonical_bit_encode` for the canonical form) |
 //! | build | `builder()` | the required-by-default builder |
 //! | build | `Name { … }` | a struct literal names every stored field directly |
@@ -335,7 +335,7 @@
 //! ## Choosing a form
 //!
 //! Every encoder is **explicit** — nothing silently rewrites your data. `to_bytes` /
-//! `bit_encode` / the std-writer [`encode`](crate::EncodeExt::encode) are always **verbatim**;
+//! `bit_encode` / the std-writer `EncodeExt::encode` are always **verbatim**;
 //! `to_canonical_bytes` / `canonical_bit_encode` are always **canonical**. To stream the
 //! canonical form over a `std::io::Write`, encode the canonical copy:
 //! `value.to_canonical().encode(&mut w)`. A `reserved`/`calc` field is an ordinary stored field,

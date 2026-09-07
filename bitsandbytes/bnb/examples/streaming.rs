@@ -28,6 +28,7 @@ struct Event {
     detail: Vec<u8>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // Three events back-to-back, as if appended to a log.
     let mut wire = Vec::new();

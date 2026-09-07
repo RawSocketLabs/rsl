@@ -1,4 +1,4 @@
-//! **try_str** — the `#[try_str]` field hint: a byte-buffer field renders in `Debug` as a
+//! **`try_str`** — the `#[try_str]` field hint: a byte-buffer field renders in `Debug` as a
 //! **string** when it's valid UTF-8, else as **hex bytes** — all-or-nothing, never lossy.
 //!
 //! It's *rendering only*: the field stays a `Vec<u8>` storing the raw bytes (sized by its
@@ -20,6 +20,7 @@ struct Record {
     name: Vec<u8>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A text value renders as a quoted string.
     let text = Record {

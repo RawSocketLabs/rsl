@@ -57,21 +57,25 @@ struct Flag {
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as Args);
     let item = parse_macro_input!(item as ItemStruct);
-    match expand_inner(args, item) {
+    match expand_inner(&args, &item) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
+// Keep the generated flag operations beside the shared backing representation.
+#[allow(clippy::too_many_lines)]
+fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
-    let backing_bits = backing_byte_count(backing)? as u32 * 8; // validates the backing primitive
+    let backing_bits = u32::try_from(backing_byte_count(backing)?)
+        .expect("backing primitive has at most 16 bytes")
+        * 8;
     let outer: Vec<&Attribute> = item.attrs.iter().collect();
 
-    let flags = collect_flags(&item, backing_bits)?;
+    let flags = collect_flags(item, backing_bits)?;
 
     let with_idents: Vec<Ident> = flags
         .iter()
@@ -264,14 +268,11 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 }
 
 fn collect_flags(item: &ItemStruct, backing_bits: u32) -> syn::Result<Vec<Flag>> {
-    let named = match &item.fields {
-        syn::Fields::Named(n) => n,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                &item.ident,
-                "#[bitflags] requires named `bool` fields",
-            ));
-        }
+    let syn::Fields::Named(named) = &item.fields else {
+        return Err(syn::Error::new_spanned(
+            &item.ident,
+            "#[bitflags] requires named `bool` fields",
+        ));
     };
     let mut next_bit: u32 = 0;
     let mut flags = Vec::new();

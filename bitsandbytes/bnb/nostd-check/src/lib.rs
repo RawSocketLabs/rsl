@@ -73,3 +73,25 @@ pub fn kind_of(value: u8) -> Option<Kind> {
 pub fn pack(hi: u4, lo: u4) -> u8 {
     Nibbles::new().with_hi(hi).with_lo(lo).to_be_bytes()[0]
 }
+
+#[derive(BitEnum, Clone, Copy)]
+#[bit_enum(u8)]
+#[repr(u8)]
+pub enum OpenKind {
+    Named = 2,
+    #[catch_all]
+    Other(u8),
+}
+
+#[derive(renamed_bnb::BitsBuilder)]
+pub struct Aliases {
+    values: Option<Vec<[OpenKind; 2]>>,
+    opaque: Vec<u8>,
+}
+
+pub fn normalize_aliases() -> Result<Aliases, renamed_bnb::BuilderError> {
+    Aliases::builder()
+        .values(Some(alloc::vec![[OpenKind::Other(2), OpenKind::Other(99)]]))
+        .opaque(alloc::vec![1, 2])
+        .build()
+}

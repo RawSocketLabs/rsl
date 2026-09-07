@@ -134,7 +134,7 @@
 //! `count_prefix` is *adjacent* (immediately before its `Vec`) and derive-only (never
 //! stored, so never overridable). When the count sits **away from** its data (DNS's
 //! `qdcount`…`arcount` header block) or measures **bytes** rather than elements (DNS's
-//! `rdlength`), or when you want to *forge* a disagreeing length — reach for [`WireLen`],
+//! `rdlength`), or when you want to *forge* a disagreeing length — reach for [`WireLen`](crate::WireLen),
 //! below.
 //!
 //! # `WireLen` — an auto-deriving, overridable length/count
@@ -331,7 +331,7 @@
 //! shared across *every* field of a message — a **back-reference / compression dictionary**
 //! (e.g. DNS name compression: a repeated name becomes a pointer to the first occurrence) —
 //! attach it to the sink with [`BitWriter::with_scratch`](crate::BitWriter::with_scratch) and
-//! reach it via `w.scratch()` + [`downcast_mut`](core::any::Any::downcast_mut). The sink is the
+//! reach it via `w.scratch()` + `Any::downcast_mut`. The sink is the
 //! one `&mut` threaded through all fields, so the value is visible to them all; it is dropped on
 //! `into_bytes` and never written. (Scope the borrow — copy what you need out before calling
 //! `w.write`.)

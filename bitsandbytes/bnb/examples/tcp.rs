@@ -50,16 +50,15 @@ fn reply_to(req: &Message) -> Option<Message> {
     match req {
         Message::Ping { seq } => Some(Message::Pong { seq: *seq }),
         Message::Echo { text } => Some(Message::Echo { text: text.clone() }), // echo it back
-        Message::Bye => None,                                                 // hang up
-        Message::Pong { .. } => None,                                         // unexpected here
+        Message::Bye | Message::Pong { .. } => None, // hang up or unexpected reply
     }
 }
 
 /// Serve one connection: read framed requests off the stream and write replies, on the *same*
 /// socket — read half is a `BufSource<&TcpStream>`, write half is `&TcpStream` (no `try_clone`).
-fn serve(stream: TcpStream) -> std::io::Result<()> {
-    let mut reader = BufSource::new(&stream); // &TcpStream: Read
-    let mut writer = &stream; // &TcpStream: Write — the same underlying socket
+fn serve(stream: &TcpStream) -> std::io::Result<()> {
+    let mut reader = BufSource::new(stream); // &TcpStream: Read
+    let mut writer = stream; // &TcpStream: Write — the same underlying socket
     loop {
         // Distinguish a clean close from corruption. When the peer hangs up *between*
         // messages, the next decode fails with `Incomplete` at exactly the bit position
@@ -74,15 +73,12 @@ fn serve(stream: TcpStream) -> std::io::Result<()> {
             Err(e) => panic!("server: framing/transport error: {e}"),
         };
         info!(?req, "server ← request");
-        match reply_to(&req) {
-            Some(reply) => {
-                writer.write_all(&reply.to_bytes().expect("encode reply"))?;
-                info!(?reply, "server → reply");
-            }
-            None => {
-                info!("server: closing connection");
-                break;
-            }
+        if let Some(reply) = reply_to(&req) {
+            writer.write_all(&reply.to_bytes().expect("encode reply"))?;
+            info!(?reply, "server → reply");
+        } else {
+            info!("server: closing connection");
+            break;
         }
     }
     Ok(())
@@ -109,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = thread::spawn(move || {
         let (stream, peer) = listener.accept().expect("accept");
         info!(%peer, "server: connection accepted");
-        serve(stream).expect("serve");
+        serve(&stream).expect("serve");
     });
 
     // The client: one connection, write requests and read the streamed replies — same duplex

@@ -18,7 +18,7 @@ mod macro_ {
     }
 
     fn write_lp<K: Sink>(v: &[u8], w: &mut K) -> Result<(), BitError> {
-        w.write(v.len() as u8)?;
+        w.write(u8::try_from(v.len()).unwrap())?;
         for b in v {
             w.write(*b)?;
         }

@@ -34,6 +34,7 @@ struct Document {
     fields: Vec<Field>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let doc = Document {
         fields: vec![

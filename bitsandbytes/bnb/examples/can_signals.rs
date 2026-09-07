@@ -1,4 +1,4 @@
-//! **can_signals** — arbitrary-width fields packed **LSB-first** (`bits = lsb`).
+//! **`can_signals`** — arbitrary-width fields packed **LSB-first** (`bits = lsb`).
 //!
 //! `arbitrary_width` and `ais` both pack MSB-first (big-endian, the network convention). The other
 //! common convention puts the *first* field in the **low** bits — CAN/DBC "Intel" signals, SMB,
@@ -32,6 +32,7 @@ struct EngineFrame {
     mil: bool, // malfunction indicator lamp (one bit)
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let frame = EngineFrame {
         mode: DriveMode::Sport,

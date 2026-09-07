@@ -64,6 +64,7 @@ struct Command {
     flags: u4,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // Exhaustive: every value maps to a named variant.
     for raw in 0u128..4 {

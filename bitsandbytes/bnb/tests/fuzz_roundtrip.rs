@@ -55,7 +55,7 @@ mod property {
     #[derive(Debug, Clone, PartialEq)]
     struct Counted {
         #[br(temp)]
-        #[bw(calc = self.items.len() as u8)]
+        #[bw(calc = u8::try_from(self.items.len()).unwrap())]
         n: u8,
         #[br(count = n)]
         items: Vec<u16>,
@@ -167,7 +167,7 @@ mod property {
             };
             let field_bytes = field.to_bytes().unwrap();
             // Coded layout: small varint (1 byte for 0) | big varint | u16 title len (2) | NUL (1)
-            prop_assert_eq!(&field_bytes[1..1 + newtype_bytes.len()], &newtype_bytes[..]);
+            prop_assert_eq!(&field_bytes[1..=newtype_bytes.len()], &newtype_bytes[..]);
         }
 
         #[test]

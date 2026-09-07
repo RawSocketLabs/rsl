@@ -206,7 +206,7 @@
 //!
 //! ## Derive and attribute mapping
 //!
-//! | num_enum | `bnb` |
+//! | `num_enum` | `bnb` |
 //! |----------|-------|
 //! | `#[derive(TryFromPrimitive, IntoPrimitive)]` | `#[derive(BitEnum)]` |
 //! | `#[repr(u8)]` (required) | `#[bit_enum(u8)]` + `#[repr(u8)]` |
@@ -216,9 +216,9 @@
 //! | `TryFromPrimitiveError` | [`UnknownDiscriminant`](crate::UnknownDiscriminant) |
 //! | `#[num_enum(alternatives = [..])]` | (fold into `#[catch_all]`, or match on the raw value) |
 //!
-//! num_enum's `catch_all` variant must be a tuple variant holding the exact repr type;
+//! `num_enum`'s `catch_all` variant must be a tuple variant holding the exact repr type;
 //! `bnb`'s is the same, holding the width type (which *is* the repr type for a primitive
-//! width). A num_enum enum:
+//! width). A `num_enum` enum:
 //!
 //! ```ignore
 //! # // num_enum — illustrative.
@@ -242,7 +242,7 @@
 //! ```
 //!
 //! For a set you assert is closed, mark it `closed` and you get the checked `TryFrom`,
-//! erroring with [`UnknownDiscriminant`](crate::UnknownDiscriminant) — num_enum's
+//! erroring with [`UnknownDiscriminant`](crate::UnknownDiscriminant) — `num_enum`'s
 //! `TryFromPrimitive`/`TryFromPrimitiveError` role:
 //!
 //! ```
@@ -257,7 +257,7 @@
 //!
 //! ## What `bnb` adds
 //!
-//! - **Bit-native reprs.** num_enum requires a primitive `#[repr]`. `bnb` enums can be
+//! - **Bit-native reprs.** `num_enum` requires a primitive `#[repr]`. `bnb` enums can be
 //!   *sub-byte* (`#[bit_enum(u3)]`) or byte-aligned-but-non-primitive (`#[bit_enum(u24)]`).
 //!   At those widths the enum gets the [`Bits`](crate::Bits) impls but not the primitive
 //!   `From`/`TryFrom` (there's no `u3` primitive to convert with) — it's meaningful only
@@ -266,7 +266,7 @@
 //!   [`#[bin]`](super::bin_codec) message as one field, contributing exactly its declared
 //!   bits.
 //! - **The `num_enum` parity is automatic at primitive widths.** A `u8`/`u16`/`u32`/`u64`/
-//!   `u128`-width enum emits the same `From`/`TryFrom<primitive>` you'd reach num_enum for
+//!   `u128`-width enum emits the same `From`/`TryFrom<primitive>` you'd reach `num_enum` for
 //!   — no separate derive, no hand-written round-trip test. See [`enums`](super::enums).
 //!
 //! # Where to go next
@@ -275,5 +275,5 @@
 //! - [`bin_codec`](super::bin_codec) / [`directives`](super::directives) — the `#[bin]`
 //!   surface in full (the binrw analogue).
 //! - [`bitfields`](super::bitfields) / [`enums`](super::enums) / [`flags`](super::flags) —
-//!   the field types (the modular-bitfield / num_enum analogues).
+//!   the field types (the modular-bitfield / `num_enum` analogues).
 //! - [`composition`](super::composition) — how all of the above nest and size each other.

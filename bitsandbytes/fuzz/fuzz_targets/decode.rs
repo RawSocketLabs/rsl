@@ -7,7 +7,7 @@
 //! Run: `cargo +nightly fuzz run decode`.
 #![no_main]
 
-use bnb::{BitEnum, bin, u4, u12};
+use bnb::{BitEnum, NormalizeEnumAliases, bin, u4, u12};
 use libfuzzer_sys::fuzz_target;
 
 // --- shapes (mirror tests/fuzz_roundtrip.rs) ----------------------------------
@@ -77,6 +77,18 @@ struct Magic {
 }
 
 fuzz_target!(|data: &[u8]| {
+    if let Some(&raw) = data.first() {
+        let mut built = Tagged::builder()
+            .kind(Kind::Other(raw))
+            .value(7)
+            .build()
+            .unwrap();
+        assert_eq!(built.kind, Kind::from(raw));
+        assert_eq!(built.to_bytes().unwrap(), [raw, 0, 7]);
+        let normalized = built.clone();
+        built.normalize_enum_aliases();
+        assert_eq!(built, normalized);
+    }
     // Property 2 — decode of arbitrary bytes never panics. Every entry point on
     // every shape must be equally robust.
     let _ = Header::decode_exact(data);

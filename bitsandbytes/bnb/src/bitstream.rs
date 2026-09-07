@@ -79,7 +79,7 @@ pub enum ErrorKind {
         /// Bits still available.
         remaining: usize,
     },
-    /// A streaming source ([`StreamBitReader`]) ran out mid-message: the caller
+    /// A streaming source (`StreamBitReader`, with `std`) ran out mid-message: the caller
     /// should read more bytes and retry. `needed` is a best-effort byte hint
     /// (`None` when unknown). See [`BitError::is_incomplete`].
     Incomplete {
@@ -117,7 +117,7 @@ pub enum ErrorKind {
     /// [`Source`] (a forward-only stream). Decode from a slice ([`BitReader`]) or a
     /// seekable source instead.
     NotSeekable,
-    /// A [`BufSource`] hit its retention cap before the message finished — the
+    /// A `BufSource` (with `std`) hit its retention cap before the message finished — the
     /// framed message is larger than the configured bound (never unbounded).
     BufferFull {
         /// The cap, in bytes.
@@ -398,7 +398,10 @@ pub trait BitAmount: Copy + sealed::Sealed {
 macro_rules! impl_bit_amount {
     ($($t:ty),*) => {$(
         impl BitAmount for $t {
+            // Preserve the existing signed/unsigned low-32-bit conversion contract.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless)]
             fn bits(self) -> u32 { self as u32 }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless)]
             fn bytes(self) -> u32 { (self as u32) * 8 }
         }
     )*};
@@ -449,7 +452,10 @@ pub fn skip_write<K: Sink>(w: &mut K, bits: u32) -> Result<(), BitError> {
 #[doc(hidden)]
 pub fn align_read<S: Source>(r: &mut S) -> Result<(), BitError> {
     let pad = (8 - (r.bit_pos() % 8)) % 8;
-    skip_read(r, pad as u32)
+    skip_read(
+        r,
+        u32::try_from(pad).expect("alignment padding is below eight bits"),
+    )
 }
 
 /// Pads with zero bits to the next byte boundary — the write dual of [`align_read`].
@@ -459,7 +465,10 @@ pub fn align_read<S: Source>(r: &mut S) -> Result<(), BitError> {
 #[doc(hidden)]
 pub fn align_write<K: Sink>(w: &mut K) -> Result<(), BitError> {
     let pad = (8 - (w.bit_pos() % 8)) % 8;
-    skip_write(w, pad as u32)
+    skip_write(
+        w,
+        u32::try_from(pad).expect("alignment padding is below eight bits"),
+    )
 }
 
 /// The wire layout: bit packing order **and** byte order, threaded through the
@@ -510,7 +519,7 @@ fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u12
     let mut out = 0u128;
     let mut i = 0;
     while i < n {
-        out |= (le[i] as u128) << (8 * (n - 1 - i));
+        out |= u128::from(le[i]) << (8 * (n - 1 - i));
         i += 1;
     }
     out
@@ -571,6 +580,7 @@ fn extract_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
 /// **Fast path:** when appending byte-aligned at the end (`bit_pos % 8 == 0`,
 /// `n % 8 == 0`, cursor at `out.len()`) the bytes are pushed whole, one per byte.
 #[inline]
+#[allow(clippy::cast_possible_truncation)] // Extract one low byte of the shifted carrier at a time.
 fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
     if n % 8 == 0 && bit_pos % 8 == 0 && bit_pos / 8 == out.len() {
         let nbytes = n / 8;
@@ -852,7 +862,7 @@ impl BitWriter {
     }
 
     /// Attach a type-erased **scratch** value, reachable from any codec during the encode
-    /// via [`Sink::scratch`] and recovered by [`downcast_mut`](Any::downcast_mut).
+    /// via [`Sink::scratch`] and recovered by `Any::downcast_mut`.
     ///
     /// The escape hatch for codecs that need mutable state shared across a whole message's
     /// fields — a back-reference / compression dictionary (e.g. DNS name compression). The
@@ -914,8 +924,8 @@ impl BitWriter {
 }
 
 /// A bit-level **input** the codec recurses over. Implemented by [`BitReader`]
-/// (in-memory slice), [`StreamBitReader`] (forward `Read`), [`BufSource`] (a
-/// retain-and-seek socket adapter), and [`SeekReader`] (`Read + Seek`); the codec is
+/// (in-memory slice), `StreamBitReader` (forward `Read`), `BufSource` (a
+/// retain-and-seek socket adapter), and `SeekReader` (`Read + Seek`); the codec is
 /// generic over `Source`, so one decoder runs over any of them — see
 /// [`guide::io`](crate::guide::io).
 ///
@@ -1172,6 +1182,7 @@ pub struct SourceReader<'a, S: Source>(&'a mut S);
 
 #[cfg(feature = "std")]
 impl<S: Source> std::io::Read for SourceReader<'_, S> {
+    #[allow(clippy::cast_possible_truncation)] // read_bits(8) yields at most one byte.
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         for (i, slot) in buf.iter_mut().enumerate() {
             match self.0.read_bits(8) {
@@ -1197,7 +1208,7 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
 /// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
 /// the failing default). A `#[bin]` message that uses `restore_position` bounds its
 /// generated `decode` on this trait, so a forward-only stream is rejected at
-/// compile time. Implemented by [`BitReader`], [`BufSource`], and [`SeekReader`]
+/// compile time. Implemented by [`BitReader`], `BufSource`, and `SeekReader`
 /// (and, with the `bytes` feature, `BytesReader`).
 pub trait SeekSource: Source {}
 
@@ -1205,7 +1216,7 @@ impl SeekSource for BitReader<'_> {}
 
 /// A bit-level **output** the codec writes to — the in-memory [`BitWriter`]
 /// (and, under the `bytes` feature, `BytesWriter`). Encode to any
-/// [`std::io::Write`] via a message's generated `encode` method.
+/// `std::io::Write` via the `EncodeExt::encode` extension method (with `std`).
 ///
 /// # Examples
 ///
@@ -1247,7 +1258,7 @@ pub trait Sink: sealed::Sealed {
     /// A type-erased, **encode-scoped scratch** value for codecs that need mutable state
     /// shared across a whole message's fields — a back-reference / compression dictionary
     /// (e.g. DNS name compression). Recover the concrete type with
-    /// [`downcast_mut`](Any::downcast_mut).
+    /// `Any::downcast_mut`.
     ///
     /// Returns `None` unless the sink was built carrying one (see
     /// [`BitWriter::with_scratch`]); the default sink has none. The scratch is the shared
@@ -1559,8 +1570,10 @@ pub(crate) mod sealed {
     note = "this trait is sealed — the supported prefix types are built in"
 )]
 pub trait CountPrefix: Bits + sealed::Sealed {
-    /// The prefix for a collection of `len` elements, or [`WidthError::ValueTooLarge`] when
-    /// `len` exceeds the prefix's range.
+    /// The prefix for a collection of `len` elements.
+    ///
+    /// # Errors
+    /// Returns [`crate::WidthError::ValueTooLarge`] when `len` exceeds the prefix's range.
     fn try_from_count(len: usize) -> core::result::Result<Self, crate::error::WidthError>
     where
         Self: Sized;
@@ -1587,6 +1600,7 @@ macro_rules! count_prefix_prim {
             }
 
             #[inline]
+            #[allow(clippy::cast_possible_truncation)] // Documented wrapping conversion on narrow targets.
             fn to_count(self) -> usize {
                 self as usize
             }
@@ -1605,16 +1619,17 @@ macro_rules! count_prefix_uint {
                 // Widen-then-compare: narrowing first (`len as $t`) would truncate
                 // *before* the range check and let an oversized length slip through.
                 let wide = len as u128;
-                if wide > Self::MASK as u128 {
+                if wide > u128::from(Self::MASK) {
                     return Err(crate::error::WidthError::ValueTooLarge {
                         value: wide,
-                        bits: N as u32,
+                        bits: Self::BITS,
                     });
                 }
-                Ok(Self::from_raw(len as $t))
+                Ok(Self::from_raw(<$t>::try_from(len).expect("count was checked against the UInt mask")))
             }
 
             #[inline]
+            #[allow(clippy::cast_possible_truncation)] // Documented wrapping conversion on narrow targets.
             fn to_count(self) -> usize {
                 self.value() as usize
             }
@@ -1866,6 +1881,7 @@ where
 /// # Errors
 /// Propagates the source's [`BitError`].
 #[doc(hidden)]
+#[allow(clippy::cast_possible_truncation)] // Every read is exactly eight bits.
 pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], BitError> {
     let mut arr = [0u8; N];
     for b in &mut arr {
@@ -1884,6 +1900,7 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
 /// # Errors
 /// [`ErrorKind::NotSeekable`] if the source can't rewind.
 #[doc(hidden)]
+#[allow(clippy::cast_possible_truncation)] // Every successful peek read is exactly eight bits.
 pub fn peek_bytes<S: Source>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
     let start = r.bit_pos();
     let mut out = Vec::with_capacity(max);
@@ -2212,7 +2229,7 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// Unlike a byte cursor (`bytes::BytesMut::advance`), `BitBuf` tracks a **bit** position, so a
 /// stream of messages that *don't* end on byte boundaries (bit-packed frames) reassembles cleanly:
 /// `pull` advances past the consumed whole bytes and retains any partial trailing byte for the
-/// next message. It's the *pushable*, in-memory counterpart to [`BufSource`] (which pulls from a
+/// next message. It's the *pushable*, in-memory counterpart to `BufSource` (which pulls from a
 /// `Read`). `no_std`-compatible (`alloc` only).
 ///
 /// **Reclaim is deferred and in place.** `pull` doesn't drain consumed bytes — the next

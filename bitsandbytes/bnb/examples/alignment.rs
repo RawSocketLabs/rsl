@@ -25,6 +25,7 @@ struct Header {
     extra: u8,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let h = Header {
         kind: u4::new(0x5),

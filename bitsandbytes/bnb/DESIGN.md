@@ -414,7 +414,68 @@ opt-in and the default for untrusted input is `#[catch_all]`.
   trait — it's generic over std's `Read + Write`, so a `std::io::Cursor` or `MockStream` already
   mocks it.)
 
-## 9. Performance
+## 9. Builder enum-alias normalization
+
+SOCKS method offers exposed a mismatch between decoding `0xff` as `NoAcceptable` and
+constructing `Other(0xff)` with the same wire code. Builders now normalize these aliases
+automatically after resolving all required/default fields and before semantic validation.
+`NormalizeEnumAliases` is an additive public trait: `BitEnum` derives reuse their existing
+integer mappings; ordinary `#[bin]` structs/enums and standalone `BitsBuilder` structs
+traverse supported fields. `Vec`, `Option`, and arrays recurse without allocating or changing
+shape. Packed bitfields already reconstruct enums from their integer storage.
+
+Concrete-site autoref dispatch selects the trait implementation or an opaque fallback without
+adding bounds to arbitrary existing fields. It works on MSRV 1.85; placing the dispatch inside
+a generic helper would select the fallback too early. This does not expand generic macro support.
+
+Custom mapped/codec newtypes remain opaque unless their author implements the trait. Field-level
+mapping/custom-codec directives and `ignore`/`temp`/read or write `calc` fields are excluded.
+A wrapper used as an ordinary field is the explicit extension seam. Unknown discriminants,
+reserved deviations, counts, and collection order survive. Raw construction, mutation, immutable
+validation, decode, and both encode forms are unchanged; validators still need defensive checks.
+
+Compatibility: this changes Rust value equality on the builder path (also for plain builders).
+The guarantee is discriminant identity, not byte identity under arbitrary callbacks: calculations
+or mappings referring to normalized siblings can distinguish variants. Ordinary codecs retain
+the same bytes. There is an extra collection traversal before validation, including oversized
+collections that a validator will subsequently reject. No opt-out or general repair framework
+is added. The next smallest protocol slice remains SOCKS's explicit raw/malformed surface.
+
+Verification (offline, 2026-09-06): nine focused macro tests, the SOCKS suite (35 tests plus
+one doctest), workspace tests, and the `bytes`/`mock`/`tokio` feature suites pass. All four
+runtime normalization mutants were caught. The extended decode fuzz target completed two
+million cases without failure. Workspace MSRV 1.85 checking and the renamed-dependency smoke
+crate's MSRV check pass; the latter also builds for `thumbv7em-none-eabi` on stable. Formatting
+and workspace Clippy pass with existing warnings; the new focused test target adds none.
+The pinned `nightly-2026-06-17` public-API output matches the updated snapshot (additions only).
+
+Subsequent 0.4 release preparation resolves the original bnb verification debt: the
+33 macro and 84 runtime Clippy diagnostics, plus all-target example/test warnings,
+are fixed or narrowly justified where intentional (const conversions, byte extraction,
+generated comparison types, and CLI output). Strict all-target/all-feature Clippy
+passes for both crates without crate-wide suppression. Warning-free all-feature
+rustdocs pass. `wnaf 0.14.1` replaces the yanked 0.14.0; cargo-deny passes all four
+checks without an advisory exemption. Syn is updated to 3.0.5 and benchmark-only
+bitbybit to 2.0.1. No new production dependency or MSRV increase is introduced.
+
+`cargo-semver-checks 0.50.0` passes against published 0.3.2 with all, default, and no
+default features; the public API snapshot remains unchanged by release cleanup.
+Cargo verifies both distributable archives using its temporary registry, including
+the matching unpublished macro crate. The two-million-input fuzz smoke and four
+caught runtime normalization mutations pass again. Runtime/all-feature and renamed
+no_std consumer checks pass on 1.85; developer tests/benchmarks intentionally use
+stable (`criterion 0.8.2` needs 1.86, `trybuild 1.0.120` needs 1.88).
+
+Release versions remain automation-owned. The intended 0.4 builder behavior change
+needs a breaking commit marker despite the additive source API; see
+[`RELEASING.md`](../docs/RELEASING.md) for ordering, credential preflight, checks, and
+remaining hosted verification requirements. No release side effects are authorized
+by local preparation.
+
+Independent final review approved after unifying bare-derive field exclusions and confining
+autoref helpers to the explicitly unstable `__private` export path; no findings remain.
+
+## 10. Performance
 
 Bitfields are plain shift/mask on a single backing integer — fully monomorphized, no
 `bitvec`, no per-field heap, no runtime field tables. Benchmarked against the crates it

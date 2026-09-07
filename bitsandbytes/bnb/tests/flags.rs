@@ -119,7 +119,7 @@ mod macro_ {
         assert_eq!(frame.flags(), TcpFlags::SYN | TcpFlags::ACK);
         assert_eq!(
             frame.to_raw(),
-            (0xA << 12) | ((TcpFlags::SYN | TcpFlags::ACK).bits() as u16) << 4
+            (0xA << 12) | u16::from((TcpFlags::SYN | TcpFlags::ACK).bits()) << 4
         );
         assert!(frame.flags().ack());
     }

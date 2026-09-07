@@ -10,11 +10,12 @@
 //! micro-benchmark of one operation. (No CI perf gate is attached; this is a local
 //! baseline only.)
 //!
-//! Run: cargo bench -p bitsandbytes --bench message_bench
+//! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
 
 use bnb::{BitEnum, bin, bitfield, u2, u3, u4, u6, u13};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 // version:ihl — the classic IPv4 first byte (two nibbles, MSB-first).
 #[bitfield(u8, bits = msb, bytes = big)]

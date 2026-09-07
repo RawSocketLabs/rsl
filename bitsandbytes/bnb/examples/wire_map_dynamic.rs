@@ -1,4 +1,4 @@
-//! **wire_map_dynamic** — the wire-mapping forms that the conversion-trait approach unlocks:
+//! **`wire_map_dynamic`** — the wire-mapping forms that the conversion-trait approach unlocks:
 //! a **variable-length** wire form, the inline **closure** form, and the fallible **`try_wire`**
 //! form.
 //!
@@ -34,7 +34,7 @@ impl From<WireText> for Greeting {
 impl From<&Greeting> for WireText {
     fn from(g: &Greeting) -> Self {
         WireText {
-            n: g.0.len() as u8,
+            n: u8::try_from(g.0.len()).expect("example greeting fits one byte of length"),
             data: g.0.as_bytes().to_vec(),
         }
     }
@@ -44,8 +44,8 @@ impl From<&Greeting> for WireText {
 
 /// A temperature stored on the wire as one biased byte (celsius + 40).
 #[bin(
-    map = |raw: u8| Celsius(raw as i16 - 40),
-    bw_map = |c: &Celsius| (c.0 + 40) as u8
+    map = |raw: u8| Celsius(i16::from(raw) - 40),
+    bw_map = |c: &Celsius| (c.0 + 40).to_le_bytes()[0]
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Celsius(i16);
@@ -78,6 +78,7 @@ impl From<&Percent> for WirePercent {
     }
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // (A) variable-length: a String-backed logical type over a length-prefixed wire.
     let g = Greeting("hello".into());

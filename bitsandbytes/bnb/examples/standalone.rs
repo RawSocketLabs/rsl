@@ -31,6 +31,7 @@ enum Ecn {
     Ce,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // Pack with the immutable `with_*` builder.
     let vihl = VersionIhl::new()

@@ -25,14 +25,21 @@ struct DeciVolts(f32);
 struct Heartbeat {
     device_id: u16,
     status: Status,
-    #[br(map = |raw: u16| DeciVolts(raw as f32 / 10.0))]
-    #[bw(map = |v: &DeciVolts| (v.0 * 10.0) as u16)]
+    #[br(map = |raw: u16| DeciVolts(f32::from(raw) / 10.0))]
+    #[bw(map = encode_voltage)]
     voltage: DeciVolts,
     // Present only when the FAULT flag is set — `if` reads the decoded `status` local.
     #[br(if(status.contains(Status::FAULT)))]
     fault_code: Option<u16>,
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // Quantize/saturate to unsigned decivolts.
+#[allow(clippy::trivially_copy_pass_by_ref)] // The wire-map callback borrows the field.
+fn encode_voltage(v: &DeciVolts) -> u16 {
+    (v.0 * 10.0) as u16
+}
+
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // Healthy: no fault flag, so no fault code on the wire.
     let ok = Heartbeat {

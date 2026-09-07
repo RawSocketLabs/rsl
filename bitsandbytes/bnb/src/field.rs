@@ -50,8 +50,12 @@ pub enum BitOrder {
 /// The contract: [`into_bits`](Bits::into_bits) yields the value in the low
 /// [`BITS`](Bits::BITS) bits of a `u128` (higher bits zero), and
 /// [`from_bits`](Bits::from_bits) reconstructs from the low `BITS` bits of its
-/// argument (higher bits ignored). Implementations must round-trip:
-/// `T::from_bits(x.into_bits()) == x` for every representable `x`.
+/// argument (higher bits ignored). Round-trips preserve the bit representation:
+/// `T::from_bits(x.into_bits()).into_bits() == x.into_bits()` for representable `x`.
+/// Rust value equality need only hold for normalized values: an enum catch-all
+/// alias such as `Other(2)` may reconstruct as the named variant for discriminant 2.
+/// For raw input in the type's domain, reconstruction preserves its low `BITS`
+/// bits; a deliberately closed enum excludes unknown discriminants from that domain.
 ///
 /// `bool`, the primitive unsigned integers, and the [`UInt`](crate::UInt) types
 /// implement it out of the box; `#[bitfield]` and `#[derive(BitEnum)]` generate
@@ -98,7 +102,7 @@ impl Bits for bool {
 
     #[inline]
     fn into_bits(self) -> u128 {
-        self as u128
+        u128::from(self)
     }
 
     #[inline]
@@ -116,10 +120,11 @@ macro_rules! impl_bits_for_primitive {
 
                 #[inline]
                 fn into_bits(self) -> u128 {
-                    self as u128
+                    u128::from(self)
                 }
 
                 #[inline]
+                #[allow(clippy::cast_possible_truncation)] // Preserve the low BITS bits by contract.
                 fn from_bits(raw: u128) -> Self {
                     // `as` truncates to the low `BITS` bits, which is exactly the
                     // masking the contract requires.
@@ -302,13 +307,13 @@ mod unit {
 
     #[test]
     fn impl_bits_emits_a_delegating_trait_impl_and_a_const_pair() {
+        const N: Nibble = Nibble::__bnb_from_bits(0x1C);
+        const _: () = assert!(Nibble(0x3).__bnb_into_bits() == 0x3);
         assert_eq!(<Nibble as Bits>::BITS, 4);
         // The trait path routes through the user's bodies (masking preserved).
         assert_eq!(Nibble::from_bits(0xAB), Nibble(0xB));
         assert_eq!(Nibble(0x7).into_bits(), 0x7);
         // The inherent pair is `const` — usable where the accessors need it.
-        const N: Nibble = Nibble::__bnb_from_bits(0x1C);
         assert_eq!(N, Nibble(0xC));
-        const _: () = assert!(Nibble(0x3).__bnb_into_bits() == 0x3);
     }
 }

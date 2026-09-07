@@ -237,13 +237,13 @@ mod macro_ {
 
     #[test]
     fn byte_order_controls_serialized_bytes() {
-        let be = BeWord::from_raw(0x01020304);
-        let le = LeWord::from_raw(0x01020304);
+        use bnb::{Bitfield, ByteOrder};
+        let be = BeWord::from_raw(0x0102_0304);
+        let le = LeWord::from_raw(0x0102_0304);
         assert_eq!(be.to_be_bytes(), [0x01, 0x02, 0x03, 0x04]);
         assert_eq!(le.to_le_bytes(), [0x04, 0x03, 0x02, 0x01]);
         // The inherent *_bytes helpers are order-agnostic; the declared order is the
         // codec default (used by binrw and the `Bitfield` seam).
-        use bnb::{Bitfield, ByteOrder};
         assert_eq!(<BeWord as Bitfield>::BYTE_ORDER, ByteOrder::Big);
         assert_eq!(<LeWord as Bitfield>::BYTE_ORDER, ByteOrder::Little);
     }

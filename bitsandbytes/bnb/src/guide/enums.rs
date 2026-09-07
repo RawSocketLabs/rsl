@@ -123,3 +123,12 @@
 //! `u24` — gets only the [`Bits`](crate::Bits)/[`BitEnum`](crate::BitEnum) impls: it is
 //! meaningful only nested in a [`#[bitfield]`](super::bitfields) or a `#[bin]` message,
 //! where its bits are placed in context.
+//!
+//! # Named variants and catch-all aliases
+//!
+//! Rust permits directly constructing `Other(known_code)`. It carries the same wire
+//! discriminant as the named variant, but is not equal to it as a Rust value. Decode
+//! and integer conversion already choose named variants. Generated builders now do
+//! the same before validation, through [`NormalizeEnumAliases`](crate::NormalizeEnumAliases).
+//! The trait can also be called explicitly; genuinely unknown values stay untouched.
+//! See [`builders`](super::builders) for recursion and custom-codec boundaries.

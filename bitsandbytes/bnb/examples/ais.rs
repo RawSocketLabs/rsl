@@ -34,6 +34,7 @@ struct PositionReport {
     sog: u10, // speed over ground, units of 0.1 knot (1023 = not available)
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let report = PositionReport {
         msg_type: u6::new(1),

@@ -1,4 +1,4 @@
-//! **bitbuf_bounded** — a fixed-capacity `BitBuf` that never reallocates on its own.
+//! **`bitbuf_bounded`** — a fixed-capacity `BitBuf` that never reallocates on its own.
 //!
 //! `BitBuf::bounded(cap)` allocates once. `try_push` refuses bytes that won't fit (returning a
 //! `CapacityError`) instead of growing, reclaiming consumed bytes **in place** first; `grow` is
@@ -16,6 +16,7 @@ struct Tick {
     seq: u16,
 } // 2 bytes each
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A buffer with room for exactly two messages, allocated once.
     let mut bb = BitBuf::bounded(4);

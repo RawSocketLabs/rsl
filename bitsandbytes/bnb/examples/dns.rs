@@ -119,7 +119,7 @@ fn write_name<K: Sink>(labels: &[String], w: &mut K) -> Result<(), bnb::BitError
                 w.bit_pos(),
             ));
         }
-        w.write(label.len() as u8)?;
+        w.write(u8::try_from(label.len()).expect("label length was checked against 63"))?;
         w.write_bytes(label.as_bytes())?;
     }
     w.write(0u8) // root
@@ -162,7 +162,7 @@ struct Record {
     rclass: u16,
     ttl: u32,
     #[br(temp)]
-    #[bw(calc = self.rdata.len() as u16)]
+    #[bw(calc = u16::try_from(self.rdata.len()).expect("example rdata fits a u16 length"))]
     rdlength: u16,
     #[br(count = rdlength)]
     rdata: Vec<u8>,
@@ -181,16 +181,16 @@ struct Message {
     id: u16,
     flags: Flags,
     #[br(temp)]
-    #[bw(calc = self.questions.len() as u16)]
+    #[bw(calc = u16::try_from(self.questions.len()).expect("example question count fits u16"))]
     qdcount: u16,
     #[br(temp)]
-    #[bw(calc = self.answers.len() as u16)]
+    #[bw(calc = u16::try_from(self.answers.len()).expect("example answer count fits u16"))]
     ancount: u16,
     #[br(temp)]
-    #[bw(calc = self.authority.len() as u16)]
+    #[bw(calc = u16::try_from(self.authority.len()).expect("example authority count fits u16"))]
     nscount: u16,
     #[br(temp)]
-    #[bw(calc = self.additional.len() as u16)]
+    #[bw(calc = u16::try_from(self.additional.len()).expect("example additional count fits u16"))]
     arcount: u16,
     #[br(count = qdcount)]
     questions: Vec<Question>,

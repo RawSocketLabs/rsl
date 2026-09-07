@@ -76,14 +76,17 @@ macro_rules! impl_uint {
 
                 /// Creates a value, or [`WidthError::ValueTooLarge`] if it does not
                 /// fit in `N` bits.
+                ///
+                /// # Errors
+                /// Returns [`WidthError::ValueTooLarge`] when `value` exceeds the width.
                 #[inline]
                 pub fn try_new(value: $t) -> core::result::Result<Self, WidthError> {
                     if value <= Self::MASK {
                         Ok(Self { value })
                     } else {
                         Err(WidthError::ValueTooLarge {
-                            value: value as u128,
-                            bits: N as u32,
+                            value: u128::from(value),
+                            bits: Self::BITS,
                         })
                     }
                 }
@@ -107,12 +110,14 @@ macro_rules! impl_uint {
                 // unstable). The `Bits` impl delegates here, so the two can't drift.
                 #[doc(hidden)]
                 #[inline]
+                #[allow(clippy::cast_possible_truncation)] // Low-bit truncation is the Bits contract.
                 pub const fn __bnb_from_bits(raw: u128) -> Self {
                     Self::from_raw(raw as $t)
                 }
 
                 #[doc(hidden)]
                 #[inline]
+                #[allow(clippy::cast_lossless)] // From is not const on the MSRV.
                 pub const fn __bnb_into_bits(self) -> u128 {
                     self.value as u128
                 }
@@ -126,6 +131,7 @@ macro_rules! impl_uint {
             }
 
             impl<const N: usize> Bits for UInt<$t, N> {
+                #[allow(clippy::cast_possible_truncation)] // Supported UInt widths are at most 128.
                 const BITS: u32 = N as u32;
 
                 #[inline]
@@ -268,7 +274,7 @@ mod unit {
         assert_eq!(<u13 as Bits>::BITS, 13);
         assert_eq!(u13::from_bits(v.into_bits()), v);
         // into_bits exposes only the low N bits.
-        assert!(v.into_bits() <= u13::MAX.value() as u128);
+        assert!(v.into_bits() <= u128::from(u13::MAX.value()));
     }
 
     #[test]

@@ -19,6 +19,7 @@ struct Reading {
     value: u16,
 } // 3 bytes each
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let readings = [
         Reading {

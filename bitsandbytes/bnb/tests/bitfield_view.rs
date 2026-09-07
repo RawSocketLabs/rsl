@@ -3,6 +3,8 @@
 //! different things depending on the direction bit stored alongside them. A bitfield
 //! is random-access, so the view reads the sibling with no cursor look-ahead.
 
+// Preserve closure syntax that exercises the macro's const-inlining rules.
+#[allow(unused_braces, clippy::no_effect_underscore_binding)]
 mod macro_ {
     use bnb::{bitfield, u2, u3};
 
@@ -114,12 +116,12 @@ mod macro_ {
             .with_kind(Kind::A)
             .with_outbound(true);
         const KIND: Kind = L.kind();
-        assert_eq!(KIND, Kind::A);
         const _: () = {
             let mut l = Lich::new().with_outbound(false);
             l.set_kind(Kind::B);
             assert!(matches!(l.kind(), Kind::B));
         };
+        assert_eq!(KIND, Kind::A);
     }
 
     // A helper the const dispatch cannot inline into a `const fn` (it isn't one).
@@ -137,7 +139,7 @@ mod macro_ {
             bits = 2,
             dynamic,
             read = |raw: u2, _s: &Self| parity(raw),
-            write = |v: bool| u2::new(v as u8)
+            write = |v: bool| u2::new(u8::from(v))
         )]
         odd: bool,
         pad: u3,
@@ -174,6 +176,7 @@ mod macro_ {
     // `read`/`write` as *paths to const fns* (not closures) plus `raw = <ty>` —
     // the direct-call const form: paths carry no annotation, so `raw` is the only
     // way the macro can see the stored type.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // The view callback borrows the containing field.
     const fn path_read(raw: u2, s: &PathView) -> Kind {
         Kind::interpret(raw, s.outbound())
     }
@@ -196,12 +199,12 @@ mod macro_ {
     fn path_fns_with_raw_key_are_const() {
         const P: PathView = PathView::new().with_kind(Kind::B).with_outbound(false);
         const KIND: Kind = P.kind();
-        assert_eq!(KIND, Kind::B); // inbound && bits 01 → B
         const _: () = {
             let mut p = P;
             p.set_kind(Kind::Reserved(u2::new(0b11)));
             assert!(matches!(p.kind(), Kind::Reserved(v) if v.value() == 0b11));
         };
+        assert_eq!(KIND, Kind::B); // inbound && bits 01 → B
     }
 
     // The `write` closure's *return annotation* as the only raw-type source (the
@@ -246,13 +249,13 @@ mod macro_ {
 
     #[test]
     fn write_body_with_return_keeps_closure_semantics() {
+        const G: u2 = RetWrite::new().clamped();
         // The early `return` exits the closure, not the setter: the store runs.
         let clamped = RetWrite::new().with_clamped(u2::new(3));
         assert_eq!(clamped.clamped(), u2::new(0));
         let plain = RetWrite::new().with_clamped(u2::new(2));
         assert_eq!(plain.clamped(), u2::new(2));
         // The getter is still const (its inlining is unaffected by `return`).
-        const G: u2 = RetWrite::new().clamped();
         assert_eq!(G, u2::new(0));
     }
 }

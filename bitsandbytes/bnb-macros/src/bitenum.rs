@@ -66,13 +66,15 @@ impl Parse for Args {
 
 pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
-    match expand_inner(input) {
+    match expand_inner(&input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
+// Keep the paired integer mappings and their generated impls together.
+#[allow(clippy::too_many_lines)]
+fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &input.ident;
 
@@ -85,14 +87,11 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
     let args: Args = attr.parse_args()?;
     let width = &args.width;
 
-    let data = match &input.data {
-        Data::Enum(e) => e,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                name,
-                "BitEnum can only derive for enums",
-            ));
-        }
+    let Data::Enum(data) = &input.data else {
+        return Err(syn::Error::new_spanned(
+            name,
+            "BitEnum can only derive for enums",
+        ));
     };
 
     // Partition variants into unit (discriminant) and a single catch-all.
@@ -180,16 +179,15 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         .iter()
         .map(|(id, disc)| quote!(#disc => #name::#id))
         .collect();
-    let from_wild = match &catch_all {
-        Some(id) => {
-            let e = crate::const_from_bits(width, &quote!(other));
-            quote!(other => #name::#id(#e))
-        }
-        None => quote!(_ => panic!(concat!(
+    let from_wild = if let Some(id) = &catch_all {
+        let e = crate::const_from_bits(width, &quote!(other));
+        quote!(other => #name::#id(#e))
+    } else {
+        quote!(_ => panic!(concat!(
             "non-exhaustive BitEnum ",
             stringify!(#name),
             " has no variant for discriminant (and no #[catch_all])"
-        ))),
+        )))
     };
 
     // The trait `from_bits` delegates to the inherent const version — except for a
@@ -198,9 +196,10 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
     // formatted, value-bearing panic a `const fn` cannot express. The arms are
     // generated in this same expansion from the same `unit` list, so the two
     // matches cannot drift.
-    let trait_from_bits_body = match &catch_all {
-        Some(_) => quote!(Self::__bnb_from_bits(raw)),
-        None => quote! {
+    let trait_from_bits_body = if catch_all.is_some() {
+        quote!(Self::__bnb_from_bits(raw))
+    } else {
+        quote! {
             match raw {
                 #(#from_unit,)*
                 other => unreachable!(
@@ -208,7 +207,7 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
                     stringify!(#name), other
                 ),
             }
-        },
+        }
     };
 
     // `From`/`TryFrom` against the primitive — `num_enum` parity.
@@ -256,6 +255,12 @@ fn expand_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         }
 
         impl #bnb::BitEnum for #name {}
+
+        impl #bnb::NormalizeEnumAliases for #name {
+            fn normalize_enum_aliases(&mut self) {
+                *self = Self::__bnb_from_bits(self.__bnb_into_bits());
+            }
+        }
 
         #conv
         #leaf_codec

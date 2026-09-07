@@ -4,7 +4,8 @@
 //! byte-aligned fast path, which copies whole bytes instead of shifting per bit).
 
 use bnb::{BitDecode, BitEncode, BitEnum, u4, u48, u108};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 #[derive(BitEnum, Copy, Clone, Eq, PartialEq, Debug)]
 #[bit_enum(u48)]

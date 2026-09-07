@@ -1,11 +1,11 @@
-//! **tokio_udp** — async UDP datagrams with [`bnb::BinCodec`] and `tokio_util`'s `UdpFramed`:
+//! **`tokio_udp`** — async UDP datagrams with [`bnb::BinCodec`] and `tokio_util`'s `UdpFramed`:
 //! the datagram analog of `tokio_framed` (which uses `Framed` over a TCP stream).
 //!
 //! The same `BinCodec<T>` drives **both** transports — `Framed` for a TCP stream, `UdpFramed`
 //! for a UDP socket — because it's just a `tokio_util` `Decoder`/`Encoder`. `UdpFramed` is a
 //! `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`, so every message carries its
 //! peer address (the datagram nature). This mirrors the sync split `MessageStream` (net) vs
-//! `MessageDatagram` (net) — bnb supplies the codec; tokio_util supplies the framing.
+//! `MessageDatagram` (net) — bnb supplies the codec; `tokio_util` supplies the framing.
 //!
 //! Run with: `cargo run -p bitsandbytes --example tokio_udp --features tokio`
 

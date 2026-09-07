@@ -19,7 +19,7 @@ mod macro_ {
     struct Frame {
         tag: u4,
         #[br(temp)]
-        #[bw(calc = self.items.len() as u16)]
+        #[bw(calc = u16::try_from(self.items.len()).unwrap())]
         count: u16,
         #[br(count = count)]
         items: Vec<u8>,

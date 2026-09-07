@@ -12,7 +12,7 @@ mod macro_ {
     /// A context-bearing child whose sizing and adjustment come from its parent.
     #[bin(big, ctx(width: u8, base: u16))]
     #[derive(Debug, PartialEq)]
-    pub struct Cell {
+    pub(crate) struct Cell {
         /// `width` payload bytes.
         #[br(count = width)]
         pub data: Vec<u8>,

@@ -11,7 +11,7 @@ mod macro_ {
     struct Msg {
         id: u8,
         #[br(temp)]
-        #[bw(calc = self.name.len() as u8)]
+        #[bw(calc = u8::try_from(self.name.len()).unwrap())]
         len: u8,
         #[br(count = len)]
         #[try_str]
@@ -49,7 +49,7 @@ mod macro_ {
         #[reserved]
         rsv: u4,
         #[br(temp)]
-        #[bw(calc = self.label.len() as u8)]
+        #[bw(calc = u8::try_from(self.label.len()).unwrap())]
         len: u8,
         #[br(count = len)]
         #[try_str]
@@ -77,7 +77,7 @@ mod macro_ {
         #[bin(magic = 0x01u8)]
         Note {
             #[br(temp)]
-            #[bw(calc = text.len() as u8)]
+            #[bw(calc = u8::try_from(text.len()).unwrap())]
             len: u8,
             #[br(count = len)]
             #[try_str]

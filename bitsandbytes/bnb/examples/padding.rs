@@ -19,6 +19,7 @@ struct Record {
     crc: u8,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let r = Record {
         kind: u3::new(0b101),

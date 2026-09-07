@@ -1,4 +1,4 @@
-//! **ctx_length** — `ctx`: a parent threads a value (here a column count) into its children,
+//! **`ctx_length`** — `ctx`: a parent threads a value (here a column count) into its children,
 //! including each element of a `count`-driven loop. A `ctx`-bearing type carries no length of
 //! its own; it is decoded/encoded with `decode_with`/`to_bytes_with` + a generated `…Ctx`, not
 //! the context-free `decode`/`to_bytes`. (A different `ctx` use than `ctx`'s off-wire `tag`
@@ -49,6 +49,7 @@ fn table_is_sound(t: &Table) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let table = Table {
         columns: 3,

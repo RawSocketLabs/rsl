@@ -1,4 +1,4 @@
-//! **mock_stream** — testing `MessageStream` code with the `mock` feature, no real socket.
+//! **`mock_stream`** — testing `MessageStream` code with the `mock` feature, no real socket.
 //!
 //! [`MockStream`](bnb::MockStream) is a `Read + Write` with separate scripted-inbound and
 //! captured-outbound buffers — the stream analog of [`MockDatagramSocket`](bnb::MockDatagramSocket).
@@ -38,6 +38,7 @@ fn serve_one<S: Read + Write>(conn: &mut MessageStream<S>) -> Result<(), bnb::Bi
     })
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // chunk_size = 1: the 3-byte request arrives one byte per read, so `read_message` loops
     // (buffer-more-and-retry) — the framing path a `Cursor` can't simulate.

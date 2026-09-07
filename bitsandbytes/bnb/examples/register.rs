@@ -21,6 +21,7 @@ struct Register {
     guard: u4, // must-be-one; fills the last byte (4 + 4)
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // From the builder, the reserved fields default to their spec values — so it's canonical.
     let r = Register::builder()

@@ -3,6 +3,70 @@
 use alloc::string::String;
 use core::fmt;
 
+/// Replaces enum catch-all aliases with their named variants, preserving discriminants.
+///
+/// Generated builders run this after resolving fields and before semantic validation.
+/// `BitEnum`, ordinary field-based `#[bin]` types, and plain `BitsBuilder` structs
+/// implement it automatically. `Vec`, `Option`, and arrays recurse into implementing
+/// elements. Opaque types without an implementation are left alone by generated code.
+///
+/// Implementations must be idempotent, preserve unknown discriminants and collection
+/// shape, and change only enum aliases. This is not reserved-field or length repair.
+/// Custom codec wrappers may implement this trait to expose their own traversal;
+/// field-level custom codecs/mappings and logical-only fields remain opaque.
+pub trait NormalizeEnumAliases {
+    /// Normalize aliases in place without allocating or performing validation.
+    fn normalize_enum_aliases(&mut self);
+}
+
+impl<T: NormalizeEnumAliases> NormalizeEnumAliases for alloc::vec::Vec<T> {
+    fn normalize_enum_aliases(&mut self) {
+        for value in self {
+            value.normalize_enum_aliases();
+        }
+    }
+}
+
+impl<T: NormalizeEnumAliases> NormalizeEnumAliases for Option<T> {
+    fn normalize_enum_aliases(&mut self) {
+        if let Some(value) = self {
+            value.normalize_enum_aliases();
+        }
+    }
+}
+
+impl<T: NormalizeEnumAliases, const N: usize> NormalizeEnumAliases for [T; N] {
+    fn normalize_enum_aliases(&mut self) {
+        for value in self {
+            value.normalize_enum_aliases();
+        }
+    }
+}
+
+// Reachable downstream only through the explicitly unstable `bnb::__private` path.
+pub(crate) mod normalization {
+    use super::NormalizeEnumAliases;
+
+    /// Concrete-site autoref dispatch for generated code; not a stable API.
+    pub struct NormalizeProbe<T: ?Sized>(pub core::marker::PhantomData<fn(&mut T)>);
+
+    /// Autoref fallback keeps opaque fields free of new trait bounds.
+    pub trait NormalizeDispatch<T: ?Sized> {
+        /// Normalize a supported field, or leave an opaque field untouched.
+        fn normalize(self, value: &mut T);
+    }
+
+    impl<T: NormalizeEnumAliases + ?Sized> NormalizeDispatch<T> for &NormalizeProbe<T> {
+        fn normalize(self, value: &mut T) {
+            value.normalize_enum_aliases();
+        }
+    }
+
+    impl<T: ?Sized> NormalizeDispatch<T> for &&NormalizeProbe<T> {
+        fn normalize(self, _: &mut T) {}
+    }
+}
+
 /// The error a generated builder's `build()` returns.
 ///
 /// Two cases:
@@ -41,6 +105,7 @@ pub enum BuilderError {
 
 impl BuilderError {
     /// Constructs the "required field not set" error for `field`.
+    #[must_use]
     pub fn missing_field(field: &'static str) -> Self {
         Self::MissingField(field)
     }
@@ -52,6 +117,7 @@ impl BuilderError {
 
     /// The name of the field that was not set, or `None` for an
     /// [`Invalid`](BuilderError::Invalid) error.
+    #[must_use]
     pub fn field(&self) -> Option<&'static str> {
         match self {
             Self::MissingField(field) => Some(field),
