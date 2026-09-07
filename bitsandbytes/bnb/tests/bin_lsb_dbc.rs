@@ -14,7 +14,7 @@
 mod macro_ {
     use bnb::{bin, u3, u4};
 
-    /// The DBC-Intel reference: sig_a `u3`@0, sig_b `u4`@3, word `u16`@7 (byte-multiple,
+    /// The DBC-Intel reference: `sig_a` `u3`@0, `sig_b` `u4`@3, word `u16`@7 (byte-multiple,
     /// byte-straddling — the case the rule governs), tail `u3`@23. 26 bits → 4 bytes.
     fn dbc_reference(a: u64, b: u64, word: u64, tail: u64) -> [u8; 4] {
         let raw: u64 = a | (b << 3) | (word << 7) | (tail << 23);
@@ -67,7 +67,7 @@ mod macro_ {
             let v = intel(a, b, word, tail);
             assert_eq!(
                 v.to_bytes().unwrap(),
-                dbc_reference(a as u64, b as u64, word as u64, tail as u64),
+                dbc_reference(u64::from(a), u64::from(b), u64::from(word), u64::from(tail)),
                 "a={a} b={b} word={word:#06x} tail={tail}",
             );
             // Decode is the exact inverse of the reference layout too.
@@ -118,7 +118,7 @@ mod macro_ {
         }
         let w = Words {
             x: 0x1122,
-            y: 0xAABBCCDD,
+            y: 0xAABB_CCDD,
         };
         assert_eq!(w.to_bytes().unwrap(), [0x22, 0x11, 0xDD, 0xCC, 0xBB, 0xAA]);
     }
@@ -143,7 +143,7 @@ mod property {
         fn lsb_little_equals_dbc_for_all_values(a in 0u8..8, b in 0u8..16, word in any::<u16>(), tail in 0u8..8) {
             let v = Intel { a: u3::new(a), b: u4::new(b), word, tail: u3::new(tail) };
             let bytes = v.to_bytes().unwrap();
-            let raw: u64 = (a as u64) | ((b as u64) << 3) | ((word as u64) << 7) | ((tail as u64) << 23);
+            let raw: u64 = u64::from(a) | (u64::from(b) << 3) | (u64::from(word) << 7) | (u64::from(tail) << 23);
             prop_assert_eq!(&bytes[..], &raw.to_le_bytes()[..4]);
             prop_assert_eq!(Intel::decode_exact(&bytes).unwrap(), v);
         }

@@ -1,4 +1,4 @@
-//! **versioned_cells** — `ctx` + a decode-time guard together: a header `version` is **guarded**
+//! **`versioned_cells`** — `ctx` + a decode-time guard together: a header `version` is **guarded**
 //! by `#[br(assert(...))]` (rejecting an unknown version at decode) and **threaded** into each
 //! cell as context, where it sets the cell's data width. A third `ctx` shape (after `ctx`'s
 //! off-wire tag dispatch and `ctx_length`'s column count).
@@ -31,6 +31,7 @@ struct Table {
     cells: Vec<Cell>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let table = Table {
         version: 2,

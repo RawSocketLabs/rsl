@@ -23,6 +23,7 @@ struct Config {
     max_port: u16,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // `build()` runs `validate` — a sound value builds.
     let c = Config::builder()

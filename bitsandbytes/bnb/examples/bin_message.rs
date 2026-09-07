@@ -1,4 +1,4 @@
-//! **bin_message** — the `#[bin]` whole-message codec end to end (the flagship of the crate).
+//! **`bin_message`** — the `#[bin]` whole-message codec end to end (the flagship of the crate).
 //!
 //! Two real shapes:
 //!   1. a 12-byte **DNS header** (RFC 1035 §4.1.1): a `#[bitfield]` flags word with
@@ -88,6 +88,7 @@ struct Frame {
     payload: Vec<u8>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a response header with the required-by-default builder. Forget a field
     // and `build()` tells you which one — the infix `with_*` setters can't.

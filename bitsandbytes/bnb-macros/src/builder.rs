@@ -37,11 +37,38 @@ pub(crate) struct BField {
 }
 
 /// How `build()` constructs the value from the resolved fields.
+#[derive(Clone, Copy)]
 pub(crate) enum BuildKind {
     /// A `#[bitfield]` type: `Foo::new().with_field(v)…`.
     Bitfield,
     /// A plain struct: `Foo { field: v, … }`.
     Plain,
+}
+
+/// Emit dispatch at a concrete field site, not in a generic helper (where Rust
+/// would select the opaque fallback before monomorphization).
+pub(crate) fn normalize_field(ty: &Type, value: &TokenStream2) -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    let probe = Ident::new("__bnb_normalize_probe", proc_macro2::Span::mixed_site());
+    quote! {
+        {
+            use #bnb::__private::NormalizeDispatch as _;
+            let #probe = #bnb::__private::NormalizeProbe::<#ty>(::core::marker::PhantomData);
+            (&#probe).normalize(#value);
+        }
+    }
+}
+
+/// Shared implementation envelope for structs and field-based enums.
+pub(crate) fn normalizer_impl(name: &Ident, body: &TokenStream2) -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    quote! {
+        impl #bnb::NormalizeEnumAliases for #name {
+            fn normalize_enum_aliases(&mut self) {
+                #body
+            }
+        }
+    }
 }
 
 /// Parses a `#[builder(...)]` field attribute into a default policy, or `None`
@@ -108,7 +135,11 @@ pub(crate) fn generate(
             });
             quote!(#name::new() #(#withs)*)
         }
-        BuildKind::Plain => quote!(#name { #( #idents ),* }),
+        BuildKind::Plain => quote!({
+            let mut __value = #name { #( #idents ),* };
+            #bnb::NormalizeEnumAliases::normalize_enum_aliases(&mut __value);
+            __value
+        }),
     };
 
     quote! {
@@ -137,7 +168,8 @@ pub(crate) fn generate(
                 }
             )*
 
-            /// Builds the value, or returns the first unset required field.
+            /// Resolves fields, normalizes enum aliases, then validates the value.
+            /// Returns the first unset required field before normalization or validation.
             #vis fn build(self) -> ::core::result::Result<#name, #bnb::BuilderError> {
                 #(#resolve)*
                 let __value = #construct;
@@ -152,13 +184,13 @@ pub(crate) fn generate(
 /// structs.
 pub(crate) fn expand_derive(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
-    match expand_derive_inner(input) {
+    match expand_derive_inner(&input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-fn expand_derive_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
+fn expand_derive_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let named = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(n) => n,
@@ -190,11 +222,14 @@ fn expand_derive_inner(input: DeriveInput) -> syn::Result<TokenStream2> {
         fields.push(BField { ident, ty, default });
     }
 
-    Ok(generate(
-        &input.ident,
-        &input.vis,
-        &fields,
-        BuildKind::Plain,
-        None,
-    ))
+    let mut normalize = Vec::new();
+    for field in &named.named {
+        if crate::bitstream::field_normalizes_aliases(field)? {
+            let id = &field.ident;
+            normalize.push(normalize_field(&field.ty, &quote!(&mut self.#id)));
+        }
+    }
+    let normalizer = normalizer_impl(&input.ident, &quote!(#(#normalize)*));
+    let builder = generate(&input.ident, &input.vis, &fields, BuildKind::Plain, None);
+    Ok(quote!(#normalizer #builder))
 }

@@ -66,6 +66,7 @@ struct LeLsb {
     word: u16,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // (1) BYTE order swaps the bytes of a multi-byte value; the logical value is unchanged.
     assert_eq!(

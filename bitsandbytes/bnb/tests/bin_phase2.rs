@@ -88,7 +88,7 @@ mod macro_ {
         Rows {
             width: u8,
             #[br(temp)]
-            #[bw(calc = cells.len() as u8)]
+            #[bw(calc = u8::try_from(cells.len()).unwrap())]
             count: u8,
             #[br(count = count, ctx { width })] // hand `width` to every Cell
             cells: Vec<Cell>,

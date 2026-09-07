@@ -41,6 +41,7 @@ struct Packet {
     body: Body,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     for body in [
         Body::Login { user_id: 0xCAFE },

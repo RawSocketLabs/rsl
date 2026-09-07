@@ -108,7 +108,7 @@ mod macro_ {
     #[derive(Debug, PartialEq)]
     struct Mapped {
         #[br(map = |raw: u8| i16::from(raw) - 40)]
-        #[bw(map = |c: &i16| (*c + 40) as u8)]
+        #[bw(map = |c: &i16| (*c + 40).to_le_bytes()[0])]
         #[br(assert(celsius > -40, "sensor floor breached: {}", celsius))]
         celsius: i16,
     }
@@ -129,7 +129,7 @@ mod macro_ {
     struct Framed {
         #[br(temp)]
         #[br(assert(len <= 4, "frame too long: {}", len))]
-        #[bw(calc = self.data.len() as u8)]
+        #[bw(calc = u8::try_from(self.data.len()).unwrap())]
         len: u8,
         #[br(count = len)]
         data: Vec<u8>,

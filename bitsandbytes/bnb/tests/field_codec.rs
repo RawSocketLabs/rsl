@@ -49,7 +49,7 @@ mod macro_ {
     struct Outer {
         tag: u8,
         #[br(temp)]
-        #[bw(calc = self.items.len() as u8)]
+        #[bw(calc = u8::try_from(self.items.len()).unwrap())]
         count: u8,
         #[br(count = count)]
         #[nested] // tolerated, ignored

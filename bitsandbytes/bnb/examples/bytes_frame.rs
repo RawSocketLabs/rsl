@@ -1,4 +1,4 @@
-//! **bytes_frame** — the `bytes` feature: zero-copy framing with `BytesWriter` / `BytesReader`.
+//! **`bytes_frame`** — the `bytes` feature: zero-copy framing with `BytesWriter` / `BytesReader`.
 //! Encode a message into a `bytes::Bytes` (the wire frame you'd hand to a socket), then decode
 //! straight from an owned `Bytes` with no copy — and cheaply slice/share it (refcounted). This
 //! is the foundation the `tokio` `BinCodec` builds on. (A different angle from `framed`, which
@@ -17,6 +17,7 @@ struct Packet {
     payload: Vec<u8>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let pkt = Packet {
         id: 0xABCD,

@@ -45,6 +45,7 @@ struct Frame {
     crc: u16,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // Small values pack into one byte; large ones grow only as needed — the point of LEB128.
     for &(length, timestamp) in &[(0u32, 0u64), (127, 128), (300, 1_000_000), (u32::MAX, 1)] {

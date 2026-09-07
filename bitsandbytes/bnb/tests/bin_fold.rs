@@ -12,7 +12,7 @@ mod macro_ {
     struct Header {
         version: u8,
         #[br(temp)]
-        #[bw(calc = self.records.len() as u16)]
+        #[bw(calc = u16::try_from(self.records.len()).unwrap())]
         count: u16,
         #[br(count = count)]
         records: Vec<u32>,

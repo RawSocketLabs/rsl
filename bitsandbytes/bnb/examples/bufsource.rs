@@ -40,6 +40,7 @@ impl Read for Trickle<'_> {
     }
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() -> Result<(), bnb::BitError> {
     let wire = [0x5A, 0xBC, 0xDE]; // flags=0x5A, value=0xBCDE; the peek sees value's high byte
 

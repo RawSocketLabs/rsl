@@ -9,21 +9,21 @@
 //! | Source | Backing | Can seek? | Use for |
 //! |---|---|---|---|
 //! | [`BitReader`](crate::BitReader) | `&[u8]` slice | yes (free cursor math) | in-memory bytes |
-//! | [`StreamBitReader`](crate::StreamBitReader) | any `Read` | no (forward only) | a stream you read once |
-//! | [`BufSource`](crate::BufSource) | any `Read` | yes (within a bounded buffer) | a socket that also needs to seek |
+//! | `StreamBitReader` (`std`) | any `Read` | no (forward only) | a stream you read once |
+//! | `BufSource` (`std`) | any `Read` | yes (within a bounded buffer) | a socket that also needs to seek |
 //! | [`BitBuf`](crate::BitBuf) | owned `Vec<u8>` (pushable) | yes (cursor math) | incremental framing: push bytes, pull messages |
-//! | [`SeekReader`](crate::SeekReader) | `Read + Seek` | yes (via `io::Seek`) | a large file / container |
+//! | `SeekReader` (`std`) | `Read + Seek` | yes (via `io::Seek`) | a large file / container |
 //! | `BytesReader` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
 //!
 //! Seeking is only needed by messages that use `#[br(restore_position)]`; everything
-//! else runs over the forward-only [`StreamBitReader`](crate::StreamBitReader) too.
+//! else runs over the forward-only `StreamBitReader` too.
 //!
 //! <div class="warning">
 //!
 //! **`decode` reads in the *source's* layout, not the message's.** A [`Source`](crate::Source)
 //! carries its own byte/bit order, and `Type::decode(&mut source)` reads in *that* order.
-//! The plain constructors ([`StreamBitReader::new`](crate::StreamBitReader::new),
-//! [`BufSource::new`](crate::BufSource::new), [`SeekReader::new`](crate::SeekReader::new))
+//! The plain constructors (`StreamBitReader::new`,
+//! `BufSource::new`, `SeekReader::new`)
 //! default to **msb/big** — correct for a default-layout message, but a non-default
 //! (`little`/`lsb`) message decoded through them is **silently misread**. Build the source
 //! with the message's layout: `StreamBitReader::with_layout(r, <Msg as bnb::BitEncode>::LAYOUT)`
@@ -121,9 +121,9 @@
 //! # Bridging to `std::io`
 //!
 //! The ladder above adapts a `std::io::Read` *into* a [`Source`](crate::Source)
-//! ([`BufSource`](crate::BufSource)/[`SeekReader`](crate::SeekReader)). The reverse —
+//! (`BufSource`/`SeekReader`). The reverse —
 //! handing a bnb cursor to `std::io`-based code from a `parse_with`/`write_with` — is
-//! [`Source::as_read`](crate::Source::as_read) and [`Sink::as_write`](crate::Sink::as_write),
+//! `Source::as_read` and `Sink::as_write`,
 //! byte views over the cursor. With `From<io::Error>`, `std::io` results `?` straight
 //! into a [`BitError`](crate::BitError):
 //!
@@ -143,7 +143,7 @@
 //!
 //! # Streaming and partial input
 //!
-//! A [`StreamBitReader`](crate::StreamBitReader) or [`BufSource`](crate::BufSource)
+//! A `StreamBitReader` or `BufSource`
 //! that runs out mid-message reports [`ErrorKind::Incomplete`](crate::ErrorKind), the
 //! "read more bytes and retry" signal — distinct from a definitive parse failure. See
 //! [`errors`](super::errors).
@@ -162,8 +162,8 @@
 //!
 //! To run a request/response loop on a single TCP connection you need to read and write the
 //! same socket. You don't need `try_clone()` (which dups the fd): **`std`'s `&TcpStream`
-//! implements both [`Read`](std::io::Read) and [`Write`](std::io::Write)**, so wrap the read
-//! half in a [`BufSource`](crate::BufSource) and write through `&TcpStream` — two shared borrows
+//! implements both `std::io::Read` and `std::io::Write`**, so wrap the read
+//! half in a `BufSource` and write through `&TcpStream` — two shared borrows
 //! of the *same* socket:
 //!
 //! ```no_run

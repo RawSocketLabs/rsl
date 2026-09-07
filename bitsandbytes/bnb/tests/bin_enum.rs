@@ -468,7 +468,7 @@ mod macro_ {
         Unknown {
             magic: u8,
             #[br(temp)]
-            #[bw(calc = body.len() as u8)]
+            #[bw(calc = u8::try_from(body.len()).unwrap())]
             len: u8,
             #[br(count = len)]
             body: Vec<u8>,

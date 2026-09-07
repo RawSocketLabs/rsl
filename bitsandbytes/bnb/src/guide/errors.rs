@@ -19,7 +19,7 @@
 //! assert_eq!(err.field, Some("a"));        // the field gives the span
 //! ```
 //!
-//! The [`Display`](std::fmt::Display) impl renders all of it:
+//! The [`Display`](core::fmt::Display) impl renders all of it:
 //!
 //! ```
 //! # use bnb::bin;
@@ -44,10 +44,10 @@
 //!   `WidthError` bridged in from checked construction (`try_new`).
 //! - `Incomplete { needed }` — a stream ran out mid-message (read more and retry).
 //! - `NotSeekable` / `BufferFull` / `TooWide` / `Io` — seek-on-a-stream, buffer cap,
-//!   over-128-bit field, and an I/O failure (carrying just the [`std::io::ErrorKind`], not
+//!   over-128-bit field, and an I/O failure (carrying just the `std::io::ErrorKind`, not
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
 //!   slices to streams (a `restore_position` on a forward stream; a message larger than a
-//!   [`BufSource`](crate::BufSource) cap).
+//!   `BufSource` cap, with `std`).
 //!
 //! ```
 //! use bnb::{bin, ErrorKind};

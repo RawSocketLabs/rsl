@@ -226,6 +226,7 @@ fn single_generic<'a>(ty: &'a syn::Type, wrapper: &str) -> Option<&'a syn::Type>
 
 /// Parsed field-level `#[br(...)]` directives.
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // Independent presence flags in the field grammar.
 struct FieldBr {
     /// `count = <expr>` — element count for a `Vec<T>` (may name an earlier field).
     count: Option<syn::Expr>,
@@ -927,13 +928,14 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     if !br.asserts.is_empty() {
         let id = f.ident.as_ref().expect("named field");
         let checks = br.asserts.iter().map(|(cond, msg)| {
-            let msg_ts = match msg {
-                Some(args) => quote!(#bnb::__private::format!(#args)),
-                None => quote!(#bnb::__private::String::from(::core::concat!(
+            let msg_ts = if let Some(args) = msg {
+                quote!(#bnb::__private::format!(#args))
+            } else {
+                quote!(#bnb::__private::String::from(::core::concat!(
                     "assertion failed: `",
                     ::core::stringify!(#cond),
                     "`"
-                ))),
+                )))
             };
             quote! {
                 if !(#cond) {
@@ -1094,6 +1096,7 @@ fn field_write_stmt(
 }
 
 /// The core encode statement (without positioning).
+#[allow(clippy::too_many_lines)] // One ordered dispatch over mutually exclusive wire directives.
 fn field_write_core(
     f: &syn::Field,
     br: &FieldBr,
@@ -1312,6 +1315,7 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 /// `ctx` type) from a name + field list + parsed options. Shared by the
 /// `#[derive(BitDecode)]` path and by `#[bin]` (which can pass `temp` fields not
 /// present in the emitted struct).
+#[allow(clippy::too_many_lines)] // Keep generated decode methods and their shared context together.
 fn gen_decode(
     name: &Ident,
     fields: &FieldsNamed,
@@ -1606,6 +1610,7 @@ fn field_write_stmt_auto(
     })
 }
 
+#[allow(clippy::too_many_lines)] // Verbatim/canonical methods share the same field generation.
 fn gen_encode(
     name: &Ident,
     fields: &FieldsNamed,
@@ -1736,9 +1741,7 @@ fn gen_encode(
         .iter()
         .zip(&brs)
         .any(|(f, br)| field_is_reserved(f) || (br.calc.is_some() && !br.temp));
-    let (canonical_method, canonical_inherent) = if !has_canonical {
-        (quote!(), quote!())
-    } else {
+    let (canonical_method, canonical_inherent) = if has_canonical {
         let writes_canonical = fields
             .named
             .iter()
@@ -1825,6 +1828,8 @@ fn gen_encode(
             }
         };
         (method, inherent)
+    } else {
+        (quote!(), quote!())
     };
 
     // A `ctx` type whose encode does *not* read context still impls `EncodeWith` (ignoring
@@ -1894,6 +1899,7 @@ fn gen_encode(
 
 /// Parsed struct-level `#[bin(...)]` options.
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // Independent syntax options, not a runtime state machine.
 struct BinArgs {
     read_only: bool,
     write_only: bool,
@@ -1986,6 +1992,7 @@ pub(crate) fn expand_bin(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+#[allow(clippy::too_many_lines)] // The complete attribute grammar is intentionally parsed in one place.
 fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> {
     let mut args = BinArgs::default();
     let parser = syn::meta::parser(|meta| {
@@ -2192,6 +2199,7 @@ fn mapped_wire_type(args: &BinArgs) -> syn::Result<Type> {
 /// (`decode_all`/`peek`/…) work at the wire type's layout. It does **not** emit `FixedBitLen`
 /// (so the wire type may be variable-length); add `impl FixedBitLen` by hand to nest a
 /// fixed-wire mapped type as a plain field.
+#[allow(clippy::too_many_lines)] // Paired read/write mapping and their generated surface.
 fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &s.ident;
@@ -2388,6 +2396,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
 /// `#[brw(variable)]` on the field. Also emits `From<Inner> for Self` and
 /// `From<Self> for Inner` (in-memory conversions, both directions regardless of
 /// `read_only`/`write_only`).
+#[allow(clippy::too_many_lines)] // Paired custom-codec adapters and their generated surface.
 fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &s.ident;
@@ -2727,6 +2736,22 @@ fn desugar_count_prefix(
 
 /// The `#[bin]` struct path: the codec (`BitDecode`/`BitEncode`) and the
 /// required-by-default builder, folded over a named-field struct.
+/// Only ordinary stored codec fields participate. Callbacks may distinguish Rust
+/// variants with the same discriminant; logical/calculated data is not ours to rewrite.
+pub(crate) fn field_normalizes_aliases(field: &syn::Field) -> syn::Result<bool> {
+    let br = parse_field_br(field)?;
+    Ok(!(br.temp
+        || br.ignore
+        || br.calc.is_some()
+        || br.br_calc.is_some()
+        || br.map.is_some()
+        || br.try_map.is_some()
+        || br.bw_map.is_some()
+        || br.parse_with.is_some()
+        || br.write_with.is_some()))
+}
+
+#[allow(clippy::too_many_lines)] // One front-end owns emitted fields, codec, builder, and validation.
 fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     if args.is_mapped() {
@@ -2754,14 +2779,11 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         desugar_count_prefix(&bnb, &mut named.named, CountPrefixSite::Struct)?;
     }
     let s = &s_desugared;
-    let full_fields = match &s.fields {
-        Fields::Named(n) => n,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                &s.ident,
-                "#[bin] requires a struct with named fields",
-            ));
-        }
+    let Fields::Named(full_fields) = &s.fields else {
+        return Err(syn::Error::new_spanned(
+            &s.ident,
+            "#[bin] requires a struct with named fields",
+        ));
     };
     // `forward_only` pins a `Source`-only bound: a seek directive is then a compile
     // error (it would need a `SeekSource`).
@@ -2843,7 +2865,9 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     // `#[try_str]` fields need adaptive Debug rendering: intercept *only* `Debug` (other
     // derives stay) and emit a custom impl over all stored fields. With no `#[derive(Debug)]`
     // there's nothing to intercept.
-    let mode_extras = if !try_str_idents.is_empty() {
+    let mode_extras = if try_str_idents.is_empty() {
+        quote!()
+    } else {
         let (had_debug, new_attrs) = intercept_debug_derive(&clean.attrs)?;
         if had_debug {
             clean.attrs = new_attrs;
@@ -2865,8 +2889,6 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         } else {
             quote!()
         }
-    } else {
-        quote!()
     };
 
     // The builder is generated directly from the stored fields (so it can run the
@@ -2983,9 +3005,22 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         quote!()
     };
 
+    let mut normalize = Vec::new();
+    for field in &full_fields.named {
+        if field_normalizes_aliases(field)? {
+            let id = &field.ident;
+            normalize.push(crate::builder::normalize_field(
+                &field.ty,
+                &quote!(&mut self.#id),
+            ));
+        }
+    }
+    let normalizer = crate::builder::normalizer_impl(&s.ident, &quote!(#(#normalize)*));
+
     Ok(quote! {
         #ctx_struct
         #clean
+        #normalizer
         #mode_extras
         #validate_methods
         #builder
@@ -3579,6 +3614,7 @@ fn snake_case(ident: &Ident) -> String {
 }
 
 /// The `#[bin]` enum path. See the module banner above.
+#[allow(clippy::too_many_lines)] // Dispatch and generated helpers use one validated variant model.
 fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &e.ident;
@@ -3887,7 +3923,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     };
 
     let prefix_verify = dispatch.prefix.as_ref().map(|m| m.verify("prefix"));
-    let prefix_write = dispatch.prefix.as_ref().map(|m| m.write_const());
+    let prefix_write = dispatch.prefix.as_ref().map(Magic::write_const);
 
     let decode_body = quote! {
         #prefix_verify
@@ -4048,12 +4084,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let kind_name = format_ident!("{}Kind", name);
     let kind_enum = if magic_dispatch && !has_selector && want_decode {
         // The "nothing matched" kind: the tail variant's kind, else an error.
-        let tail_kind = tail_variant
-            .map(|tv| {
-                let k = &tv.variant.ident;
-                quote!(::core::result::Result::Ok(#kind_name::#k))
-            })
-            .unwrap_or_else(|| {
+        let tail_kind = tail_variant.map_or_else(
+            || {
                 quote!(::core::result::Result::Err(
                     #bnb::__private::BitError::convert(
                         #bnb::__private::String::from(concat!(
@@ -4065,7 +4097,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     )
                     .in_field("magic")
                 ))
-            });
+            },
+            |tv| {
+                let k = &tv.variant.ident;
+                quote!(::core::result::Result::Ok(#kind_name::#k))
+            },
+        );
         let decision = if use_peek {
             let max = dispatch
                 .variants
@@ -4336,9 +4373,57 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         None => None,
     };
 
+    let mut normalize_arms = Vec::new();
+    for variant in &e.variants {
+        let mut stored = variant.fields.clone();
+        match &mut stored {
+            Fields::Named(n) => {
+                n.named = n
+                    .named
+                    .iter()
+                    .filter(|f| !field_is_temp(f))
+                    .cloned()
+                    .collect();
+            }
+            Fields::Unnamed(u) => {
+                u.unnamed = u
+                    .unnamed
+                    .iter()
+                    .filter(|f| !field_is_temp(f))
+                    .cloned()
+                    .collect();
+            }
+            Fields::Unit => {}
+        }
+        let ids = variant_bind_idents(&stored);
+        let mut normalize = Vec::new();
+        let mut bindings = Vec::new();
+        let mut named_bindings = Vec::new();
+        for (field, id) in stored.iter().zip(&ids) {
+            if field_normalizes_aliases(field)? {
+                normalize.push(crate::builder::normalize_field(&field.ty, &quote!(#id)));
+                bindings.push(quote!(#id));
+                named_bindings.push(quote!(#id));
+            } else {
+                bindings.push(quote!(_));
+                named_bindings.push(quote!(#id: _));
+            }
+        }
+        let vid = &variant.ident;
+        let pattern = match &stored {
+            Fields::Named(_) => quote!(Self::#vid { #(#named_bindings),* }),
+            Fields::Unnamed(_) => quote!(Self::#vid(#(#bindings),*)),
+            Fields::Unit => quote!(Self::#vid),
+        };
+        normalize_arms.push(quote!(#pattern => { #(#normalize)* }));
+    }
+    let normalizer =
+        crate::builder::normalizer_impl(name, &quote!(match self { #(#normalize_arms),* }));
+
     Ok(quote! {
         #ctx_struct
         #clean
+        #normalizer
         #try_str_debug
         #kind_enum
         #accessor_fn

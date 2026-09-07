@@ -36,7 +36,7 @@
 /// Unsigned LEB128 (`varint`) — 7 payload bits per byte, low group first, high bit set
 /// while more bytes follow. The wire format of protobuf `varint`, WebAssembly, DWARF.
 ///
-/// Generic over the field's integer width via [`Varint`]: the declared field type pins
+/// Generic over the field's integer width via [`leb128::Varint`]: the declared field type pins
 /// the width, so the same `parse`/`write` pair serves `u16` and `u64` fields alike.
 /// Decoding is **bounded and overflow-checked** — a value too large for the field or a
 /// continuation run longer than the width allows is a clean [`BitError`], never a panic
@@ -225,11 +225,11 @@ pub mod cstring {
             .map_err(|e| BitError::convert(format!("invalid UTF-8 in string field: {e}"), start))
     }
 
-    /// Writes the string's UTF-8 bytes followed by the terminator (via [`write`], so an
+    /// Writes the string's UTF-8 bytes followed by the terminator (via [`write()`], so an
     /// embedded `'\0'` is rejected the same way).
     ///
     /// # Errors
-    /// As [`write`].
+    /// As [`write()`].
     pub fn write_utf8<K: Sink>(s: &str, w: &mut K) -> Result<(), BitError> {
         write(s.as_bytes(), w)
     }

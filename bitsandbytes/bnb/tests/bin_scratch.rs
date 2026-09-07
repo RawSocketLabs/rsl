@@ -13,6 +13,7 @@ mod macro_ {
     fn tally_read<S: Source>(r: &mut S) -> Result<u8, BitError> {
         r.read()
     }
+    #[allow(clippy::trivially_copy_pass_by_ref)] // write_with requires a borrowed field.
     fn tally_write<K: Sink>(v: &u8, w: &mut K) -> Result<(), BitError> {
         if let Some(acc) = w.scratch().and_then(|s| s.downcast_mut::<u32>()) {
             *acc += u32::from(*v);
@@ -59,17 +60,19 @@ mod macro_ {
     #[derive(Default)]
     struct BackrefDict(HashMap<u8, u16>);
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // write_with requires a borrowed field.
     fn token_write<K: Sink>(tok: &u8, w: &mut K) -> Result<(), BitError> {
-        let offset = (w.bit_pos() / 8) as u16;
+        let offset = u16::try_from(w.bit_pos() / 8).unwrap();
         let prior = {
             match w.scratch().and_then(|s| s.downcast_mut::<BackrefDict>()) {
-                Some(d) => match d.0.get(tok).copied() {
-                    Some(off) => Some(off),
-                    None => {
+                Some(d) => {
+                    if let Some(off) = d.0.get(tok).copied() {
+                        Some(off)
+                    } else {
                         d.0.insert(*tok, offset);
                         None
                     }
-                },
+                }
                 None => None,
             }
         };

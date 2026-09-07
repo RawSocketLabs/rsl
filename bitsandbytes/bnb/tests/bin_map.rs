@@ -14,8 +14,8 @@ mod macro_ {
     #[derive(Debug, PartialEq, Eq, Clone)]
     struct Reading {
         tag: u4,
-        #[br(map = |raw: u16| Celsius(raw as i16))]
-        #[bw(map = |c: &Celsius| c.0 as u16)]
+        #[br(map = |raw: u16| Celsius(i16::from_ne_bytes(raw.to_ne_bytes())))]
+        #[bw(map = |c: &Celsius| u16::from_ne_bytes(c.0.to_ne_bytes()))]
         temp: Celsius, // wire repr is u16 (from the map's argument), straddling bytes
     }
 

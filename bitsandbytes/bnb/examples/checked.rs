@@ -39,6 +39,7 @@ struct Header {
     name: Vec<u8>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A valid header round-trips.
     let h = Header {

@@ -31,6 +31,7 @@ struct Event {
     label: Option<Label>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A v2 event carries the extra fields.
     let v2 = Event {

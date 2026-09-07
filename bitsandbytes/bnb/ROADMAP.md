@@ -26,6 +26,10 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `iter`, retain-vs-truncate.
 - [x] **`#[derive(BitsBuilder)]`** — required-by-default builder; `build()` names the
       first unset field; `#[builder(default)]` / `#[builder(default = expr)]`.
+- [x] **Automatic enum-alias normalization** — generated builders resolve fields, then
+      normalize named-discriminant aliases before validation. `NormalizeEnumAliases`
+      recurses through ordinary generated types and `Vec`/`Option`/arrays; custom-codec
+      and logical-only boundaries stay opaque. Unknown discriminants remain lossless.
 
 ## The `#[bin]` whole-message codec
 
@@ -252,13 +256,13 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       committed snapshot is the reviewed baseline (regenerate deliberately on a real
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
-- [x] `cargo-semver-checks` in CI (`semver-checks` job, pinned to `0.48`) — checks the
-      runtime crate against the latest release tag (`v{version}`, auto-advancing). **Run as
-      informational** (`continue-on-error`): it surfaces SemVer breakage early as a heads-up
-      but does not block, because release-plz already runs cargo-semver-checks and owns the
-      version bump at release time (a break becomes a 0.x minor in the release PR). A
-      blocking gate would force in-PR version bumps that fight that model. Complements
-      `public-api` (which flags *any* surface change).
+- [x] `cargo-semver-checks` in CI (`semver` job, pinned to `0.50.0`) — blocking
+      source-compatibility comparisons against published `0.3.2`, with all features
+      and separately default and no default features. Explicit `--release-type minor` allows additive API
+      without hand-editing versions; release-plz still owns version bumps. The 0.4
+      builder behavior change needs a breaking commit marker and consumer/UI tests:
+      rustdoc comparison cannot detect macro-expansion or behavioral changes.
+      Advance the explicit baseline deliberately after release.
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
 
 ### D. Docs & migration

@@ -1,4 +1,4 @@
-//! **arbitrary_width** — arbitrary bit widths and a *wide* enum in one sub-byte message.
+//! **`arbitrary_width`** — arbitrary bit widths and a *wide* enum in one sub-byte message.
 //!
 //! `SyncPat` is a 48-bit `#[derive(BitEnum)]`: it tracks a long sync/magic word that is far too
 //! wide for an ordinary small enum. It sits between two `u3` fields, so the whole `Frame` is
@@ -31,6 +31,7 @@ struct Frame {
     trail: u3,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // 1. A frame carrying the recognized sync word round-trips through its named variant.
     let known = Frame {

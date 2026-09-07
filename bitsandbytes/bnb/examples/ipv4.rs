@@ -103,6 +103,7 @@ impl Ipv4Header {
     /// RFC 791 header checksum: the one's-complement of the one's-complement sum of the
     /// header's 16-bit words (the checksum field taken as zero). Computed from the
     /// fields — never by re-encoding, which would recurse back through `calc`.
+    #[allow(clippy::cast_possible_truncation)] // RFC 791 splits addresses into low 16-bit words.
     fn header_checksum(&self) -> u16 {
         let words = [
             (u16::from(self.ver_ihl.to_raw()) << 8) | u16::from(self.tos.to_raw()),

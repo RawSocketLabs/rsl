@@ -1,4 +1,4 @@
-//! **unix_stream** — `MessageStream` over a Unix-domain **stream** socket (not TCP). The wrapper
+//! **`unix_stream`** — `MessageStream` over a Unix-domain **stream** socket (not TCP). The wrapper
 //! is generic over any `Read + Write`, so `MessageStream<UnixStream>` is a request/response
 //! connection over a filesystem socket with the *same* `read_message`/`write_message` API as the
 //! TCP case in `sockets`. (The stream counterpart to that example's Unix *datagram* demo.)
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(?req, "unix server ← request");
             match req {
                 Message::Echo { text } => {
-                    conn.write_message(&Message::Echo { text }).expect("write")
+                    conn.write_message(&Message::Echo { text }).expect("write");
                 }
                 Message::Bye => break,
             }

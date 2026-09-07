@@ -25,6 +25,7 @@ struct Index {
     entries: Vec<Entry>,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() -> Result<(), bnb::BitError> {
     let blob_a = b"hello".as_slice();
     let blob_b = b"world!!".as_slice();
@@ -32,17 +33,17 @@ fn main() -> Result<(), bnb::BitError> {
     // header = count-prefix byte + 2 entries — the entry size is DERIVED from the type
     // (`Entry` is a fixed `#[bin]` message), so adding a field can't silently skew offsets.
     let header_len = 1 + 2 * (<Entry as bnb::FixedBitLen>::BIT_LEN / 8) as usize;
-    let off_a = header_len as u32;
-    let off_b = off_a + blob_a.len() as u32;
+    let off_a = u32::try_from(header_len).expect("two-entry example index fits u32");
+    let off_b = off_a + u32::try_from(blob_a.len()).expect("example blob fits u32");
     let index = Index {
         entries: vec![
             Entry {
                 offset: off_a,
-                len: blob_a.len() as u16,
+                len: u16::try_from(blob_a.len()).expect("example blob fits u16"),
             },
             Entry {
                 offset: off_b,
-                len: blob_b.len() as u16,
+                len: u16::try_from(blob_b.len()).expect("example blob fits u16"),
             },
         ],
     };

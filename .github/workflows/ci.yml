@@ -51,10 +51,20 @@ jobs:
               - 'rust-toolchain.toml'
               - 'rustfmt.toml'
               - 'deny.toml'
-              - '.github/workflows/ci.yml'
+              - '.cargo/config.toml'
+              - 'release-plz.toml'
+              - '.github/workflows/**'
+              - '.github/actionlint.yaml'
             bnb:
               - 'bitsandbytes/**'
-              - '.github/workflows/ci.yml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.cargo/config.toml'
+              - 'deny.toml'
+              - 'release-plz.toml'
+              - '.github/workflows/**'
+              - '.github/actionlint.yaml'
             crypto:
               - 'crypto/**'
               - '.github/workflows/ci.yml'
@@ -93,6 +103,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets
+      - run: cargo clippy -p bitsandbytes -p bitsandbytes-macros --all-targets --all-features -- -D warnings
 
   test:
     name: build + test
@@ -107,6 +118,13 @@ jobs:
       # bnb feature ladders that aren't on the default path.
       - run: cargo test -p bitsandbytes --features bytes
       - run: cargo test -p bitsandbytes --features mock
+      - run: cargo test -p bitsandbytes --all-features
+      - name: bnb documentation (warnings are errors)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc -p bitsandbytes -p bitsandbytes-macros --all-features --no-deps
+          cargo doc -p bitsandbytes --no-default-features --no-deps
       # rawsock's privileged L3/L2 backends + the protocols' rawsock-injection layers, plus the
       # dns resolver client — all behind opt-in features, off the default path. The `inject`/
       # `link`/`network` capability-consistency tests run unprivileged; the real sends skip.
@@ -141,6 +159,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
+      - run: cargo check -p bitsandbytes --all-features
+      - run: cargo check --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml
 
   no_std:
     name: no_std (bare-metal target)
@@ -203,6 +223,33 @@ jobs:
       # libc is incompatible with the ASan sanitizer (and musl std isn't installed).
       - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
       - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
+
+  semver:
+    name: bnb source compatibility (0.3.2 baseline)
+    needs: changes
+    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks@0.50.0
+      # 0.4.0 changes builder behavior, but promises additive source API changes.
+      # Macro expansion/behavior remains covered by the consumer and UI tests.
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --all-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --default-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.3.2 --release-type minor --only-explicit-features
+
+  workflow-lint:
+    name: workflow syntax
+    needs: changes
+    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker://rhysd/actionlint:1.7.12
 
   fuzz-crypto:
     name: cargo-fuzz (rsl-crypto boundaries, smoke run)
@@ -313,7 +360,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, fuzz, fuzz-crypto, fuzz-pki, ffi, blessed-sync, rust-skills]
+    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, semver, workflow-lint, fuzz, fuzz-crypto, fuzz-pki, ffi, blessed-sync, rust-skills]
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Fail if any needed job failed or was cancelled

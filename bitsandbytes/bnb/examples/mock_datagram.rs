@@ -1,4 +1,4 @@
-//! **mock_datagram** — testing `MessageDatagram` code with the `mock` feature, no real socket.
+//! **`mock_datagram`** — testing `MessageDatagram` code with the `mock` feature, no real socket.
 //!
 //! `net`'s [`DatagramSocket`](bnb::DatagramSocket) trait is *sealed* (only `bnb` implements it), so
 //! to unit-test datagram logic you reach for [`MockDatagramSocket`](bnb::MockDatagramSocket) (the
@@ -42,6 +42,7 @@ fn serve_one<D: DatagramSocket<Addr = SocketAddr>>(
     Ok(())
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A server over the mock — nothing bound to the network.
     let mut server = MessageDatagram::new(MockDatagramSocket::new());

@@ -23,6 +23,7 @@ struct Entry {
     flags: u8,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let e = Entry {
         id: 42,

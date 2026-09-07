@@ -62,7 +62,7 @@ impl<S> MessageStream<S> {
     /// Wrap a stream with a **bounded** read buffer: a peer that streams bytes which never
     /// complete a message can only grow the buffer to `cap` bytes before
     /// [`read_message`](Self::read_message) fails with
-    /// [`ErrorKind::BufferFull`](crate::ErrorKind::BufferFull), rather than consuming memory
+    /// [`ErrorKind::BufferFull`], rather than consuming memory
     /// without bound. The bounded counterpart to [`new`](Self::new) for untrusted streams.
     pub fn bounded(inner: S, cap: usize) -> Self {
         Self {

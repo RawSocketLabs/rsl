@@ -1,4 +1,4 @@
-//! **tokio_framed** — [`bnb::BinCodec`] (the `tokio` feature) framing `#[bin]` messages over an
+//! **`tokio_framed`** — [`bnb::BinCodec`] (the `tokio` feature) framing `#[bin]` messages over an
 //! async `Framed` TCP stream, against a real client/server.
 //!
 //! `BinCodec<T>` is `tokio_util`'s `Decoder`/`Encoder` for *any* `#[bin]` message, so

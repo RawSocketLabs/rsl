@@ -11,7 +11,8 @@
 //! Flamegraph: cargo bench -p bnb -- --profile-time 5
 //! (Reports under target/criterion/.)
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 // --- `bnb` ----------------------------------------------------------------
 use bnb::{BitEnum, bitfield, u4, u5, u7};
@@ -25,12 +26,13 @@ struct BitsState {
 }
 
 // --- `bitbybit` (the dns crate's choice) ----------------------------------
+#[allow(unreachable_pub)] // bitbybit generates public helper items inside this private comparison module.
 mod bb {
     pub(crate) use arbitrary_int::{u4, u5, u7};
     use bitbybit::bitfield;
 
     #[bitfield(u16, default = 0)] // bitbybit already generates Clone/Copy
-    pub struct State {
+    pub(crate) struct State {
         #[bits(11..=15, rw)]
         pub a: u5,
         #[bits(4..=10, rw)]
@@ -65,7 +67,7 @@ fn bench_pack(c: &mut Criterion) {
                 .with_a(u5::new(black_box(2)))
                 .with_b(u7::new(black_box(42)))
                 .with_c(u4::new(black_box(2)))
-        })
+        });
     });
     g.bench_function("bitbybit", |bn| {
         bn.iter(|| {
@@ -73,7 +75,7 @@ fn bench_pack(c: &mut Criterion) {
                 .with_a(bb::u5::new(black_box(2)))
                 .with_b(bb::u7::new(black_box(42)))
                 .with_c(bb::u4::new(black_box(2)))
-        })
+        });
     });
     g.bench_function("modular_bitfield", |bn| {
         bn.iter(|| {
@@ -81,7 +83,7 @@ fn bench_pack(c: &mut Criterion) {
                 .with_a(black_box(2))
                 .with_b(black_box(42))
                 .with_c(black_box(2))
-        })
+        });
     });
     g.bench_function("handwritten", |bn| {
         bn.iter(|| {
@@ -89,7 +91,7 @@ fn bench_pack(c: &mut Criterion) {
             let b = black_box(42u16);
             let c = black_box(2u16);
             ((a & 0x1F) << 11) | ((b & 0x7F) << 4) | (c & 0xF)
-        })
+        });
     });
     g.finish();
 }
@@ -109,19 +111,19 @@ fn bench_unpack(c: &mut Criterion) {
     let mut g = c.benchmark_group("unpack");
     g.bench_function("bnb", |bn| {
         let s = black_box(bits_s);
-        bn.iter(|| s.a().value() as u16 + s.b().value() as u16 + s.c().value() as u16)
+        bn.iter(|| u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value()));
     });
     g.bench_function("bitbybit", |bn| {
         let s = black_box(bb_s);
-        bn.iter(|| s.a().value() as u16 + s.b().value() as u16 + s.c().value() as u16)
+        bn.iter(|| u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value()));
     });
     g.bench_function("modular_bitfield", |bn| {
         let s = black_box(mb_s);
-        bn.iter(|| s.a() as u16 + s.b() as u16 + s.c() as u16)
+        bn.iter(|| u16::from(s.a()) + u16::from(s.b()) + u16::from(s.c()));
     });
     g.bench_function("handwritten", |bn| {
         let v = black_box(raw);
-        bn.iter(|| ((v >> 11) & 0x1F) + ((v >> 4) & 0x7F) + (v & 0xF))
+        bn.iter(|| ((v >> 11) & 0x1F) + ((v >> 4) & 0x7F) + (v & 0xF));
     });
     g.finish();
 }
@@ -133,11 +135,11 @@ fn bench_bytes_roundtrip(c: &mut Criterion) {
     let mut g = c.benchmark_group("bytes_roundtrip");
     g.bench_function("bnb", |bn| {
         let s = black_box(bits_s);
-        bn.iter(|| BitsState::from_be_bytes(black_box(s.to_be_bytes())))
+        bn.iter(|| BitsState::from_be_bytes(black_box(s.to_be_bytes())));
     });
     g.bench_function("modular_bitfield", |bn| {
         let s = black_box(mb_s);
-        bn.iter(|| mb::State::from_bytes(black_box(s.into_bytes())))
+        bn.iter(|| mb::State::from_bytes(black_box(s.into_bytes())));
     });
     g.finish();
 }
@@ -156,14 +158,14 @@ fn bench_primitives(c: &mut Criterion) {
     let mut g = c.benchmark_group("primitives");
     g.bench_function("bnb_uint_new", |bn| bn.iter(|| u5::new(black_box(17))));
     g.bench_function("arbitrary_int_new", |bn| {
-        bn.iter(|| bb::u5::new(black_box(17)))
+        bn.iter(|| bb::u5::new(black_box(17)));
     });
     g.bench_function("bnb_enum_decode", |bn| {
-        bn.iter(|| <Code as bnb::Bits>::from_bits(black_box(9)))
+        bn.iter(|| <Code as bnb::Bits>::from_bits(black_box(9)));
     });
     g.bench_function("bnb_enum_encode", |bn| {
         let v = black_box(Code::Other(u4::new(9)));
-        bn.iter(|| <Code as bnb::Bits>::into_bits(v))
+        bn.iter(|| <Code as bnb::Bits>::into_bits(v));
     });
     g.finish();
 }

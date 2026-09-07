@@ -19,7 +19,7 @@ use crate::bitstream::{BitDecode, BitEncode, BitError, CountPrefix, FixedBitLen,
 use crate::field::Bits;
 
 /// A wire length/count field: [`Auto`](Self::Auto)-derived by default, or an explicit
-/// [`Set`](Self::Set) override. See the [module docs](self).
+/// [`Set`](Self::Set) override. See the [directive guide](crate::guide::directives).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum WireLen<T> {
     /// Derive this length from its declared target when the message is encoded.

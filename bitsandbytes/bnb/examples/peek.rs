@@ -20,6 +20,7 @@ struct Frame {
     length: u16,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() -> Result<(), bnb::BitError> {
     let wire = vec![0x07, 0x12, 0x34]; // type = 7, length = 0x1234
     let mut src = SeekReader::new(Cursor::new(wire));

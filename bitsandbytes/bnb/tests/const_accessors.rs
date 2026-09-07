@@ -67,9 +67,9 @@ mod macro_ {
         rest: u7,
     }
 
-    const LSB: Lsb = Lsb::new().with_lo(u24::new(0xBEEF42)).with_flag(true);
+    const LSB: Lsb = Lsb::new().with_lo(u24::new(0x00BE_EF42)).with_flag(true);
     const _: () = {
-        assert!(LSB.lo().value() == 0xBEEF42);
+        assert!(LSB.lo().value() == 0x00BE_EF42);
         assert!(LSB.flag());
         assert!(LSB.rest().value() == 0);
     };
@@ -296,7 +296,7 @@ mod macro_ {
                 self.0.value() as u128
             }
             const fn from_bits(raw: u128) -> Self {
-                Percent(u7::from_raw(raw as u8))
+                Percent(u7::from_raw(raw.to_le_bytes()[0]))
             }
         }
     }

@@ -1,4 +1,4 @@
-//! **wire_map** — a logical type that serializes via a separate *wire* type, using the
+//! **`wire_map`** — a logical type that serializes via a separate *wire* type, using the
 //! conversion-trait form `#[bin(wire = W)]`.
 //!
 //! `Rgb` is the friendly logical type; `WireColor` is its byte layout on the wire. The
@@ -27,16 +27,13 @@ struct Rgb(u32);
 
 impl From<WireColor> for Rgb {
     fn from(w: WireColor) -> Self {
-        Rgb((w.r as u32) << 16 | (w.g as u32) << 8 | w.b as u32)
+        Rgb(u32::from(w.r) << 16 | u32::from(w.g) << 8 | u32::from(w.b))
     }
 }
 impl From<&Rgb> for WireColor {
     fn from(c: &Rgb) -> Self {
-        WireColor {
-            r: (c.0 >> 16) as u8,
-            g: (c.0 >> 8) as u8,
-            b: c.0 as u8,
-        }
+        let [_, r, g, b] = c.0.to_be_bytes();
+        WireColor { r, g, b }
     }
 }
 // `WireColor` is fixed-size, so this one line lets `Rgb` nest as a plain field *and*
@@ -54,6 +51,7 @@ struct Pixel {
     alpha: u8,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // The mapped type encodes/decodes like any `#[bin]` message — the mapping is invisible here.
     let c = Rgb(0x11_22_33);

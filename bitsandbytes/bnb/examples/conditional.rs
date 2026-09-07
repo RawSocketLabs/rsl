@@ -20,8 +20,8 @@ struct Battery {
     millivolts: u16,
 }
 
-/// The presence flags — one wire byte, bits auto-assigned LSB-first (bit0 = has_auth,
-/// bit1 = has_battery), read through named accessors instead of `& 0x01` masks.
+/// The presence flags — one wire byte, bits auto-assigned LSB-first (bit0 = `has_auth`,
+/// bit1 = `has_battery`), read through named accessors instead of `& 0x01` masks.
 #[bitflags(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 struct Presence {
@@ -36,8 +36,8 @@ struct Reading {
 
     flags: Presence,
 
-    #[br(map = |raw: u16| Celsius(raw as i16 as f32 / 100.0))]
-    #[bw(map = |c: &Celsius| ((c.0 * 100.0) as i16) as u16)]
+    #[br(map = |raw: u16| Celsius(f32::from(i16::from_ne_bytes(raw.to_ne_bytes())) / 100.0))]
+    #[bw(map = encode_temperature)]
     temp: Celsius,
 
     #[br(if(flags.has_auth()))]
@@ -47,6 +47,13 @@ struct Reading {
     battery: Option<Battery>, // an optional nested message
 }
 
+#[allow(clippy::cast_possible_truncation)] // Quantize hundredths of a degree to signed 16-bit storage.
+#[allow(clippy::trivially_copy_pass_by_ref)] // The wire-map callback borrows the field.
+fn encode_temperature(c: &Celsius) -> u16 {
+    u16::from_ne_bytes(((c.0 * 100.0) as i16).to_ne_bytes())
+}
+
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A full reading: auth token + battery present.
     let full = Reading {

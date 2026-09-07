@@ -84,21 +84,21 @@ LEB128 varints, NUL-terminated and length-prefixed strings — ship ready-made i
 `Vec<u8>` and owns variable-length payloads), but not `std`. Build with
 `default-features = false` for an embedded target.
 
-- **`std`** *(default)* — the `std::io` ladder ([`StreamBitReader`], [`BufSource`],
-  [`SeekReader`], [`Source::as_read`]/[`Sink::as_write`]), the `From<std::io::Error>`
-  bridge, and the `encode(writer)` convenience ([`EncodeExt`]). The `#[br(dbg)]`
+- **`std`** *(default)* — the `std::io` ladder (`StreamBitReader`, `BufSource`,
+  `SeekReader`, `Source::as_read`/`Sink::as_write`), the `From<std::io::Error>`
+  bridge, and the `encode(writer)` convenience (`EncodeExt`). The `#[br(dbg)]`
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
-- **`tokio`** — [`BinCodec`], a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
+- **`tokio`** — `BinCodec`, a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
   message: `Framed::new(tcp, BinCodec::<T>::new())` (a stream) or `UdpFramed::new(udp, …)` (a
   datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
   This **is** bnb's async support: a native async `Source`/`Sink` family is deliberately out of
   scope (the codec is in-memory and fast; framing is the async boundary, and `BinCodec` covers it).
-- **`net`** — ergonomic `std` socket helpers: [`MessageStream`] (whole-message read/write over
-  any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and [`MessageDatagram`] (`send_message`/
-  `recv_message` over a sealed [`DatagramSocket`] — `UdpSocket` or `UnixDatagram`). Implies `std`.
+- **`net`** — ergonomic `std` socket helpers: `MessageStream` (whole-message read/write over
+  any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and `MessageDatagram` (`send_message`/
+  `recv_message` over a sealed `DatagramSocket` — `UdpSocket` or `UnixDatagram`). Implies `std`.
 - **`mock`** — test-only in-memory transports for exercising `net` code without a real socket:
-  [`MockDatagramSocket`] (a [`DatagramSocket`]) and [`MockStream`] (a `Read + Write`, with chunked
+  `MockDatagramSocket` (a `DatagramSocket`) and `MockStream` (a `Read + Write`, with chunked
   delivery to drive the read-more path). Put it in your `[dev-dependencies]`. Implies `net`.
 
 Without `std` you still get the full macro surface plus: decode from a `&[u8]`
@@ -212,14 +212,14 @@ pub use net::{DatagramSocket, MessageDatagram, MessageStream};
 pub use net::{MockDatagramSocket, MockStream};
 
 /// Common imports for the codec — the typed positioning amounts (`4.bits()`,
-/// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the [`EncodeExt`] trait that
+/// `3.bytes()`) used by `#[br(pad_before = …)]` etc., plus the `EncodeExt` trait that
 /// carries `encode(writer)` (the `std` feature).
 pub mod prelude {
     pub use crate::BitAmount;
     #[cfg(feature = "std")]
     pub use crate::EncodeExt;
 }
-pub use builder::BuilderError;
+pub use builder::{BuilderError, NormalizeEnumAliases};
 pub use error::{UnknownDiscriminant, WidthError};
 pub use field::{BitOrder, Bitfield, Bits, ByteOrder};
 pub use int::{UInt, *};
@@ -247,6 +247,7 @@ pub mod __private {
         read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write, verify_magic,
         write_byte_array, write_mapped,
     };
+    pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;
     pub use crate::field::{BitOrder, Bitfield, Bits, ByteOrder};
     pub use crate::wirelen::WireLen;

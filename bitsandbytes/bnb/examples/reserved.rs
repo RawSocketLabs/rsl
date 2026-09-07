@@ -18,6 +18,7 @@ struct Frame {
     payload: u16,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     // A peer left non-spec bits in the reserved nibble; the decoder captures them verbatim.
     let received = Frame::decode_exact(&[0x5F, 0x12, 0x34]).unwrap();

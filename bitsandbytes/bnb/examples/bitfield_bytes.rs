@@ -1,4 +1,4 @@
-//! **bitfield_bytes** — a `#[bitfield]`'s declared byte order (`bytes = big|le`) drives
+//! **`bitfield_bytes`** — a `#[bitfield]`'s declared byte order (`bytes = big|le`) drives
 //! `to_bytes()`/`from_bytes()`, while `to_be_bytes`/`to_le_bytes` are the explicit override.
 //!
 //! The *same* logical value, declared big- vs little-endian, serializes to *different* wire bytes
@@ -28,6 +28,7 @@ struct TagLe {
     lo: u4,
 }
 
+#[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
 fn main() {
     let be = TagBe::new()
         .with_hi(u4::new(0xA))

@@ -19,8 +19,8 @@ mod macro_ {
     }
 
     #[bin(
-        map = |w: WirePoint| Point { x: w.x_biased as i16 - 128, y: w.y_biased as i16 - 128 },
-        bw_map = |p: &Point| WirePoint { x_biased: (p.x + 128) as u8, y_biased: (p.y + 128) as u8 }
+        map = |w: WirePoint| Point { x: i16::from(w.x_biased) - 128, y: i16::from(w.y_biased) - 128 },
+        bw_map = |p: &Point| WirePoint { x_biased: (p.x + 128).to_le_bytes()[0], y_biased: (p.y + 128).to_le_bytes()[0] }
     )]
     #[derive(Debug, Clone, PartialEq)]
     struct Point {
@@ -125,16 +125,16 @@ mod macro_ {
     impl From<WireCoord> for Coord {
         fn from(w: WireCoord) -> Self {
             Coord {
-                x: w.x as i16 - 128,
-                y: w.y as i16 - 128,
+                x: i16::from(w.x) - 128,
+                y: i16::from(w.y) - 128,
             }
         }
     }
     impl From<&Coord> for WireCoord {
         fn from(c: &Coord) -> Self {
             WireCoord {
-                x: (c.x + 128) as u8,
-                y: (c.y + 128) as u8,
+                x: (c.x + 128).to_le_bytes()[0],
+                y: (c.y + 128).to_le_bytes()[0],
             }
         }
     }
@@ -193,7 +193,7 @@ mod macro_ {
     impl From<&Text> for WireText {
         fn from(t: &Text) -> Self {
             WireText {
-                n: t.0.len() as u8,
+                n: u8::try_from(t.0.len()).unwrap(),
                 data: t.0.as_bytes().to_vec(),
             }
         }

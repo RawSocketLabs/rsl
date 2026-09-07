@@ -1,6 +1,6 @@
 # Conventional Commits -> SemVer, automated by release-plz.
 #
-# Two jobs run on every push to `main`:
+# Jobs run only after successful push CI for the exact current `main` commit:
 #   * release-plz-pr      — opens/updates a "release" PR that bumps each crate's
 #                           version (from the commits since its last tag) and
 #                           updates its CHANGELOG.md. Merging that PR is what
@@ -12,30 +12,83 @@
 #                           bitsandbytes pair and rsl-netlink). GitHub Releases stay disabled
 #                           (`git_release_enable = false`).
 #
-# Token note: PRs opened with the default GITHUB_TOKEN do NOT trigger other
-# workflows (so CI won't run on the release PR). To get CI on the release PR,
-# add a Personal Access Token or GitHub App token as the `RELEASE_PLZ_TOKEN`
-# secret; the job falls back to GITHUB_TOKEN when it is absent.
+# RELEASE_PLZ_TOKEN must be a user/App token so the release PR triggers CI.
+# A missing token is an error, never a fallback to GITHUB_TOKEN.
 name: release-plz
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+# Serialize the entire tag/publish/PR sequence, not just PR creation.
+concurrency:
+  group: release-plz-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
+  candidate:
+    name: verify successful CI candidate
+    if: >-
+      github.repository_owner == 'RawSocketLabs' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - name: Verify workflow identity and current main SHA
+        id: verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" |
+            jq -e --arg sha "$CANDIDATE_SHA" '
+              .path == ".github/workflows/ci.yml" and
+              .head_sha == $sha and .event == "push" and .conclusion == "success"'
+          main_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$main_sha" != "$CANDIDATE_SHA" ]; then
+            echo "Superseded CI run; wait for the current main commit."
+            exit 0
+          fi
+          echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
   # Tag a freshly merged release PR and publish the opted-in crates (no GH release).
   release-plz-release:
     name: release-plz release (tags + scoped publish)
+    needs: candidate
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: ${{ github.repository_owner == 'RawSocketLabs' }}
+    if: needs.candidate.outputs.sha != ''
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: main
+      - name: Fail closed before release side effects
+        env:
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -n "$CARGO_REGISTRY_TOKEN" || { echo "::error::CARGO_REGISTRY_TOKEN is required"; exit 1; }
+          test -n "$RELEASE_PLZ_TOKEN" || { echo "::error::RELEASE_PLZ_TOKEN is required"; exit 1; }
       - uses: dtolnay/rust-toolchain@stable
       - uses: release-plz/action@v0.5
         with:
@@ -54,19 +107,23 @@ jobs:
     # The release job creates tags after a release PR merge. Analyze the next
     # release only after that job finishes so git-only version discovery never
     # races against tag creation and regenerates the release that just merged.
-    needs: release-plz-release
+    needs: [candidate, release-plz-release]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: ${{ github.repository_owner == 'RawSocketLabs' }}
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: main
+      - name: Require the verified candidate before updating release PRs
+        env:
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: dtolnay/rust-toolchain@stable
       - uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

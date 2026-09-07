@@ -430,6 +430,12 @@ pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// first unset **required** field. A field is optional only with
 /// `#[builder(default)]` (`Default::default()` if unset) or
 /// `#[builder(default = expr)]`. Coexists with the infallible infix `with_*`.
+/// After resolving fields, `build()` normalizes enum catch-all aliases to named
+/// variants, before any `#[bin(validate = ...)]` check. Unknown codes are retained.
+/// Ordinary generated fields and `Vec`/`Option`/arrays recurse; custom codec/mapping
+/// directives and logical/calculated fields stay opaque. Direct construction and
+/// immutable validation are unchanged. See `bnb::NormalizeEnumAliases` and the
+/// builder guide for compatibility and traversal boundaries.
 ///
 /// On a `#[bitfield]` struct, list `#[bitfield(...)]` **above** the `#[derive]`
 /// so it intercepts this marker.

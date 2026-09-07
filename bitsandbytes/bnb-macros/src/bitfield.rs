@@ -240,13 +240,15 @@ fn parse_view(attr: &Attribute) -> syn::Result<View> {
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as Args);
     let item = parse_macro_input!(item as ItemStruct);
-    match expand_inner(args, item) {
+    match expand_inner(&args, &item) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
+// The generated accessors share the same layout constants and const-dispatch model.
+#[allow(clippy::too_many_lines)]
+fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let name = &item.ident;
     let vis = &item.vis;
@@ -263,7 +265,7 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
         quote!(#[derive(#(#derive_paths),*)])
     };
 
-    let fields = collect_fields(&item)?;
+    let fields = collect_fields(item)?;
     let manual = fields.iter().any(|f| matches!(f.spec, Spec::Range(..)));
     if manual && !fields.iter().all(|f| matches!(f.spec, Spec::Range(..))) {
         return Err(syn::Error::new_spanned(
@@ -312,7 +314,8 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 
     // 2. Total declared width: sum of field widths (auto) or backing width (manual).
     let width_expr = if manual {
-        let bits = (backing_bytes * 8) as u32;
+        let bits =
+            u32::try_from(backing_bytes * 8).expect("backing primitive has at most 128 bits");
         quote!(#bits)
     } else {
         let sum = fields.iter().map(width_ident);
@@ -726,14 +729,11 @@ fn expand_inner(args: Args, item: ItemStruct) -> syn::Result<TokenStream2> {
 }
 
 fn collect_fields(item: &ItemStruct) -> syn::Result<Vec<Field>> {
-    let named = match &item.fields {
-        syn::Fields::Named(n) => n,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                &item.ident,
-                "#[bitfield] requires a struct with named fields",
-            ));
-        }
+    let syn::Fields::Named(named) = &item.fields else {
+        return Err(syn::Error::new_spanned(
+            &item.ident,
+            "#[bitfield] requires a struct with named fields",
+        ));
     };
     named
         .named
