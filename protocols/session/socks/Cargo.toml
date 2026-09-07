@@ -1,0 +1,33 @@
+[package]
+name = "socks"
+version = "0.1.0"
+description = "SOCKS protocol wire codecs on the bnb bit-aware codec"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The SOCKS5 wire format includes std::net address types, whose bnb codecs are std-gated.
+bnb = { workspace = true, features = ["std"] }
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+blocking = []
+tokio = ["dep:tokio"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "session_blocking"
+required-features = ["blocking"]
+
+[[test]]
+name = "session_async"
+required-features = ["tokio"]
+
+[lints]
+workspace = true

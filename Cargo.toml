@@ -25,6 +25,7 @@ members = [
     "protocols/transport/udp",
     "protocols/network/ip",
     "protocols/network/icmp",
+    "protocols/session/socks",
     "protocols/application/dns",
     # Linux kernel/userspace protocols
     "protocols/system/netlink",

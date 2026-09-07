@@ -141,7 +141,8 @@ corpus name once compliance tracking is wired.
 | `application/dns` | application | 0.1.0 | functional (codec + UDP resolver client) | `dns` (RFC 1034/1035) |
 | `link/arp` | link | 0.1.0 | functional (packet codec + rawsock injection) | `arp` (RFC 826) |
 | `system/netlink` | system | 0.1.0 | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
-| `session/socks`; `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
+| `session/socks` | session | 0.1.0 | dev (SOCKS5 codecs, blocking/Tokio CONNECT clients and servers) | `socks` (RFC 1928/1929) |
+| `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
 
 The roadmap of protocols-to-come lives here, not as empty member dirs — a crate joins
 `[workspace] members` only when it exists.

@@ -3789,6 +3789,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "socks"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
