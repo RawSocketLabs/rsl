@@ -486,7 +486,7 @@ the original must survive. No borrowed `as_` view or implicit-clone helper is ad
 
 The helper does not allocate, validate, repair lengths/reserved fields, or expand
 traversal through opaque fields. Generated builders, macros, and wire behavior
-are unchanged. This is a runtime-only additive release, expected as `0.4.1` with
+are unchanged. This shipped as a runtime-only additive release, `0.4.1` with
 macros remaining `0.4.0`. CI's source baseline advances to published `0.4.0` in
 all/default/no-default feature modes with `--release-type patch`; release-plz still
 selects actual versions.
@@ -497,8 +497,9 @@ delegation makes the non-Clone unit test fail; restoring it passes. Strict bnb/m
 Clippy, configured workspace Clippy, denied-warning all-feature/no-default docs,
 Rust 1.85 workspace/all-feature/renamed-consumer checks, and bare-metal compilation
 pass. The pinned API snapshot is additive; all three 0.4.0 compatibility checks,
-cargo-deny, benchmark smoke, and two million fuzz inputs pass. Hosted CI and the
-generated release candidate remain delivery gates. Independent review found no
+cargo-deny, benchmark smoke, and two million fuzz inputs pass. All fifteen container
+validation jobs, hosted CI, and the generated release candidate passed; PRs #73/#74
+were merged and the runtime published under `michael-smythe`. Independent review found no
 remaining issues after tightening compatibility checks to the patch release class.
 The next smallest consumer change is SOCKS immutable method validation using the
 consuming helper on copied methods; no protocol surface expansion is needed.
