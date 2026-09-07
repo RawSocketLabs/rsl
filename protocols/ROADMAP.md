@@ -48,7 +48,13 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        checksum verifies (a composed ping is a real, valid packet).
 4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
        protocol-to-protocol chain.
-5. [ ] Application protocols as demand dictates: `tftp`, `socks`, `smb`, `nbt`, `ssh`, …
+5. [~] **`session/socks`** — RFC 1928/1929 wire slices implemented on `bnb`: method negotiation,
+       complete method/CMD/REP/ATYP registries, IPv4/domain/IPv6 endpoints, requests, replies, and
+       username/password authentication messages. Blocking and optional Tokio CONNECT clients,
+       embedded server handshakes, and bounded listening proxies now share strict session
+       validation, explicit authentication/destination policy, and half-close-aware relay.
+       Remaining: explicit raw/malformed codec, GSS-API, UDP ASSOCIATE, BIND, SOCKS4, and SOCKS4A.
+       Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## bnb co-evolution — gaps the DNS port is expected to surface
 

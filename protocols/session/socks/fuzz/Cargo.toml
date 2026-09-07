@@ -1,0 +1,22 @@
+# Isolated libFuzzer workspace; the production crate stays stable and dependency-light.
+[package]
+name = "socks-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+socks = { path = "..", features = ["blocking"] }
+
+[[bin]]
+name = "session"
+path = "fuzz_targets/session.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
