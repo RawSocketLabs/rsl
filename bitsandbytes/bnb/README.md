@@ -8,14 +8,14 @@ unified `#[bin]` whole-message macro for binary protocols. No external codec
 dependency — `bnb` is self-contained.
 
 Published on crates.io as **`bitsandbytes`**; import it as `bnb`:
-`bnb = { package = "bitsandbytes", version = "0.4" }`. Docs: <https://docs.rs/bitsandbytes>.
+`bnb = { package = "bitsandbytes", version = "0.5" }`. Docs: <https://docs.rs/bitsandbytes>.
 
-The **unreleased 0.5 candidate** extends `BitBuf` with detailed incremental attempts,
+Version **0.5** extends `BitBuf` with detailed incremental attempts,
 finite EOF, and context/read-only support; stream helpers preserve buffered tails across
 protocol handoff. It changes `push` to a fallible operation and replaces lossy stream
 extraction. See the [I/O guide](src/guide/io.rs) for usage and
 [design/migration decisions](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
-These new APIs are not available from the 0.4 dependency above.
+These APIs require 0.5; see the migration notes when upgrading from 0.4.
 
 `bnb` collapses a stack of overlapping helpers — `modular-bitfield(-msb)`,
 `bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a `binrw`-style
