@@ -3,6 +3,195 @@
 mod integration {
     use bnb::{BitBuf, BitError, ErrorKind, Source, bin};
 
+    // Sample representative contents at every shorter length, including bytes that
+    // will ultimately produce a hard error. Atomic producers do not inspect them yet.
+    fn assert_lower_bound<T: bnb::BitDecode + bnb::BitEncode + core::fmt::Debug>(
+        buffer: &BitBuf,
+        layout: bnb::Layout,
+    ) {
+        let error = buffer
+            .clone()
+            .try_pull_with::<T, _>(layout, ())
+            .unwrap_err();
+        let ErrorKind::Incomplete {
+            needed: Some(needed),
+        } = error.kind
+        else {
+            panic!("fixture must exercise a positive hint: {error}");
+        };
+        assert!(needed > 0);
+        for additional in 0..needed {
+            for byte in [0, 0x41, 0xff] {
+                let mut extended = buffer.clone();
+                extended.push(&vec![byte; additional]).unwrap();
+                assert!(
+                    extended
+                        .try_pull_with::<T, _>(layout, ())
+                        .unwrap_err()
+                        .is_incomplete(),
+                    "{additional} < {needed} bytes, fill {byte:#x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_and_bulk_hints_count_physical_bytes_in_both_bit_orders() {
+        for bit in [bnb::BitOrder::Msb, bnb::BitOrder::Lsb] {
+            for start in 0..8 {
+                for length in 1..5 {
+                    let layout = bnb::Layout {
+                        bit,
+                        byte: bnb::ByteOrder::Big,
+                    };
+                    let mut buffer = BitBuf::new().with_layout(layout);
+                    buffer.push(&vec![0; length]).unwrap();
+                    buffer.seek_to_bit(start).unwrap();
+                    let error = buffer
+                        .clone()
+                        .try_pull_with::<u64, _>(layout, ())
+                        .unwrap_err();
+                    let ErrorKind::Incomplete {
+                        needed: Some(needed),
+                    } = error.kind
+                    else {
+                        panic!("scalar hint")
+                    };
+                    assert_eq!(needed, (64 - (length * 8 - start)).div_ceil(8));
+                    for count in 0..needed {
+                        let mut extended = buffer.clone();
+                        extended.push(&vec![0xff; count]).unwrap();
+                        assert!(
+                            extended
+                                .try_pull_with::<u64, _>(layout, ())
+                                .unwrap_err()
+                                .is_incomplete()
+                        );
+                    }
+                    assert_lower_bound::<EightBytes>(&buffer, layout);
+                }
+            }
+        }
+    }
+
+    #[bin(big)]
+    #[derive(Debug)]
+    struct EightBytes {
+        #[br(count = 8)]
+        bytes: Vec<u8>,
+    }
+
+    #[bin(big)]
+    #[derive(Debug)]
+    struct TextWire {
+        #[brw(count_prefix = u16)]
+        bytes: Vec<u8>,
+    }
+
+    impl From<&Utf8Body> for TextWire {
+        fn from(value: &Utf8Body) -> Self {
+            Self {
+                bytes: value.text.as_bytes().to_vec(),
+            }
+        }
+    }
+
+    #[bin(try_wire = TextWire)]
+    #[derive(Debug)]
+    struct Utf8Body {
+        text: String,
+    }
+
+    impl TryFrom<TextWire> for Utf8Body {
+        type Error = std::string::FromUtf8Error;
+        fn try_from(value: TextWire) -> Result<Self, Self::Error> {
+            Ok(Self {
+                text: String::from_utf8(value.bytes)?,
+            })
+        }
+    }
+
+    #[bin(big, magic = 0x4142_4344u32)]
+    #[derive(Debug)]
+    struct WideMagic {}
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq)]
+    enum AlternativeMagic {
+        #[bin(magic = b"ABCDE")]
+        Long,
+        #[bin(magic = b"AX")]
+        Short,
+        Raw(u8),
+    }
+
+    #[test]
+    fn hints_do_not_delay_discovery_of_an_earlier_terminal_or_alternative() {
+        let mut buffer = BitBuf::new();
+        buffer.push(&[0]).unwrap();
+        assert_lower_bound::<WideMagic>(&buffer, bnb::Layout::default());
+        buffer.push(&[0, 0, 0]).unwrap();
+        assert!(matches!(
+            buffer.try_pull::<WideMagic>().unwrap_err().kind,
+            ErrorKind::BadMagic { .. }
+        ));
+
+        let mut buffer = BitBuf::new();
+        buffer.push(b"A").unwrap();
+        assert_eq!(
+            buffer.try_pull::<AlternativeMagic>().unwrap_err().kind,
+            ErrorKind::Incomplete { needed: Some(1) }
+        );
+        buffer.push(b"X").unwrap();
+        assert_eq!(
+            buffer.try_pull::<AlternativeMagic>().unwrap(),
+            AlternativeMagic::Short
+        );
+        assert_eq!(
+            AlternativeMagic::peek_variant(b"AX").unwrap(),
+            AlternativeMagicKind::Short
+        );
+        assert_eq!(
+            AlternativeMagic::peek_variant(b"AZ").unwrap(),
+            AlternativeMagicKind::Raw
+        );
+    }
+
+    #[test]
+    fn mapped_validation_waits_for_the_whole_wire_value() {
+        let mut buffer = BitBuf::new();
+        buffer.push(&[0, 4, 0xff]).unwrap();
+        assert_lower_bound::<Utf8Body>(&buffer, bnb::Layout::default());
+        buffer.push(&[0, 0, 0]).unwrap();
+        assert!(matches!(
+            buffer.try_pull::<Utf8Body>().unwrap_err().kind,
+            ErrorKind::Convert { .. }
+        ));
+    }
+
+    #[bin(big)]
+    #[derive(Debug)]
+    struct Restored {
+        #[br(restore_position)]
+        value: u32,
+        tag: u8,
+    }
+
+    #[test]
+    fn restore_hints_survive_compaction_of_a_previous_message() {
+        let mut buffer = BitBuf::bounded(8);
+        buffer.push(&[0xaa, 0xbb, 1]).unwrap();
+        assert_eq!(buffer.try_pull::<u16>().unwrap(), 0xaabb);
+        assert_lower_bound::<Restored>(&buffer, bnb::Layout::default());
+        buffer.push(&[2]).unwrap(); // dead prefix exceeds live bytes: push rebases the cursor.
+        assert_eq!(buffer.bit_pos(), 0);
+        assert_lower_bound::<Restored>(&buffer, bnb::Layout::default());
+        buffer.push(&[3, 4]).unwrap();
+        let value = buffer.try_pull::<Restored>().unwrap();
+        assert_eq!((value.value, value.tag), (0x0102_0304, 1));
+        assert_eq!(buffer.bit_len(), 24);
+    }
+
     #[bin(big)]
     #[derive(Debug, PartialEq, Eq)]
     enum LongFirst {

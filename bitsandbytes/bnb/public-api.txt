@@ -154,6 +154,8 @@ pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
 impl core::cmp::Eq for bnb::bitstream::BitError
 impl core::cmp::PartialEq for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
+impl core::convert::From<bnb::bitstream::BitError> for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::from(bnb::bitstream::BitError) -> Self
 impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
 impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
@@ -1612,6 +1614,46 @@ pub type bnb::int::u97 = bnb::UInt<u128, 97>
 pub type bnb::int::u98 = bnb::UInt<u128, 98>
 pub type bnb::int::u99 = bnb::UInt<u128, 99>
 pub mod bnb::net
+#[non_exhaustive] pub enum bnb::net::MessageReadError
+pub bnb::net::MessageReadError::Codec(bnb::bitstream::BitError)
+pub bnb::net::MessageReadError::Io(std::io::error::Error)
+impl core::convert::From<bnb::bitstream::BitError> for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::from(bnb::bitstream::BitError) -> Self
+impl core::convert::From<std::io::error::Error> for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::from(std::io::error::Error) -> Self
+impl core::error::Error for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for bnb::net::MessageReadError
+impl core::marker::Send for bnb::net::MessageReadError
+impl core::marker::Sync for bnb::net::MessageReadError
+impl core::marker::Unpin for bnb::net::MessageReadError
+impl core::marker::UnsafeUnpin for bnb::net::MessageReadError
+impl !core::panic::unwind_safe::RefUnwindSafe for bnb::net::MessageReadError
+impl !core::panic::unwind_safe::UnwindSafe for bnb::net::MessageReadError
+impl<T, U> core::convert::Into<U> for bnb::net::MessageReadError where U: core::convert::From<T>
+pub fn bnb::net::MessageReadError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::net::MessageReadError where U: core::convert::Into<T>
+pub type bnb::net::MessageReadError::Error = core::convert::Infallible
+pub fn bnb::net::MessageReadError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::net::MessageReadError where U: core::convert::TryFrom<T>
+pub type bnb::net::MessageReadError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::net::MessageReadError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::string::ToString for bnb::net::MessageReadError where T: core::fmt::Display + ?core::marker::Sized
+pub fn bnb::net::MessageReadError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for bnb::net::MessageReadError where T: 'static + ?core::marker::Sized
+pub fn bnb::net::MessageReadError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::net::MessageReadError where T: ?core::marker::Sized
+pub fn bnb::net::MessageReadError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::net::MessageReadError where T: ?core::marker::Sized
+pub fn bnb::net::MessageReadError::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::net::MessageReadError
+impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageReadError
 pub struct bnb::net::MessageDatagram<D>
 impl<D: bnb::net::DatagramSocket> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::recv_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
@@ -1651,7 +1693,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MessageDatagram<D>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageDatagram<D>
 pub struct bnb::net::MessageStream<S>
 impl<S: std::io::Read> bnb::net::MessageStream<S>
-pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::net::MessageReadError>
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
@@ -1798,6 +1840,8 @@ impl bnb::net::DatagramSocket for std::os::unix::net::datagram::UnixDatagram
 pub type std::os::unix::net::datagram::UnixDatagram::Addr = std::os::unix::net::addr::SocketAddr
 pub fn std::os::unix::net::datagram::UnixDatagram::recv_from(&self, &mut [u8]) -> std::io::error::Result<(usize, Self::Addr)>
 pub fn std::os::unix::net::datagram::UnixDatagram::send_to(&self, &[u8], &Self::Addr) -> std::io::error::Result<usize>
+pub fn bnb::net::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode, R: std::io::Read + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8]) -> core::result::Result<T, bnb::net::MessageReadError>
+pub async fn bnb::net::read_message_async<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode, R: tokio::io::async_read::AsyncRead + core::marker::Unpin + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8]) -> core::result::Result<T, bnb::net::MessageReadError>
 pub mod bnb::prelude
 pub trait bnb::prelude::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::prelude::BitAmount::bits(self) -> u32
@@ -2280,6 +2324,8 @@ pub fn bnb::bitstream::BitError::clone(&self) -> bnb::bitstream::BitError
 impl core::cmp::Eq for bnb::bitstream::BitError
 impl core::cmp::PartialEq for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::eq(&self, &bnb::bitstream::BitError) -> bool
+impl core::convert::From<bnb::bitstream::BitError> for bnb::net::MessageReadError
+pub fn bnb::net::MessageReadError::from(bnb::bitstream::BitError) -> Self
 impl core::convert::From<bnb::error::WidthError> for bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::from(bnb::error::WidthError) -> Self
 impl core::convert::From<std::io::error::Error> for bnb::bitstream::BitError
@@ -2769,7 +2815,7 @@ impl<T> tracing::instrument::Instrument for bnb::net::MessageDatagram<D>
 impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageDatagram<D>
 pub struct bnb::MessageStream<S>
 impl<S: std::io::Read> bnb::net::MessageStream<S>
-pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::net::MessageReadError>
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>

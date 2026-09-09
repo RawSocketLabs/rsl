@@ -796,3 +796,156 @@ The next smallest implementation slice is **SOCKS adoption only**:
 replace duplicated framing with the approved buffer/handoff API and prove handshake-to-raw
 payload preservation in sync and async paths. Do not combine that adoption with another
 parser architecture, client/server expansion, or the independent audit follow-ups.
+
+## 12. Hint-driven whole-message reads (0.6 candidate)
+
+### 12.1 Scope, contracts, and migration
+
+Baseline: `8c2757db04e3e8997f50698a73723e3fa96172a0` (runtime/macros 0.5.0). Work is isolated
+on `feat/bnb-hinted-message-reads`; both existing SOCKS worktrees/indexes are untouched.
+Expected release: **bitsandbytes 0.6.0 with bitsandbytes-macros 0.5.0**. Release-plz owns
+versions/pins/changelog; no macro expansion change warrants a macros bump.
+
+`MessageStream::read_message` now handles hint-based refills internally. Borrowed
+`net::read_message` and `net::read_message_async` take the transport, `BitBuf` and reusable
+scratch. They return a complete `T` or `MessageReadError::{Codec(BitError), Io(io::Error)}`,
+preserving the original owned I/O source and codec location/field. This changes the existing
+method's error type; match the outer variant before inspecting `kind` / `kind()`. Writes and
+datagrams retain `BitError`. No second `_hinted` API, status enum, callback framework,
+transport owner, runtime or parser-continuation engine is added.
+
+`Incomplete::needed = Some(n > 0)` is a **lower bound**, not an estimate: adding fewer than
+`n` physical tail bytes cannot change this attempt to success **or a terminal error** with
+the same retained prefix, numeric start cursor, layout, context and codec-visible state.
+It does not promise sufficiency or the final frame length. `None` and defensive `Some(0)`
+schedule retry after at least one new byte; raw errors are not rewritten. Custom speculative
+codecs must use `None` unless the bound is provable. Overstated downstream hints can stall
+reads; the contract cannot be enforced on arbitrary user code and is not a memory-safety rule.
+
+Decode precedes scratch validation and transport access. Each read is bounded by scratch
+and free retained capacity. Even huge hints fill remaining capacity before `BufferFull`,
+without an extra read. EOF immediately makes a finite attempt despite an unmet hint; empty
+EOF is `Io(UnexpectedEof)`, truncation/custom finite failure is `Codec`. Both normal and finite
+success consume final byte padding; core `BitBuf` preserves packed bits. Every successful
+read is appended before another await. Cancellation retains accepted bytes, not callback
+side effects or protocol-session resumability. Timeouts remain caller-owned.
+
+**Review-driven correction:** `push` can compact/rebase the numeric cursor. Generated absolute
+`seek` can then discover an error with less input than the old hint. Both helpers detect cursor
+rebasing across `push`, discard that hint and immediately retry. Merely requiring custom codecs
+to be rebase-invariant was insufficient: generated positioning is also affected. Applications
+with message-relative pointers should still extract a bounded envelope before interpreting it.
+
+`net` adds optional workspace `thiserror`; new `tokio-io` adds optional workspace Tokio and
+implies `net`, without requiring `tokio-util`. Existing `tokio` includes `tokio-io` and retains
+`BinCodec`. Default/no_std dependency boundaries do not change. `BinCodec` stays stateless and
+datagram-compatible. Direct `Source`/`BufSource`/`StreamBitReader` do not become transactional;
+`BitBuf` owns whole-message retry. General variable-element/delimiter replay may still be
+quadratic; batching a blocked byte-blob read is not full parser resumption.
+
+### 12.2 Audit ledger
+
+Review covers shared runtime/macro dependencies, not only diff lines. The independent
+0.5 audit follow-ups in §11.3 remain separate; none is silently waived here.
+
+| Severity / location | Evidence and consequence | Disposition / regression |
+|---|---|---|
+| High, candidate `net` / `BitBuf::make_room` | Rebased absolute seek can discover an error before a hint expires. | Invalidate on rebase in both drivers; generated seek/assert regression checks exactly one byte consumed. Removing the check fails both tests. |
+| High, pre-existing `Incomplete` contract | Estimates cannot justify suppressing attempts that could complete or fail. | Strict lower-bound docs/display and migration; audit producers and propagation, not just terminology. |
+| Medium, pre-existing I/O error conversion | `BitError::from(io::Error)` loses ordinary transport sources. | Typed thiserror reader boundary; source-chain/non-ZST pointer-identity regression. Writes unchanged. |
+| Reviewed, physical scalar/bulk/seek shortage | IncrementalReader rounds up bit shortage or reports whole-byte shortage before allocation. | Every shorter length with representative contents, aligned/unaligned MSB+LSB, seek/restore and mapped UTF-8 validation. |
+| Reviewed, magic dispatch / macro composition | Bytewise magic probing must discover early mismatch; mappings/contexts propagate the first blocked operation. | Long `ABCDE` versus `AX` decode/peek; scalar magic becomes terminal only when complete; stable context/window and mapped-body tests. No macro change. |
+| Reviewed, SourceReader / logical bounds | Partial `read_exact` returns a short read, then a typed next-byte shortage; declared region EOF is terminal. | Typed hint/field/position preservation and retained retry; physical versus logical `LimitedSource` tests. No direct-source rollback claim. |
+| Low, pre-existing net-only rustdocs | Mock-type links failed without `mock`. | Feature-conditional references use code text; denied-warning net-only docs join all/no-default gates. |
+| Medium, test evidence, fixed during review | Bulk helper ignored LSB; ZST identity was weak; fixed fuzz scratch never limited reads. | Explicit `try_pull_with` layout, non-ZST marker and input-selected scratch. Representative patterns are not claimed to exhaust all byte contents. |
+
+### 12.3 Verification and performance gate
+
+Evidence directory: `/tmp/bnb-hinted-checks.tTiIUI` (2026-09-09). Candidate, immutable baseline,
+API, MSRV, fuzz and mutation builds use separate targets. Tests follow the repository tiers:
+inline component contracts, integration/properties, existing e2e/UI suites and stateful fuzz.
+The readers are proven with fixed records, length-prefixed bodies, NUL delimiters, alternative
+magic and sub-byte padding independently of SOCKS. Existing DMR, DNS-envelope/DER and context
+examples remain compatibility evidence. The fuzz oracle independently models length-prefixed
+records and checks all unconsumed bytes after error/handoff; async futures are dropped on
+Pending to exercise retention of completed reads.
+
+Predeclared final performance gate: identical nine-case `stream_envelope` harness on both
+revisions; 64/1024/16384-byte bodies, chunks 1/64/whole, 20 samples, 300 ms warmup, 2 s
+measurement. Rust 1.98.0 / LLVM 22.1.8, Threadripper 7970X, Linux x86-64 system allocator,
+CPU 0 pinned, existing powersave/boost settings unchanged. Runs are serialized without
+concurrent task builds/fuzzing. Initial concurrent-build runs are exploratory only. Require
+baseline repeats within 5%; investigate unexplained candidate regression above 15% (3× noise).
+Deterministic buffer/decode/read-count tests run in CI; elapsed-time thresholds do not.
+
+Separate allocation profiling (`bitbuf_bounded --all-features --profile` under
+`bitsandbytes/scripts/profile-allocations.gdb`) passes all 12 phases. Existing bounds,
+grow/clone and copy characterizations remain intact. New phases prove zero allocations for
+1000 bounded scalar reads, and exactly one 4096-byte decoded-payload allocation for sync
+fragmented and async borrowed reads, with zero reallocations. Debug aggregate/error memmove
+totals are not payload-copy counts or release-throughput measurements.
+
+Final measurements, post-fix verification and independent approval must be recorded below
+before commit. Delivery then requires clean-tree container CI, exact-head hosted PR/main CI,
+generated release-PR archives and registry checks. The next smallest slice remains SOCKS
+adoption of the published borrowed helper only.
+
+Final serialized timing results (`bnb-05-final-a/b` / `bnb-06-final-a/b`):
+
+| Body / transport chunk | Baseline A / B | Candidate A / B |
+|---|---|---|
+| 64 B / 1 B | 3.497 / 3.492 µs | 467.88 / 455.65 ns |
+| 64 B / 64 B | 118.58 / 119.85 ns | 105.48 / 106.28 ns |
+| 64 B / whole | 67.773 / 68.400 ns | 67.335 / 68.468 ns |
+| 1 KiB / 1 B | 53.036 / 52.746 µs | 5.536 / 5.558 µs |
+| 1 KiB / 64 B | 947.73 / 948.86 ns | 249.47 / 232.70 ns |
+| 1 KiB / whole | 93.716 / 94.684 ns | 101.51 / 92.599 ns |
+| 16 KiB / 1 B | 838.12 / 843.66 µs | 86.746 / 86.753 µs |
+| 16 KiB / 64 B | 14.548 / 14.129 µs | 2.2573 / 2.2450 µs |
+| 16 KiB / whole | 731.29 / 719.09 ns | 565.61 / 570.45 ns |
+
+Baseline repeat variation is at most 2.93%. Comparing the slower candidate with the faster
+baseline, the largest regression is 8.32%, within 15%; no performance blocker remains.
+Candidate 16 KiB/one-byte scaling versus 1 KiB is 15.67× / 15.61× for 16× input. Positive-hint
+component tests require two decode attempts despite three one-byte refills; unknown/zero hints
+make four, and read overshoot must not trigger an extra transport read. These are CPU/memory
+framing measurements, not network throughput. No encoder or general resumable-parser speedup
+is claimed. The identical Criterion executable grows 4,756,560 → 4,761,520 bytes (+0.11%);
+macros/generated protocol source are unchanged. No cold-build timing claim is made.
+
+Focused manual mutations were applied to an isolated copy, restored after each run: retry
+every read, wrapping shortfall subtraction, subtract one instead of the accepted byte count,
+ignore rebase, drop appended bytes, and omit final-byte padding. All six compiled and failed
+behavioral assertions (2, 4, 3, 2, 18 and 3 failures respectively); none survived. The initial
+automatic run found 11 caught, 4 unviable and 6 timeout mutations, with no survivors. Timeout
+mutants are recorded as timeouts, not assertion catches. The final post-fix automatic run
+tested 23 mutants: **13 caught, 4 unviable, 6 timeouts, zero survivors**. The extra rebase
+mutations are caught by the new regressions. Unviable generic replacements require a missing
+`T: Default` bound; they are not counted as behavioral proof.
+
+Completed local gates include workspace tests, strict bnb/macros all-target/all-feature Clippy,
+the bytes/mock/tokio-io/tokio suites, denied-warning all/no-default/net-only docs, Rust 1.85
+workspace/all-feature/renamed-consumer checks and stable bare-metal compilation. Configured
+workspace Clippy's 106 warning lines match the immutable baseline exactly; historical bnb
+macro warnings are resolved, not waived. Cargo-deny passes advisories/bans/licenses/sources;
+yanked wnaf is absent. Actionlint passes. Exact API deltas match in all/default/none modes;
+default/none each pass 223 patch-compatibility rules (31 skipped). All-feature major mode
+executes zero rules and is not treated as proof; the reviewed exact delta is the release gate.
+The development archive builds against registry macros 0.5.0; repeat packaging on the actual
+release-plz-generated version. Final fuzz/reviewer/container/hosted delivery evidence remains
+required before claiming release readiness.
+
+Final post-fix ASan runs (seed `9062026`) both exited successfully: `stream_decode` completed
+2,000,000 cases in 409 s (coverage 323, feature count 2000), and `decode` completed 2,000,000
+in 35 s (coverage 245, feature count 643). The final stream run includes variable scratch
+limits and both readers after the rebase correction. Generated discoveries were archived
+outside the worktree; only existing curated seeds remain. The final all-feature suite passes
+185 inline tests plus integration/property/UI/e2e/doctests; focused no-default incremental/DMR
+tests and strict net-only/tokio-io Clippy also pass. Public API output matches the committed
+snapshot after the final source fixes. Final independent approval and delivery gates follow.
+
+Independent final reviewer approval: **2026-09-09, no remaining findings**. Approval covers
+the final runtime/API/feature diff, rebase fix, tests, both two-million-case fuzz runs,
+mutations, allocation/performance evidence and reconciled ledger. Only clean-tree container,
+hosted and generated-release gates remain. Subsequent source edits require affected checks
+and renewed review; green CI alone does not waive the pre-commit gate.

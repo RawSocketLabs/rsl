@@ -41,6 +41,9 @@ bytes = { workspace = true, optional = true }
 # Optional: the `tokio_util::codec` adapter ([`BinCodec`]) for async framing. Off by
 # default; pulled in only by the `tokio` feature.
 tokio-util = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+# Preserve owned transport errors at the message-reader boundary.
+thiserror = { workspace = true, optional = true }
 
 [features]
 # `std` (default) enables the `std::io` ladder (`StreamBitReader`/`BufSource`/
@@ -53,10 +56,12 @@ std = ["dep:tracing"]
 bytes = ["dep:bytes", "std"]
 # `BinCodec`: a `tokio_util::codec` Decoder/Encoder for any `#[bin]` message (async framing
 # over `tokio`). Needs the `bytes` adapters' `BytesMut`, so it implies `bytes`.
-tokio = ["dep:tokio-util", "bytes"]
+tokio = ["dep:tokio-util", "bytes", "tokio-io"]
+# Borrowed async message reader, without the tokio-util framing adapters.
+tokio-io = ["net", "dep:tokio"]
 # Ergonomic std socket helpers (`MessageStream` over a `Read + Write` stream, `MessageDatagram`
-# over a `DatagramSocket`). Pure std — no extra deps.
-net = ["std"]
+# over a `DatagramSocket`), and borrowed message reads with typed errors.
+net = ["std", "dep:thiserror"]
 # Test-only mock transport (`MockDatagramSocket`) for exercising `net` code without real sockets.
 # Put it in your `[dev-dependencies]` features, not your release build.
 mock = ["net"]

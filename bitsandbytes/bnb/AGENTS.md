@@ -185,6 +185,13 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   inbound, captured outbound, chunked delivery, and error injection (`fail_after`/`fail_next_recv`)
   — unit-test `net` code without a socket.
 
+  Stream reads now return `net::MessageReadError` (original I/O source or typed codec error);
+  writes/datagrams retain `BitError`. `net::read_message` borrows a stream, `BitBuf`, and
+  reusable scratch; `tokio-io` adds the equivalent Tokio reader without `tokio-util`.
+  Both honor positive `Incomplete` lower bounds internally and invalidate outstanding
+  hints when `push` rebases the buffer cursor. `tokio` includes `tokio-io`; `BinCodec`
+  remains stateless/datagram-compatible. Never cache stream shortfalls in that shared codec.
+
 ## `no_std` (Option A) — the `std` feature
 
 `bnb` is `no_std` + `alloc`; the default-on **`std`** feature adds everything backed by

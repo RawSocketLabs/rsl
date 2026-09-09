@@ -68,14 +68,14 @@ fn allocation_end(phase: usize) {
     std::hint::black_box(phase);
 }
 
-fn profile_allocations() {
-    #[bin(big)]
-    #[derive(Debug)]
-    struct Blob {
-        #[brw(count_prefix = u16)]
-        bytes: Vec<u8>,
-    }
+#[bin(big)]
+#[derive(Debug)]
+struct Blob {
+    #[brw(count_prefix = u16)]
+    bytes: Vec<u8>,
+}
 
+fn profile_allocations() {
     let mut steady = BitBuf::bounded(2);
     allocation_start(1);
     for seq in 0..1000u16 {
@@ -136,4 +136,57 @@ fn profile_allocations() {
     spare.push(&[0xa5]).unwrap();
     allocation_end(9);
     assert_eq!(spare.bit_len(), 57 * 8);
+
+    #[cfg(feature = "net")]
+    profile_message_reads();
+}
+
+#[cfg(feature = "net")]
+fn profile_message_reads() {
+    struct OneByte<'a>(&'a [u8]);
+    impl std::io::Read for OneByte<'_> {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            let limit = out.len().min(1);
+            self.0.read(&mut out[..limit])
+        }
+    }
+    let mut stream = bnb::MessageStream::bounded(std::io::Cursor::new([0x12, 0x34]), 2);
+    allocation_start(10);
+    for _ in 0..1000 {
+        stream.get_mut().set_position(0);
+        assert_eq!(stream.read_message::<u16>().unwrap(), 0x1234);
+    }
+    allocation_end(10);
+
+    let mut wire = [0x5a; 4098];
+    wire[..2].copy_from_slice(&4096_u16.to_be_bytes());
+    let mut buffer = BitBuf::bounded(wire.len());
+    let mut reader = OneByte(&wire);
+    let mut scratch = [0; 256];
+    allocation_start(11);
+    let blob: Blob = bnb::net::read_message(&mut reader, &mut buffer, &mut scratch).unwrap();
+    assert_eq!(blob.bytes.len(), 4096);
+    std::hint::black_box(blob);
+    allocation_end(11);
+
+    #[cfg(feature = "tokio-io")]
+    {
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+        };
+        let mut reader = &wire[..];
+        allocation_start(12);
+        let future =
+            bnb::net::read_message_async::<Blob, _>(&mut reader, &mut buffer, &mut scratch);
+        let mut future = std::pin::pin!(future);
+        let Poll::Ready(result) = future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        else {
+            panic!("in-memory transport is always ready");
+        };
+        assert_eq!(result.unwrap().bytes.len(), 4096);
+        allocation_end(12);
+    }
 }
