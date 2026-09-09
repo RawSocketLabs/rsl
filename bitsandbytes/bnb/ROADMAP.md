@@ -10,7 +10,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 [`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
 
-## 0.5 candidate — incremental decoding and lossless handoff
+## 0.5.0 — incremental decoding and lossless handoff
 
 - [x] Reuse `BitBuf` for detailed `try_pull`, finite `pull_eof`, and explicit
       layout/context attempts; preserve input on all attempt failures.
@@ -22,10 +22,12 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       contextual/versioned records, stateful fuzz, mutation and allocation checks.
 - [x] Final independent review and evidence reconciliation before commit (2026-09-08). See
       [`DESIGN.md` §11](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
-- [ ] Deliver a coordinated **0.5.0 runtime/macros pair** through release-plz; verify
-      generated versions/pin and restore patch compatibility gates against 0.5.0.
+- [x] Deliver the coordinated **0.5.0 runtime/macros pair** through release-plz; verify
+      versions/pin, archives, tags, and registry consumer; restore patch compatibility
+      gates against published 0.5.0 (223 rules pass in each feature mode). Delivery receipt:
+      [`DESIGN.md` §11.7](DESIGN.md#117-delivery-receipt-2026-09-09-utc).
 - [ ] Next smallest consumer slice: SOCKS sync/async adoption and lossless raw handoff,
-      after bnb delivery. No SOCKS implementation changes in this candidate.
+      after bnb delivery. No SOCKS implementation changes in this release.
 
 Audit follow-ups (not silently waived or bundled into this feature):
 
@@ -288,10 +290,10 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
 - [x] `cargo-semver-checks` in CI (`semver` job, pinned to `0.50.0`) — blocking
-      source-compatibility comparisons against published `0.4.0`, with all features
+      source-compatibility comparisons against published `0.5.0`, with all features
       and separately default and no default features. Compatible additions use
-      `--release-type patch`; the breaking 0.5 candidate pairs major mode with exact reviewed
-      per-feature API deltas. Release-plz still owns bumps. The 0.4
+      `--release-type patch`; the breaking 0.4 → 0.5 migration deltas remain historical
+      evidence, not executable gates. Release-plz still owns bumps. The 0.4
       builder behavior change needs a breaking commit marker and consumer/UI tests:
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
       Advance the explicit baseline deliberately after release.

@@ -4,7 +4,7 @@
 # workspace crate names (ethernet, arp, udp, ip, dns, …) exist on crates.io as unrelated
 # projects, so a blanket publish would attempt uploads to names we do not own.
 [workspace]
-# Isolate the bnb 0.4 release. Other pending releases remain in history until
+# Isolate bnb releases. Other pending releases remain in history until
 # their versions, changelogs, ownership, and release scope are reviewed.
 release = false
 publish = false

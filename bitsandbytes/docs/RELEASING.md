@@ -58,12 +58,12 @@ Dependency, policy, and workflow changes trigger bnb's full CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
-baseline is explicitly published `0.4.0`; advance it deliberately after releases.
-Compatible additions normally enforce `--release-type patch` in all three feature modes.
-The incremental 0.5 candidate deliberately uses `--release-type major` for the Cargo-semver
-0.4 → 0.5 boundary, **plus exact reviewed API-delta snapshots** in all/default/no-default
-feature modes (`bitsandbytes/scripts/check-api-delta.sh`). This is not permission to ignore
-unreviewed API changes. After publishing 0.5.0, advance the baseline and restore patch gates.
+baseline is explicitly published `0.5.0`; advance it deliberately after releases.
+Compatible additions enforce `--release-type patch` in all three feature modes.
+The breaking 0.4 → 0.5 transition used major mode plus exact reviewed API deltas.
+The three `bnb/api-delta-0.5-{all,default,none}.txt` snapshots remain historical migration
+evidence, not executable CI gates. The one-time delta checker was removed after publication;
+the standing public-API snapshot check and all three patch compatibility gates remain.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
 
@@ -109,16 +109,19 @@ This process does not authorize a generic parser rewrite, unsafe optimization, u
 cleanup, or release side effects. A measured design limitation that defeats an intended use
 must be resolved or the proposed adoption revised before claiming that use is ready.
 
-### Coordinated incremental 0.5 candidate
+### Coordinated incremental 0.5.0 release
 
-Both runtime and macros require **0.5.0**: removed/changed runtime APIs are breaking, and
+Both runtime and macros shipped as **0.5.0**: removed/changed runtime APIs are breaking, and
 new macro expansion calls new runtime helpers. Publishing the new macros under `^0.4`
-would permit Cargo to pair them with an incompatible old runtime. Use a breaking
-Conventional Commit/squash title and verify that release-plz proposes both 0.5.0 versions
-and rewrites the runtime's macro dependency; do not hand-edit versions. Candidate archive
-checks use current development manifest versions and must be repeated on the generated
-release PR's exact contents before publication.
-That PR must also regenerate the detached `bitsandbytes/fuzz/Cargo.lock` for the new path
+would have permitted Cargo to pair them with an incompatible old runtime. Release-plz
+generated both versions and the matching dependency requirement in
+[PR #77](https://github.com/RawSocketLabs/rsl/pull/77). Both archives were verified before
+publication; [release automation](https://github.com/RawSocketLabs/rsl/actions/runs/34298309943)
+published them from `91f87b7b`. Both registry checksums and crate-prefixed tags were verified.
+See the delivery receipt in `bnb/DESIGN.md` §11.7.
+
+For future releases, repeat archive verification on the generated release PR's exact
+contents. Also regenerate the detached `bitsandbytes/fuzz/Cargo.lock` for new path
 package versions (`cargo metadata --manifest-path bitsandbytes/fuzz/Cargo.toml --format-version 1`).
 CI checks this lockfile with `--locked` before cargo-fuzz; release-plz does not own detached
 workspace lockfiles. Do not merge the version PR with a stale fuzz lock.
