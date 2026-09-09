@@ -201,9 +201,58 @@ fn bench_element_replay(c: &mut Criterion) {
     group.finish();
 }
 
+// Identical harness on the immutable 0.5 baseline and hinted-reader candidate.
+// Reuse the transport buffer; only the decoded body allocates per iteration.
+#[cfg(feature = "net")]
+fn bench_stream_reads(c: &mut Criterion) {
+    use std::io::{self, Read};
+
+    struct Fragments<'a> {
+        bytes: &'a [u8],
+        chunk: usize,
+    }
+    impl Read for Fragments<'_> {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            let count = out.len().min(self.chunk);
+            self.bytes.read(&mut out[..count])
+        }
+    }
+
+    let mut group = c.benchmark_group("stream_envelope");
+    group.sample_size(20);
+    group.warm_up_time(Duration::from_millis(300));
+    group.measurement_time(Duration::from_secs(2));
+    for size in [64, 1024, 16 * 1024] {
+        let wire = Envelope {
+            body: vec![0x5a; size],
+        }
+        .to_bytes()
+        .unwrap();
+        group.throughput(Throughput::Bytes(wire.len() as u64));
+        for chunk in [1, 64, wire.len()] {
+            group.bench_with_input(
+                BenchmarkId::new(size.to_string(), chunk),
+                &chunk,
+                |bench, &chunk| {
+                    let mut stream =
+                        bnb::MessageStream::bounded(Fragments { bytes: &[], chunk }, wire.len());
+                    bench.iter(|| {
+                        stream.get_mut().bytes = black_box(&wire);
+                        black_box(stream.read_message::<Envelope>().unwrap());
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+#[cfg(not(feature = "net"))]
+fn bench_stream_reads(_: &mut Criterion) {}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_message, bench_incremental, bench_element_replay
+    targets = bench_message, bench_incremental, bench_element_replay, bench_stream_reads
 }
 criterion_main!(benches);

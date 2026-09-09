@@ -190,7 +190,9 @@
 //! regions and codec errors never masquerade as physical backing exhaustion.
 //!
 //! **Costs and limits.** A byte hint describes the next blocked operation, not the final
-//! frame size or a no-read-ahead promise. Attempts replay parsing, not suspended parser
+//! frame size or a no-read-ahead promise. Positive hints obey the strict lower-bound
+//! contract in [`ErrorKind::Incomplete`](crate::ErrorKind::Incomplete); they are not estimates.
+//! Attempts replay parsing, not suspended parser
 //! state; callbacks/context must tolerate retries and their side effects are not undone.
 //! A generated context-free `Vec<u8>` checks the complete body before allocating under
 //! incremental decoding. General variable-element collections can still do quadratic work
@@ -263,3 +265,59 @@
 //! (`UdpSocket` or `UnixDatagram`) with `send_message`/`recv_message`; both are unit-testable
 //! without a real socket via the **`mock`** feature. With **`tokio`**, `BinCodec` does the same
 //! for an async `Framed` stream.
+//!
+//! ## Borrowed whole-message readers (`net` / `tokio-io`)
+//!
+//! Already own the stream and retained buffer? The borrowed helpers keep that ownership:
+//!
+//! ```
+//! # #[cfg(feature = "net")] {
+//! use bnb::{bin, BitBuf};
+//! use bnb::net::read_message;
+//! #[bin(big)]
+//! struct Envelope { #[brw(count_prefix = u16)] body: Vec<u8> }
+//! let mut input = &b"\x00\x03abcRAW"[..];
+//! let mut buffer = BitBuf::bounded(64);
+//! let mut scratch = [0; 64]; // reuse across messages and protocol phases
+//! let message: Envelope = read_message(&mut input, &mut buffer, &mut scratch)?;
+//! assert_eq!(message.body, b"abc");
+//! // Move BOTH transport and retained bytes into the next protocol owner.
+//! let mut tunnel = bnb::MessageStream::from_parts(input, buffer);
+//! let mut raw = [0; 3];
+//! std::io::Read::read_exact(&mut tunnel, &mut raw)?;
+//! assert_eq!(&raw, b"RAW");
+//! # }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ```
+//! # #[cfg(feature = "tokio-io")]
+//! # async fn example() -> Result<(), bnb::net::MessageReadError> {
+//! use bnb::{bin, BitBuf};
+//! #[bin(big)]
+//! struct Record { sequence: u32 }
+//! let mut input = &b"\x00\x00\x00\x07"[..];
+//! let mut buffer = BitBuf::bounded(64);
+//! let mut scratch = [0; 64];
+//! let record: Record = bnb::net::read_message_async(
+//!     &mut input, &mut buffer, &mut scratch,
+//! ).await?;
+//! assert_eq!(record.sequence, 7);
+//! # Ok(()) }
+//! ```
+//!
+//! Both helpers try buffered decoding first, then wait for the additional-byte lower bound
+//! before replaying the codec. They still allow read-ahead and immediately retain every
+//! successful read. EOF triggers a finite decode even with an unmet hint. Dropping a pending
+//! async call retains bytes from completed reads; retry with the same buffer and transport.
+//! This is not resumable parser state or a cancellation-safe protocol session. Caller-owned
+//! deadlines, output allocations, and general variable-element replay costs remain unchanged.
+//!
+//! **Migration from 0.5:** `MessageStream::read_message` now returns
+//! `net::MessageReadError::{Codec(BitError), Io(io::Error)}`. Match the outer variant before
+//! inspecting a codec's `kind` or an I/O error's `kind()`. Ordinary transport failures preserve
+//! the original owned source; no downcast is needed to distinguish codec from I/O. Writes and
+//! datagrams still return `BitError`. Audit custom positive hints against the strengthened
+//! contract above; use `None` for speculative or input-length/state-dependent guesses.
+//! `BinCodec` remains stateless and suitable for both streams and datagrams; it does not cache
+//! hints. Core `BitBuf` and direct `Source` remain available for application-owned reading.

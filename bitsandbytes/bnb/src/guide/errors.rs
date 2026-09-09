@@ -80,7 +80,16 @@
 //! Buffered attempts return `Incomplete` for physical input shortage, not for a logical
 //! region boundary or a custom codec's hard error. Its `needed` is additional **bytes**
 //! for the next blocked operation (`UnexpectedEof` uses **bits**). It is not the final
-//! frame length. [`is_incomplete`](crate::BitError::is_incomplete) distinguishes retry
+//! frame length. `Some(n > 0)` is a lower bound: appending fewer than `n` bytes cannot
+//! produce either success or a terminal error for the same retained prefix, numeric attempt
+//! cursor, layout, context, and codec-visible state. Compaction/rebasing invalidates that
+//! hint and requires an immediate retry; the whole-message readers handle this internally.
+//! Custom/speculative codecs **must** return `None` if
+//! they cannot prove that bound. `None`/`Some(0)` mean retry after receiving at least one
+//! additional byte. EOF always requires an immediate finite attempt. Overstated custom hints
+//! can stall a reader; they are not a memory-safety issue. This is a behavioral change from
+//! 0.5's best-effort estimates, so custom codec authors must audit their hints when upgrading.
+//! [`is_incomplete`](crate::BitError::is_incomplete) distinguishes retry
 //! from a definitive failure. Direct forward readers do not roll back consumed input:
 //!
 //! ```

@@ -50,7 +50,13 @@ mod e2e {
         let mut inp = MessageStream::bounded(&bytes[..], 2);
         let err = inp.read_message::<Msg>().unwrap_err();
         assert!(
-            matches!(err.kind, ErrorKind::BufferFull { cap: 2 }),
+            matches!(
+                err,
+                bnb::net::MessageReadError::Codec(bnb::BitError {
+                    kind: ErrorKind::BufferFull { cap: 2 },
+                    ..
+                })
+            ),
             "expected BufferFull, got {err:?}"
         );
     }

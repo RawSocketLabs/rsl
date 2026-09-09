@@ -16,7 +16,11 @@ libfuzzer-sys = "0.4"
 
 [dependencies.bitsandbytes]
 path = "../bnb"
-features = ["net"]
+features = ["tokio-io"]
+
+[dependencies.tokio]
+version = "1"
+features = ["io-util"]
 
 [[bin]]
 name = "decode"

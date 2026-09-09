@@ -83,13 +83,26 @@ pub enum ErrorKind {
     /// `needed` describes the next blocked operation, **not** the full frame length or
     /// a promise that a transport will not read ahead. See [`BitBuf::try_pull`].
     Incomplete {
-        /// Best-effort estimate of additional bytes needed, if known.
+        /// Minimum additional **whole bytes**, appended at the physical end of the
+        /// retained input, before this attempt can stop being incomplete. `Some(n > 0)`
+        /// guarantees that appending fewer than `n` bytes cannot produce either a value
+        /// **or a definitive error**, with the same retained prefix, numeric attempt-start
+        /// cursor, layout, context, and codec-visible state. It does not promise that `n`
+        /// bytes will suffice. Compaction that rebases the cursor invalidates an outstanding
+        /// hint: retry immediately, because absolute seeks or position-dependent codecs may
+        /// now behave differently. The whole-message readers detect this automatically.
+        ///
+        /// Use `None` when that lower bound cannot be proved (including speculative
+        /// codecs whose choice can change with earlier bytes). Readers treat `Some(0)`
+        /// as unknown: retry after at least one additional byte. Physical EOF overrides
+        /// all hints and requires a finite attempt. Hints do not make a forward-only
+        /// source transactional; safe whole-message retry needs retained input.
         needed: Option<usize>,
     },
     /// A custom codec requested more input after the caller declared finite EOF.
     /// Ordinary finite-source exhaustion uses [`UnexpectedEof`](Self::UnexpectedEof).
     IncompleteAtEof {
-        /// The custom codec's additional-byte hint, if known.
+        /// The custom codec's additional-byte hint, if known; informational at finite EOF.
         needed: Option<usize>,
     },
     /// A streamed message or counted element succeeded without moving its cursor forward.
@@ -209,8 +222,8 @@ impl fmt::Display for BitError {
                 "unexpected end of input: needed {needed} bits, {remaining} remain"
             )?,
             ErrorKind::Incomplete { needed } => match needed {
-                Some(n) => write!(f, "incomplete: need ~{n} more bytes")?,
-                None => write!(f, "incomplete: need more bytes")?,
+                Some(n) if *n != 0 => write!(f, "incomplete: need at least {n} more bytes")?,
+                _ => write!(f, "incomplete: need more bytes")?,
             },
             ErrorKind::IncompleteAtEof { needed } => {
                 write!(
@@ -3151,7 +3164,7 @@ mod unit {
     fn display_incomplete_with_and_without_hint() {
         assert_eq!(
             BitError::new(ErrorKind::Incomplete { needed: Some(3) }, 8).to_string(),
-            "incomplete: need ~3 more bytes at bit 8",
+            "incomplete: need at least 3 more bytes at bit 8",
         );
         assert_eq!(
             BitError::new(ErrorKind::Incomplete { needed: None }, 8).to_string(),
@@ -3742,6 +3755,130 @@ mod component {
                 region.read::<u16>().map_err(|e| e.in_field("inner"))?;
                 Ok(Self)
             }
+        }
+
+        #[derive(Debug)]
+        struct WindowValue(u32);
+        impl DecodeWith<usize> for WindowValue {
+            fn decode_with<S: Source>(source: &mut S, length: usize) -> Result<Self, BitError> {
+                source
+                    .limit_bytes(length)?
+                    .read::<u32>()
+                    .map(Self)
+                    .map_err(|error| error.in_field("window"))
+            }
+        }
+
+        #[test]
+        fn context_window_preserves_physical_hints_but_not_logical_exhaustion() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            let error = buffer
+                .try_pull_with::<WindowValue, _>(Layout::default(), 4)
+                .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(3) });
+            assert_eq!(error.field, Some("window"));
+            for count in 0..3 {
+                let mut extended = buffer.clone();
+                extended.push(&vec![0xff; count]).unwrap();
+                assert!(
+                    extended
+                        .try_pull_with::<WindowValue, _>(Layout::default(), 4)
+                        .unwrap_err()
+                        .is_incomplete()
+                );
+            }
+            assert!(matches!(
+                buffer
+                    .try_pull_with::<WindowValue, _>(Layout::default(), 3)
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 32,
+                    remaining: 24
+                }
+            ));
+            buffer.push(&[2, 3, 4]).unwrap();
+            assert_eq!(
+                buffer
+                    .try_pull_with::<WindowValue, _>(Layout::default(), 4)
+                    .unwrap()
+                    .0,
+                0x0102_0304
+            );
+        }
+
+        #[derive(Debug)]
+        struct Seeking;
+        impl DecodeWith<()> for Seeking {
+            fn decode_with<S: Source>(source: &mut S, (): ()) -> Result<Self, BitError> {
+                source.seek_to_bit(source.bit_pos() + 64)?;
+                Ok(Self)
+            }
+        }
+
+        #[test]
+        fn absolute_seek_hint_is_a_tail_lower_bound() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[0]).unwrap();
+            assert_eq!(
+                buffer
+                    .try_pull_with::<Seeking, _>(Layout::default(), ())
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::Incomplete { needed: Some(7) }
+            );
+            for count in 0..7 {
+                let mut extended = buffer.clone();
+                extended.push(&vec![0xff; count]).unwrap();
+                assert!(
+                    extended
+                        .try_pull_with::<Seeking, _>(Layout::default(), ())
+                        .unwrap_err()
+                        .is_incomplete()
+                );
+            }
+            buffer.push(&[0; 7]).unwrap();
+            buffer
+                .try_pull_with::<Seeking, _>(Layout::default(), ())
+                .unwrap();
+            assert!(buffer.is_empty());
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn read_exact_bridge_preserves_shortfall_after_a_partial_read() {
+            use std::io::Read;
+            #[derive(Debug)]
+            struct Exact([u8; 4]);
+            impl DecodeWith<()> for Exact {
+                fn decode_with<S: Source>(source: &mut S, (): ()) -> Result<Self, BitError> {
+                    let mut bytes = [0; 4];
+                    source
+                        .as_read()
+                        .read_exact(&mut bytes)
+                        .map_err(BitError::from)
+                        .map_err(|error| error.in_field("external"))?;
+                    Ok(Self(bytes))
+                }
+            }
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1, 2]).unwrap();
+            let error = buffer
+                .try_pull_with::<Exact, _>(Layout::default(), ())
+                .unwrap_err();
+            // The bridge is bytewise, so its *next operation* requires one byte, not two.
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(1) });
+            assert_eq!((error.at, error.field), (16, Some("external")));
+            assert_eq!(buffer.bit_pos(), 0);
+            buffer.push(&[3, 4]).unwrap();
+            assert_eq!(
+                buffer
+                    .try_pull_with::<Exact, _>(Layout::default(), ())
+                    .unwrap()
+                    .0,
+                [1, 2, 3, 4]
+            );
         }
 
         #[test]

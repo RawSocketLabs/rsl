@@ -91,12 +91,16 @@ LEB128 varints, NUL-terminated and length-prefixed strings — ship ready-made i
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 - **`tokio`** — `BinCodec`, a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
   message: `Framed::new(tcp, BinCodec::<T>::new())` (a stream) or `UdpFramed::new(udp, …)` (a
-  datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
-  This **is** bnb's async support: a native async `Source`/`Sink` family is deliberately out of
-  scope (the codec is in-memory and fast; framing is the async boundary, and `BinCodec` covers it).
+  datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`
+  and `tokio-io`. A native async `Source`/`Sink` family remains out of scope.
+- **`tokio-io`** — borrowed, hint-driven `net::read_message_async` over Tokio `AsyncRead`,
+  a caller-owned `BitBuf`, and reusable scratch. Implies `net`, without `tokio-util`
+  or bnb's `bytes` adapters (Tokio may itself depend on the bytes crate).
 - **`net`** — ergonomic `std` socket helpers: `MessageStream` (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and `MessageDatagram` (`send_message`/
-  `recv_message` over a sealed `DatagramSocket` — `UdpSocket` or `UnixDatagram`). Implies `std`.
+  `recv_message` over a sealed `DatagramSocket` — `UdpSocket` or `UnixDatagram`). Borrowed
+  `net::read_message` reuses caller-owned storage. Stream reads honor additional-byte hints
+  and return typed `net::MessageReadError`; writes/datagrams retain `BitError`. Implies `std`.
 - **`mock`** — test-only in-memory transports for exercising `net` code without a real socket:
   `MockDatagramSocket` (a `DatagramSocket`) and `MockStream` (a `Read + Write`, with chunked
   delivery to drive the read-more path). Put it in your `[dev-dependencies]`. Implies `net`.
