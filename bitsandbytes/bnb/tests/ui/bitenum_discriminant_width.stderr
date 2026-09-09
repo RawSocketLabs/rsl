@@ -1,0 +1,5 @@
+error: discriminant exceeds the declared bit width
+ --> tests/ui/bitenum_discriminant_width.rs:9:5
+  |
+9 |     D = 9,
+  |     ^

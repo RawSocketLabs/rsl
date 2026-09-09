@@ -1,0 +1,5 @@
+error: bit range exceeds the backing integer width
+ --> tests/ui/bitfield_range_backing.rs:6:5
+  |
+6 |     value: u16,
+  |     ^^^^^

@@ -59,12 +59,69 @@ strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
 baseline is explicitly published `0.4.0`; advance it deliberately after releases.
-All three feature modes enforce `--release-type patch` for compatible additions.
+Compatible additions normally enforce `--release-type patch` in all three feature modes.
+The incremental 0.5 candidate deliberately uses `--release-type major` for the Cargo-semver
+0.4 → 0.5 boundary, **plus exact reviewed API-delta snapshots** in all/default/no-default
+feature modes (`bitsandbytes/scripts/check-api-delta.sh`). This is not permission to ignore
+unreviewed API changes. After publishing 0.5.0, advance the baseline and restore patch gates.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
 
 Do not recreate historical tags. The `git_only` migration remains deferred in
 `release-plz.toml` until a packageable tag baseline exists.
+
+## Pre-commit correctness and performance gate
+
+CI success is necessary, not sufficient. Before committing a runtime or macro release:
+
+1. Inventory runtime, macro expansion, public contracts, and their existing evidence.
+   Review shared dependencies of changed paths as well as the diff. Record findings in
+   `bnb/DESIGN.md`: location, consequence, evidence, severity, pre-existing/new status,
+   disposition, and the regression check that closes each finding. Independent unrelated
+   improvements belong in `bnb/ROADMAP.md`; pre-existing release blockers are not waived.
+2. Pin an immutable baseline revision and representative consumers. Record toolchain,
+   features, corpus, CPU/allocator environment, and benchmark settings. Establish baseline
+   variance and a justified regression budget before measuring the candidate. Keep allocation
+   instrumentation separate from uninstrumented throughput measurements. Measure scaling,
+   copying, retention/allocation, I/O calls, and representative codegen/build growth;
+   bounded memory alone does not establish bounded CPU work.
+3. Prove changed contracts with specification vectors, independent/reference results, and
+   stateful properties. Incremental decoding needs arbitrary partitions and sequences of
+   feed/decode/EOF/compaction/rejection/handoff, not just slice fuzzing. Account for consumed
+   input and retained tails. Exercise real non-SOCKS consumers, custom/context codecs, both
+   bit orders, and byte-padded versus tightly packed messages. Distinguish buffering bounds
+   from allocations owned by decoded values.
+4. Fuzz the actual changed paths and test the tests through focused mutation. Surviving
+   non-equivalent mutations in consumption, capacity, EOF, dispatch, or extraction must be
+   resolved; record equivalent mutations and timeouts separately. Use deterministic resource
+   and progress assertions in CI, not timing thresholds on shared runners. Controlled local
+   benchmarks remain the performance approval gate.
+5. Run the required formatting, strict Clippy, feature/workspace tests, denied-warning docs,
+   MSRV, bare-metal no_std, macro/UI and renamed-consumer checks, public API/compatibility,
+   fuzz, and package checks. Relevant workflow/dependency changes also require actionlint and
+   cargo-deny. Record exact commands, results, limitations, and baseline-only failures.
+6. Obtain independent reviewer approval of the final post-fix diff, findings ledger, test
+   evidence, and measurements. Resolve release blockers and unexplained material regressions;
+   document accepted nonblocking tradeoffs and follow-ups. Later edits invalidate affected
+   checks/review. Stage only intentional files and commit only after this gate is satisfied.
+
+This process does not authorize a generic parser rewrite, unsafe optimization, unrelated
+cleanup, or release side effects. A measured design limitation that defeats an intended use
+must be resolved or the proposed adoption revised before claiming that use is ready.
+
+### Coordinated incremental 0.5 candidate
+
+Both runtime and macros require **0.5.0**: removed/changed runtime APIs are breaking, and
+new macro expansion calls new runtime helpers. Publishing the new macros under `^0.4`
+would permit Cargo to pair them with an incompatible old runtime. Use a breaking
+Conventional Commit/squash title and verify that release-plz proposes both 0.5.0 versions
+and rewrites the runtime's macro dependency; do not hand-edit versions. Candidate archive
+checks use current development manifest versions and must be repeated on the generated
+release PR's exact contents before publication.
+That PR must also regenerate the detached `bitsandbytes/fuzz/Cargo.lock` for the new path
+package versions (`cargo metadata --manifest-path bitsandbytes/fuzz/Cargo.toml --format-version 1`).
+CI checks this lockfile with `--locked` before cargo-fuzz; release-plz does not own detached
+workspace lockfiles. Do not merge the version PR with a stale fuzz lock.
 
 ## Required: a token that can open the release PR
 

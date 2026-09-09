@@ -42,7 +42,12 @@
 //!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
 //!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
 //!   `WidthError` bridged in from checked construction (`try_new`).
-//! - `Incomplete { needed }` — a stream ran out mid-message (read more and retry).
+//! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` supports retry;
+//!   a direct forward-only read may already have consumed input.
+//! - `IncompleteAtEof { needed }` — a custom codec still requested input in a finite
+//!   `BitBuf`/`BinCodec` attempt. Other finite custom-codec entry points must report
+//!   their own definitive errors.
+//! - `NoProgress` — a streamed message or counted element consumed no bits.
 //! - `NotSeekable` / `BufferFull` / `TooWide` / `Io` — seek-on-a-stream, buffer cap,
 //!   over-128-bit field, and an I/O failure (carrying just the `std::io::ErrorKind`, not
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
@@ -72,10 +77,11 @@
 //!
 //! # Streaming: `Incomplete` means "retry", not "fail"
 //!
-//! When a forward stream runs out partway through a message, the error is
-//! `Incomplete` — a signal to read more bytes and retry the decode, as opposed to a
-//! definitive failure. [`is_incomplete`](crate::BitError::is_incomplete) distinguishes
-//! the two:
+//! Buffered attempts return `Incomplete` for physical input shortage, not for a logical
+//! region boundary or a custom codec's hard error. Its `needed` is additional **bytes**
+//! for the next blocked operation (`UnexpectedEof` uses **bits**). It is not the final
+//! frame length. [`is_incomplete`](crate::BitError::is_incomplete) distinguishes retry
+//! from a definitive failure. Direct forward readers do not roll back consumed input:
 //!
 //! ```
 //! use bnb::{bin, StreamBitReader};
@@ -87,7 +93,8 @@
 //! // Only 2 of the 4 needed bytes are available so far.
 //! let mut s = StreamBitReader::new(&[0x12, 0x34][..]);
 //! let err = Quad::decode(&mut s).unwrap_err();
-//! assert!(err.is_incomplete()); // buffer more and try again — not a parse error
+//! assert!(err.is_incomplete()); // shortage, but the forward source has consumed its prefix
+//! // For retryable messages, retain the original input and use BitBuf::try_pull instead.
 //! ```
 //!
 //! # Two error types

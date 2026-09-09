@@ -86,7 +86,9 @@ pub enum BitOrder {
 /// assert!(!bool::from_bits(0b10)); // only the low bit is read
 /// ```
 pub trait Bits: Copy {
-    /// The number of bits this value occupies on the wire.
+    /// The number of bits this value occupies on the wire, in `0..=128`.
+    /// A zero-width value is valid alone, but not as a streamed message or counted
+    /// element: those operations require forward progress.
     const BITS: u32;
 
     /// This value as the low [`BITS`](Bits::BITS) bits of a `u128`.

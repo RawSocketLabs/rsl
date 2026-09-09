@@ -189,7 +189,8 @@ and `validate = <path>`.
 `parse_with`/`write_with`, `ignore`, `pad_*`/`align_*`, `restore_position`, and
 `#[reserved]`/`#[reserved_with(…)]`.
 
-`#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`; those bare derives
+`#[bin]` emits codecs directly through shared generators; the bare
+`#[derive(BitDecode, BitEncode, BitsBuilder)]` derives
 are the codec without the builder/`#[bin]` sugar, and they carry a **right-tool guard**
 — a const-eval assert that rejects an all-byte-aligned struct (the cursor never leaves
 byte boundaries, so `#[bin]` is the better tool, and a sub-byte run that fills one
@@ -395,7 +396,8 @@ opt-in and the default for untrusted input is `#[catch_all]`.
 - **Position-aware errors.** A codec error records the absolute **bit offset** where it
   failed and the **field** being processed (the innermost wins, like a span), so a
   failure points at the exact place. A streaming source that runs out mid-message
-  reports `Incomplete` ("read more and retry"), distinct from a definitive failure.
+  reports `Incomplete`, distinct from a definitive failure. Safe retry requires retained
+  input (`BitBuf`); the signal alone does not make forward-only reads transactional.
 - **Reserved bits are explicit, stored, and observable.** A `#[reserved]` field is a
   normal stored field with a known *spec value* (the type's zero, or the
   `#[reserved_with(…)]` expression). On the verbatim path (`decode`/`to_bytes`) it
@@ -515,3 +517,250 @@ headers and `[u8; N]` payloads) it copies whole bytes instead of shifting one bi
 time (~2–3× on aligned data); sub-byte reads fall through to the general bit loop. The
 generated accessors and the runtime read/write methods are `#[inline]` so they inline
 across crate boundaries.
+
+## 11. Incremental decoding and lossless handoff (0.5 candidate)
+
+### 11.1 Scope and existing capabilities
+
+This extends **existing** `BitBuf`, `MessageStream`, `BinCodec`, `DecodeWith`, and
+`ErrorKind::Incomplete`; it does not add a second framing engine, parser generator,
+transport runtime, or dependency. `pull` already decoded zero/one/many messages through
+repeated calls, but hid shortfall details; socket extraction and bounded read-ahead could
+lose retained input. Direct `Source` decoding, `BufSource`, and `StreamBitReader` are not
+transactional substitutes. Inspection covered runtime cursors/I/O/codecs/integers/fields,
+macro generation/dispatch/builders, feature boundaries, existing tests/benchmarks/fuzz,
+public API, and release gates. Findings below include pre-existing shared-path weaknesses,
+not just lines introduced by this feature. This is a bounded audit, not a proof of the
+absence of defects in arbitrary downstream codecs.
+
+Baseline: `25a4381ae353421848a9bb61d9260623029829cc`. Candidate work is isolated on
+`feat/bnb-incremental`; the existing SOCKS integration worktree/index is untouched.
+No SOCKS source is changed in this slice. Local implementation evidence is separate from
+delivery: repository/advisory metadata was refreshed on 2026-09-08; hosted candidate CI,
+merge, generated release versions, and registry publication are subsequent gates.
+
+### 11.2 Contracts and migration
+
+| Surface | Decision |
+|---|---|
+| `BitBuf::pull` | Retained `Result<Option<T>, BitError>` convenience. |
+| `try_pull` | One complete value or typed `Incomplete` with bit offset, field, and optional **additional-byte** hint. Drain until incomplete. |
+| `pull_eof` | One finite attempt; empty is `None`, truncation is a hard error. EOF is not sticky. |
+| `try_pull_with` / `pull_eof_with` | Explicit layout and `DecodeWith<A>` arguments; supports read-only codecs, fresh non-`Clone` context each attempt. |
+| Failure | All attempt errors preserve buffered bytes and cursor. No callback-side-effect rollback or parser continuation state. |
+| `push` | Single fallible capacity-enforcing append; replace old `try_push` with `push`, handle its result. Rejected input stays with caller; no pre-rejection compaction. |
+| `MessageStream` extraction | Replace lossy `into_inner` with `try_into_inner`, or transfer `(stream, BitBuf)` via `into_parts` / `from_parts`. |
+| Raw stream I/O | `Read` returns buffered bytes first without also reading the stream; unaligned imported cursor errors unchanged. `Write`/`flush` delegate. |
+| Message boundaries | Core `BitBuf` preserves exact bits; sync and Tokio helpers consume each message's final byte padding, matching independent encoding. |
+| Tokio handoff | Transfer both `FramedParts` buffers. `BinCodec::decode_eof` is finite; errors retain a typed `BitError` inside `io::Error`. |
+
+Only the private incremental backing reader converts **physical** shortage to `Incomplete`.
+Logical `LimitedSource` exhaustion and custom hard errors remain definitive. An explicit
+custom `Incomplete` at EOF becomes `IncompleteAtEof`, retaining its hint and location without
+inventing an exact missing-bit count. A successful streamed message or counted element must
+advance; otherwise `NoProgress` prevents an infinite drain/allocation loop. Zero-width values
+remain usable outside these progress-requiring operations.
+
+Variable-length magic dispatch preserves declaration order: a matching but incomplete prefix
+waits before a later variant/fallback. Finite input may fall back; a definite mismatch may
+fall back immediately. Probing rewinds on failure and allocates no scratch byte vector.
+
+`BitDecode::decode_vec` is a defaulted extension point with an exact-count/wire-order/progress
+contract. The primitive `u8` override uses `Source::read_bytes`; generated context-free counted
+fields use this method rather than guessing types by spelling. The incremental source proves
+whole-payload availability before allocation. Custom/context element codecs retain their
+semantics; wrappers using the default byte reader can still allocate incrementally.
+
+This is a **0.5.0 pair**: breaking runtime changes and generated calls to new runtime helpers
+must not ship as macros compatible with `^0.4`. Release-plz owns the actual versions and root
+dependency pin. The breaking Conventional Commit/squash title must trigger both crates;
+verify the generated release PR, never hand-bump versions. The API delta gate records all,
+default, and no-default feature surfaces against published 0.4.0, including the already-existing
+0.4.1 consuming alias helper. Major-mode semver checking is paired with that exact delta,
+not used as a blanket waiver; restore patch checking against 0.5.0 after publication.
+
+### 11.3 Audit findings and disposition
+
+All entries below are pre-existing unless marked candidate. High findings block the candidate
+until fixed and proven; accepted medium/low follow-ups do not affect the stated incremental
+contract. Tests are named by behavior; source locations are module/function names so this
+ledger survives line movement.
+
+| Severity / location | Consequence and evidence | Disposition / closing proof |
+|---|---|---|
+| High: `net::MessageStream` extraction/read loop | `into_inner` discarded tails; reading before a capacity check could lose bytes. | Checked/parts extraction, bounded reads before I/O; component tests recover every byte across capacity errors, consumed prefixes, phase changes, and raw handoff. |
+| High: `bitstream::CountPrefix::to_count` | Wide untrusted counts narrowed by wrapping. | Saturate above `usize::MAX`; host-width boundary and hostile counted-field tests. No eager allocation from count. |
+| High: explicit `#[br(count = expr)]` (final reviewer) | Both generated paths still cast to `usize`; a wide count could wrap to zero and falsely complete a frame. | Evaluate once with checked `TryInto<usize>` before payload decode; negative/overflow counts are field-positioned conversion errors. Direct u128, context, ordinary scalar/literal, and unchanged-buffer regressions. |
+| High: generated counted collections | A zero-width successful element allowed count-driven work/allocation without input progress. | Default `decode_vec` and context loop progress guards; runtime, generated, and context regressions. |
+| High: `bitenum` discriminant/width generation | Auto-increment overflow, out-of-width values, and misleading width aliases could create lossy or non-total mappings. | Checked increment and compiler-evaluated actual-width/discriminant/exhaustiveness assertions; three new compile-fail cases. |
+| High: `bitfield` explicit ranges | A range beyond the backing integer produced invalid layout arithmetic. | Reject at macro expansion with field span; compile-fail test. |
+| High: `int::UInt<T, N>` | A width beyond the backing primitive misrepresented its domain. | Const-evaluated width invariant on public constructors/constants/trait width; compile-fail test. |
+| High: `StreamBitReader::read_bits` | Non-EOF I/O failures were reclassified as retryable incomplete input. | Preserve `Io(kind)`; scripted I/O test and explicit nontransactional docs. |
+| High: `MessageDatagram::recv_message` | Trailing full bytes in the received slice were silently accepted/discarded. | Exact received-slice decode; extra-byte rejection and final-padding acceptance tests. An undersized OS receive buffer still truncates, as documented. |
+| High: `BitBuf::grow` / bounded clone | Sparse grow/clone did not reserve the promised full logical cap, allowing later reallocations. | Reserve relative to length; manual bounded clone reservation; allocator profile proves later fills allocate zero. Unbounded clone copies length, not spare capacity. |
+| High: `BitBuf::make_room` after grow | Allocator slack could permit retained physical length beyond the logical cap; rewinding made all bytes live and capacity subtraction could panic. | Compact against the logical cap when bounded, physical capacity otherwise. Public regressions cover byte/partial-bit cursors, unchanged overflow rejection, rewind, and exact data both after grow and at the exact original cap. The no-grow regression kills the surviving capacity-arithmetic mutation. |
+| Medium: `BufSource` / `SeekReader` positions | Cursor plus requested width could overflow. | Checked addition before I/O; host-limit tests assert typed error and unchanged cursor. |
+| High: explicit `#[br(seek = expr)]` (final reviewer) | A wide wire pointer narrowed to a valid earlier offset. | Checked `TryInto<usize>` with field-positioned conversion error; wide/signed offsets, valid pointer, and unchanged-buffer regressions. |
+| Medium: `BitAmount::bytes` | Debug-only overflow panic diverged from release wrapping. | Explicit low-32-bit wrapping, documented unchecked conversion, boundary tests. |
+| Medium: byte-order transform | A downstream invalid `Bits::BITS > 128` could panic before width validation. | Let the sink report `TooWide`; custom-width regression and documented trait domain. |
+| High: candidate magic/EOF/error bridges | Broad EOF conversion or trying fallback too early would hide malformed input or consume the wrong variant. | Private physical-shortage adapter, finite retry, typed `as_read` bridge; split-prefix, logical-boundary, custom-error, and EOF tests. |
+| Medium: explicit field width vs logical/raw type | A wider stored field than its logical type can hide high bits through getters (raw backing still retains them). | Deferred policy decision: reject versus explicitly permit truncating views. Not a new incremental path; track before 1.0. |
+| Low: explicit bitflag aliases | Duplicate positions are accepted but alias/iteration policy is not explicit. | Deferred API/documentation decision; no changed flag generation. |
+| Medium: `auto_len = bytes` | Probe uses a default-layout, offset-zero, scratchless writer and invokes the encoder twice. Stateful lengths can differ. | Document supported state-independent/retry-safe encoder boundary; use encode-once outer envelopes for such protocols. Track general encode-once sizing separately. |
+| Low: `SeekReader` allocation / macro offsets | At most 17 temporary bytes are heap-allocated per scalar; cumulative generated offset expressions can grow quadratically. | Track stack scratch and measured codegen optimization independently; neither is required by this buffer-backed design. |
+| Low: fixed-array width constants | Extremely large array-size expressions can exceed the `u32` fixed-bit-length domain. | Track clearer compile-time diagnostics; runtime length paths here are checked. |
+
+### 11.4 Genericity and limits
+
+Evidence is not SOCKS-specific: existing DMR golden vectors at every split, 54-bit packed
+frames in both bit orders, compressed DNS in an owned TCP-length envelope at every split,
+versioned read-only records with context and explicit layout, nested logical bounds,
+variable magic/fallback dispatch, arbitrary partition TLV properties, and a borrowed DER
+parser over the extracted owned envelope. DNS compression pointers remain relative to
+the message, not an accumulating stream buffer. The DER test proves the borrowed span
+points into the owned envelope; it adds no owned trait requirement to the DER parser.
+
+Hints describe the next blocked operation, not the full frame size or a no-read-ahead
+promise. Error positions are buffer-local and can rebase after compaction. Buffer caps
+bound retained **wire bytes**, not allocations in returned values, parser recursion, or
+arbitrary callbacks. General variable-element parsing replays and can be quadratic under
+tiny fragments: batch input, cap frame sizes/attempt frequency, or frame an opaque owned
+envelope first. No generalized resumable parser is implied. Async cancellation/partial
+writes remain owned by Tokio/transport callers; this does not make whole-message retries
+safe after a partial write. Direct underlying reads can still bypass buffered tails.
+`IncompleteAtEof` classifies custom shortages in the new finite-attempt APIs only. Legacy
+finite custom-codec entry points (including datagram `decode_exact`) must themselves return
+definitive errors; broader finite-error normalization is deferred. A datagram already
+truncated by an undersized receive buffer cannot be reconstructed by exact slice decoding.
+
+Verbatim encoding retains modeled wire fields, not arbitrary unmodeled padding or a custom
+codec's original representation. `decode_exact` accepts final partial-byte padding and an
+independent encoder emits zero padding. Bit-exact packed concatenation uses one bit cursor.
+
+### 11.5 Performance gate and measurements
+
+Setup: rustc 1.98.0 / LLVM 22.1.8, default features, system allocator, Threadripper 7970X,
+CPU 0 pinned (`taskset`, SMT sibling 32), powersave governor, boost enabled. No concurrent
+builds during timed runs. Baseline source is the SHA above plus the identical benchmark
+harness. Criterion uses 100 samples/3 s warmup/5 s measurement for IPv4-shaped messages;
+u32-length byte envelopes of 64/1024/16384 bytes, chunks 1/64/1500/whole, use 10 samples,
+200 ms warmup/1 s measurement (extended for slow cases). Baselines saved as
+`bnb-04-final-a` / `-b`; final candidate as `bnb-05-release-a` / `-b`.
+
+**Predeclared gates**, established before candidate measurement: baseline repeat variation
+under 5%; investigate/reject unexplained >15% whole-message/envelope regression (3× noise).
+Incomplete byte payloads allocate zero, completion allocates one payload. The 16 KiB/1-byte
+case must scale by at most 20× the 1 KiB case (16× input plus 25% tolerance). Separately
+investigate >15% expanded-source growth for unchanged `bin_message`; repeated warm expansion
+times are diagnostic, not cold-build claims. These are controlled local gates, not noisy
+shared-CI timing assertions. General variable-element replay is measured without claiming
+linearity or extrapolating the byte-blob optimization to arbitrary codecs.
+
+Final A/B central estimates (both candidate runs follow the last production capacity fix):
+
+| Case | Baseline A / B | Candidate A / B |
+|---|---|---|
+| IPv4-shaped encode | 239.74 / 241.86 ns | 255.19 / 238.45 ns |
+| IPv4-shaped decode | 244.92 / 236.92 ns | 132.08 / 128.72 ns |
+| Whole 16 KiB byte envelope | 38.856 / 38.751 µs | 371.30 / 370.37 ns |
+| 1 KiB envelope, one-byte chunks | 1.3681 / 1.4075 ms | 10.830 / 10.852 µs |
+| 16 KiB envelope, one-byte chunks | 320.50 / 320.51 ms | 170.25 / 177.20 µs |
+| 1024 variable elements, whole input | 23.672 / 23.925 µs | 27.176 / 26.140 µs |
+| 64 variable elements, one-byte chunks | 96.521 / 92.357 µs | 96.916 / 93.995 µs |
+| 1024 variable elements, one-byte chunks | 25.175 / 24.649 ms | 27.946 / 27.648 ms |
+
+Baseline repeats differ by at most 4.91% relative to their pair mean across all 18 cases.
+The candidate byte-envelope scaling is 15.72× / 16.33×, within the 20× gate. No tested
+whole-message/envelope case exceeds the 15% regression budget even comparing the slower
+candidate with the faster baseline. Generic collection whole-input decoding costs up to
+14.8% more, accepted for per-element progress enforcement; it is not the optimized byte-blob
+path. Its one-byte replay grows about 288× / 294× for 16× more elements: the quadratic
+limitation is real, measured, and requires batching or opaque envelopes for such workloads.
+IPv4 encode repeat variance is visible, so no encoding speedup is claimed. The unchanged
+`bin_message` expansion grows from 55,343 to 57,800 bytes (+4.44%); repeated warm expansion
+was 0.15 s baseline / 0.13 s candidate, diagnostic only. No cold-build speed claim is made.
+
+Separate allocation instrumentation: debug `bitbuf_bounded --profile` under
+`scripts/profile-allocations.gdb` on Linux x86-64, no unsafe allocator implementation and
+no debugger network downloads. Passed: 1000 bounded scalar cycles allocate zero; sparse grow
+and bounded-clone fills allocate zero; bounded clone reserves 64 bytes; unbounded clone of
+length 3/reservation 1 MB allocates only 3 bytes. All 4095 partial attempts before completing
+a 4096-byte payload allocate zero; completion allocates once (4096 bytes). Compaction plus
+append moves four bytes (two retained + two new). Debug `memmove` counts also include compiler
+aggregate/error copies; those totals are not a payload-copy metric and are excluded from
+throughput comparisons. The spare-capacity phase (cap 65, append 64, consume 8 bytes,
+append 1) allocates zero and moves only the newly appended byte, not the 56 retained bytes.
+These copy counts are characterized on the stated debug toolchain and must be recalibrated
+for different compiler lowering, not relaxed to accept unnecessary compaction. Script
+assertions fail on allocation/copy-budget regressions.
+
+### 11.6 Verification and review gate
+
+The reusable pre-commit audit/performance/reviewer process is codified in
+[`../docs/RELEASING.md`](../docs/RELEASING.md). Every finding has a disposition; no commit
+may precede final independent review and resolution of affected verification failures.
+Local checks on 2026-09-08 use separate candidate and immutable-baseline target directories.
+Sharing one Cargo target between worktrees produced stale/cross-contaminated artifacts;
+the reported baseline builds, expansion, and timings were rerun in isolated directories.
+Rustdoc/public-API jobs also run serially when sharing a target, so a documentation build
+cannot overwrite the JSON input of an API check.
+
+| Gate / command | Result and interpretation |
+|---|---|
+| `cargo fmt --all --check`; `git diff --check` | Pass. |
+| `cargo clippy -p bitsandbytes -p bitsandbytes-macros --all-targets --all-features -- -D warnings` | Pass without warnings. Historical macros warnings are resolved, not waived. |
+| `cargo test --workspace`; `cargo test -p bitsandbytes` with default, `bytes`, `mock`, `tokio`, and all features | Pass, including macro/UI, properties, and transport tests. |
+| `cargo test -p bitsandbytes --no-default-features --test incremental --test bitstream_dmr_frame` | Pass. The broad no-default **test** command still includes pre-existing ungated std-only examples/tests; reproduced on isolated main. This does not affect no_std library/renamed-consumer gates. |
+| `cargo clippy --workspace --all-targets`; strict all-feature SOCKS Clippy | Pass under configured CI policy; workspace has the same 106 warning lines as baseline. Workspace-wide `-D warnings` still fails unrelated lint debt; no blanket waiver added. |
+| `cargo +1.85.0 check --workspace`; runtime all features; renamed consumer | Pass. Developer tests/benchmarks use stable; library MSRV remains 1.85. |
+| `cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi` | Pass on stable. The 1.85 bare-metal target is not installed locally; CI requires the checked 1.85 host plus stable bare-metal combination. |
+| `RUSTDOCFLAGS='-D warnings' cargo doc` for both crates/all features and runtime/no defaults, `--no-deps` | Pass. |
+| Pinned `cargo +nightly-2026-06-17 public-api` snapshot; `bash bitsandbytes/scripts/check-api-delta.sh` in `all`, `default`, `none` modes | Pass; exact reviewed delta is the migration guard. |
+| `cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type major` in all/default/explicit-none modes | Pass, but major mode executes **zero** compatibility rules (254 skipped); it is not compatibility proof. The diagnostic patch run executes 223 rules: 222 pass, one fails for the intentionally removed `try_push`/`into_inner`. Both crates require 0.5.0. |
+| `cargo package -p bitsandbytes-macros -p bitsandbytes --all-features --allow-dirty` | Both archives build together using Cargo's temporary registry. Current development manifest versions are not the release candidate versions; repeat on the generated release PR. |
+| `cargo deny check`; `actionlint` | Pass with refreshed advisory data. Unused-license and duplicate-syn warnings remain; yanked wnaf is absent. |
+
+Benchmark, allocation, mutation, fuzz, and final reviewer evidence below complement these
+checks. A clean committed worktree must additionally pass `scripts/ci-act.sh pre-push`,
+then exact-SHA hosted PR/main CI and release-PR/package checks before registry publication.
+
+Final independent reviewer approval: 2026-09-08, no findings or unresolved pre-commit
+release blockers. Approval covers the final production diff, exact-capacity regression,
+allocation profile, findings dispositions, and reconciled measurements. Delivery gates
+above remain mandatory; source changes require affected checks and review again.
+
+The first containerized pre-push run exposed a new UI-environment mismatch, not a relaxed
+baseline exception: the UInt width diagnostic includes core source excerpts locally, but
+the container omitted them without `rust-src`. The build/test job now installs that
+component, matching trybuild's documented prerequisite; the invalid-width assertion and
+snapshot are unchanged. This delivery-only fix requires the full pre-push rerun.
+
+Focused mutation evidence on the final production implementation:
+
+- Core attempts/capacity/EOF/dispatch/extraction: 72 mutants, **62 caught, 6 unviable,
+  4 functional survivors**. The exact-capacity regression added after the previous run
+  catches `limit - len` changed to `limit / len`; it is not an accepted survivor.
+- The four remaining `make_room` variants retain mandatory compaction and only change
+  its discretionary schedule: computing live bytes with `+` or `/`, using `>=` rather
+  than `>` for capacity pressure, or reversing the dead/live comparison. Review accepts
+  the `+` variant as a harmless heuristic alternative, not a required API behavior.
+  The other three introduce unnecessary copies in the spare-capacity profile scenario;
+  the separate resource gate guards that cost without coupling unit tests to private fields.
+- Additional adapter/default-reader family: 41 mutants, **32 caught, 5 unviable,
+  3 timeouts, 1 functional survivor**. Replacing the byte-alignment `%` with `+` disables
+  the byte fast path but preserves decoded values; allocation/scaling measurements,
+  not value equality, guard this performance distinction.
+- Timeouts are recorded separately: an inverted element-progress check with a hostile
+  zero-width count, and two retry-condition mutations that loop on permanent scripted
+  I/O failures. They are bounded harness detections, not ordinary assertion failures.
+
+The stateful `stream_decode` fuzz target completed 2,000,000 cases on the final runtime
+paths (seed 649629597, 419 s, coverage 231, feature count 1617); the slice `decode` target
+also completed 2,000,000 cases (seed 1839166121, 27 s). Subsequent edits add regression
+tests, profiling, and evidence only. CI's 60-second/two-million-case smoke limit is a
+different budget and does not promise two million cases on a hosted runner.
+
+The next smallest implementation slice is **SOCKS adoption only** after bnb delivery:
+replace duplicated framing with the approved buffer/handoff API and prove handshake-to-raw
+payload preservation in sync and async paths. Do not combine that adoption with another
+parser architecture, client/server expansion, or the independent audit follow-ups.

@@ -174,6 +174,18 @@
 //! a truncation), and a `WireLen`-auto field is optional in the builder (defaults to
 //! `auto()`), so you never mention it unless forging.
 //!
+//! `auto_len = bytes(field)` currently measures by encoding the field into a temporary
+//! default-layout writer at offset zero, without the outer writer's scratch state, then
+//! encodes it again into the message. Use it only when the encoded **length** is independent
+//! of layout, position, and scratch state, and the encoder is safe to invoke twice. For
+//! compression or state-dependent lengths, encode the payload once into an owned envelope
+//! and prefix its byte length, or supply an explicit `WireLen::set` from that encoding.
+//!
+//! Explicit `#[br(count = expression)]` counts are evaluated once and must convert to
+//! `usize` through `TryInto`. Negative or oversized values are field-positioned conversion
+//! errors; they never wrap into a shorter collection. Ordinary integer literals and
+//! integer fields/context expressions work directly.
+//!
 //! # `if` — a conditional `Option`
 //!
 //! `#[br(if(<cond>))]` on an `Option<T>` reads `Some` when the condition (over earlier
@@ -516,6 +528,9 @@
 //! (the writer is append-only); pair it with `restore_position` to read at the offset and
 //! return so later fields continue in order. Like `restore_position` it seeks, so
 //! `decode` on a forward-only stream is a compile error; the slice paths qualify.
+//! The offset is checked through `TryInto<usize>`: negative or oversized values are
+//! conversion errors, not wrapped pointers. Validate a byte amount before calling the
+//! unchecked low-32-bit [`BitAmount::bytes`](crate::BitAmount::bytes) convenience.
 //!
 //! ```
 //! use bnb::{bin, prelude::*};

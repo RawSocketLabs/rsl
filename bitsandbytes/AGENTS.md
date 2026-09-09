@@ -18,6 +18,9 @@ and the road to 1.0 in [`bnb/ROADMAP.md`](bnb/ROADMAP.md).
 ## Working here
 
 - **One concern per change**, on a branch off `main` → PR → green CI → squash-merge.
+- **Before committing runtime/macro changes**, apply the correctness/performance gate in
+  [`docs/RELEASING.md`](docs/RELEASING.md#pre-commit-correctness-and-performance-gate).
+  Record candidate evidence and findings in `bnb/DESIGN.md`; obtain final independent review.
 - **Conventional Commits** are enforced (commitlint); `release-plz` derives versions from
   them. `feat`/`fix` bump; most other types don't.
 - **No `Co-Authored-By:` trailer in commit messages** — do not append the line that makes

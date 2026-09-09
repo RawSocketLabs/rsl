@@ -26,7 +26,7 @@ mod e2e {
         out.write_message(&Msg::Hi { n: 1 }).unwrap();
         out.write_message(&Msg::Hi { n: 2 }).unwrap();
         out.write_message(&Msg::Bye).unwrap();
-        let bytes = out.into_inner();
+        let bytes = out.try_into_inner().unwrap();
 
         let mut inp = MessageStream::new(&bytes[..]);
         assert_eq!(inp.read_message::<Msg>().unwrap(), Msg::Hi { n: 1 });
@@ -44,7 +44,7 @@ mod e2e {
         let bytes = {
             let mut out = MessageStream::new(Vec::new());
             out.write_message(&Msg::Hi { n: 7 }).unwrap();
-            out.into_inner()
+            out.try_into_inner().unwrap()
         };
         assert!(bytes.len() > 2);
         let mut inp = MessageStream::bounded(&bytes[..], 2);
@@ -74,7 +74,7 @@ mod e2e {
         let mut out = MessageStream::new(Vec::new());
         out.write_message(&Msg::Hi { n: 0xABCD }).unwrap();
         out.write_message(&Msg::Bye).unwrap();
-        let bytes = out.into_inner();
+        let bytes = out.try_into_inner().unwrap();
 
         // Deliver one byte per `read` — `MessageStream` must buffer until each message completes.
         let mut inp = MessageStream::new(Trickle {

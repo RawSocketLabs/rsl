@@ -169,7 +169,7 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `SeekSource` marker for in-memory buffers, `BufSource<R: Read>` (bounded
   retain-and-seek over a forward-only reader), `BitBuf` (push/pull bit-aware in-memory
   buffer — pushable, a `SeekSource`, `no_std`; **reclaim is deferred + in place** so a push/pull
-  loop reuses one alloc, and `BitBuf::bounded(cap)` + `try_push`/`grow` give a fixed alloc-once
+  loop reuses one alloc, and `BitBuf::bounded(cap)` + `push`/`grow` give a fixed alloc-once
   footprint, `CapacityError` on overflow), `SeekReader<R: Read + Seek>`, and —
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
@@ -297,6 +297,9 @@ in the layer that matches its subject:
 - **`property`** — `tests/`, `mod property`. `proptest` invariants (`fuzz_roundtrip`).
 
 `tests/compile_fail.rs` (trybuild) is the separate negative/UI harness, outside the layers.
+Install the stable toolchain's `rust-src` component before running these tests
+(`rustup component add rust-src`). Core const-panic diagnostics include source excerpts
+when it is present; CI installs it so local and hosted snapshots render consistently.
 
 ```bash
 cargo test                                  # whole workspace (default features)
