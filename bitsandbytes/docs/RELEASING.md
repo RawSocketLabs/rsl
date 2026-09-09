@@ -61,11 +61,12 @@ Dependency, policy, and workflow changes trigger bnb's full CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
-baseline is explicitly published `0.5.0`; advance it deliberately after releases.
+baseline is explicitly published `0.6.0`; advance it deliberately after releases.
 Compatible additions enforce `--release-type patch` in all three feature modes.
-The breaking 0.4 → 0.5 transition used major mode plus exact reviewed API deltas.
-The three `bnb/api-delta-0.5-{all,default,none}.txt` snapshots remain historical migration
-evidence, not executable CI gates. The one-time delta checker was removed after publication;
+The breaking 0.4 → 0.5 and 0.5 → 0.6 transitions used major mode plus exact reviewed API deltas.
+The `bnb/api-delta-0.5-{all,default,none}.txt` and `bnb/api-delta-0.6-{all,default,none}.txt`
+snapshots remain historical migration evidence, not executable CI gates.
+The one-time delta checker was removed after publication;
 the standing public-API snapshot check and all three patch compatibility gates remain.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
@@ -73,19 +74,21 @@ and review remain required.
 Do not recreate historical tags. The `git_only` migration remains deferred in
 `release-plz.toml` until a packageable tag baseline exists.
 
-### Runtime 0.6 transition
+### Runtime 0.6.0 delivery
 
 Hint-driven message reading changes the read-error type and strengthens the positive
-`Incomplete` contract. Expect runtime 0.6.0 with macros remaining 0.5.0: no new generated
-runtime requirement or macro implementation change is involved. Preserve the breaking
-Conventional Commit marker. Versions and changelogs remain release-plz-owned.
+`Incomplete` contract. [PR #80](https://github.com/RawSocketLabs/rsl/pull/80) preserved the
+breaking Conventional Commit marker; release-plz generated runtime **0.6.0** in
+[PR #81](https://github.com/RawSocketLabs/rsl/pull/81). Macros remain **0.5.0**: no new
+generated runtime requirement or macro implementation change is involved.
+Versions and changelogs remain release-plz-owned.
 
-During this transition, `check-api-delta.sh` verifies exact reviewed all/default/none deltas
-against published 0.5.0. All-feature semver uses major mode alongside that gate; default and
-no-default source APIs still enforce patch compatibility. After verified publication, restore
-all-mode patch checks against 0.6.0 and retire the temporary checker, retaining delta snapshots
-as migration evidence. Repeat detached fuzz lock and archive verification on the generated PR.
-The release allowlist stays bnb-only; no GitHub Release is created.
+During this transition, exact reviewed all/default/none deltas against 0.5.0 supplemented
+all-feature major mode; default and no-default APIs continued to enforce patch compatibility.
+After verified publication, all-mode patch checks now target 0.6.0. The temporary checker
+is retired; delta snapshots remain migration evidence. The generated PR's detached fuzz lock
+and archive were verified before merge. The release allowlist stays bnb-only; no GitHub Release
+was created. See `bnb/DESIGN.md` §12.4 for registry, tag, publisher and consumer receipts.
 
 ## Pre-commit correctness and performance gate
 

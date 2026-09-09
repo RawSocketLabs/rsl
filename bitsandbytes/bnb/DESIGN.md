@@ -949,3 +949,42 @@ the final runtime/API/feature diff, rebase fix, tests, both two-million-case fuz
 mutations, allocation/performance evidence and reconciled ledger. Only clean-tree container,
 hosted and generated-release gates remain. Subsequent source edits require affected checks
 and renewed review; green CI alone does not waive the pre-commit gate.
+
+### 12.4 Delivery receipt (2026-09-09 UTC)
+
+[PR #80](https://github.com/RawSocketLabs/rsl/pull/80) delivered the reviewed source as
+`cd5db374`, after full clean-tree container and hosted CI. PR #79 was superseded only to
+wrap its commit-message body/footer for commitlint; its published branch was preserved,
+and the replacement Git tree was identical. No source or published history was rewritten.
+
+Release-plz generated runtime **0.6.0** in [PR #81](https://github.com/RawSocketLabs/rsl/pull/81);
+macros remain **0.5.0**. The generated PR's initial CI exposed its stale detached fuzz lock.
+Refreshing only the runtime version fixed the locked-metadata gate. README/release guidance
+was aligned, both commits passed local commitlint, and the independent reviewer approved
+the eight-file candidate. Strict bnb/macros Clippy, workspace/all-feature tests, clean archive
+verification, full clean-tree container CI and fresh hosted PR CI passed before merge.
+The 254-file runtime archive builds against registry macros 0.5.0, not a local macro patch.
+
+PR #81 merged as `6bcbb949dba082fcff5c0f0335b3be2bff909dd3` by `michael-smythe`.
+[Main CI](https://github.com/RawSocketLabs/rsl/actions/runs/34315930303) passed for that exact SHA;
+[release automation](https://github.com/RawSocketLabs/rsl/actions/runs/34316114611) then published
+[bitsandbytes 0.6.0](https://crates.io/crates/bitsandbytes/0.6.0). Crates.io records
+`michael-smythe` as publisher at `2026-09-09T05:45:38Z`; the version is not yanked.
+The annotated `bitsandbytes-v0.6.0` tag and the registry archive's VCS metadata both resolve
+to the release merge SHA. Downloaded archive, sparse index and registry API checksums agree:
+`8b8c57b18675d29aac95d3decfc16d201592817deeff6d105d46f9a9813d4f40`.
+Macros 0.5.0 remain the latest macro release; no macro 0.6 tag or GitHub Release was created.
+
+The [versioned async reader docs](https://docs.rs/bitsandbytes/0.6.0/bnb/net/fn.read_message_async.html)
+are available. A fresh external registry-only consumer renames the dependency to `wire`, uses
+`default-features = false` with `tokio-io`, and verifies generated length-prefixed records,
+borrowed sync/async readers, buffered success with empty scratch, clean EOF classification,
+and lossless raw handoff. It passes stable and Rust 1.85 execution plus strict all-target Clippy;
+its lock/tree resolve registry runtime 0.6.0 and macros 0.5.0 with no path patch.
+
+Post-release CI restores `--release-type patch` against published 0.6.0 in all/default/none
+feature modes; each local comparison passes 223 rules (31 skipped), and the public-API
+snapshot remains unchanged. The temporary delta checker is retired; all reviewed delta snapshots remain
+historical evidence and the standing public-API snapshot remains enforced. The next smallest
+slice is SOCKS adoption of the published borrowed readers, preserving its existing session,
+error and handoff policies. Neither dirty SOCKS checkout nor the unrelated PNGs was changed.
