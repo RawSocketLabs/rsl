@@ -297,6 +297,9 @@ in the layer that matches its subject:
 - **`property`** — `tests/`, `mod property`. `proptest` invariants (`fuzz_roundtrip`).
 
 `tests/compile_fail.rs` (trybuild) is the separate negative/UI harness, outside the layers.
+Install the stable toolchain's `rust-src` component before running these tests
+(`rustup component add rust-src`). Core const-panic diagnostics include source excerpts
+when it is present; CI installs it so local and hosted snapshots render consistently.
 
 ```bash
 cargo test                                  # whole workspace (default features)

@@ -729,6 +729,12 @@ release blockers. Approval covers the final production diff, exact-capacity regr
 allocation profile, findings dispositions, and reconciled measurements. Delivery gates
 above remain mandatory; source changes require affected checks and review again.
 
+The first containerized pre-push run exposed a new UI-environment mismatch, not a relaxed
+baseline exception: the UInt width diagnostic includes core source excerpts locally, but
+the container omitted them without `rust-src`. The build/test job now installs that
+component, matching trybuild's documented prerequisite; the invalid-width assertion and
+snapshot are unchanged. This delivery-only fix requires the full pre-push rerun.
+
 Focused mutation evidence on the final production implementation:
 
 - Core attempts/capacity/EOF/dispatch/extraction: 72 mutants, **62 caught, 6 unviable,
