@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.5.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.4.0...bitsandbytes-macros-v0.5.0) - 2026-09-09
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] support incremental decoding and lossless handoff
+
 ## [0.4.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.3.2...bitsandbytes-macros-v0.4.0) - 2026-09-07
 
 ### Added
