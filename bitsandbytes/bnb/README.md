@@ -8,7 +8,7 @@ unified `#[bin]` whole-message macro for binary protocols. No external codec
 dependency — `bnb` is self-contained.
 
 Published on crates.io as **`bitsandbytes`**; import it as `bnb`:
-`bnb = { package = "bitsandbytes", version = "0.5" }`. Docs: <https://docs.rs/bitsandbytes>.
+`bnb = { package = "bitsandbytes", version = "0.6" }`. Docs: <https://docs.rs/bitsandbytes>.
 
 Version **0.5** extends `BitBuf` with detailed incremental attempts,
 finite EOF, and context/read-only support; stream helpers preserve buffered tails across
@@ -17,7 +17,7 @@ extraction. See the [I/O guide](src/guide/io.rs) for usage and
 [design/migration decisions](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
 These APIs require 0.5; see the migration notes when upgrading from 0.4.
 
-The next runtime release adds hint-driven whole-message reads: `MessageStream::read_message`
+Version **0.6** adds hint-driven whole-message reads: `MessageStream::read_message`
 handles refills internally; `net::read_message` and `net::read_message_async` borrow your
 transport, `BitBuf`, and reusable scratch. Enable `net` for sync or `tokio-io` for Tokio
 without `tokio-util`; `tokio` includes both the borrowed reader and existing `BinCodec`.

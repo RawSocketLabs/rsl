@@ -6,9 +6,12 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
 ## How it works
 
 1. **Every commit must be conventional.** `.github/workflows/commitlint.yml` lints
-   every commit in a PR against `commitlint.config.mjs`. A non-conforming message
+   every commit in a PR against `.config/commitlint.config.mjs`. A non-conforming message
    fails CI. The squash title must also carry the intended scope and breaking marker:
    release-plz parses the history that actually reaches `main`.
+   Before the first push, run commitlint locally with that configuration; wrap body and
+   footer lines at 100 characters. The full `CI` container run does not include the separate
+   `commit-lint` workflow, and identity hooks do not validate commit-message style.
 
 2. **Successful CI unlocks release automation.** After push CI succeeds for the
    exact current `main` SHA,
