@@ -287,6 +287,12 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
                     ),
                 ));
             }
+            if *b as usize >= backing_bytes * 8 {
+                return Err(syn::Error::new_spanned(
+                    &f.ident,
+                    "bit range exceeds the backing integer width",
+                ));
+            }
         }
     }
 

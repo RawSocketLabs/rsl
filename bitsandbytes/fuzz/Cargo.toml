@@ -16,10 +16,18 @@ libfuzzer-sys = "0.4"
 
 [dependencies.bitsandbytes]
 path = "../bnb"
+features = ["net"]
 
 [[bin]]
 name = "decode"
 path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_decode"
+path = "fuzz_targets/incremental.rs"
 test = false
 doc = false
 bench = false

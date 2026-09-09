@@ -1,0 +1,40 @@
+error[E0080]: evaluation panicked: UInt width exceeds its backing integer
+ --> $RUST/core/src/panic.rs
+  |
+  |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `bnb::UInt::<u8, 16>::VALID_WIDTH` failed here
+  |
+ ::: src/int.rs
+  |
+  | impl_uint!(u8, u16, u32, u64, u128);
+  | ----------------------------------- in this macro invocation
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `impl_uint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+ --> src/int.rs
+  |
+  |                     let () = Self::VALID_WIDTH;
+  |                              ^^^^^^^^^^^^^^^^^
+...
+  | impl_uint!(u8, u16, u32, u64, u128);
+  | ----------------------------------- in this macro invocation
+  |
+  = note: this note originates in the macro `impl_uint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+ --> src/int.rs
+  |
+  |                     Self { value: value & Self::MASK }
+  |                                           ^^^^^^^^^^
+...
+  | impl_uint!(u8, u16, u32, u64, u128);
+  | ----------------------------------- in this macro invocation
+  |
+  = note: this note originates in the macro `impl_uint` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+ --> tests/ui/uint_width_backing.rs:3:31
+  |
+3 | const INVALID: UInt<u8, 16> = UInt::<u8, 16>::MIN;
+  |                               ^^^^^^^^^^^^^^^^^^^

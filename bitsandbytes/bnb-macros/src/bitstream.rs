@@ -893,6 +893,19 @@ fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
     quote!(#align #pad)
 }
 
+/// Checked host-size operands shared by generated counts and absolute pointers.
+fn checked_usize(expr: &syn::Expr, field: &Ident, message: &str) -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    quote! {
+        ::core::convert::TryInto::<usize>::try_into(#expr).map_err(|_| {
+            #bnb::__private::BitError::convert(
+                #bnb::__private::String::from(#message),
+                #bnb::__private::Source::bit_pos(__bnb_r),
+            ).in_field(::core::stringify!(#field))
+        })?
+    }
+}
+
 /// The decode statement for one field — a `let #id = …;` binding, wrapped with any
 /// `pad_*`/`align_*` positioning. A later `count` can name an earlier field.
 fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
@@ -902,10 +915,14 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     // `seek = <bits>`: jump to an absolute bit offset before the read (following a
     // pointer). Read-side only; emitted inside the `restore_position` wrap so the saved
     // offset is the *pre-seek* one (read at the offset, then return).
-    let seek = br
-        .seek
-        .as_ref()
-        .map(|e| quote!(#bnb::__private::Source::seek_to_bit(__bnb_r, (#e) as usize)?;));
+    let seek = br.seek.as_ref().map(|expr| {
+        let id = f.ident.as_ref().expect("named field");
+        let offset = checked_usize(expr, id, "seek offset is outside the usize range");
+        quote! {
+            let __seek = #offset;
+            #bnb::__private::Source::seek_to_bit(__bnb_r, __seek)?;
+        }
+    });
     let mut core = field_read_core(f, br)?;
     // `dbg`: trace the field's start offset and decoded value (the field must be
     // `Debug`). Captured after any `seek`, so the offset is where the bits actually came
@@ -1021,27 +1038,38 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         let count = br.count.as_ref().ok_or_else(|| {
             syn::Error::new_spanned(f, "a `Vec<_>` field needs `#[br(count = <expr>)]`")
         })?;
+        // Explicit expressions need the same host-width protection as CountPrefix.
+        // Evaluate once; reject negative/oversized counts before touching the payload.
+        let checked_count = checked_usize(count, id, "count is outside the usize range");
+        let Some(names) = &br.ctx else {
+            return Ok(quote! {
+                let #id = {
+                    let __n = #checked_count;
+                    <#elem as #bnb::__private::BitDecode>::decode_vec(__bnb_r, __n)
+                        .map_err(|e| e.in_field(::core::stringify!(#id)))?
+                };
+            });
+        };
         // Read one element into `__e`, pinning its type so inference can't drift.
-        let read_elem = if let Some(names) = &br.ctx {
-            let lit = ctx_literal(&ctx_struct_ty(elem)?, names, None);
-            quote! {
-                let __e = <#elem>::decode_with(__bnb_r, #lit)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }
-        } else {
-            quote! {
-                let __e = <#elem as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }
+        let lit = ctx_literal(&ctx_struct_ty(elem)?, names, None);
+        let read_elem = quote! {
+            let __e = <#elem>::decode_with(__bnb_r, #lit)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;
         };
         // No untrusted pre-allocation: `count` is attacker-controlled, so grow the
-        // Vec by pushing (bounded by the input — each element consumes ≥1 bit).
+        // Vec by pushing. Require progress: zero-width/custom codecs need not consume input.
         Ok(quote! {
             let #id = {
-                let __n = (#count) as usize;
+                let __n = #checked_count;
                 let mut __v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
                 for _ in 0..__n {
+                    let __start = #bnb::__private::Source::bit_pos(__bnb_r);
                     #read_elem
+                    if #bnb::__private::Source::bit_pos(__bnb_r) <= __start {
+                        return ::core::result::Result::Err(#bnb::__private::BitError::new(
+                            #bnb::__private::ErrorKind::NoProgress, __start,
+                        ).in_field(::core::stringify!(#id)));
+                    }
                     __v.push(__e);
                 }
                 __v
@@ -3831,35 +3859,23 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let magic_block = if !magic_dispatch {
         quote!()
     } else if use_peek {
-        let max = dispatch
-            .variants
-            .iter()
-            .filter(|v| v.role() == VariantRole::MagicOnly)
-            .map(|v| v.magic.as_ref().unwrap().byte_len())
-            .max()
-            .expect("at least one magic-only variant");
         let mut chain = tail_body.clone();
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
                 let Magic::Bytes(bytes) = v.magic.as_ref().unwrap() else {
                     unreachable!("peek path validated to byte-string magics");
                 };
-                let len = bytes.len();
                 let bytes = bytes.iter();
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
                 chain = quote! {
-                    if __peek.starts_with(&[#(#bytes),*]) {
-                        #bnb::__private::Source::seek_to_bit(__bnb_r, #bnb::__private::Source::bit_pos(__bnb_r) + #len * 8)?;
+                    if #bnb::__private::match_magic(__bnb_r, &[#(#bytes),*])? {
                         #(#reads)*
                         ::core::result::Result::Ok(#ctor)
                     } else #chain
                 };
             }
         }
-        quote! {
-            let __peek = #bnb::__private::peek_bytes(__bnb_r, #max)?;
-            #chain
-        }
+        chain
     } else {
         let read = rep_magic
             .expect("magic dispatch has a representative magic")
@@ -4104,13 +4120,6 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             },
         );
         let decision = if use_peek {
-            let max = dispatch
-                .variants
-                .iter()
-                .filter(|v| v.role() == VariantRole::MagicOnly)
-                .map(|v| v.magic.as_ref().unwrap().byte_len())
-                .max()
-                .expect("at least one magic-only variant");
             let mut chain = quote!({ #tail_kind });
             for v in dispatch.variants.iter().rev() {
                 if v.role() == VariantRole::MagicOnly {
@@ -4119,13 +4128,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     };
                     let bytes = bytes.iter();
                     let k = &v.variant.ident;
-                    chain = quote!(if __peek.starts_with(&[#(#bytes),*]) { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
+                    chain = quote!(if #bnb::__private::match_magic(__bnb_r, &[#(#bytes),*])? { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
                 }
             }
-            quote! {
-                let __peek = #bnb::__private::peek_bytes(__bnb_r, #max)?;
-                #chain
-            }
+            chain
         } else {
             let read = rep_magic
                 .expect("magic dispatch has a representative magic")

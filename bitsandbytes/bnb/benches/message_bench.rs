@@ -13,9 +13,10 @@
 //! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
 
-use bnb::{BitEnum, bin, bitfield, u2, u3, u4, u6, u13};
-use criterion::{Criterion, criterion_group, criterion_main};
+use bnb::{BitBuf, BitEnum, bin, bitfield, u2, u3, u4, u6, u13};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
+use std::time::Duration;
 
 // version:ihl — the classic IPv4 first byte (two nibbles, MSB-first).
 #[bitfield(u8, bits = msb, bytes = big)]
@@ -108,9 +109,101 @@ fn bench_message(c: &mut Criterion) {
     g.finish();
 }
 
+/// A transport envelope: the body length is independent of its interpretation.
+#[bin(big)]
+struct Envelope {
+    #[brw(count_prefix = u32)]
+    body: Vec<u8>,
+}
+
+fn bench_incremental(c: &mut Criterion) {
+    let mut group = c.benchmark_group("incremental_envelope");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(200));
+    group.measurement_time(Duration::from_secs(1));
+    for size in [64, 1024, 16 * 1024] {
+        let wire = Envelope {
+            body: vec![0x5a; size],
+        }
+        .to_bytes()
+        .unwrap();
+        group.throughput(Throughput::Bytes(wire.len() as u64));
+        for chunk_size in [1, 64, 1500, wire.len()] {
+            group.bench_with_input(
+                BenchmarkId::new(size.to_string(), chunk_size),
+                &chunk_size,
+                |bench, &chunk_size| {
+                    // Reuse the allocation between messages. Keep this harness usable
+                    // against the 0.4 infallible and 0.5 fallible push APIs; an unbounded
+                    // buffer has no capacity rejection in either version.
+                    let mut buffer = BitBuf::with_capacity(wire.len());
+                    bench.iter(|| {
+                        for chunk in black_box(&wire).chunks(chunk_size) {
+                            let _ = buffer.push(chunk);
+                            if let Some(message) = buffer.pull::<Envelope>().unwrap() {
+                                black_box(message);
+                            }
+                        }
+                        assert!(buffer.is_empty());
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+// This deliberately does NOT use the byte-blob fast path for the outer collection.
+// It measures the documented replay cost of general variable-element messages.
+#[bin(big)]
+struct Element {
+    #[brw(count_prefix = u8)]
+    body: Vec<u8>,
+}
+
+#[bin(big)]
+struct Collection {
+    #[brw(count_prefix = u16)]
+    elements: Vec<Element>,
+}
+
+fn bench_element_replay(c: &mut Criterion) {
+    let mut group = c.benchmark_group("incremental_element_replay");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(200));
+    group.measurement_time(Duration::from_secs(1));
+    for count in [64, 1024] {
+        let wire = Collection {
+            elements: (0..count).map(|_| Element { body: vec![0x5a] }).collect(),
+        }
+        .to_bytes()
+        .unwrap();
+        group.throughput(Throughput::Bytes(wire.len() as u64));
+        for chunk_size in [1, wire.len()] {
+            group.bench_with_input(
+                BenchmarkId::new(count.to_string(), chunk_size),
+                &chunk_size,
+                |bench, &chunk_size| {
+                    let mut buffer = BitBuf::with_capacity(wire.len());
+                    bench.iter(|| {
+                        for chunk in black_box(&wire).chunks(chunk_size) {
+                            let _ = buffer.push(chunk); // unbounded; also runs against 0.4
+                            if let Some(message) = buffer.pull::<Collection>().unwrap() {
+                                black_box(message);
+                            }
+                        }
+                        assert!(buffer.is_empty());
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_message
+    targets = bench_message, bench_incremental, bench_element_replay
 }
 criterion_main!(benches);

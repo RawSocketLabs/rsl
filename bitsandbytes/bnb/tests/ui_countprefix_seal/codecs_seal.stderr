@@ -32,8 +32,8 @@ note: required by a bound in `CountPrefix`
              i64
              isize
              bnb::LimitedSource<'_, S>
+             bnb::bitstream::IncrementalReader<'_>
              bnb::BitReader<'_>
-             bnb::BitWriter
            and $N others
 
 error[E0277]: the trait bound `MyPrefix: bitstream::sealed::Sealed` is not satisfied
@@ -70,6 +70,6 @@ note: required by a bound in `Varint`
              i64
              isize
              bnb::LimitedSource<'_, S>
+             bnb::bitstream::IncrementalReader<'_>
              bnb::BitReader<'_>
-             bnb::BitWriter
            and $N others

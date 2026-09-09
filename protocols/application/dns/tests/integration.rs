@@ -38,6 +38,13 @@ mod integration {
     /// Decode must resolve every name inline; re-encode is uncompressed (not byte-equal).
     #[test]
     fn compressed_response_resolves_names_inline() {
+        #[bnb::bin(big)]
+        #[derive(Debug)]
+        struct TcpEnvelope {
+            #[brw(count_prefix = u16)]
+            body: Vec<u8>,
+        }
+
         let wire = [
             0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x07, b'e',
             b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00, 0x01, 0x00,
@@ -58,6 +65,58 @@ mod integration {
             panic!("expected CNAME, got {:?}", msg.answers[0].data);
         };
         assert_eq!(target.to_string(), "www.example.com");
+
+        // RFC 1035 §4.2.2 TCP framing: own the u16-length envelope first, then decode
+        // the compressed DNS message at offset zero (compression pointers are relative
+        // to that message, not the accumulating stream buffer).
+        let prefix = u16::try_from(wire.len()).unwrap().to_be_bytes();
+        let mut framed = prefix.to_vec();
+        framed.extend_from_slice(&wire);
+        for split in 1..framed.len() {
+            let mut buffer = bnb::BitBuf::bounded(framed.len() * 2);
+            buffer.push(&framed[..split]).unwrap();
+            assert!(
+                buffer
+                    .try_pull::<TcpEnvelope>()
+                    .unwrap_err()
+                    .is_incomplete()
+            );
+            buffer.push(&framed[split..]).unwrap();
+            buffer.push(&framed).unwrap();
+            for compact in [false, true] {
+                if compact {
+                    buffer.compact();
+                }
+                let envelope = buffer.try_pull::<TcpEnvelope>().unwrap();
+                assert_eq!(envelope.body, wire);
+                assert_eq!(Message::decode_exact(&envelope.body).unwrap(), msg);
+            }
+            assert!(buffer.is_empty());
+        }
+        // The outer envelope is authoritative, even when a complete inner DNS packet
+        // is already buffered: a larger length must not expose it prematurely.
+        let mut buffer = bnb::BitBuf::new();
+        buffer
+            .push(&(u16::try_from(wire.len()).unwrap() + 1).to_be_bytes())
+            .unwrap();
+        buffer.push(&wire).unwrap();
+        assert!(
+            buffer
+                .try_pull::<TcpEnvelope>()
+                .unwrap_err()
+                .is_incomplete()
+        );
+        assert!(buffer.pull_eof::<TcpEnvelope>().is_err());
+        // A short envelope may be complete but the contained DNS message is truncated;
+        // the next byte is retained for the outer caller, never borrowed by inner decode.
+        let mut buffer = bnb::BitBuf::new();
+        buffer
+            .push(&(u16::try_from(wire.len()).unwrap() - 1).to_be_bytes())
+            .unwrap();
+        buffer.push(&wire).unwrap();
+        let envelope = buffer.try_pull::<TcpEnvelope>().unwrap();
+        assert!(Message::decode_exact(&envelope.body).is_err());
+        assert_eq!(buffer.try_pull::<u8>().unwrap(), *wire.last().unwrap());
 
         // Answer 2: name pointer(0x1D) → www.example.com; A = 1.2.3.4.
         assert_eq!(msg.answers[1].name.to_string(), "www.example.com");

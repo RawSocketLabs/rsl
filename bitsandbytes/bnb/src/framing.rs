@@ -19,18 +19,23 @@
 //! when only a partial frame has arrived, so `Framed` reads more and retries.
 //!
 //! **Byte alignment over `Framed`.** `Framed`'s buffer is byte-granular, so `BinCodec`
-//! advances by whole bytes and starts each `decode` at a byte boundary. A message whose
-//! encoded length is **not** a whole number of bytes (a sub-byte `#[bin]` frame) therefore
-//! cannot be packed back-to-back on a `Framed` byte *stream* — use a byte-aligned message, or
-//! carry the bit cursor yourself with [`BitBuf`](crate::BitBuf)/[`MessageStream`](crate::MessageStream).
-//! (Each `UdpFramed` datagram is framed independently, so sub-byte messages are fine there.)
+//! consumes the final byte's padding and starts each `decode` at a byte boundary, matching
+//! the encoder. Padding bits are accepted, not validated. For bit-packed concatenation
+//! without per-message padding, use [`BitBuf`](crate::BitBuf) directly.
+//!
+//! `decode` leaves the entire buffer unchanged on incomplete input or errors. `decode_eof`
+//! makes a finite attempt so truncation is an error. Parsing is replayed on each attempt;
+//! callbacks must be retry-safe. Use `Framed::into_parts` / `Framed::from_parts` for protocol
+//! transitions, transferring **both** read and write buffers; `into_inner` discards them.
+//! This convenience codec uses `T::LAYOUT` from `BitEncode`; directional/contextual codecs
+//! instead use [`BitBuf::try_pull_with`](crate::BitBuf::try_pull_with) with an explicit layout.
 //!
 //! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
 //! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So
 //! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the
 //! async mirror of the sync `MessageStream` / `MessageDatagram` split. See `examples/tokio_udp`.
 
-use crate::{BitDecode, BitEncode, BitReader, BitWriter, ErrorKind};
+use crate::{BitDecode, BitEncode, BitWriter};
 use bytes::{Buf, BytesMut};
 use core::marker::PhantomData;
 use std::io;
@@ -63,28 +68,28 @@ impl<T: BitDecode + BitEncode> Decoder for BinCodec<T> {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<T>, io::Error> {
+        Self::attempt(src, false)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<T>, io::Error> {
+        Self::attempt(src, true)
+    }
+}
+
+impl<T: BitDecode + BitEncode> BinCodec<T> {
+    fn attempt(src: &mut BytesMut, eof: bool) -> Result<Option<T>, io::Error> {
         if src.is_empty() {
             return Ok(None);
         }
-        let mut reader = BitReader::with_layout(&src[..], <T as BitEncode>::LAYOUT);
-        match <T as BitDecode>::bit_decode(&mut reader) {
-            Ok(item) => {
-                // Consume exactly what this message used; leave the rest for the next call.
-                let consumed = reader.bit_pos() / 8;
-                src.advance(consumed);
+        match crate::bitstream::decode_attempt(&src[..], 0, T::LAYOUT, (), eof) {
+            Ok((item, end)) => {
+                src.advance(end.div_ceil(8));
                 Ok(Some(item))
             }
             // Only a partial frame is buffered — ask `Framed` to read more (don't consume).
-            Err(e)
-                if matches!(
-                    e.kind,
-                    ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. }
-                ) =>
-            {
-                Ok(None)
-            }
+            Err(e) if e.is_incomplete() => Ok(None),
             // A genuine framing error.
-            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
+            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
         }
     }
 }
@@ -95,7 +100,7 @@ impl<T: BitEncode> Encoder<T> for BinCodec<T> {
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), io::Error> {
         let mut w = BitWriter::with_layout(<T as BitEncode>::LAYOUT);
         item.bit_encode(&mut w)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         dst.extend_from_slice(&w.into_bytes());
         Ok(())
     }
@@ -109,6 +114,64 @@ mod component {
     use bnb::bin;
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
+
+    #[test]
+    fn padded_subbyte_frames_consume_the_whole_final_byte() {
+        let mut short = BinCodec::<bnb::u4>::new();
+        let mut long = BinCodec::<bnb::u12>::new();
+        for short_first in [false, true] {
+            let mut wire = BytesMut::new();
+            if short_first {
+                short.encode(bnb::u4::new(0xa), &mut wire).unwrap();
+            }
+            long.encode(bnb::u12::new(0xbcd), &mut wire).unwrap();
+            if !short_first {
+                short.encode(bnb::u4::new(0xa), &mut wire).unwrap();
+            }
+            wire.extend_from_slice(b"raw");
+            if short_first {
+                assert_eq!(short.decode(&mut wire).unwrap().unwrap().value(), 0xa);
+            }
+            assert_eq!(long.decode(&mut wire).unwrap().unwrap().value(), 0xbcd);
+            if !short_first {
+                assert_eq!(short.decode(&mut wire).unwrap().unwrap().value(), 0xa);
+            }
+            assert_eq!(&wire[..], b"raw");
+        }
+        let mut wire = BytesMut::from(&[0xaf][..]);
+        assert_eq!(short.decode(&mut wire).unwrap().unwrap().value(), 0xa);
+        assert!(wire.is_empty());
+    }
+
+    #[test]
+    fn finite_eof_keeps_truncation_typed_and_retains_input() {
+        let mut codec = BinCodec::<u16>::new();
+        let mut wire = BytesMut::from(&[1][..]);
+        assert_eq!(codec.decode(&mut wire).unwrap(), None);
+        let error = bnb::BitError::from(codec.decode_eof(&mut wire).unwrap_err());
+        assert_eq!(
+            error.kind,
+            bnb::ErrorKind::UnexpectedEof {
+                needed: 16,
+                remaining: 8
+            }
+        );
+        assert_eq!(&wire[..], &[1]);
+        wire.extend_from_slice(&[2]);
+        assert_eq!(codec.decode_eof(&mut wire).unwrap(), Some(0x0102));
+        assert_eq!(codec.decode_eof(&mut wire).unwrap(), None);
+    }
+
+    #[test]
+    fn zero_width_frame_cannot_stall_a_drain_loop() {
+        let mut codec = BinCodec::<bnb::UInt<u8, 0>>::new();
+        let mut wire = BytesMut::from(&[1][..]);
+        assert_eq!(
+            bnb::BitError::from(codec.decode(&mut wire).unwrap_err()).kind,
+            bnb::ErrorKind::NoProgress
+        );
+        assert_eq!(&wire[..], &[1]);
+    }
 
     /// A fixed 4-byte message — its length is implicit in its `#[bin]` structure.
     #[bin(big)]

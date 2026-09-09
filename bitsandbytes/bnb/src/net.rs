@@ -16,7 +16,7 @@
 //! wrappers bridge `std::io::Error` into [`BitError`] (the `std` feature), so a single `?` covers
 //! I/O *and* codec errors.
 
-use crate::{BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind};
+use crate::{BitBuf, BitDecode, BitEncode, BitError, BitWriter, ErrorKind};
 use alloc::vec;
 use alloc::vec::Vec;
 use std::io::{self, Read, Write};
@@ -71,51 +71,123 @@ impl<S> MessageStream<S> {
         }
     }
 
-    /// Borrow the underlying stream.
+    /// Borrow the underlying stream for configuration or inspection. Reading it directly
+    /// bypasses retained bytes, even if `S` permits reads through a shared reference.
     pub fn get_ref(&self) -> &S {
         &self.inner
     }
 
-    /// Mutably borrow the underlying stream (e.g. to set a timeout).
+    /// Mutably borrow the underlying stream (e.g. to set a timeout). Direct reads bypass
+    /// retained bytes; use this wrapper's `Read` implementation for a protocol handoff.
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.inner
     }
 
-    /// Recover the underlying stream (any buffered-but-unparsed bytes are dropped).
-    pub fn into_inner(self) -> S {
-        self.inner
+    /// Recover the stream only when no unread bits remain. On failure returns the entire
+    /// wrapper, without losing bytes. Use [`into_parts`](Self::into_parts) to transfer both.
+    ///
+    /// # Errors
+    /// Returns `self` if buffered input remains.
+    pub fn try_into_inner(self) -> Result<S, Self> {
+        if self.buf.is_empty() {
+            Ok(self.inner)
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Transfer the stream and all retained input, including its bit cursor and capacity.
+    pub fn into_parts(self) -> (S, BitBuf) {
+        (self.inner, self.buf)
+    }
+
+    /// Reconstruct a wrapper without copying or discarding retained input.
+    pub fn from_parts(inner: S, buf: BitBuf) -> Self {
+        Self { inner, buf }
     }
 }
 
 impl<S: Read> MessageStream<S> {
     /// Read exactly one `#[bin]` message, pulling more bytes from the stream as needed and
     /// keeping any trailing bytes for the next call. The message's own byte/bit order is honored
-    /// (via [`BitBuf::pull`]).
+    /// (via [`BitBuf::pull`]). Messages are independently byte-padded, like `write_message`:
+    /// the unused bits of the last byte are accepted and consumed. Use `BitBuf` directly
+    /// for bit-packed concatenation. Decode callbacks may run repeatedly as input arrives.
     ///
     /// # Errors
-    /// A codec [`BitError`] for a malformed message, or an I/O error — an EOF mid-stream (a
-    /// closed connection) surfaces as an `Io(UnexpectedEof)` error, so a read loop ends on `Err`.
+    /// A codec error for malformed/truncated input, or an I/O error. Clean connection close
+    /// is `Io(UnexpectedEof)`; EOF with retained input makes one finite decode attempt.
+    /// At a full configured cap, `BufferFull` is returned **before** any further read.
+    /// Errors retain accepted bytes; they do not undo codec side effects.
+    ///
+    /// # Panics
+    /// Panics if the underlying `Read` violates its contract by reporting more bytes
+    /// than its destination can hold.
     pub fn read_message<T: BitDecode + BitEncode>(&mut self) -> Result<T, BitError> {
         loop {
             // `pull` decodes in `T`'s own layout, returns `None` until a whole message is
             // buffered, and reclaims consumed bytes — the framing logic lives in `BitBuf`.
             if let Some(msg) = self.buf.pull::<T>()? {
+                self.buf.finish_byte();
                 return Ok(msg);
             }
             let mut chunk = [0u8; 4096];
-            let n = self.inner.read(&mut chunk)?;
+            let available = self
+                .buf
+                .read_capacity()
+                .unwrap_or(chunk.len())
+                .min(chunk.len());
+            if available == 0 {
+                return Err(BitError::new(
+                    ErrorKind::BufferFull {
+                        cap: self.buf.capacity().expect("bounded buffer"),
+                    },
+                    crate::Source::bit_pos(&self.buf),
+                ));
+            }
+            let n = match self.inner.read(&mut chunk[..available]) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                result => result?,
+            };
             if n == 0 {
+                if let Some(msg) = self.buf.pull_eof::<T>()? {
+                    self.buf.finish_byte();
+                    return Ok(msg);
+                }
                 return Err(
                     io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed").into(),
                 );
             }
-            // `try_push` is a no-op bound for an unbounded buffer (`new`) and enforces the
-            // `cap` for a bounded one (`bounded`) — a never-completing frame is `BufferFull`,
-            // not unbounded growth.
-            self.buf.try_push(&chunk[..n]).map_err(|e| {
-                BitError::new(ErrorKind::BufferFull { cap: e.cap }, self.buf.bit_len())
-            })?;
+            // Read was limited to the exact free retained capacity, before touching the stream.
+            self.buf
+                .push(&chunk[..n])
+                .expect("read cannot exceed reserved input capacity");
         }
+    }
+}
+
+impl<S: Read> Read for MessageStream<S> {
+    /// Return retained whole bytes first, without also reading the underlying stream.
+    /// An unaligned imported cursor returns `InvalidData` without consuming anything.
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if out.is_empty() {
+            return Ok(0);
+        }
+        let n = self
+            .buf
+            .read_buffered(out)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if n != 0 { Ok(n) } else { self.inner.read(out) }
+    }
+}
+
+impl<S: Write> Write for MessageStream<S> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.inner.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -123,7 +195,8 @@ impl<S: Write> MessageStream<S> {
     /// Encode one `#[bin]` message and write it to the stream.
     ///
     /// # Errors
-    /// A codec [`BitError`] or an I/O write error.
+    /// A codec [`BitError`] or an I/O write error. A failed write may have sent a prefix;
+    /// retrying the whole message can duplicate it. This method does not flush.
     pub fn write_message<T: BitEncode>(&mut self, msg: &T) -> Result<(), BitError> {
         self.inner.write_all(&encode(msg)?)?;
         Ok(())
@@ -246,9 +319,7 @@ impl<D: DatagramSocket> MessageDatagram<D> {
     /// A codec [`BitError`] (the datagram wasn't a valid `T`) or an I/O receive error.
     pub fn recv_message<T: BitDecode + BitEncode>(&mut self) -> Result<(T, D::Addr), BitError> {
         let (n, from) = self.sock.recv_from(&mut self.buf)?;
-        // Decode in `T`'s own byte/bit order (not the reader's default).
-        let mut r = BitReader::with_layout(&self.buf[..n], <T as BitEncode>::LAYOUT);
-        let msg = <T as BitDecode>::bit_decode(&mut r)?;
+        let msg = crate::bitstream::decode_exact(&self.buf[..n], T::LAYOUT)?;
         Ok((msg, from))
     }
 }
@@ -464,7 +535,190 @@ impl Write for MockStream {
 mod component {
     //! Component tests: the `net` wrappers driven by the in-memory mocks, one call at a time
     //! (a queued read, a captured write, chunked reassembly, error injection, the accessors).
+    use crate::{BitBuf, BitError, ErrorKind};
     use bnb::{MessageDatagram, MessageStream, MockDatagramSocket, MockStream, bin};
+    use std::io::{self, Read, Write};
+
+    #[derive(Debug)]
+    struct Scripted {
+        bytes: io::Cursor<Vec<u8>>,
+        reads: usize,
+        fail: Option<io::ErrorKind>,
+    }
+    impl Read for Scripted {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            self.reads += 1;
+            if let Some(kind) = self.fail.take() {
+                return Err(kind.into());
+            }
+            self.bytes.read(out)
+        }
+    }
+
+    #[test]
+    fn full_buffer_never_reads_and_parts_recover_every_byte() {
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![1, 2, 3, 4, 5]),
+            reads: 0,
+            fail: None,
+        };
+        let mut stream = MessageStream::bounded(inner, 2);
+        assert!(matches!(
+            stream.read_message::<u32>().unwrap_err().kind,
+            ErrorKind::BufferFull { cap: 2 }
+        ));
+        assert_eq!(stream.get_ref().reads, 1);
+        assert_eq!(stream.get_ref().bytes.position(), 2);
+        assert!(stream.read_message::<u32>().is_err());
+        assert_eq!(stream.get_ref().reads, 1);
+        let stream = stream.try_into_inner().unwrap_err();
+        let (inner, mut buffer) = stream.into_parts();
+        buffer.grow(2);
+        let mut stream = MessageStream::from_parts(inner, buffer);
+        assert_eq!(stream.read_message::<u32>().unwrap(), 0x0102_0304);
+        let mut tail = [0; 1];
+        stream.read_exact(&mut tail).unwrap();
+        assert_eq!(tail, [5]);
+        assert!(stream.try_into_inner().is_ok());
+    }
+
+    #[test]
+    fn raw_read_drains_retained_input_without_an_additional_read() {
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![1, 2, 3]),
+            reads: 0,
+            fail: None,
+        };
+        let mut stream = MessageStream::new(inner);
+        assert_eq!(stream.read_message::<u8>().unwrap(), 1);
+        let mut out = [0; 8];
+        assert_eq!(stream.read(&mut []).unwrap(), 0);
+        assert_eq!(stream.read(&mut out).unwrap(), 2);
+        assert_eq!(&out[..2], &[2, 3]);
+        assert_eq!(stream.get_ref().reads, 1);
+        assert_eq!(stream.read(&mut out).unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_read_reclaims_consumed_prefix_before_the_next_message() {
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![1, 2, 3, 4, 5, 6]),
+            reads: 0,
+            fail: None,
+        };
+        let mut stream = MessageStream::bounded(inner, 4);
+        assert_eq!(stream.read_message::<u16>().unwrap(), 0x0102);
+        assert_eq!(stream.read_message::<u32>().unwrap(), 0x0304_0506);
+        assert_eq!(stream.get_ref().reads, 2);
+        assert_eq!(stream.get_ref().bytes.position(), 6);
+    }
+
+    #[test]
+    fn raw_read_rejects_unaligned_parts_without_losing_bits() {
+        let mut buffer = BitBuf::new();
+        buffer.push(&[0xab]).unwrap();
+        buffer.try_pull::<crate::u4>().unwrap();
+        let mut stream = MessageStream::from_parts(&b"tail"[..], buffer);
+        assert_eq!(stream.read(&mut []).unwrap(), 0);
+        let error = BitError::from(stream.read(&mut [0; 1]).unwrap_err());
+        assert_eq!(error.kind, ErrorKind::NotByteAligned);
+        let (inner, mut buffer) = stream.into_parts();
+        assert_eq!(inner, b"tail");
+        assert_eq!(buffer.try_pull::<crate::u4>().unwrap().value(), 0xb);
+    }
+
+    #[test]
+    fn subbyte_messages_are_independently_padded_before_raw_handoff() {
+        for short_first in [false, true] {
+            let mut sender = MessageStream::new(Vec::new());
+            if short_first {
+                sender.write_message(&crate::u4::new(0xa)).unwrap();
+            }
+            sender.write_message(&crate::u12::new(0xbcd)).unwrap();
+            if !short_first {
+                sender.write_message(&crate::u4::new(0xa)).unwrap();
+            }
+            sender.write_all(b"raw").unwrap();
+            sender.flush().unwrap();
+            let wire = sender.try_into_inner().unwrap();
+            let mut receiver = MessageStream::new(&wire[..]);
+            if short_first {
+                assert_eq!(receiver.read_message::<crate::u4>().unwrap().value(), 0xa);
+            }
+            assert_eq!(
+                receiver.read_message::<crate::u12>().unwrap().value(),
+                0xbcd
+            );
+            if !short_first {
+                assert_eq!(receiver.read_message::<crate::u4>().unwrap().value(), 0xa);
+            }
+            let mut tail = [0; 3];
+            receiver.read_exact(&mut tail).unwrap();
+            assert_eq!(&tail, b"raw");
+            assert_eq!(receiver.read(&mut tail).unwrap(), 0);
+        }
+        let mut receiver = MessageStream::new(&[0xaf, 0x99][..]);
+        assert_eq!(receiver.read_message::<crate::u4>().unwrap().value(), 0xa);
+        assert_eq!(receiver.read_message::<u8>().unwrap(), 0x99);
+    }
+
+    #[test]
+    fn transport_errors_and_truncated_eof_keep_accepted_bytes() {
+        let mut buffer = BitBuf::new();
+        buffer.push(&[1]).unwrap();
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![2]),
+            reads: 0,
+            fail: Some(io::ErrorKind::WouldBlock),
+        };
+        let mut stream = MessageStream::from_parts(inner, buffer);
+        assert_eq!(
+            stream.read_message::<u16>().unwrap_err().kind,
+            ErrorKind::Io(io::ErrorKind::WouldBlock)
+        );
+        assert_eq!(stream.read_message::<u16>().unwrap(), 0x0102);
+        assert_eq!(
+            stream.read_message::<u16>().unwrap_err().kind,
+            ErrorKind::Io(io::ErrorKind::UnexpectedEof)
+        );
+        let mut stream = MessageStream::new(&[1][..]);
+        assert_eq!(
+            stream.read_message::<u16>().unwrap_err().kind,
+            ErrorKind::UnexpectedEof {
+                needed: 16,
+                remaining: 8
+            }
+        );
+        assert_eq!(stream.read_message::<u8>().unwrap(), 1);
+    }
+
+    #[test]
+    fn interrupted_read_retries_without_losing_the_retained_prefix() {
+        let mut buffer = BitBuf::bounded(2);
+        buffer.push(&[0x12]).unwrap();
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![0x34]),
+            reads: 0,
+            fail: Some(io::ErrorKind::Interrupted),
+        };
+        let mut stream = MessageStream::from_parts(inner, buffer);
+        assert_eq!(stream.read_message::<u16>().unwrap(), 0x1234);
+        assert_eq!(stream.get_ref().reads, 2);
+        assert!(stream.try_into_inner().is_ok());
+    }
+
+    #[test]
+    fn datagram_rejects_trailing_whole_bytes_but_accepts_final_padding() {
+        let mut peer = MessageDatagram::new(MockDatagramSocket::new());
+        let from = "127.0.0.1:5000".parse().unwrap();
+        peer.get_ref().push_inbound(&[0xaf], from);
+        assert_eq!(peer.recv_message::<crate::u4>().unwrap().0.value(), 0xa);
+        peer.get_ref().push_inbound(&[0xa0, 0xff], from);
+        assert_eq!(
+            peer.recv_message::<crate::u4>().unwrap_err().kind,
+            ErrorKind::TrailingBytes { remaining: 1 }
+        );
+    }
 
     #[bin(big)]
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -473,6 +727,17 @@ mod component {
     }
 
     // --- MessageStream over MockStream -------------------------------------------------
+
+    #[test]
+    fn mock_stream_honors_its_scripted_chunk_bound() {
+        let mut stream = MockStream::with_chunk_size(2);
+        stream.push_inbound(&[1, 2, 3, 4]);
+        let mut bytes = [0; 4];
+        assert_eq!(stream.read(&mut bytes).unwrap(), 2);
+        assert_eq!(&bytes[..2], &[1, 2]);
+        assert_eq!(stream.read(&mut bytes).unwrap(), 2);
+        assert_eq!(&bytes[..2], &[3, 4]);
+    }
 
     #[test]
     fn stream_write_message_is_captured() {
@@ -520,7 +785,7 @@ mod component {
     #[test]
     fn stream_into_inner_recovers_the_transport() {
         let conn = MessageStream::new(MockStream::new());
-        let _inner: MockStream = conn.into_inner();
+        let _inner: MockStream = conn.try_into_inner().unwrap();
     }
 
     // --- MessageDatagram over MockDatagramSocket ---------------------------------------

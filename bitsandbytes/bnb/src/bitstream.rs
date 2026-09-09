@@ -79,13 +79,22 @@ pub enum ErrorKind {
         /// Bits still available.
         remaining: usize,
     },
-    /// A streaming source (`StreamBitReader`, with `std`) ran out mid-message: the caller
-    /// should read more bytes and retry. `needed` is a best-effort byte hint
-    /// (`None` when unknown). See [`BitError::is_incomplete`].
+    /// More backing input is required. Buffered callers can append bytes and retry.
+    /// `needed` describes the next blocked operation, **not** the full frame length or
+    /// a promise that a transport will not read ahead. See [`BitBuf::try_pull`].
     Incomplete {
         /// Best-effort estimate of additional bytes needed, if known.
         needed: Option<usize>,
     },
+    /// A custom codec requested more input after the caller declared finite EOF.
+    /// Ordinary finite-source exhaustion uses [`UnexpectedEof`](Self::UnexpectedEof).
+    IncompleteAtEof {
+        /// The custom codec's additional-byte hint, if known.
+        needed: Option<usize>,
+    },
+    /// A streamed message or counted element succeeded without moving its cursor forward.
+    /// Rejecting it prevents a drain loop from emitting unlimited values from no input.
+    NoProgress,
     /// `decode_exact` left whole bytes unconsumed after the message.
     TrailingBytes {
         /// Number of trailing bytes.
@@ -107,8 +116,7 @@ pub enum ErrorKind {
         /// The value actually read.
         found: u128,
     },
-    /// A `try_map` conversion from the wire representation failed; `message` is the
-    /// converter's `Display` output.
+    /// A wire-value or positioning/count conversion failed; `message` describes it.
     Convert {
         /// The converter's error, rendered.
         message: String,
@@ -125,7 +133,7 @@ pub enum ErrorKind {
     },
     /// A byte-only operation was attempted while the cursor was between bytes.
     NotByteAligned,
-    /// Computing a bounded region's end position overflowed `usize`.
+    /// Computing a wire cursor or bounded region's end position overflowed `usize`.
     PositionOverflow,
     /// A bounded region was not consumed exactly.
     TrailingBits {
@@ -153,7 +161,7 @@ impl BitError {
         Self::new(ErrorKind::BadMagic { expected, found }, at)
     }
 
-    /// Builds a [`ErrorKind::Convert`] error (a `try_map` conversion failed) at
+    /// Builds an [`ErrorKind::Convert`] error (a value conversion or codec check failed) at
     /// absolute bit offset `at`.
     #[must_use]
     pub fn convert(message: String, at: usize) -> Self {
@@ -172,8 +180,9 @@ impl BitError {
     }
 
     /// Whether this is the streaming "need more bytes" signal
-    /// ([`ErrorKind::Incomplete`]) — the caller should read more and retry, as
-    /// opposed to a definitive parse failure.
+    /// ([`ErrorKind::Incomplete`]), as opposed to a definitive parse failure.
+    /// Retrying safely requires retained input, such as a `BitBuf` attempt;
+    /// this predicate alone does not promise rollback by a forward-only reader.
     #[must_use]
     pub fn is_incomplete(&self) -> bool {
         matches!(self.kind, ErrorKind::Incomplete { .. })
@@ -182,12 +191,13 @@ impl BitError {
 
 #[cfg(feature = "std")]
 impl From<std::io::Error> for BitError {
-    /// Wraps a [`std::io::Error`] as [`ErrorKind::Io`] — so a `parse_with`/`write_with`
-    /// using [`Source::as_read`]/[`Sink::as_write`] can `?` `std::io` results straight
-    /// into a `BitError`. The bit offset is unknown at this boundary (recorded as `0`);
-    /// build with [`BitError::new`] if you need the precise position.
+    /// Recovers a typed `BitError` carried by an I/O adapter, including its position and
+    /// field. Other I/O errors become [`ErrorKind::Io`] at unknown offset `0`.
     fn from(e: std::io::Error) -> Self {
-        BitError::new(ErrorKind::Io(e.kind()), 0)
+        e.get_ref()
+            .and_then(|inner| inner.downcast_ref::<Self>())
+            .cloned()
+            .unwrap_or_else(|| Self::new(ErrorKind::Io(e.kind()), 0))
     }
 }
 
@@ -202,6 +212,13 @@ impl fmt::Display for BitError {
                 Some(n) => write!(f, "incomplete: need ~{n} more bytes")?,
                 None => write!(f, "incomplete: need more bytes")?,
             },
+            ErrorKind::IncompleteAtEof { needed } => {
+                write!(
+                    f,
+                    "codec requested more input at EOF ({needed:?} additional bytes)"
+                )?;
+            }
+            ErrorKind::NoProgress => f.write_str("decoder made no forward progress")?,
             ErrorKind::TrailingBytes { remaining } => {
                 write!(f, "{remaining} trailing bytes after the message")?;
             }
@@ -226,7 +243,7 @@ impl fmt::Display for BitError {
                 f.write_str("operation requires a byte-aligned cursor")?;
             }
             ErrorKind::PositionOverflow => {
-                f.write_str("bounded source position overflowed")?;
+                f.write_str("wire cursor position overflowed")?;
             }
             ErrorKind::TrailingBits { remaining } => {
                 write!(f, "{remaining} trailing bits in the bounded region")?;
@@ -388,6 +405,9 @@ where
 ///
 /// Used by the positioning directives, e.g. `#[br(pad_before = 2u32.bytes())]` — see
 /// [`guide::directives`](crate::guide::directives).
+/// The result retains the low 32 bits, including multiplication by eight for `bytes`;
+/// negative and overflowing amounts wrap. For untrusted lengths, validate the range
+/// before converting: this convenience trait is not a checked length conversion.
 pub trait BitAmount: Copy + sealed::Sealed {
     /// This many **bits**.
     fn bits(self) -> u32;
@@ -402,7 +422,7 @@ macro_rules! impl_bit_amount {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless)]
             fn bits(self) -> u32 { self as u32 }
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless)]
-            fn bytes(self) -> u32 { (self as u32) * 8 }
+            fn bytes(self) -> u32 { (self as u32).wrapping_mul(8) }
         }
     )*};
 }
@@ -511,7 +531,7 @@ fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u12
         BitOrder::Msb => ByteOrder::Big,
         BitOrder::Lsb => ByteOrder::Little,
     };
-    if byte == natural || bits % 8 != 0 {
+    if byte == natural || bits % 8 != 0 || bits > 128 {
         return raw;
     }
     let n = (bits / 8) as usize;
@@ -1196,7 +1216,7 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
                         }
                         _ => std::io::ErrorKind::InvalidData,
                     };
-                    return Err(std::io::Error::new(kind, e.to_string()));
+                    return Err(std::io::Error::new(kind, e));
                 }
                 Err(_) => return Ok(i),
             }
@@ -1213,6 +1233,104 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
 pub trait SeekSource: Source {}
 
 impl SeekSource for BitReader<'_> {}
+
+// Only this backing reader turns physical exhaustion into a retry signal. In particular,
+// an enclosing LimitedSource's logical boundary errors must remain definitive.
+struct IncrementalReader<'a>(BitReader<'a>);
+
+impl sealed::Sealed for IncrementalReader<'_> {}
+impl SeekSource for IncrementalReader<'_> {}
+
+impl IncrementalReader<'_> {
+    fn shortfall(mut error: BitError) -> BitError {
+        if let ErrorKind::UnexpectedEof { needed, remaining } = error.kind {
+            error.kind = ErrorKind::Incomplete {
+                needed: Some(needed.saturating_sub(remaining).div_ceil(8)),
+            };
+        }
+        error
+    }
+}
+
+impl Source for IncrementalReader<'_> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        self.0.read_bits(n).map_err(Self::shortfall)
+    }
+
+    fn bit_pos(&self) -> usize {
+        self.0.bit_pos()
+    }
+
+    fn byte_order(&self) -> ByteOrder {
+        self.0.byte
+    }
+
+    fn bit_order(&self) -> BitOrder {
+        self.0.order
+    }
+
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        self.0.seek_to_bit(pos).map_err(Self::shortfall)
+    }
+
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        let available = self.0.remaining_bits() / 8;
+        if n > available {
+            return Err(BitError::new(
+                ErrorKind::Incomplete {
+                    needed: Some(n - available),
+                },
+                self.bit_pos(),
+            ));
+        }
+        // Only reserve after proving the full byte payload is physically available.
+        // Retrying a fragmented length-prefixed blob therefore does not repeatedly
+        // allocate/copy its growing prefix. Unaligned reads retain their bit-order semantics.
+        if self.bit_pos() % 8 == 0 {
+            let start = self.bit_pos() / 8;
+            let bytes = self.0.bytes[start..start + n].to_vec();
+            self.0.bit_pos += n * 8;
+            Ok(bytes)
+        } else {
+            let mut bytes = Vec::with_capacity(n);
+            for _ in 0..n {
+                bytes.push(self.read::<u8>()?);
+            }
+            Ok(bytes)
+        }
+    }
+}
+
+// The attempt is transactional with respect to its caller's cursor, not codec side effects.
+// Keep BytesMut framing on this slice path too: no second accumulation buffer or copy.
+pub(crate) fn decode_attempt<T: DecodeWith<A>, A>(
+    bytes: &[u8],
+    start: usize,
+    layout: Layout,
+    args: A,
+    eof: bool,
+) -> Result<(T, usize), BitError> {
+    let mut reader = BitReader::with_layout(bytes, layout);
+    reader.seek_to_bit(start)?;
+    let (value, end) = if eof {
+        let value = T::decode_with(&mut reader, args).map_err(|mut error| {
+            if let ErrorKind::Incomplete { needed } = error.kind {
+                error.kind = ErrorKind::IncompleteAtEof { needed };
+            }
+            error
+        })?;
+        (value, reader.bit_pos())
+    } else {
+        let mut reader = IncrementalReader(reader);
+        let value = T::decode_with(&mut reader, args)?;
+        (value, reader.bit_pos())
+    };
+    if end <= start {
+        Err(BitError::new(ErrorKind::NoProgress, start))
+    } else {
+        Ok((value, end))
+    }
+}
 
 /// A bit-level **output** the codec writes to — the in-memory [`BitWriter`]
 /// (and, under the `bytes` feature, `BytesWriter`). Encode to any
@@ -1407,6 +1525,31 @@ pub trait BitDecode: Sized {
     /// # Errors
     /// Propagates the source's [`BitError`].
     fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError>;
+
+    /// Decode `count` consecutive elements. Used by generated context-free counted fields.
+    /// The default grows only after each successful, forward-moving element; `u8` uses
+    /// [`Source::read_bytes`] so buffered byte payloads can check availability before allocating.
+    /// An override must return **exactly** `count` elements in wire order, preserve element
+    /// decoding, and advance for every nonempty result. It must not allocate from an
+    /// untrusted count before proving the corresponding input is available. Wrappers
+    /// using the default `Source::read_bytes` retain its per-byte allocation behavior.
+    ///
+    /// # Errors
+    /// A source/element error, or [`ErrorKind::NoProgress`] for a zero-width element.
+    /// Like [`bit_decode`](Self::bit_decode), this direct source operation is not transactional;
+    /// use a `BitBuf` attempt for rollback of buffered input.
+    fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+        let mut values = Vec::new();
+        for _ in 0..count {
+            let start = r.bit_pos();
+            let value = Self::bit_decode(r)?;
+            if r.bit_pos() <= start {
+                return Err(BitError::new(ErrorKind::NoProgress, start));
+            }
+            values.push(value);
+        }
+        Ok(values)
+    }
 }
 
 /// A message whose encoded length is a **compile-time constant** — i.e. it has no
@@ -1463,12 +1606,13 @@ pub trait BitEncode {
 // `impl<T: Bits>` is possible (it would collide with the per-message derives under coherence),
 // so the leaves are covered concretely here and the macros emit one for each user `Bits` type.
 macro_rules! bits_leaf_codec {
-    ($($t:ty),* $(,)?) => {$(
+    ($($t:ident),* $(,)?) => {$(
         impl BitDecode for $t {
             #[inline]
             fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
                 r.read::<$t>()
             }
+            bits_leaf_codec!(@bytes $t);
         }
         impl BitEncode for $t {
             #[inline]
@@ -1482,6 +1626,12 @@ macro_rules! bits_leaf_codec {
             const BIT_LEN: u32 = <$t as Bits>::BITS;
         }
     )*};
+    (@bytes u8) => {
+        fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+            r.read_bytes(count)
+        }
+    };
+    (@bytes $other:ty) => {};
 }
 bits_leaf_codec!(u8, u16, u32, u64, u128, bool);
 
@@ -1580,9 +1730,8 @@ pub trait CountPrefix: Bits + sealed::Sealed {
 
     /// The prefix as an element count.
     ///
-    /// For a `u64`/`u128` prefix on a 32-bit target this is a wrapping narrow — the same
-    /// `n as usize` the hand-written triad performs; harmless under the codec's
-    /// push-based count loop (no pre-allocation, bounded by the input).
+    /// Counts too large for this host saturate at `usize::MAX`, never wrap to a smaller
+    /// frame. Decoders must bound allocation and require input progress per element.
     fn to_count(self) -> usize;
 }
 
@@ -1600,9 +1749,8 @@ macro_rules! count_prefix_prim {
             }
 
             #[inline]
-            #[allow(clippy::cast_possible_truncation)] // Documented wrapping conversion on narrow targets.
             fn to_count(self) -> usize {
-                self as usize
+                usize::try_from(self).unwrap_or(usize::MAX)
             }
         }
     )*};
@@ -1629,9 +1777,8 @@ macro_rules! count_prefix_uint {
             }
 
             #[inline]
-            #[allow(clippy::cast_possible_truncation)] // Documented wrapping conversion on narrow targets.
             fn to_count(self) -> usize {
-                self.value() as usize
+                usize::try_from(self.value()).unwrap_or(usize::MAX)
             }
         }
     )*};
@@ -1907,11 +2054,45 @@ pub fn peek_bytes<S: Source>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError>
     for _ in 0..max {
         match r.read_bits(8) {
             Ok(b) => out.push(b as u8),
-            Err(_) => break, // end of input — a shorter magic may still match
+            Err(error) if matches!(error.kind, ErrorKind::UnexpectedEof { .. }) => break,
+            Err(error) => {
+                r.seek_to_bit(start)?;
+                return Err(error);
+            }
         }
     }
     r.seek_to_bit(start)?;
     Ok(out)
+}
+
+/// Match one byte-string magic in declaration order, consuming it only on a full match.
+/// A finite EOF rules out this candidate; incremental exhaustion with a matching prefix
+/// requests more input before any later candidate or fallback can be selected.
+/// No lookahead allocation is needed, and a mismatch stops at its first differing byte.
+///
+/// # Errors
+/// Propagates non-finite-EOF source errors, rewinding before returning.
+#[doc(hidden)]
+pub fn match_magic<S: Source>(r: &mut S, magic: &[u8]) -> Result<bool, BitError> {
+    let start = r.bit_pos();
+    for &expected in magic {
+        match r.read_bits(8) {
+            Ok(found) if found == u128::from(expected) => {}
+            Ok(_) => {
+                r.seek_to_bit(start)?;
+                return Ok(false);
+            }
+            Err(error) => {
+                r.seek_to_bit(start)?;
+                return if matches!(error.kind, ErrorKind::UnexpectedEof { .. }) {
+                    Ok(false)
+                } else {
+                    Err(error.in_field("magic"))
+                };
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// Writes a fixed `[u8; N]` byte array. Backs a `[u8; N]` payload field.
@@ -1933,8 +2114,10 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 /// seek (a socket, or a `&[u8]`, which is `Read` but not `Seek`). A message that needs
 /// to seek (`#[br(restore_position)]`) won't decode through it — use a [`BufSource`] or
 /// [`SeekReader`] for that. Reads up to 128 bits per call (the [`Source`] width
-/// ceiling); running out mid-message yields [`ErrorKind::Incomplete`] ("read more and
-/// retry").
+/// ceiling); running out mid-message yields [`ErrorKind::Incomplete`]. This reader is
+/// **not transactional**: input already consumed during a failed field cannot be replayed.
+/// Use [`BitBuf::try_pull`] for buffered, retryable message decoding. Non-EOF I/O failures
+/// keep their original [`ErrorKind::Io`] kind.
 ///
 /// # Examples
 ///
@@ -2000,8 +2183,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::Incomplete`] if the
-    /// source runs out mid-field (read more and retry). Either carries the bit
-    /// offset.
+    /// source runs out mid-field. Either carries the bit offset. A failed read may
+    /// have consumed input; do not retry the field on this reader. Use `BitBuf`
+    /// when the caller needs transactional incremental attempts.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 128 {
             return Err(BitError::new(
@@ -2020,10 +2204,13 @@ impl<R: std::io::Read> StreamBitReader<R> {
         while need > 0 {
             if self.lead_bits == 0 {
                 let mut b = [0u8; 1];
-                if self.inner.read_exact(&mut b).is_err() {
-                    // Ran out mid-field: "need more bytes" (buffer and retry), not a
-                    // definitive end-of-input.
-                    return Err(BitError::new(ErrorKind::Incomplete { needed: None }, at));
+                if let Err(error) = self.inner.read_exact(&mut b) {
+                    let kind = if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                        ErrorKind::Incomplete { needed: None }
+                    } else {
+                        ErrorKind::Io(error.kind())
+                    };
+                    return Err(BitError::new(kind, at));
                 }
                 self.lead = u32::from(b[0]);
                 self.lead_bits = 8;
@@ -2186,7 +2373,11 @@ impl<R: std::io::Read> Source for BufSource<R> {
                 self.bit_pos,
             ));
         }
-        let byte_end = (self.bit_pos + n as usize).div_ceil(8);
+        let end = self
+            .bit_pos
+            .checked_add(n as usize)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
+        let byte_end = end.div_ceil(8);
         self.fill_to(byte_end)?;
         if self.buf.len() < byte_end {
             return Err(BitError::new(
@@ -2233,10 +2424,10 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// `Read`). `no_std`-compatible (`alloc` only).
 ///
 /// **Reclaim is deferred and in place.** `pull` doesn't drain consumed bytes — the next
-/// [`push`](Self::push)/[`try_push`](Self::try_push) reclaims them in place (one memmove, only when
+/// [`push`](Self::push) reclaims them in place (one memmove, only when
 /// it avoids a reallocation), so a steady push/pull loop reuses the same allocation without
 /// per-message churn. For a guaranteed-fixed footprint (real-time / `no_std`), construct a
-/// [`bounded`](Self::bounded) buffer: it allocates once, [`try_push`](Self::try_push) refuses bytes
+/// [`bounded`](Self::bounded) buffer: it allocates once, [`push`](Self::push) refuses bytes
 /// past the cap instead of growing, and [`grow`](Self::grow) is the only thing that reallocates.
 ///
 /// `BitBuf` is also a [`SeekSource`], so it reads through the same [`decode`](crate::BitDecode)
@@ -2253,15 +2444,15 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// struct Ping { seq: u16 }
 ///
 /// let mut bb = BitBuf::new();
-/// bb.push(&[0x00]);                                  // only half of the first message
+/// bb.push(&[0x00]).unwrap();                         // only half of the first message
 /// assert_eq!(bb.pull::<Ping>().unwrap(), None);      // not a whole message yet
-/// bb.push(&[0x01, 0x00, 0x02]);                      // rest of msg 1 + all of msg 2
+/// bb.push(&[0x01, 0x00, 0x02]).unwrap();             // rest of msg 1 + all of msg 2
 /// assert_eq!(bb.pull::<Ping>().unwrap(), Some(Ping { seq: 1 }));
 /// assert_eq!(bb.pull::<Ping>().unwrap(), Some(Ping { seq: 2 }));
 /// assert_eq!(bb.pull::<Ping>().unwrap(), None);      // drained
 /// ```
 ///
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct BitBuf {
     /// Buffered bytes. The bytes before `cursor`'s byte are **consumed** (dead) — physically
     /// reclaimed lazily (on a [`push`](Self::push) that would otherwise grow, or [`compact`](Self::compact)),
@@ -2269,11 +2460,31 @@ pub struct BitBuf {
     buf: Vec<u8>,
     /// Live read position, in bits, into `buf` (`0..=buf.len() * 8`).
     cursor: usize,
-    /// `Some(cap)` for a **bounded** buffer (alloc-once: [`try_push`](Self::try_push) never grows
+    /// `Some(cap)` for a **bounded** buffer (alloc-once: [`push`](Self::push) never grows
     /// past `cap`, [`grow`](Self::grow) raises it explicitly); `None` for an auto-growing buffer.
     cap: Option<usize>,
     /// Byte/bit order for the [`Source`] impl (the `decode(&mut bitbuf)` path); default msb/big.
     layout: Layout,
+}
+
+impl Clone for BitBuf {
+    fn clone(&self) -> Self {
+        // Vec::clone reserves only len; that would break a bounded clone's alloc-once
+        // promise when the original has unused reserved space.
+        let buf = if let Some(cap) = self.cap {
+            let mut buf = Vec::with_capacity(cap.max(self.buf.len()));
+            buf.extend_from_slice(&self.buf);
+            buf
+        } else {
+            self.buf.clone()
+        };
+        Self {
+            buf,
+            cursor: self.cursor,
+            cap: self.cap,
+            layout: self.layout,
+        }
+    }
 }
 
 impl BitBuf {
@@ -2297,7 +2508,7 @@ impl BitBuf {
     }
 
     /// An empty **bounded** buffer: it allocates `cap` bytes once and never reallocates on its own.
-    /// [`try_push`](Self::try_push) refuses bytes that would exceed `cap` (reclaiming consumed
+    /// [`push`](Self::push) refuses bytes that would exceed `cap` (reclaiming consumed
     /// bytes first), and [`grow`](Self::grow) is the only thing that allocates again — so a
     /// real-time / `no_std` caller can guarantee a fixed footprint.
     #[must_use]
@@ -2334,34 +2545,30 @@ impl BitBuf {
             return;
         }
         let live = self.buf.len() - dead;
-        let would_grow = self.buf.len() + additional > self.buf.capacity();
+        // Allocator slack after grow() must not allow physical length past the logical
+        // cap: Source can rewind into the dead prefix and make every retained byte live.
+        let limit = self.cap.unwrap_or(self.buf.capacity());
+        let would_grow = additional > limit - self.buf.len();
         if would_grow || dead >= live {
             self.buf.drain(..dead);
             self.cursor -= dead * 8;
         }
     }
 
-    /// Append freshly-received bytes to the back of the buffer, growing (reallocating) if needed.
-    /// Consumed bytes are reclaimed in place first when that avoids a reallocation. For a hard,
-    /// alloc-free cap, use [`bounded`](Self::bounded) + [`try_push`](Self::try_push).
-    pub fn push(&mut self, bytes: &[u8]) {
-        self.make_room(bytes.len());
-        self.buf.extend_from_slice(bytes);
-    }
-
-    /// Append bytes **without reallocating**, reclaiming consumed bytes in place to make room.
+    /// Append bytes, reclaiming consumed whole bytes in place when useful. An unbounded
+    /// buffer grows as needed; a bounded buffer never reallocates here.
     ///
     /// # Errors
     /// [`CapacityError`] if the bytes don't fit a [`bounded`](Self::bounded) buffer's capacity
-    /// (the live bytes plus the new bytes exceed `cap`). On an unbounded buffer it always
-    /// succeeds (growing if needed), so prefer [`push`](Self::push) there.
-    pub fn try_push(&mut self, bytes: &[u8]) -> Result<(), CapacityError> {
+    /// (the live bytes plus the new bytes exceed `cap`). Rejection leaves **all** state
+    /// unchanged, including the cursor: the caller still owns the rejected input.
+    pub fn push(&mut self, bytes: &[u8]) -> Result<(), CapacityError> {
         let live = self.buf.len() - self.cursor / 8;
         if let Some(cap) = self.cap {
-            if live + bytes.len() > cap {
+            if bytes.len() > cap - live {
                 return Err(CapacityError {
                     cap,
-                    requested: live + bytes.len(),
+                    requested: live.saturating_add(bytes.len()),
                 });
             }
         }
@@ -2373,11 +2580,20 @@ impl BitBuf {
     /// Grow a [`bounded`](Self::bounded) buffer's capacity by `additional` bytes (raising the cap
     /// and reserving the space — the one operation that reallocates a bounded buffer). On an
     /// unbounded buffer it just reserves.
+    ///
+    /// # Panics
+    /// Panics if the requested capacity overflows or exceeds `Vec`'s allocation limit.
     pub fn grow(&mut self, additional: usize) {
-        if let Some(cap) = &mut self.cap {
-            *cap += additional;
+        if let Some(cap) = self.cap {
+            let cap = cap
+                .checked_add(additional)
+                .expect("bitbuf capacity overflow");
+            // reserve() is relative to len, not the previous capacity.
+            self.buf.reserve(cap.saturating_sub(self.buf.len()));
+            self.cap = Some(cap);
+        } else {
+            self.buf.reserve(additional);
         }
-        self.buf.reserve(additional);
     }
 
     /// The number of unconsumed bits currently buffered.
@@ -2410,42 +2626,118 @@ impl BitBuf {
     /// Decode the next complete message off the front, advancing past the bytes it consumed.
     ///
     /// Returns `Ok(None)` when the buffer doesn't yet hold a whole message — push more bytes and
-    /// call again; the cursor is left untouched, so the retry is free. A malformed message is an
+    /// call again; bytes and cursor are left untouched. A malformed message is an
     /// `Err`. The byte/bit order is taken from `T`'s [`LAYOUT`](BitEncode::LAYOUT), so it decodes
     /// `little`/`lsb` messages correctly regardless of [`with_layout`](Self::with_layout).
     ///
     /// Consumed bytes are **not** drained here — they are reclaimed in place by the next
-    /// [`push`](Self::push)/[`try_push`](Self::try_push) (or an explicit [`compact`](Self::compact)),
+    /// [`push`](Self::push) (or an explicit [`compact`](Self::compact)),
     /// so a steady push/pull loop reuses the same allocation without per-message memmoves.
     ///
     /// # Errors
     /// A codec [`BitError`] for a malformed message.
     pub fn pull<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, BitError> {
-        if self.cursor >= self.buf.len() * 8 {
-            return Ok(None);
-        }
-        let mut r = BitReader::with_layout(&self.buf, <T as BitEncode>::LAYOUT);
-        r.seek_to_bit(self.cursor)?;
-        match T::bit_decode(&mut r) {
-            Ok(msg) => {
-                self.cursor = r.bit_pos(); // advance past the message; reclaim is deferred
-                Ok(Some(msg))
-            }
-            // Only a partial message is buffered — wait for more (cursor untouched, retry-safe).
-            Err(e)
-                if matches!(
-                    e.kind,
-                    ErrorKind::UnexpectedEof { .. } | ErrorKind::Incomplete { .. }
-                ) =>
-            {
-                Ok(None)
-            }
+        match self.try_pull::<T>() {
+            Ok(msg) => Ok(Some(msg)),
+            Err(e) if e.is_incomplete() => Ok(None),
             Err(e) => Err(e),
         }
     }
+
+    /// Decode one message, returning [`ErrorKind::Incomplete`] with position, field, and
+    /// an additional-byte hint when more input is needed. An empty buffer reports an
+    /// unknown hint without invoking the codec. Drain repeatedly to obtain zero or more
+    /// messages, stopping on `Incomplete`; append bytes and continue later.
+    ///
+    /// The hint concerns the next blocked operation, not the final frame size. An attempt
+    /// replays decoding from the current cursor: it does not resume inside a field. Callbacks
+    /// must be retry-safe; their side effects are **not** rolled back. Fragmented variable-size
+    /// collections can require repeated work. Errors never consume buffered input.
+    ///
+    /// Positions are buffer-local and may be rebased by compaction. Protocols with absolute
+    /// message-relative pointers should first extract an owned envelope, then decode its slice.
+    ///
+    /// # Errors
+    /// `Incomplete` for physical backing exhaustion, a definitive codec error otherwise,
+    /// or [`ErrorKind::NoProgress`] if decoding succeeds without advancing.
+    pub fn try_pull<T: BitDecode + BitEncode>(&mut self) -> Result<T, BitError> {
+        self.try_pull_with(T::LAYOUT, ())
+    }
+
+    /// Context-aware, directional counterpart of [`try_pull`](Self::try_pull). The caller
+    /// supplies the layout and fresh arguments for **each** attempt; `A` need not be `Clone`.
+    /// This also supports `#[bin(read_only)]` messages without a `BitEncode` implementation.
+    ///
+    /// # Errors
+    /// As [`try_pull`](Self::try_pull); all errors leave the buffer unchanged.
+    pub fn try_pull_with<T: DecodeWith<A>, A>(
+        &mut self,
+        layout: Layout,
+        args: A,
+    ) -> Result<T, BitError> {
+        if self.is_empty() {
+            return Err(BitError::new(
+                ErrorKind::Incomplete { needed: None },
+                self.cursor,
+            ));
+        }
+        let (value, end) = decode_attempt(&self.buf, self.cursor, layout, args, false)?;
+        self.cursor = end;
+        Ok(value)
+    }
+
+    /// Decode with the currently buffered input declared **finite**. Empty input is
+    /// `Ok(None)`; a truncated message is a definitive error. EOF is not stored: the caller
+    /// may append bytes or change message type after this attempt, even after an error.
+    ///
+    /// # Errors
+    /// A finite codec error, [`ErrorKind::IncompleteAtEof`] for a custom codec's request
+    /// for more input, or [`ErrorKind::NoProgress`]. Errors do not consume input.
+    pub fn pull_eof<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, BitError> {
+        self.pull_eof_with(T::LAYOUT, ())
+    }
+
+    /// Context-aware, directional counterpart of [`pull_eof`](Self::pull_eof).
+    ///
+    /// # Errors
+    /// As [`pull_eof`](Self::pull_eof); arguments are consumed, buffered input is not.
+    pub fn pull_eof_with<T: DecodeWith<A>, A>(
+        &mut self,
+        layout: Layout,
+        args: A,
+    ) -> Result<Option<T>, BitError> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        let (value, end) = decode_attempt(&self.buf, self.cursor, layout, args, true)?;
+        self.cursor = end;
+        Ok(Some(value))
+    }
+
+    #[cfg(feature = "net")]
+    pub(crate) fn read_capacity(&self) -> Option<usize> {
+        self.cap.map(|cap| cap - (self.buf.len() - self.cursor / 8))
+    }
+
+    #[cfg(feature = "net")]
+    pub(crate) fn finish_byte(&mut self) {
+        self.cursor = self.cursor.div_ceil(8) * 8;
+    }
+
+    #[cfg(feature = "net")]
+    pub(crate) fn read_buffered(&mut self, out: &mut [u8]) -> Result<usize, BitError> {
+        if self.cursor % 8 != 0 {
+            return Err(BitError::new(ErrorKind::NotByteAligned, self.cursor));
+        }
+        let start = self.cursor / 8;
+        let n = out.len().min(self.buf.len() - start);
+        out[..n].copy_from_slice(&self.buf[start..start + n]);
+        self.cursor += n * 8;
+        Ok(n)
+    }
 }
 
-/// The error [`BitBuf::try_push`] returns when bytes won't fit a [`bounded`](BitBuf::bounded)
+/// The error [`BitBuf::push`] returns when bytes won't fit a [`bounded`](BitBuf::bounded)
 /// buffer — the live (unconsumed) bytes plus the new bytes exceed its fixed `cap`. Grow it with
 /// [`BitBuf::grow`], or drain messages with [`pull`](BitBuf::pull) before pushing more.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2559,6 +2851,10 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
                 self.bit_pos,
             ));
         }
+        let end = self
+            .bit_pos
+            .checked_add(n as usize)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
         let bit_off = self.bit_pos % 8;
         let byte_start = (self.bit_pos / 8) as u64;
         let nbytes = (bit_off + n as usize).div_ceil(8);
@@ -2578,7 +2874,7 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
             BitError::new(kind, self.bit_pos)
         })?;
         let acc = extract_bits(&buf, bit_off, n as usize, self.layout.bit);
-        self.bit_pos += n as usize;
+        self.bit_pos = end;
         Ok(acc)
     }
     fn bit_pos(&self) -> usize {
@@ -3288,6 +3584,40 @@ mod unit {
     }
 
     #[test]
+    fn positioning_amounts_keep_low_32_bits_without_debug_only_panics() {
+        assert_eq!(u32::MAX.bytes(), 0xffff_fff8);
+        assert_eq!((-1i32).bits(), u32::MAX);
+        assert_eq!((-1i32).bytes(), 0xffff_fff8);
+        assert_eq!((1u64 << 32).bits(), 0);
+        assert_eq!((1u64 << 29).bytes(), 0);
+    }
+
+    #[test]
+    fn oversized_custom_bits_reports_width_error_before_byte_swap() {
+        #[derive(Clone, Copy)]
+        struct InvalidWidth;
+        impl Bits for InvalidWidth {
+            const BITS: u32 = 136;
+            fn into_bits(self) -> u128 {
+                0
+            }
+            fn from_bits(_: u128) -> Self {
+                Self
+            }
+        }
+
+        let mut writer = BitWriter::with_layout(Layout {
+            bit: BitOrder::Msb,
+            byte: ByteOrder::Little,
+        });
+        assert_eq!(
+            writer.write(InvalidWidth).unwrap_err().kind,
+            ErrorKind::TooWide { width: 136 }
+        );
+        assert!(writer.into_bytes().is_empty());
+    }
+
+    #[test]
     fn bulk_bytes_work_at_a_bit_offset() {
         // Bytes need not be aligned: write a nibble, then bytes straddling.
         let mut w = BitWriter::new();
@@ -3327,6 +3657,345 @@ mod unit {
 mod component {
     //! Component tests: one runtime adapter in isolation (the I/O ladder over the
     //! bit cursors). `cargo test component` runs these alongside the other layers.
+
+    mod incremental {
+        use crate::bitstream::CountPrefix;
+        use crate::{BitBuf, BitDecode, BitError, DecodeWith, ErrorKind, Layout, Source, bin};
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq, Eq)]
+        struct Packet {
+            tag: u8,
+            value: u32,
+        }
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq, Eq)]
+        struct Blob {
+            #[brw(count_prefix = u16)]
+            body: Vec<u8>,
+        }
+
+        #[test]
+        fn shortfall_reports_next_operation_and_keeps_input() {
+            let mut buffer = BitBuf::new();
+            assert_eq!(
+                buffer.try_pull::<Packet>().unwrap_err().kind,
+                ErrorKind::Incomplete { needed: None }
+            );
+            buffer.push(&[7, 1, 2]).unwrap();
+            let error = buffer.try_pull::<Packet>().unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(2) });
+            assert_eq!((error.at, error.field), (8, Some("value")));
+            assert_eq!(buffer.bit_len(), 24);
+            assert_eq!(buffer.try_pull::<Packet>().unwrap_err(), error);
+            buffer.push(&[3, 4, 9]).unwrap();
+            assert_eq!(
+                buffer.try_pull::<Packet>().unwrap(),
+                Packet {
+                    tag: 7,
+                    value: 0x0102_0304
+                }
+            );
+            assert_eq!(buffer.try_pull::<u8>().unwrap(), 9);
+            assert!(buffer.is_empty());
+        }
+
+        #[test]
+        fn eof_is_finite_per_attempt_not_sticky() {
+            let mut buffer = BitBuf::new();
+            assert_eq!(buffer.pull_eof::<Packet>().unwrap(), None);
+            buffer.push(&[7, 1, 2]).unwrap();
+            let error = buffer.pull_eof::<Packet>().unwrap_err();
+            assert_eq!(
+                error.kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 32,
+                    remaining: 16
+                }
+            );
+            assert_eq!((error.at, error.field), (8, Some("value")));
+            assert_eq!(buffer.bit_len(), 24);
+            buffer.push(&[3, 4]).unwrap();
+            assert!(buffer.pull_eof::<Packet>().unwrap().is_some());
+            assert!(buffer.is_empty());
+        }
+
+        #[test]
+        fn byte_blob_waits_for_entire_body_and_keeps_trailing_frame() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[0, 4, 1]).unwrap();
+            let error = buffer.try_pull::<Blob>().unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(3) });
+            assert_eq!((error.at, error.field), (16, Some("body")));
+            buffer.push(&[2, 3, 4, 0, 0]).unwrap();
+            assert_eq!(buffer.try_pull::<Blob>().unwrap().body, [1, 2, 3, 4]);
+            assert!(buffer.try_pull::<Blob>().unwrap().body.is_empty());
+            assert!(buffer.is_empty());
+        }
+
+        #[derive(Debug)]
+        struct Region;
+        impl DecodeWith<()> for Region {
+            fn decode_with<S: Source>(source: &mut S, (): ()) -> Result<Self, BitError> {
+                let mut region = source.limit_bytes(1)?;
+                region.read::<u16>().map_err(|e| e.in_field("inner"))?;
+                Ok(Self)
+            }
+        }
+
+        #[test]
+        fn logical_region_exhaustion_never_becomes_incomplete() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            let error = buffer
+                .try_pull_with::<Region, _>(Layout::default(), ())
+                .unwrap_err();
+            assert_eq!(
+                error.kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 16,
+                    remaining: 8
+                }
+            );
+            assert_eq!(error.field, Some("inner"));
+            buffer.push(&[2, 3]).unwrap();
+            assert_eq!(
+                buffer
+                    .try_pull_with::<Region, _>(Layout::default(), ())
+                    .unwrap_err(),
+                error
+            );
+            assert_eq!(buffer.bit_len(), 24);
+        }
+
+        #[derive(Debug)]
+        struct CustomIncomplete;
+        impl DecodeWith<()> for CustomIncomplete {
+            fn decode_with<S: Source>(source: &mut S, (): ()) -> Result<Self, BitError> {
+                source.read::<u8>()?;
+                Err(
+                    BitError::new(ErrorKind::Incomplete { needed: Some(3) }, source.bit_pos())
+                        .in_field("custom"),
+                )
+            }
+        }
+
+        #[test]
+        fn custom_incomplete_at_eof_is_terminal_with_original_context() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            let error = buffer
+                .pull_eof_with::<CustomIncomplete, _>(Layout::default(), ())
+                .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::IncompleteAtEof { needed: Some(3) });
+            assert!(!error.is_incomplete());
+            assert_eq!((error.at, error.field), (8, Some("custom")));
+            assert_eq!(buffer.try_pull::<u8>().unwrap(), 1);
+        }
+
+        #[bin(read_only, ctx(count: usize))]
+        #[derive(Debug, PartialEq, Eq)]
+        struct Context {
+            #[br(count = count)]
+            data: Vec<u8>,
+        }
+
+        struct OwnedArg(Vec<u8>); // deliberately neither Copy nor Clone
+        impl DecodeWith<OwnedArg> for Context {
+            fn decode_with<S: Source>(source: &mut S, arg: OwnedArg) -> Result<Self, BitError> {
+                Ok(Self {
+                    data: source.read_bytes(arg.0.len())?,
+                })
+            }
+        }
+
+        #[test]
+        fn explicit_layout_supports_read_only_context_and_consuming_args() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            assert!(
+                buffer
+                    .try_pull_with::<Context, _>(Layout::default(), ContextCtx { count: 2 })
+                    .unwrap_err()
+                    .is_incomplete()
+            );
+            buffer.push(&[2]).unwrap();
+            let decoded: Context = buffer
+                .try_pull_with(Layout::default(), OwnedArg(vec![0; 2]))
+                .unwrap();
+            assert_eq!(decoded.data, [1, 2]);
+            assert!(
+                buffer
+                    .pull_eof_with::<Context, _>(Layout::default(), ContextCtx { count: 2 })
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        #[bin(read_only)]
+        #[derive(Debug)]
+        struct Empty {}
+
+        #[test]
+        fn streamed_zero_width_messages_and_elements_are_rejected() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            assert_eq!(
+                buffer
+                    .try_pull_with::<Empty, _>(Layout::default(), ())
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::NoProgress
+            );
+            assert_eq!(
+                buffer
+                    .pull_eof_with::<Empty, _>(Layout::default(), ())
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::NoProgress
+            );
+            assert_eq!(buffer.bit_len(), 8);
+            let mut source = crate::BitReader::new(&[1]);
+            assert_eq!(
+                Empty::decode_vec(&mut source, usize::MAX).unwrap_err().kind,
+                ErrorKind::NoProgress
+            );
+            assert!(Empty::decode_vec(&mut source, 0).unwrap().is_empty());
+        }
+
+        #[test]
+        fn rejection_does_not_compact_or_change_a_partial_cursor() {
+            let mut buffer = BitBuf::bounded(2);
+            buffer.push(&[0xab, 0xcd]).unwrap();
+            assert_eq!(buffer.try_pull::<crate::u12>().unwrap().value(), 0xabc);
+            let position = buffer.bit_pos();
+            let error = buffer.push(&[1, 2]).unwrap_err();
+            assert_eq!((error.cap, error.requested), (2, 3));
+            assert_eq!(buffer.bit_pos(), position);
+            assert_eq!(buffer.bit_len(), 4);
+            buffer.push(&[0xef]).unwrap();
+            assert_eq!(buffer.try_pull::<crate::u12>().unwrap().value(), 0xdef);
+            assert!(buffer.is_empty());
+        }
+
+        #[test]
+        fn filling_reclaimed_capacity_never_retains_bytes_past_the_bound() {
+            for bits in [8_u8, 12] {
+                let mut buffer = BitBuf::bounded(4);
+                buffer.push(&[1, 2, 3, 4]).unwrap();
+                buffer.read_bits(u32::from(bits)).unwrap();
+                buffer.push(&[5]).unwrap();
+                assert_eq!(buffer.capacity(), Some(4), "consumed {bits} bits");
+                assert_eq!(buffer.bit_len(), 40 - usize::from(bits));
+                let position = buffer.bit_pos();
+                let error = buffer.push(&[6]).unwrap_err();
+                assert_eq!((error.cap, error.requested), (4, 5));
+                assert_eq!(buffer.bit_pos(), position);
+                assert_eq!(buffer.bit_len(), 40 - usize::from(bits));
+                buffer.seek_to_bit(0).unwrap();
+                assert_eq!(buffer.bit_len(), 32, "consumed {bits} bits");
+                buffer.push(&[]).unwrap();
+                assert_eq!(buffer.read_bytes(4).unwrap(), [2, 3, 4, 5]);
+                assert!(buffer.is_empty());
+            }
+        }
+
+        #[test]
+        fn allocator_slack_cannot_break_the_bound_after_rewinding() {
+            for bits in [8, 12] {
+                let mut buffer = BitBuf::bounded(4);
+                buffer.push(&[0x11, 0x22, 0x33, 0x44]).unwrap();
+                buffer.grow(1); // Vec may reserve more than the logical five-byte cap.
+                buffer.read_bits(bits).unwrap();
+                buffer.push(&[0x55, 0x66]).unwrap();
+                let position = buffer.bit_pos();
+                let remaining = buffer.bit_len();
+                let error = buffer.push(&[0x77]).unwrap_err();
+                assert_eq!((error.cap, error.requested), (5, 6));
+                assert_eq!((buffer.bit_pos(), buffer.bit_len()), (position, remaining));
+                buffer.seek_to_bit(0).unwrap();
+                assert_eq!(buffer.bit_len(), 40);
+                buffer.push(&[]).unwrap();
+                assert_eq!(buffer.try_pull::<u8>().unwrap(), 0x22);
+                assert_eq!(buffer.read_bytes(4).unwrap(), [0x33, 0x44, 0x55, 0x66]);
+                assert!(buffer.is_empty());
+            }
+        }
+
+        #[test]
+        fn counts_above_host_width_never_wrap_to_shorter_frames() {
+            let beyond_host = (usize::MAX as u128) + 1;
+            assert_eq!(beyond_host.to_count(), usize::MAX);
+            assert_eq!(crate::u127::new(beyond_host).to_count(), usize::MAX);
+            assert_eq!((usize::MAX as u128).to_count(), usize::MAX);
+            assert_eq!(0u128.to_count(), 0);
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn io_view_roundtrip_preserves_shortfall_and_field() {
+            use std::io::Read;
+            #[derive(Debug)]
+            struct Io;
+            impl DecodeWith<()> for Io {
+                fn decode_with<S: Source>(source: &mut S, (): ()) -> Result<Self, BitError> {
+                    let mut bytes = [0; 2];
+                    source
+                        .as_read()
+                        .read_exact(&mut bytes)
+                        .map_err(BitError::from)
+                        .map_err(|e| e.in_field("io"))?;
+                    Ok(Self)
+                }
+            }
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1]).unwrap();
+            let error = buffer
+                .try_pull_with::<Io, _>(Layout::default(), ())
+                .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(1) });
+            assert_eq!((error.at, error.field), (8, Some("io")));
+            let eof = buffer
+                .pull_eof_with::<Io, _>(Layout::default(), ())
+                .unwrap_err();
+            assert_eq!(
+                eof.kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 8,
+                    remaining: 0
+                }
+            );
+            assert_eq!((eof.at, eof.field), (8, Some("io")));
+            buffer.push(&[2]).unwrap();
+            assert!(buffer.try_pull_with::<Io, _>(Layout::default(), ()).is_ok());
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn stream_reader_keeps_non_eof_io_failures_and_seek_overflow_is_typed() {
+            struct Failure(std::io::ErrorKind);
+            impl std::io::Read for Failure {
+                fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                    Err(self.0.into())
+                }
+            }
+            for kind in [
+                std::io::ErrorKind::ConnectionReset,
+                std::io::ErrorKind::TimedOut,
+                std::io::ErrorKind::WouldBlock,
+            ] {
+                let mut source = crate::StreamBitReader::new(Failure(kind));
+                assert_eq!(source.read::<u8>().unwrap_err().kind, ErrorKind::Io(kind));
+            }
+            let mut source = crate::BufSource::new(&[][..]);
+            source.seek_to_bit(usize::MAX).unwrap();
+            assert_eq!(
+                source.read_bits(1).unwrap_err().kind,
+                ErrorKind::PositionOverflow
+            );
+        }
+    }
     /// `bitstream_source.rs` — Generic recursion over `Source` (ROADMAP Phase 1, chunk B1): one derived
     mod source {
 
@@ -3778,6 +4447,18 @@ mod component {
         use bnb::{SeekReader, bin, u4};
         use std::io::Cursor;
 
+        #[test]
+        fn overflowing_position_is_rejected_before_io() {
+            use bnb::{ErrorKind, Source};
+
+            let mut reader = SeekReader::new(Cursor::new([]));
+            reader.seek_to_bit(usize::MAX).unwrap();
+            let error = reader.read_bits(1).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::PositionOverflow);
+            assert_eq!(error.at, usize::MAX);
+            assert_eq!(reader.bit_pos(), usize::MAX);
+        }
+
         #[bin]
         #[derive(Debug, PartialEq, Eq, Clone)]
         struct Frame {
@@ -3866,11 +4547,11 @@ mod component {
             let bytes = m.to_bytes().unwrap();
 
             let mut bb = BitBuf::new();
-            bb.push(&bytes[..3]); // only part of the message
+            bb.push(&bytes[..3]).unwrap(); // only part of the message
             assert_eq!(bb.pull::<LeMsg>().unwrap(), None); // wait for more — buffer untouched
             assert_eq!(bb.bit_len(), 24);
 
-            bb.push(&bytes[3..]); // the rest
+            bb.push(&bytes[3..]).unwrap(); // the rest
             assert_eq!(bb.pull::<LeMsg>().unwrap(), Some(m)); // decodes (little-endian honored via LAYOUT)
             assert!(bb.is_empty()); // consumed bytes reclaimed
             assert_eq!(bb.pull::<LeMsg>().unwrap(), None);
@@ -3896,7 +4577,7 @@ mod component {
             let mut out = Vec::new();
             // f1 spans the chunk boundary; the bit cursor keeps f2's sub-byte alignment.
             for chunk in [&wire[0..1], &wire[1..3]] {
-                bb.push(chunk);
+                bb.push(chunk).unwrap();
                 while let Some(f) = bb.pull::<Frame>().unwrap() {
                     out.push(f);
                 }
@@ -3908,7 +4589,7 @@ mod component {
         #[test]
         fn clear_and_capacity() {
             let mut bb = BitBuf::with_capacity(64);
-            bb.push(&[1, 2, 3]);
+            bb.push(&[1, 2, 3]).unwrap();
             assert_eq!(bb.bit_len(), 24);
             bb.clear();
             assert!(bb.is_empty());
@@ -3925,7 +4606,7 @@ mod component {
                 val: 0x9A,
             };
             let mut bb = BitBuf::new();
-            bb.push(&f.to_bytes().unwrap());
+            bb.push(&f.to_bytes().unwrap()).unwrap();
             assert_eq!(<Frame as BitDecode>::bit_decode(&mut bb).unwrap(), f);
 
             // little message via a layout-configured BitBuf (byte-aligned, so compact fully drains)
@@ -3934,7 +4615,7 @@ mod component {
                 b: 0xDEAD_BEEF,
             };
             let mut bb = BitBuf::new().with_layout(<LeMsg as BitEncode>::LAYOUT);
-            bb.push(&m.to_bytes().unwrap());
+            bb.push(&m.to_bytes().unwrap()).unwrap();
             let got = <LeMsg as BitDecode>::bit_decode(&mut bb).unwrap();
             assert_eq!(got, m); // would be byte-swapped if ordering double-applied
             bb.compact(); // Source path doesn't auto-reclaim
@@ -3953,7 +4634,7 @@ mod component {
                 full: u16,
             }
             let mut bb = BitBuf::new();
-            bb.push(&[0xAB, 0xCD]);
+            bb.push(&[0xAB, 0xCD]).unwrap();
             let p = Peeked::decode(&mut bb).unwrap();
             assert_eq!((p.tag, p.full), (0xAB, 0xABCD));
         }
@@ -3967,20 +4648,20 @@ mod component {
         }
 
         #[test]
-        fn bounded_try_push_respects_capacity_then_reclaims_in_place() {
+        fn bounded_push_respects_capacity_then_reclaims_in_place() {
             use bnb::CapacityError;
             let mut bb = BitBuf::bounded(4);
             assert_eq!(bb.capacity(), Some(4));
-            bb.try_push(&[0x00, 0x01]).unwrap(); // 2 bytes
-            bb.try_push(&[0x00, 0x02]).unwrap(); // 4 bytes — full
+            bb.push(&[0x00, 0x01]).unwrap(); // 2 bytes
+            bb.push(&[0x00, 0x02]).unwrap(); // 4 bytes — full
             // a 5th byte can't fit until something is drained
             assert!(matches!(
-                bb.try_push(&[0xFF]),
+                bb.push(&[0xFF]),
                 Err(CapacityError { cap: 4, .. })
             ));
             // drain one message → 2 live bytes; the dead prefix is reclaimed in place to fit more
             assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 1 }));
-            bb.try_push(&[0x00, 0x03]).unwrap();
+            bb.push(&[0x00, 0x03]).unwrap();
             assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 2 }));
             assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: 3 }));
             assert!(bb.is_empty());
@@ -3989,29 +4670,29 @@ mod component {
         #[test]
         fn grow_raises_a_bounded_capacity() {
             let mut bb = BitBuf::bounded(2);
-            bb.try_push(&[0x00, 0x01]).unwrap();
-            assert!(bb.try_push(&[0x02]).is_err()); // full at 2
+            bb.push(&[0x00, 0x01]).unwrap();
+            assert!(bb.push(&[0x02]).is_err()); // full at 2
             bb.grow(2); // the one explicit allocation
             assert_eq!(bb.capacity(), Some(4));
-            bb.try_push(&[0x02, 0x03]).unwrap();
+            bb.push(&[0x02, 0x03]).unwrap();
             assert_eq!(bb.bit_len(), 32);
         }
 
         #[test]
-        fn unbounded_try_push_never_fails() {
+        fn unbounded_push_never_fails() {
             let mut bb = BitBuf::new();
             assert_eq!(bb.capacity(), None);
-            bb.try_push(&[1, 2, 3]).unwrap(); // no cap → grows, never errors
+            bb.push(&[1, 2, 3]).unwrap(); // no cap → grows, never errors
             assert_eq!(bb.bit_len(), 24);
         }
 
         #[test]
         fn a_streaming_push_pull_loop_stays_within_a_tiny_cap() {
             // Pushed one message at a time and drained immediately, a bounded buffer reuses the same
-            // allocation forever: each try_push fits because the prior message was reclaimed in place.
+            // allocation forever: each push fits because the prior message was reclaimed in place.
             let mut bb = BitBuf::bounded(2);
             for i in 0..100u16 {
-                bb.try_push(&i.to_be_bytes()).unwrap();
+                bb.push(&i.to_be_bytes()).unwrap();
                 assert_eq!(bb.pull::<Two>().unwrap(), Some(Two { v: i }));
             }
             assert!(bb.is_empty());

@@ -48,21 +48,25 @@ macro_rules! impl_uint {
     ($($t:ty),* $(,)?) => {
         $(
             impl<const N: usize> UInt<$t, N> {
+                const VALID_WIDTH: () = assert!(N <= <$t>::BITS as usize, "UInt width exceeds its backing integer");
                 /// The number of bits.
                 pub const BITS: u32 = <Self as Bits>::BITS;
 
                 /// A mask with the low `N` bits set.
-                pub const MASK: $t = if N >= <$t>::BITS as usize {
-                    <$t>::MAX
-                } else {
-                    ((1 as $t) << N) - 1
+                pub const MASK: $t = {
+                    let () = Self::VALID_WIDTH;
+                    if N == <$t>::BITS as usize {
+                        <$t>::MAX
+                    } else {
+                        ((1 as $t) << N) - 1
+                    }
                 };
 
                 /// The largest representable value (`2^N - 1`).
                 pub const MAX: Self = Self { value: Self::MASK };
 
                 /// The zero value.
-                pub const MIN: Self = Self { value: 0 };
+                pub const MIN: Self = Self::from_raw(0);
 
                 /// Creates a value, panicking if it does not fit in `N` bits.
                 ///
@@ -101,6 +105,7 @@ macro_rules! impl_uint {
                 /// The underlying value.
                 #[inline]
                 pub const fn value(self) -> $t {
+                    let () = Self::VALID_WIDTH;
                     self.value
                 }
 
@@ -119,20 +124,23 @@ macro_rules! impl_uint {
                 #[inline]
                 #[allow(clippy::cast_lossless)] // From is not const on the MSRV.
                 pub const fn __bnb_into_bits(self) -> u128 {
-                    self.value as u128
+                    self.value() as u128
                 }
             }
 
             impl<const N: usize> Default for UInt<$t, N> {
                 #[inline]
                 fn default() -> Self {
-                    Self { value: 0 }
+                    Self::MIN
                 }
             }
 
             impl<const N: usize> Bits for UInt<$t, N> {
                 #[allow(clippy::cast_possible_truncation)] // Supported UInt widths are at most 128.
-                const BITS: u32 = N as u32;
+                const BITS: u32 = {
+                    let () = Self::VALID_WIDTH;
+                    N as u32
+                };
 
                 #[inline]
                 fn into_bits(self) -> u128 {

@@ -97,7 +97,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     // Partition variants into unit (discriminant) and a single catch-all.
     let mut unit: Vec<(Ident, u128)> = Vec::new();
     let mut catch_all: Option<Ident> = None;
-    let mut next: u128 = 0;
+    let mut next: Option<u128> = Some(0);
 
     for v in &data.variants {
         let is_catch = v.attrs.iter().any(|a| a.path().is_ident("catch_all"));
@@ -132,10 +132,18 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
         let disc = match &v.discriminant {
             Some((_, expr)) => parse_discriminant(expr)?,
-            None => next,
+            None => next.ok_or_else(|| {
+                syn::Error::new_spanned(&v.ident, "implicit discriminant exceeds u128")
+            })?,
         };
+        if width_bits(width).is_some_and(|bits| bits < 128 && disc >= (1u128 << bits)) {
+            return Err(syn::Error::new_spanned(
+                &v.ident,
+                "discriminant exceeds the declared bit width",
+            ));
+        }
         unit.push((v.ident.clone(), disc));
-        next = disc + 1;
+        next = disc.checked_add(1);
     }
 
     // Decode safety: `Bits::from_bits` is infallible and runs on the decode path (and
@@ -163,6 +171,9 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let vis = &input.vis;
     let bits_path = quote!(#bnb::__private::Bits);
+    let discriminants = unit.iter().map(|(_, value)| value);
+    let count = unit.len() as u128;
+    let require_exhaustive = catch_all.is_none() && !args.closed;
 
     // into_bits: discriminant for unit variants; inner value for catch-all. The
     // conversions go through the const dispatch (not `Bits`) so the inherent pair
@@ -216,6 +227,17 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let leaf_codec = crate::bits_leaf_codec_impl(name, &bnb);
 
     Ok(quote! {
+        // Resolve the actual Bits width too: a type alias/name must not spoof uN coverage.
+        const _: () = {
+            let width = <#width as #bits_path>::BITS;
+            assert!(width <= 128, "BitEnum width exceeds the carrier");
+            #(assert!(width == 128 || #discriminants < (1u128 << width),
+                "discriminant exceeds the declared bit width");)*
+            if #require_exhaustive {
+                assert!(width < 128 && #count == (1u128 << width),
+                    "BitEnum variants do not cover the actual Bits width");
+            }
+        };
         impl #name {
             // Const-dispatch seam (see `Bits`): the `Bits::from_bits`/`into_bits`
             // contract as inherent `const fn`s, so this enum works as a field of a

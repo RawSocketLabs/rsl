@@ -64,7 +64,7 @@ helpers are built on the cursors, so dropping a level is always possible.
 | `streaming` | `StreamBitReader` — decode a *sequence* of messages off a forward-only stream; clean stop on `Incomplete` | `--example streaming` |
 | `bufsource` | `BufSource` retain-and-seek — a backward `restore_position` over a reader that **can't** seek (the socket+seek case) | `--example bufsource` |
 | `bitbuf` | `BitBuf` push/pull — feed chunks as they arrive, pull whole messages; compared against `decode_all`/`BitReader`/`BufSource` on the same buffer | `--example bitbuf` |
-| `bitbuf_bounded` | `BitBuf::bounded(cap)` — **alloc-once** fixed capacity: `try_push` (refuses to grow → `CapacityError`), deferred **in-place reclaim**, explicit `grow` | `--example bitbuf_bounded` |
+| `bitbuf_bounded` | `BitBuf::bounded(cap)` — **alloc-once** fixed capacity: `push` (refuses to grow → `CapacityError`), deferred **in-place reclaim**, explicit `grow` | `--example bitbuf_bounded` |
 | `framed` | The opt-in `bytes` adapters (`BytesReader`/`BytesWriter`) + the streaming `Incomplete` signal | `--example framed --features bytes` |
 | `bytes_frame` | The `bytes` feature: zero-copy framing — encode to a `Bytes`, decode from an owned `Bytes`, cheap slices | `--example bytes_frame --features bytes` |
 | `tcp` | Raw `std` TCP: `BufSource` + the `&TcpStream` duplex trick (read + write one socket, no `try_clone`) | `--example tcp` |
@@ -103,7 +103,7 @@ helpers are built on the cursors, so dropping a level is always possible.
 | `validate` | validate, bin_message, telemetry |
 | `#[try_str]` (Debug rendering) | try_str, checked, ctx, wav |
 | I/O: `BufSource` / `SeekReader` / `StreamBitReader` / `BitBuf` | tcp, bufsource / archive, peek / framed, streaming / bitbuf, bitbuf_bounded |
-| `BitBuf` bounded (alloc-once `try_push`/`grow`/`CapacityError`) | bitbuf_bounded |
+| `BitBuf` bounded (alloc-once `push`/`grow`/`CapacityError`) | bitbuf_bounded |
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
 | `net` feature | sockets, unix_stream |

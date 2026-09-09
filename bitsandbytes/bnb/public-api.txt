@@ -17,7 +17,10 @@ pub bnb::bitstream::ErrorKind::Convert
 pub bnb::bitstream::ErrorKind::Convert::message: alloc::string::String
 pub bnb::bitstream::ErrorKind::Incomplete
 pub bnb::bitstream::ErrorKind::Incomplete::needed: core::option::Option<usize>
+pub bnb::bitstream::ErrorKind::IncompleteAtEof
+pub bnb::bitstream::ErrorKind::IncompleteAtEof::needed: core::option::Option<usize>
 pub bnb::bitstream::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::bitstream::ErrorKind::NoProgress
 pub bnb::bitstream::ErrorKind::NotByteAligned
 pub bnb::bitstream::ErrorKind::NotSeekable
 pub bnb::bitstream::ErrorKind::PositionOverflow
@@ -80,8 +83,11 @@ pub fn bnb::bitstream::BitBuf::grow(&mut self, usize)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
-pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
-pub fn bnb::bitstream::BitBuf::try_push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
+pub fn bnb::bitstream::BitBuf::pull_eof<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::pull_eof_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
+pub fn bnb::bitstream::BitBuf::try_pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::try_pull_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
 pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
@@ -97,7 +103,7 @@ pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Res
 pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
-pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::clone(&self) -> Self
 impl core::default::Default for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::default() -> bnb::bitstream::BitBuf
 impl core::fmt::Debug for bnb::bitstream::BitBuf
@@ -783,26 +789,37 @@ pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
 pub trait bnb::bitstream::BitDecode: core::marker::Sized
 pub fn bnb::bitstream::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitDecode::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for bool
 pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bool::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv4Addr
 pub fn core::net::ip_addr::Ipv4Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv6Addr
 pub fn core::net::ip_addr::Ipv6Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u128
 pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u128::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u16
 pub fn u16::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u16::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u32
 pub fn u32::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u32::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u64
 pub fn u64::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u64::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u8
 pub fn u8::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u8::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T: bnb::Bits> bnb::bitstream::BitDecode for bnb::WireLen<T>
 pub fn bnb::WireLen<T>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::WireLen<T>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 pub trait bnb::bitstream::BitEncode
 pub const bnb::bitstream::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::bitstream::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -1226,6 +1243,7 @@ impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::framing::BinCodec<T>::Item = T
 pub fn bnb::framing::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+pub fn bnb::framing::BinCodec<T>::decode_eof(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
 impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
@@ -1321,6 +1339,7 @@ pub fn bnb::UInt<u8, N>::try_new(u8) -> core::result::Result<Self, bnb::error::W
 pub const fn bnb::UInt<u8, N>::value(self) -> u8
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::UInt<T, N>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -1637,12 +1656,19 @@ impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::bounded(S, usize) -> Self
+pub fn bnb::net::MessageStream<S>::from_parts(S, bnb::bitstream::BitBuf) -> Self
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
 pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
-pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
+pub fn bnb::net::MessageStream<S>::into_parts(self) -> (S, bnb::bitstream::BitBuf)
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
+pub fn bnb::net::MessageStream<S>::try_into_inner(self) -> core::result::Result<S, Self>
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<S: std::io::Read> std::io::Read for bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl<S: std::io::Write> std::io::Write for bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::net::MessageStream<S>::write(&mut self, &[u8]) -> std::io::error::Result<usize>
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
 impl<S> core::marker::Send for bnb::net::MessageStream<S> where S: core::marker::Send
 impl<S> core::marker::Sync for bnb::net::MessageStream<S> where S: core::marker::Sync
@@ -1959,7 +1985,10 @@ pub bnb::ErrorKind::Convert
 pub bnb::ErrorKind::Convert::message: alloc::string::String
 pub bnb::ErrorKind::Incomplete
 pub bnb::ErrorKind::Incomplete::needed: core::option::Option<usize>
+pub bnb::ErrorKind::IncompleteAtEof
+pub bnb::ErrorKind::IncompleteAtEof::needed: core::option::Option<usize>
 pub bnb::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::ErrorKind::NoProgress
 pub bnb::ErrorKind::NotByteAligned
 pub bnb::ErrorKind::NotSeekable
 pub bnb::ErrorKind::PositionOverflow
@@ -2074,6 +2103,7 @@ pub fn bnb::WireLen<T>::is_auto(&self) -> bool
 pub fn bnb::WireLen<T>::set(T) -> Self
 impl<T: bnb::Bits> bnb::bitstream::BitDecode for bnb::WireLen<T>
 pub fn bnb::WireLen<T>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::WireLen<T>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T: bnb::Bits> bnb::bitstream::BitEncode for bnb::WireLen<T>
 pub const bnb::WireLen<T>::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::WireLen<T>::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -2137,6 +2167,7 @@ impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::framing::BinCodec<T>::Item = T
 pub fn bnb::framing::BinCodec<T>::decode(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
+pub fn bnb::framing::BinCodec<T>::decode_eof(&mut self, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<core::option::Option<T>, std::io::error::Error>
 impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
@@ -2178,8 +2209,11 @@ pub fn bnb::bitstream::BitBuf::grow(&mut self, usize)
 pub fn bnb::bitstream::BitBuf::is_empty(&self) -> bool
 pub fn bnb::bitstream::BitBuf::new() -> Self
 pub fn bnb::bitstream::BitBuf::pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
-pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8])
-pub fn bnb::bitstream::BitBuf::try_push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
+pub fn bnb::bitstream::BitBuf::pull_eof<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::pull_eof_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<core::option::Option<T>, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::push(&mut self, &[u8]) -> core::result::Result<(), bnb::bitstream::CapacityError>
+pub fn bnb::bitstream::BitBuf::try_pull<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::bitstream::BitError>
+pub fn bnb::bitstream::BitBuf::try_pull_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::with_capacity(usize) -> Self
 pub fn bnb::bitstream::BitBuf::with_layout(self, bnb::bitstream::Layout) -> Self
 impl bnb::bitstream::SeekSource for bnb::bitstream::BitBuf
@@ -2195,7 +2229,7 @@ pub fn bnb::bitstream::BitBuf::read_bytes(&mut self, usize) -> core::result::Res
 pub fn bnb::bitstream::BitBuf::read_into(&mut self, &mut [u8]) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitBuf::seek_to_bit(&mut self, usize) -> core::result::Result<(), bnb::bitstream::BitError>
 impl core::clone::Clone for bnb::bitstream::BitBuf
-pub fn bnb::bitstream::BitBuf::clone(&self) -> bnb::bitstream::BitBuf
+pub fn bnb::bitstream::BitBuf::clone(&self) -> Self
 impl core::default::Default for bnb::bitstream::BitBuf
 pub fn bnb::bitstream::BitBuf::default() -> bnb::bitstream::BitBuf
 impl core::fmt::Debug for bnb::bitstream::BitBuf
@@ -2740,12 +2774,19 @@ impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::bounded(S, usize) -> Self
+pub fn bnb::net::MessageStream<S>::from_parts(S, bnb::bitstream::BitBuf) -> Self
 pub fn bnb::net::MessageStream<S>::get_mut(&mut self) -> &mut S
 pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
-pub fn bnb::net::MessageStream<S>::into_inner(self) -> S
+pub fn bnb::net::MessageStream<S>::into_parts(self) -> (S, bnb::bitstream::BitBuf)
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
+pub fn bnb::net::MessageStream<S>::try_into_inner(self) -> core::result::Result<S, Self>
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<S: std::io::Read> std::io::Read for bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::read(&mut self, &mut [u8]) -> std::io::error::Result<usize>
+impl<S: std::io::Write> std::io::Write for bnb::net::MessageStream<S>
+pub fn bnb::net::MessageStream<S>::flush(&mut self) -> std::io::error::Result<()>
+pub fn bnb::net::MessageStream<S>::write(&mut self, &[u8]) -> std::io::error::Result<usize>
 impl<S> core::marker::Freeze for bnb::net::MessageStream<S> where S: core::marker::Freeze
 impl<S> core::marker::Send for bnb::net::MessageStream<S> where S: core::marker::Send
 impl<S> core::marker::Sync for bnb::net::MessageStream<S> where S: core::marker::Sync
@@ -3108,6 +3149,8 @@ impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb:
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 impl<T, const N: usize> bnb::bitstream::BitEncode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub const bnb::UInt<T, N>::LAYOUT: bnb::bitstream::Layout
@@ -3485,26 +3528,37 @@ pub fn usize::bits(self) -> u32
 pub fn usize::bytes(self) -> u32
 pub trait bnb::BitDecode: core::marker::Sized
 pub fn bnb::BitDecode::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::BitDecode::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for bool
 pub fn bool::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bool::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv4Addr
 pub fn core::net::ip_addr::Ipv4Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv4Addr::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for core::net::ip_addr::Ipv6Addr
 pub fn core::net::ip_addr::Ipv6Addr::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn core::net::ip_addr::Ipv6Addr::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u128
 pub fn u128::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u128::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u16
 pub fn u16::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u16::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u32
 pub fn u32::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u32::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u64
 pub fn u64::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u64::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl bnb::bitstream::BitDecode for u8
 pub fn u8::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn u8::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T, const N: usize> bnb::bitstream::BitDecode for bnb::UInt<T, N> where bnb::UInt<T, N>: bnb::Bits
 pub fn bnb::UInt<T, N>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::UInt<T, N>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 impl<T: bnb::Bits> bnb::bitstream::BitDecode for bnb::WireLen<T>
 pub fn bnb::WireLen<T>::bit_decode<S: bnb::bitstream::Source>(&mut S) -> core::result::Result<Self, bnb::bitstream::BitError>
+pub fn bnb::WireLen<T>::decode_vec<S: bnb::bitstream::Source>(&mut S, usize) -> core::result::Result<alloc::vec::Vec<Self>, bnb::bitstream::BitError>
 pub trait bnb::BitEncode
 pub const bnb::BitEncode::LAYOUT: bnb::bitstream::Layout
 pub fn bnb::BitEncode::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
