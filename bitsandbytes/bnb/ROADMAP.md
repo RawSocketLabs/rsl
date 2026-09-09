@@ -10,6 +10,20 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 [`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
 
+## 0.6 candidate — hinted message reads
+
+- [x] One hint-driven `MessageStream::read_message`; borrowed sync/Tokio readers over
+      caller-owned transport, `BitBuf`, and scratch, with typed original I/O errors.
+- [x] Strict additional-byte lower bounds, automatic invalidation on compaction/rebasing,
+      bounded read-ahead, immediate finite EOF and lossless byte-padded handoff.
+- [x] Non-SOCKS protocol evidence, lower-bound/async cancellation tests, separate allocation
+      profiling and baseline-controlled performance gate; see [`DESIGN.md` §12](DESIGN.md#12-hint-driven-whole-message-reads-06-candidate).
+- [x] Final post-fix fuzz/mutation/reviewer gate (2026-09-09, no remaining findings).
+- [ ] Clean-tree container and hosted CI.
+- [ ] Release-plz runtime release, archive/registry verification and restored compatibility
+      baseline. Macros remain 0.5.0 unless implementation evidence warrants a change.
+- [ ] SOCKS adoption of the published borrowed helpers in a separate slice.
+
 ## 0.5.0 — incremental decoding and lossless handoff
 
 - [x] Reuse `BitBuf` for detailed `try_pull`, finite `pull_eof`, and explicit

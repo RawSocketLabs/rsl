@@ -70,6 +70,20 @@ and review remain required.
 Do not recreate historical tags. The `git_only` migration remains deferred in
 `release-plz.toml` until a packageable tag baseline exists.
 
+### Runtime 0.6 transition
+
+Hint-driven message reading changes the read-error type and strengthens the positive
+`Incomplete` contract. Expect runtime 0.6.0 with macros remaining 0.5.0: no new generated
+runtime requirement or macro implementation change is involved. Preserve the breaking
+Conventional Commit marker. Versions and changelogs remain release-plz-owned.
+
+During this transition, `check-api-delta.sh` verifies exact reviewed all/default/none deltas
+against published 0.5.0. All-feature semver uses major mode alongside that gate; default and
+no-default source APIs still enforce patch compatibility. After verified publication, restore
+all-mode patch checks against 0.6.0 and retire the temporary checker, retaining delta snapshots
+as migration evidence. Repeat detached fuzz lock and archive verification on the generated PR.
+The release allowlist stays bnb-only; no GitHub Release is created.
+
 ## Pre-commit correctness and performance gate
 
 CI success is necessary, not sufficient. Before committing a runtime or macro release:

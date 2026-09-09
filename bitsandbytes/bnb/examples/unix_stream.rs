@@ -50,10 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // not silently treated as end-of-stream.
             let req = match conn.read_message::<Message>() {
                 Ok(req) => req,
-                Err(bnb::BitError {
-                    kind: bnb::ErrorKind::Io(std::io::ErrorKind::UnexpectedEof),
-                    ..
-                }) => break, // clean close
+                Err(bnb::net::MessageReadError::Io(error))
+                    if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    break;
+                }
                 Err(e) => panic!("unix server: framing/transport error: {e}"),
             };
             info!(?req, "unix server ← request");

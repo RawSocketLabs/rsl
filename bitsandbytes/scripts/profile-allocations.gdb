@@ -1,5 +1,5 @@
 # Linux x86_64 / system allocator, debug example build. Not a wall-clock benchmark.
-# cargo build -p bitsandbytes --example bitbuf_bounded
+# cargo build -p bitsandbytes --example bitbuf_bounded --all-features
 # gdb -q -batch -x bitsandbytes/scripts/profile-allocations.gdb --args target/debug/examples/bitbuf_bounded --profile
 set pagination off
 set breakpoint pending on
@@ -12,7 +12,8 @@ phase = None
 metrics = None
 seen = set()
 expected = {1: (0, 0), 2: (0, 0), 3: (0, 0), 4: (0, 0),
-            5: (1, 4096), 6: (1, 3), 7: (0, 0), 8: (1, 64), 9: (0, 0)}
+            5: (1, 4096), 6: (1, 3), 7: (0, 0), 8: (1, 64), 9: (0, 0),
+            10: (0, 0), 11: (1, 4096), 12: (1, 4096)}
 
 class Marker(gdb.Breakpoint):
     def __init__(self, name, starting):

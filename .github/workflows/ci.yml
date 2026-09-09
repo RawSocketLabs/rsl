@@ -130,6 +130,7 @@ jobs:
       # bnb feature ladders that aren't on the default path.
       - run: cargo test -p bitsandbytes --features bytes
       - run: cargo test -p bitsandbytes --features mock
+      - run: cargo test -p bitsandbytes --features tokio-io
       - run: cargo test -p bitsandbytes --all-features
       - name: bnb documentation (warnings are errors)
         env:
@@ -191,7 +192,7 @@ jobs:
       - run: cargo build -p rsl-asn1 -p rsl-x509 -p rsl-pki --target thumbv7em-none-eabi
 
   public-api:
-    name: public-api (bitsandbytes surface unchanged)
+    name: public-api (bitsandbytes reviewed surface)
     needs: changes
     if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
@@ -215,6 +216,11 @@ jobs:
             echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bitsandbytes/bnb/public-api.txt"
             exit 1
           fi
+      - name: Verify the exact reviewed breaking-release API delta
+        run: |
+          bash bitsandbytes/scripts/check-api-delta.sh all
+          bash bitsandbytes/scripts/check-api-delta.sh default
+          bash bitsandbytes/scripts/check-api-delta.sh none
 
   fuzz:
     name: cargo-fuzz (bnb decode path, smoke run)
@@ -242,7 +248,7 @@ jobs:
       - run: cargo fuzz run stream_decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
   semver:
-    name: bnb source compatibility (0.5.0 baseline)
+    name: bnb reviewed 0.6 transition (0.5.0 baseline)
     needs: changes
     if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
@@ -253,9 +259,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-semver-checks@0.50.0
-      # Enforce compatibility with the published 0.5 pair in every feature mode.
-      # Macro expansion and behavioral compatibility still require consumer/UI tests.
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --all-features
+      # net changes read_message's error type. The public-api job enforces the exact
+      # reviewed delta; major mode alone is not compatibility evidence. Default/no_std
+      # source APIs remain patch-compatible. Restore all-mode patch gates after release.
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type major --all-features
       - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --default-features
       - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --only-explicit-features
 

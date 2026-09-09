@@ -8,7 +8,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example sockets --features net`
 
-use bnb::{BitError, ErrorKind, MessageDatagram, MessageStream, bin};
+use bnb::{MessageDatagram, MessageStream, bin};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::Duration;
@@ -39,10 +39,11 @@ fn tcp_demo() -> Result<(), Box<dyn std::error::Error>> {
             // not silently treated as end-of-stream.
             let req = match conn.read_message::<Message>() {
                 Ok(req) => req,
-                Err(BitError {
-                    kind: ErrorKind::Io(std::io::ErrorKind::UnexpectedEof),
-                    ..
-                }) => break, // clean close
+                Err(bnb::net::MessageReadError::Io(error))
+                    if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    break;
+                }
                 Err(e) => panic!("tcp server: framing/transport error: {e}"),
             };
             info!(?req, "tcp server ← request");

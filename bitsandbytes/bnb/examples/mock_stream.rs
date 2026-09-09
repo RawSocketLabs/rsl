@@ -30,12 +30,15 @@ struct Reply {
 
 /// The unit under test — read one request, write a reply. Generic over the transport, so it runs
 /// unchanged over a real `TcpStream` (production) or a `MockStream` (tests).
-fn serve_one<S: Read + Write>(conn: &mut MessageStream<S>) -> Result<(), bnb::BitError> {
+fn serve_one<S: Read + Write>(
+    conn: &mut MessageStream<S>,
+) -> Result<(), bnb::net::MessageReadError> {
     let req: Request = conn.read_message()?;
     conn.write_message(&Reply {
         id: req.id,
         status: 0,
-    })
+    })?;
+    Ok(())
 }
 
 #[allow(clippy::print_stdout)] // This CLI demo intentionally prints its observable results.
@@ -63,11 +66,8 @@ fn main() {
         .get_mut()
         .push_inbound(&Request { id: 9, op: 0 }.to_bytes().unwrap());
     let err = dropped.read_message::<Request>().unwrap_err();
-    assert!(matches!(err.kind, bnb::ErrorKind::Io(_)));
-    println!(
-        "  error path: a mid-message reset surfaces as {:?}",
-        err.kind
-    );
+    assert!(matches!(err, bnb::net::MessageReadError::Io(_)));
+    println!("  error path: a mid-message reset surfaces as {err}");
 
     println!("all checks passed");
 }

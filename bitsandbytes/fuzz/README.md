@@ -36,9 +36,16 @@ cargo +nightly fuzz run decode bitsandbytes/fuzz/artifacts/decode/crash-<hash> -
   `Vec`, conditional `Option`, magic-prefixed), and asserts the fixed-length parsers
   are wire bijections. Mirrors the shapes in `bnb/tests/fuzz_roundtrip.rs`.
 - **`stream_decode`** — sequences bounded push/rejection, pull/finite EOF, compaction,
-  explicit growth, clear, and lossless sync handoff against an independent byte-accounting
-  model; also fragments variable-width magic/fallback dispatch. Buffer caps stay at most
-  128 bytes. Run `cargo +nightly fuzz run stream_decode --fuzz-dir bitsandbytes/fuzz
+  explicit growth, clear, and lossless handoff against an independent byte-accounting
+  model; also fragments variable-width magic/fallback dispatch. It drives the actual borrowed
+  sync and Tokio reader helpers over independently modeled length-prefixed records, varying
+  transport chunks, scratch length and retained capacity. Async futures are dropped on
+  `Pending` and recreated to prove completed reads remain in caller-owned storage. On error,
+  raw handoff must recover every byte not consumed by a complete message. No runtime or socket
+  is required. Buffer caps stay at most 128 bytes; reader-model input is capped at 512 bytes.
+  Custom zero/unknown/huge hints, injected I/O errors, empty scratch and position-sensitive
+  rebase are covered by deterministic component tests. Run
+  `cargo +nightly fuzz run stream_decode --fuzz-dir bitsandbytes/fuzz
   --target x86_64-unknown-linux-gnu -- -runs=2000000` for the pre-commit run. CI uses a
   time-limited smoke run; that is not evidence that two million cases completed.
 

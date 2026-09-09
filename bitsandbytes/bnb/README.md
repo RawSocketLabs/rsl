@@ -17,6 +17,15 @@ extraction. See the [I/O guide](src/guide/io.rs) for usage and
 [design/migration decisions](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
 These APIs require 0.5; see the migration notes when upgrading from 0.4.
 
+The next runtime release adds hint-driven whole-message reads: `MessageStream::read_message`
+handles refills internally; `net::read_message` and `net::read_message_async` borrow your
+transport, `BitBuf`, and reusable scratch. Enable `net` for sync or `tokio-io` for Tokio
+without `tokio-util`; `tokio` includes both the borrowed reader and existing `BinCodec`.
+Read-ahead survives cancellation/error and protocol handoff. Stream reads now return
+`net::MessageReadError`, retaining original I/O errors, and custom positive `Incomplete`
+hints must be proven lower bounds. See the [migration guide](src/guide/io.rs) and
+[candidate evidence](DESIGN.md#12-hint-driven-whole-message-reads-06-candidate).
+
 `bnb` collapses a stack of overlapping helpers — `modular-bitfield(-msb)`,
 `bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a `binrw`-style
 codec — into one crate that is:
