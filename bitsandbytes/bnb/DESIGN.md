@@ -571,13 +571,14 @@ fields use this method rather than guessing types by spelling. The incremental s
 whole-payload availability before allocation. Custom/context element codecs retain their
 semantics; wrappers using the default byte reader can still allocate incrementally.
 
-This is a **0.5.0 pair**: breaking runtime changes and generated calls to new runtime helpers
-must not ship as macros compatible with `^0.4`. Release-plz owns the actual versions and root
-dependency pin. The breaking Conventional Commit/squash title must trigger both crates;
-verify the generated release PR, never hand-bump versions. The API delta gate records all,
-default, and no-default feature surfaces against published 0.4.0, including the already-existing
-0.4.1 consuming alias helper. Major-mode semver checking is paired with that exact delta,
-not used as a blanket waiver; restore patch checking against 0.5.0 after publication.
+This shipped as a **0.5.0 pair**: breaking runtime changes and generated calls to new runtime
+helpers must not ship as macros compatible with `^0.4`. Release-plz generated both versions
+and the root dependency pin from the breaking Conventional Commit. The reviewed API deltas
+record all, default, and no-default feature surfaces against published 0.4.0, including the
+already-existing 0.4.1 consuming alias helper. Major-mode semver checking was paired with
+those exact deltas, not used as a blanket waiver. Post-release CI enforces patch compatibility
+against published 0.5.0; `api-delta-0.5-{all,default,none}.txt` remain historical migration
+records, not executable gates. The one-time delta checker is retained only in Git history.
 
 ### 11.3 Audit findings and disposition
 
@@ -715,7 +716,7 @@ cannot overwrite the JSON input of an API check.
 | `cargo +1.85.0 check --workspace`; runtime all features; renamed consumer | Pass. Developer tests/benchmarks use stable; library MSRV remains 1.85. |
 | `cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi` | Pass on stable. The 1.85 bare-metal target is not installed locally; CI requires the checked 1.85 host plus stable bare-metal combination. |
 | `RUSTDOCFLAGS='-D warnings' cargo doc` for both crates/all features and runtime/no defaults, `--no-deps` | Pass. |
-| Pinned `cargo +nightly-2026-06-17 public-api` snapshot; `bash bitsandbytes/scripts/check-api-delta.sh` in `all`, `default`, `none` modes | Pass; exact reviewed delta is the migration guard. |
+| Pinned `cargo +nightly-2026-06-17 public-api` snapshot; historical `check-api-delta.sh` in `all`, `default`, `none` modes | Pass; exact reviewed delta guarded the 0.4 → 0.5 migration. The checker was retired after publication. |
 | `cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type major` in all/default/explicit-none modes | Pass, but major mode executes **zero** compatibility rules (254 skipped); it is not compatibility proof. The diagnostic patch run executes 223 rules: 222 pass, one fails for the intentionally removed `try_push`/`into_inner`. Both crates require 0.5.0. |
 | `cargo package -p bitsandbytes-macros -p bitsandbytes --all-features --allow-dirty` | Both archives build together using Cargo's temporary registry. Current development manifest versions are not the release candidate versions; repeat on the generated release PR. |
 | `cargo deny check`; `actionlint` | Pass with refreshed advisory data. Unused-license and duplicate-syn warnings remain; yanked wnaf is absent. |
@@ -760,7 +761,38 @@ also completed 2,000,000 cases (seed 1839166121, 27 s). Subsequent edits add reg
 tests, profiling, and evidence only. CI's 60-second/two-million-case smoke limit is a
 different budget and does not promise two million cases on a hosted runner.
 
-The next smallest implementation slice is **SOCKS adoption only** after bnb delivery:
+### 11.7 Delivery receipt (2026-09-09 UTC)
+
+The feature merged through [PR #76](https://github.com/RawSocketLabs/rsl/pull/76) as
+`d27ad646`; the generated [release PR #77](https://github.com/RawSocketLabs/rsl/pull/77)
+merged as `91f87b7b`. Both were merged under `michael-smythe`. Release-plz generated
+the versions, dependency requirement, and changelogs; the detached fuzz lock and README
+were aligned separately. The first generated-PR CI run caught the stale detached lock;
+the corrected exact head passed full local container CI and
+[hosted PR CI](https://github.com/RawSocketLabs/rsl/actions/runs/34297854868).
+[Main CI](https://github.com/RawSocketLabs/rsl/actions/runs/34298121386) passed before
+[release automation](https://github.com/RawSocketLabs/rsl/actions/runs/34298309943) published
+both crates. Both 0.5.0 candidate archives were packaged and built together before merge.
+
+Registry archive SHA-256 checksums match the public index:
+
+- `bitsandbytes 0.5.0`: `46785464d3a301ebd5eccdaf32eead1e9f0b7335860c7dcf4d26f08aff5ad22f`.
+- `bitsandbytes-macros 0.5.0`: `eede5d552e588d36155a6af4ba4db942daa7beff3f64f6f7004435c5f2f6aca8`.
+
+Both crate-prefixed tags and the archives' VCS metadata identify `91f87b7b`; neither
+registry version is yanked. docs.rs serves both 0.5.0 versions. The release allowlist remains
+limited to this pair; no other crate was released and no GitHub Release was created.
+
+A clean external consumer, renamed to `wirebits` with `=0.5.0` and `net`/`tokio` features,
+resolved both crates from the registry without path dependencies or patches. Its executable
+verified fragmented decode, detailed incomplete results, finite EOF, and buffered raw-tail
+handoff; strict Clippy and Rust 1.85 checks passed. Post-release patch compatibility checks
+against published 0.5.0 pass **223 rules** in each of all/default/no-default feature modes
+(31 inapplicable rules skipped). Formatting, strict bnb/macros Clippy, the unchanged pinned
+public-API snapshot, denied-warning docs, and actionlint also pass. The documentation/CI-only
+follow-up still requires clean-tree container CI and exact-head hosted checks before merge.
+
+The next smallest implementation slice is **SOCKS adoption only**:
 replace duplicated framing with the approved buffer/handoff API and prove handshake-to-raw
 payload preservation in sync and async paths. Do not combine that adoption with another
 parser architecture, client/server expansion, or the independent audit follow-ups.

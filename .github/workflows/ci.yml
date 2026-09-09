@@ -215,11 +215,6 @@ jobs:
             echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bitsandbytes/bnb/public-api.txt"
             exit 1
           fi
-      - name: Verify the exact approved 0.5 API delta in every feature mode
-        run: |
-          bash bitsandbytes/scripts/check-api-delta.sh all
-          bash bitsandbytes/scripts/check-api-delta.sh default
-          bash bitsandbytes/scripts/check-api-delta.sh none
 
   fuzz:
     name: cargo-fuzz (bnb decode path, smoke run)
@@ -247,7 +242,7 @@ jobs:
       - run: cargo fuzz run stream_decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
 
   semver:
-    name: bnb source compatibility (0.4.0 baseline)
+    name: bnb source compatibility (0.5.0 baseline)
     needs: changes
     if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
@@ -258,12 +253,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-semver-checks@0.50.0
-      # 0.4 -> 0.5 is a Cargo-semver major transition. The public-api job additionally
-      # enforces an exact approved delta in all three modes, not a blanket breakage waiver.
-      # Restore patch checks against 0.5.0 after publishing it. Macro behavior needs UI tests.
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type major --all-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type major --default-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.4.0 --release-type major --only-explicit-features
+      # Enforce compatibility with the published 0.5 pair in every feature mode.
+      # Macro expansion and behavioral compatibility still require consumer/UI tests.
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --all-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --default-features
+      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.5.0 --release-type patch --only-explicit-features
 
   workflow-lint:
     name: workflow syntax
