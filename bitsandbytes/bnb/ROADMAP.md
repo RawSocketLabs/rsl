@@ -10,7 +10,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 [`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
 
-## 0.6 candidate — hinted message reads
+## 0.6.0 — hinted message reads
 
 - [x] One hint-driven `MessageStream::read_message`; borrowed sync/Tokio readers over
       caller-owned transport, `BitBuf`, and scratch, with typed original I/O errors.
@@ -21,8 +21,10 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [x] Final post-fix fuzz/mutation/reviewer gate (2026-09-09, no remaining findings).
 - [x] Source delivery: clean-tree container and hosted CI; [PR #80](https://github.com/RawSocketLabs/rsl/pull/80)
       merged as `cd5db374`. The generated version PR has separate archive/release gates.
-- [ ] Release-plz runtime release, archive/registry verification and restored compatibility
-      baseline. Macros remain 0.5.0 unless implementation evidence warrants a change.
+- [x] Release-plz runtime **0.6.0** release; macros remain **0.5.0**. Archive/index checksum,
+      tag, publisher, docs.rs and renamed registry consumer verified. Restore patch checks
+      in all feature modes against published 0.6.0; keep transition snapshots as history.
+      Delivery receipt: [`DESIGN.md` §12.4](DESIGN.md#124-delivery-receipt-2026-09-09-utc).
 - [ ] SOCKS adoption of the published borrowed helpers in a separate slice.
 
 ## 0.5.0 — incremental decoding and lossless handoff
@@ -305,9 +307,9 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
 - [x] `cargo-semver-checks` in CI (`semver` job, pinned to `0.50.0`) — blocking
-      source-compatibility comparisons against published `0.5.0`, with all features
+      source-compatibility comparisons against published `0.6.0`, with all features
       and separately default and no default features. Compatible additions use
-      `--release-type patch`; the breaking 0.4 → 0.5 migration deltas remain historical
+      `--release-type patch`; the breaking 0.4 → 0.5 and 0.5 → 0.6 deltas remain historical
       evidence, not executable gates. Release-plz still owns bumps. The 0.4
       builder behavior change needs a breaking commit marker and consumer/UI tests:
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
