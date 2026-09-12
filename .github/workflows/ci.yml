@@ -22,6 +22,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Rollout checkpoint: the original gates remain authoritative while the new
+  # selector is independently reviewed and its decisions are compared in shadow.
+  impact-shadow:
+    name: impact selection (shadow)
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      - name: Report proposed coverage without skipping legacy gates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_FULL: ${{ inputs.full }}
+        run: python3 scripts/ci/prepare.py
+
   # Detect what changed so we only run the jobs a change can actually affect. The heavy
   # bnb-specific jobs (fuzz and public-api) run only when bitsandbytes changes; no_std covers bnb
   # and the certificate stack; crypto and PKI fuzz smoke runs follow their own trees; the
@@ -378,7 +394,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, semver, workflow-lint, fuzz, fuzz-crypto, fuzz-pki, ffi, blessed-sync, rust-skills]
+    needs: [impact-shadow, changes, fmt, clippy, test, deny, msrv, no_std, public-api, semver, workflow-lint, fuzz, fuzz-crypto, fuzz-pki, ffi, blessed-sync, rust-skills]
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - name: Fail if any needed job failed or was cancelled
