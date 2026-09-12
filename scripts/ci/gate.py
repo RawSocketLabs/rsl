@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sys
 
-from plan import FUZZ, PROFILES, SCHEMA, metadata_graph, select
+from plan import FUZZ, PROFILES, SCHEMA, command, metadata_graph, release_policy, select
 
 
 def validate_plan(plan):
@@ -75,9 +75,22 @@ def check_release(report, *, sha, run_id, attempt, graph):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("ci", "release"))
-    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("mode", choices=("ci", "release", "candidate"))
+    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
+    if args.mode == "candidate":
+        from prepare import associated_release, emit_output
+
+        sha = os.environ["CANDIDATE_SHA"]
+        root = Path.cwd()
+        if command(root, "git", "rev-parse", "HEAD").decode().strip() != sha:
+            raise ValueError("candidate checkout is not the verified CI commit")
+        candidate = associated_release(root, os.environ["GITHUB_REPOSITORY"], sha, release_policy(root))
+        emit_output("publish", candidate)
+        print("Exact merged release candidate" if candidate else "No publish operation for this commit")
+        return
+    if args.report is None:
+        parser.error("--report is required for ci/release qualification")
     if args.mode == "ci":
         from prepare import plan_for_event
 

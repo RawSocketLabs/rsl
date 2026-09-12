@@ -308,6 +308,11 @@ Install the stable toolchain's `rust-src` component before running these tests
 (`rustup component add rust-src`). Core const-panic diagnostics include source excerpts
 when it is present; CI installs it so local and hosted snapshots render consistently.
 
+The commands below are focused/manual checks. Before delivery, use the repository-root
+`scripts/ci-act.sh pre-push` for complete bnb and affected downstream suites, or `--full`
+for the entire monorepo. The [CI policy](../../docs/CI.md) defines selection and release
+qualification; an upstream codec change must not omit consumer behavior tests.
+
 ```bash
 cargo test                                  # whole workspace (default features)
 cargo test unit                             # one layer at a time (filters by mod name):

@@ -8,7 +8,7 @@ import unittest
 
 from gate import check_plan, check_release, check_results
 from plan import BNB, MACROS, SOCKS, NOSTD, Package, affected_packages, changed_paths, select
-from prepare import event_options, is_release_merge, is_release_pr
+from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
 
 def fixture():
@@ -271,6 +271,10 @@ class GitBoundaryTests(unittest.TestCase):
 
 
 class EventTests(unittest.TestCase):
+    def test_empty_comparison_does_not_install_rust(self):
+        self.assertFalse(needs_cargo(Path(__file__).resolve().parents[2], "HEAD", False, False))
+        self.assertTrue(needs_cargo(Path.cwd(), None, False, False))
+
     def test_manual_run_without_base_and_schedule_require_full_coverage(self):
         options = dict(base="", full=False, release=False, repository="RawSocketLabs/rsl", prefix="release-plz-")
         self.assertEqual(event_options(Path.cwd(), {}, "workflow_dispatch", **options), ("", True, False, False))
