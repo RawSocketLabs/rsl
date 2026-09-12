@@ -43,8 +43,10 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
+      publish: ${{ steps.candidate.outputs.publish }}
     steps:
       - name: Verify workflow identity and current main SHA
         id: verify
@@ -55,23 +57,55 @@ jobs:
           CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" |
-            jq -e --arg sha "$CANDIDATE_SHA" '
+          run=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")
+          jq -e --arg sha "$CANDIDATE_SHA" --arg repository "$REPOSITORY" '
               .path == ".github/workflows/ci.yml" and
-              .head_sha == $sha and .event == "push" and .conclusion == "success"'
+              .head_sha == $sha and .event == "push" and .conclusion == "success" and
+              .head_branch == "main" and .head_repository.full_name == $repository' <<< "$run"
           main_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
           if [ "$main_sha" != "$CANDIDATE_SHA" ]; then
             echo "Superseded CI run; wait for the current main commit."
             exit 0
           fi
           echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          echo "attempt=$(jq -r .run_attempt <<< "$run")" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        if: steps.verify.outputs.sha != ''
+        with:
+          ref: ${{ steps.verify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Identify the exact merged release PR
+        id: candidate
+        if: steps.verify.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_SHA: ${{ steps.verify.outputs.sha }}
+        run: python3 scripts/ci/gate.py candidate
+      - uses: actions/download-artifact@v8.0.1
+        if: steps.candidate.outputs.publish == 'true'
+        with:
+          name: ci-coverage-${{ github.event.workflow_run.id }}-${{ steps.verify.outputs.attempt }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Treat the receipt as data, outside the executable checkout.
+          path: ${{ runner.temp }}/ci-coverage
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.candidate.outputs.publish == 'true'
+      - name: Require complete exact-run release and downstream qualification
+        if: steps.candidate.outputs.publish == 'true'
+        env:
+          CANDIDATE_SHA: ${{ steps.verify.outputs.sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ steps.verify.outputs.attempt }}
+        run: python3 scripts/ci/gate.py release --report "$RUNNER_TEMP/ci-coverage/ci-coverage.json"
 
   # Tag a freshly merged release PR and publish the opted-in crates (no GH release).
   release-plz-release:
     name: release-plz release (tags + scoped publish)
     needs: candidate
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: needs.candidate.outputs.sha != ''
+    if: needs.candidate.result == 'success' && needs.candidate.outputs.publish == 'true'
     permissions:
       contents: write
     steps:
@@ -107,6 +141,9 @@ jobs:
     # release only after that job finishes so git-only version discovery never
     # races against tag creation and regenerates the release that just merged.
     needs: [candidate, release-plz-release]
+    if: >-
+      always() && needs.candidate.result == 'success' && needs.candidate.outputs.sha != '' &&
+      (needs.release-plz-release.result == 'success' || needs.release-plz-release.result == 'skipped')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
@@ -119,7 +156,11 @@ jobs:
       - name: Require the verified candidate before updating release PRs
         env:
           CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
-        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -n "$RELEASE_PLZ_TOKEN" || { echo "::error::RELEASE_PLZ_TOKEN is required"; exit 1; }
       - uses: dtolnay/rust-toolchain@stable
       - uses: release-plz/action@v0.5
         with:

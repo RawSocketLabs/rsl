@@ -1,0 +1,6 @@
+# Domain-owned gates: changing a baseline qualifies bnb and its consumers, not crypto primitives.
+public_api_toolchain = "nightly-2026-06-17"
+public_api_version = "0.52.0"
+semver_version = "0.50.0"
+baseline = "0.6.0"
+release_type = "patch"

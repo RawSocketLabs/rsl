@@ -4,390 +4,211 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 9 * * *'
   workflow_dispatch:
     inputs:
       runner:
         description: >-
-          Runner for all jobs. `beefy` targets the on-demand self-hosted
-          runner — start it with `ci-runner RawSocketLabs/rsl -j N`.
+          Runner for validation. Start `beefy` with ci-runner RawSocketLabs/rsl -j N.
         type: choice
         options: [blacksmith-4vcpu-ubuntu-2404, beefy]
         default: blacksmith-4vcpu-ubuntu-2404
       full:
-        description: Run every validation surface for a local pre-push check.
+        description: Run every validation surface.
         type: boolean
         default: false
+      base:
+        description: Comparison base for an affected run; absent means full coverage.
+        type: string
+        default: ''
+      release:
+        description: Add release checks; this does not authorize publication.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Only obsolete PR runs are cancelled. Main and publisher runs remain independent.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Detect what changed so we only run the jobs a change can actually affect. The heavy
-  # bnb-specific jobs (fuzz and public-api) run only when bitsandbytes changes; no_std covers bnb
-  # and the certificate stack; crypto and PKI fuzz smoke runs follow their own trees; the
-  # workspace jobs run on any Rust/config change (skipped for docs-only pushes). A change to
-  # this workflow itself trips every filter, so CI changes are always fully validated.
-  changes:
-    name: detect changes
-    if: ${{ !inputs.full }}
+  plan:
+    name: select affected coverage
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     outputs:
-      rust: ${{ steps.filter.outputs.rust }}
-      bnb: ${{ steps.filter.outputs.bnb }}
-      crypto: ${{ steps.filter.outputs.crypto }}
-      pki: ${{ steps.filter.outputs.pki }}
-      ffi: ${{ steps.filter.outputs.ffi }}
-      rust_skills: ${{ steps.filter.outputs.rust_skills }}
+      plan: ${{ steps.plan.outputs.plan }}
+      checks: ${{ steps.plan.outputs.checks }}
+      fuzz: ${{ steps.plan.outputs.fuzz }}
+      has_checks: ${{ steps.plan.outputs.has_checks }}
+      has_fuzz: ${{ steps.plan.outputs.has_fuzz }}
+      public_api_tool: ${{ steps.plan.outputs.public_api_tool }}
+      semver_tool: ${{ steps.plan.outputs.semver_tool }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
-        id: filter
         with:
-          filters: |
-            rust:
-              - '**/*.rs'
-              - '**/Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'rustfmt.toml'
-              - 'deny.toml'
-              - '.cargo/config.toml'
-              - 'release-plz.toml'
-              - '.github/workflows/**'
-              - '.github/actionlint.yaml'
-            bnb:
-              - 'bitsandbytes/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - '.cargo/config.toml'
-              - 'deny.toml'
-              - 'release-plz.toml'
-              - '.github/workflows/**'
-              - '.github/actionlint.yaml'
-            crypto:
-              - 'crypto/**'
-              - '.github/workflows/ci.yml'
-            pki:
-              - 'pki/**'
-              - '.github/workflows/ci.yml'
-            ffi:
-              - 'usdr/**'
-              - 'rust-dsdcc/**'
-              - '.github/workflows/ci.yml'
-            rust_skills:
-              - 'tools/rust-skills/**'
-              - '.github/workflows/ci.yml'
-
-  fmt:
-    name: rustfmt
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all --check
-
-  clippy:
-    name: clippy (workspace lints enforce clippy::all = deny)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets
-      - run: cargo clippy -p bitsandbytes -p bitsandbytes-macros --all-targets --all-features -- -D warnings
-      - run: cargo clippy -p socks --all-targets --all-features -- -D warnings
-
-  test:
-    name: build + test
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          # trybuild snapshots of core const panics include these source excerpts.
-          components: rust-src
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
-      # SOCKS wire-only defaults plus independent I/O features and cross-driver interop.
-      - run: cargo test -p socks --features blocking
-      - run: cargo test -p socks --features tokio
-      - run: cargo test -p socks --all-features
-      - name: SOCKS documentation
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Probe whether Cargo metadata is needed
+        id: probe
         env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc -p socks --all-features --no-deps
-      # bnb feature ladders that aren't on the default path.
-      - run: cargo test -p bitsandbytes --features bytes
-      - run: cargo test -p bitsandbytes --features mock
-      - run: cargo test -p bitsandbytes --features tokio-io
-      - run: cargo test -p bitsandbytes --all-features
-      - name: bnb documentation (warnings are errors)
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_FULL: ${{ inputs.full }}
+          INPUT_RELEASE: ${{ inputs.release }}
+        run: python3 scripts/ci/prepare.py --probe
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.probe.outputs.needs_cargo == 'true'
+      - name: Select packages, profiles, and downstream fuzz targets
+        id: plan
         env:
-          RUSTDOCFLAGS: -D warnings
-        run: |
-          cargo doc -p bitsandbytes -p bitsandbytes-macros --all-features --no-deps
-          cargo doc -p bitsandbytes --no-default-features --no-deps
-      # rawsock's privileged L3/L2 backends + the protocols' rawsock-injection layers, plus the
-      # dns resolver client — all behind opt-in features, off the default path. The `inject`/
-      # `link`/`network` capability-consistency tests run unprivileged; the real sends skip.
-      - run: cargo test -p rawsock --all-features
-      - run: cargo test -p dns --features client
-      - run: >
-          cargo test --features inject
-          -p ip -p icmp -p tcp -p udp -p ethernet -p arp
-      # the rsl facade + rsl-deps blessed stack (pure-Rust slice; FFI excluded).
-      - run: cargo build -p rsl --features full
-      - run: cargo build -p rsl-deps --features full
-      # the dual-use demos (compile-check the examples; they run only with CAP_NET_RAW).
-      - run: cargo build -p demos --examples
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_FULL: ${{ inputs.full }}
+          INPUT_RELEASE: ${{ inputs.release }}
+        run: python3 scripts/ci/prepare.py
 
-  deny:
-    name: cargo-deny (advisories / licenses / bans / sources)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
+  policy:
+    name: CI policy and workflow syntax
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: EmbarkStudios/cargo-deny-action@v2
-
-  msrv:
-    name: MSRV (rust-version = 1.85)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@1.85.0
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
-      - run: cargo check -p bitsandbytes --all-features
-      - run: cargo check -p socks --all-features
-      - run: cargo check --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml
-
-  no_std:
-    name: no_std (bare-metal target)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true' || needs.changes.outputs.pki == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: thumbv7em-none-eabi
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p bitsandbytes --no-default-features
-      - run: cargo build --manifest-path bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
-      - run: cargo build -p rsl-asn1 -p rsl-x509 -p rsl-pki --target thumbv7em-none-eabi
-
-  public-api:
-    name: public-api (bitsandbytes reviewed surface)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2026-06-17
-      - uses: Swatinem/rust-cache@v2
-      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-public-api@0.52.0
-      - name: Diff the public API against the committed snapshot
-        run: |
-          cargo public-api -p bitsandbytes --all-features > "$RUNNER_TEMP/public-api.txt"
-          if ! diff -u bitsandbytes/bnb/public-api.txt "$RUNNER_TEMP/public-api.txt"; then
-            echo "::error::Public API differs from bitsandbytes/bnb/public-api.txt (see diff above)."
-            echo "If intentional, regenerate:"
-            echo "  cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features > bitsandbytes/bnb/public-api.txt"
-            exit 1
-          fi
-
-  fuzz:
-    name: cargo-fuzz (bnb decode path, smoke run)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      # bitsandbytes is no longer its own workspace root, so cargo-fuzz walks up to the
-      # monorepo root; point it at the fuzz crate explicitly with --fuzz-dir.
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-      # Prebuilt binary (seconds) instead of `cargo install` compiling it from source (minutes).
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-fuzz
-      # Pin the gnu target: cargo-fuzz otherwise defaults to musl here, whose statically linked
-      # libc is incompatible with the ASan sanitizer (and musl std isn't installed).
-      - name: Verify the detached fuzz lockfile before building
-        run: cargo metadata --manifest-path bitsandbytes/fuzz/Cargo.toml --locked --format-version 1 > /dev/null
-      - run: cargo fuzz build decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
-      - run: cargo fuzz run decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
-      - run: cargo fuzz build stream_decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu
-      - run: cargo fuzz run stream_decode --fuzz-dir bitsandbytes/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=60 -runs=2000000
-
-  semver:
-    name: bnb compatibility (published 0.6.0 baseline)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.bnb == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-semver-checks@0.50.0
-      # The published 0.6 API is now the baseline. Require patch compatibility in
-      # every feature mode; reviewed transition snapshots remain historical evidence.
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.6.0 --release-type patch --all-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.6.0 --release-type patch --default-features
-      - run: cargo semver-checks -p bitsandbytes --baseline-version 0.6.0 --release-type patch --only-explicit-features
-
-  workflow-lint:
-    name: workflow syntax
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+          persist-credentials: false
+      # Fast tier has no Cargo invocation, builds, registry access, or extra Python dependencies.
+      - run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      - run: bash -n scripts/ci-act.sh
       - uses: docker://rhysd/actionlint:1.7.12
 
-  fuzz-crypto:
-    name: cargo-fuzz (rsl-crypto boundaries, smoke run)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.crypto == 'true')
+  checks:
+    name: checks (${{ matrix.profile }})
+    needs: [plan, policy]
+    if: needs.plan.outputs.has_checks == 'true'
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.checks) }}
+    env:
+      CI_PLAN: ${{ needs.plan.outputs.plan }}
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v7
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-fuzz
-      - run: cargo fuzz build --fuzz-dir crypto/fuzz --target x86_64-unknown-linux-gnu
-      - name: Smoke-run every crypto fuzz target
-        run: |
-          for target in aead_open signature_verify public_key_parse digest_fragmentation rsa_pss_verify; do
-            cargo fuzz run "$target" --fuzz-dir crypto/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=45 -runs=500000
-          done
-
-  fuzz-pki:
-    name: cargo-fuzz (PKI boundaries, smoke run)
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.pki == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - run: rm -f rust-toolchain.toml
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        if: matrix.profile != 'deny' && matrix.profile != 'blessed'
         with:
-          tool: cargo-fuzz
-      - run: cargo fuzz build --fuzz-dir pki/fuzz --target x86_64-unknown-linux-gnu
-      - name: Smoke-run every PKI fuzz target
-        run: |
-          for target in der_decode certificate_parse path_validation; do
-            cargo fuzz run "$target" --fuzz-dir pki/fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=45 -runs=500000
-          done
-
-  ffi:
-    name: FFI bridges (usdr, dsdcc) — cxx compile check
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.ffi == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - if: inputs.runner != 'beefy'  # the beefy host has a native toolchain (no apt)
-        run: sudo apt-get update && sudo apt-get install -y build-essential
-      # The FFI crates are excluded workspace members, so check them by manifest path. `cargo
-      # check` compiles the cxx bridge (C++ ↔ Rust) and type-checks the Rust, but does NOT link
-      # the native libs (libusdr / libdsdcc), which aren't packaged — so this gates API/bridge
-      # drift without needing the SDR hardware libraries. usdr's headers are vendored; dsdcc
-      # needs DSDcc's headers, cloned here for DSDCC_INCLUDE.
-      - name: usdr — cxx bridge check
-        run: cargo check --manifest-path usdr/Cargo.toml
-      - name: Fetch DSDcc headers
-        run: git clone --depth 1 https://github.com/f4exb/dsdcc.git "$RUNNER_TEMP/dsdcc"
-      - name: dsdcc — cxx bridge check
-        env:
-          DSDCC_INCLUDE: ${{ runner.temp }}/dsdcc
-        run: cargo check --manifest-path rust-dsdcc/Cargo.toml
-
-  blessed-sync:
-    name: blessed-versions in sync
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      # rsl-deps' pins are the source of truth; the committed blessed-versions.toml must match.
-      - run: |
-          snapshot="$RUNNER_TEMP/blessed-versions.toml"
-          cp rsl-deps/blessed-versions.toml "$snapshot"
-          python3 tools/gen-blessed.py
-          diff -u "$snapshot" rsl-deps/blessed-versions.toml || {
-            echo "::error::rsl-deps/blessed-versions.toml is stale — run tools/gen-blessed.py and commit."
-            exit 1
-          }
-
-  rust-skills:
-    name: Rust engineering skills
-    needs: changes
-    if: always() && (inputs.full || needs.changes.outputs.rust_skills == 'true')
-    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/rust-skills -> target
-      - run: cargo fmt --manifest-path tools/rust-skills/Cargo.toml --all -- --check
-      - run: cargo clippy --manifest-path tools/rust-skills/Cargo.toml --workspace --all-targets -- -D warnings
-      - run: cargo test --manifest-path tools/rust-skills/Cargo.toml --workspace
-      - run: cargo run --manifest-path tools/rust-skills/Cargo.toml --package xtask -- validate
-      - run: cargo run --manifest-path tools/rust-skills/Cargo.toml --package xtask -- generate --check
+          toolchain: ${{ matrix.toolchain }}
+          # trybuild panic snapshots need rust-src. Never silently switch their compiler.
+          components: ${{ contains(fromJSON('["workspace","bnb","socks","rust-skills"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
+          targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
-      - run: cargo +1.85.0 check --manifest-path tools/rust-skills/Cargo.toml --workspace
+        if: matrix.profile == 'rust-skills'
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.profile != 'deny' && matrix.profile != 'blessed'
+        with:
+          key: checks-${{ matrix.profile }}-${{ matrix.toolchain }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: |
+            . -> target
+            bitsandbytes/bnb/nostd-check -> target
+            tools/rust-skills -> target
+            usdr -> target
+            rust-dsdcc -> target
+      - uses: taiki-e/install-action@v2
+        if: matrix.profile == 'public-api'
+        with:
+          tool: ${{ needs.plan.outputs.public_api_tool }}
+      - uses: taiki-e/install-action@v2
+        if: matrix.profile == 'semver'
+        with:
+          tool: ${{ needs.plan.outputs.semver_tool }}
+      - name: Native compiler for FFI bridge checks
+        if: contains(fromJSON('["usdr","rust-dsdcc"]'), matrix.profile) && inputs.runner != 'beefy'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: Fetch DSDcc headers (compile check only, no hardware/native linking)
+        if: matrix.profile == 'rust-dsdcc'
+        run: git clone --depth 1 https://github.com/f4exb/dsdcc.git "$RUNNER_TEMP/dsdcc"
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        if: matrix.profile == 'deny'
+      - name: Run the complete selected profile
+        if: matrix.profile != 'deny'
+        env:
+          PROFILE: ${{ matrix.profile }}
+          DSDCC_INCLUDE: ${{ runner.temp }}/dsdcc
+        run: python3 scripts/ci/run.py "$PROFILE"
 
-  # Single required check: green when every job passed or was legitimately skipped, red if any
-  # failed or was cancelled. Point branch protection at this one job, not the individual gated
-  # jobs (a skipped required check would otherwise block merges).
+  fuzz:
+    name: fuzz (${{ matrix.root }}/${{ matrix.target }})
+    needs: [plan, policy]
+    if: needs.plan.outputs.has_fuzz == 'true'
+    runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.fuzz) }}
+    env:
+      RUSTUP_TOOLCHAIN: nightly
+      CI_PLAN: ${{ needs.plan.outputs.plan }}
+      FUZZ_ITEM: ${{ toJSON(matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-${{ matrix.root }}-${{ matrix.target }}-nightly-gnu
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ matrix.root }} -> target
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # Separate processes preserve each target's original budget. GNU is required for ASan.
+      - run: python3 scripts/ci/run.py fuzz
+
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, fmt, clippy, test, deny, msrv, no_std, public-api, semver, workflow-lint, fuzz, fuzz-crypto, fuzz-pki, ffi, blessed-sync, rust-skills]
+    needs: [plan, policy, checks, fuzz]
     runs-on: ${{ inputs.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
-      - name: Fail if any needed job failed or was cancelled
-        run: |
-          echo "results: ${{ join(needs.*.result, ' ') }}"
-          for r in ${{ join(needs.*.result, ' ') }}; do
-            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
-              echo "::error::A required job did not pass."
-              exit 1
-            fi
-          done
-          echo "All jobs passed or were skipped."
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Probe independent coverage recomputation
+        id: probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_FULL: ${{ inputs.full }}
+          INPUT_RELEASE: ${{ inputs.release }}
+        run: python3 scripts/ci/prepare.py --probe
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.probe.outputs.needs_cargo == 'true'
+      - name: Recompute coverage and reject any unexpected skip, failure, or cancellation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_FULL: ${{ inputs.full }}
+          INPUT_RELEASE: ${{ inputs.release }}
+          CI_PLAN: ${{ needs.plan.outputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/gate.py ci --report "$RUNNER_TEMP/ci-coverage.json"
+      - uses: actions/upload-artifact@v7.0.1
+        if: env.ACT != 'true'
+        with:
+          name: ci-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-coverage.json
+          if-no-files-found: error
+          retention-days: 30

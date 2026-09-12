@@ -28,6 +28,9 @@ and the road to 1.0 in [`bnb/ROADMAP.md`](bnb/ROADMAP.md).
   alike). Write a plain subject + body.
 - **CI gates** (all must pass): fmt, clippy (`clippy::all` denied), test (+ `--features
   bytes`), `no_std` (bare-metal), cargo-deny, MSRV 1.85, fuzz, public-api, semver-checks.
+  These complete gates and affected consumer suites run when bnb is in the impact set.
+  Ordinary prose-only changes use the lightweight policy path; release candidates never do.
+  Use the root `scripts/ci-act.sh pre-push` selector, not hand-maintained consumer lists.
 - **Zero `unsafe`** — `unsafe_code = "forbid"` workspace-wide; don't introduce any.
 - **Public items need docs** (`#![deny(missing_docs)]`); a public-API change means
   regenerating `bnb/public-api.txt` (see `bnb/AGENTS.md` and the `public-api` CI job).

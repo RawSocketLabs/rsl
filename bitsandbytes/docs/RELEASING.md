@@ -57,11 +57,11 @@ Workflow-level concurrency serializes release and PR updates; the PR job waits f
 tagging/publishing so it cannot regenerate a release against stale tags. A new push
 after verification can supersede the candidate; the workflow does not lock `main`.
 
-Dependency, policy, and workflow changes trigger bnb's full CI gates, including
+Changes affecting bnb, its dependencies, or its gate policy trigger bnb's complete CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
-baseline is explicitly published `0.6.0`; advance it deliberately after releases.
+baseline is explicitly published `0.6.0` in `.github/ci/bnb.toml`; advance it deliberately after releases.
 Compatible additions enforce `--release-type patch` in all three feature modes.
 The breaking 0.4 → 0.5 and 0.5 → 0.6 transitions used major mode plus exact reviewed API deltas.
 The `bnb/api-delta-0.5-{all,default,none}.txt` and `bnb/api-delta-0.6-{all,default,none}.txt`
@@ -70,6 +70,21 @@ The one-time delta checker was removed after publication;
 the standing public-API snapshot check and all three patch compatibility gates remain.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
+
+The shared [CI selector](../../docs/CI.md) runs complete affected-package and downstream
+consumer suites, not unrelated domains. Shared lockfiles/build configuration and central CI
+changes remain full-workspace triggers. Nightly/manual full runs retain workspace-wide
+feature-unification coverage. A bnb change selects protocol and PKI consumer tests/fuzzing,
+but does not run independent crypto primitive tests merely because PKI also uses crypto.
+
+Release PRs force complete codec-pair and downstream qualification, including archive checks,
+even for prose-only recovery changes. The main push must be the exact merge SHA of a same-repo
+release PR using the configured release-plz branch prefix. CI writes a run/attempt/SHA-bound
+coverage artifact only after recomputing selection and checking every selected job. Before any
+publication, the read-only candidate job verifies that receipt and the required release
+coverage. Missing/expired receipts require a fresh successful CI run; a manually forced
+`release` check is not publication authority. Ordinary commits skip the no-op publish job,
+but release-plz still owns release-PR discovery. Publisher serialization and token checks remain.
 
 Do not recreate historical tags. The `git_only` migration remains deferred in
 `release-plz.toml` until a packageable tag baseline exists.
@@ -116,10 +131,12 @@ CI success is necessary, not sufficient. Before committing a runtime or macro re
    resolved; record equivalent mutations and timeouts separately. Use deterministic resource
    and progress assertions in CI, not timing thresholds on shared runners. Controlled local
    benchmarks remain the performance approval gate.
-5. Run the required formatting, strict Clippy, feature/workspace tests, denied-warning docs,
+5. Run the required formatting, strict Clippy, feature and affected-consumer tests, denied-warning docs,
    MSRV, bare-metal no_std, macro/UI and renamed-consumer checks, public API/compatibility,
    fuzz, and package checks. Relevant workflow/dependency changes also require actionlint and
-   cargo-deny. Record exact commands, results, limitations, and baseline-only failures.
+   cargo-deny. Use root `scripts/ci-act.sh pre-push` for the complete selected suites; shared
+   build/dependency policy or central CI changes require its full mode. Record exact commands,
+   results, limitations, and baseline-only failures.
 6. Obtain independent reviewer approval of the final post-fix diff, findings ledger, test
    evidence, and measurements. Resolve release blockers and unexplained material regressions;
    document accepted nonblocking tradeoffs and follow-ups. Later edits invalidate affected
@@ -141,10 +158,11 @@ published them from `91f87b7b`. Both registry checksums and crate-prefixed tags 
 See the delivery receipt in `bnb/DESIGN.md` §11.7.
 
 For future releases, repeat archive verification on the generated release PR's exact
-contents. Also regenerate the detached `bitsandbytes/fuzz/Cargo.lock` for new path
-package versions (`cargo metadata --manifest-path bitsandbytes/fuzz/Cargo.toml --format-version 1`).
-CI checks this lockfile with `--locked` before cargo-fuzz; release-plz does not own detached
-workspace lockfiles. Do not merge the version PR with a stale fuzz lock.
+contents. Also refresh affected detached fuzz lockfiles for new path package versions
+(`cargo metadata --manifest-path <fuzz-root>/Cargo.toml --format-version 1`). This includes
+bnb, PKI, and SOCKS when the codec pair changes. CI checks each selected fuzz lockfile with
+`--locked` before cargo-fuzz; release-plz does not own detached workspace lockfiles.
+Do not merge the version PR with a stale fuzz lock.
 
 ## Required: a token that can open the release PR
 
