@@ -79,11 +79,12 @@ web = ["web-server", "openapi"]
 # Everything.
 full = [
     "std-ext", "service", "web", "bytes", "cli", "rand", "hash", "netutil", "parse",
-    "num", "pod", "audio", "fft", "http", "tui", "time", "time-core", "protobuf",
+    "num", "pod", "audio", "fft", "http", "report", "tui", "time", "time-core", "protobuf",
 ]
 
 # ---- capability features --------------------------------------------------
-error    = ["dep:thiserror", "dep:color-eyre"]
+error    = ["dep:thiserror"]
+report   = ["dep:color-eyre"]
 log      = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
 serde    = ["dep:serde", "dep:serde_json"]
 bytes    = ["dep:bytes"]
@@ -104,7 +105,7 @@ web-server = ["dep:axum", "dep:tower", "dep:tower-http"]
 openapi    = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 http       = ["dep:reqwest"]
 
-tui      = ["dep:ratatui", "dep:color-eyre"]
+tui      = ["dep:ratatui", "report"]
 time     = ["dep:chrono"]
 # NOTE: the feature `time` above means chrono; the `time` crate is `time-core`. Never write
 # "time/<feature>" in this table: it would also enable the `time` feature, i.e. chrono.

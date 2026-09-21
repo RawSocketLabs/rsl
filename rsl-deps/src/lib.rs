@@ -12,7 +12,7 @@
 //! ```
 //!
 //! ```ignore
-//! use rsl_deps::prelude::*;   // EyreResult, tracing macros, serde derives (feature "std-ext")
+//! use rsl_deps::prelude::*;   // ThisError, tracing macros, serde derives (feature "std-ext"); EyreResult with "report"
 //! use rsl_deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
@@ -158,8 +158,8 @@ pub use utoipa_swagger_ui;
 #[doc(inline)]
 pub use reqwest;
 
-/// Contextual error reports for application code, and colorful panic/error reports for TUI/CLI binaries.
-#[cfg(any(feature = "error", feature = "tui"))]
+/// Contextual error reports for binaries, services, and TUI/CLI tools (feature `report`; never in a library).
+#[cfg(feature = "report")]
 #[doc(inline)]
 pub use color_eyre;
 /// Terminal UI framework.
@@ -184,7 +184,7 @@ pub use prost;
 /// Common imports. Glob this in to pull the everyday items of whatever features are
 /// enabled — `use rsl_deps::prelude::*;`.
 pub mod prelude {
-    #[cfg(any(feature = "error", feature = "tui"))]
+    #[cfg(feature = "report")]
     #[doc(no_inline)]
     pub use crate::color_eyre::eyre::{Result as EyreResult, WrapErr as _};
     #[cfg(feature = "error")]
