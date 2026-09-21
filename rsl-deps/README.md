@@ -10,7 +10,7 @@ rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std
 ```
 
 ```rust
-use rsl_deps::prelude::*;   // eyre::Result, tracing macros, serde derives
+use rsl_deps::prelude::*;   // EyreResult, tracing macros, serde derives
 use rsl_deps::tokio;        // blessed async runtime, canonical name
 use rsl_deps::serde_json;
 ```
@@ -57,7 +57,7 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 | `http` | `reqwest` |
 | `tui` | `ratatui`, `color_eyre` |
 | `time` | `chrono` (crates that already depend on `tokio`) |
-| `time-core` | `time` (sync, protocol, certificate, and codec crates) |
+| `time-core` | `time` with `formatting`, `parsing`, `macros` (sync `std` crates without `tokio`; enable `features = ["time-core"]`, then `use rsl_deps::time`) |
 | `protobuf` | `prost` |
 
 Bundles: `std-ext` (`error`+`log`+`serde`), `service` (`async`+`nats`+`parallel`+`std-ext`+`bytes`),

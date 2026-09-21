@@ -63,7 +63,7 @@ color-eyre         = { version = "0.6", optional = true }
 
 # time & protobuf
 chrono             = { version = "0.4", optional = true }
-time               = { version = "0.3", default-features = false, features = ["std"], optional = true }
+time               = { version = "0.3", default-features = false, features = ["std", "formatting", "parsing", "macros"], optional = true }
 prost              = { version = "0.14", optional = true }
 
 [features]
@@ -106,6 +106,8 @@ http       = ["dep:reqwest"]
 
 tui      = ["dep:ratatui", "dep:color-eyre"]
 time     = ["dep:chrono"]
+# NOTE: the feature `time` above means chrono; the `time` crate is `time-core`. Never write
+# "time/<feature>" in this table: it would also enable the `time` feature, i.e. chrono.
 time-core = ["dep:time"]
 protobuf = ["dep:prost"]
 

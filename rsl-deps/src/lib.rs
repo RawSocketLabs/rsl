@@ -12,7 +12,7 @@
 //! ```
 //!
 //! ```ignore
-//! use rsl_deps::prelude::*;   // eyre::Result, tracing macros, serde derives (feature "std-ext")
+//! use rsl_deps::prelude::*;   // EyreResult, tracing macros, serde derives (feature "std-ext")
 //! use rsl_deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
@@ -171,7 +171,7 @@ pub use ratatui;
 #[cfg(feature = "time")]
 #[doc(inline)]
 pub use chrono;
-/// Date and time for sync, protocol, certificate, and codec crates (feature `time-core`).
+/// Date and time for sync `std` crates that do not depend on `tokio` (feature `time-core`).
 #[cfg(feature = "time-core")]
 #[doc(inline)]
 pub use time;
@@ -184,7 +184,7 @@ pub use prost;
 /// Common imports. Glob this in to pull the everyday items of whatever features are
 /// enabled — `use rsl_deps::prelude::*;`.
 pub mod prelude {
-    #[cfg(feature = "error")]
+    #[cfg(any(feature = "error", feature = "tui"))]
     #[doc(no_inline)]
     pub use crate::color_eyre::eyre::{Result as EyreResult, WrapErr as _};
     #[cfg(feature = "error")]
