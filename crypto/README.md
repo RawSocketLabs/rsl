@@ -8,6 +8,28 @@ The goal is readable, independently testable reference code: specifications shou
 to named types, operations, and intermediate values. Speed is secondary. Optimized backends may
 be added later beside the reference implementations.
 
+## Why this library exists
+
+Cryptographic libraries make different primary tradeoffs:
+
+| Library family | Primarily optimizes for |
+|---|---|
+| [RustCrypto](https://github.com/RustCrypto) | Broad, modular, pure-Rust algorithms and reusable traits |
+| [libsodium](https://doc.libsodium.org/doc) | Portable, high-level operations designed for ease of use |
+| [`ring`](https://github.com/briansmith/ring) / [AWS-LC for Rust](https://github.com/aws/aws-lc-rs) | Native optimized providers; AWS-LC for Rust additionally targets FIPS requirements |
+| [EverCrypt](https://project-everest.github.io/) | Formally verified implementations with platform-selected performance |
+| **`rsl-crypto`** | Traceable protocol engineering: readable standards mappings, semantic lifecycle APIs, and explicit research escape hatches |
+
+`rsl-crypto` exists for work where developers need to follow a construction from publication to
+source and test evidence, compose it into protocol machinery without losing security state, and
+still reach lower-level operations for vectors, interoperability, and new protocol research. The
+guided path makes complete constructions conspicuous; an escape hatch returns only the narrower
+property it actually establishes and cannot fabricate authenticated or protocol-validated state.
+
+The result is an executable reference, protocol workbench, and potential oracle for future
+optimized backends—not a present claim of independent audit, formal verification, FIPS
+validation, or production-ready side-channel resistance.
+
 ## Status
 
 Early implementation. The crate establishes secret handling and contracts for digests, MACs,
