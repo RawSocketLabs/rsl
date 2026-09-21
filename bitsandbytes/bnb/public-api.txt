@@ -7,6 +7,92 @@ pub use bnb::bin
 pub use bnb::bitfield
 pub use bnb::bitflags
 pub mod bnb::bitstream
+#[non_exhaustive] pub enum bnb::bitstream::DispatchKind
+pub bnb::bitstream::DispatchKind::Magic
+pub bnb::bitstream::DispatchKind::Tag
+pub bnb::bitstream::DispatchKind::TagOrMagic
+impl core::clone::Clone for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::clone(&self) -> bnb::bitstream::DispatchKind
+impl core::cmp::Eq for bnb::bitstream::DispatchKind
+impl core::cmp::PartialEq for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::eq(&self, &bnb::bitstream::DispatchKind) -> bool
+impl core::fmt::Debug for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::DispatchKind
+impl core::marker::StructuralPartialEq for bnb::bitstream::DispatchKind
+impl core::marker::Freeze for bnb::bitstream::DispatchKind
+impl core::marker::Send for bnb::bitstream::DispatchKind
+impl core::marker::Sync for bnb::bitstream::DispatchKind
+impl core::marker::Unpin for bnb::bitstream::DispatchKind
+impl core::marker::UnsafeUnpin for bnb::bitstream::DispatchKind
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::DispatchKind
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::DispatchKind
+impl<T, U> core::convert::Into<U> for bnb::bitstream::DispatchKind where U: core::convert::From<T>
+pub fn bnb::bitstream::DispatchKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::DispatchKind where U: core::convert::Into<T>
+pub type bnb::bitstream::DispatchKind::Error = core::convert::Infallible
+pub fn bnb::bitstream::DispatchKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::DispatchKind where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::DispatchKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::DispatchKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::DispatchKind where T: core::clone::Clone
+pub type bnb::bitstream::DispatchKind::Owned = T
+pub fn bnb::bitstream::DispatchKind::clone_into(&self, &mut T)
+pub fn bnb::bitstream::DispatchKind::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::DispatchKind where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::DispatchKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::DispatchKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::DispatchKind where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::DispatchKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::DispatchKind
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::DispatchKind
+#[non_exhaustive] pub enum bnb::bitstream::DispatchValue
+pub bnb::bitstream::DispatchValue::Bytes(alloc::vec::Vec<u8>)
+pub bnb::bitstream::DispatchValue::Integer(u128)
+impl core::clone::Clone for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::clone(&self) -> bnb::bitstream::DispatchValue
+impl core::cmp::Eq for bnb::bitstream::DispatchValue
+impl core::cmp::PartialEq for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::eq(&self, &bnb::bitstream::DispatchValue) -> bool
+impl core::fmt::Debug for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::DispatchValue
+impl core::marker::Freeze for bnb::bitstream::DispatchValue
+impl core::marker::Send for bnb::bitstream::DispatchValue
+impl core::marker::Sync for bnb::bitstream::DispatchValue
+impl core::marker::Unpin for bnb::bitstream::DispatchValue
+impl core::marker::UnsafeUnpin for bnb::bitstream::DispatchValue
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::DispatchValue
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::DispatchValue
+impl<T, U> core::convert::Into<U> for bnb::bitstream::DispatchValue where U: core::convert::From<T>
+pub fn bnb::bitstream::DispatchValue::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::DispatchValue where U: core::convert::Into<T>
+pub type bnb::bitstream::DispatchValue::Error = core::convert::Infallible
+pub fn bnb::bitstream::DispatchValue::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::DispatchValue where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::DispatchValue::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::DispatchValue::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::DispatchValue where T: core::clone::Clone
+pub type bnb::bitstream::DispatchValue::Owned = T
+pub fn bnb::bitstream::DispatchValue::clone_into(&self, &mut T)
+pub fn bnb::bitstream::DispatchValue::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::DispatchValue where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::DispatchValue where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::DispatchValue where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::DispatchValue where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::DispatchValue::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::DispatchValue
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::DispatchValue
 #[non_exhaustive] pub enum bnb::bitstream::ErrorKind
 pub bnb::bitstream::ErrorKind::BadMagic
 pub bnb::bitstream::ErrorKind::BadMagic::expected: u128
@@ -20,6 +106,7 @@ pub bnb::bitstream::ErrorKind::Incomplete::needed: core::option::Option<usize>
 pub bnb::bitstream::ErrorKind::IncompleteAtEof
 pub bnb::bitstream::ErrorKind::IncompleteAtEof::needed: core::option::Option<usize>
 pub bnb::bitstream::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::bitstream::ErrorKind::NoMatchingVariant(alloc::boxed::Box<bnb::bitstream::EnumDispatchError>)
 pub bnb::bitstream::ErrorKind::NoProgress
 pub bnb::bitstream::ErrorKind::NotByteAligned
 pub bnb::bitstream::ErrorKind::NotSeekable
@@ -146,6 +233,7 @@ pub bnb::bitstream::BitError::kind: bnb::bitstream::ErrorKind
 impl bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::bad_magic(u128, u128, usize) -> Self
 pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+pub fn bnb::bitstream::BitError::dispatch_error_for<T: 'static>(&self) -> core::option::Option<&bnb::bitstream::EnumDispatchError>
 pub fn bnb::bitstream::BitError::in_field(self, &'static str) -> Self
 pub fn bnb::bitstream::BitError::is_incomplete(&self) -> bool
 pub fn bnb::bitstream::BitError::new(bnb::bitstream::ErrorKind, usize) -> Self
@@ -516,6 +604,50 @@ impl<T> core::convert::From<T> for bnb::bitstream::CapacityError
 pub fn bnb::bitstream::CapacityError::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::CapacityError
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::CapacityError
+#[non_exhaustive] pub struct bnb::bitstream::EnumDispatchError
+impl bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::dispatch_kind(&self) -> bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::EnumDispatchError::enum_name(&self) -> &'static str
+pub fn bnb::bitstream::EnumDispatchError::observed(&self) -> core::option::Option<&bnb::bitstream::DispatchValue>
+impl core::clone::Clone for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::clone(&self) -> bnb::bitstream::EnumDispatchError
+impl core::cmp::Eq for bnb::bitstream::EnumDispatchError
+impl core::cmp::PartialEq for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::eq(&self, &bnb::bitstream::EnumDispatchError) -> bool
+impl core::fmt::Debug for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::EnumDispatchError
+impl core::marker::Freeze for bnb::bitstream::EnumDispatchError
+impl core::marker::Send for bnb::bitstream::EnumDispatchError
+impl core::marker::Sync for bnb::bitstream::EnumDispatchError
+impl core::marker::Unpin for bnb::bitstream::EnumDispatchError
+impl core::marker::UnsafeUnpin for bnb::bitstream::EnumDispatchError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::EnumDispatchError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::EnumDispatchError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::EnumDispatchError where U: core::convert::From<T>
+pub fn bnb::bitstream::EnumDispatchError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::EnumDispatchError where U: core::convert::Into<T>
+pub type bnb::bitstream::EnumDispatchError::Error = core::convert::Infallible
+pub fn bnb::bitstream::EnumDispatchError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::EnumDispatchError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::EnumDispatchError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::EnumDispatchError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::EnumDispatchError where T: core::clone::Clone
+pub type bnb::bitstream::EnumDispatchError::Owned = T
+pub fn bnb::bitstream::EnumDispatchError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::EnumDispatchError::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::EnumDispatchError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::EnumDispatchError where T: ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::EnumDispatchError where T: ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::EnumDispatchError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::EnumDispatchError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::EnumDispatchError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::EnumDispatchError
 pub struct bnb::bitstream::Layout
 pub bnb::bitstream::Layout::bit: bnb::BitOrder
 pub bnb::bitstream::Layout::byte: bnb::ByteOrder
@@ -2019,6 +2151,92 @@ impl<T> core::convert::From<T> for bnb::ByteOrder
 pub fn bnb::ByteOrder::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::ByteOrder
 impl<T> tracing::instrument::WithSubscriber for bnb::ByteOrder
+#[non_exhaustive] pub enum bnb::DispatchKind
+pub bnb::DispatchKind::Magic
+pub bnb::DispatchKind::Tag
+pub bnb::DispatchKind::TagOrMagic
+impl core::clone::Clone for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::clone(&self) -> bnb::bitstream::DispatchKind
+impl core::cmp::Eq for bnb::bitstream::DispatchKind
+impl core::cmp::PartialEq for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::eq(&self, &bnb::bitstream::DispatchKind) -> bool
+impl core::fmt::Debug for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for bnb::bitstream::DispatchKind
+impl core::marker::StructuralPartialEq for bnb::bitstream::DispatchKind
+impl core::marker::Freeze for bnb::bitstream::DispatchKind
+impl core::marker::Send for bnb::bitstream::DispatchKind
+impl core::marker::Sync for bnb::bitstream::DispatchKind
+impl core::marker::Unpin for bnb::bitstream::DispatchKind
+impl core::marker::UnsafeUnpin for bnb::bitstream::DispatchKind
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::DispatchKind
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::DispatchKind
+impl<T, U> core::convert::Into<U> for bnb::bitstream::DispatchKind where U: core::convert::From<T>
+pub fn bnb::bitstream::DispatchKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::DispatchKind where U: core::convert::Into<T>
+pub type bnb::bitstream::DispatchKind::Error = core::convert::Infallible
+pub fn bnb::bitstream::DispatchKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::DispatchKind where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::DispatchKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::DispatchKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::DispatchKind where T: core::clone::Clone
+pub type bnb::bitstream::DispatchKind::Owned = T
+pub fn bnb::bitstream::DispatchKind::clone_into(&self, &mut T)
+pub fn bnb::bitstream::DispatchKind::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::DispatchKind where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::DispatchKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::DispatchKind where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::DispatchKind where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::DispatchKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::DispatchKind::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::DispatchKind
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::DispatchKind
+#[non_exhaustive] pub enum bnb::DispatchValue
+pub bnb::DispatchValue::Bytes(alloc::vec::Vec<u8>)
+pub bnb::DispatchValue::Integer(u128)
+impl core::clone::Clone for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::clone(&self) -> bnb::bitstream::DispatchValue
+impl core::cmp::Eq for bnb::bitstream::DispatchValue
+impl core::cmp::PartialEq for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::eq(&self, &bnb::bitstream::DispatchValue) -> bool
+impl core::fmt::Debug for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::DispatchValue
+impl core::marker::Freeze for bnb::bitstream::DispatchValue
+impl core::marker::Send for bnb::bitstream::DispatchValue
+impl core::marker::Sync for bnb::bitstream::DispatchValue
+impl core::marker::Unpin for bnb::bitstream::DispatchValue
+impl core::marker::UnsafeUnpin for bnb::bitstream::DispatchValue
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::DispatchValue
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::DispatchValue
+impl<T, U> core::convert::Into<U> for bnb::bitstream::DispatchValue where U: core::convert::From<T>
+pub fn bnb::bitstream::DispatchValue::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::DispatchValue where U: core::convert::Into<T>
+pub type bnb::bitstream::DispatchValue::Error = core::convert::Infallible
+pub fn bnb::bitstream::DispatchValue::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::DispatchValue where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::DispatchValue::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::DispatchValue::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::DispatchValue where T: core::clone::Clone
+pub type bnb::bitstream::DispatchValue::Owned = T
+pub fn bnb::bitstream::DispatchValue::clone_into(&self, &mut T)
+pub fn bnb::bitstream::DispatchValue::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::DispatchValue where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::DispatchValue where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::DispatchValue where T: ?core::marker::Sized
+pub fn bnb::bitstream::DispatchValue::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::DispatchValue where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::DispatchValue::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::DispatchValue
+pub fn bnb::bitstream::DispatchValue::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::DispatchValue
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::DispatchValue
 #[non_exhaustive] pub enum bnb::ErrorKind
 pub bnb::ErrorKind::BadMagic
 pub bnb::ErrorKind::BadMagic::expected: u128
@@ -2032,6 +2250,7 @@ pub bnb::ErrorKind::Incomplete::needed: core::option::Option<usize>
 pub bnb::ErrorKind::IncompleteAtEof
 pub bnb::ErrorKind::IncompleteAtEof::needed: core::option::Option<usize>
 pub bnb::ErrorKind::Io(core::io::error::ErrorKind)
+pub bnb::ErrorKind::NoMatchingVariant(alloc::boxed::Box<bnb::bitstream::EnumDispatchError>)
 pub bnb::ErrorKind::NoProgress
 pub bnb::ErrorKind::NotByteAligned
 pub bnb::ErrorKind::NotSeekable
@@ -2316,6 +2535,7 @@ pub bnb::BitError::kind: bnb::bitstream::ErrorKind
 impl bnb::bitstream::BitError
 pub fn bnb::bitstream::BitError::bad_magic(u128, u128, usize) -> Self
 pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+pub fn bnb::bitstream::BitError::dispatch_error_for<T: 'static>(&self) -> core::option::Option<&bnb::bitstream::EnumDispatchError>
 pub fn bnb::bitstream::BitError::in_field(self, &'static str) -> Self
 pub fn bnb::bitstream::BitError::is_incomplete(&self) -> bool
 pub fn bnb::bitstream::BitError::new(bnb::bitstream::ErrorKind, usize) -> Self
@@ -2686,6 +2906,50 @@ impl<T> core::convert::From<T> for bnb::bitstream::CapacityError
 pub fn bnb::bitstream::CapacityError::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::CapacityError
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::CapacityError
+#[non_exhaustive] pub struct bnb::EnumDispatchError
+impl bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::dispatch_kind(&self) -> bnb::bitstream::DispatchKind
+pub fn bnb::bitstream::EnumDispatchError::enum_name(&self) -> &'static str
+pub fn bnb::bitstream::EnumDispatchError::observed(&self) -> core::option::Option<&bnb::bitstream::DispatchValue>
+impl core::clone::Clone for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::clone(&self) -> bnb::bitstream::EnumDispatchError
+impl core::cmp::Eq for bnb::bitstream::EnumDispatchError
+impl core::cmp::PartialEq for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::eq(&self, &bnb::bitstream::EnumDispatchError) -> bool
+impl core::fmt::Debug for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for bnb::bitstream::EnumDispatchError
+impl core::marker::Freeze for bnb::bitstream::EnumDispatchError
+impl core::marker::Send for bnb::bitstream::EnumDispatchError
+impl core::marker::Sync for bnb::bitstream::EnumDispatchError
+impl core::marker::Unpin for bnb::bitstream::EnumDispatchError
+impl core::marker::UnsafeUnpin for bnb::bitstream::EnumDispatchError
+impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::EnumDispatchError
+impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::EnumDispatchError
+impl<T, U> core::convert::Into<U> for bnb::bitstream::EnumDispatchError where U: core::convert::From<T>
+pub fn bnb::bitstream::EnumDispatchError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::EnumDispatchError where U: core::convert::Into<T>
+pub type bnb::bitstream::EnumDispatchError::Error = core::convert::Infallible
+pub fn bnb::bitstream::EnumDispatchError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for bnb::bitstream::EnumDispatchError where U: core::convert::TryFrom<T>
+pub type bnb::bitstream::EnumDispatchError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn bnb::bitstream::EnumDispatchError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::bitstream::EnumDispatchError where T: core::clone::Clone
+pub type bnb::bitstream::EnumDispatchError::Owned = T
+pub fn bnb::bitstream::EnumDispatchError::clone_into(&self, &mut T)
+pub fn bnb::bitstream::EnumDispatchError::to_owned(&self) -> T
+impl<T> core::any::Any for bnb::bitstream::EnumDispatchError where T: 'static + ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for bnb::bitstream::EnumDispatchError where T: ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::EnumDispatchError where T: ?core::marker::Sized
+pub fn bnb::bitstream::EnumDispatchError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::bitstream::EnumDispatchError where T: core::clone::Clone
+pub unsafe fn bnb::bitstream::EnumDispatchError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for bnb::bitstream::EnumDispatchError
+pub fn bnb::bitstream::EnumDispatchError::from(T) -> T
+impl<T> tracing::instrument::Instrument for bnb::bitstream::EnumDispatchError
+impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::EnumDispatchError
 pub struct bnb::Layout
 pub bnb::Layout::bit: bnb::BitOrder
 pub bnb::Layout::byte: bnb::ByteOrder
