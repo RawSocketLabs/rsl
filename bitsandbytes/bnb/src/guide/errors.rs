@@ -38,6 +38,8 @@
 //! - `UnexpectedEof { needed, remaining }` — ran off the end of a finite slice.
 //! - `TrailingBytes { remaining }` — `decode_exact` left whole bytes unconsumed.
 //! - `BadMagic { expected, found }` — a `magic` constant didn't match.
+//! - `NoMatchingVariant(details)` — a closed `#[bin]` enum exhausted its dispatch
+//!   alternatives. Details identify the enum and, when already read, the discriminator.
 //! - `Convert { message }` — a conversion or guard rejected the value: a `try_map` /
 //!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
 //!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
@@ -106,12 +108,72 @@
 //! // For retryable messages, retain the original input and use BitBuf::try_pull instead.
 //! ```
 //!
-//! # Two error types
+//! # Closed-enum diagnostics without reparsing input
+//!
+//! Match the **originating type**, not a field name, formatted message, or enum name:
+//!
+//! ```
+//! use bnb::{bin, BitError, DispatchKind, DispatchValue};
+//!
+//! #[bin(big)]
+//! #[derive(Debug)]
+//! enum Address {
+//!     #[bin(magic = 1u8)] V4([u8; 4]),
+//!     #[bin(magic = 4u8)] V6([u8; 16]),
+//! }
+//!
+//! #[derive(Debug)]
+//! enum ProtocolError { UnsupportedAddress(u8), Codec(BitError) }
+//! impl From<BitError> for ProtocolError {
+//!     fn from(error: BitError) -> Self {
+//!         let code = error.dispatch_error_for::<Address>()
+//!             .and_then(|detail| detail.observed())
+//!             .and_then(|value| match value {
+//!                 DispatchValue::Integer(code) => u8::try_from(*code).ok(),
+//!                 _ => None,
+//!             });
+//!         match code {
+//!             Some(code) => Self::UnsupportedAddress(code),
+//!             None => Self::Codec(error),
+//!         }
+//!     }
+//! }
+//! fn parse(bytes: &[u8]) -> Result<Address, ProtocolError> {
+//!     Ok(Address::decode_exact(bytes)?) // ordinary `?`, no input probe
+//! }
+//! assert!(matches!(parse(&[0xff]), Err(ProtocolError::UnsupportedAddress(0xff))));
+//! let error = Address::decode_exact(&[0xff]).unwrap_err();
+//! let detail = error.dispatch_error_for::<Address>().unwrap();
+//! assert_eq!(detail.dispatch_kind(), DispatchKind::Magic);
+//! assert_eq!((error.at, error.field), (8, Some("magic")));
+//! ```
+//!
+//! [`dispatch_error_for`](crate::BitError::dispatch_error_for) uses Rust type identity;
+//! identically named enums in different modules cannot collide. Nested payload errors
+//! keep their original type, kind, bit offset, and innermost field. `observed() == None`
+//! means **not captured**, not "need more bytes": external tags and variable-width magic
+//! probes are not captured. Hybrid tag/magic misses capture the final wire magic only.
+//! Fixed-width integers are interpreted in the active layout; byte strings are copied
+//! only on terminal failure, bounded by the declared magic width, never the whole frame.
+//! Successful dispatch adds no diagnostic allocation, copy, or read. Failure details are
+//! boxed; numeric failures allocate one box, fixed-byte failures also own a byte vector.
+//!
+//! Migration: these terminal misses previously returned `Convert` with an unstructured
+//! string. Enum prefix/signature and `decode_as_*` verification failures still use
+//! `Convert`; struct/field magic checks retain `BadMagic`. The rendered message drops the
+//! `conversion failed:` prefix and appends a captured value as `: 0x…`; match the kind,
+//! never the text. Catch-all/fallback success,
+//! incremental hints and finite EOF behavior are unchanged. This does not make direct
+//! forward-only reads transactional; use retained `BitBuf` attempts for lossless retry.
+//!
+//! # Construction errors versus codec errors
 //!
 //! Decoding/encoding yields [`BitError`](crate::BitError). The separate
 //! [`WidthError`](crate::WidthError) covers *construction* (`UInt::try_new` and the `TryFrom`
 //! impls). A `From<WidthError> for BitError` bridges them, so a construction failure inside
-//! a custom `parse_with`/converter can `?`-propagate:
+//! a custom `parse_with`/converter can `?`-propagate.
+//! [`UnknownDiscriminant`](crate::UnknownDiscriminant) is also construction-only: it
+//! belongs to a closed `BitEnum`'s checked integer `TryFrom`, not `#[bin]` dispatch.
 //!
 //! ```
 //! use bnb::{u4, BitError};

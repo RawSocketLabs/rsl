@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.7.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.5.0...bitsandbytes-macros-v0.7.0) - 2026-09-21
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] attribute closed-enum dispatch misses by type ([#87](https://github.com/RawSocketLabs/rsl/pull/87))
+
 ## [0.5.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.4.0...bitsandbytes-macros-v0.5.0) - 2026-09-09
 
 ### Added

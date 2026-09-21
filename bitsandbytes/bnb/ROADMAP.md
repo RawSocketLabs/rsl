@@ -524,6 +524,16 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
       real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
       `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
+- [ ] **[correctness] `ctx` enum with tag plus variable-width/fallback magic does not compile.**
+      The generated `impl DecodeWith … fn decode_with<S: Source>` calls the inherent
+      `decode_with<S: SeekSource>` the probe path requires (E0277). Repro: `#[bin(big, ctx(sel:
+      u8), tag = sel)] enum E { #[bin(tag = 1)] T(u8), #[bin(magic = b"A")] M(u8), #[bin(magic =
+      b"CDE")] N }`. Pre-existing; found in the `DESIGN.md` §13 review. Until fixed, a hybrid
+      dispatch miss with `observed() == None` is unreachable.
+- [ ] **[perf] Context-free enum `decode_exact` specialization.** Emitting the decode body
+      through `decode_exact_with` cut slice-path rejection ~28% and four-byte success ~23%
+      (`DESIGN.md` §13) but duplicates every enum's decode body. Needs its own gate and an enum
+      `TrailingBytes`/trait-path parity test first: a `decode_peek_with` mutant survived.
 - [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
       canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
       boundary is already documented as intentional in the guide/DESIGN: canonical form and validity
