@@ -4,7 +4,6 @@
 # tools/check-drift.py enforces it in the consumer's CI.
 
 [versions]
-anyhow = "1.0"
 async-nats = "0.50"
 axum = "0.8"
 bytemuck = "1.25"

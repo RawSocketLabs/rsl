@@ -10,7 +10,7 @@ rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std
 ```
 
 ```rust
-use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives
+use rsl_deps::prelude::*;   // eyre::Result, tracing macros, serde derives
 use rsl_deps::tokio;        // blessed async runtime, canonical name
 use rsl_deps::serde_json;
 ```
@@ -36,7 +36,7 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 
 | Feature | Re-exports |
 |---------|-----------|
-| `error` | `thiserror`, `anyhow` |
+| `error` | `thiserror`, `color_eyre` |
 | `log` | `tracing`, `tracing_subscriber`, `tracing_appender` |
 | `serde` | `serde`, `serde_json` |
 | `bytes` | `bytes` |

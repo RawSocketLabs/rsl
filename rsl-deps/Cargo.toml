@@ -23,7 +23,6 @@ publish = false
 # ---------------------------------------------------------------------------
 [dependencies]
 thiserror          = { version = "2.0", optional = true }
-anyhow             = { version = "1.0", optional = true }
 tracing            = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], optional = true }
 tracing-appender   = { version = "0.2", optional = true }
@@ -83,7 +82,7 @@ full = [
 ]
 
 # ---- capability features --------------------------------------------------
-error    = ["dep:thiserror", "dep:anyhow"]
+error    = ["dep:thiserror", "dep:color-eyre"]
 log      = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
 serde    = ["dep:serde", "dep:serde_json"]
 bytes    = ["dep:bytes"]

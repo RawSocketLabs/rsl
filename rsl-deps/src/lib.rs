@@ -12,7 +12,7 @@
 //! ```
 //!
 //! ```ignore
-//! use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives (feature "std-ext")
+//! use rsl_deps::prelude::*;   // eyre::Result, tracing macros, serde derives (feature "std-ext")
 //! use rsl_deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
@@ -27,11 +27,7 @@
 
 // Re-exports don't carry docs of their own, so we don't `deny(missing_docs)` here.
 
-/// Derive-based error types.
-#[cfg(feature = "error")]
-#[doc(inline)]
-pub use anyhow;
-/// Boxed, contextual error handling for application code.
+/// Derive-based error types for libraries.
 #[cfg(feature = "error")]
 #[doc(inline)]
 pub use thiserror;
@@ -162,8 +158,8 @@ pub use utoipa_swagger_ui;
 #[doc(inline)]
 pub use reqwest;
 
-/// Colorful panic/error reports for TUI/CLI binaries.
-#[cfg(feature = "tui")]
+/// Contextual error reports for application code, and colorful panic/error reports for TUI/CLI binaries.
+#[cfg(any(feature = "error", feature = "tui"))]
 #[doc(inline)]
 pub use color_eyre;
 /// Terminal UI framework.
@@ -186,7 +182,7 @@ pub use prost;
 pub mod prelude {
     #[cfg(feature = "error")]
     #[doc(no_inline)]
-    pub use crate::anyhow::{Context as _, Result as AnyhowResult};
+    pub use crate::color_eyre::eyre::{Result as EyreResult, WrapErr as _};
     #[cfg(feature = "error")]
     #[doc(no_inline)]
     pub use crate::thiserror::Error as ThisError;
