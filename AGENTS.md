@@ -50,6 +50,33 @@ DSDcc library — its license governs distributed linked binaries.
 
 ## Verify
 
+### Routine local iteration
+
+Keep checks proportional to the current edit, not the cumulative branch diff. Discussion,
+inspection, and status questions do not trigger verification runs.
+
+- Prose/guidance-only edits: review the diff and run `git diff --check`. Build docs or run
+  doctests only when changed Rust examples, public API paths, or links need validation.
+- Rust edits: run `cargo fmt --all --check`, focused tests for the affected package/behavior,
+  and `cargo clippy -p <package> --all-targets -- -D warnings`.
+  Enable the features needed by the changed code; do not test unrelated packages.
+- Shared code, module moves, or feature wiring: add the relevant compile/test configurations
+  (typically default and all-features), not the exhaustive feature matrix. Security-sensitive
+  changes still require targeted regressions and independent review.
+- Do not automatically run workspace-wide tests/Clippy, exhaustive feature or MSRV matrices,
+  release-profile suites, fuzz campaigns, mutation campaigns, benchmarks, or container CI
+  during ordinary editing. Reserve full local qualification for release preparation or an
+  explicit request for broader verification. Crate full-tier checklists describe that scope,
+  not a requirement to repeat it after each local edit.
+- Reuse results while their relevant inputs are unchanged. Report exactly what ran; a focused
+  local pass is not release qualification, and a cancelled run is not a pass.
+
+### Release qualification and publication gates
+
+Release preparation runs the workspace checks below plus the applicable crate's complete
+feature, downstream, fuzz, compatibility, and performance qualification. The routine tier
+does not bypass existing pre-push hooks or change hosted/scheduled CI selection.
+
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets

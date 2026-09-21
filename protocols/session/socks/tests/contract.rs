@@ -1,8 +1,8 @@
 //! RFC-derived, byte-exact SOCKS5 wire contracts.
 
 use socks::v5::{
-    AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, ReplyCode, Request,
-    UsernamePasswordRequest, UsernamePasswordResponse, UsernamePasswordStatus,
+    AuthMethod, Command, Domain, Endpoint, MethodRequest, MethodSelection, Reply, ReplyCode,
+    Request, UsernamePasswordRequest, UsernamePasswordResponse, UsernamePasswordStatus,
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -105,8 +105,107 @@ fn connect_request_encodes_domain_endpoint() {
     wire.extend_from_slice(&80u16.to_be_bytes());
 
     let request = Request::decode_exact(&wire).unwrap();
-    assert_eq!(request.destination, Endpoint::domain(b"example.com", 80));
+    assert_eq!(
+        request.destination,
+        Endpoint::domain(b"example.com", 80).unwrap()
+    );
     assert_eq!(request.to_bytes().unwrap(), wire);
+}
+
+#[test]
+fn checked_domain_constructor_preserves_bytes_and_allows_zero_port() {
+    for name in [vec![b'x'], vec![b'x'; 255], vec![b'A', 0, 0xff]] {
+        let checked = Endpoint::domain(name.clone(), 0).unwrap();
+        assert_eq!(checked, Endpoint::domain_raw(name.clone(), 0));
+        let mut wire = vec![3, u8::try_from(name.len()).unwrap()];
+        wire.extend_from_slice(&name);
+        wire.extend_from_slice(&[0, 0]);
+        assert_eq!(checked.to_bytes().unwrap(), wire);
+        assert_eq!(Endpoint::decode_exact(&wire).unwrap(), checked);
+    }
+}
+
+#[test]
+fn zero_ports_remain_representable_in_wire_requests_and_replies() {
+    for address in [
+        vec![1, 127, 0, 0, 1, 0, 0],
+        vec![3, 1, b'x', 0, 0],
+        vec![4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    ] {
+        let endpoint = Endpoint::decode_exact(&address).unwrap();
+        assert!(endpoint.validate().is_ok());
+        let request = Request::builder()
+            .command(Command::Connect)
+            .destination(endpoint.clone())
+            .build()
+            .unwrap();
+        let wire = [vec![5, 1, 0], address.clone()].concat();
+        assert_eq!(request.to_bytes().unwrap(), wire);
+        assert_eq!(request.to_canonical_bytes().unwrap(), wire);
+        assert_eq!(Request::decode_exact(&wire).unwrap(), request);
+        for code in [ReplyCode::Succeeded, ReplyCode::GeneralFailure] {
+            let reply = Reply::builder()
+                .code(code)
+                .bound(endpoint.clone())
+                .build()
+                .unwrap();
+            let wire = [vec![5, u8::from(code), 0], address.clone()].concat();
+            assert_eq!(reply.to_bytes().unwrap(), wire);
+            assert_eq!(reply.to_canonical_bytes().unwrap(), wire);
+            assert_eq!(Reply::decode_exact(&wire).unwrap(), reply);
+        }
+    }
+}
+
+#[test]
+fn domain_payload_keeps_opaque_bytes_and_endpoint_adds_only_atyp() {
+    let domain = Domain::builder()
+        .name(vec![b'A', 0, 0xff])
+        .port(0x1234)
+        .build()
+        .unwrap();
+    // RFC 1928 address framing, with deliberately opaque/non-DNS name bytes.
+    let payload = [3, b'A', 0, 0xff, 0x12, 0x34];
+    assert_eq!(domain.to_bytes().unwrap(), payload);
+    assert_eq!(Domain::decode_exact(&payload).unwrap(), domain);
+    let endpoint = Endpoint::from(domain);
+    let wire = [3, 3, b'A', 0, 0xff, 0x12, 0x34];
+    assert_eq!(endpoint.to_bytes().unwrap(), wire);
+    assert_eq!(Endpoint::decode_exact(&wire).unwrap(), endpoint);
+    assert!(endpoint.validate().is_ok());
+}
+
+#[test]
+fn domain_builders_accept_both_length_boundaries_without_restricting_command_or_reply() {
+    for length in [1u8, 255] {
+        let name = vec![b'x'; usize::from(length)];
+        let domain = Domain::builder()
+            .name(name.clone())
+            .port(443)
+            .build()
+            .unwrap();
+        let payload = [vec![length], name, vec![1, 187]].concat();
+        assert_eq!(domain.to_bytes().unwrap(), payload, "length {length}");
+
+        // Construction checks address length, not the guided CONNECT-only capability.
+        let request = Request::builder()
+            .command(Command::Bind)
+            .destination(domain.clone().into())
+            .build()
+            .unwrap();
+        let request_wire = [vec![5, 2, 0, 3], payload.clone()].concat();
+        assert_eq!(request.to_bytes().unwrap(), request_wire, "length {length}");
+        assert_eq!(Request::decode_exact(&request_wire).unwrap(), request);
+
+        let reply = Reply::builder()
+            .code(ReplyCode::ConnectionRefused)
+            .bound(domain.into())
+            .build()
+            .unwrap();
+        let reply_wire = [vec![5, 5, 0, 3], payload].concat();
+        assert_eq!(reply.to_bytes().unwrap(), reply_wire, "length {length}");
+        assert_eq!(Reply::decode_exact(&reply_wire).unwrap(), reply);
+    }
 }
 
 #[test]

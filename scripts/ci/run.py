@@ -43,6 +43,7 @@ def commands(profile, plan, bnb):
         return [["cargo", "clippy", "-p", "socks", "--all-targets", "--all-features", "--", "-D", "warnings"],
                 ["cargo", "test", "-p", "socks", "--features", "blocking"],
                 ["cargo", "test", "-p", "socks", "--features", "tokio"],
+                ["cargo", "test", "-p", "socks", "--features", "mio"],
                 ["cargo", "test", "-p", "socks", "--all-features"],
                 ["cargo", "doc", "-p", "socks", "--all-features", "--no-deps"]]
     if profile == "network":

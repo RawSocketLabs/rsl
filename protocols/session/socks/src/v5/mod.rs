@@ -1,19 +1,15 @@
-//! SOCKS5 wire types from RFC 1928 and RFC 1929.
+//! SOCKS5 wire codecs and version-specific client/server exchanges.
 
-mod codes;
-mod endpoint;
-mod method;
-mod request;
-mod username_password;
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+pub mod auth;
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+pub mod client;
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+mod decode;
+#[cfg(feature = "mio")]
+pub(crate) mod mio_io;
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+pub mod server;
+pub mod wire;
 
-pub use codes::{AddressType, AuthMethod, Command, ReplyCode};
-pub use endpoint::Endpoint;
-pub use method::{MethodRequest, MethodSelection};
-pub use request::{Reply, Request};
-pub use username_password::{
-    USERNAME_PASSWORD_VERSION, UsernamePasswordRequest, UsernamePasswordResponse,
-    UsernamePasswordStatus,
-};
-
-/// The SOCKS version byte used by RFC 1928 messages.
-pub const VERSION: u8 = 5;
+pub use wire::*;

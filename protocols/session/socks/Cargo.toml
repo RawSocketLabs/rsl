@@ -12,11 +12,16 @@ rust-version.workspace = true
 bnb = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
+mio = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true, optional = true }
 
 [features]
 default = []
-blocking = []
-tokio = ["dep:tokio"]
+blocking = ["bnb/net"]
+tokio = ["dep:tokio", "bnb/tokio-io"]
+mio = ["dep:mio", "dep:libc", "bnb/net"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
@@ -28,6 +33,23 @@ required-features = ["blocking"]
 [[test]]
 name = "session_async"
 required-features = ["tokio"]
+
+[[test]]
+name = "session_mio"
+required-features = ["mio"]
+
+[[bench]]
+name = "session_reads"
+harness = false
+required-features = ["blocking", "tokio"]
+
+[[example]]
+name = "mio_client"
+required-features = ["mio"]
+
+[[example]]
+name = "mio_proxy"
+required-features = ["mio"]
 
 [lints]
 workspace = true

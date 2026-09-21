@@ -2,8 +2,8 @@
 
 use bnb::{BuilderError, bitstream::ErrorKind};
 use socks::v5::{
-    AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, ReplyCode, Request,
-    UsernamePasswordRequest, UsernamePasswordResponse,
+    AuthMethod, Command, Domain, DomainError, Endpoint, MethodRequest, MethodSelection, Reply,
+    ReplyCode, Request, UsernamePasswordRequest, UsernamePasswordResponse,
 };
 use std::net::Ipv4Addr;
 
@@ -218,12 +218,136 @@ fn method_count_overflow_is_rejected() {
 }
 
 #[test]
+fn domain_construction_rejects_empty_and_oversized_names_including_raw_nested_values() {
+    for (length, expected) in [
+        (0, DomainError::Empty),
+        (256, DomainError::TooLong { length: 256 }),
+    ] {
+        assert_eq!(Endpoint::domain(vec![b'x'; length], 443), Err(expected));
+        let raw = Domain {
+            name: vec![b'x'; length],
+            port: 443,
+        };
+        assert_eq!(raw.check_length(), Err(expected), "length {length}");
+        assert!(
+            matches!(
+                Domain::builder()
+                    .name(raw.name.clone())
+                    .port(raw.port)
+                    .build(),
+                Err(BuilderError::Invalid(_))
+            ),
+            "domain length {length}"
+        );
+        let endpoint = Endpoint::from(raw);
+        assert_eq!(endpoint, Endpoint::domain_raw(vec![b'x'; length], 443));
+        assert_eq!(endpoint.validate(), Err(expected), "length {length}");
+        assert!(
+            matches!(
+                Request::builder()
+                    .command(Command::Connect)
+                    .destination(endpoint.clone())
+                    .build(),
+                Err(BuilderError::Invalid(_))
+            ),
+            "request domain length {length}"
+        );
+        assert!(
+            matches!(
+                Reply::builder()
+                    .code(ReplyCode::GeneralFailure)
+                    .bound(endpoint)
+                    .build(),
+                Err(BuilderError::Invalid(_))
+            ),
+            "reply domain length {length}"
+        );
+    }
+}
+
+#[test]
+fn empty_domain_decodes_verbatim_and_canonical_encoding_only_repairs_header_constants() {
+    let payload = [0, 0xab, 0xcd];
+    let domain = Domain::decode_exact(&payload).unwrap();
+    assert_eq!(domain.check_length(), Err(DomainError::Empty));
+    assert!(!domain.is_valid());
+    assert_eq!(domain.to_bytes().unwrap(), payload);
+
+    let endpoint_wire = [3, 0, 0xab, 0xcd];
+    let endpoint = Endpoint::decode_exact(&endpoint_wire).unwrap();
+    assert_eq!(endpoint.validate(), Err(DomainError::Empty));
+    assert_eq!(endpoint.to_bytes().unwrap(), endpoint_wire);
+
+    // Identical framing: BIND command / connection-not-allowed reply, invalid VER and RSV.
+    let wire = [4, 2, 255, 3, 0, 0xab, 0xcd];
+    let canonical = [5, 2, 0, 3, 0, 0xab, 0xcd];
+    let request = Request::decode_exact(&wire).unwrap();
+    assert!(!request.is_valid());
+    assert_eq!(request.to_bytes().unwrap(), wire);
+    assert_eq!(request.to_canonical_bytes().unwrap(), canonical);
+    let reply = Reply::decode_exact(&wire).unwrap();
+    assert!(!reply.is_valid());
+    assert_eq!(reply.to_bytes().unwrap(), wire);
+    assert_eq!(reply.to_canonical_bytes().unwrap(), canonical);
+}
+
+#[test]
+fn domain_and_message_validation_recheck_mutation_without_normalizing_fields() {
+    let mut domain = Domain::builder()
+        .name(b"example.com".to_vec())
+        .port(80)
+        .build()
+        .unwrap();
+    domain.name.clear();
+    assert_eq!(domain.check_length(), Err(DomainError::Empty));
+    assert!(domain.validate().is_err());
+    assert_eq!(domain.to_bytes().unwrap(), [0, 0, 80]);
+    domain.name.resize(256, b'x');
+    assert_eq!(
+        domain.check_length(),
+        Err(DomainError::TooLong { length: 256 })
+    );
+    assert!(domain.to_bytes().is_err());
+
+    let mut request = Request::builder()
+        .command(Command::Bind)
+        .destination(Endpoint::domain(b"example.com", 80).unwrap())
+        .build()
+        .unwrap();
+    request.destination = Endpoint::domain_raw([], 80);
+    request.version = 4;
+    assert!(request.validate().is_err());
+    assert_eq!(request.to_bytes().unwrap(), [4, 2, 0, 3, 0, 0, 80]);
+
+    let mut reply = Reply::builder()
+        .code(ReplyCode::GeneralFailure)
+        .bound(Endpoint::domain(b"example.com", 80).unwrap())
+        .build()
+        .unwrap();
+    reply.bound = Endpoint::domain_raw([], 80);
+    reply.reserved = 255;
+    assert!(reply.validate().is_err());
+    assert_eq!(reply.to_bytes().unwrap(), [5, 1, 255, 3, 0, 0, 80]);
+}
+
+#[test]
+fn every_truncated_domain_payload_is_rejected() {
+    let payload = [3, b'A', 0, 0xff, 0x12, 0x34];
+    for end in 0..payload.len() {
+        assert!(
+            Domain::decode_exact(&payload[..end]).is_err(),
+            "truncated at {end}"
+        );
+    }
+}
+
+#[test]
 fn domain_length_overflow_is_rejected() {
     let request = Request {
         version: 5,
         command: Command::Connect,
         reserved: 0,
-        destination: Endpoint::domain(vec![b'x'; 256], 443),
+        destination: Endpoint::domain_raw(vec![b'x'; 256], 443),
     };
     let error = request.to_bytes().unwrap_err();
     assert!(
@@ -278,7 +402,7 @@ fn maximum_domain_length_round_trips() {
         version: 5,
         command: Command::Connect,
         reserved: 0,
-        destination: Endpoint::domain(vec![b'x'; 255], u16::MAX),
+        destination: Endpoint::domain(vec![b'x'; 255], u16::MAX).unwrap(),
     };
     let wire = request.to_bytes().unwrap();
     assert_eq!(wire[4], u8::MAX);

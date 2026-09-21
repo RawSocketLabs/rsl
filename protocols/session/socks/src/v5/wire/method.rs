@@ -62,3 +62,18 @@ pub struct MethodSelection {
     /// The selected method, or [`AuthMethod::NoAcceptable`].
     pub method: AuthMethod,
 }
+
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+impl MethodSelection {
+    /// Check the response version and the client's single explicitly offered method.
+    pub(crate) fn check_offered(self, offered: AuthMethod) -> Result<(), crate::error::Error> {
+        use crate::error::Error;
+
+        super::validation::version(self.version, VERSION)?;
+        match self.method {
+            AuthMethod::NoAcceptable => Err(Error::NoAcceptableMethod),
+            method if method == offered => Ok(()),
+            method => Err(Error::UnexpectedMethod(method)),
+        }
+    }
+}

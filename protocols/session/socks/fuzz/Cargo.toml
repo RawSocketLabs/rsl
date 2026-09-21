@@ -10,11 +10,18 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-socks = { path = "..", features = ["blocking"] }
+socks = { path = "..", features = ["blocking", "mio"] }
 
 [[bin]]
 name = "session"
 path = "fuzz_targets/session.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mio_session"
+path = "fuzz_targets/mio_session.rs"
 test = false
 doc = false
 bench = false

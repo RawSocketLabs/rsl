@@ -116,6 +116,19 @@ pub struct UsernamePasswordResponse {
     pub status: UsernamePasswordStatus,
 }
 
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+impl UsernamePasswordResponse {
+    /// Require the expected version and a successful authentication outcome.
+    pub(crate) fn ensure_success(&self) -> Result<(), crate::error::Error> {
+        super::validation::version(self.version, USERNAME_PASSWORD_VERSION)?;
+        if self.status.is_success() {
+            Ok(())
+        } else {
+            Err(crate::error::Error::AuthenticationRejected)
+        }
+    }
+}
+
 #[cfg(test)]
 mod unit {
     use super::*;

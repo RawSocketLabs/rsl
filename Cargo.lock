@@ -3794,6 +3794,8 @@ name = "socks"
 version = "0.1.0"
 dependencies = [
  "bitsandbytes",
+ "libc",
+ "mio",
  "thiserror 2.0.20",
  "tokio",
 ]
