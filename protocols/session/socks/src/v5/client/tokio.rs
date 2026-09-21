@@ -4,11 +4,7 @@ use crate::v5::{
     AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, Request as WireRequest,
     UsernamePasswordRequest, UsernamePasswordResponse, VERSION,
 };
-use crate::{
-    Stream,
-    error::Error,
-    v5::{auth::ClientAuth, decode},
-};
+use crate::{Stream, error::Error, v5::auth::ClientAuth};
 use std::{net::SocketAddr, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -64,10 +60,7 @@ async fn connect_prepared<S: AsyncRead + AsyncWrite + Unpin>(
         },
     )
     .await?;
-    let response: Reply = stream
-        .read_message_async()
-        .await
-        .map_err(|error| decode::command_error(error, &mut stream.buffered))?;
+    let response: Reply = stream.read_message_async().await?;
     response.ensure_success()?;
     Ok((stream, response.bound))
 }

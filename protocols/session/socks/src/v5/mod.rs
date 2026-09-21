@@ -4,8 +4,6 @@
 pub mod auth;
 #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub mod client;
-#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
-mod decode;
 #[cfg(feature = "mio")]
 pub(crate) mod mio_io;
 #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]

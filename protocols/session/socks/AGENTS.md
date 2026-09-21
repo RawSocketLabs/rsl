@@ -41,8 +41,10 @@ GSS-API, SOCKS4, and SOCKS4A remain absent. [`DESIGN.md`](DESIGN.md) records dec
   `Request`/`Reply` check only their endpoint, not CONNECT support or reply success.
   `v5/wire/validation.rs` contains only shared scalar checks. `v5/server/validation.rs`
   owns CONNECT-only capability enforcement, keeping it separate from wire validity.
-  `v5/decode.rs` classifies failed command decodes without consuming retained input;
-  `v5/auth.rs` owns authentication adaptation. There is no synthetic `Session` type.
+  `src/error.rs` converts bnb's type-attributed `Endpoint` dispatch misses into
+  `UnsupportedAddressType`; no header probe, rewind, or message-specific read wrapper is
+  needed. Other codec errors retain their original details. `v5/auth.rs` owns
+  authentication adaptation. There is no synthetic `Session` type.
   `src/server/policy.rs` owns ONE version-independent authentication/authorization policy. A boolean
   credential verifier establishes an authentication outcome, not an identity/principal.
   Never turn a claimed identity into verified authentication. `Destination` preserves domain

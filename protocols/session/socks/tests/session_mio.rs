@@ -703,6 +703,27 @@ fn all_unknown_address_types_get_reply_eight_without_parsing_a_payload() {
 }
 
 #[test]
+fn client_preserves_unknown_address_types_in_fragmented_and_coalesced_replies() {
+    for atyp in (0..=u8::MAX).filter(|code| ![1, 3, 4].contains(code)) {
+        for chunk in [1, usize::MAX] {
+            let (io, _) = Fragmented::new(vec![5, 0, 5, 0, 0, atyp], chunk);
+            let mut client = Client::new(
+                io,
+                "127.0.0.1:80".parse::<SocketAddr>().unwrap().into(),
+                ClientAuth::NoAuthentication,
+            )
+            .unwrap();
+            let error = (0..64)
+                .find_map(|_| client.advance().err())
+                .expect("an unknown ATYP fails without waiting for a payload");
+            assert!(matches!(error, Error::UnsupportedAddressType(code) if code == atyp));
+            assert_eq!(client.interest(), None);
+            assert!(matches!(client.advance(), Err(Error::InvalidState)));
+        }
+    }
+}
+
+#[test]
 fn every_truncated_handshake_is_terminal_not_a_retryable_eof() {
     let input = [b"\x05\x01\x02\x01\x01u\x01p".as_slice(), CONNECT].concat();
     for length in 0..input.len() {

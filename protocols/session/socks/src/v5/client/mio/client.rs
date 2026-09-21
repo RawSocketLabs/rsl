@@ -143,7 +143,7 @@ impl<S: Read + Write> Client<S> {
                     self.phase = Phase::Reply;
                 }
                 Phase::Reply => {
-                    let Some(message) = self.io.command::<Reply>()? else {
+                    let Some(message) = self.io.receive::<Reply>()? else {
                         return Ok(false);
                     };
                     message.ensure_success()?;

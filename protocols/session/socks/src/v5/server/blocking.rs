@@ -4,12 +4,7 @@ use crate::v5::{
     Endpoint, MethodRequest, MethodSelection, Reply, ReplyCode, Request as WireRequest,
     UsernamePasswordRequest, UsernamePasswordResponse, UsernamePasswordStatus, VERSION,
 };
-use crate::{
-    Stream,
-    error::Error,
-    server::policy::ServerAuth,
-    v5::{auth, decode},
-};
+use crate::{Stream, error::Error, server::policy::ServerAuth, v5::auth};
 use std::{
     io::{Read, Write},
     net::TcpStream,
@@ -91,13 +86,10 @@ pub fn exchange<S: Read + Write>(stream: S, auth: &ServerAuth) -> Result<Request
             return Err(Error::AuthenticationRejected);
         }
     }
-    let result = stream
-        .read_message::<WireRequest>()
-        .map_err(|error| decode::command_error(error, &mut stream.buffered))
-        .and_then(|request| {
-            super::validation::check_request(&request)?;
-            Ok(request)
-        });
+    let result = stream.read_message::<WireRequest>().and_then(|request| {
+        super::validation::check_request(&request)?;
+        Ok(request)
+    });
     match result {
         Ok(request) => Ok(Request {
             stream,

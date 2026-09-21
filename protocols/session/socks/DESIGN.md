@@ -86,7 +86,6 @@ src/
   v5/                          version-specific protocol behavior
     mod.rs
     auth.rs
-    decode.rs                  failed command-decode classification
     mio_io.rs                  bounded, resumable V5 codec adapter
     client/
       mod.rs
@@ -1413,6 +1412,36 @@ benchmark, fuzz, mutation, or release gate was run.
 No supported command/version or roadmap status changes. DNS/IDNA policy and future
 version-specific error boundaries remain separate decisions; the next smallest protocol
 and platform steps below are unchanged.
+
+### Typed dispatch-error conversion (unreleased candidate, 2026-09-19)
+
+The local bnb runtime/macro candidate supplies type-attributed closed-enum dispatch
+diagnostics. `From<bnb::BitError> for Error` recognizes only `Endpoint` misses carrying an
+integer that fits `u8`, returning `UnsupportedAddressType(code)`. Wrapped reader codec
+errors enter the same conversion. Other origins, missing/noninteger observations,
+oversized integers, payload truncations, and unrelated errors retain the original codec
+error, position, and field. Enum names and formatted text are never classification keys.
+
+The command-header probe and its cursor restoration are removed, along with the extra Mio
+command-read wrapper. Blocking/Tokio exchanges use their ordinary message reads; Mio uses
+ordinary `receive`. The wire `Request`/`Reply` APIs continue returning `bnb::BitError`;
+only the guided boundary translates it. Unsupported ATYP still has no known payload width
+and still maps to the existing address-type-not-supported reply. No header type, policy,
+wire format, framing rule, or transport state is added.
+
+Tests cover direct/wrapped conversion, wrong originating types with the same diagnostic
+name, defensive observation handling, all unsupported address bytes, fragmented/coalesced
+driver transcripts, and unchanged truncation classification. The current ownership map
+and AGENTS guide no longer assign failed-decode classification to a separate probe module.
+
+This uses the typed dispatch error released in bitsandbytes 0.7.0 (2026-09-21); the
+workspace requires the macro crate at exactly the same version. bnb's buffered success path
+executes the same instruction count per message as before the feature, and a terminal
+dispatch miss costs 7–13 ns more, which ends the session anyway. This is not a SOCKS session
+benchmark; removing the probe alone is not evidence of a net speedup. Measurements are in
+bnb DESIGN §13. SOCKS itself remains unmerged work on its own branch, not published or
+released. No protocol roadmap status or release setting changes. The next protocol slice
+remains the blocking BIND exchange described below.
 
 ## Known limitations
 

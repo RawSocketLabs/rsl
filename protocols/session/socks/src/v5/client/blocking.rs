@@ -4,11 +4,7 @@ use crate::v5::{
     Command, Endpoint, MethodRequest, MethodSelection, Reply, Request as WireRequest,
     UsernamePasswordRequest, UsernamePasswordResponse, VERSION,
 };
-use crate::{
-    Stream,
-    error::Error,
-    v5::{auth::ClientAuth, decode},
-};
+use crate::{Stream, error::Error, v5::auth::ClientAuth};
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
@@ -61,9 +57,7 @@ fn connect_prepared<S: Read + Write>(
             destination,
         },
     )?;
-    let response: Reply = stream
-        .read_message()
-        .map_err(|error| decode::command_error(error, &mut stream.buffered))?;
+    let response: Reply = stream.read_message()?;
     response.ensure_success()?;
     Ok((stream, response.bound))
 }

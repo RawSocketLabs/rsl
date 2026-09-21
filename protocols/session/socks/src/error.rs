@@ -1,6 +1,6 @@
 //! Errors from the guided CONNECT session and proxy layers, not wire-codec policy.
 
-use crate::v5::{AuthMethod, Command, ReplyCode};
+use crate::v5::{AuthMethod, Command, Endpoint, ReplyCode};
 use thiserror::Error;
 
 /// A failed session is terminal: drop its transport; do not retry the handshake on it.
@@ -12,7 +12,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     /// A codec, finite-EOF truncation, or receive-capacity check failed.
     #[error("SOCKS codec failed: {0}")]
-    Codec(#[from] bnb::BitError),
+    Codec(#[source] bnb::BitError),
     /// Locally supplied credentials or a message failed construction validation.
     #[error("invalid SOCKS construction: {0}")]
     Construction(#[from] bnb::BuilderError),
@@ -78,11 +78,28 @@ pub enum Error {
     VersionNotAccepted(u8),
 }
 
+/// Translate only typed endpoint dispatch misses at the guided protocol boundary.
+impl From<bnb::BitError> for Error {
+    fn from(error: bnb::BitError) -> Self {
+        let code = error
+            .dispatch_error_for::<Endpoint>()
+            .and_then(bnb::EnumDispatchError::observed)
+            .and_then(|value| match value {
+                bnb::DispatchValue::Integer(code) => u8::try_from(*code).ok(),
+                _ => None,
+            });
+        match code {
+            Some(code) => Self::UnsupportedAddressType(code),
+            None => Self::Codec(error),
+        }
+    }
+}
+
 impl From<bnb::net::MessageReadError> for Error {
     fn from(error: bnb::net::MessageReadError) -> Self {
         match error {
             bnb::net::MessageReadError::Io(error) => Self::Io(error),
-            bnb::net::MessageReadError::Codec(error) => Self::Codec(error),
+            bnb::net::MessageReadError::Codec(error) => Self::from(error),
             // Preserve a future reader error's source without guessing its meaning.
             other => Self::Io(std::io::Error::other(other)),
         }
@@ -115,6 +132,66 @@ mod unit {
     use bnb::net::MessageReadError;
     use bnb::{BitError, ErrorKind};
     use std::io;
+
+    #[test]
+    fn endpoint_dispatch_misses_convert_directly_and_through_readers() {
+        for code in (0..=u8::MAX).filter(|code| ![1, 3, 4].contains(code)) {
+            let original = crate::v5::Request::decode_exact(&[5, 1, 0, code]).unwrap_err();
+            for converted in [
+                Error::from(original.clone()),
+                Error::from(MessageReadError::Codec(original)),
+            ] {
+                assert!(
+                    matches!(converted, Error::UnsupportedAddressType(actual) if actual == code)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unrelated_dispatch_errors_retain_all_details() {
+        // Deliberately shares the diagnostic name; only type identity may match.
+        #[bnb::bin(big)]
+        #[derive(Debug)]
+        enum Endpoint {
+            #[bin(magic = 1u8)]
+            Known,
+        }
+        let original = Endpoint::decode_exact(&[255]).unwrap_err();
+        for converted in [
+            Error::from(original.clone()),
+            Error::from(MessageReadError::Codec(original.clone())),
+        ] {
+            let Error::Codec(error) = converted else {
+                panic!("unrelated enum must stay a codec error");
+            };
+            assert_eq!(error, original);
+        }
+    }
+
+    #[test]
+    fn uncaptured_noninteger_and_overwide_codes_remain_codec_errors() {
+        // Defensive conversion for hand-written codecs or future Endpoint shapes. These
+        // states are reachable only through bnb's doc-hidden constructor, which no API gate
+        // tracks; lockstep workspace development surfaces a signature change at compile time.
+        for observed in [
+            None,
+            Some(bnb::DispatchValue::Bytes(vec![255])),
+            Some(bnb::DispatchValue::Integer(256)),
+        ] {
+            let original = BitError::no_matching_variant(
+                std::any::TypeId::of::<crate::v5::Endpoint>(),
+                &("Endpoint", bnb::DispatchKind::Magic),
+                observed,
+                32,
+            )
+            .in_field("magic");
+            let Error::Codec(error) = Error::from(original.clone()) else {
+                panic!("only captured u8 integers are address types");
+            };
+            assert_eq!(error, original);
+        }
+    }
 
     #[test]
     fn reader_codec_error_preserves_kind_position_and_field() {

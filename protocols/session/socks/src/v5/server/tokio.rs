@@ -4,12 +4,7 @@ use crate::v5::{
     AuthMethod, Endpoint, MethodRequest, MethodSelection, Reply, ReplyCode, Request as WireRequest,
     UsernamePasswordRequest, UsernamePasswordResponse, UsernamePasswordStatus, VERSION,
 };
-use crate::{
-    Stream,
-    error::Error,
-    server::policy::ServerAuth,
-    v5::{auth, decode},
-};
+use crate::{Stream, error::Error, server::policy::ServerAuth, v5::auth};
 use tokio::io::{AsyncRead, AsyncWrite};
 /// An authenticated CONNECT request awaiting authorization and a target connection.
 pub struct Request<S> {
@@ -94,7 +89,6 @@ pub async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     let result = stream
         .read_message_async::<WireRequest>()
         .await
-        .map_err(|error| decode::command_error(error, &mut stream.buffered))
         .and_then(|request| {
             super::validation::check_request(&request)?;
             Ok(request)

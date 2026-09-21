@@ -1,4 +1,4 @@
-use crate::{Stream, error::Error, io::stream::MAX_FRAME_LEN, v5::decode};
+use crate::{Stream, error::Error, io::stream::MAX_FRAME_LEN};
 use bnb::{BitDecode, BitEncode};
 use mio::Interest;
 use std::io::{self, Read, Write};
@@ -110,13 +110,6 @@ impl<S: Read + Write> Io<S> {
             Err(Error::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(error) => Err(error),
         }
-    }
-
-    pub(crate) fn command<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, Error> {
-        self.receive().map_err(|error| match self.stream.as_mut() {
-            Some(stream) => decode::command_error(error, &mut stream.buffered),
-            None => error,
-        })
     }
 }
 

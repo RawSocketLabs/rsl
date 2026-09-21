@@ -219,7 +219,7 @@ impl<S: Read + Write> Exchange<S> {
                     self.phase = Phase::Request;
                 }
                 Phase::Request => {
-                    let result = self.io.command::<Request>().and_then(|request| {
+                    let result = self.io.receive::<Request>().and_then(|request| {
                         if let Some(value) = &request {
                             super::validation::check_request(value)?;
                         }
