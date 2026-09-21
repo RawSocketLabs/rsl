@@ -73,10 +73,11 @@ fn every_truncated_reply_is_rejected() {
 #[test]
 fn unsupported_address_type_is_rejected_without_guessing_its_width() {
     let error = Request::decode_exact(&[0x05, 0x01, 0x00, 0x02, 0x00, 0x50]).unwrap_err();
-    assert!(
-        matches!(&error.kind, ErrorKind::Convert { message } if message.contains("unrecognized Endpoint discriminant")),
-        "unexpected error: {error:?}"
+    assert_eq!(
+        error.dispatch_error_for::<Endpoint>().unwrap().observed(),
+        Some(&bnb::DispatchValue::Integer(2)),
     );
+    assert_eq!((error.at, error.field), (32, Some("magic")));
 }
 
 #[test]

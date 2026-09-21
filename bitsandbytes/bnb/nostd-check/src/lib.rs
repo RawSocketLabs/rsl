@@ -89,6 +89,35 @@ pub fn pull_directional(
     buffer.try_pull_with(renamed_bnb::Layout::default(), DirectionalCtx { count })
 }
 
+/// Closed integer and byte-string dispatch errors under a renamed no_std dependency.
+#[bin(big)]
+#[derive(Debug)]
+pub enum ClosedInteger {
+    #[bin(magic = 1u8)]
+    Known,
+}
+
+#[bin(big)]
+#[derive(Debug)]
+pub enum ClosedBytes {
+    #[bin(magic = b"OK")]
+    Known,
+}
+
+/// Compile proof that typed dispatch diagnostics expand under a renamed `no_std`
+/// dependency: the captured integer and byte-string discriminators of two misses.
+pub fn dispatch_diagnostics() -> [Option<renamed_bnb::DispatchValue>; 2] {
+    [
+        observed::<ClosedInteger>(ClosedInteger::decode_exact(&[255]).err()),
+        observed::<ClosedBytes>(ClosedBytes::peek_variant(b"NO").err()),
+    ]
+}
+
+/// The discriminator captured by a dispatch miss that originated in enum `T`.
+fn observed<T: 'static>(error: Option<BitError>) -> Option<renamed_bnb::DispatchValue> {
+    error?.dispatch_error_for::<T>()?.observed().cloned()
+}
+
 /// Encode to an owned `Vec<u8>` (alloc).
 pub fn build(frame: &Frame) -> Result<Vec<u8>, BitError> {
     frame.to_bytes()

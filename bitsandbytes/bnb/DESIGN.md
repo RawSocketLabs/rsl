@@ -988,3 +988,238 @@ snapshot remains unchanged. The temporary delta checker is retired; all reviewed
 historical evidence and the standing public-API snapshot remains enforced. The next smallest
 slice is SOCKS adoption of the published borrowed readers, preserving its existing session,
 error and handoff policies. Neither dirty SOCKS checkout nor the unrelated PNGs was changed.
+
+## 13. Type-attributed enum dispatch diagnostics (unreleased candidate)
+
+### Contract and consumer boundary
+
+Closed `#[bin]` enums now report `ErrorKind::NoMatchingVariant(Box<EnumDispatchError>)`
+instead of an unstructured `Convert` string when dispatch exhausts its alternatives.
+`BitError::dispatch_error_for::<T>()` checks the actual enum's `TypeId`; diagnostic names
+are not identity. The details expose `enum_name()`, `dispatch_kind()`, and `observed()`.
+`DispatchKind` distinguishes magic, external tag, and tag-then-magic dispatch;
+`DispatchValue` owns either an interpreted `u128` or a fixed-width byte-string `Vec<u8>`.
+These extensible enums and the details remain `no_std + alloc`, without new dependencies.
+The existing construction-only `BitEnum::TryFrom` error, `UnknownDiscriminant`, is unchanged.
+
+Only terminal closed tails in ordinary decode and `peek_variant` construct these details.
+Uniform magic dispatch captures the already-read value; arbitrary context tags and
+variable-width probes capture nothing. `None` means **not captured**, never incomplete.
+A hybrid miss reports its final wire magic, not the tag. No new selector conversions,
+trait bounds, input reads, rewinds, or payload copies are introduced. Prefix/signature and
+`decode_as_*` verification errors retain their existing `Convert` kind; nested payload
+errors propagate unchanged. Catch-all/fallback success, declaration order, shortfalls,
+finite EOF, offsets, and innermost field attribution keep their existing contracts.
+
+Current generated enums reject all generic parameters, so actual `TypeId::of::<Self>()`
+needs no marker/identity abstraction. Generic or lifetime-bearing enum support must revisit
+that assumption. The doc-hidden constructor is macro plumbing, not a provenance/security
+boundary for manually constructed errors. Runtime and macro releases must be coordinated:
+the new expansion requires this runtime helper; no versions are changed in this candidate.
+
+The motivating consumer is SOCKS: on its unmerged framing branch, `From<bnb::BitError>`
+turns only an `Endpoint`-attributed integer fitting in `u8` into `UnsupportedAddressType`,
+replacing header probing in blocking, Tokio, and Mio. That adoption is **not part of this
+change**; trunk SOCKS only updates the one test that matched the old `Convert` text.
+
+### Performance gate and findings
+
+The immutable source baseline is Git tree `ddc8aceaf749287dd3ae6265dc867eced5bcf77a`
+(the existing staged SOCKS candidate over commit `9b29a2a88816d6b0184590a306f7d09acc39ddd7`).
+The original checkout/index is preserved. The new `enum_dispatch` benchmark fixtures run
+unchanged against baseline and candidate in optimized bench profiles: valid/invalid numeric
+and four-byte magic, one invalid input per 16 attempts, and 16 coalesced/fragmented messages.
+Instrumentation runs separately through the benchmark's `BNB_DISPATCH_PROBE=1` entry point.
+System-allocator calls are counted with GDB; Criterion timings have no allocation hooks.
+
+Environment: Rust 1.98.0 / LLVM 22.1.8, Linux x86_64, Threadripper 7970X, system allocator,
+default bnb features, CPU affinity 2. Screening runs use 40 samples, 0.2 s warmup, and
+0.6 s measurement; final alternating comparisons use 60 samples, 0.5 s warmup, and 1 s
+measurement, repeated three times per executable. Both use 10,000 resamples and no plots.
+Repeatable regressions beyond baseline variation require optimization or explicit approval,
+not a silent larger budget. The user retained this strict gate.
+
+The initial inline constructor preserved `BitError` (80 bytes), `ErrorKind` (48 bytes),
+and representative `Result` sizes (80 bytes), with zero successful-path allocations.
+Numeric failure used one allocation of 80 bytes versus the baseline string's 41 bytes;
+four-byte failure used two allocations totaling 84 bytes versus one of 39 bytes. Across
+three alternating runs, median rejection time rose from 20.797 to 25.019 ns (numeric) and
+25.495 to 33.482 ns (bytes). This is a **new acceptance blocker**, not an accepted tradeoff.
+The first cold constructor was slower still; inlining reduced, but did not remove, the cost.
+Sharing immutable name/kind metadata in a promoted static tuple reduces the allocated
+details; type identity and owned observed values remain per error.
+
+That compaction reduces the box to 64 bytes (numeric total 64; four-byte total 68),
+with no successful-path allocation or inline error/result growth. It alone does not
+clear the rejection-latency gate. An inlining trial on `read_byte_array` produced no
+benefit and was reverted. A generated context-free `BitDecode::bit_decode` inline hint
+improved rejection time but caused a repeatable 7% whole-frame buffered regression; it
+was also reverted. The final experiment instead emits the same decode body through
+`decode_exact_with` at the context-free enum's slice entry point, leaving the trait method
+unchanged. That preserves slice improvements but does not resolve the buffered regression.
+
+Final measurements below are medians of the three runs' arithmetic mean estimates, in
+nanoseconds. Mixed and buffered cases process 16 messages per iteration, not one:
+
+| Case | Baseline | Candidate | Change |
+| --- | ---: | ---: | ---: |
+| Integer success | 9.873 | 9.804 | -0.7% |
+| Integer rejection | 20.237 | 14.551 | -28.1% |
+| Four-byte success | 17.866 | 13.705 | -23.3% |
+| Four-byte rejection | 25.312 | 23.911 | -5.5% |
+| Mixed, one rejection per 16 | 160.910 | 151.121 | -6.1% |
+| Buffered, one-byte chunks | 1238.426 | 1234.439 | -0.3% |
+| Buffered, five-byte whole frames | 240.032 | 258.578 | **+7.7%** |
+| Buffered, 80-byte coalesced input | 187.336 | 188.955 | +0.9% |
+
+The whole-frame baseline means span 239.832–246.280 ns; candidate means span
+254.382–264.848 ns. These ranges do not overlap. Improvements elsewhere do not cancel
+this failed acceptance gate. No SOCKS session throughput improvement is claimed.
+
+Separate GDB accounting confirms no success allocations, no reallocations, one 64-byte
+allocation per integer rejection, and two allocations totaling 68 bytes per four-byte
+rejection. `BitError`, `ErrorKind`, and representative results remain 80/48/80 bytes.
+The benchmark executable's text grows from 3,180,442 to 3,181,846 bytes (`size`); this is
+a Criterion-heavy executable comparison, not a consumer-library code-size guarantee.
+
+Reproduction: build `cargo bench --offline --locked -p bitsandbytes --bench bitstream_bench
+--no-run` against each source tree with the same benchmark harness. Run each saved
+executable with `taskset -c 2 <executable> --bench enum_dispatch --warm-up-time 0.5
+--measurement-time 1 --sample-size 60 --nresamples 10000 --noplot --save-baseline <name>`.
+Run `gdb -q -batch -x bitsandbytes/scripts/profile-enum-dispatch.gdb --args <executable>`
+separately; set `BNB_PROFILE_BASELINE=1` for the old implementation. Local evidence is in
+`/tmp/rsl-dispatch.W49EOH/slice-gate-{baseline,slice}-{1,2,3}.log` and
+`slice-gate-allocations.log`; Criterion estimates are under the corresponding
+`dispatch-slice-gate-*` directories in `target/criterion/enum_dispatch`.
+
+The new empty-buffer regression initially assumed a known shortfall and truncation at EOF.
+Existing `BitBuf` intentionally skips the codec for empty input: `try_pull` reports an unknown
+hint and `pull_eof` reports clean EOF. The test oracle is corrected without changing runtime
+behavior. The final candidate passed the 43 tests in `bin_dispatch_error`, `bin_enum`, and
+`incremental` with all features, and strict all-target/all-feature Clippy for bnb, its
+macros, and SOCKS. Formatting was applied. These commands ran offline on 2026-09-19.
+The strict Clippy run reported no issues; the historical macro warnings are not a failure
+of this candidate. `cargo deny` was not rerun, so the historical yanked-wnaf advisory is
+not newly verified or resolved here.
+
+**Superseded status (2026-09-19): acceptance was blocked on performance.** That candidate
+stayed isolated and unstaged; independent review found no correctness, safety,
+macro-hygiene, identity, conversion, or test-oracle findings but withheld approval on the
+whole-frame regression. The 2026-09-20 revision below replaces this status.
+
+### Review revision (2026-09-20)
+
+A four-lens review with independent refutation changed the candidate and its gate.
+
+**Findings ledger.** All are new to this candidate unless marked.
+
+| Location | Finding and evidence | Disposition |
+| --- | --- | --- |
+| macro `decode_exact` via `decode_exact_with` | Unrelated slice-entry specialization; sole source of every improvement in the table above, masking the constructor's cost. Mutating it to `decode_peek_with` kept the full bnb and SOCKS suites green: no enum `TrailingBytes` test. | Removed from this candidate. Reintroduce only as its own change with that test and its own gate. |
+| `BitError::no_matching_variant::<T>` `#[inline]` | Put `__rust_alloc` in every closed enum's decode frame: every preserved pre-fix executable has `push/pop %r15` and a reload in `decode_with::<IncrementalReader>` (0x1ef bytes or more, against the baseline's 0x1df). | Now non-generic `#[cold] #[inline(never)]`; the macro passes `TypeId::of::<Self>()`. The candidate's `decode_with` is 0x1df bytes with no `%r15`; `BitBuf::pull` is instruction-identical to baseline. |
+| `buffered_chunk_*` bench cases | Whether a build inlined `BitBuf::pull` into the Criterion closure moved the same library code between 207–226 and 237–268 ns. | Measured unit moved to `#[inline(never)] drain`; `buffered_invalid` added for rejection through `BitBuf`, the path stream consumers use. |
+| This section, "ranges do not overlap" | True only within one session: the same baseline binary spans 236.9–255.0 ns (7.6%) across saved sessions, and no numeric budget was recorded (RELEASING gate step 2). | Budget recorded below; those sessions predate the `drain` harness. |
+| `Display` of `DispatchValue::Bytes` | `{:02x?}` rendered `[58, 59]`: unprefixed hex. Only the integer form was tested. | Renders `0x5859`; `unit::display_no_matching_variant` covers integer, bytes, and uncaptured forms. |
+| `bin_dispatch_error` | No positive miss for a prefixed closed enum; one assertion could not fail. | `prefixed_enum_miss_is_attributed_after_its_prefix` added; the `clone` equality removed. |
+| `nostd-check::dispatch_diagnostics` | Asserted in a build-only crate; the assertions never ran. | Returns the captured values; documented as a compile proof. |
+| `public-api.txt` | Lacked the new items; the CI comparison is byte-exact. | Regenerated with `cargo +nightly-2026-06-17 public-api -p bitsandbytes --all-features` (cargo-public-api 0.52.0): 264 added lines, none removed. |
+| Tag plus variable-width magic under `ctx` (pre-existing) | Does not compile (`S: SeekSource` unsatisfied in the `DecodeWith` impl), so `(TagOrMagic, None)` is unreachable. | Recorded in `ROADMAP.md`; not changed here. |
+
+**Release requirement.** The expansion calls a runtime helper that 0.6.0 lacks, while 0.6.0
+accepts macros `^0.5.0`. Macros must ship as **0.6.0**, never 0.5.x, and terminal misses
+changing from `Convert` to `NoMatchingVariant` is an observable behavior change: both crates
+take a breaking (`!`) marker, following the 0.4.0 and 0.5.0 precedent. No versions are changed
+in this candidate.
+
+**Gate and budget.** The success-path gate is deterministic: user-space instruction counts
+equal to within 0.001 per message on a fixed-work probe (`BNB_DISPATCH_PROBE=buffered`, 1,000,000 whole-frame drains of
+16 messages, `perf stat -e instructions:u,cycles:u`, CPU 2). Criterion wall-clock is secondary
+with an 8% budget. That figure is inherited: it is the 236.9–255.0 ns spread of baseline
+whole-frame means across the saved pre-`drain` sessions, and sits inside the 15%
+whole-message budget §12.3 predeclared. Under this revision's harness the baseline repeats
+within 3.3% (245.58–253.66 ns). Rejection is terminal for a stream consumer, so its latency is
+recorded, not gated; the owner directed this tradeoff on 2026-09-20 in exchange for a success
+path with no added instructions or spills.
+
+| Fixed-work probe, three alternating runs | Baseline | Candidate |
+| --- | ---: | ---: |
+| Instructions | 6,051,536,706–7,300 | 6,051,537,669–7,977 |
+| Cycles | 1,264.2–1,284.4 M | 1,247.8–1,252.0 M |
+
+That is 378 instructions per message in both (the difference is under 0.0001 per message),
+and 1–3% fewer cycles in the candidate. The typed error adds no success-path instructions;
+the candidate's `decode_with` reserves 32 more stack bytes (`sub $0x58` → `sub $0x78`).
+
+Criterion medians of three alternating runs, in nanoseconds: the CLI point estimates (slope
+where Criterion fits one), same settings and baseline tree as above, both trees built with
+this revision's final harness:
+
+| Case | Baseline | Candidate | Change |
+| --- | ---: | ---: | ---: |
+| Integer success | 9.851 | 9.834 | -0.2% |
+| Integer rejection | 19.768 | 30.859 | +56.1% |
+| Four-byte success | 17.772 | 17.406 | -2.1% |
+| Four-byte rejection | 27.081 | 39.592 | +46.2% |
+| Mixed, one rejection per 16 | 163.71 | 159.77 | -2.4% |
+| Buffered, one-byte chunks | 1226.6 | 1243.2 | +1.4% |
+| Buffered, five-byte whole frames | 246.61 | 243.55 | -1.2% |
+| Buffered, 80-byte coalesced input | 187.55 | 189.66 | +1.1% |
+| Buffered rejection | 15.717 | 22.986 | +46.2% |
+
+No success-case median exceeds the baseline's slowest repeat. Running the
+whole-frame case alone gives baseline 247.07–251.14 ns and candidate 239.06–245.70 ns. An
+earlier build of this same revision, differing only in a probe function that Criterion never
+calls, showed +5.6% on that case in the full group and the opposite order alone: the case
+follows executable layout, not library work, which is why instruction counts are the gate.
+Rejection costs 7–13 ns more per terminal miss. GDB accounting on the final candidate
+matches the counts recorded above: 0 / 1000 / 0 / 2000 allocations, 64,000 and 68,000 bytes, no reallocations;
+`BitError`/`ErrorKind`/`Result` remain 80/48/80 bytes.
+
+Evidence, all produced by the two executables whose digests are in `executables.sha256`
+under `/tmp/rsl-gate.piGQor/`: `gate-{baseline,cold}-{1,2,3}.log`,
+`alone-{baseline,cold}-{1,2,3}.log`, `perf-{baseline,cold}-{1,2,3}.log`,
+`allocations-cold.log`, and `disasm-summary.txt`. `superseded/` holds the earlier build's
+logs. The directory is local and does not survive a reboot.
+
+**Qualification (2026-09-20).** `scripts/ci-act.sh pre-push --base 9b29a2a8` ran against a
+throwaway commit of this candidate in a scratch clone; the checkout and index were untouched.
+Every selected check profile's step passed: blessed, bnb, facades, msrv, network, no-std,
+package, public-api, semver, socks, workspace, rust-dsdcc, rust-skills, and usdr. Two
+failures are not the candidate's:
+
+- `deny` fails on RUSTSEC-2026-0285 (rustls 0.23.41), already in trunk's `Cargo.lock` at
+  `9b29a2a8`. Baseline-only, and it blocks any push until trunk resolves it.
+- The `stream_decode` fuzz job died in act's `Swatinem/rust-cache` step
+  (`ERR_MODULE_NOT_FOUND` for `dist/cleanup-BPghO_DY.js`, while several jobs were cloning
+  that action) before fuzzing. Its sibling fuzz jobs ended failed without reaching a fuzz
+  step, and act labelled the passing check jobs failed as well.
+
+The bnb, SOCKS, and first two crypto targets were therefore run on the host with CI's
+arguments (`-max_total_time=60 -runs=2000000`); none crashed (exit 0 observed for each,
+recorded only in `fuzz-stream_decode.log`): bnb `decode` 2,000,000 runs and
+`stream_decode` 591,273; SOCKS `session` 293,738 and `mio_session` 159,467; crypto
+`digest_fragmentation` 277,366 and `aead_open` 19,053. The remaining crypto and pki targets
+were not run; this candidate does not touch them.
+
+Focused mutation (`cargo mutants` 27.1.0): runtime `no_matching_variant`,
+`dispatch_error_for`, `EnumDispatchError`, and `Display for BitError` gave 10 caught, 4
+unviable, 1 missed; macro `bin_enum` gave 4 caught, 51 unviable, 7 missed. No survivor is on
+a line this candidate changes: the runtime one is the `Incomplete` hint guard (`*n != 0`), and
+the macro ones are feature-selection conditions at `bitstream.rs` 3949, 3978, 3981, 4100,
+and 4119. They are pre-existing and belong in `ROADMAP.md` follow-up, not this change.
+
+**Status.** No performance blocker remains under the recorded gate, and the correctness
+tiers above are complete. Independent review reproduced every figure in this revision from
+the evidence. This change lands on trunk alone as `feat/bnb-dispatch-diagnostics`. The
+measurements and qualification above were taken with the unmerged SOCKS framing work
+underneath; that work touches nothing under `bitsandbytes/`, so the bnb sources measured are
+the ones committed here, and the trunk-only tree was re-qualified separately (below). The
+trunk `deny` advisory is fixed separately by the rustls 0.23.45 lockfile update. No release
+is made here: release-plz derives both breaking versions.
+
+**Trunk-only qualification (2026-09-21),** on `origin/main` `9b29a2a8` plus this change:
+`cargo fmt --all --check`; strict all-target, all-feature Clippy for bnb, macros, and SOCKS;
+`cargo test --workspace` (1491 passed) and bnb plus SOCKS with all features (696 passed);
+denied-warning docs; `cargo +1.85.0 check`; the `thumbv7em-none-eabi` `nostd-check` build; a
+byte-identical `public-api.txt`; and trunk SOCKS `session` fuzz, 2,000,000 runs, exit 0
+(`fuzz-trunk-socks-session.log`). `scripts/ci-act.sh pre-push` was not repeated on this tree.

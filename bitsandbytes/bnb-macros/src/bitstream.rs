@@ -3722,10 +3722,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     }
 
     // Magic dispatch reads the discriminant once and matches by `==` when the magics are
-    // uniform-width and there is no typed fallback; otherwise it **peeks** the longest
-    // magic, matches a prefix, and seeks past the winner — so a fallback / catch-all can
-    // read the still-unconsumed bytes. The peek path needs byte-string magics (so
-    // `starts_with` is well-defined) and a seekable source.
+    // uniform-width and there is no typed fallback; otherwise it probes byte-string
+    // magics in declaration order, restoring mismatches and retaining the winner's
+    // consumption. A fallback / catch-all reads the still-unconsumed bytes.
     let mixed = magic_dispatch && dispatch.magic_width() == MagicWidth::Mixed;
     let use_peek = magic_dispatch && (mixed || fallback_variant.is_some());
     if use_peek
@@ -3832,6 +3831,28 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // unconsumed bytes, or a catch-all capturing the discriminant), else — a closed set —
     // an `unrecognized discriminant` error.
     let disc_field = if magic_dispatch { "magic" } else { "tag" };
+    let dispatch_kind = match (has_selector, magic_dispatch) {
+        (true, true) => quote!(#bnb::DispatchKind::TagOrMagic),
+        (true, false) => quote!(#bnb::DispatchKind::Tag),
+        _ => quote!(#bnb::DispatchKind::Magic),
+    };
+    let observed = match rep_magic.filter(|_| !use_peek) {
+        Some(Magic::Int { .. }) => quote!(::core::option::Option::Some(
+            #bnb::DispatchValue::Integer(::core::convert::From::from(__m))
+        )),
+        Some(Magic::Bytes(_)) => quote!(::core::option::Option::Some(
+            #bnb::DispatchValue::Bytes(#bnb::__private::Vec::from(__m))
+        )),
+        None => quote!(::core::option::Option::None),
+    };
+    // Shared by decode and peek_variant. Only the closed terminal tail executes
+    // this allocation; no new reads, tag conversions, or payload error wrapping.
+    let dispatch_error = quote!(#bnb::__private::BitError::no_matching_variant(
+        ::core::any::TypeId::of::<Self>(),
+        &(stringify!(#name), #dispatch_kind),
+        #observed,
+        #bnb::__private::Source::bit_pos(__bnb_r),
+    ).in_field(#disc_field));
     let tail_body = if let Some(tv) = tail_variant {
         let (reads, ctor, _) = variant_field_codec(name, tv.variant, tail_capture.as_ref())?;
         quote! {{
@@ -3840,20 +3861,17 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }}
     } else {
         quote! {{
-            ::core::result::Result::Err(#bnb::__private::BitError::convert(
-                #bnb::__private::String::from(concat!("unrecognized ", stringify!(#name), " discriminant")),
-                #bnb::__private::Source::bit_pos(__bnb_r),
-            ).in_field(#disc_field))
+            ::core::result::Result::Err(#dispatch_error)
         }}
     };
 
     // The decode dispatch. Magic: a single `__m` read + an `==` chain (uniform width, no
-    // fallback), or a `peek_bytes` + `starts_with` + seek chain (variable width / fallback,
+    // fallback), or a `match_magic` probe chain (variable width / fallback,
     // so the tail can re-read the unconsumed magic). Tag: a `match` on the selector. The
     // tail body is the final else.
     //
-    // The magic block: a single `__m` read + `==` chain (uniform width), or a `peek_bytes`
-    // + `starts_with` + seek chain (variable width / fallback), ending in the tail body.
+    // The magic block: a single `__m` read + `==` chain (uniform width), or a
+    // `match_magic` chain (variable width / fallback), ending in the tail body.
     // Used directly for pure-magic dispatch, and as the selector `match`'s fall-through
     // under hybrid (tag takes priority, then magic).
     let magic_block = if !magic_dispatch {
@@ -4103,15 +4121,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let tail_kind = tail_variant.map_or_else(
             || {
                 quote!(::core::result::Result::Err(
-                    #bnb::__private::BitError::convert(
-                        #bnb::__private::String::from(concat!(
-                            "unrecognized ",
-                            stringify!(#name),
-                            " discriminant"
-                        )),
-                        #bnb::__private::Source::bit_pos(__bnb_r),
-                    )
-                    .in_field("magic")
+                    #dispatch_error
                 ))
             },
             |tv| {

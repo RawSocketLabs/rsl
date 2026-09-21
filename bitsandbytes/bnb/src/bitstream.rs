@@ -30,7 +30,7 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::any::Any;
+use core::any::{Any, TypeId};
 use core::fmt;
 
 use crate::field::{BitOrder, Bits, ByteOrder};
@@ -64,6 +64,66 @@ pub struct BitError {
     /// derive (the innermost field — the "span"). `None` for low-level reader
     /// errors with no field context.
     pub field: Option<&'static str>,
+}
+
+/// The selection strategy of a closed `#[bin]` enum that found no variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DispatchKind {
+    /// Selection by a wire magic value.
+    Magic,
+    /// Selection by an external context tag.
+    Tag,
+    /// Selection by a context tag first, then wire magic if no tag matched.
+    TagOrMagic,
+}
+
+/// A discriminator already read by the failed dispatch operation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DispatchValue {
+    /// An unsigned magic integer, interpreted using the decoder's wire layout.
+    Integer(u128),
+    /// A fixed-width byte-string magic, copied only on terminal failure.
+    Bytes(Vec<u8>),
+}
+
+/// Details of a terminal closed-enum dispatch miss, not a selected payload failure.
+///
+/// Use [`BitError::dispatch_error_for`] to check the originating enum's type identity.
+/// Names alone cannot distinguish enums with identical names in different modules.
+/// The details own their data and never borrow or retain the input frame.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EnumDispatchError {
+    origin: TypeId,
+    // The macro promotes this immutable pair instead of copying it into every error.
+    metadata: &'static (&'static str, DispatchKind),
+    observed: Option<DispatchValue>,
+}
+
+impl EnumDispatchError {
+    /// The enum's name for diagnostics; not a unique type identifier.
+    #[must_use]
+    pub fn enum_name(&self) -> &'static str {
+        self.metadata.0
+    }
+
+    /// The selection strategy that found no matching variant.
+    #[must_use]
+    pub fn dispatch_kind(&self) -> DispatchKind {
+        self.metadata.1
+    }
+
+    /// The already-read discriminator, if capturing it required no additional reads.
+    ///
+    /// `None` means **not captured**, not incomplete input: external context tags and
+    /// variable-width magic probes are not captured. Hybrid dispatch captures the final
+    /// wire magic, never the context tag. No whole payload is copied.
+    #[must_use]
+    pub fn observed(&self) -> Option<&DispatchValue> {
+        self.observed.as_ref()
+    }
 }
 
 /// The cause of a [`BitError`]. `#[non_exhaustive]`: new variants may be added
@@ -129,6 +189,10 @@ pub enum ErrorKind {
         /// The value actually read.
         found: u128,
     },
+    /// No variant of a closed `#[bin]` enum matched. Details are allocated only on
+    /// failure and boxed so they do not enlarge the inline error representation.
+    /// Signature, prefix, and selected-payload failures keep their original kinds.
+    NoMatchingVariant(Box<EnumDispatchError>),
     /// A wire-value or positioning/count conversion failed; `message` describes it.
     Convert {
         /// The converter's error, rendered.
@@ -179,6 +243,45 @@ impl BitError {
     #[must_use]
     pub fn convert(message: String, at: usize) -> Self {
         Self::new(ErrorKind::Convert { message }, at)
+    }
+
+    /// Macro implementation detail: construct a type-attributed dispatch miss.
+    ///
+    /// Non-generic and out of line so the allocation stays outside every generated
+    /// decode frame; the macro passes `TypeId::of::<Self>()` as `origin`.
+    #[doc(hidden)]
+    #[cold]
+    #[inline(never)]
+    #[must_use]
+    pub fn no_matching_variant(
+        origin: TypeId,
+        metadata: &'static (&'static str, DispatchKind),
+        observed: Option<DispatchValue>,
+        at: usize,
+    ) -> Self {
+        Self::new(
+            ErrorKind::NoMatchingVariant(Box::new(EnumDispatchError {
+                origin,
+                metadata,
+                observed,
+            })),
+            at,
+        )
+    }
+
+    /// Return dispatch details only when the miss originated in enum `T`.
+    ///
+    /// Checks type identity, not the diagnostic name or field path. Nested dispatch
+    /// errors retain their innermost origin. This is not a parser or a retry operation.
+    /// `#[bin]` enums currently do not support generic parameters, including lifetimes.
+    #[must_use]
+    pub fn dispatch_error_for<T: 'static>(&self) -> Option<&EnumDispatchError> {
+        match &self.kind {
+            ErrorKind::NoMatchingVariant(details) if details.origin == TypeId::of::<T>() => {
+                Some(details)
+            }
+            _ => None,
+        }
     }
 
     /// Records the field being processed, **if one is not already set** — so the
@@ -242,6 +345,19 @@ impl fmt::Display for BitError {
             ErrorKind::Io(kind) => write!(f, "I/O error: {kind:?}")?,
             ErrorKind::BadMagic { expected, found } => {
                 write!(f, "bad magic: expected {expected:#x}, found {found:#x}")?;
+            }
+            ErrorKind::NoMatchingVariant(details) => {
+                write!(f, "unrecognized {} discriminant", details.enum_name())?;
+                match &details.observed {
+                    Some(DispatchValue::Integer(value)) => write!(f, ": {value:#x}")?,
+                    Some(DispatchValue::Bytes(bytes)) => {
+                        f.write_str(": 0x")?;
+                        for byte in bytes {
+                            write!(f, "{byte:02x}")?;
+                        }
+                    }
+                    None => {}
+                }
             }
             ErrorKind::Convert { message } => {
                 write!(f, "conversion failed: {message}")?;
@@ -3202,6 +3318,29 @@ mod unit {
             BitError::convert(String::from("nope"), 8).to_string(),
             "conversion failed: nope at bit 8",
         );
+    }
+
+    #[test]
+    fn display_no_matching_variant() {
+        let miss = |observed| {
+            BitError::no_matching_variant(
+                TypeId::of::<u8>(),
+                &("Kind", DispatchKind::Magic),
+                observed,
+                8,
+            )
+            .to_string()
+        };
+        assert_eq!(
+            miss(Some(DispatchValue::Integer(0x0a))),
+            "unrecognized Kind discriminant: 0xa at bit 8",
+        );
+        // Byte-string magics render as one prefixed hex run, never bare decimal-looking bytes.
+        assert_eq!(
+            miss(Some(DispatchValue::Bytes(Vec::from(*b"XY")))),
+            "unrecognized Kind discriminant: 0x5859 at bit 8",
+        );
+        assert_eq!(miss(None), "unrecognized Kind discriminant at bit 8");
     }
 
     #[test]
