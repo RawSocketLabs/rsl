@@ -93,5 +93,7 @@ boundary, or maintenance hazard it makes easier to see.
 
 Re-read every cited location with its caller and governing rule. Remove
 duplicates and speculation. Lead with findings in severity order using the
-schema in `SKILL.md`. Then state assumptions, exact verification, and gaps. If
+schema in `SKILL.md`. List any performance `Hypothesis` after the findings and
+before optional suggestions, outside the severity scale. Then state
+assumptions, exact verification, and gaps. If
 no findings remain, say so plainly and do not manufacture optional comments.

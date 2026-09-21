@@ -6,4 +6,4 @@ scope = "Raw Socket Labs Rust repositories that adopt RSL dependency policy"
 rule = "Treat a crate already carried by rsl-deps as having owner direction under CORE-DEP-001 when it is used for the capability rsl-deps carries it for, with default features disabled and only the needed features enabled; state the crate and features in the change description; and obtain owner direction as usual for any crate rsl-deps does not carry, for a new feature that expands the resolved graph materially, and for any MSRV, unsafe-exposure, or license change."
 applies_when = ["Adding a direct, development, or build dependency", "Enabling a dependency feature", "Reviewing a manifest or lockfile change"]
 exceptions = ["A repository that pins a narrower allow-list or forbids a carried crate", "A no_std, embedded, or safety-critical component whose profile requires per-dependency review", "A higher-precedence repository decision"]
-source_rules = ["R68", "R70", "R122", "R136", "R217"]
+source_rules = ["R68", "R217"]

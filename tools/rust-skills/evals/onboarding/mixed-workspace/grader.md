@@ -19,7 +19,8 @@
 
 - Facts, recommendations, proposed profiles, and unresolved decisions are
   labeled separately.
-- The next action is a coherent question round, not file generation.
+- The next action is a single question with a recommended default (or a whole
+  round when the owner asked for one), not file generation.
 
 ## Scoring
 

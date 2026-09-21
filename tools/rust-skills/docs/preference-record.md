@@ -59,8 +59,11 @@ Normative strengths:
 
 #### Priority tiers
 
-- **Top tier:** correctness, performance, abstraction quality, clarity.
-- **Middle tier:** maintainability, simplicity, development velocity, security.
+- **Top tier:** correctness, performance, clarity, simplicity.
+- **Middle tier:** maintainability, abstraction quality, development velocity,
+  security.
+- Revised by R214 (2026-09-20); abstraction quality was top tier and simplicity
+  middle tier before.
 - **Lower tier:** compile time, binary size, API stability.
 
 These tiers are not a blind ordering. Correct, simple, understandable use takes
@@ -424,6 +427,8 @@ From most to least preferred:
   diagnosable without parsing prose.
 
 #### R20. Use opaque application errors at orchestration boundaries
+
+Narrowed for Raw Socket Labs repositories by R216 (color-eyre; no new anyhow).
 
 - **Strength:** MAY
 - **Scope:** binaries and application orchestration
@@ -1750,6 +1755,8 @@ The owner confirmed the following choices in refinement round 1:
   understandable cases.
 
 #### R151. Prefer `match` for structured branching
+
+Revised by R213 for an `Option` or `Result` whose other arm only exits.
 
 - **Strength:** PREFER
 - **Scope:** branching code
@@ -3222,7 +3229,8 @@ the preference named in its rule.
 
 - **Strength:** SHOULD
 - **Scope:** repository onboarding interview
-- **Rule:** Revises the Round 9 interview cadence: infer what the repository states,
+- **Rule:** New preference; the adaptive interview previously asked rounds of five to ten
+  questions. Infer what the repository states,
   present it for correction, and ask the remainder one decision at a time with
   a recommended default. A whole round at once remains available on request.
 - **Why:** A batch of ten questions gets skimmed answers; a single decision with a
@@ -3232,9 +3240,9 @@ the preference named in its rule.
 
 - **Strength:** SHOULD
 - **Scope:** Raw Socket Labs repositories
-- **Rule:** Organization decision `errors`: satisfies the approval R176 requires for
-  thiserror, selects color-eyre as the application report type, and stops new
-  use of anyhow.
+- **Rule:** Organization decision `errors`. Keeps R18 (typed library errors); gives
+  thiserror the dependency approval R68 requires; and narrows R20, which allows
+  `anyhow` or `eyre`, to color-eyre with no new use of anyhow.
 - **Why:** One report type and one derive across repositories keeps error handling
   familiar and the dependency graph small.
 
@@ -3242,9 +3250,11 @@ the preference named in its rule.
 
 - **Strength:** SHOULD
 - **Scope:** Raw Socket Labs repositories adopting dependency policy
-- **Rule:** Organization decision `dependencies`: a crate carried by rsl-deps, used for the
-  capability it is carried for with minimal features, has owner direction under
-  R68 and R136. Everything else still needs it.
+- **Rule:** Organization decision `dependencies`. Revises R68, which required approval even
+  for a crate available through `rsl-deps`: a carried crate, used for the
+  capability it is carried for with minimal features, is approved in advance.
+  R68 stands unchanged for every other crate, feature expansion, and MSRV,
+  unsafe-exposure, or license change.
 - **Why:** The owner already reviewed those crates when adding them to rsl-deps; asking
   again for each use adds an interruption and no information.
 
@@ -3328,6 +3338,9 @@ than restating its steps (clarifies R127; no new preference).
 ### Draft rules
 
 #### R68. Discuss every new dependency
+
+Revised by R217: a crate carried by `rsl-deps`, used for its carried capability
+with minimal features, is approved in advance for Raw Socket Labs repositories.
 
 - **Strength:** MUST
 - **Scope:** agent behavior in all repositories

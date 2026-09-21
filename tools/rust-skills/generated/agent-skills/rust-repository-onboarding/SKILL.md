@@ -18,8 +18,9 @@ approval. Steps 1-4 complete before anything is written.
    `scripts/inspect_repository.py` from the target root when available.
 2. Classify the repository and propose exactly one base plus applicable
    capabilities. Mixed workspaces may add confirmed component overlays.
-3. Ask the questions in [the adaptive interview](references/interview.md) in
-   coherent rounds. Skip facts already proven; ask follow-ups when answers
+3. Work through [the adaptive interview](references/interview.md): present
+   inferred facts for correction, then ask what remains one decision at a time
+   with a recommended default. Skip facts already proven; ask follow-ups when answers
    conflict with source or materially change the design.
 4. Separate facts, user decisions, organization preferences, recommendations,
    and unresolved items. Present the complete proposal and obtain approval.

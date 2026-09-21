@@ -44,7 +44,7 @@ hash = "00fc5026ee837676"
 
 [[files]]
 path = "agent-skills/rust-api-design/references/ownership-patterns.md"
-hash = "891f141f86d408ca"
+hash = "b0a5b036e821dfdf"
 
 [[files]]
 path = "agent-skills/rust-api-design/skill.toml"
@@ -80,7 +80,7 @@ hash = "2227c6057b036994"
 
 [[files]]
 path = "agent-skills/rust-core/references/principles.md"
-hash = "1a0a6c3dfaace786"
+hash = "e8f07f0118ef4042"
 
 [[files]]
 path = "agent-skills/rust-core/skill.toml"
@@ -96,7 +96,7 @@ hash = "c6320313533c1229"
 
 [[files]]
 path = "agent-skills/rust-dependencies-security/references/dependencies-and-change.md"
-hash = "6c75df0322be47c0"
+hash = "63579f5d2fe5d19d"
 
 [[files]]
 path = "agent-skills/rust-dependencies-security/references/security.md"
@@ -192,7 +192,7 @@ hash = "03d4f309e4a7fab4"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/SKILL.md"
-hash = "c549afb84160823c"
+hash = "af29ec95fd40f175"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/agents/openai.yaml"
@@ -236,7 +236,7 @@ hash = "d54e0da5a3051009"
 
 [[files]]
 path = "agent-skills/rust-review/SKILL.md"
-hash = "562bde3b62269d99"
+hash = "517b990a0de2f486"
 
 [[files]]
 path = "agent-skills/rust-review/agents/openai.yaml"
@@ -244,7 +244,7 @@ hash = "e835b659bc638b75"
 
 [[files]]
 path = "agent-skills/rust-review/references/review-procedure.md"
-hash = "e813df2063390fac"
+hash = "ef2c21847aecab79"
 
 [[files]]
 path = "agent-skills/rust-review/references/risk-checks.md"
@@ -336,7 +336,7 @@ hash = "00fc5026ee837676"
 
 [[files]]
 path = "claude-skills/rust-api-design/references/ownership-patterns.md"
-hash = "891f141f86d408ca"
+hash = "b0a5b036e821dfdf"
 
 [[files]]
 path = "claude-skills/rust-api-design/skill.toml"
@@ -364,7 +364,7 @@ hash = "2227c6057b036994"
 
 [[files]]
 path = "claude-skills/rust-core/references/principles.md"
-hash = "1a0a6c3dfaace786"
+hash = "e8f07f0118ef4042"
 
 [[files]]
 path = "claude-skills/rust-core/skill.toml"
@@ -376,7 +376,7 @@ hash = "185561b1e2a3ef7b"
 
 [[files]]
 path = "claude-skills/rust-dependencies-security/references/dependencies-and-change.md"
-hash = "6c75df0322be47c0"
+hash = "63579f5d2fe5d19d"
 
 [[files]]
 path = "claude-skills/rust-dependencies-security/references/security.md"
@@ -452,7 +452,7 @@ hash = "03d4f309e4a7fab4"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/SKILL.md"
-hash = "c549afb84160823c"
+hash = "af29ec95fd40f175"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/assets/approved-answers.example.json"
@@ -492,11 +492,11 @@ hash = "d54e0da5a3051009"
 
 [[files]]
 path = "claude-skills/rust-review/SKILL.md"
-hash = "562bde3b62269d99"
+hash = "517b990a0de2f486"
 
 [[files]]
 path = "claude-skills/rust-review/references/review-procedure.md"
-hash = "e813df2063390fac"
+hash = "ef2c21847aecab79"
 
 [[files]]
 path = "claude-skills/rust-review/references/risk-checks.md"

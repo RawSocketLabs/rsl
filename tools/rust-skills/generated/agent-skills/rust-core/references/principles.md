@@ -64,7 +64,7 @@ with evidence, and an abstraction must earn its cost with a present caller
   measurements justify it. Small duplication can be cheaper than coupling
   unrelated concepts to a premature common interface.
 - **Mechanical owner:** Evals and review.
-- **Sources:** Preferences R3, R8-R10, and R205; CodeAesthetic advisory source.
+- **Sources:** Preferences R3, R8-R10, R205, and R214; CodeAesthetic advisory source.
 
 ### CORE-DESIGN-004 Make dependencies visible without manufacturing interfaces
 
@@ -87,7 +87,7 @@ with evidence, and an abstraction must earn its cost with a present caller
   may determine the wiring shape.
 - **Mechanical owner:** API and implementation review, behavior tests, and
   representative consumer construction.
-- **Sources:** Preference R204; qualified CodeAesthetic advisory source, R214.
+- **Sources:** Preference R204; qualified CodeAesthetic advisory source.
 
 ### CORE-STYLE-006 Keep visibility and exceptions narrow
 
