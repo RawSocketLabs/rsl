@@ -32,8 +32,11 @@ approval. Steps 1-4 complete before anything is written.
    migration state.
 ## Verify
 
-7. Generate `scripts/validate-rust.py` from the packaged template, configure
-   required and optional checks using
+7. Generate `scripts/validate-rust.py` from the packaged template. When the
+   repository already declares a gate (a `just`, `make`, or `xtask` entry point
+   that CI runs), configure that entry point as the required check instead of
+   restating its steps, so one command remains the definition of done.
+   Otherwise configure required and optional checks using
    [the validation catalog](references/validation-catalog.md), run safe
    available checks, and report each as passed, failed, skipped, unavailable,
    or inapplicable.

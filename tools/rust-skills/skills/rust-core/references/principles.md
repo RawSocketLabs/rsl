@@ -21,13 +21,14 @@ overlays. Do not infer every risk from a whole-repository label.
 
 Priority tiers are:
 
-1. Correctness, performance, abstraction quality, clarity.
-2. Maintainability, simplicity, velocity, security.
+1. Correctness, performance, clarity, simplicity.
+2. Maintainability, abstraction quality, velocity, security.
 3. Compile time, binary size, API stability.
 
-Clarity and simple correct use break a tie with a harder-to-understand
-abstraction or optimization. Performance remains top tier, but complexity must
-earn its cost with evidence.
+Clarity and simple correct use outrank a harder-to-understand abstraction or
+optimization. Performance remains top tier, but complexity must earn its cost
+with evidence, and an abstraction must earn its cost with a present caller
+(CORE-DESIGN-002).
 
 ### CORE-DESIGN-001 Make consequential decisions proportional
 
@@ -50,8 +51,11 @@ earn its cost with evidence.
 - **Applies to:** all profiles
 - **Directive:** Add an abstraction when it names a domain concept, contains an
   invariant, removes meaningful duplication, or separates a decision that must
-  vary independently from its use. Account for the coupling introduced by the
-  shared contract, accepted inputs, implementors, and evolution policy.
+  vary independently from its use. Require a present caller: do not add a trait,
+  generic parameter, or shared type for a use that does not exist yet, and
+  prefer leaving two similar sites inline until a third shows what actually
+  varies. Account for the coupling introduced by the shared contract, accepted
+  inputs, implementors, and evolution policy.
 - **Why:** An abstraction is a commitment every implementor and caller must keep
   evolving together. Introduced without a boundary that genuinely varies, it buys
   nothing and charges that coupling forever, while the duplication it replaced
@@ -83,7 +87,7 @@ earn its cost with evidence.
   may determine the wiring shape.
 - **Mechanical owner:** API and implementation review, behavior tests, and
   representative consumer construction.
-- **Sources:** Preference R204; qualified CodeAesthetic advisory source.
+- **Sources:** Preference R204; qualified CodeAesthetic advisory source, R214.
 
 ### CORE-STYLE-006 Keep visibility and exceptions narrow
 

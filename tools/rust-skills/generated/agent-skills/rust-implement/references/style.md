@@ -8,10 +8,12 @@ blocking findings.
 
 - **Strength:** PREFER
 - **Applies to:** control flow
-- **Directive:** Use `match` for enums, `Option`, `Result`, multiple meaningful
-  cases, and exhaustive state reasoning. Use `if` for direct predicates and
-  `if let` when one pattern is truly the sole interesting case. Keep owned enum
-  variants explicit when evolution should force a decision.
+- **Directive:** Use `match` for enums, multiple meaningful cases, and
+  exhaustive state reasoning, including an `Option` or `Result` whose arms each
+  carry real work. When one arm only exits or propagates, use `?` or
+  `let ... else` under CORE-STYLE-002 instead of a `match`. Use `if` for direct
+  predicates and `if let` when one pattern is truly the sole interesting case.
+  Keep owned enum variants explicit when evolution should force a decision.
 - **Why:** An exhaustive `match` makes the compiler report every place a new
   variant needs a decision. A catch-all or a chain of `if let` silently assigns
   that variant the old default, which is how a newly added state gets handled as
@@ -19,7 +21,7 @@ blocking findings.
 - **Exceptions:** Open external domains and preserved unknown values require a
   deliberate fallback.
 - **Mechanical owner:** Human/agent review.
-- **Sources:** Preference R151, R159.
+- **Sources:** Preference R151, R159, R213.
 
 ### CORE-STYLE-002 Keep the successful path visible
 

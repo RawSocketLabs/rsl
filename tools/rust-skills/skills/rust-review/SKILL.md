@@ -39,8 +39,8 @@ Verification:
 Related skill:
 ```
 
-Reject vague “consider” comments, unmeasured performance claims, rustfmt
-comments, iterator rewrites that reduce clarity, abstractions without a real
+Reject vague “consider” comments, unmeasured performance claims presented as
+defects, rustfmt comments, iterator rewrites that reduce clarity, abstractions without a real
 second use case, blanket clone or test-`unwrap` objections, speculative claims
 presented as facts, and comments unrelated to the requested change.
 

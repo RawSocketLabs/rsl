@@ -80,7 +80,7 @@ hash = "2227c6057b036994"
 
 [[files]]
 path = "agent-skills/rust-core/references/principles.md"
-hash = "8308783bc0c94371"
+hash = "1a0a6c3dfaace786"
 
 [[files]]
 path = "agent-skills/rust-core/skill.toml"
@@ -148,7 +148,7 @@ hash = "4288fc6198247695"
 
 [[files]]
 path = "agent-skills/rust-implement/references/style.md"
-hash = "79c814c4311f9ec3"
+hash = "0872d6b30947e7c6"
 
 [[files]]
 path = "agent-skills/rust-implement/skill.toml"
@@ -192,7 +192,7 @@ hash = "03d4f309e4a7fab4"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/SKILL.md"
-hash = "427512a57b28a4c0"
+hash = "c549afb84160823c"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/agents/openai.yaml"
@@ -212,7 +212,7 @@ hash = "22f844d56b20c88b"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/references/interview.md"
-hash = "23b1571d40be2481"
+hash = "6987ce0132815050"
 
 [[files]]
 path = "agent-skills/rust-repository-onboarding/references/outputs.md"
@@ -236,7 +236,7 @@ hash = "d54e0da5a3051009"
 
 [[files]]
 path = "agent-skills/rust-review/SKILL.md"
-hash = "a959f75eebb489cd"
+hash = "562bde3b62269d99"
 
 [[files]]
 path = "agent-skills/rust-review/agents/openai.yaml"
@@ -244,7 +244,7 @@ hash = "e835b659bc638b75"
 
 [[files]]
 path = "agent-skills/rust-review/references/review-procedure.md"
-hash = "d0bfe57d101eef58"
+hash = "e813df2063390fac"
 
 [[files]]
 path = "agent-skills/rust-review/references/risk-checks.md"
@@ -272,7 +272,7 @@ hash = "0ef49e963f603de4"
 
 [[files]]
 path = "agent-skills/rust-testing/SKILL.md"
-hash = "2f152e59d66de426"
+hash = "077703bf987fba7f"
 
 [[files]]
 path = "agent-skills/rust-testing/agents/openai.yaml"
@@ -284,7 +284,7 @@ hash = "11b577322995e421"
 
 [[files]]
 path = "agent-skills/rust-testing/references/verification.md"
-hash = "04f18ea53662bce9"
+hash = "38e9cc84d244ca29"
 
 [[files]]
 path = "agent-skills/rust-testing/skill.toml"
@@ -364,7 +364,7 @@ hash = "2227c6057b036994"
 
 [[files]]
 path = "claude-skills/rust-core/references/principles.md"
-hash = "8308783bc0c94371"
+hash = "1a0a6c3dfaace786"
 
 [[files]]
 path = "claude-skills/rust-core/skill.toml"
@@ -416,7 +416,7 @@ hash = "29b71827131dbd29"
 
 [[files]]
 path = "claude-skills/rust-implement/references/style.md"
-hash = "79c814c4311f9ec3"
+hash = "0872d6b30947e7c6"
 
 [[files]]
 path = "claude-skills/rust-implement/skill.toml"
@@ -452,7 +452,7 @@ hash = "03d4f309e4a7fab4"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/SKILL.md"
-hash = "427512a57b28a4c0"
+hash = "c549afb84160823c"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/assets/approved-answers.example.json"
@@ -468,7 +468,7 @@ hash = "22f844d56b20c88b"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/references/interview.md"
-hash = "23b1571d40be2481"
+hash = "6987ce0132815050"
 
 [[files]]
 path = "claude-skills/rust-repository-onboarding/references/outputs.md"
@@ -492,11 +492,11 @@ hash = "d54e0da5a3051009"
 
 [[files]]
 path = "claude-skills/rust-review/SKILL.md"
-hash = "a959f75eebb489cd"
+hash = "562bde3b62269d99"
 
 [[files]]
 path = "claude-skills/rust-review/references/review-procedure.md"
-hash = "d0bfe57d101eef58"
+hash = "e813df2063390fac"
 
 [[files]]
 path = "claude-skills/rust-review/references/risk-checks.md"
@@ -520,7 +520,7 @@ hash = "0ef49e963f603de4"
 
 [[files]]
 path = "claude-skills/rust-testing/SKILL.md"
-hash = "2f152e59d66de426"
+hash = "077703bf987fba7f"
 
 [[files]]
 path = "claude-skills/rust-testing/references/techniques.md"
@@ -528,7 +528,7 @@ hash = "11b577322995e421"
 
 [[files]]
 path = "claude-skills/rust-testing/references/verification.md"
-hash = "04f18ea53662bce9"
+hash = "38e9cc84d244ca29"
 
 [[files]]
 path = "claude-skills/rust-testing/skill.toml"

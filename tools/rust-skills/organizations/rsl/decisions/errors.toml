@@ -1,0 +1,9 @@
+schema = 1
+id = "errors"
+title = "RSL error-type ecosystem preference"
+strength = "SHOULD"
+scope = "Raw Socket Labs Rust libraries, applications, services, and command-line tools"
+rule = "Give a reusable library its own typed error enum, hand-written or derived with thiserror, which this decision approves for that purpose; use color-eyre as the report type at the presentation and orchestration boundary of an application, service, or command-line tool; and do not introduce anyhow into new code, while leaving an existing anyhow application in place until a change already touches its error boundary."
+applies_when = ["Adding or changing a public or crate-level error type", "Choosing the report type of a new binary, service, or command-line tool", "Reviewing a dependency change that adds an error-handling crate"]
+exceptions = ["A no_std, embedded, or dependency-minimal crate hand-writes its errors and adds no derive dependency", "A framework or external consumer imposes another error or report type", "A higher-precedence repository decision selects a different error ecosystem"]
+source_rules = ["R21", "R22", "R23", "R24", "R176", "R216"]
