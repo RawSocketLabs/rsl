@@ -56,7 +56,8 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 | `openapi` | `utoipa`, `utoipa_swagger_ui` |
 | `http` | `reqwest` |
 | `tui` | `ratatui`, `color_eyre` |
-| `time` | `chrono` |
+| `time` | `chrono` (crates that already depend on `tokio`) |
+| `time-core` | `time` (sync, protocol, certificate, and codec crates) |
 | `protobuf` | `prost` |
 
 Bundles: `std-ext` (`error`+`log`+`serde`), `service` (`async`+`nats`+`parallel`+`std-ext`+`bytes`),
@@ -79,8 +80,8 @@ struct Pair {
 - **`publish = false` for now** — intended to move to a registry (crates.io / private) so that
   published RSL libraries can depend on it. It has no git deps of its own (only registry version
   pins), so it's already publishable once that decision is made.
-- **MSRV floors on features** — core is Rust 1.85; `tui` (`ratatui`) and `time` (`chrono`) pull
-  crates needing **1.88**. Enabling them raises the effective MSRV.
+- **MSRV floors on features** — core is Rust 1.85; `tui` (`ratatui`), `time` (`chrono`), and `time-core`
+  (`time`) pull crates needing **1.88**. Enabling them raises the effective MSRV.
 
 ## Verify
 

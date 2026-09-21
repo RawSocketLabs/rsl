@@ -167,10 +167,14 @@ pub use color_eyre;
 #[doc(inline)]
 pub use ratatui;
 
-/// Date and time.
+/// Date and time for crates that already depend on `tokio` (services and async applications).
 #[cfg(feature = "time")]
 #[doc(inline)]
 pub use chrono;
+/// Date and time for sync, protocol, certificate, and codec crates (feature `time-core`).
+#[cfg(feature = "time-core")]
+#[doc(inline)]
+pub use time;
 
 /// Protocol Buffers runtime.
 #[cfg(feature = "protobuf")]

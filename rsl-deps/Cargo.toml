@@ -63,6 +63,7 @@ color-eyre         = { version = "0.6", optional = true }
 
 # time & protobuf
 chrono             = { version = "0.4", optional = true }
+time               = { version = "0.3", default-features = false, features = ["std"], optional = true }
 prost              = { version = "0.14", optional = true }
 
 [features]
@@ -78,7 +79,7 @@ web = ["web-server", "openapi"]
 # Everything.
 full = [
     "std-ext", "service", "web", "bytes", "cli", "rand", "hash", "netutil", "parse",
-    "num", "pod", "audio", "fft", "http", "tui", "time", "protobuf",
+    "num", "pod", "audio", "fft", "http", "tui", "time", "time-core", "protobuf",
 ]
 
 # ---- capability features --------------------------------------------------
@@ -105,6 +106,7 @@ http       = ["dep:reqwest"]
 
 tui      = ["dep:ratatui", "dep:color-eyre"]
 time     = ["dep:chrono"]
+time-core = ["dep:time"]
 protobuf = ["dep:prost"]
 
 [[test]]
