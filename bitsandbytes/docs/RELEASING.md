@@ -31,9 +31,12 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    an additive feature on `0.4.0` selects `0.4.1`, not `0.5.0`. Inspect the
    generated candidate; version numbers remain automation-owned.
 
-   The two crates use **independent versions**; if `bitsandbytes-macros` bumps,
-   release-plz also bumps `bitsandbytes` (it depends on it) and rewrites the
-   `version = "…"` pin in the root `Cargo.toml`.
+   The two crates share **one version** (`version_group = "bitsandbytes"` in
+   `release-plz.toml`): whichever needs the larger bump sets it for both, so macros may
+   release unchanged. The root `Cargo.toml` requires macros with an exact `version = "=…"`,
+   because generated code calls runtime `__private` helpers that no API or semver gate sees.
+   In every release PR, confirm both crates carry the same version and that the rewritten
+   requirement still begins with `=`; restore it by hand if release-plz drops it.
 
 3. **Merging the release PR cuts the release.** The `release-plz release` job then
    creates the git tag(s) — name-prefixed per crate (`bitsandbytes-v0.3.1`,
