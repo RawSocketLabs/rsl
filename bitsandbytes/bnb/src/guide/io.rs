@@ -12,7 +12,8 @@
 //! | `StreamBitReader` (`std`) | any `Read` | no (forward only) | a stream you read once |
 //! | `BufSource` (`std`) | any `Read` | yes (within a bounded buffer) | a socket that also needs to seek |
 //! | [`BitBuf`](crate::BitBuf) | owned `Vec<u8>` (pushable) | yes (cursor math) | incremental framing: push bytes, pull messages |
-//! | `SeekReader` (`std`) | `Read + Seek` | yes (via `io::Seek`) | a large file / container |
+//! | `SeekReader` (`std`) | `Read + Seek` | yes (via `io::Seek`) | a large file / container whose cursor may be shared (`&File`) |
+//! | `BufSeekReader` (`std`) | owned `Read + Seek` | yes (buffered; seeks only on a jump) | a large file / container you own |
 //! | `BytesReader` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
 //!
 //! Seeking is only needed by messages that use `#[br(restore_position)]`; everything
@@ -27,7 +28,8 @@
 //! default to **msb/big** — correct for a default-layout message, but a non-default
 //! (`little`/`lsb`) message decoded through them is **silently misread**. Build the source
 //! with the message's layout: `StreamBitReader::with_layout(r, <Msg as bnb::BitEncode>::LAYOUT)`
-//! (likewise `SeekReader::with_layout` and `BufSource::with_capacity_and_layout`). The slice
+//! (likewise `SeekReader::with_layout`, `BufSeekReader::with_layout`, and
+//! `BufSource::with_capacity_and_layout`). The slice
 //! entry points (`decode_exact`/`decode_all`/`peek`) sidestep this — they bake `Msg`'s layout
 //! in — so they are the foolproof "decode this buffer" path.
 //!

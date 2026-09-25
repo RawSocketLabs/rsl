@@ -170,7 +170,9 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   retain-and-seek over a forward-only reader), `BitBuf` (push/pull bit-aware in-memory
   buffer — pushable, a `SeekSource`, `no_std`; **reclaim is deferred + in place** so a push/pull
   loop reuses one alloc, and `BitBuf::bounded(cap)` + `push`/`grow` give a fixed alloc-once
-  footprint, `CapacityError` on overflow), `SeekReader<R: Read + Seek>`, and —
+  footprint, `CapacityError` on overflow), `SeekReader<R: Read + Seek>` (re-seeks every read:
+  safe for shared cursors like `&File`), `BufSeekReader<R>` (owns a `BufReader<R>`, tracks the
+  offset, seeks only on a jump; no `Clone`/`get_mut` by design), and —
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
 - **Opt-in transport helpers (all `std`).** `tokio`: `BinCodec<T>`, a `tokio_util::codec`
