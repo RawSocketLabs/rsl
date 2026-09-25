@@ -261,7 +261,8 @@ into any `Sink`):
 | `StreamBitReader` | any `Read` | no (forward only) | a stream read once |
 | `BufSource` | any `Read` | yes (bounded retain-and-seek) | a socket that also seeks |
 | `BitBuf` | owned `Vec<u8>` (pushable) | yes (cursor math) | incremental framing: push bytes, pull messages |
-| `SeekReader` | `Read + Seek` | yes (via `io::Seek`) | a large file/container |
+| `SeekReader` | `Read + Seek` | yes (via `io::Seek`, before every read) | a large file/container, cursor may be shared |
+| `BufSeekReader` | owned `Read + Seek` | yes (tracked; relative seek only on a jump) | a large file/container you own (§14) |
 | `BytesReader`/`Writer` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
 
 A `Source` carries its own byte/bit order, so `decode(&mut Source)` reads in the *cursor's*
@@ -1224,3 +1225,120 @@ is made here: release-plz derives both breaking versions.
 denied-warning docs; `cargo +1.85.0 check`; the `thumbv7em-none-eabi` `nostd-check` build; a
 byte-identical `public-api.txt`; and trunk SOCKS `session` fuzz, 2,000,000 runs, exit 0
 (`fuzz-trunk-socks-session.log`). `scripts/ci-act.sh pre-push` was not repeated on this tree.
+
+## 14. Owned buffered seek reader (unreleased candidate)
+
+### Scope and contract
+
+Motivating consumer: a camera RAW/TIFF parser that reads `u16`/`u32` values at arbitrary
+offsets from a `BufReader<File>`, with byte order chosen at run time from the `II`/`MM`
+header. `SeekReader::read_bits` seeks to an absolute offset and allocates a `Vec` before
+every read, and `BufReader::seek` always discards its buffer, so each value cost a seek plus
+a buffer refill. Two changes, one concern:
+
+- `SeekReader` reads into a 17-byte stack buffer (7 leading bits plus 128) instead of a `Vec`.
+  Validation, errors, offsets, and the per-read absolute seek are unchanged; the shared read
+  path (`ByteSpan`) is private.
+- New `BufSeekReader<R: Read + Seek>` owns a `BufReader<R>` and tracks the stream offset. It
+  seeks only when a read does not start where the last ended, and then with
+  `BufReader::seek_relative`, which keeps the buffer when the target is buffered. The offset
+  is unknown (absolute seek next) before the first read and after any failed seek or read.
+  It implements `Source`/`SeekSource`, takes any `Layout` at construction, and offers
+  `new`/`with_layout`/`get_ref`/`into_inner`. It has no `get_mut` and no `Clone`: both would
+  let the stream move behind the tracked offset.
+
+`SeekReader` keeps the per-read absolute seek on purpose. It derives `Clone` and accepts any
+`R`, including shared-cursor readers such as `&File`, where a remembered position is wrong
+as soon as another handle reads. Skipping its seek conditionally would be a silent
+correctness regression for those users; the owned type makes the assumption explicit.
+
+### Findings ledger
+
+| Location | Finding and evidence | Disposition |
+| --- | --- | --- |
+| `SeekReader::read_bits` (pre-existing) | One `seek` + one `read` syscall and one allocation per value; through `BufReader` each seek also discards the buffer. 1.25 µs per sequential read (bench below). | Allocation removed; the seek stays (shared-cursor contract). `BufSeekReader` added for owned readers. |
+| `SeekReader` over `&File` (pre-existing contract) | No test guarded the shared-cursor case that forbids the skip-seek optimisation. | `seek_reader::interleaved_readers_over_one_shared_file_each_read_their_own_bytes`: two readers (one a clone) over one `&File`. |
+| `ErrorKind::Io` (pre-existing) | Carries only `io::ErrorKind`; the source error is lost. Carrying it would be breaking and grow `BitError`. | Not changed. Consumers map `UnexpectedEof` themselves. |
+| Seek-reader EOF detail (pre-existing) | Both seek readers report `UnexpectedEof { remaining: 0 }` whatever remains; a zero-width read at a sub-byte offset reads the next byte and can fail, unlike `BitReader`. | Kept for exact parity; recorded in `ROADMAP.md` (I/O ladder). |
+| `BufSeekReader::get_ref` (new) | A `&File` borrowed out can move the OS offset and stale the tracked position, as with `BufReader::get_ref`. | Documented on the method and the type; no `get_mut`. |
+| `BufSeekReader` given a `BufReader` (new) | Double-buffers: correct but copies twice. | Documented: pass the unbuffered reader. |
+| UI snapshots | `ui_seek` and `ui_countprefix_seal` list `SeekSource`/`Sealed` implementors, so a new implementor changes the expected text. | Re-blessed with `TRYBUILD=overwrite` under default features (the harness's gate); diff is the added `BufSeekReader<R>` line and one line pushed into `and $N others`. |
+
+### Tests
+
+- `tests/seek_reader_parity.rs` (`property`, 512 cases): random 0–20,000-byte files (several
+  8 KiB buffers), all four layouts, 1–63 random operations (seeks, `read_bits(0..=130)`, `u16` and `u32`
+  reads) against `SeekReader` as the reference: values, errors, and `bit_pos` equal at every
+  step. Every successful value is also checked against `BitReader` over the same slice, an
+  oracle independent of the shared `ByteSpan` path.
+- `bitstream.rs` `component::buf_seek_reader`: sequential 64 KiB of `u16`s does exactly one seek
+  and at most one underlying read per 8 KiB; a backward read inside the buffer does no I/O; a
+  jump out of the buffer seeks once per jump and stays correct; read and seek failures and EOF,
+  `TooWide`, `PositionOverflow`, and zero-width cases equal `SeekReader`'s, and a failed read
+  re-seeks on retry.
+- Mutation: `cargo mutants` over `SeekReader`/`ByteSpan`/`BufSeekReader`: 22 caught, 5
+  unviable, 0 missed. Two hand mutations cargo-mutants cannot express were also caught:
+  keeping the stale offset after an error (the property test, minimal input 3 bytes) and a
+  buffer-discarding relative seek (the backward-read test).
+
+### Performance
+
+Environment: AMD Ryzen Threadripper 7970X, Linux 7.1.9 x86_64, rustc 1.98.0 / LLVM 22.1.8,
+system allocator, Criterion 0.8 defaults (100 samples, 3 s warm-up, 5 s measurement),
+`--features net`, 2026-09-25. Baseline is `main` `e4d1eda7`. `benches/seek_bench.rs` reads a
+1 MiB file in the page cache, with little-endian layout chosen at run time. `SeekReader` wraps
+`BufReader<File>` (8 KiB); `BufSeekReader` owns the `File` and its own 8 KiB buffer.
+Sequential: 10,922 `u16`+`u32` pairs from offset 0. Scattered: 4,096 random offsets, one pair each.
+
+| Case | `SeekReader<BufReader<File>>` before | same, after | `BufSeekReader<File>` |
+| --- | ---: | ---: | ---: |
+| sequential (21,844 reads) | 27.249 ms | 27.892 ms | 0.212 ms (128x) |
+| scattered (8,192 reads) | 10.510 ms | 10.693 ms | 5.310 ms (2.0x) |
+
+The 128x is against the `SeekReader<BufReader<File>>` shape the motivating consumer uses, in
+which every seek discards an 8 KiB buffer and refills it. A plain `SeekReader<File>` avoids the
+refill (`seek_reader_unbuffered`; one CPU-2-pinned run, 30 samples, 3 s): sequential
+21.365 ms and scattered 7.989 ms, against `BufSeekReader`'s 0.215 ms (99x) and 5.404 ms
+(1.5x) in the same run.
+
+The unpinned full-suite rerun reported `SeekReader` +2.4% (sequential) and +1.7%
+(scattered). A pinned alternating rerun reversed that: baseline and candidate executables
+alternated four times on CPU 2 (`--warm-up-time 1 --measurement-time 3 --sample-size 30`).
+Median of means: sequential 27.277 → 26.838 ms (−1.6%), scattered 10.519 → 10.408 ms
+(−1.1%). `BufSeekReader` in the same runs: 0.210 ms and 5.368 ms. The stack buffer is a
+noise-level gain for `SeekReader`, whose two syscalls and buffer refill per value dominate.
+Scattered `BufSeekReader` reads still pay one `lseek` plus a refill per jump outside the
+buffer, the floor for an 8 KiB buffer over a 1 MiB file.
+
+Protocol-facing paths do not call the changed code. The unpinned full-suite rerun showed
+spurious ±5–25% moves in `incremental_envelope`/`stream_envelope`, so the affected groups
+were re-measured as alternating baseline/candidate executables pinned to CPU 2 (`taskset -c 2
+<bench> --warm-up-time 0.5 --measurement-time 1 --sample-size 60`, three rounds each). All
+medians fall within the baselines' own run-to-run ranges (largest: `buffered_chunk_80` +5.8%,
+ranges 186.9–200.3 vs 191.1–201.5 ns). Deterministically, every `bnb::` symbol in the
+`message_bench` (49) and `bitstream_bench` (43) executables has the same size in both builds;
+`message_bench` text differs by 4 bytes, outside `bnb`.
+
+### Verification (2026-09-25, offline)
+
+`cargo fmt --all --check`; `cargo clippy -p bitsandbytes -p bitsandbytes-macros --all-targets
+--all-features -- -D warnings`; `cargo test -p bitsandbytes` with default, `bytes`, `mock`,
+`tokio-io`, and all features; denied-warning `cargo doc` (all features, and no default
+features); `cargo build -p bitsandbytes --no-default-features`; the `nostd-check` build for
+`thumbv7em-none-eabi`; `cargo +1.85.0 check` for the workspace, bnb with all features, and
+`nostd-check`; a byte-identical `public-api.txt` (`cargo +nightly-2026-06-17 public-api`
+0.52.0: 114 lines added, none removed); `cargo semver-checks` 0.50.0 against 0.6.0,
+`--release-type patch`, for all three feature modes ("no semver update required"); `cargo
+package --offline` for both crates; `cargo clippy --workspace --all-targets` (no bnb
+warnings; existing protocol/rawsock lint debt unchanged); and `cargo test --workspace`.
+All passed. Not run: `cargo deny` (needs the advisory database from the network), bnb fuzzing,
+and `scripts/ci-act.sh pre-push`, which must run before pushing.
+
+Independent review (read-only reviewer agent, post-fix diff): no blockers. Addressed: the
+parity claim now states that `R` must support `SeekFrom::Current`; the property test checks
+every bit-consuming success against `BitReader`, since both seek readers share `ByteSpan`
+(a hand mutation forcing MSB order in `ByteSpan::read` now fails it); the unbuffered
+`SeekReader<File>` row was added; the buffer-count bound derives from the observed
+`BufReader` capacity. The bnb checks above were re-run after these fixes. Library changes
+after the workspace run were doc comments only, so the workspace suite and semver-checks
+were not repeated.

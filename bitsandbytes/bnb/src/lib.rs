@@ -85,7 +85,7 @@ LEB128 varints, NUL-terminated and length-prefixed strings — ship ready-made i
 `default-features = false` for an embedded target.
 
 - **`std`** *(default)* — the `std::io` ladder (`StreamBitReader`, `BufSource`,
-  `SeekReader`, `Source::as_read`/`Sink::as_write`), the `From<std::io::Error>`
+  `SeekReader`, `BufSeekReader`, `Source::as_read`/`Sink::as_write`), the `From<std::io::Error>`
   bridge, and the `encode(writer)` convenience (`EncodeExt`). The `#[br(dbg)]`
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
@@ -199,7 +199,9 @@ pub use wirelen::WireLen;
 /// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
 /// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_canonical_bytes`).
 #[cfg(feature = "std")]
-pub use bitstream::{BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader};
+pub use bitstream::{
+    BufSeekReader, BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader,
+};
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
 #[cfg(feature = "bytes")]

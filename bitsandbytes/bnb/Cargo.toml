@@ -146,5 +146,9 @@ harness = false
 name = "message_bench"
 harness = false
 
+[[bench]]
+name = "seek_bench"
+harness = false
+
 [lints]
 workspace = true

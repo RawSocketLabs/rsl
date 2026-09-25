@@ -9,6 +9,7 @@ error[E0277]: the trait bound `StreamBitReader<&[u8]>: SeekSource` is not satisf
    = help: the following other types implement trait `SeekSource`:
              BitBuf
              BitReader<'_>
+             BufSeekReader<R>
              BufSource<R>
              LimitedSource<'_, S>
              SeekReader<R>

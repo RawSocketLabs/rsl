@@ -154,7 +154,14 @@ Audit follow-ups (not silently waived or bundled into this feature):
       `alloc`). **Reclaim is deferred + in place** (a push/pull loop reuses one allocation), and a
       **bounded / alloc-once** mode — `BitBuf::bounded(cap)` + `push` (`CapacityError` on
       overflow, never reallocates) + explicit `grow` — gives a fixed footprint for real-time/`no_std`.
-- [x] `SeekReader<R: Read + Seek>` — large file / container.
+- [x] `SeekReader<R: Read + Seek>` — large file / container; re-seeks every read, so it is
+      correct over shared cursors (`&File`).
+- [x] `BufSeekReader<R: Read + Seek>` — owned, buffered counterpart: tracks the offset and seeks
+      (relative, buffer-preserving) only on a jump. Same values and errors as `SeekReader`.
+- [ ] Seek-reader EOF detail (pre-existing, kept for parity; DESIGN §14): both seek readers
+      report `UnexpectedEof { remaining: 0 }` whatever remains, and a zero-width read at a sub-byte
+      offset touches (and can fail on) the next byte, unlike `BitReader`. Aligning them changes
+      observable errors: decide before 1.0.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
 - [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message: drives

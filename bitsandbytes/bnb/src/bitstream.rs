@@ -677,7 +677,7 @@ fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u12
 /// Extracts `n` (`<= 128`) bits starting at absolute bit offset `pos` from `buf`, in
 /// `order`, returned right-aligned in a `u128` (byte order is applied separately by
 /// `read`). The single bit-extraction routine behind every slice-backed [`Source`]
-/// ([`BitReader`], [`BufSource`], [`SeekReader`]). The caller must have bounds-checked
+/// ([`BitReader`], [`BufSource`], [`SeekReader`], [`BufSeekReader`]). The caller must have bounds-checked
 /// `pos + n <= buf.len() * 8` and `n <= 128`.
 ///
 /// **Fast path:** when the read is byte-aligned (`pos % 8 == 0` and `n % 8 == 0`) the
@@ -1074,7 +1074,7 @@ impl BitWriter {
 
 /// A bit-level **input** the codec recurses over. Implemented by [`BitReader`]
 /// (in-memory slice), `StreamBitReader` (forward `Read`), `BufSource` (a
-/// retain-and-seek socket adapter), and `SeekReader` (`Read + Seek`); the codec is
+/// retain-and-seek socket adapter), and `SeekReader`/`BufSeekReader` (`Read + Seek`); the codec is
 /// generic over `Source`, so one decoder runs over any of them — see
 /// [`guide::io`](crate::guide::io).
 ///
@@ -1357,7 +1357,7 @@ impl<S: Source> std::io::Read for SourceReader<'_, S> {
 /// A [`Source`] that can seek (its [`seek_to_bit`](Source::seek_to_bit) is real, not
 /// the failing default). A `#[bin]` message that uses `restore_position` bounds its
 /// generated `decode` on this trait, so a forward-only stream is rejected at
-/// compile time. Implemented by [`BitReader`], `BufSource`, and `SeekReader`
+/// compile time. Implemented by [`BitReader`], `BufSource`, `SeekReader`, and `BufSeekReader`
 /// (and, with the `bytes` feature, `BytesReader`).
 pub trait SeekSource: Source {}
 
@@ -2928,6 +2928,12 @@ impl SeekSource for BitBuf {}
 /// the large-file / container-format case. For a *non*-seekable stream that still
 /// needs to seek, use [`BufSource`].
 ///
+/// It re-seeks to an absolute offset before **every** read, so it stays correct when the
+/// cursor is shared (a `&File`, a clone of this reader, a handle others also move). The
+/// price is one `seek` plus one `read` per value, and a `BufReader` inside `R` is emptied
+/// by each seek. When the reader is exclusively owned, [`BufSeekReader`] reads the same
+/// bytes with far fewer calls.
+///
 /// # Examples
 ///
 /// ```
@@ -2974,36 +2980,12 @@ impl<R: std::io::Read + std::io::Seek> sealed::Sealed for SeekReader<R> {}
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
-        if n > 128 {
-            return Err(BitError::new(
-                ErrorKind::TooWide { width: n as usize },
-                self.bit_pos,
-            ));
-        }
-        let end = self
-            .bit_pos
-            .checked_add(n as usize)
-            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
-        let bit_off = self.bit_pos % 8;
-        let byte_start = (self.bit_pos / 8) as u64;
-        let nbytes = (bit_off + n as usize).div_ceil(8);
+        let span = ByteSpan::new(self.bit_pos, n)?;
         self.inner
-            .seek(std::io::SeekFrom::Start(byte_start))
-            .map_err(|e| BitError::new(ErrorKind::Io(e.kind()), self.bit_pos))?;
-        let mut buf = vec![0u8; nbytes];
-        self.inner.read_exact(&mut buf).map_err(|e| {
-            let kind = if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                ErrorKind::UnexpectedEof {
-                    needed: n as usize,
-                    remaining: 0,
-                }
-            } else {
-                ErrorKind::Io(e.kind())
-            };
-            BitError::new(kind, self.bit_pos)
-        })?;
-        let acc = extract_bits(&buf, bit_off, n as usize, self.layout.bit);
-        self.bit_pos = end;
+            .seek(std::io::SeekFrom::Start(span.start))
+            .map_err(|e| span.io_error(&e))?;
+        let acc = span.read(&mut self.inner, self.layout.bit)?;
+        self.bit_pos = span.end;
         Ok(acc)
     }
     fn bit_pos(&self) -> usize {
@@ -3021,8 +3003,224 @@ impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
     }
 }
 
+/// The whole bytes an `n`-bit read at a bit offset touches — the shared read path of
+/// [`SeekReader`] and [`BufSeekReader`], so both validate, fail, and extract identically.
+#[cfg(feature = "std")]
+struct ByteSpan {
+    /// The read's starting bit offset (the position every error reports).
+    at: usize,
+    /// The read's width in bits (`<= 128`).
+    width: u32,
+    /// Absolute byte offset of the first touched byte.
+    start: u64,
+    /// Number of touched bytes (`<= 17`: 7 leading bits plus 128).
+    len: usize,
+    /// Bit offset of the read within the first byte.
+    bit_off: usize,
+    /// The bit offset just past the read.
+    end: usize,
+}
+
+#[cfg(feature = "std")]
+impl ByteSpan {
+    /// The largest span: a 128-bit read starting 7 bits into a byte.
+    const MAX_LEN: usize = (7 + 128usize).div_ceil(8);
+
+    /// Validates an `n`-bit read at bit `at` before any I/O.
+    ///
+    /// # Errors
+    /// [`ErrorKind::TooWide`] for `n > 128`, [`ErrorKind::PositionOverflow`] when the end
+    /// bit is unrepresentable.
+    fn new(at: usize, n: u32) -> Result<Self, BitError> {
+        if n > 128 {
+            return Err(BitError::new(ErrorKind::TooWide { width: n as usize }, at));
+        }
+        let end = at
+            .checked_add(n as usize)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, at))?;
+        let bit_off = at % 8;
+        Ok(Self {
+            at,
+            width: n,
+            start: (at / 8) as u64,
+            len: (bit_off + n as usize).div_ceil(8),
+            bit_off,
+            end,
+        })
+    }
+
+    /// Maps a positioning (seek) failure to [`ErrorKind::Io`] at the read's offset.
+    fn io_error(&self, e: &std::io::Error) -> BitError {
+        BitError::new(ErrorKind::Io(e.kind()), self.at)
+    }
+
+    /// Reads the span's bytes from `inner` (already positioned at [`start`](Self::start))
+    /// into a stack buffer and extracts the value in `order`.
+    ///
+    /// # Errors
+    /// End of input is [`ErrorKind::UnexpectedEof`]; any other failure is
+    /// [`ErrorKind::Io`].
+    fn read(&self, inner: &mut impl std::io::Read, order: BitOrder) -> Result<u128, BitError> {
+        let mut buf = [0u8; Self::MAX_LEN];
+        let bytes = &mut buf[..self.len];
+        inner.read_exact(bytes).map_err(|e| {
+            let kind = if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                ErrorKind::UnexpectedEof {
+                    needed: self.width as usize,
+                    remaining: 0,
+                }
+            } else {
+                ErrorKind::Io(e.kind())
+            };
+            BitError::new(kind, self.at)
+        })?;
+        Ok(extract_bits(
+            bytes,
+            self.bit_off,
+            self.width as usize,
+            order,
+        ))
+    }
+}
+
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> SeekSource for SeekReader<R> {}
+
+/// A [`SeekSource`] that **owns** a seekable reader behind a [`BufReader`](std::io::BufReader)
+/// and tracks the stream position, so it seeks only when a read does not start where the
+/// last one ended — and then by a relative seek that keeps the buffer when the target is
+/// already buffered. Sequential and nearby reads cost a buffer copy, not a system call.
+///
+/// Reads, values, errors, and [`bit_pos`](Source::bit_pos) match [`SeekReader`] over the
+/// same bytes, provided `R` supports [`SeekFrom::Current`](std::io::SeekFrom::Current) as
+/// well as `Start` (every `std` seekable does): a jump outside the buffer is a relative
+/// seek, where `SeekReader` only ever seeks from the start. The difference is the ownership
+/// contract:
+///
+/// - Use `BufSeekReader` when the reader is **exclusively owned** — a `File` you opened for
+///   this parse, a `Cursor`. Pass the unbuffered reader; it supplies its own buffer.
+/// - Use [`SeekReader`] when the cursor may be **shared** — a `&File` (every `&File` moves
+///   the one OS file offset), a cloned handle, or a reader others also move. `SeekReader`
+///   re-seeks to an absolute offset before every read, so interleaved users stay correct.
+///
+/// There is deliberately no `get_mut` and no `Clone`: either would let the stream move
+/// behind the tracked position. Do not move the cursor through [`get_ref`](Self::get_ref)
+/// either (e.g. reading a `&File`).
+///
+/// # Examples
+///
+/// ```
+/// use bnb::{BitOrder, BufSeekReader, ByteOrder, Layout, Source};
+/// use std::io::Cursor;
+///
+/// // A TIFF-like header: the byte order is known only at run time.
+/// let bytes = vec![b'I', b'I', 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00];
+/// let byte = if bytes[..2] == *b"II" { ByteOrder::Little } else { ByteOrder::Big };
+/// let mut r = BufSeekReader::with_layout(Cursor::new(bytes), Layout { bit: BitOrder::Msb, byte });
+///
+/// r.seek_to_bit(2 * 8).unwrap();
+/// assert_eq!(r.read::<u16>().unwrap(), 42);
+/// assert_eq!(r.read::<u32>().unwrap(), 8); // continues from the buffer, no seek
+/// ```
+#[cfg(feature = "std")]
+#[derive(Debug)]
+pub struct BufSeekReader<R> {
+    /// The owned reader and its buffer.
+    inner: std::io::BufReader<R>,
+    /// The byte offset the buffered stream is logically at, or `None` when unknown (before
+    /// the first read and after any I/O error), which forces an absolute seek.
+    stream_pos: Option<u64>,
+    /// The bit cursor; reads start here.
+    bit_pos: usize,
+    /// The bit and byte order values are read in.
+    layout: Layout,
+}
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read + std::io::Seek> BufSeekReader<R> {
+    /// Wraps `inner` at bit 0, MSB-first big-endian, with a default-sized buffer.
+    #[must_use]
+    pub fn new(inner: R) -> Self {
+        Self::with_layout(inner, Layout::default())
+    }
+
+    /// Wraps `inner` at bit 0 with the given [`Layout`] (which may be chosen at run time),
+    /// with a default-sized buffer.
+    #[must_use]
+    pub fn with_layout(inner: R, layout: Layout) -> Self {
+        Self {
+            inner: std::io::BufReader::new(inner),
+            stream_pos: None,
+            bit_pos: 0,
+            layout,
+        }
+    }
+
+    /// Borrows the underlying reader. Do not move its cursor through this borrow (a
+    /// `&File` can): the tracked position would go stale.
+    #[must_use]
+    pub fn get_ref(&self) -> &R {
+        self.inner.get_ref()
+    }
+
+    /// Unwraps the underlying reader. Buffered-but-unread bytes are discarded, so its
+    /// cursor is at an unspecified offset: seek it before reading.
+    #[must_use]
+    pub fn into_inner(self) -> R {
+        self.inner.into_inner()
+    }
+
+    /// Positions the buffered stream at byte `target`: nothing when already there, a
+    /// relative seek (which keeps buffered bytes in range) when the position is known, and
+    /// an absolute seek otherwise.
+    fn position(&mut self, target: u64) -> std::io::Result<()> {
+        let delta = self
+            .stream_pos
+            .and_then(|pos| i64::try_from(i128::from(target) - i128::from(pos)).ok());
+        match delta {
+            Some(0) => Ok(()),
+            Some(delta) => self.inner.seek_relative(delta),
+            None => {
+                std::io::Seek::seek(&mut self.inner, std::io::SeekFrom::Start(target)).map(drop)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read + std::io::Seek> sealed::Sealed for BufSeekReader<R> {}
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read + std::io::Seek> Source for BufSeekReader<R> {
+    fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        let span = ByteSpan::new(self.bit_pos, n)?;
+        let positioned = self.position(span.start);
+        // Unknown until the read succeeds: a failed seek or `read_exact` leaves the offset
+        // unspecified, so the next read re-seeks absolutely.
+        self.stream_pos = None;
+        positioned.map_err(|e| span.io_error(&e))?;
+        let acc = span.read(&mut self.inner, self.layout.bit)?;
+        self.stream_pos = Some(span.start + span.len as u64);
+        self.bit_pos = span.end;
+        Ok(acc)
+    }
+    fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+    fn byte_order(&self) -> ByteOrder {
+        self.layout.byte
+    }
+    fn bit_order(&self) -> BitOrder {
+        self.layout.bit
+    }
+    fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+        self.bit_pos = pos; // the stream is positioned (if needed) on the next read
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: std::io::Read + std::io::Seek> SeekSource for BufSeekReader<R> {}
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature): own a `Bytes` frame to
 /// decode, encode into a `BytesMut` you `freeze()` to a `Bytes` — the async/tokio
@@ -4792,6 +4990,228 @@ mod component {
                 <Le as bnb::BitEncode>::LAYOUT,
             );
             assert_eq!(Le::decode(&mut src).unwrap(), Le { v: 0x1234_5678 });
+        }
+
+        /// Guards the shared-cursor contract: every `&File` moves one OS offset, so a
+        /// `SeekReader` must not trust a remembered position. Two readers (one a clone)
+        /// interleave reads at different offsets and each still sees its own bytes.
+        #[test]
+        fn interleaved_readers_over_one_shared_file_each_read_their_own_bytes() {
+            use bnb::Source;
+            use std::io::Write;
+
+            let path = std::env::temp_dir().join(format!(
+                "bnb-shared-cursor-{}-{:?}.bin",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let data: Vec<u8> = (0..=255).collect();
+            std::fs::File::create(&path)
+                .and_then(|mut f| f.write_all(&data))
+                .unwrap();
+            let file = std::fs::File::open(&path).unwrap();
+
+            let mut low = SeekReader::new(&file);
+            let mut high = low.clone();
+            high.seek_to_bit(128 * 8).unwrap();
+            for i in 0..64u16 {
+                let lo = low.read::<u16>().unwrap();
+                let hi = high.read::<u16>().unwrap();
+                let at = usize::from(i) * 2;
+                assert_eq!(
+                    lo,
+                    u16::from_be_bytes([data[at], data[at + 1]]),
+                    "low reader, word {i}"
+                );
+                assert_eq!(
+                    hi,
+                    u16::from_be_bytes([data[128 + at], data[129 + at]]),
+                    "high reader, word {i}"
+                );
+            }
+            drop(file);
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+
+    /// `BufSeekReader` — the owned, position-tracking `SeekSource`: the seek economy that
+    /// motivates it, error parity with `SeekReader`, and recovery after I/O errors. (Value
+    /// parity over random operations is `tests/seek_reader_parity.rs`.)
+    mod buf_seek_reader {
+
+        use bnb::{BufSeekReader, ErrorKind, SeekReader, Source};
+        use std::io::{Cursor, Read, Seek, SeekFrom};
+
+        /// The fixture byte at offset `i`: a period (251) that no power-of-two stride aliases.
+        fn byte_at(i: usize) -> u8 {
+            u8::try_from(i % 251).expect("below 251")
+        }
+
+        /// Counts the calls that reach the underlying reader.
+        struct Counting {
+            inner: Cursor<Vec<u8>>,
+            seeks: usize,
+            reads: usize,
+            /// The largest buffer a `read` asked to fill (the `BufReader` capacity).
+            widest_read: usize,
+        }
+
+        impl Counting {
+            /// A `len`-byte [`byte_at`] fixture with zeroed counters.
+            fn new(len: usize) -> Self {
+                Self {
+                    inner: Cursor::new((0..len).map(byte_at).collect()),
+                    seeks: 0,
+                    reads: 0,
+                    widest_read: 0,
+                }
+            }
+        }
+
+        impl Read for Counting {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                self.reads += 1;
+                self.widest_read = self.widest_read.max(buf.len());
+                self.inner.read(buf)
+            }
+        }
+
+        impl Seek for Counting {
+            fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+                self.seeks += 1;
+                self.inner.seek(pos)
+            }
+        }
+
+        #[test]
+        fn sequential_reads_seek_once_and_read_once_per_buffer() {
+            const LEN: usize = 64 * 1024;
+            let mut src = BufSeekReader::new(Counting::new(LEN));
+            for i in 0..LEN / 2 {
+                let at = i * 2;
+                let want = u16::from_be_bytes([byte_at(at), byte_at(at + 1)]);
+                assert_eq!(src.read::<u16>().unwrap(), want, "word {i}");
+            }
+            let inner = src.get_ref();
+            assert_eq!(inner.seeks, 1, "only the initial absolute seek");
+            assert!(
+                inner.reads <= LEN.div_ceil(inner.widest_read) + 1,
+                "one underlying read per buffer fill (capacity {}), got {}",
+                inner.widest_read,
+                inner.reads
+            );
+        }
+
+        #[test]
+        fn a_nearby_backward_read_is_served_from_the_buffer() {
+            let mut src = BufSeekReader::new(Counting::new(4096));
+            src.read::<u8>().unwrap(); // buffers from byte 0
+            let before = (src.get_ref().seeks, src.get_ref().reads);
+            src.seek_to_bit(100 * 8).unwrap();
+            assert_eq!(src.read::<u32>().unwrap(), 0x6465_6667);
+            src.seek_to_bit(50 * 8).unwrap();
+            assert_eq!(src.read::<u8>().unwrap(), 50);
+            let inner = src.get_ref();
+            assert_eq!(
+                (inner.seeks, inner.reads),
+                before,
+                "no I/O for buffered bytes"
+            );
+        }
+
+        #[test]
+        fn a_read_beyond_the_buffer_seeks_and_stays_correct() {
+            let mut src = BufSeekReader::new(Counting::new(64 * 1024));
+            src.read::<u8>().unwrap();
+            src.seek_to_bit(40_000 * 8).unwrap();
+            assert_eq!(src.read::<u8>().unwrap(), byte_at(40_000));
+            src.seek_to_bit(3 * 8).unwrap();
+            assert_eq!(src.read::<u8>().unwrap(), 3);
+            assert_eq!(
+                src.get_ref().seeks,
+                3,
+                "one seek per jump out of the buffer"
+            );
+        }
+
+        /// Fails its first `read` or `seek` call (per flag), then behaves.
+        struct FailOnce {
+            inner: Cursor<Vec<u8>>,
+            fail_read: bool,
+            fail_seek: bool,
+        }
+
+        impl Read for FailOnce {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if std::mem::take(&mut self.fail_read) {
+                    return Err(std::io::ErrorKind::ConnectionReset.into());
+                }
+                self.inner.read(buf)
+            }
+        }
+
+        impl Seek for FailOnce {
+            fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+                if std::mem::take(&mut self.fail_seek) {
+                    return Err(std::io::ErrorKind::PermissionDenied.into());
+                }
+                self.inner.seek(pos)
+            }
+        }
+
+        /// A four-byte `FailOnce` fixture (`12 34 56 78`).
+        fn fail_once(fail_read: bool, fail_seek: bool) -> FailOnce {
+            FailOnce {
+                inner: Cursor::new(vec![0x12, 0x34, 0x56, 0x78]),
+                fail_read,
+                fail_seek,
+            }
+        }
+
+        #[test]
+        fn read_and_seek_failures_match_seek_reader_and_then_recover() {
+            for (fail_read, fail_seek, kind) in [
+                (true, false, std::io::ErrorKind::ConnectionReset),
+                (false, true, std::io::ErrorKind::PermissionDenied),
+            ] {
+                let mut reference = SeekReader::new(fail_once(fail_read, fail_seek));
+                let mut candidate = BufSeekReader::new(fail_once(fail_read, fail_seek));
+                reference.seek_to_bit(4).unwrap();
+                candidate.seek_to_bit(4).unwrap();
+                let expected = reference.read_bits(16).unwrap_err();
+                assert_eq!(candidate.read_bits(16).unwrap_err(), expected);
+                assert_eq!(expected.kind, ErrorKind::Io(kind));
+                assert_eq!(candidate.bit_pos(), 4, "a failed read does not advance");
+                assert_eq!(
+                    candidate.read_bits(16).unwrap(),
+                    0x2345,
+                    "the retry re-seeks instead of trusting a stale offset"
+                );
+            }
+        }
+
+        #[test]
+        fn end_of_input_and_argument_errors_match_seek_reader() {
+            let bytes = vec![0x12, 0x34];
+            for (start, width) in [
+                (0, 32),
+                (12, 8),
+                (16, 1),
+                (100, 0),
+                (0, 129),
+                (usize::MAX, 1),
+            ] {
+                let mut reference = SeekReader::new(Cursor::new(bytes.clone()));
+                let mut candidate = BufSeekReader::new(Cursor::new(bytes.clone()));
+                reference.seek_to_bit(start).unwrap();
+                candidate.seek_to_bit(start).unwrap();
+                assert_eq!(
+                    candidate.read_bits(width),
+                    reference.read_bits(width),
+                    "read of {width} bits at bit {start}"
+                );
+                assert_eq!(candidate.bit_pos(), reference.bit_pos());
+            }
         }
     }
 
