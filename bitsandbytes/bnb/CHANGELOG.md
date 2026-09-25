@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.7.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.7.0...bitsandbytes-v0.7.1) - 2026-09-25
+
+### Added
+
+- *(bitsandbytes)* add BufSeekReader, a buffered seek reader for owned inputs ([#94](https://github.com/RawSocketLabs/rsl/pull/94))
+
+### Other
+
+- *(bitsandbytes)* record verified 0.4.1 delivery ([#92](https://github.com/RawSocketLabs/rsl/pull/92))
+
 ## [0.7.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.6.0...bitsandbytes-v0.7.0) - 2026-09-21
 
 ### Added
