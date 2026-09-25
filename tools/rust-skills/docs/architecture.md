@@ -179,8 +179,8 @@ The agent then:
 
 1. reports verified facts with locations;
 2. proposes a base and capability combination;
-3. asks adaptive questions in coherent subject rounds, including confirmation
-   of local terminology, mappings to shared or organization vocabulary, and
+3. asks adaptive questions one decision at a time, by subject round, including
+   confirmation of local terminology, mappings to shared or organization vocabulary, and
    stream-metadata, discontinuity, processing-composition, rate-relationship,
    streaming-completion, timing-instrumentation, observability, and protocol-
    validation policy where applicable;

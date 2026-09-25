@@ -18,8 +18,9 @@ approval. Steps 1-4 complete before anything is written.
    `scripts/inspect_repository.py` from the target root when available.
 2. Classify the repository and propose exactly one base plus applicable
    capabilities. Mixed workspaces may add confirmed component overlays.
-3. Ask the questions in [the adaptive interview](references/interview.md) in
-   coherent rounds. Skip facts already proven; ask follow-ups when answers
+3. Work through [the adaptive interview](references/interview.md): present
+   inferred facts for correction, then ask what remains one decision at a time
+   with a recommended default. Skip facts already proven; ask follow-ups when answers
    conflict with source or materially change the design.
 4. Separate facts, user decisions, organization preferences, recommendations,
    and unresolved items. Present the complete proposal and obtain approval.
@@ -32,8 +33,11 @@ approval. Steps 1-4 complete before anything is written.
    migration state.
 ## Verify
 
-7. Generate `scripts/validate-rust.py` from the packaged template, configure
-   required and optional checks using
+7. Generate `scripts/validate-rust.py` from the packaged template. When the
+   repository already declares a gate (a `just`, `make`, or `xtask` entry point
+   that CI runs), configure that entry point as the required check instead of
+   restating its steps, so one command remains the definition of done.
+   Otherwise configure required and optional checks using
    [the validation catalog](references/validation-catalog.md), run safe
    available checks, and report each as passed, failed, skipped, unavailable,
    or inapplicable.

@@ -1,8 +1,11 @@
 # Adaptive Repository Interview
 
-Ask coherent rounds of roughly five to ten questions. Skip answered facts,
-explain conflicts found in source, summarize decisions after each round, and
-adapt later questions. Do not finalize local rules until the owner approves the
+Infer every fact the repository already states before asking anything, and
+present inferred facts for correction rather than as questions. Ask only what
+cannot be inferred, one decision at a time, each with a recommended default and
+its reason, in the order of the rounds below. Explain conflicts found in
+source, summarize decisions at the end of each round, and adapt later
+questions. An owner may ask for a whole round at once. Do not finalize local rules until the owner approves the
 complete proposal.
 
 ## Round 1: purpose and consumers

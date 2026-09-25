@@ -12,7 +12,7 @@
 //! ```
 //!
 //! ```ignore
-//! use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives (feature "std-ext")
+//! use rsl_deps::prelude::*;   // ThisError, tracing macros, serde derives (feature "std-ext"); EyreResult with "report"
 //! use rsl_deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
@@ -27,11 +27,7 @@
 
 // Re-exports don't carry docs of their own, so we don't `deny(missing_docs)` here.
 
-/// Derive-based error types.
-#[cfg(feature = "error")]
-#[doc(inline)]
-pub use anyhow;
-/// Boxed, contextual error handling for application code.
+/// Derive-based error types for libraries.
 #[cfg(feature = "error")]
 #[doc(inline)]
 pub use thiserror;
@@ -162,8 +158,8 @@ pub use utoipa_swagger_ui;
 #[doc(inline)]
 pub use reqwest;
 
-/// Colorful panic/error reports for TUI/CLI binaries.
-#[cfg(feature = "tui")]
+/// Contextual error reports for binaries, services, and TUI/CLI tools (feature `report`; never in a library).
+#[cfg(feature = "report")]
 #[doc(inline)]
 pub use color_eyre;
 /// Terminal UI framework.
@@ -171,10 +167,14 @@ pub use color_eyre;
 #[doc(inline)]
 pub use ratatui;
 
-/// Date and time.
+/// Date and time for crates that already depend on `tokio` (services and async applications).
 #[cfg(feature = "time")]
 #[doc(inline)]
 pub use chrono;
+/// Date and time for sync `std` crates that do not depend on `tokio` (feature `time-core`).
+#[cfg(feature = "time-core")]
+#[doc(inline)]
+pub use time;
 
 /// Protocol Buffers runtime.
 #[cfg(feature = "protobuf")]
@@ -184,9 +184,9 @@ pub use prost;
 /// Common imports. Glob this in to pull the everyday items of whatever features are
 /// enabled — `use rsl_deps::prelude::*;`.
 pub mod prelude {
-    #[cfg(feature = "error")]
+    #[cfg(feature = "report")]
     #[doc(no_inline)]
-    pub use crate::anyhow::{Context as _, Result as AnyhowResult};
+    pub use crate::color_eyre::eyre::{Result as EyreResult, WrapErr as _};
     #[cfg(feature = "error")]
     #[doc(no_inline)]
     pub use crate::thiserror::Error as ThisError;

@@ -187,4 +187,4 @@
   behavior are documented.
 - **Mechanical owner:** Public API tests, source-chain tests, dependency review,
   documentation, and SemVer analysis.
-- **Sources:** Preferences R21-R24 and R176.
+- **Sources:** Preferences R18-R20.

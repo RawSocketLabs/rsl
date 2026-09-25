@@ -10,7 +10,7 @@ rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std
 ```
 
 ```rust
-use rsl_deps::prelude::*;   // anyhow::Result, tracing macros, serde derives
+use rsl_deps::prelude::*;   // ThisError, tracing macros, serde derives; EyreResult with "report"
 use rsl_deps::tokio;        // blessed async runtime, canonical name
 use rsl_deps::serde_json;
 ```
@@ -36,7 +36,8 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 
 | Feature | Re-exports |
 |---------|-----------|
-| `error` | `thiserror`, `anyhow` |
+| `error` | `thiserror` (libraries) |
+| `report` | `color_eyre` (binaries and services only; implied by `tui`) |
 | `log` | `tracing`, `tracing_subscriber`, `tracing_appender` |
 | `serde` | `serde`, `serde_json` |
 | `bytes` | `bytes` |
@@ -56,7 +57,8 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 | `openapi` | `utoipa`, `utoipa_swagger_ui` |
 | `http` | `reqwest` |
 | `tui` | `ratatui`, `color_eyre` |
-| `time` | `chrono` |
+| `time` | `chrono` (crates that already depend on `tokio`) |
+| `time-core` | `time` with `formatting`, `parsing`, `macros` (sync `std` crates without `tokio`; enable `features = ["time-core"]`, then `use rsl_deps::time`) |
 | `protobuf` | `prost` |
 
 Bundles: `std-ext` (`error`+`log`+`serde`), `service` (`async`+`nats`+`parallel`+`std-ext`+`bytes`),
@@ -79,8 +81,8 @@ struct Pair {
 - **`publish = false` for now** — intended to move to a registry (crates.io / private) so that
   published RSL libraries can depend on it. It has no git deps of its own (only registry version
   pins), so it's already publishable once that decision is made.
-- **MSRV floors on features** — core is Rust 1.85; `tui` (`ratatui`) and `time` (`chrono`) pull
-  crates needing **1.88**. Enabling them raises the effective MSRV.
+- **MSRV floors on features** — core is Rust 1.85; `tui` (`ratatui`), `time` (`chrono`), and `time-core`
+  (`time`) pull crates needing **1.88**. Enabling them raises the effective MSRV.
 
 ## Verify
 

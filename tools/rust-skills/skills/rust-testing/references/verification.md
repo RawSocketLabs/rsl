@@ -33,6 +33,29 @@ change, and do not let one green test layer stand in for a different risk.
 - **Mechanical owner:** Repository test tiers and CI.
 - **Sources:** Preference R51, R127.
 
+### TEST-SCOPE-001 Scope each run to what the change touches
+
+- **Strength:** SHOULD
+- **Applies to:** checks run while iterating, before completion, and at release
+- **Directive:** Choose the run from the change, not from the list of available
+  tools. While iterating, run the focused checks for the touched unit. Before
+  reporting completion, run the repository's declared gate once. Add a bounded
+  fuzz smoke run only when the change touches a hostile-input surface, `unsafe`,
+  or FFI, and only for the affected target; add the affected benchmark only when
+  the change touches a benchmarked path. Reserve sustained fuzzing, mutation
+  testing, full benchmark suites, and target or feature matrices for release,
+  scheduled runs, or an explicit request. Do not re-run a check whose inputs
+  have not changed, and run no build for a documentation-only change unless the
+  gate requires it.
+- **Why:** Expensive evidence run on every small change spends minutes proving
+  what the change could not have broken, and teaches people to skip the run
+  entirely. Tying each tier to what it protects keeps the slow tools credible
+  for the changes that need them.
+- **Exceptions:** Repository policy may require a wider tier for any change. A
+  change whose reach is unclear takes the wider tier, with the reason reported.
+- **Mechanical owner:** Repository validation contract, CI tiers, review.
+- **Sources:** Preference R51, R127, R212.
+
 ### CORE-TEST-002 Keep tests deterministic and semantic
 
 - **Strength:** MUST

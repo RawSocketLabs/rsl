@@ -4,7 +4,6 @@
 # tools/check-drift.py enforces it in the consumer's CI.
 
 [versions]
-anyhow = "1.0"
 async-nats = "0.50"
 axum = "0.8"
 bytemuck = "1.25"
@@ -28,6 +27,7 @@ serde_json = "1.0"
 sha2 = "0.11"
 socket2 = "0.6"
 thiserror = "2.0"
+time = "0.3"
 tokio = "1.50"
 tower = "0.5"
 tower-http = "0.7"

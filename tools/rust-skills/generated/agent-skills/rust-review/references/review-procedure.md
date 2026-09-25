@@ -74,8 +74,14 @@ finding blocks only when repository policy makes that contract mandatory.
 Optional suggestions follow findings and must state their concrete benefit;
 they are never disguised as defects.
 
+Report an unmeasured performance concern on a path the repository identifies
+as hot only as a hypothesis: label it `Hypothesis`, keep it out of the blocking
+findings, state the complexity or allocation argument with the real input size,
+and name the measurement that would settle it. Omit it when no such argument
+exists.
+
 Do not report preference-only style, rustfmt output, possible cleanup,
-unmeasured performance, hypothetical abstraction, blanket clone or test
+unmeasured performance as a defect, hypothetical abstraction, blanket clone or test
 `unwrap` objections, or a concern contradicted by types, callers, tests, or
 local policy. Do not enforce numeric function or indentation limits, ban every
 `else`, expand established domain abbreviations, remove durable comments, turn
@@ -87,5 +93,7 @@ boundary, or maintenance hazard it makes easier to see.
 
 Re-read every cited location with its caller and governing rule. Remove
 duplicates and speculation. Lead with findings in severity order using the
-schema in `SKILL.md`. Then state assumptions, exact verification, and gaps. If
+schema in `SKILL.md`. List any performance `Hypothesis` after the findings and
+before optional suggestions, outside the severity scale. Then state
+assumptions, exact verification, and gaps. If
 no findings remain, say so plainly and do not manufacture optional comments.
