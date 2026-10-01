@@ -21,14 +21,14 @@
 //! **Byte alignment over `Framed`.** `Framed`'s buffer is byte-granular, so `BinCodec`
 //! consumes the final byte's padding and starts each `decode` at a byte boundary, matching
 //! the encoder. Padding bits are accepted, not validated. For bit-packed concatenation
-//! without per-message padding, use [`BitBuf`](crate::BitBuf) directly.
+//! without per-message padding, use [`BitBuf`] directly.
 //!
 //! `decode` leaves the entire buffer unchanged on incomplete input or errors. `decode_eof`
 //! makes a finite attempt so truncation is an error. Parsing is replayed on each attempt;
 //! callbacks must be retry-safe. Use `Framed::into_parts` / `Framed::from_parts` for protocol
 //! transitions, transferring **both** read and write buffers; `into_inner` discards them.
 //! This convenience codec uses `T::LAYOUT` from `BitEncode`; directional/contextual codecs
-//! instead use [`BitBuf::try_pull_with`](crate::BitBuf::try_pull_with) with an explicit layout.
+//! instead use [`BitBuf::try_pull_with`] with an explicit layout.
 //!
 //! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
 //! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So

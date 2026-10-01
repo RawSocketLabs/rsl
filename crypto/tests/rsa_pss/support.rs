@@ -29,5 +29,5 @@ fn nibble(digit: u8) -> u8 {
 #[test]
 fn conversion_retains_leading_zeroes_and_printed_byte_order() {
     assert_eq!(decode("000102ff"), vec![0x00, 0x01, 0x02, 0xff]);
-    assert!(decode("").is_empty());
+    assert_eq!(decode(""), [] as [u8; 0]);
 }

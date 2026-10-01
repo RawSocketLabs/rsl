@@ -11,7 +11,7 @@ mod adversarial {
             0x00, 0x01, 0x0a, 0x00, 0x00, 0x02,
         ];
         let h = Ipv4Header::decode_exact(&wire).unwrap();
-        assert!(h.options.is_empty());
+        assert_eq!(h.options, [] as [u8; 0]);
         assert_eq!(h.header_len(), 0);
     }
 

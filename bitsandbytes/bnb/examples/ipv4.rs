@@ -170,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "decoded header",
     );
     assert!(hdr.is_canonical());
-    assert!(hdr.canonical_diff().is_empty());
+    assert_eq!(hdr.canonical_diff(), [] as [&str; 0]);
 
     // `to_bytes` is verbatim, so a decoded packet round-trips byte-for-byte.
     let verbatim = hdr.to_bytes()?;

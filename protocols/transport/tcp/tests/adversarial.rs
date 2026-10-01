@@ -13,7 +13,7 @@ mod adversarial {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         let h = TcpHeader::decode_exact(&wire).unwrap();
-        assert!(h.options.is_empty());
+        assert_eq!(h.options, [] as [u8; 0]);
         assert_eq!(h.header_len(), 0);
     }
 

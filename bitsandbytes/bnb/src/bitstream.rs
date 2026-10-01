@@ -3964,7 +3964,7 @@ mod unit {
             writer.write(InvalidWidth).unwrap_err().kind,
             ErrorKind::TooWide { width: 136 }
         );
-        assert!(writer.into_bytes().is_empty());
+        assert_eq!(writer.into_bytes(), b"");
     }
 
     #[test]
@@ -4080,7 +4080,7 @@ mod component {
             assert_eq!((error.at, error.field), (16, Some("body")));
             buffer.push(&[2, 3, 4, 0, 0]).unwrap();
             assert_eq!(buffer.try_pull::<Blob>().unwrap().body, [1, 2, 3, 4]);
-            assert!(buffer.try_pull::<Blob>().unwrap().body.is_empty());
+            assert_eq!(buffer.try_pull::<Blob>().unwrap().body, b"");
             assert!(buffer.is_empty());
         }
 
@@ -4643,7 +4643,7 @@ mod component {
             // yield an empty `Vec` (not one spurious element) and not spin.
             let out: Vec<Zero> =
                 bnb::__private::decode_all(&[0xFF, 0xFF], Layout::default()).unwrap();
-            assert!(out.is_empty());
+            assert_eq!(out, []);
         }
 
         #[test]
