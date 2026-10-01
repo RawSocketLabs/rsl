@@ -156,7 +156,7 @@ mod unit {
 
         apply(&cipher, counter, &mut empty);
 
-        assert!(empty.is_empty());
+        assert_eq!(empty.as_slice(), []);
     }
 
     /// API-regression evidence: GCTR consumes AES blocks only as temporary key-stream owners.

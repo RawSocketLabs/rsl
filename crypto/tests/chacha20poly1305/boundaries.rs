@@ -76,7 +76,7 @@ fn empty_inputs_seal_and_open() {
     let algorithm = ChaCha20Poly1305::new(ChaCha20Poly1305Key::new([0x11; 32]));
     let nonce = ChaCha20Poly1305Nonce::new([0; 12]);
     let sealed = algorithm.seal(&nonce, b"", b"").unwrap();
-    assert!(sealed.ciphertext().is_empty());
+    assert_eq!(sealed.ciphertext(), []);
     assert_eq!(algorithm.open(&nonce, b"", b"", sealed.tag()).unwrap(), b"");
 }
 

@@ -174,7 +174,7 @@ fn authentication_failure_never_invokes_the_plaintext_sink_or_advances() {
         opener.open_data_to(&changed, &mut sink),
         Err(RecordOpenError::Crypto(CryptoError::AuthenticationFailed))
     );
-    assert!(sink.data.is_empty());
+    assert_eq!(sink.data, [] as [std::vec::Vec<u8>; 0]);
     assert!(sink.final_plaintext.is_none());
     assert_eq!(opener.next_record_number(), 0);
 
@@ -190,7 +190,7 @@ fn an_exact_record_boundary_uses_an_empty_authenticated_final_record() {
     assert_eq!(records.len(), 2);
     assert_eq!(final_record.record_number(), 2);
     assert_eq!(final_record.plaintext_len(), 0);
-    assert!(final_record.ciphertext().is_empty());
+    assert_eq!(final_record.ciphertext(), []);
 
     let mut opener = builder().build_opener().unwrap();
     for record in &records {

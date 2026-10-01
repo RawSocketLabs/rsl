@@ -182,7 +182,7 @@ fn invalid_local_credentials_emit_nothing_and_max_lengths_work() {
             )
             .is_err()
         );
-        assert!(script.written.is_empty());
+        assert_eq!(script.written, b"");
     }
     let mut script = Script::new([b"\x05\x02\x01\x00".as_slice(), REPLY].concat(), 1);
     blocking::connect(

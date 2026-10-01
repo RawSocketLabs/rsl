@@ -49,6 +49,6 @@ mod unit {
         second.update([0, 0, 0, 1]).unwrap();
         assert_eq!(&mask[..32], first.finalize().as_bytes());
         assert_eq!(&mask[32..], &second.finalize().as_bytes()[..8]);
-        assert!(mgf1_sha256(seed, 0).unwrap().is_empty());
+        assert_eq!(mgf1_sha256(seed, 0).unwrap(), [] as [u8; 0]);
     }
 }

@@ -39,7 +39,7 @@ fn main() {
     // Get a fresh, normalized value directly...
     let canon = received.to_canonical();
     assert!(canon.is_canonical());
-    assert!(canon.canonical_diff().is_empty());
+    assert_eq!(canon.canonical_diff(), [] as [&str; 0]);
 
     // ...and encode it: the std `encode(writer)` is verbatim, so encoding the canonical copy
     // emits the normalized bytes.

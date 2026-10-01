@@ -129,7 +129,7 @@ fn unassigned_command_and_reply_codes_are_preserved() {
 #[test]
 fn empty_method_list_decodes_but_compliant_builder_rejects_it() {
     let decoded = MethodRequest::decode_exact(&[0x05, 0x00]).unwrap();
-    assert!(decoded.methods.is_empty());
+    assert_eq!(decoded.methods, [] as [AuthMethod; 0]);
 
     let error = MethodRequest::builder()
         .methods(Vec::new())
@@ -141,7 +141,7 @@ fn empty_method_list_decodes_but_compliant_builder_rejects_it() {
 #[test]
 fn empty_username_decodes_but_compliant_builder_rejects_it() {
     let decoded = UsernamePasswordRequest::decode_exact(&[0x01, 0x00, 0x01, b'p']).unwrap();
-    assert!(decoded.username.is_empty());
+    assert_eq!(decoded.username, b"");
     assert_eq!(decoded.password, b"p");
 
     let result = UsernamePasswordRequest::builder()
@@ -155,7 +155,7 @@ fn empty_username_decodes_but_compliant_builder_rejects_it() {
 fn empty_password_decodes_but_compliant_builder_rejects_it() {
     let decoded = UsernamePasswordRequest::decode_exact(&[0x01, 0x01, b'u', 0x00]).unwrap();
     assert_eq!(decoded.username, b"u");
-    assert!(decoded.password.is_empty());
+    assert_eq!(decoded.password, b"");
 
     let result = UsernamePasswordRequest::builder()
         .username(b"u".to_vec())

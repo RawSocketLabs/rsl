@@ -52,7 +52,7 @@ mod integration {
         assert!(!h.is_ack());
         assert_eq!(h.window, 0xFFFF);
         assert_eq!(h.header_len(), 20);
-        assert!(h.options.is_empty());
+        assert_eq!(h.options, [] as [u8; 0]);
         // Round-trips byte-identically.
         assert_eq!(h.to_bytes().unwrap(), wire);
     }

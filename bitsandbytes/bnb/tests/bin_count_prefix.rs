@@ -73,7 +73,7 @@ mod macro_ {
         };
         let bytes = m.to_bytes().unwrap();
         let decoded = Msg::decode_exact(&bytes).unwrap();
-        assert!(decoded.items.is_empty());
+        assert_eq!(decoded.items, [] as [u8; 0]);
     }
 
     /// An arbitrary-width prefix occupies its declared bits, not the backing width.
