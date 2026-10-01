@@ -6,9 +6,12 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
 ## How it works
 
 1. **Every commit must be conventional.** `.github/workflows/commitlint.yml` lints
-   every commit in a PR against `commitlint.config.mjs`. A non-conforming message
+   every commit in a PR against `.config/commitlint.config.mjs`. A non-conforming message
    fails CI. The squash title must also carry the intended scope and breaking marker:
    release-plz parses the history that actually reaches `main`.
+   Before the first push, run commitlint locally with that configuration; wrap body and
+   footer lines at 100 characters. The full `CI` container run does not include the separate
+   `commit-lint` workflow, and identity hooks do not validate commit-message style.
 
 2. **Successful CI unlocks release automation.** After push CI succeeds for the
    exact current `main` SHA,
@@ -28,9 +31,12 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    an additive feature on `0.4.0` selects `0.4.1`, not `0.5.0`. Inspect the
    generated candidate; version numbers remain automation-owned.
 
-   The two crates use **independent versions**; if `bitsandbytes-macros` bumps,
-   release-plz also bumps `bitsandbytes` (it depends on it) and rewrites the
-   `version = "…"` pin in the root `Cargo.toml`.
+   The two crates share **one version** (`version_group = "bitsandbytes"` in
+   `release-plz.toml`): whichever needs the larger bump sets it for both, so macros may
+   release unchanged. The root `Cargo.toml` requires macros with an exact `version = "=…"`,
+   because generated code calls runtime `__private` helpers that no API or semver gate sees.
+   In every release PR, confirm both crates carry the same version and that the rewritten
+   requirement still begins with `=`; restore it by hand if release-plz drops it.
 
 3. **Merging the release PR cuts the release.** The `release-plz release` job then
    creates the git tag(s) — name-prefixed per crate (`bitsandbytes-v0.3.1`,
@@ -54,17 +60,112 @@ Workflow-level concurrency serializes release and PR updates; the PR job waits f
 tagging/publishing so it cannot regenerate a release against stale tags. A new push
 after verification can supersede the candidate; the workflow does not lock `main`.
 
-Dependency, policy, and workflow changes trigger bnb's full CI gates, including
+Changes affecting bnb, its dependencies, or its gate policy trigger bnb's complete CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
-baseline is explicitly published `0.4.0`; advance it deliberately after releases.
-All three feature modes enforce `--release-type patch` for compatible additions.
+baseline is explicitly published `0.6.0` in `.github/ci/bnb.toml`; advance it deliberately after releases.
+Compatible additions enforce `--release-type patch` in all three feature modes.
+The breaking 0.4 → 0.5 and 0.5 → 0.6 transitions used major mode plus exact reviewed API deltas.
+The `bnb/api-delta-0.5-{all,default,none}.txt` and `bnb/api-delta-0.6-{all,default,none}.txt`
+snapshots remain historical migration evidence, not executable CI gates.
+The one-time delta checker was removed after publication;
+the standing public-API snapshot check and all three patch compatibility gates remain.
 The checker cannot certify proc-macro expansion or behavior: consumer/UI tests
 and review remain required.
 
+The shared [CI selector](../../docs/CI.md) runs complete affected-package and downstream
+consumer suites, not unrelated domains. Shared lockfiles/build configuration and central CI
+changes remain full-workspace triggers. Nightly/manual full runs retain workspace-wide
+feature-unification coverage. A bnb change selects protocol and PKI consumer tests/fuzzing,
+but does not run independent crypto primitive tests merely because PKI also uses crypto.
+
+Release PRs force complete codec-pair and downstream qualification, including archive checks,
+even for prose-only recovery changes. The main push must be the exact merge SHA of a same-repo
+release PR using the configured release-plz branch prefix. CI writes a run/attempt/SHA-bound
+coverage artifact only after recomputing selection and checking every selected job. Before any
+publication, the read-only candidate job verifies that receipt and the required release
+coverage. Missing/expired receipts require a fresh successful CI run; a manually forced
+`release` check is not publication authority. Ordinary commits skip the no-op publish job,
+but release-plz still owns release-PR discovery. Publisher serialization and token checks remain.
+
 Do not recreate historical tags. The `git_only` migration remains deferred in
 `release-plz.toml` until a packageable tag baseline exists.
+
+### Runtime 0.6.0 delivery
+
+Hint-driven message reading changes the read-error type and strengthens the positive
+`Incomplete` contract. [PR #80](https://github.com/RawSocketLabs/rsl/pull/80) preserved the
+breaking Conventional Commit marker; release-plz generated runtime **0.6.0** in
+[PR #81](https://github.com/RawSocketLabs/rsl/pull/81). Macros remain **0.5.0**: no new
+generated runtime requirement or macro implementation change is involved.
+Versions and changelogs remain release-plz-owned.
+
+During this transition, exact reviewed all/default/none deltas against 0.5.0 supplemented
+all-feature major mode; default and no-default APIs continued to enforce patch compatibility.
+After verified publication, all-mode patch checks now target 0.6.0. The temporary checker
+is retired; delta snapshots remain migration evidence. The generated PR's detached fuzz lock
+and archive were verified before merge. The release allowlist stays bnb-only; no GitHub Release
+was created. See `bnb/DESIGN.md` §12.4 for registry, tag, publisher and consumer receipts.
+
+## Pre-commit correctness and performance gate
+
+CI success is necessary, not sufficient. Before committing a runtime or macro release:
+
+1. Inventory runtime, macro expansion, public contracts, and their existing evidence.
+   Review shared dependencies of changed paths as well as the diff. Record findings in
+   `bnb/DESIGN.md`: location, consequence, evidence, severity, pre-existing/new status,
+   disposition, and the regression check that closes each finding. Independent unrelated
+   improvements belong in `bnb/ROADMAP.md`; pre-existing release blockers are not waived.
+2. Pin an immutable baseline revision and representative consumers. Record toolchain,
+   features, corpus, CPU/allocator environment, and benchmark settings. Establish baseline
+   variance and a justified regression budget before measuring the candidate. Keep allocation
+   instrumentation separate from uninstrumented throughput measurements. Measure scaling,
+   copying, retention/allocation, I/O calls, and representative codegen/build growth;
+   bounded memory alone does not establish bounded CPU work.
+3. Prove changed contracts with specification vectors, independent/reference results, and
+   stateful properties. Incremental decoding needs arbitrary partitions and sequences of
+   feed/decode/EOF/compaction/rejection/handoff, not just slice fuzzing. Account for consumed
+   input and retained tails. Exercise real non-SOCKS consumers, custom/context codecs, both
+   bit orders, and byte-padded versus tightly packed messages. Distinguish buffering bounds
+   from allocations owned by decoded values.
+4. Fuzz the actual changed paths and test the tests through focused mutation. Surviving
+   non-equivalent mutations in consumption, capacity, EOF, dispatch, or extraction must be
+   resolved; record equivalent mutations and timeouts separately. Use deterministic resource
+   and progress assertions in CI, not timing thresholds on shared runners. Controlled local
+   benchmarks remain the performance approval gate.
+5. Run the required formatting, strict Clippy, feature and affected-consumer tests, denied-warning docs,
+   MSRV, bare-metal no_std, macro/UI and renamed-consumer checks, public API/compatibility,
+   fuzz, and package checks. Relevant workflow/dependency changes also require actionlint and
+   cargo-deny. Use root `scripts/ci-act.sh pre-push` for the complete selected suites; shared
+   build/dependency policy or central CI changes require its full mode. Record exact commands,
+   results, limitations, and baseline-only failures.
+6. Obtain independent reviewer approval of the final post-fix diff, findings ledger, test
+   evidence, and measurements. Resolve release blockers and unexplained material regressions;
+   document accepted nonblocking tradeoffs and follow-ups. Later edits invalidate affected
+   checks/review. Stage only intentional files and commit only after this gate is satisfied.
+
+This process does not authorize a generic parser rewrite, unsafe optimization, unrelated
+cleanup, or release side effects. A measured design limitation that defeats an intended use
+must be resolved or the proposed adoption revised before claiming that use is ready.
+
+### Coordinated incremental 0.5.0 release
+
+Both runtime and macros shipped as **0.5.0**: removed/changed runtime APIs are breaking, and
+new macro expansion calls new runtime helpers. Publishing the new macros under `^0.4`
+would have permitted Cargo to pair them with an incompatible old runtime. Release-plz
+generated both versions and the matching dependency requirement in
+[PR #77](https://github.com/RawSocketLabs/rsl/pull/77). Both archives were verified before
+publication; [release automation](https://github.com/RawSocketLabs/rsl/actions/runs/34298309943)
+published them from `91f87b7b`. Both registry checksums and crate-prefixed tags were verified.
+See the delivery receipt in `bnb/DESIGN.md` §11.7.
+
+For future releases, repeat archive verification on the generated release PR's exact
+contents. Also refresh affected detached fuzz lockfiles for new path package versions
+(`cargo metadata --manifest-path <fuzz-root>/Cargo.toml --format-version 1`). This includes
+bnb, PKI, and SOCKS when the codec pair changes. CI checks each selected fuzz lockfile with
+`--locked` before cargo-fuzz; release-plz does not own detached workspace lockfiles.
+Do not merge the version PR with a stale fuzz lock.
 
 ## Required: a token that can open the release PR
 
@@ -108,19 +209,23 @@ crates.io as unrelated projects, so a blanket `publish = true` would attempt upl
 to names we do not own. Check ownership of the crates.io name first
 (`cargo owner --list <name>`).
 
-## Additive runtime release after 0.4.0
+## Delivered 0.4.0 and 0.4.1
 
 Both `0.4.0` crates were published successfully under `michael-smythe` after
 PR #65 merged as `a8d1bc5`; hosted CI and release automation passed. This confirms
 the registry token's publication path, superseding the historical token blocker
 below. Keep the release allowlist restricted to the bnb pair.
 
-The consuming enum-alias helper adds only a default runtime trait method. Expect
-`bitsandbytes 0.4.1` with `bitsandbytes-macros 0.4.0`; review the generated versions,
-changelog, dependency pin, and archive before merging its release PR. Verify the
-runtime archive against the already-published macro crate with `cargo package
--p bitsandbytes --all-features --allow-dirty`. No macro release is warranted by
-this feature, and no manifest or changelog is hand-bumped for delivery.
+The consuming enum-alias helper shipped as `bitsandbytes 0.4.1`, with macros
+remaining `0.4.0`. Feature PR #73 and release PR #74 passed review and hosted CI;
+the release workflow published under `michael-smythe`. The registry checksum,
+downloaded source, and tag target `6787622` were verified. The versions and changelog
+entries were generated by release automation, not hand-bumped.
+
+Delivery used an isolated main-based worktree with a bnb-only release scope. The
+older integration checkout retained unrelated work and older release configuration;
+that configuration was not used for these releases. Keep main's release hold intact:
+netlink and other workspace packages require their own explicit release decision.
 
 ## Historical 0.4.0 preparation
 

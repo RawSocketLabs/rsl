@@ -10,6 +10,11 @@ updates:
     groups:
       cargo-minor:
         update-types: [minor, patch]
+    ignore:
+      # 1.1.5 does not compile with only `net` enabled (rawsock's feature set): its
+      # `timespec` module is gated on other features. Drop once a fixed release exists.
+      - dependency-name: "rustix"
+        versions: ["1.1.5"]
 
   # Keep the GitHub Actions (checkout, rust-toolchain, rust-cache, paths-filter, …) current.
   - package-ecosystem: github-actions

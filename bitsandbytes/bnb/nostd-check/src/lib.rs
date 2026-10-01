@@ -54,6 +54,70 @@ pub fn parse(bytes: &[u8]) -> Option<Frame> {
     Frame::decode_exact(bytes).ok()
 }
 
+/// Incremental retry/EOF through a renamed dependency, including mixed magic codegen.
+#[bin(big)]
+#[derive(Debug)]
+pub enum Incremental {
+    #[bin(magic = b"AB")]
+    Long,
+    #[bin(magic = b"A")]
+    Short,
+    Raw(u8),
+}
+
+pub fn pull_incremental(
+    buffer: &mut renamed_bnb::BitBuf,
+    eof: bool,
+) -> Result<Option<Incremental>, BitError> {
+    if eof {
+        buffer.pull_eof()
+    } else {
+        buffer.pull()
+    }
+}
+
+#[bin(read_only, ctx(count: usize))]
+pub struct Directional {
+    #[br(count = count)]
+    bytes: Vec<u8>,
+}
+
+pub fn pull_directional(
+    buffer: &mut renamed_bnb::BitBuf,
+    count: usize,
+) -> Result<Directional, BitError> {
+    buffer.try_pull_with(renamed_bnb::Layout::default(), DirectionalCtx { count })
+}
+
+/// Closed integer and byte-string dispatch errors under a renamed no_std dependency.
+#[bin(big)]
+#[derive(Debug)]
+pub enum ClosedInteger {
+    #[bin(magic = 1u8)]
+    Known,
+}
+
+#[bin(big)]
+#[derive(Debug)]
+pub enum ClosedBytes {
+    #[bin(magic = b"OK")]
+    Known,
+}
+
+/// Compile proof that typed dispatch diagnostics expand under a renamed `no_std`
+/// dependency: the captured integer and byte-string discriminators of two misses.
+pub fn dispatch_diagnostics() -> [Option<renamed_bnb::DispatchValue>; 2] {
+    [
+        observed::<ClosedInteger>(ClosedInteger::decode_exact(&[255]).err()),
+        observed::<ClosedBytes>(ClosedBytes::peek_variant(b"NO").err()),
+    ]
+}
+
+/// The discriminator captured by a dispatch miss that originated in enum `T`.
+fn observed<T: 'static>(error: Option<BitError>) -> Option<renamed_bnb::DispatchValue> {
+    error?.dispatch_error_for::<T>()?.observed().cloned()
+}
+
 /// Encode to an owned `Vec<u8>` (alloc).
 pub fn build(frame: &Frame) -> Result<Vec<u8>, BitError> {
     frame.to_bytes()

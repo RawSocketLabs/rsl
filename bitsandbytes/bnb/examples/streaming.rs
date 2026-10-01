@@ -4,10 +4,10 @@
 //!
 //! The point of this example is the **two truncation signals** and why they differ:
 //!
-//! - [`ErrorKind::Incomplete`] — *retryable*. A streaming source can't know whether more bytes
-//!   will ever arrive, so running out mid-message means "read more and retry". Test for it with
-//!   the shipped [`BitError::is_incomplete`]. Only the **caller** knows when the input is truly
-//!   exhausted — ending the loop is the caller's decision, not the error's.
+//! - [`ErrorKind::Incomplete`] — the source ran out mid-message. Test for it with
+//!   [`BitError::is_incomplete`]. A `StreamBitReader` has already consumed input, so do
+//!   **not** retry the failed field/message on it. Use `BitBuf` for retained-input retries.
+//!   Only the caller knows whether the input is truly exhausted.
 //! - [`ErrorKind::UnexpectedEof`] — *definitive*. A finite input (a slice) ends where it ends;
 //!   the same truncated bytes are a hard EOF, no retry possible.
 //!
@@ -50,9 +50,10 @@ fn main() {
     }
 
     // Read them forward, one at a time. When the stream runs dry the reader says
-    // `Incomplete` — "read more and retry" — because *it* can't know the input is done.
-    // *We* know this buffer is the whole input, so it's the caller, explicitly, that
-    // turns the retryable signal into end-of-input. Any non-`Incomplete` error is a
+    // `Incomplete`, because it cannot know whether the input is finite. This fixture
+    // contains exactly three complete messages; we check that count below. In general,
+    // `Incomplete` alone cannot distinguish clean EOF from a truncated final message.
+    // Any non-`Incomplete` error is a
     // definitive decode failure (malformed data), never end-of-input.
     let mut r = StreamBitReader::new(wire.as_slice());
     let mut seen = 0;
@@ -63,8 +64,8 @@ fn main() {
                 seen += 1;
             }
             Err(e) if e.is_incomplete() => {
-                // Over a live pipe/socket we'd wait for more bytes and retry here.
-                // Our source has nothing left to feed, so: end of input.
+                // This fixture is exhausted. A live fragmented source should instead
+                // use BitBuf; this reader cannot roll back an interrupted message.
                 println!("input exhausted after {seen} events ({e})");
                 break;
             }
@@ -76,8 +77,8 @@ fn main() {
     // The same truncated bytes, two different verdicts — that's the distinction:
     let truncated = &wire[..wire.len() - 2];
 
-    // 1) Through a *stream*, the cut-short tail is `Incomplete` — retryable; for all the
-    //    reader knows, the rest of event 3 is still in flight.
+    // 1) Through a stream, the cut-short tail is Incomplete, but consumed bytes cannot
+    //    be recovered from this forward-only reader for a retry.
     let mut r = StreamBitReader::new(truncated);
     let _ = Event::decode(&mut r); // event 1
     let _ = Event::decode(&mut r); // event 2

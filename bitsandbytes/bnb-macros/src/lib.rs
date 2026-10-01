@@ -401,7 +401,7 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// `peek_variant`/`<Name>Kind`, `decode_tagged`, and a `magic()`/`tag()` accessor where
 /// the discriminant is single-valued. See the `bnb::guide::dispatch` page.
 ///
-/// On a struct, `#[bin]` lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`, which
+/// On a struct, `#[bin]` uses the shared codec/builder generators directly, which
 /// stay usable directly. See the `bnb::guide::bin_codec` page for a full walkthrough and
 /// `bnb::guide::directives` for one runnable example per directive.
 #[proc_macro_attribute]

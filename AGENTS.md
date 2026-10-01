@@ -57,8 +57,17 @@ cargo test --workspace
 cargo deny check
 ```
 
-Before pushing a large source, dependency, API, FFI, or workflow change, run
-`scripts/ci-act.sh pre-push` from a clean, committed worktree. It executes
-every validation job from the checked-in GitHub Actions workflow in rootless
-Podman. Set `ACT_CONCURRENT_JOBS` to limit local container load; hosted CI
-remains the final authority.
+Before pushing a source, dependency, API, FFI, or workflow change, run
+`scripts/ci-act.sh pre-push` from a clean, committed worktree. It executes complete
+affected-package and downstream-consumer suites from the checked-in GitHub Actions
+workflow in rootless Podman. The selector includes optional/dev/build/platform dependencies,
+detached validation workspaces, and shared fixtures; do not replace it with ad-hoc path filters.
+Shared lockfile/build policy, central CI changes, and unknown ownership select full coverage.
+Use `pre-push --base REF` for an explicit comparison and `pre-push --full` for every surface.
+Missing trunk history also selects full coverage. Full CI runs nightly; ordinary prose-only
+changes run policy checks without Rust builds or fuzzing. Release candidates always require
+complete release and downstream qualification. See [CI policy](docs/CI.md).
+
+Set `ACT_CONCURRENT_JOBS` to limit local container load; hosted CI remains the final authority.
+Linked worktrees are validated through a retained, self-contained temporary clone because
+the selector needs Git history inside the container. Never publish from that validation clone.

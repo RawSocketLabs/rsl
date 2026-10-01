@@ -11,7 +11,7 @@ fn mix_step(state: &mut [u8; STATE_LEN], j: &mut u8, i: usize, key_byte: u8) {
 
 /// Expand a validated non-empty key into RC4's initial permutation.
 pub(super) fn schedule(key: &[u8]) -> [u8; STATE_LEN] {
-    debug_assert!(!key.is_empty());
+    debug_assert_ne!(key, []);
     let mut state = core::array::from_fn(|index| {
         u8::try_from(index).expect("RC4 state indices are smaller than 256")
     });

@@ -4,7 +4,7 @@
 # workspace crate names (ethernet, arp, udp, ip, dns, …) exist on crates.io as unrelated
 # projects, so a blanket publish would attempt uploads to names we do not own.
 [workspace]
-# Isolate the bnb 0.4 release. Other pending releases remain in history until
+# Isolate bnb releases. Other pending releases remain in history until
 # their versions, changelogs, ownership, and release scope are reviewed.
 release = false
 publish = false
@@ -28,15 +28,21 @@ release_commits = '^(feat|fix|perf|docs|revert)[(:]|^[a-z]+(?:\([^)]*\))?!:'
 # The bitsandbytes runtime cannot be published (or verified) without its proc-macro
 # crate on the registry. The release job supplies the CARGO_REGISTRY_TOKEN secret
 # (see .github/workflows/release-plz.yml).
+#
+# The pair shares one version. Generated code calls runtime `__private` helpers that no
+# API or semver gate sees, so a macros release is only valid with the runtime it shipped
+# beside; the root `Cargo.toml` pins that pairing with an exact `=` requirement.
 [[package]]
 name = "bitsandbytes-macros"
 release = true
 publish = true
+version_group = "bitsandbytes"
 
 [[package]]
 name = "bitsandbytes"
 release = true
 publish = true
+version_group = "bitsandbytes"
 
 # Preserve netlink's registry opt-in, but inherit release = false. Re-enabling
 # requires review of its breaking synchronous-transport change and version.

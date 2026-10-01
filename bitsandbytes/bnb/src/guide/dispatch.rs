@@ -11,6 +11,9 @@
 //!
 //! `#[catch_all]` preserves an unknown discriminant (dual-use); without one, a magic enum
 //! is a *closed set* and an unknown discriminant is a decode error.
+//! Closed misses use [`ErrorKind::NoMatchingVariant`](crate::ErrorKind::NoMatchingVariant);
+//! [`BitError::dispatch_error_for`](crate::BitError::dispatch_error_for) checks the actual
+//! originating enum. See [typed error handling](super::errors#closed-enum-diagnostics-without-reparsing-input).
 //!
 //! A tagged-union enum encodes **verbatim** — the canonical/`validate`
 //! surface that a [`#[bin]` struct](super::bin_codec#two-encode-forms-verbatim-vs-canonical)
@@ -126,8 +129,10 @@
 //!
 //! # Variable-width magics and a typed fallback
 //!
-//! Byte-string magics may differ in length: dispatch then **peeks** the longest, matches
-//! a prefix, and seeks past the winner (so it needs a seekable source). A variant with
+//! Byte-string magics may differ in length: dispatch probes in declaration order,
+//! restores mismatches, and retains the winner's consumption (so it needs a seekable
+//! source). Incremental matching prefixes wait for more input; finite EOF rules out
+//! incomplete candidates. A variant with
 //! **no** `tag`/`magic` is a *typed fallback*, parsed when nothing matched; use a
 //! fallback **or** a `#[catch_all]` (which here reads from the unconsumed position), not
 //! both. Where nothing matches, the unmatched bytes are still there to read.
@@ -211,3 +216,8 @@
 //!   `peek_variant` likewise needs an on-wire magic (so not under tag/hybrid dispatch).
 //! - With overlapping byte-string magics, declaration order decides — a magic that is a
 //!   prefix of another should come first, and a fallback must not begin like a magic.
+//! - Failed uniform-width magic dispatch reports the already-read integer or bytes.
+//!   Variable-width probes and arbitrary context tags report no observed value; this
+//!   absence is not an incomplete-input signal. Hybrid misses identify `TagOrMagic`
+//!   and report only the final wire magic. No selector conversions or new trait bounds
+//!   are introduced. Generic `#[bin]` enums remain unsupported.

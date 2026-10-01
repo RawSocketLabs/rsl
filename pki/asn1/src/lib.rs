@@ -941,6 +941,13 @@ mod tests {
 
     #[test]
     fn standard_derived_sequence_round_trip_and_exact_span() {
+        #[bnb::bin(big)]
+        #[derive(Debug)]
+        struct Envelope {
+            #[brw(count_prefix = u16)]
+            bytes: Vec<u8>,
+        }
+
         let der = [0x30, 0x06, 0x02, 0x01, 0x2a, 0x01, 0x01, 0xff];
         let sequence = decode_exact(&der).unwrap();
         assert_eq!(sequence.encoded(), der);
@@ -957,6 +964,18 @@ mod tests {
             })
             .unwrap();
         assert_eq!(encoded.finish(), der);
+
+        // Incremental transport ownership does not require the borrowed DER parser to
+        // implement an owned-message trait. Extract an owned outer envelope, then lend it.
+        let mut buffer = bnb::BitBuf::bounded(16);
+        buffer.push(&[0, 8, 0x30]).unwrap();
+        assert!(buffer.try_pull::<Envelope>().unwrap_err().is_incomplete());
+        buffer.push(&der[1..]).unwrap();
+        let owned = buffer.try_pull::<Envelope>().unwrap();
+        let borrowed = decode_exact(&owned.bytes).unwrap();
+        assert_eq!(borrowed.encoded(), der);
+        assert_eq!(borrowed.encoded().as_ptr(), owned.bytes.as_ptr());
+        assert!(buffer.is_empty());
     }
 
     #[test]

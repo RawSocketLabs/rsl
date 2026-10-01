@@ -1,0 +1,5 @@
+error: implicit discriminant exceeds u128
+ --> tests/ui/bitenum_discriminant_overflow.rs:7:5
+  |
+7 |     TooFar,
+  |     ^^^^^^

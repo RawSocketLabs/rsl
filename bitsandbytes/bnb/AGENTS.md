@@ -169,8 +169,10 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `SeekSource` marker for in-memory buffers, `BufSource<R: Read>` (bounded
   retain-and-seek over a forward-only reader), `BitBuf` (push/pull bit-aware in-memory
   buffer — pushable, a `SeekSource`, `no_std`; **reclaim is deferred + in place** so a push/pull
-  loop reuses one alloc, and `BitBuf::bounded(cap)` + `try_push`/`grow` give a fixed alloc-once
-  footprint, `CapacityError` on overflow), `SeekReader<R: Read + Seek>`, and —
+  loop reuses one alloc, and `BitBuf::bounded(cap)` + `push`/`grow` give a fixed alloc-once
+  footprint, `CapacityError` on overflow), `SeekReader<R: Read + Seek>` (re-seeks every read:
+  safe for shared cursors like `&File`), `BufSeekReader<R>` (owns a `BufReader<R>`, tracks the
+  offset, seeks only on a jump; no `Clone`/`get_mut` by design), and —
   under the opt-in **`bytes`** feature — `BytesReader`/`BytesWriter` for async
   framing. Seeking is free cursor math; there is no uniform `Seek` requirement.
 - **Opt-in transport helpers (all `std`).** `tokio`: `BinCodec<T>`, a `tokio_util::codec`
@@ -184,6 +186,13 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   for `[dev-dependencies]`): `MockDatagramSocket`/`MockStream` in-memory transports with scripted
   inbound, captured outbound, chunked delivery, and error injection (`fail_after`/`fail_next_recv`)
   — unit-test `net` code without a socket.
+
+  Stream reads now return `net::MessageReadError` (original I/O source or typed codec error);
+  writes/datagrams retain `BitError`. `net::read_message` borrows a stream, `BitBuf`, and
+  reusable scratch; `tokio-io` adds the equivalent Tokio reader without `tokio-util`.
+  Both honor positive `Incomplete` lower bounds internally and invalidate outstanding
+  hints when `push` rebases the buffer cursor. `tokio` includes `tokio-io`; `BinCodec`
+  remains stateless/datagram-compatible. Never cache stream shortfalls in that shared codec.
 
 ## `no_std` (Option A) — the `std` feature
 
@@ -297,6 +306,14 @@ in the layer that matches its subject:
 - **`property`** — `tests/`, `mod property`. `proptest` invariants (`fuzz_roundtrip`).
 
 `tests/compile_fail.rs` (trybuild) is the separate negative/UI harness, outside the layers.
+Install the stable toolchain's `rust-src` component before running these tests
+(`rustup component add rust-src`). Core const-panic diagnostics include source excerpts
+when it is present; CI installs it so local and hosted snapshots render consistently.
+
+The commands below are focused/manual checks. Before delivery, use the repository-root
+`scripts/ci-act.sh pre-push` for complete bnb and affected downstream suites, or `--full`
+for the entire monorepo. The [CI policy](../../docs/CI.md) defines selection and release
+qualification; an upstream codec change must not omit consumer behavior tests.
 
 ```bash
 cargo test                                  # whole workspace (default features)

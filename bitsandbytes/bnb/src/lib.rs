@@ -85,18 +85,22 @@ LEB128 varints, NUL-terminated and length-prefixed strings — ship ready-made i
 `default-features = false` for an embedded target.
 
 - **`std`** *(default)* — the `std::io` ladder (`StreamBitReader`, `BufSource`,
-  `SeekReader`, `Source::as_read`/`Sink::as_write`), the `From<std::io::Error>`
+  `SeekReader`, `BufSeekReader`, `Source::as_read`/`Sink::as_write`), the `From<std::io::Error>`
   bridge, and the `encode(writer)` convenience (`EncodeExt`). The `#[br(dbg)]`
   directive (which emits a `tracing` event) is also `std`-only.
 - **`bytes`** — the zero-copy `bytes`-crate adapters; implies `std` (async/tokio framing).
 - **`tokio`** — `BinCodec`, a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]`
   message: `Framed::new(tcp, BinCodec::<T>::new())` (a stream) or `UdpFramed::new(udp, …)` (a
-  datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`.
-  This **is** bnb's async support: a native async `Source`/`Sink` family is deliberately out of
-  scope (the codec is in-memory and fast; framing is the async boundary, and `BinCodec` covers it).
+  datagram `Stream + Sink` of `(T, addr)`) — one codec, both async transports. Implies `bytes`
+  and `tokio-io`. A native async `Source`/`Sink` family remains out of scope.
+- **`tokio-io`** — borrowed, hint-driven `net::read_message_async` over Tokio `AsyncRead`,
+  a caller-owned `BitBuf`, and reusable scratch. Implies `net`, without `tokio-util`
+  or bnb's `bytes` adapters (Tokio may itself depend on the bytes crate).
 - **`net`** — ergonomic `std` socket helpers: `MessageStream` (whole-message read/write over
   any `Read + Write`, e.g. a `TcpStream`, no `try_clone`) and `MessageDatagram` (`send_message`/
-  `recv_message` over a sealed `DatagramSocket` — `UdpSocket` or `UnixDatagram`). Implies `std`.
+  `recv_message` over a sealed `DatagramSocket` — `UdpSocket` or `UnixDatagram`). Borrowed
+  `net::read_message` reuses caller-owned storage. Stream reads honor additional-byte hints
+  and return typed `net::MessageReadError`; writes/datagrams retain `BitError`. Implies `std`.
 - **`mock`** — test-only in-memory transports for exercising `net` code without a real socket:
   `MockDatagramSocket` (a `DatagramSocket`) and `MockStream` (a `Read + Write`, with chunked
   delivery to drive the read-more path). Put it in your `[dev-dependencies]`. Implies `net`.
@@ -186,8 +190,8 @@ mod wirelen;
 
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
-    DecodeWith, EncodeWith, ErrorKind, FixedBitLen, Layout, LimitedSource, SeekSource, Sink,
-    Source,
+    DecodeWith, DispatchKind, DispatchValue, EncodeWith, EnumDispatchError, ErrorKind, FixedBitLen,
+    Layout, LimitedSource, SeekSource, Sink, Source,
 };
 pub use wirelen::WireLen;
 
@@ -195,7 +199,9 @@ pub use wirelen::WireLen;
 /// `std` feature. Without it, `bnb` is `no_std + alloc`: decode from a `&[u8]`
 /// (`BitReader`), encode to a `Vec<u8>` (`to_bytes`/`to_canonical_bytes`).
 #[cfg(feature = "std")]
-pub use bitstream::{BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader};
+pub use bitstream::{
+    BufSeekReader, BufSource, EncodeExt, SeekReader, SinkWriter, SourceReader, StreamBitReader,
+};
 
 /// Zero-copy `bytes`-crate adapters (the `bytes` feature).
 #[cfg(feature = "bytes")]
@@ -240,12 +246,12 @@ pub mod __private {
     #[cfg(feature = "std")]
     pub use crate::bitstream::encode_to_writer_with;
     pub use crate::bitstream::{
-        BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, FixedBitLen, Layout,
-        SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all, decode_exact,
-        decode_exact_with, decode_iter, decode_mapped_msg, decode_peek, decode_peek_with,
-        decode_try_mapped_msg, encode_mapped_msg, encode_to_vec, encode_to_vec_with, peek_bytes,
-        read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write, verify_magic,
-        write_byte_array, write_mapped,
+        BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, ErrorKind, FixedBitLen,
+        Layout, SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all,
+        decode_exact, decode_exact_with, decode_iter, decode_mapped_msg, decode_peek,
+        decode_peek_with, decode_try_mapped_msg, encode_mapped_msg, encode_to_vec,
+        encode_to_vec_with, match_magic, peek_bytes, read_byte_array, read_mapped, read_try_mapped,
+        skip_read, skip_write, verify_magic, write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;

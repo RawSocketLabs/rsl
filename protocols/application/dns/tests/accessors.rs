@@ -54,7 +54,7 @@ mod integration {
         assert_eq!(msg.aaaa_records(), vec![Ipv6Addr::LOCALHOST]);
         assert_eq!(msg.cnames().len(), 1);
         assert_eq!(msg.cnames()[0].to_string(), "cdn.example.com");
-        assert!(msg.mx_records().is_empty());
+        assert_eq!(msg.mx_records(), [] as [&dns::Mx; 0]);
         // `records(rtype)` filters by the declared type.
         assert_eq!(msg.records(RType::A).count(), 2);
         assert_eq!(msg.records(RType::AAAA).count(), 1);
@@ -63,8 +63,8 @@ mod integration {
     #[test]
     fn empty_answers_give_empty_views() {
         let msg = response(vec![]);
-        assert!(msg.a_records().is_empty());
-        assert!(msg.aaaa_records().is_empty());
+        assert_eq!(msg.a_records(), [] as [std::net::Ipv4Addr; 0]);
+        assert_eq!(msg.aaaa_records(), [] as [std::net::Ipv6Addr; 0]);
         assert_eq!(msg.records(RType::A).count(), 0);
     }
 }

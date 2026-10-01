@@ -47,7 +47,7 @@ mod macro_ {
         assert_eq!(c.tag, u4::new(0xA)); // ordinary fields unchanged
         assert_eq!(c.payload, 0x10);
         assert!(c.is_canonical());
-        assert!(c.canonical_diff().is_empty());
+        assert_eq!(c.canonical_diff(), [] as [&str; 0]);
 
         // The defining identity: `x.to_canonical().to_bytes() == x.to_canonical_bytes()`.
         assert_eq!(c.to_bytes().unwrap(), m.to_canonical_bytes().unwrap());

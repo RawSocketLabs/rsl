@@ -99,6 +99,19 @@ mod integration {
         assert_eq!(bytes, golden, "got {bytes:02x?}");
         // ...and the golden bytes decode back to the frame.
         assert_eq!(Frame::decode_exact(&golden).unwrap(), frame);
+        // The same real 288-bit frame, fragmented at every byte boundary, then followed
+        // by another frame. No protocol-specific read-size calculation is involved.
+        for split in 1..golden.len() {
+            let mut buffer = bnb::BitBuf::bounded(golden.len() * 2);
+            buffer.push(&golden[..split]).unwrap();
+            assert!(buffer.try_pull::<Frame>().unwrap_err().is_incomplete());
+            buffer.push(&golden[split..]).unwrap();
+            buffer.push(&golden).unwrap();
+            assert_eq!(buffer.try_pull::<Frame>().unwrap(), frame);
+            buffer.compact();
+            assert_eq!(buffer.pull_eof::<Frame>().unwrap(), Some(frame));
+            assert!(buffer.is_empty());
+        }
     }
 
     proptest! {

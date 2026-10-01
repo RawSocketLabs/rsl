@@ -194,6 +194,6 @@ mod unit {
         let plaintext = open(&cipher, &iv, &[], &[], &tag)
             .expect("the published empty-input tag authenticates");
 
-        assert!(plaintext.is_empty());
+        assert_eq!(plaintext, [] as [u8; 0]);
     }
 }

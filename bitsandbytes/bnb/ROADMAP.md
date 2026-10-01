@@ -10,6 +10,56 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 [`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
 
+## 0.6.0 — hinted message reads
+
+- [x] One hint-driven `MessageStream::read_message`; borrowed sync/Tokio readers over
+      caller-owned transport, `BitBuf`, and scratch, with typed original I/O errors.
+- [x] Strict additional-byte lower bounds, automatic invalidation on compaction/rebasing,
+      bounded read-ahead, immediate finite EOF and lossless byte-padded handoff.
+- [x] Non-SOCKS protocol evidence, lower-bound/async cancellation tests, separate allocation
+      profiling and baseline-controlled performance gate; see [`DESIGN.md` §12](DESIGN.md#12-hint-driven-whole-message-reads-06-candidate).
+- [x] Final post-fix fuzz/mutation/reviewer gate (2026-09-09, no remaining findings).
+- [x] Source delivery: clean-tree container and hosted CI; [PR #80](https://github.com/RawSocketLabs/rsl/pull/80)
+      merged as `cd5db374`. The generated version PR has separate archive/release gates.
+- [x] Release-plz runtime **0.6.0** release; macros remain **0.5.0**. Archive/index checksum,
+      tag, publisher, docs.rs and renamed registry consumer verified. Restore patch checks
+      in all feature modes against published 0.6.0; keep transition snapshots as history.
+      Delivery receipt: [`DESIGN.md` §12.4](DESIGN.md#124-delivery-receipt-2026-09-09-utc).
+- [ ] SOCKS adoption of the published borrowed helpers in a separate slice.
+
+## 0.5.0 — incremental decoding and lossless handoff
+
+- [x] Reuse `BitBuf` for detailed `try_pull`, finite `pull_eof`, and explicit
+      layout/context attempts; preserve input on all attempt failures.
+- [x] One fallible `push`, bounded pre-read enforcement, reservation-correct grow/clone,
+      progress checks, physical-versus-logical shortage, and prefix-safe magic dispatch.
+- [x] Lossless sync extraction/raw handoff and finite Tokio decoding; consistent
+      independently byte-padded transport messages, exact packed bits in core `BitBuf`.
+- [x] Generic evidence: DMR/packed bits, compressed DNS envelopes, borrowed DER,
+      contextual/versioned records, stateful fuzz, mutation and allocation checks.
+- [x] Final independent review and evidence reconciliation before commit (2026-09-08). See
+      [`DESIGN.md` §11](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
+- [x] Deliver the coordinated **0.5.0 runtime/macros pair** through release-plz; verify
+      versions/pin, archives, tags, and registry consumer; restore patch compatibility
+      gates against published 0.5.0 (223 rules pass in each feature mode). Delivery receipt:
+      [`DESIGN.md` §11.7](DESIGN.md#117-delivery-receipt-2026-09-09-utc).
+- [ ] Next smallest consumer slice: SOCKS sync/async adoption and lossless raw handoff,
+      after bnb delivery. No SOCKS implementation changes in this release.
+
+Audit follow-ups (not silently waived or bundled into this feature):
+
+- [ ] Define explicit field-width versus logical/raw-type truncation policy before 1.0.
+- [ ] Define duplicate bitflag-position aliases and iteration semantics.
+- [ ] General encode-once sizing for position/layout/scratch-dependent `auto_len(bytes)`;
+      current support requires retry-safe, state-independent encoded length.
+- [ ] Replace `SeekReader`'s tiny per-scalar heap scratch after focused evidence; clarify
+      zero-width I/O behavior. Measure cumulative macro-offset expansion before optimizing it.
+- [ ] Improve diagnostics for fixed-array widths exceeding the `u32` bit-length domain.
+- [ ] Normalize custom incomplete errors across other finite entry points; the new
+      `IncompleteAtEof` contract currently covers `BitBuf`/`BinCodec` finite attempts only.
+- [ ] Consider resumable parsing only with a measured consumer requirement. General
+      variable-element replay remains documented; byte-blob framing is the efficient path.
+
 ## Field types & macros
 
 - [x] **`u1`..`u127`** (`UInt<T, N>`) — range-checked arbitrary-width unsigned
@@ -38,8 +88,8 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), and `decode_exact`/`peek`
       (one-shot) — the encode entry points (`to_bytes` + the `encode(writer)` convenience, plus
       `BitEncode::bit_encode` for a `Sink`), and construction (struct literal, `builder()`).
-- [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (exactly what's stored;
-      byte-identical `decode → to_bytes`); `to_canonical_bytes` normalizes (`reserved` → spec,
+- [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (modeled stored fields;
+      not unmodeled final padding or custom-codec representations); `to_canonical_bytes` normalizes (`reserved` → spec,
       `calc` recomputed). Generated for a `reserved`/`calc` message, alongside the in-memory
       helpers `to_canonical`/`canonical_diff`/`is_canonical`. The form is chosen **per call** —
       there is no carried mode (the `std`-writer `encode(w)` is always verbatim; stream canonical
@@ -68,7 +118,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       named `impl` blocks, reusable in-program). Bypasses the field codec; handles a
       **variable-length** wire form; emits no `FixedBitLen` (a fixed-wire mapped type nests as a
       plain field via a one-line manual impl). See [`bnb::guide::mapping`].
-- [x] Lowers to `#[derive(BitDecode, BitEncode, BitsBuilder)]`; the bare derives carry
+- [x] Shares generators with `#[derive(BitDecode, BitEncode, BitsBuilder)]`; the bare derives carry
       the all-byte-aligned right-tool guard (escape hatch
       `#[bit_stream(allow_byte_aligned)]`).
 - [x] **Tagged-union enums** (`#[bin]` on an enum) — dispatch by per-variant `magic` (a
@@ -95,16 +145,23 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
       the single `&mut` threaded through every field's encode, so a value stored on it is visible
       to them all; recover it with `Any::downcast_mut`. Zero `unsafe`. Surfaced + driven by the DNS
       name-compression port (the co-evolution headline gap).
-- [x] `StreamBitReader<R: Read>` — forward-only streaming; `Incomplete` ("read more")
-      signal.
+- [x] `StreamBitReader<R: Read>` — forward-only, **nontransactional** streaming;
+      short reads may already consume input. Use `BitBuf` for safe incremental retry.
 - [x] `BufSource<R: Read>` — bounded retain-and-seek socket adapter.
 - [x] `BitBuf` — push/pull, bit-aware in-memory buffer: `push(&bytes)` as they arrive,
       `pull::<T>()` takes whole messages off the front (`None` until complete). A `SeekSource`, so
       it also reads through plain `decode`; the pushable counterpart to `BufSource` (`no_std` +
       `alloc`). **Reclaim is deferred + in place** (a push/pull loop reuses one allocation), and a
-      **bounded / alloc-once** mode — `BitBuf::bounded(cap)` + `try_push` (`CapacityError` on
+      **bounded / alloc-once** mode — `BitBuf::bounded(cap)` + `push` (`CapacityError` on
       overflow, never reallocates) + explicit `grow` — gives a fixed footprint for real-time/`no_std`.
-- [x] `SeekReader<R: Read + Seek>` — large file / container.
+- [x] `SeekReader<R: Read + Seek>` — large file / container; re-seeks every read, so it is
+      correct over shared cursors (`&File`).
+- [x] `BufSeekReader<R: Read + Seek>` — owned, buffered counterpart: tracks the offset and seeks
+      (relative, buffer-preserving) only on a jump. Same values and errors as `SeekReader`.
+- [ ] Seek-reader EOF detail (pre-existing, kept for parity; DESIGN §14): both seek readers
+      report `UnexpectedEof { remaining: 0 }` whatever remains, and a zero-width read at a sub-byte
+      offset touches (and can fail on) the next byte, unlike `BitReader`. Aligning them changes
+      observable errors: decide before 1.0.
 - [x] `BytesReader`/`BytesWriter` — zero-copy `bytes`-crate framing (opt-in `bytes`
       feature).
 - [x] `BinCodec<T>` — a `tokio_util::codec` `Decoder`/`Encoder` for any `#[bin]` message: drives
@@ -248,7 +305,7 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       whether `canonical_diff` earns its slot. **Newer surface to
       scrutinize:** the **two struct-mapping forms** (closures `map`/`bw_map` vs the conversion-trait
       `wire`/`try_wire`) deliver the same capability two ways — keep both or converge? — and the
-      `BitBuf` bounded quartet (`bounded`/`try_push`/`grow`/`capacity` + `CapacityError`) is fresh
+      `BitBuf` bounded quartet (`bounded`/`push`/`grow`/`capacity` + `CapacityError`) is fresh
       surface to confirm earns its place.
 - [x] `cargo-public-api` snapshot (`bnb/public-api.txt`, full surface via `--all-features`)
       + a CI `public-api` job that diffs it, pinned to `nightly-2026-06-17` +
@@ -257,9 +314,10 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       change). The proc-macro crate has no rustdoc-extractable surface — its macros are
       covered via the re-exports in the runtime-crate snapshot.
 - [x] `cargo-semver-checks` in CI (`semver` job, pinned to `0.50.0`) — blocking
-      source-compatibility comparisons against published `0.4.0`, with all features
-      and separately default and no default features. Explicit `--release-type patch` checks the
-      intended compatible release class without hand-editing versions; release-plz still owns bumps. The 0.4
+      source-compatibility comparisons against published `0.6.0`, with all features
+      and separately default and no default features. Compatible additions use
+      `--release-type patch`; the breaking 0.4 → 0.5 and 0.5 → 0.6 deltas remain historical
+      evidence, not executable gates. Release-plz still owns bumps. The 0.4
       builder behavior change needs a breaking commit marker and consumer/UI tests:
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
       Advance the explicit baseline deliberately after release.
@@ -473,6 +531,16 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       std, since the default carries a value; (3) per-field `#[default(<expr>)]` composing into a
       real `Default` impl for `#[bin]`/`#[bitfield]` structs (today only the builder-only
       `#[builder(default = expr)]` exists, and bitfields get an all-zero `Default`).
+- [ ] **[correctness] `ctx` enum with tag plus variable-width/fallback magic does not compile.**
+      The generated `impl DecodeWith … fn decode_with<S: Source>` calls the inherent
+      `decode_with<S: SeekSource>` the probe path requires (E0277). Repro: `#[bin(big, ctx(sel:
+      u8), tag = sel)] enum E { #[bin(tag = 1)] T(u8), #[bin(magic = b"A")] M(u8), #[bin(magic =
+      b"CDE")] N }`. Pre-existing; found in the `DESIGN.md` §13 review. Until fixed, a hybrid
+      dispatch miss with `observed() == None` is unreachable.
+- [ ] **[perf] Context-free enum `decode_exact` specialization.** Emitting the decode body
+      through `decode_exact_with` cut slice-path rejection ~28% and four-byte success ~23%
+      (`DESIGN.md` §13) but duplicates every enum's decode body. Needs its own gate and an enum
+      `TrailingBytes`/trait-path parity test first: a `decode_peek_with` mutant survived.
 - [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
       canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
       boundary is already documented as intentional in the guide/DESIGN: canonical form and validity

@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: BitEnum variants do not cover the actual Bits width
+ --> tests/ui/bitenum_actual_width.rs:5:10
+  |
+5 | #[derive(BitEnum, Clone, Copy)]
+  |          ^^^^^^^ evaluation of `_` failed here

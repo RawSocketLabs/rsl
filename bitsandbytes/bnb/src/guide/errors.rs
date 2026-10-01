@@ -38,11 +38,18 @@
 //! - `UnexpectedEof { needed, remaining }` — ran off the end of a finite slice.
 //! - `TrailingBytes { remaining }` — `decode_exact` left whole bytes unconsumed.
 //! - `BadMagic { expected, found }` — a `magic` constant didn't match.
+//! - `NoMatchingVariant(details)` — a closed `#[bin]` enum exhausted its dispatch
+//!   alternatives. Details identify the enum and, when already read, the discriminator.
 //! - `Convert { message }` — a conversion or guard rejected the value: a `try_map` /
 //!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
 //!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
 //!   `WidthError` bridged in from checked construction (`try_new`).
-//! - `Incomplete { needed }` — a stream ran out mid-message (read more and retry).
+//! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` supports retry;
+//!   a direct forward-only read may already have consumed input.
+//! - `IncompleteAtEof { needed }` — a custom codec still requested input in a finite
+//!   `BitBuf`/`BinCodec` attempt. Other finite custom-codec entry points must report
+//!   their own definitive errors.
+//! - `NoProgress` — a streamed message or counted element consumed no bits.
 //! - `NotSeekable` / `BufferFull` / `TooWide` / `Io` — seek-on-a-stream, buffer cap,
 //!   over-128-bit field, and an I/O failure (carrying just the `std::io::ErrorKind`, not
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
@@ -72,10 +79,20 @@
 //!
 //! # Streaming: `Incomplete` means "retry", not "fail"
 //!
-//! When a forward stream runs out partway through a message, the error is
-//! `Incomplete` — a signal to read more bytes and retry the decode, as opposed to a
-//! definitive failure. [`is_incomplete`](crate::BitError::is_incomplete) distinguishes
-//! the two:
+//! Buffered attempts return `Incomplete` for physical input shortage, not for a logical
+//! region boundary or a custom codec's hard error. Its `needed` is additional **bytes**
+//! for the next blocked operation (`UnexpectedEof` uses **bits**). It is not the final
+//! frame length. `Some(n > 0)` is a lower bound: appending fewer than `n` bytes cannot
+//! produce either success or a terminal error for the same retained prefix, numeric attempt
+//! cursor, layout, context, and codec-visible state. Compaction/rebasing invalidates that
+//! hint and requires an immediate retry; the whole-message readers handle this internally.
+//! Custom/speculative codecs **must** return `None` if
+//! they cannot prove that bound. `None`/`Some(0)` mean retry after receiving at least one
+//! additional byte. EOF always requires an immediate finite attempt. Overstated custom hints
+//! can stall a reader; they are not a memory-safety issue. This is a behavioral change from
+//! 0.5's best-effort estimates, so custom codec authors must audit their hints when upgrading.
+//! [`is_incomplete`](crate::BitError::is_incomplete) distinguishes retry
+//! from a definitive failure. Direct forward readers do not roll back consumed input:
 //!
 //! ```
 //! use bnb::{bin, StreamBitReader};
@@ -87,15 +104,76 @@
 //! // Only 2 of the 4 needed bytes are available so far.
 //! let mut s = StreamBitReader::new(&[0x12, 0x34][..]);
 //! let err = Quad::decode(&mut s).unwrap_err();
-//! assert!(err.is_incomplete()); // buffer more and try again — not a parse error
+//! assert!(err.is_incomplete()); // shortage, but the forward source has consumed its prefix
+//! // For retryable messages, retain the original input and use BitBuf::try_pull instead.
 //! ```
 //!
-//! # Two error types
+//! # Closed-enum diagnostics without reparsing input
+//!
+//! Match the **originating type**, not a field name, formatted message, or enum name:
+//!
+//! ```
+//! use bnb::{bin, BitError, DispatchKind, DispatchValue};
+//!
+//! #[bin(big)]
+//! #[derive(Debug)]
+//! enum Address {
+//!     #[bin(magic = 1u8)] V4([u8; 4]),
+//!     #[bin(magic = 4u8)] V6([u8; 16]),
+//! }
+//!
+//! #[derive(Debug)]
+//! enum ProtocolError { UnsupportedAddress(u8), Codec(BitError) }
+//! impl From<BitError> for ProtocolError {
+//!     fn from(error: BitError) -> Self {
+//!         let code = error.dispatch_error_for::<Address>()
+//!             .and_then(|detail| detail.observed())
+//!             .and_then(|value| match value {
+//!                 DispatchValue::Integer(code) => u8::try_from(*code).ok(),
+//!                 _ => None,
+//!             });
+//!         match code {
+//!             Some(code) => Self::UnsupportedAddress(code),
+//!             None => Self::Codec(error),
+//!         }
+//!     }
+//! }
+//! fn parse(bytes: &[u8]) -> Result<Address, ProtocolError> {
+//!     Ok(Address::decode_exact(bytes)?) // ordinary `?`, no input probe
+//! }
+//! assert!(matches!(parse(&[0xff]), Err(ProtocolError::UnsupportedAddress(0xff))));
+//! let error = Address::decode_exact(&[0xff]).unwrap_err();
+//! let detail = error.dispatch_error_for::<Address>().unwrap();
+//! assert_eq!(detail.dispatch_kind(), DispatchKind::Magic);
+//! assert_eq!((error.at, error.field), (8, Some("magic")));
+//! ```
+//!
+//! [`dispatch_error_for`](crate::BitError::dispatch_error_for) uses Rust type identity;
+//! identically named enums in different modules cannot collide. Nested payload errors
+//! keep their original type, kind, bit offset, and innermost field. `observed() == None`
+//! means **not captured**, not "need more bytes": external tags and variable-width magic
+//! probes are not captured. Hybrid tag/magic misses capture the final wire magic only.
+//! Fixed-width integers are interpreted in the active layout; byte strings are copied
+//! only on terminal failure, bounded by the declared magic width, never the whole frame.
+//! Successful dispatch adds no diagnostic allocation, copy, or read. Failure details are
+//! boxed; numeric failures allocate one box, fixed-byte failures also own a byte vector.
+//!
+//! Migration: these terminal misses previously returned `Convert` with an unstructured
+//! string. Enum prefix/signature and `decode_as_*` verification failures still use
+//! `Convert`; struct/field magic checks retain `BadMagic`. The rendered message drops the
+//! `conversion failed:` prefix and appends a captured value as `: 0x…`; match the kind,
+//! never the text. Catch-all/fallback success,
+//! incremental hints and finite EOF behavior are unchanged. This does not make direct
+//! forward-only reads transactional; use retained `BitBuf` attempts for lossless retry.
+//!
+//! # Construction errors versus codec errors
 //!
 //! Decoding/encoding yields [`BitError`](crate::BitError). The separate
 //! [`WidthError`](crate::WidthError) covers *construction* (`UInt::try_new` and the `TryFrom`
 //! impls). A `From<WidthError> for BitError` bridges them, so a construction failure inside
-//! a custom `parse_with`/converter can `?`-propagate:
+//! a custom `parse_with`/converter can `?`-propagate.
+//! [`UnknownDiscriminant`](crate::UnknownDiscriminant) is also construction-only: it
+//! belongs to a closed `BitEnum`'s checked integer `TryFrom`, not `#[bin]` dispatch.
 //!
 //! ```
 //! use bnb::{u4, BitError};

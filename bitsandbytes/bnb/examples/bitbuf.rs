@@ -61,7 +61,7 @@ fn main() {
     let mut bb = BitBuf::new();
     let mut out = Vec::new();
     for chunk in [&buf[0..2], &buf[2..7], &buf[7..9]] {
-        bb.push(chunk); // feed whatever just arrived
+        bb.push(chunk).unwrap(); // feed whatever just arrived
         while let Some(r) = bb.pull::<Reading>().unwrap() {
             out.push(r); // take every message that's now complete
         }
