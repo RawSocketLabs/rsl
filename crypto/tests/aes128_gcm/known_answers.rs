@@ -44,7 +44,7 @@ fn example_one_empty_inputs_match_the_published_tag() {
         .seal(&nonce, &[], &[])
         .expect("empty inputs satisfy every GCM length limit");
 
-    assert!(sealed.ciphertext().is_empty());
+    assert_eq!(sealed.ciphertext(), []);
     assert_eq!(
         sealed.tag(),
         &Aes128GcmTag::new([

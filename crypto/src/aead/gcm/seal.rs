@@ -162,7 +162,7 @@ mod unit {
         let (cipher, iv) = nist_cipher_and_iv();
         let result = seal(&cipher, &iv, &[], &[]).expect("empty inputs satisfy every length limit");
 
-        assert!(result.ciphertext().is_empty());
+        assert_eq!(result.ciphertext(), []);
         assert_eq!(
             result.tag().as_bytes(),
             &[
@@ -213,7 +213,7 @@ mod unit {
         let result = seal(&cipher, &iv, &[], &[]).expect("empty inputs are valid");
         let (ciphertext, tag) = result.into_parts();
 
-        assert!(ciphertext.is_empty());
+        assert_eq!(ciphertext, [] as [u8; 0]);
         assert_eq!(tag.len(), 16);
     }
 }

@@ -196,7 +196,7 @@ mod macro_ {
         assert_eq!(None::<Kind>.into_normalized_enum_aliases(), None);
         assert_eq!([Kind::Other(2); 0].into_normalized_enum_aliases(), []);
         let empty = Vec::<Kind>::new().into_normalized_enum_aliases();
-        assert!(empty.is_empty());
+        assert_eq!(empty, []);
         assert_eq!(empty.capacity(), 0);
     }
 

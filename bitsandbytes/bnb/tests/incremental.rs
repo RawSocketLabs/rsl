@@ -522,12 +522,7 @@ mod integration {
         let values = CustomCollection::decode_exact(&[2, 42, 43]).unwrap().values;
         assert_eq!(values, [CustomByte(42), CustomByte(43)]);
         assert_eq!(BULK_CALLS.load(Ordering::Relaxed), 1);
-        assert!(
-            CustomCollection::decode_exact(&[0])
-                .unwrap()
-                .values
-                .is_empty()
-        );
+        assert_eq!(CustomCollection::decode_exact(&[0]).unwrap().values, []);
         assert_eq!(BULK_CALLS.load(Ordering::Relaxed), 2);
         let mut buffer = BitBuf::new();
         buffer.push(&[2, 42]).unwrap();
