@@ -65,7 +65,7 @@ pub struct MethodSelection {
     pub method: AuthMethod,
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl MethodSelection {
     /// Check the response version and the client's single explicitly offered method.
     pub(crate) fn check_offered(self, offered: AuthMethod) -> Result<(), crate::error::Error> {

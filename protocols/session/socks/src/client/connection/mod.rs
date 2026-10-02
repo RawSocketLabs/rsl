@@ -1,6 +1,6 @@
 //! Established client connection and backend-specific I/O delegation.
 mod connection;
-#[cfg(feature = "blocking")]
+#[cfg(any(feature = "blocking", feature = "mio"))]
 mod std;
 #[cfg(feature = "tokio")]
 mod tokio;

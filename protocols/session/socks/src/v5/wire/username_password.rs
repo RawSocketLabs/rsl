@@ -118,7 +118,7 @@ pub struct UsernamePasswordResponse {
     pub status: UsernamePasswordStatus,
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl UsernamePasswordResponse {
     /// Require the expected version and a successful authentication outcome.
     pub(crate) fn ensure_success(&self) -> Result<(), crate::error::Error> {

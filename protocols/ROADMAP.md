@@ -53,7 +53,9 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        username/password authentication messages. Blocking and optional Tokio CONNECT clients,
        embedded server handshakes, and bounded listening proxies now share strict session
        validation, explicit authentication/destination policy, and half-close-aware relay.
+       An optional Mio backend adds resumable client/server handshakes and an owned-poll proxy.
        Remaining: explicit raw/malformed codec, GSS-API, UDP ASSOCIATE, BIND, SOCKS4, and SOCKS4A.
+       Windows/macOS Mio runtime qualification is deferred.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## bnb co-evolution — gaps the DNS port is expected to surface

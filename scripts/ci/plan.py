@@ -28,7 +28,8 @@ FUZZ = {
     "bitsandbytes/fuzz": ["-max_total_time=60", "-runs=2000000"],
     "crypto/fuzz": ["-max_total_time=45", "-runs=500000"],
     "pki/fuzz": ["-max_total_time=45", "-runs=500000"],
-    f"{SOCKS}/fuzz": ["-runs=2000000", "-max_len=2048"],
+    # PR runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
+    f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
 DETACHED = (*FUZZ, NOSTD, "usdr", "rust-dsdcc", "tools/rust-skills")
 GLOBAL_FILES = {

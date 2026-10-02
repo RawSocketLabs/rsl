@@ -62,7 +62,8 @@ impl ServerConfig {
 pub struct Limits {
     /// Absolute deadline for negotiation, authentication, and receiving CONNECT.
     pub handshake: Duration,
-    /// Budget shared by outbound connection attempts (not blocking system DNS).
+    /// Budget shared by outbound connection attempts. Blocking and Tokio exclude system
+    /// DNS; the Mio proxy resolves on worker threads and counts DNS against this budget.
     pub connect: Duration,
     /// Total relay lifetime in every driver, not an idle timeout.
     pub relay: Duration,

@@ -10,8 +10,8 @@ SOCKS wire codecs, beginning with SOCKS5 (RFC 1928 and RFC 1929). refcheck proto
 
 The default feature set provides pure SOCKS5 wire codecs: method negotiation, command and
 reply registries, IPv4/domain/IPv6 endpoints, requests, replies, and RFC 1929 username/password
-messages plus transport-independent client configuration and validation. Optional `blocking`
-and `tokio` features add CONNECT operations, embeddable server
+messages plus transport-independent client configuration and validation. Optional `blocking`,
+`tokio`, and `mio` features add CONNECT operations, embeddable server
 handshakes, complete per-connection proxies, and bounded listeners. Every client, server,
 and proxy path is CONNECT-only; servers reply command not supported to BIND and
 UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
@@ -26,11 +26,11 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   same grouping to scoped imports; facade re-exports remain after module declarations.
 - Keep `lib.rs` and every `mod.rs` facade-only: documentation/attributes, module
   declarations, then re-exports. Alphabetize declarations and re-exports within their
-  groups; backend order is `blocking`, `tokio`. Types, constants, functions, and
+  groups; backend order is `blocking`, `mio`, `tokio`. Types, constants, functions, and
   implementations belong in purpose-named files, even when small.
 - `src/v5/wire/` owns the RFC 1928 and RFC 1929 wire types; `v5` re-exports those stable
   wire names. Wire codecs perform no I/O and select no runtime. `v5/client/` and `v5/server/`
-  contain version-specific exchanges, with `blocking` and `tokio` siblings.
+  contain version-specific exchanges, with `blocking`, `mio`, and `tokio` siblings.
   `v5/client/config.rs` owns the re-exported `Config`; `v5/wire/version.rs` owns `VERSION`.
 - Wire constants remain stored and public. Builders default them correctly; verbatim encoding
   preserves deviations and canonical encoding repairs them.
@@ -65,7 +65,7 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   Unsupported greeting versions close without a guessed SOCKS5 reply.
 - `src/client/mod.rs` is a facade: documentation, module declarations, and re-exports only.
   `client/client.rs`, `client/builder.rs`, and `client/configuration.rs` own `Client`, `Builder`,
-  and `Configuration`; public `client/{blocking,tokio}/` folders own distinct clients
+  and `Configuration`; public `client/{blocking,tokio,mio}/` folders own distinct clients
   and specialized builder completion, with facade-only `mod.rs` files. The root `Client` remains
   transport-independent settings and the builder entry point; version-specific exchanges stay
   under `v5/client/`. `Client::configure(configuration)` requires settings up front; there
@@ -73,7 +73,7 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   Client configuration, V5 authentication choices, and construction errors remain available
   without transport features. Only backend-specific builders expose `build()`; the shared
   builder validates settings internally via `into_settings()`. Default normal dependencies
-  must not enable bnb net or Tokio.
+  must not enable bnb net, Tokio, or Mio.
   `client::Builder<B = Unselected>` owns shared options once; `client/backend.rs` owns
   re-exported, feature-gated backend markers. Only the unselected state can select a
   backend. Backend builder paths are aliases with specialized `build()` implementations,
@@ -82,20 +82,24 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   configuration and destination names; retain descriptive type and field names.
   Import referenced crate items at module scope instead of spelling `crate::` paths
   inside functions; use import aliases where names would collide.
-  Select `.blocking()` or `.tokio()` before `.build()` for a concrete backend.
+  Select `.blocking()`, `.tokio()`, or `.mio()` before `.build()` for a concrete backend.
   Blocking/Tokio clients expose `connect` and `connect_with` (Tokio methods are async).
   Successful configured clients return `client::Connection<S>` from `client/connection/`;
   it delegates application I/O through `Stream`, exposes `bound()`, and preserves the
-  buffer in `into_parts()`. This one-sided client connection
+  buffer in `into_parts()`. Mio uses `Handshake::take_connection()` or returns the original
+  poll alongside the connection from `connect_blocking`. This one-sided client connection
   is distinct from the root/server two-sided relay `Connection<S>`.
+  Mio `connect_with` returns a caller-driven `Handshake`; `connect_blocking` explicitly
+  drives its own poll loop. Preserve all readiness/fairness and single-handoff semantics.
   Supplied transports must already be connected and retain caller-owned deadlines;
   the configured budget applies to self-driving TCP setup only.
 - `src/io/stream/` owns a bounded bnb incremental buffer and lossless raw-I/O handoff. Its
   facade re-exports `Stream` from `stream.rs`; `std.rs` owns standard-I/O implementations
-  used by blocking, and `tokio.rs` owns Tokio implementations. All driver
+  shared by blocking and Mio, and `tokio.rs` owns Tokio implementations. All driver
   handoffs retain `Stream<S>`, directly or inside a connection; never extract only the
   transport while buffered input remains.
-  Its crate-private `read_message` / `read_message_async` methods own sequential-driver reads.
+  Its crate-private `read_message` / `read_message_async` methods own sequential-driver reads;
+  the bounded Mio adapter borrows the same bnb reader through its fairness budget.
   Scratch stays method-local: retaining it enlarged the wrapper and showed no consistent
   benchmark benefit. It is not an additional queue of unread input.
 - Blocking/Tokio version-specific exchanges delegate whole-message reads to bnb 0.6's
@@ -112,7 +116,7 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   from `server/server.rs`, `server/builder.rs`, and `server/connection/` respectively;
   `server/config.rs` owns `ServerConfig` and `Limits`, re-exported from `server`.
   `server::Builder<B = Unselected>` requires feature-gated backend selection before build.
-  `server/{blocking,tokio}/` own distinct servers and specialized builder completion;
+  `server/{blocking,tokio,mio}/` own distinct servers and specialized builder completion;
   blocking/Tokio `exchange.rs` files own managed stages. The root `Server` is an
   uninhabited configuration entry point, not a backend-neutral runtime value.
   `src/proxy/` owns complete proxies,
@@ -120,16 +124,17 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   beneath each protocol version. `src/io/` owns shared transport/deadline mechanics.
   `server/resolve.rs` owns shared domain-name preparation for system resolution, not wire
   validation. `io/deadline.rs` owns standard-clock deadline arithmetic and timeout-error
-  helpers. Blocking uses explicit-instant arithmetic
-  through its backend adapter; Tokio retains its own clock. These helpers remain crate-private.
+  helpers. Blocking and Mio use the same explicit-instant arithmetic
+  through backend adapters; Tokio retains its own clock. These helpers remain crate-private.
   Blocking builders additionally expose `thread_budget` (default 128, minimum two).
   Blocking listener admission reserves two thread slots per session and takes the smaller
   of half this budget and `limits.connections`. This is per listener, excluding its caller
   and application-created threads; direct exchanges/`serve_connection` are not bounded by it.
   Per-connection blocking/Tokio drivers take their backend's `&Server`, not `&ServerConfig`;
-  Tokio managed proxies own their `Server` configuration. Validate at server construction,
+  Tokio and Mio managed proxies own their `Server` configuration. Validate at server construction,
   not once per accepted connection. Selected blocking servers expose `serve` as a
-  delegation to their proxy driver. Blocking entry points remain unchanged.
+  delegation to their proxy driver; Mio exposes consuming `into_proxy`, preserving caller-
+  driven polling. Blocking and Mio entry points remain unchanged.
   Tokio additionally exposes infallible `into_proxy`, then fallible explicit `start`.
   `proxy/tokio/` owns `Proxy`, `Running`, and `Shutdown`; Tokio's public
   callback-based `serve` APIs are removed. The listener takes a concrete reporter and
@@ -165,6 +170,29 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   adding V4, not a file move now. Policy is `server::policy` and resource limits are
   `server::Limits`, with no parallel root-module compatibility facade.
 
+- `v5/client/mio/` and `v5/server/mio.rs` provide resumable exchanges. The client facade
+  re-exports `Client` from `client.rs` and `connect_tcp` from the separate `connect.rs`
+  convenience poll loop. `proxy/mio/` owns the complete
+  proxy; `io/mio::Connector` owns numeric TCP connection mechanics.
+  `proxy/mio/proxy.rs` owns the poll/listener/token loop, `entry.rs` owns per-connection state,
+  and `shutdown.rs` owns its shutdown handle. `relay.rs` and `resolver.rs` retain their
+  existing responsibilities. `Entry` owns construction, private protocol state, and
+  phase-checked resolution delivery; `Proxy` owns polling/registration/scheduling.
+  Cross-file internals stay scoped to `proxy::mio`. Reuse `Destination::socket_addr`
+  for numeric destinations rather than another resolver-specific conversion.
+  `v5/mio_io.rs` is the private version-specific bounded codec adapter, not generic I/O.
+  Share strict policies/codecs/handoff with the other drivers; do not duplicate wire framing.
+  Every partial write retains its offset. `WouldBlock` is pending; every other error poisons
+  the handshake. A 64-operation fairness yield requires immediate continuation, not another
+  readiness edge. Interests can be absent while awaiting policy or after completion.
+- Keep Mio sockets associated with their original poll for their lifetime. The convenience
+  client returns that poll alongside its stream. Check `take_error` and `peer_addr` after
+  writable connect readiness, including platform-specific in-progress errors at MSRV 1.85.
+- The Mio proxy owns non-reused tokens, bounded resolver channels/two workers, pinned target
+  addresses, absolute deadlines, and two 16 KiB relay buffers per established connection.
+  Preserve half-close, queued bytes under backpressure, callback-once behavior, stale-event
+  rejection, and prompt shutdown. In-flight system DNS cannot be cancelled or safely joined.
+
 ## Testing
 
 - `unit` tests live beside pure registry and helper logic.
@@ -172,7 +200,8 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
 - `tests/adversarial.rs` covers truncation, unsupported address types, invalid constants,
   unassigned codes, lengths, and parser no-panic behavior.
 - `tests/api.rs` is the fast-tier explicit-configuration and neutral-destination contract.
-  Driver suites cover every unsupported greeting version and configured client transcripts.
+  Driver suites cover every unsupported greeting version and configured client transcripts;
+  the all-feature Mio suite checks the same shared policy across all three complete backends.
 
 - `tests/session_blocking.rs` and `tests/session_async.rs` exercise RFC transcripts, hostile
   peers, and loopback composition. Transcript tests are the fast tier; loopback, fuzz, and
@@ -192,7 +221,7 @@ Follow the root guide's routine tier. For prose-only changes, review the diff an
 no checks. For Rust edits, run formatting, the affected behavior's tests, and strict
 all-target SOCKS Clippy with the affected features. A single-driver edit normally needs
 only that driver's configuration. Shared code or module moves normally use default and
-all-features tests plus all-feature Clippy, not all four combinations. Rebuild rustdoc
+all-features tests plus all-feature Clippy, not all eight combinations. Rebuild rustdoc
 when changing documented API paths/examples. Keep targeted auth, denial, and lossless-handoff
 regressions and independent review when relevant.
 
@@ -203,14 +232,16 @@ unchanged code remain useful evidence; do not rerun them just to answer a questi
 ### Release qualification
 
 During release preparation, or an explicit request for full qualification, run default,
-`--features blocking`, `--features tokio`, and `--all-features` tests.
-Include strict Clippy, warnings-denied rustdoc and MSRV checks
+`--features blocking`, `--features tokio`, `--features mio`, every pairwise driver combination,
+and `--all-features` tests. Include strict Clippy, warnings-denied rustdoc and MSRV checks
 across that matrix, optimized release tests, workspace checks from the root guide, detached
-fuzz-workspace Clippy, mutation checks, and the session-read benchmark.
+fuzz-workspace Clippy, mutation checks, and the session-read benchmark. Mio transcripts and
+loopback tests live in `tests/session_mio.rs`; native client and complete proxy examples are
+in `examples/mio_client.rs` and `examples/mio_proxy.rs` (required feature `mio`).
 
 Run `cargo +nightly fuzz run --fuzz-dir protocols/session/socks/fuzz session
---target x86_64-unknown-linux-gnu -- -runs=2000000 -max_len=2048`.
-These are release-tier local gates, not ordinary interaction gates.
+--target x86_64-unknown-linux-gnu -- -runs=2000000 -max_len=2048` and the same command with
+target `mio_session`. These are release-tier local gates, not ordinary interaction gates.
 Existing pre-push and hosted/scheduled CI requirements remain unchanged; do not bypass them.
 
 ## Scope notes

@@ -13,7 +13,7 @@ pub(crate) fn deadline(now: Instant, duration: Duration) -> Result<Instant, Erro
     }
 }
 
-#[cfg(feature = "blocking")]
+#[cfg(any(feature = "blocking", feature = "mio"))]
 pub(crate) fn remaining(until: Instant, now: Instant) -> std::io::Result<Duration> {
     until
         .checked_duration_since(now)
@@ -21,7 +21,7 @@ pub(crate) fn remaining(until: Instant, now: Instant) -> std::io::Result<Duratio
         .ok_or_else(timed_out)
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub(crate) fn timed_out() -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::TimedOut, "SOCKS deadline expired")
 }

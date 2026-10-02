@@ -1,6 +1,6 @@
 # SOCKS integration note
 
-**Status:** SOCKS5 wire codecs plus blocking/Tokio CONNECT clients and servers implemented.
+**Status:** SOCKS5 wire codecs plus blocking/Tokio/Mio CONNECT clients and servers implemented.
 Source audit:
 `origin/draft/protocols-socks` through `b93c3b9`; imported history through `c5df41a`.
 
@@ -14,7 +14,7 @@ timeouts, and UDP source-pinning regressions. It is excluded and uses the predec
 
 This crate currently implements the RFC 1928 SOCKS5 wire seam—method negotiation, registries,
 typed endpoints, requests, and replies—plus the RFC 1929 username/password request and response
-messages on `bnb`. Optional blocking and Tokio session layers now compose these codecs into
+messages on `bnb`. Optional blocking, Tokio, and Mio session layers now compose these codecs into
 CONNECT clients, embedded server handshakes, per-connection proxies, and bounded listeners.
 The drivers delegate hinted reads to bnb's incremental reader; the dated records below
 retain the earlier framing decisions and measurements for comparison.
@@ -40,6 +40,7 @@ src/
     client.rs
     configuration.rs           typed version/configuration selection
     blocking/                  concrete client and specialized builder
+    mio/                       concrete client, builder, resumable handshake
     tokio/                     concrete client and specialized builder
     connection/                established client connection and I/O traits
   server/                      configured server and shared policy
@@ -61,6 +62,10 @@ src/
       connected.rs             dialed target awaiting success acknowledgment
       server.rs                validated blocking server
       exchange.rs              managed exchange/authorize/connect stages
+    mio/
+      mod.rs
+      builder.rs
+      server.rs                validated configuration for the Mio proxy
     tokio/
       mod.rs
       builder.rs
@@ -73,15 +78,26 @@ src/
       listener.rs              listener and complete per-connection handling
       sockets.rs               cancellation across both relay sockets
       worker.rs                session threads and explicit connection stages
+    mio/
+      mod.rs
+      entry.rs                 private protocol state and connection lifecycle
+      proxy.rs                 poll/listener/token management and scheduling
+      relay.rs
+      resolver.rs
+      shutdown.rs
     tokio.rs
   io/                          shared transport mechanics, not negotiation
     mod.rs
     deadline.rs                standard-clock arithmetic and timeout errors
     blocking.rs                blocking deadline adapter and message writes
+    mio/
+      mod.rs
+      connector.rs
+      deadline.rs              Mio deadline/error adapter
     stream/
       mod.rs
       stream.rs                bounded buffer ownership and lossless handoff
-      std.rs                   standard I/O for blocking
+      std.rs                   standard I/O for blocking and Mio
       tokio.rs                 Tokio I/O
     tokio.rs                   Tokio timeout wrappers and message writes
   types/
@@ -91,14 +107,20 @@ src/
   v5/                          version-specific protocol behavior
     mod.rs
     auth.rs
+    mio_io.rs                  bounded, resumable V5 codec adapter
     client/
       mod.rs
       config.rs
       blocking/                CONNECT and shared exchange
+      mio/
+        mod.rs
+        client.rs              resumable handshake
+        connect.rs             convenience-owned poll loop
       tokio.rs
     server/
       mod.rs
       blocking/                CONNECT and shared exchange
+      mio.rs
       tokio.rs
       validation.rs            shared CONNECT-only server capability checks
     wire/                      permissive RFC 1928/1929 bnb codecs
@@ -113,11 +135,12 @@ src/
       version.rs
 ```
 
-`Server::configure().blocking().build()` (or `.tokio()`) produces a validated
+`Server::configure().blocking().build()` (or `.tokio()` / `.mio()`) produces a validated
 backend-specific server. Blocking servers expose `serve`; Tokio exposes `into_proxy`
-then explicit `start`, with events and a shutdown handle. Per-connection proxy functions
-borrow their matching `&Server`; Tokio's managed proxy owns its server.
-`ServerConfig` remains an alternative
+then explicit `start`, with events and a shutdown handle. Mio exposes `into_proxy`
+to obtain an owned, driveable proxy. Per-connection proxy functions borrow their matching
+`&Server`; Tokio's managed proxy owns its server, and
+`proxy::mio::Proxy::new` takes a Mio server by value. `ServerConfig` remains an alternative
 input through the selected backend's `Server::new(config)`, not a proxy argument. Embedded
 version-specific exchanges still leave authorization and dialing to their caller.
 
@@ -125,7 +148,7 @@ version-specific exchanges still leave authorization and dialing to their caller
 
 - Use `bnb` for the wire codec and the workspace's `thiserror` for semantic construction
   diagnostics. The default wire surface needs no transport or runtime dependency; optional
-  `blocking` and `tokio` features add the reviewed CONNECT behavior described below.
+  `blocking`, `tokio`, and `mio` features add the reviewed CONNECT behavior described below.
 - Name wire messages by their role (`MethodRequest`, `MethodSelection`, `ReplyCode`) instead of
   preserving the draft's ambiguous `Identifier`, `Offer`, and `Response` API.
 - Make `Endpoint` own `ATYP + address + port`. The draft stored `address_type`, address, and port
@@ -744,7 +767,7 @@ transcripts, retained application payloads, peer-observed bound addresses, and n
 on ephemeral loopback listeners. Compile-fail examples enforce the consuming API boundaries.
 Tokio's paused clock checks deadline retention and a fresh failure-reply budget.
 
-Verification completed for this slice: 97 all-feature tests plus nine doctests;
+Verification completed before the Mio follow-up: 97 all-feature tests plus nine doctests;
 independent default/blocking/Tokio/all-feature tests, strict Clippy, warnings-denied rustdoc,
 and Rust 1.85 all-target checks; optimized tests, workspace tests/configured Clippy/MSRV,
 and all four offline cargo-deny gates pass. Five automatic policy/deadline mutations and
@@ -752,9 +775,146 @@ three manual faults (blocking timeout leakage, renewed Tokio connect budget, and
 deadline precedence) are caught; one automatic mutation was unbuildable. Two million ASan
 session fuzz cases and a final 10,000-case smoke pass. Independent final review cleared the
 source/API/security changes after fixing deadline precedence. Documentation bookkeeping was
-interrupted by subsequent documentation requests, not by an outstanding source finding.
+interrupted by the subsequent docs/Mio requests, not by an outstanding source finding.
 The measured bnb helper overhead above is an accepted tradeoff; this refactor claims no speedup.
 Roadmap status remains `dev` because supported versions, commands, and conformance do not change.
+
+### Optional Mio client/server/proxy stack (2026-09-18)
+
+The user requested the complete alternative stack, not merely an adapter example. Feature
+`mio` adds cached workspace Mio 1.2.1 (`net`, `os-poll`, no default logging feature), `bnb/net`,
+and optional Unix libc for portable `EINPROGRESS` constants at Rust 1.85. No package version
+is upgraded and no runtime or Tokio production dependency is enabled. Wire-only defaults,
+blocking-only, Tokio-only, and combinations remain supported. The roadmap remains `dev`:
+adding another driver does not implement another SOCKS version/command or GSS-API.
+
+#### APIs and ownership
+
+- `mio::Client<S>` and `mio::Exchange<S>` own resumable handshake state on an existing
+  nonblocking `Read + Write` transport. Construction does no I/O. `advance`, `interest`,
+  and `needs_advance` distinguish readiness waits, fairness continuations, and completion.
+  `Exchange` reports `Requested` after authentication and request validation; the embedding
+  caller must authorize/dial before `send_success`, or explicitly `send_failure`.
+- Partial writes retain both encoded bytes and offset, including a pending flush. Protocol
+  phase advancement and subsequent input occur only after the preceding output is flushed.
+  Credential checks execute once, even with spurious readiness. `WouldBlock` never becomes
+  a session error; every returned error poisons the owned handshake. Borrowed transports
+  still require their owner to close them after terminal error.
+- The existing bnb 0.6 borrowed reader is reused through a 64-operation budget adapter. It
+  retains every accepted byte, enforces the 513-byte cap, retries finite-EOF decoding, and
+  batches hints within each call. A budget yield masquerades as `WouldBlock` only internally;
+  `needs_advance` tells the scheduler to continue immediately. Decoder attempts/hints are
+  restarted after suspension, not a resumable parser within a field. No upstream bnb change
+  or additional framing algorithm is needed.
+- `take_stream` succeeds only once after full success and preserves the bnb buffer. Raw
+  standard I/O on `Stream` now compiles for `blocking || mio`. Direct socket I/O bypasses
+  that buffer; it remains limited to registration, configuration, and shutdown.
+- `mio::Connector` confirms a numeric TCP connection using `take_error` and `peer_addr`
+  after writable readiness. `NotConnected`, `WouldBlock`, and platform in-progress values
+  remain pending. It enforces an absolute deadline using its own clock, not a caller-provided
+  timestamp that could be stale. It owns no DNS or SOCKS policy.
+- `mio::connect_tcp` runs a convenience poll loop under one absolute setup deadline and
+  returns **the original Poll**, a deregistered `Stream<mio::net::TcpStream>`, and the bound
+  endpoint. Keep/reuse that poll for the stream's lifetime. Mio sources cannot portably be
+  moved between polls even after deregistration; the first review caught and removed an
+  unsafe promise to drop the private poll at handoff. Native-loop users instead compose
+  `Connector` and `Client`, as the runnable client example demonstrates.
+- The new `mio/client.rs`, `server.rs`, and `proxy.rs` are distinct role siblings. Existing
+  blocking/Tokio phase sequencing is intentionally not rewritten in this feature. All three
+  share wire types, strict validators, authentication/destination policy, errors, and lossless
+  streams. A common public state engine or the broader version-selecting facade remains a
+  separate decision; no dummy future versions or executor abstraction are introduced.
+
+#### Complete proxy and readiness safety
+
+- `mio::Proxy::new(listener, Server)` owns its poll/token namespace. `run` drives it to
+  shutdown; `poll(max_wait, report)` allows bounded embedding without an async executor.
+  Session errors go to a caller callback. `shutdown_handle` uses an atomic flag and the
+  **same** Mio waker used for DNS completions, so blocked polling is interruptible.
+- At most `Limits::connections` sessions are accepted. Excess peers stay in the OS backlog.
+  The listener is deregistered at capacity and explicitly resumed when a slot is freed.
+  Client and target tokens are monotonically allocated and never reused, including failed
+  target attempts. Unknown/stale events and DNS results for retired sessions are ignored.
+  Token/resource arithmetic is checked; relay buffers are allocated lazily and fallibly.
+- Each session drive bounds transport work; the outer loop runs bounded batches and uses
+  a deduplicated continuation queue. A yield before `WouldBlock` always schedules another
+  turn. Deadlines and shutdown are checked between batches, and timeout calculation includes
+  the earliest absolute phase deadline. Ready events and deadline scans do not allocate a
+  fresh per-turn vector. Error/closed readiness flags are hints, never substitutes for I/O EOF.
+- Two dedicated workers perform system DNS away from the event loop. Request/result channels
+  are bounded by connection capacity; submission is nonblocking and saturation fails closed.
+  Each answer retains at most 64 numeric candidates. System resolver internals may allocate
+  more before exposing the iterator. DNS, all policy checks, and all connection attempts
+  share one connect deadline. Authorization filters the retained numeric list once, and
+  dialing never re-resolves. Policy elapsed time counts even when every address is denied.
+- Successful TCP connect precedes any SOCKS success bytes, using the real local target
+  address as BND. Failed resolution/policy/dial queues a resumable failure reply with its
+  own budget capped at ten seconds. A failure while writing a success reply only closes
+  the session; it can never append a second reply.
+- Both 16 KiB circular queues are reserved after TCP connect but **before** queuing success;
+  allocation/local-endpoint failures still send a failure reply. Post-success relay assembly
+  is infallible. Circular storage never compacts retained payload, including one-byte drains;
+  the first review removed a sliding-buffer design with quadratic copying under that load.
+- Each established relay owns those two queues. Read interest stops when its direction is
+  full; write interest exists only for queued bytes. Draining queues resumes reads in the
+  same drive/continuation instead of assuming a new edge. Prefetched client bytes are driven
+  immediately. EOF drains queued bytes, then shuts down the opposite write half once while
+  preserving the reverse direction. Deadlines terminate both sides.
+- Shutdown drops the listener, every active socket, both resolver channels, and queued work.
+  It does not join an uninterruptible system resolver. At most two already-running DNS calls
+  per proxy may outlive it until the OS call returns; repeatedly constructing proxies around
+  a stuck resolver can accumulate such threads. Reuse a proxy instance. Callback execution
+  also cannot be preempted: callbacks must remain fast/nonblocking/non-panicking. Their panics
+  unwind the Mio loop, unlike the blocking/Tokio workers' `WorkerPanicked` reporting.
+
+#### Evidence and verification
+
+RFC 1928 §§3–6 and RFC 1929 §2 supply the independent transcript vectors. Cached Mio 1.2.1
+`Poll` portability documentation and `TcpStream::connect` establish readiness draining,
+spurious events, connection confirmation, and lifetime poll association. The Windows SDK
+constant confirms WSAEINPROGRESS. No external documentation/package host was contacted.
+
+Verification:
+
+- All-feature suite: 118 tests plus eleven doctests (including three compile-fail examples).
+  Default, each independent driver, all three driver pairs, and all-feature tests, strict
+  all-target Clippy, warnings-denied rustdoc, and Rust 1.85 all-target checks pass. Both
+  runnable Mio examples compile. Optimized all-feature tests also pass.
+- Workspace tests, configured all-target Clippy, workspace MSRV, all four offline cargo-deny
+  gates, and 45 CI-selector command-contract tests pass. CI's SOCKS profile now includes an
+  independent Mio feature suite. Existing unrelated workspace warn-level debt remains;
+  historical bnb-macro warnings and the yanked-wnaf advisory remain resolved, not exemptions.
+- Mio-only production dependencies exclude Tokio and tokio-util; default builds exclude Mio.
+  Cached-target compile checks also pass for aarch64 Linux/musl and big-endian s390x Linux.
+  Those are compile checks, not cross-platform execution results.
+- RFC transcripts exercise fragmented/coalesced input, partial output and flush, interruptions,
+  real `WouldBlock` versus budget continuation, all unknown ATYP values, truncated handshakes,
+  maximum credentials, callback-once authentication, downgrade refusal, terminal poisoning,
+  and lossless payload handoff. Loopback covers numeric/domain CONNECT, no-dial denial, refused
+  target connect, both half-close orders, a 256 KiB pipelined payload, capacity recovery,
+  deadlines without readiness, both-socket shutdown, and blocking/Tokio client interoperability.
+- Two million ASan cases pass for each of `session` (480 seconds) and the new `mio_session`
+  (995 seconds), with maximum input length 2048. Final-source/lock smoke runs cover 10,000
+  additional inputs per target. The detached fuzz lock is aligned to production Mio 1.2.1;
+  the initial resumable-codec run also exercised the cached compatible Mio 1.2.3 resolution.
+  Fuzzing exercises codec/handshake suspension, not kernel readiness scheduling or DNS races.
+- Eight selected budget/continuation/half-close mutations are detected. Two initially time out
+  in the broad suite and then fail immediate assertions in focused non-network transcripts.
+  Five additional circular-queue arithmetic mutations are caught by a bounded tiny-write
+  wraparound test. An isolated allocation-failure injection proves that a SOCKS failure reply
+  precedes success when relay storage cannot be reserved. No fault was applied to this worktree.
+- Independent source/API/security review clears all production findings after the fixes
+  recorded above. The final test-harness finding is closed with a bounded progress oracle.
+  Source, examples, and rustdoc are available in the existing LAN documentation server.
+
+Linux loopback is the exercised transport; Windows/macOS execution is not claimed. There is
+no performance win claim: bounded work/storage and no queue-compaction copies are structural
+properties, not a throughput benchmark. The separately measured bnb helper overhead is the
+accepted tradeoff recorded above. All dependency checks used cached/offline data.
+
+Next smallest Mio step: after this review, qualify readiness and socket lifecycle on Windows
+and macOS before claiming cross-platform runtime support. A customizable resolver/cancellable
+DNS API, asynchronous auth principals, and new SOCKS commands remain separate work.
 
 ### Version-first organization and one shared server policy (2026-09-18)
 
@@ -775,19 +935,20 @@ src/
   destination.rs         application IP/domain + port, no wire address discriminant
   limits.rs              shared deadlines and connection capacity
   stream.rs              unchanged lossless bnb input ownership and raw I/O
-  io/                    transport writes and deadlines
-  proxy/                 blocking/Tokio listeners
+  io/                    transport writes/deadlines and Mio numeric connector
+  proxy/                 blocking/Tokio listeners and complete Mio lifecycle/DNS/relay
   v5/
     wire/                unchanged permissive codecs; also re-exported at v5::
     auth.rs              client authentication choice and server method adaptation
     session.rs           strict V5 validation and reply classification
-    client/              V5 config plus blocking.rs, tokio.rs
-    server/              blocking.rs, tokio.rs embedded exchanges
+    io.rs                private bounded Mio codec/write adapter
+    client/              V5 config plus blocking.rs, tokio.rs, mio.rs
+    server/              blocking.rs, tokio.rs, mio.rs embedded exchanges
 ```
 
-Root `blocking`, `asynchronous`, and `session` modules are removed, not retained as
+Root `blocking`, `asynchronous`, `mio`, and `session` modules are removed, not retained as
 parallel compatibility facades in this unpublished API. `tokio` now names the backend
-accurately. Existing wire paths such as `v5::Endpoint` remain valid
+accurately; Mio is also nonblocking. Existing wire paths such as `v5::Endpoint` remain valid
 deliberately, with their definitions under `v5::wire`. Source movement was first validated
 against the existing all-feature suite before changing policy/dispatch behavior.
 
@@ -804,8 +965,10 @@ let connection = server.exchange(stream)?.authorize()?.connect()?;
 
 - Client configuration owns credentials without `Debug`; version-specific generic APIs still
   accept borrowed `ClientAuth`. The facade offers generic blocking/Tokio handshakes and TCP
-  convenience methods for both backends. Domains are forwarded unchanged. Invalid local
-  credentials/destinations fail before I/O; a TCP budget spans connect and handshake.
+  convenience methods for all three backends. Domains are forwarded unchanged. Invalid local
+  credentials/destinations fail before I/O; a TCP budget spans connect and handshake. Native
+  Mio loops use `v5::client::mio::Client`/`v5::server::mio::Exchange` and `io::mio::Connector`:
+  this change does not force resumable readiness into a sequential facade contract.
 - A typed `client::Configuration` selects the version together with its valid options; no separate
   version/authentication knobs can disagree. There is no public protocol plugin trait or
   fallback retry. `Version`, client protocol, policy operation/authentication, and context
@@ -824,7 +987,7 @@ let connection = server.exchange(stream)?.authorize()?.connect()?;
 
 - `Policy` owns one shared `ServerAuth` and one `Context` predicate. Its clones share the
   callbacks via `Arc`. V5 only adapts the requirement to RFC 1928/1929; it owns no independent
-  access policy. Complete blocking and Tokio paths both call the same policy evaluator.
+  access policy. Complete blocking, Tokio, and Mio paths all call the same policy evaluator.
 - Context carries the peer, a `RequestInfo` (actual validated version, completed authentication,
   operation, original neutral destination), and the exact numeric candidate. Only successful
   exchange constructs that context. The evaluator also rejects an authentication outcome
@@ -842,24 +1005,24 @@ let connection = server.exchange(stream)?.authorize()?.connect()?;
 - Resolution remains once per request, followed by one callback per retained numeric candidate
   before any dial. Authorization retains an immutable approved list and the SAME absolute
   connect deadline through caller pauses and all attempts. Blocking DNS remains outside its
-  connect budget; Tokio DNS remains inside. Reply-budget precedence, target registration
-  before success, partial-success terminality, and relay half-close
-  are unchanged. Unsupported commands never reach destination authorization.
+  connect budget; Tokio/Mio DNS remains inside. Reply-budget precedence, target registration
+  before success, partial-success terminality, relay half-close, and Mio continuation/token
+  ownership are unchanged. Unsupported commands never reach destination authorization.
 - Managed blocking/Tokio exchanges expose neutral destinations/request facts. Their
   `into_request` escape hatch returns the version-specific manual request and keeps its
   caller-owned policy/deadline contract. This is not a second automatic policy path. Adding
   a second accepted version requires an explicit root manual-handoff return/API decision;
   `v5::server::*` remains the direct version-specific manual route. A one-variant wrapper
   is deliberately not introduced ahead of that implementation.
-- Neutral request ownership can copy at most 255 domain bytes during a V5 managed exchange.
-  Owned client credentials are copied
+- Neutral request ownership can copy at most 255 domain bytes during a V5 managed exchange;
+  Mio also owns a separate resolver query when needed. Owned client credentials are copied
   transiently into each wire exchange. There is no zero-copy, zero-allocation, zeroization,
   or performance-improvement claim. The earlier measured bnb helper overhead remains open.
 
 #### Verification and remaining scope
 
 - 127 all-feature tests and eight doctests (three compile-fail) pass. Independent default,
-  single-backend, combined-backend, and all-feature tests, strict all-target
+  blocking, Tokio, Mio, all three backend pairs, and all-feature tests, strict all-target
   Clippy, warnings-denied rustdoc, and Rust 1.85 all-target checks pass. Optimized release
   tests, workspace tests/configured Clippy/MSRV, and all four offline cargo-deny gates pass.
   Unrelated workspace warn-level debt remains; historical bnb-macro warnings and yanked-wnaf
@@ -869,9 +1032,9 @@ let connection = server.exchange(stream)?.authorize()?.connect()?;
   IPv4, IPv6, opaque/non-UTF-8/NUL domains, and raw unencodable lengths without applying DNS
   or construction policy during conversion. Configured client transcripts assert exact RFC
   bytes, pre-I/O destination rejection, and coalesced application handoff. Convenience-client
-  tests include Tokio.
+  tests include Tokio and Mio with retained poll ownership.
 - Each driver tests every non-V5 greeting byte with no credential callback or guessed reply.
-  The complete-backend composition test shares ONE policy across every complete backend,
+  The complete-backend composition test shares ONE policy across blocking, Tokio, and Mio,
   checks completed authentication/version/operation/original destination/exact numeric target,
   requires one verifier/policy invocation per numeric request, and proves denial prevents dial.
   Existing opaque-domain, malformed credential, no-downgrade, deadlines, cancellation,
@@ -880,9 +1043,9 @@ let connection = server.exchange(stream)?.authorize()?.connect()?;
   version set, ignoring policy denial, reporting the wrong authentication outcome, and
   bypassing each driver's no-reply foreign-version guard. The copy's full suite passes after
   restoration. No fault was applied to the working checkout.
-- The session ASan fuzz target passes two million inputs with `-max_len=2048` in 457
-  seconds. Final-source smokes pass 10,000 additional inputs. The detached fuzz workspace
-  also passes strict all-target Clippy. Fuzzing exercises
+- Both ASan fuzz targets pass two million inputs with `-max_len=2048`: session in 457
+  seconds and Mio in 1006 seconds. Final-source smokes pass 10,000 additional inputs per
+  target. The detached fuzz workspace also passes strict all-target Clippy. Fuzzing exercises
   codec/session state, not kernel readiness scheduling or DNS races.
 - Independent source/API/security and test review finds no remaining issue after marking
   extension points non-exhaustive and documenting manual-handoff evolution.
@@ -921,6 +1084,7 @@ src/
     stream.rs            lossless Stream and its I/O implementations
     blocking.rs
     tokio.rs
+    mio/
   proxy/                 unchanged complete proxy implementations
   v5/                    unchanged version-first wire/client/server ownership
 ```
@@ -941,7 +1105,7 @@ empty modules or generic scaffolding.
 
 Verification for these moves:
 
-- Formatting and every feature configuration passes tests, strict all-target Clippy,
+- Formatting and all eight feature configurations pass tests, strict all-target Clippy,
   warnings-denied rustdoc, and Rust 1.85 all-target checks. The all-feature suite still
   passes 127 tests and eight doctests; optimized release tests also pass.
 - Workspace tests, configured workspace Clippy, workspace MSRV, and all four offline
@@ -952,6 +1116,10 @@ Verification for these moves:
   retains its definition, and the extracted configuration and server bodies are unchanged.
   Existing behavior tests are retained rather than adding tests coupled to file placement.
 - The session ASan target passes two million inputs with `-max_len=2048` in 461 seconds.
+  The fresh Mio run was intentionally stopped at the user's request before two million
+  inputs, after its last progress report of 1,451,648 inputs. No finding was reported
+  before cancellation; this is NOT a completed qualification pass. The earlier layout
+  slice's completed Mio run remains a separate historical result.
 
 ### Local verification cadence (2026-09-18)
 
@@ -976,6 +1144,7 @@ src/client/
   protocol.rs            Protocol and its version-configuration From implementation
   blocking.rs            blocking impl Client methods
   tokio.rs               Tokio impl Client methods
+  mio.rs                 Mio impl Client convenience method
 ```
 
 No public path or method changes: `socks::Client` and `socks::client::{Client, Builder,
@@ -1018,24 +1187,38 @@ src/
     mod.rs               transport facade
     address.rs           existing domain-name conversion/validation
     deadline.rs          shared timeout error construction
+    mio/
+      mod.rs             connector facade
+      connector.rs       unchanged numeric connection mechanics
+      deadline.rs        existing explicit-instant deadline arithmetic
+  proxy/mio/
+    mod.rs               Proxy/Shutdown facade
+    proxy.rs             poll loop, listener, token registration, and scheduling
+    entry.rs             existing per-connection Entry and State
+    shutdown.rs          shutdown handle
+    relay.rs             unchanged bounded relay
+    resolver.rs          unchanged resolver workers
   v5/
+    mio_io.rs            renamed private Mio codec adapter (formerly io.rs)
     client/config.rs     Config extracted from the client facade
     wire/version.rs      VERSION extracted from the wire facade
 ```
 
 All public paths, feature gates, wire constants, signatures, and method bodies are preserved.
 The server builder/configuration/policy, V5 credentials, deadline budgets, authorization,
-numeric target pinning, and shutdown behavior do not change. The existing crate-visible server and
+numeric target pinning, partial-write offsets, token lifecycle, and shutdown behavior do not
+change. Mio's `Entry`, `State`, and shared fields/methods use only `pub(super)` where sibling
+files need access; none becomes crate-wide or public. The existing crate-visible server and
 I/O internals retain their visibility. No wrapper types, dependencies, commands, versions,
 roadmap changes, or publication are introduced.
 
-The source scan found no empty files and one obsolete empty directory left by the earlier
-version-first moves. That directory was removed with non-recursive `rmdir`; it contained
-no data or tracked files. No unrelated files or directories were removed.
+The source scan found no empty files and one obsolete empty directory, `src/mio/`, left by
+the earlier version-first moves. That directory was removed with non-recursive `rmdir`;
+it contained no data or tracked files. No unrelated files or directories were removed.
 
 Routine verification passes default SOCKS tests (36 plus one doctest), all-feature tests
 (127 plus eight doctests), formatting, strict all-target/all-feature SOCKS Clippy, and
-warnings-denied rustdoc.
+warnings-denied rustdoc. The smaller extraction was also compiled before the Mio split.
 Independent review confirms behavior, public paths, feature gates, and scoped visibility
 are preserved, with no findings. The final source scan confirms all eleven facades contain
 only documentation/attributes, ordered declarations, and re-exports, with no remaining
@@ -1068,24 +1251,28 @@ were added; existing behavior tests cover the move.
 
 The approved structural review is implemented without adding V4 placeholders or runtime
 abstractions. Blocking/Tokio complete proxy entry points now borrow a validated `Server`,
-retaining backend-appropriate ownership. This
+matching the builder-driven Mio path while retaining backend-appropriate ownership. This
 is an intentional signature change in the unpublished API: replace `&config` with a borrowed
 the backend's `Server::new(config)?` or a server built with backend selection. Listener workers clone
 the validated server and its configuration, sharing the same policy callbacks, without
 reconstructing or revalidating the server per connection. Configuration validation is now
 private to the server module.
 
-Numeric address conversion reuses `Destination::socket_addr`. The blocking deadline adapter
-uses shared arithmetic with explicit `now`,
-preserving zero/overflow rejection, exact expiry, error classification,
+Mio `Entry` constructs its version-specific exchange and accepts resolution results only
+while resolving. Protocol state, request facts, peer, identity, and pending resolution are
+private to the entry implementation. Poll scheduling and registration metadata remain
+available to `Proxy`; stale answers still cannot revive another phase. Numeric address
+conversion reuses `Destination::socket_addr`. Blocking/Mio deadline adapters share arithmetic
+with explicit `now`, preserving zero/overflow rejection, exact expiry, error classification,
 and absolute budgets. Tokio continues to use Tokio time for its timeout behavior.
 
-The blocking proxy now separates listener/session management from relay mechanics, and `Stream`
+The blocking proxy now separates listener/session management from relay mechanics, the V5
+Mio client separates its resumable handshake from its convenience poll loop, and `Stream`
 separates buffer ownership from standard/Tokio I/O implementations. Their public paths and
 feature availability are unchanged; all new `mod.rs` files are facades. The current map above
 supersedes historical trees without deleting their rationale or verification evidence.
 
-Existing listener tests now exercise builder-created blocking/Tokio servers; the cross-backend
+Existing listener tests now exercise builder-created blocking/Tokio servers; the three-backend
 policy regression builds separate backend servers from clones of one configuration, retaining its callback-count,
 verified-context, and no-dial-on-denial assertions. Other callers explicitly validate their
 configuration before invoking complete proxies. No new file-placement tests or test harness
@@ -1094,11 +1281,11 @@ V4 dispatch, manual-handoff types, version-specific errors, and receive bounds r
 until its wire codec is implemented; the next protocol/platform steps below are unchanged.
 
 Routine verification passes default tests (36 plus one doctest), all-feature tests (127 plus
-eight doctests), formatting, strict all-target SOCKS Clippy with all features, and
-warnings-denied all-feature rustdoc. Targeted backend compilation also passes. A
-single-backend compile exposed a newly unused timeout re-export after the arithmetic
-extraction; gating that re-export to Tokio resolved it, and the final strict checks are
-warning-free. The source scan confirms all fifteen facades remain declaration-
+eight doctests), formatting, strict all-target SOCKS Clippy with all features and separately
+with Mio/Tokio, and warnings-denied all-feature rustdoc. Targeted backend compilation also
+passes. The initial Mio-only compile exposed a newly unused timeout re-export after the
+arithmetic extraction; gating that re-export to Tokio resolved it, and the final strict
+checks are warning-free. The source scan confirms all fifteen facades remain declaration-
 and-export-only, no empty source files/directories remain, and the current ownership map
 matches the source tree. Independent review found no source/API/security or test issue;
 its configuration-cloning documentation correction is resolved. No workspace suite,
@@ -1124,7 +1311,7 @@ those responsibilities remain with the existing server stages and embedded calle
 and destination checks in their original order. `v5/wire/validation.rs` retains only shared
 version/reserved-byte checks. `v5/decode.rs` retains the unchanged failed-command header probe
 and cursor restoration, because no decoded message exists on that path. `session.rs` is
-removed; no wrapper type or public API is added. Both backends use the same methods.
+removed; no wrapper type or public API is added. All three backends use the same methods.
 
 Targeted transcript regressions cover header/capability/destination error precedence,
 authentication-version precedence without sending CONNECT, and failure-reply precedence over
@@ -1181,7 +1368,7 @@ request/reply decoding; no separate framing implementation or fuzz campaign is a
 New contract/adversarial tests cover exact payload and enclosing bytes, 1/255-byte bounds,
 empty/256-byte construction failures, nested-builder enforcement, typed errors, post-build
 mutation, every truncated payload prefix, opaque bytes, and permissive-versus-canonical
-behavior. Existing transcript and lossless-handoff suites cover both driver integrations.
+behavior. Existing transcript and lossless-handoff suites cover all three driver integrations.
 The scalar `wire/validation.rs` helper cleanup remains separate from this domain refactor.
 
 Routine verification passes focused contract/adversarial tests (36), default tests (42 plus
@@ -1208,7 +1395,7 @@ empty domains still round-trip and oversized names remain unencodable. Canonical
 does not repair names or ports. No new dependency, normalization, or allocation is added.
 
 `Endpoint::validate_destination` composes domain-length validation with a nonzero
-destination-port check. All blocking/Tokio clients call it before handshake I/O; TCP
+destination-port check. All blocking/Tokio/Mio clients call it before handshake I/O; TCP
 convenience entry points call it before dialing the proxy. All server backends check the
 request header, supported command, domain length, then destination port, before exposing a
 request to manual handlers or managed resolution/authorization/dialing. The typed
@@ -1246,9 +1433,9 @@ and platform steps below are unchanged.
 
 The staged validation cleanup is committed independently of subsequent protocol features.
 Domain and endpoint match-arm ordering follows the reviewed local edits without changing
-validation results. Local `cargo test -p socks` passed for default, each driver, driver
-combinations, and all features, including doctests.
-Formatting, strict all-target/all-feature SOCKS Clippy, and warnings-denied
+validation results. Local `cargo test -p socks` passed for default, each driver, all three
+driver pairs, and all features (48/99/95/84/134/123/119/160 tests respectively, including
+doctests). Formatting, strict all-target/all-feature SOCKS Clippy, and warnings-denied
 all-feature rustdoc passed. These runs used offline, locked dependency resolution.
 
 The pre-push selector against the configured trunk merge base selects full coverage because
@@ -1286,9 +1473,9 @@ errors enter the same conversion. Other origins, missing/noninteger observations
 oversized integers, payload truncations, and unrelated errors retain the original codec
 error, position, and field. Enum names and formatted text are never classification keys.
 
-The command-header probe and its cursor restoration are removed. Blocking/Tokio exchanges
-use their ordinary message reads.
-The wire `Request`/`Reply` APIs continue returning `bnb::BitError`;
+The command-header probe and its cursor restoration are removed, along with the extra Mio
+command-read wrapper. Blocking/Tokio exchanges use their ordinary message reads; Mio uses
+ordinary `receive`. The wire `Request`/`Reply` APIs continue returning `bnb::BitError`;
 only the guided boundary translates it. Unsupported ATYP still has no known payload width
 and still maps to the existing address-type-not-supported reply. No header type, policy,
 wire format, framing rule, or transport state is added.
@@ -1344,13 +1531,13 @@ functions use these same names (formerly `connect_tcp` and `connect`, respective
 TCP methods retain the configured setup budget; supplied transports retain caller-managed
 deadlines. Facade drivers import the version-specific functions as `connect_v5` and
 `connect_with_v5` rather than spelling full paths inside methods. The final configured
-client migration, including removal of root methods, is described below;
-server stages are unchanged.
+client migration, including removal of root methods and Mio's explicitly blocking
+convenience, is described below; server stages are unchanged.
 
 ### Backend-specific configured clients (2026-09-23)
 
-Select `Client::configure(cfg).blocking().build()` or `.tokio().build()` to obtain
-the concrete `client::<backend>::Client`. Backend builders
+Select `Client::configure(cfg).blocking().build()`, `.tokio().build()`, or
+`.mio().build()` to obtain the concrete `client::<backend>::Client`. Backend builders
 share validation through the root builder, accept timeout settings before or after
 selection, and move configuration without cloning credentials. The shared builder has no
 public `build()` method: selecting a backend is required before construction. Default-feature
@@ -1358,15 +1545,28 @@ users can prepare configuration, but cannot build a client. Root connection meth
 calls to the blocking client, and async calls to Tokio's unsuffixed `connect` and
 `connect_with`. Backend modules are public facades with separate builder/client files.
 
-Existing version-specific APIs and stream `into_parts` remain available; no mid-handshake
-extraction or new transport abstraction is added.
+Native Mio is primary: `connect_with` requires an already-connected nonblocking transport
+(complete the existing `Connector` first), then returns a version-neutral `Handshake`.
+It delegates readiness interest, fairness continuation, registration access, advancement,
+and one-time lossless handoff to the existing V5 implementation. No socket, poll, timer,
+extra buffer, or alternate state machine is created by this wrapper. The caller enforces
+the absolute deadline before/after advancement. The configured timeout does not run in
+the background or govern this caller-driven stage.
+
+The former configured `connect_tcp_mio` convenience becomes the Mio client's explicit
+`connect_blocking`: it owns the setup loop and timeout, returning the original poll
+alongside the stream. That poll must remain associated with the socket. The native Mio
+example now uses the configured facade. Existing version-specific APIs and stream
+`into_parts` remain available; no mid-handshake extraction or new transport abstraction
+is added. Native Windows/macOS execution remains unqualified.
 
 Verification: default tests (53), all-feature tests (182), default/all-feature strict
-all-target Clippy and warnings-denied rustdoc passed. Blocking and Tokio each
-passed an individual all-target compile check.
-Backend selection tests cover timeout validation both before and after selection. No new
-parser, dependency, or protocol behavior was introduced; release-tier workspace, fuzz
-campaigns, benchmarks, and native-platform runs were not repeated.
+all-target Clippy and warnings-denied rustdoc passed. Blocking, Tokio, and Mio each
+passed an individual all-target compile check, including the migrated native example.
+Backend selection tests cover timeout validation both before and after selection;
+configured Mio tests cover fragmented authentication, retained payload, one-time handoff,
+and terminal refusal. No new parser, dependency, or protocol behavior was introduced;
+release-tier workspace, fuzz campaigns, benchmarks, and native-platform runs were not repeated.
 
 ### Established client connections (2026-09-23)
 
@@ -1377,7 +1577,9 @@ reported bound address, accessed through `bound()`. Application I/O uses standar
 async shutdown. All operations delegate through `Stream`; no extra buffer, allocation,
 runtime, or framing implementation is introduced.
 
-`get_ref`/`get_mut` expose the
+Migrate configured Mio `Handshake::take_stream()` to `take_connection()`;
+`connect_blocking` now returns `(Poll, client::Connection<TcpStream>)`. The original
+poll must remain alive and associated with the socket. `get_ref`/`get_mut` expose the
 transport for configuration/registration, not application reads, which would bypass
 retained bytes. `into_parts()` returns `(Stream<S>, Destination)` losslessly; it never
 discards read-ahead by returning only the raw transport.
@@ -1388,10 +1590,10 @@ Construction is private to the configured client and only happens after successf
 negotiation. No mid-handshake extraction or credential-bearing `Debug` is added.
 Verification: package tests passed with default features (53) and all features (185).
 Default/all-feature strict all-target Clippy and warnings-denied rustdoc passed, as did
-individual blocking/Tokio all-target compile checks, formatting, and diff whitespace
+individual blocking/Tokio/Mio all-target compile checks, formatting, and diff whitespace
 checks. Added blocking/Tokio regressions exercise retained-prefix reads, vectored I/O,
-transport errors, and lossless extraction. Native Windows/macOS runtime qualification is
-still outstanding.
+transport errors, and lossless extraction; configured Mio retains one-time handoff tests.
+Native Windows/macOS runtime qualification is still outstanding.
 
 ### Configuration entry points
 
@@ -1401,7 +1603,7 @@ backend-specific `Builder` types retain `.build()` completion. Wire-message cons
 continues to use `builder()`, separating message values from service configuration.
 
 The shared client builder no longer exposes `build()`. Its crate-private `into_settings()`
-owns timeout validation for the backend builders; their public `build()` methods
+owns timeout validation for the three backend builders; their public `build()` methods
 are unchanged. Compile-fail documentation enforces backend selection even with all features
 enabled. Configuration remains available without transport features or an implicit backend.
 
@@ -1409,11 +1611,11 @@ enabled. Configuration remains available without transport features or an implic
 
 `client::Builder<B = Unselected>` replaces the three forwarding wrappers. Backend
 selection consumes the unselected builder and changes only its type marker; shared
-options and timeout validation have one implementation. The markers `Blocking`
+options and timeout validation have one implementation. The markers `Blocking`, `Mio`,
 and `Tokio` are feature-gated and re-exported from `client`. They add no runtime storage,
 allocation, or dispatch. There is no extensible backend trait.
 
-Existing `client::{blocking,tokio}::Builder` paths remain type aliases to the matching
+Existing `client::{blocking,mio,tokio}::Builder` paths remain type aliases to the matching
 specialization, preserving ordinary call sites and explicit annotations. Their specialized
 `build()` methods still return distinct concrete clients. Unselected builders cannot build,
 and selected builders cannot select another backend. Compile-fail examples cover those
@@ -1425,7 +1627,7 @@ default/all-feature rustdoc. No runtime, parser, or dependency behavior changed.
 ### Backend-selected servers
 
 Server setup now mirrors client setup: `Server::configure().protocols(...).policy(...)`
-requires `.blocking()` or `.tokio()` before `.build()`. Shared options live
+requires `.blocking()`, `.tokio()`, or `.mio()` before `.build()`. Shared options live
 once on `server::Builder<B = Unselected>`; only the unselected state implements
 `Default` or selectors, and specialized builders produce distinct concrete server types.
 Each backend module exposes its builder alias and server; blocking/Tokio also retain the
@@ -1435,9 +1637,10 @@ Intentional unpublished-API changes: root `Server` is only a configuration entry
 and root `Server::new` is removed. Use `server::<backend>::Server::new(config)` for existing
 configuration, or the selected builder. Each construction path validates before I/O.
 Tokio's `exchange_async` becomes async `exchange`; complete proxy entry points accept
-only their backend's server. Building a server never binds a listener or starts workers.
+only their backend's server. Mio remains readiness-driven through `proxy::mio::Proxy`;
+building a server never binds a listener, creates a poll, or starts workers.
 
-Policy and accepted-version configuration remain shared and cloneable. The cross-backend
+Policy and accepted-version configuration remain shared and cloneable. The three-backend
 regression now creates separate servers from one cloned `ServerConfig` while retaining
 authentication counts, verified context, and denial-before-dial assertions. Per-backend
 construction tests cover missing policy, empty/duplicate versions, invalid limits, generic
@@ -1445,7 +1648,7 @@ option helpers, and direct-config construction. Compile-fail examples cover requ
 backend selection, driver mismatch, and unchanged authorization-before-connect boundaries.
 Wire codecs, version-specific embedded APIs, command scope, and relay semantics are unchanged.
 Verification passed: default tests (58), all-feature tests (202), strict default/all-feature
-all-target Clippy, individual blocking/Tokio all-target compile checks, formatting,
+all-target Clippy, individual blocking/Tokio/Mio all-target compile checks, formatting,
 and warnings-denied default/all-feature rustdoc. Release-tier workspace, fuzz, benchmarks,
 and native-platform qualification were not repeated for this API-only migration.
 Review caught a cross-backend compile-fail example that could fail merely because the
@@ -1465,7 +1668,7 @@ worker's sockets before joining any remaining worker.
 
 This is a per-listener admission bound, not a thread pool or process-wide resource quota.
 The caller's listener thread, application-created threads, and direct exchanges or
-`serve_connection` calls are outside it. Tokio retains its existing shared connection
+`serve_connection` calls are outside it. Tokio/Mio retain their existing shared connection
 limits without this blocking-specific option. A configured budget does not guarantee the
 OS can create that many threads; creation errors retain normal cleanup behavior.
 The default preserves the previous 64-session default, but raising `connections` alone
@@ -1507,19 +1710,21 @@ design and final reviews found no blockers. Workspace/release-tier checks were n
 ## Service entry points and transport ownership
 
 Backend-selected blocking/Tokio servers now expose `serve`, delegating to the existing
-matching proxy driver without a second backend selection.
+matching proxy driver without a second backend selection. Mio instead exposes consuming
+`into_proxy`, returning its owned `Proxy` for `run`/`poll` and shutdown-handle access.
 The existing proxy functions and `Proxy::new` remain valid; these entry points do not
 change acceptance, concurrency, policy, relay, or shutdown behavior.
 
 `server/connection/` owns the two-sided connection plus blocking/Tokio relay methods.
-`proxy/` retains listener/service coordination. Shared deadlines, buffering, and TCP establishment
+`proxy/` retains listener/service coordination and Mio's readiness-driven relay state.
+Shared deadlines, buffering, and TCP establishment
 remain under `io/`; it is shared transport infrastructure, not a runtime-unifying trait.
 The current 513-byte stream buffer limit remains unchanged. Revisit its version ownership
 before adding SOCKS4 rather than introducing speculative buffer configuration now.
 
 Verification: 63 default and 216 all-feature tests passed; updated entry points are covered
-by blocking capacity/shutdown and Tokio authentication/domain/half-close tests.
-Isolated backend all-target builds, strict all-feature all-target Clippy,
+by blocking capacity/shutdown, Tokio authentication/domain/half-close, and Mio proxy tests.
+All three isolated backend all-target builds, strict all-feature all-target Clippy,
 36 all-feature doctests, formatting, and default/all-feature warnings-denied rustdoc passed.
 Release-tier workspace, fuzz, benchmark, and platform matrices were not repeated.
 
@@ -1576,7 +1781,7 @@ the contract now explicitly preserves the existing shutdown-first behavior.
 Remove `proxy::tokio::serve` and `server::tokio::Server::serve` from the unpublished API.
 Migrate listener ownership to `server.into_proxy(listener).start()?`, handle diagnostics
 through `Running::next_session_error`, and use the shutdown handle plus `join` for termination.
-Caller-managed acceptance retains `serve_connection`; blocking is unchanged.
+Caller-managed acceptance retains `serve_connection`; blocking and Mio are unchanged.
 The private listener takes a concrete `Reporter` and watch receiver instead of executing
 an application error callback. Its select branch unwraps the task result directly:
 worker failure propagates, while a failed session produces an event and serving continues.
@@ -1625,12 +1830,13 @@ matrices, fuzzing, and benchmarks were not repeated for this diagnostics-only ch
 - RFC 1929 credentials are plaintext byte vectors. The wire codec does not provide secrecy or
   zeroization and deliberately does not expose the credential-bearing request through `Debug`.
 - The crate is not yet re-exported by the `rsl` facade.
-- Fuzzing covers hostile client/server input and lossless handoff through the blocking
-  handshakes. Tokio cancellation is exercised by integration tests, not libFuzzer.
+- Fuzzing covers hostile client/server input and lossless handoff through the blocking and
+  resumable Mio handshakes. Actual Mio poll/socket scheduling and Tokio cancellation are
+  exercised by integration tests, not libFuzzer.
 
 ## Protocol dependency map
 
-1. Preserve the SOCKS5 wire/session seam now shared by blocking and Tokio CONNECT. Extend the
+1. Preserve the SOCKS5 wire/session seam now shared by blocking, Tokio, and Mio CONNECT. Extend the
    raw surface independently; later BIND and UDP ASSOCIATE must not couple wire types to sockets.
 2. Reuse the existing TCP/UDP and DNS concepts at behavioral boundaries, but use ordinary stream
    and datagram transports for proxying; raw packet injection is not a SOCKS prerequisite.
@@ -1646,6 +1852,9 @@ matrices, fuzzing, and benchmarks were not repeated for this diagnostics-only ch
    crypto. These are later application-layer consumers, not reasons to generalize SOCKS types.
 
 ## Next smallest reviewable step
+
+For Mio, qualify the existing readiness and socket lifecycle on Windows/macOS before claiming
+cross-platform runtime support. No additional protocol command is needed for that check.
 
 The version-first organization and explicit configuration/shared-policy slice above is now
 implemented. A future SOCKS4/4A slice must start with its wire codec, then prove cross-version

@@ -5,6 +5,10 @@ pub struct Unselected;
 #[cfg(feature = "blocking")]
 pub struct Blocking;
 
+/// Selected Mio backend for the generic client builder.
+#[cfg(feature = "mio")]
+pub struct Mio;
+
 /// Selected Tokio backend for the generic client builder.
 #[cfg(feature = "tokio")]
 pub struct Tokio;

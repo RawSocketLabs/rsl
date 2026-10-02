@@ -12,17 +12,23 @@
     doc = "- [`blocking`]: CONNECT over TCP or a supplied transport."
 )]
 #![cfg_attr(
+    feature = "mio",
+    doc = "- [`mio`]: a resumable CONNECT handshake and a convenience-owned poll loop."
+)]
+#![cfg_attr(
     feature = "tokio",
     doc = "- [`tokio`]: async CONNECT over TCP or a supplied transport."
 )]
 #![cfg_attr(
-    not(any(feature = "blocking", feature = "tokio")),
+    not(any(feature = "blocking", feature = "tokio", feature = "mio")),
     doc = "No transport backend is enabled; [`Config`] remains available."
 )]
 
 #[cfg(feature = "blocking")]
 pub mod blocking;
 mod config;
+#[cfg(feature = "mio")]
+pub mod mio;
 #[cfg(feature = "tokio")]
 pub mod tokio;
 

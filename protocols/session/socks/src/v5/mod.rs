@@ -10,13 +10,15 @@
 //!
 //! [`client`](crate::v5::client) groups version-specific configuration and client backends.
 #![cfg_attr(
-    any(feature = "blocking", feature = "tokio"),
+    any(feature = "blocking", feature = "tokio", feature = "mio"),
     doc = "[`server`](crate::v5::server) groups embedded server exchanges by backend. These leave policy/dialing to their caller; use [`crate::server`] for configured authorization stages."
 )]
 
 pub mod auth;
 pub mod client;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(feature = "mio")]
+pub(crate) mod mio_io;
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub mod server;
 pub mod wire;
 

@@ -5,6 +5,10 @@ pub struct Unselected;
 #[cfg(feature = "blocking")]
 pub struct Blocking;
 
+/// Mio server builder state.
+#[cfg(feature = "mio")]
+pub struct Mio;
+
 /// Tokio server builder state.
 #[cfg(feature = "tokio")]
 pub struct Tokio;

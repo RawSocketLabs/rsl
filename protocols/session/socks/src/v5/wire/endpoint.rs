@@ -6,7 +6,7 @@ use bnb::bin;
 
 // --- Internal modules ---
 use super::{AddressType, Domain, DomainError};
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use crate::error::Error;
 
 /// A SOCKS5 address and port, including its wire `ATYP` discriminant (RFC 1928 §4).
@@ -107,7 +107,7 @@ impl Endpoint {
     ///
     /// This check is CONNECT-specific, not a general rule for reply endpoints or
     /// future BIND and UDP ASSOCIATE destinations.
-    #[cfg(any(feature = "blocking", feature = "tokio"))]
+    #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
     pub(crate) fn validate_destination(&self) -> Result<(), Error> {
         self.validate_structure()?;
 
@@ -179,7 +179,7 @@ mod unit {
     // --- Internal modules ---
     use super::*;
 
-    #[cfg(any(feature = "blocking", feature = "tokio"))]
+    #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
     #[test]
     fn connect_checks_ports_without_restricting_general_endpoints() {
         for port in [0, 1, u16::MAX] {

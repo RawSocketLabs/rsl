@@ -3,7 +3,8 @@ use crate::{Destination, Stream};
 
 /// One established connection through a SOCKS proxy, including its bound address.
 /// Application I/O preserves the stream's prefetched prefix. This is distinct from
-/// the server's two-sided relay connection.
+/// the server's two-sided relay connection and does not own a Mio poll: callers
+/// must keep the original poll alive and reuse it for the transport.
 /// No `Debug` implementation is provided because retained storage can contain credentials.
 ///
 /// ```no_run

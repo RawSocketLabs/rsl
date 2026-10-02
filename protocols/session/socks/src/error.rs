@@ -71,7 +71,7 @@ pub enum Error {
     #[cfg(feature = "tokio")]
     #[error("starting a Tokio proxy requires a current Tokio runtime")]
     TokioRuntimeUnavailable,
-    /// An owned proxy handle was used after its outcome was already consumed.
+    /// A resumable session or owned handle was used after failure, handoff, or completion.
     #[error("operation is not valid in the current SOCKS session phase")]
     InvalidState,
     /// Server construction requires at least one explicitly accepted protocol.
@@ -102,7 +102,7 @@ impl From<bnb::BitError> for Error {
     }
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl From<bnb::net::MessageReadError> for Error {
     fn from(error: bnb::net::MessageReadError) -> Self {
         match error {
@@ -114,7 +114,7 @@ impl From<bnb::net::MessageReadError> for Error {
     }
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl Error {
     pub(crate) fn reply_code(&self) -> ReplyCode {
         match self {
@@ -135,7 +135,7 @@ impl Error {
     }
 }
 
-#[cfg(all(test, any(feature = "blocking", feature = "tokio")))]
+#[cfg(all(test, any(feature = "blocking", feature = "tokio", feature = "mio")))]
 mod unit {
     // --- Standard library ---
     use std::io;
