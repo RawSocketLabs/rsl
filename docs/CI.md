@@ -39,6 +39,22 @@ coverage. A domain gate edit such as `.github/ci/bnb.toml` selects that domain a
 
 ## Execution and local commands
 
+### Editing versus qualification
+
+Ordinary local editing uses focused package/behavior tests, formatting, and strict package
+Clippy with the relevant features. Prose-only edits need diff review and whitespace checks;
+discussion needs no checks. Module/feature changes add relevant configurations, not an
+exhaustive matrix. See the root `AGENTS.md` and the affected crate's routine tier.
+
+Full local workspace/feature/MSRV/release-profile suites, fuzzing, mutation testing, and
+benchmarks are reserved for release preparation or an explicit request for broader
+qualification. Do not launch them automatically after each edit or rerun unchanged inputs.
+This local cadence does not modify the selector, pre-push hooks, hosted PR/main gates,
+scheduled coverage, or release provenance requirements described here. Publication still
+requires its selected checks; ordinary editing does not invoke publication gates.
+
+### CI tooling and pre-push
+
 ```sh
 python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
 python3 -m unittest discover -s scripts/ci -p 'integration_*.py' -v
