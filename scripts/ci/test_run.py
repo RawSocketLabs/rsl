@@ -34,7 +34,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_socks_independent_features_and_interoperability_are_retained(self):
         sequence = commands("socks", planned(release=True), BNB_CONFIG)
-        for feature in ("blocking", "tokio"):
+        for feature in ("blocking", "tokio", "mio"):
             with self.subTest(feature=feature):
                 self.assertIn(["cargo", "test", "-p", "socks", "--features", feature], sequence)
         self.assertIn(["cargo", "test", "-p", "socks", "--all-features"], sequence)

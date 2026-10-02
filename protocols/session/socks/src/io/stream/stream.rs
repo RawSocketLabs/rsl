@@ -11,7 +11,7 @@ pub(crate) const MAX_FRAME_LEN: usize = 513;
 /// A SOCKS transport together with any prefetched application bytes.
 ///
 /// Reads drain the buffered prefix before reading the underlying transport. Writes
-/// and flushes go directly to it. Implements standard I/O with `blocking`, and Tokio
+/// and flushes go directly to it. Implements standard I/O with `blocking` or `mio`, and Tokio
 /// I/O with `tokio` (requiring an `Unpin` transport).
 ///
 /// Keep this wrapper when handing the connection to another protocol. To change

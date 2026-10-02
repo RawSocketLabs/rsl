@@ -11,7 +11,7 @@ use crate::Version;
 pub struct Client {
     pub(super) configuration: Configuration,
     #[cfg_attr(
-        not(any(feature = "blocking", feature = "tokio")),
+        not(any(feature = "blocking", feature = "tokio", feature = "mio")),
         expect(
             dead_code,
             reason = "Stored configuration is consumed only by enabled TCP drivers"

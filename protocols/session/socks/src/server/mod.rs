@@ -3,7 +3,8 @@
 //! Select a backend before construction; policy and limits remain version-independent.
 //! Building performs no I/O, and the returned server exposes only its backend's operations.
 //! Blocking servers `serve` an owned listener directly. Tokio servers convert
-//! `into_proxy`, then explicitly `start` the service.
+//! `into_proxy`, then explicitly `start` the service. Mio servers also convert
+//! `into_proxy`, returning a proxy whose event loop the caller drives.
 //!
 //! # Configuration and policy
 //!
@@ -42,6 +43,10 @@
     doc = "- [`blocking`]: synchronous exchange, authorization, and connection stages."
 )]
 #![cfg_attr(
+    feature = "mio",
+    doc = "- [`mio`]: validated server settings for the readiness-driven [`crate::proxy::mio::Proxy`]."
+)]
+#![cfg_attr(
     feature = "tokio",
     doc = "- [`tokio`]: async exchange, authorization, and connection stages."
 )]
@@ -58,6 +63,8 @@ pub mod blocking;
 mod builder;
 mod config;
 mod connection;
+#[cfg(feature = "mio")]
+pub mod mio;
 pub mod policy;
 pub(crate) mod resolve;
 mod server;
@@ -67,6 +74,8 @@ pub mod tokio;
 // --- Internal modules ---
 #[cfg(feature = "blocking")]
 pub use backend::Blocking;
+#[cfg(feature = "mio")]
+pub use backend::Mio;
 #[cfg(feature = "tokio")]
 pub use backend::Tokio;
 pub use backend::Unselected;

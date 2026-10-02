@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use super::Unselected;
 #[cfg(feature = "blocking")]
 use super::blocking::Builder as BlockingBuilder;
+#[cfg(feature = "mio")]
+use super::mio::Builder as MioBuilder;
 #[cfg(feature = "tokio")]
 use super::tokio::Builder as TokioBuilder;
 use super::{Client, Configuration};
@@ -65,6 +67,19 @@ impl Builder {
         self.select()
     }
 
+    /// Select the Mio client backend for caller-driven readiness.
+    ///
+    /// ```compile_fail,E0599
+    /// use socks::{Client, v5::client::Config};
+    ///
+    /// Client::configure(Config::no_authentication()).mio().mio();
+    /// ```
+    #[cfg(feature = "mio")]
+    #[must_use]
+    pub fn mio(self) -> MioBuilder {
+        self.select()
+    }
+
     /// Start with a required configuration and the default ten-second TCP budget.
     pub(super) fn new(configuration: Configuration) -> Self {
         Self {
@@ -75,7 +90,7 @@ impl Builder {
     }
 
     /// Move settings into the selected backend state without copying credentials.
-    #[cfg(any(feature = "blocking", feature = "tokio"))]
+    #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
     fn select<B>(self) -> Builder<B> {
         Builder {
             configuration: self.configuration,
@@ -98,7 +113,7 @@ impl<B> Builder<B> {
     /// # Errors
     /// Requires a nonzero, representable timeout.
     #[cfg_attr(
-        not(any(test, feature = "blocking", feature = "tokio")),
+        not(any(test, feature = "blocking", feature = "tokio", feature = "mio")),
         expect(
             dead_code,
             reason = "Only enabled backend builders consume shared settings"

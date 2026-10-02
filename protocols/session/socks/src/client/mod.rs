@@ -1,6 +1,6 @@
 //! Configured clients select a version-specific configuration, without fallback.
-//! Configuration is available with default features. Select `blocking`
-//! or `tokio` on the builder to produce the corresponding concrete client.
+//! Configuration is available with default features. Select `blocking`,
+//! `tokio`, or `mio` on the builder to produce the corresponding concrete client.
 //! Constructing any client performs no I/O.
 //!
 //! # Configuration
@@ -20,7 +20,7 @@
 //! ```
 //!
 //! ```no_run
-//! # #[cfg(all(feature = "blocking", feature = "tokio"))]
+//! # #[cfg(all(feature = "blocking", feature = "tokio", feature = "mio"))]
 //! # async fn example() -> Result<(), socks::error::Error> {
 //! use socks::{Client, Destination, v5::client::Config};
 //!
@@ -33,7 +33,12 @@
 //!
 //! // Tokio exposes the same operation asynchronously.
 //! let asynchronous = Client::configure(Config::no_authentication()).tokio().build()?;
-//! let _connection = asynchronous.connect(proxy, dest).await?;
+//! let _connection = asynchronous.connect(proxy, dest.clone()).await?;
+//!
+//! let readiness = Client::configure(Config::no_authentication()).mio().build()?;
+//! // Native event loops use readiness.connect_with(connected_nonblocking_stream, dest).
+//! // This separately named convenience instead drives its own poll loop:
+//! let (_poll, _connection) = readiness.connect_blocking(proxy, dest)?;
 //! # Ok(()) }
 //! ```
 
@@ -46,15 +51,19 @@
     doc = "- [`blocking`]: synchronous connections and caller-supplied standard I/O."
 )]
 #![cfg_attr(
+    feature = "mio",
+    doc = "- [`mio`]: resumable handshakes for event loops; a separately named convenience drives its own poll."
+)]
+#![cfg_attr(
     feature = "tokio",
     doc = "- [`tokio`]: asynchronous connections and caller-supplied Tokio I/O."
 )]
 #![cfg_attr(
-    not(any(feature = "blocking", feature = "tokio")),
-    doc = "No backend is enabled in this build. Enable `blocking` or `tokio` to construct a client."
+    not(any(feature = "blocking", feature = "tokio", feature = "mio")),
+    doc = "No backend is enabled in this build. Enable `blocking`, `tokio`, or `mio` to construct a client."
 )]
 #![cfg_attr(
-    any(feature = "blocking", feature = "tokio"),
+    any(feature = "blocking", feature = "tokio", feature = "mio"),
     doc = "\n# Established connections\n\n[`Connection`] owns the negotiated stream and bound address. Read/write through it, or use its lossless `into_parts()` handoff."
 )]
 
@@ -64,19 +73,23 @@ pub mod blocking;
 mod builder;
 mod client;
 mod configuration;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 mod connection;
+#[cfg(feature = "mio")]
+pub mod mio;
 #[cfg(feature = "tokio")]
 pub mod tokio;
 
 // --- Internal modules ---
 #[cfg(feature = "blocking")]
 pub use backend::Blocking;
+#[cfg(feature = "mio")]
+pub use backend::Mio;
 #[cfg(feature = "tokio")]
 pub use backend::Tokio;
 pub use backend::Unselected;
 pub use builder::Builder;
 pub use client::Client;
 pub use configuration::Configuration;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub use connection::Connection;

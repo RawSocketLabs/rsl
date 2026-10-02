@@ -1,10 +1,10 @@
 //! SOCKS5 client authentication choices and server method adaptation.
 // --- Internal modules ---
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use super::{
     AuthMethod, MethodRequest, USERNAME_PASSWORD_VERSION, UsernamePasswordRequest, VERSION,
 };
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use crate::{error::Error, server::policy::ServerAuth};
 
 /// Exactly one method is offered, preventing an implicit downgrade to no-auth.
@@ -22,7 +22,7 @@ pub enum ClientAuth<'a> {
     },
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl ClientAuth<'_> {
     pub(crate) fn method(self) -> AuthMethod {
         match self {
@@ -44,7 +44,7 @@ impl ClientAuth<'_> {
     }
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub(crate) fn server_method(auth: &ServerAuth) -> AuthMethod {
     if auth.requires_credentials() {
         AuthMethod::UsernamePassword
@@ -52,7 +52,7 @@ pub(crate) fn server_method(auth: &ServerAuth) -> AuthMethod {
         AuthMethod::NoAuthentication
     }
 }
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub(crate) fn select(auth: &ServerAuth, offer: &MethodRequest) -> Result<AuthMethod, Error> {
     if offer.version != VERSION {
         return Err(Error::VersionNotAccepted(offer.version));
@@ -63,7 +63,7 @@ pub(crate) fn select(auth: &ServerAuth, offer: &MethodRequest) -> Result<AuthMet
         Err(Error::NoAcceptableMethod)
     }
 }
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub(crate) fn authenticate(auth: &ServerAuth, request: &UsernamePasswordRequest) -> bool {
     request.version == USERNAME_PASSWORD_VERSION
         && request.is_valid()

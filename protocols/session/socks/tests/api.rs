@@ -1,25 +1,25 @@
 //! Fast-tier configuration contracts and lossless application/wire conversions.
 
 use socks::{Client, Destination, v5};
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use socks::{
     Server,
     server::policy::{Policy, ServerAuth},
 };
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use socks::{Version, error::Error};
 use std::net::SocketAddr;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use std::time::Duration;
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 fn deny() -> Policy {
     Policy::new(ServerAuth::no_authentication(), |_| {
         panic!("construction must not run policy")
     })
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 macro_rules! server_construction_contract {
     ($name:ident, $backend:ident) => {
         #[test]
@@ -76,6 +76,8 @@ macro_rules! server_construction_contract {
 
 #[cfg(feature = "blocking")]
 server_construction_contract!(blocking_server_validates_configuration_without_io, blocking);
+#[cfg(feature = "mio")]
+server_construction_contract!(mio_server_validates_configuration_without_io, mio);
 #[cfg(feature = "tokio")]
 server_construction_contract!(tokio_server_validates_configuration_without_io, tokio);
 
@@ -111,7 +113,7 @@ fn neutral_destinations_preserve_wire_address_bytes_without_applying_dns_policy(
     }
 }
 
-#[cfg(all(feature = "blocking", feature = "tokio"))]
+#[cfg(all(feature = "blocking", feature = "tokio", feature = "mio"))]
 #[test]
 fn generic_builder_helpers_preserve_backend_types_and_aliases() {
     fn with_budget<B>(builder: socks::client::Builder<B>) -> socks::client::Builder<B> {
@@ -123,13 +125,18 @@ fn generic_builder_helpers_preserve_backend_types_and_aliases() {
     let blocking: socks::client::blocking::Builder = with_budget(blocking);
     let _: socks::client::blocking::Client = blocking.build().unwrap();
 
+    let mio: socks::client::Builder<socks::client::Mio> =
+        Client::configure(v5::client::Config::no_authentication()).mio();
+    let mio: socks::client::mio::Builder = with_budget(mio);
+    let _: socks::client::mio::Client = mio.build().unwrap();
+
     let tokio: socks::client::Builder<socks::client::Tokio> =
         Client::configure(v5::client::Config::no_authentication()).tokio();
     let tokio: socks::client::tokio::Builder = with_budget(tokio);
     let _: socks::client::tokio::Client = tokio.build().unwrap();
 }
 
-#[cfg(all(feature = "blocking", feature = "tokio"))]
+#[cfg(all(feature = "blocking", feature = "tokio", feature = "mio"))]
 #[test]
 fn backend_selection_retains_shared_timeout_validation() {
     let blocking: socks::client::blocking::Client =
@@ -142,8 +149,14 @@ fn backend_selection_retains_shared_timeout_validation() {
             .tokio()
             .build()
             .unwrap();
+    let readiness: socks::client::mio::Client =
+        Client::configure(v5::client::Config::no_authentication())
+            .mio()
+            .build()
+            .unwrap();
     assert_eq!(blocking.version(), Version::V5);
     assert_eq!(asynchronous.version(), Version::V5);
+    assert_eq!(readiness.version(), Version::V5);
     for timeout in [Duration::ZERO, Duration::MAX] {
         assert!(matches!(
             Client::configure(v5::client::Config::no_authentication())
@@ -169,6 +182,20 @@ fn backend_selection_retains_shared_timeout_validation() {
         assert!(matches!(
             Client::configure(v5::client::Config::no_authentication())
                 .tokio()
+                .timeout(timeout)
+                .build(),
+            Err(Error::InvalidLimits)
+        ));
+        assert!(matches!(
+            Client::configure(v5::client::Config::no_authentication())
+                .timeout(timeout)
+                .mio()
+                .build(),
+            Err(Error::InvalidLimits)
+        ));
+        assert!(matches!(
+            Client::configure(v5::client::Config::no_authentication())
+                .mio()
                 .timeout(timeout)
                 .build(),
             Err(Error::InvalidLimits)

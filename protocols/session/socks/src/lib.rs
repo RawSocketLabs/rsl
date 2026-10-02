@@ -2,7 +2,7 @@
 //!
 //! The current surface covers RFC 1928 SOCKS5 method negotiation, requests, replies, registries,
 //! and typed IPv4/domain/IPv6 endpoints plus RFC 1929 username/password messages.
-//! The optional `blocking` and `tokio` features add CONNECT clients, embeddable
+//! The optional `blocking`, `tokio`, and `mio` features add CONNECT clients, embeddable
 //! server sessions, and bounded listening proxies. The default provides codecs and client configuration without transport support.
 //!
 //! # Guide: how SOCKS works
@@ -34,7 +34,7 @@
 //!
 //! | Command | Purpose | Implemented surface |
 //! | --- | --- | --- |
-//! | CONNECT | Ask the proxy to establish an outbound TCP connection | Configured clients/servers and complete proxies on both backends |
+//! | CONNECT | Ask the proxy to establish an outbound TCP connection | Configured clients/servers and complete proxies on all three backends |
 //! | BIND | Ask the proxy to listen for an incoming connection; two replies report listening and the peer connection | Command code is representable; servers reply command not supported |
 //! | UDP ASSOCIATE | Establish a UDP relay association tied to the control TCP connection | Command code is representable; no operational implementation |
 //!
@@ -151,6 +151,20 @@
 //! Apply application timeouts/cancellation around your Tokio I/O; completing negotiation
 //! does not impose a lifetime limit on application traffic.
 //!
+//! Mio is a different driving contract, not an async function with a different name:
+//!
+//! 1. Build with `.mio().build()?`, establish a nonblocking transport, and call `connect_with`.
+//! 2. Drive the returned handshake with `advance()`, registering its `interest()` in your poll.
+//!    When `needs_advance()` is true, reschedule without waiting for another readiness edge.
+//! 3. After completion, call `take_connection()` once. Keep the original poll alive and use
+//!    it for the connection; handle `WouldBlock` and retain partial-write offsets yourself.
+//!
+//! The repository's `examples/mio_client.rs` demonstrates this entire lifecycle, including
+//! TCP establishment through `io::mio::Connector`. Run it with
+//! `cargo run -p socks --features mio --example mio_client -- 127.0.0.1:1080 example.com 80`.
+//! If you deliberately want blocking setup, `connect_blocking(proxy, dest)` instead returns
+//! the owned poll together with a negotiated connection; it is not the native event-loop path.
+//!
 //! ## Run a complete proxy
 //!
 //! Use `proxy` when you want acceptance and relay managed together. This blocking example
@@ -187,7 +201,7 @@
 //! session/relay threads per connection before acceptance. The default budget is 128;
 //! actual admission uses the smaller of `limits.connections` and half the thread budget.
 //! This is per listener, excludes the calling thread, and does not bound direct
-//! `serve_connection` calls or threads started by application callbacks. Tokio does not
+//! `serve_connection` calls or threads started by application callbacks. Tokio/Mio do not
 //! expose this setting. For credentials,
 //! supply `ServerAuth::username_password(verifier)` to `Policy`; secure password storage
 //! and verification are yours. Callbacks must be fast, nonblocking, and non-panicking.
@@ -240,9 +254,11 @@
 //! cleanup are discarded, rather than overriding successful shutdown.
 //! For caller-managed acceptance, use `proxy::tokio::serve_connection` per socket.
 //! The former callback-based Tokio `serve` APIs are replaced by this owned lifecycle.
-//! The server selects the backend once; these methods delegate to the matching proxy
-//! infrastructure. Existing `proxy` free functions and `Proxy::new` remain available for
-//! explicit driver composition.
+//! A Mio server's `server.into_proxy(listener)?` returns an owned `proxy::mio::Proxy`:
+//! drive it with `run` or `poll`, retaining access to its shutdown handle. See
+//! `examples/mio_proxy.rs` for setup and shutdown. The server selects the backend once;
+//! these methods delegate to the matching proxy infrastructure. Existing `proxy` free
+//! functions and `Proxy::new` remain available for explicit driver composition.
 //!
 //! ### Choose a diagnostic reporting cadence
 //!
@@ -365,7 +381,8 @@
 //! ```
 //!
 //! Instead of taking the pair apart, call the server connection's `relay` method with
-//! your relay timeout. Tokio exposes the corresponding stages with `.await`.
+//! your relay timeout. Tokio exposes the corresponding stages with `.await`. Mio's configured
+//! server is settings for the complete proxy, not this staged exchange API.
 //!
 //! Blocking servers also expose `authorized.dial()?` when socket registration or inspection
 //! must happen before success. The returned `server::blocking::Connected` owns the target;
@@ -401,7 +418,8 @@
 //! the exact resolved target, and dial it yourself. Only then call `send_success(bound)`
 //! with the outbound socket's local endpoint; denial or dial failure needs `send_failure(code)`.
 //! Unlike configured server stages, this API does not enforce your authorization decision.
-//! You also own deadlines and relay. Tokio provides asynchronous exchanges.
+//! You also own deadlines and relay. Tokio provides asynchronous exchanges; embedded Mio
+//! exposes a resumable state machine rather than those blocking methods.
 //!
 //! ## Work directly with wire messages
 //!
@@ -448,7 +466,8 @@
 //! | --- | --- |
 //! | `blocking` | Synchronous standard-library I/O |
 //! | `tokio` | Async Tokio I/O |
-//! //!
+//! | `mio` | Readiness-driven exchanges and a complete owned-poll proxy |
+//!
 //! Enable the features you need; they can coexist. With none enabled, wire codecs and
 //! client configuration remain available, but a configured client cannot be built.
 //!
@@ -475,9 +494,9 @@
 pub mod client;
 pub mod error;
 pub mod io;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub mod proxy;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub mod server;
 mod types;
 /// SOCKS version 5 wire types (RFC 1928 and RFC 1929).
@@ -485,8 +504,8 @@ pub mod v5;
 
 // --- Internal modules ---
 pub use client::Client;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub use io::stream::Stream;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub use server::{Connection, Server};
 pub use types::{Destination, Version};

@@ -3,7 +3,7 @@ use bnb::bin;
 
 // --- Internal modules ---
 use super::{Command, DomainError, Endpoint, ReplyCode, VERSION};
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use crate::error::Error;
 
 /// A client command request: `VER`, `CMD`, `RSV`, `ATYP`, destination, and port (RFC 1928 §4).
@@ -33,7 +33,7 @@ impl Request {
     }
 
     /// Check fixed header values without restricting the requested command.
-    #[cfg(any(feature = "blocking", feature = "tokio"))]
+    #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
     pub(crate) fn check_header(&self) -> Result<(), Error> {
         super::validation::version(self.version, VERSION)?;
         super::validation::reserved(self.reserved)
@@ -67,7 +67,7 @@ impl Reply {
     }
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl Reply {
     /// Require a compliant header, successful outcome, and usable bound-address length.
     pub(crate) fn ensure_success(&self) -> Result<(), Error> {

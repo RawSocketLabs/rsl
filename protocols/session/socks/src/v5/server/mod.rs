@@ -10,12 +10,18 @@
     doc = "- [`blocking`]: CONNECT negotiation and caller-controlled replies."
 )]
 #![cfg_attr(
+    feature = "mio",
+    doc = "- [`mio`]: resumable CONNECT negotiation with explicit readiness and policy handoff."
+)]
+#![cfg_attr(
     feature = "tokio",
     doc = "- [`tokio`]: async CONNECT negotiation and caller-controlled replies."
 )]
 
 #[cfg(feature = "blocking")]
 pub mod blocking;
+#[cfg(feature = "mio")]
+pub mod mio;
 #[cfg(feature = "tokio")]
 pub mod tokio;
 mod validation;

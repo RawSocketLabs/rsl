@@ -4,6 +4,8 @@ use std::marker::PhantomData;
 // --- Internal modules ---
 #[cfg(feature = "blocking")]
 use super::blocking::Builder as BlockingBuilder;
+#[cfg(feature = "mio")]
+use super::mio::Builder as MioBuilder;
 #[cfg(feature = "tokio")]
 use super::tokio::Builder as TokioBuilder;
 use super::{Limits, ServerConfig, Unselected, policy::Policy};
@@ -49,6 +51,19 @@ impl Builder {
     #[cfg(feature = "blocking")]
     #[must_use]
     pub fn blocking(self) -> BlockingBuilder {
+        self.select()
+    }
+
+    /// Select Mio readiness-driven proxy operations without creating a poll.
+    ///
+    /// ```compile_fail,E0599
+    /// use socks::Server;
+    ///
+    /// Server::configure().mio().mio();
+    /// ```
+    #[cfg(feature = "mio")]
+    #[must_use]
+    pub fn mio(self) -> MioBuilder {
         self.select()
     }
 

@@ -1,6 +1,6 @@
 //! Lossless buffered transport and backend-specific I/O implementations.
 
-#[cfg(feature = "blocking")]
+#[cfg(any(feature = "blocking", feature = "mio"))]
 mod std;
 mod stream;
 #[cfg(feature = "tokio")]
