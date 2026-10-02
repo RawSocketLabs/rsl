@@ -12,10 +12,10 @@ The default feature set provides pure SOCKS5 wire codecs: method negotiation, co
 reply registries, IPv4/domain/IPv6 endpoints, requests, replies, and RFC 1929 username/password
 messages plus transport-independent client configuration and validation. Optional `blocking`,
 `tokio`, and `mio` features add CONNECT operations, embeddable server
-handshakes, complete per-connection proxies, and bounded listeners. Every client, server,
-and proxy path is CONNECT-only; servers reply command not supported to BIND and
-UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
-[`DESIGN.md`](DESIGN.md) records decisions and limits.
+handshakes, complete per-connection proxies, and bounded listeners. Blocking embedded BIND
+has generic two-reply stages and owned TCP helpers with independent phase deadlines;
+managed proxies and the Tokio/Mio exchange APIs remain CONNECT-only. UDP ASSOCIATE,
+GSS-API, SOCKS4, and SOCKS4A remain absent. [`DESIGN.md`](DESIGN.md) records decisions and limits.
 
 ## Architecture
 
@@ -109,9 +109,14 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   and `write_message_async` own encoding, complete writes, and explicit flushing;
   the standard/Tokio write traits remain raw-byte I/O.
   Preserve original I/O sources and codec classification when converting reader errors.
-  Blocking client/server folders have facade-only `mod.rs`, CONNECT stages, and
-  shared command/authentication exchanges. Never send a fallback after partial success.
-  Policy callbacks must be fast/nonblocking, not preemptible.
+  Blocking client/server folders have facade-only `mod.rs`, CONNECT and BIND stages,
+  shared command/authentication exchanges, and separate bounded TCP BIND helpers.
+  `blocking` enables the existing Mio dependency solely for a private bounded accept loop;
+  it does not enable the public Mio stack. Register listeners before first success,
+  authorize the actual accepted peer before second success, and preserve the original
+  peer deadline across caller delays. Never send a fallback after partial success.
+  Generic BIND transports retain caller-managed deadlines; owned TCP failure replies
+  have a one-second budget. Policy callbacks must be fast/nonblocking, not preemptible.
 - `src/server/mod.rs` re-exports `Server`, its builder, and the two-sided `Connection<S>`
   from `server/server.rs`, `server/builder.rs`, and `server/connection/` respectively;
   `server/config.rs` owns `ServerConfig` and `Limits`, re-exported from `server`.
@@ -146,7 +151,8 @@ UDP ASSOCIATE. GSS-API, SOCKS4, and SOCKS4A remain absent.
   shutdown wins simultaneously ready failures and discards cleanup completions.
   drop requests shutdown without awaiting it. Diagnostic EOF is not successful termination.
   `server/connection/` owns the established pair and blocking/Tokio relay impls; `proxy/blocking/` owns listener,
-  worker, and cancellation sockets.
+  worker, and cancellation sockets. The BIND-only acceptance helper lives at
+  `v5/server/blocking/bind_listener.rs`, next to its sole consumer.
   Blocking `Server::exchange` and Tokio's async `Server::exchange` return driver-specific `Exchange` stages; consuming
   `authorize` retains permitted numeric addresses and an absolute deadline, and consuming
   `connect` returns both sockets only after the success reply. Full proxies compose these

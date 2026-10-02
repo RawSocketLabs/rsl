@@ -53,7 +53,7 @@ impl<S: Read + Write> Request<S> {
 /// # Errors
 /// Failures are terminal; unsupported commands receive a failing SOCKS reply.
 pub fn exchange<S: Read + Write>(stream: S, auth: &ServerAuth) -> Result<Request<S>, Error> {
-    let request = super::exchange::exchange(stream, auth)?;
+    let request = super::exchange::exchange(stream, auth, crate::v5::Command::Connect)?;
     Ok(Request {
         stream: request.stream,
         destination: request.destination,

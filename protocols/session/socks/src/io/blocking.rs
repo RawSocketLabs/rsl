@@ -20,6 +20,16 @@ pub(crate) struct Deadline {
     pub(crate) deadline: Instant,
 }
 
+/// Clear protocol timeouts while preserving every prefetched application byte.
+pub(crate) fn unbounded(
+    stream: crate::Stream<Deadline>,
+) -> Result<crate::Stream<TcpStream>, Error> {
+    let (transport, buffered) = stream.into_parts();
+    transport.stream.set_read_timeout(None)?;
+    transport.stream.set_write_timeout(None)?;
+    Ok(crate::Stream::from_parts(transport.stream, buffered))
+}
+
 impl Read for Deadline {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         self.stream

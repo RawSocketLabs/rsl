@@ -9,7 +9,7 @@
 //!
 #![cfg_attr(
     feature = "blocking",
-    doc = "- [`blocking`]: CONNECT over TCP or a supplied transport."
+    doc = "- [`blocking`]: CONNECT and two-reply BIND, including bounded TCP helpers."
 )]
 #![cfg_attr(
     feature = "mio",
