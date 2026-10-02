@@ -23,7 +23,6 @@ publish = false
 # ---------------------------------------------------------------------------
 [dependencies]
 thiserror          = { version = "2.0", optional = true }
-anyhow             = { version = "1.0", optional = true }
 tracing            = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], optional = true }
 tracing-appender   = { version = "0.2", optional = true }
@@ -64,6 +63,7 @@ color-eyre         = { version = "0.6", optional = true }
 
 # time & protobuf
 chrono             = { version = "0.4", optional = true }
+time               = { version = "0.3", default-features = false, features = ["std", "formatting", "parsing", "macros"], optional = true }
 prost              = { version = "0.14", optional = true }
 
 [features]
@@ -79,11 +79,12 @@ web = ["web-server", "openapi"]
 # Everything.
 full = [
     "std-ext", "service", "web", "bytes", "cli", "rand", "hash", "netutil", "parse",
-    "num", "pod", "audio", "fft", "http", "tui", "time", "protobuf",
+    "num", "pod", "audio", "fft", "http", "report", "tui", "time", "time-core", "protobuf",
 ]
 
 # ---- capability features --------------------------------------------------
-error    = ["dep:thiserror", "dep:anyhow"]
+error    = ["dep:thiserror"]
+report   = ["dep:color-eyre"]
 log      = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
 serde    = ["dep:serde", "dep:serde_json"]
 bytes    = ["dep:bytes"]
@@ -104,8 +105,11 @@ web-server = ["dep:axum", "dep:tower", "dep:tower-http"]
 openapi    = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 http       = ["dep:reqwest"]
 
-tui      = ["dep:ratatui", "dep:color-eyre"]
+tui      = ["dep:ratatui", "report"]
 time     = ["dep:chrono"]
+# NOTE: the feature `time` above means chrono; the `time` crate is `time-core`. Never write
+# "time/<feature>" in this table: it would also enable the `time` feature, i.e. chrono.
+time-core = ["dep:time"]
 protobuf = ["dep:prost"]
 
 [[test]]

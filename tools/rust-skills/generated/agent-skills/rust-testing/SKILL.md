@@ -28,6 +28,10 @@ description: Select, implement, and assess Rust unit, integration, documentation
   hostile parser surfaces, snapshots for deliberately reviewed stable output,
   Loom for tractable concurrency models, Miri or sanitizers for applicable
   unsafe behavior, and mutation testing when it adds evidence.
+- Scope each run to what the change touches: focused checks while iterating,
+  the repository gate once at completion, and fuzz smoke, benchmarks, mutation,
+  or matrices only when the change reaches what they protect or the owner asks
+  (TEST-SCOPE-001).
 - Treat protocol round trips as necessary but insufficient; add independent
   known-answer or interoperability vectors.
 - Keep fixtures attributed, bounded, deterministic where possible, and clear

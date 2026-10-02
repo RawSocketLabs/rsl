@@ -59,8 +59,11 @@ Normative strengths:
 
 #### Priority tiers
 
-- **Top tier:** correctness, performance, abstraction quality, clarity.
-- **Middle tier:** maintainability, simplicity, development velocity, security.
+- **Top tier:** correctness, performance, clarity, simplicity.
+- **Middle tier:** maintainability, abstraction quality, development velocity,
+  security.
+- Revised by R214 (2026-09-20); abstraction quality was top tier and simplicity
+  middle tier before.
 - **Lower tier:** compile time, binary size, API stability.
 
 These tiers are not a blind ordering. Correct, simple, understandable use takes
@@ -424,6 +427,8 @@ From most to least preferred:
   diagnosable without parsing prose.
 
 #### R20. Use opaque application errors at orchestration boundaries
+
+Narrowed for Raw Socket Labs repositories by R216 (color-eyre; no new anyhow).
 
 - **Strength:** MAY
 - **Scope:** binaries and application orchestration
@@ -1750,6 +1755,8 @@ The owner confirmed the following choices in refinement round 1:
   understandable cases.
 
 #### R151. Prefer `match` for structured branching
+
+Revised by R213 for an `Option` or `Result` whose other arm only exits.
 
 - **Strength:** PREFER
 - **Scope:** branching code
@@ -3169,6 +3176,92 @@ guidance remain authoritative on that point.
   R91; the video's presentation of type-state as a universal third level is not
   adopted.
 
+## Post-interview synthesis: cross-corpus reconciliation
+
+Owner decisions of 2026-09-20, taken one at a time after an audit of these skills
+against the owner's cross-project agent configuration. Each revises or extends
+the preference named in its rule.
+
+#### R211. Report an unmeasured performance concern as a hypothesis
+
+- **Strength:** SHOULD
+- **Scope:** code review
+- **Rule:** Do not drop an unmeasured performance concern on an identified hot path and do
+  not report it as a defect. Report it as a non-blocking hypothesis with its
+  complexity or allocation argument and the measurement that would settle it.
+- **Why:** Dropping the concern loses a lead the author can test cheaply; reporting it as
+  a defect asks for an optimization nobody has shown is needed.
+
+#### R212. Scope verification to what the change touches
+
+- **Strength:** SHOULD
+- **Scope:** checks run by agents and contributors
+- **Rule:** Run focused checks while iterating and the repository gate once at completion.
+  Run a fuzz smoke only for a change to a hostile-input surface, unsafe, or FFI;
+  the affected benchmark only for a benchmarked path; and sustained fuzzing,
+  mutation testing, full benchmark suites, and matrices at release, on a
+  schedule, or on request. Do not re-run a check whose inputs are unchanged.
+  Extends R51 and R127.
+- **Why:** Uniformly expensive verification on small changes wastes the time that makes
+  the slow tools worth keeping.
+
+#### R213. Exit early with `?` or `let ... else`; match when arms carry work
+
+- **Strength:** PREFER
+- **Scope:** control flow over `Option` and `Result`
+- **Rule:** Revises R151: an `Option` or `Result` whose other arm only exits or propagates
+  uses `?` or `let ... else`; `match` is for arms that each do real work and for
+  exhaustive enum reasoning.
+- **Why:** A two-arm match whose second arm is `return` nests the successful path for no
+  exhaustiveness benefit.
+
+#### R214. Rank simplicity with clarity, above abstraction quality
+
+- **Strength:** SHOULD
+- **Scope:** priority tiers and abstraction decisions
+- **Rule:** Revises the Round 1 priority tiers: simplicity joins clarity in the first tier
+  and abstraction quality moves to the second. An abstraction needs a present
+  caller; prefer two similar sites inline until a third shows what varies.
+- **Why:** Speculative traits, generics, and shared types were the most frequent
+  avoidable finding in agent-written changes.
+
+#### R215. Onboard by inference first, then one decision at a time
+
+- **Strength:** SHOULD
+- **Scope:** repository onboarding interview
+- **Rule:** New preference; the adaptive interview previously asked rounds of five to ten
+  questions. Infer what the repository states,
+  present it for correction, and ask the remainder one decision at a time with
+  a recommended default. A whole round at once remains available on request.
+- **Why:** A batch of ten questions gets skimmed answers; a single decision with a
+  default gets a considered one.
+
+#### R216. Approve thiserror for library errors and color-eyre for binaries
+
+- **Strength:** SHOULD
+- **Scope:** Raw Socket Labs repositories
+- **Rule:** Organization decision `errors`. Keeps R18 (typed library errors); gives
+  thiserror the dependency approval R68 requires; and narrows R20, which allows
+  `anyhow` or `eyre`, to color-eyre with no new use of anyhow.
+- **Why:** One report type and one derive across repositories keeps error handling
+  familiar and the dependency graph small.
+
+#### R217. Treat the rsl-deps stack as pre-approved
+
+- **Strength:** SHOULD
+- **Scope:** Raw Socket Labs repositories adopting dependency policy
+- **Rule:** Organization decision `dependencies`. Revises R68, which required approval even
+  for a crate available through `rsl-deps`: a carried crate, used for the
+  capability it is carried for with minimal features, is approved in advance.
+  R68 stands unchanged for every other crate, feature expansion, and MSRV,
+  unsafe-exposure, or license change.
+- **Why:** The owner already reviewed those crates when adding them to rsl-deps; asking
+  again for each use adds an interruption and no information.
+
+An existing repository gate is the validation contract: onboarding configures a
+declared `just`, `make`, or `xtask` entry point as the required check rather
+than restating its steps (clarifies R127; no new preference).
+
 ## Round 6: Dependencies, linting, and change discipline
 
 ### Confirmed preferences
@@ -3245,6 +3338,9 @@ guidance remain authoritative on that point.
 ### Draft rules
 
 #### R68. Discuss every new dependency
+
+Revised by R217: a crate carried by `rsl-deps`, used for its carried capability
+with minimal features, is approved in advance for Raw Socket Labs repositories.
 
 - **Strength:** MUST
 - **Scope:** agent behavior in all repositories
@@ -4499,3 +4595,8 @@ the constraints in R124.
   tooling, generated adapters, and eight isolated eval fixtures. No pilot,
   domain-skill, publication, external-installation, or third-party dependency
   scope was added.
+- 2026-09-20: Added R211-R217 from a cross-corpus reconciliation: performance
+  hypotheses in review, change-scoped verification tiers, early-exit control
+  flow, simplicity above abstraction quality, one-decision-at-a-time onboarding,
+  and organization decisions for error types and the pre-approved rsl-deps
+  stack.

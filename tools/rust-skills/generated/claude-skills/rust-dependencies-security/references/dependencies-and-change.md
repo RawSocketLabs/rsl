@@ -12,9 +12,10 @@
   to remove than to add once callers depend on its types. One line in a manifest
   is a poor place for a decision at that scale to be made silently.
 - **Exceptions:** A lockfile-only update inside approved constraints follows the
-  repository's normal process.
+  repository's normal process. An organization or repository decision may record
+  owner direction in advance for a named set of crates and uses.
 - **Mechanical owner:** Manifest and lockfile review, cargo-deny.
-- **Sources:** Preference R68, R70, R122, R136.
+- **Sources:** Preference R68, R70, R122, R136, R217.
 
 ### CORE-DEP-002 Prefer an adopted `rsl-deps` capability
 
