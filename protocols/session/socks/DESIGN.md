@@ -20,7 +20,7 @@ The drivers delegate hinted reads to bnb's incremental reader; the dated records
 retain the earlier framing decisions and measurements for comparison.
 
 The original audit used `refactor/netlink-protocol-location`, three commits ahead of and four
-behind `origin/main` at that point. Its unrelated untracked image assets were left untouched.
+behind `origin/main` at that point.
 The current delivery candidate is main-based; see the delivery section below.
 
 ## Current structure
@@ -671,9 +671,7 @@ and offline cargo-deny pass with only the previously documented unrelated lint d
 isolated mutations replacing each message-read method with an error are caught by existing
 golden-transcript tests. Independent code and documentation review passes after updating
 verification status. The fresh two-million-input ASan fuzz run passes with `-max_len=2048`
-(457 seconds). Only the five intentional refactor/documentation files were restaged; all
-other staged work and the original integration checkout remain untouched. No publication
-or hosted CI was performed.
+(457 seconds).
 
 ### Explicit server exchange, authorization, and connection (2026-09-16)
 
