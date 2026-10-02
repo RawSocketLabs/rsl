@@ -1,3 +1,4 @@
+// --- Workspace dependencies ---
 use bnb::bin;
 use thiserror::Error;
 
@@ -24,7 +25,7 @@ enum ValidationError {
 /// both fields to contain between 1 and 255 bytes; decoding remains permissive, while both
 /// encoded lengths are derived and overflow-checked.
 //~ models rfc1929#2 part="username/password request"
-#[bin(big, validate = validate_username_password_request)]
+#[bin(big, validate = UsernamePasswordRequest::check_credentials)]
 #[derive(Clone, PartialEq, Eq)]
 pub struct UsernamePasswordRequest {
     /// The subnegotiation version. The builder defaults to [`USERNAME_PASSWORD_VERSION`].
@@ -38,15 +39,16 @@ pub struct UsernamePasswordRequest {
     pub password: Vec<u8>,
 }
 
-fn validate_username_password_request(
-    request: &UsernamePasswordRequest,
-) -> Result<(), ValidationError> {
-    match (request.username.len(), request.password.len()) {
-        (0, _) => Err(ValidationError::EmptyUsername),
-        (_, 0) => Err(ValidationError::EmptyPassword),
-        (user, _) if user > MAX_LEN => Err(ValidationError::UsernameTooLong { user }),
-        (_, pass) if pass > MAX_LEN => Err(ValidationError::PasswordTooLong { pass }),
-        _ => Ok(()),
+impl UsernamePasswordRequest {
+    /// Check credential lengths for builders and explicit validation, not authentication.
+    fn check_credentials(&self) -> Result<(), ValidationError> {
+        match (self.username.len(), self.password.len()) {
+            (0, _) => Err(ValidationError::EmptyUsername),
+            (_, 0) => Err(ValidationError::EmptyPassword),
+            (user, _) if user > MAX_LEN => Err(ValidationError::UsernameTooLong { user }),
+            (_, pass) if pass > MAX_LEN => Err(ValidationError::PasswordTooLong { pass }),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -116,8 +118,22 @@ pub struct UsernamePasswordResponse {
     pub status: UsernamePasswordStatus,
 }
 
+#[cfg(any(feature = "blocking", feature = "tokio"))]
+impl UsernamePasswordResponse {
+    /// Require the expected version and a successful authentication outcome.
+    pub(crate) fn ensure_success(&self) -> Result<(), crate::error::Error> {
+        super::validation::version(self.version, USERNAME_PASSWORD_VERSION)?;
+        if self.status.is_success() {
+            Ok(())
+        } else {
+            Err(crate::error::Error::AuthenticationRejected)
+        }
+    }
+}
+
 #[cfg(test)]
 mod unit {
+    // --- Internal modules ---
     use super::*;
 
     #[test]

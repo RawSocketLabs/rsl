@@ -1,3 +1,4 @@
+// --- Workspace dependencies ---
 use bnb::BitEnum;
 
 /// A SOCKS5 authentication method number (RFC 1928 §3).
@@ -84,6 +85,7 @@ pub enum AddressType {
 
 #[cfg(test)]
 mod unit {
+    // --- Internal modules ---
     use super::*;
 
     #[test]

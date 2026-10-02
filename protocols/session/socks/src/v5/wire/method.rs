@@ -1,6 +1,9 @@
-use super::{AuthMethod, VERSION};
+// --- Workspace dependencies ---
 use bnb::{NormalizeEnumAliases, bin};
 use thiserror::Error;
+
+// --- Internal modules ---
+use super::{AuthMethod, VERSION};
 
 const MAX_METHODS: usize = u8::MAX as usize;
 
@@ -19,7 +22,7 @@ enum ValidationError {
 /// The builder requires at least one selectable method. Decoding remains permissive, while the
 /// encoded method count is always derived and overflow-checked.
 //~ models rfc1928#3 part="client method negotiation request"
-#[bin(big, validate = validate_method_request)]
+#[bin(big, validate = MethodRequest::check_methods)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MethodRequest {
     /// The protocol version. The builder defaults to [`VERSION`].
@@ -30,24 +33,23 @@ pub struct MethodRequest {
     pub methods: Vec<AuthMethod>,
 }
 
-fn validate_method_request(request: &MethodRequest) -> Result<(), ValidationError> {
-    let methods = &request.methods;
+impl MethodRequest {
+    /// Check method count and client-selectable offers for builders and explicit validation.
+    fn check_methods(&self) -> Result<(), ValidationError> {
+        let methods = &self.methods;
 
-    match methods.len() {
-        0 => Err(ValidationError::EmptyMethods),
-        count if count > MAX_METHODS => Err(ValidationError::TooManyMethods { count }),
-        _ => Ok(()),
-    }?;
+        match methods.len() {
+            0 => Err(ValidationError::EmptyMethods),
+            count if count > MAX_METHODS => Err(ValidationError::TooManyMethods { count }),
+            _ => Ok(()),
+        }?;
 
-    let no_acceptable_methods = methods
-        .iter()
-        .copied()
-        .any(|method| method.into_normalized_enum_aliases() == AuthMethod::NoAcceptable);
-
-    if no_acceptable_methods {
-        Err(ValidationError::NoAcceptableMethod)
-    } else {
-        Ok(())
+        methods
+            .iter()
+            .copied()
+            .all(|method| method.into_normalized_enum_aliases() != AuthMethod::NoAcceptable)
+            .then_some(())
+            .ok_or(ValidationError::NoAcceptableMethod)
     }
 }
 
@@ -61,4 +63,20 @@ pub struct MethodSelection {
     pub version: u8,
     /// The selected method, or [`AuthMethod::NoAcceptable`].
     pub method: AuthMethod,
+}
+
+#[cfg(any(feature = "blocking", feature = "tokio"))]
+impl MethodSelection {
+    /// Check the response version and the client's single explicitly offered method.
+    pub(crate) fn check_offered(self, offered: AuthMethod) -> Result<(), crate::error::Error> {
+        // --- Internal modules ---
+        use crate::error::Error;
+
+        super::validation::version(self.version, VERSION)?;
+        match self.method {
+            AuthMethod::NoAcceptable => Err(Error::NoAcceptableMethod),
+            method if method == offered => Ok(()),
+            method => Err(Error::UnexpectedMethod(method)),
+        }
+    }
 }
