@@ -378,7 +378,7 @@ fn connect_rejects_zero_ports_before_client_io_or_server_handoff() {
             Err(Error::ZeroDestinationPort)
         ));
         assert_eq!(script.read_calls, 0);
-        assert!(script.written.is_empty());
+        assert_eq!(script.written, b"");
         assert!(matches!(
             client::connect(
                 proxy.local_addr().unwrap(),

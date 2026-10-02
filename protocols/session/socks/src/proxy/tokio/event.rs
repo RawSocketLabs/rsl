@@ -54,11 +54,16 @@ impl Reporter {
     /// Never wait for diagnostics; coalesce losses when the queue is full.
     pub(super) fn report(&self, error: Error) {
         if matches!(self.sender.try_send(error), Err(TrySendError::Full(_))) {
-            let _ = self
-                .dropped
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
-                    Some(count.saturating_add(1))
-                });
+            // A CAS loop saturates without `fetch_update`, deprecated after the MSRV.
+            let mut count = self.dropped.load(Ordering::Relaxed);
+            while let Err(actual) = self.dropped.compare_exchange_weak(
+                count,
+                count.saturating_add(1),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                count = actual;
+            }
         }
     }
 }
