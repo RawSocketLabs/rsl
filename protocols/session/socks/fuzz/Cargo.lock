@@ -13,6 +13,7 @@ name = "bitsandbytes"
 version = "0.7.1"
 dependencies = [
  "bitsandbytes-macros",
+ "thiserror",
  "tracing",
 ]
 

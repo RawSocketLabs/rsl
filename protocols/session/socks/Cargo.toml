@@ -15,8 +15,8 @@ tokio = { workspace = true, optional = true }
 
 [features]
 default = []
-blocking = []
-tokio = ["dep:tokio"]
+blocking = ["bnb/net"]
+tokio = ["dep:tokio", "bnb/tokio-io"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
@@ -28,6 +28,11 @@ required-features = ["blocking"]
 [[test]]
 name = "session_async"
 required-features = ["tokio"]
+
+[[bench]]
+name = "session_reads"
+harness = false
+required-features = ["blocking", "tokio"]
 
 [lints]
 workspace = true

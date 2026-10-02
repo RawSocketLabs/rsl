@@ -1,6 +1,6 @@
 # SOCKS integration note
 
-**Status:** SOCKS5 wire codecs plus blocking/Tokio CONNECT client and server slices implemented.
+**Status:** SOCKS5 wire codecs plus blocking/Tokio CONNECT clients and servers implemented.
 Source audit:
 `origin/draft/protocols-socks` through `b93c3b9`; imported history through `c5df41a`.
 
@@ -16,10 +16,110 @@ This crate currently implements the RFC 1928 SOCKS5 wire seam—method negotiati
 typed endpoints, requests, and replies—plus the RFC 1929 username/password request and response
 messages on `bnb`. Optional blocking and Tokio session layers now compose these codecs into
 CONNECT clients, embedded server handshakes, per-connection proxies, and bounded listeners.
+The drivers delegate hinted reads to bnb's incremental reader; the dated records below
+retain the earlier framing decisions and measurements for comparison.
 
 The original audit used `refactor/netlink-protocol-location`, three commits ahead of and four
 behind `origin/main` at that point. Its unrelated untracked image assets were left untouched.
 The current delivery candidate is main-based; see the delivery section below.
+
+## Current structure
+
+This is the authoritative source-ownership map. The dated records below describe earlier
+states and retain superseded paths and verification results as history, not current guidance.
+Every `mod.rs` and `lib.rs` is a facade containing documentation, declarations, and re-exports.
+
+```text
+src/
+  lib.rs                       public entry points and feature gates
+  error.rs                     shared guided-API failures
+  client/                      cross-version configured client
+    mod.rs
+    backend.rs                 generic builder state markers
+    builder.rs
+    client.rs
+    configuration.rs           typed version/configuration selection
+    blocking/                  concrete client and specialized builder
+    tokio/                     concrete client and specialized builder
+    connection/                established client connection and I/O traits
+  server/                      configured server and shared policy
+    mod.rs
+    backend.rs                 generic builder state markers
+    builder.rs
+    config.rs                  ServerConfig and Limits
+    connection/                established pair and backend-specific relay impls
+      mod.rs
+      connection.rs
+      blocking.rs
+      tokio.rs
+    policy.rs                  authentication requirements, request facts, authorization
+    resolve.rs                 shared domain-name preparation for system resolution
+    server.rs                  configuration entry point only
+    blocking/
+      mod.rs
+      builder.rs               specialized build and generic builder alias
+      connected.rs             dialed target awaiting success acknowledgment
+      server.rs                validated blocking server
+      exchange.rs              managed exchange/authorize/connect stages
+    tokio/
+      mod.rs
+      builder.rs
+      server.rs
+      exchange.rs
+  proxy/                       complete listeners, session scheduling, and shutdown
+    mod.rs
+    blocking/
+      mod.rs
+      listener.rs              listener and complete per-connection handling
+      sockets.rs               cancellation across both relay sockets
+      worker.rs                session threads and explicit connection stages
+    tokio.rs
+  io/                          shared transport mechanics, not negotiation
+    mod.rs
+    deadline.rs                standard-clock arithmetic and timeout errors
+    blocking.rs                blocking deadline adapter and message writes
+    stream/
+      mod.rs
+      stream.rs                bounded buffer ownership and lossless handoff
+      std.rs                   standard I/O for blocking
+      tokio.rs                 Tokio I/O
+    tokio.rs                   Tokio timeout wrappers and message writes
+  types/
+    mod.rs
+    destination.rs
+    version.rs
+  v5/                          version-specific protocol behavior
+    mod.rs
+    auth.rs
+    client/
+      mod.rs
+      config.rs
+      blocking/                CONNECT and shared exchange
+      tokio.rs
+    server/
+      mod.rs
+      blocking/                CONNECT and shared exchange
+      tokio.rs
+      validation.rs            shared CONNECT-only server capability checks
+    wire/                      permissive RFC 1928/1929 bnb codecs
+      mod.rs
+      codes.rs
+      domain.rs                domain payload, builder, and typed length validation
+      endpoint.rs
+      method.rs
+      request.rs
+      username_password.rs
+      validation.rs            scalar checks used by explicit message methods
+      version.rs
+```
+
+`Server::configure().blocking().build()` (or `.tokio()`) produces a validated
+backend-specific server. Blocking servers expose `serve`; Tokio exposes `into_proxy`
+then explicit `start`, with events and a shutdown handle. Per-connection proxy functions
+borrow their matching `&Server`; Tokio's managed proxy owns its server.
+`ServerConfig` remains an alternative
+input through the selected backend's `Server::new(config)`, not a proxy argument. Embedded
+version-specific exchanges still leave authorization and dialing to their caller.
 
 ## Decisions
 
@@ -31,6 +131,13 @@ The current delivery candidate is main-based; see the delivery section below.
 - Make `Endpoint` own `ATYP + address + port`. The draft stored `address_type`, address, and port
   separately, allowing ordinary typed construction to disagree.
 - Preserve domain bytes rather than require UTF-8. The one-octet length is derived and checked.
+- `Domain` owns the name/port payload and its 1–255-byte construction rule. Its bnb builder
+  and the enclosing request/reply builders check that rule, as does `Endpoint::domain`.
+  `Endpoint::domain_raw`, direct construction, conversions, and decode remain permissive.
+  `Endpoint::Domain(Domain)` adds the address-type byte before that payload.
+- Guided CONNECT destinations must use a nonzero port. This operation-specific check does
+  not constrain wire construction/decoding or reply bound ports. Clients check before I/O;
+  servers check before request handoff, resolution, authorization, or destination dialing.
 - Preserve version and reserved bytes verbatim after decode. Builders supply RFC values;
   canonical encoding normalizes them.
 - Preserve usernames and passwords as bytes rather than require UTF-8. Their one-octet lengths
@@ -73,7 +180,10 @@ The current delivery candidate is main-based; see the delivery section below.
   directly expresses both messages without stored derived state or transport coupling.
 - Adding shared `testutil`: no second SOCKS consumer exists; vectors stay local.
 
-## Verification
+## Historical verification and implementation record
+
+The initial results and dated entries below apply to their recorded source revisions. They
+are not a claim that old blockers persist or that current local checks qualify a release.
 
 - `cargo fmt --all --check`: passed.
 - Focused RFC 1929 contract and adversarial tests: passed (28 tests).
@@ -268,7 +378,7 @@ Final local verification:
 
 That implementation verification ran dependency/build checks offline; protocol references
 were consulted at RFC Editor and Tokio documentation, and transport tests used ephemeral
-loopback listeners. It did not publish or reconcile branches, or modify unrelated PNGs.
+loopback listeners.
 
 ### Main-based delivery candidate
 
@@ -277,22 +387,1248 @@ reviewed SOCKS iteration, including the local `no_acceptable_methods` variable r
 workspace membership, the lockfile entry, status documentation, and feature-specific CI.
 It preserves main's containerized pre-push validation, bytemuck capability, IP/ARP fixes,
 and bnb-only release hold. It does not reintroduce this integration branch's older release
-configuration or include its unrelated crypto/netlink documentation commits or PNG assets.
+configuration or include its unrelated crypto/netlink documentation commits.
 
 Delivery requires the main-based local checks, independent review, complete containerized
 pre-push validation, and hosted PR CI. No SOCKS registry publication is enabled by this change.
+
+### bnb 0.5 incremental decoding and lossless handoff (2026-09-08)
+
+This main-based follow-up adopts the published bnb 0.5 core without changing the wire API,
+dependencies, authentication policy, or supported commands. It supersedes the original exact-
+boundary framer described above. That framer protected the bare-transport return contract;
+reading ahead while returning only `S` would have discarded application bytes.
+
+#### API and ownership
+
+- With the user's approval, both drivers' `connect`, `connect_tcp`, and `Incoming::accept`
+  return `Tunnel<S>` / `Tunnel<TcpStream>` rather than a bare transport. The wrapper implements
+  the corresponding standard/Tokio read and write traits. Existing application I/O continues
+  through it; TCP-specific configuration uses `tunnel.get_ref()` or `get_mut()`.
+- `try_into_inner` succeeds only when no unread bits remain; failure returns the unchanged
+  wrapper. `into_parts` transfers both the transport and `BitBuf`, retaining its cursor and
+  capacity; `from_parts` reconstructs without copying/resetting. There is no unconditional
+  `into_inner`, `Deref`, `Clone`, or credential-exposing `Debug` implementation.
+- Raw reads return available buffered bytes before touching the underlying stream, including
+  when the stream would block or fail. Empty reads do no I/O. A partial-bit cursor supplied
+  through `from_parts` produces `InvalidData` without consuming input; bit-level recovery stays
+  explicit in bnb. Direct reads through transport accessors bypass the prefix and are documented
+  as inappropriate for application I/O.
+- The default feature set remains wire-only. Blocking and Tokio stay independently usable.
+  bnb `MessageStream`/`BinCodec` remain valid general adapters, but adopting both would require
+  distinct ownership wrappers and additional async dependencies here. The shared `BitBuf` core
+  is the existing cross-driver seam, not a new SOCKS-specific framing engine.
+
+#### Framing, bounds, and failures
+
+- Each handshake owns one reusable `BitBuf::bounded(513)`. Both drivers first attempt `try_pull`,
+  read at most the remaining capacity when incomplete, then append and retry. The old `Frame`
+  enum and its duplicate length/header arithmetic are removed. No per-message receive `Vec`
+  remains; the bounded I/O scratch array is 513 bytes. Typed credential/domain allocations and
+  encoded-output allocations remain; this is not an allocation-free codec claim.
+- After `Incomplete { needed: Some(n) }`, both drivers accumulate at least `n` additional bytes
+  before replaying the decoder. This is the blocked operation's shortfall, not a complete-frame
+  length. Unknown/zero hints require at least one new byte. Reads still use free buffer capacity,
+  allowing coalescing; saturating subtraction handles receiving more than the hinted minimum.
+- EOF immediately makes a finite decode attempt, even before the shortfall is satisfied. Every
+  read retains the existing capacity/deadline checks; interrupted reads change neither the
+  shortfall nor buffered input. No polling, peeking, sleeping, or SOCKS length arithmetic is added.
+- Incomplete attempts remain transactional, not resumable within a message. Already complete
+  fields can still be decoded/allocated again at the next field boundary; unknown hints can
+  still cause retries after each read. Batching eliminates unnecessary attempts within a known
+  shortfall, not all replay or allocation. The private drivers only decode built-in SOCKS wire
+  types; this is not a scheduling guarantee for arbitrary custom codecs with speculative hints.
+- RFC 1929 §2 sets the largest frame at `1 + 1 + 255 + 1 + 255 = 513` bytes. RFC 1928 §§3–6
+  messages fit below that limit (greeting 257, command/reply 262, selections/status 2).
+  Capacity is checked before consuming more transport bytes. bnb owns transactional retry and
+  payload-length handling. A coalesced client transcript is measured to need one transport
+  read; no broader throughput or latency improvement is claimed without benchmarks.
+- Reads may include subsequent phases and early tunnel data, but strict validation and writes
+  still occur in protocol order. Each successful decode consumes only its message. On EOF,
+  `pull_eof` distinguishes a truncated frame (`Error::Codec` with finite-EOF details) from a
+  missing frame (`Error::Io(UnexpectedEof)`). Original transport error sources are retained and
+  `Interrupted` reads are retried. Explicit write flushing is unchanged.
+- An unknown ATYP still gives `UnsupportedAddressType(code)` and server reply `0x08` after its
+  four-byte header. On a command codec error, a bnb source probe reads the retained header and
+  restores its cursor on every path. This only classifies errors; it computes no frame length
+  and never matches diagnostic strings. Valid ATYP truncations remain codec errors.
+- Successful handoff is lossless. Handshake errors and async cancellation remain terminal,
+  including for borrowed transports: close them rather than attempting recovery. This slice
+  deliberately adds no resumable negotiation/state-machine API.
+
+#### Relay and remaining limits
+
+- Blocking TCP setup unwraps its deadline adapter by transferring both parts, then clears TCP
+  handshake timeouts. The full blocking relay gives the retained prefix only to its outgoing
+  reader; both directions run concurrently under the same absolute relay deadline. It does
+  not synchronously drain a prefix before starting the other direction. Target registration,
+  listener cancellation, and half-close handling are unchanged.
+- Tokio passes the wrapper directly to bidirectional copying under the existing total relay
+  timeout. Pending I/O cannot hide already buffered data. Raw writes, flushes, and async
+  shutdown delegate to the underlying transport.
+- Buffers can retain consumed credential storage, including after extraction. No zeroization
+  or secrecy wrapper is added. The receive cap bounds buffered input, not callback work, raw
+  application traffic, or arbitrary buffers imported by `from_parts`. Existing DNS, callback,
+  authorization, cancellation, and CONNECT-only limitations still apply.
+
+#### Initial verification (before shortfall batching)
+
+- Default wire suite: 36 tests plus one doctest. All features: 75 tests (21 blocking,
+  18 Tokio, 36 wire) plus four doctests. Default/blocking/Tokio/all-feature suites and strict
+  all-target Clippy pass independently. Formatting, warnings-denied all-feature rustdoc,
+  Rust 1.85 workspace and all-feature SOCKS checks pass.
+- Workspace tests and configured workspace Clippy pass. The latter retains 106 warning lines
+  from unrelated existing workspace debt; strict SOCKS checks are clean. Offline cargo-deny
+  passes advisories, bans, licenses, and sources. Historical bnb macro warnings and the
+  yanked-wnaf blocker remain resolved by the already-delivered upstream release.
+- RFC-derived transcripts prove exact output, fragmented/coalesced input, 255-byte credentials,
+  bounded receive requests, every unknown ATYP, and valid-ATYP truncation. Handoff tests cover
+  parts reconstruction, refused lossy extraction, alignment, EOF/source distinctions, and
+  returning buffered data before a pending/failing transport. Both full proxies preserve an
+  8 KiB pipelined payload followed by FIN and drain the target's response after half-close.
+- Two million ASan libFuzzer cases pass with `-max_len=2048`. Arbitrary hostile inputs exercise
+  both client/server drivers; fixed valid authentication/CONNECT prefixes plus arbitrary tails
+  independently check byte-exact handoff over five read partitions and enforce the receive cap.
+- All 20 selected wrapper mutations are caught. Two initially timed out in the full suite;
+  both then fail assertions immediately in focused non-network handoff tests. Three additional
+  deliberate mutations are caught: reducing capacity to 512 and discarding the prefix in each
+  full relay. Every mutation was restored before the final feature/Clippy/workspace checks.
+- Independent cumulative reviewer approval: no blocking source, API, test, fuzz, or scope
+  findings. Documentation follow-ups record the retry-work limitation and these final results.
+- Checks used cached dependencies/offline mode; transport tests used ephemeral loopback only.
+  Containerized pre-push and hosted CI are still delivery gates, not claimed here.
+
+The protocol roadmap stays at `dev`: this replaces transport plumbing, not the supported
+protocol set or conformance status. No SOCKS release is enabled.
+
+#### Shortfall-batching measurements and verification
+
+`cargo bench -p socks --all-features --bench session_reads` compares maximum RFC 1929
+credentials and maximum RFC 1928 domains under 1-byte, 16-byte, and coalesced reads. It uses
+the public blocking/Tokio `accept` paths with in-memory input and discarded writes, optimized
+builds, 100 warmups, and the median of five samples of 10,000 handshakes. No new dependency,
+unsafe allocator hook, timing assertion, or network service is used.
+
+Local characterization on 2026-09-08 (rustc 1.98.0), before/after batching, for one-byte reads:
+
+| Handshake | Retry after every read | Shortfall batching |
+|---|---:|---:|
+| Blocking, maximum credentials | 12.681 µs | 2.683 µs |
+| Tokio, maximum credentials | 12.781 µs | 2.997 µs |
+| Blocking, maximum domain | 9.471 µs | 1.636 µs |
+| Tokio, maximum domain | 11.148 µs | 1.710 µs |
+
+The 16-byte cases also improved; no coalesced regression was observed in this run. This
+isolates local session/codec overhead, not real network throughput or latency, and does not
+count allocations. Results are evidence for this refinement, not portable performance limits.
+
+- All-feature suite: 80 tests (23 blocking, 21 Tokio, 36 wire) plus four doctests. Independent
+  default/blocking/Tokio/all-feature tests and strict all-target Clippy pass, including the
+  benchmark build. Formatting, warnings-denied rustdoc, Rust 1.85 workspace/all-target SOCKS
+  checks, workspace tests/configured Clippy, and offline cargo-deny pass. Existing unrelated
+  workspace lint debt remains; the historical bnb macro and yanked-wnaf blockers stay resolved.
+- Added EOF cases inside long username/password/address fields, interruptions and transport
+  failures during a shortfall, and async Pending/resume. Existing maximum-frame, coalesced-tail,
+  cap, half-close, and deadline tests remain green. The empty-buffer unknown hint is exercised
+  by ordinary handshakes; the zero-hint fallback is defensive for future codecs, not a value
+  currently emitted by the generated SOCKS fields.
+- A fresh two-million-case ASan fuzz run passes with `-max_len=2048`. Six targeted automatic
+  interruption/error-guard mutations are caught. Two deliberate accounting mutations (growing
+  the shortfall and using non-saturating subtraction), applied to both drivers, each fail both
+  maximum-credential tests. All mutations are restored before the final verification rerun.
+- Independent review identified a doubled-escape test-fixture typo; both fixtures were corrected
+  and now exercise the intended valid-ATYP truncation path. No source finding remains.
+- No public API, dependency version, wire behavior, authentication policy, or release setting
+  changes. The benchmark reuses existing std/Tokio dependencies. Delivery gates and preservation
+  of the original checkout remain as recorded above; only the review worktree is modified.
+
+### bnb 0.6 borrowed-reader adoption (2026-09-14)
+
+This supersedes the manual read loops and dependency-version statements in the dated 0.5
+records above. The review branch was fast-forwarded to locally available main `9b29a2a8`,
+retaining its 14-file staged patch byte-for-byte. Main supplies runtime `bitsandbytes 0.6.0`
+and macros `0.5.0` through the existing workspace path dependencies. The old ignored fuzz lock
+was backed up; main's tracked 0.6 lock was retained and only its bnb-to-thiserror edge changed.
+
+#### Implementation and contracts
+
+- `Tunnel::read_message` and `Tunnel::read_message_async` call `bnb::net::read_message` and
+  `read_message_async`, respectively. They borrow the existing transport, bounded `BitBuf`,
+  and 513-byte stack scratch; no additional ownership wrapper or per-read receive allocation
+  is introduced. Obsolete SOCKS capacity, push, and EOF helpers are removed.
+- Feature `blocking` forwards to `bnb/net`; `tokio` forwards to `bnb/tokio-io` and the existing
+  optional Tokio dependency. Default wire-only builds remain runtime-free. Neither driver
+  enables `tokio-util`; no new direct dependency or release setting is added.
+- bnb owns shortfall batching, retained-capacity checks, interruption retry, finite decoding
+  at EOF, and immediate replay when buffer compaction invalidates a positional hint. Positive
+  hints remain additional-byte lower bounds, not frame lengths. Every SOCKS message is byte-
+  aligned, so the helper's final-byte padding consumption changes no SOCKS wire boundary.
+- `From<bnb::net::MessageReadError> for Error` preserves the original owned `Io` or `Codec`
+  payload. It inherits the existing session-feature gate on the error module. The upstream
+  enum is non-exhaustive: a future variant is retained as an `io::Error::other` source and
+  classified as general failure, without guessing its semantics or matching strings.
+- Typed codec errors still reach the retained-header probe: unknown ATYP produces server
+  reply `0x08`; valid-ATYP truncation stays a codec error. Empty EOF remains `Io(UnexpectedEof)`.
+  Three new unit tests prove codec kind/offset/field, owned transport source, and OS-code
+  preservation. Existing transcript tests cover composition through both readers.
+- The staged `Tunnel<S>` public API and lossless handoff are unchanged by this adoption.
+  Authentication, destination authorization, deadlines, and terminal session-error/cancellation
+  policy are unchanged. Retained input does not make SOCKS negotiation resumable.
+- Encoding, `write_all`, and explicit flushing stay local: bnb's existing writer neither
+  preserves the full owned transport error nor flushes. Credential/endpoint allocations,
+  repeated partial-field decoding, non-zeroized storage, and CONNECT-only limits remain.
+
+#### Performance finding
+
+The existing in-memory benchmark was run before adoption, then in three alternating pairs
+against an isolated control using the old SOCKS loops with the **same bnb 0.6.0**. Each entry
+below is the median of those three benchmark medians (each 5 × 10,000 handshakes, 100 warmups,
+rustc 1.98.0, default optimized bench profile). The original 0.5 baseline and same-version
+control are comparable; the slowdown is associated with the borrowed-helper path.
+
+| Input/read chunk | Blocking control → helper | Tokio control → helper |
+|---|---:|---:|
+| Max credentials / 1 byte | 2.785 → 3.544 µs | 3.073 → 3.857 µs |
+| Max credentials / 16 bytes | 447 → 602 ns | 590 → 700 ns |
+| Max credentials / coalesced | 253 → 328 ns | 398 → 437 ns |
+| Max domain / 1 byte | 1.502 → 2.033 µs | 1.829 → 2.287 µs |
+| Max domain / 16 bytes | 286 → 345 ns | 419 → 460 ns |
+| Max domain / coalesced | 146 → 182 ns | 270 → 291 ns |
+
+This run shows 8–35% higher local handshake overhead, less than one microsecond absolute.
+Hardware instruction counts for the full benchmark increased from approximately 13.08 to
+15.45 billion (18%). A cycle profile samples out-of-line `bnb::net::read_limit` and `shortfall`
+at approximately 6% and 2%; retained-buffer `push` remains the largest sampled function.
+These observations identify an upstream profiling target, not proof that inlining alone
+fixes the regression. This is not a network-throughput, latency, or allocation-count result;
+timing remains characterization, not a test assertion or portable performance guarantee.
+No upstream bnb optimization is included. **Decision (2026-10-02): the measured overhead is
+accepted** in exchange for one shared, fuzzed framing path across backends; it is under one
+microsecond per handshake and does not affect relay throughput. Reducing the out-of-line
+`read_limit`/`shortfall` cost is tracked as bnb performance work, not a SOCKS delivery gate.
+
+#### Verification and delivery boundary
+
+- Default wire suite: 36 tests and one doctest; all features: 83 tests (36 wire, three error
+  conversion, 23 blocking, 21 Tokio) and four doctests. Default/blocking/Tokio/all-feature
+  tests, strict all-target Clippy, warnings-denied rustdoc, and Rust 1.85 all-target checks pass
+  independently. Production dependency trees exclude Tokio in default/blocking mode and
+  exclude `tokio-util` in every mode. Formatting passes.
+- Workspace tests, configured all-target workspace Clippy, Rust 1.85 workspace checks, and
+  offline cargo-deny pass. Existing unrelated workspace warn-level lint debt remains; the
+  historical bnb-macro warnings and yanked-wnaf blocker remain resolved, not exemptions.
+- Three fault mutations in an isolated copy are caught: discarding the buffered prefix by
+  reporting it empty, mapping codec failures to I/O failures (both drivers' ATYP tests), and
+  reducing transport errors to their kind (both owned-source and OS-code unit tests). The
+  working checkout was never mutated for these checks.
+- Two million ASan libFuzzer inputs pass with `-max_len=2048` (370 seconds). Existing RFC-derived
+  valid prefixes, arbitrary tails, fragmentation, coalescing, and receive-bound checks remain
+  active. Final all-feature tests and strict Clippy pass after the isolated fault checks.
+- Independent cumulative source/API/test/fuzz review and documentation re-review report no
+  findings. The measured performance regression was later accepted (see above).
+- Checks use cached dependencies/offline mode; transport tests use ephemeral loopback only.
+  Containerized pre-push and hosted CI remain later delivery gates.
+
+Roadmap status remains `dev`: this changes read plumbing, not the supported protocol set.
+The immediate follow-up is the measured reader-overhead decision above. The next protocol
+slice is embedded blocking BIND, which lands separately.
+
+#### Tunnel method placement and scratch experiment (2026-09-14)
+
+The private driver functions became crate-private inherent `Tunnel` methods: `read_message`
+under `blocking`, and `read_message_async` under `tokio`. Distinct names coexist when both
+features are enabled and do not shadow raw `Read::read`. All twelve handshake call sites now
+use these methods. This expands no public API and leaves strict session validation, typed
+ATYP error classification, raw handoff, and bnb's read contracts unchanged.
+
+A `[u8; 513]` array local to each message read has no heap allocation or destructor. Its
+initialization is the potential saving from reuse, not an allocation/deallocation pair.
+An async read retains that local in its future across suspension. Adding an inline field
+would instead retain it with every `Tunnel` through application I/O and increase the size
+of moved tunnels, including the lossless `try_into_inner` error value.
+
+The inline-field experiment initialized scratch in `from_parts` and shared it across message
+reads; bnb still immediately appended accepted bytes to `BitBuf`. Against the method-local
+array, three alternating pairs of optimized benchmark runs showed no consistent improvement.
+Maximum-credential cases ranged from 2% faster to 8% slower; maximum-domain cases were 2–27%
+slower. Coalesced domain medians were 176 → 223 ns blocking and 300 → 381 ns Tokio. These are
+same-host characterization medians, using the benchmark procedure above, not portable limits
+or proof of the exact machine-code cause. The experiment also failed strict Clippy because
+`try_into_inner`'s `Err` variant became at least 569 bytes. Boxing would add allocation or
+change the API; suppressing the warning would not establish a performance benefit.
+
+The retained-field experiment was removed. Scratch stays local to the inherent methods;
+`Tunnel`'s representation and two-part handoff remain unchanged. No extra scratch-clearing,
+secrecy, or zeroization guarantee is introduced. The earlier bnb helper-overhead finding
+remains separate and unresolved. Existing transcript, fragmentation, maximum-length, EOF,
+interruption, cancellation, and handoff tests exercise the relocated methods through public
+session APIs; no tests pin method visibility, private fields, or scratch addresses.
+
+Fresh default/blocking/Tokio/all-feature tests, strict all-target Clippy, warnings-denied
+rustdoc, and Rust 1.85 all-target checks pass. All-feature tests also pass in the optimized
+release profile (83 tests and four doctests). Workspace tests, configured workspace Clippy,
+and offline cargo-deny pass with only the previously documented unrelated lint debt. Two
+isolated mutations replacing each message-read method with an error are caught by existing
+golden-transcript tests. Independent code and documentation review passes after updating
+verification status. The fresh two-million-input ASan fuzz run passes with `-max_len=2048`
+(457 seconds). Only the five intentional refactor/documentation files were restaged; all
+other staged work and the original integration checkout remain untouched. No publication
+or hosted CI was performed.
+
+### Explicit server exchange, authorization, and connection (2026-09-16)
+
+The approved public workflow is now implemented for both optional drivers:
+
+```rust,ignore
+let server = socks::server::blocking::Server::new(config)?;
+let connection = server.exchange(stream)?.authorize()?.connect()?;
+// A Tokio server uses: server.exchange(stream).await?.authorize().await?.connect().await?
+let (client, target) = connection.into_parts();
+```
+
+This is a scoped API refactor, not the complete version-first folder reorganization.
+The backend's `Server::new` consumes the explicit `ServerConfig` and validates limits before I/O.
+Only SOCKS5 CONNECT is implemented. Version-selecting builders, a client facade, and distinct
+client/server/proxy folders remain a separate reviewable step; no placeholder versions,
+runtime marker traits, dependency, or transport framework are added here.
+
+#### API and policy boundaries
+
+- `Tunnel<S>` is renamed to `Stream<S>` in `src/stream.rs`, including clients and raw-I/O
+  handoff. Its buffering, bnb readers, method-local scratch, I/O traits, and extraction
+  contracts are unchanged. There is no stale compatibility alias in this unpublished API.
+- Driver-level generic `accept` becomes `exchange`; `Incoming<S>` becomes `Request<S>`;
+  response methods are `send_success(bound)` and `send_failure(code)`. The wire
+  `v5::Request` is unchanged. Generic protected/custom transports remain supported and
+  retain caller-managed deadlines and terminal error/cancellation behavior.
+- Distinct blocking/Tokio servers expose `exchange`, synchronous or async respectively,
+  allowing both features to coexist without overlapping inherent methods. They return
+  driver-specific `Exchange` objects containing the authenticated request, peer address,
+  and a borrowed immutable configuration. Destination authorization has not yet run.
+- `Exchange::authorize` resolves once and filters the numeric candidates against explicit
+  policy. All candidates are checked once before dialing, rather than lazily interleaving
+  callbacks with connection attempts. Empty resolution remains `InvalidEndpoint`; an
+  entirely denied list remains `PermissionDenied`. Policy callbacks remain fast/nonblocking.
+- Consuming `Authorized::connect` can dial only the private retained list, without another
+  resolution or policy evaluation. Authorization is a snapshot, not continuous policy
+  reevaluation. It returns `Connection<S>` owning both the client-side `Stream<S>` and the
+  outbound socket, after replying with that socket's actual local bound endpoint.
+- `Connection::into_parts` transfers both sides for custom I/O; `relay(timeout)` uses the
+  existing half-close-aware relay. No data relay starts during `connect`. The configured
+  full proxies compose these stages, preserving listener capacity and shutdown. Blocking
+  target registration happens before success so shutdown still owns both relay sockets.
+- `Exchange::into_request` preserves the lower-level escape hatch for external policy,
+  custom dialing, and manual replies. Blocking handshake socket timeouts are cleared before
+  handoff. This escape hatch deliberately cannot prove a caller's authorization or dial;
+  its `send_success` contract still requires both to have happened.
+
+#### Deadlines, replies, and ownership
+
+- Blocking DNS remains uncancellable and outside the connection budget. The absolute budget
+  begins after DNS and before policy filtering. Tokio starts it before DNS. Both retain the
+  same instant across authorization, caller delay, and every connection attempt; a pause
+  between `authorize` and `connect` cannot renew it. Callers own time spent holding an
+  `Exchange` before beginning authorization or holding an established connection before relay.
+- Resolution, authorization, and dial failures attempt an appropriate SOCKS failure reply
+  under a fresh bounded reply budget. A reply error takes precedence over the original
+  error, matching the previous full-proxy behavior. Once success writing starts, errors
+  only close the owned session: no second response may follow a partial success frame.
+- Consuming stages prevent managed connect-before-authorization and double connection
+  attempts. Dropping a stage closes owned transports without success or automatic dialing;
+  async cancellation remains terminal. No stage implements credential-exposing `Debug`.
+- The authentication predicate still supplies a boolean, not a principal. Authorization is
+  per-peer/original-destination/resolved-address. The new method name does not add identity,
+  asynchronous policy backends, rate limiting, or credential zeroization.
+
+RFC 1928 §§3–6 still governs method/request ordering, CONNECT status, and the BND endpoint;
+RFC 1929 §2 authentication is unchanged. New stage tests use independently assembled wire
+transcripts, retained application payloads, peer-observed bound addresses, and no-dial checks
+on ephemeral loopback listeners. Compile-fail examples enforce the consuming API boundaries.
+Tokio's paused clock checks deadline retention and a fresh failure-reply budget.
+
+Verification completed for this slice: 97 all-feature tests plus nine doctests;
+independent default/blocking/Tokio/all-feature tests, strict Clippy, warnings-denied rustdoc,
+and Rust 1.85 all-target checks; optimized tests, workspace tests/configured Clippy/MSRV,
+and all four offline cargo-deny gates pass. Five automatic policy/deadline mutations and
+three manual faults (blocking timeout leakage, renewed Tokio connect budget, and denied-policy
+deadline precedence) are caught; one automatic mutation was unbuildable. Two million ASan
+session fuzz cases and a final 10,000-case smoke pass. Independent final review cleared the
+source/API/security changes after fixing deadline precedence. Documentation bookkeeping was
+interrupted by subsequent documentation requests, not by an outstanding source finding.
+The measured bnb helper overhead above is an accepted tradeoff; this refactor claims no speedup.
+Roadmap status remains `dev` because supported versions, commands, and conformance do not change.
+
+### Version-first organization and one shared server policy (2026-09-18)
+
+The user approved version-specific client/server implementations under a common setup API,
+with an explicit accepted protocol set and ONE server policy across those protocols. This
+supersedes the earlier layout deferrals, without adding SOCKS4, another command, or a runtime.
+
+#### Ownership and public API
+
+The initial layout below is refined by the source-ownership cleanup recorded next.
+
+```text
+src/
+  client.rs              configured client and typed version configuration selection
+  server.rs              accepted versions, shared policy/limits, configured server
+  server/{blocking,tokio}/   exchange -> authorize -> connect stages
+  policy.rs              authentication requirements and neutral authorization context
+  destination.rs         application IP/domain + port, no wire address discriminant
+  limits.rs              shared deadlines and connection capacity
+  stream.rs              unchanged lossless bnb input ownership and raw I/O
+  io/                    transport writes and deadlines
+  proxy/                 blocking/Tokio listeners
+  v5/
+    wire/                unchanged permissive codecs; also re-exported at v5::
+    auth.rs              client authentication choice and server method adaptation
+    session.rs           strict V5 validation and reply classification
+    client/              V5 config plus blocking.rs, tokio.rs
+    server/              blocking.rs, tokio.rs embedded exchanges
+```
+
+Root `blocking`, `asynchronous`, and `session` modules are removed, not retained as
+parallel compatibility facades in this unpublished API. `tokio` now names the backend
+accurately. Existing wire paths such as `v5::Endpoint` remain valid
+deliberately, with their definitions under `v5::wire`. Source movement was first validated
+against the existing all-feature suite before changing policy/dispatch behavior.
+
+```rust,ignore
+let client = Client::configure(v5::client::Config::username_password(b"user", b"password")?)
+    .blocking()
+    .build()?;
+let policy = Policy::new(ServerAuth::username_password(check_credentials), |context| {
+    context.target.ip().is_loopback() // Example only: supply your actual access rules.
+});
+let server = Server::configure().protocols([Version::V5]).policy(policy).blocking().build()?;
+let connection = server.exchange(stream)?.authorize()?.connect()?;
+```
+
+- Client configuration owns credentials without `Debug`; version-specific generic APIs still
+  accept borrowed `ClientAuth`. The facade offers generic blocking/Tokio handshakes and TCP
+  convenience methods for both backends. Domains are forwarded unchanged. Invalid local
+  credentials/destinations fail before I/O; a TCP budget spans connect and handshake.
+- A typed `client::Configuration` selects the version together with its valid options; no separate
+  version/authentication knobs can disagree. There is no public protocol plugin trait or
+  fallback retry. `Version`, client protocol, policy operation/authentication, and context
+  extension points are non-exhaustive so future versions need not break downstream matches.
+- `ServerConfig::new(protocols, policy)` and `Server::configure` require a nonempty version set;
+  duplicates are removed. There is no default version set, credential policy, or destination
+  permission. All complete proxy entry points validate configuration before accepting work.
+- Only `Version::V5` is constructible today. Dispatch uses an exhaustive match on validated
+  configuration and delegates the untouched stream to the V5 exchange; it neither sniffs,
+  consumes, nor prepends a version byte. Actual multi-version sniff/dispatch is deferred until
+  a second codec exists; it must preserve the version byte in the same `BitBuf`. An unsupported
+  greeting version now closes without sending a guessed `[5, 0xff]` response. A decoded
+  foreign greeting reports `VersionNotAccepted`; truncated input remains a codec/EOF error.
+
+#### Shared security boundary
+
+- `Policy` owns one shared `ServerAuth` and one `Context` predicate. Its clones share the
+  callbacks via `Arc`. V5 only adapts the requirement to RFC 1928/1929; it owns no independent
+  access policy. Complete blocking and Tokio paths both call the same policy evaluator.
+- Context carries the peer, a `RequestInfo` (actual validated version, completed authentication,
+  operation, original neutral destination), and the exact numeric candidate. Only successful
+  exchange constructs that context. The evaluator also rejects an authentication outcome
+  inconsistent with its requirement before calling destination policy. No-auth is explicit;
+  username/password never falls back. A future protocol unable to satisfy a requirement must
+  be rejected, not silently mapped to weaker authentication.
+- `Authentication::UsernamePassword` means the shared verifier succeeded; it is not a principal
+  or username. Context retains no credential data and has no `Debug`. Claimed identity,
+  authenticated principals, asynchronous stores, and per-principal authorization remain a
+  separate API decision; a raw claimed identifier must never become verified authentication.
+- `Destination` preserves opaque domain bytes and port, or numeric IP and port, with no wire
+  discriminant. Conversion alone applies neither protocol validation nor DNS normalization.
+  IPv6 scope/flow metadata is not carried by SOCKS endpoints, as before. Version-specific
+  clients enforce address-family/length constraints. Managed DNS still requires UTF-8/no-NUL.
+- Resolution remains once per request, followed by one callback per retained numeric candidate
+  before any dial. Authorization retains an immutable approved list and the SAME absolute
+  connect deadline through caller pauses and all attempts. Blocking DNS remains outside its
+  connect budget; Tokio DNS remains inside. Reply-budget precedence, target registration
+  before success, partial-success terminality, and relay half-close
+  are unchanged. Unsupported commands never reach destination authorization.
+- Managed blocking/Tokio exchanges expose neutral destinations/request facts. Their
+  `into_request` escape hatch returns the version-specific manual request and keeps its
+  caller-owned policy/deadline contract. This is not a second automatic policy path. Adding
+  a second accepted version requires an explicit root manual-handoff return/API decision;
+  `v5::server::*` remains the direct version-specific manual route. A one-variant wrapper
+  is deliberately not introduced ahead of that implementation.
+- Neutral request ownership can copy at most 255 domain bytes during a V5 managed exchange.
+  Owned client credentials are copied
+  transiently into each wire exchange. There is no zero-copy, zero-allocation, zeroization,
+  or performance-improvement claim. The earlier measured bnb helper overhead remains open.
+
+#### Verification and remaining scope
+
+- 127 all-feature tests and eight doctests (three compile-fail) pass. Independent default,
+  single-backend, combined-backend, and all-feature tests, strict all-target
+  Clippy, warnings-denied rustdoc, and Rust 1.85 all-target checks pass. Optimized release
+  tests, workspace tests/configured Clippy/MSRV, and all four offline cargo-deny gates pass.
+  Unrelated workspace warn-level debt remains; historical bnb-macro warnings and yanked-wnaf
+  advisories remain resolved, not exemptions or new failures.
+- Configuration tests require explicit protocol/policy choices, reject empty sets and invalid
+  bounds/credentials, and canonicalize duplicate versions. Neutral destinations preserve
+  IPv4, IPv6, opaque/non-UTF-8/NUL domains, and raw unencodable lengths without applying DNS
+  or construction policy during conversion. Configured client transcripts assert exact RFC
+  bytes, pre-I/O destination rejection, and coalesced application handoff. Convenience-client
+  tests include Tokio.
+- Each driver tests every non-V5 greeting byte with no credential callback or guessed reply.
+  The complete-backend composition test shares ONE policy across every complete backend,
+  checks completed authentication/version/operation/original destination/exact numeric target,
+  requires one verifier/policy invocation per numeric request, and proves denial prevents dial.
+  Existing opaque-domain, malformed credential, no-downgrade, deadlines, cancellation,
+  pipelining, half-close, and fairness regressions remain active.
+- Six intentional faults in an isolated copy fail immediate assertions: accepting an empty
+  version set, ignoring policy denial, reporting the wrong authentication outcome, and
+  bypassing each driver's no-reply foreign-version guard. The copy's full suite passes after
+  restoration. No fault was applied to the working checkout.
+- The session ASan fuzz target passes two million inputs with `-max_len=2048` in 457
+  seconds. Final-source smokes pass 10,000 additional inputs. The detached fuzz workspace
+  also passes strict all-target Clippy. Fuzzing exercises
+  codec/session state, not kernel readiness scheduling or DNS races.
+- Independent source/API/security and test review finds no remaining issue after marking
+  extension points non-exhaustive and documenting manual-handoff evolution.
+
+No dependency, CI selector, release setting, supported version/command, or roadmap stage
+changes in this slice. The roadmap stays `dev`; adding organizational boundaries is not
+additional protocol conformance. All dependency checks are offline; transport tests use
+ephemeral loopback only. The bnb helper overhead remains the accepted tradeoff recorded above.
+
+Next organization step: when SOCKS4/4A implementation is approved, first build its wire codec,
+then its colocated exchanges, and finally add lossless multi-version dispatch and cross-version
+policy tests. Do not create empty version modules or copy listener/DNS/relay infrastructure.
+The existing `Error` retains precise V5 reply/method/command diagnostics; the next version will
+need an explicit error-mapping decision rather than erasing those details into strings.
+
+### Source-ownership cleanup (2026-09-18)
+
+The follow-up review identified root files whose owners were already established. Move
+those definitions beside their owners without changing runtime behavior or introducing
+another abstraction:
+
+```text
+src/
+  lib.rs                 exports and the small Version enum
+  client.rs              cross-version client configuration
+  destination.rs         shared application address model
+  error.rs               shared session errors
+  server/
+    mod.rs               Server, builder, Connection; configuration re-exports
+    config.rs            ServerConfig and Limits
+    policy.rs            shared authentication and authorization
+    blocking.rs          managed blocking stages
+    tokio.rs             managed Tokio stages
+  io/
+    mod.rs               shared transport helpers
+    stream.rs            lossless Stream and its I/O implementations
+    blocking.rs
+    tokio.rs
+  proxy/                 unchanged complete proxy implementations
+  v5/                    unchanged version-first wire/client/server ownership
+```
+
+Root `Client`, `Server`, `Connection`, `Stream`, `Destination`, and `Version` remain
+available. `server::ServerConfig` also stays unchanged. In this unpublished API,
+`socks::policy::*` moves to `socks::server::policy::*`, and `socks::limits::Limits` moves
+to `socks::server::Limits`; old root module facades are removed. `config` and `stream`
+are implementation modules, not additional public namespaces. Examples, benchmarks,
+fuzz targets, tests, and rustdoc imports follow the new paths.
+
+Configuration validation, policy evaluation, buffering, feature gates, and wire bytes
+are unchanged. `Version` retains its derives and non-exhaustive contract. No dependency,
+roadmap status, protocol support, or publication decision changes. The existing helper
+overhead and future multi-version dispatch/manual-handoff decisions remain open. The
+next smallest organization step is still a real second version's wire codec, not more
+empty modules or generic scaffolding.
+
+Verification for these moves:
+
+- Formatting and every feature configuration passes tests, strict all-target Clippy,
+  warnings-denied rustdoc, and Rust 1.85 all-target checks. The all-feature suite still
+  passes 127 tests and eight doctests; optimized release tests also pass.
+- Workspace tests, configured workspace Clippy, workspace MSRV, and all four offline
+  cargo-deny gates pass. Unchanged workspace warning-level lint debt remains outside
+  SOCKS; the historical bnb-macro warnings and yanked-wnaf advisory are not present.
+  The detached fuzz workspace passes strict all-target Clippy.
+- Independent review confirms `Policy` and `Stream` moved byte-for-byte, `Version`
+  retains its definition, and the extracted configuration and server bodies are unchanged.
+  Existing behavior tests are retained rather than adding tests coupled to file placement.
+- The session ASan target passes two million inputs with `-max_len=2048` in 461 seconds.
+
+### Local verification cadence (2026-09-18)
+
+The user requested lighter routine interactions. Root and SOCKS guidance now distinguish
+focused local checks from release qualification. Ordinary code edits retain formatting,
+affected behavior tests, strict package Clippy, and relevant review; module moves add only
+the useful feature configurations and docs checks. Prose-only edits use diff review and
+whitespace checks. Full workspace/feature/MSRV/release-profile suites, fuzz and mutation
+campaigns, and benchmarks are reserved for release preparation or an explicit broader-check
+request. No CI workflow, selector, hook, scheduled job, or release gate changes in this slice.
+
+### Client facade extraction (2026-09-18)
+
+The user requested a client directory with a facade-only `mod.rs`, including separate small
+files for the shared types. This replaces the root `client.rs` shown in the earlier trees:
+
+```text
+src/client/
+  mod.rs                 documentation, private module declarations, public re-exports
+  client.rs              Client state, builder entry point, and version accessor
+  builder.rs             Builder defaults, setters, and construction validation
+  protocol.rs            Protocol and its version-configuration From implementation
+  blocking.rs            blocking impl Client methods
+  tokio.rs               Tokio impl Client methods
+```
+
+No public path or method changes: `socks::Client` and `socks::client::{Client, Builder,
+Protocol}` remain available. Backend feature gates move from methods to their private
+module declarations. Client state is visible only within the client module tree via
+`pub(super)` fields; it is neither public nor crate-wide. Construction checks, credential
+ownership, version dispatch, deadlines, transport handoff, and method bodies are unchanged.
+There is no new configuration wrapper or protocol abstraction. Server and version-specific
+client layouts are outside this extraction, and no roadmap status changes.
+
+Routine-tier verification passes: default SOCKS tests (36 plus one doctest), all-feature
+tests (127 plus eight doctests), formatting, strict all-target/all-feature SOCKS Clippy,
+and warnings-denied rustdoc. Independent review confirms unchanged behavior, feature gates,
+privacy, and public paths, with no findings. No workspace, exhaustive matrix, benchmark,
+mutation, or fuzz campaign was started for this structural change.
+
+### Facade-only source cleanup (2026-09-18)
+
+The user approved the remaining organization review recommendations and checking for empty
+source paths. `lib.rs` and all `mod.rs` files now contain only documentation/attributes,
+alphabetically grouped module declarations, and re-exports. Definitions stay beside their
+implementations in purpose-named files; small files do not justify placing behavior in a
+facade. This supersedes the earlier root-inline `Version` decision and layout trees.
+
+```text
+src/
+  lib.rs                 crate facade
+  version.rs             Version, re-exported at the crate root
+  client/                existing client split; declarations precede re-exports
+  server/
+    mod.rs               server facade
+    server.rs            Server and shared setup methods
+    builder.rs           Builder
+    connection.rs        Connection and lossless handoff
+    config.rs            unchanged ServerConfig and Limits
+    policy.rs            unchanged shared policy
+    blocking.rs
+    tokio.rs
+  io/
+    mod.rs               transport facade
+    address.rs           existing domain-name conversion/validation
+    deadline.rs          shared timeout error construction
+  v5/
+    client/config.rs     Config extracted from the client facade
+    wire/version.rs      VERSION extracted from the wire facade
+```
+
+All public paths, feature gates, wire constants, signatures, and method bodies are preserved.
+The server builder/configuration/policy, V5 credentials, deadline budgets, authorization,
+numeric target pinning, and shutdown behavior do not change. The existing crate-visible server and
+I/O internals retain their visibility. No wrapper types, dependencies, commands, versions,
+roadmap changes, or publication are introduced.
+
+The source scan found no empty files and one obsolete empty directory left by the earlier
+version-first moves. That directory was removed with non-recursive `rmdir`; it contained
+no data or tracked files. No unrelated files or directories were removed.
+
+Routine verification passes default SOCKS tests (36 plus one doctest), all-feature tests
+(127 plus eight doctests), formatting, strict all-target/all-feature SOCKS Clippy, and
+warnings-denied rustdoc.
+Independent review confirms behavior, public paths, feature gates, and scoped visibility
+are preserved, with no findings. The final source scan confirms all eleven facades contain
+only documentation/attributes, ordered declarations, and re-exports, with no remaining
+empty source files or directories. No workspace suite, exhaustive matrix, benchmark,
+mutation campaign, or fuzz run was started; release qualification remains separate.
+
+### Shared vocabulary grouping (2026-09-18)
+
+The user approved grouping `Destination` and `Version` beneath private `src/types/`, with
+a facade-only `mod.rs` and unchanged definitions in `destination.rs` and `version.rs`.
+This supersedes their root file locations in the earlier layout trees. Public
+`socks::Destination` and `socks::Version` remain available with default features; the folder
+is not a new public namespace or a home for miscellaneous helpers. Conversion impls remain
+beside their target types. `src/error.rs` and `socks::error::Error` stay unchanged because
+the guided API's failure boundary spans client, server, proxy, and I/O.
+
+No behavior, feature, wire format, dependency, or roadmap status changes. The current shared
+error retains V5-specific method, command, and reply values. Its separation from future V4
+failures remains a design decision for that implementation, not part of this source move.
+The next protocol and platform qualification steps below remain unchanged.
+
+Routine verification passes formatting, default SOCKS tests (36 plus one doctest),
+all-feature tests (127 plus eight doctests), strict all-target/all-feature SOCKS Clippy,
+warnings-denied rustdoc, and whitespace checks. Independent review confirms byte-identical
+type definitions, stable public paths and feature availability, and matching documentation.
+No tests coupled to file placement, broader workspace checks, or release qualification
+were added; existing behavior tests cover the move.
+
+### Backend boundaries and navigation refinements (2026-09-18)
+
+The approved structural review is implemented without adding V4 placeholders or runtime
+abstractions. Blocking/Tokio complete proxy entry points now borrow a validated `Server`,
+retaining backend-appropriate ownership. This
+is an intentional signature change in the unpublished API: replace `&config` with a borrowed
+the backend's `Server::new(config)?` or a server built with backend selection. Listener workers clone
+the validated server and its configuration, sharing the same policy callbacks, without
+reconstructing or revalidating the server per connection. Configuration validation is now
+private to the server module.
+
+Numeric address conversion reuses `Destination::socket_addr`. The blocking deadline adapter
+uses shared arithmetic with explicit `now`,
+preserving zero/overflow rejection, exact expiry, error classification,
+and absolute budgets. Tokio continues to use Tokio time for its timeout behavior.
+
+The blocking proxy now separates listener/session management from relay mechanics, and `Stream`
+separates buffer ownership from standard/Tokio I/O implementations. Their public paths and
+feature availability are unchanged; all new `mod.rs` files are facades. The current map above
+supersedes historical trees without deleting their rationale or verification evidence.
+
+Existing listener tests now exercise builder-created blocking/Tokio servers; the cross-backend
+policy regression builds separate backend servers from clones of one configuration, retaining its callback-count,
+verified-context, and no-dial-on-denial assertions. Other callers explicitly validate their
+configuration before invoking complete proxies. No new file-placement tests or test harness
+were introduced. No dependency, wire format, roadmap stage, or publication changes occur.
+V4 dispatch, manual-handoff types, version-specific errors, and receive bounds remain deferred
+until its wire codec is implemented; the next protocol/platform steps below are unchanged.
+
+Routine verification passes default tests (36 plus one doctest), all-feature tests (127 plus
+eight doctests), formatting, strict all-target SOCKS Clippy with all features, and
+warnings-denied all-feature rustdoc. Targeted backend compilation also passes. A
+single-backend compile exposed a newly unused timeout re-export after the arithmetic
+extraction; gating that re-export to Tokio resolved it, and the final strict checks are
+warning-free. The source scan confirms all fifteen facades remain declaration-
+and-export-only, no empty source files/directories remain, and the current ownership map
+matches the source tree. Independent review found no source/API/security or test issue;
+its configuration-cloning documentation correction is resolved. No workspace suite,
+exhaustive feature/MSRV matrix, benchmark, fuzz, mutation, or release gate was run.
+
+### Message-owned guided checks (2026-09-18)
+
+The former `v5/session.rs` contained neither a session type nor lifecycle state. Its
+message-specific behavior now lives in inherent implementations beside the corresponding
+wire types: `Endpoint::check_length`, `MethodSelection::check_offered`,
+`UsernamePasswordResponse::ensure_success`, `Request::check_header`, and
+`Reply::ensure_success`. These are explicit crate-private guided checks, enabled only with
+a driver feature, not decode hooks or replacements for bnb's construction `validate` methods.
+A failing reply and a BIND request remain representable wire messages, not invalid types.
+
+`Reply::success` and `Reply::failure` own compliant guided reply construction. Success checks
+the bound endpoint; failure uses the existing unspecified IPv4 endpoint and rejects both
+the named success code and its raw `Other(0)` alias. The raw builder, fields, decoding, and
+canonical/verbatim encoding remain unchanged. Constructors do not authorize or dial targets;
+those responsibilities remain with the existing server stages and embedded callers.
+
+`v5/server/validation.rs` composes request-header checks, CONNECT-only capability enforcement,
+and destination checks in their original order. `v5/wire/validation.rs` retains only shared
+version/reserved-byte checks. `v5/decode.rs` retains the unchanged failed-command header probe
+and cursor restoration, because no decoded message exists on that path. `session.rs` is
+removed; no wrapper type or public API is added. Both backends use the same methods.
+
+Targeted transcript regressions cover header/capability/destination error precedence,
+authentication-version precedence without sending CONNECT, and failure-reply precedence over
+an invalid bound address. They also prove raw decoding and verbatim encoding still preserve
+the rejected wire values. Existing authentication, reply-byte, unknown-ATYP, and lossless
+handoff regressions remain the behavioral oracle for the relocations.
+
+Routine verification passes the three targeted regressions, default tests (36 plus one
+doctest), all-feature tests (130 plus eight doctests), formatting, strict all-target/all-feature
+SOCKS Clippy, and warnings-denied rustdoc. Clippy initially flagged borrowing the tiny `Copy`
+`MethodSelection`; its method now takes `self`, matching the old helper's by-value semantics,
+and final checks are warning-free. Independent review reports no findings. No workspace,
+exhaustive feature/MSRV matrix, benchmark, fuzz, mutation, or release gate was run.
+
+No dependency, runtime behavior, supported command/version, roadmap status, or publication
+changes occur. The existing performance and V4 dispatch/error/handoff decisions remain
+open. The next protocol and platform qualification steps below are unchanged.
+
+### Domain-owned construction and validation (2026-09-18)
+
+The user approved extracting the domain variant into a payload type rather than making
+an endpoint-wide length helper inspect unrelated IP variants. `v5::Domain` (also available
+under `v5::wire`) owns the length-prefixed name and network-order port; `Endpoint` still
+supplies the single `ATYP = 3` byte. `Domain` uses bnb's existing struct codec/builder with
+`validate = Domain::check_length`. No upstream bnb change, dependency, runtime, allocation
+wrapper, or generic validator is introduced. IPv4/IPv6 variant shapes remain unchanged.
+
+`Domain::check_length` is the one length rule, with public `thiserror` diagnostics
+`DomainError::Empty` and `DomainError::TooLong { length }`. It and the generated
+`Domain::{validate,is_valid}` are available without driver features. `Endpoint::validate_structure`
+only dispatches to that domain check; it replaces the former crate-private
+`Endpoint::check_length`. Generated request/reply builders now explicitly validate their
+nested endpoints, including raw or mutated domain payloads. They do not reject BIND,
+UDP ASSOCIATE, failure replies, or noncanonical header fields: capabilities, outcomes,
+and representation remain separate. Builder errors retain bnb's usual `Invalid` boundary.
+
+This deliberately changes the unpublished enum API from `Endpoint::Domain { name, port }`
+to `Endpoint::Domain(Domain { name, port })`. For checked construction, use
+`Domain::builder().name(name).port(port).build()?` and convert via `Endpoint::from`/`into`.
+`Domain`'s fields remain public; `Endpoint::domain(name, port)`, `From<Domain>`, and neutral
+destination conversions preserve raw data without validating or normalizing it. A checked
+builder is not a permanent validity guarantee after mutation. Standalone `Domain` encoding
+contains only length/name/port, not the address-type byte or request/reply headers.
+
+Guided clients and servers recheck current values at the same boundaries, mapping domain
+errors to the existing `Error::InvalidEndpoint` contract. Version/reserved/command/status
+error precedence and failure reply codes are unchanged. DNS resolution still owns UTF-8
+and NUL restrictions; length validation accepts opaque/non-UTF-8 bytes and performs no
+resolution, IDNA conversion, or label checks. Empty-domain messages remain decodable and
+writable verbatim; canonical request/reply encoding repairs header constants, not names.
+Oversized names remain unencodable. Existing session fuzz targets reach this payload via
+request/reply decoding; no separate framing implementation or fuzz campaign is added.
+
+New contract/adversarial tests cover exact payload and enclosing bytes, 1/255-byte bounds,
+empty/256-byte construction failures, nested-builder enforcement, typed errors, post-build
+mutation, every truncated payload prefix, opaque bytes, and permissive-versus-canonical
+behavior. Existing transcript and lossless-handoff suites cover both driver integrations.
+The scalar `wire/validation.rs` helper cleanup remains separate from this domain refactor.
+
+Routine verification passes focused contract/adversarial tests (36), default tests (42 plus
+two doctests), all-feature tests (136 plus nine doctests), formatting, strict all-target
+SOCKS Clippy with default/all features, and warnings-denied all-feature rustdoc. The first
+test draft assumed standalone domain/endpoint canonical helpers that bnb does not generate;
+canonical behavior is instead verified through request/reply messages with reserved fields.
+Final checks are warning-free; independent review reports no findings in codec layout,
+validation, API boundaries, feature isolation, or test coverage. No workspace suite,
+exhaustive feature/MSRV matrix, benchmark, fuzz, mutation, or release gate was run.
+
+No supported version/command, roadmap status, release setting, or publication changes.
+Existing bnb performance, V4 dispatch/error/handoff, and platform-qualification decisions
+remain open; the next smallest protocol/platform steps below are unchanged.
+
+### Checked endpoints and CONNECT destination ports (2026-09-19)
+
+`Endpoint::domain(name, port)` now returns `Result<Endpoint, DomainError>` and calls
+`Domain::check_length`; `Endpoint::domain_raw` retains the old unchecked constructor.
+This intentionally changes the unpublished convenience API. Checked construction still
+accepts byte vectors: it requires 1–255 bytes, not UTF-8, DNS label syntax, NUL exclusion,
+IDNA conversion, or successful resolution. Raw fields and conversions remain available;
+empty domains still round-trip and oversized names remain unencodable. Canonical encoding
+does not repair names or ports. No new dependency, normalization, or allocation is added.
+
+`Endpoint::validate_destination` composes domain-length validation with a nonzero
+destination-port check. All blocking/Tokio clients call it before handshake I/O; TCP
+convenience entry points call it before dialing the proxy. All server backends check the
+request header, supported command, domain length, then destination port, before exposing a
+request to manual handlers or managed resolution/authorization/dialing. The typed
+`Error::ZeroDestinationPort` maps through the existing general-failure reply fallback.
+That mapping is an implementation choice, not a prescribed RFC 1928 zero-port response.
+It must not masquerade as an attempted connection's `ConnectionRefused` outcome.
+
+Port zero remains valid in the general endpoint/domain and request/reply construction
+APIs and codecs. In particular, failure replies keep their unspecified `0.0.0.0:0`
+bound address. Future BIND/UDP address rules must not reuse the CONNECT-specific check.
+
+Regression coverage includes checked versus raw domain construction, opaque bytes,
+empty/1/255/256-byte lengths, raw/canonical zero-port wire messages, all three address
+families with ports 0/1/65535, and each driver's rejection before client reads/writes or
+proxy dialing and before server request handoff. Exact server failure transcripts retain
+zero bound ports; a client transcript accepts a successful zero-port bound endpoint and
+retains its coalesced application payload. Compound malformed requests preserve
+header/command/domain precedence.
+Existing refusal tests now reserve a nonzero, bound-but-not-listening TCP socket instead
+of using port zero, retaining deterministic coverage of actual destination dial failures.
+
+Routine verification passes default tests (44 plus three doctests), all-feature tests
+(143 plus ten doctests), formatting, strict all-target SOCKS Clippy with default/all
+features, and warnings-denied all-feature rustdoc. Cargo ran offline; transport tests used
+ephemeral loopback sockets only. Independent review found no source/API defects; its
+requested successful-zero-bound-port regression is included, with no remaining findings.
+No workspace suite, exhaustive feature/MSRV matrix,
+benchmark, fuzz, mutation, or release gate was run.
+
+No supported command/version or roadmap status changes. DNS/IDNA policy and future
+version-specific error boundaries remain separate decisions; the next smallest protocol
+and platform steps below are unchanged.
+
+### Local delivery qualification (2026-09-22)
+
+The staged validation cleanup is committed independently of subsequent protocol features.
+Domain and endpoint match-arm ordering follows the reviewed local edits without changing
+validation results. Local `cargo test -p socks` passed for default, each driver, driver
+combinations, and all features, including doctests.
+Formatting, strict all-target/all-feature SOCKS Clippy, and warnings-denied
+all-feature rustdoc passed. These runs used offline, locked dependency resolution.
+
+The pre-push selector against the configured trunk merge base selects full coverage because
+the accumulated branch also changes workspace dependency and CI policy files. A focused
+SOCKS pass does not substitute for that gate. Container CI qualification is pending on the
+clean local commit; no hosted CI, merge, push, or release is implied by these local results.
+
+### Checked domain construction (2026-09-22)
+
+Guided endpoint length failures now preserve their typed cause as
+`Error::InvalidDomain(DomainError)` (also available through `Error::source`). Callers
+matching length failures as `Error::InvalidEndpoint` must migrate to the new variant.
+`InvalidEndpoint` remains for unusable resolver input and absent resolved candidates.
+Both variants retain the existing host-unreachable reply mapping; no domain bytes are
+retained in the new error, and wire decoding and builder errors remain unchanged.
+
+Endpoint validation is named `validate_structure()` for general construction constraints
+and `validate_destination()` for guided CONNECT destinations. The latter composes the
+structural check with the existing nonzero-port rule; it does not define policy for future
+BIND or UDP ASSOCIATE support. Callers of the public `Endpoint::validate()` must migrate
+to `Endpoint::validate_structure()`; validation behavior and error types are unchanged.
+
+`Domain::try_new(name, port)` owns checked construction and returns `DomainError` directly.
+`Endpoint::domain` delegates to it and only wraps the successful payload. The existing
+`Domain::check_length` remains the shared rule for construction, builders, and explicit
+revalidation after decoding or mutation. Raw construction, opaque bytes, and port zero
+remain supported; this adds no decode-time validation or DNS policy.
+
+### Typed dispatch-error conversion (unreleased candidate, 2026-09-19)
+
+The local bnb runtime/macro candidate supplies type-attributed closed-enum dispatch
+diagnostics. `From<bnb::BitError> for Error` recognizes only `Endpoint` misses carrying an
+integer that fits `u8`, returning `UnsupportedAddressType(code)`. Wrapped reader codec
+errors enter the same conversion. Other origins, missing/noninteger observations,
+oversized integers, payload truncations, and unrelated errors retain the original codec
+error, position, and field. Enum names and formatted text are never classification keys.
+
+The command-header probe and its cursor restoration are removed. Blocking/Tokio exchanges
+use their ordinary message reads.
+The wire `Request`/`Reply` APIs continue returning `bnb::BitError`;
+only the guided boundary translates it. Unsupported ATYP still has no known payload width
+and still maps to the existing address-type-not-supported reply. No header type, policy,
+wire format, framing rule, or transport state is added.
+
+Tests cover direct/wrapped conversion, wrong originating types with the same diagnostic
+name, defensive observation handling, all unsupported address bytes, fragmented/coalesced
+driver transcripts, and unchanged truncation classification. The current ownership map
+and AGENTS guide no longer assign failed-decode classification to a separate probe module.
+
+This uses the typed dispatch error released in bitsandbytes 0.7.0 (2026-09-21); the
+workspace requires the macro crate at exactly the same version. bnb's buffered success path
+executes the same instruction count per message as before the feature, and a terminal
+dispatch miss costs 7–13 ns more, which ends the session anyway. This is not a SOCKS session
+benchmark; removing the probe alone is not evidence of a net speedup. Measurements are in
+bnb DESIGN §13. SOCKS itself remains unmerged work on its own branch, not published or
+released. That diagnostic change did not alter protocol roadmap status or release settings.
+
+### Message writes beside reads (2026-09-22)
+
+Message writes live beside message reads as crate-private `Stream::write_message` and
+`write_message_async` methods. They retain whole-message encoding, `write_all`, flush,
+and terminal-error/cancellation semantics; raw-byte write traits remain unchanged.
+
+### Required client configuration (2026-09-23)
+
+`client::Protocol` is renamed to `client::Configuration`: each variant owns that
+version's validated settings, including authentication. `Version` remains the identifier.
+Migrate `Client::builder().protocol(config)` to `Client::configure(config)`; the argument
+accepts either a version-specific configuration through `Into` or the enum directly.
+The builder still supports the optional TCP timeout, but can no longer exist without
+configuration. Its `Default` implementation, protocol setter, and `Error::MissingProtocol`
+are removed. This is an intentional breaking change to the unreleased client API, not
+a compatibility alias or a new wire format. Server configuration is unchanged.
+
+Client construction is now available with no transport feature: `Client`, its builder,
+`client::Configuration`, `v5::client::Config`, `v5::auth::ClientAuth`, and the shared
+error type are usable in default builds. Only pure deadline validation is compiled in
+the otherwise transport-gated I/O area. Socket operations, server policy adaptation,
+stream adapters, and bnb network-error conversions retain their transport gates. No
+optional runtime or networking dependency is enabled by configuration. Client API tests
+and construction doctests now run in the default configuration as well as with drivers.
+This supersedes earlier wire-only default descriptions; server construction remains gated.
+
+The client configuration's borrowed authentication accessor is now `Config::auth()`;
+migrate calls from `Config::authentication()`. Client locals and parameters use `cfg`
+and `dest` for configuration and destination; descriptive type, field, and wire-builder
+names remain unchanged. Server authentication-outcome accessors are not renamed.
+
+TCP establishment is the default operation on the selected blocking/Tokio client:
+`connect` establishes TCP and `connect_with` uses an already-connected stream. Tokio's
+methods are async without name suffixes. The version-specific blocking/Tokio free
+functions use these same names (formerly `connect_tcp` and `connect`, respectively).
+TCP methods retain the configured setup budget; supplied transports retain caller-managed
+deadlines. Facade drivers import the version-specific functions as `connect_v5` and
+`connect_with_v5` rather than spelling full paths inside methods. The final configured
+client migration, including removal of root methods, is described below;
+server stages are unchanged.
+
+### Backend-specific configured clients (2026-09-23)
+
+Select `Client::configure(cfg).blocking().build()` or `.tokio().build()` to obtain
+the concrete `client::<backend>::Client`. Backend builders
+share validation through the root builder, accept timeout settings before or after
+selection, and move configuration without cloning credentials. The shared builder has no
+public `build()` method: selecting a backend is required before construction. Default-feature
+users can prepare configuration, but cannot build a client. Root connection methods are intentionally removed: migrate blocking
+calls to the blocking client, and async calls to Tokio's unsuffixed `connect` and
+`connect_with`. Backend modules are public facades with separate builder/client files.
+
+Existing version-specific APIs and stream `into_parts` remain available; no mid-handshake
+extraction or new transport abstraction is added.
+
+Verification: default tests (53), all-feature tests (182), default/all-feature strict
+all-target Clippy and warnings-denied rustdoc passed. Blocking and Tokio each
+passed an individual all-target compile check.
+Backend selection tests cover timeout validation both before and after selection. No new
+parser, dependency, or protocol behavior was introduced; release-tier workspace, fuzz
+campaigns, benchmarks, and native-platform runs were not repeated.
+
+### Established client connections (2026-09-23)
+
+Configured blocking and Tokio clients now return `client::Connection<S>` instead of
+`(Stream<S>, Destination)`. It owns the established buffered stream and the proxy's
+reported bound address, accessed through `bound()`. Application I/O uses standard
+`Read`/`Write` or Tokio `AsyncRead`/`AsyncWrite`, including vectored writes, flush, and
+async shutdown. All operations delegate through `Stream`; no extra buffer, allocation,
+runtime, or framing implementation is introduced.
+
+`get_ref`/`get_mut` expose the
+transport for configuration/registration, not application reads, which would bypass
+retained bytes. `into_parts()` returns `(Stream<S>, Destination)` losslessly; it never
+discards read-ahead by returning only the raw transport.
+
+This client type is deliberately distinct from root/server `Connection<S>`, which
+owns both sides of a proxy relay. Version-specific exchange APIs remain unchanged.
+Construction is private to the configured client and only happens after successful
+negotiation. No mid-handshake extraction or credential-bearing `Debug` is added.
+Verification: package tests passed with default features (53) and all features (185).
+Default/all-feature strict all-target Clippy and warnings-denied rustdoc passed, as did
+individual blocking/Tokio all-target compile checks, formatting, and diff whitespace
+checks. Added blocking/Tokio regressions exercise retained-prefix reads, vectored I/O,
+transport errors, and lossless extraction. Native Windows/macOS runtime qualification is
+still outstanding.
+
+### Configuration entry points
+
+Client/server setup now begins with `Client::configure(cfg)` and `Server::configure()`;
+these replace the former `builder` entry points in this unpublished API. Server and
+backend-specific `Builder` types retain `.build()` completion. Wire-message construction
+continues to use `builder()`, separating message values from service configuration.
+
+The shared client builder no longer exposes `build()`. Its crate-private `into_settings()`
+owns timeout validation for the backend builders; their public `build()` methods
+are unchanged. Compile-fail documentation enforces backend selection even with all features
+enabled. Configuration remains available without transport features or an implicit backend.
+
+### Generic client builder
+
+`client::Builder<B = Unselected>` replaces the three forwarding wrappers. Backend
+selection consumes the unselected builder and changes only its type marker; shared
+options and timeout validation have one implementation. The markers `Blocking`
+and `Tokio` are feature-gated and re-exported from `client`. They add no runtime storage,
+allocation, or dispatch. There is no extensible backend trait.
+
+Existing `client::{blocking,tokio}::Builder` paths remain type aliases to the matching
+specialization, preserving ordinary call sites and explicit annotations. Their specialized
+`build()` methods still return distinct concrete clients. Unselected builders cannot build,
+and selected builders cannot select another backend. Compile-fail examples cover those
+boundaries; API tests cover generic option helpers, aliases, and unchanged timeout checks.
+Verification passed: default tests (58), all-feature tests (194), strict default/all-feature
+all-target Clippy, individual backend all-target compile checks, and warnings-denied
+default/all-feature rustdoc. No runtime, parser, or dependency behavior changed.
+
+### Backend-selected servers
+
+Server setup now mirrors client setup: `Server::configure().protocols(...).policy(...)`
+requires `.blocking()` or `.tokio()` before `.build()`. Shared options live
+once on `server::Builder<B = Unselected>`; only the unselected state implements
+`Default` or selectors, and specialized builders produce distinct concrete server types.
+Each backend module exposes its builder alias and server; blocking/Tokio also retain the
+existing `Exchange` and `Authorized` paths through facade re-exports.
+
+Intentional unpublished-API changes: root `Server` is only a configuration entry point,
+and root `Server::new` is removed. Use `server::<backend>::Server::new(config)` for existing
+configuration, or the selected builder. Each construction path validates before I/O.
+Tokio's `exchange_async` becomes async `exchange`; complete proxy entry points accept
+only their backend's server. Building a server never binds a listener or starts workers.
+
+Policy and accepted-version configuration remain shared and cloneable. The cross-backend
+regression now creates separate servers from one cloned `ServerConfig` while retaining
+authentication counts, verified context, and denial-before-dial assertions. Per-backend
+construction tests cover missing policy, empty/duplicate versions, invalid limits, generic
+option helpers, and direct-config construction. Compile-fail examples cover required/final
+backend selection, driver mismatch, and unchanged authorization-before-connect boundaries.
+Wire codecs, version-specific embedded APIs, command scope, and relay semantics are unchanged.
+Verification passed: default tests (58), all-feature tests (202), strict default/all-feature
+all-target Clippy, individual blocking/Tokio all-target compile checks, formatting,
+and warnings-denied default/all-feature rustdoc. Release-tier workspace, fuzz, benchmarks,
+and native-platform qualification were not repeated for this API-only migration.
+Review caught a cross-backend compile-fail example that could fail merely because the
+blocking module was disabled. It is now documented only with both backends enabled;
+Tokio-only doctests (17) and all-feature doctests (28) passed after the correction.
+
+## Blocking listener thread budget
+
+Blocking server builders expose `.blocking().thread_budget(usize)` (default 128).
+Budgets below two fail construction with `InvalidLimits`; direct `Server::new(config)`
+uses the same default. Each listener admits at most
+`min(limits.connections, thread_budget / 2)` sessions, reserving a worker and relay
+thread before accepting even a handshake. Odd budgets leave one slot unused; division
+avoids overflow for large values. Slots remain occupied until workers are reaped, which
+also means their scoped relay threads have ended. Cancellation still closes every
+worker's sockets before joining any remaining worker.
+
+This is a per-listener admission bound, not a thread pool or process-wide resource quota.
+The caller's listener thread, application-created threads, and direct exchanges or
+`serve_connection` calls are outside it. Tokio retains its existing shared connection
+limits without this blocking-specific option. A configured budget does not guarantee the
+OS can create that many threads; creation errors retain normal cleanup behavior.
+The default preserves the previous 64-session default, but raising `connections` alone
+above 64 now also requires raising the blocking thread budget to admit more sessions.
+
+Verification: 138 blocking tests and 212 all-feature tests passed, including minimum/odd
+budget admission, slot reuse, rejection of zero/one, and overflow-safe maximum arithmetic.
+Strict all-feature all-target Clippy, no-default-features compilation, formatting, and
+warnings-denied rustdoc passed. Independent review found no remaining issues. Release-tier
+workspace, fuzz, and benchmarks were not repeated for this listener-admission change.
+
+## Explicit blocking connection acknowledgment
+
+`Authorized::dial()` now returns a public `server::blocking::Connected` stage with no
+success reply sent yet. Its borrowed `target()` supports socket registration/inspection;
+consuming `send_success()` returns the existing relay `Connection`. Public `connect()`
+retains its previous behavior by composing these stages. Tokio is unchanged.
+
+The worker explicitly authorizes, dials, registers, acknowledges, and relays. Internal
+callback-taking `Authorized::connect_with` and `serve_connection_with` are removed.
+Registration still happens before success, serialized with shutdown under the same mutex,
+but the guard is released before reply I/O or relay. A registration failure calls consuming
+`Connected::fail(error)`: close the target, attempt the existing bounded failure reply,
+then return the original cause unless replying itself fails. This always-error transition
+is intentionally named `fail`, not the wire request's potentially successful `send_failure`.
+
+Dropping the stage closes its owned sockets without sending success. Handles cloned by
+callers remain their responsibility. Caller delay between dialing and acknowledging is
+unmanaged; reply I/O retains its existing bounded budget. A partial success-write failure
+is terminal, never followed by a replacement failure reply. No public API is removed;
+the explicit stage adds an optional interception point without a connection callback.
+
+Verification: all 40 blocking session tests and 216 all-feature tests passed, including
+deferred success, retained input, dropping a connected stage, mapped failure replies,
+original-cause retention, and reply-error precedence. Formatting, strict all-feature
+all-target Clippy, and default/all-feature warnings-denied rustdoc passed. Independent
+design and final reviews found no blockers. Workspace/release-tier checks were not repeated.
+
+## Service entry points and transport ownership
+
+Backend-selected blocking/Tokio servers now expose `serve`, delegating to the existing
+matching proxy driver without a second backend selection.
+The existing proxy functions and `Proxy::new` remain valid; these entry points do not
+change acceptance, concurrency, policy, relay, or shutdown behavior.
+
+`server/connection/` owns the two-sided connection plus blocking/Tokio relay methods.
+`proxy/` retains listener/service coordination. Shared deadlines, buffering, and TCP establishment
+remain under `io/`; it is shared transport infrastructure, not a runtime-unifying trait.
+The current 513-byte stream buffer limit remains unchanged. Revisit its version ownership
+before adding SOCKS4 rather than introducing speculative buffer configuration now.
+
+Verification: 63 default and 216 all-feature tests passed; updated entry points are covered
+by blocking capacity/shutdown and Tokio authentication/domain/half-close tests.
+Isolated backend all-target builds, strict all-feature all-target Clippy,
+36 all-feature doctests, formatting, and default/all-feature warnings-denied rustdoc passed.
+Release-tier workspace, fuzz, benchmark, and platform matrices were not repeated.
+
+## Owned Tokio proxy lifecycle
+
+Tokio servers additionally expose `into_proxy(listener) -> Proxy`, an infallible ownership
+transfer that does not spawn tasks or accept connections. Explicit `Proxy::start()` requires
+a current Tokio runtime and returns `Running`; no runtime is created by the library.
+The former Tokio `serve` APIs are replaced by this lifecycle (see the refinement below).
+No dependency, wire format, authentication, policy, or relay behavior changes.
+
+`Running` owns the service task, a cloneable `Shutdown` handle, and bounded diagnostics.
+`Shutdown::request()` is idempotent and retains requests made before the service is polled.
+Shutdown closes acceptance, aborts active sessions, and joins their tasks; it does not drain
+application traffic. Dropping `Running` requests shutdown and detaches the cleanup task.
+Only awaiting `join(&mut self)` confirms cleanup, and runtime progress is required.
+Already-running system DNS work can outlive cancellation, as with the existing driver.
+
+The service never waits for diagnostic consumption: its queue retains 64 session errors;
+overflow increments a separate counter, saturating at `usize::MAX`.
+Queued session errors retain FIFO order. `take_dropped_count` atomically retrieves and
+resets losses without consuming queued errors; receiving errors never resets losses.
+These are operational diagnostics, not a lossless audit log, and contain no new peer
+identifiers or credential data. Sampling cadence belongs to the application.
+
+`next_session_error` and `join` are cancellation-safe but exclusively borrow `Running`.
+Consumers can drain errors until EOF, sample losses, then join, or request shutdown and
+join without draining errors. The counter remains accessible after EOF and join.
+Diagnostic EOF means reporting ended, not cleanup success. Listener/task errors observed before
+shutdown wins are returned by `join`, independently of diagnostic overflow. Existing biased
+shutdown priority is retained: simultaneously ready failures and cleanup completions are
+discarded. Failure of the service task itself still returns `WorkerPanicked`.
+A second completed join returns `InvalidState`.
+`start` outside a runtime returns `TokioRuntimeUnavailable`; the listener's I/O runtime must
+also remain alive. User policy callbacks still must not block or panic.
+
+The next smallest lifecycle extension, if needed, is configurable graceful session draining;
+it is not implied by this immediate-abort shutdown contract. Native platform qualification,
+embedded BIND, and SOCKS4 remain separate work.
+
+Initial lifecycle verification (before the diagnostic API refinements below): 64 default
+and 226 all-feature package tests passed, including doctests.
+New regressions cover nonblocking event consumption, FIFO/overflow fairness, retained
+pre-poll shutdown, cancelled waits, active-session cleanup on drop, missing runtime, and
+fatal task errors independently of event consumption. Strict all-feature all-target Clippy,
+warnings-denied all-feature rustdoc, formatting, and diff whitespace checks passed.
+Workspace/release matrices, fuzzing, benchmarks, and native-platform runs were not repeated
+for this lifecycle-only addition.
+Independent review found the initial fatal-error documentation overstated shutdown races;
+the contract now explicitly preserves the existing shutdown-first behavior.
+
+### Callback-free listener refinement
+
+Remove `proxy::tokio::serve` and `server::tokio::Server::serve` from the unpublished API.
+Migrate listener ownership to `server.into_proxy(listener).start()?`, handle diagnostics
+through `Running::next_session_error`, and use the shutdown handle plus `join` for termination.
+Caller-managed acceptance retains `serve_connection`; blocking is unchanged.
+The private listener takes a concrete `Reporter` and watch receiver instead of executing
+an application error callback. Its select branch unwraps the task result directly:
+worker failure propagates, while a failed session produces an event and serving continues.
+The nested-result `report_completion` helper is removed. Capacity, shutdown priority,
+bounded reporting, and abort-and-join cleanup are unchanged. The callback auto-trait test
+is obsolete; domain/half-close, active-handshake shutdown, and capacity regressions now
+exercise the owned lifecycle.
+
+Refinement verification: 123 Tokio-feature package tests (including doctests) passed;
+strict all-feature all-target Clippy passed. No parser or transport implementation changed;
+workspace, fuzz, benchmark, and release matrices remain outside this local refinement.
+
+### Separate diagnostics and reporting cadence
+
+The unpublished `ProxyEvent` and `next_event` API, including its alternation flag, are
+removed. Use `next_session_error().await -> Option<Error>` for retained failures and
+`take_dropped_count() -> usize` for independent loss sampling. Overflow accounting is
+nonblocking and loss samples are deltas, not a cumulative gauge. No timer, scheduling
+policy, dependency, or Cargo feature is added. `join` remains service control flow;
+individual session errors cannot resume sessions or safely replay traffic.
+
+The guide includes compiled batch and timer recipes and a selection table. A batch
+threshold counts delivered errors, not queue occupancy or lost errors. It amortizes
+reporting but cannot guarantee a latency bound during quiet periods. Timer sampling
+uses a delayed first tick, skipped missed ticks, and unbiased selection. Both recipes
+flush the counter at EOF before inspecting the terminal service result. Reporting code
+must remain fast; neither approach guarantees timing when application/runtime progress
+stalls. A combined batch/time cadence can compose the same baseline methods.
+
+Potential fluent cadence adapters are deliberately only sketches for review, not new
+APIs: add them only if application recipes repeatedly need shared scheduling semantics.
+The next smallest step is evaluating these documented recipes in a real metrics consumer.
+
+Verification: 126 Tokio-feature package tests, including compiled batch/timer doctests,
+passed. Strict all-feature all-target Clippy, formatting, warnings-denied rustdoc, and
+diff whitespace checks passed. Independent review found no issues. Workspace/release
+matrices, fuzzing, and benchmarks were not repeated for this diagnostics-only change.
 
 ## Known limitations
 
 - Unknown `ATYP` cannot be decoded as a typed `Endpoint`: RFC 1928 assigns no payload width, so a
   stream parser cannot locate the port. The address code itself remains representable as
   `AddressType::Other`; arbitrary whole frames belong in the next raw-codec slice.
-- Only the guided CONNECT subset above has authentication, transport, and proxy behavior.
+- Guided CONNECT has complete proxy behavior. BIND and UDP ASSOCIATE are representable on
+  the wire only; servers reply command not supported.
 - RFC 1929 credentials are plaintext byte vectors. The wire codec does not provide secrecy or
   zeroization and deliberately does not expose the credential-bearing request through `Debug`.
 - The crate is not yet re-exported by the `rsl` facade.
-- Fuzzing covers hostile client/server input through the shared framer and blocking driver;
-  Tokio-specific scheduling/cancellation is exercised by integration tests, not libFuzzer.
+- Fuzzing covers hostile client/server input and lossless handoff through the blocking
+  handshakes. Tokio cancellation is exercised by integration tests, not libFuzzer.
 
 ## Protocol dependency map
 
@@ -300,8 +1636,9 @@ pre-push validation, and hosted PR CI. No SOCKS registry publication is enabled 
    raw surface independently; later BIND and UDP ASSOCIATE must not couple wire types to sockets.
 2. Reuse the existing TCP/UDP and DNS concepts at behavioral boundaries, but use ordinary stream
    and datagram transports for proxying; raw packet injection is not a SOCKS prerequisite.
-3. Build a narrow reusable stream-framing/transport contract only when both SOCKS and a second
-   stream protocol (likely SSH or TLS) demonstrate the same need.
+3. Use bnb's reusable incremental core, verified upstream with multiple wire shapes and adopted
+   here for SOCKS. Other stream protocols own their negotiation/policy and may use bnb adapters
+   or their own I/O; do not generalize SOCKS session state into their framing contracts.
 4. TLS should consume PKI validation and `rsl-crypto` primitives; SSH should consume crypto
    primitives but owns its packet, negotiation, transcript, and host-key rules. Neither is a
    prerequisite for SOCKS, though SOCKS CONNECT can later carry either transparently.
@@ -312,7 +1649,12 @@ pre-push validation, and hosted PR CI. No SOCKS registry publication is enabled 
 
 ## Next smallest reviewable step
 
-Add a blocking BIND embedded-session slice: two distinct replies and their deadlines, with
-explicit inbound-peer authorization. Prove that handshake before adding listening-proxy and
-Tokio BIND support. UDP ASSOCIATE remains separate because it needs datagram framing and
-source pinning. The raw/malformed convenience surface remains independently deferred.
+The version-first organization and explicit configuration/shared-policy slice above is now
+implemented. A future SOCKS4/4A slice must start with its wire codec, then prove cross-version
+dispatch and policy consistency; no placeholder or claim of multi-version runtime support
+is included here. The bnb optimization decision remains independent.
+
+Embedded BIND (two-reply exchanges with deadline tests) is the next protocol slice;
+managed listening-proxy BIND support follows it. UDP ASSOCIATE remains separate because
+it needs datagram framing and source pinning.
+The raw/malformed convenience surface remains independently deferred.
