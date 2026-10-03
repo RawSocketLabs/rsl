@@ -1,0 +1,19 @@
+[package]
+name = "smb"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+binrw.workspace = true
+bytes.workspace = true
+modular-bitfield.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+nbt = { path = "../nbt" }
+
+[lints]
+workspace = true
