@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.7.2](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.7.1...bitsandbytes-v0.7.2) - 2026-10-03
+
+### Added
+
+- *(bitsandbytes)* add stateless slice prefix decoding ([#108](https://github.com/RawSocketLabs/rsl/pull/108))
+
+### Other
+
+- *(bitsandbytes)* track incremental-read helper overhead ([#106](https://github.com/RawSocketLabs/rsl/pull/106))
+- *(bitsandbytes)* copy byte-aligned byte runs in bulk ([#109](https://github.com/RawSocketLabs/rsl/pull/109))
+- satisfy Rust 1.99's new clippy and rustdoc lints ([#99](https://github.com/RawSocketLabs/rsl/pull/99))
+
 ## [0.7.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.7.0...bitsandbytes-v0.7.1) - 2026-09-25
 
 ### Added
