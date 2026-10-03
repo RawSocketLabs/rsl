@@ -19,12 +19,16 @@ libc = { workspace = true, optional = true }
 
 [features]
 default = []
-blocking = ["bnb/net"]
+blocking = ["bnb/net", "dep:mio"]
 tokio = ["dep:tokio", "bnb/tokio-io"]
 mio = ["dep:mio", "dep:libc", "bnb/net"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "bind_blocking"
+required-features = ["blocking"]
 
 [[test]]
 name = "session_blocking"

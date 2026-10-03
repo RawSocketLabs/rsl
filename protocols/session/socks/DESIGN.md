@@ -111,7 +111,7 @@ src/
     client/
       mod.rs
       config.rs
-      blocking/                CONNECT and shared exchange
+      blocking/                CONNECT/BIND, shared exchange, bounded TCP helpers
       mio/
         mod.rs
         client.rs              resumable handshake
@@ -119,7 +119,7 @@ src/
       tokio.rs
     server/
       mod.rs
-      blocking/                CONNECT and shared exchange
+      blocking/                CONNECT/BIND, shared exchange, bounded TCP helpers
       mio.rs
       tokio.rs
       validation.rs            shared CONNECT-only server capability checks
@@ -654,7 +654,7 @@ microsecond per handshake and does not affect relay throughput. Reducing the out
 
 Roadmap status remains `dev`: this changes read plumbing, not the supported protocol set.
 The immediate follow-up is the measured reader-overhead decision above. The next protocol
-slice is embedded blocking BIND, which lands separately.
+slice remains embedded blocking BIND, as described below.
 
 #### Tunnel method placement and scratch experiment (2026-09-14)
 
@@ -1492,12 +1492,59 @@ dispatch miss costs 7–13 ns more, which ends the session anyway. This is not a
 benchmark; removing the probe alone is not evidence of a net speedup. Measurements are in
 bnb DESIGN §13. SOCKS itself remains unmerged work on its own branch, not published or
 released. That diagnostic change did not alter protocol roadmap status or release settings.
+The subsequent blocking BIND exchange is described below.
 
 ### Message writes beside reads (2026-09-22)
 
 Message writes live beside message reads as crate-private `Stream::write_message` and
 `write_message_async` methods. They retain whole-message encoding, `write_all`, flush,
 and terminal-error/cancellation semantics; raw-byte write traits remain unchanged.
+
+### Blocking embedded BIND and TCP deadlines (2026-09-22)
+
+RFC 1928 §§4 and 6 define two BIND replies: the listener address after binding,
+then the connecting peer address after acceptance. The published RFC is the baseline;
+reported BIND erratum 8867 is not an adopted correction. Generic `bind`/`exchange_bind`
+reuse the existing codecs and authentication exchange without changing CONNECT entry
+points. `Binding`, `BindRequest`, and `AwaitingPeer` retain one buffered `Stream` across
+both replies; application handoff occurs only after the second success. The caller
+authorizes listener creation and explicitly approves the actual incoming peer. A hint
+is not a verified peer identity; BIND accepts port-zero hints and checks structure only.
+
+`bind_tcp`/`exchange_bind_tcp` add owned TCP stages. An absolute handshake budget covers
+the first reply; a separate peer budget starts immediately after that reply and includes
+caller delay, acceptance, peer policy, and the second reply. Policy callbacks must be
+fast, nonblocking, and non-panicking; deadlines cannot preempt arbitrary caller code.
+A peer that policy rejects is closed and acceptance continues until the peer budget
+expires, so a stray connection to the advertised port cannot end the BIND before the
+anticipated peer arrives; once a second success reply has been written or read it is
+committed, with no further deadline check. BIND authorization is not part of
+`server::policy::Policy` (its `Operation` covers CONNECT only); embedded callers authorize
+listener creation and approve the peer themselves until an `Operation::Bind` exists.
+Failures before success writing use a fresh one-second failure-reply budget, within
+RFC 1928 §6's ten-second close requirement. Partial success writes are terminal: no
+fallback reply is appended. Successful handoff clears protocol socket timeouts.
+
+The blocking feature enables the existing Mio dependency privately for bounded accept.
+The listener is registered before first success and retains its original poll. Accepted
+sockets are safely converted to blocking standard TCP streams. No extra runtime, thread,
+dependency version, platform-specific syscall, or unsafe code is introduced. Linux is
+locally exercised; Windows/macOS runtime qualification remains deferred, not claimed.
+Enabling `blocking` now requires a Mio-supported target; default wire-only builds remain
+unaffected. This is a portability restriction for other standard-library targets.
+Generic transports retain caller-managed deadlines. Advertised listener addresses remain
+explicit for wildcard/NAT cases; no DNS matching, relay, or managed-proxy BIND is implied.
+
+Regression coverage includes RFC-derived exact replies, fragmentation, coalesced payload
+handoff, authentication, malformed/truncated replies, denied peers, partial success writes,
+phase timeout behavior, expired prefetched replies, and owned TCP loopback handoff. BIND
+currently has deterministic transcript/loopback coverage, not a dedicated fuzz driver.
+Scoped verification: offline/locked SOCKS tests passed with default features (48),
+blocking (115), and all features (176), including doctests. Strict all-target Clippy
+passed for blocking and all features; warnings-denied all-feature rustdoc, formatting,
+diff whitespace checks, and a Rust 1.85 blocking all-target check passed. Full workspace,
+container CI, release matrices, benchmarks, and fuzz campaigns were not rerun for this
+local item; this is not release or native Windows/macOS qualification.
 
 ### Required client configuration (2026-09-23)
 
@@ -1646,7 +1693,7 @@ authentication counts, verified context, and denial-before-dial assertions. Per-
 construction tests cover missing policy, empty/duplicate versions, invalid limits, generic
 option helpers, and direct-config construction. Compile-fail examples cover required/final
 backend selection, driver mismatch, and unchanged authorization-before-connect boundaries.
-Wire codecs, version-specific embedded APIs, command scope, and relay semantics are unchanged.
+Wire codecs, version-specific embedded APIs, BIND scope, and relay semantics are unchanged.
 Verification passed: default tests (58), all-feature tests (202), strict default/all-feature
 all-target Clippy, individual blocking/Tokio/Mio all-target compile checks, formatting,
 and warnings-denied default/all-feature rustdoc. Release-tier workspace, fuzz, benchmarks,
@@ -1717,7 +1764,8 @@ change acceptance, concurrency, policy, relay, or shutdown behavior.
 
 `server/connection/` owns the two-sided connection plus blocking/Tokio relay methods.
 `proxy/` retains listener/service coordination and Mio's readiness-driven relay state.
-Shared deadlines, buffering, and TCP establishment
+The BIND-only acceptance helper moved beside `v5/server/blocking/tcp_bind.rs` and is
+visible only within that backend. Shared deadlines, buffering, and TCP establishment
 remain under `io/`; it is shared transport infrastructure, not a runtime-unifying trait.
 The current 513-byte stream buffer limit remains unchanged. Revisit its version ownership
 before adding SOCKS4 rather than introducing speculative buffer configuration now.
@@ -1763,7 +1811,7 @@ also remain alive. User policy callbacks still must not block or panic.
 
 The next smallest lifecycle extension, if needed, is configurable graceful session draining;
 it is not implied by this immediate-abort shutdown contract. Native platform qualification,
-embedded BIND, and SOCKS4 remain separate work.
+Tokio embedded BIND, and SOCKS4 remain separate work.
 
 Initial lifecycle verification (before the diagnostic API refinements below): 64 default
 and 226 all-feature package tests passed, including doctests.
@@ -1825,8 +1873,8 @@ matrices, fuzzing, and benchmarks were not repeated for this diagnostics-only ch
 - Unknown `ATYP` cannot be decoded as a typed `Endpoint`: RFC 1928 assigns no payload width, so a
   stream parser cannot locate the port. The address code itself remains representable as
   `AddressType::Other`; arbitrary whole frames belong in the next raw-codec slice.
-- Guided CONNECT has complete proxy behavior. BIND and UDP ASSOCIATE are representable on
-  the wire only; servers reply command not supported.
+- Guided CONNECT has complete proxy behavior; blocking embedded BIND additionally has
+  authentication, two-reply stages, and deadline-bounded TCP helpers, but no managed proxy.
 - RFC 1929 credentials are plaintext byte vectors. The wire codec does not provide secrecy or
   zeroization and deliberately does not expose the credential-bearing request through `Debug`.
 - The crate is not yet re-exported by the `rsl` facade.
@@ -1861,7 +1909,7 @@ implemented. A future SOCKS4/4A slice must start with its wire codec, then prove
 dispatch and policy consistency; no placeholder or claim of multi-version runtime support
 is included here. The bnb optimization decision remains independent.
 
-Embedded BIND (two-reply exchanges with deadline tests) is the next protocol slice;
-managed listening-proxy BIND support follows it. UDP ASSOCIATE remains separate because
-it needs datagram framing and source pinning.
-The raw/malformed convenience surface remains independently deferred.
+The blocking embedded BIND slice is implemented. Its next smallest extension is a Tokio
+two-reply exchange with cancellation and deadline tests before managed listening-proxy
+support. UDP ASSOCIATE remains separate because it needs datagram framing and
+source pinning. The raw/malformed convenience surface remains independently deferred.

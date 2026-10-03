@@ -1,4 +1,4 @@
-//! Blocking client authentication and CONNECT reply.
+//! Shared blocking client authentication and first command reply.
 // --- Standard library ---
 use std::io::{Read, Write};
 
@@ -9,17 +9,18 @@ use crate::v5::{
 };
 use crate::{Stream, error::Error};
 
-/// Authenticate, send CONNECT, and validate its reply.
+/// Authenticate, send the selected command, and validate its first reply.
 pub(super) fn exchange<S: Read + Write>(
     stream: S,
     dest: Endpoint,
+    command: Command,
     method: AuthMethod,
     credentials: Option<UsernamePasswordRequest>,
 ) -> Result<(Stream<S>, Endpoint), Error> {
     // Build both messages before any I/O.
     let offer = MethodRequest::builder().methods(vec![method]).build()?;
     let request = WireRequest::builder()
-        .command(Command::Connect)
+        .command(command)
         .destination(dest)
         .build()?;
 
@@ -38,7 +39,7 @@ pub(super) fn exchange<S: Read + Write>(
             .ensure_success()?;
     }
 
-    // Send CONNECT and validate its reply.
+    // Send the command and validate its first reply.
     stream.write_message(&request)?;
     let response = stream.read_message::<Reply>()?;
     response.ensure_success()?;

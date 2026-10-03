@@ -1,13 +1,13 @@
 //! SOCKS5 server implementations, grouped by I/O backend.
 //!
 //! These are embedded exchanges, not complete proxies. Their caller owns authorization,
-//! dialing the target, and the decision to send success or failure.
+//! dialing or accepting a peer, and the decision to send success or failure.
 //!
 //! # Backends
 //!
 #![cfg_attr(
     feature = "blocking",
-    doc = "- [`blocking`]: CONNECT negotiation and caller-controlled replies."
+    doc = "- [`blocking`]: CONNECT and two-reply BIND with generic transports or bounded TCP helpers."
 )]
 #![cfg_attr(
     feature = "mio",

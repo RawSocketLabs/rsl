@@ -1,4 +1,4 @@
-//! Blocking server authentication and CONNECT validation.
+//! Shared blocking server authentication and command validation.
 // --- Standard library ---
 use std::io::{Read, Write};
 
@@ -14,17 +14,18 @@ use crate::{
     v5::auth,
 };
 
-/// Facts and retained input established before the CONNECT reply.
+/// Facts and retained input established before an embedded command's reply.
 pub(super) struct AuthenticatedRequest<S> {
     pub(super) stream: Stream<S>,
     pub(super) destination: Endpoint,
     pub(super) authentication: Authentication,
 }
 
-/// Authenticate and accept only a valid CONNECT request.
+/// Authenticate and accept only the command requested by this entry point.
 pub(super) fn exchange<S: Read + Write>(
     stream: S,
     auth: &ServerAuth,
+    command: crate::v5::Command,
 ) -> Result<AuthenticatedRequest<S>, Error> {
     let mut stream = Stream::new(stream);
     let offer: MethodRequest = stream.read_message()?;
@@ -52,7 +53,15 @@ pub(super) fn exchange<S: Read + Write>(
         }
     }
     let result = stream.read_message::<WireRequest>().and_then(|request| {
-        crate::v5::server::validation::check_request(&request)?;
+        if command == crate::v5::Command::Connect {
+            crate::v5::server::validation::check_request(&request)?;
+        } else {
+            request.check_header()?;
+            if request.command != command {
+                return Err(Error::UnsupportedCommand(request.command));
+            }
+            request.destination.validate_structure()?;
+        }
         Ok(request)
     });
     match result {

@@ -9,7 +9,7 @@ use std::{
 // --- Internal modules ---
 use super::exchange::exchange;
 use crate::io::blocking::{Deadline, deadline, remaining};
-use crate::v5::Endpoint;
+use crate::v5::{Command, Endpoint};
 use crate::{Stream, error::Error, v5::auth::ClientAuth};
 /// Negotiate one CONNECT request and return a lossless tunnel and
 /// the proxy's bound endpoint. Domains are sent to the proxy, not resolved locally.
@@ -24,7 +24,7 @@ pub fn connect_with<S: Read + Write>(
 ) -> Result<(Stream<S>, Endpoint), Error> {
     dest.validate_destination()?;
     let credentials = auth.credentials()?;
-    exchange(stream, dest, auth.method(), credentials)
+    exchange(stream, dest, Command::Connect, auth.method(), credentials)
 }
 
 /// Connect to a numeric proxy address and negotiate within one absolute timeout.
@@ -45,6 +45,7 @@ pub fn connect(
     let (stream, bound) = exchange(
         Deadline { stream, deadline },
         dest,
+        Command::Connect,
         auth.method(),
         credentials,
     )?;

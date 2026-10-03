@@ -35,7 +35,7 @@
 //! | Command | Purpose | Implemented surface |
 //! | --- | --- | --- |
 //! | CONNECT | Ask the proxy to establish an outbound TCP connection | Configured clients/servers and complete proxies on all three backends |
-//! | BIND | Ask the proxy to listen for an incoming connection; two replies report listening and the peer connection | Command code is representable; servers reply command not supported |
+//! | BIND | Ask the proxy to listen for an incoming connection; two replies report listening and the peer connection | Version-specific blocking embedded APIs and bounded TCP helpers only |
 //! | UDP ASSOCIATE | Establish a UDP relay association tied to the control TCP connection | Command code is representable; no operational implementation |
 //!
 //! These commands are specified in [RFC 1928 §§4 and 6](https://www.rfc-editor.org/rfc/rfc1928.html#section-4).
@@ -358,68 +358,8 @@
 //! metrics tasks. Batch and timer sampling can also be combined: each sample consumes
 //! only losses accumulated since the preceding sample.
 //!
-//! ## Manage one accepted connection
-//!
-//! Use a configured blocking/Tokio server when your application already owns acceptance.
-//! Its stages ensure destination authorization precedes dialing. This is a lower lifecycle
-//! level than the complete proxy APIs, but it still applies the configured policy:
-//!
-//! ```no_run
-//! # #[cfg(feature = "blocking")]
-//! # fn example(server: &socks::server::blocking::Server, socket: std::net::TcpStream)
-//! #     -> Result<(), socks::error::Error> {
-//! // Read and authenticate the request, then resolve and authorize its targets.
-//! let exchange = server.exchange(socket)?;
-//! let authorized = exchange.authorize()?;
-//!
-//! // Dial an authorized target and acknowledge success before application traffic.
-//! let connection = authorized.connect()?;
-//! let (client_stream, target_stream) = connection.into_parts();
-//! // Pass both sides to your relay; keep client_stream's buffered prefix intact.
-//! # let _ = (client_stream, target_stream);
-//! # Ok(()) }
-//! ```
-//!
-//! Instead of taking the pair apart, call the server connection's `relay` method with
-//! your relay timeout. Tokio exposes the corresponding stages with `.await`. Mio's configured
-//! server is settings for the complete proxy, not this staged exchange API.
-//!
-//! Blocking servers also expose `authorized.dial()?` when socket registration or inspection
-//! must happen before success. The returned `server::blocking::Connected` owns the target;
-//! `target()` borrows it, and `send_success()` consumes the stage to return a relay connection.
-//! If preparation fails, `connected.fail(error)` closes the target and attempts a failure
-//! reply, returning the cause unless reply I/O fails. Dropping the stage sends no success.
-//! `authorized.connect()` remains the convenience form of `dial()?.send_success()?`.
-//!
-//! ## Embed only SOCKS5 negotiation
-//!
-//! Use `v5::client` or `v5::server` when you own transport setup and server-side decisions.
-//! The blocking client example accepts any `Read + Write` transport already connected to
-//! the proxy; it does not open another socket:
-//!
-//! ```no_run
-//! # #[cfg(feature = "blocking")]
-//! # fn example<S: std::io::Read + std::io::Write>(transport: S)
-//! #     -> Result<(), Box<dyn std::error::Error>> {
-//! use socks::v5::{Endpoint, auth::ClientAuth, client::blocking};
-//!
-//! let dest = Endpoint::domain(b"example.com".to_vec(), 80)?;
-//! let (stream, bound) = blocking::connect_with(transport, dest, ClientAuth::NoAuthentication)?;
-//!
-//! // Transfer the negotiated stream, including bytes read ahead during the handshake.
-//! let (transport, buffered) = stream.into_parts();
-//! let stream = socks::Stream::from_parts(transport, buffered);
-//! # let _ = (stream, bound);
-//! # Ok(()) }
-//! ```
-//!
-//! On the embedded server path, `v5::server::blocking::exchange(stream, &auth)` returns
-//! an authenticated request. Inspect `destination()` and `authentication()`, authorize
-//! the exact resolved target, and dial it yourself. Only then call `send_success(bound)`
-//! with the outbound socket's local endpoint; denial or dial failure needs `send_failure(code)`.
-//! Unlike configured server stages, this API does not enforce your authorization decision.
-//! You also own deadlines and relay. Tokio provides asynchronous exchanges; embedded Mio
-//! exposes a resumable state machine rather than those blocking methods.
+//! Blocking embedded BIND is a separate two-reply workflow under `v5::client::blocking`
+//! and `v5::server::blocking`; it is not an option on configured CONNECT clients/proxies.
 //!
 //! ## Work directly with wire messages
 //!
