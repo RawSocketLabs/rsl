@@ -450,6 +450,15 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       untrusted `with_capacity`), and its open-coded header size now derives from
       `<Entry as FixedBitLen>::BIT_LEN` (drift-proof); `dns::write_name` labels via
       `write_bytes`. Deliberate public-api addition (+3 methods).
+- [x] **[shipped, candidate] Bulk byte runs in generated codecs.** Defaulted
+      `BitEncode::encode_slice` (the `decode_vec` dual; `u8` → `write_bytes`) for context-free
+      `Vec` fields, `[u8; N]` through `read_into`/`write_bytes`, and byte-aligned copy overrides
+      on `BitWriter`/`BytesWriter`/`BitReader`/`BitBuf`/`BytesReader`. 2×255-byte encode
+      1.50 µs → 98 ns, decode 0.58 µs → 30 ns. See [`DESIGN.md` §16](DESIGN.md#16-bulk-byte-runs-unreleased-candidate).
+- [ ] **[perf] Remaining per-byte runs.** `LimitedSource` (needs a no-allocation,
+      hint-preserving delegation), `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
+      (mid-run EOF/`BufferFull`/I/O semantics must stay per-byte-identical), and unaligned runs
+      (shift-merge). Measure a consumer first; all are correct today.
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building

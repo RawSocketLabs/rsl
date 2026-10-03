@@ -1263,18 +1263,20 @@ fn field_write_core(
         });
     }
     if let Some(elem) = vec_elem(f) {
-        let write_elem = if let Some(names) = &br.ctx {
-            let elem_ctx = ctx_struct_ty(elem)?;
-            let lit = ctx_literal(&elem_ctx, names, Some(field_set));
-            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        let Some(names) = &br.ctx else {
+            // Context-free: the element type's `encode_slice` (a byte run is one bulk write),
+            // the dual of the `decode_vec` read path.
+            return Ok(
+                quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(&self.#id, __bnb_w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            );
         };
+        let elem_ctx = ctx_struct_ty(elem)?;
+        let lit = ctx_literal(&elem_ctx, names, Some(field_set));
         Ok(quote! {
             for __e in &self.#id {
-                #write_elem
+                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         })
     } else if let Some(names) = &br.ctx {
@@ -3223,16 +3225,17 @@ fn variant_field_write(
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
     } else if let Some(elem) = vec_elem(f) {
-        let write_elem = if let Some(names) = &br.ctx {
+        if let Some(names) = &br.ctx {
             let elem_ctx = ctx_struct_ty(elem)?;
             let lit = ctx_literal_variant(&elem_ctx, names, stored);
-            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+            quote!(for __e in #id {
+                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            })
         } else {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
+            quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(#id, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        };
-        quote!(for __e in #id { #write_elem })
+        }
     } else if byte_array_len(f).is_some() {
         quote!(#bnb::__private::write_byte_array(#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)

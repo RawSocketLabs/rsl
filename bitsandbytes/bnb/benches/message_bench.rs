@@ -8,7 +8,7 @@
 //! codec hits — unaligned bitfields, byte-aligned scalars, and a var-length `Vec` — so
 //! the number is an **informational baseline** for whole-message throughput, not a
 //! micro-benchmark of one operation. (No CI perf gate is attached; this is a local
-//! baseline only.)
+//! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs.
 //!
 //! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
@@ -105,6 +105,35 @@ fn bench_message(c: &mut Criterion) {
     });
     g.bench_function("decode", |b| {
         b.iter(|| Ipv4ish::decode_exact(black_box(&bytes)).unwrap());
+    });
+    g.finish();
+}
+
+/// Two length-prefixed byte runs, shaped like an RFC 1929 username/password request at its
+/// 255-byte maximum: the byte-run encode/decode path, not per-field dispatch.
+#[bin(big)]
+struct Credentials {
+    version: u8,
+    #[brw(count_prefix = u8)]
+    username: Vec<u8>,
+    #[brw(count_prefix = u8)]
+    password: Vec<u8>,
+}
+
+fn bench_byte_runs(c: &mut Criterion) {
+    let msg = Credentials {
+        version: 1,
+        username: (0..=254u8).collect(),
+        password: (0..=254u8).rev().collect(),
+    };
+    let bytes = msg.to_bytes().unwrap();
+    let mut g = c.benchmark_group("byte_runs_2x255");
+    g.throughput(Throughput::Bytes(bytes.len() as u64));
+    g.bench_function("encode", |b| {
+        b.iter(|| black_box(&msg).to_bytes().unwrap());
+    });
+    g.bench_function("decode", |b| {
+        b.iter(|| Credentials::decode_exact(black_box(&bytes)).unwrap());
     });
     g.finish();
 }
@@ -253,6 +282,6 @@ fn bench_stream_reads(_: &mut Criterion) {}
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_message, bench_incremental, bench_element_replay, bench_stream_reads
+    targets = bench_message, bench_byte_runs, bench_incremental, bench_element_replay, bench_stream_reads
 }
 criterion_main!(benches);

@@ -516,7 +516,8 @@ identical DNS-shaped 16-bit field, `bnb` matches `bitbybit`, beats `modular-bitf
 and is within noise of hand-written (pack ~870 ps, unpack ~190 ps). The stream codec
 takes a byte-aligned fast path — when a read/write is byte-aligned (the common case for
 headers and `[u8; N]` payloads) it copies whole bytes instead of shifting one bit at a
-time (~2–3× on aligned data); sub-byte reads fall through to the general bit loop. The
+time (~2–3× on aligned data); sub-byte reads fall through to the general bit loop. Byte
+runs (`Vec<u8>`, `[u8; N]`) go further: a byte-aligned run is one slice copy (§16). The
 generated accessors and the runtime read/write methods are `#[inline]` so they inline
 across crate boundaries.
 
@@ -1393,3 +1394,101 @@ overrun, 12-bit rounding, empty input, and the enum/mapped/codec-newtype surface
 Performance: no existing path changed; the new functions are thin wrappers over
 `decode_attempt`. Not benchmarked. Not run: mutation testing, fuzzing, MSRV (the current
 lockfile needs a newer rustc than 1.85 locally), and `scripts/ci-act.sh pre-push`.
+
+## 16. Bulk byte runs (unreleased candidate)
+
+### Scope and contract
+
+Evidence: a `perf` profile of a SOCKS client handshake was dominated by encoding
+`UsernamePasswordRequest` (two `count_prefix = u8` `Vec<u8>` fields): its `bit_encode` ~11%,
+`BitWriter::write_bits` ~28%, `write::<u8>` ~13%. Generated encode wrote every `Vec` element
+through `bit_encode`, and the slice reader's `read_bytes` was the per-byte default, so
+`decode_vec`'s `u8` override (§11.2) gained nothing on `BitReader`.
+
+- New defaulted `BitEncode::encode_slice(&[Self], sink)`, the dual of `decode_vec`: per element
+  by default, `Sink::write_bytes` for `u8`. Generated context-free `Vec` fields (struct and enum
+  variant) call it; context-carrying elements keep their loop. The `[u8; N]` helpers use
+  `write_bytes`/`read_into`.
+- `BitWriter`/`BytesWriter` override `write_bytes`; `BitReader`, `BitBuf`, and `BytesReader`
+  override `read_bytes`/`read_into`; the private incremental reader overrides `read_into`.
+  The fast path is a plain copy taken only when the cursor is byte-aligned and, for reads,
+  the whole run is available: aligned whole bytes are identical in both bit orders, and byte
+  order does not apply to one byte. Every other case calls the same private per-byte loop the
+  trait default uses, so for `BitReader`/`BitWriter` values, errors, positions, fields,
+  partial fills, and cursors are the per-byte loop's by construction. `BitBuf`/`BytesReader`
+  run that loop on a `BitReader` at their cursor, which equals their own per-byte path only
+  because their `read_bits` is that same reader; the component tests below pin it.
+
+**Why a trait hook, not matching `u8` in the macro.** It reaches aliases (`type Octet = u8`)
+and generic element types, which a token match cannot see, and it repeats the shipped
+`decode_vec` decision rather than guessing types by spelling. `encode_slice` is public and
+documented like `decode_vec` (additive `public-api.txt` lines only); a `doc(hidden)` method
+would still be overridable and semver-visible, only undiscoverable. It is an associated
+function, so it cannot collide with downstream method-call syntax; the remaining risk is a
+`T::encode_slice(..)` path call becoming ambiguous (E0034) for a type that also implements
+another in-scope trait with that name — Cargo's "possibly-breaking" defaulted-item class,
+acceptable for 0.x. Macro and runtime stay paired: the runtime pins `bitsandbytes-macros`
+exactly.
+
+### Findings ledger
+
+| Location | Finding and evidence | Disposition |
+| --- | --- | --- |
+| Generated `Vec` encode (pre-existing) | Per-element `bit_encode` and one `write_bits` per byte; 1.50 µs for 2×255 bytes (below). | `encode_slice`; 98 ns. |
+| `BitReader::read_bytes` (pre-existing) | Per-byte default, so `decode_vec::<u8>` was not bulk on the slice path; 570–592 ns. | Aligned copy; 30 ns. |
+| `IncrementalReader::read_bytes` (pre-existing contract) | Reports the whole shortfall before allocating, unlike the per-byte loop. | Unchanged and outside the equivalence claim; its `read_into` is a pure fast path. |
+| `LimitedSource`, `StreamBitReader`, `BufSource`, `SeekReader`, `BufSeekReader` (pre-existing) | Still per byte. Delegating `LimitedSource::read_bytes` would change hints over the incremental reader or allocate from a logical window; stream sources have mid-run `BufferFull`/I/O semantics. | Correct as is; tracked in `ROADMAP.md`. |
+| Unaligned runs (new boundary) | Still per byte; no shift-merge path. | Tracked in `ROADMAP.md`. |
+| `BytesReader` cursor past its end (new edge) | A seek may pass the end; an empty run must still succeed without touching input. | Empty-run guard; covered by the equivalence test. |
+| `Source::read_bytes`/`read_into`, `Sink::write_bytes` defaults (new coverage gap) | Five `cargo mutants` survivors: no test sent a byte run through a source or sink that keeps the defaults. | `TinySource`/`TinySink` default-run tests (unaligned, EOF) and a `StreamBitReader` decode of `Vec<u8>` and `[u8; N]` against the slice path. |
+| `aligned_run`, `BitWriter::write_bytes` alignment checks (equivalent) | Three survivors disable the fast path only; the per-byte fallback yields identical results. | Recorded as equivalent; performance, not behaviour, depends on them. |
+
+### Tests
+
+- `bitstream.rs` `component::byte_runs`: `BitReader`, `BitBuf`, `BytesReader`
+  (`read_bytes`/`read_into`), the incremental reader (`read_into`), and `BitWriter`/`BytesWriter`
+  (`write_bytes`) against the private per-byte loops in all four layouts, start bits 0–17, and
+  run lengths through two bytes past the end: equal results, errors, partial fills, cursors.
+- `tests/bin_byte_runs.rs` (`macro_`): `Vec<u8>`/`Vec<Octet>` messages against an identical
+  message whose element keeps the trait defaults, byte-aligned and behind a `u3`, MSB and LSB:
+  equal bytes for lengths 0–255 and equal `BitError` (kind, offset, field) at every truncation.
+  Enum-variant runs round-trip.
+- `bitstream.rs` Source/Sink default tests: `read_bytes`/`read_into`/`write_bytes` through the
+  trait defaults at a 4-bit offset, including EOF. `tests/bin_byte_runs.rs` also decodes runs
+  through `StreamBitReader`, matching the slice path's values and truncation positions.
+- Hand mutations removing the alignment check from `BitWriter::write_bytes` and
+  `BitReader::aligned_run` fail four component tests and both unaligned `macro_` tests.
+
+### Performance
+
+AMD Ryzen Threadripper 7970X, rustc 1.99.0, default features, Criterion defaults, pinned with
+`taskset -c 2` (powersave governor), 2026-10-03. Baseline is `origin/main` `ae539d20` plus only
+the new `byte_runs_2x255` bench; two runs each, same machine and target directory.
+
+| Case | Baseline A / B | Candidate A / B |
+| --- | ---: | ---: |
+| `byte_runs_2x255/encode` (513 bytes) | 1.5007 / 1.4912 µs | 97.562 / 96.296 ns |
+| `byte_runs_2x255/decode` | 570.25 / 591.86 ns | 29.972 / 31.575 ns |
+| `ipv4ish_message/encode` (40-byte tail) | 200.44 / 196.19 ns | 98.856 / 97.907 ns |
+| `ipv4ish_message/decode` | 138.45 / 136.57 ns | 46.331 / 46.060 ns |
+
+Not measured: allocation counts, codegen size, the SOCKS session benchmark, and the other
+`message_bench` groups.
+
+### Verification (2026-10-03, routine tier)
+
+Passed: `cargo fmt -p bitsandbytes -p bitsandbytes-macros --check`; strict Clippy
+(`--all-targets -- -D warnings`) for both crates, default and all features; `cargo test` for
+both crates, default and all features; `cargo test -p socks --all-features`; the `nostd-check`
+build for `thumbv7em-none-eabi`; `cargo +1.85.0 check -p bitsandbytes --all-features`;
+denied-warning `cargo doc` (all features, no default features); `cargo +nightly-2026-06-17
+public-api` (additive only, snapshot regenerated); `cargo semver-checks --baseline-rev
+ae539d20 --release-type patch --all-features` ("no semver update required"). Independent
+reviewer: no correctness findings; two wording fixes applied above.
+
+Pre-commit gate, same day: `cargo mutants -p bitsandbytes -p bitsandbytes-macros --test-package
+bitsandbytes --all-features --in-diff <branch diff>` — 54 mutants: 49 caught, 2 unviable, and 3
+equivalent survivors (ledger above), after the default-path tests closed five real gaps.
+Fuzzing (`cargo +nightly fuzz run`, `-max_len=2048`): `decode` 2,000,000 runs and
+`stream_decode` 2,000,000 runs, no crashes. Not run: `scripts/ci-act.sh pre-push`, which
+fails locally under Podman 5.8.7; hosted CI is the substitute for this change.
