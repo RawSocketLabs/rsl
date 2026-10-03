@@ -3,7 +3,6 @@ use bnb::bin;
 
 // --- Internal modules ---
 use super::{Command, DomainError, Endpoint, ReplyCode, VERSION};
-#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 use crate::error::Error;
 
 /// A client command request: `VER`, `CMD`, `RSV`, `ATYP`, destination, and port (RFC 1928 §4).
@@ -67,7 +66,6 @@ impl Reply {
     }
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl Reply {
     /// Require a compliant header, successful outcome, and usable bound-address length.
     pub(crate) fn ensure_success(&self) -> Result<(), Error> {
@@ -78,7 +76,10 @@ impl Reply {
         }
         self.check_bound().map_err(Error::from)
     }
+}
 
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
+impl Reply {
     /// Construct a guided success reply after checking the supplied bound endpoint.
     pub(crate) fn success(bound: Endpoint) -> Result<Self, Error> {
         bound.validate_structure()?;

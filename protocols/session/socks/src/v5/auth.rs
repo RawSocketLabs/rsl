@@ -1,11 +1,11 @@
 //! SOCKS5 client authentication choices and server method adaptation.
 // --- Internal modules ---
+use super::{AuthMethod, UsernamePasswordRequest};
 #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
-use super::{
-    AuthMethod, MethodRequest, USERNAME_PASSWORD_VERSION, UsernamePasswordRequest, VERSION,
-};
+use super::{MethodRequest, USERNAME_PASSWORD_VERSION, VERSION};
+use crate::error::Error;
 #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
-use crate::{error::Error, server::policy::ServerAuth};
+use crate::server::policy::ServerAuth;
 
 /// Exactly one method is offered, preventing an implicit downgrade to no-auth.
 /// Credentials are borrowed and deliberately have no `Debug` implementation.
@@ -22,7 +22,6 @@ pub enum ClientAuth<'a> {
     },
 }
 
-#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 impl ClientAuth<'_> {
     pub(crate) fn method(self) -> AuthMethod {
         match self {

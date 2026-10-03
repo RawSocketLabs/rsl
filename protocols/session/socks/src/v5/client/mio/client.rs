@@ -6,25 +6,14 @@ use std::io::{Read, Write};
 use mio::Interest;
 
 // --- Internal modules ---
+use crate::io::stream::MAX_FRAME_LEN;
 use crate::v5::mio_io::Io;
+use crate::v5::sansio::{self, Step};
 use crate::{
     Stream,
     error::Error,
-    v5::{
-        AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, Request,
-        UsernamePasswordRequest, UsernamePasswordResponse, VERSION, auth::ClientAuth,
-    },
+    v5::{AuthMethod, Command, Endpoint, UsernamePasswordRequest, auth::ClientAuth},
 };
-
-enum Phase {
-    Greeting,
-    Selection,
-    Credentials,
-    Authentication,
-    Request,
-    Reply,
-    Complete,
-}
 
 /// A resumable client handshake. No I/O occurs during construction.
 ///
@@ -33,11 +22,10 @@ enum Phase {
 /// and readiness scheduling. Credentials and buffers are not zeroized on drop.
 pub struct Client<S> {
     io: Io<S>,
-    phase: Phase,
-    method: AuthMethod,
-    credentials: Option<UsernamePasswordRequest>,
-    destination: Endpoint,
-    bound: Option<Endpoint>,
+    machine: sansio::Client,
+    /// The current message is fully written but the transport has not been flushed.
+    unflushed: bool,
+    established: bool,
 }
 
 impl<S: Read + Write> Client<S> {
@@ -58,24 +46,20 @@ impl<S: Read + Write> Client<S> {
         method: AuthMethod,
         credentials: Option<UsernamePasswordRequest>,
     ) -> Result<Self, Error> {
+        let machine = sansio::Client::prepared(dest, Command::Connect, method, credentials)?;
         let mut io = Io::new(stream);
-        io.queue(&MethodRequest {
-            version: VERSION,
-            methods: vec![method],
-        })?;
+        io.interest = Interest::WRITABLE;
         Ok(Self {
             io,
-            phase: Phase::Greeting,
-            method,
-            credentials,
-            destination: dest,
-            bound: None,
+            machine,
+            unflushed: false,
+            established: false,
         })
     }
 
     /// Required readiness after `advance` reports incomplete progress.
     pub fn interest(&self) -> Option<Interest> {
-        (self.io.is_open() && !matches!(self.phase, Phase::Complete)).then_some(self.io.interest)
+        (self.io.is_open() && !self.established).then_some(self.io.interest)
     }
 
     /// Call `advance` again without waiting for readiness after a fairness yield.
@@ -106,77 +90,52 @@ impl<S: Read + Write> Client<S> {
         result
     }
 
+    /// Move bytes between the transport and the machine until blocked or established.
     fn drive(&mut self) -> Result<bool, Error> {
         self.io.stream()?;
+        let mut scratch = [0; MAX_FRAME_LEN];
         loop {
-            match self.phase {
-                Phase::Greeting => {
-                    if !self.io.flush()? {
-                        return Ok(false);
-                    }
-                    self.phase = Phase::Selection;
+            if self.unflushed {
+                if !self.io.flush_transport()? {
+                    return Ok(false);
                 }
-                Phase::Selection => {
-                    let Some(message) = self.io.receive::<MethodSelection>()? else {
-                        return Ok(false);
-                    };
-                    message.check_offered(self.method)?;
-                    if let Some(credentials) = self.credentials.take() {
-                        self.io.queue(&credentials)?;
-                        self.phase = Phase::Credentials;
-                    } else {
-                        self.queue_request()?;
-                    }
-                }
-                Phase::Credentials => {
-                    if !self.io.flush()? {
-                        return Ok(false);
-                    }
-                    self.phase = Phase::Authentication;
-                }
-                Phase::Authentication => {
-                    let Some(message) = self.io.receive::<UsernamePasswordResponse>()? else {
+                self.unflushed = false;
+            }
+            match self.machine.advance()? {
+                Step::Transmit => {
+                    let Some(count) = self.io.write_bytes(self.machine.transmit())? else {
                         return Ok(false);
                     };
-                    message.ensure_success()?;
-                    self.queue_request()?;
+                    self.machine.sent(count);
+                    self.unflushed = self.machine.transmit().is_empty();
                 }
-                Phase::Request => {
-                    if !self.io.flush()? {
-                        return Ok(false);
-                    }
-                    self.phase = Phase::Reply;
-                }
-                Phase::Reply => {
-                    let Some(message) = self.io.receive::<Reply>()? else {
+                Step::Receive => {
+                    let limit = self.machine.receive_limit();
+                    let Some(count) = self.io.read_bytes(&mut scratch[..limit])? else {
                         return Ok(false);
                     };
-                    message.ensure_success()?;
-                    self.bound = Some(message.bound);
-                    self.phase = Phase::Complete;
+                    match count {
+                        0 => self.machine.receive_eof(),
+                        count => self.machine.receive(&scratch[..count])?,
+                    }
                 }
-                Phase::Complete => return Ok(true),
+                Step::Established => {
+                    self.established = true;
+                    return Ok(true);
+                }
             }
         }
-    }
-
-    fn queue_request(&mut self) -> Result<(), Error> {
-        self.io.queue(&Request {
-            version: VERSION,
-            reserved: 0,
-            command: Command::Connect,
-            destination: self.destination.clone(),
-        })?;
-        self.phase = Phase::Request;
-        Ok(())
     }
 
     /// Take the established stream and bound endpoint once, preserving read-ahead.
     /// Returns `None` before completion, after failure, or after a previous handoff.
     pub fn take_stream(&mut self) -> Option<(Stream<S>, Endpoint)> {
-        if !matches!(self.phase, Phase::Complete) {
-            return None;
-        }
-        Some((self.io.take()?, self.bound.take()?))
+        let (input, bound) = self.machine.finish().ok()?;
+        let (transport, unused) = self.io.take()?.into_parts();
+        debug_assert!(
+            unused.is_empty(),
+            "handshake reads bypass the stream buffer"
+        );
+        Some((Stream::from_parts(transport, input), bound))
     }
 }

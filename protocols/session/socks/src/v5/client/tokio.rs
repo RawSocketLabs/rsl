@@ -1,19 +1,18 @@
 //! Tokio SOCKS5 client handshakes. Generic transports have caller-managed deadlines.
 // --- Standard library ---
-use std::{net::SocketAddr, time::Duration};
+use std::{io, net::SocketAddr, time::Duration};
 
 // --- Workspace dependencies ---
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
 
 // --- Internal modules ---
+use crate::io::stream::MAX_FRAME_LEN;
 use crate::io::tokio::bounded;
-use crate::v5::{
-    AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, Request as WireRequest,
-    UsernamePasswordRequest, UsernamePasswordResponse,
-};
+use crate::v5::sansio::{Client, Step};
+use crate::v5::{AuthMethod, Command, Endpoint, UsernamePasswordRequest};
 use crate::{Stream, error::Error, v5::auth::ClientAuth};
 /// Negotiate CONNECT and return a lossless tunnel and proxy-bound endpoint. Domains
 /// go to the proxy unchanged, without local DNS. Prefetched bytes stay in the tunnel.
@@ -32,31 +31,44 @@ pub async fn connect_with<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 async fn connect_prepared<S: AsyncRead + AsyncWrite + Unpin>(
-    stream: S,
+    mut stream: S,
     dest: Endpoint,
     method: AuthMethod,
     credentials: Option<UsernamePasswordRequest>,
 ) -> Result<(Stream<S>, Endpoint), Error> {
-    let offer = MethodRequest::builder().methods(vec![method]).build()?;
-    let request = WireRequest::builder()
-        .command(Command::Connect)
-        .destination(dest)
-        .build()?;
-    let mut stream = Stream::new(stream);
-    stream.write_message_async(&offer).await?;
-    let selected: MethodSelection = stream.read_message_async().await?;
-    selected.check_offered(method)?;
-    if let Some(credentials) = credentials {
-        stream.write_message_async(&credentials).await?;
-        stream
-            .read_message_async::<UsernamePasswordResponse>()
-            .await?
-            .ensure_success()?;
+    let mut client = Client::prepared(dest, Command::Connect, method, credentials)?;
+    let mut scratch = [0; MAX_FRAME_LEN];
+    loop {
+        match client.advance()? {
+            Step::Transmit => {
+                let pending = client.transmit();
+                stream.write_all(pending).await?;
+                let count = pending.len();
+                client.sent(count);
+                stream.flush().await?;
+            }
+            Step::Receive => {
+                let limit = client.receive_limit();
+                match read(&mut stream, &mut scratch[..limit]).await? {
+                    0 => client.receive_eof(),
+                    count => client.receive(&scratch[..count])?,
+                }
+            }
+            Step::Established => break,
+        }
     }
-    stream.write_message_async(&request).await?;
-    let response: Reply = stream.read_message_async().await?;
-    response.ensure_success()?;
-    Ok((stream, response.bound))
+    let (input, bound) = client.finish()?;
+    Ok((Stream::from_parts(stream, input), bound))
+}
+
+/// Read once, retrying interruptions.
+async fn read<S: AsyncRead + Unpin>(stream: &mut S, bytes: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match stream.read(bytes).await {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            result => return result,
+        }
+    }
 }
 
 /// Dial a numeric proxy address and negotiate within one absolute timeout.

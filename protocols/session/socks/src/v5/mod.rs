@@ -18,6 +18,7 @@ pub mod auth;
 pub mod client;
 #[cfg(feature = "mio")]
 pub(crate) mod mio_io;
+pub mod sansio;
 #[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 pub mod server;
 pub mod wire;

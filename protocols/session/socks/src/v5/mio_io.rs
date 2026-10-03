@@ -1,5 +1,8 @@
 // --- Standard library ---
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    mem,
+};
 
 // --- Workspace dependencies ---
 use bnb::{BitDecode, BitEncode};
@@ -71,32 +74,68 @@ impl<S: Read + Write> Io<S> {
 
     pub(crate) fn flush(&mut self) -> Result<bool, Error> {
         while self.written < self.output.len() {
-            if !self.spend() {
+            let output = mem::take(&mut self.output);
+            let result = self.write_bytes(&output[self.written..]);
+            self.output = output;
+            let Some(count) = result? else {
                 return Ok(false);
+            };
+            self.written += count;
+        }
+        if !self.flush_transport()? {
+            return Ok(false);
+        }
+        self.output.clear();
+        self.written = 0;
+        Ok(true)
+    }
+
+    /// Write once within the fairness budget; `None` means blocked or yielded.
+    pub(crate) fn write_bytes(&mut self, bytes: &[u8]) -> Result<Option<usize>, Error> {
+        self.interest = Interest::WRITABLE;
+        loop {
+            if !self.spend() {
+                return Ok(None);
             }
-            let stream = self.stream.as_mut().ok_or(Error::InvalidState)?;
-            match stream.write(&self.output[self.written..]) {
+            match self.stream()?.write(bytes) {
                 Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero).into()),
-                Ok(count) => self.written += count,
+                Ok(count) => return Ok(Some(count)),
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(None),
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    /// Flush the transport within the fairness budget; `false` means blocked or yielded.
+    pub(crate) fn flush_transport(&mut self) -> Result<bool, Error> {
         loop {
             if !self.spend() {
                 return Ok(false);
             }
             match self.stream()?.flush() {
-                Ok(()) => break,
+                Ok(()) => return Ok(true),
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
                 Err(error) => return Err(error.into()),
             }
         }
-        self.output.clear();
-        self.written = 0;
-        Ok(true)
+    }
+
+    /// Read once within the fairness budget; `None` means blocked or yielded, zero is EOF.
+    pub(crate) fn read_bytes(&mut self, bytes: &mut [u8]) -> Result<Option<usize>, Error> {
+        self.interest = Interest::READABLE;
+        loop {
+            if !self.spend() {
+                return Ok(None);
+            }
+            match self.stream()?.read(bytes) {
+                Ok(count) => return Ok(Some(count)),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 
     pub(crate) fn receive<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, Error> {
