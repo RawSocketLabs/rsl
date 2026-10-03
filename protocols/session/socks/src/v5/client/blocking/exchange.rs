@@ -1,48 +1,52 @@
 //! Shared blocking client authentication and first command reply.
 // --- Standard library ---
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 
 // --- Internal modules ---
-use crate::v5::{
-    AuthMethod, Command, Endpoint, MethodRequest, MethodSelection, Reply, Request as WireRequest,
-    UsernamePasswordRequest, UsernamePasswordResponse,
-};
+use crate::io::stream::MAX_FRAME_LEN;
+use crate::v5::sansio::{Client, Step};
+use crate::v5::{AuthMethod, Command, Endpoint, UsernamePasswordRequest};
 use crate::{Stream, error::Error};
 
 /// Authenticate, send the selected command, and validate its first reply.
 pub(super) fn exchange<S: Read + Write>(
-    stream: S,
+    mut stream: S,
     dest: Endpoint,
     command: Command,
     method: AuthMethod,
     credentials: Option<UsernamePasswordRequest>,
 ) -> Result<(Stream<S>, Endpoint), Error> {
-    // Build both messages before any I/O.
-    let offer = MethodRequest::builder().methods(vec![method]).build()?;
-    let request = WireRequest::builder()
-        .command(command)
-        .destination(dest)
-        .build()?;
-
-    // Send the offer and receive the selected method.
-    let mut stream = Stream::new(stream);
-    stream.write_message(&offer)?;
-    stream
-        .read_message::<MethodSelection>()?
-        .check_offered(method)?;
-
-    // If there are credentials, send them and validate the response.
-    if let Some(credentials) = credentials {
-        stream.write_message(&credentials)?;
-        stream
-            .read_message::<UsernamePasswordResponse>()?
-            .ensure_success()?;
+    let mut client = Client::prepared(dest, command, method, credentials)?;
+    let mut scratch = [0; MAX_FRAME_LEN];
+    loop {
+        match client.advance()? {
+            Step::Transmit => {
+                let pending = client.transmit();
+                stream.write_all(pending)?;
+                let count = pending.len();
+                client.sent(count);
+                stream.flush()?;
+            }
+            Step::Receive => {
+                let limit = client.receive_limit();
+                match read(&mut stream, &mut scratch[..limit])? {
+                    0 => client.receive_eof(),
+                    count => client.receive(&scratch[..count])?,
+                }
+            }
+            Step::Established => break,
+        }
     }
+    let (input, bound) = client.finish()?;
+    Ok((Stream::from_parts(stream, input), bound))
+}
 
-    // Send the command and validate its first reply.
-    stream.write_message(&request)?;
-    let response = stream.read_message::<Reply>()?;
-    response.ensure_success()?;
-
-    Ok((stream, response.bound))
+/// Read once, retrying interruptions.
+fn read<S: Read>(stream: &mut S, bytes: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match stream.read(bytes) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            result => return result,
+        }
+    }
 }

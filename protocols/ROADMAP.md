@@ -93,6 +93,11 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
       (u8/u16/…), so the reference crate's u5 `OpCode` / u7 `Flags` sub-byte groupings had to be
       flattened into the parent `State`. Flattening is arguably cleaner (matches the RFC diagram),
       so this is a low-priority ergonomic nicety, not a blocker — noted for completeness.
+- [ ] **No transport-free counterpart to `net::read_message`** — surfaced by the SOCKS sans-I/O
+      client: its hint skipping, capacity check, and finite-EOF decode are private to `net`, so
+      `socks::v5::sansio` re-implements them over `BitBuf::try_pull`/`pull_eof`. The slice-level
+      `T::decode_prefix`/`decode_prefix_eof` (`bitsandbytes` #108) serves caller-owned buffers;
+      a buffer-owning framer is not yet justified by a second consumer.
 - [x] **Confirmed covered (verified during Increment 1, not gaps):** ctx-`tag` dispatch composed
       with an auxiliary ctx param used in variant `count`s + a catch-all binding the unmatched
       tag and reading the remaining bytes; `count = <expr>` arithmetic; `BitEnum` catch-all
