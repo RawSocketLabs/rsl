@@ -85,9 +85,11 @@ Audit follow-ups (not silently waived or bundled into this feature):
 
 - [x] Folds read + write codecs and the builder over one struct; generates the decode entry
       points — `decode(&mut Source)` (one cursor decode over the whole I/O ladder), `decode_all`/
-      `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), and `decode_exact`/`peek`
-      (one-shot) — the encode entry points (`to_bytes` + the `encode(writer)` convenience, plus
-      `BitEncode::bit_encode` for a `Sink`), and construction (struct literal, `builder()`).
+      `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), `decode_exact`/`peek`
+      (one-shot), and `decode_prefix`/`decode_prefix_eof` (one-shot with bytes consumed and a
+      retryable `Incomplete` for a short slice) — the encode entry points (`to_bytes` + the
+      `encode(writer)` convenience, plus `BitEncode::bit_encode` for a `Sink`), and
+      construction (struct literal, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (modeled stored fields;
       not unmodeled final padding or custom-codec representations); `to_canonical_bytes` normalizes (`reserved` → spec,
       `calc` recomputed). Generated for a `reserved`/`calc` message, alongside the in-memory

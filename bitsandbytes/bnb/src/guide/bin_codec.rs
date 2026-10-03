@@ -65,7 +65,9 @@
 //! | decode | `decode_exact(&[u8])` | one message that consumes every whole byte |
 //! | decode | `decode_all(&[u8]) -> Vec<_>` | every message in the buffer (bit-aware, layout baked in) |
 //! | decode | `decode_iter(&[u8])` | a lazy iterator over the buffer's messages |
-//! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation |
+//! | decode | `peek(&[u8])` | one message, tail-tolerant, no buffer mutation; a short slice is a hard error |
+//! | decode | `decode_prefix(&[u8]) -> (_, usize)` | one message plus bytes consumed; a short slice is `Incomplete` ([prefix decoding](super::io#stateless-prefix-decoding)) |
+//! | decode | `decode_prefix_eof(&[u8]) -> (_, usize)` | as `decode_prefix`, with the slice declared final |
 //! | encode | `to_bytes() -> Vec<u8>` | encode to a fresh buffer (**verbatim**) |
 //! | encode | `to_canonical_bytes()` | encode the spec-normalized form (**canonical**) † |
 //! | encode | `encode(&mut W)` | encode to any `std::io::Write` (**verbatim**, requires `std`) |

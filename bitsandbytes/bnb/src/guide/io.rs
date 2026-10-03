@@ -208,6 +208,47 @@
 //! `try_pull_with(layout, args)` / `pull_eof_with(layout, args)` support `DecodeWith<A>`
 //! and read-only codecs; arguments are resupplied each attempt with no `Clone` bound.
 //!
+//! ## Stateless prefix decoding
+//!
+//! When the caller already owns the bytes (its own receive buffer, a `&[u8]` from a callback),
+//! `Type::decode_prefix(&bytes)` decodes one message from the front and returns it with the
+//! bytes consumed, without a `BitBuf`. `peek` cannot do this: it reports a short slice as a
+//! definitive `UnexpectedEof`, the same as malformed input.
+//!
+//! - **Short vs bad.** A slice that ends mid-message is `Incomplete`; malformed input, and a
+//!   count or field that overruns an enclosing bounded region (even with slice bytes to
+//!   spare), are definitive. `decode_prefix_eof` declares the slice final, so shortage is definitive too.
+//! - **Retry by replay.** Nothing is kept between calls: each attempt decodes from the start
+//!   of the slice again. Retry with the same bytes plus at least `needed` more (when
+//!   `Some(n)`); appending fewer cannot change the outcome. Never drain a partial message.
+//! - **Slice-relative.** `consumed` and error positions count from the slice start; drain
+//!   exactly `consumed` bytes after a success.
+//! - **Whole bytes.** `consumed` rounds up: a bit-granular message's final-byte padding counts
+//!   as consumed. For tightly packed sub-byte messages, use `decode_iter` or `BitBuf`.
+//! - **Empty input** is `Incomplete` (or `UnexpectedEof` with `_eof`) like any other short
+//!   slice; a message that consumes no bits is `NoProgress`.
+//!
+//! ```
+//! use bnb::{bin, ErrorKind};
+//! #[bin(big)]
+//! #[derive(Debug, PartialEq)]
+//! struct Record {
+//!     #[brw(count_prefix = u16)]
+//!     body: Vec<u8>,
+//! }
+//! let mut rx = vec![0, 3, 10];
+//! let short = Record::decode_prefix(&rx).unwrap_err();
+//! assert_eq!(short.kind, ErrorKind::Incomplete { needed: Some(2) });
+//! assert!(!Record::decode_prefix_eof(&rx).unwrap_err().is_incomplete());
+//! rx.extend_from_slice(&[20, 30, 0xff]); // the rest of the record, then the next one's start
+//! let (record, consumed) = Record::decode_prefix(&rx).unwrap();
+//! assert_eq!((record.body, consumed), (vec![10, 20, 30], 5));
+//! rx.drain(..consumed);
+//! assert_eq!(rx, [0xff]);
+//! ```
+//!
+//! `ctx` types get no `decode_prefix`; use `BitBuf::try_pull_with`/`pull_eof_with` for them.
+//!
 //! `StreamBitReader` and direct `Source` decoding are **not transactional**. A failed
 //! forward read may already have consumed input. `BufSource` retains bytes but its caller
 //! must explicitly rewind for a retry. Neither is a substitute for `BitBuf` attempts.

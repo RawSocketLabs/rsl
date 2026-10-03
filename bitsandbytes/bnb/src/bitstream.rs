@@ -2032,7 +2032,9 @@ pub fn decode_iter<T: BitDecode>(
 }
 
 /// Decodes one message from `bytes` without consuming the caller's buffer
-/// (tail-tolerant). Backs `Type::peek`.
+/// (tail-tolerant). Backs `Type::peek`. Not a prefix decoder: a short slice is a definitive
+/// [`ErrorKind::UnexpectedEof`], indistinguishable from malformed input — see
+/// [`decode_prefix`] for that.
 ///
 /// # Errors
 /// Propagates the decode [`BitError`].
@@ -2113,6 +2115,42 @@ pub fn decode_exact<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<T, Bit
         ));
     }
     Ok(v)
+}
+
+/// Decodes one message from the front of `bytes` and returns it with the **bits** it consumed —
+/// a stateless prefix decode that, unlike [`decode_peek`], tells a short slice from a bad one.
+/// Backs `Type::decode_prefix` (`eof = false`) and `Type::decode_prefix_eof` (`eof = true`).
+///
+/// Each call replays the decode from bit 0 of `bytes`; nothing is retained between calls, and
+/// positions in errors are relative to `bytes`. Trailing input is ignored.
+///
+/// # Errors
+/// With `eof = false`, physical shortage is [`ErrorKind::Incomplete`]: append input and retry
+/// (a positive `needed` is a lower bound in bytes). With `eof = true`, shortage is definitive
+/// ([`ErrorKind::UnexpectedEof`], or [`ErrorKind::IncompleteAtEof`] when a custom codec asks for
+/// more). Either way, codec errors and logical-region ([`LimitedSource`]) overruns are
+/// definitive, and a message that consumes no bits is [`ErrorKind::NoProgress`].
+#[doc(hidden)]
+pub fn decode_prefix_with<T: DecodeWith<A>, A>(
+    bytes: &[u8],
+    layout: Layout,
+    args: A,
+    eof: bool,
+) -> Result<(T, usize), BitError> {
+    decode_attempt(bytes, 0, layout, args, eof)
+}
+
+/// [`decode_prefix_with`] for a context-free [`BitDecode`] message.
+///
+/// # Errors
+/// As [`decode_prefix_with`].
+#[doc(hidden)]
+pub fn decode_prefix<T: BitDecode>(
+    bytes: &[u8],
+    layout: Layout,
+    eof: bool,
+) -> Result<(T, usize), BitError> {
+    decode_prefix_with(bytes, layout, (), eof)
 }
 
 /// Encodes `value` to a `Vec<u8>`. Backs `Type::to_bytes`.
@@ -4009,7 +4047,7 @@ mod component {
     //! bit cursors). `cargo test component` runs these alongside the other layers.
 
     mod incremental {
-        use crate::bitstream::CountPrefix;
+        use crate::bitstream::{CountPrefix, decode_prefix, decode_prefix_with};
         use crate::{BitBuf, BitDecode, BitError, DecodeWith, ErrorKind, Layout, Source, bin};
 
         #[bin(big)]
@@ -4266,6 +4304,101 @@ mod component {
             assert!(!error.is_incomplete());
             assert_eq!((error.at, error.field), (8, Some("custom")));
             assert_eq!(buffer.try_pull::<u8>().unwrap(), 1);
+        }
+
+        // --- decode_prefix_with: the stateless slice form of the same attempt -----------
+
+        #[test]
+        fn prefix_reports_consumed_bits_and_ignores_the_tail() {
+            let bytes = [7, 1, 2, 3, 4, 0xee];
+            let (packet, bits) = decode_prefix::<Packet>(&bytes, Layout::default(), false).unwrap();
+            assert_eq!((packet.tag, packet.value, bits), (7, 0x0102_0304, 40));
+            let (_, bits) = decode_prefix::<Packet>(&bytes, Layout::default(), true).unwrap();
+            assert_eq!(bits, 40);
+        }
+
+        #[test]
+        fn prefix_shortage_is_incomplete_unless_eof() {
+            let error = decode_prefix::<Packet>(&[7, 1], Layout::default(), false).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(3) });
+            assert_eq!((error.at, error.field), (8, Some("value")));
+            let error = decode_prefix::<Packet>(&[7, 1], Layout::default(), true).unwrap_err();
+            assert_eq!(
+                error.kind,
+                ErrorKind::UnexpectedEof {
+                    needed: 32,
+                    remaining: 8
+                }
+            );
+        }
+
+        #[test]
+        fn prefix_of_empty_input_is_a_shortage_not_a_special_case() {
+            assert_eq!(
+                decode_prefix::<Packet>(&[], Layout::default(), false)
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::Incomplete { needed: Some(1) }
+            );
+            assert!(matches!(
+                decode_prefix::<Packet>(&[], Layout::default(), true)
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::UnexpectedEof { remaining: 0, .. }
+            ));
+        }
+
+        #[derive(Debug)]
+        struct Nothing;
+        impl DecodeWith<()> for Nothing {
+            fn decode_with<S: Source>(_: &mut S, (): ()) -> Result<Self, BitError> {
+                Ok(Self)
+            }
+        }
+
+        #[test]
+        fn prefix_without_progress_is_definitive_even_on_empty_input() {
+            for eof in [false, true] {
+                for bytes in [&[][..], &[1][..]] {
+                    let error = decode_prefix_with::<Nothing, _>(bytes, Layout::default(), (), eof)
+                        .unwrap_err();
+                    assert_eq!(error.kind, ErrorKind::NoProgress);
+                }
+            }
+        }
+
+        #[test]
+        fn prefix_keeps_logical_region_overruns_definitive() {
+            // A one-byte region holding a u16 overruns its *logical* bound while the slice
+            // still has bytes to spare: never `Incomplete`, with or without EOF.
+            for eof in [false, true] {
+                let error = decode_prefix_with::<Region, _>(&[1, 2, 3], Layout::default(), (), eof)
+                    .unwrap_err();
+                assert_eq!(
+                    error.kind,
+                    ErrorKind::UnexpectedEof {
+                        needed: 16,
+                        remaining: 8
+                    }
+                );
+                assert_eq!(error.field, Some("inner"));
+            }
+            // A region longer than the slice is physical shortage, a retry signal.
+            let error = decode_prefix_with::<WindowValue, _>(&[1], Layout::default(), 4, false)
+                .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(3) });
+        }
+
+        #[test]
+        fn prefix_custom_incomplete_becomes_terminal_only_at_eof() {
+            let error =
+                decode_prefix_with::<CustomIncomplete, _>(&[1, 2], Layout::default(), (), false)
+                    .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Incomplete { needed: Some(3) });
+            let error =
+                decode_prefix_with::<CustomIncomplete, _>(&[1, 2], Layout::default(), (), true)
+                    .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::IncompleteAtEof { needed: Some(3) });
         }
 
         #[bin(read_only, ctx(count: usize))]

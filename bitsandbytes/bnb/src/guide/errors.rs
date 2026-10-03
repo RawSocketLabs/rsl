@@ -44,8 +44,9 @@
 //!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
 //!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
 //!   `WidthError` bridged in from checked construction (`try_new`).
-//! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` supports retry;
-//!   a direct forward-only read may already have consumed input.
+//! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` and
+//!   `Type::decode_prefix` support retry; a direct forward-only read may already have
+//!   consumed input.
 //! - `IncompleteAtEof { needed }` — a custom codec still requested input in a finite
 //!   `BitBuf`/`BinCodec` attempt. Other finite custom-codec entry points must report
 //!   their own definitive errors.

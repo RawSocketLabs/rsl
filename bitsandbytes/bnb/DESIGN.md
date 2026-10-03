@@ -1342,3 +1342,54 @@ every bit-consuming success against `BitReader`, since both seek readers share `
 `BufReader` capacity. The bnb checks above were re-run after these fixes. Library changes
 after the workspace run were doc comments only, so the workspace suite and semver-checks
 were not repeated.
+
+## 15. Stateless slice prefix decoding (unreleased candidate)
+
+### Scope and contract
+
+A caller that owns its receive buffer could not decode one message from a `&[u8]` and learn
+whether a failure meant "short" or "bad" without copying into a `BitBuf`: `peek` decodes
+through a plain `BitReader`, so a short slice is a definitive `UnexpectedEof`. The existing
+`decode_attempt` (behind `BitBuf::try_pull`/`pull_eof` and `BinCodec`) already makes that
+distinction. This change exposes it, with no new decode logic and no feature flag:
+
+- Runtime: `bitstream::decode_prefix_with<T: DecodeWith<A>, A>(bytes, layout, args, eof)` and
+  `decode_prefix<T: BitDecode>(bytes, layout, eof)`, both `-> Result<(T, usize /* bits */), _>`,
+  both `#[doc(hidden)]` macro plumbing like the neighbouring slice helpers, so outside the
+  tracked public API. `decode_prefix` joins `__private`.
+- Generated, beside `peek`/`decode_exact` on every context-free decode surface (`#[bin]`
+  struct and bare `#[derive(BitDecode)]` via `gen_decode`, enum, mapped, codec newtype):
+  `decode_prefix(&[u8])` and `decode_prefix_eof(&[u8])`,
+  `-> Result<(Self, usize /* bytes, rounded up */), BitError>`. Two methods rather than an
+  `eof: bool` argument, following `try_pull`/`pull_eof`.
+- Context types get no generated form: they have no generated `peek` either. They use
+  `BitBuf::try_pull_with`/`pull_eof_with`. A documented public `decode_prefix_with` would be a
+  separate API decision.
+
+Semantics are `decode_attempt`'s at cursor 0: shortage is `Incomplete` (lower-bound byte hint)
+or, with `eof`, `UnexpectedEof`/`IncompleteAtEof`; `LimitedSource` boundaries and codec errors
+stay definitive; zero progress, including a zero-width message on empty input, is
+`NoProgress`. Empty input is not special-cased (unlike `try_pull`'s `needed: None` and
+`pull_eof`'s `Ok(None)`): it is the zero-length truncation. Each call replays from the slice
+start; positions are slice-relative.
+
+### Findings ledger
+
+| Location | Finding | Disposition |
+| --- | --- | --- |
+| `peek` docs (pre-existing) | Nothing said a short slice is indistinguishable from malformed input. | Generated and runtime `peek` docs now say it is not a prefix decoder and point at `decode_prefix`. |
+| Byte rounding (new) | Whole-byte `consumed` counts final-byte padding, so back-to-back sub-byte messages cannot be walked with it. | Documented; `decode_iter`/`BitBuf` remain the packed-sequence tools. |
+| Replay cost (new) | Repeated attempts on a growing slice redo the decode, as `BitBuf` attempts do. | Documented in `guide::io`; callers should retry only after `needed` more bytes. |
+
+### Tests
+
+`component::incremental::prefix_*` (runtime: consumed bits with a tail, shortage with and
+without EOF, empty input, `NoProgress`, a `LimitedSource` overrun inside a longer slice,
+custom `Incomplete` becoming `IncompleteAtEof`); `tests/bin_decode_prefix.rs` (`macro_`:
+every truncation of a counted record is `Incomplete` with a hint that stays within the true
+length, `_eof` and `peek` agree on the definitive error, bad magic, a `parse_with` region
+overrun, 12-bit rounding, empty input, and the enum/mapped/codec-newtype surfaces).
+
+Performance: no existing path changed; the new functions are thin wrappers over
+`decode_attempt`. Not benchmarked. Not run: mutation testing, fuzzing, MSRV (the current
+lockfile needs a newer rustc than 1.85 locally), and `scripts/ci-act.sh pre-push`.
