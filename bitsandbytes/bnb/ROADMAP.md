@@ -347,6 +347,13 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       shared CI runners and a hard perf gate would flake. Revisit once there's a stable,
       dedicated bench runner. The bitfield-layer "as fast as hand-written shift/mask" claim
       is already substantiated by `bitfield_bench.rs`.
+- [ ] Incremental-read helper overhead — the `socks` adoption of hinted reads measured
+      8–35% slower in-memory handshakes (~18% more instructions), with out-of-line
+      `net::read_limit` and `shortfall` sampled at ~6% and ~2%. Accepted downstream; profile
+      and reduce here (see `protocols/session/socks/DESIGN.md`, bnb 0.6 adoption). Still
+      open after bulk byte runs (DESIGN.md §16): on `main` at `2e247e38`, the socks
+      `session_reads` profile samples `read_limit` at ~5% and `BitBuf::push` at ~18%,
+      the latter mostly from its one-byte fragment cases.
 - [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
       --timings` / expanded-output size pass on a representative multi-message crate).
 
