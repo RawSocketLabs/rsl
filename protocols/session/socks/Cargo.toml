@@ -48,6 +48,10 @@ harness = false
 required-features = ["blocking", "tokio"]
 
 [[example]]
+name = "browser_proxy"
+required-features = ["blocking"]
+
+[[example]]
 name = "mio_client"
 required-features = ["mio"]
 

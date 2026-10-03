@@ -358,6 +358,104 @@
 //! metrics tasks. Batch and timer sampling can also be combined: each sample consumes
 //! only losses accumulated since the preceding sample.
 //!
+//! ## Use the proxy from Firefox or another browser
+//!
+//! The runnable `examples/browser_proxy.rs` uses the same configured server and complete
+//! blocking listener, but deliberately allows every TCP destination for local browsing:
+//!
+//! ```text
+//! cargo run -p socks --features blocking --example browser_proxy
+//! ```
+//!
+//! It listens on `127.0.0.1:1080`. Run it on the same machine as the browser; an optional
+//! port can follow `--`, for example `-- 1081`. The bind address remains loopback-only.
+//!
+//! In Firefox Settings, search for **proxy** and open Connection Settings:
+//!
+//! 1. Choose **Manual proxy configuration**.
+//! 2. Set **SOCKS Host** to `127.0.0.1`, **Port** to `1080`, and select **SOCKS v5**.
+//! 3. Leave the HTTP/HTTPS proxy fields empty; this is SOCKS, not an HTTP proxy.
+//! 4. Enable **Proxy DNS when using SOCKS v5** to send destination names to the proxy.
+//! 5. Review **No Proxy For**: matching destinations bypass your proxy configuration.
+//!
+//! See [Mozilla's connection settings guide](https://support.mozilla.org/en-US/kb/connection-settings-firefox)
+//! and [Firefox's SOCKS/DNS setting labels](https://searchfox.org/firefox-main/source/browser/locales/en-US/browser/preferences/connection.ftl).
+//! Other browsers need equivalent SOCKS5 settings, which may be supplied by their OS.
+//! Restore your previous proxy settings when you stop the example with Ctrl-C.
+//!
+//! This example allows any local process to reach any TCP target, including internal services.
+//! It has no authentication and must not be exposed by changing the listener to a LAN/public
+//! address. It forwards HTTP and HTTPS TCP connections without terminating browser TLS;
+//! SOCKS itself adds no encryption. It is not a VPN, does not change your public egress IP
+//! when run locally, and does not guarantee that every browser subsystem uses the proxy.
+//! UDP ASSOCIATE is not implemented, so it cannot carry UDP-based traffic such as QUIC.
+//! Default limits allow 64 simultaneous sessions and a five-minute total relay lifetime
+//! per connection, not an idle timeout; long-lived connections will be closed at that limit.
+//! Ctrl-C stops the process, rather than performing a graceful drain.
+//!
+//! ## Manage one accepted connection
+//!
+//! Use a configured blocking/Tokio server when your application already owns acceptance.
+//! Its stages ensure destination authorization precedes dialing. This is a lower lifecycle
+//! level than the complete proxy APIs, but it still applies the configured policy:
+//!
+//! ```no_run
+//! # #[cfg(feature = "blocking")]
+//! # fn example(server: &socks::server::blocking::Server, socket: std::net::TcpStream)
+//! #     -> Result<(), socks::error::Error> {
+//! // Read and authenticate the request, then resolve and authorize its targets.
+//! let exchange = server.exchange(socket)?;
+//! let authorized = exchange.authorize()?;
+//!
+//! // Dial an authorized target and acknowledge success before application traffic.
+//! let connection = authorized.connect()?;
+//! let (client_stream, target_stream) = connection.into_parts();
+//! // Pass both sides to your relay; keep client_stream's buffered prefix intact.
+//! # let _ = (client_stream, target_stream);
+//! # Ok(()) }
+//! ```
+//!
+//! Instead of taking the pair apart, call the server connection's `relay` method with
+//! your relay timeout. Tokio exposes the corresponding stages with `.await`. Mio's configured
+//! server is settings for the complete proxy, not this staged exchange API.
+//!
+//! Blocking servers also expose `authorized.dial()?` when socket registration or inspection
+//! must happen before success. The returned `server::blocking::Connected` owns the target;
+//! `target()` borrows it, and `send_success()` consumes the stage to return a relay connection.
+//! If preparation fails, `connected.fail(error)` closes the target and attempts a failure
+//! reply, returning the cause unless reply I/O fails. Dropping the stage sends no success.
+//! `authorized.connect()` remains the convenience form of `dial()?.send_success()?`.
+//!
+//! ## Embed only SOCKS5 negotiation
+//!
+//! Use `v5::client` or `v5::server` when you own transport setup and server-side decisions.
+//! The blocking client example accepts any `Read + Write` transport already connected to
+//! the proxy; it does not open another socket:
+//!
+//! ```no_run
+//! # #[cfg(feature = "blocking")]
+//! # fn example<S: std::io::Read + std::io::Write>(transport: S)
+//! #     -> Result<(), Box<dyn std::error::Error>> {
+//! use socks::v5::{Endpoint, auth::ClientAuth, client::blocking};
+//!
+//! let dest = Endpoint::domain(b"example.com".to_vec(), 80)?;
+//! let (stream, bound) = blocking::connect_with(transport, dest, ClientAuth::NoAuthentication)?;
+//!
+//! // Transfer the negotiated stream, including bytes read ahead during the handshake.
+//! let (transport, buffered) = stream.into_parts();
+//! let stream = socks::Stream::from_parts(transport, buffered);
+//! # let _ = (stream, bound);
+//! # Ok(()) }
+//! ```
+//!
+//! On the embedded server path, `v5::server::blocking::exchange(stream, &auth)` returns
+//! an authenticated request. Inspect `destination()` and `authentication()`, authorize
+//! the exact resolved target, and dial it yourself. Only then call `send_success(bound)`
+//! with the outbound socket's local endpoint; denial or dial failure needs `send_failure(code)`.
+//! Unlike configured server stages, this API does not enforce your authorization decision.
+//! You also own deadlines and relay. Tokio provides asynchronous exchanges; embedded Mio
+//! exposes a resumable state machine rather than those blocking methods.
+//!
 //! Blocking embedded BIND is a separate two-reply workflow under `v5::client::blocking`
 //! and `v5::server::blocking`; it is not an option on configured CONNECT clients/proxies.
 //!
