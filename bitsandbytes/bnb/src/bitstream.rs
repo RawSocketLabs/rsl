@@ -1145,30 +1145,24 @@ pub trait Source: sealed::Sealed {
     /// `n` is often attacker-controlled, so **nothing is pre-allocated from it**: bytes
     /// are pushed as they are read, bounded by the input — a hostile huge `n` against a
     /// short source is a fast [`UnexpectedEof`](ErrorKind::UnexpectedEof), not an
-    /// allocation. (An implementation may override with a byte-aligned fast path; the
-    /// default is the correct-first per-byte loop.)
+    /// allocation. The default is the correct-first per-byte loop; the slice-backed sources
+    /// ([`BitReader`], `BitBuf`, `BytesReader`) copy a byte-aligned, fully available run in
+    /// one step and otherwise run that same loop, so values, errors, and the cursor match.
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
     fn read_bytes(&mut self, n: usize) -> Result<alloc::vec::Vec<u8>, BitError> {
-        let mut v = alloc::vec::Vec::new();
-        for _ in 0..n {
-            v.push(self.read::<u8>()?);
-        }
-        Ok(v)
+        read_bytes_per_byte(self, n)
     }
 
     /// Fills `buf` with bytes from the source — the no-alloc dual of
     /// [`read_bytes`](Source::read_bytes), for fixed scratch buffers and tight
-    /// `no_std` paths.
+    /// `no_std` paths. Bulk-copied under the same conditions as `read_bytes`.
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
     fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
-        for slot in buf.iter_mut() {
-            *slot = self.read::<u8>()?;
-        }
-        Ok(())
+        read_into_per_byte(self, buf)
     }
 
     /// Lends this source through a window of exactly `n` bytes.
@@ -1200,6 +1194,46 @@ pub trait Source: sealed::Sealed {
     {
         SourceReader(self)
     }
+}
+
+// The per-byte loops behind the defaulted bulk methods. A bulk override takes its fast path
+// only when the whole run is byte-aligned and available, and otherwise calls these, so every
+// error, position, and partial-consumption effect is the per-byte loop's by construction.
+fn read_bytes_per_byte<S: Source + ?Sized>(s: &mut S, n: usize) -> Result<Vec<u8>, BitError> {
+    let mut v = Vec::new();
+    for _ in 0..n {
+        v.push(s.read::<u8>()?);
+    }
+    Ok(v)
+}
+
+fn read_into_per_byte<S: Source + ?Sized>(s: &mut S, buf: &mut [u8]) -> Result<(), BitError> {
+    for slot in buf.iter_mut() {
+        *slot = s.read::<u8>()?;
+    }
+    Ok(())
+}
+
+fn write_bytes_per_byte<K: Sink + ?Sized>(k: &mut K, bytes: &[u8]) -> Result<(), BitError> {
+    for &b in bytes {
+        k.write(b)?;
+    }
+    Ok(())
+}
+
+// Runs a bulk read on a fresh slice reader at `*cursor`, then stores where it stopped — also
+// after a failure, as the per-byte default leaves the cursor past every byte it read.
+fn read_via_slice<T>(
+    bytes: &[u8],
+    layout: Layout,
+    cursor: &mut usize,
+    read: impl FnOnce(&mut BitReader<'_>) -> Result<T, BitError>,
+) -> Result<T, BitError> {
+    let mut r = BitReader::with_layout(bytes, layout);
+    r.seek_to_bit(*cursor)?;
+    let result = read(&mut r);
+    *cursor = r.bit_pos();
+    result
 }
 
 /// A borrowed [`Source`] window that prevents a nested decoder from crossing its declared length.
@@ -1428,6 +1462,12 @@ impl Source for IncrementalReader<'_> {
             Ok(bytes)
         }
     }
+
+    // The inner reader's per-byte fallback fails exactly where this reader's would; mapping
+    // that one error afterwards equals mapping each byte's.
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        self.0.read_into(buf).map_err(Self::shortfall)
+    }
 }
 
 // The attempt is transactional with respect to its caller's cursor, not codec side effects.
@@ -1531,15 +1571,14 @@ pub trait Sink: sealed::Sealed {
     }
 
     /// Appends a run of bytes — the bulk dual of [`Source::read_bytes`], replacing the
-    /// per-byte `write(b)?` loop in custom codecs. Works at any bit offset.
+    /// per-byte `write(b)?` loop in custom codecs. Works at any bit offset. [`BitWriter`]
+    /// (and `BytesWriter`) append a byte-aligned run in one copy and otherwise run the same
+    /// per-byte loop as this default.
     ///
     /// # Errors
     /// As [`write_bits`](Sink::write_bits).
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
-        for &b in bytes {
-            self.write(b)?;
-        }
-        Ok(())
+        write_bytes_per_byte(self, bytes)
     }
 
     /// Borrows this sink as a [`std::io::Write`] — the dual of [`Source::as_read`], for
@@ -1599,6 +1638,38 @@ impl Source for BitReader<'_> {
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         BitReader::seek_to_bit(self, pos)
     }
+    #[inline]
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        match self.aligned_run(n) {
+            Some(run) => Ok(run.to_vec()),
+            None => read_bytes_per_byte(self, n),
+        }
+    }
+    #[inline]
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        match self.aligned_run(buf.len()) {
+            Some(run) => {
+                buf.copy_from_slice(run);
+                Ok(())
+            }
+            None => read_into_per_byte(self, buf),
+        }
+    }
+}
+
+impl<'a> BitReader<'a> {
+    // Consumes the next `n` bytes when the cursor is byte-aligned and all of them remain.
+    // Whole aligned bytes read identically in both bit orders, so this is a plain copy.
+    #[inline]
+    fn aligned_run(&mut self, n: usize) -> Option<&'a [u8]> {
+        if self.bit_pos % 8 != 0 {
+            return None;
+        }
+        let start = self.bit_pos / 8;
+        let run = self.bytes.get(start..start.checked_add(n)?)?;
+        self.bit_pos += n * 8;
+        Some(run)
+    }
 }
 
 impl sealed::Sealed for BitWriter {}
@@ -1623,6 +1694,18 @@ impl Sink for BitWriter {
     #[inline]
     fn scratch(&mut self) -> Option<&mut dyn Any> {
         self.scratch.as_deref_mut()
+    }
+    // An aligned cursor sits exactly at the end of the buffer, and whole aligned bytes write
+    // identically in both bit orders, so the run is appended as-is. Writing never fails.
+    #[inline]
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
+        if self.bit_pos % 8 != 0 {
+            return write_bytes_per_byte(self, bytes);
+        }
+        debug_assert_eq!(self.bit_pos / 8, self.bytes.len());
+        self.bytes.extend_from_slice(bytes);
+        self.bit_pos += bytes.len() * 8;
+        Ok(())
     }
 }
 
@@ -1725,6 +1808,24 @@ pub trait BitEncode {
     fn canonical_bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
         self.bit_encode(w)
     }
+
+    /// Encode every element of `items` verbatim, in order — the encode dual of
+    /// [`BitDecode::decode_vec`], used by generated context-free `Vec` fields. The default
+    /// calls [`bit_encode`](Self::bit_encode) per element; `u8` uses [`Sink::write_bytes`],
+    /// which a byte-aligned [`BitWriter`] appends in one copy. An override must write exactly
+    /// the bits, and fail with exactly the error, of that per-element loop.
+    ///
+    /// # Errors
+    /// The first element's or sink's [`BitError`].
+    fn encode_slice<K: Sink>(items: &[Self], w: &mut K) -> Result<(), BitError>
+    where
+        Self: Sized,
+    {
+        for item in items {
+            item.bit_encode(w)?;
+        }
+        Ok(())
+    }
 }
 
 // A `Bits` leaf (a `uN`, a `#[bitfield]`, a `BitEnum`/`#[bitflags]`) is *also* field-codable:
@@ -1741,13 +1842,14 @@ macro_rules! bits_leaf_codec {
             fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
                 r.read::<$t>()
             }
-            bits_leaf_codec!(@bytes $t);
+            bits_leaf_codec!(@decode_bytes $t);
         }
         impl BitEncode for $t {
             #[inline]
             fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
                 w.write(*self)
             }
+            bits_leaf_codec!(@encode_bytes $t);
         }
         // A leaf's fixed width is its `Bits::BITS`, so `#[bin]` can size it the same way it
         // sizes a fixed nested message — uniformly via `FixedBitLen`.
@@ -1755,12 +1857,22 @@ macro_rules! bits_leaf_codec {
             const BIT_LEN: u32 = <$t as Bits>::BITS;
         }
     )*};
-    (@bytes u8) => {
+    // A `u8` run is a byte run: the sources/sinks bulk-copy it when byte-aligned. Matching the
+    // impl (not the field's spelling) reaches aliases and generic element types too.
+    (@decode_bytes u8) => {
+        #[inline]
         fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
             r.read_bytes(count)
         }
     };
-    (@bytes $other:ty) => {};
+    (@decode_bytes $other:ty) => {};
+    (@encode_bytes u8) => {
+        #[inline]
+        fn encode_slice<K: Sink>(items: &[Self], w: &mut K) -> Result<(), BitError> {
+            w.write_bytes(items)
+        }
+    };
+    (@encode_bytes $other:ty) => {};
 }
 bits_leaf_codec!(u8, u16, u32, u64, u128, bool);
 
@@ -2195,12 +2307,9 @@ where
 /// # Errors
 /// Propagates the source's [`BitError`].
 #[doc(hidden)]
-#[allow(clippy::cast_possible_truncation)] // Every read is exactly eight bits.
 pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], BitError> {
     let mut arr = [0u8; N];
-    for b in &mut arr {
-        *b = r.read_bits(8)? as u8;
-    }
+    r.read_into(&mut arr)?;
     Ok(arr)
 }
 
@@ -2268,10 +2377,7 @@ pub fn match_magic<S: Source>(r: &mut S, magic: &[u8]) -> Result<bool, BitError>
 /// Propagates the sink's [`BitError`].
 #[doc(hidden)]
 pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Result<(), BitError> {
-    for &b in arr {
-        w.write_bits(u128::from(b), 8)?;
-    }
-    Ok(())
+    w.write_bytes(arr)
 }
 
 /// A *forward-only* bit reader over any [`std::io::Read`] — the streaming counterpart
@@ -2957,6 +3063,24 @@ impl Source for BitBuf {
         self.cursor = pos;
         Ok(())
     }
+
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        if n == 0 {
+            return Ok(Vec::new());
+        }
+        read_via_slice(&self.buf, self.layout, &mut self.cursor, |r| {
+            r.read_bytes(n)
+        })
+    }
+
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+        read_via_slice(&self.buf, self.layout, &mut self.cursor, |r| {
+            r.read_into(buf)
+        })
+    }
 }
 
 impl SeekSource for BitBuf {}
@@ -3265,8 +3389,11 @@ impl<R: std::io::Read + std::io::Seek> SeekSource for BufSeekReader<R> {}
 /// framing case. Off by default so the core stays dependency-light.
 #[cfg(feature = "bytes")]
 mod bytes_io {
+    use alloc::vec::Vec;
+
     use super::{
         BitError, BitOrder, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source,
+        read_via_slice,
     };
 
     /// A [`SeekSource`](super::SeekSource) that **owns** a `bytes::Bytes` frame (no
@@ -3320,6 +3447,23 @@ mod bytes_io {
             self.bit_pos = pos;
             Ok(())
         }
+        // An empty run reads nothing, so it must not trip the per-read seek check either.
+        fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+            if n == 0 {
+                return Ok(Vec::new());
+            }
+            read_via_slice(&self.data, self.layout, &mut self.bit_pos, |r| {
+                r.read_bytes(n)
+            })
+        }
+        fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+            if buf.is_empty() {
+                return Ok(());
+            }
+            read_via_slice(&self.data, self.layout, &mut self.bit_pos, |r| {
+                r.read_into(buf)
+            })
+        }
     }
 
     impl SeekSource for BytesReader {}
@@ -3370,6 +3514,9 @@ mod bytes_io {
         }
         fn bit_order(&self) -> BitOrder {
             Sink::bit_order(&self.inner)
+        }
+        fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
+            self.inner.write_bytes(bytes)
         }
     }
 }
@@ -3757,6 +3904,29 @@ mod unit {
     }
 
     #[test]
+    fn source_default_byte_runs_read_per_byte() {
+        let mut s = TinySource {
+            bytes: &[0x0A, 0x0B, 0x0C, 0x0D, 0x0E],
+            pos: 4,
+        };
+        // Unaligned: each byte straddles two input bytes.
+        assert_eq!(s.read_bytes(2).unwrap(), [0xA0, 0xB0]);
+        let mut buf = [0u8; 2];
+        s.read_into(&mut buf).unwrap();
+        assert_eq!(buf, [0xC0, 0xD0]);
+        assert_eq!(s.bit_pos(), 36);
+        let err = s.read_bytes(1).unwrap_err();
+        assert!(matches!(
+            err.kind,
+            ErrorKind::UnexpectedEof {
+                needed: 8,
+                remaining: 4
+            }
+        ));
+        assert!(s.read_into(&mut buf).is_err());
+    }
+
+    #[test]
     fn limited_source_confines_nested_reads_and_requires_exact_consumption() {
         let mut source = BitReader::new(&[0xAA, 0xBB, 0xCC]);
         {
@@ -3864,6 +4034,18 @@ mod unit {
         s.write(0xABu8).unwrap();
         s.write(0xCDu8).unwrap();
         assert_eq!(s.out, [0xAB, 0xCD]);
+    }
+
+    #[test]
+    fn sink_default_byte_runs_write_per_byte() {
+        let mut s = TinySink {
+            out: Vec::new(),
+            bit: 0,
+        };
+        s.write_bits(0xF, 4).unwrap();
+        s.write_bytes(&[0xAB, 0xCD]).unwrap();
+        assert_eq!(s.out, [0xFA, 0xBC, 0xD0]);
+        assert_eq!(s.bit, 20);
     }
 
     // --- BitEncode/DecodeWith defaults for a leaf type -----------------------------
@@ -4045,6 +4227,164 @@ mod unit {
 mod component {
     //! Component tests: one runtime adapter in isolation (the I/O ladder over the
     //! bit cursors). `cargo test component` runs these alongside the other layers.
+
+    mod byte_runs {
+        //! Bulk byte runs (`read_bytes`/`read_into`/`write_bytes`) against the per-byte loops
+        //! they replace: identical values, errors, partial fills, and final cursor for every
+        //! source and sink that overrides them, at every bit offset in all four layouts.
+        use crate::bitstream::{
+            IncrementalReader, read_bytes_per_byte, read_into_per_byte, write_bytes_per_byte,
+        };
+        use crate::{BitBuf, BitOrder, BitReader, BitWriter, ByteOrder, Layout, Sink, Source};
+
+        const LAYOUTS: [Layout; 4] = [
+            Layout {
+                bit: BitOrder::Msb,
+                byte: ByteOrder::Big,
+            },
+            Layout {
+                bit: BitOrder::Msb,
+                byte: ByteOrder::Little,
+            },
+            Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Big,
+            },
+            Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Little,
+            },
+        ];
+        // Aligned and unaligned starts, including two whole bytes in.
+        const STARTS: core::ops::RangeInclusive<usize> = 0..=17;
+
+        fn data() -> Vec<u8> {
+            (0u8..12).map(|i| i.wrapping_mul(37) ^ 0xA5).collect()
+        }
+
+        // Every layout, start, and run length up to two bytes past the end of `data`.
+        fn cases() -> impl Iterator<Item = (Layout, usize, usize)> {
+            let len = data().len();
+            LAYOUTS.into_iter().flat_map(move |layout| {
+                STARTS.flat_map(move |start| (0..=len + 2).map(move |n| (layout, start, n)))
+            })
+        }
+
+        fn agree_read_bytes<S: Source>(mut bulk: S, mut each: S, n: usize, case: &str) {
+            let got = bulk.read_bytes(n);
+            assert_eq!(got, read_bytes_per_byte(&mut each, n), "{case}");
+            assert_eq!(bulk.bit_pos(), each.bit_pos(), "cursor: {case}");
+        }
+
+        fn agree_read_into<S: Source>(mut bulk: S, mut each: S, n: usize, case: &str) {
+            let (mut got, mut want) = (vec![0; n], vec![0; n]);
+            let result = bulk.read_into(&mut got);
+            assert_eq!(result, read_into_per_byte(&mut each, &mut want), "{case}");
+            assert_eq!(got, want, "partial fill: {case}");
+            assert_eq!(bulk.bit_pos(), each.bit_pos(), "cursor: {case}");
+        }
+
+        fn reader(bytes: &[u8], layout: Layout, start: usize) -> BitReader<'_> {
+            let mut r = BitReader::with_layout(bytes, layout);
+            r.seek_to_bit(start).unwrap();
+            r
+        }
+
+        #[test]
+        fn bit_reader_matches_per_byte_reads() {
+            let d = data();
+            for (layout, start, n) in cases() {
+                let case = format!("{layout:?} start {start} n {n}");
+                let mk = || reader(&d, layout, start);
+                agree_read_bytes(mk(), mk(), n, &case);
+                agree_read_into(mk(), mk(), n, &case);
+            }
+        }
+
+        // `IncrementalReader::read_bytes` deliberately reports the whole shortfall before
+        // allocating (`DESIGN.md` §11.2), so only `read_into` is a pure fast path here.
+        #[test]
+        fn incremental_reader_into_matches_per_byte_reads() {
+            let d = data();
+            for (layout, start, n) in cases() {
+                let case = format!("{layout:?} start {start} n {n}");
+                let mk = || IncrementalReader(reader(&d, layout, start));
+                agree_read_into(mk(), mk(), n, &case);
+            }
+        }
+
+        #[test]
+        fn bit_buf_matches_per_byte_reads() {
+            let d = data();
+            for (layout, start, n) in cases() {
+                let case = format!("{layout:?} start {start} n {n}");
+                let mk = || {
+                    let mut b = BitBuf::new().with_layout(layout);
+                    b.push(&d).unwrap();
+                    b.seek_to_bit(start).unwrap();
+                    b
+                };
+                agree_read_bytes(mk(), mk(), n, &case);
+                agree_read_into(mk(), mk(), n, &case);
+            }
+        }
+
+        #[cfg(feature = "bytes")]
+        #[test]
+        fn bytes_reader_matches_per_byte_reads() {
+            use crate::BytesReader;
+
+            let d = bytes::Bytes::from(data());
+            // A cursor seeked past the end only fails once a read touches input.
+            let past_end = d.len() * 8 + 9;
+            for (layout, start, n) in
+                cases().chain([(LAYOUTS[0], past_end, 0), (LAYOUTS[0], past_end, 1)])
+            {
+                let case = format!("{layout:?} start {start} n {n}");
+                let mk = || {
+                    let mut r = BytesReader::with_layout(d.clone(), layout);
+                    r.seek_to_bit(start).unwrap();
+                    r
+                };
+                agree_read_bytes(mk(), mk(), n, &case);
+                agree_read_into(mk(), mk(), n, &case);
+            }
+        }
+
+        // Writes `start` lead bits first so the run lands at every alignment.
+        fn agree_write<K: Sink>(mk: impl Fn() -> K, finish: impl Fn(K) -> Vec<u8>) {
+            let d = data();
+            for (_, start, n) in cases().filter(|(layout, ..)| *layout == LAYOUTS[0]) {
+                let n = n.min(d.len());
+                let case = format!("start {start} n {n}");
+                let lead = |k: &mut K| k.write_bits(0x1_6DB5, u32::try_from(start).unwrap());
+                let (mut bulk, mut each) = (mk(), mk());
+                lead(&mut bulk).unwrap();
+                lead(&mut each).unwrap();
+                let result = bulk.write_bytes(&d[..n]);
+                assert_eq!(result, write_bytes_per_byte(&mut each, &d[..n]), "{case}");
+                assert_eq!(bulk.bit_pos(), each.bit_pos(), "cursor: {case}");
+                assert_eq!(finish(bulk), finish(each), "bytes: {case}");
+            }
+        }
+
+        #[test]
+        fn bit_writer_matches_per_byte_writes() {
+            for layout in LAYOUTS {
+                agree_write(|| BitWriter::with_layout(layout), BitWriter::into_bytes);
+            }
+        }
+
+        #[cfg(feature = "bytes")]
+        #[test]
+        fn bytes_writer_matches_per_byte_writes() {
+            use crate::BytesWriter;
+
+            for layout in LAYOUTS {
+                agree_write(|| BytesWriter::with_layout(layout), |w| w.freeze().to_vec());
+            }
+        }
+    }
 
     mod incremental {
         use crate::bitstream::{CountPrefix, decode_prefix, decode_prefix_with};
