@@ -4,7 +4,7 @@
 use bnb::{BitEnum, bitfield, u2, u4, u6};
 
 use super::spi::BlockReg;
-use crate::chips::register::bitfield_register;
+use crate::chips::register::Register;
 
 /// RX front-end register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +61,10 @@ pub(super) struct Control {
     #[bits(0..=0)]
     enabled: bool,
 }
-bitfield_register!(Control => Reg::Control);
+impl Register for Control {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Control;
+}
 
 /// LNA gain, which LNA is active, and its input capacitance. Datasheet `GAIN_LNA_SEL`,
 /// register 0x75.
@@ -79,7 +82,10 @@ pub(super) struct LnaControl {
     #[bits(0..=3)]
     input_capacitance: u4,
 }
-bitfield_register!(LnaControl => Reg::LnaControl);
+impl Register for LnaControl {
+    type Map = Reg;
+    const ADDR: Reg = Reg::LnaControl;
+}
 
 /// The on-chip LNA load resistor, for LNA1 and LNA2 in internal-load mode. Datasheet
 /// `RDLINT_LNA`, register 0x79.
@@ -90,4 +96,7 @@ pub(super) struct LnaLoad {
     #[bits(0..=5)]
     resistance: u6,
 }
-bitfield_register!(LnaLoad => Reg::LnaLoad);
+impl Register for LnaLoad {
+    type Map = Reg;
+    const ADDR: Reg = Reg::LnaLoad;
+}

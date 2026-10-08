@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use bnb::{BitEnum, bitfield, u2, u3, u6};
 
-use super::register::{I2cRegisters, IndexedRegister, Register, bitfield_register, enum_register};
+use super::register::{I2cRegisters, IndexedRegister, Register};
 use crate::error::Error;
 use crate::lowlevel::{Bus, I2cAddr};
 
@@ -179,7 +179,10 @@ enum RequestedState {
     #[catch_all]
     Other(u8),
 }
-enum_register!(RequestedState => Reg::RequestedState);
+impl Register for RequestedState {
+    type Map = Reg;
+    const ADDR: Reg = Reg::RequestedState;
+}
 
 /// The state the device is in (read-only). `USYS_STAT`, 0x07.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,7 +199,10 @@ enum CurrentState {
     #[catch_all]
     Other(u8),
 }
-enum_register!(CurrentState => Reg::CurrentState);
+impl Register for CurrentState {
+    type Map = Reg;
+    const ADDR: Reg = Reg::CurrentState;
+}
 
 /// The PLL's reference input. `IMUX_SEL`, 0x24 (libusdr's `IMUX_*` values).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,7 +217,10 @@ enum PllReference {
     #[catch_all]
     Other(u8),
 }
-enum_register!(PllReference => Reg::PllReference);
+impl Register for PllReference {
+    type Map = Reg;
+    const ADDR: Reg = Reg::PllReference;
+}
 
 /// Clock input 2's buffer mode. `CLKIN_2_CLK_SEL`, 0x73 (libusdr's `IMUX_INX_*`).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,7 +235,10 @@ enum InputMode {
     #[catch_all]
     Other(u8),
 }
-enum_register!(InputMode => Reg::Input2Mode);
+impl Register for InputMode {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Input2Mode;
+}
 
 /// The clock outputs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,7 +259,7 @@ enum Output {
 
 /// Implements [`IndexedRegister`] over [`Output`] for a per-output register.
 macro_rules! per_output {
-    ($ty:ty, $to_byte:expr, [$o0:ident, $o1:ident, $o2:ident, $o3:ident, $o4:ident, $o5:ident]) => {
+    ($ty:ty, [$o0:ident, $o1:ident, $o2:ident, $o3:ident, $o4:ident, $o5:ident]) => {
         impl IndexedRegister for $ty {
             type Map = Reg;
             type Index = Output;
@@ -261,10 +273,6 @@ macro_rules! per_output {
                     Output::Out4 => Reg::$o4,
                     Output::Out5 => Reg::$o5,
                 }
-            }
-
-            fn to_byte(self) -> u8 {
-                $to_byte(self)
             }
         }
     };
@@ -319,7 +327,6 @@ struct OutputSource {
 }
 per_output!(
     OutputSource,
-    OutputSource::to_raw,
     [
         Output0Source,
         Output1Source,
@@ -367,7 +374,6 @@ enum DriverMode {
 }
 per_output!(
     DriverMode,
-    u8::from,
     [
         Output0Mode,
         Output1Mode,
@@ -388,7 +394,6 @@ struct Divider {
 }
 per_output!(
     Divider,
-    Divider::to_raw,
     [
         Output0Divider,
         Output1Divider,
@@ -410,7 +415,6 @@ struct Skew {
 }
 per_output!(
     Skew,
-    Skew::to_raw,
     [
         Output0Skew,
         Output1Skew,
@@ -434,7 +438,6 @@ struct Polarity {
 }
 per_output!(
     Polarity,
-    Polarity::to_raw,
     [
         Output0Polarity,
         Output1Polarity,
@@ -459,7 +462,6 @@ struct CmosDrive {
 }
 per_output!(
     CmosDrive,
-    CmosDrive::to_raw,
     [
         Output0Drive,
         Output1Drive,
@@ -508,10 +510,6 @@ impl IndexedRegister for SpreadSpectrum {
             SpreadBank::Id1b => Reg::Id1bSpreadSpectrum,
         }
     }
-
-    fn to_byte(self) -> u8 {
-        self.to_raw()
-    }
 }
 
 /// Powers down input-side blocks (libusdr's `B9_*`). Register 0xB9.
@@ -534,7 +532,10 @@ struct InputPowerDown {
     #[bits(0..=0)]
     oscillator: bool,
 }
-bitfield_register!(InputPowerDown => Reg::InputPowerDown);
+impl Register for InputPowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::InputPowerDown;
+}
 
 /// Powers down dividers (libusdr's `BA_*`). Register 0xBA.
 #[bitfield(u8)]
@@ -562,7 +563,10 @@ struct DividerPowerDown {
     #[bits(0..=0)]
     high_speed0: bool,
 }
-bitfield_register!(DividerPowerDown => Reg::DividerPowerDown);
+impl Register for DividerPowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::DividerPowerDown;
+}
 
 /// Powers down output source selectors (libusdr's `BB_*`). Register 0xBB.
 #[bitfield(u8)]
@@ -587,7 +591,10 @@ struct SourcePowerDown {
     #[bits(0..=0)]
     output0: bool,
 }
-bitfield_register!(SourcePowerDown => Reg::SourcePowerDown);
+impl Register for SourcePowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::SourcePowerDown;
+}
 
 /// Powers down output buffers 0..=3 (libusdr's `BC_*`). Register 0xBC.
 #[bitfield(u8)]
@@ -606,7 +613,10 @@ struct Output0to3PowerDown {
     #[bits(0..=0)]
     output0: bool,
 }
-bitfield_register!(Output0to3PowerDown => Reg::Output0to3PowerDown);
+impl Register for Output0to3PowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Output0to3PowerDown;
+}
 
 /// Powers down output buffers 4 and 5 (libusdr's `BD_*`). Register 0xBD.
 #[bitfield(u8)]
@@ -619,7 +629,10 @@ struct Output4and5PowerDown {
     #[bits(1..=1)]
     output4: bool,
 }
-bitfield_register!(Output4and5PowerDown => Reg::Output4and5PowerDown);
+impl Register for Output4and5PowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Output4and5PowerDown;
+}
 
 /// Extra crystal load capacitance. `XOSC_CINT_ENA`, 0xBF.
 #[bitfield(u8)]
@@ -629,7 +642,10 @@ struct CrystalLoad {
     #[bits(7..=7)]
     extra_8pf: bool,
 }
-bitfield_register!(CrystalLoad => Reg::CrystalLoad);
+impl Register for CrystalLoad {
+    type Map = Reg;
+    const ADDR: Reg = Reg::CrystalLoad;
+}
 
 /// A crystal pin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -658,10 +674,6 @@ impl IndexedRegister for CrystalTrim {
             CrystalPin::Xa => Reg::CrystalTrimXa,
             CrystalPin::Xb => Reg::CrystalTrimXb,
         }
-    }
-
-    fn to_byte(self) -> u8 {
-        self.to_raw()
     }
 }
 

@@ -4,7 +4,7 @@
 use bnb::{BitEnum, bitfield, u2, u4};
 
 use super::spi::BlockReg;
-use crate::chips::register::bitfield_register;
+use crate::chips::register::Register;
 
 /// TX RF register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,7 +49,10 @@ pub(super) struct PaSelect {
     #[bits(2..=2)]
     aux_pa_off: bool,
 }
-bitfield_register!(PaSelect => Reg::PaSelect);
+impl Register for PaSelect {
+    type Map = Reg;
+    const ADDR: Reg = Reg::PaSelect;
+}
 
 /// TX LO buffer current and amplifier cascode bias, which trade current for linearity.
 /// Datasheet `CTRL4`, register 0x47.
@@ -65,4 +68,7 @@ pub(super) struct Bias {
     #[bits(0..=3)]
     cascode_bias: u4,
 }
-bitfield_register!(Bias => Reg::Bias);
+impl Register for Bias {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Bias;
+}

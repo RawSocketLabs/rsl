@@ -5,7 +5,7 @@
 
 use bnb::{BitEnum, bitfield, u2, u4};
 
-use super::register::{I2cRegisters, IndexedRegister, bitfield_register};
+use super::register::{I2cRegisters, IndexedRegister, Register};
 use crate::error::Error;
 use crate::lowlevel::{Bus, I2cAddr};
 
@@ -59,7 +59,10 @@ struct Control {
     #[bits(0..=1)]
     ramp_rate: RampRate,
 }
-bitfield_register!(Control => Reg::Control);
+impl Register for Control {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Control;
+}
 
 /// Manufacturer and silicon revision. `DEVID`, §8.6.1.4 (read-only).
 #[bitfield(u8)]
@@ -75,7 +78,10 @@ struct DeviceId {
     #[bits(0..=1)]
     minor: u2,
 }
-bitfield_register!(DeviceId => Reg::DeviceId);
+impl Register for DeviceId {
+    type Map = Reg;
+    const ADDR: Reg = Reg::DeviceId;
+}
 
 /// Which output-voltage register, chosen by the VSEL pin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,9 +132,11 @@ impl IndexedRegister for OutputVoltage {
             Vsel::High => Reg::VoltageVselHigh,
         }
     }
+}
 
-    fn to_byte(self) -> u8 {
-        self.0
+impl From<OutputVoltage> for u8 {
+    fn from(value: OutputVoltage) -> Self {
+        value.0
     }
 }
 

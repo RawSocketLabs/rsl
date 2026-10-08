@@ -4,7 +4,7 @@
 use bnb::{BitEnum, bitfield, u4};
 
 use super::spi::BlockReg;
-use crate::chips::register::bitfield_register;
+use crate::chips::register::Register;
 
 /// Top-level register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,7 +34,10 @@ pub(super) struct ChipId {
     #[bits(0..=3)]
     revision: u4,
 }
-bitfield_register!(ChipId => Reg::ChipId);
+impl Register for ChipId {
+    type Map = Reg;
+    const ADDR: Reg = Reg::ChipId;
+}
 
 /// Which top-level blocks are powered, and how the SPI port is wired. Datasheet `ENCFG`,
 /// register 0x05.
@@ -62,7 +65,10 @@ pub(super) struct EnableConfig {
     #[bits(1..=1)]
     four_wire_spi: bool,
 }
-bitfield_register!(EnableConfig => Reg::EnableConfig);
+impl Register for EnableConfig {
+    type Map = Reg;
+    const ADDR: Reg = Reg::EnableConfig;
+}
 
 /// Clock gates for the PLL modulators' SPI and the calibration blocks, and the RX output
 /// pin switch. Datasheet `ENREG`, register 0x09.
@@ -95,7 +101,10 @@ pub(super) struct ClockEnables {
     #[bits(0..=0)]
     tx_pll_modulator_clock: bool,
 }
-bitfield_register!(ClockEnables => Reg::ClockEnables);
+impl Register for ClockEnables {
+    type Map = Reg;
+    const ADDR: Reg = Reg::ClockEnables;
+}
 
 /// The reference-clock (XCO) input buffer, the LPF calibration reference, and the RF
 /// loopback switch. Datasheet `POWER`, register 0x0B.
@@ -118,4 +127,7 @@ pub(super) struct ReferencePower {
     #[bits(0..=0)]
     rf_loopback_on: bool,
 }
-bitfield_register!(ReferencePower => Reg::ReferencePower);
+impl Register for ReferencePower {
+    type Map = Reg;
+    const ADDR: Reg = Reg::ReferencePower;
+}

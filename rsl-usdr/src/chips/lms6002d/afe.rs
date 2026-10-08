@@ -3,7 +3,7 @@
 use bnb::{BitEnum, bitfield, u2};
 
 use super::spi::BlockReg;
-use crate::chips::register::bitfield_register;
+use crate::chips::register::Register;
 
 /// AFE register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,4 +62,7 @@ pub(super) struct Interface {
     #[bits(0..=1)]
     clock_non_overlap: ClockNonOverlap,
 }
-bitfield_register!(Interface => Reg::Interface);
+impl Register for Interface {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Interface;
+}
