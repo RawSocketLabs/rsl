@@ -1,46 +1,15 @@
-//! Power-up and power-down (`usdr_init` and `usdr_dtor` in `device/m2_lm6_1/usdr_ctrl.c`).
+//! Power-up and power-down (`usdr_init` and `usdr_dtor` in `device/m2_lm6_1/usdr_ctrl.c`):
+//! `Identified` before power, then `impl Board`.
 
 use std::time::Duration;
 
+use super::Board;
 use crate::chips::lms6002d::{Lms6002d, RxPath, TxPath};
-use crate::chips::lp8758::{Buck, BuckControl, BuckVout, Config, Lp8758};
-use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
-use crate::chips::tmp114::Tmp114;
-use crate::chips::tps6381x::{Tps6381x, Vout};
+use crate::chips::lp8758::{Buck, BuckControl, BuckVout, Config};
+use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::{BusContext, Error};
 use crate::fpga::{Gpi, Gpo, Hwid};
-use crate::lowlevel::{Bus, I2cAddr, SpiAddr};
-
-/// The LP8758 PMIC.
-const PMIC: Lp8758 = Lp8758::at(I2cAddr { bus: 0, addr: 0x60 });
-/// The TMP114 temperature sensor (revision 3).
-const TEMP: Tmp114 = Tmp114::at(I2cAddr { bus: 0, addr: 0x4e });
-/// The Si5332 clock generator.
-const CLOCK: Si5332 = Si5332::at(I2cAddr { bus: 0, addr: 0x6a });
-/// The TPS63811 boost converter.
-const BOOST: Tps6381x = Tps6381x::at(I2cAddr { bus: 0, addr: 0x75 });
-/// The LMS6002D.
-const SPI_LMS6: SpiAddr = SpiAddr(0);
-
-/// The PMIC revision libusdr accepts.
-const PMIC_REVISION: u16 = 0xe001;
-/// GPIO bank voltage, compatible with xSDR.
-const VGPIO_MV: u32 = 1800;
-/// LMS6002D I/O rail at normal sample rates.
-const LMS_VIO_NORMAL_MV: u32 = 1800;
-/// Boost converter output, 3.45 V.
-const BOOST_VOUT: Vout = Vout::from_millivolts(3450);
-
-/// A powered uSDR board.
-#[derive(Debug)]
-pub(crate) struct Board {
-    /// The RF transceiver.
-    #[expect(
-        dead_code,
-        reason = "tuning and bandwidth, the next ported operations, use it"
-    )]
-    lms: Lms6002d,
-}
+use crate::lowlevel::Bus;
 
 /// A board identified and held in reset, before anything is powered: where the thermal
 /// policy decides whether to continue.
@@ -86,7 +55,7 @@ impl Board {
         let rev3 = revision == 3;
         Gpo::LmsReset.set(bus, 0)?;
         if rev3 {
-            TEMP.check_id(bus)?;
+            Self::TEMP.check_id(bus)?;
         }
         Ok(Identified { rev3 })
     }
@@ -99,7 +68,7 @@ impl Board {
     /// closed if no sensor answers. Assumed, not verified: the sensor has completed a
     /// conversion by then (its result register reads 0 °C until the first one).
     pub(crate) fn temperature(bus: &mut dyn Bus) -> Result<f32, Error> {
-        TEMP.celsius(bus)
+        Self::TEMP.celsius(bus)
     }
 
     /// Confirms a TMP114 answers before its readings are trusted. Revision 3 already
@@ -112,27 +81,24 @@ impl Board {
         if identified.rev3 {
             return Ok(());
         }
-        TEMP.check_id(bus)
+        Self::TEMP.check_id(bus)
     }
 
     /// Checks the PMIC and boost converter and brings up their rails.
     fn power_rails(bus: &mut dyn Bus) -> Result<(), Error> {
-        let revision = PMIC.revision(bus)?;
-        if revision != PMIC_REVISION {
-            return Err(Error::ChipId {
-                chip: "LP8758",
-                expected: PMIC_REVISION.into(),
-                found: revision.into(),
-            });
-        }
-        PMIC.configure(bus, Config::SoftStartOff)?;
-        PMIC.set_vout(bus, Buck::B1, BuckVout::from_millivolts(VGPIO_MV))?;
-        PMIC.set_vout(bus, Buck::B3, BuckVout::from_millivolts(LMS_VIO_NORMAL_MV))?;
+        Self::PMIC.check_revision(bus)?;
+        Self::PMIC.configure(bus, Config::SoftStartOff)?;
+        Self::PMIC.set_vout(bus, Buck::B1, BuckVout::from_millivolts(Self::VGPIO_MV))?;
+        Self::PMIC.set_vout(
+            bus,
+            Buck::B3,
+            BuckVout::from_millivolts(Self::LMS_VIO_NORMAL_MV),
+        )?;
         // 1.0 V, 2.5 V, 1.2 V and 1.8 V rails, forced PWM.
         for buck in Buck::ALL {
-            PMIC.control(bus, buck, BuckControl::EnabledForcedPwm)?;
+            Self::PMIC.control(bus, buck, BuckControl::EnabledForcedPwm)?;
         }
-        BOOST.init(bus, true, BOOST_VOUT)
+        Self::BOOST.init(bus, true, Self::BOOST_VOUT)
     }
 
     /// Programs the clock generator; on revision 3, then starts the on-board oscillator.
@@ -144,9 +110,9 @@ impl Board {
     /// absent Si5332 still fails, a deliberate divergence.
     fn start_clocks(bus: &mut dyn Bus, rev3: bool) -> Result<(), Error> {
         if !rev3 {
-            return CLOCK.init(bus, 1, Reference::Input2, LvpeclOutput::Out1);
+            return Self::CLOCK.init(bus, 1, Reference::Input2, LvpeclOutput::Out1);
         }
-        let clock = CLOCK.init(bus, 1, Reference::Oscillator, LvpeclOutput::Out0);
+        let clock = Self::CLOCK.init(bus, 1, Reference::Oscillator, LvpeclOutput::Out0);
         let oscillator = Gpo::EnableOscillator.set(bus, 1);
         bus.sleep(Duration::from_millis(1));
         match clock {
@@ -161,9 +127,10 @@ impl Board {
         Gpo::Led.set(bus, 1)?;
         Gpo::LmsReset.set(bus, 1)?;
         // libusdr reads the RF chip ID once here for its log, then again in create.
-        bus.spi32(SPI_LMS6, 0x0400).during("LMS6002D ID read")?;
+        bus.spi32(Self::SPI_LMS6, 0x0400)
+            .during("LMS6002D ID read")?;
         bus.sleep(Duration::from_millis(1));
-        Lms6002d::create(bus, SPI_LMS6)
+        Lms6002d::create(bus, Self::SPI_LMS6)
     }
 
     /// Puts the transceiver in its idle configuration: both chains off, wideband RX and

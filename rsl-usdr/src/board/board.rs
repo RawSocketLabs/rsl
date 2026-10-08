@@ -1,0 +1,40 @@
+//! The `m2_lm6_1` board: its state, how its chips are wired, and its supply setpoints.
+//! The sequences that drive it are `impl Board` blocks in sibling modules.
+
+use crate::chips::lms6002d::Lms6002d;
+use crate::chips::lp8758::Lp8758;
+use crate::chips::si5332::Si5332;
+use crate::chips::tmp114::Tmp114;
+use crate::chips::tps6381x::{Tps6381x, Vout};
+use crate::lowlevel::{I2cAddr, SpiAddr};
+
+/// A powered uSDR board.
+#[derive(Debug)]
+pub(crate) struct Board {
+    /// The RF transceiver.
+    #[expect(
+        dead_code,
+        reason = "tuning and bandwidth, the next ported operations, use it"
+    )]
+    pub(super) lms: Lms6002d,
+}
+
+impl Board {
+    /// The LP8758 PMIC.
+    pub(super) const PMIC: Lp8758 = Lp8758::at(I2cAddr { bus: 0, addr: 0x60 });
+    /// The TMP114 temperature sensor.
+    pub(super) const TEMP: Tmp114 = Tmp114::at(I2cAddr { bus: 0, addr: 0x4e });
+    /// The Si5332 clock generator.
+    pub(super) const CLOCK: Si5332 = Si5332::at(I2cAddr { bus: 0, addr: 0x6a });
+    /// The TPS63811 boost converter.
+    pub(super) const BOOST: Tps6381x = Tps6381x::at(I2cAddr { bus: 0, addr: 0x75 });
+    /// The LMS6002D's SPI target.
+    pub(super) const SPI_LMS6: SpiAddr = SpiAddr(0);
+
+    /// GPIO bank voltage (PMIC buck 1), compatible with xSDR.
+    pub(super) const VGPIO_MV: u32 = 1800;
+    /// LMS6002D I/O rail (PMIC buck 3) at normal sample rates.
+    pub(super) const LMS_VIO_NORMAL_MV: u32 = 1800;
+    /// Boost converter output, 3.45 V.
+    pub(super) const BOOST_VOUT: Vout = Vout::from_millivolts(3450);
+}
