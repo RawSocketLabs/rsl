@@ -144,8 +144,6 @@ def owners(path, graph):
         return {max(matches, key=len)}
     if path.startswith("bitsandbytes/"):
         return {BNB, MACROS} & graph.keys()
-    if path.startswith("rsl-usdr/"):
-        return {"rsl-usdr/sim", USDR_ORACLE} & graph.keys()
     return set()
 
 

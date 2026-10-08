@@ -11,6 +11,8 @@ use crate::trace::Op;
 const REG_GPO: u32 = 0;
 /// Bit 31 of a [`REG_GPO`] write selects the I2C LUT.
 const GPO_I2C_LUT: u32 = 1 << 31;
+/// General-purpose output bank enabling the revision-3 on-board oscillator.
+const GPO_ENABLE_OSC: u8 = 17;
 /// General-purpose input bank 3: the hardware ID.
 const REG_GPI_HWID: u32 = 16 + 3;
 /// HWID bits 25:24: the board has RX and TX chains.
@@ -90,6 +92,8 @@ pub struct SimBoard {
     boost: Reg8File,
     /// The Si5332 clock generator.
     clock: Si5332,
+    /// The Si5332's reference stays off until [`GPO_ENABLE_OSC`] is set.
+    oscillator_gated: bool,
     /// The TMP114 temperature sensor.
     temp: Tmp114,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
@@ -112,10 +116,20 @@ impl SimBoard {
             // DEVID (0x03) reads 4.
             boost: Reg8File::with_resets(&[(0x03, 0x04)]),
             clock: Si5332::new(),
+            oscillator_gated: false,
             temp: Tmp114::new(25_000),
             now_us: 0,
             trace: Vec::new(),
         }
+    }
+
+    /// A board whose clock generator has no input until the driver enables the on-board
+    /// oscillator (GPO 17), as on a cold revision-3 board: until then the Si5332 reports
+    /// "no input clock".
+    #[must_use]
+    pub fn with_oscillator_off(mut self) -> Self {
+        self.oscillator_gated = true;
+        self
     }
 
     /// Writes a 32-bit FPGA register.
@@ -157,7 +171,11 @@ impl SimBoard {
         let chip: Option<&mut dyn I2cChip> = match addr {
             I2C_PMIC => Some(&mut self.pmic),
             I2C_TEMP => Some(&mut self.temp),
-            I2C_CLOCK => Some(&mut self.clock),
+            I2C_CLOCK => {
+                self.clock.input_clock =
+                    !self.oscillator_gated || self.gpo.get(&GPO_ENABLE_OSC) == Some(&1);
+                Some(&mut self.clock)
+            }
             I2C_BOOST => Some(&mut self.boost),
             _ => None,
         };
@@ -255,6 +273,14 @@ mod tests {
         let missing = I2cAddress { bus: 1, addr: 0x10 };
         assert_eq!(board.i2c(missing, &[0], 2), vec![0xff, 0xff]);
         assert_eq!(board.trace().len(), 1);
+    }
+
+    #[test]
+    fn a_gated_oscillator_starves_the_clock_until_enabled() {
+        let mut board = SimBoard::new(BoardRevision::Rev3).with_oscillator_off();
+        assert_eq!(board.i2c(I2C_CLOCK, &[0x07], 1), vec![0x89]);
+        board.write_reg(REG_GPO, u32::from(GPO_ENABLE_OSC) << 24 | 1);
+        assert_eq!(board.i2c(I2C_CLOCK, &[0x07], 1), vec![0x01]);
     }
 
     #[test]

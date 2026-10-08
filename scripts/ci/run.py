@@ -92,8 +92,8 @@ def commands(profile, plan, bnb):
     if profile == "usdr-oracle":
         manifest = ["--manifest-path", f"{USDR_ORACLE}/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--", "--check"],
-                ["cargo", "clippy", *manifest, "--all-targets", "--", "-D", "warnings"],
-                ["cargo", "test", *manifest]]
+                ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "test", *manifest, "--locked"]]
     if profile == "rust-skills":
         manifest = ["--manifest-path", "tools/rust-skills/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--all", "--", "--check"],

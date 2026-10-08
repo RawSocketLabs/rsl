@@ -31,8 +31,9 @@ def fixture():
                             False, ("certificate_parse",)),
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
+        "rsl-usdr": Package("rsl-usdr", {BNB, "rsl-usdr/sim"}),
         "rsl-usdr/sim": Package("rsl-usdr-sim", set()),
-        USDR_ORACLE: Package("rsl-usdr-oracle", {"rsl-usdr/sim"}, False),
+        USDR_ORACLE: Package("rsl-usdr-oracle", {"rsl-usdr", "rsl-usdr/sim"}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -103,9 +104,19 @@ class SelectionTests(unittest.TestCase):
     def test_rustdoc_only_source_edits_are_still_code(self):
         self.assertIn("bnb", planned([f"{BNB}/src/lib.rs"])["profiles"])
 
-    def test_usdr_sim_changes_rerun_the_libusdr_oracle(self):
+    def test_usdr_sim_changes_rerun_the_driver_and_libusdr_oracle(self):
         plan = planned(["rsl-usdr/sim/src/board.rs"])
-        self.assertEqual(plan["packages"], ["rsl-usdr-sim"])
+        self.assertEqual(plan["packages"], ["rsl-usdr", "rsl-usdr-sim"])
+        self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_bnb_changes_rerun_the_usdr_driver_and_oracle(self):
+        plan = planned([f"{BNB}/src/lib.rs"])
+        self.assertIn("rsl-usdr", plan["packages"])
+        self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_usdr_driver_changes_rerun_the_libusdr_oracle(self):
+        plan = planned(["rsl-usdr/src/board/power.rs"])
+        self.assertEqual(plan["packages"], ["rsl-usdr"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_vendored_libusdr_selects_only_the_oracle(self):
@@ -114,7 +125,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("usdr-oracle", plan["profiles"])
         self.assertFalse(plan["full"])
 
-    def test_usdr_port_guide_selects_its_crates_not_full_coverage(self):
+    def test_usdr_driver_guide_selects_its_crates_not_full_coverage(self):
         plan = planned(["rsl-usdr/AGENTS.md"])
         self.assertFalse(plan["full"])
         self.assertIn("usdr-oracle", plan["profiles"])

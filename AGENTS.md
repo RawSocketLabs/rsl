@@ -23,7 +23,7 @@ git-rev pinning.
 | `compression/` | `rsl-compression` | accuracy-first compression algorithms; `no_std + alloc`, zero `unsafe` |
 | `error-correction/` | `rsl-error-correction` | accuracy-first redundancy coding; `no_std + alloc`, zero `unsafe` |
 | `rfus/` | `rfus` | RF/sample-rate parsing |
-| `rsl-usdr/sim`, `rsl-usdr/oracle` | `rsl-usdr-sim`, `rsl-usdr-oracle` | unpublished test reference for the pure-Rust uSDR port; the oracle is **excluded** (compiles vendored libusdr C) |
+| `rsl-usdr/`, `rsl-usdr/sim`, `rsl-usdr/oracle` | `rsl-usdr`, `rsl-usdr-sim`, `rsl-usdr-oracle` | pure-Rust uSDR driver (unpublished until parity), its board simulator, and the libusdr parity oracle (its own workspace: compiles vendored C) |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rsl-netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `rsl-deps/` | `rsl-deps` | blessed external-dependency stack |
