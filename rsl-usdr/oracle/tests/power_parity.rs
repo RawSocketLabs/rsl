@@ -45,8 +45,42 @@ fn without_frontend_probe(trace: &[Op]) -> Vec<Op> {
     [&trace[..end_of_init], &trace[power_down..]].concat()
 }
 
+/// The TMP114.
+const TEMP: I2cAddress = I2cAddress { bus: 0, addr: 0x4e };
+/// The LP8758 PMIC.
+const PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
+
+/// rsl-usdr's trace without its thermal gate.
+///
+/// Intentional addition: before the first PMIC operation rsl-usdr reads the TMP114
+/// temperature register, and on revisions 1 and 2 first checks the TMP114 ID (libusdr
+/// checks it only on revision 3). The gate must sit exactly there, so a misplaced or
+/// extra temperature read still fails the comparison.
+fn without_thermal_gate(trace: &[Op], revision: BoardRevision) -> Vec<Op> {
+    let gate_len = if revision == BoardRevision::Rev3 {
+        1
+    } else {
+        2
+    };
+    let first_pmic_op = trace
+        .iter()
+        .position(|op| matches!(op, Op::I2c { addr, .. } if *addr == PMIC))
+        .expect("power-up reaches the PMIC");
+    let gate = &trace[first_pmic_op - gate_len..first_pmic_op];
+    assert!(
+        matches!(gate.last(), Some(Op::I2c { addr, write, .. }) if *addr == TEMP && write[..] == [0x00]),
+        "the gate ends in one temperature read: {gate:x?}"
+    );
+    assert!(
+        gate.iter()
+            .all(|op| matches!(op, Op::I2c { addr, .. } if *addr == TEMP)),
+        "the gate only talks to the TMP114: {gate:x?}"
+    );
+    [&trace[..first_pmic_op - gate_len], &trace[first_pmic_op..]].concat()
+}
+
 /// Power-cycles fresh copies of a board through libusdr and rsl-usdr and compares traces.
-fn assert_power_cycle_matches(board: impl Fn() -> SimBoard) {
+fn assert_power_cycle_matches(revision: BoardRevision, board: impl Fn() -> SimBoard) {
     let reference = Oracle::open(board())
         .expect("libusdr opens the board")
         .close();
@@ -58,7 +92,7 @@ fn assert_power_cycle_matches(board: impl Fn() -> SimBoard) {
         .expect("rsl-usdr powers down");
 
     let expected = without_frontend_probe(reference.trace());
-    let actual = sim.board().trace().to_vec();
+    let actual = without_thermal_gate(sim.board().trace(), revision);
     if let Some(i) = expected.iter().zip(&actual).position(|(e, a)| e != a) {
         panic!(
             "first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
@@ -74,22 +108,24 @@ fn assert_power_cycle_matches(board: impl Fn() -> SimBoard) {
 
 #[test]
 fn rev1_power_cycle_matches_libusdr() {
-    assert_power_cycle_matches(|| SimBoard::new(BoardRevision::Rev1));
+    assert_power_cycle_matches(BoardRevision::Rev1, || SimBoard::new(BoardRevision::Rev1));
 }
 
 #[test]
 fn rev2_power_cycle_matches_libusdr() {
-    assert_power_cycle_matches(|| SimBoard::new(BoardRevision::Rev2));
+    assert_power_cycle_matches(BoardRevision::Rev2, || SimBoard::new(BoardRevision::Rev2));
 }
 
 #[test]
 fn rev3_power_cycle_matches_libusdr() {
-    assert_power_cycle_matches(|| SimBoard::new(BoardRevision::Rev3));
+    assert_power_cycle_matches(BoardRevision::Rev3, || SimBoard::new(BoardRevision::Rev3));
 }
 
 /// The clock generator reports no input until the oscillator is enabled after it is
 /// programmed; libusdr carries on, and so must rsl-usdr.
 #[test]
 fn rev3_cold_oscillator_power_cycle_matches_libusdr() {
-    assert_power_cycle_matches(|| SimBoard::new(BoardRevision::Rev3).with_oscillator_off());
+    assert_power_cycle_matches(BoardRevision::Rev3, || {
+        SimBoard::new(BoardRevision::Rev3).with_oscillator_off()
+    });
 }

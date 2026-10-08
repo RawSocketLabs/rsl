@@ -4,7 +4,10 @@
 
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
 TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
-over both the USB and PCIe transports. Ported so far: board power-up and power-down.
+over both the USB and PCIe transports. Ported so far: board power-up and power-down,
+temperature reading. Added beyond libusdr: the thermal policy (`src/thermal.rs`), which gates
+start-up before anything is powered and has a 110 °C hard stop no policy can lift. Parity
+tests strip its TMP114 temperature reads, an intentional addition.
 
 | Path | Crate | Role |
 |------|-------|------|
@@ -17,6 +20,8 @@ over both the USB and PCIe transports. Ported so far: board power-up and power-d
 Each layer calls only the ones below it.
 
 - `src/device.rs`: `Device`, the public API. It owns the bus and the board state.
+- `src/thermal.rs`: the public thermal policy. `Device` applies it between
+  `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). Board wiring constants
   (I2C addresses, SPI targets) live here.
 - `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths,
