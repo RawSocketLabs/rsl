@@ -50,7 +50,16 @@ Each layer calls only the ones below it.
 - Intentional divergences from libusdr are whitelisted per test scenario, never by masking a
   register globally. The first planned one is the band-crossing fix: gate Si5332 port 3
   without cycling USYS_CTRL through READY, instead of libusdr's close/reopen.
-- Register layouts in the driver use `bnb` bitfields.
+- Registers are typed (`src/chips/register.rs`). Each chip has a `Reg` enum naming every
+  address it touches, so no raw address appears.
+  - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
+    or a `BitEnum` with a catch-all for whole-byte values. It implements `Register`, or
+    `IndexedRegister` when the chip repeats it per channel or output.
+  - Opaque bytes, such as undocumented registers and tuning constants, stay `(Reg, u8)`
+    writes.
+  - 16-bit registers (TMP114) use `Reg` plus a value enum, without the traits.
+  - Field names and values come from libusdr's generated headers or its C enums; do not
+    invent fields the source does not document.
 - `sim` stays an unpublished crate, not a feature of the driver.
 
 ## Verify

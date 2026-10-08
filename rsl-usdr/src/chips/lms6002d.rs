@@ -5,8 +5,9 @@
 //! Several registers are write-only from the driver's point of view, so the driver keeps
 //! the values it last wrote and updates fields in them.
 
-use bnb::{bitfield, u2, u3, u4, u7};
+use bnb::{BitEnum, bitfield, u2, u3, u4, u7};
 
+use super::register::{Register, bitfield_register};
 use crate::error::{BusContext, Error};
 use crate::lowlevel::{Bus, SpiAddr};
 
@@ -26,45 +27,61 @@ struct SpiWord {
 }
 
 impl SpiWord {
-    /// A write of `value` to `reg`.
-    fn write_reg(reg: u8, value: u8) -> Self {
+    /// A write of a raw byte to `reg`.
+    fn store_raw(reg: Reg, value: u8) -> Self {
         Self::new()
             .with_write(true)
-            .with_addr(u7::new(reg))
+            .with_addr(u7::new(reg.into()))
             .with_data(value)
+    }
+
+    /// A write of a typed register.
+    fn store<R: Register<Map = Reg>>(value: R) -> Self {
+        Self::store_raw(R::ADDR, value.to_byte())
+    }
+
+    /// A read of `reg`.
+    fn load(reg: Reg) -> Self {
+        Self::new().with_addr(u7::new(reg.into()))
     }
 }
 
-/// Chip version and revision.
-const TOP_CHIPID: u8 = 0x04;
-/// Top-level enables; see [`TopEncfg`].
-const TOP_ENCFG: u8 = 0x05;
-/// Clock enables; see [`TopEnreg`].
-const TOP_ENREG: u8 = 0x09;
-/// Crystal buffer and reference control; see [`TopPower`].
-const TOP_POWER: u8 = 0x0b;
-/// TX PLL VCO regulator and PFD up-offset.
-const TXPLL_VCO_REG_PFD_U: u8 = 0x17;
-/// RX VCO, divider range and output buffer; see [`RxpllVcoDivBufsel`].
-const RXPLL_VCO_DIV_BUFSEL: u8 = 0x25;
-/// RX PLL VCO regulator and PFD up-offset.
-const RXPLL_VCO_REG_PFD_U: u8 = 0x27;
-/// TX power amplifier selection; see [`TrfPaCtrl`].
-const TRF_PA_CTRL: u8 = 0x44;
-/// TX LO buffer and driver bias.
-const TRF_CTRL4: u8 = 0x47;
-/// RX ADC gain, common mode and buffer boost.
-const AFE_RX_CTRL2: u8 = 0x59;
-/// ADC/DAC interface polarity, IQ order and clock edges.
-const AFE_MISC_CTRL: u8 = 0x5a;
-/// RX VGA2 enable and common mode.
-const RXVGA2_CTRL: u8 = 0x64;
-/// RX front-end enable.
-const RFE_CTRL: u8 = 0x70;
-/// LNA gain and selection; see [`RfeGainLnaSel`].
-const RFE_GAIN_LNA_SEL: u8 = 0x75;
-/// LNA load resistor.
-const RFE_RDLINT_LNA: u8 = 0x79;
+/// Register addresses.
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u8, closed)]
+#[repr(u8)]
+enum Reg {
+    /// Chip version and revision.
+    TopChipId = 0x04,
+    /// Top-level enables; see [`TopEncfg`].
+    TopEncfg = 0x05,
+    /// Clock enables; see [`TopEnreg`].
+    TopEnreg = 0x09,
+    /// Crystal buffer and reference control; see [`TopPower`].
+    TopPower = 0x0b,
+    /// TX PLL VCO regulator and PFD up-offset.
+    TxpllVcoRegPfdU = 0x17,
+    /// RX VCO, divider range and output buffer; see [`RxpllVcoDivBufsel`].
+    RxpllVcoDivBufsel = 0x25,
+    /// RX PLL VCO regulator and PFD up-offset.
+    RxpllVcoRegPfdU = 0x27,
+    /// TX power amplifier selection; see [`TrfPaCtrl`].
+    TrfPaCtrl = 0x44,
+    /// TX LO buffer and driver bias.
+    TrfCtrl4 = 0x47,
+    /// RX ADC gain, common mode and buffer boost.
+    AfeRxCtrl2 = 0x59,
+    /// ADC/DAC interface polarity, IQ order and clock edges.
+    AfeMiscCtrl = 0x5a,
+    /// RX VGA2 enable and common mode.
+    Rxvga2Ctrl = 0x64,
+    /// RX front-end enable.
+    RfeCtrl = 0x70,
+    /// LNA gain and selection; see [`RfeGainLnaSel`].
+    RfeGainLnaSel = 0x75,
+    /// LNA load resistor.
+    RfeRdlintLna = 0x79,
+}
 
 /// `TOP_ENCFG`: top-level enables.
 #[bitfield(u8)]
@@ -89,6 +106,7 @@ struct TopEncfg {
     #[bits(1..=1)]
     tfwmode: bool,
 }
+bitfield_register!(TopEncfg => Reg::TopEncfg);
 
 /// `TOP_ENREG`: clock enables.
 #[bitfield(u8)]
@@ -119,6 +137,7 @@ struct TopEnreg {
     #[bits(0..=0)]
     clk_tx_dsm_spi: bool,
 }
+bitfield_register!(TopEnreg => Reg::TopEnreg);
 
 /// `TOP_POWER`: crystal buffer and reference control.
 #[bitfield(u8)]
@@ -140,6 +159,7 @@ struct TopPower {
     #[bits(0..=0)]
     pu_rflb: bool,
 }
+bitfield_register!(TopPower => Reg::TopPower);
 
 /// `RXPLL_VCO_DIV_BUFSEL`: RX VCO, frequency range and output buffer.
 #[bitfield(u8)]
@@ -155,6 +175,7 @@ struct RxpllVcoDivBufsel {
     #[bits(0..=1)]
     selout: u2,
 }
+bitfield_register!(RxpllVcoDivBufsel => Reg::RxpllVcoDivBufsel);
 
 /// `RFE_GAIN_LNA_SEL`: LNA gain and selection.
 #[bitfield(u8)]
@@ -170,6 +191,7 @@ struct RfeGainLnaSel {
     #[bits(0..=3)]
     cbe_lna: u4,
 }
+bitfield_register!(RfeGainLnaSel => Reg::RfeGainLnaSel);
 
 /// `TRF_PA_CTRL`: TX power amplifier selection.
 #[bitfield(u8)]
@@ -182,6 +204,7 @@ struct TrfPaCtrl {
     #[bits(2..=2)]
     enaux: bool,
 }
+bitfield_register!(TrfPaCtrl => Reg::TrfPaCtrl);
 
 /// The RX input path: which LNA, and the matching PLL output buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,31 +251,29 @@ impl Lms6002d {
             lna_sel: RfeGainLnaSel::from_raw(0xc0),
             pa_ctrl: TrfPaCtrl::new(),
         };
-        let chip_id = lms.read(bus, TOP_CHIPID)?;
+        let chip_id = lms.read(bus, Reg::TopChipId)?;
         lms.post(
             bus,
             &[
-                SpiWord::write_reg(TOP_ENCFG, TopEncfg::new().with_tfwmode(true).to_raw()),
-                SpiWord::write_reg(TOP_ENCFG, lms.top_encfg.to_raw()),
-                SpiWord::write_reg(TOP_ENREG, lms.top_enreg.to_raw()),
+                SpiWord::store(TopEncfg::new().with_tfwmode(true)),
+                SpiWord::store(lms.top_encfg),
+                SpiWord::store(lms.top_enreg),
                 // Crystal buffer self-biased, LPF calibration reference off.
-                SpiWord::write_reg(
-                    TOP_POWER,
+                SpiWord::store(
                     TopPower::new()
                         .with_slfbxcobuf(true)
-                        .with_pd_dcoref_lpfcal(true)
-                        .to_raw(),
+                        .with_pd_dcoref_lpfcal(true),
                 ),
-                SpiWord::write_reg(TXPLL_VCO_REG_PFD_U, 0xe0),
-                SpiWord::write_reg(RXPLL_VCO_REG_PFD_U, 0xe3),
-                SpiWord::write_reg(RFE_CTRL, 0x01),
+                SpiWord::store_raw(Reg::TxpllVcoRegPfdU, 0xe0),
+                SpiWord::store_raw(Reg::RxpllVcoRegPfdU, 0xe3),
+                SpiWord::store_raw(Reg::RfeCtrl, 0x01),
                 // Lime FAQ v1.0r12, 5.27.
-                SpiWord::write_reg(TRF_CTRL4, 0x40),
-                SpiWord::write_reg(AFE_RX_CTRL2, 0x29),
-                SpiWord::write_reg(RXVGA2_CTRL, 0x36),
-                SpiWord::write_reg(RFE_RDLINT_LNA, 0x37),
+                SpiWord::store_raw(Reg::TrfCtrl4, 0x40),
+                SpiWord::store_raw(Reg::AfeRxCtrl2, 0x29),
+                SpiWord::store_raw(Reg::Rxvga2Ctrl, 0x36),
+                SpiWord::store_raw(Reg::RfeRdlintLna, 0x37),
                 // IQ order, negative polarity.
-                SpiWord::write_reg(AFE_MISC_CTRL, 0xb0),
+                SpiWord::store_raw(Reg::AfeMiscCtrl, 0xb0),
             ],
         )?;
         // libusdr checks the ID only after configuring.
@@ -284,8 +305,8 @@ impl Lms6002d {
         self.post(
             bus,
             &[
-                SpiWord::write_reg(RXPLL_VCO_DIV_BUFSEL, self.rxpll_bufsel.to_raw()),
-                SpiWord::write_reg(RFE_GAIN_LNA_SEL, self.lna_sel.to_raw()),
+                SpiWord::store(self.rxpll_bufsel),
+                SpiWord::store(self.lna_sel),
             ],
         )
     }
@@ -294,10 +315,7 @@ impl Lms6002d {
     pub(crate) fn set_tx_path(&mut self, bus: &mut dyn Bus, path: TxPath) -> Result<(), Error> {
         self.pa_ctrl.set_en12(u2::new(path as u8));
         self.pa_ctrl.set_enaux(false);
-        self.post(
-            bus,
-            &[SpiWord::write_reg(TRF_PA_CTRL, self.pa_ctrl.to_raw())],
-        )
+        self.post(bus, &[SpiWord::store(self.pa_ctrl)])
     }
 
     /// Writes `TOP_ENREG` then `TOP_ENCFG` from the cached values.
@@ -305,17 +323,16 @@ impl Lms6002d {
         self.post(
             bus,
             &[
-                SpiWord::write_reg(TOP_ENREG, self.top_enreg.to_raw()),
-                SpiWord::write_reg(TOP_ENCFG, self.top_encfg.to_raw()),
+                SpiWord::store(self.top_enreg),
+                SpiWord::store(self.top_encfg),
             ],
         )
     }
 
     /// Reads one register.
-    fn read(&self, bus: &mut dyn Bus, reg: u8) -> Result<u8, Error> {
-        let word = SpiWord::new().with_addr(u7::new(reg));
+    fn read(&self, bus: &mut dyn Bus, reg: Reg) -> Result<u8, Error> {
         let read = bus
-            .spi32(self.target, word.to_raw().into())
+            .spi32(self.target, SpiWord::load(reg).to_raw().into())
             .during("LMS6002D read")?;
         Ok(read.to_le_bytes()[0])
     }
