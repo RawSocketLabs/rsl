@@ -704,6 +704,12 @@ impl Si5332 {
         }
     }
 
+    /// The clock generator where the uSDR wires it: FPGA I2C bus 0, address 0x6A
+    /// (`I2C_DEV_CLKGEN` in libusdr).
+    pub(crate) const fn usdr() -> Self {
+        Self::at(I2cAddr::new(0, 0x6a))
+    }
+
     /// Identifies the chip and programs its power-up output plan (`si5332_init`), with
     /// output 0 divided by `div`.
     pub(crate) fn init(

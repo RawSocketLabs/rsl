@@ -200,6 +200,12 @@ impl Lp8758 {
         }
     }
 
+    /// The PMIC where the uSDR wires it: FPGA I2C bus 0, the LP8758-E0's address 0x60
+    /// (SNVSAC6B; `I2C_DEV_PMIC_FPGA` in libusdr).
+    pub(crate) const fn usdr() -> Self {
+        Self::at(I2cAddr::new(0, 0x60))
+    }
+
     /// Checks the revision, `OTP_REV << 8 | DEV_REV` as libusdr composes it, is the one
     /// libusdr accepts.
     pub(crate) fn check_revision(self, bus: &mut dyn Bus) -> Result<(), Error> {

@@ -17,9 +17,34 @@ pub const I2C_MAX_READ: usize = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct I2cAddr {
     /// FPGA I2C bus number.
-    pub bus: u8,
+    bus: u8,
     /// 7-bit device address.
-    pub addr: u8,
+    addr: u8,
+}
+
+impl I2cAddr {
+    /// The device at 7-bit address `addr` on FPGA I2C bus `bus`.
+    ///
+    /// # Panics
+    ///
+    /// If `addr` does not fit in 7 bits (at compile time when used in a `const`).
+    #[must_use]
+    pub const fn new(bus: u8, addr: u8) -> Self {
+        assert!(addr <= 0x7f, "I2C addresses are 7 bits");
+        Self { bus, addr }
+    }
+
+    /// The FPGA I2C bus number.
+    #[must_use]
+    pub const fn bus(self) -> u8 {
+        self.bus
+    }
+
+    /// The 7-bit device address.
+    #[must_use]
+    pub const fn addr(self) -> u8 {
+        self.addr
+    }
 }
 
 /// An SPI target as libusdr encodes it: bus number in bits 7:0, core configuration in

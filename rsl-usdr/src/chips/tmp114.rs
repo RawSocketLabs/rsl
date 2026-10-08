@@ -51,6 +51,12 @@ impl Tmp114 {
         Self { dev }
     }
 
+    /// The sensor where the uSDR wires it: FPGA I2C bus 0, address 0x4E, the TMP114NB variant's
+    /// fixed address (`I2C_DEV_TMP114NB` in libusdr).
+    pub(crate) const fn usdr() -> Self {
+        Self::at(I2cAddr::new(0, 0x4e))
+    }
+
     /// Reads the temperature in degrees Celsius.
     pub(crate) fn celsius(self, bus: &mut dyn Bus) -> Result<f32, Error> {
         let raw = self.read(bus, Reg::Temperature, "TMP114 temperature read")?;

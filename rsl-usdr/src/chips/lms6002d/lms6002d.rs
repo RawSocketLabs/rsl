@@ -32,6 +32,9 @@ pub(crate) struct Lms6002d {
 }
 
 impl Lms6002d {
+    /// The SPI target where the uSDR wires it: FPGA SPI bus 0 (`SPI_LMS6` in libusdr).
+    pub(crate) const USDR_TARGET: SpiAddr = SpiAddr(0);
+
     /// Reads the chip ID, then writes the power-up configuration (`lms6002d_create`).
     pub(crate) fn create(bus: &mut dyn Bus, target: SpiAddr) -> Result<Self, Error> {
         let lms = Self {
