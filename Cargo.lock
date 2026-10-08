@@ -375,7 +375,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "bitsandbytes"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "arbitrary-int",
  "bitbybit",
@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "bitsandbytes-macros"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
