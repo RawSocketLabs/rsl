@@ -1,0 +1,261 @@
+enum ext_fe_ch4_400_7200_usr_regs_t {
+    RX_FILTER_BANK = 0x50,
+    RX_ATTN = 0x51,
+    ANT_SEL = 0x52,
+    RX_CHEN = 0x53,
+    TX_CHEN = 0x54,
+    TX_2STAGE = 0x55,
+};
+#define MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(a, v) (0x80000000 | ((a) << 24) | ((v) & 0xffffff))
+#define MAKE_EXT_FE_CH4_400_7200_USR_REG_RD(a) (((a) << 24))
+enum ext_fe_ch4_400_7200_usr_rx_filt_opts_t {
+    RX_FILT_OPTS_FILT_50_1000M = 0x0,
+    RX_FILT_OPTS_FILT_1000_2000M = 0x1,
+    RX_FILT_OPTS_FILT_2000_3500M = 0x2,
+    RX_FILT_OPTS_FILT_2500_5000M = 0x3,
+    RX_FILT_OPTS_FILT_3500_7100M = 0x4,
+    RX_FILT_OPTS_AUTO_50_1000M = 0x8,
+    RX_FILT_OPTS_AUTO_1000_2000M = 0x9,
+    RX_FILT_OPTS_AUTO_2000_3500M = 0xa,
+    RX_FILT_OPTS_AUTO_2500_5000M = 0xb,
+    RX_FILT_OPTS_AUTO_3500_7100M = 0xc,
+};
+enum ext_fe_ch4_400_7200_usr_ant_opts_t {
+    ANT_OPTS_RX_TO_RX_AND_TX_TO_TRX = 0x0,
+    ANT_OPTS_RX_TO_TRX_AND_TX_TERM = 0x1,
+    ANT_OPTS_RX_TO_RX_AND_TX_TERM = 0x2,
+    ANT_OPTS_RX_TX_LOOPBACK = 0x3,
+    ANT_OPTS_TDD_DRIVEN_AUTO = 0x4,
+};
+// Register R80 [0x50] -- RX_FILTER_BANK
+enum rx_filter_bank_d_options {
+    RX_FILTER_BANK_D_FILT_50_1000M = 0,
+    RX_FILTER_BANK_D_FILT_1000_2000M = 1,
+    RX_FILTER_BANK_D_FILT_2000_3500M = 2,
+    RX_FILTER_BANK_D_FILT_2500_5000M = 3,
+    RX_FILTER_BANK_D_FILT_3500_7100M = 4,
+    RX_FILTER_BANK_D_AUTO_50_1000M = 8,
+    RX_FILTER_BANK_D_AUTO_1000_2000M = 9,
+    RX_FILTER_BANK_D_AUTO_2000_3500M = 10,
+    RX_FILTER_BANK_D_AUTO_2500_5000M = 11,
+    RX_FILTER_BANK_D_AUTO_3500_7100M = 12,
+};
+enum rx_filter_bank_c_options {
+    RX_FILTER_BANK_C_FILT_50_1000M = 0,
+    RX_FILTER_BANK_C_FILT_1000_2000M = 1,
+    RX_FILTER_BANK_C_FILT_2000_3500M = 2,
+    RX_FILTER_BANK_C_FILT_2500_5000M = 3,
+    RX_FILTER_BANK_C_FILT_3500_7100M = 4,
+    RX_FILTER_BANK_C_AUTO_50_1000M = 8,
+    RX_FILTER_BANK_C_AUTO_1000_2000M = 9,
+    RX_FILTER_BANK_C_AUTO_2000_3500M = 10,
+    RX_FILTER_BANK_C_AUTO_2500_5000M = 11,
+    RX_FILTER_BANK_C_AUTO_3500_7100M = 12,
+};
+enum rx_filter_bank_b_options {
+    RX_FILTER_BANK_B_FILT_50_1000M = 0,
+    RX_FILTER_BANK_B_FILT_1000_2000M = 1,
+    RX_FILTER_BANK_B_FILT_2000_3500M = 2,
+    RX_FILTER_BANK_B_FILT_2500_5000M = 3,
+    RX_FILTER_BANK_B_FILT_3500_7100M = 4,
+    RX_FILTER_BANK_B_AUTO_50_1000M = 8,
+    RX_FILTER_BANK_B_AUTO_1000_2000M = 9,
+    RX_FILTER_BANK_B_AUTO_2000_3500M = 10,
+    RX_FILTER_BANK_B_AUTO_2500_5000M = 11,
+    RX_FILTER_BANK_B_AUTO_3500_7100M = 12,
+};
+enum rx_filter_bank_a_options {
+    RX_FILTER_BANK_A_FILT_50_1000M = 0,
+    RX_FILTER_BANK_A_FILT_1000_2000M = 1,
+    RX_FILTER_BANK_A_FILT_2000_3500M = 2,
+    RX_FILTER_BANK_A_FILT_2500_5000M = 3,
+    RX_FILTER_BANK_A_FILT_3500_7100M = 4,
+    RX_FILTER_BANK_A_AUTO_50_1000M = 8,
+    RX_FILTER_BANK_A_AUTO_1000_2000M = 9,
+    RX_FILTER_BANK_A_AUTO_2000_3500M = 10,
+    RX_FILTER_BANK_A_AUTO_2500_5000M = 11,
+    RX_FILTER_BANK_A_AUTO_3500_7100M = 12,
+};
+
+enum rx_filter_bank_fields_t {
+    RX_FILTER_BANK_D_OFF = 0xc,
+    RX_FILTER_BANK_D_MSK = 0xf000,
+    RX_FILTER_BANK_C_OFF = 0x8,
+    RX_FILTER_BANK_C_MSK = 0xf00,
+    RX_FILTER_BANK_B_OFF = 0x4,
+    RX_FILTER_BANK_B_MSK = 0xf0,
+    RX_FILTER_BANK_A_OFF = 0x0,
+    RX_FILTER_BANK_A_MSK = 0xf,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_D(x) (((x) & RX_FILTER_BANK_D_MSK) >> RX_FILTER_BANK_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_C(x) (((x) & RX_FILTER_BANK_C_MSK) >> RX_FILTER_BANK_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_B(x) (((x) & RX_FILTER_BANK_B_MSK) >> RX_FILTER_BANK_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_A(x) (((x) & RX_FILTER_BANK_A_MSK) >> RX_FILTER_BANK_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_D(p, f) (p) = ((p) & ~RX_FILTER_BANK_D_MSK) | (((f) << RX_FILTER_BANK_D_OFF) & RX_FILTER_BANK_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_C(p, f) (p) = ((p) & ~RX_FILTER_BANK_C_MSK) | (((f) << RX_FILTER_BANK_C_OFF) & RX_FILTER_BANK_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_B(p, f) (p) = ((p) & ~RX_FILTER_BANK_B_MSK) | (((f) << RX_FILTER_BANK_B_OFF) & RX_FILTER_BANK_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK_A(p, f) (p) = ((p) & ~RX_FILTER_BANK_A_MSK) | (((f) << RX_FILTER_BANK_A_OFF) & RX_FILTER_BANK_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_RX_FILTER_BANK(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(RX_FILTER_BANK, \
+    (((d) << RX_FILTER_BANK_D_OFF) & RX_FILTER_BANK_D_MSK) |  \
+    (((c) << RX_FILTER_BANK_C_OFF) & RX_FILTER_BANK_C_MSK) |  \
+    (((b) << RX_FILTER_BANK_B_OFF) & RX_FILTER_BANK_B_MSK) |  \
+    (((a) << RX_FILTER_BANK_A_OFF) & RX_FILTER_BANK_A_MSK))
+// Register R81 [0x51] -- RX_ATTN
+
+enum rx_attn_fields_t {
+    RX_ATTN_D_OFF = 0xc,
+    RX_ATTN_D_MSK = 0xf000,
+    RX_ATTN_C_OFF = 0x8,
+    RX_ATTN_C_MSK = 0xf00,
+    RX_ATTN_B_OFF = 0x4,
+    RX_ATTN_B_MSK = 0xf0,
+    RX_ATTN_A_OFF = 0x0,
+    RX_ATTN_A_MSK = 0xf,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_RX_ATTN_D(x) (((x) & RX_ATTN_D_MSK) >> RX_ATTN_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_ATTN_C(x) (((x) & RX_ATTN_C_MSK) >> RX_ATTN_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_ATTN_B(x) (((x) & RX_ATTN_B_MSK) >> RX_ATTN_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_ATTN_A(x) (((x) & RX_ATTN_A_MSK) >> RX_ATTN_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_ATTN_D(p, f) (p) = ((p) & ~RX_ATTN_D_MSK) | (((f) << RX_ATTN_D_OFF) & RX_ATTN_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_ATTN_C(p, f) (p) = ((p) & ~RX_ATTN_C_MSK) | (((f) << RX_ATTN_C_OFF) & RX_ATTN_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_ATTN_B(p, f) (p) = ((p) & ~RX_ATTN_B_MSK) | (((f) << RX_ATTN_B_OFF) & RX_ATTN_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_ATTN_A(p, f) (p) = ((p) & ~RX_ATTN_A_MSK) | (((f) << RX_ATTN_A_OFF) & RX_ATTN_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_RX_ATTN(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(RX_ATTN, \
+    (((d) << RX_ATTN_D_OFF) & RX_ATTN_D_MSK) |  \
+    (((c) << RX_ATTN_C_OFF) & RX_ATTN_C_MSK) |  \
+    (((b) << RX_ATTN_B_OFF) & RX_ATTN_B_MSK) |  \
+    (((a) << RX_ATTN_A_OFF) & RX_ATTN_A_MSK))
+// Register R82 [0x52] -- ANT_SEL
+enum ant_sel_d_options {
+    ANT_SEL_D_RX_TO_RX_AND_TX_TO_TRX = 0,
+    ANT_SEL_D_RX_TO_TRX_AND_TX_TERM = 1,
+    ANT_SEL_D_RX_TO_RX_AND_TX_TERM = 2,
+    ANT_SEL_D_RX_TX_LOOPBACK = 3,
+    ANT_SEL_D_TDD_DRIVEN_AUTO = 4,
+};
+enum ant_sel_c_options {
+    ANT_SEL_C_RX_TO_RX_AND_TX_TO_TRX = 0,
+    ANT_SEL_C_RX_TO_TRX_AND_TX_TERM = 1,
+    ANT_SEL_C_RX_TO_RX_AND_TX_TERM = 2,
+    ANT_SEL_C_RX_TX_LOOPBACK = 3,
+    ANT_SEL_C_TDD_DRIVEN_AUTO = 4,
+};
+enum ant_sel_b_options {
+    ANT_SEL_B_RX_TO_RX_AND_TX_TO_TRX = 0,
+    ANT_SEL_B_RX_TO_TRX_AND_TX_TERM = 1,
+    ANT_SEL_B_RX_TO_RX_AND_TX_TERM = 2,
+    ANT_SEL_B_RX_TX_LOOPBACK = 3,
+    ANT_SEL_B_TDD_DRIVEN_AUTO = 4,
+};
+enum ant_sel_a_options {
+    ANT_SEL_A_RX_TO_RX_AND_TX_TO_TRX = 0,
+    ANT_SEL_A_RX_TO_TRX_AND_TX_TERM = 1,
+    ANT_SEL_A_RX_TO_RX_AND_TX_TERM = 2,
+    ANT_SEL_A_RX_TX_LOOPBACK = 3,
+    ANT_SEL_A_TDD_DRIVEN_AUTO = 4,
+};
+
+enum ant_sel_fields_t {
+    ANT_SEL_D_OFF = 0xc,
+    ANT_SEL_D_MSK = 0x7000,
+    ANT_SEL_C_OFF = 0x8,
+    ANT_SEL_C_MSK = 0x700,
+    ANT_SEL_B_OFF = 0x4,
+    ANT_SEL_B_MSK = 0x70,
+    ANT_SEL_A_OFF = 0x0,
+    ANT_SEL_A_MSK = 0x7,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_ANT_SEL_D(x) (((x) & ANT_SEL_D_MSK) >> ANT_SEL_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_ANT_SEL_C(x) (((x) & ANT_SEL_C_MSK) >> ANT_SEL_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_ANT_SEL_B(x) (((x) & ANT_SEL_B_MSK) >> ANT_SEL_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_ANT_SEL_A(x) (((x) & ANT_SEL_A_MSK) >> ANT_SEL_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_ANT_SEL_D(p, f) (p) = ((p) & ~ANT_SEL_D_MSK) | (((f) << ANT_SEL_D_OFF) & ANT_SEL_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_ANT_SEL_C(p, f) (p) = ((p) & ~ANT_SEL_C_MSK) | (((f) << ANT_SEL_C_OFF) & ANT_SEL_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_ANT_SEL_B(p, f) (p) = ((p) & ~ANT_SEL_B_MSK) | (((f) << ANT_SEL_B_OFF) & ANT_SEL_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_ANT_SEL_A(p, f) (p) = ((p) & ~ANT_SEL_A_MSK) | (((f) << ANT_SEL_A_OFF) & ANT_SEL_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_ANT_SEL(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(ANT_SEL, \
+    (((d) << ANT_SEL_D_OFF) & ANT_SEL_D_MSK) |  \
+    (((c) << ANT_SEL_C_OFF) & ANT_SEL_C_MSK) |  \
+    (((b) << ANT_SEL_B_OFF) & ANT_SEL_B_MSK) |  \
+    (((a) << ANT_SEL_A_OFF) & ANT_SEL_A_MSK))
+// Register R83 [0x53] -- RX_CHEN
+
+enum rx_chen_fields_t {
+    RX_CHEN_D_OFF = 0x3,
+    RX_CHEN_D_MSK = 0x8,
+    RX_CHEN_C_OFF = 0x2,
+    RX_CHEN_C_MSK = 0x4,
+    RX_CHEN_B_OFF = 0x1,
+    RX_CHEN_B_MSK = 0x2,
+    RX_CHEN_A_OFF = 0x0,
+    RX_CHEN_A_MSK = 0x1,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_RX_CHEN_D(x) (((x) & RX_CHEN_D_MSK) >> RX_CHEN_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_CHEN_C(x) (((x) & RX_CHEN_C_MSK) >> RX_CHEN_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_CHEN_B(x) (((x) & RX_CHEN_B_MSK) >> RX_CHEN_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_RX_CHEN_A(x) (((x) & RX_CHEN_A_MSK) >> RX_CHEN_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_CHEN_D(p, f) (p) = ((p) & ~RX_CHEN_D_MSK) | (((f) << RX_CHEN_D_OFF) & RX_CHEN_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_CHEN_C(p, f) (p) = ((p) & ~RX_CHEN_C_MSK) | (((f) << RX_CHEN_C_OFF) & RX_CHEN_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_CHEN_B(p, f) (p) = ((p) & ~RX_CHEN_B_MSK) | (((f) << RX_CHEN_B_OFF) & RX_CHEN_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_RX_CHEN_A(p, f) (p) = ((p) & ~RX_CHEN_A_MSK) | (((f) << RX_CHEN_A_OFF) & RX_CHEN_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_RX_CHEN(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(RX_CHEN, \
+    (((d) << RX_CHEN_D_OFF) & RX_CHEN_D_MSK) |  \
+    (((c) << RX_CHEN_C_OFF) & RX_CHEN_C_MSK) |  \
+    (((b) << RX_CHEN_B_OFF) & RX_CHEN_B_MSK) |  \
+    (((a) << RX_CHEN_A_OFF) & RX_CHEN_A_MSK))
+// Register R84 [0x54] -- TX_CHEN
+
+enum tx_chen_fields_t {
+    TX_CHEN_D_OFF = 0x3,
+    TX_CHEN_D_MSK = 0x8,
+    TX_CHEN_C_OFF = 0x2,
+    TX_CHEN_C_MSK = 0x4,
+    TX_CHEN_B_OFF = 0x1,
+    TX_CHEN_B_MSK = 0x2,
+    TX_CHEN_A_OFF = 0x0,
+    TX_CHEN_A_MSK = 0x1,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_TX_CHEN_D(x) (((x) & TX_CHEN_D_MSK) >> TX_CHEN_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_CHEN_C(x) (((x) & TX_CHEN_C_MSK) >> TX_CHEN_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_CHEN_B(x) (((x) & TX_CHEN_B_MSK) >> TX_CHEN_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_CHEN_A(x) (((x) & TX_CHEN_A_MSK) >> TX_CHEN_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_CHEN_D(p, f) (p) = ((p) & ~TX_CHEN_D_MSK) | (((f) << TX_CHEN_D_OFF) & TX_CHEN_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_CHEN_C(p, f) (p) = ((p) & ~TX_CHEN_C_MSK) | (((f) << TX_CHEN_C_OFF) & TX_CHEN_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_CHEN_B(p, f) (p) = ((p) & ~TX_CHEN_B_MSK) | (((f) << TX_CHEN_B_OFF) & TX_CHEN_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_CHEN_A(p, f) (p) = ((p) & ~TX_CHEN_A_MSK) | (((f) << TX_CHEN_A_OFF) & TX_CHEN_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_TX_CHEN(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(TX_CHEN, \
+    (((d) << TX_CHEN_D_OFF) & TX_CHEN_D_MSK) |  \
+    (((c) << TX_CHEN_C_OFF) & TX_CHEN_C_MSK) |  \
+    (((b) << TX_CHEN_B_OFF) & TX_CHEN_B_MSK) |  \
+    (((a) << TX_CHEN_A_OFF) & TX_CHEN_A_MSK))
+// Register R85 [0x55] -- TX_2STAGE
+
+enum tx_2stage_fields_t {
+    TX_2STAGE_D_OFF = 0x3,
+    TX_2STAGE_D_MSK = 0x8,
+    TX_2STAGE_C_OFF = 0x2,
+    TX_2STAGE_C_MSK = 0x4,
+    TX_2STAGE_B_OFF = 0x1,
+    TX_2STAGE_B_MSK = 0x2,
+    TX_2STAGE_A_OFF = 0x0,
+    TX_2STAGE_A_MSK = 0x1,
+};
+#define GET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_D(x) (((x) & TX_2STAGE_D_MSK) >> TX_2STAGE_D_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_C(x) (((x) & TX_2STAGE_C_MSK) >> TX_2STAGE_C_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_B(x) (((x) & TX_2STAGE_B_MSK) >> TX_2STAGE_B_OFF)
+#define GET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_A(x) (((x) & TX_2STAGE_A_MSK) >> TX_2STAGE_A_OFF)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_D(p, f) (p) = ((p) & ~TX_2STAGE_D_MSK) | (((f) << TX_2STAGE_D_OFF) & TX_2STAGE_D_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_C(p, f) (p) = ((p) & ~TX_2STAGE_C_MSK) | (((f) << TX_2STAGE_C_OFF) & TX_2STAGE_C_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_B(p, f) (p) = ((p) & ~TX_2STAGE_B_MSK) | (((f) << TX_2STAGE_B_OFF) & TX_2STAGE_B_MSK)
+#define SET_EXT_FE_CH4_400_7200_USR_TX_2STAGE_A(p, f) (p) = ((p) & ~TX_2STAGE_A_MSK) | (((f) << TX_2STAGE_A_OFF) & TX_2STAGE_A_MSK)
+
+#define MAKE_EXT_FE_CH4_400_7200_USR_TX_2STAGE(d, c, b, a) MAKE_EXT_FE_CH4_400_7200_USR_REG_WR(TX_2STAGE, \
+    (((d) << TX_2STAGE_D_OFF) & TX_2STAGE_D_MSK) |  \
+    (((c) << TX_2STAGE_C_OFF) & TX_2STAGE_C_MSK) |  \
+    (((b) << TX_2STAGE_B_OFF) & TX_2STAGE_B_MSK) |  \
+    (((a) << TX_2STAGE_A_OFF) & TX_2STAGE_A_MSK))

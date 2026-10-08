@@ -108,7 +108,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           # trybuild panic snapshots need rust-src. Never silently switch their compiler.
-          components: ${{ contains(fromJSON('["workspace","bnb","socks","rust-skills"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
+          components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","rust-skills"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
           targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
         if: matrix.profile == 'rust-skills'
@@ -123,6 +123,7 @@ jobs:
             tools/rust-skills -> target
             usdr -> target
             rust-dsdcc -> target
+            rsl-usdr/oracle -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:
@@ -132,7 +133,7 @@ jobs:
         with:
           tool: ${{ needs.plan.outputs.semver_tool }}
       - name: Native compiler for FFI bridge checks
-        if: contains(fromJSON('["usdr","rust-dsdcc"]'), matrix.profile) && inputs.runner != 'beefy'
+        if: contains(fromJSON('["usdr","rust-dsdcc","usdr-oracle"]'), matrix.profile) && inputs.runner != 'beefy'
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - name: Fetch DSDcc headers (compile check only, no hardware/native linking)
         if: matrix.profile == 'rust-dsdcc'

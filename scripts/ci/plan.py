@@ -31,7 +31,9 @@ FUZZ = {
     # PR runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
-DETACHED = (*FUZZ, NOSTD, "usdr", "rust-dsdcc", "tools/rust-skills")
+# Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
+USDR_ORACLE = "rsl-usdr/oracle"
+DETACHED = (*FUZZ, NOSTD, "usdr", "rust-dsdcc", USDR_ORACLE, "tools/rust-skills")
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
     "rustfmt.toml", "deny.toml", "release-plz.toml", "AGENTS.md",
@@ -43,8 +45,8 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
                "LICENSE-MIT", "LICENSE-APACHE"}
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
-    "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "rust-skills",
-    "package",
+    "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle",
+    "rust-skills", "package",
 }
 
 
@@ -142,6 +144,8 @@ def owners(path, graph):
         return {max(matches, key=len)}
     if path.startswith("bitsandbytes/"):
         return {BNB, MACROS} & graph.keys()
+    if path.startswith("rsl-usdr/"):
+        return {"rsl-usdr/sim", USDR_ORACLE} & graph.keys()
     return set()
 
 
@@ -217,6 +221,8 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
     if "rsl-deps" in roots or full:
         profiles.add("blessed")
     profiles.update(roots & {"usdr", "rust-dsdcc"})
+    if USDR_ORACLE in roots:
+        profiles.add("usdr-oracle")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release or full:

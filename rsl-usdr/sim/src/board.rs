@@ -1,0 +1,265 @@
+//! The simulated board: FPGA register space plus the chips behind its SPI and I2C cores.
+
+use std::collections::BTreeMap;
+use std::fmt;
+
+use crate::chips::{I2cChip, Lms6002d, Reg8File, Si5332, Tmp114};
+use crate::trace::Op;
+
+/// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
+/// bit 31 set load the I2C address LUT instead and leave the outputs alone.
+const REG_GPO: u32 = 0;
+/// Bit 31 of a [`REG_GPO`] write selects the I2C LUT.
+const GPO_I2C_LUT: u32 = 1 << 31;
+/// General-purpose input bank 3: the hardware ID.
+const REG_GPI_HWID: u32 = 16 + 3;
+/// HWID bits 25:24: the board has RX and TX chains.
+const HWID_RX_TX: u32 = 0b11 << 24;
+
+/// SPI bus carrying the LMS6002D.
+const SPI_LMS6: u32 = 0;
+
+/// The `LP8758` PMIC.
+const I2C_PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
+/// The TMP114 temperature sensor.
+const I2C_TEMP: I2cAddress = I2cAddress { bus: 0, addr: 0x4e };
+/// The Si5332 clock generator.
+const I2C_CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
+/// The `TPS6381x` boost converter.
+const I2C_BOOST: I2cAddress = I2cAddress { bus: 0, addr: 0x75 };
+
+/// The uSDR board revisions libusdr supports; the revision sits in HWID bits 15:8.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoardRevision {
+    /// Revision 1.
+    Rev1 = 1,
+    /// Revision 2.
+    Rev2 = 2,
+    /// Revision 3: adds the TMP114 check and the oscillator-enable output.
+    Rev3 = 3,
+}
+
+/// An I2C device address: FPGA I2C bus number and 7-bit device address.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct I2cAddress {
+    /// The FPGA I2C bus the device sits on.
+    pub bus: u8,
+    /// The 7-bit device address.
+    pub addr: u16,
+}
+
+impl I2cAddress {
+    /// Decodes libusdr's `ls_op` I2C address: `[31:24] core, [23:16] bus, [15:0] device`.
+    /// The board has one I2C core, so the core index is ignored.
+    #[must_use]
+    pub fn from_lsop(lsop: u32) -> Self {
+        let [_core, bus, hi, lo] = lsop.to_be_bytes();
+        Self {
+            bus,
+            addr: u16::from_be_bytes([hi, lo]),
+        }
+    }
+}
+
+impl fmt::Display for I2cAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{:#04x}", self.bus, self.addr)
+    }
+}
+
+/// A transfer the board cannot complete.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SimError {
+    /// No SPI device is wired to this bus.
+    #[error("no SPI device on bus {0}")]
+    NoSpiDevice(u32),
+}
+
+/// A healthy uSDR board whose chips respond as their datasheets describe.
+#[derive(Debug)]
+pub struct SimBoard {
+    /// FPGA registers, by address; unwritten registers read zero.
+    regs: BTreeMap<u32, u32>,
+    /// Last value written to each general-purpose output bank.
+    gpo: BTreeMap<u8, u32>,
+    /// The RF transceiver on SPI bus 0.
+    lms: Lms6002d,
+    /// The LP8758 PMIC.
+    pmic: Reg8File,
+    /// The `TPS6381x` boost converter.
+    boost: Reg8File,
+    /// The Si5332 clock generator.
+    clock: Si5332,
+    /// The TMP114 temperature sensor.
+    temp: Tmp114,
+    /// Virtual time, advanced only by [`SimBoard::sleep_us`].
+    now_us: u64,
+    /// Every operation performed, in order.
+    trace: Vec<Op>,
+}
+
+impl SimBoard {
+    /// A board of the given revision at 25 °C.
+    #[must_use]
+    pub fn new(revision: BoardRevision) -> Self {
+        let hwid = HWID_RX_TX | (revision as u32) << 8;
+        Self {
+            regs: BTreeMap::from([(REG_GPI_HWID, hwid)]),
+            gpo: BTreeMap::new(),
+            lms: Lms6002d::new(),
+            // DEV_REV 0x01 and OTP_REV 0xe0: libusdr requires revision 0xe001.
+            pmic: Reg8File::with_resets(&[(0x00, 0x01), (0x01, 0xe0)]),
+            // DEVID (0x03) reads 4.
+            boost: Reg8File::with_resets(&[(0x03, 0x04)]),
+            clock: Si5332::new(),
+            temp: Tmp114::new(25_000),
+            now_us: 0,
+            trace: Vec::new(),
+        }
+    }
+
+    /// Writes a 32-bit FPGA register.
+    pub fn write_reg(&mut self, addr: u32, value: u32) {
+        self.trace.push(Op::RegWrite { addr, value });
+        if addr == REG_GPO && value & GPO_I2C_LUT == 0 {
+            let [bank, ..] = value.to_be_bytes();
+            self.gpo.insert(bank, value & 0x00ff_ffff);
+        }
+        self.regs.insert(addr, value);
+    }
+
+    /// Reads a 32-bit FPGA register.
+    pub fn read_reg(&mut self, addr: u32) -> u32 {
+        let value = self.regs.get(&addr).copied().unwrap_or(0);
+        self.trace.push(Op::RegRead { addr, value });
+        value
+    }
+
+    /// Shifts one 32-bit word through the SPI device on `bus` and returns the word read back.
+    ///
+    /// # Errors
+    ///
+    /// [`SimError::NoSpiDevice`] when nothing is wired to `bus`.
+    pub fn spi(&mut self, bus: u32, out: u32) -> Result<u32, SimError> {
+        if bus != SPI_LMS6 {
+            return Err(SimError::NoSpiDevice(bus));
+        }
+        let read = self.lms.transact(out);
+        self.trace.push(Op::Spi { bus, out, read });
+        Ok(read)
+    }
+
+    /// Writes `write` to the device at `addr`, then reads `read_len` bytes in wire order.
+    ///
+    /// Neither libusdr transport reports a missing acknowledge, so an absent device is not an
+    /// error: as a sim choice, its reads return the idle-high bus (`0xff` per byte).
+    pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
+        let chip: Option<&mut dyn I2cChip> = match addr {
+            I2C_PMIC => Some(&mut self.pmic),
+            I2C_TEMP => Some(&mut self.temp),
+            I2C_CLOCK => Some(&mut self.clock),
+            I2C_BOOST => Some(&mut self.boost),
+            _ => None,
+        };
+        let read = chip.map_or_else(
+            || vec![0xff; read_len],
+            |chip| chip.transfer(write, read_len),
+        );
+        self.trace.push(Op::I2c {
+            addr,
+            write: write.to_vec(),
+            read: read.clone(),
+        });
+        read
+    }
+
+    /// Advances virtual time.
+    pub fn sleep_us(&mut self, us: u64) {
+        self.now_us += us;
+        self.trace.push(Op::Sleep { us });
+    }
+
+    /// Virtual microseconds elapsed since the board was created.
+    #[must_use]
+    pub fn now_us(&self) -> u64 {
+        self.now_us
+    }
+
+    /// Every operation performed so far, in order.
+    #[must_use]
+    pub fn trace(&self) -> &[Op] {
+        &self.trace
+    }
+
+    /// The last value written to a general-purpose output bank, if any.
+    #[must_use]
+    pub fn gpo(&self, bank: u8) -> Option<u32> {
+        self.gpo.get(&bank).copied()
+    }
+
+    /// An LMS6002D register.
+    #[must_use]
+    pub fn lms_reg(&self, addr: u8) -> u8 {
+        self.lms.regs[usize::from(addr & 0x7f)]
+    }
+
+    /// An LP8758 PMIC register.
+    #[must_use]
+    pub fn pmic_reg(&self, addr: u8) -> u8 {
+        self.pmic.regs[usize::from(addr)]
+    }
+
+    /// A `TPS6381x` boost-converter register.
+    #[must_use]
+    pub fn boost_reg(&self, addr: u8) -> u8 {
+        self.boost.regs[usize::from(addr)]
+    }
+
+    /// A Si5332 clock-generator register.
+    #[must_use]
+    pub fn clock_reg(&self, addr: u8) -> u8 {
+        self.clock.file.regs[usize::from(addr)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lsop_i2c_address_drops_the_core_index() {
+        let lsop = 0x01 << 24 | 0x01 << 16 | 0x004e;
+        assert_eq!(
+            I2cAddress::from_lsop(lsop),
+            I2cAddress { bus: 1, addr: 0x4e }
+        );
+    }
+
+    #[test]
+    fn tmp114_sends_its_id_msb_first() {
+        let mut board = SimBoard::new(BoardRevision::Rev3);
+        assert_eq!(board.i2c(I2C_TEMP, &[0x0b], 2), vec![0x11, 0x14]);
+    }
+
+    #[test]
+    fn gpo_writes_latch_per_bank_but_lut_writes_do_not() {
+        let mut board = SimBoard::new(BoardRevision::Rev3);
+        board.write_reg(REG_GPO, 7 << 24 | 1);
+        board.write_reg(REG_GPO, GPO_I2C_LUT | 7 << 24);
+        assert_eq!(board.gpo(7), Some(1));
+    }
+
+    #[test]
+    fn absent_i2c_devices_read_idle_high_and_are_traced() {
+        let mut board = SimBoard::new(BoardRevision::Rev3);
+        let missing = I2cAddress { bus: 1, addr: 0x10 };
+        assert_eq!(board.i2c(missing, &[0], 2), vec![0xff, 0xff]);
+        assert_eq!(board.trace().len(), 1);
+    }
+
+    #[test]
+    fn unwired_spi_buses_are_errors() {
+        let mut board = SimBoard::new(BoardRevision::Rev3);
+        assert_eq!(board.spi(1, 0), Err(SimError::NoSpiDevice(1)));
+    }
+}

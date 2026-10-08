@@ -17,6 +17,8 @@ members = [
     "error-correction",
     # RF parsing
     "rfus",
+    # uSDR board simulator (test support for the pure-Rust uSDR port)
+    "rsl-usdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -39,6 +41,7 @@ members = [
 # from the default workspace build; each is built on its own in a dedicated CI job.
 exclude = [
     "usdr",
+    "rsl-usdr/oracle",
     "rust-dsdcc",
     "bitsandbytes/fuzz",
     "bitsandbytes/bnb/nostd-check",
