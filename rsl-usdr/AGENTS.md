@@ -25,11 +25,14 @@ Each layer calls only the ones below it.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). `board/board.rs`
-  holds the `Board` struct, its chip wiring and supply setpoints as associated consts
-  (`Board::CLOCK`, `Board::BOOST_VOUT`). Each sequence file (`power.rs`, ...) adds an
-  `impl Board` block. Chip facts (IDs, revisions) stay in the chip module.
-- `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths,
-  never the board.
+  holds the `Board` struct, its chips and supply setpoints as associated consts
+  (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`). Each sequence file
+  (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay in the chip
+  module.
+- `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths.
+  Its only board knowledge is where the uSDR wires it: an `at(addr)` constructor plus a
+  `usdr()` constructor whose doc cites the address source (datasheet fixed address or
+  libusdr's `I2C_DEV_*`). Sequences, setpoints and policy stay in `src/board/`.
 - `src/fpga/`: gateware registers (GPO/GPI, then the stream engine).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
