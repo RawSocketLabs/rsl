@@ -22,8 +22,10 @@ Each layer calls only the ones below it.
 - `src/device.rs`: `Device`, the public API. It owns the bus and the board state.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
-- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). Board wiring constants
-  (I2C addresses, SPI targets) live here.
+- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). `board/board.rs`
+  holds the `Board` struct, its chip wiring and supply setpoints as associated consts
+  (`Board::CLOCK`, `Board::BOOST_VOUT`). Each sequence file (`power.rs`, ...) adds an
+  `impl Board` block. Chip facts (IDs, revisions) stay in the chip module.
 - `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths,
   never the board.
 - `src/fpga/`: gateware registers (GPO/GPI, then the stream engine).

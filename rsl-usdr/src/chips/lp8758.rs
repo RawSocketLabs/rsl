@@ -149,6 +149,9 @@ pub(crate) struct Lp8758 {
 }
 
 impl Lp8758 {
+    /// The revision libusdr requires.
+    const REVISION: u16 = 0xe001;
+
     /// The PMIC at `dev`.
     pub(crate) const fn at(dev: I2cAddr) -> Self {
         Self {
@@ -156,11 +159,20 @@ impl Lp8758 {
         }
     }
 
-    /// The revision as libusdr composes it: `OTP_REV << 8 | DEV_REV`.
-    pub(crate) fn revision(self, bus: &mut dyn Bus) -> Result<u16, Error> {
+    /// Checks the revision, `OTP_REV << 8 | DEV_REV` as libusdr composes it, is the one
+    /// libusdr accepts.
+    pub(crate) fn check_revision(self, bus: &mut dyn Bus) -> Result<(), Error> {
         let dev_rev = self.regs.read_raw(bus, Reg::DevRev)?;
         let otp_rev = self.regs.read_raw(bus, Reg::OtpRev)?;
-        Ok(u16::from_be_bytes([otp_rev, dev_rev]))
+        let found = u16::from_be_bytes([otp_rev, dev_rev]);
+        if found != Self::REVISION {
+            return Err(Error::ChipId {
+                chip: "LP8758",
+                expected: Self::REVISION.into(),
+                found: found.into(),
+            });
+        }
+        Ok(())
     }
 
     /// Writes the configuration register.
