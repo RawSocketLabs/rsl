@@ -37,6 +37,25 @@ if [[ $# -eq 0 ]]; then
   exit 0
 fi
 
+# act copies actions into /var/run/act. The upstream runner image links /var/run -> /run with
+# an absolute target, and Podman 5.8 refuses to copy through it ("path escapes from parent").
+# Run a local derivative whose link is relative, rebuilt whenever the upstream image changes.
+upstream_image="$(sed -n 's/^-P ubuntu-latest=//p' .actrc)"
+if [[ -z "${upstream_image}" ]]; then
+  echo "error: .actrc does not name the ubuntu-latest runner image" >&2
+  exit 1
+fi
+podman image exists "${upstream_image}" || podman pull "${upstream_image}"
+upstream_id="$(podman image inspect --format '{{.Id}}' "${upstream_image}")"
+runner_image="localhost/rsl-act-runner:${upstream_id:0:12}"
+if ! podman image exists "${runner_image}"; then
+  build_context="$(mktemp -d)"
+  printf 'FROM %s\nRUN rm /var/run && ln -s ../run /var/run\n' "${upstream_image}" \
+    | podman build --quiet --format docker --tag "${runner_image}" --file - "${build_context}"
+  rmdir "${build_context}"
+fi
+runner=(-P "ubuntu-latest=${runner_image}")
+
 if [[ $1 == "pre-push" ]]; then
   shift
   ci_full=false
@@ -89,6 +108,7 @@ if [[ $1 == "pre-push" ]]; then
 
   exec "${act_bin}" \
     --pull=false \
+    "${runner[@]}" \
     --concurrent-jobs "${ACT_CONCURRENT_JOBS:-2}" \
     workflow_dispatch \
     --input runner=ubuntu-latest \
@@ -98,4 +118,4 @@ if [[ $1 == "pre-push" ]]; then
     -j ci-ok
 fi
 
-exec "${act_bin}" --pull=false --input runner=ubuntu-latest "$@"
+exec "${act_bin}" --pull=false "${runner[@]}" --input runner=ubuntu-latest "$@"
