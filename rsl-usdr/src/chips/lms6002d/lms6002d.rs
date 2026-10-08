@@ -154,7 +154,7 @@ impl Lms6002d {
         let read = bus
             .spi32(self.target, SpiWord::load::<R>().to_raw().into())
             .during("LMS6002D read")?;
-        Ok(R::from_byte(read.to_le_bytes()[0]))
+        Ok(R::from(read.to_le_bytes()[0]))
     }
 
     /// Sends register writes in order.

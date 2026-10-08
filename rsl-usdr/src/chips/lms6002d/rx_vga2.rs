@@ -3,7 +3,7 @@
 use bnb::{BitEnum, bitfield, u4};
 
 use super::spi::BlockReg;
-use crate::chips::register::bitfield_register;
+use crate::chips::register::Register;
 
 /// RXVGA2 register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,4 +32,7 @@ pub(super) struct Control {
     #[bits(0..=0)]
     test_mode_controls: bool,
 }
-bitfield_register!(Control => Reg::Control);
+impl Register for Control {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Control;
+}

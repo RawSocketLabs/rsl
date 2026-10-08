@@ -33,12 +33,12 @@ impl SpiWord {
 
     /// A write of a typed register.
     pub(super) fn store<R: Register<Map: BlockReg>>(value: R) -> Self {
-        Self::store_raw(R::ADDR, value.to_byte())
+        Self::store_raw(R::ADDR, value.into())
     }
 
     /// A write of one copy of a repeated register.
     pub(super) fn store_at<R: IndexedRegister<Map: BlockReg>>(index: R::Index, value: R) -> Self {
-        Self::store_raw(R::addr(index), value.to_byte())
+        Self::store_raw(R::addr(index), value.into())
     }
 
     /// A read of a typed register's address.

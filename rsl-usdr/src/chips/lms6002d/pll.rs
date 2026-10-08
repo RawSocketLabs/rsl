@@ -60,10 +60,6 @@ impl IndexedRegister for VcoSelect {
             Pll::Rx => Reg::RxVcoSelect,
         }
     }
-
-    fn to_byte(self) -> u8 {
-        self.to_raw()
-    }
 }
 
 /// The VCO's supply regulator and the charge pump's up-current offset. Datasheet
@@ -95,9 +91,5 @@ impl IndexedRegister for VcoRegulator {
             Pll::Tx => Reg::TxVcoRegulator,
             Pll::Rx => Reg::RxVcoRegulator,
         }
-    }
-
-    fn to_byte(self) -> u8 {
-        self.to_raw()
     }
 }

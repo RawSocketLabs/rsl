@@ -6,7 +6,7 @@
 
 use bnb::{BitEnum, bitfield};
 
-use super::register::{I2cRegisters, IndexedRegister, bitfield_register};
+use super::register::{I2cRegisters, IndexedRegister, Register};
 use crate::error::Error;
 use crate::lowlevel::{Bus, I2cAddr};
 
@@ -101,10 +101,6 @@ impl IndexedRegister for BuckControl {
             Buck::B3 => Reg::Buck3Control,
         }
     }
-
-    fn to_byte(self) -> u8 {
-        self.to_raw()
-    }
 }
 
 /// A channel's output voltage. `BUCKn_VOUT` (`BUCKn_VSET`), §7.6.1.10; channel 0 resets
@@ -155,9 +151,11 @@ impl IndexedRegister for BuckVoltage {
             Buck::B3 => Reg::Buck3Voltage,
         }
     }
+}
 
-    fn to_byte(self) -> u8 {
-        self.0
+impl From<BuckVoltage> for u8 {
+    fn from(value: BuckVoltage) -> Self {
+        value.0
     }
 }
 
@@ -180,7 +178,10 @@ pub(crate) struct Config {
     #[bits(0..=0)]
     spread_spectrum: bool,
 }
-bitfield_register!(Config => Reg::Config);
+impl Register for Config {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Config;
+}
 
 /// An LP8758 on the I2C bus.
 #[derive(Clone, Copy, Debug)]
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn voltage_codes_follow_the_datasheet_table() {
-        let code = |millivolts| BuckVoltage::from_millivolts(millivolts).to_byte();
+        let code = |millivolts| u8::from(BuckVoltage::from_millivolts(millivolts));
         assert_eq!(code(500), 0x00);
         assert_eq!(code(730), 0x17);
         assert_eq!(code(735), 0x18);
@@ -269,10 +270,10 @@ mod tests {
         let on = BuckControl::new()
             .with_enabled(true)
             .with_discharge_when_off(true);
-        assert_eq!(on.to_byte(), 0x88, "PMIC_CH_ENABLE");
-        assert_eq!(on.with_forced_pwm(true).to_byte(), 0x8a);
+        assert_eq!(u8::from(on), 0x88, "PMIC_CH_ENABLE");
+        assert_eq!(u8::from(on.with_forced_pwm(true)), 0x8a);
         assert_eq!(
-            on.with_pin_controlled(true).to_byte(),
+            u8::from(on.with_pin_controlled(true)),
             0xc8,
             "PMIC_CH_DISABLE"
         );
