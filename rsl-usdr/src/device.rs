@@ -13,9 +13,7 @@ use crate::thermal::{CoolDown, ThermalPolicy};
 /// Dropping a `Device` powers the board down on a best-effort basis; call
 /// [`Device::close`] to see power-down errors.
 pub struct Device {
-    /// The hardware seam.
-    bus: Box<dyn Bus>,
-    /// Board state; `None` once powered down.
+    /// The powered board, which owns the bus; `None` only once powered down.
     board: Option<Board>,
     /// Temperature limits in force.
     thermal: ThermalPolicy,
@@ -58,7 +56,7 @@ impl Device {
     ///
     /// Any bus failure.
     pub fn temperature(&mut self) -> Result<f32, Error> {
-        Board::temperature(self.bus.as_mut())
+        self.board().temperature()
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every
@@ -77,7 +75,8 @@ impl Device {
             timeout,
             on_reading: Box::new(on_reading),
         };
-        cool_down.wait(self.bus.as_mut(), self.thermal.limits())
+        let limits = self.thermal.limits();
+        cool_down.wait(self.board(), limits)
     }
 
     /// Powers the board down.
@@ -89,11 +88,16 @@ impl Device {
         self.power_down()
     }
 
+    /// The powered board.
+    fn board(&mut self) -> &mut Board {
+        self.board
+            .as_mut()
+            .expect("invariant: a Device owns its board until close or drop")
+    }
+
     /// Powers the board down if it is still up.
     fn power_down(&mut self) -> Result<(), Error> {
-        self.board
-            .take()
-            .map_or(Ok(()), |board| board.power_down(self.bus.as_mut()))
+        self.board.take().map_or(Ok(()), Board::power_down)
     }
 }
 
@@ -132,14 +136,14 @@ impl<'a> DeviceBuilder<'a> {
     ///   identify itself as expected.
     pub fn open(self) -> Result<Device, Error> {
         let Self {
-            mut bus,
+            bus,
             thermal,
             cool_down,
         } = self;
-        let identified = Board::identify(bus.as_mut())?;
-        Board::check_temperature_sensor(bus.as_mut(), &identified)?;
+        let mut identified = Board::identify(bus)?;
+        identified.check_temperature_sensor()?;
         let limits = thermal.limits();
-        let celsius = Board::temperature(bus.as_mut())?;
+        let celsius = identified.temperature()?;
         if celsius >= limits.start() {
             let Some(mut cool_down) = cool_down else {
                 return Err(Error::Overheated {
@@ -147,11 +151,10 @@ impl<'a> DeviceBuilder<'a> {
                     limit: limits.start(),
                 });
             };
-            cool_down.wait(bus.as_mut(), limits)?;
+            cool_down.wait(&mut identified, limits)?;
         }
-        let board = identified.power_up(bus.as_mut())?;
+        let board = identified.power_up()?;
         Ok(Device {
-            bus,
             board: Some(board),
             thermal,
         })

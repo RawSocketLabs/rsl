@@ -10,9 +10,7 @@
 
 use std::time::Duration;
 
-use crate::board::Board;
 use crate::error::Error;
-use crate::lowlevel::Bus;
 
 /// Board temperature at which the driver always refuses to start (and, once streaming is
 /// ported, stops streaming).
@@ -120,6 +118,15 @@ impl ThermalLimits {
     }
 }
 
+/// Something that reads the board temperature and can wait: the board before and after
+/// power-up.
+pub(crate) trait Thermometer {
+    /// The board temperature in °C.
+    fn celsius(&mut self) -> Result<f32, Error>;
+    /// Waits for `duration` of bus time.
+    fn sleep(&mut self, duration: Duration);
+}
+
 /// How long to wait for the board to cool before giving up, and who to tell about each
 /// reading.
 pub(crate) struct CoolDown<'a> {
@@ -132,10 +139,14 @@ pub(crate) struct CoolDown<'a> {
 impl CoolDown<'_> {
     /// Reads the board temperature every [`POLL_INTERVAL`] of bus time until it is below
     /// `limits.resume`, waiting at most `timeout` in total.
-    pub(crate) fn wait(&mut self, bus: &mut dyn Bus, limits: ThermalLimits) -> Result<(), Error> {
+    pub(crate) fn wait(
+        &mut self,
+        sensor: &mut dyn Thermometer,
+        limits: ThermalLimits,
+    ) -> Result<(), Error> {
         let mut waited = Duration::ZERO;
         loop {
-            let celsius = Board::temperature(bus)?;
+            let celsius = sensor.celsius()?;
             (self.on_reading)(celsius);
             if celsius < limits.resume {
                 return Ok(());
@@ -147,7 +158,7 @@ impl CoolDown<'_> {
                 });
             }
             let nap = POLL_INTERVAL.min(self.timeout.saturating_sub(waited));
-            bus.sleep(nap);
+            sensor.sleep(nap);
             waited += nap;
         }
     }

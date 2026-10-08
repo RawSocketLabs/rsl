@@ -19,7 +19,9 @@ tests strip its TMP114 temperature reads, an intentional addition.
 
 Each layer calls only the ones below it.
 
-- `src/device.rs`: `Device`, the public API. It owns the bus and the board state.
+- `src/device.rs`: `Device`, the public API. It owns the `Board`, and the `Board` owns the bus
+  (before power-up, `Identified` does). Board methods use `self.bus`; chip drivers stay
+  stateless and borrow `&mut dyn Bus` per call.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). `board/board.rs`

@@ -1,22 +1,29 @@
 //! The `m2_lm6_1` board: its state, how its chips are wired, and its supply setpoints.
 //! The sequences that drive it are `impl Board` blocks in sibling modules.
 
+use std::fmt;
+
 use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::Lp8758;
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{Tps6381x, Vout};
-use crate::lowlevel::{I2cAddr, SpiAddr};
+use crate::lowlevel::{Bus, I2cAddr, SpiAddr};
 
-/// A powered uSDR board.
-#[derive(Debug)]
+/// A powered uSDR board and the bus it is reached through.
 pub(crate) struct Board {
+    /// The hardware seam; chip drivers borrow it per call.
+    pub(super) bus: Box<dyn Bus>,
     /// The RF transceiver.
-    #[expect(
-        dead_code,
-        reason = "tuning and bandwidth, the next ported operations, use it"
-    )]
     pub(super) lms: Lms6002d,
+}
+
+impl fmt::Debug for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Board")
+            .field("lms", &self.lms)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Board {
