@@ -7,7 +7,7 @@ const TEMP_RESULT: u8 = 0x00;
 /// Device ID register; reads 0x1114.
 const DEVICE_ID: u8 = 0x0b;
 
-/// A TMP114 reporting a fixed temperature.
+/// A TMP114 reporting whatever temperature the board sets.
 #[derive(Debug)]
 pub(crate) struct Tmp114 {
     /// Register contents, indexed by pointer.
@@ -26,6 +26,11 @@ impl Tmp114 {
         regs[usize::from(DEVICE_ID)] = 0x1114;
         regs[usize::from(TEMP_RESULT)] = Self::encode(millicelsius);
         Self { regs }
+    }
+
+    /// Updates the temperature result register.
+    pub(crate) fn set_millicelsius(&mut self, millicelsius: i32) {
+        self.regs[usize::from(TEMP_RESULT)] = Self::encode(millicelsius);
     }
 
     /// Encodes a temperature as the result register's two's-complement 1/128 °C value.

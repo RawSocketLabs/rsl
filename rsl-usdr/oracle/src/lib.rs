@@ -9,7 +9,7 @@
 //! blocks until any other instance is closed.
 
 use std::any::Any;
-use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
+use std::ffi::{CStr, c_char, c_int, c_uint, c_ulonglong, c_void};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr::{self, NonNull};
 use std::slice;
@@ -45,6 +45,7 @@ type DmDev = *mut c_void;
 unsafe extern "C" {
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
+    fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
 }
 
 /// libusdr opened on a simulated board.
@@ -103,6 +104,22 @@ impl Oracle {
             errno,
             board: Box::new(take_board()),
         })
+    }
+
+    /// Reads a libusdr device-manager value, such as `c"/dm/sensor/temp"`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn get_uint(&mut self, path: &CStr) -> Result<u64, i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let mut value = 0;
+        // SAFETY: `dev` is open, `path` is NUL-terminated, `value` is a valid out-pointer.
+        let errno = unsafe { usdr_dme_get_uint(dev.as_ptr(), path.as_ptr(), &raw mut value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(value) } else { Err(errno) }
     }
 
     /// Closes libusdr's device, which powers the board down, and returns the board.

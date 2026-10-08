@@ -42,12 +42,41 @@ pub(crate) struct Board {
     lms: Lms6002d,
 }
 
-impl Board {
+/// A board identified and held in reset, before anything is powered: where the thermal
+/// policy decides whether to continue.
+#[derive(Debug)]
+pub(crate) struct Identified {
+    /// Revision 3 (on-board oscillator, TMP114 ID check).
+    rev3: bool,
+}
+
+impl Identified {
     /// Brings the board up from reset: rails, clocks, then the RF transceiver.
     ///
     /// Failures after the clocks are programmed turn the LED, booster and RF chip back
     /// off, over the same span as libusdr's `fail:` path.
-    pub(crate) fn power_up(bus: &mut dyn Bus) -> Result<Self, Error> {
+    pub(crate) fn power_up(self, bus: &mut dyn Bus) -> Result<Board, Error> {
+        Board::power_rails(bus)?;
+        bus.sleep(Duration::from_millis(10));
+
+        let clocks = Board::start_clocks(bus, self.rev3);
+        bus.sleep(Duration::from_millis(10));
+        let lms = clocks
+            .and_then(|()| Board::release_rf(bus))
+            .inspect_err(|_| {
+                // Best effort: the original failure is the one to report.
+                let _ = Gpo::Led.set(bus, 0);
+                let _ = Gpo::LmsReset.set(bus, 0);
+                let _ = Gpo::Booster.set(bus, 0);
+            })?;
+        Board::configure_rf(bus, lms)
+    }
+}
+
+impl Board {
+    /// Reads the hardware ID and holds the RF transceiver in reset; on revision 3, also
+    /// checks the TMP114. Powers nothing.
+    pub(crate) fn identify(bus: &mut dyn Bus) -> Result<Identified, Error> {
         // Gateware build ID: libusdr only logs it.
         Gpi::UsrAccess2.read(bus)?;
         let revision = Hwid::from_raw(Gpi::Hwid.read(bus)?).revision();
@@ -55,25 +84,35 @@ impl Board {
             return Err(Error::UnsupportedRevision(revision));
         }
         let rev3 = revision == 3;
-
         Gpo::LmsReset.set(bus, 0)?;
         if rev3 {
             TEMP.check_id(bus)?;
         }
-        Self::power_rails(bus)?;
-        bus.sleep(Duration::from_millis(10));
+        Ok(Identified { rev3 })
+    }
 
-        let clocks = Self::start_clocks(bus, rev3);
-        bus.sleep(Duration::from_millis(10));
-        let lms = clocks
-            .and_then(|()| Self::release_rf(bus))
-            .inspect_err(|_| {
-                // Best effort: the original failure is the one to report.
-                let _ = Gpo::Led.set(bus, 0);
-                let _ = Gpo::LmsReset.set(bus, 0);
-                let _ = Gpo::Booster.set(bus, 0);
-            })?;
-        Self::configure_rf(bus, lms)
+    /// The board temperature in °C.
+    ///
+    /// Works before power-up on revision 3: libusdr checks the TMP114's ID there before
+    /// touching the PMIC, so the sensor is powered from reset. Revisions 1 and 2 get the same
+    /// check from [`Board::check_temperature_sensor`] before any thermal decision, failing
+    /// closed if no sensor answers. Assumed, not verified: the sensor has completed a
+    /// conversion by then (its result register reads 0 °C until the first one).
+    pub(crate) fn temperature(bus: &mut dyn Bus) -> Result<f32, Error> {
+        TEMP.celsius(bus)
+    }
+
+    /// Confirms a TMP114 answers before its readings are trusted. Revision 3 already
+    /// checked it in [`Board::identify`]; libusdr never checks on revisions 1 and 2, so this
+    /// is an addition there.
+    pub(crate) fn check_temperature_sensor(
+        bus: &mut dyn Bus,
+        identified: &Identified,
+    ) -> Result<(), Error> {
+        if identified.rev3 {
+            return Ok(());
+        }
+        TEMP.check_id(bus)
     }
 
     /// Checks the PMIC and boost converter and brings up their rails.

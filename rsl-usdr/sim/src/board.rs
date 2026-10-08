@@ -11,6 +11,9 @@ use crate::trace::Op;
 const REG_GPO: u32 = 0;
 /// Bit 31 of a [`REG_GPO`] write selects the I2C LUT.
 const GPO_I2C_LUT: u32 = 1 << 31;
+/// Board temperature the sim cools towards, in millidegrees Celsius.
+const AMBIENT_MC: i32 = 25_000;
+
 /// General-purpose output bank enabling the revision-3 on-board oscillator.
 const GPO_ENABLE_OSC: u8 = 17;
 /// General-purpose input bank 3: the hardware ID.
@@ -23,7 +26,8 @@ const SPI_LMS6: u32 = 0;
 
 /// The `LP8758` PMIC.
 const I2C_PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
-/// The TMP114 temperature sensor.
+/// The TMP114 temperature sensor, on every revision: libusdr's `usdr_gettemp` reads it here
+/// regardless of revision, though only revision 3 checks its ID during init.
 const I2C_TEMP: I2cAddress = I2cAddress { bus: 0, addr: 0x4e };
 /// The Si5332 clock generator.
 const I2C_CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
@@ -96,6 +100,12 @@ pub struct SimBoard {
     oscillator_gated: bool,
     /// The TMP114 temperature sensor.
     temp: Tmp114,
+    /// Whether the TMP114 is fitted; see [`SimBoard::without_temperature_sensor`].
+    temp_fitted: bool,
+    /// Board temperature, in millidegrees Celsius.
+    temperature_mc: i32,
+    /// How fast the board cools towards [`AMBIENT_MC`] while time passes.
+    cooling_mc_per_s: i32,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -117,7 +127,10 @@ impl SimBoard {
             boost: Reg8File::with_resets(&[(0x03, 0x04)]),
             clock: Si5332::new(),
             oscillator_gated: false,
-            temp: Tmp114::new(25_000),
+            temp: Tmp114::new(AMBIENT_MC),
+            temp_fitted: true,
+            temperature_mc: AMBIENT_MC,
+            cooling_mc_per_s: 0,
             now_us: 0,
             trace: Vec::new(),
         }
@@ -130,6 +143,33 @@ impl SimBoard {
     pub fn with_oscillator_off(mut self) -> Self {
         self.oscillator_gated = true;
         self
+    }
+
+    /// A board at `millicelsius` instead of 25 °C.
+    #[must_use]
+    pub fn with_temperature(mut self, millicelsius: i32) -> Self {
+        self.set_temperature(millicelsius);
+        self
+    }
+
+    /// A board with no TMP114 answering: its reads return the idle bus.
+    #[must_use]
+    pub fn without_temperature_sensor(mut self) -> Self {
+        self.temp_fitted = false;
+        self
+    }
+
+    /// A board that cools towards 25 °C at `millicelsius_per_second` of virtual time.
+    #[must_use]
+    pub fn with_cooling(mut self, millicelsius_per_second: i32) -> Self {
+        self.cooling_mc_per_s = millicelsius_per_second;
+        self
+    }
+
+    /// Sets the board temperature the TMP114 reports.
+    pub fn set_temperature(&mut self, millicelsius: i32) {
+        self.temperature_mc = millicelsius;
+        self.temp.set_millicelsius(millicelsius);
     }
 
     /// Writes a 32-bit FPGA register.
@@ -170,7 +210,7 @@ impl SimBoard {
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
         let chip: Option<&mut dyn I2cChip> = match addr {
             I2C_PMIC => Some(&mut self.pmic),
-            I2C_TEMP => Some(&mut self.temp),
+            I2C_TEMP if self.temp_fitted => Some(&mut self.temp),
             I2C_CLOCK => {
                 self.clock.input_clock =
                     !self.oscillator_gated || self.gpo.get(&GPO_ENABLE_OSC) == Some(&1);
@@ -194,6 +234,12 @@ impl SimBoard {
     /// Advances virtual time.
     pub fn sleep_us(&mut self, us: u64) {
         self.now_us += us;
+        if self.temperature_mc > AMBIENT_MC && self.cooling_mc_per_s > 0 {
+            let cooled = i64::from(self.cooling_mc_per_s) * i64::try_from(us).unwrap_or(i64::MAX)
+                / 1_000_000;
+            let cooled = i32::try_from(cooled).unwrap_or(i32::MAX);
+            self.set_temperature(self.temperature_mc.saturating_sub(cooled).max(AMBIENT_MC));
+        }
         self.trace.push(Op::Sleep { us });
     }
 
