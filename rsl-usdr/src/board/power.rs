@@ -145,10 +145,10 @@ impl Identified {
         Gpo::Led.set(bus, 1)?;
         Gpo::LmsReset.set(bus, 1)?;
         // libusdr reads the RF chip ID once here for its log, then again in create.
-        bus.spi32(Board::SPI_LMS6, 0x0400)
+        bus.spi32(Lms6002d::USDR_TARGET, 0x0400)
             .during("LMS6002D ID read")?;
         bus.sleep(Duration::from_millis(1));
-        Lms6002d::create(bus, Board::SPI_LMS6)
+        Lms6002d::create(bus, Lms6002d::USDR_TARGET)
     }
 
     /// Puts the transceiver in its idle configuration (both chains off, wideband RX and TX

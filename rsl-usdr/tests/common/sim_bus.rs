@@ -55,8 +55,8 @@ impl Bus for SimBus {
             ));
         }
         let addr = I2cAddress {
-            bus: dev.bus,
-            addr: dev.addr.into(),
+            bus: dev.bus(),
+            addr: dev.addr().into(),
         };
         let bytes = self.board().i2c(addr, write, read.len());
         read.copy_from_slice(&bytes);

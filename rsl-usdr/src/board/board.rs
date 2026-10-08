@@ -8,7 +8,7 @@ use crate::chips::lp8758::{BuckVoltage, Lp8758};
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
-use crate::lowlevel::{Bus, I2cAddr, SpiAddr};
+use crate::lowlevel::Bus;
 
 /// A powered uSDR board and the bus it is reached through.
 pub(crate) struct Board {
@@ -28,15 +28,13 @@ impl fmt::Debug for Board {
 
 impl Board {
     /// The LP8758 PMIC.
-    pub(super) const PMIC: Lp8758 = Lp8758::at(I2cAddr { bus: 0, addr: 0x60 });
+    pub(super) const PMIC: Lp8758 = Lp8758::usdr();
     /// The TMP114 temperature sensor.
-    pub(super) const TEMP: Tmp114 = Tmp114::at(I2cAddr { bus: 0, addr: 0x4e });
+    pub(super) const TEMP: Tmp114 = Tmp114::usdr();
     /// The Si5332 clock generator.
-    pub(super) const CLOCK: Si5332 = Si5332::at(I2cAddr { bus: 0, addr: 0x6a });
+    pub(super) const CLOCK: Si5332 = Si5332::usdr();
     /// The TPS63811 boost converter.
-    pub(super) const BOOST: Tps6381x = Tps6381x::at(I2cAddr { bus: 0, addr: 0x75 });
-    /// The LMS6002D's SPI target.
-    pub(super) const SPI_LMS6: SpiAddr = SpiAddr(0);
+    pub(super) const BOOST: Tps6381x = Tps6381x::usdr();
 
     /// GPIO bank voltage (PMIC buck 1), compatible with xSDR.
     pub(super) const VGPIO: BuckVoltage = BuckVoltage::from_millivolts(1800);

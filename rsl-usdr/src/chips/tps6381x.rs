@@ -150,6 +150,12 @@ impl Tps6381x {
         }
     }
 
+    /// The converter where the uSDR wires it: FPGA I2C bus 0, address 0x75, the part's fixed
+    /// address (`I2C_DEV_DCDCBOOST` in libusdr).
+    pub(crate) const fn usdr() -> Self {
+        Self::at(I2cAddr::new(0, 0x75))
+    }
+
     /// Checks the device ID, then runs the converter at `voltage` whichever level VSEL is
     /// at (`tps6381x_init`).
     pub(crate) fn init(
