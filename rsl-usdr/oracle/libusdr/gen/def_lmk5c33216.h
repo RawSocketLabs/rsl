@@ -1,0 +1,5126 @@
+enum lmk5c33216_regs_t {
+    VNDRID_BY1 = 0x0,
+    VNDRID_BY0 = 0x1,
+    PRODID = 0x2,
+    REVID = 0x3,
+    NVMCNT = 0x10,
+    SLAVEADR = 0x12,
+    EEREV = 0x13,
+    EE_ROM_PAGE = 0x14,
+    DEV_CTL1 = 0x15,
+    DEV_CTL2 = 0x16,
+    SWRST = 0x17,
+    STRT_PRTY = 0x18,
+    SYNC_CTL = 0x19,
+    SYSREF_REQ_CTL = 0x1a,
+    TOD_BY0 = 0x1b,
+    TOD_BY1 = 0x1c,
+    TOD_BY2 = 0x1d,
+    TOD_BY3 = 0x1e,
+    TOD_BY4 = 0x1f,
+    TOD_CTRL = 0x20,
+    INT_LIVE0 = 0x21,
+    INT_LIVE1 = 0x22,
+    INT_LIVE2 = 0x23,
+    INT_LIVE3 = 0x24,
+    INT_MASK0 = 0x25,
+    INT_MASK1 = 0x26,
+    INT_MASK2 = 0x27,
+    INT_MASK3 = 0x28,
+    INT_FLAG_POL0 = 0x29,
+    INT_FLAG_POL1 = 0x2a,
+    INT_FLAG_POL2 = 0x2b,
+    INT_FLAG_POL3 = 0x2c,
+    INT_FLAG0 = 0x2d,
+    INT_FLAG1 = 0x2e,
+    INT_FLAG2 = 0x2f,
+    INT_FLAG3 = 0x30,
+    INT_CTL = 0x31,
+    REFIN_STAT = 0x32,
+    REFIN_STAT3 = 0x34,
+    OPCTRL_STAT = 0x35,
+    GPIO0_CONFIG = 0x36,
+    GPIO1_CONFIG = 0x37,
+    GPIO2_CONFIG = 0x38,
+    GPIO0_SEL = 0x39,
+    GPIO1_SEL = 0x3a,
+    GPIO2_SEL = 0x3b,
+    GPIO_OUT_CTL = 0x3c,
+    SYSREF_DPLL_MUTE = 0x3d,
+    DPLL_MUTE = 0x3e,
+    XO_CLKCTL = 0x3f,
+    XO_OUT_SEL = 0x40,
+    REF1_CTL = 0x43,
+    REF0_CTL = 0x44,
+    OUT0_1_CMV = 0x45,
+    OUT2_3_CMV = 0x46,
+    OUT4_7_CMV = 0x47,
+    OUT8_11_CMV = 0x48,
+    OUT12_13_CMV = 0x49,
+    OUT14_15_CMV = 0x4a,
+    TDC3_ZDLY = 0x4b,
+    TDC2_ZDLY = 0x4c,
+    TDC1_ZDLY = 0x4d,
+    REF_OUT_SEL = 0x4e,
+    REF0_DETEN = 0x4f,
+    REF1_DETEN = 0x50,
+    REF0_3_CLK_DIV = 0x53,
+    REF0_MISSCLK_DIV_BY0 = 0x54,
+    REF0_MISSCLK_DIV_BY1 = 0x55,
+    REF0_MISSCLK_DIV_BY2 = 0x56,
+    REF1_MISSCLK_DIV_BY0 = 0x57,
+    REF1_MISSCLK_DIV_BY1 = 0x58,
+    REF1_MISSCLK_DIV_BY2 = 0x59,
+    REF_MISSCLK_CTL = 0x60,
+    REF0_EARLY_CLK_DIV_BY0 = 0x61,
+    REF0_EARLY_CLK_DIV_BY1 = 0x62,
+    REF0_EARLY_CLK_DIV_BY2 = 0x63,
+    REF1_EARLY_CLK_DIV_BY0 = 0x64,
+    REF1_EARLY_CLK_DIV_BY1 = 0x65,
+    REF1_EARLY_CLK_DIV_BY2 = 0x66,
+    REF0_PPM_MIN_BY0 = 0x6d,
+    REF0_PPM_MIN_BY1 = 0x6e,
+    REF0_PPM_MAX_BY0 = 0x6f,
+    REF0_PPM_MAX_BY1 = 0x70,
+    REF1_PPM_MIN_BY0 = 0x71,
+    REF1_PPM_MIN_BY1 = 0x72,
+    REF1_PPM_MAX_BY0 = 0x73,
+    REF1_PPM_MAX_BY1 = 0x74,
+    REF0_VLDTMR = 0x9d,
+    REF1_VLDTMR = 0x9e,
+    REF0_PH_VALID_THR_BY0 = 0xa1,
+    REF0_PH_VALID_THR_BY1 = 0xa2,
+    REF1_PH_VALID_THR_BY0 = 0xa3,
+    REF1_PH_VALID_THR_BY1 = 0xa4,
+    NVMSCRC = 0xaa,
+    NVMCTL = 0xab,
+    MEMADR_BY0 = 0xad,
+    MEMADR_BY1 = 0xae,
+    RAMDAT = 0xb0,
+    NVMUNLK = 0xb4,
+    DFT_CTL = 0xde,
+    DPLL1_REF1 = 0xdf,
+    DPLL1_REF3 = 0xe1,
+    DPLL1_REF4 = 0xe2,
+    DPLL1_REFSEL_STAT = 0xe3,
+    DPLL1_FDET_LCK_BY0 = 0xe4,
+    DPLL1_FDET_LCK_BY1 = 0xe5,
+    DPLL1_FDET_UNLCK_BY0 = 0xe6,
+    DPLL1_FDET_UNLCK_BY1 = 0xe7,
+    DPLL1_FDET2_CNTSTRT_BY0 = 0xe8,
+    DPLL1_FDET2_CNTSTRT_BY1 = 0xe9,
+    DPLL1_FDET2_CNTSTRT_BY2 = 0xea,
+    DPLL1_FDET2_CNTSTRT_BY3 = 0xeb,
+    DPLL1_FDET_CNTSTRT_BY0 = 0xec,
+    DPLL1_FDET_CNTSTRT_BY1 = 0xed,
+    DPLL1_FDET_CNTSTRT_BY2 = 0xee,
+    DPLL1_FDET_CNTSTRT_BY3 = 0xef,
+    DPLL1_FDET_VCO_CNTSTRT_BY0 = 0xf0,
+    DPLL1_FDET_VCO_CNTSTRT_BY1 = 0xf1,
+    DPLL1_FDET_VCO_CNTSTRT_BY2 = 0xf2,
+    DPLL1_FDET_VCO_CNTSTRT_BY3 = 0xf3,
+    DPLL1_FDET_STATUS = 0xf4,
+    DPLL1_CTRL1 = 0xf7,
+    DPLL1_SCLR_BY1 = 0xf8,
+    DPLL1_PHOFF_BY0 = 0xfa,
+    DPLL1_PHOFF_BY1 = 0xfb,
+    DPLL1_PHOFF_BY2 = 0xfc,
+    DPLL1_PHOFF_BY3 = 0xfd,
+    DPLL1_PHOFF_BY4 = 0xfe,
+    DPLL1_PHOFF_BY5 = 0xff,
+    DPLL1_FREERUN_BY0 = 0x100,
+    DPLL1_FREERUN_BY1 = 0x101,
+    DPLL1_FREERUN_BY2 = 0x102,
+    DPLL1_FREERUN_BY3 = 0x103,
+    DPLL1_FREERUN_BY4 = 0x104,
+    DPLL1_LCKTMR_BY0 = 0x122,
+    DPLL1_LCKTMR_BY1 = 0x123,
+    DPLL1_HOLDTMR_BY0 = 0x126,
+    DPLL1_HOLDTMR_BY1 = 0x127,
+    DPLL1_PHS1TMR_BY0 = 0x128,
+    DPLL1_PHS1TMR_BY1 = 0x129,
+    DPLL1_PLLK = 0x12f,
+    DPLL1_PLUNLK = 0x130,
+    DPLL1_PHS1LIM = 0x131,
+    DPLL1_HOLDLIM = 0x134,
+    DPLL1_DBG2 = 0x136,
+    DPLL1_DBG3 = 0x137,
+    DPLL1_FBDIV_BY0 = 0x13a,
+    DPLL1_FBDIV_BY1 = 0x13b,
+    DPLL1_FBDIV_BY2 = 0x13c,
+    DPLL1_FBDIV_BY3 = 0x13d,
+    DPLL1_FBDIV_BY4 = 0x13e,
+    DPLL1_FBNUM_BY0 = 0x13f,
+    DPLL1_FBNUM_BY1 = 0x140,
+    DPLL1_FBNUM_BY2 = 0x141,
+    DPLL1_FBNUM_BY3 = 0x142,
+    DPLL1_FBNUM_BY4 = 0x143,
+    DPLL1_FBDEN_BY0 = 0x144,
+    DPLL1_FBDEN_BY1 = 0x145,
+    DPLL1_FBDEN_BY2 = 0x146,
+    DPLL1_FBDEN_BY3 = 0x147,
+    DPLL1_FBDEN_BY4 = 0x148,
+    DPLL1_FBDIV2_BY0 = 0x149,
+    DPLL1_FBDIV2_BY1 = 0x14a,
+    DPLL1_FBDIV2_BY2 = 0x14b,
+    DPLL1_FBDIV2_BY3 = 0x14c,
+    DPLL1_FBDIV2_BY4 = 0x14d,
+    DPLL1_FBNUM2_BY0 = 0x14e,
+    DPLL1_FBNUM2_BY1 = 0x14f,
+    DPLL1_FBNUM2_BY2 = 0x150,
+    DPLL1_FBNUM2_BY3 = 0x151,
+    DPLL1_FBNUM2_BY4 = 0x152,
+    DPLL1_FBDEN2_BY0 = 0x153,
+    DPLL1_FBDEN2_BY1 = 0x154,
+    DPLL1_FBDEN2_BY2 = 0x155,
+    DPLL1_FBDEN2_BY3 = 0x156,
+    DPLL1_FBDEN2_BY4 = 0x157,
+    DPLL1_FBDIV_SEL = 0x158,
+    DPLL1_FBMASHCTL = 0x159,
+    DPLL1_FBFDEV_BY0 = 0x15a,
+    DPLL1_FBFDEV_BY1 = 0x15b,
+    DPLL1_FBFDEV_BY2 = 0x15c,
+    DPLL1_FBFDEV_BY3 = 0x15d,
+    DPLL1_FBFDEV_BY4 = 0x15e,
+    DPLL1_FBFDEVUPDATE = 0x15f,
+    DPLL1_FBFDEVEN = 0x160,
+    DPLL1_FBNUM_STAT_BY0 = 0x161,
+    DPLL1_FBNUM_STAT_BY1 = 0x162,
+    DPLL1_FBNUM_STAT_BY2 = 0x163,
+    DPLL1_FBNUM_STAT_BY3 = 0x164,
+    DPLL1_FBNUM_STAT_BY4 = 0x165,
+    DPLL1_REF_DBLR = 0x166,
+    DPLL1_REF0RDIV_BY0 = 0x167,
+    DPLL1_REF0RDIV_BY1 = 0x168,
+    DPLL1_REF1RDIV_BY0 = 0x169,
+    DPLL1_REF1RDIV_BY1 = 0x16a,
+    DPLL1_REF5RDIV_BY0 = 0x171,
+    DPLL1_REF5RDIV_BY1 = 0x172,
+    DPLL2_REF1 = 0x175,
+    DPLL2_REF3 = 0x177,
+    DPLL2_REF4 = 0x178,
+    DPLL2_REFSEL_STAT = 0x179,
+    DPLL2_FDET_LCK_BY0 = 0x17a,
+    DPLL2_FDET_LCK_BY1 = 0x17b,
+    DPLL2_FDET_UNLCK_BY0 = 0x17c,
+    DPLL2_FDET_UNLCK_BY1 = 0x17d,
+    DPLL2_FDET2_CNTSTRT_BY0 = 0x17e,
+    DPLL2_FDET2_CNTSTRT_BY1 = 0x17f,
+    DPLL2_FDET2_CNTSTRT_BY2 = 0x180,
+    DPLL2_FDET2_CNTSTRT_BY3 = 0x181,
+    DPLL2_FDET_CNTSTRT_BY0 = 0x182,
+    DPLL2_FDET_CNTSTRT_BY1 = 0x183,
+    DPLL2_FDET_CNTSTRT_BY2 = 0x184,
+    DPLL2_FDET_CNTSTRT_BY3 = 0x185,
+    DPLL2_FDET_VCO_CNTSTRT_BY0 = 0x186,
+    DPLL2_FDET_VCO_CNTSTRT_BY1 = 0x187,
+    DPLL2_FDET_VCO_CNTSTRT_BY2 = 0x188,
+    DPLL2_FDET_VCO_CNTSTRT_BY3 = 0x189,
+    DPLL2_FDET_STATUS = 0x18a,
+    DPLL2_CTRL1 = 0x18d,
+    DPLL2_SCLR_BY1 = 0x18e,
+    DPLL2_PHOFF_BY0 = 0x190,
+    DPLL2_PHOFF_BY1 = 0x191,
+    DPLL2_PHOFF_BY2 = 0x192,
+    DPLL2_PHOFF_BY3 = 0x193,
+    DPLL2_PHOFF_BY4 = 0x194,
+    DPLL2_PHOFF_BY5 = 0x195,
+    DPLL2_FREERUN_BY0 = 0x196,
+    DPLL2_FREERUN_BY1 = 0x197,
+    DPLL2_FREERUN_BY2 = 0x198,
+    DPLL2_FREERUN_BY3 = 0x199,
+    DPLL2_FREERUN_BY4 = 0x19a,
+    DPLL2_LCKTMR_BY0 = 0x1b8,
+    DPLL2_LCKTMR_BY1 = 0x1b9,
+    DPLL2_HOLDTMR_BY0 = 0x1bc,
+    DPLL2_HOLDTMR_BY1 = 0x1bd,
+    DPLL2_PHS1TMR_BY0 = 0x1be,
+    DPLL2_PHS1TMR_BY1 = 0x1bf,
+    DPLL2_PLLK = 0x1c5,
+    DPLL2_PLUNLK = 0x1c6,
+    DPLL2_PHS1LIM = 0x1c7,
+    DPLL2_HOLDLIM = 0x1ca,
+    DPLL2_DBG2 = 0x1cc,
+    DPLL2_DBG3 = 0x1cd,
+    DPLL2_FBDIV_BY0 = 0x1d0,
+    DPLL2_FBDIV_BY1 = 0x1d1,
+    DPLL2_FBDIV_BY2 = 0x1d2,
+    DPLL2_FBDIV_BY3 = 0x1d3,
+    DPLL2_FBDIV_BY4 = 0x1d4,
+    DPLL2_FBNUM_BY0 = 0x1d5,
+    DPLL2_FBNUM_BY1 = 0x1d6,
+    DPLL2_FBNUM_BY2 = 0x1d7,
+    DPLL2_FBNUM_BY3 = 0x1d8,
+    DPLL2_FBNUM_BY4 = 0x1d9,
+    DPLL2_FBDEN_BY0 = 0x1da,
+    DPLL2_FBDEN_BY1 = 0x1db,
+    DPLL2_FBDEN_BY2 = 0x1dc,
+    DPLL2_FBDEN_BY3 = 0x1dd,
+    DPLL2_FBDEN_BY4 = 0x1de,
+    DPLL2_FBDIV2_BY0 = 0x1df,
+    DPLL2_FBDIV2_BY1 = 0x1e0,
+    DPLL2_FBDIV2_BY2 = 0x1e1,
+    DPLL2_FBDIV2_BY3 = 0x1e2,
+    DPLL2_FBDIV2_BY4 = 0x1e3,
+    DPLL2_FBNUM2_BY0 = 0x1e4,
+    DPLL2_FBNUM2_BY1 = 0x1e5,
+    DPLL2_FBNUM2_BY2 = 0x1e6,
+    DPLL2_FBNUM2_BY3 = 0x1e7,
+    DPLL2_FBNUM2_BY4 = 0x1e8,
+    DPLL2_FBDEN2_BY0 = 0x1e9,
+    DPLL2_FBDEN2_BY1 = 0x1ea,
+    DPLL2_FBDEN2_BY2 = 0x1eb,
+    DPLL2_FBDEN2_BY3 = 0x1ec,
+    DPLL2_FBDEN2_BY4 = 0x1ed,
+    DPLL2_FBDIV_SEL = 0x1ee,
+    DPLL2_FBMASHCTL = 0x1ef,
+    DPLL2_FBFDEV_BY0 = 0x1f0,
+    DPLL2_FBFDEV_BY1 = 0x1f1,
+    DPLL2_FBFDEV_BY2 = 0x1f2,
+    DPLL2_FBFDEV_BY3 = 0x1f3,
+    DPLL2_FBFDEV_BY4 = 0x1f4,
+    DPLL2_FBFDEVUPDATE = 0x1f5,
+    DPLL2_FBFDEVEN = 0x1f6,
+    DPLL2_FBNUM_STAT_BY0 = 0x1f7,
+    DPLL2_FBNUM_STAT_BY1 = 0x1f8,
+    DPLL2_FBNUM_STAT_BY2 = 0x1f9,
+    DPLL2_FBNUM_STAT_BY3 = 0x1fa,
+    DPLL2_FBNUM_STAT_BY4 = 0x1fb,
+    DPLL2_REF_DBLR = 0x1fc,
+    DPLL2_REF0RDIV_BY0 = 0x1fd,
+    DPLL2_REF0RDIV_BY1 = 0x1fe,
+    DPLL2_REF1RDIV_BY0 = 0x1ff,
+    DPLL2_REF1RDIV_BY1 = 0x200,
+    DPLL2_REF4RDIV_BY0 = 0x205,
+    DPLL2_REF4RDIV_BY1 = 0x206,
+    DPLL2_REF5RDIV_BY0 = 0x207,
+    DPLL2_REF5RDIV_BY1 = 0x208,
+    DPLL3_REF1 = 0x20b,
+    DPLL3_REF3 = 0x20d,
+    DPLL3_REF4 = 0x20e,
+    DPLL3_REFSEL_STAT = 0x20f,
+    DPLL3_FDET_LCK_BY0 = 0x210,
+    DPLL3_FDET_LCK_BY1 = 0x211,
+    DPLL3_FDET_UNLCK_BY0 = 0x212,
+    DPLL3_FDET_UNLCK_BY1 = 0x213,
+    DPLL3_FDET2_CNTSTRT_BY0 = 0x214,
+    DPLL3_FDET2_CNTSTRT_BY1 = 0x215,
+    DPLL3_FDET2_CNTSTRT_BY2 = 0x216,
+    DPLL3_FDET2_CNTSTRT_BY3 = 0x217,
+    DPLL3_FDET_CNTSTRT_BY0 = 0x218,
+    DPLL3_FDET_CNTSTRT_BY1 = 0x219,
+    DPLL3_FDET_CNTSTRT_BY2 = 0x21a,
+    DPLL3_FDET_CNTSTRT_BY3 = 0x21b,
+    DPLL3_FDET_VCO_CNTSTRT_BY0 = 0x21c,
+    DPLL3_FDET_VCO_CNTSTRT_BY1 = 0x21d,
+    DPLL3_FDET_VCO_CNTSTRT_BY2 = 0x21e,
+    DPLL3_FDET_VCO_CNTSTRT_BY3 = 0x21f,
+    DPLL3_FDET_STATUS = 0x220,
+    DPLL3_CTRL1 = 0x223,
+    DPLL3_SCLR_BY1 = 0x224,
+    DPLL3_PHOFF_BY0 = 0x226,
+    DPLL3_PHOFF_BY1 = 0x227,
+    DPLL3_PHOFF_BY2 = 0x228,
+    DPLL3_PHOFF_BY3 = 0x229,
+    DPLL3_PHOFF_BY4 = 0x22a,
+    DPLL3_PHOFF_BY5 = 0x22b,
+    DPLL3_FREERUN_BY0 = 0x22c,
+    DPLL3_FREERUN_BY1 = 0x22d,
+    DPLL3_FREERUN_BY2 = 0x22e,
+    DPLL3_FREERUN_BY3 = 0x22f,
+    DPLL3_FREERUN_BY4 = 0x230,
+    DPLL3_LCKTMR_BY0 = 0x24e,
+    DPLL3_LCKTMR_BY1 = 0x24f,
+    DPLL3_HOLDTMR_BY0 = 0x252,
+    DPLL3_HOLDTMR_BY1 = 0x253,
+    DPLL3_PHS1TMR_BY0 = 0x254,
+    DPLL3_PHS1TMR_BY1 = 0x255,
+    DPLL3_PLLK = 0x25b,
+    DPLL3_PLUNLK = 0x25c,
+    DPLL3_PHS1LIM = 0x25d,
+    DPLL3_DBG2 = 0x262,
+    DPLL3_DBG3 = 0x263,
+    DPLL3_FBDIV_BY0 = 0x266,
+    DPLL3_FBDIV_BY1 = 0x267,
+    DPLL3_FBDIV_BY2 = 0x268,
+    DPLL3_FBDIV_BY3 = 0x269,
+    DPLL3_FBDIV_BY4 = 0x26a,
+    DPLL3_FBNUM_BY0 = 0x26b,
+    DPLL3_FBNUM_BY1 = 0x26c,
+    DPLL3_FBNUM_BY2 = 0x26d,
+    DPLL3_FBNUM_BY3 = 0x26e,
+    DPLL3_FBNUM_BY4 = 0x26f,
+    DPLL3_FBDEN_BY0 = 0x270,
+    DPLL3_FBDEN_BY1 = 0x271,
+    DPLL3_FBDEN_BY2 = 0x272,
+    DPLL3_FBDEN_BY3 = 0x273,
+    DPLL3_FBDEN_BY4 = 0x274,
+    DPLL3_FBDIV2_BY0 = 0x275,
+    DPLL3_FBDIV2_BY1 = 0x276,
+    DPLL3_FBDIV2_BY2 = 0x277,
+    DPLL3_FBDIV2_BY3 = 0x278,
+    DPLL3_FBDIV2_BY4 = 0x279,
+    DPLL3_FBNUM2_BY_BY0 = 0x27a,
+    DPLL3_FBNUM2_BY_BY1 = 0x27b,
+    DPLL3_FBNUM2_BY_BY2 = 0x27c,
+    DPLL3_FBNUM2_BY_BY3 = 0x27d,
+    DPLL3_FBNUM2_BY_BY4 = 0x27e,
+    DPLL3_FBDEN2_BY0 = 0x27f,
+    DPLL3_FBDEN2_BY1 = 0x280,
+    DPLL3_FBDEN2_BY2 = 0x281,
+    DPLL3_FBDEN2_BY3 = 0x282,
+    DPLL3_FBDEN2_BY4 = 0x283,
+    DPLL3_FBDIV_SEL = 0x284,
+    DPLL3_FBMASHCTL = 0x285,
+    DPLL3_FBFDEV_BY0 = 0x286,
+    DPLL3_FBFDEV_BY1 = 0x287,
+    DPLL3_FBFDEV_BY2 = 0x288,
+    DPLL3_FBFDEV_BY3 = 0x289,
+    DPLL3_FBFDEV_BY4 = 0x28a,
+    DPLL3_FBFDEVUPDATE = 0x28b,
+    DPLL3_FBFDEVEN = 0x28c,
+    DPLL3_FBNUM_STAT_BY0 = 0x28d,
+    DPLL3_FBNUM_STAT_BY1 = 0x28e,
+    DPLL3_FBNUM_STAT_BY2 = 0x28f,
+    DPLL3_FBNUM_STAT_BY3 = 0x290,
+    DPLL3_FBNUM_STAT_BY4 = 0x291,
+    DPLL3_REF_DBLR = 0x292,
+    DPLL3_REF0RDIV_BY0 = 0x293,
+    DPLL3_REF0RDIV_BY1 = 0x294,
+    DPLL3_REF1RDIV_BY0 = 0x295,
+    DPLL3_REF1RDIV_BY1 = 0x296,
+    DPLL3_REF2RDIV_BY0 = 0x297,
+    DPLL3_REF2RDIV_BY1 = 0x298,
+    DPLL3_REF5RDIV_BY0 = 0x29d,
+    DPLL3_REF5RDIV_BY1 = 0x29e,
+    APLL1_CP_RPU = 0x2c3,
+    APLL1_CPG = 0x2c4,
+    APLL1_LPF_R2 = 0x2c5,
+    APLL1_LPF_R3 = 0x2c6,
+    APLL1_LPF_R4 = 0x2c7,
+    APLL1_LPF_C3C4 = 0x2c8,
+    APLL1_RDIV_BY0 = 0x2c9,
+    APLL1_RDIV_BY1 = 0x2ca,
+    APLL1_RDIV_CTL = 0x2cb,
+    APLL1_NDIV_BY0 = 0x2cc,
+    APLL1_NDIV_BY1 = 0x2cd,
+    APLL1_NUM_MSB = 0x2ce,
+    APLL1_NUM_BY0 = 0x2cf,
+    APLL1_NUM_BY1 = 0x2d0,
+    APLL1_NUM_BY2 = 0x2d1,
+    APLL1_NUM_BY3 = 0x2d2,
+    APLL1_NUM_BY4 = 0x2d3,
+    APLL1_MASH_CTL = 0x2d4,
+    APLL1_NUM_STAT_BY0 = 0x2d5,
+    APLL1_NUM_STAT_BY1 = 0x2d6,
+    APLL1_NUM_STAT_BY2 = 0x2d7,
+    APLL1_NUM_STAT_BY3 = 0x2d8,
+    APLL1_NUM_STAT_BY4 = 0x2d9,
+    APLL1_VCO_PRIDIV_CTL = 0x2db,
+    APLL1_VCO_SECDIV_CTL = 0x2dc,
+    APLL1_VCO_BUF_CTL = 0x2dd,
+    APLL1_CALSTAT1 = 0x2e5,
+    APLL2_CAL = 0x305,
+    APLL2_CP_PU = 0x309,
+    APLL2_CPG = 0x30a,
+    APLL2_LPF_R2 = 0x30b,
+    APLL2_LPF_R3 = 0x30c,
+    APLL2_LPF_R4 = 0x30d,
+    APLL2_LPF_C3C4 = 0x30e,
+    APLL2_RDIV_BY0 = 0x30f,
+    APLL2_RDIV_BY1 = 0x310,
+    APLL2_RDIV_CTL = 0x311,
+    APLL2_NDIV_BY0 = 0x312,
+    APLL2_NDIV_BY1 = 0x313,
+    APLL2_NUM_MSB = 0x314,
+    APLL2_NUM_BY0 = 0x315,
+    APLL2_NUM_BY1 = 0x316,
+    APLL2_NUM_BY2 = 0x317,
+    APLL2_NUM_BY3 = 0x318,
+    APLL2_NUM_BY4 = 0x319,
+    APLL2_MASH_CTL = 0x31a,
+    APLL2_NUM_STAT_BY0 = 0x31b,
+    APLL2_NUM_STAT_BY1 = 0x31c,
+    APLL2_NUM_STAT_BY2 = 0x31d,
+    APLL2_NUM_STAT_BY3 = 0x31e,
+    APLL2_NUM_STAT_BY4 = 0x31f,
+    APLL2_VCO_BUF_CTL = 0x323,
+    APLL2_VCO_DIV = 0x324,
+    APLL2_VCO_DRVR = 0x325,
+    APLL2_CALSTAT1 = 0x32d,
+    APLL3_CPBLEED = 0x348,
+    APLL3_CPG = 0x349,
+    APLL3_LPF_R2 = 0x34a,
+    APLL3_LPF_R3 = 0x34b,
+    APLL3_LPF_R4 = 0x34c,
+    APLL3_LPF_C3C4 = 0x34d,
+    APLL3_RDIV_BY0 = 0x34e,
+    APLL3_RDIV_BY1 = 0x34f,
+    APLL3_RDIV_CTL = 0x350,
+    APLL3_NDIV_BY0 = 0x351,
+    APLL3_NDIV_BY1 = 0x352,
+    APLL3_NUM_MSB = 0x353,
+    APLL3_NUM_BY0 = 0x354,
+    APLL3_NUM_BY1 = 0x355,
+    APLL3_NUM_BY2 = 0x356,
+    APLL3_NUM_BY3 = 0x357,
+    APLL3_NUM_BY4 = 0x358,
+    APLL3_DEN_APLL_BY0 = 0x353,
+    APLL3_DEN_APLL_BY1 = 0x354,
+    APLL3_DEN_APLL_BY2 = 0x355,
+    APLL3_NUM_APLL_BY0 = 0x356,
+    APLL3_NUM_APLL_BY1 = 0x357,
+    APLL3_NUM_APLL_BY2 = 0x358,
+    APLL3_MASH_CTL = 0x359,
+    APLL3_NUM_STAT_BY0 = 0x35a,
+    APLL3_NUM_STAT_BY1 = 0x35b,
+    APLL3_NUM_STAT_BY2 = 0x35c,
+    APLL3_NUM_STAT_BY3 = 0x35d,
+    APLL3_NUM_STAT_BY4 = 0x35e,
+    APLL3_VCO_CTL = 0x360,
+    APLL3_VCO_CTL2 = 0x361,
+    APLL3_VCO_BUF_CTL = 0x362,
+    OUT0_MODE = 0x3c1,
+    OUT0_CTL_P = 0x3c2,
+    OUT0_CTL = 0x3c3,
+    OUT1_MODE = 0x3c4,
+    OUT1_CTL_P = 0x3c5,
+    OUT1_CTL = 0x3c6,
+    OUT0_1_CMOS_CTL = 0x3c7,
+    CH0_1_ZDLY = 0x3c8,
+    CH0_1_CTL = 0x3c9,
+    CH0_1_MUX_CTL2_P = 0x3cc,
+    CH0_1_MUX_CTL2 = 0x3cd,
+    CH0_1_CH0_STATIC_OFFSET_BY0 = 0x3ce,
+    CH0_1_CH0_STATIC_OFFSET_BY1 = 0x3cf,
+    CH0_1_CH1_STATIC_OFFSET_BY0 = 0x3d0,
+    CH0_1_CH1_STATIC_OFFSET_BY1 = 0x3d1,
+    CH0_1_CH0_DIV_BY0 = 0x3d2,
+    CH0_1_CH0_DIV_BY1 = 0x3d3,
+    CH0_1_CH1_DIV_BY0 = 0x3d4,
+    CH0_1_CH1_DIV_BY1 = 0x3d5,
+    CH0_1_SR_ANA_DELAY = 0x3d6,
+    CH0_1_SR_ANA_DELAY_CTL = 0x3d7,
+    CH0_1_SR_DDLY = 0x3d8,
+    CH0_1_SR_DIV_BY0 = 0x3d9,
+    CH0_1_SR_DIV_BY1 = 0x3da,
+    CH0_1_SR_DIV_BY2 = 0x3db,
+    CH0_1_SR_STATIC_OFFSET_BY0 = 0x3dc,
+    CH0_1_SR_STATIC_OFFSET_BY1 = 0x3dd,
+    CH0_1_SR_CTL = 0x3de,
+    CH0_1_DFT = 0x3df,
+    OUT2_MODE = 0x400,
+    OUT2_CTL = 0x401,
+    CH2_CTL = 0x402,
+    CH2_CTL2 = 0x403,
+    CH2_STATIC_OFFSET_BY0 = 0x404,
+    CH2_STATIC_OFFSET_BY1 = 0x405,
+    CH2_DIV_BY0 = 0x406,
+    CH2_DIV_BY1 = 0x407,
+    OUT3_MODE = 0x420,
+    OUT3_CTL = 0x421,
+    CH3_CTL = 0x422,
+    CH3_CTL2 = 0x423,
+    CH3_STATIC_OFFSET_BY0 = 0x424,
+    CH3_STATIC_OFFSET_BY1 = 0x425,
+    CH3_DIV_BY0 = 0x426,
+    CH3_DIV_BY1 = 0x427,
+    CH4_5_SR_ANA_DLY_TRIM = 0x440,
+    OUT4_MODE = 0x441,
+    OUT4_CTL = 0x442,
+    OUT5_MODE = 0x443,
+    OUT5_CTL = 0x444,
+    CH4_5_CTL = 0x445,
+    CH4_5_CTL2 = 0x446,
+    CH4_5_STATIC_OFFSET_BY0 = 0x447,
+    CH4_5_STATIC_OFFSET_BY1 = 0x448,
+    CH4_5_DIV_BY0 = 0x449,
+    CH4_5_DIV_BY1 = 0x44a,
+    CH4_5_SR_ANA_DELAY = 0x44b,
+    CH4_5_SR_ANA_DELAY_CTL = 0x44c,
+    CH4_5_SR_DDLY = 0x44d,
+    CH4_5_SR_DIV_BY0 = 0x44e,
+    CH4_5_SR_DIV_BY1 = 0x44f,
+    CH4_5_SR_DIV_BY2 = 0x450,
+    CH4_5_SR_STATIC_OFFSET_BY0 = 0x451,
+    CH4_5_SR_STATIC_OFFSET_BY1 = 0x452,
+    CH4_5_SR_PULSE_CTL = 0x453,
+    CH4_5_DFT = 0x454,
+    OUT6_MODE = 0x461,
+    OUT6_CTL = 0x462,
+    OUT7_MODE = 0x463,
+    OUT7_CTL = 0x464,
+    CH6_7_CTL = 0x465,
+    CH6_7_CTL2 = 0x466,
+    CH6_7_STATIC_OFFSET_BY0 = 0x467,
+    CH6_7_STATIC_OFFSET_BY1 = 0x468,
+    CH6_7_DIV_BY0 = 0x469,
+    CH6_7_DIV_BY1 = 0x46a,
+    CH6_7_SR_ANA_DELAY = 0x46b,
+    CH6_7_SR_ANA_DELAY_CTL = 0x46c,
+    CH6_7_SR_DDLY = 0x46d,
+    CH6_7_SR_DIV_BY0 = 0x46e,
+    CH6_7_SR_DIV_BY1 = 0x46f,
+    CH6_7_SR_DIV_BY2 = 0x470,
+    CH6_7_SR_STATIC_OFFSET_BY0 = 0x471,
+    CH6_7_SR_STATIC_OFFSET_BY1 = 0x472,
+    CH6_7_SR_PULSE_CTL = 0x473,
+    CH6_7_DFT = 0x474,
+    OUT8_MODE = 0x481,
+    OUT8_CTL = 0x482,
+    OUT9_MODE = 0x483,
+    OUT9_CTL = 0x484,
+    CH8_9_CTL = 0x485,
+    CH8_9_CTL2 = 0x486,
+    CH8_9_STATIC_OFFSET_BY0 = 0x487,
+    CH8_9_STATIC_OFFSET_BY1 = 0x488,
+    CH8_9_DIV_BY0 = 0x489,
+    CH8_9_DIV_BY1 = 0x48a,
+    CH8_9_SR_ANA_DELAY = 0x48b,
+    CH8_9_SR_ANA_DELAY_CTL = 0x48c,
+    CH8_9_SR_DDLY = 0x48d,
+    CH8_9_SR_DIV_BY0 = 0x48e,
+    CH8_9_SR_DIV_BY1 = 0x48f,
+    CH8_9_SR_DIV_BY2 = 0x490,
+    CH8_9_SR_STATIC_OFFSET_BY0 = 0x491,
+    CH8_9_SR_STATIC_OFFSET_BY1 = 0x492,
+    CH8_9_SR_PULSE_CTL = 0x493,
+    OUT10_MODE = 0x4a1,
+    OUT10_CTL = 0x4a2,
+    OUT11_MODE = 0x4a3,
+    OUT11_CTL = 0x4a4,
+    CH10_11_CTL = 0x4a5,
+    CH10_11_CTL2 = 0x4a6,
+    CH10_11_STATIC_OFFSET_BY0 = 0x4a7,
+    CH10_11_STATIC_OFFSET_BY1 = 0x4a8,
+    CH10_11_DIV_BY0 = 0x4a9,
+    CH10_11_DIV_BY1 = 0x4aa,
+    CH10_11_SR_ANA_DELAY = 0x4ab,
+    CH10_11_SR_ANA_DELAY_CTL = 0x4ac,
+    CH10_11_SR_DDLY = 0x4ad,
+    CH10_11_SR_DIV_BY0 = 0x4ae,
+    CH10_11_SR_DIV_BY1 = 0x4af,
+    CH10_11_SR_DIV_BY2 = 0x4b0,
+    CH10_11_SR_STATIC_OFFSET_BY0 = 0x4b1,
+    CH10_11_SR_STATIC_OFFSET_BY1 = 0x4b2,
+    CH10_11_SR_PULSE_CTL = 0x4b3,
+    CH10_11_DFT = 0x4b4,
+    OUT12_MODE = 0x4c1,
+    OUT12_CTL = 0x4c2,
+    OUT13_MODE = 0x4c3,
+    OUT13_CTL = 0x4c4,
+    CH12_13_CTL = 0x4c5,
+    CH12_13_CTL2 = 0x4c6,
+    CH12_13_STATIC_OFFSET_BY0 = 0x4c7,
+    CH12_13_STATIC_OFFSET_BY1 = 0x4c8,
+    CH12_13_DIV_BY0 = 0x4c9,
+    CH12_13_DIV_BY1 = 0x4ca,
+    CH12_13_SR_ANA_DELAY = 0x4cb,
+    CH12_13_SR_ANA_DELAY_CTL = 0x4cc,
+    CH12_13_SR_DDLY = 0x4cd,
+    CH12_13_SR_DIV_BY0 = 0x4ce,
+    CH12_13_SR_DIV_BY1 = 0x4cf,
+    CH12_13_SR_DIV_BY2 = 0x4d0,
+    CH12_13_SR_STATIC_OFFSET_BY0 = 0x4d1,
+    CH12_13_SR_STATIC_OFFSET_BY1 = 0x4d2,
+    CH12_13_SR_PULSE_CTL = 0x4d3,
+    CH12_13_DFT = 0x4d4,
+    OUT14_MODE = 0x4e0,
+    OUT14_CTL = 0x4e1,
+    CH14_CTL = 0x4e2,
+    CH14_CTL2 = 0x4e3,
+    CH14_STATIC_OFFSET_BY0 = 0x4e4,
+    CH14_STATIC_OFFSET_BY1 = 0x4e5,
+    CH14_DIV_BY0 = 0x4e6,
+    CH14_DIV_BY1 = 0x4e7,
+    OUT15_MODE = 0x500,
+    OUT15_CTL = 0x501,
+    CH15_CTL = 0x502,
+    CH15_CTL2 = 0x503,
+    CH15_STATIC_OFFSET_BY0 = 0x504,
+    CH15_STATIC_OFFSET_BY1 = 0x505,
+    CH15_DIV_BY0 = 0x506,
+    CH15_DIV_BY1 = 0x507,
+};
+#define MAKE_LMK5C33216_REG_WR(a, v) (0x800000 | ((a) << 8) | ((v) & 0xff))
+#define MAKE_LMK5C33216_REG_RD(a) (((a) << 8))
+enum lmk5c33216_opts_gpio_mod_t {
+    OPTS_GPIO_MOD_STATUS_OR_INT = 0x0,
+    OPTS_GPIO_MOD_INSEL01_DPLL1 = 0x1,
+    OPTS_GPIO_MOD_INSEL01_DPLL2 = 0x2,
+    OPTS_GPIO_MOD_INSEL01_DPLL3 = 0x3,
+    OPTS_GPIO_MOD_SYNC = 0x1f,
+    OPTS_GPIO_MOD_SYSREF_REQ = 0x20,
+    OPTS_GPIO_MOD_FDEV_TRIG_DPLL1 = 0x21,
+    OPTS_GPIO_MOD_FDEV_TRIG_DPLL2 = 0x22,
+    OPTS_GPIO_MOD_FDEV_TRIG_DPLL3 = 0x23,
+    OPTS_GPIO_MOD_FDEV_DIR_DPLL1 = 0x24,
+    OPTS_GPIO_MOD_FDEV_DIR_DPLL2 = 0x25,
+    OPTS_GPIO_MOD_FDEV_DIR_DPLL3 = 0x26,
+    OPTS_GPIO_MOD_TOD_TRIG_SEL = 0x27,
+};
+enum lmk5c33216_opts_gpio_sel_t {
+    OPTS_GPIO_SEL_XO_Loss_of_Signal_LOS = 0x0,
+    OPTS_GPIO_SEL_PLL1_Loss_of_Lock_LOL = 0x1,
+    OPTS_GPIO_SEL_PLL2_Loss_of_Lock_LOL = 0x2,
+    OPTS_GPIO_SEL_PLL3_Loss_of_Lock_LOL = 0x3,
+    OPTS_GPIO_SEL_DPLL1_Loss_of_Phase_Lock_LOPL = 0x4,
+    OPTS_GPIO_SEL_DPLL1_Loss_of_Frequency_Lock_LOFL = 0x5,
+    OPTS_GPIO_SEL_PLL1_LOL_OR_DPLL1_LOPL_OR_DPLL1_LOFL = 0x6,
+    OPTS_GPIO_SEL_DPLL2_Loss_of_Phase_Lock_LOPL = 0x7,
+    OPTS_GPIO_SEL_DPLL2_Loss_of_Frequency_Lock_LOFL = 0x8,
+    OPTS_GPIO_SEL_PLL2_LOL_OR_DPLL2_LOPL_OR_DPLL2_LOFL = 0x9,
+    OPTS_GPIO_SEL_DPLL3_Loss_of_Phase_Lock_LOPL = 0xa,
+    OPTS_GPIO_SEL_DPLL3_Loss_of_Frequency_Lock_LOFL = 0xb,
+    OPTS_GPIO_SEL_PLL3_LOL_OR_DPLL3_LOPL_OR_DPLL3_LOFL = 0xc,
+    OPTS_GPIO_SEL_DPLL1_OR_DPLL2_OR_DPLL3_LOL = 0xd,
+    OPTS_GPIO_SEL_INTR = 0xe,
+    OPTS_GPIO_SEL_SPI_Readback_Data_SDO = 0xf,
+    OPTS_GPIO_SEL_DPLL1_REF0_Selected = 0x15,
+    OPTS_GPIO_SEL_DPLL1_REF1_Selected = 0x16,
+    OPTS_GPIO_SEL_DPLL1_Holdover_Active = 0x1a,
+    OPTS_GPIO_SEL_DPLL2_REF0_Selected = 0x1b,
+    OPTS_GPIO_SEL_DPLL2_REF1_Selected = 0x1c,
+    OPTS_GPIO_SEL_DPLL2_Holdover_Active = 0x20,
+    OPTS_GPIO_SEL_DPLL3_REF0_Selected = 0x21,
+    OPTS_GPIO_SEL_DPLL3_REF1_Selected = 0x22,
+    OPTS_GPIO_SEL_DPLL3_Holdover_Active = 0x26,
+    OPTS_GPIO_SEL_REF0_Frequency_Monitor = 0x27,
+    OPTS_GPIO_SEL_REF1_Frequency_Monitor = 0x28,
+    OPTS_GPIO_SEL_REF0_Missing_Clock_Monitor = 0x2c,
+    OPTS_GPIO_SEL_REF1_Missing_Clock_Monitor = 0x2d,
+    OPTS_GPIO_SEL_REF0_Phase_Validation_Monitor = 0x3b,
+    OPTS_GPIO_SEL_REF1_Phase_Validation_Monitor = 0x3c,
+};
+enum lmk5c33216_opts_gpio_sysref_ref_t {
+    OPTS_GPIO_SYSREF_REF_OUT_0_1 = 0x0,
+    OPTS_GPIO_SYSREF_REF_OUT_4_5 = 0x1,
+    OPTS_GPIO_SYSREF_REF_OUT_6_7 = 0x2,
+    OPTS_GPIO_SYSREF_REF_OUT_8_9 = 0x3,
+    OPTS_GPIO_SYSREF_REF_OUT_10_11 = 0x4,
+    OPTS_GPIO_SYSREF_REF_OUT_12_13 = 0x5,
+};
+enum lmk5c33216_out_configuration_01_t {
+    OUT_CONFIGURATION_01_CH0_DIV2 = 0x0,
+    OUT_CONFIGURATION_01_CHDIV1 = 0x14,
+    OUT_CONFIGURATION_01_SYSREF_ADLY = 0x20,
+    OUT_CONFIGURATION_01_SYSREF = 0x21,
+    OUT_CONFIGURATION_01_STATIC_DC = 0x22,
+    OUT_CONFIGURATION_01_CHDIV0 = 0x28,
+    OUT_CONFIGURATION_01_CH1_Bypass = 0x40,
+    OUT_CONFIGURATION_01_CH0_Bypass = 0x80,
+};
+enum lmk5c33216_in_opts_t {
+    IN_OPTS_DC_DIFF_EXT = 0x0,
+    IN_OPTS_AC_DIFF_EXT = 0x1,
+    IN_OPTS_AC_DIFF_INT_100 = 0x3,
+    IN_OPTS_HCSL_INT_50 = 0x4,
+    IN_OPTS_AC_LVPECL_50 = 0x5,
+    IN_OPTS_CMOS = 0x8,
+    IN_OPTS_SE_INT_50 = 0xc,
+};
+enum lmk5c33216_out_fmt_01_t {
+    OUT_FMT_01_DISABLED = 0x0,
+    OUT_FMT_01_LVDS = 0x1,
+    OUT_FMT_01_LVPECL = 0x2,
+    OUT_FMT_01_HSDS = 0x3,
+    OUT_FMT_01_CMOS = 0x4,
+};
+enum lmk5c33216_out_fmt_46_t {
+    OUT_FMT_46_DISABLED = 0x0,
+    OUT_FMT_46_LVDS = 0x1,
+    OUT_FMT_46_LVPECL = 0x2,
+    OUT_FMT_46_HSDS = 0x3,
+    OUT_FMT_46_CML = 0x5,
+};
+enum lmk5c33216_out_fmt_t {
+    OUT_FMT_DISABLED = 0x0,
+    OUT_FMT_LVDS = 0x1,
+    OUT_FMT_LVPECL = 0x2,
+    OUT_FMT_HSDS = 0x3,
+};
+enum lmk5c33216_clk_in_fanout_t {
+    CLK_IN_FANOUT_DISABLED = 0x0,
+    CLK_IN_FANOUT_IN1_to_CHDIV1 = 0x3,
+    CLK_IN_FANOUT_IN0_to_SYSREF = 0x4,
+    CLK_IN_FANOUT_IN0_to_SYSREF__IN1_to_CHDIV1 = 0x7,
+    CLK_IN_FANOUT_IN0_to_CHDIV0 = 0xc,
+    CLK_IN_FANOUT_IN0_to_CHDIV0__IN1_to_CHDIV1 = 0xf,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT0 = 0x10,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT0__IN1_to_CHDIV1_OUT1 = 0x13,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT0_and_SYSREF_OUT1 = 0x14,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT0_and_CHDIV0_OUT1 = 0x1c,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT1 = 0x20,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT1__IN1_to_CHDIV1_OUT0 = 0x23,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT1_and_SYSREF_OUT0 = 0x24,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT1_and_CHDIV0_OUT0 = 0x2c,
+    CLK_IN_FANOUT_IN0_to_CH0DIV2_OUT0_and_OUT1 = 0x30,
+};
+enum lmk5c33216_clk_in_mux_23_t {
+    CLK_IN_MUX_23_PLL1_SEC = 0x0,
+    CLK_IN_MUX_23_PLL2 = 0x1,
+    CLK_IN_MUX_23_PLL1_PRI = 0x2,
+};
+enum lmk5c33216_clk_in_mux_ef_t {
+    CLK_IN_MUX_EF_VCO3 = 0x0,
+    CLK_IN_MUX_EF_VCO2 = 0x1,
+    CLK_IN_MUX_EF_VCO1_PRI = 0x2,
+};
+enum lmk5c33216_clk_in_mux_t {
+    CLK_IN_MUX_VCO2 = 0x0,
+    CLK_IN_MUX_VCO3 = 0x1,
+};
+// Register R0 [0x0] -- VNDRID_BY1
+
+// Register R1 [0x1] -- VNDRID_BY0
+
+// Register R2 [0x2] -- PRODID
+
+// Register R3 [0x3] -- REVID
+
+// Register R16 [0x10] -- NVMCNT
+
+// Register R18 [0x12] -- SLAVEADR
+
+// Register R19 [0x13] -- EEREV
+
+// Register R20 [0x14] -- EE_ROM_PAGE
+
+// Register R21 [0x15] -- DEV_CTL1
+
+enum dev_ctl1_fields_t {
+    SPI_3WIRE_DIS_OFF = 0x7,
+    SPI_3WIRE_DIS_MSK = 0x80,
+    SYNC_SW_OFF = 0x6,
+    SYNC_SW_MSK = 0x40,
+};
+#define MAKE_LMK5C33216_DEV_CTL1(spi_3wire_dis, sync_sw) MAKE_LMK5C33216_REG_WR(DEV_CTL1, \
+    (((spi_3wire_dis) << SPI_3WIRE_DIS_OFF) & SPI_3WIRE_DIS_MSK) |  \
+    (((sync_sw) << SYNC_SW_OFF) & SYNC_SW_MSK))
+// Register R22 [0x16] -- DEV_CTL2
+
+enum dev_ctl2_fields_t {
+    DPLL3_EN_OFF = 0x5,
+    DPLL3_EN_MSK = 0x20,
+    APLL3_EN_OFF = 0x4,
+    APLL3_EN_MSK = 0x10,
+    DPLL2_EN_OFF = 0x3,
+    DPLL2_EN_MSK = 0x8,
+    APLL2_EN_OFF = 0x2,
+    APLL2_EN_MSK = 0x4,
+    DPLL1_EN_OFF = 0x1,
+    DPLL1_EN_MSK = 0x2,
+    APLL1_EN_OFF = 0x0,
+    APLL1_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DEV_CTL2(dpll3_en, apll3_en, dpll2_en, apll2_en, dpll1_en, apll1_en) MAKE_LMK5C33216_REG_WR(DEV_CTL2, \
+    (((dpll3_en) << DPLL3_EN_OFF) & DPLL3_EN_MSK) |  \
+    (((apll3_en) << APLL3_EN_OFF) & APLL3_EN_MSK) |  \
+    (((dpll2_en) << DPLL2_EN_OFF) & DPLL2_EN_MSK) |  \
+    (((apll2_en) << APLL2_EN_OFF) & APLL2_EN_MSK) |  \
+    (((dpll1_en) << DPLL1_EN_OFF) & DPLL1_EN_MSK) |  \
+    (((apll1_en) << APLL1_EN_OFF) & APLL1_EN_MSK))
+// Register R23 [0x17] -- SWRST
+
+enum swrst_fields_t {
+    SWRST_OFF = 0x6,
+    SWRST_MSK = 0x40,
+};
+#define MAKE_LMK5C33216_SWRST(swrst) MAKE_LMK5C33216_REG_WR(SWRST, \
+    (((swrst) << SWRST_OFF) & SWRST_MSK))
+// Register R24 [0x18] -- STRT_PRTY
+
+enum strt_prty_fields_t {
+    APLL3_STRT_PRTY_OFF = 0x4,
+    APLL3_STRT_PRTY_MSK = 0x30,
+    APLL2_STRT_PRTY_OFF = 0x2,
+    APLL2_STRT_PRTY_MSK = 0xc,
+    APLL1_STRT_PRTY_OFF = 0x0,
+    APLL1_STRT_PRTY_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_STRT_PRTY(apll3_strt_prty, apll2_strt_prty, apll1_strt_prty) MAKE_LMK5C33216_REG_WR(STRT_PRTY, \
+    (((apll3_strt_prty) << APLL3_STRT_PRTY_OFF) & APLL3_STRT_PRTY_MSK) |  \
+    (((apll2_strt_prty) << APLL2_STRT_PRTY_OFF) & APLL2_STRT_PRTY_MSK) |  \
+    (((apll1_strt_prty) << APLL1_STRT_PRTY_OFF) & APLL1_STRT_PRTY_MSK))
+// Register R25 [0x19] -- SYNC_CTL
+
+enum sync_ctl_fields_t {
+    SYNC_EN_OFF = 0x0,
+    SYNC_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_SYNC_CTL(sync_en) MAKE_LMK5C33216_REG_WR(SYNC_CTL, \
+    (((sync_en) << SYNC_EN_OFF) & SYNC_EN_MSK))
+// Register R26 [0x1a] -- SYSREF_REQ_CTL
+
+enum sysref_req_ctl_fields_t {
+    SYSREF_REQ_SW_OFF = 0x0,
+    SYSREF_REQ_SW_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_SYSREF_REQ_CTL(sysref_req_sw) MAKE_LMK5C33216_REG_WR(SYSREF_REQ_CTL, \
+    (((sysref_req_sw) << SYSREF_REQ_SW_OFF) & SYSREF_REQ_SW_MSK))
+// Register R27 [0x1b] -- TOD
+
+
+#define MAKE_LMK5C33216_TOD_BY0(value) MAKE_LMK5C33216_REG_WR(TOD_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_TOD_BY1(value) MAKE_LMK5C33216_REG_WR(TOD_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_TOD_BY2(value) MAKE_LMK5C33216_REG_WR(TOD_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_TOD_BY3(value) MAKE_LMK5C33216_REG_WR(TOD_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_TOD_BY4(value) MAKE_LMK5C33216_REG_WR(TOD_BY4, (((value) << 0) & 0xff))
+// Register R32 [0x20] -- TOD_CTRL
+
+enum tod_ctrl_fields_t {
+    TOD_CNTR_TRIG_SEL_OFF = 0x1,
+    TOD_CNTR_TRIG_SEL_MSK = 0x2,
+    TOD_CNTR_EN_OFF = 0x0,
+    TOD_CNTR_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_TOD_CTRL(tod_cntr_trig_sel, tod_cntr_en) MAKE_LMK5C33216_REG_WR(TOD_CTRL, \
+    (((tod_cntr_trig_sel) << TOD_CNTR_TRIG_SEL_OFF) & TOD_CNTR_TRIG_SEL_MSK) |  \
+    (((tod_cntr_en) << TOD_CNTR_EN_OFF) & TOD_CNTR_EN_MSK))
+// Register R33 [0x21] -- INT_LIVE0
+
+enum int_live0_fields_t {
+    LOL_PLL1_OFF = 0x3,
+    LOL_PLL1_MSK = 0x8,
+    LOL_PLL2_OFF = 0x2,
+    LOL_PLL2_MSK = 0x4,
+    LOS_FDET_XO_OFF = 0x0,
+    LOS_FDET_XO_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_LIVE0(lol_pll1, lol_pll2, los_fdet_xo) MAKE_LMK5C33216_REG_WR(INT_LIVE0, \
+    (((lol_pll1) << LOL_PLL1_OFF) & LOL_PLL1_MSK) |  \
+    (((lol_pll2) << LOL_PLL2_OFF) & LOL_PLL2_MSK) |  \
+    (((los_fdet_xo) << LOS_FDET_XO_OFF) & LOS_FDET_XO_MSK))
+// Register R34 [0x22] -- INT_LIVE1
+
+enum int_live1_fields_t {
+    LOPL_DPLL1_OFF = 0x7,
+    LOPL_DPLL1_MSK = 0x80,
+    LOFL_DPLL1_OFF = 0x6,
+    LOFL_DPLL1_MSK = 0x40,
+    HIST1_OFF = 0x5,
+    HIST1_MSK = 0x20,
+    HLDOVR1_OFF = 0x4,
+    HLDOVR1_MSK = 0x10,
+    REFSWITCH1_OFF = 0x3,
+    REFSWITCH1_MSK = 0x8,
+    LOR_MISSCLK1_OFF = 0x2,
+    LOR_MISSCLK1_MSK = 0x4,
+    LOR_FREQ1_OFF = 0x1,
+    LOR_FREQ1_MSK = 0x2,
+    LOR_PH1_OFF = 0x0,
+    LOR_PH1_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_LIVE1(lopl_dpll1, lofl_dpll1, hist1, hldovr1, refswitch1, lor_missclk1, lor_freq1, lor_ph1) MAKE_LMK5C33216_REG_WR(INT_LIVE1, \
+    (((lopl_dpll1) << LOPL_DPLL1_OFF) & LOPL_DPLL1_MSK) |  \
+    (((lofl_dpll1) << LOFL_DPLL1_OFF) & LOFL_DPLL1_MSK) |  \
+    (((hist1) << HIST1_OFF) & HIST1_MSK) |  \
+    (((hldovr1) << HLDOVR1_OFF) & HLDOVR1_MSK) |  \
+    (((refswitch1) << REFSWITCH1_OFF) & REFSWITCH1_MSK) |  \
+    (((lor_missclk1) << LOR_MISSCLK1_OFF) & LOR_MISSCLK1_MSK) |  \
+    (((lor_freq1) << LOR_FREQ1_OFF) & LOR_FREQ1_MSK) |  \
+    (((lor_ph1) << LOR_PH1_OFF) & LOR_PH1_MSK))
+// Register R35 [0x23] -- INT_LIVE2
+
+enum int_live2_fields_t {
+    LOPL_DPLL2_OFF = 0x7,
+    LOPL_DPLL2_MSK = 0x80,
+    LOFL_DPLL2_OFF = 0x6,
+    LOFL_DPLL2_MSK = 0x40,
+    HIST2_OFF = 0x5,
+    HIST2_MSK = 0x20,
+    HLDOVR2_OFF = 0x4,
+    HLDOVR2_MSK = 0x10,
+    REFSWITCH2_OFF = 0x3,
+    REFSWITCH2_MSK = 0x8,
+    LOR_MISSCLK2_OFF = 0x2,
+    LOR_MISSCLK2_MSK = 0x4,
+    LOR_FREQ2_OFF = 0x1,
+    LOR_FREQ2_MSK = 0x2,
+    LOR_PH2_OFF = 0x0,
+    LOR_PH2_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_LIVE2(lopl_dpll2, lofl_dpll2, hist2, hldovr2, refswitch2, lor_missclk2, lor_freq2, lor_ph2) MAKE_LMK5C33216_REG_WR(INT_LIVE2, \
+    (((lopl_dpll2) << LOPL_DPLL2_OFF) & LOPL_DPLL2_MSK) |  \
+    (((lofl_dpll2) << LOFL_DPLL2_OFF) & LOFL_DPLL2_MSK) |  \
+    (((hist2) << HIST2_OFF) & HIST2_MSK) |  \
+    (((hldovr2) << HLDOVR2_OFF) & HLDOVR2_MSK) |  \
+    (((refswitch2) << REFSWITCH2_OFF) & REFSWITCH2_MSK) |  \
+    (((lor_missclk2) << LOR_MISSCLK2_OFF) & LOR_MISSCLK2_MSK) |  \
+    (((lor_freq2) << LOR_FREQ2_OFF) & LOR_FREQ2_MSK) |  \
+    (((lor_ph2) << LOR_PH2_OFF) & LOR_PH2_MSK))
+// Register R36 [0x24] -- INT_LIVE3
+
+enum int_live3_fields_t {
+    LOPL_DPLL3_OFF = 0x7,
+    LOPL_DPLL3_MSK = 0x80,
+    LOFL_DPLL3_OFF = 0x6,
+    LOFL_DPLL3_MSK = 0x40,
+    HIST3_OFF = 0x5,
+    HIST3_MSK = 0x20,
+    HLDOVR3_OFF = 0x4,
+    HLDOVR3_MSK = 0x10,
+    REFSWITCH3_OFF = 0x3,
+    REFSWITCH3_MSK = 0x8,
+    LOR_MISSCLK3_OFF = 0x2,
+    LOR_MISSCLK3_MSK = 0x4,
+    LOR_FREQ3_OFF = 0x1,
+    LOR_FREQ3_MSK = 0x2,
+    LOR_PH3_OFF = 0x0,
+    LOR_PH3_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_LIVE3(lopl_dpll3, lofl_dpll3, hist3, hldovr3, refswitch3, lor_missclk3, lor_freq3, lor_ph3) MAKE_LMK5C33216_REG_WR(INT_LIVE3, \
+    (((lopl_dpll3) << LOPL_DPLL3_OFF) & LOPL_DPLL3_MSK) |  \
+    (((lofl_dpll3) << LOFL_DPLL3_OFF) & LOFL_DPLL3_MSK) |  \
+    (((hist3) << HIST3_OFF) & HIST3_MSK) |  \
+    (((hldovr3) << HLDOVR3_OFF) & HLDOVR3_MSK) |  \
+    (((refswitch3) << REFSWITCH3_OFF) & REFSWITCH3_MSK) |  \
+    (((lor_missclk3) << LOR_MISSCLK3_OFF) & LOR_MISSCLK3_MSK) |  \
+    (((lor_freq3) << LOR_FREQ3_OFF) & LOR_FREQ3_MSK) |  \
+    (((lor_ph3) << LOR_PH3_OFF) & LOR_PH3_MSK))
+// Register R37 [0x25] -- INT_MASK0
+
+enum int_mask0_fields_t {
+    LOL_PLL1_MASK_OFF = 0x3,
+    LOL_PLL1_MASK_MSK = 0x8,
+    LOL_PLL2_MASK_OFF = 0x2,
+    LOL_PLL2_MASK_MSK = 0x4,
+    LOS_FDET_XO_MASK_OFF = 0x0,
+    LOS_FDET_XO_MASK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_MASK0(lol_pll1_mask, lol_pll2_mask, los_fdet_xo_mask) MAKE_LMK5C33216_REG_WR(INT_MASK0, \
+    (((lol_pll1_mask) << LOL_PLL1_MASK_OFF) & LOL_PLL1_MASK_MSK) |  \
+    (((lol_pll2_mask) << LOL_PLL2_MASK_OFF) & LOL_PLL2_MASK_MSK) |  \
+    (((los_fdet_xo_mask) << LOS_FDET_XO_MASK_OFF) & LOS_FDET_XO_MASK_MSK))
+// Register R38 [0x26] -- INT_MASK1
+
+enum int_mask1_fields_t {
+    LOPL_DPLL1_MASK_OFF = 0x7,
+    LOPL_DPLL1_MASK_MSK = 0x80,
+    LOFL_DPLL1_MASK_OFF = 0x6,
+    LOFL_DPLL1_MASK_MSK = 0x40,
+    HIST1_MASK_OFF = 0x5,
+    HIST1_MASK_MSK = 0x20,
+    HLDOVR1_MASK_OFF = 0x4,
+    HLDOVR1_MASK_MSK = 0x10,
+    REFSWITCH1_MASK_OFF = 0x3,
+    REFSWITCH1_MASK_MSK = 0x8,
+    LOR_MISSCLK1_MASK_OFF = 0x2,
+    LOR_MISSCLK1_MASK_MSK = 0x4,
+    LOR_FREQ1_MASK_OFF = 0x1,
+    LOR_FREQ1_MASK_MSK = 0x2,
+    LOR_PH1_MASK_OFF = 0x0,
+    LOR_PH1_MASK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_MASK1(lopl_dpll1_mask, lofl_dpll1_mask, hist1_mask, hldovr1_mask, refswitch1_mask, lor_missclk1_mask, lor_freq1_mask, lor_ph1_mask) MAKE_LMK5C33216_REG_WR(INT_MASK1, \
+    (((lopl_dpll1_mask) << LOPL_DPLL1_MASK_OFF) & LOPL_DPLL1_MASK_MSK) |  \
+    (((lofl_dpll1_mask) << LOFL_DPLL1_MASK_OFF) & LOFL_DPLL1_MASK_MSK) |  \
+    (((hist1_mask) << HIST1_MASK_OFF) & HIST1_MASK_MSK) |  \
+    (((hldovr1_mask) << HLDOVR1_MASK_OFF) & HLDOVR1_MASK_MSK) |  \
+    (((refswitch1_mask) << REFSWITCH1_MASK_OFF) & REFSWITCH1_MASK_MSK) |  \
+    (((lor_missclk1_mask) << LOR_MISSCLK1_MASK_OFF) & LOR_MISSCLK1_MASK_MSK) |  \
+    (((lor_freq1_mask) << LOR_FREQ1_MASK_OFF) & LOR_FREQ1_MASK_MSK) |  \
+    (((lor_ph1_mask) << LOR_PH1_MASK_OFF) & LOR_PH1_MASK_MSK))
+// Register R39 [0x27] -- INT_MASK2
+
+enum int_mask2_fields_t {
+    LOPL_DPLL2_MASK_OFF = 0x7,
+    LOPL_DPLL2_MASK_MSK = 0x80,
+    LOFL_DPLL2_MASK_OFF = 0x6,
+    LOFL_DPLL2_MASK_MSK = 0x40,
+    HIST2_MASK_OFF = 0x5,
+    HIST2_MASK_MSK = 0x20,
+    HLDOVR2_MASK_OFF = 0x4,
+    HLDOVR2_MASK_MSK = 0x10,
+    REFSWITCH2_MASK_OFF = 0x3,
+    REFSWITCH2_MASK_MSK = 0x8,
+    LOR_MISSCLK2_MASK_OFF = 0x2,
+    LOR_MISSCLK2_MASK_MSK = 0x4,
+    LOR_FREQ2_MASK_OFF = 0x1,
+    LOR_FREQ2_MASK_MSK = 0x2,
+    LOR_PH2_MASK_OFF = 0x0,
+    LOR_PH2_MASK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_MASK2(lopl_dpll2_mask, lofl_dpll2_mask, hist2_mask, hldovr2_mask, refswitch2_mask, lor_missclk2_mask, lor_freq2_mask, lor_ph2_mask) MAKE_LMK5C33216_REG_WR(INT_MASK2, \
+    (((lopl_dpll2_mask) << LOPL_DPLL2_MASK_OFF) & LOPL_DPLL2_MASK_MSK) |  \
+    (((lofl_dpll2_mask) << LOFL_DPLL2_MASK_OFF) & LOFL_DPLL2_MASK_MSK) |  \
+    (((hist2_mask) << HIST2_MASK_OFF) & HIST2_MASK_MSK) |  \
+    (((hldovr2_mask) << HLDOVR2_MASK_OFF) & HLDOVR2_MASK_MSK) |  \
+    (((refswitch2_mask) << REFSWITCH2_MASK_OFF) & REFSWITCH2_MASK_MSK) |  \
+    (((lor_missclk2_mask) << LOR_MISSCLK2_MASK_OFF) & LOR_MISSCLK2_MASK_MSK) |  \
+    (((lor_freq2_mask) << LOR_FREQ2_MASK_OFF) & LOR_FREQ2_MASK_MSK) |  \
+    (((lor_ph2_mask) << LOR_PH2_MASK_OFF) & LOR_PH2_MASK_MSK))
+// Register R40 [0x28] -- INT_MASK3
+
+enum int_mask3_fields_t {
+    LOPL_DPLL3_MASK_OFF = 0x7,
+    LOPL_DPLL3_MASK_MSK = 0x80,
+    LOFL_DPLL3_MASK_OFF = 0x6,
+    LOFL_DPLL3_MASK_MSK = 0x40,
+    HIST3_MASK_OFF = 0x5,
+    HIST3_MASK_MSK = 0x20,
+    HLDOVR3_MASK_OFF = 0x4,
+    HLDOVR3_MASK_MSK = 0x10,
+    REFSWITCH3_MASK_OFF = 0x3,
+    REFSWITCH3_MASK_MSK = 0x8,
+    LOR_MISSCLK3_MASK_OFF = 0x2,
+    LOR_MISSCLK3_MASK_MSK = 0x4,
+    LOR_FREQ3_MASK_OFF = 0x1,
+    LOR_FREQ3_MASK_MSK = 0x2,
+    LOR_PH3_MASK_OFF = 0x0,
+    LOR_PH3_MASK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_MASK3(lopl_dpll3_mask, lofl_dpll3_mask, hist3_mask, hldovr3_mask, refswitch3_mask, lor_missclk3_mask, lor_freq3_mask, lor_ph3_mask) MAKE_LMK5C33216_REG_WR(INT_MASK3, \
+    (((lopl_dpll3_mask) << LOPL_DPLL3_MASK_OFF) & LOPL_DPLL3_MASK_MSK) |  \
+    (((lofl_dpll3_mask) << LOFL_DPLL3_MASK_OFF) & LOFL_DPLL3_MASK_MSK) |  \
+    (((hist3_mask) << HIST3_MASK_OFF) & HIST3_MASK_MSK) |  \
+    (((hldovr3_mask) << HLDOVR3_MASK_OFF) & HLDOVR3_MASK_MSK) |  \
+    (((refswitch3_mask) << REFSWITCH3_MASK_OFF) & REFSWITCH3_MASK_MSK) |  \
+    (((lor_missclk3_mask) << LOR_MISSCLK3_MASK_OFF) & LOR_MISSCLK3_MASK_MSK) |  \
+    (((lor_freq3_mask) << LOR_FREQ3_MASK_OFF) & LOR_FREQ3_MASK_MSK) |  \
+    (((lor_ph3_mask) << LOR_PH3_MASK_OFF) & LOR_PH3_MASK_MSK))
+// Register R41 [0x29] -- INT_FLAG_POL0
+
+enum int_flag_pol0_fields_t {
+    LOL_PLL1_POL_OFF = 0x3,
+    LOL_PLL1_POL_MSK = 0x8,
+    LOL_PLL2_POL_OFF = 0x2,
+    LOL_PLL2_POL_MSK = 0x4,
+    LOS_FDET_XO_POL_OFF = 0x0,
+    LOS_FDET_XO_POL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG_POL0(lol_pll1_pol, lol_pll2_pol, los_fdet_xo_pol) MAKE_LMK5C33216_REG_WR(INT_FLAG_POL0, \
+    (((lol_pll1_pol) << LOL_PLL1_POL_OFF) & LOL_PLL1_POL_MSK) |  \
+    (((lol_pll2_pol) << LOL_PLL2_POL_OFF) & LOL_PLL2_POL_MSK) |  \
+    (((los_fdet_xo_pol) << LOS_FDET_XO_POL_OFF) & LOS_FDET_XO_POL_MSK))
+// Register R42 [0x2a] -- INT_FLAG_POL1
+
+enum int_flag_pol1_fields_t {
+    LOPL_DPLL1_POL_OFF = 0x7,
+    LOPL_DPLL1_POL_MSK = 0x80,
+    LOFL_DPLL1_POL_OFF = 0x6,
+    LOFL_DPLL1_POL_MSK = 0x40,
+    HIST1_POL_OFF = 0x5,
+    HIST1_POL_MSK = 0x20,
+    HLDOVR1_POL_OFF = 0x4,
+    HLDOVR1_POL_MSK = 0x10,
+    REFSWITCH1_POL_OFF = 0x3,
+    REFSWITCH1_POL_MSK = 0x8,
+    LOR_MISSCLK1_POL_OFF = 0x2,
+    LOR_MISSCLK1_POL_MSK = 0x4,
+    LOR_FREQ1_POL_OFF = 0x1,
+    LOR_FREQ1_POL_MSK = 0x2,
+    LOR_PH1_POL_OFF = 0x0,
+    LOR_PH1_POL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG_POL1(lopl_dpll1_pol, lofl_dpll1_pol, hist1_pol, hldovr1_pol, refswitch1_pol, lor_missclk1_pol, lor_freq1_pol, lor_ph1_pol) MAKE_LMK5C33216_REG_WR(INT_FLAG_POL1, \
+    (((lopl_dpll1_pol) << LOPL_DPLL1_POL_OFF) & LOPL_DPLL1_POL_MSK) |  \
+    (((lofl_dpll1_pol) << LOFL_DPLL1_POL_OFF) & LOFL_DPLL1_POL_MSK) |  \
+    (((hist1_pol) << HIST1_POL_OFF) & HIST1_POL_MSK) |  \
+    (((hldovr1_pol) << HLDOVR1_POL_OFF) & HLDOVR1_POL_MSK) |  \
+    (((refswitch1_pol) << REFSWITCH1_POL_OFF) & REFSWITCH1_POL_MSK) |  \
+    (((lor_missclk1_pol) << LOR_MISSCLK1_POL_OFF) & LOR_MISSCLK1_POL_MSK) |  \
+    (((lor_freq1_pol) << LOR_FREQ1_POL_OFF) & LOR_FREQ1_POL_MSK) |  \
+    (((lor_ph1_pol) << LOR_PH1_POL_OFF) & LOR_PH1_POL_MSK))
+// Register R43 [0x2b] -- INT_FLAG_POL2
+
+enum int_flag_pol2_fields_t {
+    LOPL_DPLL2_POL_OFF = 0x7,
+    LOPL_DPLL2_POL_MSK = 0x80,
+    LOFL_DPLL2_POL_OFF = 0x6,
+    LOFL_DPLL2_POL_MSK = 0x40,
+    HIST2_POL_OFF = 0x5,
+    HIST2_POL_MSK = 0x20,
+    HLDOVR2_POL_OFF = 0x4,
+    HLDOVR2_POL_MSK = 0x10,
+    REFSWITCH2_POL_OFF = 0x3,
+    REFSWITCH2_POL_MSK = 0x8,
+    LOR_MISSCLK2_POL_OFF = 0x2,
+    LOR_MISSCLK2_POL_MSK = 0x4,
+    LOR_FREQ2_POL_OFF = 0x1,
+    LOR_FREQ2_POL_MSK = 0x2,
+    LOR_PH2_POL_OFF = 0x0,
+    LOR_PH2_POL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG_POL2(lopl_dpll2_pol, lofl_dpll2_pol, hist2_pol, hldovr2_pol, refswitch2_pol, lor_missclk2_pol, lor_freq2_pol, lor_ph2_pol) MAKE_LMK5C33216_REG_WR(INT_FLAG_POL2, \
+    (((lopl_dpll2_pol) << LOPL_DPLL2_POL_OFF) & LOPL_DPLL2_POL_MSK) |  \
+    (((lofl_dpll2_pol) << LOFL_DPLL2_POL_OFF) & LOFL_DPLL2_POL_MSK) |  \
+    (((hist2_pol) << HIST2_POL_OFF) & HIST2_POL_MSK) |  \
+    (((hldovr2_pol) << HLDOVR2_POL_OFF) & HLDOVR2_POL_MSK) |  \
+    (((refswitch2_pol) << REFSWITCH2_POL_OFF) & REFSWITCH2_POL_MSK) |  \
+    (((lor_missclk2_pol) << LOR_MISSCLK2_POL_OFF) & LOR_MISSCLK2_POL_MSK) |  \
+    (((lor_freq2_pol) << LOR_FREQ2_POL_OFF) & LOR_FREQ2_POL_MSK) |  \
+    (((lor_ph2_pol) << LOR_PH2_POL_OFF) & LOR_PH2_POL_MSK))
+// Register R44 [0x2c] -- INT_FLAG_POL3
+
+enum int_flag_pol3_fields_t {
+    LOPL_DPLL3_POL_OFF = 0x7,
+    LOPL_DPLL3_POL_MSK = 0x80,
+    LOFL_DPLL3_POL_OFF = 0x6,
+    LOFL_DPLL3_POL_MSK = 0x40,
+    HIST3_POL_OFF = 0x5,
+    HIST3_POL_MSK = 0x20,
+    HLDOVR3_POL_OFF = 0x4,
+    HLDOVR3_POL_MSK = 0x10,
+    REFSWITCH3_POL_OFF = 0x3,
+    REFSWITCH3_POL_MSK = 0x8,
+    LOR_MISSCLK3_POL_OFF = 0x2,
+    LOR_MISSCLK3_POL_MSK = 0x4,
+    LOR_FREQ3_POL_OFF = 0x1,
+    LOR_FREQ3_POL_MSK = 0x2,
+    LOR_PH3_POL_OFF = 0x0,
+    LOR_PH3_POL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG_POL3(lopl_dpll3_pol, lofl_dpll3_pol, hist3_pol, hldovr3_pol, refswitch3_pol, lor_missclk3_pol, lor_freq3_pol, lor_ph3_pol) MAKE_LMK5C33216_REG_WR(INT_FLAG_POL3, \
+    (((lopl_dpll3_pol) << LOPL_DPLL3_POL_OFF) & LOPL_DPLL3_POL_MSK) |  \
+    (((lofl_dpll3_pol) << LOFL_DPLL3_POL_OFF) & LOFL_DPLL3_POL_MSK) |  \
+    (((hist3_pol) << HIST3_POL_OFF) & HIST3_POL_MSK) |  \
+    (((hldovr3_pol) << HLDOVR3_POL_OFF) & HLDOVR3_POL_MSK) |  \
+    (((refswitch3_pol) << REFSWITCH3_POL_OFF) & REFSWITCH3_POL_MSK) |  \
+    (((lor_missclk3_pol) << LOR_MISSCLK3_POL_OFF) & LOR_MISSCLK3_POL_MSK) |  \
+    (((lor_freq3_pol) << LOR_FREQ3_POL_OFF) & LOR_FREQ3_POL_MSK) |  \
+    (((lor_ph3_pol) << LOR_PH3_POL_OFF) & LOR_PH3_POL_MSK))
+// Register R45 [0x2d] -- INT_FLAG0
+
+enum int_flag0_fields_t {
+    LOL_PLL1_INTR_OFF = 0x3,
+    LOL_PLL1_INTR_MSK = 0x8,
+    LOL_PLL2_INTR_OFF = 0x2,
+    LOL_PLL2_INTR_MSK = 0x4,
+    LOS_FDET_XO_INTR_OFF = 0x0,
+    LOS_FDET_XO_INTR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG0(lol_pll1_intr, lol_pll2_intr, los_fdet_xo_intr) MAKE_LMK5C33216_REG_WR(INT_FLAG0, \
+    (((lol_pll1_intr) << LOL_PLL1_INTR_OFF) & LOL_PLL1_INTR_MSK) |  \
+    (((lol_pll2_intr) << LOL_PLL2_INTR_OFF) & LOL_PLL2_INTR_MSK) |  \
+    (((los_fdet_xo_intr) << LOS_FDET_XO_INTR_OFF) & LOS_FDET_XO_INTR_MSK))
+// Register R46 [0x2e] -- INT_FLAG1
+
+enum int_flag1_fields_t {
+    LOPL_DPLL1_INTR_OFF = 0x7,
+    LOPL_DPLL1_INTR_MSK = 0x80,
+    LOFL_DPLL1_INTR_OFF = 0x6,
+    LOFL_DPLL1_INTR_MSK = 0x40,
+    HIST1_INTR_OFF = 0x5,
+    HIST1_INTR_MSK = 0x20,
+    HLDOVR1_INTR_OFF = 0x4,
+    HLDOVR1_INTR_MSK = 0x10,
+    REFSWITCH1_INTR_OFF = 0x3,
+    REFSWITCH1_INTR_MSK = 0x8,
+    LOR_MISSCLK1_INTR_OFF = 0x2,
+    LOR_MISSCLK1_INTR_MSK = 0x4,
+    LOR_FREQ1_INTR_OFF = 0x1,
+    LOR_FREQ1_INTR_MSK = 0x2,
+    LOR_PH1_INTR_OFF = 0x0,
+    LOR_PH1_INTR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG1(lopl_dpll1_intr, lofl_dpll1_intr, hist1_intr, hldovr1_intr, refswitch1_intr, lor_missclk1_intr, lor_freq1_intr, lor_ph1_intr) MAKE_LMK5C33216_REG_WR(INT_FLAG1, \
+    (((lopl_dpll1_intr) << LOPL_DPLL1_INTR_OFF) & LOPL_DPLL1_INTR_MSK) |  \
+    (((lofl_dpll1_intr) << LOFL_DPLL1_INTR_OFF) & LOFL_DPLL1_INTR_MSK) |  \
+    (((hist1_intr) << HIST1_INTR_OFF) & HIST1_INTR_MSK) |  \
+    (((hldovr1_intr) << HLDOVR1_INTR_OFF) & HLDOVR1_INTR_MSK) |  \
+    (((refswitch1_intr) << REFSWITCH1_INTR_OFF) & REFSWITCH1_INTR_MSK) |  \
+    (((lor_missclk1_intr) << LOR_MISSCLK1_INTR_OFF) & LOR_MISSCLK1_INTR_MSK) |  \
+    (((lor_freq1_intr) << LOR_FREQ1_INTR_OFF) & LOR_FREQ1_INTR_MSK) |  \
+    (((lor_ph1_intr) << LOR_PH1_INTR_OFF) & LOR_PH1_INTR_MSK))
+// Register R47 [0x2f] -- INT_FLAG2
+
+enum int_flag2_fields_t {
+    LOPL_DPLL2_INTR_OFF = 0x7,
+    LOPL_DPLL2_INTR_MSK = 0x80,
+    LOFL_DPLL2_INTR_OFF = 0x6,
+    LOFL_DPLL2_INTR_MSK = 0x40,
+    HIST2_INTR_OFF = 0x5,
+    HIST2_INTR_MSK = 0x20,
+    HLDOVR2_INTR_OFF = 0x4,
+    HLDOVR2_INTR_MSK = 0x10,
+    REFSWITCH2_INTR_OFF = 0x3,
+    REFSWITCH2_INTR_MSK = 0x8,
+    LOR_MISSCLK2_INTR_OFF = 0x2,
+    LOR_MISSCLK2_INTR_MSK = 0x4,
+    LOR_FREQ2_INTR_OFF = 0x1,
+    LOR_FREQ2_INTR_MSK = 0x2,
+    LOR_PH2_INTR_OFF = 0x0,
+    LOR_PH2_INTR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG2(lopl_dpll2_intr, lofl_dpll2_intr, hist2_intr, hldovr2_intr, refswitch2_intr, lor_missclk2_intr, lor_freq2_intr, lor_ph2_intr) MAKE_LMK5C33216_REG_WR(INT_FLAG2, \
+    (((lopl_dpll2_intr) << LOPL_DPLL2_INTR_OFF) & LOPL_DPLL2_INTR_MSK) |  \
+    (((lofl_dpll2_intr) << LOFL_DPLL2_INTR_OFF) & LOFL_DPLL2_INTR_MSK) |  \
+    (((hist2_intr) << HIST2_INTR_OFF) & HIST2_INTR_MSK) |  \
+    (((hldovr2_intr) << HLDOVR2_INTR_OFF) & HLDOVR2_INTR_MSK) |  \
+    (((refswitch2_intr) << REFSWITCH2_INTR_OFF) & REFSWITCH2_INTR_MSK) |  \
+    (((lor_missclk2_intr) << LOR_MISSCLK2_INTR_OFF) & LOR_MISSCLK2_INTR_MSK) |  \
+    (((lor_freq2_intr) << LOR_FREQ2_INTR_OFF) & LOR_FREQ2_INTR_MSK) |  \
+    (((lor_ph2_intr) << LOR_PH2_INTR_OFF) & LOR_PH2_INTR_MSK))
+// Register R48 [0x30] -- INT_FLAG3
+
+enum int_flag3_fields_t {
+    LOPL_DPLL3_INTR_OFF = 0x7,
+    LOPL_DPLL3_INTR_MSK = 0x80,
+    LOFL_DPLL3_INTR_OFF = 0x6,
+    LOFL_DPLL3_INTR_MSK = 0x40,
+    HIST3_INTR_OFF = 0x5,
+    HIST3_INTR_MSK = 0x20,
+    HLDOVR3_INTR_OFF = 0x4,
+    HLDOVR3_INTR_MSK = 0x10,
+    REFSWITCH3_INTR_OFF = 0x3,
+    REFSWITCH3_INTR_MSK = 0x8,
+    LOR_MISSCLK3_INTR_OFF = 0x2,
+    LOR_MISSCLK3_INTR_MSK = 0x4,
+    LOR_FREQ3_INTR_OFF = 0x1,
+    LOR_FREQ3_INTR_MSK = 0x2,
+    LOR_PH3_INTR_OFF = 0x0,
+    LOR_PH3_INTR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_FLAG3(lopl_dpll3_intr, lofl_dpll3_intr, hist3_intr, hldovr3_intr, refswitch3_intr, lor_missclk3_intr, lor_freq3_intr, lor_ph3_intr) MAKE_LMK5C33216_REG_WR(INT_FLAG3, \
+    (((lopl_dpll3_intr) << LOPL_DPLL3_INTR_OFF) & LOPL_DPLL3_INTR_MSK) |  \
+    (((lofl_dpll3_intr) << LOFL_DPLL3_INTR_OFF) & LOFL_DPLL3_INTR_MSK) |  \
+    (((hist3_intr) << HIST3_INTR_OFF) & HIST3_INTR_MSK) |  \
+    (((hldovr3_intr) << HLDOVR3_INTR_OFF) & HLDOVR3_INTR_MSK) |  \
+    (((refswitch3_intr) << REFSWITCH3_INTR_OFF) & REFSWITCH3_INTR_MSK) |  \
+    (((lor_missclk3_intr) << LOR_MISSCLK3_INTR_OFF) & LOR_MISSCLK3_INTR_MSK) |  \
+    (((lor_freq3_intr) << LOR_FREQ3_INTR_OFF) & LOR_FREQ3_INTR_MSK) |  \
+    (((lor_ph3_intr) << LOR_PH3_INTR_OFF) & LOR_PH3_INTR_MSK))
+// Register R49 [0x31] -- INT_CTL
+
+enum int_ctl_fields_t {
+    INT_EN_OFF = 0x1,
+    INT_EN_MSK = 0x2,
+    INT_CLR_OFF = 0x0,
+    INT_CLR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_INT_CTL(int_en, int_clr) MAKE_LMK5C33216_REG_WR(INT_CTL, \
+    (((int_en) << INT_EN_OFF) & INT_EN_MSK) |  \
+    (((int_clr) << INT_CLR_OFF) & INT_CLR_MSK))
+// Register R50 [0x32] -- REFIN_STAT
+
+enum refin_stat_fields_t {
+    REF1_VALID_STATUS_OFF = 0x1,
+    REF1_VALID_STATUS_MSK = 0x2,
+    REF0_VALID_STATUS_OFF = 0x0,
+    REF0_VALID_STATUS_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_REFIN_STAT(ref1_valid_status, ref0_valid_status) MAKE_LMK5C33216_REG_WR(REFIN_STAT, \
+    (((ref1_valid_status) << REF1_VALID_STATUS_OFF) & REF1_VALID_STATUS_MSK) |  \
+    (((ref0_valid_status) << REF0_VALID_STATUS_OFF) & REF0_VALID_STATUS_MSK))
+// Register R52 [0x34] -- REFIN_STAT3
+
+enum refin_stat3_fields_t {
+    REF1_PH_STATUS_OFF = 0x5,
+    REF1_PH_STATUS_MSK = 0x20,
+    REF1_MISSCLK_STATUS_OFF = 0x4,
+    REF1_MISSCLK_STATUS_MSK = 0x10,
+    REF1_FDET_STATUS_OFF = 0x3,
+    REF1_FDET_STATUS_MSK = 0x8,
+    REF0_PH_STATUS_OFF = 0x2,
+    REF0_PH_STATUS_MSK = 0x4,
+    REF0_MISSCLK_STATUS_OFF = 0x1,
+    REF0_MISSCLK_STATUS_MSK = 0x2,
+    REF0_FDET_STATUS_OFF = 0x0,
+    REF0_FDET_STATUS_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_REFIN_STAT3(ref1_ph_status, ref1_missclk_status, ref1_fdet_status, ref0_ph_status, ref0_missclk_status, ref0_fdet_status) MAKE_LMK5C33216_REG_WR(REFIN_STAT3, \
+    (((ref1_ph_status) << REF1_PH_STATUS_OFF) & REF1_PH_STATUS_MSK) |  \
+    (((ref1_missclk_status) << REF1_MISSCLK_STATUS_OFF) & REF1_MISSCLK_STATUS_MSK) |  \
+    (((ref1_fdet_status) << REF1_FDET_STATUS_OFF) & REF1_FDET_STATUS_MSK) |  \
+    (((ref0_ph_status) << REF0_PH_STATUS_OFF) & REF0_PH_STATUS_MSK) |  \
+    (((ref0_missclk_status) << REF0_MISSCLK_STATUS_OFF) & REF0_MISSCLK_STATUS_MSK) |  \
+    (((ref0_fdet_status) << REF0_FDET_STATUS_OFF) & REF0_FDET_STATUS_MSK))
+// Register R53 [0x35] -- OPCTRL_STAT
+
+enum opctrl_stat_fields_t {
+    TOD_CNTR_HELD_OFF = 0x4,
+    TOD_CNTR_HELD_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_OPCTRL_STAT(tod_cntr_held) MAKE_LMK5C33216_REG_WR(OPCTRL_STAT, \
+    (((tod_cntr_held) << TOD_CNTR_HELD_OFF) & TOD_CNTR_HELD_MSK))
+// Register R54 [0x36] -- GPIO0_CONFIG
+enum gpio0_mode_options {
+    GPIO0_MODE_STATUS_OR_INT = 0,
+    GPIO0_MODE_INSEL01_DPLL1 = 1,
+    GPIO0_MODE_INSEL01_DPLL2 = 2,
+    GPIO0_MODE_INSEL01_DPLL3 = 3,
+    GPIO0_MODE_SYNC = 31,
+    GPIO0_MODE_SYSREF_REQ = 32,
+    GPIO0_MODE_FDEV_TRIG_DPLL1 = 33,
+    GPIO0_MODE_FDEV_TRIG_DPLL2 = 34,
+    GPIO0_MODE_FDEV_TRIG_DPLL3 = 35,
+    GPIO0_MODE_FDEV_DIR_DPLL1 = 36,
+    GPIO0_MODE_FDEV_DIR_DPLL2 = 37,
+    GPIO0_MODE_FDEV_DIR_DPLL3 = 38,
+    GPIO0_MODE_TOD_TRIG_SEL = 39,
+};
+
+enum gpio0_config_fields_t {
+    GPIO0_IN_FLT_EN_OFF = 0x6,
+    GPIO0_IN_FLT_EN_MSK = 0x40,
+    GPIO0_MODE_OFF = 0x0,
+    GPIO0_MODE_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_GPIO0_CONFIG(gpio0_in_flt_en, gpio0_mode) MAKE_LMK5C33216_REG_WR(GPIO0_CONFIG, \
+    (((gpio0_in_flt_en) << GPIO0_IN_FLT_EN_OFF) & GPIO0_IN_FLT_EN_MSK) |  \
+    (((gpio0_mode) << GPIO0_MODE_OFF) & GPIO0_MODE_MSK))
+// Register R55 [0x37] -- GPIO1_CONFIG
+enum gpio1_mode_options {
+    GPIO1_MODE_STATUS_OR_INT = 0,
+    GPIO1_MODE_INSEL01_DPLL1 = 1,
+    GPIO1_MODE_INSEL01_DPLL2 = 2,
+    GPIO1_MODE_INSEL01_DPLL3 = 3,
+    GPIO1_MODE_SYNC = 31,
+    GPIO1_MODE_SYSREF_REQ = 32,
+    GPIO1_MODE_FDEV_TRIG_DPLL1 = 33,
+    GPIO1_MODE_FDEV_TRIG_DPLL2 = 34,
+    GPIO1_MODE_FDEV_TRIG_DPLL3 = 35,
+    GPIO1_MODE_FDEV_DIR_DPLL1 = 36,
+    GPIO1_MODE_FDEV_DIR_DPLL2 = 37,
+    GPIO1_MODE_FDEV_DIR_DPLL3 = 38,
+    GPIO1_MODE_TOD_TRIG_SEL = 39,
+};
+
+enum gpio1_config_fields_t {
+    GPIO1_IN_FLT_EN_OFF = 0x6,
+    GPIO1_IN_FLT_EN_MSK = 0x40,
+    GPIO1_MODE_OFF = 0x0,
+    GPIO1_MODE_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_GPIO1_CONFIG(gpio1_in_flt_en, gpio1_mode) MAKE_LMK5C33216_REG_WR(GPIO1_CONFIG, \
+    (((gpio1_in_flt_en) << GPIO1_IN_FLT_EN_OFF) & GPIO1_IN_FLT_EN_MSK) |  \
+    (((gpio1_mode) << GPIO1_MODE_OFF) & GPIO1_MODE_MSK))
+// Register R56 [0x38] -- GPIO2_CONFIG
+enum gpio2_mode_options {
+    GPIO2_MODE_STATUS_OR_INT = 0,
+    GPIO2_MODE_INSEL01_DPLL1 = 1,
+    GPIO2_MODE_INSEL01_DPLL2 = 2,
+    GPIO2_MODE_INSEL01_DPLL3 = 3,
+    GPIO2_MODE_SYNC = 31,
+    GPIO2_MODE_SYSREF_REQ = 32,
+    GPIO2_MODE_FDEV_TRIG_DPLL1 = 33,
+    GPIO2_MODE_FDEV_TRIG_DPLL2 = 34,
+    GPIO2_MODE_FDEV_TRIG_DPLL3 = 35,
+    GPIO2_MODE_FDEV_DIR_DPLL1 = 36,
+    GPIO2_MODE_FDEV_DIR_DPLL2 = 37,
+    GPIO2_MODE_FDEV_DIR_DPLL3 = 38,
+    GPIO2_MODE_TOD_TRIG_SEL = 39,
+};
+
+enum gpio2_config_fields_t {
+    GPIO2_IN_FLT_EN_OFF = 0x6,
+    GPIO2_IN_FLT_EN_MSK = 0x40,
+    GPIO2_MODE_OFF = 0x0,
+    GPIO2_MODE_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_GPIO2_CONFIG(gpio2_in_flt_en, gpio2_mode) MAKE_LMK5C33216_REG_WR(GPIO2_CONFIG, \
+    (((gpio2_in_flt_en) << GPIO2_IN_FLT_EN_OFF) & GPIO2_IN_FLT_EN_MSK) |  \
+    (((gpio2_mode) << GPIO2_MODE_OFF) & GPIO2_MODE_MSK))
+// Register R57 [0x39] -- GPIO0_SEL
+enum gpio0_sel_options {
+    GPIO0_SEL_XO_LOSS_OF_SIGNAL_LOS = 0,
+    GPIO0_SEL_PLL1_LOSS_OF_LOCK_LOL = 1,
+    GPIO0_SEL_PLL2_LOSS_OF_LOCK_LOL = 2,
+    GPIO0_SEL_PLL3_LOSS_OF_LOCK_LOL = 3,
+    GPIO0_SEL_DPLL1_LOSS_OF_PHASE_LOCK_LOPL = 4,
+    GPIO0_SEL_DPLL1_LOSS_OF_FREQUENCY_LOCK_LOFL = 5,
+    GPIO0_SEL_PLL1_LOL_OR_DPLL1_LOPL_OR_DPLL1_LOFL = 6,
+    GPIO0_SEL_DPLL2_LOSS_OF_PHASE_LOCK_LOPL = 7,
+    GPIO0_SEL_DPLL2_LOSS_OF_FREQUENCY_LOCK_LOFL = 8,
+    GPIO0_SEL_PLL2_LOL_OR_DPLL2_LOPL_OR_DPLL2_LOFL = 9,
+    GPIO0_SEL_DPLL3_LOSS_OF_PHASE_LOCK_LOPL = 10,
+    GPIO0_SEL_DPLL3_LOSS_OF_FREQUENCY_LOCK_LOFL = 11,
+    GPIO0_SEL_PLL3_LOL_OR_DPLL3_LOPL_OR_DPLL3_LOFL = 12,
+    GPIO0_SEL_DPLL1_OR_DPLL2_OR_DPLL3_LOL = 13,
+    GPIO0_SEL_INTR = 14,
+    GPIO0_SEL_SPI_READBACK_DATA_SDO = 15,
+    GPIO0_SEL_DPLL1_REF0_SELECTED = 21,
+    GPIO0_SEL_DPLL1_REF1_SELECTED = 22,
+    GPIO0_SEL_DPLL1_HOLDOVER_ACTIVE = 26,
+    GPIO0_SEL_DPLL2_REF0_SELECTED = 27,
+    GPIO0_SEL_DPLL2_REF1_SELECTED = 28,
+    GPIO0_SEL_DPLL2_HOLDOVER_ACTIVE = 32,
+    GPIO0_SEL_DPLL3_REF0_SELECTED = 33,
+    GPIO0_SEL_DPLL3_REF1_SELECTED = 34,
+    GPIO0_SEL_DPLL3_HOLDOVER_ACTIVE = 38,
+    GPIO0_SEL_REF0_FREQUENCY_MONITOR = 39,
+    GPIO0_SEL_REF1_FREQUENCY_MONITOR = 40,
+    GPIO0_SEL_REF0_MISSING_CLOCK_MONITOR = 44,
+    GPIO0_SEL_REF1_MISSING_CLOCK_MONITOR = 45,
+    GPIO0_SEL_REF0_PHASE_VALIDATION_MONITOR = 59,
+    GPIO0_SEL_REF1_PHASE_VALIDATION_MONITOR = 60,
+};
+
+enum gpio0_sel_fields_t {
+    GPIO0_SEL_OFF = 0x0,
+    GPIO0_SEL_MSK = 0x7f,
+};
+#define MAKE_LMK5C33216_GPIO0_SEL(gpio0_sel) MAKE_LMK5C33216_REG_WR(GPIO0_SEL, \
+    (((gpio0_sel) << GPIO0_SEL_OFF) & GPIO0_SEL_MSK))
+// Register R58 [0x3a] -- GPIO1_SEL
+enum gpio1_sel_options {
+    GPIO1_SEL_XO_LOSS_OF_SIGNAL_LOS = 0,
+    GPIO1_SEL_PLL1_LOSS_OF_LOCK_LOL = 1,
+    GPIO1_SEL_PLL2_LOSS_OF_LOCK_LOL = 2,
+    GPIO1_SEL_PLL3_LOSS_OF_LOCK_LOL = 3,
+    GPIO1_SEL_DPLL1_LOSS_OF_PHASE_LOCK_LOPL = 4,
+    GPIO1_SEL_DPLL1_LOSS_OF_FREQUENCY_LOCK_LOFL = 5,
+    GPIO1_SEL_PLL1_LOL_OR_DPLL1_LOPL_OR_DPLL1_LOFL = 6,
+    GPIO1_SEL_DPLL2_LOSS_OF_PHASE_LOCK_LOPL = 7,
+    GPIO1_SEL_DPLL2_LOSS_OF_FREQUENCY_LOCK_LOFL = 8,
+    GPIO1_SEL_PLL2_LOL_OR_DPLL2_LOPL_OR_DPLL2_LOFL = 9,
+    GPIO1_SEL_DPLL3_LOSS_OF_PHASE_LOCK_LOPL = 10,
+    GPIO1_SEL_DPLL3_LOSS_OF_FREQUENCY_LOCK_LOFL = 11,
+    GPIO1_SEL_PLL3_LOL_OR_DPLL3_LOPL_OR_DPLL3_LOFL = 12,
+    GPIO1_SEL_DPLL1_OR_DPLL2_OR_DPLL3_LOL = 13,
+    GPIO1_SEL_INTR = 14,
+    GPIO1_SEL_SPI_READBACK_DATA_SDO = 15,
+    GPIO1_SEL_DPLL1_REF0_SELECTED = 21,
+    GPIO1_SEL_DPLL1_REF1_SELECTED = 22,
+    GPIO1_SEL_DPLL1_HOLDOVER_ACTIVE = 26,
+    GPIO1_SEL_DPLL2_REF0_SELECTED = 27,
+    GPIO1_SEL_DPLL2_REF1_SELECTED = 28,
+    GPIO1_SEL_DPLL2_HOLDOVER_ACTIVE = 32,
+    GPIO1_SEL_DPLL3_REF0_SELECTED = 33,
+    GPIO1_SEL_DPLL3_REF1_SELECTED = 34,
+    GPIO1_SEL_DPLL3_HOLDOVER_ACTIVE = 38,
+    GPIO1_SEL_REF0_FREQUENCY_MONITOR = 39,
+    GPIO1_SEL_REF1_FREQUENCY_MONITOR = 40,
+    GPIO1_SEL_REF0_MISSING_CLOCK_MONITOR = 44,
+    GPIO1_SEL_REF1_MISSING_CLOCK_MONITOR = 45,
+    GPIO1_SEL_REF0_PHASE_VALIDATION_MONITOR = 59,
+    GPIO1_SEL_REF1_PHASE_VALIDATION_MONITOR = 60,
+};
+
+enum gpio1_sel_fields_t {
+    GPIO1_SEL_OFF = 0x0,
+    GPIO1_SEL_MSK = 0x7f,
+};
+#define MAKE_LMK5C33216_GPIO1_SEL(gpio1_sel) MAKE_LMK5C33216_REG_WR(GPIO1_SEL, \
+    (((gpio1_sel) << GPIO1_SEL_OFF) & GPIO1_SEL_MSK))
+// Register R59 [0x3b] -- GPIO2_SEL
+enum gpio2_sel_options {
+    GPIO2_SEL_XO_LOSS_OF_SIGNAL_LOS = 0,
+    GPIO2_SEL_PLL1_LOSS_OF_LOCK_LOL = 1,
+    GPIO2_SEL_PLL2_LOSS_OF_LOCK_LOL = 2,
+    GPIO2_SEL_PLL3_LOSS_OF_LOCK_LOL = 3,
+    GPIO2_SEL_DPLL1_LOSS_OF_PHASE_LOCK_LOPL = 4,
+    GPIO2_SEL_DPLL1_LOSS_OF_FREQUENCY_LOCK_LOFL = 5,
+    GPIO2_SEL_PLL1_LOL_OR_DPLL1_LOPL_OR_DPLL1_LOFL = 6,
+    GPIO2_SEL_DPLL2_LOSS_OF_PHASE_LOCK_LOPL = 7,
+    GPIO2_SEL_DPLL2_LOSS_OF_FREQUENCY_LOCK_LOFL = 8,
+    GPIO2_SEL_PLL2_LOL_OR_DPLL2_LOPL_OR_DPLL2_LOFL = 9,
+    GPIO2_SEL_DPLL3_LOSS_OF_PHASE_LOCK_LOPL = 10,
+    GPIO2_SEL_DPLL3_LOSS_OF_FREQUENCY_LOCK_LOFL = 11,
+    GPIO2_SEL_PLL3_LOL_OR_DPLL3_LOPL_OR_DPLL3_LOFL = 12,
+    GPIO2_SEL_DPLL1_OR_DPLL2_OR_DPLL3_LOL = 13,
+    GPIO2_SEL_INTR = 14,
+    GPIO2_SEL_SPI_READBACK_DATA_SDO = 15,
+    GPIO2_SEL_DPLL1_REF0_SELECTED = 21,
+    GPIO2_SEL_DPLL1_REF1_SELECTED = 22,
+    GPIO2_SEL_DPLL1_HOLDOVER_ACTIVE = 26,
+    GPIO2_SEL_DPLL2_REF0_SELECTED = 27,
+    GPIO2_SEL_DPLL2_REF1_SELECTED = 28,
+    GPIO2_SEL_DPLL2_HOLDOVER_ACTIVE = 32,
+    GPIO2_SEL_DPLL3_REF0_SELECTED = 33,
+    GPIO2_SEL_DPLL3_REF1_SELECTED = 34,
+    GPIO2_SEL_DPLL3_HOLDOVER_ACTIVE = 38,
+    GPIO2_SEL_REF0_FREQUENCY_MONITOR = 39,
+    GPIO2_SEL_REF1_FREQUENCY_MONITOR = 40,
+    GPIO2_SEL_REF0_MISSING_CLOCK_MONITOR = 44,
+    GPIO2_SEL_REF1_MISSING_CLOCK_MONITOR = 45,
+    GPIO2_SEL_REF0_PHASE_VALIDATION_MONITOR = 59,
+    GPIO2_SEL_REF1_PHASE_VALIDATION_MONITOR = 60,
+};
+
+enum gpio2_sel_fields_t {
+    GPIO2_SEL_OFF = 0x0,
+    GPIO2_SEL_MSK = 0x7f,
+};
+#define MAKE_LMK5C33216_GPIO2_SEL(gpio2_sel) MAKE_LMK5C33216_REG_WR(GPIO2_SEL, \
+    (((gpio2_sel) << GPIO2_SEL_OFF) & GPIO2_SEL_MSK))
+// Register R60 [0x3c] -- GPIO_OUT_CTL
+
+enum gpio_out_ctl_fields_t {
+    GPIO0_OPEND_OFF = 0x5,
+    GPIO0_OPEND_MSK = 0x20,
+    GPIO1_OPEND_OFF = 0x4,
+    GPIO1_OPEND_MSK = 0x10,
+    GPIO2_OPEND_OFF = 0x3,
+    GPIO2_OPEND_MSK = 0x8,
+    GPIO0_POL_OFF = 0x2,
+    GPIO0_POL_MSK = 0x4,
+    GPIO1_POL_OFF = 0x1,
+    GPIO1_POL_MSK = 0x2,
+    GPIO2_POL_OFF = 0x0,
+    GPIO2_POL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_GPIO_OUT_CTL(gpio0_opend, gpio1_opend, gpio2_opend, gpio0_pol, gpio1_pol, gpio2_pol) MAKE_LMK5C33216_REG_WR(GPIO_OUT_CTL, \
+    (((gpio0_opend) << GPIO0_OPEND_OFF) & GPIO0_OPEND_MSK) |  \
+    (((gpio1_opend) << GPIO1_OPEND_OFF) & GPIO1_OPEND_MSK) |  \
+    (((gpio2_opend) << GPIO2_OPEND_OFF) & GPIO2_OPEND_MSK) |  \
+    (((gpio0_pol) << GPIO0_POL_OFF) & GPIO0_POL_MSK) |  \
+    (((gpio1_pol) << GPIO1_POL_OFF) & GPIO1_POL_MSK) |  \
+    (((gpio2_pol) << GPIO2_POL_OFF) & GPIO2_POL_MSK))
+// Register R61 [0x3d] -- SYSREF_DPLL_MUTE
+enum gpio_sysref_sel_options {
+    GPIO_SYSREF_SEL_OUT_0_1 = 0,
+    GPIO_SYSREF_SEL_OUT_4_5 = 1,
+    GPIO_SYSREF_SEL_OUT_6_7 = 2,
+    GPIO_SYSREF_SEL_OUT_8_9 = 3,
+    GPIO_SYSREF_SEL_OUT_10_11 = 4,
+    GPIO_SYSREF_SEL_OUT_12_13 = 5,
+};
+
+enum sysref_dpll_mute_fields_t {
+    GPIO_SYSREF_SEL_OFF = 0x2,
+    GPIO_SYSREF_SEL_MSK = 0x1c,
+    MUTE_DPLL3_PHLOCK_OFF = 0x1,
+    MUTE_DPLL3_PHLOCK_MSK = 0x2,
+    MUTE_DPLL3_LOCK_OFF = 0x0,
+    MUTE_DPLL3_LOCK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_SYSREF_DPLL_MUTE(gpio_sysref_sel, mute_dpll3_phlock, mute_dpll3_lock) MAKE_LMK5C33216_REG_WR(SYSREF_DPLL_MUTE, \
+    (((gpio_sysref_sel) << GPIO_SYSREF_SEL_OFF) & GPIO_SYSREF_SEL_MSK) |  \
+    (((mute_dpll3_phlock) << MUTE_DPLL3_PHLOCK_OFF) & MUTE_DPLL3_PHLOCK_MSK) |  \
+    (((mute_dpll3_lock) << MUTE_DPLL3_LOCK_OFF) & MUTE_DPLL3_LOCK_MSK))
+// Register R62 [0x3e] -- DPLL_MUTE
+
+enum dpll_mute_fields_t {
+    MUTE_DPLL2_PHLOCK_OFF = 0x5,
+    MUTE_DPLL2_PHLOCK_MSK = 0x20,
+    MUTE_DPLL2_LOCK_OFF = 0x4,
+    MUTE_DPLL2_LOCK_MSK = 0x10,
+    MUTE_APLL2_LOCK_OFF = 0x3,
+    MUTE_APLL2_LOCK_MSK = 0x8,
+    MUTE_DPLL1_PHLOCK_OFF = 0x2,
+    MUTE_DPLL1_PHLOCK_MSK = 0x4,
+    MUTE_DPLL1_LOCK_OFF = 0x1,
+    MUTE_DPLL1_LOCK_MSK = 0x2,
+    MUTE_APLL1_LOCK_OFF = 0x0,
+    MUTE_APLL1_LOCK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL_MUTE(mute_dpll2_phlock, mute_dpll2_lock, mute_apll2_lock, mute_dpll1_phlock, mute_dpll1_lock, mute_apll1_lock) MAKE_LMK5C33216_REG_WR(DPLL_MUTE, \
+    (((mute_dpll2_phlock) << MUTE_DPLL2_PHLOCK_OFF) & MUTE_DPLL2_PHLOCK_MSK) |  \
+    (((mute_dpll2_lock) << MUTE_DPLL2_LOCK_OFF) & MUTE_DPLL2_LOCK_MSK) |  \
+    (((mute_apll2_lock) << MUTE_APLL2_LOCK_OFF) & MUTE_APLL2_LOCK_MSK) |  \
+    (((mute_dpll1_phlock) << MUTE_DPLL1_PHLOCK_OFF) & MUTE_DPLL1_PHLOCK_MSK) |  \
+    (((mute_dpll1_lock) << MUTE_DPLL1_LOCK_OFF) & MUTE_DPLL1_LOCK_MSK) |  \
+    (((mute_apll1_lock) << MUTE_APLL1_LOCK_OFF) & MUTE_APLL1_LOCK_MSK))
+// Register R63 [0x3f] -- XO_CLKCTL
+enum xo_itype_options {
+    XO_ITYPE_DC_DIFF_EXT = 0,
+    XO_ITYPE_AC_DIFF_EXT = 1,
+    XO_ITYPE_AC_DIFF_INT_100 = 3,
+    XO_ITYPE_HCSL_INT_50 = 4,
+    XO_ITYPE_AC_LVPECL_50 = 5,
+    XO_ITYPE_CMOS = 8,
+    XO_ITYPE_SE_INT_50 = 12,
+};
+
+enum xo_clkctl_fields_t {
+    XO_FDET_BYP_OFF = 0x4,
+    XO_FDET_BYP_MSK = 0x10,
+    XO_ITYPE_OFF = 0x0,
+    XO_ITYPE_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_XO_CLKCTL(xo_fdet_byp, xo_itype) MAKE_LMK5C33216_REG_WR(XO_CLKCTL, \
+    (((xo_fdet_byp) << XO_FDET_BYP_OFF) & XO_FDET_BYP_MSK) |  \
+    (((xo_itype) << XO_ITYPE_OFF) & XO_ITYPE_MSK))
+// Register R64 [0x40] -- XO_OUT_SEL
+
+enum xo_out_sel_fields_t {
+    EN_OUT0_1_OFF = 0x4,
+    EN_OUT0_1_MSK = 0x10,
+    EN_APLL3_REF_OFF = 0x3,
+    EN_APLL3_REF_MSK = 0x8,
+    EN_APLL2_REF_OFF = 0x2,
+    EN_APLL2_REF_MSK = 0x4,
+    EN_APLL1_REF_OFF = 0x1,
+    EN_APLL1_REF_MSK = 0x2,
+    EN_XO_FREQ_DETECT_OFF = 0x1,
+    EN_XO_FREQ_DETECT_MSK = 0x2,
+};
+#define MAKE_LMK5C33216_XO_OUT_SEL(en_out0_1, en_apll3_ref, en_apll2_ref, en_apll1_ref, en_xo_freq_detect) MAKE_LMK5C33216_REG_WR(XO_OUT_SEL, \
+    (((en_out0_1) << EN_OUT0_1_OFF) & EN_OUT0_1_MSK) |  \
+    (((en_apll3_ref) << EN_APLL3_REF_OFF) & EN_APLL3_REF_MSK) |  \
+    (((en_apll2_ref) << EN_APLL2_REF_OFF) & EN_APLL2_REF_MSK) |  \
+    (((en_apll1_ref) << EN_APLL1_REF_OFF) & EN_APLL1_REF_MSK) |  \
+    (((en_xo_freq_detect) << EN_XO_FREQ_DETECT_OFF) & EN_XO_FREQ_DETECT_MSK))
+// Register R67 [0x43] -- REF1_CTL
+enum ref1_itype_options {
+    REF1_ITYPE_DC_DIFF_EXT = 0,
+    REF1_ITYPE_AC_DIFF_EXT = 1,
+    REF1_ITYPE_AC_DIFF_INT_100 = 3,
+    REF1_ITYPE_HCSL_INT_50 = 4,
+    REF1_ITYPE_AC_LVPECL_50 = 5,
+    REF1_ITYPE_CMOS = 8,
+    REF1_ITYPE_SE_INT_50 = 12,
+};
+
+enum ref1_ctl_fields_t {
+    REF1_HYST_TOGGLE_OFF = 0x5,
+    REF1_HYST_TOGGLE_MSK = 0x20,
+    REF1_DC_COUPLED_EN_OFF = 0x4,
+    REF1_DC_COUPLED_EN_MSK = 0x10,
+    REF1_ITYPE_OFF = 0x0,
+    REF1_ITYPE_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_REF1_CTL(ref1_hyst_toggle, ref1_dc_coupled_en, ref1_itype) MAKE_LMK5C33216_REG_WR(REF1_CTL, \
+    (((ref1_hyst_toggle) << REF1_HYST_TOGGLE_OFF) & REF1_HYST_TOGGLE_MSK) |  \
+    (((ref1_dc_coupled_en) << REF1_DC_COUPLED_EN_OFF) & REF1_DC_COUPLED_EN_MSK) |  \
+    (((ref1_itype) << REF1_ITYPE_OFF) & REF1_ITYPE_MSK))
+// Register R68 [0x44] -- REF0_CTL
+enum ref0_itype_options {
+    REF0_ITYPE_DC_DIFF_EXT = 0,
+    REF0_ITYPE_AC_DIFF_EXT = 1,
+    REF0_ITYPE_AC_DIFF_INT_100 = 3,
+    REF0_ITYPE_HCSL_INT_50 = 4,
+    REF0_ITYPE_AC_LVPECL_50 = 5,
+    REF0_ITYPE_CMOS = 8,
+    REF0_ITYPE_SE_INT_50 = 12,
+};
+
+enum ref0_ctl_fields_t {
+    REF0_HYST_TOGGLE_OFF = 0x5,
+    REF0_HYST_TOGGLE_MSK = 0x20,
+    REF0_DC_COUPLED_EN_OFF = 0x4,
+    REF0_DC_COUPLED_EN_MSK = 0x10,
+    REF0_ITYPE_OFF = 0x0,
+    REF0_ITYPE_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_REF0_CTL(ref0_hyst_toggle, ref0_dc_coupled_en, ref0_itype) MAKE_LMK5C33216_REG_WR(REF0_CTL, \
+    (((ref0_hyst_toggle) << REF0_HYST_TOGGLE_OFF) & REF0_HYST_TOGGLE_MSK) |  \
+    (((ref0_dc_coupled_en) << REF0_DC_COUPLED_EN_OFF) & REF0_DC_COUPLED_EN_MSK) |  \
+    (((ref0_itype) << REF0_ITYPE_OFF) & REF0_ITYPE_MSK))
+// Register R69 [0x45] -- OUT0_1_CMV
+
+enum out0_1_cmv_fields_t {
+    CH_0_VCM_OFF = 0x4,
+    CH_0_VCM_MSK = 0xf0,
+    CH_1_VCM_OFF = 0x0,
+    CH_1_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT0_1_CMV(ch_0_vcm, ch_1_vcm) MAKE_LMK5C33216_REG_WR(OUT0_1_CMV, \
+    (((ch_0_vcm) << CH_0_VCM_OFF) & CH_0_VCM_MSK) |  \
+    (((ch_1_vcm) << CH_1_VCM_OFF) & CH_1_VCM_MSK))
+// Register R70 [0x46] -- OUT2_3_CMV
+
+enum out2_3_cmv_fields_t {
+    CH_2_VCM_OFF = 0x4,
+    CH_2_VCM_MSK = 0xf0,
+    CH_3_VCM_OFF = 0x0,
+    CH_3_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT2_3_CMV(ch_2_vcm, ch_3_vcm) MAKE_LMK5C33216_REG_WR(OUT2_3_CMV, \
+    (((ch_2_vcm) << CH_2_VCM_OFF) & CH_2_VCM_MSK) |  \
+    (((ch_3_vcm) << CH_3_VCM_OFF) & CH_3_VCM_MSK))
+// Register R71 [0x47] -- OUT4_7_CMV
+
+enum out4_7_cmv_fields_t {
+    CH_4_6_VCM_OFF = 0x4,
+    CH_4_6_VCM_MSK = 0xf0,
+    CH_7_8_VCM_OFF = 0x0,
+    CH_7_8_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT4_7_CMV(ch_4_6_vcm, ch_7_8_vcm) MAKE_LMK5C33216_REG_WR(OUT4_7_CMV, \
+    (((ch_4_6_vcm) << CH_4_6_VCM_OFF) & CH_4_6_VCM_MSK) |  \
+    (((ch_7_8_vcm) << CH_7_8_VCM_OFF) & CH_7_8_VCM_MSK))
+// Register R72 [0x48] -- OUT8_11_CMV
+
+enum out8_11_cmv_fields_t {
+    CH_8_9_VCM_OFF = 0x4,
+    CH_8_9_VCM_MSK = 0xf0,
+    CH_10_11_VCM_OFF = 0x0,
+    CH_10_11_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT8_11_CMV(ch_8_9_vcm, ch_10_11_vcm) MAKE_LMK5C33216_REG_WR(OUT8_11_CMV, \
+    (((ch_8_9_vcm) << CH_8_9_VCM_OFF) & CH_8_9_VCM_MSK) |  \
+    (((ch_10_11_vcm) << CH_10_11_VCM_OFF) & CH_10_11_VCM_MSK))
+// Register R73 [0x49] -- OUT12_13_CMV
+
+enum out12_13_cmv_fields_t {
+    CH_12_13_VCM_OFF = 0x0,
+    CH_12_13_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT12_13_CMV(ch_12_13_vcm) MAKE_LMK5C33216_REG_WR(OUT12_13_CMV, \
+    (((ch_12_13_vcm) << CH_12_13_VCM_OFF) & CH_12_13_VCM_MSK))
+// Register R74 [0x4a] -- OUT14_15_CMV
+
+enum out14_15_cmv_fields_t {
+    CH_14_VCM_OFF = 0x4,
+    CH_14_VCM_MSK = 0xf0,
+    CH_15_VCM_OFF = 0x0,
+    CH_15_VCM_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_OUT14_15_CMV(ch_14_vcm, ch_15_vcm) MAKE_LMK5C33216_REG_WR(OUT14_15_CMV, \
+    (((ch_14_vcm) << CH_14_VCM_OFF) & CH_14_VCM_MSK) |  \
+    (((ch_15_vcm) << CH_15_VCM_OFF) & CH_15_VCM_MSK))
+// Register R75 [0x4b] -- TDC3_ZDLY
+
+// Register R76 [0x4c] -- TDC2_ZDLY
+
+// Register R77 [0x4d] -- TDC1_ZDLY
+
+// Register R78 [0x4e] -- REF_OUT_SEL
+
+// Register R79 [0x4f] -- REF0_DETEN
+
+// Register R80 [0x50] -- REF1_DETEN
+
+// Register R83 [0x53] -- REF0_3_CLK_DIV
+
+// Register R84 [0x54] -- REF0_MISSCLK_DIV
+
+
+#define MAKE_LMK5C33216_REF0_MISSCLK_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(REF0_MISSCLK_DIV_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_REF0_MISSCLK_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(REF0_MISSCLK_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF0_MISSCLK_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(REF0_MISSCLK_DIV_BY2, (((value) << 0) & 0xff))
+// Register R87 [0x57] -- REF1_MISSCLK_DIV
+
+
+#define MAKE_LMK5C33216_REF1_MISSCLK_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(REF1_MISSCLK_DIV_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_REF1_MISSCLK_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(REF1_MISSCLK_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF1_MISSCLK_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(REF1_MISSCLK_DIV_BY2, (((value) << 0) & 0xff))
+// Register R96 [0x60] -- REF_MISSCLK_CTL
+
+enum ref_missclk_ctl_fields_t {
+    REF0_MISSCLK_VCOSEL_OFF = 0x0,
+    REF0_MISSCLK_VCOSEL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_REF_MISSCLK_CTL(ref0_missclk_vcosel) MAKE_LMK5C33216_REG_WR(REF_MISSCLK_CTL, \
+    (((ref0_missclk_vcosel) << REF0_MISSCLK_VCOSEL_OFF) & REF0_MISSCLK_VCOSEL_MSK))
+// Register R97 [0x61] -- REF0_EARLY_CLK_DIV
+
+
+#define MAKE_LMK5C33216_REF0_EARLY_CLK_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(REF0_EARLY_CLK_DIV_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_REF0_EARLY_CLK_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(REF0_EARLY_CLK_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF0_EARLY_CLK_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(REF0_EARLY_CLK_DIV_BY2, (((value) << 0) & 0xff))
+// Register R100 [0x64] -- REF1_EARLY_CLK_DIV
+
+
+#define MAKE_LMK5C33216_REF1_EARLY_CLK_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(REF1_EARLY_CLK_DIV_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_REF1_EARLY_CLK_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(REF1_EARLY_CLK_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF1_EARLY_CLK_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(REF1_EARLY_CLK_DIV_BY2, (((value) << 0) & 0xff))
+// Register R109 [0x6d] -- REF0_PPM_MIN
+
+
+#define MAKE_LMK5C33216_REF0_PPM_MIN_BY0(value) MAKE_LMK5C33216_REG_WR(REF0_PPM_MIN_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF0_PPM_MIN_BY1(value) MAKE_LMK5C33216_REG_WR(REF0_PPM_MIN_BY1, (((value) << 0) & 0xff))
+// Register R111 [0x6f] -- REF0_PPM_MAX
+
+
+#define MAKE_LMK5C33216_REF0_PPM_MAX_BY0(value) MAKE_LMK5C33216_REG_WR(REF0_PPM_MAX_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF0_PPM_MAX_BY1(value) MAKE_LMK5C33216_REG_WR(REF0_PPM_MAX_BY1, (((value) << 0) & 0xff))
+// Register R113 [0x71] -- REF1_PPM_MIN
+
+
+#define MAKE_LMK5C33216_REF1_PPM_MIN_BY0(value) MAKE_LMK5C33216_REG_WR(REF1_PPM_MIN_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF1_PPM_MIN_BY1(value) MAKE_LMK5C33216_REG_WR(REF1_PPM_MIN_BY1, (((value) << 0) & 0xff))
+// Register R115 [0x73] -- REF1_PPM_MAX
+
+
+#define MAKE_LMK5C33216_REF1_PPM_MAX_BY0(value) MAKE_LMK5C33216_REG_WR(REF1_PPM_MAX_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF1_PPM_MAX_BY1(value) MAKE_LMK5C33216_REG_WR(REF1_PPM_MAX_BY1, (((value) << 0) & 0xff))
+// Register R157 [0x9d] -- REF0_VLDTMR
+
+// Register R158 [0x9e] -- REF1_VLDTMR
+
+// Register R161 [0xa1] -- REF0_PH_VALID_THR
+
+
+#define MAKE_LMK5C33216_REF0_PH_VALID_THR_BY0(value) MAKE_LMK5C33216_REG_WR(REF0_PH_VALID_THR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF0_PH_VALID_THR_BY1(value) MAKE_LMK5C33216_REG_WR(REF0_PH_VALID_THR_BY1, (((value) << 0) & 0xff))
+// Register R163 [0xa3] -- REF1_PH_VALID_THR
+
+
+#define MAKE_LMK5C33216_REF1_PH_VALID_THR_BY0(value) MAKE_LMK5C33216_REG_WR(REF1_PH_VALID_THR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_REF1_PH_VALID_THR_BY1(value) MAKE_LMK5C33216_REG_WR(REF1_PH_VALID_THR_BY1, (((value) << 0) & 0xff))
+// Register R170 [0xaa] -- NVMSCRC
+
+// Register R171 [0xab] -- NVMCTL
+
+// Register R173 [0xad] -- MEMADR
+
+
+#define MAKE_LMK5C33216_MEMADR_BY0(value) MAKE_LMK5C33216_REG_WR(MEMADR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_MEMADR_BY1(value) MAKE_LMK5C33216_REG_WR(MEMADR_BY1, (((value) << 0) & 0xff))
+// Register R176 [0xb0] -- RAMDAT
+
+// Register R180 [0xb4] -- NVMUNLK
+
+// Register R222 [0xde] -- DFT_CTL
+
+enum dft_ctl_fields_t {
+    STATUS_MUX_DIV2_EN_OFF = 0x6,
+    STATUS_MUX_DIV2_EN_MSK = 0x40,
+};
+#define MAKE_LMK5C33216_DFT_CTL(status_mux_div2_en) MAKE_LMK5C33216_REG_WR(DFT_CTL, \
+    (((status_mux_div2_en) << STATUS_MUX_DIV2_EN_OFF) & STATUS_MUX_DIV2_EN_MSK))
+// Register R223 [0xdf] -- DPLL1_REF1
+
+enum dpll1_ref1_fields_t {
+    DPLL1_REF0_AUTO_PRTY_OFF = 0x3,
+    DPLL1_REF0_AUTO_PRTY_MSK = 0x38,
+    DPLL1_REF1_AUTO_PRTY_OFF = 0x0,
+    DPLL1_REF1_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL1_REF1(dpll1_ref0_auto_prty, dpll1_ref1_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL1_REF1, \
+    (((dpll1_ref0_auto_prty) << DPLL1_REF0_AUTO_PRTY_OFF) & DPLL1_REF0_AUTO_PRTY_MSK) |  \
+    (((dpll1_ref1_auto_prty) << DPLL1_REF1_AUTO_PRTY_OFF) & DPLL1_REF1_AUTO_PRTY_MSK))
+// Register R225 [0xe1] -- DPLL1_REF3
+
+enum dpll1_ref3_fields_t {
+    DPLL1_REF4_AUTO_PRTY_OFF = 0x3,
+    DPLL1_REF4_AUTO_PRTY_MSK = 0x38,
+    DPLL1_REF5_AUTO_PRTY_OFF = 0x0,
+    DPLL1_REF5_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL1_REF3(dpll1_ref4_auto_prty, dpll1_ref5_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL1_REF3, \
+    (((dpll1_ref4_auto_prty) << DPLL1_REF4_AUTO_PRTY_OFF) & DPLL1_REF4_AUTO_PRTY_MSK) |  \
+    (((dpll1_ref5_auto_prty) << DPLL1_REF5_AUTO_PRTY_OFF) & DPLL1_REF5_AUTO_PRTY_MSK))
+// Register R226 [0xe2] -- DPLL1_REF4
+
+enum dpll1_ref4_fields_t {
+    DPLL1_MAN_REFSEL_OFF = 0x3,
+    DPLL1_MAN_REFSEL_MSK = 0x38,
+    DPLL1_MAN_SWITCH_PIN_MODE_OFF = 0x2,
+    DPLL1_MAN_SWITCH_PIN_MODE_MSK = 0x4,
+    DPLL1_SWITCH_MODE_OFF = 0x0,
+    DPLL1_SWITCH_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_DPLL1_REF4(dpll1_man_refsel, dpll1_man_switch_pin_mode, dpll1_switch_mode) MAKE_LMK5C33216_REG_WR(DPLL1_REF4, \
+    (((dpll1_man_refsel) << DPLL1_MAN_REFSEL_OFF) & DPLL1_MAN_REFSEL_MSK) |  \
+    (((dpll1_man_switch_pin_mode) << DPLL1_MAN_SWITCH_PIN_MODE_OFF) & DPLL1_MAN_SWITCH_PIN_MODE_MSK) |  \
+    (((dpll1_switch_mode) << DPLL1_SWITCH_MODE_OFF) & DPLL1_SWITCH_MODE_MSK))
+// Register R227 [0xe3] -- DPLL1_REFSEL_STAT
+
+enum dpll1_refsel_stat_fields_t {
+    DPLL1_REFSEL_STAT_OFF = 0x0,
+    DPLL1_REFSEL_STAT_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL1_REFSEL_STAT(dpll1_refsel_stat) MAKE_LMK5C33216_REG_WR(DPLL1_REFSEL_STAT, \
+    (((dpll1_refsel_stat) << DPLL1_REFSEL_STAT_OFF) & DPLL1_REFSEL_STAT_MSK))
+// Register R228 [0xe4] -- DPLL1_FDET_LCK
+
+enum dpll1_fdet_lck_fields_t {
+    DPLL1_LOCKDET_PPM_EN_OFF = 0xf,
+    DPLL1_LOCKDET_PPM_EN_MSK = 0x8000,
+    DPLL1_LOCKDET_PPM_MAX_OFF = 0x0,
+    DPLL1_LOCKDET_PPM_MAX_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_DPLL1_FDET_LCK_LONG(dpll1_lockdet_ppm_en, dpll1_lockdet_ppm_max) ( \
+    (((dpll1_lockdet_ppm_en) << DPLL1_LOCKDET_PPM_EN_OFF) & DPLL1_LOCKDET_PPM_EN_MSK) |  \
+    (((dpll1_lockdet_ppm_max) << DPLL1_LOCKDET_PPM_MAX_OFF) & DPLL1_LOCKDET_PPM_MAX_MSK))
+#define MAKE_LMK5C33216_DPLL1_FDET_LCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_LCK_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_LCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_LCK_BY1, (((value) << 0) & 0xff))
+// Register R230 [0xe6] -- DPLL1_FDET_UNLCK
+
+
+#define MAKE_LMK5C33216_DPLL1_FDET_UNLCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_UNLCK_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_UNLCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_UNLCK_BY1, (((value) << 0) & 0xff))
+// Register R232 [0xe8] -- DPLL1_FDET2_CNTSTRT
+
+
+#define MAKE_LMK5C33216_DPLL1_FDET2_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET2_CNTSTRT_BY0, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET2_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET2_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET2_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET2_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET2_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET2_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R236 [0xec] -- DPLL1_FDET_CNTSTRT
+
+
+#define MAKE_LMK5C33216_DPLL1_FDET_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_CNTSTRT_BY0, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R240 [0xf0] -- DPLL1_FDET_VCO_CNTSTRT
+
+
+#define MAKE_LMK5C33216_DPLL1_FDET_VCO_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_VCO_CNTSTRT_BY0, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_VCO_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_VCO_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_VCO_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_VCO_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FDET_VCO_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_VCO_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R244 [0xf4] -- DPLL1_FDET_STATUS
+
+enum dpll1_fdet_status_fields_t {
+    DPLL1_STATUS_PPM_LOCKR_OFF = 0x0,
+    DPLL1_STATUS_PPM_LOCKR_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL1_FDET_STATUS(dpll1_status_ppm_lockr) MAKE_LMK5C33216_REG_WR(DPLL1_FDET_STATUS, \
+    (((dpll1_status_ppm_lockr) << DPLL1_STATUS_PPM_LOCKR_OFF) & DPLL1_STATUS_PPM_LOCKR_MSK))
+// Register R247 [0xf7] -- DPLL1_CTRL1
+
+enum dpll1_ctrl1_fields_t {
+    DPLL1_LOOP_EN_OFF = 0x7,
+    DPLL1_LOOP_EN_MSK = 0x80,
+    DPLL1_PHASE_CANCEL_EN_OFF = 0x6,
+    DPLL1_PHASE_CANCEL_EN_MSK = 0x40,
+    DPLL1_PHS1_EN_OFF = 0x4,
+    DPLL1_PHS1_EN_MSK = 0x10,
+    DPLL1_ZDM_EN_OFF = 0x3,
+    DPLL1_ZDM_EN_MSK = 0x8,
+    DPLL1_HIST_EN_OFF = 0x2,
+    DPLL1_HIST_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL1_CTRL1(dpll1_loop_en, dpll1_phase_cancel_en, dpll1_phs1_en, dpll1_zdm_en, dpll1_hist_en) MAKE_LMK5C33216_REG_WR(DPLL1_CTRL1, \
+    (((dpll1_loop_en) << DPLL1_LOOP_EN_OFF) & DPLL1_LOOP_EN_MSK) |  \
+    (((dpll1_phase_cancel_en) << DPLL1_PHASE_CANCEL_EN_OFF) & DPLL1_PHASE_CANCEL_EN_MSK) |  \
+    (((dpll1_phs1_en) << DPLL1_PHS1_EN_OFF) & DPLL1_PHS1_EN_MSK) |  \
+    (((dpll1_zdm_en) << DPLL1_ZDM_EN_OFF) & DPLL1_ZDM_EN_MSK) |  \
+    (((dpll1_hist_en) << DPLL1_HIST_EN_OFF) & DPLL1_HIST_EN_MSK))
+// Register R248 [0xf8] -- DPLL1_SCLR_BY1
+
+enum dpll1_sclr_by1_fields_t {
+    DPLL1_HOLD_SLEW_LIM_EN_OFF = 0x7,
+    DPLL1_HOLD_SLEW_LIM_EN_MSK = 0x80,
+    DPLL1_CLK_DIV_SRC_SEL_OFF = 0x2,
+    DPLL1_CLK_DIV_SRC_SEL_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL1_SCLR_BY1(dpll1_hold_slew_lim_en, dpll1_clk_div_src_sel) MAKE_LMK5C33216_REG_WR(DPLL1_SCLR_BY1, \
+    (((dpll1_hold_slew_lim_en) << DPLL1_HOLD_SLEW_LIM_EN_OFF) & DPLL1_HOLD_SLEW_LIM_EN_MSK) |  \
+    (((dpll1_clk_div_src_sel) << DPLL1_CLK_DIV_SRC_SEL_OFF) & DPLL1_CLK_DIV_SRC_SEL_MSK))
+// Register R250 [0xfa] -- DPLL1_PHOFF
+
+
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY0, (((value) >> 40) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY1, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY2, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY3, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY4, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHOFF_BY5(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHOFF_BY5, (((value) << 0) & 0xff))
+// Register R256 [0x100] -- DPLL1_FREERUN
+
+
+#define MAKE_LMK5C33216_DPLL1_FREERUN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FREERUN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FREERUN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FREERUN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FREERUN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FREERUN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FREERUN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FREERUN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FREERUN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FREERUN_BY4, (((value) << 0) & 0xff))
+// Register R290 [0x122] -- DPLL1_LCKTMR
+
+
+#define MAKE_LMK5C33216_DPLL1_LCKTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_LCKTMR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_LCKTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_LCKTMR_BY1, (((value) << 0) & 0xff))
+// Register R294 [0x126] -- DPLL1_HOLDTMR
+
+
+#define MAKE_LMK5C33216_DPLL1_HOLDTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_HOLDTMR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_HOLDTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_HOLDTMR_BY1, (((value) << 0) & 0xff))
+// Register R296 [0x128] -- DPLL1_PHS1TMR
+
+
+#define MAKE_LMK5C33216_DPLL1_PHS1TMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHS1TMR_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_PHS1TMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_PHS1TMR_BY1, (((value) << 0) & 0xff))
+// Register R303 [0x12f] -- DPLL1_PLLK
+
+enum dpll1_pllk_fields_t {
+    DPLL1_PL_THRESH_OFF = 0x0,
+    DPLL1_PL_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL1_PLLK(dpll1_pl_thresh) MAKE_LMK5C33216_REG_WR(DPLL1_PLLK, \
+    (((dpll1_pl_thresh) << DPLL1_PL_THRESH_OFF) & DPLL1_PL_THRESH_MSK))
+// Register R304 [0x130] -- DPLL1_PLUNLK
+
+enum dpll1_plunlk_fields_t {
+    DPLL1_PL_UNLK_THRESH_OFF = 0x0,
+    DPLL1_PL_UNLK_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL1_PLUNLK(dpll1_pl_unlk_thresh) MAKE_LMK5C33216_REG_WR(DPLL1_PLUNLK, \
+    (((dpll1_pl_unlk_thresh) << DPLL1_PL_UNLK_THRESH_OFF) & DPLL1_PL_UNLK_THRESH_MSK))
+// Register R305 [0x131] -- DPLL1_PHS1LIM
+
+enum dpll1_phs1lim_fields_t {
+    DPLL1_PHS1_THRESH_OFF = 0x0,
+    DPLL1_PHS1_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL1_PHS1LIM(dpll1_phs1_thresh) MAKE_LMK5C33216_REG_WR(DPLL1_PHS1LIM, \
+    (((dpll1_phs1_thresh) << DPLL1_PHS1_THRESH_OFF) & DPLL1_PHS1_THRESH_MSK))
+// Register R308 [0x134] -- DPLL1_HOLDLIM
+
+enum dpll1_holdlim_fields_t {
+    DPLL1_HOLD_SLEW_STEP_OFF = 0x0,
+    DPLL1_HOLD_SLEW_STEP_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL1_HOLDLIM(dpll1_hold_slew_step) MAKE_LMK5C33216_REG_WR(DPLL1_HOLDLIM, \
+    (((dpll1_hold_slew_step) << DPLL1_HOLD_SLEW_STEP_OFF) & DPLL1_HOLD_SLEW_STEP_MSK))
+// Register R310 [0x136] -- DPLL1_DBG2
+
+enum dpll1_dbg2_fields_t {
+    DPLL1_STATUS_PL_OFF = 0x5,
+    DPLL1_STATUS_PL_MSK = 0x20,
+};
+#define MAKE_LMK5C33216_DPLL1_DBG2(dpll1_status_pl) MAKE_LMK5C33216_REG_WR(DPLL1_DBG2, \
+    (((dpll1_status_pl) << DPLL1_STATUS_PL_OFF) & DPLL1_STATUS_PL_MSK))
+// Register R311 [0x137] -- DPLL1_DBG3
+
+enum dpll1_dbg3_fields_t {
+    DPLL1_DCO_SLEW_ACTIVE_OFF = 0x4,
+    DPLL1_DCO_SLEW_ACTIVE_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_DPLL1_DBG3(dpll1_dco_slew_active) MAKE_LMK5C33216_REG_WR(DPLL1_DBG3, \
+    (((dpll1_dco_slew_active) << DPLL1_DCO_SLEW_ACTIVE_OFF) & DPLL1_DCO_SLEW_ACTIVE_MSK))
+// Register R314 [0x13a] -- DPLL1_FBDIV
+
+
+#define MAKE_LMK5C33216_DPLL1_FBDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_BY4, (((value) << 0) & 0xff))
+// Register R319 [0x13f] -- DPLL1_FBNUM
+
+
+#define MAKE_LMK5C33216_DPLL1_FBNUM_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_BY4, (((value) << 0) & 0xff))
+// Register R324 [0x144] -- DPLL1_FBDEN
+
+
+#define MAKE_LMK5C33216_DPLL1_FBDEN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN_BY4, (((value) << 0) & 0xff))
+// Register R329 [0x149] -- DPLL1_FBDIV2
+
+
+#define MAKE_LMK5C33216_DPLL1_FBDIV2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDIV2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV2_BY4, (((value) << 0) & 0xff))
+// Register R334 [0x14e] -- DPLL1_FBNUM2
+
+
+#define MAKE_LMK5C33216_DPLL1_FBNUM2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM2_BY4, (((value) << 0) & 0xff))
+// Register R339 [0x153] -- DPLL1_FBDEN2
+
+
+#define MAKE_LMK5C33216_DPLL1_FBDEN2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBDEN2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBDEN2_BY4, (((value) << 0) & 0xff))
+// Register R344 [0x158] -- DPLL1_FBDIV_SEL
+
+enum dpll1_fbdiv_sel_fields_t {
+    DPLL1_REF5_FB_SEL_OFF = 0x5,
+    DPLL1_REF5_FB_SEL_MSK = 0x20,
+    DPLL1_REF1_FB_SEL_OFF = 0x1,
+    DPLL1_REF1_FB_SEL_MSK = 0x2,
+    DPLL1_REF0_FB_SEL_OFF = 0x0,
+    DPLL1_REF0_FB_SEL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL1_FBDIV_SEL(dpll1_ref5_fb_sel, dpll1_ref1_fb_sel, dpll1_ref0_fb_sel) MAKE_LMK5C33216_REG_WR(DPLL1_FBDIV_SEL, \
+    (((dpll1_ref5_fb_sel) << DPLL1_REF5_FB_SEL_OFF) & DPLL1_REF5_FB_SEL_MSK) |  \
+    (((dpll1_ref1_fb_sel) << DPLL1_REF1_FB_SEL_OFF) & DPLL1_REF1_FB_SEL_MSK) |  \
+    (((dpll1_ref0_fb_sel) << DPLL1_REF0_FB_SEL_OFF) & DPLL1_REF0_FB_SEL_MSK))
+// Register R345 [0x159] -- DPLL1_FBMASHCTL
+
+enum dpll1_fbmashctl_fields_t {
+    DPLL1_FB_MASH_ORDER_OFF = 0x0,
+    DPLL1_FB_MASH_ORDER_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL1_FBMASHCTL(dpll1_fb_mash_order) MAKE_LMK5C33216_REG_WR(DPLL1_FBMASHCTL, \
+    (((dpll1_fb_mash_order) << DPLL1_FB_MASH_ORDER_OFF) & DPLL1_FB_MASH_ORDER_MSK))
+// Register R346 [0x15a] -- DPLL1_FBFDEV
+
+
+#define MAKE_LMK5C33216_DPLL1_FBFDEV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEV_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBFDEV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBFDEV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBFDEV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBFDEV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEV_BY4, (((value) << 0) & 0xff))
+// Register R351 [0x15f] -- DPLL1_FBFDEVUPDATE
+
+enum dpll1_fbfdevupdate_fields_t {
+    DPLL1_FB_FDEV_UPDATE_OFF = 0x0,
+    DPLL1_FB_FDEV_UPDATE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL1_FBFDEVUPDATE(dpll1_fb_fdev_update) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEVUPDATE, \
+    (((dpll1_fb_fdev_update) << DPLL1_FB_FDEV_UPDATE_OFF) & DPLL1_FB_FDEV_UPDATE_MSK))
+// Register R352 [0x160] -- DPLL1_FBFDEVEN
+
+enum dpll1_fbfdeven_fields_t {
+    DPLL1_FB_FDEV_EN_OFF = 0x0,
+    DPLL1_FB_FDEV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL1_FBFDEVEN(dpll1_fb_fdev_en) MAKE_LMK5C33216_REG_WR(DPLL1_FBFDEVEN, \
+    (((dpll1_fb_fdev_en) << DPLL1_FB_FDEV_EN_OFF) & DPLL1_FB_FDEV_EN_MSK))
+// Register R353 [0x161] -- DPLL1_FBNUM_STAT
+
+
+#define MAKE_LMK5C33216_DPLL1_FBNUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_FBNUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL1_FBNUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R358 [0x166] -- DPLL1_REF_DBLR
+
+enum dpll1_ref_dblr_fields_t {
+    DPLL1_REF0_DBLR_EN_OFF = 0x3,
+    DPLL1_REF0_DBLR_EN_MSK = 0x8,
+    DPLL1_REF1_DBLR_EN_OFF = 0x2,
+    DPLL1_REF1_DBLR_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL1_REF_DBLR(dpll1_ref0_dblr_en, dpll1_ref1_dblr_en) MAKE_LMK5C33216_REG_WR(DPLL1_REF_DBLR, \
+    (((dpll1_ref0_dblr_en) << DPLL1_REF0_DBLR_EN_OFF) & DPLL1_REF0_DBLR_EN_MSK) |  \
+    (((dpll1_ref1_dblr_en) << DPLL1_REF1_DBLR_EN_OFF) & DPLL1_REF1_DBLR_EN_MSK))
+// Register R359 [0x167] -- DPLL1_REF0RDIV
+
+
+#define MAKE_LMK5C33216_DPLL1_REF0RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF0RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_REF0RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF0RDIV_BY1, (((value) << 0) & 0xff))
+// Register R361 [0x169] -- DPLL1_REF1RDIV
+
+
+#define MAKE_LMK5C33216_DPLL1_REF1RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF1RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_REF1RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF1RDIV_BY1, (((value) << 0) & 0xff))
+// Register R369 [0x171] -- DPLL1_REF5RDIV
+
+
+#define MAKE_LMK5C33216_DPLL1_REF5RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF5RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL1_REF5RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL1_REF5RDIV_BY1, (((value) << 0) & 0xff))
+// Register R373 [0x175] -- DPLL2_REF1
+
+enum dpll2_ref1_fields_t {
+    DPLL2_REF0_AUTO_PRTY_OFF = 0x3,
+    DPLL2_REF0_AUTO_PRTY_MSK = 0x38,
+    DPLL2_REF1_AUTO_PRTY_OFF = 0x0,
+    DPLL2_REF1_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL2_REF1(dpll2_ref0_auto_prty, dpll2_ref1_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL2_REF1, \
+    (((dpll2_ref0_auto_prty) << DPLL2_REF0_AUTO_PRTY_OFF) & DPLL2_REF0_AUTO_PRTY_MSK) |  \
+    (((dpll2_ref1_auto_prty) << DPLL2_REF1_AUTO_PRTY_OFF) & DPLL2_REF1_AUTO_PRTY_MSK))
+// Register R375 [0x177] -- DPLL2_REF3
+
+enum dpll2_ref3_fields_t {
+    DPLL2_REF4_AUTO_PRTY_OFF = 0x3,
+    DPLL2_REF4_AUTO_PRTY_MSK = 0x38,
+    DPLL2_REF5_AUTO_PRTY_OFF = 0x0,
+    DPLL2_REF5_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL2_REF3(dpll2_ref4_auto_prty, dpll2_ref5_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL2_REF3, \
+    (((dpll2_ref4_auto_prty) << DPLL2_REF4_AUTO_PRTY_OFF) & DPLL2_REF4_AUTO_PRTY_MSK) |  \
+    (((dpll2_ref5_auto_prty) << DPLL2_REF5_AUTO_PRTY_OFF) & DPLL2_REF5_AUTO_PRTY_MSK))
+// Register R376 [0x178] -- DPLL2_REF4
+
+enum dpll2_ref4_fields_t {
+    DPLL2_MAN_REFSEL_OFF = 0x3,
+    DPLL2_MAN_REFSEL_MSK = 0x38,
+    DPLL2_MAN_SWITCH_PIN_MODE_OFF = 0x2,
+    DPLL2_MAN_SWITCH_PIN_MODE_MSK = 0x4,
+    DPLL2_SWITCH_MODE_OFF = 0x0,
+    DPLL2_SWITCH_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_DPLL2_REF4(dpll2_man_refsel, dpll2_man_switch_pin_mode, dpll2_switch_mode) MAKE_LMK5C33216_REG_WR(DPLL2_REF4, \
+    (((dpll2_man_refsel) << DPLL2_MAN_REFSEL_OFF) & DPLL2_MAN_REFSEL_MSK) |  \
+    (((dpll2_man_switch_pin_mode) << DPLL2_MAN_SWITCH_PIN_MODE_OFF) & DPLL2_MAN_SWITCH_PIN_MODE_MSK) |  \
+    (((dpll2_switch_mode) << DPLL2_SWITCH_MODE_OFF) & DPLL2_SWITCH_MODE_MSK))
+// Register R377 [0x179] -- DPLL2_REFSEL_STAT
+
+enum dpll2_refsel_stat_fields_t {
+    DPLL2_REFSEL_STAT_OFF = 0x0,
+    DPLL2_REFSEL_STAT_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL2_REFSEL_STAT(dpll2_refsel_stat) MAKE_LMK5C33216_REG_WR(DPLL2_REFSEL_STAT, \
+    (((dpll2_refsel_stat) << DPLL2_REFSEL_STAT_OFF) & DPLL2_REFSEL_STAT_MSK))
+// Register R378 [0x17a] -- DPLL2_FDET_LCK
+
+enum dpll2_fdet_lck_fields_t {
+    DPLL2_LOCKDET_PPM_EN_OFF = 0xf,
+    DPLL2_LOCKDET_PPM_EN_MSK = 0x8000,
+    DPLL2_LOCKDET_PPM_MAX_OFF = 0x0,
+    DPLL2_LOCKDET_PPM_MAX_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET_LCK_LONG(dpll2_lockdet_ppm_en, dpll2_lockdet_ppm_max) ( \
+    (((dpll2_lockdet_ppm_en) << DPLL2_LOCKDET_PPM_EN_OFF) & DPLL2_LOCKDET_PPM_EN_MSK) |  \
+    (((dpll2_lockdet_ppm_max) << DPLL2_LOCKDET_PPM_MAX_OFF) & DPLL2_LOCKDET_PPM_MAX_MSK))
+#define MAKE_LMK5C33216_DPLL2_FDET_LCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_LCK_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET_LCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_LCK_BY1, (((value) << 0) & 0xff))
+// Register R380 [0x17c] -- DPLL2_FDET_UNLCK
+
+enum dpll2_fdet_unlck_fields_t {
+    DPLL2_UNLOCKDET_PPM_MAX_OFF = 0x0,
+    DPLL2_UNLOCKDET_PPM_MAX_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET_UNLCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_UNLCK_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_DPLL2_FDET_UNLCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_UNLCK_BY1, (((value) << 0) & 0xff))
+// Register R382 [0x17e] -- DPLL2_FDET2_CNTSTRT
+
+enum dpll2_fdet2_cntstrt_fields_t {
+    DPLL2_LOCKDET2_PPM_CNTSTRT_OFF = 0x0,
+    DPLL2_LOCKDET2_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET2_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET2_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL2_FDET2_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET2_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET2_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET2_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET2_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET2_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R386 [0x182] -- DPLL2_FDET_CNTSTRT
+
+enum dpll2_fdet_cntstrt_fields_t {
+    DPLL2_LOCKDET_PPM_CNTSTRT_OFF = 0x0,
+    DPLL2_LOCKDET_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL2_FDET_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R390 [0x186] -- DPLL2_FDET_VCO_CNTSTRT
+
+enum dpll2_fdet_vco_cntstrt_fields_t {
+    DPLL2_LOCKDET_VCO_PPM_CNTSTRT_OFF = 0x0,
+    DPLL2_LOCKDET_VCO_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET_VCO_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_VCO_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL2_FDET_VCO_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_VCO_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET_VCO_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_VCO_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FDET_VCO_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_VCO_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R394 [0x18a] -- DPLL2_FDET_STATUS
+
+enum dpll2_fdet_status_fields_t {
+    DPLL2_STATUS_PPM_LOCK_OFF = 0x0,
+    DPLL2_STATUS_PPM_LOCK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL2_FDET_STATUS(dpll2_status_ppm_lock) MAKE_LMK5C33216_REG_WR(DPLL2_FDET_STATUS, \
+    (((dpll2_status_ppm_lock) << DPLL2_STATUS_PPM_LOCK_OFF) & DPLL2_STATUS_PPM_LOCK_MSK))
+// Register R397 [0x18d] -- DPLL2_CTRL1
+
+enum dpll2_ctrl1_fields_t {
+    DPLL2_LOOP_EN_OFF = 0x7,
+    DPLL2_LOOP_EN_MSK = 0x80,
+    DPLL2_PHASE_CANCEL_EN_OFF = 0x6,
+    DPLL2_PHASE_CANCEL_EN_MSK = 0x40,
+    DPLL2_PHS1_EN_OFF = 0x4,
+    DPLL2_PHS1_EN_MSK = 0x10,
+    DPLL2_ZDM_EN_OFF = 0x3,
+    DPLL2_ZDM_EN_MSK = 0x8,
+    DPLL2_HIST_EN_OFF = 0x2,
+    DPLL2_HIST_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL2_CTRL1(dpll2_loop_en, dpll2_phase_cancel_en, dpll2_phs1_en, dpll2_zdm_en, dpll2_hist_en) MAKE_LMK5C33216_REG_WR(DPLL2_CTRL1, \
+    (((dpll2_loop_en) << DPLL2_LOOP_EN_OFF) & DPLL2_LOOP_EN_MSK) |  \
+    (((dpll2_phase_cancel_en) << DPLL2_PHASE_CANCEL_EN_OFF) & DPLL2_PHASE_CANCEL_EN_MSK) |  \
+    (((dpll2_phs1_en) << DPLL2_PHS1_EN_OFF) & DPLL2_PHS1_EN_MSK) |  \
+    (((dpll2_zdm_en) << DPLL2_ZDM_EN_OFF) & DPLL2_ZDM_EN_MSK) |  \
+    (((dpll2_hist_en) << DPLL2_HIST_EN_OFF) & DPLL2_HIST_EN_MSK))
+// Register R398 [0x18e] -- DPLL2_SCLR_BY1
+
+enum dpll2_sclr_by1_fields_t {
+    DPLL2_HOLD_SLEW_LIM_EN_OFF = 0x7,
+    DPLL2_HOLD_SLEW_LIM_EN_MSK = 0x80,
+};
+#define MAKE_LMK5C33216_DPLL2_SCLR_BY1(dpll2_hold_slew_lim_en) MAKE_LMK5C33216_REG_WR(DPLL2_SCLR_BY1, \
+    (((dpll2_hold_slew_lim_en) << DPLL2_HOLD_SLEW_LIM_EN_OFF) & DPLL2_HOLD_SLEW_LIM_EN_MSK))
+// Register R400 [0x190] -- DPLL2_PHOFF
+
+enum dpll2_phoff_fields_t {
+    DPLL2_PH_OFFSET_OFF = 0x0,
+    DPLL2_PH_OFFSET_MSK = 0x1fffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY0, (((value) >> 40) & 0x1f))
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY1, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY2, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY3, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY4, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_PHOFF_BY5(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHOFF_BY5, (((value) << 0) & 0xff))
+// Register R406 [0x196] -- DPLL2_FREERUN
+
+enum dpll2_freerun_fields_t {
+    DPLL2_FREE_RUN_OFF = 0x0,
+    DPLL2_FREE_RUN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FREERUN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FREERUN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FREERUN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FREERUN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FREERUN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FREERUN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FREERUN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FREERUN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FREERUN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FREERUN_BY4, (((value) << 0) & 0xff))
+// Register R440 [0x1b8] -- DPLL2_LCKTMR
+
+enum dpll2_lcktmr_fields_t {
+    DPLL2_LCK_TIMER_OFF = 0x0,
+    DPLL2_LCK_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL2_LCKTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_LCKTMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL2_LCKTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_LCKTMR_BY1, (((value) << 0) & 0xff))
+// Register R444 [0x1bc] -- DPLL2_HOLDTMR
+
+enum dpll2_holdtmr_fields_t {
+    DPLL2_HOLD_TIMER_OFF = 0x0,
+    DPLL2_HOLD_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL2_HOLDTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_HOLDTMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL2_HOLDTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_HOLDTMR_BY1, (((value) << 0) & 0xff))
+// Register R446 [0x1be] -- DPLL2_PHS1TMR
+
+enum dpll2_phs1tmr_fields_t {
+    DPLL2_PHS1_TIMER_OFF = 0x0,
+    DPLL2_PHS1_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL2_PHS1TMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHS1TMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL2_PHS1TMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_PHS1TMR_BY1, (((value) << 0) & 0xff))
+// Register R453 [0x1c5] -- DPLL2_PLLK
+
+enum dpll2_pllk_fields_t {
+    DPLL2_PL_THRESH_OFF = 0x0,
+    DPLL2_PL_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL2_PLLK(dpll2_pl_thresh) MAKE_LMK5C33216_REG_WR(DPLL2_PLLK, \
+    (((dpll2_pl_thresh) << DPLL2_PL_THRESH_OFF) & DPLL2_PL_THRESH_MSK))
+// Register R454 [0x1c6] -- DPLL2_PLUNLK
+
+enum dpll2_plunlk_fields_t {
+    DPLL2_PL_UNLK_THRESH_OFF = 0x0,
+    DPLL2_PL_UNLK_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL2_PLUNLK(dpll2_pl_unlk_thresh) MAKE_LMK5C33216_REG_WR(DPLL2_PLUNLK, \
+    (((dpll2_pl_unlk_thresh) << DPLL2_PL_UNLK_THRESH_OFF) & DPLL2_PL_UNLK_THRESH_MSK))
+// Register R455 [0x1c7] -- DPLL2_PHS1LIM
+
+enum dpll2_phs1lim_fields_t {
+    DPLL2_PHS1_THRESH_OFF = 0x0,
+    DPLL2_PHS1_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL2_PHS1LIM(dpll2_phs1_thresh) MAKE_LMK5C33216_REG_WR(DPLL2_PHS1LIM, \
+    (((dpll2_phs1_thresh) << DPLL2_PHS1_THRESH_OFF) & DPLL2_PHS1_THRESH_MSK))
+// Register R458 [0x1ca] -- DPLL2_HOLDLIM
+
+enum dpll2_holdlim_fields_t {
+    DPLL2_HOLD_SLEW_STEP_OFF = 0x0,
+    DPLL2_HOLD_SLEW_STEP_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL2_HOLDLIM(dpll2_hold_slew_step) MAKE_LMK5C33216_REG_WR(DPLL2_HOLDLIM, \
+    (((dpll2_hold_slew_step) << DPLL2_HOLD_SLEW_STEP_OFF) & DPLL2_HOLD_SLEW_STEP_MSK))
+// Register R460 [0x1cc] -- DPLL2_DBG2
+
+enum dpll2_dbg2_fields_t {
+    DPLL2_STATUS_PL_OFF = 0x5,
+    DPLL2_STATUS_PL_MSK = 0x20,
+};
+#define MAKE_LMK5C33216_DPLL2_DBG2(dpll2_status_pl) MAKE_LMK5C33216_REG_WR(DPLL2_DBG2, \
+    (((dpll2_status_pl) << DPLL2_STATUS_PL_OFF) & DPLL2_STATUS_PL_MSK))
+// Register R461 [0x1cd] -- DPLL2_DBG3
+
+enum dpll2_dbg3_fields_t {
+    DPLL2_DCO_SLEW_ACTIVE_OFF = 0x4,
+    DPLL2_DCO_SLEW_ACTIVE_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_DPLL2_DBG3(dpll2_dco_slew_active) MAKE_LMK5C33216_REG_WR(DPLL2_DBG3, \
+    (((dpll2_dco_slew_active) << DPLL2_DCO_SLEW_ACTIVE_OFF) & DPLL2_DCO_SLEW_ACTIVE_MSK))
+// Register R464 [0x1d0] -- DPLL2_FBDIV
+
+enum dpll2_fbdiv_fields_t {
+    DPLL2_FB_DIV_OFF = 0x0,
+    DPLL2_FB_DIV_MSK = 0x1ffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_BY0, (((value) >> 32) & 0x1))
+#define MAKE_LMK5C33216_DPLL2_FBDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_BY4, (((value) << 0) & 0xff))
+// Register R469 [0x1d5] -- DPLL2_FBNUM
+
+enum dpll2_fbnum_fields_t {
+    DPLL2_FB_NUM_OFF = 0x0,
+    DPLL2_FB_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBNUM_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_BY4, (((value) << 0) & 0xff))
+// Register R474 [0x1da] -- DPLL2_FBDEN
+
+enum dpll2_fbden_fields_t {
+    DPLL2_FB_DEN_OFF = 0x0,
+    DPLL2_FB_DEN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBDEN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN_BY4, (((value) << 0) & 0xff))
+// Register R479 [0x1df] -- DPLL2_FBDIV2
+
+enum dpll2_fbdiv2_fields_t {
+    DPLL2_FB2_DIV_OFF = 0x0,
+    DPLL2_FB2_DIV_MSK = 0x1ffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBDIV2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV2_BY0, (((value) >> 32) & 0x1))
+#define MAKE_LMK5C33216_DPLL2_FBDIV2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDIV2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV2_BY4, (((value) << 0) & 0xff))
+// Register R484 [0x1e4] -- DPLL2_FBNUM2
+
+enum dpll2_fbnum2_fields_t {
+    DPLL2_FB2_NUM_OFF = 0x0,
+    DPLL2_FB2_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBNUM2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM2_BY4, (((value) << 0) & 0xff))
+// Register R489 [0x1e9] -- DPLL2_FBDEN2
+
+enum dpll2_fbden2_fields_t {
+    DPLL2_FB2_DEN_OFF = 0x0,
+    DPLL2_FB2_DEN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBDEN2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBDEN2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBDEN2_BY4, (((value) << 0) & 0xff))
+// Register R494 [0x1ee] -- DPLL2_FBDIV_SEL
+
+enum dpll2_fbdiv_sel_fields_t {
+    DPLL2_REF5_FB_SEL_OFF = 0x5,
+    DPLL2_REF5_FB_SEL_MSK = 0x20,
+    DPLL2_REF1_FB_SEL_OFF = 0x1,
+    DPLL2_REF1_FB_SEL_MSK = 0x2,
+    DPLL2_REF0_FB_SEL_OFF = 0x0,
+    DPLL2_REF0_FB_SEL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL2_FBDIV_SEL(dpll2_ref5_fb_sel, dpll2_ref1_fb_sel, dpll2_ref0_fb_sel) MAKE_LMK5C33216_REG_WR(DPLL2_FBDIV_SEL, \
+    (((dpll2_ref5_fb_sel) << DPLL2_REF5_FB_SEL_OFF) & DPLL2_REF5_FB_SEL_MSK) |  \
+    (((dpll2_ref1_fb_sel) << DPLL2_REF1_FB_SEL_OFF) & DPLL2_REF1_FB_SEL_MSK) |  \
+    (((dpll2_ref0_fb_sel) << DPLL2_REF0_FB_SEL_OFF) & DPLL2_REF0_FB_SEL_MSK))
+// Register R495 [0x1ef] -- DPLL2_FBMASHCTL
+
+enum dpll2_fbmashctl_fields_t {
+    DPLL2_FB_MASH_ORDER_OFF = 0x0,
+    DPLL2_FB_MASH_ORDER_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL2_FBMASHCTL(dpll2_fb_mash_order) MAKE_LMK5C33216_REG_WR(DPLL2_FBMASHCTL, \
+    (((dpll2_fb_mash_order) << DPLL2_FB_MASH_ORDER_OFF) & DPLL2_FB_MASH_ORDER_MSK))
+// Register R496 [0x1f0] -- DPLL2_FBFDEV
+
+enum dpll2_fbfdev_fields_t {
+    DPLL2_FB_FDEV_OFF = 0x0,
+    DPLL2_FB_FDEV_MSK = 0x3fffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBFDEV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEV_BY0, (((value) >> 32) & 0x3f))
+#define MAKE_LMK5C33216_DPLL2_FBFDEV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBFDEV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBFDEV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBFDEV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEV_BY4, (((value) << 0) & 0xff))
+// Register R501 [0x1f5] -- DPLL2_FBFDEVUPDATE
+
+enum dpll2_fbfdevupdate_fields_t {
+    DPLL2_FB_FDEV_UPDATE_OFF = 0x0,
+    DPLL2_FB_FDEV_UPDATE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL2_FBFDEVUPDATE(dpll2_fb_fdev_update) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEVUPDATE, \
+    (((dpll2_fb_fdev_update) << DPLL2_FB_FDEV_UPDATE_OFF) & DPLL2_FB_FDEV_UPDATE_MSK))
+// Register R502 [0x1f6] -- DPLL2_FBFDEVEN
+
+enum dpll2_fbfdeven_fields_t {
+    DPLL2_FB_FDEV_EN_OFF = 0x0,
+    DPLL2_FB_FDEV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL2_FBFDEVEN(dpll2_fb_fdev_en) MAKE_LMK5C33216_REG_WR(DPLL2_FBFDEVEN, \
+    (((dpll2_fb_fdev_en) << DPLL2_FB_FDEV_EN_OFF) & DPLL2_FB_FDEV_EN_MSK))
+// Register R503 [0x1f7] -- DPLL2_FBNUM_STAT
+
+enum dpll2_fbnum_stat_fields_t {
+    DPLL2_FB_NUM_STAT_OFF = 0x0,
+    DPLL2_FB_NUM_STAT_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL2_FBNUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_FBNUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL2_FBNUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R508 [0x1fc] -- DPLL2_REF_DBLR
+
+enum dpll2_ref_dblr_fields_t {
+    DPLL2_REF0_DBLR_EN_OFF = 0x3,
+    DPLL2_REF0_DBLR_EN_MSK = 0x8,
+    DPLL2_REF1_DBLR_EN_OFF = 0x2,
+    DPLL2_REF1_DBLR_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL2_REF_DBLR(dpll2_ref0_dblr_en, dpll2_ref1_dblr_en) MAKE_LMK5C33216_REG_WR(DPLL2_REF_DBLR, \
+    (((dpll2_ref0_dblr_en) << DPLL2_REF0_DBLR_EN_OFF) & DPLL2_REF0_DBLR_EN_MSK) |  \
+    (((dpll2_ref1_dblr_en) << DPLL2_REF1_DBLR_EN_OFF) & DPLL2_REF1_DBLR_EN_MSK))
+// Register R509 [0x1fd] -- DPLL2_REF0RDIV
+
+enum dpll2_ref0rdiv_fields_t {
+    DPLL2_REF0_RDIV_OFF = 0x0,
+    DPLL2_REF0_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL2_REF0RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF0RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_REF0RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF0RDIV_BY1, (((value) << 0) & 0xff))
+// Register R511 [0x1ff] -- DPLL2_REF1RDIV
+
+enum dpll2_ref1rdiv_fields_t {
+    DPLL2_REF1_RDIV_OFF = 0x0,
+    DPLL2_REF1_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL2_REF1RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF1RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_REF1RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF1RDIV_BY1, (((value) << 0) & 0xff))
+// Register R517 [0x205] -- DPLL2_REF4RDIV
+
+enum dpll2_ref4rdiv_fields_t {
+    DPLL2_REF4_RDIV_OFF = 0x0,
+    DPLL2_REF4_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL2_REF4RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF4RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_REF4RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF4RDIV_BY1, (((value) << 0) & 0xff))
+// Register R519 [0x207] -- DPLL2_REF5RDIV
+
+enum dpll2_ref5rdiv_fields_t {
+    DPLL2_REF5_RDIV_OFF = 0x0,
+    DPLL2_REF5_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL2_REF5RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF5RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL2_REF5RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL2_REF5RDIV_BY1, (((value) << 0) & 0xff))
+// Register R523 [0x20b] -- DPLL3_REF1
+
+enum dpll3_ref1_fields_t {
+    DPLL3_REF0_AUTO_PRTY_OFF = 0x3,
+    DPLL3_REF0_AUTO_PRTY_MSK = 0x38,
+    DPLL3_REF1_AUTO_PRTY_OFF = 0x0,
+    DPLL3_REF1_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL3_REF1(dpll3_ref0_auto_prty, dpll3_ref1_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL3_REF1, \
+    (((dpll3_ref0_auto_prty) << DPLL3_REF0_AUTO_PRTY_OFF) & DPLL3_REF0_AUTO_PRTY_MSK) |  \
+    (((dpll3_ref1_auto_prty) << DPLL3_REF1_AUTO_PRTY_OFF) & DPLL3_REF1_AUTO_PRTY_MSK))
+// Register R525 [0x20d] -- DPLL3_REF3
+
+enum dpll3_ref3_fields_t {
+    DPLL3_REF4_AUTO_PRTY_OFF = 0x3,
+    DPLL3_REF4_AUTO_PRTY_MSK = 0x38,
+    DPLL3_REF5_AUTO_PRTY_OFF = 0x0,
+    DPLL3_REF5_AUTO_PRTY_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL3_REF3(dpll3_ref4_auto_prty, dpll3_ref5_auto_prty) MAKE_LMK5C33216_REG_WR(DPLL3_REF3, \
+    (((dpll3_ref4_auto_prty) << DPLL3_REF4_AUTO_PRTY_OFF) & DPLL3_REF4_AUTO_PRTY_MSK) |  \
+    (((dpll3_ref5_auto_prty) << DPLL3_REF5_AUTO_PRTY_OFF) & DPLL3_REF5_AUTO_PRTY_MSK))
+// Register R526 [0x20e] -- DPLL3_REF4
+
+enum dpll3_ref4_fields_t {
+    DPLL3_MAN_REFSEL_OFF = 0x3,
+    DPLL3_MAN_REFSEL_MSK = 0x38,
+    DPLL3_MAN_SWITCH_PIN_MODE_OFF = 0x2,
+    DPLL3_MAN_SWITCH_PIN_MODE_MSK = 0x4,
+    DPLL3_SWITCH_MODE_OFF = 0x0,
+    DPLL3_SWITCH_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_DPLL3_REF4(dpll3_man_refsel, dpll3_man_switch_pin_mode, dpll3_switch_mode) MAKE_LMK5C33216_REG_WR(DPLL3_REF4, \
+    (((dpll3_man_refsel) << DPLL3_MAN_REFSEL_OFF) & DPLL3_MAN_REFSEL_MSK) |  \
+    (((dpll3_man_switch_pin_mode) << DPLL3_MAN_SWITCH_PIN_MODE_OFF) & DPLL3_MAN_SWITCH_PIN_MODE_MSK) |  \
+    (((dpll3_switch_mode) << DPLL3_SWITCH_MODE_OFF) & DPLL3_SWITCH_MODE_MSK))
+// Register R527 [0x20f] -- DPLL3_REFSEL_STAT
+
+enum dpll3_refsel_stat_fields_t {
+    DPLL3_REFSEL_STAT_OFF = 0x0,
+    DPLL3_REFSEL_STAT_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL3_REFSEL_STAT(dpll3_refsel_stat) MAKE_LMK5C33216_REG_WR(DPLL3_REFSEL_STAT, \
+    (((dpll3_refsel_stat) << DPLL3_REFSEL_STAT_OFF) & DPLL3_REFSEL_STAT_MSK))
+// Register R528 [0x210] -- DPLL3_FDET_LCK
+
+enum dpll3_fdet_lck_fields_t {
+    DPLL3_LOCKDET_PPM_EN_OFF = 0xf,
+    DPLL3_LOCKDET_PPM_EN_MSK = 0x8000,
+    DPLL3_LOCKDET_PPM_MAX_OFF = 0x0,
+    DPLL3_LOCKDET_PPM_MAX_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET_LCK_LONG(dpll3_lockdet_ppm_en, dpll3_lockdet_ppm_max) ( \
+    (((dpll3_lockdet_ppm_en) << DPLL3_LOCKDET_PPM_EN_OFF) & DPLL3_LOCKDET_PPM_EN_MSK) |  \
+    (((dpll3_lockdet_ppm_max) << DPLL3_LOCKDET_PPM_MAX_OFF) & DPLL3_LOCKDET_PPM_MAX_MSK))
+#define MAKE_LMK5C33216_DPLL3_FDET_LCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_LCK_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET_LCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_LCK_BY1, (((value) << 0) & 0xff))
+// Register R530 [0x212] -- DPLL3_FDET_UNLCK
+
+enum dpll3_fdet_unlck_fields_t {
+    DPLL3_UNLOCKDET_PPM_MAX_OFF = 0x0,
+    DPLL3_UNLOCKDET_PPM_MAX_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET_UNLCK_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_UNLCK_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_DPLL3_FDET_UNLCK_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_UNLCK_BY1, (((value) << 0) & 0xff))
+// Register R532 [0x214] -- DPLL3_FDET2_CNTSTRT
+
+enum dpll3_fdet2_cntstrt_fields_t {
+    DPLL3_LOCKDET2_PPM_CNTSTRT_OFF = 0x0,
+    DPLL3_LOCKDET2_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET2_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET2_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL3_FDET2_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET2_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET2_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET2_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET2_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET2_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R536 [0x218] -- DPLL3_FDET_CNTSTRT
+
+enum dpll3_fdet_cntstrt_fields_t {
+    DPLL3_LOCKDET_PPM_CNTSTRT_OFF = 0x0,
+    DPLL3_LOCKDET_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL3_FDET_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R540 [0x21c] -- DPLL3_FDET_VCO_CNTSTRT
+
+enum dpll3_fdet_vco_cntstrt_fields_t {
+    DPLL3_LOCKDET_VCO_PPM_CNTSTRT_OFF = 0x0,
+    DPLL3_LOCKDET_VCO_PPM_CNTSTRT_MSK = 0x3fffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET_VCO_CNTSTRT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_VCO_CNTSTRT_BY0, (((value) >> 24) & 0x3f))
+#define MAKE_LMK5C33216_DPLL3_FDET_VCO_CNTSTRT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_VCO_CNTSTRT_BY1, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET_VCO_CNTSTRT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_VCO_CNTSTRT_BY2, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FDET_VCO_CNTSTRT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_VCO_CNTSTRT_BY3, (((value) << 0) & 0xff))
+// Register R544 [0x220] -- DPLL3_FDET_STATUS
+
+enum dpll3_fdet_status_fields_t {
+    DPLL3_STATUS_PPM_LOCK_OFF = 0x0,
+    DPLL3_STATUS_PPM_LOCK_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL3_FDET_STATUS(dpll3_status_ppm_lock) MAKE_LMK5C33216_REG_WR(DPLL3_FDET_STATUS, \
+    (((dpll3_status_ppm_lock) << DPLL3_STATUS_PPM_LOCK_OFF) & DPLL3_STATUS_PPM_LOCK_MSK))
+// Register R547 [0x223] -- DPLL3_CTRL1
+
+enum dpll3_ctrl1_fields_t {
+    DPLL3_LOOP_EN_OFF = 0x7,
+    DPLL3_LOOP_EN_MSK = 0x80,
+    DPLL3_PHASE_CANCEL_EN_OFF = 0x6,
+    DPLL3_PHASE_CANCEL_EN_MSK = 0x40,
+    DPLL3_PHS1_EN_OFF = 0x4,
+    DPLL3_PHS1_EN_MSK = 0x10,
+    DPLL3_ZDM_EN_OFF = 0x3,
+    DPLL3_ZDM_EN_MSK = 0x8,
+    DPLL3_HIST_EN_OFF = 0x2,
+    DPLL3_HIST_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL3_CTRL1(dpll3_loop_en, dpll3_phase_cancel_en, dpll3_phs1_en, dpll3_zdm_en, dpll3_hist_en) MAKE_LMK5C33216_REG_WR(DPLL3_CTRL1, \
+    (((dpll3_loop_en) << DPLL3_LOOP_EN_OFF) & DPLL3_LOOP_EN_MSK) |  \
+    (((dpll3_phase_cancel_en) << DPLL3_PHASE_CANCEL_EN_OFF) & DPLL3_PHASE_CANCEL_EN_MSK) |  \
+    (((dpll3_phs1_en) << DPLL3_PHS1_EN_OFF) & DPLL3_PHS1_EN_MSK) |  \
+    (((dpll3_zdm_en) << DPLL3_ZDM_EN_OFF) & DPLL3_ZDM_EN_MSK) |  \
+    (((dpll3_hist_en) << DPLL3_HIST_EN_OFF) & DPLL3_HIST_EN_MSK))
+// Register R548 [0x224] -- DPLL3_SCLR_BY1
+
+enum dpll3_sclr_by1_fields_t {
+    DPLL3_HOLD_SLEW_LIM_EN_OFF = 0x7,
+    DPLL3_HOLD_SLEW_LIM_EN_MSK = 0x80,
+};
+#define MAKE_LMK5C33216_DPLL3_SCLR_BY1(dpll3_hold_slew_lim_en) MAKE_LMK5C33216_REG_WR(DPLL3_SCLR_BY1, \
+    (((dpll3_hold_slew_lim_en) << DPLL3_HOLD_SLEW_LIM_EN_OFF) & DPLL3_HOLD_SLEW_LIM_EN_MSK))
+// Register R550 [0x226] -- DPLL3_PHOFF
+
+enum dpll3_phoff_fields_t {
+    DPLL3_PH_OFFSET_OFF = 0x0,
+    DPLL3_PH_OFFSET_MSK = 0x1fffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY0, (((value) >> 40) & 0x1f))
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY1, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY2, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY3, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY4, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_PHOFF_BY5(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHOFF_BY5, (((value) << 0) & 0xff))
+// Register R556 [0x22c] -- DPLL3_FREERUN
+
+enum dpll3_freerun_fields_t {
+    DPLL3_FREE_RUN_OFF = 0x0,
+    DPLL3_FREE_RUN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FREERUN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FREERUN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FREERUN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FREERUN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FREERUN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FREERUN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FREERUN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FREERUN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FREERUN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FREERUN_BY4, (((value) << 0) & 0xff))
+// Register R590 [0x24e] -- DPLL3_LCKTMR
+
+enum dpll3_lcktmr_fields_t {
+    DPLL3_LCK_TIMER_OFF = 0x0,
+    DPLL3_LCK_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL3_LCKTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_LCKTMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL3_LCKTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_LCKTMR_BY1, (((value) << 0) & 0xff))
+// Register R594 [0x252] -- DPLL3_HOLDTMR
+
+enum dpll3_holdtmr_fields_t {
+    DPLL3_HOLD_TIMER_OFF = 0x0,
+    DPLL3_HOLD_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL3_HOLDTMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_HOLDTMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL3_HOLDTMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_HOLDTMR_BY1, (((value) << 0) & 0xff))
+// Register R596 [0x254] -- DPLL3_PHS1TMR
+
+enum dpll3_phs1tmr_fields_t {
+    DPLL3_PHS1_TIMER_OFF = 0x0,
+    DPLL3_PHS1_TIMER_MSK = 0x3ff,
+};
+#define MAKE_LMK5C33216_DPLL3_PHS1TMR_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHS1TMR_BY0, (((value) >> 8) & 0x3))
+#define MAKE_LMK5C33216_DPLL3_PHS1TMR_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_PHS1TMR_BY1, (((value) << 0) & 0xff))
+// Register R603 [0x25b] -- DPLL3_PLLK
+
+enum dpll3_pllk_fields_t {
+    DPLL3_PL_THRESH_OFF = 0x0,
+    DPLL3_PL_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL3_PLLK(dpll3_pl_thresh) MAKE_LMK5C33216_REG_WR(DPLL3_PLLK, \
+    (((dpll3_pl_thresh) << DPLL3_PL_THRESH_OFF) & DPLL3_PL_THRESH_MSK))
+// Register R604 [0x25c] -- DPLL3_PLUNLK
+
+enum dpll3_plunlk_fields_t {
+    DPLL3_PL_UNLK_THRESH_OFF = 0x0,
+    DPLL3_PL_UNLK_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL3_PLUNLK(dpll3_pl_unlk_thresh) MAKE_LMK5C33216_REG_WR(DPLL3_PLUNLK, \
+    (((dpll3_pl_unlk_thresh) << DPLL3_PL_UNLK_THRESH_OFF) & DPLL3_PL_UNLK_THRESH_MSK))
+// Register R605 [0x25d] -- DPLL3_PHS1LIM
+
+enum dpll3_phs1lim_fields_t {
+    DPLL3_PHS1_THRESH_OFF = 0x0,
+    DPLL3_PHS1_THRESH_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_DPLL3_PHS1LIM(dpll3_phs1_thresh) MAKE_LMK5C33216_REG_WR(DPLL3_PHS1LIM, \
+    (((dpll3_phs1_thresh) << DPLL3_PHS1_THRESH_OFF) & DPLL3_PHS1_THRESH_MSK))
+// Register R610 [0x262] -- DPLL3_DBG2
+
+enum dpll3_dbg2_fields_t {
+    DPLL3_STATUS_PL_OFF = 0x5,
+    DPLL3_STATUS_PL_MSK = 0x20,
+};
+#define MAKE_LMK5C33216_DPLL3_DBG2(dpll3_status_pl) MAKE_LMK5C33216_REG_WR(DPLL3_DBG2, \
+    (((dpll3_status_pl) << DPLL3_STATUS_PL_OFF) & DPLL3_STATUS_PL_MSK))
+// Register R611 [0x263] -- DPLL3_DBG3
+
+enum dpll3_dbg3_fields_t {
+    DPLL3_DCO_SLEW_ACTIVE_OFF = 0x4,
+    DPLL3_DCO_SLEW_ACTIVE_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_DPLL3_DBG3(dpll3_dco_slew_active) MAKE_LMK5C33216_REG_WR(DPLL3_DBG3, \
+    (((dpll3_dco_slew_active) << DPLL3_DCO_SLEW_ACTIVE_OFF) & DPLL3_DCO_SLEW_ACTIVE_MSK))
+// Register R614 [0x266] -- DPLL3_FBDIV
+
+enum dpll3_fbdiv_fields_t {
+    DPLL3_FB_DIV_OFF = 0x0,
+    DPLL3_FB_DIV_MSK = 0x1ffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_BY0, (((value) >> 32) & 0x1))
+#define MAKE_LMK5C33216_DPLL3_FBDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_BY4, (((value) << 0) & 0xff))
+// Register R619 [0x26b] -- DPLL3_FBNUM
+
+enum dpll3_fbnum_fields_t {
+    DPLL3_FB_NUM_OFF = 0x0,
+    DPLL3_FB_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBNUM_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_BY4, (((value) << 0) & 0xff))
+// Register R624 [0x270] -- DPLL3_FBDEN
+
+enum dpll3_fbden_fields_t {
+    DPLL3_FB_DEN_OFF = 0x0,
+    DPLL3_FB_DEN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBDEN_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN_BY4, (((value) << 0) & 0xff))
+// Register R629 [0x275] -- DPLL3_FBDIV2
+
+enum dpll3_fbdiv2_fields_t {
+    DPLL3_FB2_DIV_OFF = 0x0,
+    DPLL3_FB2_DIV_MSK = 0x1ffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBDIV2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV2_BY0, (((value) >> 32) & 0x1))
+#define MAKE_LMK5C33216_DPLL3_FBDIV2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDIV2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV2_BY4, (((value) << 0) & 0xff))
+// Register R634 [0x27a] -- DPLL3_FBNUM2_BY
+
+enum dpll3_fbnum2_by_fields_t {
+    DPLL3_FB2_NUM_OFF = 0x0,
+    DPLL3_FB2_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBNUM2_BY_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM2_BY_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM2_BY_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM2_BY_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM2_BY_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM2_BY_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM2_BY_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM2_BY_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM2_BY_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM2_BY_BY4, (((value) << 0) & 0xff))
+// Register R639 [0x27f] -- DPLL3_FBDEN2
+
+enum dpll3_fbden2_fields_t {
+    DPLL3_FB2_DEN_OFF = 0x0,
+    DPLL3_FB2_DEN_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBDEN2_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN2_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN2_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN2_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN2_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN2_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN2_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN2_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBDEN2_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBDEN2_BY4, (((value) << 0) & 0xff))
+// Register R644 [0x284] -- DPLL3_FBDIV_SEL
+
+enum dpll3_fbdiv_sel_fields_t {
+    DPLL3_REF5_FB_SEL_OFF = 0x5,
+    DPLL3_REF5_FB_SEL_MSK = 0x20,
+    DPLL3_REF4_FB_SEL_OFF = 0x4,
+    DPLL3_REF4_FB_SEL_MSK = 0x10,
+    DPLL3_REF1_FB_SEL_OFF = 0x1,
+    DPLL3_REF1_FB_SEL_MSK = 0x2,
+    DPLL3_REF0_FB_SEL_OFF = 0x0,
+    DPLL3_REF0_FB_SEL_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL3_FBDIV_SEL(dpll3_ref5_fb_sel, dpll3_ref4_fb_sel, dpll3_ref1_fb_sel, dpll3_ref0_fb_sel) MAKE_LMK5C33216_REG_WR(DPLL3_FBDIV_SEL, \
+    (((dpll3_ref5_fb_sel) << DPLL3_REF5_FB_SEL_OFF) & DPLL3_REF5_FB_SEL_MSK) |  \
+    (((dpll3_ref4_fb_sel) << DPLL3_REF4_FB_SEL_OFF) & DPLL3_REF4_FB_SEL_MSK) |  \
+    (((dpll3_ref1_fb_sel) << DPLL3_REF1_FB_SEL_OFF) & DPLL3_REF1_FB_SEL_MSK) |  \
+    (((dpll3_ref0_fb_sel) << DPLL3_REF0_FB_SEL_OFF) & DPLL3_REF0_FB_SEL_MSK))
+// Register R645 [0x285] -- DPLL3_FBMASHCTL
+
+enum dpll3_fbmashctl_fields_t {
+    DPLL3_FB_MASH_ORDER_OFF = 0x0,
+    DPLL3_FB_MASH_ORDER_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_DPLL3_FBMASHCTL(dpll3_fb_mash_order) MAKE_LMK5C33216_REG_WR(DPLL3_FBMASHCTL, \
+    (((dpll3_fb_mash_order) << DPLL3_FB_MASH_ORDER_OFF) & DPLL3_FB_MASH_ORDER_MSK))
+// Register R646 [0x286] -- DPLL3_FBFDEV
+
+enum dpll3_fbfdev_fields_t {
+    DPLL3_FB_FDEV_OFF = 0x0,
+    DPLL3_FB_FDEV_MSK = 0x3fffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBFDEV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEV_BY0, (((value) >> 32) & 0x3f))
+#define MAKE_LMK5C33216_DPLL3_FBFDEV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEV_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBFDEV_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEV_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBFDEV_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEV_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBFDEV_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEV_BY4, (((value) << 0) & 0xff))
+// Register R651 [0x28b] -- DPLL3_FBFDEVUPDATE
+
+enum dpll3_fbfdevupdate_fields_t {
+    DPLL3_FB_FDEV_UPDATE_OFF = 0x0,
+    DPLL3_FB_FDEV_UPDATE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL3_FBFDEVUPDATE(dpll3_fb_fdev_update) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEVUPDATE, \
+    (((dpll3_fb_fdev_update) << DPLL3_FB_FDEV_UPDATE_OFF) & DPLL3_FB_FDEV_UPDATE_MSK))
+// Register R652 [0x28c] -- DPLL3_FBFDEVEN
+
+enum dpll3_fbfdeven_fields_t {
+    DPLL3_FB_FDEV_EN_OFF = 0x0,
+    DPLL3_FB_FDEV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_DPLL3_FBFDEVEN(dpll3_fb_fdev_en) MAKE_LMK5C33216_REG_WR(DPLL3_FBFDEVEN, \
+    (((dpll3_fb_fdev_en) << DPLL3_FB_FDEV_EN_OFF) & DPLL3_FB_FDEV_EN_MSK))
+// Register R653 [0x28d] -- DPLL3_FBNUM_STAT
+
+enum dpll3_fbnum_stat_fields_t {
+    DPLL3_FB_NUM_STAT_OFF = 0x0,
+    DPLL3_FB_NUM_STAT_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_DPLL3_FBNUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_FBNUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(DPLL3_FBNUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R658 [0x292] -- DPLL3_REF_DBLR
+
+enum dpll3_ref_dblr_fields_t {
+    DPLL3_REF0_DBLR_EN_OFF = 0x3,
+    DPLL3_REF0_DBLR_EN_MSK = 0x8,
+    DPLL3_REF1_DBLR_EN_OFF = 0x2,
+    DPLL3_REF1_DBLR_EN_MSK = 0x4,
+};
+#define MAKE_LMK5C33216_DPLL3_REF_DBLR(dpll3_ref0_dblr_en, dpll3_ref1_dblr_en) MAKE_LMK5C33216_REG_WR(DPLL3_REF_DBLR, \
+    (((dpll3_ref0_dblr_en) << DPLL3_REF0_DBLR_EN_OFF) & DPLL3_REF0_DBLR_EN_MSK) |  \
+    (((dpll3_ref1_dblr_en) << DPLL3_REF1_DBLR_EN_OFF) & DPLL3_REF1_DBLR_EN_MSK))
+// Register R659 [0x293] -- DPLL3_REF0RDIV
+
+enum dpll3_ref0rdiv_fields_t {
+    DPLL3_REF0_RDIV_OFF = 0x0,
+    DPLL3_REF0_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL3_REF0RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF0RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_REF0RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF0RDIV_BY1, (((value) << 0) & 0xff))
+// Register R661 [0x295] -- DPLL3_REF1RDIV
+
+enum dpll3_ref1rdiv_fields_t {
+    DPLL3_REF1_RDIV_OFF = 0x0,
+    DPLL3_REF1_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL3_REF1RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF1RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_REF1RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF1RDIV_BY1, (((value) << 0) & 0xff))
+// Register R663 [0x297] -- DPLL3_REF2RDIV
+
+enum dpll3_ref2rdiv_fields_t {
+    DPLL3_REF2_RDIV_OFF = 0x0,
+    DPLL3_REF2_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL3_REF2RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF2RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_REF2RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF2RDIV_BY1, (((value) << 0) & 0xff))
+// Register R669 [0x29d] -- DPLL3_REF5RDIV
+
+enum dpll3_ref5rdiv_fields_t {
+    DPLL3_REF5_RDIV_OFF = 0x0,
+    DPLL3_REF5_RDIV_MSK = 0xffff,
+};
+#define MAKE_LMK5C33216_DPLL3_REF5RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF5RDIV_BY0, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_DPLL3_REF5RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(DPLL3_REF5RDIV_BY1, (((value) << 0) & 0xff))
+// Register R707 [0x2c3] -- APLL1_CP_RPU
+
+enum apll1_cp_rpu_fields_t {
+    PLL1_CP_PU_R_OFF = 0x0,
+    PLL1_CP_PU_R_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL1_CP_RPU(pll1_cp_pu_r) MAKE_LMK5C33216_REG_WR(APLL1_CP_RPU, \
+    (((pll1_cp_pu_r) << PLL1_CP_PU_R_OFF) & PLL1_CP_PU_R_MSK))
+// Register R708 [0x2c4] -- APLL1_CPG
+
+enum apll1_cpg_fields_t {
+    PLL1_CPG_OFF = 0x0,
+    PLL1_CPG_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL1_CPG(pll1_cpg) MAKE_LMK5C33216_REG_WR(APLL1_CPG, \
+    (((pll1_cpg) << PLL1_CPG_OFF) & PLL1_CPG_MSK))
+// Register R709 [0x2c5] -- APLL1_LPF_R2
+
+enum apll1_lpf_r2_fields_t {
+    PLL1_LF_R2_OFF = 0x0,
+    PLL1_LF_R2_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL1_LPF_R2(pll1_lf_r2) MAKE_LMK5C33216_REG_WR(APLL1_LPF_R2, \
+    (((pll1_lf_r2) << PLL1_LF_R2_OFF) & PLL1_LF_R2_MSK))
+// Register R710 [0x2c6] -- APLL1_LPF_R3
+
+enum apll1_lpf_r3_fields_t {
+    PLL1_LF_R3_OFF = 0x0,
+    PLL1_LF_R3_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL1_LPF_R3(pll1_lf_r3) MAKE_LMK5C33216_REG_WR(APLL1_LPF_R3, \
+    (((pll1_lf_r3) << PLL1_LF_R3_OFF) & PLL1_LF_R3_MSK))
+// Register R711 [0x2c7] -- APLL1_LPF_R4
+
+enum apll1_lpf_r4_fields_t {
+    PLL1_LF_R4_OFF = 0x0,
+    PLL1_LF_R4_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL1_LPF_R4(pll1_lf_r4) MAKE_LMK5C33216_REG_WR(APLL1_LPF_R4, \
+    (((pll1_lf_r4) << PLL1_LF_R4_OFF) & PLL1_LF_R4_MSK))
+// Register R712 [0x2c8] -- APLL1_LPF_C3C4
+
+enum apll1_lpf_c3c4_fields_t {
+    PLL1_DISABLE_3RD4TH_OFF = 0x6,
+    PLL1_DISABLE_3RD4TH_MSK = 0xc0,
+    PLL1_LF_C3_OFF = 0x3,
+    PLL1_LF_C3_MSK = 0x38,
+    PLL1_LF_C4_OFF = 0x0,
+    PLL1_LF_C4_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL1_LPF_C3C4(pll1_disable_3rd4th, pll1_lf_c3, pll1_lf_c4) MAKE_LMK5C33216_REG_WR(APLL1_LPF_C3C4, \
+    (((pll1_disable_3rd4th) << PLL1_DISABLE_3RD4TH_OFF) & PLL1_DISABLE_3RD4TH_MSK) |  \
+    (((pll1_lf_c3) << PLL1_LF_C3_OFF) & PLL1_LF_C3_MSK) |  \
+    (((pll1_lf_c4) << PLL1_LF_C4_OFF) & PLL1_LF_C4_MSK))
+// Register R713 [0x2c9] -- APLL1_RDIV
+
+enum apll1_rdiv_fields_t {
+    PLL1_RDIV_OFF = 0x0,
+    PLL1_RDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL1_RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL1_RDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL1_RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL1_RDIV_BY1, (((value) << 0) & 0xff))
+// Register R715 [0x2cb] -- APLL1_RDIV_CTL
+enum pll1_rdiv_mux_sel_options {
+    PLL1_RDIV_MUX_SEL_XO = 0,
+    PLL1_RDIV_MUX_SEL_VCO2FBDIV = 1,
+    PLL1_RDIV_MUX_SEL_VCO3FBDIV = 2,
+};
+
+enum apll1_rdiv_ctl_fields_t {
+    PLL1_RDIV_XO_EN_OFF = 0x4,
+    PLL1_RDIV_XO_EN_MSK = 0x10,
+    PLL1_RDIV_XO_DBLR_EN_OFF = 0x3,
+    PLL1_RDIV_XO_DBLR_EN_MSK = 0x8,
+    PLL1_RDIV_BYPASS_EN_OFF = 0x2,
+    PLL1_RDIV_BYPASS_EN_MSK = 0x4,
+    PLL1_RDIV_MUX_SEL_OFF = 0x0,
+    PLL1_RDIV_MUX_SEL_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL1_RDIV_CTL(pll1_rdiv_xo_en, pll1_rdiv_xo_dblr_en, pll1_rdiv_bypass_en, pll1_rdiv_mux_sel) MAKE_LMK5C33216_REG_WR(APLL1_RDIV_CTL, \
+    (((pll1_rdiv_xo_en) << PLL1_RDIV_XO_EN_OFF) & PLL1_RDIV_XO_EN_MSK) |  \
+    (((pll1_rdiv_xo_dblr_en) << PLL1_RDIV_XO_DBLR_EN_OFF) & PLL1_RDIV_XO_DBLR_EN_MSK) |  \
+    (((pll1_rdiv_bypass_en) << PLL1_RDIV_BYPASS_EN_OFF) & PLL1_RDIV_BYPASS_EN_MSK) |  \
+    (((pll1_rdiv_mux_sel) << PLL1_RDIV_MUX_SEL_OFF) & PLL1_RDIV_MUX_SEL_MSK))
+// Register R716 [0x2cc] -- APLL1_NDIV
+
+enum apll1_ndiv_fields_t {
+    PLL1_NDIV_OFF = 0x0,
+    PLL1_NDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL1_NDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL1_NDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL1_NDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL1_NDIV_BY1, (((value) << 0) & 0xff))
+// Register R718 [0x2ce] -- APLL1_NUM_MSB
+
+enum apll1_num_msb_fields_t {
+    PLL1_NUM_MSB_OFF = 0x0,
+    PLL1_NUM_MSB_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL1_NUM_MSB(pll1_num_msb) MAKE_LMK5C33216_REG_WR(APLL1_NUM_MSB, \
+    (((pll1_num_msb) << PLL1_NUM_MSB_OFF) & PLL1_NUM_MSB_MSK))
+// Register R719 [0x2cf] -- APLL1_NUM
+
+enum apll1_num_fields_t {
+    PLL1_NUM_OFF = 0x0,
+    PLL1_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL1_NUM_BY0(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_BY1(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_BY2(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_BY3(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_BY4(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_BY4, (((value) << 0) & 0xff))
+// Register R724 [0x2d4] -- APLL1_MASH_CTL
+
+enum apll1_mash_ctl_fields_t {
+    PLL1_DTHRMODE_OFF = 0x4,
+    PLL1_DTHRMODE_MSK = 0x30,
+    PLL1_ORDER_OFF = 0x2,
+    PLL1_ORDER_MSK = 0xc,
+    PLL1_MODE_OFF = 0x0,
+    PLL1_MODE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_APLL1_MASH_CTL(pll1_dthrmode, pll1_order, pll1_mode) MAKE_LMK5C33216_REG_WR(APLL1_MASH_CTL, \
+    (((pll1_dthrmode) << PLL1_DTHRMODE_OFF) & PLL1_DTHRMODE_MSK) |  \
+    (((pll1_order) << PLL1_ORDER_OFF) & PLL1_ORDER_MSK) |  \
+    (((pll1_mode) << PLL1_MODE_OFF) & PLL1_MODE_MSK))
+// Register R725 [0x2d5] -- APLL1_NUM_STAT
+
+enum apll1_num_stat_fields_t {
+    APLL1_NUM_STAT_OFF = 0x0,
+    APLL1_NUM_STAT_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL1_NUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL1_NUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(APLL1_NUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R731 [0x2db] -- APLL1_VCO_PRIDIV_CTL
+
+enum apll1_vco_pridiv_ctl_fields_t {
+    PLL1_PRI_DIV_SYNC_EN_OFF = 0x7,
+    PLL1_PRI_DIV_SYNC_EN_MSK = 0x80,
+    PLL1_PRI_DIV_EN_OFF = 0x6,
+    PLL1_PRI_DIV_EN_MSK = 0x40,
+    PLL1_PRI_DIV_OFF = 0x3,
+    PLL1_PRI_DIV_MSK = 0x38,
+    PLL1_PRI_DIV_DRVR_EN_OFF = 0x0,
+    PLL1_PRI_DIV_DRVR_EN_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL1_VCO_PRIDIV_CTL(pll1_pri_div_sync_en, pll1_pri_div_en, pll1_pri_div, pll1_pri_div_drvr_en) MAKE_LMK5C33216_REG_WR(APLL1_VCO_PRIDIV_CTL, \
+    (((pll1_pri_div_sync_en) << PLL1_PRI_DIV_SYNC_EN_OFF) & PLL1_PRI_DIV_SYNC_EN_MSK) |  \
+    (((pll1_pri_div_en) << PLL1_PRI_DIV_EN_OFF) & PLL1_PRI_DIV_EN_MSK) |  \
+    (((pll1_pri_div) << PLL1_PRI_DIV_OFF) & PLL1_PRI_DIV_MSK) |  \
+    (((pll1_pri_div_drvr_en) << PLL1_PRI_DIV_DRVR_EN_OFF) & PLL1_PRI_DIV_DRVR_EN_MSK))
+// Register R732 [0x2dc] -- APLL1_VCO_SECDIV_CTL
+
+enum apll1_vco_secdiv_ctl_fields_t {
+    PLL1_SEC_DIV_SYNC_EN_OFF = 0x7,
+    PLL1_SEC_DIV_SYNC_EN_MSK = 0x80,
+    PLL1_SEC_DIV_EN_OFF = 0x6,
+    PLL1_SEC_DIV_EN_MSK = 0x40,
+    PLL1_SEC_DIV_OFF = 0x3,
+    PLL1_SEC_DIV_MSK = 0x38,
+    PLL1_SEC_DIV_DRVR_EN_OFF = 0x0,
+    PLL1_SEC_DIV_DRVR_EN_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL1_VCO_SECDIV_CTL(pll1_sec_div_sync_en, pll1_sec_div_en, pll1_sec_div, pll1_sec_div_drvr_en) MAKE_LMK5C33216_REG_WR(APLL1_VCO_SECDIV_CTL, \
+    (((pll1_sec_div_sync_en) << PLL1_SEC_DIV_SYNC_EN_OFF) & PLL1_SEC_DIV_SYNC_EN_MSK) |  \
+    (((pll1_sec_div_en) << PLL1_SEC_DIV_EN_OFF) & PLL1_SEC_DIV_EN_MSK) |  \
+    (((pll1_sec_div) << PLL1_SEC_DIV_OFF) & PLL1_SEC_DIV_MSK) |  \
+    (((pll1_sec_div_drvr_en) << PLL1_SEC_DIV_DRVR_EN_OFF) & PLL1_SEC_DIV_DRVR_EN_MSK))
+// Register R733 [0x2dd] -- APLL1_VCO_BUF_CTL
+
+enum apll1_vco_buf_ctl_fields_t {
+    PLL1_VCO_BUF_EN_OFF = 0x7,
+    PLL1_VCO_BUF_EN_MSK = 0x80,
+    PLL1_VCO_BUF_2REF_EN_OFF = 0x5,
+    PLL1_VCO_BUF_2REF_EN_MSK = 0x60,
+    PLL1_VCO_BUF_2DPLL_EN_OFF = 0x4,
+    PLL1_VCO_BUF_2DPLL_EN_MSK = 0x10,
+    PLL1_VCO_BUF_PPM_CHECK_EN_OFF = 0x2,
+    PLL1_VCO_BUF_PPM_CHECK_EN_MSK = 0x4,
+    PLL1_VCO_BUF_FB_TDC_EN_OFF = 0x0,
+    PLL1_VCO_BUF_FB_TDC_EN_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL1_VCO_BUF_CTL(pll1_vco_buf_en, pll1_vco_buf_2ref_en, pll1_vco_buf_2dpll_en, pll1_vco_buf_ppm_check_en, pll1_vco_buf_fb_tdc_en) MAKE_LMK5C33216_REG_WR(APLL1_VCO_BUF_CTL, \
+    (((pll1_vco_buf_en) << PLL1_VCO_BUF_EN_OFF) & PLL1_VCO_BUF_EN_MSK) |  \
+    (((pll1_vco_buf_2ref_en) << PLL1_VCO_BUF_2REF_EN_OFF) & PLL1_VCO_BUF_2REF_EN_MSK) |  \
+    (((pll1_vco_buf_2dpll_en) << PLL1_VCO_BUF_2DPLL_EN_OFF) & PLL1_VCO_BUF_2DPLL_EN_MSK) |  \
+    (((pll1_vco_buf_ppm_check_en) << PLL1_VCO_BUF_PPM_CHECK_EN_OFF) & PLL1_VCO_BUF_PPM_CHECK_EN_MSK) |  \
+    (((pll1_vco_buf_fb_tdc_en) << PLL1_VCO_BUF_FB_TDC_EN_OFF) & PLL1_VCO_BUF_FB_TDC_EN_MSK))
+// Register R741 [0x2e5] -- APLL1_CALSTAT1
+
+enum apll1_calstat1_fields_t {
+    PLL1_VM_INSIDE_OFF = 0x5,
+    PLL1_VM_INSIDE_MSK = 0x20,
+    PLL1_VM_HI_OFF = 0x4,
+    PLL1_VM_HI_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_APLL1_CALSTAT1(pll1_vm_inside, pll1_vm_hi) MAKE_LMK5C33216_REG_WR(APLL1_CALSTAT1, \
+    (((pll1_vm_inside) << PLL1_VM_INSIDE_OFF) & PLL1_VM_INSIDE_MSK) |  \
+    (((pll1_vm_hi) << PLL1_VM_HI_OFF) & PLL1_VM_HI_MSK))
+// Register R773 [0x305] -- APLL2_CAL
+
+enum apll2_cal_fields_t {
+    PLL2_CLSDWAIT_OFF = 0x2,
+    PLL2_CLSDWAIT_MSK = 0xc,
+    PLL2_OPENWAIT_OFF = 0x0,
+    PLL2_OPENWAIT_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL2_CAL(pll2_clsdwait, pll2_openwait) MAKE_LMK5C33216_REG_WR(APLL2_CAL, \
+    (((pll2_clsdwait) << PLL2_CLSDWAIT_OFF) & PLL2_CLSDWAIT_MSK) |  \
+    (((pll2_openwait) << PLL2_OPENWAIT_OFF) & PLL2_OPENWAIT_MSK))
+// Register R777 [0x309] -- APLL2_CP_PU
+
+enum apll2_cp_pu_fields_t {
+    PLL2_CP_PU_R_OFF = 0x0,
+    PLL2_CP_PU_R_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL2_CP_PU(pll2_cp_pu_r) MAKE_LMK5C33216_REG_WR(APLL2_CP_PU, \
+    (((pll2_cp_pu_r) << PLL2_CP_PU_R_OFF) & PLL2_CP_PU_R_MSK))
+// Register R778 [0x30a] -- APLL2_CPG
+
+enum apll2_cpg_fields_t {
+    PLL2_CPG_OFF = 0x0,
+    PLL2_CPG_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_APLL2_CPG(pll2_cpg) MAKE_LMK5C33216_REG_WR(APLL2_CPG, \
+    (((pll2_cpg) << PLL2_CPG_OFF) & PLL2_CPG_MSK))
+// Register R779 [0x30b] -- APLL2_LPF_R2
+
+enum apll2_lpf_r2_fields_t {
+    PLL2_LF_R2_OFF = 0x0,
+    PLL2_LF_R2_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL2_LPF_R2(pll2_lf_r2) MAKE_LMK5C33216_REG_WR(APLL2_LPF_R2, \
+    (((pll2_lf_r2) << PLL2_LF_R2_OFF) & PLL2_LF_R2_MSK))
+// Register R780 [0x30c] -- APLL2_LPF_R3
+
+enum apll2_lpf_r3_fields_t {
+    PLL2_LF_R3_OFF = 0x0,
+    PLL2_LF_R3_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL2_LPF_R3(pll2_lf_r3) MAKE_LMK5C33216_REG_WR(APLL2_LPF_R3, \
+    (((pll2_lf_r3) << PLL2_LF_R3_OFF) & PLL2_LF_R3_MSK))
+// Register R781 [0x30d] -- APLL2_LPF_R4
+
+enum apll2_lpf_r4_fields_t {
+    PLL2_LF_R4_OFF = 0x0,
+    PLL2_LF_R4_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL2_LPF_R4(pll2_lf_r4) MAKE_LMK5C33216_REG_WR(APLL2_LPF_R4, \
+    (((pll2_lf_r4) << PLL2_LF_R4_OFF) & PLL2_LF_R4_MSK))
+// Register R782 [0x30e] -- APLL2_LPF_C3C4
+
+enum apll2_lpf_c3c4_fields_t {
+    PLL2_DISABLE_3RD4TH_OFF = 0x6,
+    PLL2_DISABLE_3RD4TH_MSK = 0xc0,
+    PLL2_LF_C3_OFF = 0x3,
+    PLL2_LF_C3_MSK = 0x38,
+    PLL2_LF_C4_OFF = 0x0,
+    PLL2_LF_C4_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL2_LPF_C3C4(pll2_disable_3rd4th, pll2_lf_c3, pll2_lf_c4) MAKE_LMK5C33216_REG_WR(APLL2_LPF_C3C4, \
+    (((pll2_disable_3rd4th) << PLL2_DISABLE_3RD4TH_OFF) & PLL2_DISABLE_3RD4TH_MSK) |  \
+    (((pll2_lf_c3) << PLL2_LF_C3_OFF) & PLL2_LF_C3_MSK) |  \
+    (((pll2_lf_c4) << PLL2_LF_C4_OFF) & PLL2_LF_C4_MSK))
+// Register R783 [0x30f] -- APLL2_RDIV
+
+enum apll2_rdiv_fields_t {
+    PLL2_RDIV_OFF = 0x0,
+    PLL2_RDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL2_RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL2_RDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL2_RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL2_RDIV_BY1, (((value) << 0) & 0xff))
+// Register R785 [0x311] -- APLL2_RDIV_CTL
+enum pll2_rdiv_mux_sel_options {
+    PLL2_RDIV_MUX_SEL_XO = 0,
+    PLL2_RDIV_MUX_SEL_VCO1FBDIV = 1,
+    PLL2_RDIV_MUX_SEL_VCO3FBDIV = 2,
+};
+
+enum apll2_rdiv_ctl_fields_t {
+    PLL2_RDIV_XO_EN_OFF = 0x4,
+    PLL2_RDIV_XO_EN_MSK = 0x10,
+    PLL2_RDIV_XO_DBLR_EN_OFF = 0x3,
+    PLL2_RDIV_XO_DBLR_EN_MSK = 0x8,
+    PLL2_RDIV_BYPASS_EN_OFF = 0x2,
+    PLL2_RDIV_BYPASS_EN_MSK = 0x4,
+    PLL2_RDIV_MUX_SEL_OFF = 0x0,
+    PLL2_RDIV_MUX_SEL_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL2_RDIV_CTL(pll2_rdiv_xo_en, pll2_rdiv_xo_dblr_en, pll2_rdiv_bypass_en, pll2_rdiv_mux_sel) MAKE_LMK5C33216_REG_WR(APLL2_RDIV_CTL, \
+    (((pll2_rdiv_xo_en) << PLL2_RDIV_XO_EN_OFF) & PLL2_RDIV_XO_EN_MSK) |  \
+    (((pll2_rdiv_xo_dblr_en) << PLL2_RDIV_XO_DBLR_EN_OFF) & PLL2_RDIV_XO_DBLR_EN_MSK) |  \
+    (((pll2_rdiv_bypass_en) << PLL2_RDIV_BYPASS_EN_OFF) & PLL2_RDIV_BYPASS_EN_MSK) |  \
+    (((pll2_rdiv_mux_sel) << PLL2_RDIV_MUX_SEL_OFF) & PLL2_RDIV_MUX_SEL_MSK))
+// Register R786 [0x312] -- APLL2_NDIV
+
+enum apll2_ndiv_fields_t {
+    PLL2_NDIV_OFF = 0x0,
+    PLL2_NDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL2_NDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL2_NDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL2_NDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL2_NDIV_BY1, (((value) << 0) & 0xff))
+// Register R788 [0x314] -- APLL2_NUM_MSB
+
+enum apll2_num_msb_fields_t {
+    PLL2_NUM_MSB_OFF = 0x0,
+    PLL2_NUM_MSB_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL2_NUM_MSB(pll2_num_msb) MAKE_LMK5C33216_REG_WR(APLL2_NUM_MSB, \
+    (((pll2_num_msb) << PLL2_NUM_MSB_OFF) & PLL2_NUM_MSB_MSK))
+// Register R789 [0x315] -- APLL2_NUM
+
+enum apll2_num_fields_t {
+    PLL2_NUM_OFF = 0x0,
+    PLL2_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL2_NUM_BY0(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_BY1(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_BY2(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_BY3(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_BY4(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_BY4, (((value) << 0) & 0xff))
+// Register R794 [0x31a] -- APLL2_MASH_CTL
+
+enum apll2_mash_ctl_fields_t {
+    PLL2_DTHRMODE_OFF = 0x4,
+    PLL2_DTHRMODE_MSK = 0x30,
+    PLL2_ORDER_OFF = 0x1,
+    PLL2_ORDER_MSK = 0xe,
+    PLL2_MODE_OFF = 0x0,
+    PLL2_MODE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_APLL2_MASH_CTL(pll2_dthrmode, pll2_order, pll2_mode) MAKE_LMK5C33216_REG_WR(APLL2_MASH_CTL, \
+    (((pll2_dthrmode) << PLL2_DTHRMODE_OFF) & PLL2_DTHRMODE_MSK) |  \
+    (((pll2_order) << PLL2_ORDER_OFF) & PLL2_ORDER_MSK) |  \
+    (((pll2_mode) << PLL2_MODE_OFF) & PLL2_MODE_MSK))
+// Register R795 [0x31b] -- APLL2_NUM_STAT
+
+enum apll2_num_stat_fields_t {
+    PLL2_NUM_STAT_OFF = 0x0,
+    PLL2_NUM_STAT_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL2_NUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL2_NUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(APLL2_NUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R803 [0x323] -- APLL2_VCO_BUF_CTL
+
+enum apll2_vco_buf_ctl_fields_t {
+    PLL2_VCO_DIV_3_SEL_OFF = 0x6,
+    PLL2_VCO_DIV_3_SEL_MSK = 0x40,
+    PLL2_VCO_DIV_2_3_EN_OFF = 0x5,
+    PLL2_VCO_DIV_2_3_EN_MSK = 0x20,
+    PLL2_VCO_BUF_EN_OFF = 0x4,
+    PLL2_VCO_BUF_EN_MSK = 0x10,
+    PLL2_VCO_BUF_2REF_EN_OFF = 0x2,
+    PLL2_VCO_BUF_2REF_EN_MSK = 0xc,
+    PLL2_VCO_BUF_2DPLL_EN_OFF = 0x1,
+    PLL2_VCO_BUF_2DPLL_EN_MSK = 0x2,
+    PLL2_VCO_BUF_2WNDDET_EN_OFF = 0x0,
+    PLL2_VCO_BUF_2WNDDET_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_APLL2_VCO_BUF_CTL(pll2_vco_div_3_sel, pll2_vco_div_2_3_en, pll2_vco_buf_en, pll2_vco_buf_2ref_en, pll2_vco_buf_2dpll_en, pll2_vco_buf_2wnddet_en) MAKE_LMK5C33216_REG_WR(APLL2_VCO_BUF_CTL, \
+    (((pll2_vco_div_3_sel) << PLL2_VCO_DIV_3_SEL_OFF) & PLL2_VCO_DIV_3_SEL_MSK) |  \
+    (((pll2_vco_div_2_3_en) << PLL2_VCO_DIV_2_3_EN_OFF) & PLL2_VCO_DIV_2_3_EN_MSK) |  \
+    (((pll2_vco_buf_en) << PLL2_VCO_BUF_EN_OFF) & PLL2_VCO_BUF_EN_MSK) |  \
+    (((pll2_vco_buf_2ref_en) << PLL2_VCO_BUF_2REF_EN_OFF) & PLL2_VCO_BUF_2REF_EN_MSK) |  \
+    (((pll2_vco_buf_2dpll_en) << PLL2_VCO_BUF_2DPLL_EN_OFF) & PLL2_VCO_BUF_2DPLL_EN_MSK) |  \
+    (((pll2_vco_buf_2wnddet_en) << PLL2_VCO_BUF_2WNDDET_EN_OFF) & PLL2_VCO_BUF_2WNDDET_EN_MSK))
+// Register R804 [0x324] -- APLL2_VCO_DIV
+
+enum apll2_vco_div_fields_t {
+    PLL2_VCO_DIV_SYNC_EN_OFF = 0x5,
+    PLL2_VCO_DIV_SYNC_EN_MSK = 0x20,
+    PLL2_VCO_DIV_EN_OFF = 0x4,
+    PLL2_VCO_DIV_EN_MSK = 0x10,
+    PLL2_VCO_DIV_OFF = 0x0,
+    PLL2_VCO_DIV_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_APLL2_VCO_DIV(pll2_vco_div_sync_en, pll2_vco_div_en, pll2_vco_div) MAKE_LMK5C33216_REG_WR(APLL2_VCO_DIV, \
+    (((pll2_vco_div_sync_en) << PLL2_VCO_DIV_SYNC_EN_OFF) & PLL2_VCO_DIV_SYNC_EN_MSK) |  \
+    (((pll2_vco_div_en) << PLL2_VCO_DIV_EN_OFF) & PLL2_VCO_DIV_EN_MSK) |  \
+    (((pll2_vco_div) << PLL2_VCO_DIV_OFF) & PLL2_VCO_DIV_MSK))
+// Register R805 [0x325] -- APLL2_VCO_DRVR
+
+enum apll2_vco_drvr_fields_t {
+    PLL2_VCO_BUF_FB_TDC_EN_OFF = 0x5,
+    PLL2_VCO_BUF_FB_TDC_EN_MSK = 0x60,
+    PLL2_VCO_DIV_DRVR_EN_OFF = 0x0,
+    PLL2_VCO_DIV_DRVR_EN_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_APLL2_VCO_DRVR(pll2_vco_buf_fb_tdc_en, pll2_vco_div_drvr_en) MAKE_LMK5C33216_REG_WR(APLL2_VCO_DRVR, \
+    (((pll2_vco_buf_fb_tdc_en) << PLL2_VCO_BUF_FB_TDC_EN_OFF) & PLL2_VCO_BUF_FB_TDC_EN_MSK) |  \
+    (((pll2_vco_div_drvr_en) << PLL2_VCO_DIV_DRVR_EN_OFF) & PLL2_VCO_DIV_DRVR_EN_MSK))
+// Register R813 [0x32d] -- APLL2_CALSTAT1
+
+enum apll2_calstat1_fields_t {
+    PLL2_VM_INSIDE_OFF = 0x5,
+    PLL2_VM_INSIDE_MSK = 0x20,
+};
+#define MAKE_LMK5C33216_APLL2_CALSTAT1(pll2_vm_inside) MAKE_LMK5C33216_REG_WR(APLL2_CALSTAT1, \
+    (((pll2_vm_inside) << PLL2_VM_INSIDE_OFF) & PLL2_VM_INSIDE_MSK))
+// Register R840 [0x348] -- APLL3_CPBLEED
+
+enum apll3_cpbleed_fields_t {
+    PLL3_CPBAW_BLEED_OFF = 0x0,
+    PLL3_CPBAW_BLEED_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL3_CPBLEED(pll3_cpbaw_bleed) MAKE_LMK5C33216_REG_WR(APLL3_CPBLEED, \
+    (((pll3_cpbaw_bleed) << PLL3_CPBAW_BLEED_OFF) & PLL3_CPBAW_BLEED_MSK))
+// Register R841 [0x349] -- APLL3_CPG
+
+enum apll3_cpg_fields_t {
+    PLL3_CPG_OFF = 0x0,
+    PLL3_CPG_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_APLL3_CPG(pll3_cpg) MAKE_LMK5C33216_REG_WR(APLL3_CPG, \
+    (((pll3_cpg) << PLL3_CPG_OFF) & PLL3_CPG_MSK))
+// Register R842 [0x34a] -- APLL3_LPF_R2
+
+enum apll3_lpf_r2_fields_t {
+    PLL3_LF_R2_OFF = 0x0,
+    PLL3_LF_R2_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL3_LPF_R2(pll3_lf_r2) MAKE_LMK5C33216_REG_WR(APLL3_LPF_R2, \
+    (((pll3_lf_r2) << PLL3_LF_R2_OFF) & PLL3_LF_R2_MSK))
+// Register R843 [0x34b] -- APLL3_LPF_R3
+
+enum apll3_lpf_r3_fields_t {
+    PLL3_LF_R3_OFF = 0x0,
+    PLL3_LF_R3_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL3_LPF_R3(pll3_lf_r3) MAKE_LMK5C33216_REG_WR(APLL3_LPF_R3, \
+    (((pll3_lf_r3) << PLL3_LF_R3_OFF) & PLL3_LF_R3_MSK))
+// Register R844 [0x34c] -- APLL3_LPF_R4
+
+enum apll3_lpf_r4_fields_t {
+    PLL3_LF_R4_OFF = 0x0,
+    PLL3_LF_R4_MSK = 0x3f,
+};
+#define MAKE_LMK5C33216_APLL3_LPF_R4(pll3_lf_r4) MAKE_LMK5C33216_REG_WR(APLL3_LPF_R4, \
+    (((pll3_lf_r4) << PLL3_LF_R4_OFF) & PLL3_LF_R4_MSK))
+// Register R845 [0x34d] -- APLL3_LPF_C3C4
+
+enum apll3_lpf_c3c4_fields_t {
+    PLL3_LF_C3_OFF = 0x3,
+    PLL3_LF_C3_MSK = 0x38,
+    PLL3_LF_C4_OFF = 0x0,
+    PLL3_LF_C4_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL3_LPF_C3C4(pll3_lf_c3, pll3_lf_c4) MAKE_LMK5C33216_REG_WR(APLL3_LPF_C3C4, \
+    (((pll3_lf_c3) << PLL3_LF_C3_OFF) & PLL3_LF_C3_MSK) |  \
+    (((pll3_lf_c4) << PLL3_LF_C4_OFF) & PLL3_LF_C4_MSK))
+// Register R846 [0x34e] -- APLL3_RDIV
+
+enum apll3_rdiv_fields_t {
+    PLL3_RDIV_OFF = 0x0,
+    PLL3_RDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL3_RDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_RDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL3_RDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_RDIV_BY1, (((value) << 0) & 0xff))
+// Register R848 [0x350] -- APLL3_RDIV_CTL
+enum pll3_rdiv_mux_sel_options {
+    PLL3_RDIV_MUX_SEL_XO = 0,
+    PLL3_RDIV_MUX_SEL_VCO1FBDIV = 1,
+    PLL3_RDIV_MUX_SEL_VCO2FBDIV = 2,
+};
+
+enum apll3_rdiv_ctl_fields_t {
+    PLL3_RDIV_XO_EN_OFF = 0x4,
+    PLL3_RDIV_XO_EN_MSK = 0x10,
+    PLL3_RDIV_XO_DBLR_EN_OFF = 0x3,
+    PLL3_RDIV_XO_DBLR_EN_MSK = 0x8,
+    PLL3_RDIV_BYPASS_EN_OFF = 0x2,
+    PLL3_RDIV_BYPASS_EN_MSK = 0x4,
+    PLL3_RDIV_MUX_SEL_OFF = 0x0,
+    PLL3_RDIV_MUX_SEL_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL3_RDIV_CTL(pll3_rdiv_xo_en, pll3_rdiv_xo_dblr_en, pll3_rdiv_bypass_en, pll3_rdiv_mux_sel) MAKE_LMK5C33216_REG_WR(APLL3_RDIV_CTL, \
+    (((pll3_rdiv_xo_en) << PLL3_RDIV_XO_EN_OFF) & PLL3_RDIV_XO_EN_MSK) |  \
+    (((pll3_rdiv_xo_dblr_en) << PLL3_RDIV_XO_DBLR_EN_OFF) & PLL3_RDIV_XO_DBLR_EN_MSK) |  \
+    (((pll3_rdiv_bypass_en) << PLL3_RDIV_BYPASS_EN_OFF) & PLL3_RDIV_BYPASS_EN_MSK) |  \
+    (((pll3_rdiv_mux_sel) << PLL3_RDIV_MUX_SEL_OFF) & PLL3_RDIV_MUX_SEL_MSK))
+// Register R849 [0x351] -- APLL3_NDIV
+
+enum apll3_ndiv_fields_t {
+    PLL3_NDIV_OFF = 0x0,
+    PLL3_NDIV_MSK = 0x1ff,
+};
+#define MAKE_LMK5C33216_APLL3_NDIV_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_NDIV_BY0, (((value) >> 8) & 0x1))
+#define MAKE_LMK5C33216_APLL3_NDIV_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_NDIV_BY1, (((value) << 0) & 0xff))
+// Register R851 [0x353] -- APLL3_NUM_MSB
+
+enum apll3_num_msb_fields_t {
+    PLL3_NUM_MSB_OFF = 0x0,
+    PLL3_NUM_MSB_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_APLL3_NUM_MSB(pll3_num_msb) MAKE_LMK5C33216_REG_WR(APLL3_NUM_MSB, \
+    (((pll3_num_msb) << PLL3_NUM_MSB_OFF) & PLL3_NUM_MSB_MSK))
+// Register R852 [0x354] -- APLL3_NUM
+
+enum apll3_num_fields_t {
+    PLL3_NUM_OFF = 0x0,
+    PLL3_NUM_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL3_NUM_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_BY2(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_BY3(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_BY4(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_BY4, (((value) << 0) & 0xff))
+// Register R851 [0x353] -- APLL3_DEN_APLL
+
+
+#define MAKE_LMK5C33216_APLL3_DEN_APLL_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_DEN_APLL_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL3_DEN_APLL_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_DEN_APLL_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL3_DEN_APLL_BY2(value) MAKE_LMK5C33216_REG_WR(APLL3_DEN_APLL_BY2, (((value) << 0) & 0xff))
+// Register R854 [0x356] -- APLL3_NUM_APLL
+
+
+#define MAKE_LMK5C33216_APLL3_NUM_APLL_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_APLL_BY0, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_APLL_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_APLL_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_APLL_BY2(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_APLL_BY2, (((value) << 0) & 0xff))
+// Register R857 [0x359] -- APLL3_MASH_CTL
+
+enum apll3_mash_ctl_fields_t {
+    PLL3_DTHRMODE_OFF = 0x4,
+    PLL3_DTHRMODE_MSK = 0x30,
+    PLL3_ORDER_OFF = 0x1,
+    PLL3_ORDER_MSK = 0xe,
+    PLL3_MODE_OFF = 0x0,
+    PLL3_MODE_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_APLL3_MASH_CTL(pll3_dthrmode, pll3_order, pll3_mode) MAKE_LMK5C33216_REG_WR(APLL3_MASH_CTL, \
+    (((pll3_dthrmode) << PLL3_DTHRMODE_OFF) & PLL3_DTHRMODE_MSK) |  \
+    (((pll3_order) << PLL3_ORDER_OFF) & PLL3_ORDER_MSK) |  \
+    (((pll3_mode) << PLL3_MODE_OFF) & PLL3_MODE_MSK))
+// Register R858 [0x35a] -- APLL3_NUM_STAT
+
+enum apll3_num_stat_fields_t {
+    PLL3_NUM_STAT_OFF = 0x0,
+    PLL3_NUM_STAT_MSK = 0xffffffffff,
+};
+#define MAKE_LMK5C33216_APLL3_NUM_STAT_BY0(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_STAT_BY0, (((value) >> 32) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_STAT_BY1(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_STAT_BY1, (((value) >> 24) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_STAT_BY2(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_STAT_BY2, (((value) >> 16) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_STAT_BY3(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_STAT_BY3, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_APLL3_NUM_STAT_BY4(value) MAKE_LMK5C33216_REG_WR(APLL3_NUM_STAT_BY4, (((value) << 0) & 0xff))
+// Register R864 [0x360] -- APLL3_VCO_CTL
+
+enum apll3_vco_ctl_fields_t {
+    PLL3_PRI_DIV_OFF = 0x4,
+    PLL3_PRI_DIV_MSK = 0x70,
+    PLL3_CHAN_EN_14_15_OFF = 0x3,
+    PLL3_CHAN_EN_14_15_MSK = 0x8,
+    PLL3_CHAN_EN_8_9_10_11_12_13_OFF = 0x2,
+    PLL3_CHAN_EN_8_9_10_11_12_13_MSK = 0x4,
+    PLL3_CHAN_EN_4_5_6_7_OFF = 0x1,
+    PLL3_CHAN_EN_4_5_6_7_MSK = 0x2,
+    PLL3_CHAN_EN_OFF = 0x0,
+    PLL3_CHAN_EN_MSK = 0xf,
+    PLL3_CHAN_EN_0_1_OFF = 0x0,
+    PLL3_CHAN_EN_0_1_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_APLL3_VCO_CTL(pll3_pri_div, pll3_chan_en_14_15, pll3_chan_en_8_9_10_11_12_13, pll3_chan_en_4_5_6_7, pll3_chan_en, pll3_chan_en_0_1) MAKE_LMK5C33216_REG_WR(APLL3_VCO_CTL, \
+    (((pll3_pri_div) << PLL3_PRI_DIV_OFF) & PLL3_PRI_DIV_MSK) |  \
+    (((pll3_chan_en_14_15) << PLL3_CHAN_EN_14_15_OFF) & PLL3_CHAN_EN_14_15_MSK) |  \
+    (((pll3_chan_en_8_9_10_11_12_13) << PLL3_CHAN_EN_8_9_10_11_12_13_OFF) & PLL3_CHAN_EN_8_9_10_11_12_13_MSK) |  \
+    (((pll3_chan_en_4_5_6_7) << PLL3_CHAN_EN_4_5_6_7_OFF) & PLL3_CHAN_EN_4_5_6_7_MSK) |  \
+    (((pll3_chan_en) << PLL3_CHAN_EN_OFF) & PLL3_CHAN_EN_MSK) |  \
+    (((pll3_chan_en_0_1) << PLL3_CHAN_EN_0_1_OFF) & PLL3_CHAN_EN_0_1_MSK))
+// Register R865 [0x361] -- APLL3_VCO_CTL2
+
+enum apll3_vco_ctl2_fields_t {
+    PLL3_DIV_SYNC_EN_OFF = 0x5,
+    PLL3_DIV_SYNC_EN_MSK = 0x20,
+    PLL3_CHAN_SEL_DIV1TO7_OFF = 0x4,
+    PLL3_CHAN_SEL_DIV1TO7_MSK = 0x10,
+    PLL3_CLKDRVRBYP46_SEL_OFF = 0x0,
+    PLL3_CLKDRVRBYP46_SEL_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_APLL3_VCO_CTL2(pll3_div_sync_en, pll3_chan_sel_div1to7, pll3_clkdrvrbyp46_sel) MAKE_LMK5C33216_REG_WR(APLL3_VCO_CTL2, \
+    (((pll3_div_sync_en) << PLL3_DIV_SYNC_EN_OFF) & PLL3_DIV_SYNC_EN_MSK) |  \
+    (((pll3_chan_sel_div1to7) << PLL3_CHAN_SEL_DIV1TO7_OFF) & PLL3_CHAN_SEL_DIV1TO7_MSK) |  \
+    (((pll3_clkdrvrbyp46_sel) << PLL3_CLKDRVRBYP46_SEL_OFF) & PLL3_CLKDRVRBYP46_SEL_MSK))
+// Register R866 [0x362] -- APLL3_VCO_BUF_CTL
+
+enum apll3_vco_buf_ctl_fields_t {
+    PLL3_VCO_BUF_2REF_EN_OFF = 0x6,
+    PLL3_VCO_BUF_2REF_EN_MSK = 0xc0,
+    PLL3_2X_PLLN_EN_OFF = 0x5,
+    PLL3_2X_PLLN_EN_MSK = 0x20,
+    PLL3_PLLN_OUT_EN_OFF = 0x3,
+    PLL3_PLLN_OUT_EN_MSK = 0x18,
+    PLL3_WIN_DET_DRVR_EN_OFF = 0x2,
+    PLL3_WIN_DET_DRVR_EN_MSK = 0x4,
+    PLL3_VCO_BUF_FB_TDC_EN_OFF = 0x0,
+    PLL3_VCO_BUF_FB_TDC_EN_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_APLL3_VCO_BUF_CTL(pll3_vco_buf_2ref_en, pll3_2x_plln_en, pll3_plln_out_en, pll3_win_det_drvr_en, pll3_vco_buf_fb_tdc_en) MAKE_LMK5C33216_REG_WR(APLL3_VCO_BUF_CTL, \
+    (((pll3_vco_buf_2ref_en) << PLL3_VCO_BUF_2REF_EN_OFF) & PLL3_VCO_BUF_2REF_EN_MSK) |  \
+    (((pll3_2x_plln_en) << PLL3_2X_PLLN_EN_OFF) & PLL3_2X_PLLN_EN_MSK) |  \
+    (((pll3_plln_out_en) << PLL3_PLLN_OUT_EN_OFF) & PLL3_PLLN_OUT_EN_MSK) |  \
+    (((pll3_win_det_drvr_en) << PLL3_WIN_DET_DRVR_EN_OFF) & PLL3_WIN_DET_DRVR_EN_MSK) |  \
+    (((pll3_vco_buf_fb_tdc_en) << PLL3_VCO_BUF_FB_TDC_EN_OFF) & PLL3_VCO_BUF_FB_TDC_EN_MSK))
+// Register R961 [0x3c1] -- OUT0_MODE
+enum out_0_fmt_options {
+    OUT_0_FMT_DISABLED = 0,
+    OUT_0_FMT_LVDS = 1,
+    OUT_0_FMT_LVPECL = 2,
+    OUT_0_FMT_HSDS = 3,
+    OUT_0_FMT_CMOS = 4,
+};
+
+enum out0_mode_fields_t {
+    OUT_0_HSDSBOOST_OFF = 0x7,
+    OUT_0_HSDSBOOST_MSK = 0x80,
+    OUT_0_AMP_OFF = 0x5,
+    OUT_0_AMP_MSK = 0x60,
+    OUT_0_LDO_EN_OFF = 0x4,
+    OUT_0_LDO_EN_MSK = 0x10,
+    OUT_0_STATIC_LOW_OFF = 0x3,
+    OUT_0_STATIC_LOW_MSK = 0x8,
+    OUT_0_FMT_OFF = 0x0,
+    OUT_0_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT0_MODE(out_0_hsdsboost, out_0_amp, out_0_ldo_en, out_0_static_low, out_0_fmt) MAKE_LMK5C33216_REG_WR(OUT0_MODE, \
+    (((out_0_hsdsboost) << OUT_0_HSDSBOOST_OFF) & OUT_0_HSDSBOOST_MSK) |  \
+    (((out_0_amp) << OUT_0_AMP_OFF) & OUT_0_AMP_MSK) |  \
+    (((out_0_ldo_en) << OUT_0_LDO_EN_OFF) & OUT_0_LDO_EN_MSK) |  \
+    (((out_0_static_low) << OUT_0_STATIC_LOW_OFF) & OUT_0_STATIC_LOW_MSK) |  \
+    (((out_0_fmt) << OUT_0_FMT_OFF) & OUT_0_FMT_MSK))
+// Register R962 [0x3c2] -- OUT0_CTL_P
+
+enum out0_ctl_p_fields_t {
+    OUT_0_P_INVERT_POLARITY_OFF = 0x3,
+    OUT_0_P_INVERT_POLARITY_MSK = 0x8,
+    OUT_0_N_INVERT_POLARITY_OFF = 0x2,
+    OUT_0_N_INVERT_POLARITY_MSK = 0x4,
+    OUT_0_P_FORCELOW_OFF = 0x1,
+    OUT_0_P_FORCELOW_MSK = 0x2,
+    OUT_0_N_FORCELOW_OFF = 0x0,
+    OUT_0_N_FORCELOW_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_OUT0_CTL_P(out_0_p_invert_polarity, out_0_n_invert_polarity, out_0_p_forcelow, out_0_n_forcelow) MAKE_LMK5C33216_REG_WR(OUT0_CTL_P, \
+    (((out_0_p_invert_polarity) << OUT_0_P_INVERT_POLARITY_OFF) & OUT_0_P_INVERT_POLARITY_MSK) |  \
+    (((out_0_n_invert_polarity) << OUT_0_N_INVERT_POLARITY_OFF) & OUT_0_N_INVERT_POLARITY_MSK) |  \
+    (((out_0_p_forcelow) << OUT_0_P_FORCELOW_OFF) & OUT_0_P_FORCELOW_MSK) |  \
+    (((out_0_n_forcelow) << OUT_0_N_FORCELOW_OFF) & OUT_0_N_FORCELOW_MSK))
+// Register R963 [0x3c3] -- OUT0_CTL
+enum out_0_configuration_options {
+    OUT_0_CONFIGURATION_CH0_DIV2 = 0,
+    OUT_0_CONFIGURATION_CHDIV1 = 20,
+    OUT_0_CONFIGURATION_SYSREF_ADLY = 32,
+    OUT_0_CONFIGURATION_SYSREF = 33,
+    OUT_0_CONFIGURATION_STATIC_DC = 34,
+    OUT_0_CONFIGURATION_CHDIV0 = 40,
+    OUT_0_CONFIGURATION_CH1_BYPASS = 64,
+    OUT_0_CONFIGURATION_CH0_BYPASS = 128,
+};
+
+enum out0_ctl_fields_t {
+    OUT_0_CONFIGURATION_OFF = 0x0,
+    OUT_0_CONFIGURATION_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_OUT0_CTL(out_0_configuration) MAKE_LMK5C33216_REG_WR(OUT0_CTL, \
+    (((out_0_configuration) << OUT_0_CONFIGURATION_OFF) & OUT_0_CONFIGURATION_MSK))
+// Register R964 [0x3c4] -- OUT1_MODE
+enum out_1_fmt_options {
+    OUT_1_FMT_DISABLED = 0,
+    OUT_1_FMT_LVDS = 1,
+    OUT_1_FMT_LVPECL = 2,
+    OUT_1_FMT_HSDS = 3,
+    OUT_1_FMT_CMOS = 4,
+};
+
+enum out1_mode_fields_t {
+    OUT_1_HSDSBOOST_OFF = 0x7,
+    OUT_1_HSDSBOOST_MSK = 0x80,
+    OUT_1_AMP_OFF = 0x5,
+    OUT_1_AMP_MSK = 0x60,
+    OUT_1_LDO2_SEL_OFF = 0x4,
+    OUT_1_LDO2_SEL_MSK = 0x10,
+    OUT_1_STATIC_LOW_OFF = 0x3,
+    OUT_1_STATIC_LOW_MSK = 0x8,
+    OUT_1_FMT_OFF = 0x0,
+    OUT_1_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT1_MODE(out_1_hsdsboost, out_1_amp, out_1_ldo2_sel, out_1_static_low, out_1_fmt) MAKE_LMK5C33216_REG_WR(OUT1_MODE, \
+    (((out_1_hsdsboost) << OUT_1_HSDSBOOST_OFF) & OUT_1_HSDSBOOST_MSK) |  \
+    (((out_1_amp) << OUT_1_AMP_OFF) & OUT_1_AMP_MSK) |  \
+    (((out_1_ldo2_sel) << OUT_1_LDO2_SEL_OFF) & OUT_1_LDO2_SEL_MSK) |  \
+    (((out_1_static_low) << OUT_1_STATIC_LOW_OFF) & OUT_1_STATIC_LOW_MSK) |  \
+    (((out_1_fmt) << OUT_1_FMT_OFF) & OUT_1_FMT_MSK))
+// Register R965 [0x3c5] -- OUT1_CTL_P
+
+enum out1_ctl_p_fields_t {
+    OUT_1_P_INVERT_POLARITY_OFF = 0x3,
+    OUT_1_P_INVERT_POLARITY_MSK = 0x8,
+    OUT_1_N_INVERT_POLARITY_OFF = 0x2,
+    OUT_1_N_INVERT_POLARITY_MSK = 0x4,
+    OUT_1_P_FORCELOW_OFF = 0x1,
+    OUT_1_P_FORCELOW_MSK = 0x2,
+    OUT_1_N_FORCELOW_OFF = 0x0,
+    OUT_1_N_FORCELOW_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_OUT1_CTL_P(out_1_p_invert_polarity, out_1_n_invert_polarity, out_1_p_forcelow, out_1_n_forcelow) MAKE_LMK5C33216_REG_WR(OUT1_CTL_P, \
+    (((out_1_p_invert_polarity) << OUT_1_P_INVERT_POLARITY_OFF) & OUT_1_P_INVERT_POLARITY_MSK) |  \
+    (((out_1_n_invert_polarity) << OUT_1_N_INVERT_POLARITY_OFF) & OUT_1_N_INVERT_POLARITY_MSK) |  \
+    (((out_1_p_forcelow) << OUT_1_P_FORCELOW_OFF) & OUT_1_P_FORCELOW_MSK) |  \
+    (((out_1_n_forcelow) << OUT_1_N_FORCELOW_OFF) & OUT_1_N_FORCELOW_MSK))
+// Register R966 [0x3c6] -- OUT1_CTL
+enum out_1_configuration_options {
+    OUT_1_CONFIGURATION_CH0_DIV2 = 0,
+    OUT_1_CONFIGURATION_CHDIV1 = 20,
+    OUT_1_CONFIGURATION_SYSREF_ADLY = 32,
+    OUT_1_CONFIGURATION_SYSREF = 33,
+    OUT_1_CONFIGURATION_STATIC_DC = 34,
+    OUT_1_CONFIGURATION_CHDIV0 = 40,
+    OUT_1_CONFIGURATION_CH1_BYPASS = 64,
+    OUT_1_CONFIGURATION_CH0_BYPASS = 128,
+};
+
+enum out1_ctl_fields_t {
+    OUT_1_CONFIGURATION_OFF = 0x0,
+    OUT_1_CONFIGURATION_MSK = 0xff,
+};
+#define MAKE_LMK5C33216_OUT1_CTL(out_1_configuration) MAKE_LMK5C33216_REG_WR(OUT1_CTL, \
+    (((out_1_configuration) << OUT_1_CONFIGURATION_OFF) & OUT_1_CONFIGURATION_MSK))
+// Register R967 [0x3c7] -- OUT0_1_CMOS_CTL
+
+enum out0_1_cmos_ctl_fields_t {
+    OUT_0_1_CMOS_OUT_VOLTAGE_SEL_OFF = 0x1,
+    OUT_0_1_CMOS_OUT_VOLTAGE_SEL_MSK = 0x2,
+    OUT_0_1_CMOS_OUT_LDO_EN_OFF = 0x0,
+    OUT_0_1_CMOS_OUT_LDO_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_OUT0_1_CMOS_CTL(out_0_1_cmos_out_voltage_sel, out_0_1_cmos_out_ldo_en) MAKE_LMK5C33216_REG_WR(OUT0_1_CMOS_CTL, \
+    (((out_0_1_cmos_out_voltage_sel) << OUT_0_1_CMOS_OUT_VOLTAGE_SEL_OFF) & OUT_0_1_CMOS_OUT_VOLTAGE_SEL_MSK) |  \
+    (((out_0_1_cmos_out_ldo_en) << OUT_0_1_CMOS_OUT_LDO_EN_OFF) & OUT_0_1_CMOS_OUT_LDO_EN_MSK))
+// Register R968 [0x3c8] -- CH0_1_ZDLY
+
+enum ch0_1_zdly_fields_t {
+    OUT_0_1_ZDM_TDC_SEL_OFF = 0x1,
+    OUT_0_1_ZDM_TDC_SEL_MSK = 0xe,
+    OUT_0_1_ZDM_EN_OFF = 0x0,
+    OUT_0_1_ZDM_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH0_1_ZDLY(out_0_1_zdm_tdc_sel, out_0_1_zdm_en) MAKE_LMK5C33216_REG_WR(CH0_1_ZDLY, \
+    (((out_0_1_zdm_tdc_sel) << OUT_0_1_ZDM_TDC_SEL_OFF) & OUT_0_1_ZDM_TDC_SEL_MSK) |  \
+    (((out_0_1_zdm_en) << OUT_0_1_ZDM_EN_OFF) & OUT_0_1_ZDM_EN_MSK))
+// Register R969 [0x3c9] -- CH0_1_CTL
+
+enum ch0_1_ctl_fields_t {
+    OUT_0_1_DIV_MUTE_EN_OFF = 0x6,
+    OUT_0_1_DIV_MUTE_EN_MSK = 0x40,
+    OUT_0_1_DIV_SYNC_EN_OFF = 0x5,
+    OUT_0_1_DIV_SYNC_EN_MSK = 0x20,
+    OUT_0_1_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_0_1_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_0_1_CH0_CHAN_POL_SEL_OFF = 0x3,
+    OUT_0_1_CH0_CHAN_POL_SEL_MSK = 0x8,
+    OUT_0_1_CH1_CHAN_POL_SEL_OFF = 0x2,
+    OUT_0_1_CH1_CHAN_POL_SEL_MSK = 0x4,
+    OUT_0_1_CH0_DIV_EN_OFF = 0x1,
+    OUT_0_1_CH0_DIV_EN_MSK = 0x2,
+    OUT_0_1_CH1_DIV_EN_OFF = 0x0,
+    OUT_0_1_CH1_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH0_1_CTL(out_0_1_div_mute_en, out_0_1_div_sync_en, out_0_1_sr_div_sync_en, out_0_1_ch0_chan_pol_sel, out_0_1_ch1_chan_pol_sel, out_0_1_ch0_div_en, out_0_1_ch1_div_en) MAKE_LMK5C33216_REG_WR(CH0_1_CTL, \
+    (((out_0_1_div_mute_en) << OUT_0_1_DIV_MUTE_EN_OFF) & OUT_0_1_DIV_MUTE_EN_MSK) |  \
+    (((out_0_1_div_sync_en) << OUT_0_1_DIV_SYNC_EN_OFF) & OUT_0_1_DIV_SYNC_EN_MSK) |  \
+    (((out_0_1_sr_div_sync_en) << OUT_0_1_SR_DIV_SYNC_EN_OFF) & OUT_0_1_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_0_1_ch0_chan_pol_sel) << OUT_0_1_CH0_CHAN_POL_SEL_OFF) & OUT_0_1_CH0_CHAN_POL_SEL_MSK) |  \
+    (((out_0_1_ch1_chan_pol_sel) << OUT_0_1_CH1_CHAN_POL_SEL_OFF) & OUT_0_1_CH1_CHAN_POL_SEL_MSK) |  \
+    (((out_0_1_ch0_div_en) << OUT_0_1_CH0_DIV_EN_OFF) & OUT_0_1_CH0_DIV_EN_MSK) |  \
+    (((out_0_1_ch1_div_en) << OUT_0_1_CH1_DIV_EN_OFF) & OUT_0_1_CH1_DIV_EN_MSK))
+// Register R972 [0x3cc] -- CH0_1_MUX_CTL2_P
+
+enum ch0_1_mux_ctl2_p_fields_t {
+    OUT_0_1_CH0_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x1,
+    OUT_0_1_CH0_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x2,
+};
+#define MAKE_LMK5C33216_CH0_1_MUX_CTL2_P(out_0_1_ch0_ch_div_sr_mux_clk_sel) MAKE_LMK5C33216_REG_WR(CH0_1_MUX_CTL2_P, \
+    (((out_0_1_ch0_ch_div_sr_mux_clk_sel) << OUT_0_1_CH0_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_0_1_CH0_CH_DIV_SR_MUX_CLK_SEL_MSK))
+// Register R973 [0x3cd] -- CH0_1_MUX_CTL2
+enum out_0_1_clk_in_fanout_options {
+    OUT_0_1_CLK_IN_FANOUT_DISABLED = 0,
+    OUT_0_1_CLK_IN_FANOUT_IN1_TO_CHDIV1 = 3,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_SYSREF = 4,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_SYSREF__IN1_TO_CHDIV1 = 7,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CHDIV0 = 12,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CHDIV0__IN1_TO_CHDIV1 = 15,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT0 = 16,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT0__IN1_TO_CHDIV1_OUT1 = 19,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT0_AND_SYSREF_OUT1 = 20,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT0_AND_CHDIV0_OUT1 = 28,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT1 = 32,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT1__IN1_TO_CHDIV1_OUT0 = 35,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT1_AND_SYSREF_OUT0 = 36,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT1_AND_CHDIV0_OUT0 = 44,
+    OUT_0_1_CLK_IN_FANOUT_IN0_TO_CH0DIV2_OUT0_AND_OUT1 = 48,
+};
+
+enum ch0_1_mux_ctl2_fields_t {
+    OUT_0_1_CLK_IN_FANOUT_OFF = 0x2,
+    OUT_0_1_CLK_IN_FANOUT_MSK = 0xfc,
+};
+#define MAKE_LMK5C33216_CH0_1_MUX_CTL2(out_0_1_clk_in_fanout) MAKE_LMK5C33216_REG_WR(CH0_1_MUX_CTL2, \
+    (((out_0_1_clk_in_fanout) << OUT_0_1_CLK_IN_FANOUT_OFF) & OUT_0_1_CLK_IN_FANOUT_MSK))
+// Register R974 [0x3ce] -- CH0_1_CH0_STATIC_OFFSET
+
+enum ch0_1_ch0_static_offset_fields_t {
+    OUT_0_1_CH0_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_0_1_CH0_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH0_1_CH0_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH0_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH0_1_CH0_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH0_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R976 [0x3d0] -- CH0_1_CH1_STATIC_OFFSET
+
+enum ch0_1_ch1_static_offset_fields_t {
+    OUT_0_1_CH1_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_0_1_CH1_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH0_1_CH1_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH1_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH0_1_CH1_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH1_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R978 [0x3d2] -- CH0_1_CH0_DIV
+
+enum ch0_1_ch0_div_fields_t {
+    OUT_0_1_CH0_CH_DIV_OFF = 0x0,
+    OUT_0_1_CH0_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH0_1_CH0_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH0_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH0_1_CH0_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH0_DIV_BY1, (((value) << 0) & 0xff))
+// Register R980 [0x3d4] -- CH0_1_CH1_DIV
+
+enum ch0_1_ch1_div_fields_t {
+    OUT_0_1_CH1_CH_DIV_OFF = 0x0,
+    OUT_0_1_CH1_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH0_1_CH1_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH1_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH0_1_CH1_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_CH1_DIV_BY1, (((value) << 0) & 0xff))
+// Register R982 [0x3d6] -- CH0_1_SR_ANA_DELAY
+
+enum ch0_1_sr_ana_delay_fields_t {
+    OUT_0_1_SR_ANA_DELAY_OFF = 0x0,
+    OUT_0_1_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_ANA_DELAY(out_0_1_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH0_1_SR_ANA_DELAY, \
+    (((out_0_1_sr_ana_delay) << OUT_0_1_SR_ANA_DELAY_OFF) & OUT_0_1_SR_ANA_DELAY_MSK))
+// Register R983 [0x3d7] -- CH0_1_SR_ANA_DELAY_CTL
+
+enum ch0_1_sr_ana_delay_ctl_fields_t {
+    OUT_0_1_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_0_1_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_0_1_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_0_1_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_0_1_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_0_1_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_0_1_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_0_1_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_ANA_DELAY_CTL(out_0_1_sr_ana_delay_div2_sel, out_0_1_sr_ana_delay_en, out_0_1_sr_ana_delay_small_step_en, out_0_1_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH0_1_SR_ANA_DELAY_CTL, \
+    (((out_0_1_sr_ana_delay_div2_sel) << OUT_0_1_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_0_1_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_0_1_sr_ana_delay_en) << OUT_0_1_SR_ANA_DELAY_EN_OFF) & OUT_0_1_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_0_1_sr_ana_delay_small_step_en) << OUT_0_1_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_0_1_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_0_1_sr_ana_delay_range) << OUT_0_1_SR_ANA_DELAY_RANGE_OFF) & OUT_0_1_SR_ANA_DELAY_RANGE_MSK))
+// Register R984 [0x3d8] -- CH0_1_SR_DDLY
+
+enum ch0_1_sr_ddly_fields_t {
+    OUT_0_1_SR_DDLY_OFF = 0x0,
+    OUT_0_1_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_DDLY(out_0_1_sr_ddly) MAKE_LMK5C33216_REG_WR(CH0_1_SR_DDLY, \
+    (((out_0_1_sr_ddly) << OUT_0_1_SR_DDLY_OFF) & OUT_0_1_SR_DDLY_MSK))
+// Register R985 [0x3d9] -- CH0_1_SR_DIV
+
+enum ch0_1_sr_div_fields_t {
+    OUT_0_1_SR_DIV_OFF = 0x0,
+    OUT_0_1_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH0_1_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH0_1_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH0_1_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R988 [0x3dc] -- CH0_1_SR_STATIC_OFFSET
+
+enum ch0_1_sr_static_offset_fields_t {
+    OUT_0_1_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_0_1_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH0_1_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH0_1_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH0_1_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R990 [0x3de] -- CH0_1_SR_CTL
+
+enum ch0_1_sr_ctl_fields_t {
+    OUT_0_1_SR_GPIO_EN_OFF = 0x6,
+    OUT_0_1_SR_GPIO_EN_MSK = 0x40,
+    OUT_0_1_PULSE_COUNT_OFF = 0x2,
+    OUT_0_1_PULSE_COUNT_MSK = 0x1c,
+    OUT_0_1_SR_MODE_OFF = 0x0,
+    OUT_0_1_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH0_1_SR_CTL(out_0_1_sr_gpio_en, out_0_1_pulse_count, out_0_1_sr_mode) MAKE_LMK5C33216_REG_WR(CH0_1_SR_CTL, \
+    (((out_0_1_sr_gpio_en) << OUT_0_1_SR_GPIO_EN_OFF) & OUT_0_1_SR_GPIO_EN_MSK) |  \
+    (((out_0_1_pulse_count) << OUT_0_1_PULSE_COUNT_OFF) & OUT_0_1_PULSE_COUNT_MSK) |  \
+    (((out_0_1_sr_mode) << OUT_0_1_SR_MODE_OFF) & OUT_0_1_SR_MODE_MSK))
+// Register R991 [0x3df] -- CH0_1_DFT
+
+enum ch0_1_dft_fields_t {
+    OUT_0_1_SR_CH0_DIV_BYPASS_OFF = 0x5,
+    OUT_0_1_SR_CH0_DIV_BYPASS_MSK = 0x20,
+};
+#define MAKE_LMK5C33216_CH0_1_DFT(out_0_1_sr_ch0_div_bypass) MAKE_LMK5C33216_REG_WR(CH0_1_DFT, \
+    (((out_0_1_sr_ch0_div_bypass) << OUT_0_1_SR_CH0_DIV_BYPASS_OFF) & OUT_0_1_SR_CH0_DIV_BYPASS_MSK))
+// Register R1024 [0x400] -- OUT2_MODE
+enum out_2_fmt_options {
+    OUT_2_FMT_DISABLED = 0,
+    OUT_2_FMT_LVDS = 1,
+    OUT_2_FMT_LVPECL = 2,
+    OUT_2_FMT_HSDS = 3,
+};
+
+enum out2_mode_fields_t {
+    OUT_2_HSDSBOOST_OFF = 0x6,
+    OUT_2_HSDSBOOST_MSK = 0x40,
+    OUT_2_AMP_OFF = 0x4,
+    OUT_2_AMP_MSK = 0x30,
+    OUT_2_FMT_OFF = 0x0,
+    OUT_2_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT2_MODE(out_2_hsdsboost, out_2_amp, out_2_fmt) MAKE_LMK5C33216_REG_WR(OUT2_MODE, \
+    (((out_2_hsdsboost) << OUT_2_HSDSBOOST_OFF) & OUT_2_HSDSBOOST_MSK) |  \
+    (((out_2_amp) << OUT_2_AMP_OFF) & OUT_2_AMP_MSK) |  \
+    (((out_2_fmt) << OUT_2_FMT_OFF) & OUT_2_FMT_MSK))
+// Register R1025 [0x401] -- OUT2_CTL
+
+enum out2_ctl_fields_t {
+    OUT_2_CONFIGURATION_OFF = 0x0,
+    OUT_2_CONFIGURATION_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT2_CTL(out_2_configuration) MAKE_LMK5C33216_REG_WR(OUT2_CTL, \
+    (((out_2_configuration) << OUT_2_CONFIGURATION_OFF) & OUT_2_CONFIGURATION_MSK))
+// Register R1026 [0x402] -- CH2_CTL
+enum out_2_clk_mux_options {
+    OUT_2_CLK_MUX_PLL1_SEC = 0,
+    OUT_2_CLK_MUX_PLL2 = 1,
+    OUT_2_CLK_MUX_PLL1_PRI = 2,
+};
+
+enum ch2_ctl_fields_t {
+    OUT_2_CHAN_POL_SEL_OFF = 0x7,
+    OUT_2_CHAN_POL_SEL_MSK = 0x80,
+    OUT_2_CLK_MUX_OFF = 0x5,
+    OUT_2_CLK_MUX_MSK = 0x60,
+    OUT_2_DIV_EN_OFF = 0x3,
+    OUT_2_DIV_EN_MSK = 0x8,
+    OUT_2_CH_MUX_SEL_OFF = 0x0,
+    OUT_2_CH_MUX_SEL_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH2_CTL(out_2_chan_pol_sel, out_2_clk_mux, out_2_div_en, out_2_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH2_CTL, \
+    (((out_2_chan_pol_sel) << OUT_2_CHAN_POL_SEL_OFF) & OUT_2_CHAN_POL_SEL_MSK) |  \
+    (((out_2_clk_mux) << OUT_2_CLK_MUX_OFF) & OUT_2_CLK_MUX_MSK) |  \
+    (((out_2_div_en) << OUT_2_DIV_EN_OFF) & OUT_2_DIV_EN_MSK) |  \
+    (((out_2_ch_mux_sel) << OUT_2_CH_MUX_SEL_OFF) & OUT_2_CH_MUX_SEL_MSK))
+// Register R1027 [0x403] -- CH2_CTL2
+
+enum ch2_ctl2_fields_t {
+    OUT_2_MUTE_EN_OFF = 0x4,
+    OUT_2_MUTE_EN_MSK = 0x10,
+    OUT_2_SYNC_EN_OFF = 0x3,
+    OUT_2_SYNC_EN_MSK = 0x8,
+};
+#define MAKE_LMK5C33216_CH2_CTL2(out_2_mute_en, out_2_sync_en) MAKE_LMK5C33216_REG_WR(CH2_CTL2, \
+    (((out_2_mute_en) << OUT_2_MUTE_EN_OFF) & OUT_2_MUTE_EN_MSK) |  \
+    (((out_2_sync_en) << OUT_2_SYNC_EN_OFF) & OUT_2_SYNC_EN_MSK))
+// Register R1028 [0x404] -- CH2_STATIC_OFFSET
+
+enum ch2_static_offset_fields_t {
+    OUT_2_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_2_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH2_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH2_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH2_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH2_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1030 [0x406] -- CH2_DIV
+
+enum ch2_div_fields_t {
+    OUT_2_CH_DIV_OFF = 0x0,
+    OUT_2_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH2_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH2_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH2_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH2_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1056 [0x420] -- OUT3_MODE
+enum out_3_fmt_options {
+    OUT_3_FMT_DISABLED = 0,
+    OUT_3_FMT_LVDS = 1,
+    OUT_3_FMT_LVPECL = 2,
+    OUT_3_FMT_HSDS = 3,
+};
+
+enum out3_mode_fields_t {
+    OUT_3_HSDSBOOST_OFF = 0x6,
+    OUT_3_HSDSBOOST_MSK = 0x40,
+    OUT_3_AMP_OFF = 0x4,
+    OUT_3_AMP_MSK = 0x30,
+    OUT_3_FMT_OFF = 0x0,
+    OUT_3_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT3_MODE(out_3_hsdsboost, out_3_amp, out_3_fmt) MAKE_LMK5C33216_REG_WR(OUT3_MODE, \
+    (((out_3_hsdsboost) << OUT_3_HSDSBOOST_OFF) & OUT_3_HSDSBOOST_MSK) |  \
+    (((out_3_amp) << OUT_3_AMP_OFF) & OUT_3_AMP_MSK) |  \
+    (((out_3_fmt) << OUT_3_FMT_OFF) & OUT_3_FMT_MSK))
+// Register R1057 [0x421] -- OUT3_CTL
+
+enum out3_ctl_fields_t {
+    OUT_3_CONFIGURATION_OFF = 0x0,
+    OUT_3_CONFIGURATION_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT3_CTL(out_3_configuration) MAKE_LMK5C33216_REG_WR(OUT3_CTL, \
+    (((out_3_configuration) << OUT_3_CONFIGURATION_OFF) & OUT_3_CONFIGURATION_MSK))
+// Register R1058 [0x422] -- CH3_CTL
+enum out_3_clk_mux_options {
+    OUT_3_CLK_MUX_PLL1_SEC = 0,
+    OUT_3_CLK_MUX_PLL2 = 1,
+    OUT_3_CLK_MUX_PLL1_PRI = 2,
+};
+
+enum ch3_ctl_fields_t {
+    OUT_3_CHAN_POL_SEL_OFF = 0x7,
+    OUT_3_CHAN_POL_SEL_MSK = 0x80,
+    OUT_3_CLK_MUX_OFF = 0x5,
+    OUT_3_CLK_MUX_MSK = 0x60,
+    OUT_3_DIV_EN_OFF = 0x3,
+    OUT_3_DIV_EN_MSK = 0x8,
+    OUT_3_CH_MUX_SEL_OFF = 0x0,
+    OUT_3_CH_MUX_SEL_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH3_CTL(out_3_chan_pol_sel, out_3_clk_mux, out_3_div_en, out_3_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH3_CTL, \
+    (((out_3_chan_pol_sel) << OUT_3_CHAN_POL_SEL_OFF) & OUT_3_CHAN_POL_SEL_MSK) |  \
+    (((out_3_clk_mux) << OUT_3_CLK_MUX_OFF) & OUT_3_CLK_MUX_MSK) |  \
+    (((out_3_div_en) << OUT_3_DIV_EN_OFF) & OUT_3_DIV_EN_MSK) |  \
+    (((out_3_ch_mux_sel) << OUT_3_CH_MUX_SEL_OFF) & OUT_3_CH_MUX_SEL_MSK))
+// Register R1059 [0x423] -- CH3_CTL2
+
+enum ch3_ctl2_fields_t {
+    OUT_3_MUTE_EN_OFF = 0x4,
+    OUT_3_MUTE_EN_MSK = 0x10,
+    OUT_3_SYNC_EN_OFF = 0x3,
+    OUT_3_SYNC_EN_MSK = 0x8,
+};
+#define MAKE_LMK5C33216_CH3_CTL2(out_3_mute_en, out_3_sync_en) MAKE_LMK5C33216_REG_WR(CH3_CTL2, \
+    (((out_3_mute_en) << OUT_3_MUTE_EN_OFF) & OUT_3_MUTE_EN_MSK) |  \
+    (((out_3_sync_en) << OUT_3_SYNC_EN_OFF) & OUT_3_SYNC_EN_MSK))
+// Register R1060 [0x424] -- CH3_STATIC_OFFSET
+
+enum ch3_static_offset_fields_t {
+    OUT_3_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_3_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH3_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH3_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH3_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH3_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1062 [0x426] -- CH3_DIV
+
+enum ch3_div_fields_t {
+    OUT_3_CH_DIV_OFF = 0x0,
+    OUT_3_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH3_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH3_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH3_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH3_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1088 [0x440] -- CH4_5_SR_ANA_DLY_TRIM
+
+enum ch4_5_sr_ana_dly_trim_fields_t {
+    OUT_4_5_SR_ANA_DLY_BIASTRIM_OFF = 0x0,
+    OUT_4_5_SR_ANA_DLY_BIASTRIM_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_ANA_DLY_TRIM(out_4_5_sr_ana_dly_biastrim) MAKE_LMK5C33216_REG_WR(CH4_5_SR_ANA_DLY_TRIM, \
+    (((out_4_5_sr_ana_dly_biastrim) << OUT_4_5_SR_ANA_DLY_BIASTRIM_OFF) & OUT_4_5_SR_ANA_DLY_BIASTRIM_MSK))
+// Register R1089 [0x441] -- OUT4_MODE
+enum out_4_fmt_options {
+    OUT_4_FMT_DISABLED = 0,
+    OUT_4_FMT_LVDS = 1,
+    OUT_4_FMT_LVPECL = 2,
+    OUT_4_FMT_HSDS = 3,
+    OUT_4_FMT_CML = 5,
+};
+
+enum out4_mode_fields_t {
+    OUT_4_HSDSBOOST_OFF = 0x7,
+    OUT_4_HSDSBOOST_MSK = 0x80,
+    OUT_4_AMP_OFF = 0x5,
+    OUT_4_AMP_MSK = 0x60,
+    OUT_4_FMT_OFF = 0x0,
+    OUT_4_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT4_MODE(out_4_hsdsboost, out_4_amp, out_4_fmt) MAKE_LMK5C33216_REG_WR(OUT4_MODE, \
+    (((out_4_hsdsboost) << OUT_4_HSDSBOOST_OFF) & OUT_4_HSDSBOOST_MSK) |  \
+    (((out_4_amp) << OUT_4_AMP_OFF) & OUT_4_AMP_MSK) |  \
+    (((out_4_fmt) << OUT_4_FMT_OFF) & OUT_4_FMT_MSK))
+// Register R1090 [0x442] -- OUT4_CTL
+
+enum out4_ctl_fields_t {
+    OUT_4_CONFIGURATION_OFF = 0x0,
+    OUT_4_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT4_CTL(out_4_configuration) MAKE_LMK5C33216_REG_WR(OUT4_CTL, \
+    (((out_4_configuration) << OUT_4_CONFIGURATION_OFF) & OUT_4_CONFIGURATION_MSK))
+// Register R1091 [0x443] -- OUT5_MODE
+enum out_5_fmt_options {
+    OUT_5_FMT_DISABLED = 0,
+    OUT_5_FMT_LVDS = 1,
+    OUT_5_FMT_LVPECL = 2,
+    OUT_5_FMT_HSDS = 3,
+};
+
+enum out5_mode_fields_t {
+    OUT_5_HSDSBOOST_OFF = 0x7,
+    OUT_5_HSDSBOOST_MSK = 0x80,
+    OUT_5_AMP_OFF = 0x5,
+    OUT_5_AMP_MSK = 0x60,
+    OUT_5_PREPWR_OFF = 0x3,
+    OUT_5_PREPWR_MSK = 0x18,
+    OUT_5_FMT_OFF = 0x0,
+    OUT_5_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT5_MODE(out_5_hsdsboost, out_5_amp, out_5_prepwr, out_5_fmt) MAKE_LMK5C33216_REG_WR(OUT5_MODE, \
+    (((out_5_hsdsboost) << OUT_5_HSDSBOOST_OFF) & OUT_5_HSDSBOOST_MSK) |  \
+    (((out_5_amp) << OUT_5_AMP_OFF) & OUT_5_AMP_MSK) |  \
+    (((out_5_prepwr) << OUT_5_PREPWR_OFF) & OUT_5_PREPWR_MSK) |  \
+    (((out_5_fmt) << OUT_5_FMT_OFF) & OUT_5_FMT_MSK))
+// Register R1092 [0x444] -- OUT5_CTL
+
+enum out5_ctl_fields_t {
+    OUT_5_CONFIGURATION_OFF = 0x0,
+    OUT_5_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT5_CTL(out_5_configuration) MAKE_LMK5C33216_REG_WR(OUT5_CTL, \
+    (((out_5_configuration) << OUT_5_CONFIGURATION_OFF) & OUT_5_CONFIGURATION_MSK))
+// Register R1093 [0x445] -- CH4_5_CTL
+
+enum ch4_5_ctl_fields_t {
+    OUT_4_5_DIV_SYNC_EN_OFF = 0x5,
+    OUT_4_5_DIV_SYNC_EN_MSK = 0x20,
+    OUT_4_5_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_4_5_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_4_5_CHAN_POL_SEL_OFF = 0x1,
+    OUT_4_5_CHAN_POL_SEL_MSK = 0x2,
+    OUT_4_5_DIV_EN_OFF = 0x0,
+    OUT_4_5_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH4_5_CTL(out_4_5_div_sync_en, out_4_5_sr_div_sync_en, out_4_5_chan_pol_sel, out_4_5_div_en) MAKE_LMK5C33216_REG_WR(CH4_5_CTL, \
+    (((out_4_5_div_sync_en) << OUT_4_5_DIV_SYNC_EN_OFF) & OUT_4_5_DIV_SYNC_EN_MSK) |  \
+    (((out_4_5_sr_div_sync_en) << OUT_4_5_SR_DIV_SYNC_EN_OFF) & OUT_4_5_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_4_5_chan_pol_sel) << OUT_4_5_CHAN_POL_SEL_OFF) & OUT_4_5_CHAN_POL_SEL_MSK) |  \
+    (((out_4_5_div_en) << OUT_4_5_DIV_EN_OFF) & OUT_4_5_DIV_EN_MSK))
+// Register R1094 [0x446] -- CH4_5_CTL2
+enum out_4_5_clk_in_sel_options {
+    OUT_4_5_CLK_IN_SEL_VCO2 = 0,
+    OUT_4_5_CLK_IN_SEL_VCO3 = 1,
+};
+
+enum ch4_5_ctl2_fields_t {
+    OUT_4_5_MUTE_EN_OFF = 0x7,
+    OUT_4_5_MUTE_EN_MSK = 0x80,
+    OUT_4_5_ZDM_EN_OFF = 0x6,
+    OUT_4_5_ZDM_EN_MSK = 0x40,
+    OUT_4_5_CLK_IN_SEL_OFF = 0x5,
+    OUT_4_5_CLK_IN_SEL_MSK = 0x20,
+    OUT_4_5_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x4,
+    OUT_4_5_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x10,
+    OUT_4_5_CH_MUX_SEL_OFF = 0x0,
+    OUT_4_5_CH_MUX_SEL_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_CH4_5_CTL2(out_4_5_mute_en, out_4_5_zdm_en, out_4_5_clk_in_sel, out_4_5_ch_div_sr_mux_clk_sel, out_4_5_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH4_5_CTL2, \
+    (((out_4_5_mute_en) << OUT_4_5_MUTE_EN_OFF) & OUT_4_5_MUTE_EN_MSK) |  \
+    (((out_4_5_zdm_en) << OUT_4_5_ZDM_EN_OFF) & OUT_4_5_ZDM_EN_MSK) |  \
+    (((out_4_5_clk_in_sel) << OUT_4_5_CLK_IN_SEL_OFF) & OUT_4_5_CLK_IN_SEL_MSK) |  \
+    (((out_4_5_ch_div_sr_mux_clk_sel) << OUT_4_5_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_4_5_CH_DIV_SR_MUX_CLK_SEL_MSK) |  \
+    (((out_4_5_ch_mux_sel) << OUT_4_5_CH_MUX_SEL_OFF) & OUT_4_5_CH_MUX_SEL_MSK))
+// Register R1095 [0x447] -- CH4_5_STATIC_OFFSET
+
+enum ch4_5_static_offset_fields_t {
+    OUT_4_5_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_4_5_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH4_5_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH4_5_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH4_5_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH4_5_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1097 [0x449] -- CH4_5_DIV
+
+enum ch4_5_div_fields_t {
+    OUT_4_5_CH_DIV_OFF = 0x0,
+    OUT_4_5_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH4_5_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH4_5_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH4_5_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH4_5_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1099 [0x44b] -- CH4_5_SR_ANA_DELAY
+
+enum ch4_5_sr_ana_delay_fields_t {
+    OUT_4_5_SR_ANA_DELAY_OFF = 0x0,
+    OUT_4_5_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_ANA_DELAY(out_4_5_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH4_5_SR_ANA_DELAY, \
+    (((out_4_5_sr_ana_delay) << OUT_4_5_SR_ANA_DELAY_OFF) & OUT_4_5_SR_ANA_DELAY_MSK))
+// Register R1100 [0x44c] -- CH4_5_SR_ANA_DELAY_CTL
+
+enum ch4_5_sr_ana_delay_ctl_fields_t {
+    OUT_4_5_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_4_5_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_4_5_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_4_5_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_4_5_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_4_5_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_4_5_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_4_5_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_ANA_DELAY_CTL(out_4_5_sr_ana_delay_div2_sel, out_4_5_sr_ana_delay_en, out_4_5_sr_ana_delay_small_step_en, out_4_5_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH4_5_SR_ANA_DELAY_CTL, \
+    (((out_4_5_sr_ana_delay_div2_sel) << OUT_4_5_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_4_5_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_4_5_sr_ana_delay_en) << OUT_4_5_SR_ANA_DELAY_EN_OFF) & OUT_4_5_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_4_5_sr_ana_delay_small_step_en) << OUT_4_5_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_4_5_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_4_5_sr_ana_delay_range) << OUT_4_5_SR_ANA_DELAY_RANGE_OFF) & OUT_4_5_SR_ANA_DELAY_RANGE_MSK))
+// Register R1101 [0x44d] -- CH4_5_SR_DDLY
+
+enum ch4_5_sr_ddly_fields_t {
+    OUT_4_5_SR_DDLY_OFF = 0x0,
+    OUT_4_5_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_DDLY(out_4_5_sr_ddly) MAKE_LMK5C33216_REG_WR(CH4_5_SR_DDLY, \
+    (((out_4_5_sr_ddly) << OUT_4_5_SR_DDLY_OFF) & OUT_4_5_SR_DDLY_MSK))
+// Register R1102 [0x44e] -- CH4_5_SR_DIV
+
+enum ch4_5_sr_div_fields_t {
+    OUT_4_5_SR_DIV_OFF = 0x0,
+    OUT_4_5_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH4_5_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH4_5_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH4_5_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH4_5_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH4_5_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R1105 [0x451] -- CH4_5_SR_STATIC_OFFSET
+
+enum ch4_5_sr_static_offset_fields_t {
+    OUT_4_5_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_4_5_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH4_5_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH4_5_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH4_5_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1107 [0x453] -- CH4_5_SR_PULSE_CTL
+
+enum ch4_5_sr_pulse_ctl_fields_t {
+    OUT_4_5_PULSE_COUNT_OFF = 0x3,
+    OUT_4_5_PULSE_COUNT_MSK = 0x38,
+    OUT_4_5_SR_GPIO_EN_OFF = 0x2,
+    OUT_4_5_SR_GPIO_EN_MSK = 0x4,
+    OUT_4_5_SR_MODE_OFF = 0x0,
+    OUT_4_5_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH4_5_SR_PULSE_CTL(out_4_5_pulse_count, out_4_5_sr_gpio_en, out_4_5_sr_mode) MAKE_LMK5C33216_REG_WR(CH4_5_SR_PULSE_CTL, \
+    (((out_4_5_pulse_count) << OUT_4_5_PULSE_COUNT_OFF) & OUT_4_5_PULSE_COUNT_MSK) |  \
+    (((out_4_5_sr_gpio_en) << OUT_4_5_SR_GPIO_EN_OFF) & OUT_4_5_SR_GPIO_EN_MSK) |  \
+    (((out_4_5_sr_mode) << OUT_4_5_SR_MODE_OFF) & OUT_4_5_SR_MODE_MSK))
+// Register R1108 [0x454] -- CH4_5_DFT
+
+enum ch4_5_dft_fields_t {
+    OUT_4_5_SR_CH_DIV_BYPASS_OFF = 0x4,
+    OUT_4_5_SR_CH_DIV_BYPASS_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_CH4_5_DFT(out_4_5_sr_ch_div_bypass) MAKE_LMK5C33216_REG_WR(CH4_5_DFT, \
+    (((out_4_5_sr_ch_div_bypass) << OUT_4_5_SR_CH_DIV_BYPASS_OFF) & OUT_4_5_SR_CH_DIV_BYPASS_MSK))
+// Register R1121 [0x461] -- OUT6_MODE
+enum out_6_fmt_options {
+    OUT_6_FMT_DISABLED = 0,
+    OUT_6_FMT_LVDS = 1,
+    OUT_6_FMT_LVPECL = 2,
+    OUT_6_FMT_HSDS = 3,
+    OUT_6_FMT_CML = 5,
+};
+
+enum out6_mode_fields_t {
+    OUT_6_HSDSBOOST_OFF = 0x7,
+    OUT_6_HSDSBOOST_MSK = 0x80,
+    OUT_6_AMP_OFF = 0x5,
+    OUT_6_AMP_MSK = 0x60,
+    OUT_6_FMT_OFF = 0x0,
+    OUT_6_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT6_MODE(out_6_hsdsboost, out_6_amp, out_6_fmt) MAKE_LMK5C33216_REG_WR(OUT6_MODE, \
+    (((out_6_hsdsboost) << OUT_6_HSDSBOOST_OFF) & OUT_6_HSDSBOOST_MSK) |  \
+    (((out_6_amp) << OUT_6_AMP_OFF) & OUT_6_AMP_MSK) |  \
+    (((out_6_fmt) << OUT_6_FMT_OFF) & OUT_6_FMT_MSK))
+// Register R1122 [0x462] -- OUT6_CTL
+
+enum out6_ctl_fields_t {
+    OUT_6_CONFIGURATION_OFF = 0x0,
+    OUT_6_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT6_CTL(out_6_configuration) MAKE_LMK5C33216_REG_WR(OUT6_CTL, \
+    (((out_6_configuration) << OUT_6_CONFIGURATION_OFF) & OUT_6_CONFIGURATION_MSK))
+// Register R1123 [0x463] -- OUT7_MODE
+enum out_7_fmt_options {
+    OUT_7_FMT_DISABLED = 0,
+    OUT_7_FMT_LVDS = 1,
+    OUT_7_FMT_LVPECL = 2,
+    OUT_7_FMT_HSDS = 3,
+};
+
+enum out7_mode_fields_t {
+    OUT_7_HSDSBOOST_OFF = 0x7,
+    OUT_7_HSDSBOOST_MSK = 0x80,
+    OUT_7_AMP_OFF = 0x5,
+    OUT_7_AMP_MSK = 0x60,
+    OUT_7_PREPWR_OFF = 0x3,
+    OUT_7_PREPWR_MSK = 0x18,
+    OUT_7_FMT_OFF = 0x0,
+    OUT_7_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT7_MODE(out_7_hsdsboost, out_7_amp, out_7_prepwr, out_7_fmt) MAKE_LMK5C33216_REG_WR(OUT7_MODE, \
+    (((out_7_hsdsboost) << OUT_7_HSDSBOOST_OFF) & OUT_7_HSDSBOOST_MSK) |  \
+    (((out_7_amp) << OUT_7_AMP_OFF) & OUT_7_AMP_MSK) |  \
+    (((out_7_prepwr) << OUT_7_PREPWR_OFF) & OUT_7_PREPWR_MSK) |  \
+    (((out_7_fmt) << OUT_7_FMT_OFF) & OUT_7_FMT_MSK))
+// Register R1124 [0x464] -- OUT7_CTL
+
+enum out7_ctl_fields_t {
+    OUT_7_CONFIGURATION_OFF = 0x0,
+    OUT_7_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT7_CTL(out_7_configuration) MAKE_LMK5C33216_REG_WR(OUT7_CTL, \
+    (((out_7_configuration) << OUT_7_CONFIGURATION_OFF) & OUT_7_CONFIGURATION_MSK))
+// Register R1125 [0x465] -- CH6_7_CTL
+
+enum ch6_7_ctl_fields_t {
+    OUT_6_7_DIV_SYNC_EN_OFF = 0x5,
+    OUT_6_7_DIV_SYNC_EN_MSK = 0x20,
+    OUT_6_7_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_6_7_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_6_7_CHAN_POL_SEL_OFF = 0x1,
+    OUT_6_7_CHAN_POL_SEL_MSK = 0x2,
+    OUT_6_7_DIV_EN_OFF = 0x0,
+    OUT_6_7_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH6_7_CTL(out_6_7_div_sync_en, out_6_7_sr_div_sync_en, out_6_7_chan_pol_sel, out_6_7_div_en) MAKE_LMK5C33216_REG_WR(CH6_7_CTL, \
+    (((out_6_7_div_sync_en) << OUT_6_7_DIV_SYNC_EN_OFF) & OUT_6_7_DIV_SYNC_EN_MSK) |  \
+    (((out_6_7_sr_div_sync_en) << OUT_6_7_SR_DIV_SYNC_EN_OFF) & OUT_6_7_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_6_7_chan_pol_sel) << OUT_6_7_CHAN_POL_SEL_OFF) & OUT_6_7_CHAN_POL_SEL_MSK) |  \
+    (((out_6_7_div_en) << OUT_6_7_DIV_EN_OFF) & OUT_6_7_DIV_EN_MSK))
+// Register R1126 [0x466] -- CH6_7_CTL2
+enum out_6_7_clk_in_sel_options {
+    OUT_6_7_CLK_IN_SEL_VCO2 = 0,
+    OUT_6_7_CLK_IN_SEL_VCO3 = 1,
+};
+
+enum ch6_7_ctl2_fields_t {
+    OUT_6_7_MUTE_EN_OFF = 0x7,
+    OUT_6_7_MUTE_EN_MSK = 0x80,
+    OUT_6_7_CLK_IN_SEL_OFF = 0x5,
+    OUT_6_7_CLK_IN_SEL_MSK = 0x20,
+    OUT_6_7_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x4,
+    OUT_6_7_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x10,
+    OUT_6_7_CH_MUX_SEL_OFF = 0x0,
+    OUT_6_7_CH_MUX_SEL_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_CH6_7_CTL2(out_6_7_mute_en, out_6_7_clk_in_sel, out_6_7_ch_div_sr_mux_clk_sel, out_6_7_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH6_7_CTL2, \
+    (((out_6_7_mute_en) << OUT_6_7_MUTE_EN_OFF) & OUT_6_7_MUTE_EN_MSK) |  \
+    (((out_6_7_clk_in_sel) << OUT_6_7_CLK_IN_SEL_OFF) & OUT_6_7_CLK_IN_SEL_MSK) |  \
+    (((out_6_7_ch_div_sr_mux_clk_sel) << OUT_6_7_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_6_7_CH_DIV_SR_MUX_CLK_SEL_MSK) |  \
+    (((out_6_7_ch_mux_sel) << OUT_6_7_CH_MUX_SEL_OFF) & OUT_6_7_CH_MUX_SEL_MSK))
+// Register R1127 [0x467] -- CH6_7_STATIC_OFFSET
+
+enum ch6_7_static_offset_fields_t {
+    OUT_6_7_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_6_7_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH6_7_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH6_7_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH6_7_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH6_7_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1129 [0x469] -- CH6_7_DIV
+
+enum ch6_7_div_fields_t {
+    OUT_6_7_CH_DIV_OFF = 0x0,
+    OUT_6_7_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH6_7_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH6_7_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH6_7_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH6_7_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1131 [0x46b] -- CH6_7_SR_ANA_DELAY
+
+enum ch6_7_sr_ana_delay_fields_t {
+    OUT_6_7_SR_ANA_DELAY_OFF = 0x0,
+    OUT_6_7_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_ANA_DELAY(out_6_7_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH6_7_SR_ANA_DELAY, \
+    (((out_6_7_sr_ana_delay) << OUT_6_7_SR_ANA_DELAY_OFF) & OUT_6_7_SR_ANA_DELAY_MSK))
+// Register R1132 [0x46c] -- CH6_7_SR_ANA_DELAY_CTL
+
+enum ch6_7_sr_ana_delay_ctl_fields_t {
+    OUT_6_7_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_6_7_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_6_7_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_6_7_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_6_7_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_6_7_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_6_7_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_6_7_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_ANA_DELAY_CTL(out_6_7_sr_ana_delay_div2_sel, out_6_7_sr_ana_delay_en, out_6_7_sr_ana_delay_small_step_en, out_6_7_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH6_7_SR_ANA_DELAY_CTL, \
+    (((out_6_7_sr_ana_delay_div2_sel) << OUT_6_7_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_6_7_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_6_7_sr_ana_delay_en) << OUT_6_7_SR_ANA_DELAY_EN_OFF) & OUT_6_7_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_6_7_sr_ana_delay_small_step_en) << OUT_6_7_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_6_7_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_6_7_sr_ana_delay_range) << OUT_6_7_SR_ANA_DELAY_RANGE_OFF) & OUT_6_7_SR_ANA_DELAY_RANGE_MSK))
+// Register R1133 [0x46d] -- CH6_7_SR_DDLY
+
+enum ch6_7_sr_ddly_fields_t {
+    OUT_6_7_SR_DDLY_OFF = 0x0,
+    OUT_6_7_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_DDLY(out_6_7_sr_ddly) MAKE_LMK5C33216_REG_WR(CH6_7_SR_DDLY, \
+    (((out_6_7_sr_ddly) << OUT_6_7_SR_DDLY_OFF) & OUT_6_7_SR_DDLY_MSK))
+// Register R1134 [0x46e] -- CH6_7_SR_DIV
+
+enum ch6_7_sr_div_fields_t {
+    OUT_6_7_SR_DIV_OFF = 0x0,
+    OUT_6_7_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH6_7_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH6_7_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH6_7_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH6_7_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH6_7_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R1137 [0x471] -- CH6_7_SR_STATIC_OFFSET
+
+enum ch6_7_sr_static_offset_fields_t {
+    OUT_6_7_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_6_7_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH6_7_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH6_7_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH6_7_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1139 [0x473] -- CH6_7_SR_PULSE_CTL
+
+enum ch6_7_sr_pulse_ctl_fields_t {
+    OUT_6_7_PULSE_COUNT_OFF = 0x3,
+    OUT_6_7_PULSE_COUNT_MSK = 0x38,
+    OUT_6_7_SR_GPIO_EN_OFF = 0x2,
+    OUT_6_7_SR_GPIO_EN_MSK = 0x4,
+    OUT_6_7_SR_MODE_OFF = 0x0,
+    OUT_6_7_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH6_7_SR_PULSE_CTL(out_6_7_pulse_count, out_6_7_sr_gpio_en, out_6_7_sr_mode) MAKE_LMK5C33216_REG_WR(CH6_7_SR_PULSE_CTL, \
+    (((out_6_7_pulse_count) << OUT_6_7_PULSE_COUNT_OFF) & OUT_6_7_PULSE_COUNT_MSK) |  \
+    (((out_6_7_sr_gpio_en) << OUT_6_7_SR_GPIO_EN_OFF) & OUT_6_7_SR_GPIO_EN_MSK) |  \
+    (((out_6_7_sr_mode) << OUT_6_7_SR_MODE_OFF) & OUT_6_7_SR_MODE_MSK))
+// Register R1140 [0x474] -- CH6_7_DFT
+
+enum ch6_7_dft_fields_t {
+    OUT_6_7_SR_CH_DIV_BYPASS_OFF = 0x4,
+    OUT_6_7_SR_CH_DIV_BYPASS_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_CH6_7_DFT(out_6_7_sr_ch_div_bypass) MAKE_LMK5C33216_REG_WR(CH6_7_DFT, \
+    (((out_6_7_sr_ch_div_bypass) << OUT_6_7_SR_CH_DIV_BYPASS_OFF) & OUT_6_7_SR_CH_DIV_BYPASS_MSK))
+// Register R1153 [0x481] -- OUT8_MODE
+enum out_8_fmt_options {
+    OUT_8_FMT_DISABLED = 0,
+    OUT_8_FMT_LVDS = 1,
+    OUT_8_FMT_LVPECL = 2,
+    OUT_8_FMT_HSDS = 3,
+};
+
+enum out8_mode_fields_t {
+    OUT_8_HSDSBOOST_OFF = 0x7,
+    OUT_8_HSDSBOOST_MSK = 0x80,
+    OUT_8_AMP_OFF = 0x5,
+    OUT_8_AMP_MSK = 0x60,
+    OUT_8_FMT_OFF = 0x0,
+    OUT_8_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT8_MODE(out_8_hsdsboost, out_8_amp, out_8_fmt) MAKE_LMK5C33216_REG_WR(OUT8_MODE, \
+    (((out_8_hsdsboost) << OUT_8_HSDSBOOST_OFF) & OUT_8_HSDSBOOST_MSK) |  \
+    (((out_8_amp) << OUT_8_AMP_OFF) & OUT_8_AMP_MSK) |  \
+    (((out_8_fmt) << OUT_8_FMT_OFF) & OUT_8_FMT_MSK))
+// Register R1154 [0x482] -- OUT8_CTL
+
+enum out8_ctl_fields_t {
+    OUT_8_CONFIGURATION_OFF = 0x0,
+    OUT_8_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT8_CTL(out_8_configuration) MAKE_LMK5C33216_REG_WR(OUT8_CTL, \
+    (((out_8_configuration) << OUT_8_CONFIGURATION_OFF) & OUT_8_CONFIGURATION_MSK))
+// Register R1155 [0x483] -- OUT9_MODE
+enum out_9_fmt_options {
+    OUT_9_FMT_DISABLED = 0,
+    OUT_9_FMT_LVDS = 1,
+    OUT_9_FMT_LVPECL = 2,
+    OUT_9_FMT_HSDS = 3,
+};
+
+enum out9_mode_fields_t {
+    OUT_9_HSDSBOOST_OFF = 0x7,
+    OUT_9_HSDSBOOST_MSK = 0x80,
+    OUT_9_AMP_OFF = 0x5,
+    OUT_9_AMP_MSK = 0x60,
+    OUT_9_PREPWR_OFF = 0x3,
+    OUT_9_PREPWR_MSK = 0x18,
+    OUT_9_FMT_OFF = 0x0,
+    OUT_9_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT9_MODE(out_9_hsdsboost, out_9_amp, out_9_prepwr, out_9_fmt) MAKE_LMK5C33216_REG_WR(OUT9_MODE, \
+    (((out_9_hsdsboost) << OUT_9_HSDSBOOST_OFF) & OUT_9_HSDSBOOST_MSK) |  \
+    (((out_9_amp) << OUT_9_AMP_OFF) & OUT_9_AMP_MSK) |  \
+    (((out_9_prepwr) << OUT_9_PREPWR_OFF) & OUT_9_PREPWR_MSK) |  \
+    (((out_9_fmt) << OUT_9_FMT_OFF) & OUT_9_FMT_MSK))
+// Register R1156 [0x484] -- OUT9_CTL
+
+enum out9_ctl_fields_t {
+    OUT_9_CONFIGURATION_OFF = 0x0,
+    OUT_9_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT9_CTL(out_9_configuration) MAKE_LMK5C33216_REG_WR(OUT9_CTL, \
+    (((out_9_configuration) << OUT_9_CONFIGURATION_OFF) & OUT_9_CONFIGURATION_MSK))
+// Register R1157 [0x485] -- CH8_9_CTL
+
+enum ch8_9_ctl_fields_t {
+    OUT_8_9_DIV_SYNC_EN_OFF = 0x5,
+    OUT_8_9_DIV_SYNC_EN_MSK = 0x20,
+    OUT_8_9_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_8_9_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_8_9_CHAN_POL_SEL_OFF = 0x1,
+    OUT_8_9_CHAN_POL_SEL_MSK = 0x2,
+    OUT_8_9_DIV_EN_OFF = 0x0,
+    OUT_8_9_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH8_9_CTL(out_8_9_div_sync_en, out_8_9_sr_div_sync_en, out_8_9_chan_pol_sel, out_8_9_div_en) MAKE_LMK5C33216_REG_WR(CH8_9_CTL, \
+    (((out_8_9_div_sync_en) << OUT_8_9_DIV_SYNC_EN_OFF) & OUT_8_9_DIV_SYNC_EN_MSK) |  \
+    (((out_8_9_sr_div_sync_en) << OUT_8_9_SR_DIV_SYNC_EN_OFF) & OUT_8_9_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_8_9_chan_pol_sel) << OUT_8_9_CHAN_POL_SEL_OFF) & OUT_8_9_CHAN_POL_SEL_MSK) |  \
+    (((out_8_9_div_en) << OUT_8_9_DIV_EN_OFF) & OUT_8_9_DIV_EN_MSK))
+// Register R1158 [0x486] -- CH8_9_CTL2
+enum out_8_9_clk_in_sel_options {
+    OUT_8_9_CLK_IN_SEL_VCO2 = 0,
+    OUT_8_9_CLK_IN_SEL_VCO3 = 1,
+};
+
+enum ch8_9_ctl2_fields_t {
+    OUT_8_9_MUTE_EN_OFF = 0x7,
+    OUT_8_9_MUTE_EN_MSK = 0x80,
+    OUT_8_9_CLK_IN_SEL_OFF = 0x5,
+    OUT_8_9_CLK_IN_SEL_MSK = 0x20,
+    OUT_8_9_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x4,
+    OUT_8_9_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x10,
+    OUT_8_9_CH_MUX_SEL_OFF = 0x0,
+    OUT_8_9_CH_MUX_SEL_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_CH8_9_CTL2(out_8_9_mute_en, out_8_9_clk_in_sel, out_8_9_ch_div_sr_mux_clk_sel, out_8_9_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH8_9_CTL2, \
+    (((out_8_9_mute_en) << OUT_8_9_MUTE_EN_OFF) & OUT_8_9_MUTE_EN_MSK) |  \
+    (((out_8_9_clk_in_sel) << OUT_8_9_CLK_IN_SEL_OFF) & OUT_8_9_CLK_IN_SEL_MSK) |  \
+    (((out_8_9_ch_div_sr_mux_clk_sel) << OUT_8_9_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_8_9_CH_DIV_SR_MUX_CLK_SEL_MSK) |  \
+    (((out_8_9_ch_mux_sel) << OUT_8_9_CH_MUX_SEL_OFF) & OUT_8_9_CH_MUX_SEL_MSK))
+// Register R1159 [0x487] -- CH8_9_STATIC_OFFSET
+
+enum ch8_9_static_offset_fields_t {
+    OUT_8_9_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_8_9_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH8_9_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH8_9_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH8_9_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH8_9_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1161 [0x489] -- CH8_9_DIV
+
+enum ch8_9_div_fields_t {
+    OUT_8_9_CH_DIV_OFF = 0x0,
+    OUT_8_9_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH8_9_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH8_9_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH8_9_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH8_9_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1163 [0x48b] -- CH8_9_SR_ANA_DELAY
+
+enum ch8_9_sr_ana_delay_fields_t {
+    OUT_8_9_SR_ANA_DELAY_OFF = 0x0,
+    OUT_8_9_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_ANA_DELAY(out_8_9_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH8_9_SR_ANA_DELAY, \
+    (((out_8_9_sr_ana_delay) << OUT_8_9_SR_ANA_DELAY_OFF) & OUT_8_9_SR_ANA_DELAY_MSK))
+// Register R1164 [0x48c] -- CH8_9_SR_ANA_DELAY_CTL
+
+enum ch8_9_sr_ana_delay_ctl_fields_t {
+    OUT_8_9_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_8_9_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_8_9_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_8_9_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_8_9_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_8_9_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_8_9_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_8_9_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_ANA_DELAY_CTL(out_8_9_sr_ana_delay_div2_sel, out_8_9_sr_ana_delay_en, out_8_9_sr_ana_delay_small_step_en, out_8_9_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH8_9_SR_ANA_DELAY_CTL, \
+    (((out_8_9_sr_ana_delay_div2_sel) << OUT_8_9_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_8_9_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_8_9_sr_ana_delay_en) << OUT_8_9_SR_ANA_DELAY_EN_OFF) & OUT_8_9_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_8_9_sr_ana_delay_small_step_en) << OUT_8_9_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_8_9_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_8_9_sr_ana_delay_range) << OUT_8_9_SR_ANA_DELAY_RANGE_OFF) & OUT_8_9_SR_ANA_DELAY_RANGE_MSK))
+// Register R1165 [0x48d] -- CH8_9_SR_DDLY
+
+enum ch8_9_sr_ddly_fields_t {
+    OUT_8_9_SR_DDLY_OFF = 0x0,
+    OUT_8_9_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_DDLY(out_8_9_sr_ddly) MAKE_LMK5C33216_REG_WR(CH8_9_SR_DDLY, \
+    (((out_8_9_sr_ddly) << OUT_8_9_SR_DDLY_OFF) & OUT_8_9_SR_DDLY_MSK))
+// Register R1166 [0x48e] -- CH8_9_SR_DIV
+
+enum ch8_9_sr_div_fields_t {
+    OUT_8_9_SR_DIV_OFF = 0x0,
+    OUT_8_9_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH8_9_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH8_9_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH8_9_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH8_9_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH8_9_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R1169 [0x491] -- CH8_9_SR_STATIC_OFFSET
+
+enum ch8_9_sr_static_offset_fields_t {
+    OUT_8_9_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_8_9_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH8_9_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH8_9_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH8_9_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1171 [0x493] -- CH8_9_SR_PULSE_CTL
+
+enum ch8_9_sr_pulse_ctl_fields_t {
+    OUT_8_9_PULSE_COUNT_OFF = 0x3,
+    OUT_8_9_PULSE_COUNT_MSK = 0x38,
+    OUT_8_9_SR_GPIO_EN_OFF = 0x2,
+    OUT_8_9_SR_GPIO_EN_MSK = 0x4,
+    OUT_8_9_SR_MODE_OFF = 0x0,
+    OUT_8_9_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH8_9_SR_PULSE_CTL(out_8_9_pulse_count, out_8_9_sr_gpio_en, out_8_9_sr_mode) MAKE_LMK5C33216_REG_WR(CH8_9_SR_PULSE_CTL, \
+    (((out_8_9_pulse_count) << OUT_8_9_PULSE_COUNT_OFF) & OUT_8_9_PULSE_COUNT_MSK) |  \
+    (((out_8_9_sr_gpio_en) << OUT_8_9_SR_GPIO_EN_OFF) & OUT_8_9_SR_GPIO_EN_MSK) |  \
+    (((out_8_9_sr_mode) << OUT_8_9_SR_MODE_OFF) & OUT_8_9_SR_MODE_MSK))
+// Register R1185 [0x4a1] -- OUT10_MODE
+enum out_10_fmt_options {
+    OUT_10_FMT_DISABLED = 0,
+    OUT_10_FMT_LVDS = 1,
+    OUT_10_FMT_LVPECL = 2,
+    OUT_10_FMT_HSDS = 3,
+};
+
+enum out10_mode_fields_t {
+    OUT_10_HSDSBOOST_OFF = 0x7,
+    OUT_10_HSDSBOOST_MSK = 0x80,
+    OUT_10_AMP_OFF = 0x5,
+    OUT_10_AMP_MSK = 0x60,
+    OUT_10_FMT_OFF = 0x0,
+    OUT_10_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT10_MODE(out_10_hsdsboost, out_10_amp, out_10_fmt) MAKE_LMK5C33216_REG_WR(OUT10_MODE, \
+    (((out_10_hsdsboost) << OUT_10_HSDSBOOST_OFF) & OUT_10_HSDSBOOST_MSK) |  \
+    (((out_10_amp) << OUT_10_AMP_OFF) & OUT_10_AMP_MSK) |  \
+    (((out_10_fmt) << OUT_10_FMT_OFF) & OUT_10_FMT_MSK))
+// Register R1186 [0x4a2] -- OUT10_CTL
+
+enum out10_ctl_fields_t {
+    OUT_10_CONFIGURATION_OFF = 0x0,
+    OUT_10_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT10_CTL(out_10_configuration) MAKE_LMK5C33216_REG_WR(OUT10_CTL, \
+    (((out_10_configuration) << OUT_10_CONFIGURATION_OFF) & OUT_10_CONFIGURATION_MSK))
+// Register R1187 [0x4a3] -- OUT11_MODE
+enum out_11_fmt_options {
+    OUT_11_FMT_DISABLED = 0,
+    OUT_11_FMT_LVDS = 1,
+    OUT_11_FMT_LVPECL = 2,
+    OUT_11_FMT_HSDS = 3,
+};
+
+enum out11_mode_fields_t {
+    OUT_11_HSDSBOOST_OFF = 0x7,
+    OUT_11_HSDSBOOST_MSK = 0x80,
+    OUT_11_AMP_OFF = 0x5,
+    OUT_11_AMP_MSK = 0x60,
+    OUT_11_PREPWR_OFF = 0x3,
+    OUT_11_PREPWR_MSK = 0x18,
+    OUT_11_FMT_OFF = 0x0,
+    OUT_11_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT11_MODE(out_11_hsdsboost, out_11_amp, out_11_prepwr, out_11_fmt) MAKE_LMK5C33216_REG_WR(OUT11_MODE, \
+    (((out_11_hsdsboost) << OUT_11_HSDSBOOST_OFF) & OUT_11_HSDSBOOST_MSK) |  \
+    (((out_11_amp) << OUT_11_AMP_OFF) & OUT_11_AMP_MSK) |  \
+    (((out_11_prepwr) << OUT_11_PREPWR_OFF) & OUT_11_PREPWR_MSK) |  \
+    (((out_11_fmt) << OUT_11_FMT_OFF) & OUT_11_FMT_MSK))
+// Register R1188 [0x4a4] -- OUT11_CTL
+
+enum out11_ctl_fields_t {
+    OUT_11_CONFIGURATION_OFF = 0x0,
+    OUT_11_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT11_CTL(out_11_configuration) MAKE_LMK5C33216_REG_WR(OUT11_CTL, \
+    (((out_11_configuration) << OUT_11_CONFIGURATION_OFF) & OUT_11_CONFIGURATION_MSK))
+// Register R1189 [0x4a5] -- CH10_11_CTL
+
+enum ch10_11_ctl_fields_t {
+    OUT_10_11_DIV_SYNC_EN_OFF = 0x5,
+    OUT_10_11_DIV_SYNC_EN_MSK = 0x20,
+    OUT_10_11_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_10_11_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_10_11_CHAN_POL_SEL_OFF = 0x1,
+    OUT_10_11_CHAN_POL_SEL_MSK = 0x2,
+    OUT_10_11_DIV_EN_OFF = 0x0,
+    OUT_10_11_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH10_11_CTL(out_10_11_div_sync_en, out_10_11_sr_div_sync_en, out_10_11_chan_pol_sel, out_10_11_div_en) MAKE_LMK5C33216_REG_WR(CH10_11_CTL, \
+    (((out_10_11_div_sync_en) << OUT_10_11_DIV_SYNC_EN_OFF) & OUT_10_11_DIV_SYNC_EN_MSK) |  \
+    (((out_10_11_sr_div_sync_en) << OUT_10_11_SR_DIV_SYNC_EN_OFF) & OUT_10_11_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_10_11_chan_pol_sel) << OUT_10_11_CHAN_POL_SEL_OFF) & OUT_10_11_CHAN_POL_SEL_MSK) |  \
+    (((out_10_11_div_en) << OUT_10_11_DIV_EN_OFF) & OUT_10_11_DIV_EN_MSK))
+// Register R1190 [0x4a6] -- CH10_11_CTL2
+enum out_10_11_clk_in_sel_options {
+    OUT_10_11_CLK_IN_SEL_VCO2 = 0,
+    OUT_10_11_CLK_IN_SEL_VCO3 = 1,
+};
+
+enum ch10_11_ctl2_fields_t {
+    OUT_10_11_MUTE_EN_OFF = 0x7,
+    OUT_10_11_MUTE_EN_MSK = 0x80,
+    OUT_10_11_ZDM_EN_OFF = 0x6,
+    OUT_10_11_ZDM_EN_MSK = 0x40,
+    OUT_10_11_CLK_IN_SEL_OFF = 0x5,
+    OUT_10_11_CLK_IN_SEL_MSK = 0x20,
+    OUT_10_11_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x4,
+    OUT_10_11_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x10,
+    OUT_10_11_CH_MUX_SEL_OFF = 0x0,
+    OUT_10_11_CH_MUX_SEL_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_CH10_11_CTL2(out_10_11_mute_en, out_10_11_zdm_en, out_10_11_clk_in_sel, out_10_11_ch_div_sr_mux_clk_sel, out_10_11_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH10_11_CTL2, \
+    (((out_10_11_mute_en) << OUT_10_11_MUTE_EN_OFF) & OUT_10_11_MUTE_EN_MSK) |  \
+    (((out_10_11_zdm_en) << OUT_10_11_ZDM_EN_OFF) & OUT_10_11_ZDM_EN_MSK) |  \
+    (((out_10_11_clk_in_sel) << OUT_10_11_CLK_IN_SEL_OFF) & OUT_10_11_CLK_IN_SEL_MSK) |  \
+    (((out_10_11_ch_div_sr_mux_clk_sel) << OUT_10_11_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_10_11_CH_DIV_SR_MUX_CLK_SEL_MSK) |  \
+    (((out_10_11_ch_mux_sel) << OUT_10_11_CH_MUX_SEL_OFF) & OUT_10_11_CH_MUX_SEL_MSK))
+// Register R1191 [0x4a7] -- CH10_11_STATIC_OFFSET
+
+enum ch10_11_static_offset_fields_t {
+    OUT_10_11_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_10_11_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH10_11_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH10_11_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH10_11_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH10_11_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1193 [0x4a9] -- CH10_11_DIV
+
+enum ch10_11_div_fields_t {
+    OUT_10_11_CH_DIV_OFF = 0x0,
+    OUT_10_11_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH10_11_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH10_11_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH10_11_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH10_11_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1195 [0x4ab] -- CH10_11_SR_ANA_DELAY
+
+enum ch10_11_sr_ana_delay_fields_t {
+    OUT_10_11_SR_ANA_DELAY_OFF = 0x0,
+    OUT_10_11_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_ANA_DELAY(out_10_11_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH10_11_SR_ANA_DELAY, \
+    (((out_10_11_sr_ana_delay) << OUT_10_11_SR_ANA_DELAY_OFF) & OUT_10_11_SR_ANA_DELAY_MSK))
+// Register R1196 [0x4ac] -- CH10_11_SR_ANA_DELAY_CTL
+
+enum ch10_11_sr_ana_delay_ctl_fields_t {
+    OUT_10_11_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_10_11_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_10_11_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_10_11_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_10_11_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_10_11_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_10_11_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_10_11_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_ANA_DELAY_CTL(out_10_11_sr_ana_delay_div2_sel, out_10_11_sr_ana_delay_en, out_10_11_sr_ana_delay_small_step_en, out_10_11_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH10_11_SR_ANA_DELAY_CTL, \
+    (((out_10_11_sr_ana_delay_div2_sel) << OUT_10_11_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_10_11_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_10_11_sr_ana_delay_en) << OUT_10_11_SR_ANA_DELAY_EN_OFF) & OUT_10_11_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_10_11_sr_ana_delay_small_step_en) << OUT_10_11_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_10_11_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_10_11_sr_ana_delay_range) << OUT_10_11_SR_ANA_DELAY_RANGE_OFF) & OUT_10_11_SR_ANA_DELAY_RANGE_MSK))
+// Register R1197 [0x4ad] -- CH10_11_SR_DDLY
+
+enum ch10_11_sr_ddly_fields_t {
+    OUT_10_11_SR_DDLY_OFF = 0x0,
+    OUT_10_11_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_DDLY(out_10_11_sr_ddly) MAKE_LMK5C33216_REG_WR(CH10_11_SR_DDLY, \
+    (((out_10_11_sr_ddly) << OUT_10_11_SR_DDLY_OFF) & OUT_10_11_SR_DDLY_MSK))
+// Register R1198 [0x4ae] -- CH10_11_SR_DIV
+
+enum ch10_11_sr_div_fields_t {
+    OUT_10_11_SR_DIV_OFF = 0x0,
+    OUT_10_11_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH10_11_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH10_11_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH10_11_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH10_11_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH10_11_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R1201 [0x4b1] -- CH10_11_SR_STATIC_OFFSET
+
+enum ch10_11_sr_static_offset_fields_t {
+    OUT_10_11_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_10_11_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH10_11_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH10_11_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH10_11_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1203 [0x4b3] -- CH10_11_SR_PULSE_CTL
+
+enum ch10_11_sr_pulse_ctl_fields_t {
+    OUT_10_11_PULSE_COUNT_OFF = 0x3,
+    OUT_10_11_PULSE_COUNT_MSK = 0x38,
+    OUT_10_11_SR_GPIO_EN_OFF = 0x2,
+    OUT_10_11_SR_GPIO_EN_MSK = 0x4,
+    OUT_10_11_SR_MODE_OFF = 0x0,
+    OUT_10_11_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH10_11_SR_PULSE_CTL(out_10_11_pulse_count, out_10_11_sr_gpio_en, out_10_11_sr_mode) MAKE_LMK5C33216_REG_WR(CH10_11_SR_PULSE_CTL, \
+    (((out_10_11_pulse_count) << OUT_10_11_PULSE_COUNT_OFF) & OUT_10_11_PULSE_COUNT_MSK) |  \
+    (((out_10_11_sr_gpio_en) << OUT_10_11_SR_GPIO_EN_OFF) & OUT_10_11_SR_GPIO_EN_MSK) |  \
+    (((out_10_11_sr_mode) << OUT_10_11_SR_MODE_OFF) & OUT_10_11_SR_MODE_MSK))
+// Register R1204 [0x4b4] -- CH10_11_DFT
+
+enum ch10_11_dft_fields_t {
+    OUT_10_11_SR_CH_DIV_BYPASS_OFF = 0x4,
+    OUT_10_11_SR_CH_DIV_BYPASS_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_CH10_11_DFT(out_10_11_sr_ch_div_bypass) MAKE_LMK5C33216_REG_WR(CH10_11_DFT, \
+    (((out_10_11_sr_ch_div_bypass) << OUT_10_11_SR_CH_DIV_BYPASS_OFF) & OUT_10_11_SR_CH_DIV_BYPASS_MSK))
+// Register R1217 [0x4c1] -- OUT12_MODE
+enum out_12_fmt_options {
+    OUT_12_FMT_DISABLED = 0,
+    OUT_12_FMT_LVDS = 1,
+    OUT_12_FMT_LVPECL = 2,
+    OUT_12_FMT_HSDS = 3,
+};
+
+enum out12_mode_fields_t {
+    OUT_12_HSDSBOOST_OFF = 0x7,
+    OUT_12_HSDSBOOST_MSK = 0x80,
+    OUT_12_AMP_OFF = 0x5,
+    OUT_12_AMP_MSK = 0x60,
+    OUT_12_FMT_OFF = 0x0,
+    OUT_12_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT12_MODE(out_12_hsdsboost, out_12_amp, out_12_fmt) MAKE_LMK5C33216_REG_WR(OUT12_MODE, \
+    (((out_12_hsdsboost) << OUT_12_HSDSBOOST_OFF) & OUT_12_HSDSBOOST_MSK) |  \
+    (((out_12_amp) << OUT_12_AMP_OFF) & OUT_12_AMP_MSK) |  \
+    (((out_12_fmt) << OUT_12_FMT_OFF) & OUT_12_FMT_MSK))
+// Register R1218 [0x4c2] -- OUT12_CTL
+
+enum out12_ctl_fields_t {
+    OUT_12_CONFIGURATION_OFF = 0x0,
+    OUT_12_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT12_CTL(out_12_configuration) MAKE_LMK5C33216_REG_WR(OUT12_CTL, \
+    (((out_12_configuration) << OUT_12_CONFIGURATION_OFF) & OUT_12_CONFIGURATION_MSK))
+// Register R1219 [0x4c3] -- OUT13_MODE
+enum out_13_fmt_options {
+    OUT_13_FMT_DISABLED = 0,
+    OUT_13_FMT_LVDS = 1,
+    OUT_13_FMT_LVPECL = 2,
+    OUT_13_FMT_HSDS = 3,
+};
+
+enum out13_mode_fields_t {
+    OUT_13_HSDSBOOST_OFF = 0x7,
+    OUT_13_HSDSBOOST_MSK = 0x80,
+    OUT_13_AMP_OFF = 0x5,
+    OUT_13_AMP_MSK = 0x60,
+    OUT_13_PREPWR_OFF = 0x3,
+    OUT_13_PREPWR_MSK = 0x18,
+    OUT_13_FMT_OFF = 0x0,
+    OUT_13_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT13_MODE(out_13_hsdsboost, out_13_amp, out_13_prepwr, out_13_fmt) MAKE_LMK5C33216_REG_WR(OUT13_MODE, \
+    (((out_13_hsdsboost) << OUT_13_HSDSBOOST_OFF) & OUT_13_HSDSBOOST_MSK) |  \
+    (((out_13_amp) << OUT_13_AMP_OFF) & OUT_13_AMP_MSK) |  \
+    (((out_13_prepwr) << OUT_13_PREPWR_OFF) & OUT_13_PREPWR_MSK) |  \
+    (((out_13_fmt) << OUT_13_FMT_OFF) & OUT_13_FMT_MSK))
+// Register R1220 [0x4c4] -- OUT13_CTL
+
+enum out13_ctl_fields_t {
+    OUT_13_CONFIGURATION_OFF = 0x0,
+    OUT_13_CONFIGURATION_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_OUT13_CTL(out_13_configuration) MAKE_LMK5C33216_REG_WR(OUT13_CTL, \
+    (((out_13_configuration) << OUT_13_CONFIGURATION_OFF) & OUT_13_CONFIGURATION_MSK))
+// Register R1221 [0x4c5] -- CH12_13_CTL
+
+enum ch12_13_ctl_fields_t {
+    OUT_12_13_DIV_SYNC_EN_OFF = 0x5,
+    OUT_12_13_DIV_SYNC_EN_MSK = 0x20,
+    OUT_12_13_SR_DIV_SYNC_EN_OFF = 0x4,
+    OUT_12_13_SR_DIV_SYNC_EN_MSK = 0x10,
+    OUT_12_13_CHAN_POL_SEL_OFF = 0x1,
+    OUT_12_13_CHAN_POL_SEL_MSK = 0x2,
+    OUT_12_13_DIV_EN_OFF = 0x0,
+    OUT_12_13_DIV_EN_MSK = 0x1,
+};
+#define MAKE_LMK5C33216_CH12_13_CTL(out_12_13_div_sync_en, out_12_13_sr_div_sync_en, out_12_13_chan_pol_sel, out_12_13_div_en) MAKE_LMK5C33216_REG_WR(CH12_13_CTL, \
+    (((out_12_13_div_sync_en) << OUT_12_13_DIV_SYNC_EN_OFF) & OUT_12_13_DIV_SYNC_EN_MSK) |  \
+    (((out_12_13_sr_div_sync_en) << OUT_12_13_SR_DIV_SYNC_EN_OFF) & OUT_12_13_SR_DIV_SYNC_EN_MSK) |  \
+    (((out_12_13_chan_pol_sel) << OUT_12_13_CHAN_POL_SEL_OFF) & OUT_12_13_CHAN_POL_SEL_MSK) |  \
+    (((out_12_13_div_en) << OUT_12_13_DIV_EN_OFF) & OUT_12_13_DIV_EN_MSK))
+// Register R1222 [0x4c6] -- CH12_13_CTL2
+enum out_12_13_clk_in_sel_options {
+    OUT_12_13_CLK_IN_SEL_VCO2 = 0,
+    OUT_12_13_CLK_IN_SEL_VCO3 = 1,
+};
+
+enum ch12_13_ctl2_fields_t {
+    OUT_12_13_MUTE_EN_OFF = 0x7,
+    OUT_12_13_MUTE_EN_MSK = 0x80,
+    OUT_12_13_CLK_IN_SEL_OFF = 0x5,
+    OUT_12_13_CLK_IN_SEL_MSK = 0x20,
+    OUT_12_13_CH_DIV_SR_MUX_CLK_SEL_OFF = 0x4,
+    OUT_12_13_CH_DIV_SR_MUX_CLK_SEL_MSK = 0x10,
+    OUT_12_13_CH_MUX_SEL_OFF = 0x0,
+    OUT_12_13_CH_MUX_SEL_MSK = 0xf,
+};
+#define MAKE_LMK5C33216_CH12_13_CTL2(out_12_13_mute_en, out_12_13_clk_in_sel, out_12_13_ch_div_sr_mux_clk_sel, out_12_13_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH12_13_CTL2, \
+    (((out_12_13_mute_en) << OUT_12_13_MUTE_EN_OFF) & OUT_12_13_MUTE_EN_MSK) |  \
+    (((out_12_13_clk_in_sel) << OUT_12_13_CLK_IN_SEL_OFF) & OUT_12_13_CLK_IN_SEL_MSK) |  \
+    (((out_12_13_ch_div_sr_mux_clk_sel) << OUT_12_13_CH_DIV_SR_MUX_CLK_SEL_OFF) & OUT_12_13_CH_DIV_SR_MUX_CLK_SEL_MSK) |  \
+    (((out_12_13_ch_mux_sel) << OUT_12_13_CH_MUX_SEL_OFF) & OUT_12_13_CH_MUX_SEL_MSK))
+// Register R1223 [0x4c7] -- CH12_13_STATIC_OFFSET
+
+enum ch12_13_static_offset_fields_t {
+    OUT_12_13_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_12_13_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH12_13_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH12_13_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH12_13_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH12_13_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1225 [0x4c9] -- CH12_13_DIV
+
+enum ch12_13_div_fields_t {
+    OUT_12_13_CH_DIV_OFF = 0x0,
+    OUT_12_13_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH12_13_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH12_13_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH12_13_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH12_13_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1227 [0x4cb] -- CH12_13_SR_ANA_DELAY
+
+enum ch12_13_sr_ana_delay_fields_t {
+    OUT_12_13_SR_ANA_DELAY_OFF = 0x0,
+    OUT_12_13_SR_ANA_DELAY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_ANA_DELAY(out_12_13_sr_ana_delay) MAKE_LMK5C33216_REG_WR(CH12_13_SR_ANA_DELAY, \
+    (((out_12_13_sr_ana_delay) << OUT_12_13_SR_ANA_DELAY_OFF) & OUT_12_13_SR_ANA_DELAY_MSK))
+// Register R1228 [0x4cc] -- CH12_13_SR_ANA_DELAY_CTL
+
+enum ch12_13_sr_ana_delay_ctl_fields_t {
+    OUT_12_13_SR_ANA_DELAY_DIV2_SEL_OFF = 0x5,
+    OUT_12_13_SR_ANA_DELAY_DIV2_SEL_MSK = 0x20,
+    OUT_12_13_SR_ANA_DELAY_EN_OFF = 0x4,
+    OUT_12_13_SR_ANA_DELAY_EN_MSK = 0x10,
+    OUT_12_13_SR_ANA_DELAY_SMALL_STEP_EN_OFF = 0x3,
+    OUT_12_13_SR_ANA_DELAY_SMALL_STEP_EN_MSK = 0x8,
+    OUT_12_13_SR_ANA_DELAY_RANGE_OFF = 0x0,
+    OUT_12_13_SR_ANA_DELAY_RANGE_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_ANA_DELAY_CTL(out_12_13_sr_ana_delay_div2_sel, out_12_13_sr_ana_delay_en, out_12_13_sr_ana_delay_small_step_en, out_12_13_sr_ana_delay_range) MAKE_LMK5C33216_REG_WR(CH12_13_SR_ANA_DELAY_CTL, \
+    (((out_12_13_sr_ana_delay_div2_sel) << OUT_12_13_SR_ANA_DELAY_DIV2_SEL_OFF) & OUT_12_13_SR_ANA_DELAY_DIV2_SEL_MSK) |  \
+    (((out_12_13_sr_ana_delay_en) << OUT_12_13_SR_ANA_DELAY_EN_OFF) & OUT_12_13_SR_ANA_DELAY_EN_MSK) |  \
+    (((out_12_13_sr_ana_delay_small_step_en) << OUT_12_13_SR_ANA_DELAY_SMALL_STEP_EN_OFF) & OUT_12_13_SR_ANA_DELAY_SMALL_STEP_EN_MSK) |  \
+    (((out_12_13_sr_ana_delay_range) << OUT_12_13_SR_ANA_DELAY_RANGE_OFF) & OUT_12_13_SR_ANA_DELAY_RANGE_MSK))
+// Register R1229 [0x4cd] -- CH12_13_SR_DDLY
+
+enum ch12_13_sr_ddly_fields_t {
+    OUT_12_13_SR_DDLY_OFF = 0x0,
+    OUT_12_13_SR_DDLY_MSK = 0x1f,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_DDLY(out_12_13_sr_ddly) MAKE_LMK5C33216_REG_WR(CH12_13_SR_DDLY, \
+    (((out_12_13_sr_ddly) << OUT_12_13_SR_DDLY_OFF) & OUT_12_13_SR_DDLY_MSK))
+// Register R1230 [0x4ce] -- CH12_13_SR_DIV
+
+enum ch12_13_sr_div_fields_t {
+    OUT_12_13_SR_DIV_OFF = 0x0,
+    OUT_12_13_SR_DIV_MSK = 0xfffff,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH12_13_SR_DIV_BY0, (((value) >> 16) & 0xf))
+#define MAKE_LMK5C33216_CH12_13_SR_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH12_13_SR_DIV_BY1, (((value) >> 8) & 0xff))
+#define MAKE_LMK5C33216_CH12_13_SR_DIV_BY2(value) MAKE_LMK5C33216_REG_WR(CH12_13_SR_DIV_BY2, (((value) << 0) & 0xff))
+// Register R1233 [0x4d1] -- CH12_13_SR_STATIC_OFFSET
+
+enum ch12_13_sr_static_offset_fields_t {
+    OUT_12_13_SR_DIV_STATIC_OFFSET_OFF = 0x0,
+    OUT_12_13_SR_DIV_STATIC_OFFSET_MSK = 0x7fff,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH12_13_SR_STATIC_OFFSET_BY0, (((value) >> 8) & 0x7f))
+#define MAKE_LMK5C33216_CH12_13_SR_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH12_13_SR_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1235 [0x4d3] -- CH12_13_SR_PULSE_CTL
+
+enum ch12_13_sr_pulse_ctl_fields_t {
+    OUT_12_13_PULSE_COUNT_OFF = 0x3,
+    OUT_12_13_PULSE_COUNT_MSK = 0x38,
+    OUT_12_13_SR_GPIO_EN_OFF = 0x2,
+    OUT_12_13_SR_GPIO_EN_MSK = 0x4,
+    OUT_12_13_SR_MODE_OFF = 0x0,
+    OUT_12_13_SR_MODE_MSK = 0x3,
+};
+#define MAKE_LMK5C33216_CH12_13_SR_PULSE_CTL(out_12_13_pulse_count, out_12_13_sr_gpio_en, out_12_13_sr_mode) MAKE_LMK5C33216_REG_WR(CH12_13_SR_PULSE_CTL, \
+    (((out_12_13_pulse_count) << OUT_12_13_PULSE_COUNT_OFF) & OUT_12_13_PULSE_COUNT_MSK) |  \
+    (((out_12_13_sr_gpio_en) << OUT_12_13_SR_GPIO_EN_OFF) & OUT_12_13_SR_GPIO_EN_MSK) |  \
+    (((out_12_13_sr_mode) << OUT_12_13_SR_MODE_OFF) & OUT_12_13_SR_MODE_MSK))
+// Register R1236 [0x4d4] -- CH12_13_DFT
+
+enum ch12_13_dft_fields_t {
+    OUT_12_13_SR_CH_DIV_BYPASS_OFF = 0x4,
+    OUT_12_13_SR_CH_DIV_BYPASS_MSK = 0x10,
+};
+#define MAKE_LMK5C33216_CH12_13_DFT(out_12_13_sr_ch_div_bypass) MAKE_LMK5C33216_REG_WR(CH12_13_DFT, \
+    (((out_12_13_sr_ch_div_bypass) << OUT_12_13_SR_CH_DIV_BYPASS_OFF) & OUT_12_13_SR_CH_DIV_BYPASS_MSK))
+// Register R1248 [0x4e0] -- OUT14_MODE
+enum out_14_fmt_options {
+    OUT_14_FMT_DISABLED = 0,
+    OUT_14_FMT_LVDS = 1,
+    OUT_14_FMT_LVPECL = 2,
+    OUT_14_FMT_HSDS = 3,
+};
+
+enum out14_mode_fields_t {
+    OUT_14_HSDSBOOST_OFF = 0x6,
+    OUT_14_HSDSBOOST_MSK = 0x40,
+    OUT_14_AMP_OFF = 0x4,
+    OUT_14_AMP_MSK = 0x30,
+    OUT_14_FMT_OFF = 0x0,
+    OUT_14_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT14_MODE(out_14_hsdsboost, out_14_amp, out_14_fmt) MAKE_LMK5C33216_REG_WR(OUT14_MODE, \
+    (((out_14_hsdsboost) << OUT_14_HSDSBOOST_OFF) & OUT_14_HSDSBOOST_MSK) |  \
+    (((out_14_amp) << OUT_14_AMP_OFF) & OUT_14_AMP_MSK) |  \
+    (((out_14_fmt) << OUT_14_FMT_OFF) & OUT_14_FMT_MSK))
+// Register R1249 [0x4e1] -- OUT14_CTL
+
+enum out14_ctl_fields_t {
+    OUT_14_CONFIGURATION_OFF = 0x0,
+    OUT_14_CONFIGURATION_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT14_CTL(out_14_configuration) MAKE_LMK5C33216_REG_WR(OUT14_CTL, \
+    (((out_14_configuration) << OUT_14_CONFIGURATION_OFF) & OUT_14_CONFIGURATION_MSK))
+// Register R1250 [0x4e2] -- CH14_CTL
+enum out_14_clk_mux_options {
+    OUT_14_CLK_MUX_VCO3 = 0,
+    OUT_14_CLK_MUX_VCO2 = 1,
+    OUT_14_CLK_MUX_VCO1_PRI = 2,
+};
+
+enum ch14_ctl_fields_t {
+    OUT_14_CHAN_POL_SEL_OFF = 0x7,
+    OUT_14_CHAN_POL_SEL_MSK = 0x80,
+    OUT_14_CLK_MUX_OFF = 0x5,
+    OUT_14_CLK_MUX_MSK = 0x60,
+    OUT_14_DIV_EN_OFF = 0x3,
+    OUT_14_DIV_EN_MSK = 0x8,
+    OUT_14_CH_MUX_SEL_OFF = 0x0,
+    OUT_14_CH_MUX_SEL_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH14_CTL(out_14_chan_pol_sel, out_14_clk_mux, out_14_div_en, out_14_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH14_CTL, \
+    (((out_14_chan_pol_sel) << OUT_14_CHAN_POL_SEL_OFF) & OUT_14_CHAN_POL_SEL_MSK) |  \
+    (((out_14_clk_mux) << OUT_14_CLK_MUX_OFF) & OUT_14_CLK_MUX_MSK) |  \
+    (((out_14_div_en) << OUT_14_DIV_EN_OFF) & OUT_14_DIV_EN_MSK) |  \
+    (((out_14_ch_mux_sel) << OUT_14_CH_MUX_SEL_OFF) & OUT_14_CH_MUX_SEL_MSK))
+// Register R1251 [0x4e3] -- CH14_CTL2
+
+enum ch14_ctl2_fields_t {
+    OUT_14_MUTE_EN_OFF = 0x4,
+    OUT_14_MUTE_EN_MSK = 0x10,
+    OUT_14_SYNC_EN_OFF = 0x3,
+    OUT_14_SYNC_EN_MSK = 0x8,
+};
+#define MAKE_LMK5C33216_CH14_CTL2(out_14_mute_en, out_14_sync_en) MAKE_LMK5C33216_REG_WR(CH14_CTL2, \
+    (((out_14_mute_en) << OUT_14_MUTE_EN_OFF) & OUT_14_MUTE_EN_MSK) |  \
+    (((out_14_sync_en) << OUT_14_SYNC_EN_OFF) & OUT_14_SYNC_EN_MSK))
+// Register R1252 [0x4e4] -- CH14_STATIC_OFFSET
+
+enum ch14_static_offset_fields_t {
+    OUT_14_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_14_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH14_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH14_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH14_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH14_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1254 [0x4e6] -- CH14_DIV
+
+enum ch14_div_fields_t {
+    OUT_14_CH_DIV_OFF = 0x0,
+    OUT_14_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH14_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH14_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH14_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH14_DIV_BY1, (((value) << 0) & 0xff))
+// Register R1280 [0x500] -- OUT15_MODE
+enum out_15_fmt_options {
+    OUT_15_FMT_DISABLED = 0,
+    OUT_15_FMT_LVDS = 1,
+    OUT_15_FMT_LVPECL = 2,
+    OUT_15_FMT_HSDS = 3,
+};
+
+enum out15_mode_fields_t {
+    OUT_15_HSDSBOOST_OFF = 0x6,
+    OUT_15_HSDSBOOST_MSK = 0x40,
+    OUT_15_AMP_OFF = 0x4,
+    OUT_15_AMP_MSK = 0x30,
+    OUT_15_FMT_OFF = 0x0,
+    OUT_15_FMT_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT15_MODE(out_15_hsdsboost, out_15_amp, out_15_fmt) MAKE_LMK5C33216_REG_WR(OUT15_MODE, \
+    (((out_15_hsdsboost) << OUT_15_HSDSBOOST_OFF) & OUT_15_HSDSBOOST_MSK) |  \
+    (((out_15_amp) << OUT_15_AMP_OFF) & OUT_15_AMP_MSK) |  \
+    (((out_15_fmt) << OUT_15_FMT_OFF) & OUT_15_FMT_MSK))
+// Register R1281 [0x501] -- OUT15_CTL
+
+enum out15_ctl_fields_t {
+    OUT_15_CONFIGURATION_OFF = 0x0,
+    OUT_15_CONFIGURATION_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_OUT15_CTL(out_15_configuration) MAKE_LMK5C33216_REG_WR(OUT15_CTL, \
+    (((out_15_configuration) << OUT_15_CONFIGURATION_OFF) & OUT_15_CONFIGURATION_MSK))
+// Register R1282 [0x502] -- CH15_CTL
+enum out_15_clk_mux_options {
+    OUT_15_CLK_MUX_VCO3 = 0,
+    OUT_15_CLK_MUX_VCO2 = 1,
+    OUT_15_CLK_MUX_VCO1_PRI = 2,
+};
+
+enum ch15_ctl_fields_t {
+    OUT_15_CHAN_POL_SEL_OFF = 0x7,
+    OUT_15_CHAN_POL_SEL_MSK = 0x80,
+    OUT_15_CLK_MUX_OFF = 0x5,
+    OUT_15_CLK_MUX_MSK = 0x60,
+    OUT_15_DIV_EN_OFF = 0x3,
+    OUT_15_DIV_EN_MSK = 0x8,
+    OUT_15_CH_MUX_SEL_OFF = 0x0,
+    OUT_15_CH_MUX_SEL_MSK = 0x7,
+};
+#define MAKE_LMK5C33216_CH15_CTL(out_15_chan_pol_sel, out_15_clk_mux, out_15_div_en, out_15_ch_mux_sel) MAKE_LMK5C33216_REG_WR(CH15_CTL, \
+    (((out_15_chan_pol_sel) << OUT_15_CHAN_POL_SEL_OFF) & OUT_15_CHAN_POL_SEL_MSK) |  \
+    (((out_15_clk_mux) << OUT_15_CLK_MUX_OFF) & OUT_15_CLK_MUX_MSK) |  \
+    (((out_15_div_en) << OUT_15_DIV_EN_OFF) & OUT_15_DIV_EN_MSK) |  \
+    (((out_15_ch_mux_sel) << OUT_15_CH_MUX_SEL_OFF) & OUT_15_CH_MUX_SEL_MSK))
+// Register R1283 [0x503] -- CH15_CTL2
+
+enum ch15_ctl2_fields_t {
+    OUT_15_MUTE_EN_OFF = 0x4,
+    OUT_15_MUTE_EN_MSK = 0x10,
+    OUT_15_SYNC_EN_OFF = 0x3,
+    OUT_15_SYNC_EN_MSK = 0x8,
+};
+#define MAKE_LMK5C33216_CH15_CTL2(out_15_mute_en, out_15_sync_en) MAKE_LMK5C33216_REG_WR(CH15_CTL2, \
+    (((out_15_mute_en) << OUT_15_MUTE_EN_OFF) & OUT_15_MUTE_EN_MSK) |  \
+    (((out_15_sync_en) << OUT_15_SYNC_EN_OFF) & OUT_15_SYNC_EN_MSK))
+// Register R1284 [0x504] -- CH15_STATIC_OFFSET
+
+enum ch15_static_offset_fields_t {
+    OUT_15_CH_STATIC_OFFSET_OFF = 0x0,
+    OUT_15_CH_STATIC_OFFSET_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH15_STATIC_OFFSET_BY0(value) MAKE_LMK5C33216_REG_WR(CH15_STATIC_OFFSET_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH15_STATIC_OFFSET_BY1(value) MAKE_LMK5C33216_REG_WR(CH15_STATIC_OFFSET_BY1, (((value) << 0) & 0xff))
+// Register R1286 [0x506] -- CH15_DIV
+
+enum ch15_div_fields_t {
+    OUT_15_CH_DIV_OFF = 0x0,
+    OUT_15_CH_DIV_MSK = 0xfff,
+};
+#define MAKE_LMK5C33216_CH15_DIV_BY0(value) MAKE_LMK5C33216_REG_WR(CH15_DIV_BY0, (((value) >> 8) & 0xf))
+#define MAKE_LMK5C33216_CH15_DIV_BY1(value) MAKE_LMK5C33216_REG_WR(CH15_DIV_BY1, (((value) << 0) & 0xff))

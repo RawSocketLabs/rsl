@@ -1,0 +1,484 @@
+enum pciefe_regs_t {
+    GENERAL_DAC = 0x4,
+    V0_FE0 = 0x0,
+    V0_FE1 = 0x1,
+    V0_GPIO0 = 0x2,
+    V0_GPIO1 = 0x3,
+    V0_FE0_ALT = 0x10,
+    V0_AFE1_ALT = 0x11,
+    V1_FE = 0x20,
+    V1_GPIO0 = 0x22,
+    V1_GPIO1 = 0x23,
+};
+#define MAKE_PCIEFE_REG_WR(a, v) (((a) << 16) | ((v) & 0xffff))
+#define MAKE_PCIEFE_REG_RD(a) (((a) << 16))
+// Register R4 [0x4] -- GENERAL_DAC
+
+enum general_dac_fields_t {
+    GENERAL_DAC_VOUT_OFF = 0x0,
+    GENERAL_DAC_VOUT_MSK = 0xffff,
+};
+#define GET_PCIEFE_GENERAL_DAC_VOUT(x) (((x) & GENERAL_DAC_VOUT_MSK) >> GENERAL_DAC_VOUT_OFF)
+#define SET_PCIEFE_GENERAL_DAC_VOUT(p, f) (p) = ((p) & ~GENERAL_DAC_VOUT_MSK) | (((f) << GENERAL_DAC_VOUT_OFF) & GENERAL_DAC_VOUT_MSK)
+
+#define MAKE_PCIEFE_GENERAL_DAC(vout) MAKE_PCIEFE_REG_WR(GENERAL_DAC, \
+    (((vout) << GENERAL_DAC_VOUT_OFF) & GENERAL_DAC_VOUT_MSK))
+// Register R0 [0x0] -- V0_FE0
+enum v0_fe0_txsel2_options {
+    V0_FE0_TXSEL2_RF4_LPF_1200 = 0,
+    V0_FE0_TXSEL2_RF1_BYPASS = 1,
+    V0_FE0_TXSEL2_RF2_LPF_400 = 2,
+    V0_FE0_TXSEL2_RF3_LPF_2100 = 3,
+};
+enum v0_fe0_rxsel2_options {
+    V0_FE0_RXSEL2_RF4_BPF_3000_4200 = 0,
+    V0_FE0_RXSEL2_RF1_LPF_2100 = 1,
+    V0_FE0_RXSEL2_RF2_LPF_1200 = 2,
+    V0_FE0_RXSEL2_RF3_BPF_2100_3000 = 3,
+};
+enum v0_fe0_rxsel1_options {
+    V0_FE0_RXSEL1_RF4_LPF_1200 = 0,
+    V0_FE0_RXSEL1_RF2_BPF_3000_4200 = 1,
+    V0_FE0_RXSEL1_RF1_BPF_2100_3000 = 2,
+    V0_FE0_RXSEL1_RF3_LPF_2100 = 3,
+};
+enum v0_fe0_txsel1_options {
+    V0_FE0_TXSEL1_RF4_LPF_400 = 0,
+    V0_FE0_TXSEL1_RF1_LPF_2100 = 1,
+    V0_FE0_TXSEL1_RF2_LPF_1200 = 2,
+    V0_FE0_TXSEL1_RF3_BYPASS = 3,
+};
+
+enum v0_fe0_fields_t {
+    V0_FE0_TXSEL2_OFF = 0x6,
+    V0_FE0_TXSEL2_MSK = 0xc0,
+    V0_FE0_RXSEL2_OFF = 0x4,
+    V0_FE0_RXSEL2_MSK = 0x30,
+    V0_FE0_RXSEL1_OFF = 0x2,
+    V0_FE0_RXSEL1_MSK = 0xc,
+    V0_FE0_TXSEL1_OFF = 0x0,
+    V0_FE0_TXSEL1_MSK = 0x3,
+};
+#define GET_PCIEFE_V0_FE0_TXSEL2(x) (((x) & V0_FE0_TXSEL2_MSK) >> V0_FE0_TXSEL2_OFF)
+#define GET_PCIEFE_V0_FE0_RXSEL2(x) (((x) & V0_FE0_RXSEL2_MSK) >> V0_FE0_RXSEL2_OFF)
+#define GET_PCIEFE_V0_FE0_RXSEL1(x) (((x) & V0_FE0_RXSEL1_MSK) >> V0_FE0_RXSEL1_OFF)
+#define GET_PCIEFE_V0_FE0_TXSEL1(x) (((x) & V0_FE0_TXSEL1_MSK) >> V0_FE0_TXSEL1_OFF)
+#define SET_PCIEFE_V0_FE0_TXSEL2(p, f) (p) = ((p) & ~V0_FE0_TXSEL2_MSK) | (((f) << V0_FE0_TXSEL2_OFF) & V0_FE0_TXSEL2_MSK)
+#define SET_PCIEFE_V0_FE0_RXSEL2(p, f) (p) = ((p) & ~V0_FE0_RXSEL2_MSK) | (((f) << V0_FE0_RXSEL2_OFF) & V0_FE0_RXSEL2_MSK)
+#define SET_PCIEFE_V0_FE0_RXSEL1(p, f) (p) = ((p) & ~V0_FE0_RXSEL1_MSK) | (((f) << V0_FE0_RXSEL1_OFF) & V0_FE0_RXSEL1_MSK)
+#define SET_PCIEFE_V0_FE0_TXSEL1(p, f) (p) = ((p) & ~V0_FE0_TXSEL1_MSK) | (((f) << V0_FE0_TXSEL1_OFF) & V0_FE0_TXSEL1_MSK)
+
+#define MAKE_PCIEFE_V0_FE0(txsel2, rxsel2, rxsel1, txsel1) MAKE_PCIEFE_REG_WR(V0_FE0, \
+    (((txsel2) << V0_FE0_TXSEL2_OFF) & V0_FE0_TXSEL2_MSK) |  \
+    (((rxsel2) << V0_FE0_RXSEL2_OFF) & V0_FE0_RXSEL2_MSK) |  \
+    (((rxsel1) << V0_FE0_RXSEL1_OFF) & V0_FE0_RXSEL1_MSK) |  \
+    (((txsel1) << V0_FE0_TXSEL1_OFF) & V0_FE0_TXSEL1_MSK))
+// Register R1 [0x1] -- V0_FE1
+enum v0_fe1_attn_options {
+    V0_FE1_ATTN_IL = 0,
+    V0_FE1_ATTN_12DB = 1,
+    V0_FE1_ATTN_6DB = 2,
+    V0_FE1_ATTN_18DB = 3,
+};
+enum v0_fe1_dupl_path_options {
+    V0_FE1_DUPL_PATH_RF1_BAND5 = 1,
+    V0_FE1_DUPL_PATH_RF2_BAND8 = 2,
+    V0_FE1_DUPL_PATH_RF3_BAND2 = 3,
+    V0_FE1_DUPL_PATH_RF4_BYPASS = 4,
+    V0_FE1_DUPL_PATH_RF5_BAND3 = 5,
+    V0_FE1_DUPL_PATH_RF6_BAND7 = 6,
+};
+
+enum v0_fe1_fields_t {
+    V0_FE1_EN_LNA_OFF = 0x7,
+    V0_FE1_EN_LNA_MSK = 0x80,
+    V0_FE1_EN_PA_OFF = 0x6,
+    V0_FE1_EN_PA_MSK = 0x40,
+    V0_FE1_ATTN_OFF = 0x4,
+    V0_FE1_ATTN_MSK = 0x30,
+    V0_FE1_NLOOPBACK_OFF = 0x3,
+    V0_FE1_NLOOPBACK_MSK = 0x8,
+    V0_FE1_DUPL_PATH_OFF = 0x0,
+    V0_FE1_DUPL_PATH_MSK = 0x7,
+};
+#define GET_PCIEFE_V0_FE1_EN_LNA(x) (((x) & V0_FE1_EN_LNA_MSK) >> V0_FE1_EN_LNA_OFF)
+#define GET_PCIEFE_V0_FE1_EN_PA(x) (((x) & V0_FE1_EN_PA_MSK) >> V0_FE1_EN_PA_OFF)
+#define GET_PCIEFE_V0_FE1_ATTN(x) (((x) & V0_FE1_ATTN_MSK) >> V0_FE1_ATTN_OFF)
+#define GET_PCIEFE_V0_FE1_NLOOPBACK(x) (((x) & V0_FE1_NLOOPBACK_MSK) >> V0_FE1_NLOOPBACK_OFF)
+#define GET_PCIEFE_V0_FE1_DUPL_PATH(x) (((x) & V0_FE1_DUPL_PATH_MSK) >> V0_FE1_DUPL_PATH_OFF)
+#define SET_PCIEFE_V0_FE1_EN_LNA(p, f) (p) = ((p) & ~V0_FE1_EN_LNA_MSK) | (((f) << V0_FE1_EN_LNA_OFF) & V0_FE1_EN_LNA_MSK)
+#define SET_PCIEFE_V0_FE1_EN_PA(p, f) (p) = ((p) & ~V0_FE1_EN_PA_MSK) | (((f) << V0_FE1_EN_PA_OFF) & V0_FE1_EN_PA_MSK)
+#define SET_PCIEFE_V0_FE1_ATTN(p, f) (p) = ((p) & ~V0_FE1_ATTN_MSK) | (((f) << V0_FE1_ATTN_OFF) & V0_FE1_ATTN_MSK)
+#define SET_PCIEFE_V0_FE1_NLOOPBACK(p, f) (p) = ((p) & ~V0_FE1_NLOOPBACK_MSK) | (((f) << V0_FE1_NLOOPBACK_OFF) & V0_FE1_NLOOPBACK_MSK)
+#define SET_PCIEFE_V0_FE1_DUPL_PATH(p, f) (p) = ((p) & ~V0_FE1_DUPL_PATH_MSK) | (((f) << V0_FE1_DUPL_PATH_OFF) & V0_FE1_DUPL_PATH_MSK)
+
+#define MAKE_PCIEFE_V0_FE1(en_lna, en_pa, attn, nloopback, dupl_path) MAKE_PCIEFE_REG_WR(V0_FE1, \
+    (((en_lna) << V0_FE1_EN_LNA_OFF) & V0_FE1_EN_LNA_MSK) |  \
+    (((en_pa) << V0_FE1_EN_PA_OFF) & V0_FE1_EN_PA_MSK) |  \
+    (((attn) << V0_FE1_ATTN_OFF) & V0_FE1_ATTN_MSK) |  \
+    (((nloopback) << V0_FE1_NLOOPBACK_OFF) & V0_FE1_NLOOPBACK_MSK) |  \
+    (((dupl_path) << V0_FE1_DUPL_PATH_OFF) & V0_FE1_DUPL_PATH_MSK))
+// Register R2 [0x2] -- V0_GPIO0
+
+enum v0_gpio0_fields_t {
+    V0_GPIO0_DIR_45_OFF = 0x7,
+    V0_GPIO0_DIR_45_MSK = 0x80,
+    V0_GPIO0_DIR_23_OFF = 0x6,
+    V0_GPIO0_DIR_23_MSK = 0x40,
+    V0_GPIO0_LS_1_OFF = 0x5,
+    V0_GPIO0_LS_1_MSK = 0x20,
+    V0_GPIO0_LS_0_OFF = 0x4,
+    V0_GPIO0_LS_0_MSK = 0x10,
+    V0_GPIO0_LS_4_OFF = 0x3,
+    V0_GPIO0_LS_4_MSK = 0x8,
+    V0_GPIO0_LS_5_OFF = 0x2,
+    V0_GPIO0_LS_5_MSK = 0x4,
+    V0_GPIO0_EN_GPS_OFF = 0x1,
+    V0_GPIO0_EN_GPS_MSK = 0x2,
+    V0_GPIO0_EN_OSC_OFF = 0x0,
+    V0_GPIO0_EN_OSC_MSK = 0x1,
+};
+#define GET_PCIEFE_V0_GPIO0_DIR_45(x) (((x) & V0_GPIO0_DIR_45_MSK) >> V0_GPIO0_DIR_45_OFF)
+#define GET_PCIEFE_V0_GPIO0_DIR_23(x) (((x) & V0_GPIO0_DIR_23_MSK) >> V0_GPIO0_DIR_23_OFF)
+#define GET_PCIEFE_V0_GPIO0_LS_1(x) (((x) & V0_GPIO0_LS_1_MSK) >> V0_GPIO0_LS_1_OFF)
+#define GET_PCIEFE_V0_GPIO0_LS_0(x) (((x) & V0_GPIO0_LS_0_MSK) >> V0_GPIO0_LS_0_OFF)
+#define GET_PCIEFE_V0_GPIO0_LS_4(x) (((x) & V0_GPIO0_LS_4_MSK) >> V0_GPIO0_LS_4_OFF)
+#define GET_PCIEFE_V0_GPIO0_LS_5(x) (((x) & V0_GPIO0_LS_5_MSK) >> V0_GPIO0_LS_5_OFF)
+#define GET_PCIEFE_V0_GPIO0_EN_GPS(x) (((x) & V0_GPIO0_EN_GPS_MSK) >> V0_GPIO0_EN_GPS_OFF)
+#define GET_PCIEFE_V0_GPIO0_EN_OSC(x) (((x) & V0_GPIO0_EN_OSC_MSK) >> V0_GPIO0_EN_OSC_OFF)
+#define SET_PCIEFE_V0_GPIO0_DIR_45(p, f) (p) = ((p) & ~V0_GPIO0_DIR_45_MSK) | (((f) << V0_GPIO0_DIR_45_OFF) & V0_GPIO0_DIR_45_MSK)
+#define SET_PCIEFE_V0_GPIO0_DIR_23(p, f) (p) = ((p) & ~V0_GPIO0_DIR_23_MSK) | (((f) << V0_GPIO0_DIR_23_OFF) & V0_GPIO0_DIR_23_MSK)
+#define SET_PCIEFE_V0_GPIO0_LS_1(p, f) (p) = ((p) & ~V0_GPIO0_LS_1_MSK) | (((f) << V0_GPIO0_LS_1_OFF) & V0_GPIO0_LS_1_MSK)
+#define SET_PCIEFE_V0_GPIO0_LS_0(p, f) (p) = ((p) & ~V0_GPIO0_LS_0_MSK) | (((f) << V0_GPIO0_LS_0_OFF) & V0_GPIO0_LS_0_MSK)
+#define SET_PCIEFE_V0_GPIO0_LS_4(p, f) (p) = ((p) & ~V0_GPIO0_LS_4_MSK) | (((f) << V0_GPIO0_LS_4_OFF) & V0_GPIO0_LS_4_MSK)
+#define SET_PCIEFE_V0_GPIO0_LS_5(p, f) (p) = ((p) & ~V0_GPIO0_LS_5_MSK) | (((f) << V0_GPIO0_LS_5_OFF) & V0_GPIO0_LS_5_MSK)
+#define SET_PCIEFE_V0_GPIO0_EN_GPS(p, f) (p) = ((p) & ~V0_GPIO0_EN_GPS_MSK) | (((f) << V0_GPIO0_EN_GPS_OFF) & V0_GPIO0_EN_GPS_MSK)
+#define SET_PCIEFE_V0_GPIO0_EN_OSC(p, f) (p) = ((p) & ~V0_GPIO0_EN_OSC_MSK) | (((f) << V0_GPIO0_EN_OSC_OFF) & V0_GPIO0_EN_OSC_MSK)
+
+#define MAKE_PCIEFE_V0_GPIO0(dir_45, dir_23, ls_1, ls_0, ls_4, ls_5, en_gps, en_osc) MAKE_PCIEFE_REG_WR(V0_GPIO0, \
+    (((dir_45) << V0_GPIO0_DIR_45_OFF) & V0_GPIO0_DIR_45_MSK) |  \
+    (((dir_23) << V0_GPIO0_DIR_23_OFF) & V0_GPIO0_DIR_23_MSK) |  \
+    (((ls_1) << V0_GPIO0_LS_1_OFF) & V0_GPIO0_LS_1_MSK) |  \
+    (((ls_0) << V0_GPIO0_LS_0_OFF) & V0_GPIO0_LS_0_MSK) |  \
+    (((ls_4) << V0_GPIO0_LS_4_OFF) & V0_GPIO0_LS_4_MSK) |  \
+    (((ls_5) << V0_GPIO0_LS_5_OFF) & V0_GPIO0_LS_5_MSK) |  \
+    (((en_gps) << V0_GPIO0_EN_GPS_OFF) & V0_GPIO0_EN_GPS_MSK) |  \
+    (((en_osc) << V0_GPIO0_EN_OSC_OFF) & V0_GPIO0_EN_OSC_MSK))
+// Register R3 [0x3] -- V0_GPIO1
+
+enum v0_gpio1_fields_t {
+    V0_GPIO1_LED4_OFF = 0x7,
+    V0_GPIO1_LED4_MSK = 0x80,
+    V0_GPIO1_LED3_OFF = 0x6,
+    V0_GPIO1_LED3_MSK = 0x40,
+    V0_GPIO1_LED2_OFF = 0x5,
+    V0_GPIO1_LED2_MSK = 0x20,
+    V0_GPIO1_LED1_OFF = 0x4,
+    V0_GPIO1_LED1_MSK = 0x10,
+    V0_GPIO1_DIR_AB_OFF = 0x3,
+    V0_GPIO1_DIR_AB_MSK = 0x8,
+    V0_GPIO1_DIR_89_OFF = 0x2,
+    V0_GPIO1_DIR_89_MSK = 0x4,
+    V0_GPIO1_DIR_01_OFF = 0x1,
+    V0_GPIO1_DIR_01_MSK = 0x2,
+    V0_GPIO1_DIR_67_OFF = 0x0,
+    V0_GPIO1_DIR_67_MSK = 0x1,
+};
+#define GET_PCIEFE_V0_GPIO1_LED4(x) (((x) & V0_GPIO1_LED4_MSK) >> V0_GPIO1_LED4_OFF)
+#define GET_PCIEFE_V0_GPIO1_LED3(x) (((x) & V0_GPIO1_LED3_MSK) >> V0_GPIO1_LED3_OFF)
+#define GET_PCIEFE_V0_GPIO1_LED2(x) (((x) & V0_GPIO1_LED2_MSK) >> V0_GPIO1_LED2_OFF)
+#define GET_PCIEFE_V0_GPIO1_LED1(x) (((x) & V0_GPIO1_LED1_MSK) >> V0_GPIO1_LED1_OFF)
+#define GET_PCIEFE_V0_GPIO1_DIR_AB(x) (((x) & V0_GPIO1_DIR_AB_MSK) >> V0_GPIO1_DIR_AB_OFF)
+#define GET_PCIEFE_V0_GPIO1_DIR_89(x) (((x) & V0_GPIO1_DIR_89_MSK) >> V0_GPIO1_DIR_89_OFF)
+#define GET_PCIEFE_V0_GPIO1_DIR_01(x) (((x) & V0_GPIO1_DIR_01_MSK) >> V0_GPIO1_DIR_01_OFF)
+#define GET_PCIEFE_V0_GPIO1_DIR_67(x) (((x) & V0_GPIO1_DIR_67_MSK) >> V0_GPIO1_DIR_67_OFF)
+#define SET_PCIEFE_V0_GPIO1_LED4(p, f) (p) = ((p) & ~V0_GPIO1_LED4_MSK) | (((f) << V0_GPIO1_LED4_OFF) & V0_GPIO1_LED4_MSK)
+#define SET_PCIEFE_V0_GPIO1_LED3(p, f) (p) = ((p) & ~V0_GPIO1_LED3_MSK) | (((f) << V0_GPIO1_LED3_OFF) & V0_GPIO1_LED3_MSK)
+#define SET_PCIEFE_V0_GPIO1_LED2(p, f) (p) = ((p) & ~V0_GPIO1_LED2_MSK) | (((f) << V0_GPIO1_LED2_OFF) & V0_GPIO1_LED2_MSK)
+#define SET_PCIEFE_V0_GPIO1_LED1(p, f) (p) = ((p) & ~V0_GPIO1_LED1_MSK) | (((f) << V0_GPIO1_LED1_OFF) & V0_GPIO1_LED1_MSK)
+#define SET_PCIEFE_V0_GPIO1_DIR_AB(p, f) (p) = ((p) & ~V0_GPIO1_DIR_AB_MSK) | (((f) << V0_GPIO1_DIR_AB_OFF) & V0_GPIO1_DIR_AB_MSK)
+#define SET_PCIEFE_V0_GPIO1_DIR_89(p, f) (p) = ((p) & ~V0_GPIO1_DIR_89_MSK) | (((f) << V0_GPIO1_DIR_89_OFF) & V0_GPIO1_DIR_89_MSK)
+#define SET_PCIEFE_V0_GPIO1_DIR_01(p, f) (p) = ((p) & ~V0_GPIO1_DIR_01_MSK) | (((f) << V0_GPIO1_DIR_01_OFF) & V0_GPIO1_DIR_01_MSK)
+#define SET_PCIEFE_V0_GPIO1_DIR_67(p, f) (p) = ((p) & ~V0_GPIO1_DIR_67_MSK) | (((f) << V0_GPIO1_DIR_67_OFF) & V0_GPIO1_DIR_67_MSK)
+
+#define MAKE_PCIEFE_V0_GPIO1(led4, led3, led2, led1, dir_ab, dir_89, dir_01, dir_67) MAKE_PCIEFE_REG_WR(V0_GPIO1, \
+    (((led4) << V0_GPIO1_LED4_OFF) & V0_GPIO1_LED4_MSK) |  \
+    (((led3) << V0_GPIO1_LED3_OFF) & V0_GPIO1_LED3_MSK) |  \
+    (((led2) << V0_GPIO1_LED2_OFF) & V0_GPIO1_LED2_MSK) |  \
+    (((led1) << V0_GPIO1_LED1_OFF) & V0_GPIO1_LED1_MSK) |  \
+    (((dir_ab) << V0_GPIO1_DIR_AB_OFF) & V0_GPIO1_DIR_AB_MSK) |  \
+    (((dir_89) << V0_GPIO1_DIR_89_OFF) & V0_GPIO1_DIR_89_MSK) |  \
+    (((dir_01) << V0_GPIO1_DIR_01_OFF) & V0_GPIO1_DIR_01_MSK) |  \
+    (((dir_67) << V0_GPIO1_DIR_67_OFF) & V0_GPIO1_DIR_67_MSK))
+// Register R16 [0x10] -- V0_FE0_ALT
+enum v0_fe0_alt_atxsel2_options {
+    V0_FE0_ALT_ATXSEL2_ARF1_LPF_400 = 0,
+    V0_FE0_ALT_ATXSEL2_ARF3_BYPASS = 1,
+    V0_FE0_ALT_ATXSEL2_ARF2_LPF_1200 = 2,
+    V0_FE0_ALT_ATXSEL2_ARF4_LPF_2100 = 3,
+};
+enum v0_fe0_alt_arxsel2_options {
+    V0_FE0_ALT_ARXSEL2_ARF1_LPF_1200 = 0,
+    V0_FE0_ALT_ARXSEL2_ARF3_LPF_2100 = 1,
+    V0_FE0_ALT_ARXSEL2_ARF2_BPF_3000_4200 = 2,
+    V0_FE0_ALT_ARXSEL2_ARF4_BPF_2100_3000 = 3,
+};
+enum v0_fe0_alt_arxsel1_options {
+    V0_FE0_ALT_ARXSEL1_ARF1_BPF_3000_4200 = 0,
+    V0_FE0_ALT_ARXSEL1_ARF2_LPF_1200 = 1,
+    V0_FE0_ALT_ARXSEL1_ARF3_BPF_2100_3000 = 2,
+    V0_FE0_ALT_ARXSEL1_ARF3_LPF_2100 = 3,
+};
+enum v0_fe0_alt_atxsel1_options {
+    V0_FE0_ALT_ATXSEL1_ARF1_LPF_1200 = 0,
+    V0_FE0_ALT_ATXSEL1_ARF3_LPF_2100 = 1,
+    V0_FE0_ALT_ATXSEL1_ARF2_LPF_400 = 2,
+    V0_FE0_ALT_ATXSEL1_ARF4_BYPASS = 3,
+};
+
+enum v0_fe0_alt_fields_t {
+    V0_FE0_ALT_ATXSEL2_OFF = 0x6,
+    V0_FE0_ALT_ATXSEL2_MSK = 0xc0,
+    V0_FE0_ALT_ARXSEL2_OFF = 0x4,
+    V0_FE0_ALT_ARXSEL2_MSK = 0x30,
+    V0_FE0_ALT_ARXSEL1_OFF = 0x2,
+    V0_FE0_ALT_ARXSEL1_MSK = 0xc,
+    V0_FE0_ALT_ATXSEL1_OFF = 0x0,
+    V0_FE0_ALT_ATXSEL1_MSK = 0x3,
+};
+#define GET_PCIEFE_V0_FE0_ALT_ATXSEL2(x) (((x) & V0_FE0_ALT_ATXSEL2_MSK) >> V0_FE0_ALT_ATXSEL2_OFF)
+#define GET_PCIEFE_V0_FE0_ALT_ARXSEL2(x) (((x) & V0_FE0_ALT_ARXSEL2_MSK) >> V0_FE0_ALT_ARXSEL2_OFF)
+#define GET_PCIEFE_V0_FE0_ALT_ARXSEL1(x) (((x) & V0_FE0_ALT_ARXSEL1_MSK) >> V0_FE0_ALT_ARXSEL1_OFF)
+#define GET_PCIEFE_V0_FE0_ALT_ATXSEL1(x) (((x) & V0_FE0_ALT_ATXSEL1_MSK) >> V0_FE0_ALT_ATXSEL1_OFF)
+#define SET_PCIEFE_V0_FE0_ALT_ATXSEL2(p, f) (p) = ((p) & ~V0_FE0_ALT_ATXSEL2_MSK) | (((f) << V0_FE0_ALT_ATXSEL2_OFF) & V0_FE0_ALT_ATXSEL2_MSK)
+#define SET_PCIEFE_V0_FE0_ALT_ARXSEL2(p, f) (p) = ((p) & ~V0_FE0_ALT_ARXSEL2_MSK) | (((f) << V0_FE0_ALT_ARXSEL2_OFF) & V0_FE0_ALT_ARXSEL2_MSK)
+#define SET_PCIEFE_V0_FE0_ALT_ARXSEL1(p, f) (p) = ((p) & ~V0_FE0_ALT_ARXSEL1_MSK) | (((f) << V0_FE0_ALT_ARXSEL1_OFF) & V0_FE0_ALT_ARXSEL1_MSK)
+#define SET_PCIEFE_V0_FE0_ALT_ATXSEL1(p, f) (p) = ((p) & ~V0_FE0_ALT_ATXSEL1_MSK) | (((f) << V0_FE0_ALT_ATXSEL1_OFF) & V0_FE0_ALT_ATXSEL1_MSK)
+
+#define MAKE_PCIEFE_V0_FE0_ALT(atxsel2, arxsel2, arxsel1, atxsel1) MAKE_PCIEFE_REG_WR(V0_FE0_ALT, \
+    (((atxsel2) << V0_FE0_ALT_ATXSEL2_OFF) & V0_FE0_ALT_ATXSEL2_MSK) |  \
+    (((arxsel2) << V0_FE0_ALT_ARXSEL2_OFF) & V0_FE0_ALT_ARXSEL2_MSK) |  \
+    (((arxsel1) << V0_FE0_ALT_ARXSEL1_OFF) & V0_FE0_ALT_ARXSEL1_MSK) |  \
+    (((atxsel1) << V0_FE0_ALT_ATXSEL1_OFF) & V0_FE0_ALT_ATXSEL1_MSK))
+// Register R17 [0x11] -- V0_AFE1_ALT
+enum v0_afe1_alt_aattn_options {
+    V0_AFE1_ALT_AATTN_IL = 0,
+    V0_AFE1_ALT_AATTN_12DB = 1,
+    V0_AFE1_ALT_AATTN_6DB = 2,
+    V0_AFE1_ALT_AATTN_18DB = 3,
+};
+enum v0_afe1_alt_adupl_path_options {
+    V0_AFE1_ALT_ADUPL_PATH_ARF1_BAND2 = 0,
+    V0_AFE1_ALT_ADUPL_PATH_ARF5_BAND5 = 1,
+    V0_AFE1_ALT_ADUPL_PATH_ARF3_BAND8 = 2,
+    V0_AFE1_ALT_ADUPL_PATH_ARF2_BAND7 = 4,
+    V0_AFE1_ALT_ADUPL_PATH_ARF6_BYPASS = 5,
+    V0_AFE1_ALT_ADUPL_PATH_ARF4_BAND3 = 6,
+};
+
+enum v0_afe1_alt_fields_t {
+    V0_AFE1_ALT_AEN_LNA_OFF = 0x7,
+    V0_AFE1_ALT_AEN_LNA_MSK = 0x80,
+    V0_AFE1_ALT_AEN_PA_OFF = 0x6,
+    V0_AFE1_ALT_AEN_PA_MSK = 0x40,
+    V0_AFE1_ALT_AATTN_OFF = 0x4,
+    V0_AFE1_ALT_AATTN_MSK = 0x30,
+    V0_AFE1_ALT_ANLOOPBACK_OFF = 0x3,
+    V0_AFE1_ALT_ANLOOPBACK_MSK = 0x8,
+    V0_AFE1_ALT_ADUPL_PATH_OFF = 0x0,
+    V0_AFE1_ALT_ADUPL_PATH_MSK = 0x7,
+};
+#define GET_PCIEFE_V0_AFE1_ALT_AEN_LNA(x) (((x) & V0_AFE1_ALT_AEN_LNA_MSK) >> V0_AFE1_ALT_AEN_LNA_OFF)
+#define GET_PCIEFE_V0_AFE1_ALT_AEN_PA(x) (((x) & V0_AFE1_ALT_AEN_PA_MSK) >> V0_AFE1_ALT_AEN_PA_OFF)
+#define GET_PCIEFE_V0_AFE1_ALT_AATTN(x) (((x) & V0_AFE1_ALT_AATTN_MSK) >> V0_AFE1_ALT_AATTN_OFF)
+#define GET_PCIEFE_V0_AFE1_ALT_ANLOOPBACK(x) (((x) & V0_AFE1_ALT_ANLOOPBACK_MSK) >> V0_AFE1_ALT_ANLOOPBACK_OFF)
+#define GET_PCIEFE_V0_AFE1_ALT_ADUPL_PATH(x) (((x) & V0_AFE1_ALT_ADUPL_PATH_MSK) >> V0_AFE1_ALT_ADUPL_PATH_OFF)
+#define SET_PCIEFE_V0_AFE1_ALT_AEN_LNA(p, f) (p) = ((p) & ~V0_AFE1_ALT_AEN_LNA_MSK) | (((f) << V0_AFE1_ALT_AEN_LNA_OFF) & V0_AFE1_ALT_AEN_LNA_MSK)
+#define SET_PCIEFE_V0_AFE1_ALT_AEN_PA(p, f) (p) = ((p) & ~V0_AFE1_ALT_AEN_PA_MSK) | (((f) << V0_AFE1_ALT_AEN_PA_OFF) & V0_AFE1_ALT_AEN_PA_MSK)
+#define SET_PCIEFE_V0_AFE1_ALT_AATTN(p, f) (p) = ((p) & ~V0_AFE1_ALT_AATTN_MSK) | (((f) << V0_AFE1_ALT_AATTN_OFF) & V0_AFE1_ALT_AATTN_MSK)
+#define SET_PCIEFE_V0_AFE1_ALT_ANLOOPBACK(p, f) (p) = ((p) & ~V0_AFE1_ALT_ANLOOPBACK_MSK) | (((f) << V0_AFE1_ALT_ANLOOPBACK_OFF) & V0_AFE1_ALT_ANLOOPBACK_MSK)
+#define SET_PCIEFE_V0_AFE1_ALT_ADUPL_PATH(p, f) (p) = ((p) & ~V0_AFE1_ALT_ADUPL_PATH_MSK) | (((f) << V0_AFE1_ALT_ADUPL_PATH_OFF) & V0_AFE1_ALT_ADUPL_PATH_MSK)
+
+#define MAKE_PCIEFE_V0_AFE1_ALT(aen_lna, aen_pa, aattn, anloopback, adupl_path) MAKE_PCIEFE_REG_WR(V0_AFE1_ALT, \
+    (((aen_lna) << V0_AFE1_ALT_AEN_LNA_OFF) & V0_AFE1_ALT_AEN_LNA_MSK) |  \
+    (((aen_pa) << V0_AFE1_ALT_AEN_PA_OFF) & V0_AFE1_ALT_AEN_PA_MSK) |  \
+    (((aattn) << V0_AFE1_ALT_AATTN_OFF) & V0_AFE1_ALT_AATTN_MSK) |  \
+    (((anloopback) << V0_AFE1_ALT_ANLOOPBACK_OFF) & V0_AFE1_ALT_ANLOOPBACK_MSK) |  \
+    (((adupl_path) << V0_AFE1_ALT_ADUPL_PATH_OFF) & V0_AFE1_ALT_ADUPL_PATH_MSK))
+// Register R32 [0x20] -- V1_FE
+enum v1_fe_attn_options {
+    V1_FE_ATTN_IL = 0,
+    V1_FE_ATTN_12DB = 1,
+    V1_FE_ATTN_6DB = 2,
+    V1_FE_ATTN_18DB = 3,
+};
+enum v1_fe_dupl_path_options {
+    V1_FE_DUPL_PATH_RF1_BAND5 = 1,
+    V1_FE_DUPL_PATH_RF2_BAND8 = 2,
+    V1_FE_DUPL_PATH_RF3_BAND2 = 3,
+    V1_FE_DUPL_PATH_RF4_BYPASS = 4,
+    V1_FE_DUPL_PATH_RF5_BAND3 = 5,
+    V1_FE_DUPL_PATH_RF6_BAND7 = 6,
+};
+enum v1_fe_rxsel_options {
+    V1_FE_RXSEL_BPF_2100_3000_LPF_1200 = 0,
+    V1_FE_RXSEL_BPF_2100_3000_BPF_2100_3000 = 1,
+    V1_FE_RXSEL_LPF_2100_BPF_3000_4200 = 2,
+    V1_FE_RXSEL_LPF_2100_LPF_2100 = 3,
+    V1_FE_RXSEL_LPF_1200_LPF_1200 = 4,
+    V1_FE_RXSEL_LPF_1200_BPF_2100_3000 = 5,
+    V1_FE_RXSEL_BPF_3000_4200_BPF_3000_4200 = 6,
+    V1_FE_RXSEL_BPF_3000_4200_LPF2100 = 7,
+};
+enum v1_fe_txsel_options {
+    V1_FE_TXSEL_LPF_400_LPF_2100 = 0,
+    V1_FE_TXSEL_LPF_400_LPF_400 = 1,
+    V1_FE_TXSEL_LPF_2100_LPF_4000 = 2,
+    V1_FE_TXSEL_LPF_2100_LPF_2100 = 3,
+    V1_FE_TXSEL_LPF_1200_LPF_1200 = 4,
+    V1_FE_TXSEL_LPF_1200_LPF_400 = 5,
+    V1_FE_TXSEL_LPF_4000_LPF_4000 = 6,
+    V1_FE_TXSEL_LPF_4000_LPF_2100 = 7,
+};
+
+enum v1_fe_fields_t {
+    V1_FE_ATTN_OFF = 0xe,
+    V1_FE_ATTN_MSK = 0xc000,
+    V1_FE_REFCLK_PATH_OFF = 0xd,
+    V1_FE_REFCLK_PATH_MSK = 0x2000,
+    V1_FE_EN_PA1_OFF = 0xc,
+    V1_FE_EN_PA1_MSK = 0x1000,
+    V1_FE_EN_LNA2_OFF = 0xb,
+    V1_FE_EN_LNA2_MSK = 0x800,
+    V1_FE_EN_LNA1_OFF = 0xa,
+    V1_FE_EN_LNA1_MSK = 0x400,
+    V1_FE_DUPL_PATH_OFF = 0x7,
+    V1_FE_DUPL_PATH_MSK = 0x380,
+    V1_FE_EN_PA2_OFF = 0x6,
+    V1_FE_EN_PA2_MSK = 0x40,
+    V1_FE_RXSEL_OFF = 0x3,
+    V1_FE_RXSEL_MSK = 0x38,
+    V1_FE_TXSEL_OFF = 0x0,
+    V1_FE_TXSEL_MSK = 0x7,
+};
+#define GET_PCIEFE_V1_FE_ATTN(x) (((x) & V1_FE_ATTN_MSK) >> V1_FE_ATTN_OFF)
+#define GET_PCIEFE_V1_FE_REFCLK_PATH(x) (((x) & V1_FE_REFCLK_PATH_MSK) >> V1_FE_REFCLK_PATH_OFF)
+#define GET_PCIEFE_V1_FE_EN_PA1(x) (((x) & V1_FE_EN_PA1_MSK) >> V1_FE_EN_PA1_OFF)
+#define GET_PCIEFE_V1_FE_EN_LNA2(x) (((x) & V1_FE_EN_LNA2_MSK) >> V1_FE_EN_LNA2_OFF)
+#define GET_PCIEFE_V1_FE_EN_LNA1(x) (((x) & V1_FE_EN_LNA1_MSK) >> V1_FE_EN_LNA1_OFF)
+#define GET_PCIEFE_V1_FE_DUPL_PATH(x) (((x) & V1_FE_DUPL_PATH_MSK) >> V1_FE_DUPL_PATH_OFF)
+#define GET_PCIEFE_V1_FE_EN_PA2(x) (((x) & V1_FE_EN_PA2_MSK) >> V1_FE_EN_PA2_OFF)
+#define GET_PCIEFE_V1_FE_RXSEL(x) (((x) & V1_FE_RXSEL_MSK) >> V1_FE_RXSEL_OFF)
+#define GET_PCIEFE_V1_FE_TXSEL(x) (((x) & V1_FE_TXSEL_MSK) >> V1_FE_TXSEL_OFF)
+#define SET_PCIEFE_V1_FE_ATTN(p, f) (p) = ((p) & ~V1_FE_ATTN_MSK) | (((f) << V1_FE_ATTN_OFF) & V1_FE_ATTN_MSK)
+#define SET_PCIEFE_V1_FE_REFCLK_PATH(p, f) (p) = ((p) & ~V1_FE_REFCLK_PATH_MSK) | (((f) << V1_FE_REFCLK_PATH_OFF) & V1_FE_REFCLK_PATH_MSK)
+#define SET_PCIEFE_V1_FE_EN_PA1(p, f) (p) = ((p) & ~V1_FE_EN_PA1_MSK) | (((f) << V1_FE_EN_PA1_OFF) & V1_FE_EN_PA1_MSK)
+#define SET_PCIEFE_V1_FE_EN_LNA2(p, f) (p) = ((p) & ~V1_FE_EN_LNA2_MSK) | (((f) << V1_FE_EN_LNA2_OFF) & V1_FE_EN_LNA2_MSK)
+#define SET_PCIEFE_V1_FE_EN_LNA1(p, f) (p) = ((p) & ~V1_FE_EN_LNA1_MSK) | (((f) << V1_FE_EN_LNA1_OFF) & V1_FE_EN_LNA1_MSK)
+#define SET_PCIEFE_V1_FE_DUPL_PATH(p, f) (p) = ((p) & ~V1_FE_DUPL_PATH_MSK) | (((f) << V1_FE_DUPL_PATH_OFF) & V1_FE_DUPL_PATH_MSK)
+#define SET_PCIEFE_V1_FE_EN_PA2(p, f) (p) = ((p) & ~V1_FE_EN_PA2_MSK) | (((f) << V1_FE_EN_PA2_OFF) & V1_FE_EN_PA2_MSK)
+#define SET_PCIEFE_V1_FE_RXSEL(p, f) (p) = ((p) & ~V1_FE_RXSEL_MSK) | (((f) << V1_FE_RXSEL_OFF) & V1_FE_RXSEL_MSK)
+#define SET_PCIEFE_V1_FE_TXSEL(p, f) (p) = ((p) & ~V1_FE_TXSEL_MSK) | (((f) << V1_FE_TXSEL_OFF) & V1_FE_TXSEL_MSK)
+
+#define MAKE_PCIEFE_V1_FE(attn, refclk_path, en_pa1, en_lna2, en_lna1, dupl_path, en_pa2, rxsel, txsel) MAKE_PCIEFE_REG_WR(V1_FE, \
+    (((attn) << V1_FE_ATTN_OFF) & V1_FE_ATTN_MSK) |  \
+    (((refclk_path) << V1_FE_REFCLK_PATH_OFF) & V1_FE_REFCLK_PATH_MSK) |  \
+    (((en_pa1) << V1_FE_EN_PA1_OFF) & V1_FE_EN_PA1_MSK) |  \
+    (((en_lna2) << V1_FE_EN_LNA2_OFF) & V1_FE_EN_LNA2_MSK) |  \
+    (((en_lna1) << V1_FE_EN_LNA1_OFF) & V1_FE_EN_LNA1_MSK) |  \
+    (((dupl_path) << V1_FE_DUPL_PATH_OFF) & V1_FE_DUPL_PATH_MSK) |  \
+    (((en_pa2) << V1_FE_EN_PA2_OFF) & V1_FE_EN_PA2_MSK) |  \
+    (((rxsel) << V1_FE_RXSEL_OFF) & V1_FE_RXSEL_MSK) |  \
+    (((txsel) << V1_FE_TXSEL_OFF) & V1_FE_TXSEL_MSK))
+// Register R34 [0x22] -- V1_GPIO0
+
+enum v1_gpio0_fields_t {
+    V1_GPIO0_DIR_CD_OFF = 0x7,
+    V1_GPIO0_DIR_CD_MSK = 0x80,
+    V1_GPIO0_DIR_67_OFF = 0x6,
+    V1_GPIO0_DIR_67_MSK = 0x40,
+    V1_GPIO0_DIR_89_OFF = 0x5,
+    V1_GPIO0_DIR_89_MSK = 0x20,
+    V1_GPIO0_DIR_AB_OFF = 0x4,
+    V1_GPIO0_DIR_AB_MSK = 0x10,
+    V1_GPIO0_LED2_OFF = 0x3,
+    V1_GPIO0_LED2_MSK = 0x8,
+    V1_GPIO0_LED1_OFF = 0x2,
+    V1_GPIO0_LED1_MSK = 0x4,
+    V1_GPIO0_EN_GPS_OFF = 0x1,
+    V1_GPIO0_EN_GPS_MSK = 0x2,
+    V1_GPIO0_EN_OSC_OFF = 0x0,
+    V1_GPIO0_EN_OSC_MSK = 0x1,
+};
+#define GET_PCIEFE_V1_GPIO0_DIR_CD(x) (((x) & V1_GPIO0_DIR_CD_MSK) >> V1_GPIO0_DIR_CD_OFF)
+#define GET_PCIEFE_V1_GPIO0_DIR_67(x) (((x) & V1_GPIO0_DIR_67_MSK) >> V1_GPIO0_DIR_67_OFF)
+#define GET_PCIEFE_V1_GPIO0_DIR_89(x) (((x) & V1_GPIO0_DIR_89_MSK) >> V1_GPIO0_DIR_89_OFF)
+#define GET_PCIEFE_V1_GPIO0_DIR_AB(x) (((x) & V1_GPIO0_DIR_AB_MSK) >> V1_GPIO0_DIR_AB_OFF)
+#define GET_PCIEFE_V1_GPIO0_LED2(x) (((x) & V1_GPIO0_LED2_MSK) >> V1_GPIO0_LED2_OFF)
+#define GET_PCIEFE_V1_GPIO0_LED1(x) (((x) & V1_GPIO0_LED1_MSK) >> V1_GPIO0_LED1_OFF)
+#define GET_PCIEFE_V1_GPIO0_EN_GPS(x) (((x) & V1_GPIO0_EN_GPS_MSK) >> V1_GPIO0_EN_GPS_OFF)
+#define GET_PCIEFE_V1_GPIO0_EN_OSC(x) (((x) & V1_GPIO0_EN_OSC_MSK) >> V1_GPIO0_EN_OSC_OFF)
+#define SET_PCIEFE_V1_GPIO0_DIR_CD(p, f) (p) = ((p) & ~V1_GPIO0_DIR_CD_MSK) | (((f) << V1_GPIO0_DIR_CD_OFF) & V1_GPIO0_DIR_CD_MSK)
+#define SET_PCIEFE_V1_GPIO0_DIR_67(p, f) (p) = ((p) & ~V1_GPIO0_DIR_67_MSK) | (((f) << V1_GPIO0_DIR_67_OFF) & V1_GPIO0_DIR_67_MSK)
+#define SET_PCIEFE_V1_GPIO0_DIR_89(p, f) (p) = ((p) & ~V1_GPIO0_DIR_89_MSK) | (((f) << V1_GPIO0_DIR_89_OFF) & V1_GPIO0_DIR_89_MSK)
+#define SET_PCIEFE_V1_GPIO0_DIR_AB(p, f) (p) = ((p) & ~V1_GPIO0_DIR_AB_MSK) | (((f) << V1_GPIO0_DIR_AB_OFF) & V1_GPIO0_DIR_AB_MSK)
+#define SET_PCIEFE_V1_GPIO0_LED2(p, f) (p) = ((p) & ~V1_GPIO0_LED2_MSK) | (((f) << V1_GPIO0_LED2_OFF) & V1_GPIO0_LED2_MSK)
+#define SET_PCIEFE_V1_GPIO0_LED1(p, f) (p) = ((p) & ~V1_GPIO0_LED1_MSK) | (((f) << V1_GPIO0_LED1_OFF) & V1_GPIO0_LED1_MSK)
+#define SET_PCIEFE_V1_GPIO0_EN_GPS(p, f) (p) = ((p) & ~V1_GPIO0_EN_GPS_MSK) | (((f) << V1_GPIO0_EN_GPS_OFF) & V1_GPIO0_EN_GPS_MSK)
+#define SET_PCIEFE_V1_GPIO0_EN_OSC(p, f) (p) = ((p) & ~V1_GPIO0_EN_OSC_MSK) | (((f) << V1_GPIO0_EN_OSC_OFF) & V1_GPIO0_EN_OSC_MSK)
+
+#define MAKE_PCIEFE_V1_GPIO0(dir_cd, dir_67, dir_89, dir_ab, led2, led1, en_gps, en_osc) MAKE_PCIEFE_REG_WR(V1_GPIO0, \
+    (((dir_cd) << V1_GPIO0_DIR_CD_OFF) & V1_GPIO0_DIR_CD_MSK) |  \
+    (((dir_67) << V1_GPIO0_DIR_67_OFF) & V1_GPIO0_DIR_67_MSK) |  \
+    (((dir_89) << V1_GPIO0_DIR_89_OFF) & V1_GPIO0_DIR_89_MSK) |  \
+    (((dir_ab) << V1_GPIO0_DIR_AB_OFF) & V1_GPIO0_DIR_AB_MSK) |  \
+    (((led2) << V1_GPIO0_LED2_OFF) & V1_GPIO0_LED2_MSK) |  \
+    (((led1) << V1_GPIO0_LED1_OFF) & V1_GPIO0_LED1_MSK) |  \
+    (((en_gps) << V1_GPIO0_EN_GPS_OFF) & V1_GPIO0_EN_GPS_MSK) |  \
+    (((en_osc) << V1_GPIO0_EN_OSC_OFF) & V1_GPIO0_EN_OSC_MSK))
+// Register R35 [0x23] -- V1_GPIO1
+
+enum v1_gpio1_fields_t {
+    V1_GPIO1_LED4_OFF = 0x7,
+    V1_GPIO1_LED4_MSK = 0x80,
+    V1_GPIO1_LED3_OFF = 0x6,
+    V1_GPIO1_LED3_MSK = 0x40,
+    V1_GPIO1_LS_5_OFF = 0x5,
+    V1_GPIO1_LS_5_MSK = 0x20,
+    V1_GPIO1_LS_4_OFF = 0x4,
+    V1_GPIO1_LS_4_MSK = 0x10,
+    V1_GPIO1_LS_3_OFF = 0x3,
+    V1_GPIO1_LS_3_MSK = 0x8,
+    V1_GPIO1_LS_2_OFF = 0x2,
+    V1_GPIO1_LS_2_MSK = 0x4,
+    V1_GPIO1_LS_1_OFF = 0x1,
+    V1_GPIO1_LS_1_MSK = 0x2,
+    V1_GPIO1_LS_0_OFF = 0x0,
+    V1_GPIO1_LS_0_MSK = 0x1,
+};
+#define GET_PCIEFE_V1_GPIO1_LED4(x) (((x) & V1_GPIO1_LED4_MSK) >> V1_GPIO1_LED4_OFF)
+#define GET_PCIEFE_V1_GPIO1_LED3(x) (((x) & V1_GPIO1_LED3_MSK) >> V1_GPIO1_LED3_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_5(x) (((x) & V1_GPIO1_LS_5_MSK) >> V1_GPIO1_LS_5_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_4(x) (((x) & V1_GPIO1_LS_4_MSK) >> V1_GPIO1_LS_4_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_3(x) (((x) & V1_GPIO1_LS_3_MSK) >> V1_GPIO1_LS_3_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_2(x) (((x) & V1_GPIO1_LS_2_MSK) >> V1_GPIO1_LS_2_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_1(x) (((x) & V1_GPIO1_LS_1_MSK) >> V1_GPIO1_LS_1_OFF)
+#define GET_PCIEFE_V1_GPIO1_LS_0(x) (((x) & V1_GPIO1_LS_0_MSK) >> V1_GPIO1_LS_0_OFF)
+#define SET_PCIEFE_V1_GPIO1_LED4(p, f) (p) = ((p) & ~V1_GPIO1_LED4_MSK) | (((f) << V1_GPIO1_LED4_OFF) & V1_GPIO1_LED4_MSK)
+#define SET_PCIEFE_V1_GPIO1_LED3(p, f) (p) = ((p) & ~V1_GPIO1_LED3_MSK) | (((f) << V1_GPIO1_LED3_OFF) & V1_GPIO1_LED3_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_5(p, f) (p) = ((p) & ~V1_GPIO1_LS_5_MSK) | (((f) << V1_GPIO1_LS_5_OFF) & V1_GPIO1_LS_5_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_4(p, f) (p) = ((p) & ~V1_GPIO1_LS_4_MSK) | (((f) << V1_GPIO1_LS_4_OFF) & V1_GPIO1_LS_4_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_3(p, f) (p) = ((p) & ~V1_GPIO1_LS_3_MSK) | (((f) << V1_GPIO1_LS_3_OFF) & V1_GPIO1_LS_3_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_2(p, f) (p) = ((p) & ~V1_GPIO1_LS_2_MSK) | (((f) << V1_GPIO1_LS_2_OFF) & V1_GPIO1_LS_2_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_1(p, f) (p) = ((p) & ~V1_GPIO1_LS_1_MSK) | (((f) << V1_GPIO1_LS_1_OFF) & V1_GPIO1_LS_1_MSK)
+#define SET_PCIEFE_V1_GPIO1_LS_0(p, f) (p) = ((p) & ~V1_GPIO1_LS_0_MSK) | (((f) << V1_GPIO1_LS_0_OFF) & V1_GPIO1_LS_0_MSK)
+
+#define MAKE_PCIEFE_V1_GPIO1(led4, led3, ls_5, ls_4, ls_3, ls_2, ls_1, ls_0) MAKE_PCIEFE_REG_WR(V1_GPIO1, \
+    (((led4) << V1_GPIO1_LED4_OFF) & V1_GPIO1_LED4_MSK) |  \
+    (((led3) << V1_GPIO1_LED3_OFF) & V1_GPIO1_LED3_MSK) |  \
+    (((ls_5) << V1_GPIO1_LS_5_OFF) & V1_GPIO1_LS_5_MSK) |  \
+    (((ls_4) << V1_GPIO1_LS_4_OFF) & V1_GPIO1_LS_4_MSK) |  \
+    (((ls_3) << V1_GPIO1_LS_3_OFF) & V1_GPIO1_LS_3_MSK) |  \
+    (((ls_2) << V1_GPIO1_LS_2_OFF) & V1_GPIO1_LS_2_MSK) |  \
+    (((ls_1) << V1_GPIO1_LS_1_OFF) & V1_GPIO1_LS_1_MSK) |  \
+    (((ls_0) << V1_GPIO1_LS_0_OFF) & V1_GPIO1_LS_0_MSK))

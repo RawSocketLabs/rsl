@@ -1,0 +1,575 @@
+enum m2_dsdr_e_regs_t {
+    SW_RX_FILTER = 0x20,
+    IF_LNA = 0x21,
+    SW_OUT = 0x22,
+    SW_IN = 0x23,
+    ENABLE = 0x24,
+    LMS8001_RESET = 0x25,
+    AUX_CTRL = 0x26,
+    SW_IN_RX = 0x27,
+    LED_TRX_CTRL = 0x28,
+    LEDRX_CH_CTRL = 0x29,
+};
+#define MAKE_M2_DSDR_E_REG_WR(a, v) (0x80000000 | ((a) << 24) | ((v) & 0xffffff))
+#define MAKE_M2_DSDR_E_REG_RD(a) (((a) << 24))
+enum m2_dsdr_e_rx_filt_in_opts_t {
+    RX_FILT_IN_OPTS_MUTE0 = 0x0,
+    RX_FILT_IN_OPTS_400_1000M = 0x3,
+    RX_FILT_IN_OPTS_1000_2000M = 0x2,
+    RX_FILT_IN_OPTS_2000_3500M = 0x1,
+    RX_FILT_IN_OPTS_2500_5000M = 0x5,
+    RX_FILT_IN_OPTS_3500_7100M = 0x4,
+    RX_FILT_IN_OPTS_MUTE1 = 0x6,
+    RX_FILT_IN_OPTS_MUTE2 = 0x7,
+};
+enum m2_dsdr_e_rx_filt_out_opts_t {
+    RX_FILT_OUT_OPTS_MUTE0 = 0x0,
+    RX_FILT_OUT_OPTS_400_1000M = 0x3,
+    RX_FILT_OUT_OPTS_1000_2000M = 0x4,
+    RX_FILT_OUT_OPTS_2000_3500M = 0x5,
+    RX_FILT_OUT_OPTS_2500_5000M = 0x1,
+    RX_FILT_OUT_OPTS_3500_7100M = 0x2,
+    RX_FILT_OUT_OPTS_MUTE1 = 0x6,
+    RX_FILT_OUT_OPTS_MUTE2 = 0x7,
+};
+enum m2_dsdr_e_if_lna_opts_t {
+    IF_LNA_OPTS_LNA = 0x0,
+    IF_LNA_OPTS_Disable = 0x1,
+    IF_LNA_OPTS_BYPASS = 0x2,
+    IF_LNA_OPTS_BYPASS2 = 0x3,
+};
+enum m2_dsdr_e_r2rx_in_opts_t {
+    R2RX_IN_OPTS_DISABLE = 0x0,
+    R2RX_IN_OPTS_RX_HI = 0x1,
+    R2RX_IN_OPTS_RX_LOW = 0x2,
+    R2RX_IN_OPTS_RX_BYPASS = 0x3,
+};
+enum m2_dsdr_e_r2rx_out_opts_t {
+    R2RX_OUT_OPTS_DISABLE = 0x0,
+    R2RX_OUT_OPTS_RX_LOW = 0x1,
+    R2RX_OUT_OPTS_RX_HI = 0x2,
+    R2RX_OUT_OPTS_RX_BYPASS = 0x3,
+};
+// Register R32 [0x20] -- SW_RX_FILTER
+enum sw_rx_filter_in_chd_options {
+    SW_RX_FILTER_IN_CHD_MUTE0 = 0,
+    SW_RX_FILTER_IN_CHD_2000_3500M = 1,
+    SW_RX_FILTER_IN_CHD_1000_2000M = 2,
+    SW_RX_FILTER_IN_CHD_400_1000M = 3,
+    SW_RX_FILTER_IN_CHD_3500_7100M = 4,
+    SW_RX_FILTER_IN_CHD_2500_5000M = 5,
+    SW_RX_FILTER_IN_CHD_MUTE1 = 6,
+    SW_RX_FILTER_IN_CHD_MUTE2 = 7,
+};
+enum sw_rx_filter_in_chc_options {
+    SW_RX_FILTER_IN_CHC_MUTE0 = 0,
+    SW_RX_FILTER_IN_CHC_2000_3500M = 1,
+    SW_RX_FILTER_IN_CHC_1000_2000M = 2,
+    SW_RX_FILTER_IN_CHC_400_1000M = 3,
+    SW_RX_FILTER_IN_CHC_3500_7100M = 4,
+    SW_RX_FILTER_IN_CHC_2500_5000M = 5,
+    SW_RX_FILTER_IN_CHC_MUTE1 = 6,
+    SW_RX_FILTER_IN_CHC_MUTE2 = 7,
+};
+enum sw_rx_filter_in_chb_options {
+    SW_RX_FILTER_IN_CHB_MUTE0 = 0,
+    SW_RX_FILTER_IN_CHB_2000_3500M = 1,
+    SW_RX_FILTER_IN_CHB_1000_2000M = 2,
+    SW_RX_FILTER_IN_CHB_400_1000M = 3,
+    SW_RX_FILTER_IN_CHB_3500_7100M = 4,
+    SW_RX_FILTER_IN_CHB_2500_5000M = 5,
+    SW_RX_FILTER_IN_CHB_MUTE1 = 6,
+    SW_RX_FILTER_IN_CHB_MUTE2 = 7,
+};
+enum sw_rx_filter_in_cha_options {
+    SW_RX_FILTER_IN_CHA_MUTE0 = 0,
+    SW_RX_FILTER_IN_CHA_2000_3500M = 1,
+    SW_RX_FILTER_IN_CHA_1000_2000M = 2,
+    SW_RX_FILTER_IN_CHA_400_1000M = 3,
+    SW_RX_FILTER_IN_CHA_3500_7100M = 4,
+    SW_RX_FILTER_IN_CHA_2500_5000M = 5,
+    SW_RX_FILTER_IN_CHA_MUTE1 = 6,
+    SW_RX_FILTER_IN_CHA_MUTE2 = 7,
+};
+enum sw_rx_filter_out_cha_options {
+    SW_RX_FILTER_OUT_CHA_MUTE0 = 0,
+    SW_RX_FILTER_OUT_CHA_2500_5000M = 1,
+    SW_RX_FILTER_OUT_CHA_3500_7100M = 2,
+    SW_RX_FILTER_OUT_CHA_400_1000M = 3,
+    SW_RX_FILTER_OUT_CHA_1000_2000M = 4,
+    SW_RX_FILTER_OUT_CHA_2000_3500M = 5,
+    SW_RX_FILTER_OUT_CHA_MUTE1 = 6,
+    SW_RX_FILTER_OUT_CHA_MUTE2 = 7,
+};
+enum sw_rx_filter_out_chb_options {
+    SW_RX_FILTER_OUT_CHB_MUTE0 = 0,
+    SW_RX_FILTER_OUT_CHB_2500_5000M = 1,
+    SW_RX_FILTER_OUT_CHB_3500_7100M = 2,
+    SW_RX_FILTER_OUT_CHB_400_1000M = 3,
+    SW_RX_FILTER_OUT_CHB_1000_2000M = 4,
+    SW_RX_FILTER_OUT_CHB_2000_3500M = 5,
+    SW_RX_FILTER_OUT_CHB_MUTE1 = 6,
+    SW_RX_FILTER_OUT_CHB_MUTE2 = 7,
+};
+enum sw_rx_filter_out_chc_options {
+    SW_RX_FILTER_OUT_CHC_MUTE0 = 0,
+    SW_RX_FILTER_OUT_CHC_2500_5000M = 1,
+    SW_RX_FILTER_OUT_CHC_3500_7100M = 2,
+    SW_RX_FILTER_OUT_CHC_400_1000M = 3,
+    SW_RX_FILTER_OUT_CHC_1000_2000M = 4,
+    SW_RX_FILTER_OUT_CHC_2000_3500M = 5,
+    SW_RX_FILTER_OUT_CHC_MUTE1 = 6,
+    SW_RX_FILTER_OUT_CHC_MUTE2 = 7,
+};
+enum sw_rx_filter_out_chd_options {
+    SW_RX_FILTER_OUT_CHD_MUTE0 = 0,
+    SW_RX_FILTER_OUT_CHD_2500_5000M = 1,
+    SW_RX_FILTER_OUT_CHD_3500_7100M = 2,
+    SW_RX_FILTER_OUT_CHD_400_1000M = 3,
+    SW_RX_FILTER_OUT_CHD_1000_2000M = 4,
+    SW_RX_FILTER_OUT_CHD_2000_3500M = 5,
+    SW_RX_FILTER_OUT_CHD_MUTE1 = 6,
+    SW_RX_FILTER_OUT_CHD_MUTE2 = 7,
+};
+
+enum sw_rx_filter_fields_t {
+    SW_RX_FILTER_IN_CHD_OFF = 0xb,
+    SW_RX_FILTER_IN_CHD_MSK = 0x30800,
+    SW_RX_FILTER_IN_CHC_OFF = 0xa,
+    SW_RX_FILTER_IN_CHC_MSK = 0xc0400,
+    SW_RX_FILTER_IN_CHB_OFF = 0x9,
+    SW_RX_FILTER_IN_CHB_MSK = 0x300200,
+    SW_RX_FILTER_IN_CHA_OFF = 0x8,
+    SW_RX_FILTER_IN_CHA_MSK = 0xc00100,
+    SW_RX_FILTER_OUT_CHA_OFF = 0x6,
+    SW_RX_FILTER_OUT_CHA_MSK = 0x80c0,
+    SW_RX_FILTER_OUT_CHB_OFF = 0x4,
+    SW_RX_FILTER_OUT_CHB_MSK = 0x4030,
+    SW_RX_FILTER_OUT_CHC_OFF = 0x2,
+    SW_RX_FILTER_OUT_CHC_MSK = 0x200c,
+    SW_RX_FILTER_OUT_CHD_OFF = 0x0,
+    SW_RX_FILTER_OUT_CHD_MSK = 0x1003,
+};
+#define GET_M2_DSDR_E_SW_RX_FILTER_IN_CHD(x) ((((((x) & SW_RX_FILTER_IN_CHD_MSK) >> 16) & 0x1) << 0) | (((((x) & SW_RX_FILTER_IN_CHD_MSK) >> 17) & 0x1) << 1) | (((((x) & SW_RX_FILTER_IN_CHD_MSK) >> 11) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_IN_CHC(x) ((((((x) & SW_RX_FILTER_IN_CHC_MSK) >> 18) & 0x1) << 0) | (((((x) & SW_RX_FILTER_IN_CHC_MSK) >> 19) & 0x1) << 1) | (((((x) & SW_RX_FILTER_IN_CHC_MSK) >> 10) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_IN_CHB(x) ((((((x) & SW_RX_FILTER_IN_CHB_MSK) >> 20) & 0x1) << 0) | (((((x) & SW_RX_FILTER_IN_CHB_MSK) >> 21) & 0x1) << 1) | (((((x) & SW_RX_FILTER_IN_CHB_MSK) >> 9) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_IN_CHA(x) ((((((x) & SW_RX_FILTER_IN_CHA_MSK) >> 22) & 0x1) << 0) | (((((x) & SW_RX_FILTER_IN_CHA_MSK) >> 23) & 0x1) << 1) | (((((x) & SW_RX_FILTER_IN_CHA_MSK) >> 8) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_OUT_CHA(x) ((((((x) & SW_RX_FILTER_OUT_CHA_MSK) >> 7) & 0x1) << 0) | (((((x) & SW_RX_FILTER_OUT_CHA_MSK) >> 6) & 0x1) << 1) | (((((x) & SW_RX_FILTER_OUT_CHA_MSK) >> 15) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_OUT_CHB(x) ((((((x) & SW_RX_FILTER_OUT_CHB_MSK) >> 5) & 0x1) << 0) | (((((x) & SW_RX_FILTER_OUT_CHB_MSK) >> 4) & 0x1) << 1) | (((((x) & SW_RX_FILTER_OUT_CHB_MSK) >> 14) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_OUT_CHC(x) ((((((x) & SW_RX_FILTER_OUT_CHC_MSK) >> 2) & 0x1) << 0) | (((((x) & SW_RX_FILTER_OUT_CHC_MSK) >> 3) & 0x1) << 1) | (((((x) & SW_RX_FILTER_OUT_CHC_MSK) >> 13) & 0x1) << 2))
+#define GET_M2_DSDR_E_SW_RX_FILTER_OUT_CHD(x) ((((((x) & SW_RX_FILTER_OUT_CHD_MSK) >> 1) & 0x1) << 0) | (((((x) & SW_RX_FILTER_OUT_CHD_MSK) >> 0) & 0x1) << 1) | (((((x) & SW_RX_FILTER_OUT_CHD_MSK) >> 12) & 0x1) << 2))
+#define SET_M2_DSDR_E_SW_RX_FILTER_IN_CHD(p, f) (p) = ((p) & ~SW_RX_FILTER_IN_CHD_MSK) | ((((((f) >> 2) & 0x1) << 11) | ((((f) >> 1) & 0x1) << 17) | ((((f) >> 0) & 0x1) << 16)) & SW_RX_FILTER_IN_CHD_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_IN_CHC(p, f) (p) = ((p) & ~SW_RX_FILTER_IN_CHC_MSK) | ((((((f) >> 2) & 0x1) << 10) | ((((f) >> 1) & 0x1) << 19) | ((((f) >> 0) & 0x1) << 18)) & SW_RX_FILTER_IN_CHC_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_IN_CHB(p, f) (p) = ((p) & ~SW_RX_FILTER_IN_CHB_MSK) | ((((((f) >> 2) & 0x1) << 9) | ((((f) >> 1) & 0x1) << 21) | ((((f) >> 0) & 0x1) << 20)) & SW_RX_FILTER_IN_CHB_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_IN_CHA(p, f) (p) = ((p) & ~SW_RX_FILTER_IN_CHA_MSK) | ((((((f) >> 2) & 0x1) << 8) | ((((f) >> 1) & 0x1) << 23) | ((((f) >> 0) & 0x1) << 22)) & SW_RX_FILTER_IN_CHA_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_OUT_CHA(p, f) (p) = ((p) & ~SW_RX_FILTER_OUT_CHA_MSK) | ((((((f) >> 2) & 0x1) << 15) | ((((f) >> 1) & 0x1) << 6) | ((((f) >> 0) & 0x1) << 7)) & SW_RX_FILTER_OUT_CHA_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_OUT_CHB(p, f) (p) = ((p) & ~SW_RX_FILTER_OUT_CHB_MSK) | ((((((f) >> 2) & 0x1) << 14) | ((((f) >> 1) & 0x1) << 4) | ((((f) >> 0) & 0x1) << 5)) & SW_RX_FILTER_OUT_CHB_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_OUT_CHC(p, f) (p) = ((p) & ~SW_RX_FILTER_OUT_CHC_MSK) | ((((((f) >> 2) & 0x1) << 13) | ((((f) >> 1) & 0x1) << 3) | ((((f) >> 0) & 0x1) << 2)) & SW_RX_FILTER_OUT_CHC_MSK)
+#define SET_M2_DSDR_E_SW_RX_FILTER_OUT_CHD(p, f) (p) = ((p) & ~SW_RX_FILTER_OUT_CHD_MSK) | ((((((f) >> 2) & 0x1) << 12) | ((((f) >> 1) & 0x1) << 0) | ((((f) >> 0) & 0x1) << 1)) & SW_RX_FILTER_OUT_CHD_MSK)
+
+#define MAKE_M2_DSDR_E_SW_RX_FILTER(in_chd, in_chc, in_chb, in_cha, out_cha, out_chb, out_chc, out_chd) MAKE_M2_DSDR_E_REG_WR(SW_RX_FILTER, \
+    ((((((in_chd) >> 2) & 0x1) << 11) | ((((in_chd) >> 1) & 0x1) << 17) | ((((in_chd) >> 0) & 0x1) << 16)) & SW_RX_FILTER_IN_CHD_MSK) |  \
+    ((((((in_chc) >> 2) & 0x1) << 10) | ((((in_chc) >> 1) & 0x1) << 19) | ((((in_chc) >> 0) & 0x1) << 18)) & SW_RX_FILTER_IN_CHC_MSK) |  \
+    ((((((in_chb) >> 2) & 0x1) << 9) | ((((in_chb) >> 1) & 0x1) << 21) | ((((in_chb) >> 0) & 0x1) << 20)) & SW_RX_FILTER_IN_CHB_MSK) |  \
+    ((((((in_cha) >> 2) & 0x1) << 8) | ((((in_cha) >> 1) & 0x1) << 23) | ((((in_cha) >> 0) & 0x1) << 22)) & SW_RX_FILTER_IN_CHA_MSK) |  \
+    ((((((out_cha) >> 2) & 0x1) << 15) | ((((out_cha) >> 1) & 0x1) << 6) | ((((out_cha) >> 0) & 0x1) << 7)) & SW_RX_FILTER_OUT_CHA_MSK) |  \
+    ((((((out_chb) >> 2) & 0x1) << 14) | ((((out_chb) >> 1) & 0x1) << 4) | ((((out_chb) >> 0) & 0x1) << 5)) & SW_RX_FILTER_OUT_CHB_MSK) |  \
+    ((((((out_chc) >> 2) & 0x1) << 13) | ((((out_chc) >> 1) & 0x1) << 3) | ((((out_chc) >> 0) & 0x1) << 2)) & SW_RX_FILTER_OUT_CHC_MSK) |  \
+    ((((((out_chd) >> 2) & 0x1) << 12) | ((((out_chd) >> 1) & 0x1) << 0) | ((((out_chd) >> 0) & 0x1) << 1)) & SW_RX_FILTER_OUT_CHD_MSK))
+// Register R33 [0x21] -- IF_LNA
+enum if_lna_ctrl_chd_options {
+    IF_LNA_CTRL_CHD_LNA = 0,
+    IF_LNA_CTRL_CHD_DISABLE = 1,
+    IF_LNA_CTRL_CHD_BYPASS = 2,
+    IF_LNA_CTRL_CHD_BYPASS2 = 3,
+};
+enum if_lna_ctrl_chc_options {
+    IF_LNA_CTRL_CHC_LNA = 0,
+    IF_LNA_CTRL_CHC_DISABLE = 1,
+    IF_LNA_CTRL_CHC_BYPASS = 2,
+    IF_LNA_CTRL_CHC_BYPASS2 = 3,
+};
+enum if_lna_ctrl_chb_options {
+    IF_LNA_CTRL_CHB_LNA = 0,
+    IF_LNA_CTRL_CHB_DISABLE = 1,
+    IF_LNA_CTRL_CHB_BYPASS = 2,
+    IF_LNA_CTRL_CHB_BYPASS2 = 3,
+};
+enum if_lna_ctrl_cha_options {
+    IF_LNA_CTRL_CHA_LNA = 0,
+    IF_LNA_CTRL_CHA_DISABLE = 1,
+    IF_LNA_CTRL_CHA_BYPASS = 2,
+    IF_LNA_CTRL_CHA_BYPASS2 = 3,
+};
+
+enum if_lna_fields_t {
+    IF_LNA_CTRL_CHD_OFF = 0x6,
+    IF_LNA_CTRL_CHD_MSK = 0xc0,
+    IF_LNA_CTRL_CHC_OFF = 0x4,
+    IF_LNA_CTRL_CHC_MSK = 0x30,
+    IF_LNA_CTRL_CHB_OFF = 0x2,
+    IF_LNA_CTRL_CHB_MSK = 0xc,
+    IF_LNA_CTRL_CHA_OFF = 0x0,
+    IF_LNA_CTRL_CHA_MSK = 0x3,
+};
+#define GET_M2_DSDR_E_IF_LNA_CTRL_CHD(x) (((x) & IF_LNA_CTRL_CHD_MSK) >> IF_LNA_CTRL_CHD_OFF)
+#define GET_M2_DSDR_E_IF_LNA_CTRL_CHC(x) (((x) & IF_LNA_CTRL_CHC_MSK) >> IF_LNA_CTRL_CHC_OFF)
+#define GET_M2_DSDR_E_IF_LNA_CTRL_CHB(x) (((x) & IF_LNA_CTRL_CHB_MSK) >> IF_LNA_CTRL_CHB_OFF)
+#define GET_M2_DSDR_E_IF_LNA_CTRL_CHA(x) (((x) & IF_LNA_CTRL_CHA_MSK) >> IF_LNA_CTRL_CHA_OFF)
+#define SET_M2_DSDR_E_IF_LNA_CTRL_CHD(p, f) (p) = ((p) & ~IF_LNA_CTRL_CHD_MSK) | (((f) << IF_LNA_CTRL_CHD_OFF) & IF_LNA_CTRL_CHD_MSK)
+#define SET_M2_DSDR_E_IF_LNA_CTRL_CHC(p, f) (p) = ((p) & ~IF_LNA_CTRL_CHC_MSK) | (((f) << IF_LNA_CTRL_CHC_OFF) & IF_LNA_CTRL_CHC_MSK)
+#define SET_M2_DSDR_E_IF_LNA_CTRL_CHB(p, f) (p) = ((p) & ~IF_LNA_CTRL_CHB_MSK) | (((f) << IF_LNA_CTRL_CHB_OFF) & IF_LNA_CTRL_CHB_MSK)
+#define SET_M2_DSDR_E_IF_LNA_CTRL_CHA(p, f) (p) = ((p) & ~IF_LNA_CTRL_CHA_MSK) | (((f) << IF_LNA_CTRL_CHA_OFF) & IF_LNA_CTRL_CHA_MSK)
+
+#define MAKE_M2_DSDR_E_IF_LNA(ctrl_chd, ctrl_chc, ctrl_chb, ctrl_cha) MAKE_M2_DSDR_E_REG_WR(IF_LNA, \
+    (((ctrl_chd) << IF_LNA_CTRL_CHD_OFF) & IF_LNA_CTRL_CHD_MSK) |  \
+    (((ctrl_chc) << IF_LNA_CTRL_CHC_OFF) & IF_LNA_CTRL_CHC_MSK) |  \
+    (((ctrl_chb) << IF_LNA_CTRL_CHB_OFF) & IF_LNA_CTRL_CHB_MSK) |  \
+    (((ctrl_cha) << IF_LNA_CTRL_CHA_OFF) & IF_LNA_CTRL_CHA_MSK))
+// Register R34 [0x22] -- SW_OUT
+
+enum sw_out_fields_t {
+    SW_OUT_RX_H_CHB_R2D_V2_OFF = 0x7,
+    SW_OUT_RX_H_CHB_R2D_V2_MSK = 0x80,
+    SW_OUT_RX_H_CHA_R2D_V1_OFF = 0x6,
+    SW_OUT_RX_H_CHA_R2D_V1_MSK = 0x40,
+    SW_OUT_RX_H_CHD_R2C_V2_OFF = 0x5,
+    SW_OUT_RX_H_CHD_R2C_V2_MSK = 0x20,
+    SW_OUT_RX_H_CHC_R2C_V1_OFF = 0x4,
+    SW_OUT_RX_H_CHC_R2C_V1_MSK = 0x10,
+    SW_OUT_TX_L_CHA_OFF = 0x3,
+    SW_OUT_TX_L_CHA_MSK = 0x8,
+    SW_OUT_TX_L_CHB_OFF = 0x2,
+    SW_OUT_TX_L_CHB_MSK = 0x4,
+    SW_OUT_TX_L_CHC_OFF = 0x1,
+    SW_OUT_TX_L_CHC_MSK = 0x2,
+    SW_OUT_TX_L_CHD_OFF = 0x0,
+    SW_OUT_TX_L_CHD_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_SW_OUT_RX_H_CHB_R2D_V2(x) (((x) & SW_OUT_RX_H_CHB_R2D_V2_MSK) >> SW_OUT_RX_H_CHB_R2D_V2_OFF)
+#define GET_M2_DSDR_E_SW_OUT_RX_H_CHA_R2D_V1(x) (((x) & SW_OUT_RX_H_CHA_R2D_V1_MSK) >> SW_OUT_RX_H_CHA_R2D_V1_OFF)
+#define GET_M2_DSDR_E_SW_OUT_RX_H_CHD_R2C_V2(x) (((x) & SW_OUT_RX_H_CHD_R2C_V2_MSK) >> SW_OUT_RX_H_CHD_R2C_V2_OFF)
+#define GET_M2_DSDR_E_SW_OUT_RX_H_CHC_R2C_V1(x) (((x) & SW_OUT_RX_H_CHC_R2C_V1_MSK) >> SW_OUT_RX_H_CHC_R2C_V1_OFF)
+#define GET_M2_DSDR_E_SW_OUT_TX_L_CHA(x) (((x) & SW_OUT_TX_L_CHA_MSK) >> SW_OUT_TX_L_CHA_OFF)
+#define GET_M2_DSDR_E_SW_OUT_TX_L_CHB(x) (((x) & SW_OUT_TX_L_CHB_MSK) >> SW_OUT_TX_L_CHB_OFF)
+#define GET_M2_DSDR_E_SW_OUT_TX_L_CHC(x) (((x) & SW_OUT_TX_L_CHC_MSK) >> SW_OUT_TX_L_CHC_OFF)
+#define GET_M2_DSDR_E_SW_OUT_TX_L_CHD(x) (((x) & SW_OUT_TX_L_CHD_MSK) >> SW_OUT_TX_L_CHD_OFF)
+#define SET_M2_DSDR_E_SW_OUT_RX_H_CHB_R2D_V2(p, f) (p) = ((p) & ~SW_OUT_RX_H_CHB_R2D_V2_MSK) | (((f) << SW_OUT_RX_H_CHB_R2D_V2_OFF) & SW_OUT_RX_H_CHB_R2D_V2_MSK)
+#define SET_M2_DSDR_E_SW_OUT_RX_H_CHA_R2D_V1(p, f) (p) = ((p) & ~SW_OUT_RX_H_CHA_R2D_V1_MSK) | (((f) << SW_OUT_RX_H_CHA_R2D_V1_OFF) & SW_OUT_RX_H_CHA_R2D_V1_MSK)
+#define SET_M2_DSDR_E_SW_OUT_RX_H_CHD_R2C_V2(p, f) (p) = ((p) & ~SW_OUT_RX_H_CHD_R2C_V2_MSK) | (((f) << SW_OUT_RX_H_CHD_R2C_V2_OFF) & SW_OUT_RX_H_CHD_R2C_V2_MSK)
+#define SET_M2_DSDR_E_SW_OUT_RX_H_CHC_R2C_V1(p, f) (p) = ((p) & ~SW_OUT_RX_H_CHC_R2C_V1_MSK) | (((f) << SW_OUT_RX_H_CHC_R2C_V1_OFF) & SW_OUT_RX_H_CHC_R2C_V1_MSK)
+#define SET_M2_DSDR_E_SW_OUT_TX_L_CHA(p, f) (p) = ((p) & ~SW_OUT_TX_L_CHA_MSK) | (((f) << SW_OUT_TX_L_CHA_OFF) & SW_OUT_TX_L_CHA_MSK)
+#define SET_M2_DSDR_E_SW_OUT_TX_L_CHB(p, f) (p) = ((p) & ~SW_OUT_TX_L_CHB_MSK) | (((f) << SW_OUT_TX_L_CHB_OFF) & SW_OUT_TX_L_CHB_MSK)
+#define SET_M2_DSDR_E_SW_OUT_TX_L_CHC(p, f) (p) = ((p) & ~SW_OUT_TX_L_CHC_MSK) | (((f) << SW_OUT_TX_L_CHC_OFF) & SW_OUT_TX_L_CHC_MSK)
+#define SET_M2_DSDR_E_SW_OUT_TX_L_CHD(p, f) (p) = ((p) & ~SW_OUT_TX_L_CHD_MSK) | (((f) << SW_OUT_TX_L_CHD_OFF) & SW_OUT_TX_L_CHD_MSK)
+
+#define MAKE_M2_DSDR_E_SW_OUT(rx_h_chb_r2d_v2, rx_h_cha_r2d_v1, rx_h_chd_r2c_v2, rx_h_chc_r2c_v1, tx_l_cha, tx_l_chb, tx_l_chc, tx_l_chd) MAKE_M2_DSDR_E_REG_WR(SW_OUT, \
+    (((rx_h_chb_r2d_v2) << SW_OUT_RX_H_CHB_R2D_V2_OFF) & SW_OUT_RX_H_CHB_R2D_V2_MSK) |  \
+    (((rx_h_cha_r2d_v1) << SW_OUT_RX_H_CHA_R2D_V1_OFF) & SW_OUT_RX_H_CHA_R2D_V1_MSK) |  \
+    (((rx_h_chd_r2c_v2) << SW_OUT_RX_H_CHD_R2C_V2_OFF) & SW_OUT_RX_H_CHD_R2C_V2_MSK) |  \
+    (((rx_h_chc_r2c_v1) << SW_OUT_RX_H_CHC_R2C_V1_OFF) & SW_OUT_RX_H_CHC_R2C_V1_MSK) |  \
+    (((tx_l_cha) << SW_OUT_TX_L_CHA_OFF) & SW_OUT_TX_L_CHA_MSK) |  \
+    (((tx_l_chb) << SW_OUT_TX_L_CHB_OFF) & SW_OUT_TX_L_CHB_MSK) |  \
+    (((tx_l_chc) << SW_OUT_TX_L_CHC_OFF) & SW_OUT_TX_L_CHC_MSK) |  \
+    (((tx_l_chd) << SW_OUT_TX_L_CHD_OFF) & SW_OUT_TX_L_CHD_MSK))
+// Register R35 [0x23] -- SW_IN
+
+enum sw_in_fields_t {
+    SW_IN_TX_H_CHD_OFF = 0x7,
+    SW_IN_TX_H_CHD_MSK = 0x80,
+    SW_IN_TX_H_CHC_OFF = 0x6,
+    SW_IN_TX_H_CHC_MSK = 0x40,
+    SW_IN_TX_H_CHB_OFF = 0x5,
+    SW_IN_TX_H_CHB_MSK = 0x20,
+    SW_IN_TX_H_CHA_OFF = 0x4,
+    SW_IN_TX_H_CHA_MSK = 0x10,
+    SW_IN_RX_L_CHD_R2A_V2_OFF = 0x3,
+    SW_IN_RX_L_CHD_R2A_V2_MSK = 0x8,
+    SW_IN_RX_L_CHC_R2A_V1_OFF = 0x2,
+    SW_IN_RX_L_CHC_R2A_V1_MSK = 0x4,
+    SW_IN_RX_L_CHB_R2B_V2_OFF = 0x1,
+    SW_IN_RX_L_CHB_R2B_V2_MSK = 0x2,
+    SW_IN_RX_L_CHA_R2B_V1_OFF = 0x0,
+    SW_IN_RX_L_CHA_R2B_V1_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_SW_IN_TX_H_CHD(x) (((x) & SW_IN_TX_H_CHD_MSK) >> SW_IN_TX_H_CHD_OFF)
+#define GET_M2_DSDR_E_SW_IN_TX_H_CHC(x) (((x) & SW_IN_TX_H_CHC_MSK) >> SW_IN_TX_H_CHC_OFF)
+#define GET_M2_DSDR_E_SW_IN_TX_H_CHB(x) (((x) & SW_IN_TX_H_CHB_MSK) >> SW_IN_TX_H_CHB_OFF)
+#define GET_M2_DSDR_E_SW_IN_TX_H_CHA(x) (((x) & SW_IN_TX_H_CHA_MSK) >> SW_IN_TX_H_CHA_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_L_CHD_R2A_V2(x) (((x) & SW_IN_RX_L_CHD_R2A_V2_MSK) >> SW_IN_RX_L_CHD_R2A_V2_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_L_CHC_R2A_V1(x) (((x) & SW_IN_RX_L_CHC_R2A_V1_MSK) >> SW_IN_RX_L_CHC_R2A_V1_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_L_CHB_R2B_V2(x) (((x) & SW_IN_RX_L_CHB_R2B_V2_MSK) >> SW_IN_RX_L_CHB_R2B_V2_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_L_CHA_R2B_V1(x) (((x) & SW_IN_RX_L_CHA_R2B_V1_MSK) >> SW_IN_RX_L_CHA_R2B_V1_OFF)
+#define SET_M2_DSDR_E_SW_IN_TX_H_CHD(p, f) (p) = ((p) & ~SW_IN_TX_H_CHD_MSK) | (((f) << SW_IN_TX_H_CHD_OFF) & SW_IN_TX_H_CHD_MSK)
+#define SET_M2_DSDR_E_SW_IN_TX_H_CHC(p, f) (p) = ((p) & ~SW_IN_TX_H_CHC_MSK) | (((f) << SW_IN_TX_H_CHC_OFF) & SW_IN_TX_H_CHC_MSK)
+#define SET_M2_DSDR_E_SW_IN_TX_H_CHB(p, f) (p) = ((p) & ~SW_IN_TX_H_CHB_MSK) | (((f) << SW_IN_TX_H_CHB_OFF) & SW_IN_TX_H_CHB_MSK)
+#define SET_M2_DSDR_E_SW_IN_TX_H_CHA(p, f) (p) = ((p) & ~SW_IN_TX_H_CHA_MSK) | (((f) << SW_IN_TX_H_CHA_OFF) & SW_IN_TX_H_CHA_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_L_CHD_R2A_V2(p, f) (p) = ((p) & ~SW_IN_RX_L_CHD_R2A_V2_MSK) | (((f) << SW_IN_RX_L_CHD_R2A_V2_OFF) & SW_IN_RX_L_CHD_R2A_V2_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_L_CHC_R2A_V1(p, f) (p) = ((p) & ~SW_IN_RX_L_CHC_R2A_V1_MSK) | (((f) << SW_IN_RX_L_CHC_R2A_V1_OFF) & SW_IN_RX_L_CHC_R2A_V1_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_L_CHB_R2B_V2(p, f) (p) = ((p) & ~SW_IN_RX_L_CHB_R2B_V2_MSK) | (((f) << SW_IN_RX_L_CHB_R2B_V2_OFF) & SW_IN_RX_L_CHB_R2B_V2_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_L_CHA_R2B_V1(p, f) (p) = ((p) & ~SW_IN_RX_L_CHA_R2B_V1_MSK) | (((f) << SW_IN_RX_L_CHA_R2B_V1_OFF) & SW_IN_RX_L_CHA_R2B_V1_MSK)
+
+#define MAKE_M2_DSDR_E_SW_IN(tx_h_chd, tx_h_chc, tx_h_chb, tx_h_cha, rx_l_chd_r2a_v2, rx_l_chc_r2a_v1, rx_l_chb_r2b_v2, rx_l_cha_r2b_v1) MAKE_M2_DSDR_E_REG_WR(SW_IN, \
+    (((tx_h_chd) << SW_IN_TX_H_CHD_OFF) & SW_IN_TX_H_CHD_MSK) |  \
+    (((tx_h_chc) << SW_IN_TX_H_CHC_OFF) & SW_IN_TX_H_CHC_MSK) |  \
+    (((tx_h_chb) << SW_IN_TX_H_CHB_OFF) & SW_IN_TX_H_CHB_MSK) |  \
+    (((tx_h_cha) << SW_IN_TX_H_CHA_OFF) & SW_IN_TX_H_CHA_MSK) |  \
+    (((rx_l_chd_r2a_v2) << SW_IN_RX_L_CHD_R2A_V2_OFF) & SW_IN_RX_L_CHD_R2A_V2_MSK) |  \
+    (((rx_l_chc_r2a_v1) << SW_IN_RX_L_CHC_R2A_V1_OFF) & SW_IN_RX_L_CHC_R2A_V1_MSK) |  \
+    (((rx_l_chb_r2b_v2) << SW_IN_RX_L_CHB_R2B_V2_OFF) & SW_IN_RX_L_CHB_R2B_V2_MSK) |  \
+    (((rx_l_cha_r2b_v1) << SW_IN_RX_L_CHA_R2B_V1_OFF) & SW_IN_RX_L_CHA_R2B_V1_MSK))
+// Register R36 [0x24] -- ENABLE
+
+enum enable_fields_t {
+    ENABLE_REV2_P5V_OFF = 0x7,
+    ENABLE_REV2_P5V_MSK = 0x80,
+    ENABLE_REV2_P5V_EXTLO_OFF = 0x6,
+    ENABLE_REV2_P5V_EXTLO_MSK = 0x40,
+    ENABLE_REV2_PG_6P0_OFF = 0x5,
+    ENABLE_REV2_PG_6P0_MSK = 0x20,
+    ENABLE_REV2_PG_8P0_OFF = 0x4,
+    ENABLE_REV2_PG_8P0_MSK = 0x10,
+    ENABLE_REF_OSC_OFF = 0x3,
+    ENABLE_REF_OSC_MSK = 0x8,
+    ENABLE_REF_GPS_OFF = 0x2,
+    ENABLE_REF_GPS_MSK = 0x4,
+    ENABLE_P8V_TX_OFF = 0x1,
+    ENABLE_P8V_TX_MSK = 0x2,
+    ENABLE_P5V_RX_OFF = 0x0,
+    ENABLE_P5V_RX_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_ENABLE_REV2_P5V(x) (((x) & ENABLE_REV2_P5V_MSK) >> ENABLE_REV2_P5V_OFF)
+#define GET_M2_DSDR_E_ENABLE_REV2_P5V_EXTLO(x) (((x) & ENABLE_REV2_P5V_EXTLO_MSK) >> ENABLE_REV2_P5V_EXTLO_OFF)
+#define GET_M2_DSDR_E_ENABLE_REV2_PG_6P0(x) (((x) & ENABLE_REV2_PG_6P0_MSK) >> ENABLE_REV2_PG_6P0_OFF)
+#define GET_M2_DSDR_E_ENABLE_REV2_PG_8P0(x) (((x) & ENABLE_REV2_PG_8P0_MSK) >> ENABLE_REV2_PG_8P0_OFF)
+#define GET_M2_DSDR_E_ENABLE_REF_OSC(x) (((x) & ENABLE_REF_OSC_MSK) >> ENABLE_REF_OSC_OFF)
+#define GET_M2_DSDR_E_ENABLE_REF_GPS(x) (((x) & ENABLE_REF_GPS_MSK) >> ENABLE_REF_GPS_OFF)
+#define GET_M2_DSDR_E_ENABLE_P8V_TX(x) (((x) & ENABLE_P8V_TX_MSK) >> ENABLE_P8V_TX_OFF)
+#define GET_M2_DSDR_E_ENABLE_P5V_RX(x) (((x) & ENABLE_P5V_RX_MSK) >> ENABLE_P5V_RX_OFF)
+#define SET_M2_DSDR_E_ENABLE_REV2_P5V(p, f) (p) = ((p) & ~ENABLE_REV2_P5V_MSK) | (((f) << ENABLE_REV2_P5V_OFF) & ENABLE_REV2_P5V_MSK)
+#define SET_M2_DSDR_E_ENABLE_REV2_P5V_EXTLO(p, f) (p) = ((p) & ~ENABLE_REV2_P5V_EXTLO_MSK) | (((f) << ENABLE_REV2_P5V_EXTLO_OFF) & ENABLE_REV2_P5V_EXTLO_MSK)
+#define SET_M2_DSDR_E_ENABLE_REV2_PG_6P0(p, f) (p) = ((p) & ~ENABLE_REV2_PG_6P0_MSK) | (((f) << ENABLE_REV2_PG_6P0_OFF) & ENABLE_REV2_PG_6P0_MSK)
+#define SET_M2_DSDR_E_ENABLE_REV2_PG_8P0(p, f) (p) = ((p) & ~ENABLE_REV2_PG_8P0_MSK) | (((f) << ENABLE_REV2_PG_8P0_OFF) & ENABLE_REV2_PG_8P0_MSK)
+#define SET_M2_DSDR_E_ENABLE_REF_OSC(p, f) (p) = ((p) & ~ENABLE_REF_OSC_MSK) | (((f) << ENABLE_REF_OSC_OFF) & ENABLE_REF_OSC_MSK)
+#define SET_M2_DSDR_E_ENABLE_REF_GPS(p, f) (p) = ((p) & ~ENABLE_REF_GPS_MSK) | (((f) << ENABLE_REF_GPS_OFF) & ENABLE_REF_GPS_MSK)
+#define SET_M2_DSDR_E_ENABLE_P8V_TX(p, f) (p) = ((p) & ~ENABLE_P8V_TX_MSK) | (((f) << ENABLE_P8V_TX_OFF) & ENABLE_P8V_TX_MSK)
+#define SET_M2_DSDR_E_ENABLE_P5V_RX(p, f) (p) = ((p) & ~ENABLE_P5V_RX_MSK) | (((f) << ENABLE_P5V_RX_OFF) & ENABLE_P5V_RX_MSK)
+
+#define MAKE_M2_DSDR_E_ENABLE(rev2_p5v, rev2_p5v_extlo, rev2_pg_6p0, rev2_pg_8p0, ref_osc, ref_gps, p8v_tx, p5v_rx) MAKE_M2_DSDR_E_REG_WR(ENABLE, \
+    (((rev2_p5v) << ENABLE_REV2_P5V_OFF) & ENABLE_REV2_P5V_MSK) |  \
+    (((rev2_p5v_extlo) << ENABLE_REV2_P5V_EXTLO_OFF) & ENABLE_REV2_P5V_EXTLO_MSK) |  \
+    (((rev2_pg_6p0) << ENABLE_REV2_PG_6P0_OFF) & ENABLE_REV2_PG_6P0_MSK) |  \
+    (((rev2_pg_8p0) << ENABLE_REV2_PG_8P0_OFF) & ENABLE_REV2_PG_8P0_MSK) |  \
+    (((ref_osc) << ENABLE_REF_OSC_OFF) & ENABLE_REF_OSC_MSK) |  \
+    (((ref_gps) << ENABLE_REF_GPS_OFF) & ENABLE_REF_GPS_MSK) |  \
+    (((p8v_tx) << ENABLE_P8V_TX_OFF) & ENABLE_P8V_TX_MSK) |  \
+    (((p5v_rx) << ENABLE_P5V_RX_OFF) & ENABLE_P5V_RX_MSK))
+// Register R37 [0x25] -- LMS8001_RESET
+
+enum lms8001_reset_fields_t {
+    LMS8001_RESET_RX_CHCD_HIGH_OFF = 0x6,
+    LMS8001_RESET_RX_CHCD_HIGH_MSK = 0x40,
+    LMS8001_RESET_RX_CHCD_LOW_OFF = 0x5,
+    LMS8001_RESET_RX_CHCD_LOW_MSK = 0x20,
+    LMS8001_RESET_RX_CHAB_HIGH_OFF = 0x4,
+    LMS8001_RESET_RX_CHAB_HIGH_MSK = 0x10,
+    LMS8001_RESET_RX_CHAB_LOW_OFF = 0x3,
+    LMS8001_RESET_RX_CHAB_LOW_MSK = 0x8,
+    LMS8001_RESET_TX_CHAB_OFF = 0x2,
+    LMS8001_RESET_TX_CHAB_MSK = 0x4,
+    LMS8001_RESET_TX_CHCD_OFF = 0x1,
+    LMS8001_RESET_TX_CHCD_MSK = 0x2,
+    LMS8001_RESET_REV2_DCDC_OFF = 0x0,
+    LMS8001_RESET_REV2_DCDC_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_LMS8001_RESET_RX_CHCD_HIGH(x) (((x) & LMS8001_RESET_RX_CHCD_HIGH_MSK) >> LMS8001_RESET_RX_CHCD_HIGH_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_RX_CHCD_LOW(x) (((x) & LMS8001_RESET_RX_CHCD_LOW_MSK) >> LMS8001_RESET_RX_CHCD_LOW_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_RX_CHAB_HIGH(x) (((x) & LMS8001_RESET_RX_CHAB_HIGH_MSK) >> LMS8001_RESET_RX_CHAB_HIGH_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_RX_CHAB_LOW(x) (((x) & LMS8001_RESET_RX_CHAB_LOW_MSK) >> LMS8001_RESET_RX_CHAB_LOW_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_TX_CHAB(x) (((x) & LMS8001_RESET_TX_CHAB_MSK) >> LMS8001_RESET_TX_CHAB_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_TX_CHCD(x) (((x) & LMS8001_RESET_TX_CHCD_MSK) >> LMS8001_RESET_TX_CHCD_OFF)
+#define GET_M2_DSDR_E_LMS8001_RESET_REV2_DCDC(x) (((x) & LMS8001_RESET_REV2_DCDC_MSK) >> LMS8001_RESET_REV2_DCDC_OFF)
+#define SET_M2_DSDR_E_LMS8001_RESET_RX_CHCD_HIGH(p, f) (p) = ((p) & ~LMS8001_RESET_RX_CHCD_HIGH_MSK) | (((f) << LMS8001_RESET_RX_CHCD_HIGH_OFF) & LMS8001_RESET_RX_CHCD_HIGH_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_RX_CHCD_LOW(p, f) (p) = ((p) & ~LMS8001_RESET_RX_CHCD_LOW_MSK) | (((f) << LMS8001_RESET_RX_CHCD_LOW_OFF) & LMS8001_RESET_RX_CHCD_LOW_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_RX_CHAB_HIGH(p, f) (p) = ((p) & ~LMS8001_RESET_RX_CHAB_HIGH_MSK) | (((f) << LMS8001_RESET_RX_CHAB_HIGH_OFF) & LMS8001_RESET_RX_CHAB_HIGH_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_RX_CHAB_LOW(p, f) (p) = ((p) & ~LMS8001_RESET_RX_CHAB_LOW_MSK) | (((f) << LMS8001_RESET_RX_CHAB_LOW_OFF) & LMS8001_RESET_RX_CHAB_LOW_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_TX_CHAB(p, f) (p) = ((p) & ~LMS8001_RESET_TX_CHAB_MSK) | (((f) << LMS8001_RESET_TX_CHAB_OFF) & LMS8001_RESET_TX_CHAB_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_TX_CHCD(p, f) (p) = ((p) & ~LMS8001_RESET_TX_CHCD_MSK) | (((f) << LMS8001_RESET_TX_CHCD_OFF) & LMS8001_RESET_TX_CHCD_MSK)
+#define SET_M2_DSDR_E_LMS8001_RESET_REV2_DCDC(p, f) (p) = ((p) & ~LMS8001_RESET_REV2_DCDC_MSK) | (((f) << LMS8001_RESET_REV2_DCDC_OFF) & LMS8001_RESET_REV2_DCDC_MSK)
+
+#define MAKE_M2_DSDR_E_LMS8001_RESET(rx_chcd_high, rx_chcd_low, rx_chab_high, rx_chab_low, tx_chab, tx_chcd, rev2_dcdc) MAKE_M2_DSDR_E_REG_WR(LMS8001_RESET, \
+    (((rx_chcd_high) << LMS8001_RESET_RX_CHCD_HIGH_OFF) & LMS8001_RESET_RX_CHCD_HIGH_MSK) |  \
+    (((rx_chcd_low) << LMS8001_RESET_RX_CHCD_LOW_OFF) & LMS8001_RESET_RX_CHCD_LOW_MSK) |  \
+    (((rx_chab_high) << LMS8001_RESET_RX_CHAB_HIGH_OFF) & LMS8001_RESET_RX_CHAB_HIGH_MSK) |  \
+    (((rx_chab_low) << LMS8001_RESET_RX_CHAB_LOW_OFF) & LMS8001_RESET_RX_CHAB_LOW_MSK) |  \
+    (((tx_chab) << LMS8001_RESET_TX_CHAB_OFF) & LMS8001_RESET_TX_CHAB_MSK) |  \
+    (((tx_chcd) << LMS8001_RESET_TX_CHCD_OFF) & LMS8001_RESET_TX_CHCD_MSK) |  \
+    (((rev2_dcdc) << LMS8001_RESET_REV2_DCDC_OFF) & LMS8001_RESET_REV2_DCDC_MSK))
+// Register R38 [0x26] -- AUX_CTRL
+
+enum aux_ctrl_fields_t {
+    AUX_CTRL_ABSLNA_PA_CHD_OFF = 0x7,
+    AUX_CTRL_ABSLNA_PA_CHD_MSK = 0x80,
+    AUX_CTRL_ABSLNA_PA_CHC_OFF = 0x6,
+    AUX_CTRL_ABSLNA_PA_CHC_MSK = 0x40,
+    AUX_CTRL_ABSLNA_PA_CHB_OFF = 0x5,
+    AUX_CTRL_ABSLNA_PA_CHB_MSK = 0x20,
+    AUX_CTRL_ABSLNA_PA_CHA_OFF = 0x4,
+    AUX_CTRL_ABSLNA_PA_CHA_MSK = 0x10,
+    AUX_CTRL_PA_BYPASS_D_OFF = 0x3,
+    AUX_CTRL_PA_BYPASS_D_MSK = 0x8,
+    AUX_CTRL_PA_BYPASS_C_OFF = 0x2,
+    AUX_CTRL_PA_BYPASS_C_MSK = 0x4,
+    AUX_CTRL_PA_BYPASS_B_OFF = 0x1,
+    AUX_CTRL_PA_BYPASS_B_MSK = 0x2,
+    AUX_CTRL_PA_BYPASS_A_OFF = 0x0,
+    AUX_CTRL_PA_BYPASS_A_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHD(x) (((x) & AUX_CTRL_ABSLNA_PA_CHD_MSK) >> AUX_CTRL_ABSLNA_PA_CHD_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHC(x) (((x) & AUX_CTRL_ABSLNA_PA_CHC_MSK) >> AUX_CTRL_ABSLNA_PA_CHC_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHB(x) (((x) & AUX_CTRL_ABSLNA_PA_CHB_MSK) >> AUX_CTRL_ABSLNA_PA_CHB_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHA(x) (((x) & AUX_CTRL_ABSLNA_PA_CHA_MSK) >> AUX_CTRL_ABSLNA_PA_CHA_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_D(x) (((x) & AUX_CTRL_PA_BYPASS_D_MSK) >> AUX_CTRL_PA_BYPASS_D_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_C(x) (((x) & AUX_CTRL_PA_BYPASS_C_MSK) >> AUX_CTRL_PA_BYPASS_C_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_B(x) (((x) & AUX_CTRL_PA_BYPASS_B_MSK) >> AUX_CTRL_PA_BYPASS_B_OFF)
+#define GET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_A(x) (((x) & AUX_CTRL_PA_BYPASS_A_MSK) >> AUX_CTRL_PA_BYPASS_A_OFF)
+#define SET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHD(p, f) (p) = ((p) & ~AUX_CTRL_ABSLNA_PA_CHD_MSK) | (((f) << AUX_CTRL_ABSLNA_PA_CHD_OFF) & AUX_CTRL_ABSLNA_PA_CHD_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHC(p, f) (p) = ((p) & ~AUX_CTRL_ABSLNA_PA_CHC_MSK) | (((f) << AUX_CTRL_ABSLNA_PA_CHC_OFF) & AUX_CTRL_ABSLNA_PA_CHC_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHB(p, f) (p) = ((p) & ~AUX_CTRL_ABSLNA_PA_CHB_MSK) | (((f) << AUX_CTRL_ABSLNA_PA_CHB_OFF) & AUX_CTRL_ABSLNA_PA_CHB_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_ABSLNA_PA_CHA(p, f) (p) = ((p) & ~AUX_CTRL_ABSLNA_PA_CHA_MSK) | (((f) << AUX_CTRL_ABSLNA_PA_CHA_OFF) & AUX_CTRL_ABSLNA_PA_CHA_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_D(p, f) (p) = ((p) & ~AUX_CTRL_PA_BYPASS_D_MSK) | (((f) << AUX_CTRL_PA_BYPASS_D_OFF) & AUX_CTRL_PA_BYPASS_D_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_C(p, f) (p) = ((p) & ~AUX_CTRL_PA_BYPASS_C_MSK) | (((f) << AUX_CTRL_PA_BYPASS_C_OFF) & AUX_CTRL_PA_BYPASS_C_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_B(p, f) (p) = ((p) & ~AUX_CTRL_PA_BYPASS_B_MSK) | (((f) << AUX_CTRL_PA_BYPASS_B_OFF) & AUX_CTRL_PA_BYPASS_B_MSK)
+#define SET_M2_DSDR_E_AUX_CTRL_PA_BYPASS_A(p, f) (p) = ((p) & ~AUX_CTRL_PA_BYPASS_A_MSK) | (((f) << AUX_CTRL_PA_BYPASS_A_OFF) & AUX_CTRL_PA_BYPASS_A_MSK)
+
+#define MAKE_M2_DSDR_E_AUX_CTRL(abslna_pa_chd, abslna_pa_chc, abslna_pa_chb, abslna_pa_cha, pa_bypass_d, pa_bypass_c, pa_bypass_b, pa_bypass_a) MAKE_M2_DSDR_E_REG_WR(AUX_CTRL, \
+    (((abslna_pa_chd) << AUX_CTRL_ABSLNA_PA_CHD_OFF) & AUX_CTRL_ABSLNA_PA_CHD_MSK) |  \
+    (((abslna_pa_chc) << AUX_CTRL_ABSLNA_PA_CHC_OFF) & AUX_CTRL_ABSLNA_PA_CHC_MSK) |  \
+    (((abslna_pa_chb) << AUX_CTRL_ABSLNA_PA_CHB_OFF) & AUX_CTRL_ABSLNA_PA_CHB_MSK) |  \
+    (((abslna_pa_cha) << AUX_CTRL_ABSLNA_PA_CHA_OFF) & AUX_CTRL_ABSLNA_PA_CHA_MSK) |  \
+    (((pa_bypass_d) << AUX_CTRL_PA_BYPASS_D_OFF) & AUX_CTRL_PA_BYPASS_D_MSK) |  \
+    (((pa_bypass_c) << AUX_CTRL_PA_BYPASS_C_OFF) & AUX_CTRL_PA_BYPASS_C_MSK) |  \
+    (((pa_bypass_b) << AUX_CTRL_PA_BYPASS_B_OFF) & AUX_CTRL_PA_BYPASS_B_MSK) |  \
+    (((pa_bypass_a) << AUX_CTRL_PA_BYPASS_A_OFF) & AUX_CTRL_PA_BYPASS_A_MSK))
+// Register R39 [0x27] -- SW_IN_RX
+enum sw_in_rx_chd_options {
+    SW_IN_RX_CHD_DISABLE = 0,
+    SW_IN_RX_CHD_RX_HI = 1,
+    SW_IN_RX_CHD_RX_LOW = 2,
+    SW_IN_RX_CHD_RX_BYPASS = 3,
+};
+enum sw_in_rx_chc_options {
+    SW_IN_RX_CHC_DISABLE = 0,
+    SW_IN_RX_CHC_RX_HI = 1,
+    SW_IN_RX_CHC_RX_LOW = 2,
+    SW_IN_RX_CHC_RX_BYPASS = 3,
+};
+enum sw_in_rx_chb_options {
+    SW_IN_RX_CHB_DISABLE = 0,
+    SW_IN_RX_CHB_RX_HI = 1,
+    SW_IN_RX_CHB_RX_LOW = 2,
+    SW_IN_RX_CHB_RX_BYPASS = 3,
+};
+enum sw_in_rx_cha_options {
+    SW_IN_RX_CHA_DISABLE = 0,
+    SW_IN_RX_CHA_RX_HI = 1,
+    SW_IN_RX_CHA_RX_LOW = 2,
+    SW_IN_RX_CHA_RX_BYPASS = 3,
+};
+
+enum sw_in_rx_fields_t {
+    SW_IN_RX_CHD_OFF = 0x6,
+    SW_IN_RX_CHD_MSK = 0xc0,
+    SW_IN_RX_CHC_OFF = 0x4,
+    SW_IN_RX_CHC_MSK = 0x30,
+    SW_IN_RX_CHB_OFF = 0x2,
+    SW_IN_RX_CHB_MSK = 0xc,
+    SW_IN_RX_CHA_OFF = 0x0,
+    SW_IN_RX_CHA_MSK = 0x3,
+};
+#define GET_M2_DSDR_E_SW_IN_RX_CHD(x) (((x) & SW_IN_RX_CHD_MSK) >> SW_IN_RX_CHD_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_CHC(x) (((x) & SW_IN_RX_CHC_MSK) >> SW_IN_RX_CHC_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_CHB(x) (((x) & SW_IN_RX_CHB_MSK) >> SW_IN_RX_CHB_OFF)
+#define GET_M2_DSDR_E_SW_IN_RX_CHA(x) (((x) & SW_IN_RX_CHA_MSK) >> SW_IN_RX_CHA_OFF)
+#define SET_M2_DSDR_E_SW_IN_RX_CHD(p, f) (p) = ((p) & ~SW_IN_RX_CHD_MSK) | (((f) << SW_IN_RX_CHD_OFF) & SW_IN_RX_CHD_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_CHC(p, f) (p) = ((p) & ~SW_IN_RX_CHC_MSK) | (((f) << SW_IN_RX_CHC_OFF) & SW_IN_RX_CHC_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_CHB(p, f) (p) = ((p) & ~SW_IN_RX_CHB_MSK) | (((f) << SW_IN_RX_CHB_OFF) & SW_IN_RX_CHB_MSK)
+#define SET_M2_DSDR_E_SW_IN_RX_CHA(p, f) (p) = ((p) & ~SW_IN_RX_CHA_MSK) | (((f) << SW_IN_RX_CHA_OFF) & SW_IN_RX_CHA_MSK)
+
+#define MAKE_M2_DSDR_E_SW_IN_RX(chd, chc, chb, cha) MAKE_M2_DSDR_E_REG_WR(SW_IN_RX, \
+    (((chd) << SW_IN_RX_CHD_OFF) & SW_IN_RX_CHD_MSK) |  \
+    (((chc) << SW_IN_RX_CHC_OFF) & SW_IN_RX_CHC_MSK) |  \
+    (((chb) << SW_IN_RX_CHB_OFF) & SW_IN_RX_CHB_MSK) |  \
+    (((cha) << SW_IN_RX_CHA_OFF) & SW_IN_RX_CHA_MSK))
+// Register R40 [0x28] -- LED_TRX_CTRL
+
+enum led_trx_ctrl_fields_t {
+    LED_TRX_CTRL_LED_CHD_OFF = 0x6,
+    LED_TRX_CTRL_LED_CHD_MSK = 0xc0,
+    LED_TRX_CTRL_LED_CHC_OFF = 0x4,
+    LED_TRX_CTRL_LED_CHC_MSK = 0x30,
+    LED_TRX_CTRL_LED_CHB_OFF = 0x2,
+    LED_TRX_CTRL_LED_CHB_MSK = 0xc,
+    LED_TRX_CTRL_LED_CHA_OFF = 0x0,
+    LED_TRX_CTRL_LED_CHA_MSK = 0x3,
+};
+#define GET_M2_DSDR_E_LED_TRX_CTRL_LED_CHD(x) (((x) & LED_TRX_CTRL_LED_CHD_MSK) >> LED_TRX_CTRL_LED_CHD_OFF)
+#define GET_M2_DSDR_E_LED_TRX_CTRL_LED_CHC(x) (((x) & LED_TRX_CTRL_LED_CHC_MSK) >> LED_TRX_CTRL_LED_CHC_OFF)
+#define GET_M2_DSDR_E_LED_TRX_CTRL_LED_CHB(x) (((x) & LED_TRX_CTRL_LED_CHB_MSK) >> LED_TRX_CTRL_LED_CHB_OFF)
+#define GET_M2_DSDR_E_LED_TRX_CTRL_LED_CHA(x) (((x) & LED_TRX_CTRL_LED_CHA_MSK) >> LED_TRX_CTRL_LED_CHA_OFF)
+#define SET_M2_DSDR_E_LED_TRX_CTRL_LED_CHD(p, f) (p) = ((p) & ~LED_TRX_CTRL_LED_CHD_MSK) | (((f) << LED_TRX_CTRL_LED_CHD_OFF) & LED_TRX_CTRL_LED_CHD_MSK)
+#define SET_M2_DSDR_E_LED_TRX_CTRL_LED_CHC(p, f) (p) = ((p) & ~LED_TRX_CTRL_LED_CHC_MSK) | (((f) << LED_TRX_CTRL_LED_CHC_OFF) & LED_TRX_CTRL_LED_CHC_MSK)
+#define SET_M2_DSDR_E_LED_TRX_CTRL_LED_CHB(p, f) (p) = ((p) & ~LED_TRX_CTRL_LED_CHB_MSK) | (((f) << LED_TRX_CTRL_LED_CHB_OFF) & LED_TRX_CTRL_LED_CHB_MSK)
+#define SET_M2_DSDR_E_LED_TRX_CTRL_LED_CHA(p, f) (p) = ((p) & ~LED_TRX_CTRL_LED_CHA_MSK) | (((f) << LED_TRX_CTRL_LED_CHA_OFF) & LED_TRX_CTRL_LED_CHA_MSK)
+
+#define MAKE_M2_DSDR_E_LED_TRX_CTRL(led_chd, led_chc, led_chb, led_cha) MAKE_M2_DSDR_E_REG_WR(LED_TRX_CTRL, \
+    (((led_chd) << LED_TRX_CTRL_LED_CHD_OFF) & LED_TRX_CTRL_LED_CHD_MSK) |  \
+    (((led_chc) << LED_TRX_CTRL_LED_CHC_OFF) & LED_TRX_CTRL_LED_CHC_MSK) |  \
+    (((led_chb) << LED_TRX_CTRL_LED_CHB_OFF) & LED_TRX_CTRL_LED_CHB_MSK) |  \
+    (((led_cha) << LED_TRX_CTRL_LED_CHA_OFF) & LED_TRX_CTRL_LED_CHA_MSK))
+// Register R41 [0x29] -- LEDRX_CH_CTRL
+
+enum ledrx_ch_ctrl_fields_t {
+    LEDRX_CH_CTRL_LED_CHD_OFF = 0x7,
+    LEDRX_CH_CTRL_LED_CHD_MSK = 0x80,
+    LEDRX_CH_CTRL_LED_CHC_OFF = 0x6,
+    LEDRX_CH_CTRL_LED_CHC_MSK = 0x40,
+    LEDRX_CH_CTRL_LED_CHB_OFF = 0x5,
+    LEDRX_CH_CTRL_LED_CHB_MSK = 0x20,
+    LEDRX_CH_CTRL_LED_CHA_OFF = 0x4,
+    LEDRX_CH_CTRL_LED_CHA_MSK = 0x10,
+    LEDRX_CH_CTRL_EN_CHD_OFF = 0x3,
+    LEDRX_CH_CTRL_EN_CHD_MSK = 0x8,
+    LEDRX_CH_CTRL_EN_CHC_OFF = 0x2,
+    LEDRX_CH_CTRL_EN_CHC_MSK = 0x4,
+    LEDRX_CH_CTRL_EN_CHB_OFF = 0x1,
+    LEDRX_CH_CTRL_EN_CHB_MSK = 0x2,
+    LEDRX_CH_CTRL_EN_CHA_OFF = 0x0,
+    LEDRX_CH_CTRL_EN_CHA_MSK = 0x1,
+};
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHD(x) (((x) & LEDRX_CH_CTRL_LED_CHD_MSK) >> LEDRX_CH_CTRL_LED_CHD_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHC(x) (((x) & LEDRX_CH_CTRL_LED_CHC_MSK) >> LEDRX_CH_CTRL_LED_CHC_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHB(x) (((x) & LEDRX_CH_CTRL_LED_CHB_MSK) >> LEDRX_CH_CTRL_LED_CHB_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHA(x) (((x) & LEDRX_CH_CTRL_LED_CHA_MSK) >> LEDRX_CH_CTRL_LED_CHA_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHD(x) (((x) & LEDRX_CH_CTRL_EN_CHD_MSK) >> LEDRX_CH_CTRL_EN_CHD_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHC(x) (((x) & LEDRX_CH_CTRL_EN_CHC_MSK) >> LEDRX_CH_CTRL_EN_CHC_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHB(x) (((x) & LEDRX_CH_CTRL_EN_CHB_MSK) >> LEDRX_CH_CTRL_EN_CHB_OFF)
+#define GET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHA(x) (((x) & LEDRX_CH_CTRL_EN_CHA_MSK) >> LEDRX_CH_CTRL_EN_CHA_OFF)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHD(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_LED_CHD_MSK) | (((f) << LEDRX_CH_CTRL_LED_CHD_OFF) & LEDRX_CH_CTRL_LED_CHD_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHC(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_LED_CHC_MSK) | (((f) << LEDRX_CH_CTRL_LED_CHC_OFF) & LEDRX_CH_CTRL_LED_CHC_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHB(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_LED_CHB_MSK) | (((f) << LEDRX_CH_CTRL_LED_CHB_OFF) & LEDRX_CH_CTRL_LED_CHB_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_LED_CHA(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_LED_CHA_MSK) | (((f) << LEDRX_CH_CTRL_LED_CHA_OFF) & LEDRX_CH_CTRL_LED_CHA_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHD(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_EN_CHD_MSK) | (((f) << LEDRX_CH_CTRL_EN_CHD_OFF) & LEDRX_CH_CTRL_EN_CHD_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHC(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_EN_CHC_MSK) | (((f) << LEDRX_CH_CTRL_EN_CHC_OFF) & LEDRX_CH_CTRL_EN_CHC_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHB(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_EN_CHB_MSK) | (((f) << LEDRX_CH_CTRL_EN_CHB_OFF) & LEDRX_CH_CTRL_EN_CHB_MSK)
+#define SET_M2_DSDR_E_LEDRX_CH_CTRL_EN_CHA(p, f) (p) = ((p) & ~LEDRX_CH_CTRL_EN_CHA_MSK) | (((f) << LEDRX_CH_CTRL_EN_CHA_OFF) & LEDRX_CH_CTRL_EN_CHA_MSK)
+
+#define MAKE_M2_DSDR_E_LEDRX_CH_CTRL(led_chd, led_chc, led_chb, led_cha, en_chd, en_chc, en_chb, en_cha) MAKE_M2_DSDR_E_REG_WR(LEDRX_CH_CTRL, \
+    (((led_chd) << LEDRX_CH_CTRL_LED_CHD_OFF) & LEDRX_CH_CTRL_LED_CHD_MSK) |  \
+    (((led_chc) << LEDRX_CH_CTRL_LED_CHC_OFF) & LEDRX_CH_CTRL_LED_CHC_MSK) |  \
+    (((led_chb) << LEDRX_CH_CTRL_LED_CHB_OFF) & LEDRX_CH_CTRL_LED_CHB_MSK) |  \
+    (((led_cha) << LEDRX_CH_CTRL_LED_CHA_OFF) & LEDRX_CH_CTRL_LED_CHA_MSK) |  \
+    (((en_chd) << LEDRX_CH_CTRL_EN_CHD_OFF) & LEDRX_CH_CTRL_EN_CHD_MSK) |  \
+    (((en_chc) << LEDRX_CH_CTRL_EN_CHC_OFF) & LEDRX_CH_CTRL_EN_CHC_MSK) |  \
+    (((en_chb) << LEDRX_CH_CTRL_EN_CHB_OFF) & LEDRX_CH_CTRL_EN_CHB_MSK) |  \
+    (((en_cha) << LEDRX_CH_CTRL_EN_CHA_OFF) & LEDRX_CH_CTRL_EN_CHA_MSK))

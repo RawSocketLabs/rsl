@@ -17,6 +17,8 @@ members = [
     "error-correction",
     # RF parsing
     "rfus",
+    # uSDR board simulator (test support for the pure-Rust uSDR port)
+    "rsl-usdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -41,6 +43,7 @@ exclude = [
     "bindings/bladerf",
     "bindings/usdr",
     "bindings/dsdcc",
+    "rsl-usdr/oracle",
     "bitsandbytes/fuzz",
     "bitsandbytes/bnb/nostd-check",
     "crypto/fuzz",
