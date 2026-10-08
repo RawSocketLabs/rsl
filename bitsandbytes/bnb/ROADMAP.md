@@ -67,13 +67,18 @@ Audit follow-ups (not silently waived or bundled into this feature):
 - [x] **`#[bitfield]`** — integer-backed packing with independent `bits = msb|lsb` and
       `bytes = big|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
       `with_*`/`set_*`, order-respecting `to_bytes`/`from_bytes` (the declared `bytes`) plus the
-      endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`.
+      endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`;
+      `From` both ways over the backing integer.
+- [ ] **`#[bitfield]` on a generic struct** — generics and `where` clauses are silently dropped
+      (`struct Reg<T>` expands non-generic). Reject them with a spanned error.
 - [x] **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width; `#[catch_all]`
       (lossless, dual-use) or `closed` (asserted closed set); a non-exhaustive enum
       with neither is a compile error; `num_enum`-parity `From`/`TryFrom` for
       byte-aligned widths.
 - [x] **`#[bitflags]`** — single-bit flag sets with set algebra, per-flag accessors,
       `iter`, retain-vs-truncate.
+- [ ] **`#[bitflags]` `From` parity** — it wraps a backing integer like `#[bitfield]` but has no
+      `From<uN>`/`From<Self> for uN` pair. Adding one is breaking for the same reason (DESIGN §17).
 - [x] **`#[derive(BitsBuilder)]`** — required-by-default builder; `build()` names the
       first unset field; `#[builder(default)]` / `#[builder(default = expr)]`.
 - [x] **Automatic enum-alias normalization** — generated builders resolve fields, then
