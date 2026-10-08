@@ -1,0 +1,144 @@
+//! Typed registers: a register's value type names its address.
+//!
+//! A chip module declares a `Reg` enum for every address it touches. Registers whose
+//! contents the driver interprets get a value type (a `bnb` bitfield or `BitEnum`) that
+//! implements [`Register`] or, when the chip repeats it per channel or output,
+//! [`IndexedRegister`]. Writing a value then needs no address argument, and the wrong value
+//! for a register does not compile. Registers written as opaque bytes stay `(Reg, u8)`.
+
+use crate::error::{BusContext, Error};
+use crate::lowlevel::{Bus, I2cAddr};
+
+/// An 8-bit register at one fixed address.
+pub(crate) trait Register: Copy {
+    /// The chip's register-address enum.
+    type Map: Into<u8>;
+    /// Where this register lives.
+    const ADDR: Self::Map;
+    /// Decodes the register's byte.
+    fn from_byte(byte: u8) -> Self;
+    /// Encodes the register's byte.
+    fn to_byte(self) -> u8;
+
+    /// This value as an `(address, byte)` write.
+    fn entry(self) -> (Self::Map, u8) {
+        (Self::ADDR, self.to_byte())
+    }
+}
+
+/// An 8-bit register the chip repeats; `Index` (a channel or output) selects the copy.
+pub(crate) trait IndexedRegister: Copy {
+    /// The chip's register-address enum.
+    type Map: Into<u8>;
+    /// What selects one copy of the register.
+    type Index: Copy;
+    /// Where the copy for `index` lives.
+    fn addr(index: Self::Index) -> Self::Map;
+    /// Encodes the register's byte.
+    fn to_byte(self) -> u8;
+
+    /// This value, for the copy at `index`, as an `(address, byte)` write.
+    fn entry_at(self, index: Self::Index) -> (Self::Map, u8) {
+        (Self::addr(index), self.to_byte())
+    }
+}
+
+/// Byte-wide registers behind an I2C device with an auto-incrementing register pointer.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct I2cRegisters {
+    /// Where the chip answers.
+    dev: I2cAddr,
+    /// Names a failed read in errors.
+    read_op: &'static str,
+    /// Names a failed write in errors.
+    write_op: &'static str,
+}
+
+impl I2cRegisters {
+    /// Registers of the chip at `dev`; `read_op` and `write_op` name failures.
+    pub(crate) const fn new(dev: I2cAddr, read_op: &'static str, write_op: &'static str) -> Self {
+        Self {
+            dev,
+            read_op,
+            write_op,
+        }
+    }
+
+    /// Reads a typed register.
+    pub(crate) fn read<R: Register>(self, bus: &mut dyn Bus) -> Result<R, Error> {
+        self.read_raw(bus, R::ADDR).map(R::from_byte)
+    }
+
+    /// Writes a typed register.
+    pub(crate) fn write<R: Register>(self, bus: &mut dyn Bus, value: R) -> Result<(), Error> {
+        self.write_raw(bus, R::ADDR, value.to_byte())
+    }
+
+    /// Writes one copy of a repeated register.
+    pub(crate) fn write_at<R: IndexedRegister>(
+        self,
+        bus: &mut dyn Bus,
+        index: R::Index,
+        value: R,
+    ) -> Result<(), Error> {
+        self.write_raw(bus, R::addr(index), value.to_byte())
+    }
+
+    /// Reads a register as a byte.
+    pub(crate) fn read_raw(self, bus: &mut dyn Bus, reg: impl Into<u8>) -> Result<u8, Error> {
+        let mut value = [0];
+        bus.i2c(self.dev, &[reg.into()], &mut value)
+            .during(self.read_op)?;
+        Ok(value[0])
+    }
+
+    /// Writes a register as a byte.
+    pub(crate) fn write_raw(
+        self,
+        bus: &mut dyn Bus,
+        reg: impl Into<u8>,
+        value: u8,
+    ) -> Result<(), Error> {
+        bus.i2c(self.dev, &[reg.into(), value], &mut [])
+            .during(self.write_op)
+    }
+}
+
+/// Implements [`Register`] for a `bnb` bitfield: `bitfield_register!(Type => Reg::Variant)`.
+macro_rules! bitfield_register {
+    ($ty:ty => $map:ident::$variant:ident) => {
+        impl $crate::chips::register::Register for $ty {
+            type Map = $map;
+            const ADDR: $map = $map::$variant;
+
+            fn from_byte(byte: u8) -> Self {
+                <Self as ::bnb::Bitfield>::from_raw(byte)
+            }
+
+            fn to_byte(self) -> u8 {
+                ::bnb::Bitfield::to_raw(self)
+            }
+        }
+    };
+}
+
+/// Implements [`Register`] for a whole-byte `BitEnum` with a catch-all:
+/// `enum_register!(Type => Reg::Variant)`.
+macro_rules! enum_register {
+    ($ty:ty => $map:ident::$variant:ident) => {
+        impl $crate::chips::register::Register for $ty {
+            type Map = $map;
+            const ADDR: $map = $map::$variant;
+
+            fn from_byte(byte: u8) -> Self {
+                byte.into()
+            }
+
+            fn to_byte(self) -> u8 {
+                self.into()
+            }
+        }
+    };
+}
+
+pub(crate) use {bitfield_register, enum_register};

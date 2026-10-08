@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::chips::lms6002d::{Lms6002d, RxPath, TxPath};
-use crate::chips::lp8758::{Buck, Lp8758};
+use crate::chips::lp8758::{Buck, BuckControl, BuckVout, Config, Lp8758};
 use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{Tps6381x, Vout};
@@ -125,12 +125,12 @@ impl Board {
                 found: revision.into(),
             });
         }
-        PMIC.set_soft_start(bus, false)?;
-        PMIC.set_vout(bus, Buck::B1, VGPIO_MV)?;
-        PMIC.set_vout(bus, Buck::B3, LMS_VIO_NORMAL_MV)?;
+        PMIC.configure(bus, Config::SoftStartOff)?;
+        PMIC.set_vout(bus, Buck::B1, BuckVout::from_millivolts(VGPIO_MV))?;
+        PMIC.set_vout(bus, Buck::B3, BuckVout::from_millivolts(LMS_VIO_NORMAL_MV))?;
         // 1.0 V, 2.5 V, 1.2 V and 1.8 V rails, forced PWM.
         for buck in Buck::ALL {
-            PMIC.enable(bus, buck, true)?;
+            PMIC.control(bus, buck, BuckControl::EnabledForcedPwm)?;
         }
         BOOST.init(bus, true, BOOST_VOUT)
     }
