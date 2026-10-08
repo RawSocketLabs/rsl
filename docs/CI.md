@@ -75,6 +75,9 @@ means full coverage. Explicit `--base` selects a different comparison. No remote
 implicitly to choose that base. Linked worktrees use a retained self-contained temporary clone
 because act cannot follow their external Git-directory pointers; its path is printed. That
 clone is validation evidence, not a publication checkout. `ACT_CONCURRENT_JOBS` defaults to 2.
+Jobs run in a local derivative of the `.actrc` runner image, built on first use and whenever
+the upstream image changes. Its only difference is a relative `/var/run` link: act copies actions
+into `/var/run/act`, and Podman 5.8 rejects copies through the upstream absolute link.
 
 Hosted profiles run independently. Fuzz targets use separate processes/matrix entries with
 at most four concurrent entries; bnb retains 60 seconds/2,000,000 runs per target, crypto/PKI
