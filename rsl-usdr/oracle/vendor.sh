@@ -22,7 +22,8 @@ mkdir -p "$dest/lib" "$dest/gen"
 
 # The hardware transports (USB, PCIe, FT601, WebUSB, Verilator) are replaced by the sim plugin
 # in shim/; everything else in src/lib is kept so libusdr's device registry links unmodified.
-(cd "$src/lib" && find . \( -name '*.c' -o -name '*.h' -o -name '*.t' -o -name '*.inc' \) \
+# The register YAMLs are kept too: they are the generated headers' source and document every field.
+(cd "$src/lib" && find . \( -name '*.c' -o -name '*.h' -o -name '*.t' -o -name '*.inc' -o -name '*.yaml' \) \
     -not -path './lowlevel/usb_uram/*' -not -path './lowlevel/pcie_uram/*' \
     -not -path './lowlevel/usb_ft601/*' -not -path './lowlevel/verilator_ll/*' \
     -not -path './webusb/*' -not -path '*/utests/*' \

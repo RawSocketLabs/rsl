@@ -62,8 +62,17 @@ Each layer calls only the ones below it.
   - Opaque bytes, such as undocumented registers and tuning constants, stay `(Reg, u8)`
     writes.
   - 16-bit registers (TMP114) use `Reg` plus a value enum, without the traits.
-  - Field names and values come from libusdr's generated headers or its C enums; do not
-    invent fields the source does not document.
+  - Names say what a register, field or variant does (`EnableConfig::rx_enabled`, not
+    `TopEncfg::srxen`). Active-low bits get names that read true when set.
+  - Docs give the behaviour first, then the datasheet mnemonic, address or bits, reset
+    value and units, so searching the datasheet name finds the item.
+  - Sources: field meanings for the LMS6002D and Si5332 come from libusdr's register
+    YAMLs (vendored beside the C). For TI parts, cite the datasheet by literature
+    number and section: LP8758-E0 SNVSAC6B, TMP114 SNIS214E, TPS63810/11 SLVSEK4C. Never
+    invent a field the source does not document; keep such bits in a raw byte, with the
+    reason in the doc.
+  - The LMS6002D has one module per datasheet block (`top`, `pll`, `tx_rf`, `afe`,
+    `rx_vga2`, `rx_fe`). Blocks with identical maps share a module and an index (`Pll`).
 - `sim` stays an unpublished crate, not a feature of the driver.
 
 ## Verify

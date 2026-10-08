@@ -1,7 +1,9 @@
-//! TMP114 temperature sensor (source: `hw/tmp114/tmp114.c`). Its registers are 16 bits wide
-//! and sent MSB first.
+//! TMP114 temperature sensor, which reads the board temperature for the thermal policy.
+//!
+//! Register meanings: TI SNIS214E, "TMP114", §8.6. Its registers are 16 bits wide and sent
+//! MSB first.
 
-use bnb::BitEnum;
+use bnb::{BitEnum, bitfield, u4, u12};
 
 use crate::error::{BusContext, Error};
 use crate::lowlevel::{Bus, I2cAddr};
@@ -11,22 +13,23 @@ use crate::lowlevel::{Bus, I2cAddr};
 #[bit_enum(u8, closed)]
 #[repr(u8)]
 enum Reg {
-    /// Temperature result: two's complement, 1/128 °C per bit.
-    TempResult = 0x00,
-    /// Device ID; see [`DeviceId`].
+    /// The latest conversion: two's complement, 1/128 °C (0.0078125 °C) per bit.
+    /// `Temp_Result`, §8.6.1; reset 0, until the first conversion completes.
+    Temperature = 0x00,
+    /// See [`DeviceId`]. `Device_ID`, §8.6.12.
     DeviceId = 0x0b,
 }
 
-/// The device ID register.
-#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u16)]
-#[repr(u16)]
-enum DeviceId {
-    /// TMP114.
-    Tmp114 = 0x1114,
-    /// Any other part, or no part (an idle bus reads `0xffff`).
-    #[catch_all]
-    Other(u16),
+/// The part and its revision. `Device_ID`, §8.6.12 (read-only).
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DeviceId {
+    /// Device revision. `Rev`, bits 15:12; 1 on the TMP114.
+    #[bits(12..=15)]
+    revision: u4,
+    /// Device ID. `ID`, bits 11:0; 0x114 on the TMP114.
+    #[bits(0..=11)]
+    device: u12,
 }
 
 /// Result register counts per degree Celsius.
@@ -40,6 +43,9 @@ pub(crate) struct Tmp114 {
 }
 
 impl Tmp114 {
+    /// The ID libusdr requires: device 0x114 (TMP114), revision 1. An idle bus reads 0xFFFF.
+    const DEVICE_ID: u16 = 0x1114;
+
     /// The sensor at `dev`.
     pub(crate) const fn at(dev: I2cAddr) -> Self {
         Self { dev }
@@ -47,21 +53,22 @@ impl Tmp114 {
 
     /// Reads the temperature in degrees Celsius.
     pub(crate) fn celsius(self, bus: &mut dyn Bus) -> Result<f32, Error> {
-        let raw = self.read(bus, Reg::TempResult, "TMP114 temperature read")?;
+        let raw = self.read(bus, Reg::Temperature, "TMP114 temperature read")?;
         Ok(f32::from(i16::from_be_bytes(raw)) / COUNTS_PER_CELSIUS)
     }
 
     /// Checks the device ID register.
     pub(crate) fn check_id(self, bus: &mut dyn Bus) -> Result<(), Error> {
         let raw = self.read(bus, Reg::DeviceId, "TMP114 ID read")?;
-        match DeviceId::from(u16::from_be_bytes(raw)) {
-            DeviceId::Tmp114 => Ok(()),
-            DeviceId::Other(found) => Err(Error::ChipId {
+        let id = DeviceId::from_raw(u16::from_be_bytes(raw));
+        if !(id.device().value() == 0x114 && id.revision().value() == 1) {
+            return Err(Error::ChipId {
                 chip: "TMP114",
-                expected: u16::from(DeviceId::Tmp114).into(),
-                found: found.into(),
-            }),
+                expected: Self::DEVICE_ID.into(),
+                found: id.to_raw().into(),
+            });
         }
+        Ok(())
     }
 
     /// Reads one 16-bit register, in wire order.

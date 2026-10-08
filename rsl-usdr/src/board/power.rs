@@ -5,8 +5,8 @@ use std::fmt;
 use std::time::Duration;
 
 use super::Board;
-use crate::chips::lms6002d::{Lms6002d, RxPath, TxPath};
-use crate::chips::lp8758::{Buck, BuckControl, BuckVout, Config};
+use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
+use crate::chips::lp8758::{Buck, BuckControl, Config};
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::{BusContext, Error};
 use crate::fpga::{Gpi, Gpo, Hwid};
@@ -102,18 +102,19 @@ impl Identified {
     fn power_rails(&mut self) -> Result<(), Error> {
         let bus = self.bus.as_mut();
         Board::PMIC.check_revision(bus)?;
-        Board::PMIC.configure(bus, Config::SoftStartOff)?;
-        Board::PMIC.set_vout(bus, Buck::B1, BuckVout::from_millivolts(Board::VGPIO_MV))?;
-        Board::PMIC.set_vout(
-            bus,
-            Buck::B3,
-            BuckVout::from_millivolts(Board::LMS_VIO_NORMAL_MV),
-        )?;
-        // 1.0 V, 2.5 V, 1.2 V and 1.8 V rails, forced PWM.
+        // libusdr's `lp8758_ss(0)`: spread spectrum off; this byte also sets the 105 °C
+        // die-temperature warning and drops the EN-pin pull-downs.
+        Board::PMIC.configure(bus, Config::new().with_warn_at_105c(true))?;
+        Board::PMIC.set_voltage(bus, Buck::B1, Board::VGPIO)?;
+        Board::PMIC.set_voltage(bus, Buck::B3, Board::LMS_VIO_NORMAL)?;
+        // All four channels on, forced PWM.
         for buck in Buck::ALL {
-            Board::PMIC.control(bus, buck, BuckControl::EnabledForcedPwm)?;
+            let on = BuckControl::new()
+                .with_enabled(true)
+                .with_discharge_when_off(true);
+            Board::PMIC.control(bus, buck, on.with_forced_pwm(true))?;
         }
-        Board::BOOST.init(bus, true, Board::BOOST_VOUT)
+        Board::BOOST.init(bus, true, Board::BOOST_VOLTAGE)
     }
 
     /// Programs the clock generator; on revision 3, then starts the on-board oscillator.
@@ -162,8 +163,8 @@ impl Identified {
         Gpo::RxSwitch.set(io, 0)?;
         Gpo::RxMixerEnable.set(io, 0)?;
         Gpo::TxSwitch.set(io, 1)?;
-        lms.set_rx_path(io, RxPath::Lna1)?;
-        lms.set_tx_path(io, TxPath::Pa1)?;
+        lms.select_lna(io, Lna::Lna1)?;
+        lms.select_pa(io, PowerAmp::Pa1)?;
         Gpo::DcCorrection.set(io, 1)?;
         Ok(Board { bus, lms })
     }
