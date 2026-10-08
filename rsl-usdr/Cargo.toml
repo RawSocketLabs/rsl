@@ -1,0 +1,19 @@
+[package]
+name = "rsl-usdr"
+version = "0.0.0"
+description = "Pure-Rust driver for the Wavelet Lab uSDR software-defined radio."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rsl-usdr-sim.workspace = true
+
+[lints]
+workspace = true

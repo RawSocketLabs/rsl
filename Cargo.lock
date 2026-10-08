@@ -3280,6 +3280,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-usdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-usdr-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-usdr-sim"
 version = "0.0.0"
 dependencies = [

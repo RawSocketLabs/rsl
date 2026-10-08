@@ -9,9 +9,16 @@ repository = "https://github.com/RawSocketLabs/rsl"
 rust-version = "1.85"
 links = "usdr_oracle"
 
+# Its own workspace root: it sits inside the `rsl-usdr` member's directory, where the root
+# workspace's `exclude` cannot reach it.
+[workspace]
+
 [dependencies]
 rsl-usdr-sim = { path = "../sim" }
 thiserror = "2.0"
+
+[dev-dependencies]
+rsl-usdr = { path = ".." }
 
 [build-dependencies]
 cc = "1.2"
