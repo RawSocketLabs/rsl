@@ -43,3 +43,13 @@ impl Register for Control {
     type Map = Reg;
     const ADDR: Reg = Reg::Control;
 }
+
+impl Control {
+    /// Lime's recommended setting, 0x36, from the LMS6002D FAQ v1.0r12, 5.27 (as libusdr
+    /// writes it): powered, common-mode code `0b1101`. libusdr's YAML scale cannot place
+    /// that code: 40 mV steps up from its 620 mV at `0b1000` give 820 mV, but down from its
+    /// 860 mV at `0b1111` give 780 mV.
+    pub(super) const LIME_RECOMMENDED: Self = Self::new()
+        .with_common_mode(u4::new(0b1101))
+        .with_enabled(true);
+}

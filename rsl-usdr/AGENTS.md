@@ -74,8 +74,14 @@ Each layer calls only the ones below it.
     number and section: LP8758-E0 SNVSAC6B, TMP114 SNIS214E, TPS63810/11 SLVSEK4C. Never
     invent a field the source does not document; keep such bits in a raw byte, with the
     reason in the doc.
-  - The LMS6002D has one module per datasheet block (`top`, `pll`, `tx_rf`, `afe`,
-    `rx_vga2`, `rx_fe`). Blocks with identical maps share a module and an index (`Pll`).
+  - A chip whose register value types outgrow one file is a directory: `mod.rs` holds the
+    chip docs, module declarations and re-exports; `<chip>.rs` the driver; the value types
+    split by register group, plus any transport helper (the LMS6002D's `spi`). The
+    LMS6002D splits by datasheet block (`top`, `pll`, `tx_rf`, `afe`, `rx_vga2`, `rx_fe`),
+    each with its own `Reg`; blocks with identical maps share a module and an index (`Pll`).
+    The I2C chips have one flat address space, so their single `Reg` sits in `reg.rs` and
+    the value types split by function (Si5332: `state`, `input`, `divider`, `output`). The
+    TMP114, with one value type, stays one file.
 - `sim` stays an unpublished crate, not a feature of the driver.
 
 ## Verify

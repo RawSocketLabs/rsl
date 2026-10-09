@@ -63,42 +63,54 @@ impl I2cRegisters {
         }
     }
 
+    /// These registers on `bus`, for the accesses of one operation.
+    pub(crate) fn on(self, bus: &mut dyn Bus) -> I2cWriter<'_> {
+        I2cWriter { regs: self, bus }
+    }
+}
+
+/// [`I2cRegisters`] bound to a bus for one operation; it reads and writes.
+pub(crate) struct I2cWriter<'a> {
+    /// Which chip.
+    regs: I2cRegisters,
+
+    /// The bus the chip is on.
+    bus: &'a mut dyn Bus,
+}
+
+impl I2cWriter<'_> {
     /// Reads a typed register.
-    pub(crate) fn read<R: Register>(self, bus: &mut dyn Bus) -> Result<R, Error> {
-        self.read_raw(bus, R::ADDR).map(R::from)
+    pub(crate) fn read<R: Register>(&mut self) -> Result<R, Error> {
+        self.read_raw(R::ADDR).map(R::from)
     }
 
     /// Writes a typed register.
-    pub(crate) fn write<R: Register>(self, bus: &mut dyn Bus, value: R) -> Result<(), Error> {
-        self.write_raw(bus, R::ADDR, value.into())
+    pub(crate) fn write<R: Register>(&mut self, value: R) -> Result<(), Error> {
+        self.write_raw(R::ADDR, value.into())
     }
 
     /// Writes one copy of a repeated register.
-    pub(crate) fn write_at<R: IndexedRegister>(
-        self,
-        bus: &mut dyn Bus,
+    pub(crate) fn write_to<R: IndexedRegister>(
+        &mut self,
         index: R::Index,
         value: R,
     ) -> Result<(), Error> {
-        self.write_raw(bus, R::addr(index), value.into())
+        self.write_raw(R::addr(index), value.into())
     }
 
     /// Reads a register as a byte.
-    pub(crate) fn read_raw(self, bus: &mut dyn Bus, reg: impl Into<u8>) -> Result<u8, Error> {
+    pub(crate) fn read_raw(&mut self, reg: impl Into<u8>) -> Result<u8, Error> {
         let mut value = [0];
-        bus.i2c(self.dev, &[reg.into()], &mut value)
-            .during(self.read_op)?;
+        self.bus
+            .i2c(self.regs.dev, &[reg.into()], &mut value)
+            .during(self.regs.read_op)?;
         Ok(value[0])
     }
 
     /// Writes a register as a byte.
-    pub(crate) fn write_raw(
-        self,
-        bus: &mut dyn Bus,
-        reg: impl Into<u8>,
-        value: u8,
-    ) -> Result<(), Error> {
-        bus.i2c(self.dev, &[reg.into(), value], &mut [])
-            .during(self.write_op)
+    pub(crate) fn write_raw(&mut self, reg: impl Into<u8>, value: u8) -> Result<(), Error> {
+        self.bus
+            .i2c(self.regs.dev, &[reg.into(), value], &mut [])
+            .during(self.regs.write_op)
     }
 }

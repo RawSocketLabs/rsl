@@ -123,3 +123,9 @@ impl Register for LnaLoad {
     type Map = Reg;
     const ADDR: Reg = Reg::LnaLoad;
 }
+
+impl LnaLoad {
+    /// Lime's recommended load, code 0x37, from the LMS6002D FAQ v1.0r12, 5.27 (as libusdr
+    /// writes it). Neither libusdr nor its register map gives the resistance per code.
+    pub(super) const LIME_RECOMMENDED: Self = Self::new().with_resistance(u6::new(0x37));
+}

@@ -85,3 +85,10 @@ impl Register for Bias {
     type Map = Reg;
     const ADDR: Reg = Reg::Bias;
 }
+
+impl Bias {
+    /// Lime's recommended setting, 0x40, from the LMS6002D FAQ v1.0r12, 5.27 (as libusdr
+    /// writes it): LO buffer current code 4, about 3.3 mA against the 5 mA reset, and the
+    /// cascode bias left at its reset value.
+    pub(super) const LIME_RECOMMENDED: Self = Self::new().with_lo_buffer_current(u4::new(4));
+}
