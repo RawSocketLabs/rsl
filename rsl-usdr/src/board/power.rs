@@ -18,6 +18,7 @@ use crate::thermal::Thermometer;
 pub(crate) struct Identified {
     /// The hardware seam.
     bus: Box<dyn Bus>,
+
     /// Revision 3 (on-board oscillator, TMP114 ID check).
     rev3: bool,
 }

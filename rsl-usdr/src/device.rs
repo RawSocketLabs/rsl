@@ -15,6 +15,7 @@ use crate::thermal::{CoolDown, ThermalPolicy};
 pub struct Device {
     /// The powered board, which owns the bus; `None` only once powered down.
     board: Option<Board>,
+
     /// Temperature limits in force.
     thermal: ThermalPolicy,
 }
@@ -24,8 +25,10 @@ pub struct Device {
 pub struct DeviceBuilder<'a> {
     /// The hardware seam.
     bus: Box<dyn Bus>,
+
     /// Temperature limits to enforce.
     thermal: ThermalPolicy,
+
     /// Wait for a hot board to cool, reporting each reading, instead of failing.
     cool_down: Option<CoolDown<'a>>,
 }

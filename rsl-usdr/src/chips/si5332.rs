@@ -65,135 +65,199 @@ enum Reg {
     /// Supply status flags (`VDDO_OK`, `VDD_XTAL_OK`), read for diagnostics only. `VDD_OK`,
     /// 0x05.
     SupplyStatus = 0x05,
+
     /// See [`RequestedState`]. `USYS_CTRL`, 0x06.
     RequestedState = 0x06,
+
     /// See [`CurrentState`]. `USYS_STAT`, 0x07.
     CurrentState = 0x07,
+
     /// Device part number. `DEVICE_PN_BASE`, 0x0D.
     DevicePn = 0x0d,
+
     /// Device revision. `DEVICE_REV`, 0x0E.
     DeviceRev = 0x0e,
+
     /// Device grade. `DEVICE_GRADE`, 0x0F.
     DeviceGrade = 0x0f,
+
     /// Orderable part number, characters 1 and 0. `FACTORY_OPN_ID10`, 0x10.
     FactoryOpnId10 = 0x10,
+
     /// Orderable part number, characters 3 and 2. `FACTORY_OPN_ID32`, 0x11.
     FactoryOpnId32 = 0x11,
+
     /// Orderable part number, revision and character 4. `FACTORY_OPN_IDR4`, 0x12.
     FactoryOpnIdR4 = 0x12,
+
     /// Design ID, byte 0. `DESIGN_ID0`, 0x13.
     DesignId0 = 0x13,
+
     /// Design ID, byte 1. `DESIGN_ID1`, 0x14.
     DesignId1 = 0x14,
+
     /// Design ID, byte 2. `DESIGN_ID2`, 0x15.
     DesignId2 = 0x15,
+
     /// See [`PllReference`]. `IMUX_SEL`, 0x24.
     PllReference = 0x24,
+
     /// See [`OutputSource`], output 0. `OMUX0_SEL10`, 0x25.
     Output0Source = 0x25,
+
     /// Output 1 source. `OMUX1_SEL10`, 0x26.
     Output1Source = 0x26,
+
     /// Output 2 source. `OMUX2_SEL10`, 0x27.
     Output2Source = 0x27,
+
     /// Output 3 source. `OMUX3_SEL10`, 0x28.
     Output3Source = 0x28,
+
     /// Output 4 source. `OMUX4_SEL10`, 0x29.
     Output4Source = 0x29,
+
     /// Output 5 source. `OMUX5_SEL10`, 0x2A.
     Output5Source = 0x2a,
+
     /// See [`SpreadSpectrum`], divider 0 bank A. `ID0A_SS`, 0x3C.
     Id0aSpreadSpectrum = 0x3c,
+
     /// Divider 0 bank B spread spectrum. `ID0B_SS`, 0x48.
     Id0bSpreadSpectrum = 0x48,
+
     /// Divider 1 bank A spread spectrum. `ID1A_SS`, 0x54.
     Id1aSpreadSpectrum = 0x54,
+
     /// Divider 1 bank B spread spectrum. `ID1B_SS`, 0x60.
     Id1bSpreadSpectrum = 0x60,
+
     /// See [`InputMode`]. `CLKIN_2_CLK_SEL`, 0x73.
     Input2Mode = 0x73,
+
     /// Input buffer 3's mode; libusdr's map has no layout, and it writes 0.
     /// `CLKIN_3_CLK_SEL`, 0x74.
     Input3Mode = 0x74,
+
     /// See [`DriverMode`], output 0. `OUT0_MODE`, 0x7A.
     Output0Mode = 0x7a,
+
     /// See [`Divider`], output 0. `OUT0_DIV`, 0x7B.
     Output0Divider = 0x7b,
+
     /// See [`Skew`], output 0. `OUT0_SKEW`, 0x7C.
     Output0Skew = 0x7c,
+
     /// See [`Polarity`], output 0. `OUT0_CMOS_INV_Z`, 0x7D.
     Output0Polarity = 0x7d,
+
     /// See [`CmosDrive`], output 0. `OUT0_CMOS_SLEW`, 0x7E.
     Output0Drive = 0x7e,
+
     /// Output 1 driver mode. `OUT1_MODE`, 0x7F.
     Output1Mode = 0x7f,
+
     /// Output 1 divider. `OUT1_DIV`, 0x80.
     Output1Divider = 0x80,
+
     /// Output 1 skew. `OUT1_SKEW`, 0x81.
     Output1Skew = 0x81,
+
     /// Output 1 polarity. `OUT1_CMOS_INV_Z`, 0x82.
     Output1Polarity = 0x82,
+
     /// Output 1 CMOS drive. `OUT1_CMOS_SLEW`, 0x83.
     Output1Drive = 0x83,
+
     /// Output 2 driver mode. `OUT2_MODE`, 0x89.
     Output2Mode = 0x89,
+
     /// Output 2 divider. `OUT2_DIV`, 0x8A.
     Output2Divider = 0x8a,
+
     /// Output 2 skew. `OUT2_SKEW`, 0x8B.
     Output2Skew = 0x8b,
+
     /// Output 2 polarity. `OUT2_CMOS_INV_Z`, 0x8C.
     Output2Polarity = 0x8c,
+
     /// Output 2 CMOS drive. `OUT2_CMOS_SLEW`, 0x8D.
     Output2Drive = 0x8d,
+
     /// Output 3 driver mode. `OUT3_MODE`, 0x98.
     Output3Mode = 0x98,
+
     /// Output 3 divider. `OUT3_DIV`, 0x99.
     Output3Divider = 0x99,
+
     /// Output 3 skew. `OUT3_SKEW`, 0x9A.
     Output3Skew = 0x9a,
+
     /// Output 3 polarity. `OUT3_CMOS_INV_Z`, 0x9B.
     Output3Polarity = 0x9b,
+
     /// Output 3 CMOS drive. `OUT3_CMOS_SLEW`, 0x9C.
     Output3Drive = 0x9c,
+
     /// Output 4 driver mode. `OUT4_MODE`, 0xA7.
     Output4Mode = 0xa7,
+
     /// Output 4 divider. `OUT4_DIV`, 0xA8.
     Output4Divider = 0xa8,
+
     /// Output 4 skew. `OUT4_SKEW`, 0xA9.
     Output4Skew = 0xa9,
+
     /// Output 4 polarity. `OUT4_CMOS_INV_Z`, 0xAA.
     Output4Polarity = 0xaa,
+
     /// Output 4 CMOS drive. `OUT4_CMOS_SLEW`, 0xAB.
     Output4Drive = 0xab,
+
     /// Output 5 driver mode. `OUT5_MODE`, 0xAC.
     Output5Mode = 0xac,
+
     /// Output 5 divider. `OUT5_DIV`, 0xAD.
     Output5Divider = 0xad,
+
     /// Output 5 skew. `OUT5_SKEW`, 0xAE.
     Output5Skew = 0xae,
+
     /// Output 5 polarity. `OUT5_CMOS_INV_Z`, 0xAF.
     Output5Polarity = 0xaf,
+
     /// Output 5 CMOS drive. `OUT5_CMOS_SLEW`, 0xB0.
     Output5Drive = 0xb0,
+
     /// Output enables for outputs 0..=3 (bits 0, 1, 3, 6). libusdr writes 0xFF, which also
     /// sets the undefined bits, so it stays a raw byte. `OUT3210_OE`, 0xB6.
     OutputEnables0to3 = 0xb6,
+
     /// Output enables for outputs 4 and 5 (bits 1, 2); written as 0xFF like
     /// [`Reg::OutputEnables0to3`]. `OUT54_OE`, 0xB7.
     OutputEnables4and5 = 0xb7,
+
     /// See [`InputPowerDown`]. 0xB9.
     InputPowerDown = 0xb9,
+
     /// See [`DividerPowerDown`]. 0xBA.
     DividerPowerDown = 0xba,
+
     /// See [`SourcePowerDown`]. 0xBB.
     SourcePowerDown = 0xbb,
+
     /// See [`Output0to3PowerDown`]. 0xBC.
     Output0to3PowerDown = 0xbc,
+
     /// See [`Output4and5PowerDown`]. 0xBD.
     Output4and5PowerDown = 0xbd,
+
     /// See [`CrystalLoad`]. `XOSC_CINT_ENA`, 0xBF.
     CrystalLoad = 0xbf,
+
     /// See [`CrystalTrim`], pin XA. `XOSC_CTRIM_XA`, 0xC0.
     CrystalTrimXa = 0xc0,
+
     /// Crystal trim, pin XB. `XOSC_CTRIM_XB`, 0xC1.
     CrystalTrimXb = 0xc1,
 }
@@ -218,8 +282,10 @@ const ID_REGS: [Reg; 9] = [
 enum RequestedState {
     /// Hold the outputs so the configuration can be changed.
     Ready = 0x01,
+
     /// Run with the current configuration.
     Active = 0x02,
+
     /// Any other value.
     #[catch_all]
     Other(u8),
@@ -236,10 +302,13 @@ impl Register for RequestedState {
 enum CurrentState {
     /// Outputs held; configuration can be changed.
     Ready = 0x01,
+
     /// Running.
     Active = 0x02,
+
     /// No input clock detected, so it cannot become active.
     NoInputClock = 0x89,
+
     /// Any other value, including while a transition is in progress.
     #[catch_all]
     Other(u8),
@@ -256,8 +325,10 @@ impl Register for CurrentState {
 enum PllReference {
     /// The crystal or on-board oscillator.
     Oscillator = 1,
+
     /// Clock input 2.
     Input2 = 2,
+
     /// Any other value.
     #[catch_all]
     Other(u8),
@@ -274,8 +345,10 @@ impl Register for PllReference {
 enum InputMode {
     /// Buffer off.
     Off = 0,
+
     /// Differential input.
     Differential = 1,
+
     /// Any other value.
     #[catch_all]
     Other(u8),
@@ -290,14 +363,19 @@ impl Register for InputMode {
 enum Output {
     /// Output 0: the LMS6002D PLL reference on revision 3, the RX clock on revisions 1-2.
     Out0,
+
     /// Output 1: the RX clock on revision 3, the PLL reference on revisions 1-2.
     Out1,
+
     /// Output 2: the TX clock.
     Out2,
+
     /// Output 3: the external RX mixer's LO.
     Out3,
+
     /// Output 4: the FPGA transceiver (MGT) reference.
     Out4,
+
     /// Output 5: the FPGA reference on revisions 3-4, the USB clock on revision 2.
     Out5,
 }
@@ -329,10 +407,13 @@ macro_rules! per_output {
 enum DirectSource {
     /// The PLL reference before its pre-scaler.
     PllReference,
+
     /// The PLL reference after its pre-scaler.
     PllReferencePrescaled,
+
     /// Clock input 2.
     Input2,
+
     /// Clock input 3.
     Input3,
 }
@@ -343,18 +424,25 @@ enum DirectSource {
 enum DividerSource {
     /// High-speed divider 0.
     HighSpeed0,
+
     /// High-speed divider 1.
     HighSpeed1,
+
     /// High-speed divider 2.
     HighSpeed2,
+
     /// High-speed divider 3.
     HighSpeed3,
+
     /// High-speed divider 4.
     HighSpeed4,
+
     /// Interpolative divider 0.
     Interpolative0,
+
     /// Interpolative divider 1.
     Interpolative1,
+
     /// No divider: use the direct source. Forced whenever the PLL is off.
     Direct,
 }
@@ -366,6 +454,7 @@ struct OutputSource {
     /// A divider, or [`DividerSource::Direct`] to take `direct`. `OMUXn_SEL1`, bits 6:4.
     #[bits(4..=6)]
     divider: DividerSource,
+
     /// The undivided source. `OMUXn_SEL0`, bits 1:0.
     #[bits(0..=1)]
     direct: DirectSource,
@@ -389,30 +478,43 @@ per_output!(
 enum DriverMode {
     /// Off.
     Off = 0,
+
     /// CMOS on the positive pin only.
     CmosPositive = 1,
+
     /// CMOS on the negative pin only.
     CmosNegative = 2,
+
     /// CMOS on both pins.
     CmosDual = 3,
+
     /// 2.5 V/3.3 V LVDS.
     Lvds25 = 4,
+
     /// 1.8 V LVDS.
     Lvds18 = 5,
+
     /// 2.5 V/3.3 V LVDS, fast edges.
     Lvds25Fast = 6,
+
     /// 1.8 V LVDS, fast edges.
     Lvds18Fast = 7,
+
     /// HCSL, 50 Ω external termination.
     Hcsl50External = 8,
+
     /// HCSL, 50 Ω internal termination.
     Hcsl50Internal = 9,
+
     /// HCSL, 42.5 Ω external termination.
     Hcsl42External = 10,
+
     /// HCSL, 42.5 Ω internal termination.
     Hcsl42Internal = 11,
+
     /// LVPECL.
     Lvpecl = 12,
+
     /// Any other value.
     #[catch_all]
     Other(u8),
@@ -477,6 +579,7 @@ struct Polarity {
     /// Polarity of the two dual-CMOS pins. `OUTn_CMOS_INV`, bits 5:4.
     #[bits(4..=5)]
     cmos_inversion: u2,
+
     /// Go high-impedance when stopped. `OUTn_STOP_HIGHZ`, bit 0.
     #[bits(0..=0)]
     high_z_when_stopped: bool,
@@ -501,6 +604,7 @@ struct CmosDrive {
     /// the driver writes 0. `OUTn_CMOS_STR`, bit 2.
     #[bits(2..=2)]
     impedance_select: bool,
+
     /// Slew rate, fast (0) to slow (3). `OUTn_CMOS_SLEW`, bits 1:0.
     #[bits(0..=1)]
     slew: u2,
@@ -522,10 +626,13 @@ per_output!(
 enum SpreadBank {
     /// Divider 0, bank A.
     Id0a,
+
     /// Divider 0, bank B.
     Id0b,
+
     /// Divider 1, bank A.
     Id1a,
+
     /// Divider 1, bank B.
     Id1b,
 }
@@ -538,6 +645,7 @@ struct SpreadSpectrum {
     /// Spread-spectrum mode. `SS_MODE`, bits 2:1.
     #[bits(1..=2)]
     mode: u2,
+
     /// Modulate the divider. `SS_ENA`, bit 0.
     #[bits(0..=0)]
     enabled: bool,
@@ -564,15 +672,19 @@ struct InputPowerDown {
     /// The PLL. `PLL_DIS`, bit 5.
     #[bits(5..=5)]
     pll: bool,
+
     /// The pre-divider buffer. `PDIV_DIS`, bit 4.
     #[bits(4..=4)]
     pre_divider: bool,
+
     /// The input mux. `IMUX_DIS`, bit 3.
     #[bits(3..=3)]
     input_mux: bool,
+
     /// Input buffer 0. `IBUF0_DIS`, bit 1.
     #[bits(1..=1)]
     input_buffer0: bool,
+
     /// The crystal oscillator buffer. `XOSC_DIS`, bit 0.
     #[bits(0..=0)]
     oscillator: bool,
@@ -589,21 +701,27 @@ struct DividerPowerDown {
     /// Interpolative divider 1. `ID1_DIS`, bit 6.
     #[bits(6..=6)]
     interpolative1: bool,
+
     /// Interpolative divider 0. `ID0_DIS`, bit 5.
     #[bits(5..=5)]
     interpolative0: bool,
+
     /// High-speed divider 4. `HSDIV4_DIS`, bit 4.
     #[bits(4..=4)]
     high_speed4: bool,
+
     /// High-speed divider 3. `HSDIV3_DIS`, bit 3.
     #[bits(3..=3)]
     high_speed3: bool,
+
     /// High-speed divider 2. `HSDIV2_DIS`, bit 2.
     #[bits(2..=2)]
     high_speed2: bool,
+
     /// High-speed divider 1. `HSDIV1_DIS`, bit 1.
     #[bits(1..=1)]
     high_speed1: bool,
+
     /// High-speed divider 0. `HSDIV0_DIS`, bit 0.
     #[bits(0..=0)]
     high_speed0: bool,
@@ -620,18 +738,23 @@ struct SourcePowerDown {
     /// Output 5's selector. `OMUX5_DIS`, bit 5.
     #[bits(5..=5)]
     output5: bool,
+
     /// Output 4's selector. `OMUX4_DIS`, bit 4.
     #[bits(4..=4)]
     output4: bool,
+
     /// Output 3's selector. `OMUX3_DIS`, bit 3.
     #[bits(3..=3)]
     output3: bool,
+
     /// Output 2's selector. `OMUX2_DIS`, bit 2.
     #[bits(2..=2)]
     output2: bool,
+
     /// Output 1's selector. `OMUX1_DIS`, bit 1.
     #[bits(1..=1)]
     output1: bool,
+
     /// Output 0's selector. `OMUX0_DIS`, bit 0.
     #[bits(0..=0)]
     output0: bool,
@@ -648,12 +771,15 @@ struct Output0to3PowerDown {
     /// Output 3. `OUT3_DIS`, bit 6.
     #[bits(6..=6)]
     output3: bool,
+
     /// Output 2. `OUT2_DIS`, bit 3.
     #[bits(3..=3)]
     output2: bool,
+
     /// Output 1. `OUT1_DIS`, bit 1.
     #[bits(1..=1)]
     output1: bool,
+
     /// Output 0. `OUT0_DIS`, bit 0.
     #[bits(0..=0)]
     output0: bool,
@@ -670,6 +796,7 @@ struct Output4and5PowerDown {
     /// Output 5. `OUT5_DIS`, bit 2.
     #[bits(2..=2)]
     output5: bool,
+
     /// Output 4. `OUT4_DIS`, bit 1.
     #[bits(1..=1)]
     output4: bool,
@@ -697,6 +824,7 @@ impl Register for CrystalLoad {
 enum CrystalPin {
     /// Pin XA.
     Xa,
+
     /// Pin XB.
     Xb,
 }
@@ -730,6 +858,7 @@ const STATE_POLLS: usize = 100;
 pub(crate) enum Reference {
     /// The on-board 26 MHz oscillator, which revision 3 carries and the FPGA switches on.
     Oscillator,
+
     /// Clock input 2, received differentially: the reference on revisions 1 and 2.
     Input2,
 }
@@ -743,6 +872,7 @@ pub(crate) enum Reference {
 pub(crate) enum LvpeclOutput {
     /// Output 0 is LVPECL.
     Out0,
+
     /// Output 1 is LVPECL.
     Out1,
 }

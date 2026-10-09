@@ -18,6 +18,7 @@ pub const I2C_MAX_READ: usize = 4;
 pub struct I2cAddr {
     /// FPGA I2C bus number.
     bus: u8,
+
     /// 7-bit device address.
     addr: u8,
 }
@@ -67,15 +68,19 @@ pub enum BusError {
     /// The operation did not complete in time.
     #[error("bus operation timed out")]
     Timeout,
+
     /// The device was unplugged or its driver went away.
     #[error("device disconnected")]
     Disconnected,
+
     /// The bus cannot perform this operation (for example, an I2C transfer over the limits).
     #[error("unsupported bus operation: {0}")]
     Unsupported(&'static str),
+
     /// An operating-system error from the transport.
     #[error("bus I/O error")]
     Io(#[from] io::Error),
+
     /// Any other failure. An escape hatch for custom buses whose errors have no variant
     /// here; the driver's own transports use the specific variants.
     #[error(transparent)]

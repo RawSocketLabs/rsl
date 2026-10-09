@@ -50,24 +50,34 @@ use crate::lowlevel::{Bus, I2cAddr};
 pub(crate) enum Reg {
     /// Device revision. libusdr reads it as `DEV_REV`; SNVSAC6B's map does not list 0x00.
     DeviceRevision = 0x00,
+
     /// OTP image revision. `OTP_REV`, §7.6.1.1.
     OtpRevision = 0x01,
+
     /// See [`BuckControl`], channel 0. `BUCK0_CTRL1`.
     Buck0Control = 0x02,
+
     /// Channel 1 control. `BUCK1_CTRL1`.
     Buck1Control = 0x04,
+
     /// Channel 2 control. `BUCK2_CTRL1`.
     Buck2Control = 0x06,
+
     /// Channel 3 control. `BUCK3_CTRL1`.
     Buck3Control = 0x08,
+
     /// See [`BuckVoltage`], channel 0. `BUCK0_VOUT`.
     Buck0Voltage = 0x0a,
+
     /// Channel 1 output voltage. `BUCK1_VOUT`.
     Buck1Voltage = 0x0c,
+
     /// Channel 2 output voltage. `BUCK2_VOUT`.
     Buck2Voltage = 0x0e,
+
     /// Channel 3 output voltage. `BUCK3_VOUT`.
     Buck3Voltage = 0x10,
+
     /// See [`Config`]. `CONFIG`, §7.6.1.23.
     Config = 0x17,
 }
@@ -77,10 +87,13 @@ pub(crate) enum Reg {
 pub(crate) enum Buck {
     /// Channel 0: the 1.0 V rail (its OTP default is 1.0 V; libusdr leaves it there).
     B0,
+
     /// Channel 1: the GPIO bank rail, set to 1.8 V.
     B1,
+
     /// Channel 2: libusdr's comment calls it the 1.2 V rail; it never sets its voltage.
     B2,
+
     /// Channel 3: the LMS6002D I/O rail, 1.8 V at normal sample rates (libusdr raises it
     /// to 1.925 V above 62 MS/s).
     B3,
@@ -102,20 +115,25 @@ pub(crate) struct BuckControl {
     /// Run the channel. `EN_BUCKn`, bit 7; reset 1 (OTP).
     #[bits(7..=7)]
     enabled: bool,
+
     /// Also require the selected EN pin to be high. `EN_PIN_CTRLn`, bit 6; reset 1 (OTP).
     #[bits(6..=6)]
     pin_controlled: bool,
+
     /// The EN pin is EN2 rather than EN1, when pin-controlled. `EN_PIN_SELECTn`, bit 5;
     /// reset 0 (OTP).
     #[bits(5..=5)]
     uses_en2: bool,
+
     /// The EN pin switches between roof and floor voltages instead of on and off.
     /// `EN_ROOF_FLOORn`, bit 4; reset 0.
     #[bits(4..=4)]
     pin_selects_roof_floor: bool,
+
     /// Discharge the output through a resistor while off. `EN_RDISn`, bit 3; reset 1.
     #[bits(3..=3)]
     discharge_when_off: bool,
+
     /// Always switch in PWM instead of moving between PFM and PWM. `BUCKn_FPWM`, bit 1;
     /// reset 0 (OTP).
     #[bits(1..=1)]
@@ -201,12 +219,15 @@ pub(crate) struct Config {
     /// bit 3; reset 0.
     #[bits(3..=3)]
     warn_at_105c: bool,
+
     /// Pull the EN2 pin down. `EN2_PD`, bit 2; reset 1.
     #[bits(2..=2)]
     en2_pull_down: bool,
+
     /// Pull the EN1 pin down. `EN1_PD`, bit 1; reset 1.
     #[bits(1..=1)]
     en1_pull_down: bool,
+
     /// Spread the switching frequency to reduce EMI peaks. `EN_SPREAD_SPEC`, bit 0; reset 0.
     #[bits(0..=0)]
     spread_spectrum: bool,

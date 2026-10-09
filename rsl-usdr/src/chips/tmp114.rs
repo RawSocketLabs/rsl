@@ -37,6 +37,7 @@ enum Reg {
     /// The latest conversion: two's complement, 1/128 °C (0.0078125 °C) per bit.
     /// `Temp_Result`, §8.6.1; reset 0, until the first conversion completes.
     Temperature = 0x00,
+
     /// See [`DeviceId`]. `Device_ID`, §8.6.12.
     DeviceId = 0x0b,
 }
@@ -48,6 +49,7 @@ struct DeviceId {
     /// Device revision. `Rev`, bits 15:12; 1 on the TMP114.
     #[bits(12..=15)]
     revision: u4,
+
     /// Device ID. `ID`, bits 11:0; 0x114 on the TMP114.
     #[bits(0..=11)]
     device: u12,

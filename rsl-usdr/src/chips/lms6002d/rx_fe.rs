@@ -19,8 +19,10 @@ use crate::chips::register::Register;
 pub(super) enum Reg {
     /// Datasheet `CTRL`; see [`Control`].
     Control = 0x70,
+
     /// Datasheet `GAIN_LNA_SEL`; see [`LnaControl`].
     LnaControl = 0x75,
+
     /// Datasheet `RDLINT_LNA`; see [`LnaLoad`].
     LnaLoad = 0x79,
 }
@@ -36,12 +38,15 @@ impl BlockReg for Reg {}
 pub(crate) enum Lna {
     /// No LNA.
     None,
+
     /// LNA1: 0.3 to 2.8 GHz through the B0322J5050AHF balun, RX switch 0. libusdr's
     /// `LNAW` path and the power-up default.
     Lna1,
+
     /// LNA2: 1.5 to 3.8 GHz through the 3600BL14M050 balun, RX switch 1. libusdr's `LNAH`
     /// path.
     Lna2,
+
     /// LNA3: the low band below 230 MHz, through the board's upconverting mixer, RX switch
     /// 1; libusdr's wiring table also names the M.2 RF port. libusdr's `LNAL` path.
     Lna3,
@@ -53,10 +58,13 @@ pub(crate) enum Lna {
 pub(super) enum LnaGain {
     /// Maximum gain, LNA3 only.
     Lna3Max,
+
     /// LNA bypassed, LNA1 and LNA2 only.
     Bypassed,
+
     /// Mid gain.
     Mid,
+
     /// Maximum gain.
     Max,
 }
@@ -69,6 +77,7 @@ pub(super) struct Control {
     /// `RFE_DECODE`, bit 1; reset 0.
     #[bits(1..=1)]
     test_mode_controls: bool,
+
     /// Power the RX front-end modules. `RFE_EN`, bit 0; reset 1.
     #[bits(0..=0)]
     enabled: bool,
@@ -86,9 +95,11 @@ pub(super) struct LnaControl {
     /// Gain mode. `G_LNA`, bits 7:6; reset maximum.
     #[bits(6..=7)]
     gain: LnaGain,
+
     /// The active LNA. `LNASEL`, bits 5:4; reset LNA1.
     #[bits(4..=5)]
     active: Lna,
+
     /// Extra capacitance across the input transistors' base-emitter, easing matching at
     /// low frequencies; LNA1 and LNA2 only. `CBE_LNA`, bits 3:0.
     #[bits(0..=3)]

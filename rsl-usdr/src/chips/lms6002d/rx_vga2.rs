@@ -29,9 +29,11 @@ pub(super) struct Control {
     /// steps. `CMV`, bits 5:2.
     #[bits(2..=5)]
     common_mode: u4,
+
     /// Power the RXVGA2 modules. `EN`, bit 1; reset 1.
     #[bits(1..=1)]
     enabled: bool,
+
     /// Take control signals from the test-mode registers instead of decoding them.
     /// `DECODE`, bit 0; reset 0.
     #[bits(0..=0)]

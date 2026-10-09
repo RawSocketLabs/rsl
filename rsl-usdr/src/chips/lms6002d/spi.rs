@@ -18,9 +18,11 @@ pub(super) struct SpiWord {
     /// Set for a write, clear for a read.
     #[bits(15..=15)]
     write: bool,
+
     /// Register address.
     #[bits(8..=14)]
     addr: u7,
+
     /// The byte written; zero for reads.
     #[bits(0..=7)]
     data: u8,
