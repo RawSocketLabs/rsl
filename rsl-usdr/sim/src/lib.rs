@@ -15,4 +15,5 @@ mod chips;
 mod trace;
 
 pub use board::{BoardRevision, I2cAddress, SimBoard, SimError};
+pub use chips::RxPllLock;
 pub use trace::Op;

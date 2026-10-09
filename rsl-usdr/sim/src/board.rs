@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{I2cChip, Lms6002d, Reg8File, Si5332, Tmp114};
+use crate::chips::{I2cChip, Lms6002d, Reg8File, RxPllLock, Si5332, Tmp114};
 use crate::trace::Op;
 
 /// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
@@ -154,6 +154,14 @@ impl SimBoard {
         if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
             *hwid &= !HWID_TX;
         }
+        self
+    }
+
+    /// A board whose RX PLL comparator answers as `lock` describes, instead of
+    /// [`RxPllLock::default`].
+    #[must_use]
+    pub fn with_rx_pll_lock(mut self, lock: RxPllLock) -> Self {
+        self.lms.rx_lock = lock;
         self
     }
 
