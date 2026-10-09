@@ -40,10 +40,11 @@
 //! # Register map
 //!
 //! One flat address space ([`reg`]); the value types are split into the per-channel
-//! registers ([`buck`]) and the chip-wide [`config`].
+//! registers ([`buck`]), the chip-wide [`config`] and the revision ([`id`]).
 
 mod buck;
 mod config;
+mod id;
 mod lp8758;
 mod reg;
 

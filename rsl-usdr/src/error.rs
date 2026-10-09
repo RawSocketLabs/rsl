@@ -1,17 +1,26 @@
 //! The driver's error type.
 
+use std::fmt;
+
 use crate::lowlevel::BusError;
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// A bus transaction failed.
-    #[error("{op} failed")]
+    /// A register access failed on the bus.
+    #[error("{chip} register {reg:#04x} {access} failed")]
     #[non_exhaustive]
     Bus {
-        /// What the driver was doing.
-        op: &'static str,
+        /// The chip accessed: `"FPGA"` (gateware registers), `"LMS6002D"`, `"LP8758"`,
+        /// `"Si5332"`, `"TMP114"` or `"TPS6381x"`.
+        chip: &'static str,
+
+        /// Whether it was a read or a write.
+        access: Access,
+
+        /// The register address, in the chip's own address space.
+        reg: u32,
 
         /// The bus failure.
         #[source]
@@ -64,14 +73,52 @@ pub enum Error {
     ClockInputMissing,
 }
 
-/// Attaches the driver operation to a bus failure.
+/// The direction of a failed register access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// A register read.
+    Read,
+
+    /// A register write.
+    Write,
+}
+
+impl fmt::Display for Access {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        })
+    }
+}
+
+/// Attaches the register access to a bus failure.
 pub(crate) trait BusContext<T> {
-    /// Names the operation that failed.
-    fn during(self, op: &'static str) -> Result<T, Error>;
+    /// Names the register read that failed.
+    fn reading(self, chip: &'static str, reg: impl Into<u32>) -> Result<T, Error>;
+
+    /// Names the register write that failed.
+    fn writing(self, chip: &'static str, reg: impl Into<u32>) -> Result<T, Error>;
 }
 
 impl<T> BusContext<T> for Result<T, BusError> {
-    fn during(self, op: &'static str) -> Result<T, Error> {
-        self.map_err(|source| Error::Bus { op, source })
+    fn reading(self, chip: &'static str, reg: impl Into<u32>) -> Result<T, Error> {
+        let reg = reg.into();
+        self.map_err(|source| Error::Bus {
+            chip,
+            access: Access::Read,
+            reg,
+            source,
+        })
+    }
+
+    fn writing(self, chip: &'static str, reg: impl Into<u32>) -> Result<T, Error> {
+        let reg = reg.into();
+        self.map_err(|source| Error::Bus {
+            chip,
+            access: Access::Write,
+            reg,
+            source,
+        })
     }
 }

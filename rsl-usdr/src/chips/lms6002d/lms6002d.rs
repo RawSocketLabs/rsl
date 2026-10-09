@@ -4,7 +4,7 @@ use super::afe::{self, Interface};
 use super::pll::{Pll, VcoRegulator, VcoSelect};
 use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad};
 use super::rx_vga2;
-use super::spi::SpiRegisters;
+use super::spi::SpiWriter;
 use super::top::{ChipId, ClockEnables, EnableConfig, ReferencePower};
 use super::tx_rf::{Bias, PaSelect, PowerAmp};
 
@@ -15,8 +15,8 @@ use crate::lowlevel::{Bus, SpiAddr};
 /// updates field by field (the chip's registers are not read back).
 #[derive(Debug)]
 pub(crate) struct Lms6002d {
-    /// The chip's registers.
-    regs: SpiRegisters,
+    /// SPI target the chip is on.
+    target: SpiAddr,
 
     /// Last [`EnableConfig`] written.
     enable_config: EnableConfig,
@@ -35,20 +35,23 @@ pub(crate) struct Lms6002d {
 }
 
 impl Lms6002d {
+    /// The chip's name in errors.
+    const NAME: &'static str = "LMS6002D";
+
     /// The SPI target where the uSDR wires it: FPGA SPI bus 0 (`SPI_LMS6` in libusdr).
     pub(crate) const USDR_TARGET: SpiAddr = SpiAddr(0);
 
     /// Reads the raw chip ID (version and revision) from the chip on `target`, configuring
     /// nothing.
     pub(crate) fn read_id(bus: &mut dyn Bus, target: SpiAddr) -> Result<u8, Error> {
-        let id: ChipId = SpiRegisters::new(target).on(bus).read()?;
+        let id: ChipId = SpiWriter::new(target, Self::NAME, bus).read()?;
         Ok(id.to_raw())
     }
 
     /// Reads the chip ID, then writes the power-up configuration (`lms6002d_create`).
     pub(crate) fn create(bus: &mut dyn Bus, target: SpiAddr) -> Result<Self, Error> {
         let lms = Self {
-            regs: SpiRegisters::new(target),
+            target,
             enable_config: EnableConfig::new()
                 .with_modulators_running(true)
                 .with_top_enabled(true)
@@ -59,7 +62,7 @@ impl Lms6002d {
             pa_select: PaSelect::new(),
         };
 
-        let mut regs = lms.regs.on(bus);
+        let mut regs = lms.on(bus);
         let chip_id: ChipId = regs.read()?;
 
         // Modulators held in soft reset, top modules off, while the SPI mode is set.
@@ -80,7 +83,7 @@ impl Lms6002d {
 
         // libusdr checks the ID only after configuring.
         match chip_id.to_raw() {
-            0xff => Err(Error::ChipMissing("LMS6002D")),
+            0xff => Err(Error::ChipMissing(Self::NAME)),
             _ => Ok(lms),
         }
     }
@@ -103,7 +106,7 @@ impl Lms6002d {
     pub(crate) fn select_lna(&mut self, bus: &mut dyn Bus, lna: Lna) -> Result<(), Error> {
         self.rx_vco.set_lo_buffer(lna);
         self.lna_control.set_active(lna);
-        let mut regs = self.regs.on(bus);
+        let mut regs = self.on(bus);
         regs.write_to(Pll::Rx, self.rx_vco)?;
         regs.write(self.lna_control)
     }
@@ -117,12 +120,17 @@ impl Lms6002d {
     ) -> Result<(), Error> {
         self.pa_select.set_amplifier(amplifier);
         self.pa_select.set_aux_pa_off(false);
-        self.regs.on(bus).write(self.pa_select)
+        self.on(bus).write(self.pa_select)
+    }
+
+    /// This chip's registers on `bus`, for the accesses of one operation.
+    fn on<'a>(&self, bus: &'a mut dyn Bus) -> SpiWriter<'a> {
+        SpiWriter::new(self.target, Self::NAME, bus)
     }
 
     /// Writes [`ClockEnables`] then [`EnableConfig`] from the cached values.
     fn write_enables(&self, bus: &mut dyn Bus) -> Result<(), Error> {
-        let mut regs = self.regs.on(bus);
+        let mut regs = self.on(bus);
         regs.write(self.clock_enables)?;
         regs.write(self.enable_config)
     }

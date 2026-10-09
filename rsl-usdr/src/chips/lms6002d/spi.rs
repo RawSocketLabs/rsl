@@ -30,44 +30,36 @@ struct SpiWord {
     data: u8,
 }
 
-/// The LMS6002D's registers behind one SPI target, one [`SpiWord`] per access.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct SpiRegisters {
+/// The LMS6002D's registers bound to a bus for one operation; it reads and writes, one
+/// [`SpiWord`] per access.
+pub(super) struct SpiWriter<'a> {
     /// SPI target the chip is on.
     target: SpiAddr,
-}
 
-impl SpiRegisters {
-    /// Registers of the chip on `target`.
-    pub(super) const fn new(target: SpiAddr) -> Self {
-        Self { target }
-    }
-
-    /// These registers on `bus`, for the accesses of one operation.
-    pub(super) fn on(self, bus: &mut dyn Bus) -> SpiWriter<'_> {
-        SpiWriter { regs: self, bus }
-    }
-}
-
-/// [`SpiRegisters`] bound to a bus for one operation; it reads and writes, one [`SpiWord`]
-/// per access.
-pub(super) struct SpiWriter<'a> {
-    /// Which chip.
-    regs: SpiRegisters,
+    /// Names the chip in errors.
+    chip: &'static str,
 
     /// The bus the chip is on.
     bus: &'a mut dyn Bus,
 }
 
+impl<'a> SpiWriter<'a> {
+    /// The registers of `chip` on `target`, over `bus`.
+    pub(super) fn new(target: SpiAddr, chip: &'static str, bus: &'a mut dyn Bus) -> Self {
+        Self { target, chip, bus }
+    }
+}
+
 impl SpiWriter<'_> {
     /// Reads a typed register; its byte comes back in the reply's low eight bits.
     pub(super) fn read<R: Register<Map: BlockReg>>(&mut self) -> Result<R, Error> {
-        let word = SpiWord::new().with_addr(u7::new(R::ADDR.into()));
+        let reg = R::ADDR.into();
+        let word = SpiWord::new().with_addr(u7::new(reg));
 
         let reply = self
             .bus
-            .spi32(self.regs.target, word.to_raw().into())
-            .during("LMS6002D read")?;
+            .spi32(self.target, word.to_raw().into())
+            .reading(self.chip, reg)?;
 
         Ok(R::from(reply.to_le_bytes()[0]))
     }
@@ -88,14 +80,15 @@ impl SpiWriter<'_> {
 
     /// Writes a register as a byte.
     pub(super) fn write_raw(&mut self, reg: impl BlockReg, value: u8) -> Result<(), Error> {
+        let reg = reg.into();
         let word = SpiWord::new()
             .with_write(true)
-            .with_addr(u7::new(reg.into()))
+            .with_addr(u7::new(reg))
             .with_data(value);
 
         self.bus
-            .spi32(self.regs.target, word.to_raw().into())
-            .during("LMS6002D write")?;
+            .spi32(self.target, word.to_raw().into())
+            .writing(self.chip, reg)?;
 
         Ok(())
     }
