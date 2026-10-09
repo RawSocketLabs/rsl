@@ -5,7 +5,7 @@ use std::fmt;
 use std::time::Duration;
 
 use super::Board;
-use super::board::Chains;
+use super::board::{Chains, RxState};
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::lp8758::{Buck, BuckControl, Config};
 use crate::chips::si5332::{LvpeclOutput, Reference};
@@ -199,8 +199,7 @@ impl Identified {
             rev3,
             chains,
             vio_boosted: false,
-            rx_powered: false,
-            rx_decimation: None,
+            rx: RxState::default(),
         })
     }
 }

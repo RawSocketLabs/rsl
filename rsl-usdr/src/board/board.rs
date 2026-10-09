@@ -43,12 +43,23 @@ pub(crate) struct Board {
     /// [`Self::LMS_VIO_NORMAL`].
     pub(super) vio_boosted: bool,
 
+    /// What the receive chain was last set to.
+    pub(super) rx: RxState,
+}
+
+/// The receive chain's settings that later calls depend on, as libusdr tracks them.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct RxState {
     /// The LMS6002D's receiver and RXVGA2 are powered (libusdr's `rx_pwren`).
-    pub(super) rx_powered: bool,
+    pub(super) powered: bool,
+
+    /// The caller fixed the RX bandwidth (libusdr's `rx_bw.set`), so sample-rate and
+    /// frequency changes leave the filter alone.
+    pub(super) bandwidth_fixed: bool,
 
     /// The decimation of the last sample rate set (libusdr's `rxbb_decim`); `None` until the
     /// first. Its FIR is loaded unless the board has no RX chain.
-    pub(super) rx_decimation: Option<Decimation>,
+    pub(super) decimation: Option<Decimation>,
 }
 
 /// Which DSP chains the gateware has (HWID bits 25 and 24).
@@ -68,8 +79,7 @@ impl fmt::Debug for Board {
             .field("rev3", &self.rev3)
             .field("chains", &self.chains)
             .field("vio_boosted", &self.vio_boosted)
-            .field("rx_powered", &self.rx_powered)
-            .field("rx_decimation", &self.rx_decimation)
+            .field("rx", &self.rx)
             .finish_non_exhaustive()
     }
 }
