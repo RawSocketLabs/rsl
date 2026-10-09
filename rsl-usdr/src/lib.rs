@@ -117,6 +117,7 @@ mod error;
 mod fpga;
 pub mod lowlevel;
 mod thermal;
+pub mod transport;
 
 pub use board::RxPacket;
 pub use device::{Device, DeviceBuilder};

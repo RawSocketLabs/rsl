@@ -13,6 +13,13 @@ bnb.workspace = true
 num-complex.workspace = true
 thiserror.workspace = true
 
+[features]
+## The PCIe transport over the `usdr_pcie_uram` Linux driver (`transport::pcie`).
+pcie = ["dep:rsl-usdr-pcie"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rsl-usdr-pcie = { workspace = true, optional = true }
+
 [dev-dependencies]
 rsl-usdr-sim.workspace = true
 

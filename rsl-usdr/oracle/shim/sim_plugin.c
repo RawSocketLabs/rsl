@@ -5,13 +5,19 @@
 // device, and the PCIe entry returns the simulated uSDR (m2_lm6_1) board.
 
 #include <errno.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "usdr_lowlevel.h"
 #include "device/device.h"
+#include "device/device_bus.h"
 #include "device/device_ids.h"
+#include "device/device_names.h"
+#include "device/device_vfs.h"
+#include "lowlevel/pcie_uram/pcie_uram_driver_if.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int rsl_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz, const void* pout);
@@ -153,6 +159,9 @@ static int sim_discovery(unsigned pcount, const char** filterparams, const char*
     return -ENODEV;
 }
 
+// The device the sim plugin created last, for the PCIe layout check below.
+static struct sim_dev* s_last_dev;
+
 static int sim_create(unsigned pcount, const char** devparam, const char** devval,
                       lldev_t* odev, unsigned vidpid, void* webops, uintptr_t param)
 {
@@ -172,7 +181,133 @@ static int sim_create(unsigned pcount, const char** devparam, const char** devva
         return err;
     }
     *odev = &d->ll;
+    s_last_dev = d;
     return 0;
+}
+
+// The `pcie_driver_devlayout` libusdr's PCIe transport would send for the open board, built
+// as `pcie_uram_plugin_create` does (pcie_uram_main.c:970-1048, MIT) from the board's own
+// description. One difference: libusdr copies the indexed-window arrays with the size of
+// the four-entry destination, reading past the two-entry source; here only the populated
+// entries are copied, the ones the driver reads (it uses `idx_regsp_cnt` of them).
+int rsl_oracle_pcie_devlayout(unsigned char* out, size_t len)
+{
+    if (s_last_dev == NULL || len != sizeof(struct pcie_driver_devlayout)) {
+        return -EINVAL;
+    }
+    pdevice_t pdev = s_last_dev->ll.pdev;
+    // Zeroed as libusdr's is (it lives in the calloc'd transport state): the unused slots
+    // are copied too.
+    device_bus_t db;
+    memset(&db, 0, sizeof(db));
+    int err = device_bus_init(pdev, &db);
+    if (err) {
+        return err;
+    }
+    uint64_t tmp;
+    struct pcie_driver_devlayout dl;
+    memset(&dl, 0, sizeof(dl));
+
+    dl.spi_cnt = db.spi_count;
+    dl.i2c_cnt = db.i2c_count;
+    dl.idx_regsp_cnt = db.idx_regsps;
+    dl.streams_count = db.srx_count + db.stx_count;
+    if (db.bucket_count != 1 || dl.idx_regsp_cnt > DBMAX_IDXREG_MAPS) {
+        return -ENOSPC;
+    }
+    memcpy(dl.idx_regsp_base, db.idxreg_base, dl.idx_regsp_cnt * sizeof(dl.idx_regsp_base[0]));
+    memcpy(dl.idx_regsp_vbase, db.idxreg_virt_base, dl.idx_regsp_cnt * sizeof(dl.idx_regsp_vbase[0]));
+    memcpy(dl.spi_base, db.spi_base, sizeof(dl.spi_base));
+    memcpy(dl.i2c_base, db.i2c_base, sizeof(dl.i2c_base));
+    memcpy(dl.spi_core, db.spi_core, sizeof(dl.spi_core));
+    memcpy(dl.i2c_core, db.i2c_core, sizeof(dl.i2c_core));
+
+    memcpy(dl.stream_cnf_base, db.srx_base, db.srx_count * sizeof(dl.stream_cnf_base[0]));
+    memcpy(dl.stream_cnf_base + db.srx_count, db.stx_base, db.stx_count * sizeof(dl.stream_cnf_base[0]));
+    memcpy(dl.stream_cfg_base, db.srx_cfg_base, db.srx_count * sizeof(dl.stream_cfg_base[0]));
+    memcpy(dl.stream_cfg_base + db.srx_count, db.stx_cfg_base, db.stx_count * sizeof(dl.stream_cfg_base[0]));
+    memcpy(dl.stream_core, db.srx_core, db.srx_count * sizeof(dl.stream_core[0]));
+    memcpy(dl.stream_core + db.srx_count, db.stx_core, db.stx_count * sizeof(dl.stream_core[0]));
+
+    err = usdr_device_vfs_obj_val_get_u64(pdev, DNLL_IRQ_COUNT, &tmp);
+    if (err)
+        return err;
+    dl.interrupt_count = tmp;
+
+    err = usdr_device_vfs_obj_val_get_u64(pdev, DNLLFP_BASE(DNP_IRQ, "0"), &tmp);
+    if (err)
+        return err;
+    dl.interrupt_base = tmp;
+
+    dl.poll_event_rd = db.poll_event_rd;
+    dl.poll_event_wr = db.poll_event_wr;
+
+    struct device_params {
+        const char* path;
+        unsigned* store;
+        unsigned count;
+    } bii[] = {
+        { DNLLFP_IRQ(DN_BUS_SPI, "%d"), dl.spi_int_number, dl.spi_cnt },
+        { DNLLFP_IRQ(DN_BUS_I2C, "%d"), dl.i2c_int_number, dl.i2c_cnt },
+        { DNLLFP_IRQ(DN_SRX, "%d"), dl.stream_int_number, db.srx_count },
+        { DNLLFP_IRQ(DN_STX, "%d"), dl.stream_int_number + db.srx_count, db.stx_count },
+        { DNLLFP_NAME(DN_SRX, "%d", DNP_DMACAP), dl.stream_cap, db.srx_count },
+        { DNLLFP_NAME(DN_STX, "%d", DNP_DMACAP), dl.stream_cap + db.srx_count, db.stx_count },
+    };
+    char buffer[32];
+    for (unsigned i = 0; i < sizeof(bii) / sizeof(bii[0]); i++) {
+        for (unsigned j = 0; j < bii[i].count; j++) {
+            snprintf(buffer, sizeof(buffer), bii[i].path, j);
+            err = usdr_device_vfs_obj_val_get_u64(pdev, buffer, &tmp);
+            if (err)
+                return err;
+            bii[i].store[j] = (unsigned)tmp;
+        }
+    }
+
+    dl.bucket_base = db.bucket_base[0];
+    dl.bucket_core = db.bucket_core[0];
+    dl.bucket_count = db.bucket_count;
+
+    memcpy(out, &dl, sizeof(dl));
+    return 0;
+}
+
+// The driver interface's sizes, offsets and request codes, from the header itself, in the
+// order rsl-usdr-pcie's `abi()` lists them.
+size_t rsl_oracle_pcie_abi(unsigned long long* out, size_t len)
+{
+    const unsigned long long facts[] = {
+        sizeof(struct pcie_driver_uuid),
+        sizeof(struct pcie_driver_devlayout),
+        sizeof(struct pcie_driver_spi32),
+        sizeof(struct pcie_driver_si2c),
+        offsetof(struct pcie_driver_si2c, rdb),
+        offsetof(struct pcie_driver_si2c, wrb_p),
+        sizeof(struct pcie_driver_sdma_conf),
+        offsetof(struct pcie_driver_sdma_conf, out_vma_off),
+        offsetof(struct pcie_driver_sdma_conf, out_vma_length),
+        sizeof(struct pcie_driver_woa_oob),
+        offsetof(struct pcie_driver_woa_oob, oobdata),
+        offsetof(struct pcie_driver_devlayout, idx_regsp_vbase),
+        offsetof(struct pcie_driver_devlayout, stream_cap),
+        offsetof(struct pcie_driver_devlayout, bucket_base),
+        PCIE_DRIVER_GET_UUID,
+        PCIE_DRIVER_CLAIM,
+        PCIE_DRIVER_SET_DEVLAYOUT,
+        PCIE_DRIVER_SPI32_TRANSACT,
+        PCIE_DRIVER_SI2C_TRANSACT,
+        PCIE_DRIVER_DMA_CONF,
+        PCIE_DRIVER_DMA_UNCONF,
+        PCIE_DRIVER_DMA_WAIT_OOB,
+        PCIE_DRIVER_CLAIM_VERSION,
+        PCIE_DRIVER_DMA_RELEASE,
+    };
+    size_t count = sizeof(facts) / sizeof(facts[0]);
+    for (size_t i = 0; i < count && i < len; i++) {
+        out[i] = facts[i];
+    }
+    return count;
 }
 
 static int no_device_create(unsigned pcount, const char** devparam, const char** devval,

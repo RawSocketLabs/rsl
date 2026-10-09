@@ -31,6 +31,9 @@ mkdir -p "$dest/lib" "$dest/gen"
     | xargs -0 cp --parents -t "$dest/lib")
 # usdr_lowlevel.c includes this USB header for its declarations only.
 (cd "$src/lib" && cp --parents lowlevel/usb_uram/usb_uram_generic.h "$dest/lib")
+# The PCIe driver's userspace interface ((GPL-2.0 WITH Linux-syscall-note) OR MIT): the oracle
+# checks rsl-usdr-pcie's ioctl numbers, struct layouts and uSDR device layout against it.
+(cd "$src/lib" && cp --parents lowlevel/pcie_uram/pcie_uram_driver_if.h "$dest/lib")
 
 # Register headers upstream generates at CMake time from YAML.
 gen() { python3 "$src/hwparser/gen_h.py" --yaml "$1" --ch "$dest/gen/def_$2.h" > "$dest/gen/def_$2.h"; }

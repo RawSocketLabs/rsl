@@ -3285,7 +3285,16 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "num-complex",
+ "rsl-usdr-pcie",
  "rsl-usdr-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rsl-usdr-pcie"
+version = "0.0.0"
+dependencies = [
+ "rustix",
  "thiserror 2.0.21",
 ]
 
