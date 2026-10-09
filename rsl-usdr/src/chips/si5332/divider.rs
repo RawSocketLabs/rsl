@@ -1,5 +1,5 @@
-//! The dividers between the PLL and the outputs: spread spectrum on the interpolative
-//! dividers, and powering down the dividers.
+//! The dividers between the PLL and the outputs: the high-speed dividers' ratios, spread
+//! spectrum on the interpolative dividers, and powering down the dividers.
 
 use bnb::{bitfield, u2};
 
@@ -85,4 +85,52 @@ pub(super) struct DividerPowerDown {
 impl Register for DividerPowerDown {
     type Map = Reg;
     const ADDR: Reg = Reg::DividerPowerDown;
+}
+
+/// The high-speed divider banks the driver programs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum HsBank {
+    /// Divider 0, bank A: the sample clocks.
+    Div0A,
+
+    /// Divider 0, bank B.
+    Div0B,
+
+    /// Divider 1, bank A.
+    Div1A,
+
+    /// Divider 2, bank A.
+    Div2A,
+
+    /// Divider 3, bank A: the mixer LO.
+    Div3A,
+
+    /// Divider 3, bank B.
+    Div3B,
+}
+
+/// A high-speed divider's ratio, dividing the VCO by an integer. `HSDIVnx_DIV`, whole byte;
+/// the YAML gives no range or meaning for 0, which libusdr writes to dividers 1 and 2.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct HsDivider {
+    /// Divide ratio. Bits 7:0.
+    #[bits(0..=7)]
+    ratio: u8,
+}
+
+impl IndexedRegister for HsDivider {
+    type Map = Reg;
+    type Index = HsBank;
+
+    fn addr(bank: HsBank) -> Reg {
+        match bank {
+            HsBank::Div0A => Reg::HsDivider0A,
+            HsBank::Div0B => Reg::HsDivider0B,
+            HsBank::Div1A => Reg::HsDivider1A,
+            HsBank::Div2A => Reg::HsDivider2A,
+            HsBank::Div3A => Reg::HsDivider3A,
+            HsBank::Div3B => Reg::HsDivider3B,
+        }
+    }
 }

@@ -1,11 +1,14 @@
-//! The Si5332 driver: identification and the power-up output plan.
+//! The Si5332 driver: identification, the power-up output plan and the sample-clock plan.
 
 use std::time::Duration;
 
-use bnb::{u2, u6};
+use bnb::{u2, u5, u6};
 
-use super::divider::{DividerPowerDown, SpreadBank, SpreadSpectrum};
-use super::input::{CrystalLoad, CrystalPin, CrystalTrim, InputMode, InputPowerDown, PllReference};
+use super::divider::{DividerPowerDown, HsBank, HsDivider, SpreadBank, SpreadSpectrum};
+use super::input::{
+    CrystalLoad, CrystalPin, CrystalTrim, InputMode, InputPowerDown, PllReference, Prescaler,
+};
+use super::layout::Layout;
 use super::output::{
     CmosDrive, DirectSource, Divider, DividerSource, DriverMode, Output, Output0to3PowerDown,
     Output4and5PowerDown, OutputSource, Polarity, Skew, SourcePowerDown,
@@ -111,6 +114,97 @@ impl Si5332 {
         }
     }
 
+    /// Moves the RX and TX sample clocks onto the plan in `layout`, usually the PLL (the
+    /// reference itself when [`Layout`] says so), and points output 3,
+    /// the mixer LO, at the VCO divided by `lo_divider` (`si5332_set_layout`). The RX clock is
+    /// whichever of outputs 0 and 1 is not `lvpecl`.
+    ///
+    /// The writes run in a READY..ACTIVE cycle; like libusdr, a state other than ACTIVE is
+    /// not an error before it, and a missing input clock is one after it.
+    pub(crate) fn set_layout(
+        self,
+        bus: &mut dyn Bus,
+        layout: &Layout,
+        lvpecl: LvpeclOutput,
+        lo_divider: u8,
+    ) -> Result<(), Error> {
+        self.settle(bus)?;
+        let mut regs = self.on(bus);
+        for (reg, value) in Self::layout_plan(layout, lvpecl, lo_divider) {
+            regs.write_raw(reg, value)?;
+        }
+        self.wait_active(bus)
+    }
+
+    /// The register writes of `si5332_set_layout`, in order.
+    fn layout_plan(layout: &Layout, lvpecl: LvpeclOutput, lo_divider: u8) -> [RegWrite; 25] {
+        let rx_clock = match lvpecl {
+            LvpeclOutput::Out0 => Output::Out1,
+            LvpeclOutput::Out1 => Output::Out0,
+        };
+        // Slew 0 is fastest, 3 slowest.
+        let slew = match layout.out_hz {
+            110_000_001.. => 0,
+            50_000_001.. => 1,
+            25_000_001.. => 2,
+            _ => 3,
+        };
+        let drive = CmosDrive::new().with_slew(u2::new(slew));
+        let divider = Divider::new().with_ratio(u6::new(low_byte(layout.output_divider)));
+        let source = OutputSource::new()
+            .with_direct(DirectSource::PllReference)
+            .with_divider(if layout.from_reference {
+                DividerSource::Direct
+            } else {
+                DividerSource::HighSpeed0
+            });
+        let pll_mode = if layout.pll_input_hz > 30_000_000 {
+            8
+        } else {
+            4
+        };
+        // libusdr writes each 15-bit term's low byte to the higher address; see `Reg`.
+        let [integer_low, integer_high, ..] = layout.integer.to_le_bytes();
+        let [residue_low, residue_high, ..] = layout.residue.to_le_bytes();
+        let [denominator_low, denominator_high, ..] = layout.denominator.to_le_bytes();
+        let hs_divider = HsDivider::new().with_ratio(low_byte(layout.hs_divider));
+        let lo_divider = HsDivider::new().with_ratio(lo_divider);
+        let prescaler = Prescaler::new().with_ratio(u5::new(low_byte(layout.prescaler)));
+
+        #[rustfmt::skip]
+        let plan = [
+            RequestedState::Ready.entry(),
+            (Reg::PllInteger68, integer_low),
+            (Reg::PllInteger67, integer_high),
+            (Reg::PllResidue6A, residue_low),
+            (Reg::PllResidue69, residue_high),
+            (Reg::PllDenominator6C, denominator_low),
+            (Reg::PllDenominator6B, denominator_high),
+            prescaler.entry(),
+            (Reg::PllMode, pll_mode),
+            hs_divider.entry_at(HsBank::Div0A),
+            hs_divider.entry_at(HsBank::Div0B),
+            HsDivider::new().entry_at(HsBank::Div1A),
+            HsDivider::new().entry_at(HsBank::Div2A),
+            drive.entry_at(rx_clock),
+            drive.entry_at(Output::Out2),
+            divider.entry_at(rx_clock),
+            divider.entry_at(Output::Out2),
+            source.entry_at(rx_clock),
+            source.entry_at(Output::Out2),
+            lo_divider.entry_at(HsBank::Div3A),
+            lo_divider.entry_at(HsBank::Div3B),
+            OutputSource::new()
+                .with_direct(DirectSource::PllReference)
+                .with_divider(DividerSource::HighSpeed3)
+                .entry_at(Output::Out3),
+            Divider::new().with_ratio(u6::new(1)).entry_at(Output::Out3),
+            DriverMode::Hcsl50Internal.entry_at(Output::Out3),
+            RequestedState::Active.entry(),
+        ];
+        plan
+    }
+
     /// The register writes of `si5332_init`, in order: hold the outputs, route every output
     /// straight from the reference, set each output's driver, power down unused blocks, run.
     fn power_up_plan(div: u8, reference: Reference, lvpecl: LvpeclOutput) -> [RegWrite; 49] {
@@ -211,4 +305,9 @@ impl Si5332 {
         }
         Ok(state)
     }
+}
+
+/// The low byte, as libusdr's `uint8_t` register table stores it.
+fn low_byte(value: u32) -> u8 {
+    value.to_le_bytes()[0]
 }

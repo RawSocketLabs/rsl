@@ -14,7 +14,7 @@ use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
 
 /// The gateware's name in errors.
-const FPGA: &str = "FPGA";
+pub(super) const FPGA: &str = "FPGA";
 
 /// FPGA register latching one GPO bank per write.
 const REG_GPO: u32 = 0;

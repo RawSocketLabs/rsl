@@ -5,6 +5,7 @@ use std::fmt;
 use std::time::Duration;
 
 use super::Board;
+use super::board::Chains;
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::lp8758::{Buck, BuckControl, Config};
 use crate::chips::si5332::{LvpeclOutput, Reference};
@@ -21,6 +22,9 @@ pub(crate) struct Identified {
 
     /// Revision 3 (on-board oscillator, TMP114 ID check).
     rev3: bool,
+
+    /// Which DSP chains the gateware has.
+    chains: Chains,
 }
 
 impl Board {
@@ -29,7 +33,8 @@ impl Board {
     pub(crate) fn identify(mut bus: Box<dyn Bus>) -> Result<Identified, Error> {
         // Gateware build ID: libusdr only logs it.
         Gpi::UsrAccess2.read(bus.as_mut())?;
-        let revision = Hwid::from_raw(Gpi::Hwid.read(bus.as_mut())?).revision();
+        let hwid = Hwid::from_raw(Gpi::Hwid.read(bus.as_mut())?);
+        let revision = hwid.revision();
         if !(1..=3).contains(&revision) {
             return Err(Error::UnsupportedRevision(revision));
         }
@@ -38,7 +43,11 @@ impl Board {
         if rev3 {
             Self::TEMP.check_id(bus.as_mut())?;
         }
-        Ok(Identified { bus, rev3 })
+        let chains = Chains {
+            rx: hwid.has_rx(),
+            tx: hwid.has_tx(),
+        };
+        Ok(Identified { bus, rev3, chains })
     }
 
     /// The board temperature in °C.
@@ -127,10 +136,11 @@ impl Identified {
     /// absent Si5332 still fails, a deliberate divergence.
     fn start_clocks(&mut self) -> Result<(), Error> {
         let bus = self.bus.as_mut();
+        let lvpecl = Board::lvpecl(self.rev3);
         if !self.rev3 {
-            return Self::init_clock(bus, Reference::Input2, LvpeclOutput::Out1);
+            return Self::init_clock(bus, Reference::Input2, lvpecl);
         }
-        let clock = Self::init_clock(bus, Reference::Oscillator, LvpeclOutput::Out0);
+        let clock = Self::init_clock(bus, Reference::Oscillator, lvpecl);
         let oscillator = Gpo::EnableOscillator.set(bus, 1);
         bus.sleep(Duration::from_millis(1));
         match clock {
@@ -167,7 +177,11 @@ impl Identified {
     /// Puts the transceiver in its idle configuration (both chains off, wideband RX and TX
     /// paths, external mixer off, FPGA DC correction on) and hands the bus to the board.
     fn configure_rf(self, mut lms: Lms6002d) -> Result<Board, Error> {
-        let Self { mut bus, .. } = self;
+        let Self {
+            mut bus,
+            rev3,
+            chains,
+        } = self;
         let io = bus.as_mut();
         lms.set_tx_enabled(io, false)?;
         lms.set_rx_enabled(io, false)?;
@@ -179,7 +193,15 @@ impl Identified {
         lms.select_lna(io, Lna::Lna1)?;
         lms.select_pa(io, PowerAmp::Pa1)?;
         Gpo::DcCorrection.set(io, 1)?;
-        Ok(Board { bus, lms })
+        Ok(Board {
+            bus,
+            lms,
+            rev3,
+            chains,
+            vio_boosted: false,
+            rx_powered: false,
+            rx_decimation: None,
+        })
     }
 }
 

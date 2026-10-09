@@ -68,6 +68,10 @@ pub enum Error {
         /// Requested resume limit.
         resume: f32,
     },
+    /// A sample rate the board cannot run at.
+    #[error("unsupported sample rate {0} S/s")]
+    UnsupportedSampleRate(u32),
+
     /// The Si5332 clock generator lost its input clock.
     #[error("Si5332 has no input clock")]
     ClockInputMissing,

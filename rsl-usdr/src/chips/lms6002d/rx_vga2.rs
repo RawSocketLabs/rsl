@@ -52,4 +52,12 @@ impl Control {
     pub(super) const LIME_RECOMMENDED: Self = Self::new()
         .with_common_mode(u4::new(0b1101))
         .with_enabled(true);
+
+    /// libusdr's RX power-up value, 0x1F (`lms6002d_rxvga2_enable(true)`): powered,
+    /// common-mode code 7, and control signals from the test-mode registers. libusdr gives
+    /// no reason for leaving the FAQ's common mode or for setting `DECODE`.
+    pub(super) const RX_POWER_UP: Self = Self::new()
+        .with_common_mode(u4::new(7))
+        .with_enabled(true)
+        .with_test_mode_controls(true);
 }

@@ -69,6 +69,25 @@ pub(super) enum Reg {
     /// Output 5 source. `OMUX5_SEL10`, 0x2A.
     Output5Source = 0x2a,
 
+    /// See [`HsDivider`](super::divider::HsDivider), divider 0 bank A: the sample clocks
+    /// once a rate is set. `HSDIV0A_DIV`, 0x2B.
+    HsDivider0A = 0x2b,
+
+    /// High-speed divider 0, bank B. `HSDIV0B_DIV`, 0x2C.
+    HsDivider0B = 0x2c,
+
+    /// High-speed divider 1, bank A. `HSDIV1A_DIV`, 0x2D.
+    HsDivider1A = 0x2d,
+
+    /// High-speed divider 2, bank A. `HSDIV2A_DIV`, 0x2F.
+    HsDivider2A = 0x2f,
+
+    /// High-speed divider 3, bank A: the mixer LO divider. `HSDIV3A_DIV`, 0x31.
+    HsDivider3A = 0x31,
+
+    /// High-speed divider 3, bank B. `HSDIV3B_DIV`, 0x32.
+    HsDivider3B = 0x32,
+
     /// See [`SpreadSpectrum`](super::divider::SpreadSpectrum), divider 0 bank A. `ID0A_SS`, 0x3C.
     Id0aSpreadSpectrum = 0x3c,
 
@@ -81,12 +100,38 @@ pub(super) enum Reg {
     /// Divider 1 bank B spread spectrum. `ID1B_SS`, 0x60.
     Id1bSpreadSpectrum = 0x60,
 
+    /// One byte of the PLL feedback divider's integer term, the 15-bit `IDPA_INTG` at
+    /// 0x67:0x68; libusdr writes its high byte here (`IDPA_INTG_L`, 0x67). The YAML does
+    /// not say which byte is which.
+    PllInteger67 = 0x67,
+
+    /// The other byte of `IDPA_INTG`; libusdr writes its low byte here (`IDPA_INTG_H`,
+    /// 0x68).
+    PllInteger68 = 0x68,
+
+    /// One byte of the 15-bit fractional numerator `IDPA_RES` at 0x69:0x6A; libusdr writes
+    /// its high byte here (`IDPA_RES_L`, 0x69).
+    PllResidue69 = 0x69,
+
+    /// The other byte of `IDPA_RES`; libusdr writes its low byte here (`IDPA_RES_H`, 0x6A).
+    PllResidue6A = 0x6a,
+
+    /// One byte of the 15-bit fractional denominator `IDPA_DEN` at 0x6B:0x6C; libusdr
+    /// writes its high byte here (`IDPA_DEN_L`, 0x6B).
+    PllDenominator6B = 0x6b,
+
+    /// The other byte of `IDPA_DEN`; libusdr writes its low byte here (`IDPA_DEN_H`, 0x6C).
+    PllDenominator6C = 0x6c,
+
     /// See [`InputMode`](super::input::InputMode). `CLKIN_2_CLK_SEL`, 0x73.
     Input2Mode = 0x73,
 
     /// Input buffer 3's mode; libusdr's map has no layout, and it writes 0.
     /// `CLKIN_3_CLK_SEL`, 0x74.
     Input3Mode = 0x74,
+
+    /// See [`Prescaler`](super::input::Prescaler). `PDIV_DIV`, 0x75.
+    Prescaler = 0x75,
 
     /// See [`DriverMode`](super::output::DriverMode), output 0. `OUT0_MODE`, 0x7A.
     Output0Mode = 0x7a,
@@ -200,6 +245,11 @@ pub(super) enum Reg {
 
     /// See [`Output4and5PowerDown`](super::output::Output4and5PowerDown). 0xBD.
     Output4and5PowerDown = 0xbd,
+
+    /// PLL bandwidth (`PLL_MODE`, bits 5:2 per the YAML). libusdr writes 4 or 8 as whole
+    /// bytes, commenting "4 - 500kHz | 7 - 175khz", which reads as the field value; kept raw
+    /// until a datasheet settles it. 0xBE.
+    PllMode = 0xbe,
 
     /// See [`CrystalLoad`](super::input::CrystalLoad). `XOSC_CINT_ENA`, 0xBF.
     CrystalLoad = 0xbf,
