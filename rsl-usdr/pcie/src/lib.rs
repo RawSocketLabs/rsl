@@ -23,9 +23,9 @@ pub use device::{OpenError, PcieDevice, PcieError, discover};
 pub use layout::{BoardLayout, Core, IndexedSpace, LayoutTooLarge, Stream};
 
 /// The driver's structure sizes, field offsets and request codes as this crate encodes them,
-/// by the C name; the oracle compares them with the header.
-#[cfg(target_os = "linux")]
-#[doc(hidden)]
+/// each named by the C expression it stands for. Only with the `test-abi` feature, which
+/// the oracle enables to compare them with the header.
+#[cfg(all(target_os = "linux", feature = "test-abi"))]
 #[must_use]
 pub fn abi() -> Vec<(&'static str, u64)> {
     use core::mem::offset_of;

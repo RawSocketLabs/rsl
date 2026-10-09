@@ -273,41 +273,48 @@ int rsl_oracle_pcie_devlayout(unsigned char* out, size_t len)
     return 0;
 }
 
-// The driver interface's sizes, offsets and request codes, from the header itself, in the
-// order rsl-usdr-pcie's `abi()` lists them.
-size_t rsl_oracle_pcie_abi(unsigned long long* out, size_t len)
+// The driver interface's sizes, offsets and request codes, from the header itself, each
+// named by the C expression that produced it, so rsl-usdr-pcie's facts are matched by name.
+struct rsl_abi_fact {
+    const char* name;
+    unsigned long long value;
+};
+
+#define ABI_SIZE(t) { "sizeof(" #t ")", sizeof(struct t) }
+#define ABI_OFFSET(t, f) { "offsetof(" #t ", " #f ")", offsetof(struct t, f) }
+#define ABI_CODE(c) { #c, c }
+
+static const struct rsl_abi_fact s_pcie_abi[] = {
+    ABI_SIZE(pcie_driver_uuid),
+    ABI_SIZE(pcie_driver_devlayout),
+    ABI_SIZE(pcie_driver_spi32),
+    ABI_SIZE(pcie_driver_si2c),
+    ABI_OFFSET(pcie_driver_si2c, rdb),
+    ABI_OFFSET(pcie_driver_si2c, wrb_p),
+    ABI_SIZE(pcie_driver_sdma_conf),
+    ABI_OFFSET(pcie_driver_sdma_conf, out_vma_off),
+    ABI_OFFSET(pcie_driver_sdma_conf, out_vma_length),
+    ABI_SIZE(pcie_driver_woa_oob),
+    ABI_OFFSET(pcie_driver_woa_oob, oobdata),
+    ABI_OFFSET(pcie_driver_devlayout, idx_regsp_vbase),
+    ABI_OFFSET(pcie_driver_devlayout, stream_cap),
+    ABI_OFFSET(pcie_driver_devlayout, bucket_base),
+    ABI_CODE(PCIE_DRIVER_GET_UUID),
+    ABI_CODE(PCIE_DRIVER_CLAIM),
+    ABI_CODE(PCIE_DRIVER_SET_DEVLAYOUT),
+    ABI_CODE(PCIE_DRIVER_SPI32_TRANSACT),
+    ABI_CODE(PCIE_DRIVER_SI2C_TRANSACT),
+    ABI_CODE(PCIE_DRIVER_DMA_CONF),
+    ABI_CODE(PCIE_DRIVER_DMA_UNCONF),
+    ABI_CODE(PCIE_DRIVER_DMA_WAIT_OOB),
+    ABI_CODE(PCIE_DRIVER_CLAIM_VERSION),
+    ABI_CODE(PCIE_DRIVER_DMA_RELEASE),
+};
+
+const struct rsl_abi_fact* rsl_oracle_pcie_abi(size_t* count)
 {
-    const unsigned long long facts[] = {
-        sizeof(struct pcie_driver_uuid),
-        sizeof(struct pcie_driver_devlayout),
-        sizeof(struct pcie_driver_spi32),
-        sizeof(struct pcie_driver_si2c),
-        offsetof(struct pcie_driver_si2c, rdb),
-        offsetof(struct pcie_driver_si2c, wrb_p),
-        sizeof(struct pcie_driver_sdma_conf),
-        offsetof(struct pcie_driver_sdma_conf, out_vma_off),
-        offsetof(struct pcie_driver_sdma_conf, out_vma_length),
-        sizeof(struct pcie_driver_woa_oob),
-        offsetof(struct pcie_driver_woa_oob, oobdata),
-        offsetof(struct pcie_driver_devlayout, idx_regsp_vbase),
-        offsetof(struct pcie_driver_devlayout, stream_cap),
-        offsetof(struct pcie_driver_devlayout, bucket_base),
-        PCIE_DRIVER_GET_UUID,
-        PCIE_DRIVER_CLAIM,
-        PCIE_DRIVER_SET_DEVLAYOUT,
-        PCIE_DRIVER_SPI32_TRANSACT,
-        PCIE_DRIVER_SI2C_TRANSACT,
-        PCIE_DRIVER_DMA_CONF,
-        PCIE_DRIVER_DMA_UNCONF,
-        PCIE_DRIVER_DMA_WAIT_OOB,
-        PCIE_DRIVER_CLAIM_VERSION,
-        PCIE_DRIVER_DMA_RELEASE,
-    };
-    size_t count = sizeof(facts) / sizeof(facts[0]);
-    for (size_t i = 0; i < count && i < len; i++) {
-        out[i] = facts[i];
-    }
-    return count;
+    *count = sizeof(s_pcie_abi) / sizeof(s_pcie_abi[0]);
+    return s_pcie_abi;
 }
 
 static int no_device_create(unsigned pcount, const char** devparam, const char** devval,

@@ -4,17 +4,25 @@
 //! The driver accepts a layout only once per module load and cannot report it back, so a
 //! wrong byte would persist unnoticed on hardware; this is the check.
 
+use std::collections::BTreeMap;
+
 use rsl_usdr::transport::pcie::USDR_LAYOUT;
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, SimBoard};
 
+/// Every fact, matched by its C expression: the same names on both sides, and the same
+/// value for each.
 #[test]
 fn sizes_offsets_and_request_codes_match_the_header() {
-    let header = rsl_usdr_oracle::pcie_abi();
-    let ours = rsl_usdr_pcie::abi();
-    assert_eq!(header.len(), ours.len(), "the same facts are listed");
-    for ((name, value), expected) in ours.iter().zip(&header) {
-        assert_eq!(value, expected, "{name}");
+    let header: BTreeMap<String, u64> = rsl_usdr_oracle::pcie_abi().into_iter().collect();
+    let ours: BTreeMap<String, u64> = rsl_usdr_pcie::abi()
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect();
+    let names = |facts: &BTreeMap<String, u64>| facts.keys().cloned().collect::<Vec<_>>();
+    assert_eq!(names(&ours), names(&header), "the same facts on both sides");
+    for (name, value) in &ours {
+        assert_eq!(*value, header[name], "{name}");
     }
 }
 
