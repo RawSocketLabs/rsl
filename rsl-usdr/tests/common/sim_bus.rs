@@ -79,14 +79,18 @@ impl Bus for SimBus {
         Ok(())
     }
 
-    /// As the oracle's shim: no sample data is modelled yet, so every wait times out at
-    /// once.
+    /// As the oracle's shim: the board's next block, or a timeout at once while its stream
+    /// engine is stopped.
     fn rx_stream_recv(
         &mut self,
         _timeout: Duration,
-        _consume: &mut dyn FnMut(&[u8], [u64; 2]),
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
     ) -> Result<(), BusError> {
-        Err(BusError::Timeout)
+        let Some((block, oob)) = self.board().rx_next_block() else {
+            return Err(BusError::Timeout);
+        };
+        consume(&block, oob);
+        Ok(())
     }
 
     fn rx_stream_close(&mut self) -> Result<(), BusError> {

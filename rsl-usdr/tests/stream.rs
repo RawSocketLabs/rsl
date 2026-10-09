@@ -196,3 +196,27 @@ fn lost_packets_advance_the_sample_count_and_accumulate() {
     // 1024 samples per packet: 3 lost before the second, 2 more before the third.
     assert_eq!(summary, [(0, 0), (4 * 1024, 3), (7 * 1024, 5)]);
 }
+
+/// A packet that cannot split into whole-word bursts arrives padded; the samples come out
+/// continuous, the stubs skipped (libusdr's pass-through copy would include them).
+#[test]
+fn a_padded_packet_arrives_without_its_stubs() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim).expect("powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    // 16383 samples: three bursts of 5461, each ending in a 4-byte stub.
+    device.start_rx_stream(16383).expect("starts streaming");
+    let mut samples = vec![Complex::new(0, 0); 16383];
+    device
+        .receive(&mut samples, Duration::from_millis(10))
+        .expect("a packet");
+    let expected: Vec<Complex<i16>> = (0..16383_u16)
+        .map(|n| {
+            let i = i16::from_le_bytes(n.to_le_bytes());
+            Complex::new(i, i.wrapping_neg())
+        })
+        .collect();
+    assert_eq!(samples, expected, "the sim's counting pattern, unbroken");
+}
