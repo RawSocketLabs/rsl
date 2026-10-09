@@ -57,8 +57,9 @@ Each layer calls only the ones below it.
   `extref`) and its `USDR_BARE_DEV`/`USDR_IGNORE_TMP`/`USDR_FE_TYPE` environment overrides.
   The oracle's parity tests assume those variables are unset.
 - Intentional divergences from libusdr are whitelisted per test scenario, never by masking a
-  register globally. The first planned one is the band-crossing fix: gate Si5332 port 3
-  without cycling USYS_CTRL through READY, instead of libusdr's close/reopen.
+  register globally. The first is the band-crossing fix: gate Si5332 port 3 with
+  `OUT3_OE` alone, without cycling USYS_CTRL through READY as libusdr does (and without
+  the FFI wrapper's close/reopen workaround); `oracle/tests/rx_parity.rs` whitelists it.
 - Registers are typed (`src/chips/register.rs`). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
   - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
