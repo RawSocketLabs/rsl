@@ -9,6 +9,11 @@ license = "MIT"
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+## Exposes `abi()`, the driver interface as this crate encodes it, for the oracle's check
+## against the C header. Not for other use.
+test-abi = []
+
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true, features = ["fs", "mm"] }
 thiserror.workspace = true

@@ -52,7 +52,7 @@ unsafe extern "C" {
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
     fn rsl_oracle_pcie_devlayout(out: *mut u8, len: usize) -> c_int;
-    fn rsl_oracle_pcie_abi(out: *mut u64, len: usize) -> usize;
+    fn rsl_oracle_pcie_abi(count: *mut usize) -> *const AbiFact;
     fn usdr_dms_create_ex(
         dev: DmDev,
         sobj: *const c_char,
@@ -76,6 +76,16 @@ unsafe extern "C" {
         timeout_ms: c_uint,
         nfo: *mut c_void,
     ) -> c_int;
+}
+
+/// One fact about the `PCIe` driver interface: the C expression and its value
+/// (`struct rsl_abi_fact` in the shim).
+#[repr(C)]
+struct AbiFact {
+    /// The expression, NUL-terminated, static.
+    name: *const c_char,
+    /// Its value.
+    value: u64,
 }
 
 /// Opaque libusdr stream handle (`pusdr_dms_t`).
@@ -594,14 +604,23 @@ fn i2c(board: &mut SimBoard, addr: I2cAddress, input: &mut [u8], output: &[u8]) 
     0
 }
 
-/// The `PCIe` driver interface's sizes, offsets and request codes, from the C header, in the
-/// order `rsl_usdr_pcie::abi()` lists them.
+/// The `PCIe` driver interface's sizes, offsets and request codes, from the C header, each
+/// named by the C expression that produced it (`sizeof(pcie_driver_si2c)`,
+/// `PCIE_DRIVER_DMA_CONF`, ...).
 #[must_use]
-pub fn pcie_abi() -> Vec<u64> {
-    let mut facts = [0_u64; 64];
-    // SAFETY: `facts` is valid for its 64 writable entries, the length passed.
-    let count = unsafe { rsl_oracle_pcie_abi(facts.as_mut_ptr(), facts.len()) };
-    facts[..count.min(facts.len())].to_vec()
+pub fn pcie_abi() -> Vec<(String, u64)> {
+    let mut count = 0;
+    // SAFETY: `count` is a valid out-pointer; the shim returns a static array of `count`
+    // facts whose names are static NUL-terminated strings.
+    let facts = unsafe { slice::from_raw_parts(rsl_oracle_pcie_abi(&raw mut count), count) };
+    facts
+        .iter()
+        .map(|fact| {
+            // SAFETY: as above, a static NUL-terminated string.
+            let name = unsafe { CStr::from_ptr(fact.name) };
+            (name.to_string_lossy().into_owned(), fact.value)
+        })
+        .collect()
 }
 
 #[cfg(test)]
