@@ -3,5 +3,6 @@
 mod board;
 mod power;
 mod rate;
+mod tune;
 
 pub(crate) use board::Board;

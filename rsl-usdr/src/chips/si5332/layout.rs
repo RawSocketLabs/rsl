@@ -60,6 +60,11 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    /// The VCO frequency, in Hz; the mixer LO divides it.
+    pub(crate) const fn vco_hz(&self) -> u32 {
+        self.vco_hz
+    }
+
     /// The plan for `out_hz` from a `reference_hz` reference, or `None` where libusdr
     /// returns `-ERANGE` (high-speed divider 0 would go below 8, or no output divider below
     /// 64 keeps the VCO in range) and for a zero `out_hz`, which libusdr would divide by.

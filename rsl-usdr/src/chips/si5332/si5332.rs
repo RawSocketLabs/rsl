@@ -11,7 +11,7 @@ use super::input::{
 use super::layout::Layout;
 use super::output::{
     CmosDrive, DirectSource, Divider, DividerSource, DriverMode, Output, Output0to3PowerDown,
-    Output4and5PowerDown, OutputSource, Polarity, Skew, SourcePowerDown,
+    Output4and5PowerDown, OutputEnables0to3, OutputSource, Polarity, Skew, SourcePowerDown,
 };
 use super::reg::{ID_REGS, Reg};
 use super::state::{CurrentState, RequestedState};
@@ -134,6 +134,51 @@ impl Si5332 {
             regs.write_raw(reg, value)?;
         }
         self.wait_active(bus)
+    }
+
+    /// Switches output 3, the mixer LO, and output 2, the TX sample clock, on or off
+    /// (`si5332_set_port3_en`). Outputs 0 and 1 stay enabled.
+    ///
+    /// libusdr cycles the chip through READY to change the power-downs, without polling
+    /// its state; the sample clocks may pause meanwhile. This is the band-crossing problem
+    /// the module docs describe, kept here for parity.
+    pub(crate) fn set_mixer_lo(
+        self,
+        bus: &mut dyn Bus,
+        lo_on: bool,
+        tx_clock_on: bool,
+    ) -> Result<(), Error> {
+        let mut regs = self.on(bus);
+        regs.write(
+            OutputEnables0to3::new()
+                .with_output3(lo_on)
+                .with_output2(tx_clock_on)
+                .with_output1(true)
+                .with_output0(true),
+        )?;
+        regs.write(RequestedState::Ready)?;
+        regs.write(
+            DividerPowerDown::new()
+                .with_high_speed3(!lo_on)
+                .with_high_speed1(true)
+                .with_high_speed2(true)
+                .with_high_speed4(true)
+                .with_interpolative0(true)
+                .with_interpolative1(true),
+        )?;
+        regs.write(
+            SourcePowerDown::new()
+                .with_output3(!lo_on)
+                .with_output2(!tx_clock_on)
+                .with_output4(true)
+                .with_output5(true),
+        )?;
+        regs.write(
+            Output0to3PowerDown::new()
+                .with_output3(!lo_on)
+                .with_output2(!tx_clock_on),
+        )?;
+        regs.write(RequestedState::Active)
     }
 
     /// The register writes of `si5332_set_layout`, in order.
@@ -277,7 +322,7 @@ impl Si5332 {
             slow_cmos.entry_at(Output::Out5),
             DriverMode::Off.entry_at(Output::Out3),
             DriverMode::Off.entry_at(Output::Out4),
-            (Reg::OutputEnables0to3, 0xff),
+            OutputEnables0to3::ALL.entry(),
             (Reg::OutputEnables4and5, 0xff),
             inputs_off.entry(),
             dividers_off.entry(),

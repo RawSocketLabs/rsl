@@ -72,6 +72,20 @@ pub enum Error {
     #[error("unsupported sample rate {0} S/s")]
     UnsupportedSampleRate(u32),
 
+    /// A frequency the board cannot tune to.
+    #[error("unsupported frequency {0} Hz")]
+    UnsupportedFrequency(u32),
+
+    /// The LMS6002D's RX synthesizer found no capacitor code that locks at this LO, in Hz.
+    #[error("RX PLL cannot lock at {0} Hz")]
+    PllUnlocked(u32),
+
+    /// The LMS6002D's synthesizer read back something it cannot have: a divider other than
+    /// the one written, or both tuning-voltage comparator bits at once. A failed divider
+    /// read counts as a wrong one, as in libusdr.
+    #[error("LMS6002D synthesizer read back an impossible value")]
+    PllFault,
+
     /// The Si5332 clock generator lost its input clock.
     #[error("Si5332 has no input clock")]
     ClockInputMissing,

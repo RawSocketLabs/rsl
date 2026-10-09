@@ -54,6 +54,6 @@ mod spi;
 mod top;
 mod tx_rf;
 
-pub(crate) use lms6002d::Lms6002d;
+pub(crate) use lms6002d::{CapacitorWindow, Lms6002d};
 pub(crate) use rx_fe::Lna;
 pub(crate) use tx_rf::PowerAmp;

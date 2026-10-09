@@ -69,9 +69,29 @@ impl Device {
     /// - [`Error::UnsupportedSampleRate`] outside 960 kS/s to 80 MS/s, or 1 to 80 MS/s on a
     ///   board with only one DSP chain.
     /// - [`Error::ClockInputMissing`] if the Si5332 loses its reference while switching.
+    /// - [`Error::PllUnlocked`], [`Error::PllFault`] or [`Error::UnsupportedFrequency`] if
+    ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
     /// - Any bus failure.
     pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
         self.board().set_rx_sample_rate(samples_per_second)
+    }
+
+    /// Tunes the receiver to `hz`.
+    ///
+    /// Below 230 MHz the board mixer lifts the signal into the LMS6002D's range, so the
+    /// PLL's LO is about 300 MHz higher. If the PLL cannot lock at an LO below 250 MHz (in
+    /// practice a request from 230 to 250 MHz), the receiver tunes the lowest LO that does
+    /// and the NCO covers the rest, which needs a sample rate with room for the offset.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::PllUnlocked`] if the RX PLL cannot lock and no NCO fallback applies.
+    /// - [`Error::UnsupportedFrequency`] for an LO below the PLL's 170 MHz floor, possible
+    ///   only under 230 MHz before a sample rate sets the mixer LO.
+    /// - [`Error::PllFault`] if the LMS6002D reads back impossible PLL values.
+    /// - Any bus failure.
+    pub fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        self.board().set_rx_frequency(hz)
     }
 
     /// Fixes the RX filter bandwidth in Hz, so later sample-rate and frequency changes keep

@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use rsl_usdr::{Device, Error};
 use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, RxPllLock, SimBoard};
 use sim_bus::SimBus;
 
 /// One RX call, made the same way on both sides.
@@ -19,6 +19,9 @@ enum Call {
 
     /// `set_rx_bandwidth`.
     Bandwidth(u32),
+
+    /// `set_rx_frequency`.
+    Frequency(u32),
 }
 
 impl Call {
@@ -27,6 +30,7 @@ impl Call {
         match self {
             Self::Rate(rate) => oracle.set_rx_rate(rate),
             Self::Bandwidth(hz) => oracle.set_rx_bandwidth(hz),
+            Self::Frequency(hz) => oracle.set_rx_frequency(hz),
         }
         .is_ok()
     }
@@ -36,13 +40,15 @@ impl Call {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
             Self::Bandwidth(hz) => device.set_rx_bandwidth(hz),
+            Self::Frequency(hz) => device.set_rx_frequency(hz),
         }
     }
 }
 
-/// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr, and
-/// compares each call's outcome and operations.
-fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) {
+/// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr,
+/// compares each call's outcome and operations, and returns whether each succeeded.
+/// [`assert_calls_succeed`] is the usual form.
+fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool> {
     let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
     let mut expected: Vec<(bool, Range<usize>)> = Vec::new();
     for &call in calls {
@@ -62,6 +68,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) {
     }
     let board = sim.board();
 
+    let mut outcomes = Vec::new();
     for ((call, (expected_ok, expected)), (result, actual)) in
         calls.iter().zip(expected).zip(actual)
     {
@@ -83,7 +90,19 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) {
             actual.len(),
             "{call:?}: same prefix, different lengths"
         );
+        outcomes.push(expected_ok);
     }
+    outcomes
+}
+
+/// As [`assert_calls_match`], and every call must succeed: a regression that failed both
+/// sides alike would otherwise pass.
+fn assert_calls_succeed(board: impl Fn() -> SimBoard, calls: &[Call]) {
+    let outcomes = assert_calls_match(board, calls);
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {calls:?} -> {outcomes:?}"
+    );
 }
 
 /// A revision-3 board.
@@ -95,7 +114,7 @@ fn rev3() -> SimBoard {
 /// filter back to the rate.
 #[test]
 fn fixed_bandwidth_holds_across_rate_changes_like_libusdr() {
-    assert_calls_match(
+    assert_calls_succeed(
         rev3,
         &[
             Call::Rate(20_000_000),
@@ -110,5 +129,122 @@ fn fixed_bandwidth_holds_across_rate_changes_like_libusdr() {
 /// Above 47 MHz the filter is bypassed.
 #[test]
 fn wide_bandwidth_bypasses_the_filter_like_libusdr() {
-    assert_calls_match(rev3, &[Call::Rate(20_000_000), Call::Bandwidth(50_000_000)]);
+    assert_calls_succeed(rev3, &[Call::Rate(20_000_000), Call::Bandwidth(50_000_000)]);
+}
+
+/// Each band above the mixer's: LNA1 at three VCO ranges, then LNA2.
+#[test]
+fn tuning_across_lna1_and_lna2_matches_libusdr() {
+    assert_calls_succeed(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Frequency(433_000_000),
+            Call::Frequency(2_400_000_000),
+            Call::Frequency(3_000_000_000),
+        ],
+    );
+}
+
+#[test]
+fn rev1_tuning_matches_libusdr() {
+    assert_calls_succeed(
+        || SimBoard::new(BoardRevision::Rev1),
+        &[Call::Rate(1_000_000), Call::Frequency(915_000_000)],
+    );
+}
+
+#[test]
+fn rev2_tuning_matches_libusdr() {
+    assert_calls_succeed(
+        || SimBoard::new(BoardRevision::Rev2),
+        &[Call::Rate(1_000_000), Call::Frequency(915_000_000)],
+    );
+}
+
+/// Below 230 MHz the board mixer and Si5332 output 3 come on and the PLL tunes above the
+/// signal by the mixer LO; a rate change moves the mixer LO and retunes; leaving the band
+/// turns the mixer and output 3 off again.
+#[test]
+fn the_mixer_band_matches_libusdr() {
+    assert_calls_succeed(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(100_000_000),
+            Call::Rate(10_000_000),
+            Call::Frequency(1_000_000_000),
+        ],
+    );
+}
+
+/// Revisions 1 and 2 route the RX clock through output 0, not 1.
+#[test]
+fn rev1_mixer_band_matches_libusdr() {
+    assert_calls_succeed(
+        || SimBoard::new(BoardRevision::Rev1),
+        &[Call::Rate(1_000_000), Call::Frequency(100_000_000)],
+    );
+}
+
+/// A board whose RX PLL locks only from 245 MHz up.
+fn rev3_unlocked_below_245m() -> SimBoard {
+    SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(RxPllLock {
+        unlocked_below_hz: 245_000_000,
+        ..RxPllLock::default()
+    })
+}
+
+/// 240 MHz cannot lock: libusdr retries, steps up to 245 MHz and covers the 5 MHz with the
+/// NCO, which 1 MS/s (a 32 MS/s ADC) has room for; the next low tune reuses 245 MHz.
+#[test]
+fn the_low_lo_fallback_matches_libusdr() {
+    assert_calls_succeed(
+        rev3_unlocked_below_245m,
+        &[
+            Call::Rate(1_000_000),
+            Call::Frequency(240_000_000),
+            Call::Frequency(241_000_000),
+            Call::Rate(2_000_000),
+            Call::Frequency(1_000_000_000),
+        ],
+    );
+}
+
+/// At 20 MS/s (a 40 MS/s ADC) the 5 MHz NCO offset does not fit, so tuning fails on both
+/// sides, after the same operations.
+#[test]
+fn a_fallback_without_nco_room_fails_like_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3_unlocked_below_245m,
+        &[Call::Rate(20_000_000), Call::Frequency(240_000_000)],
+    );
+    assert_eq!(outcomes, [true, false]);
+}
+
+/// Above 250 MHz there is no fallback: a PLL that cannot lock fails the call.
+#[test]
+fn an_unlockable_lo_above_250m_fails_like_libusdr() {
+    let outcomes = assert_calls_match(
+        || {
+            SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(RxPllLock {
+                unlocked_below_hz: 2_000_000_000,
+                ..RxPllLock::default()
+            })
+        },
+        &[Call::Rate(20_000_000), Call::Frequency(1_000_000_000)],
+    );
+    assert_eq!(outcomes, [true, false]);
+}
+
+/// 231 MHz needs a 14 MHz NCO offset: 1 MS/s plus 14 MHz is 15 MHz, just over 45% of the
+/// 32 MS/s ADC (14.4 MHz), so libusdr refuses it.
+#[test]
+fn the_nco_headroom_limit_matches_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3_unlocked_below_245m,
+        &[Call::Rate(1_000_000), Call::Frequency(231_000_000)],
+    );
+    assert_eq!(outcomes, [true, false]);
 }
