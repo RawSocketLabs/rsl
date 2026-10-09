@@ -6,8 +6,8 @@ A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP875
 TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
 temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream
-(create, start, receive, stop) over any streaming `Bus`; the USB and PCIe transports are
-next. Added beyond libusdr: the
+(create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
+`pcie`; untested on hardware). The USB transport is next. Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -17,6 +17,7 @@ intentional addition.
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, and the RX stream engine's blocks below it |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
+| `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
 
 ## Driver layout
 
@@ -41,6 +42,9 @@ Each layer calls only the ones below it.
   front end, DMA, sync).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
+- `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
+  Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `window` is the
+  register-window and pair-write access libusdr's transports share.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -94,11 +98,17 @@ Each layer calls only the ones below it.
     the value types split by function (Si5332: `state`, `input`, `divider`, `output`). The
     TMP114, with one value type, stays one file.
 - `sim` stays an unpublished crate, not a feature of the driver.
+- `unsafe` lives only in `rsl-usdr-pcie`; `rsl-usdr` keeps `#![forbid(unsafe_code)]`. That
+  crate knows the driver's protocol and nothing of the board: layouts and register meanings
+  stay in `rsl-usdr`. Its ABI and the uSDR layout are checked against the vendored header and
+  libusdr's own layout by `oracle/tests/pcie_abi.rs`; nothing else of it can run without
+  hardware (`tests/pcie_hardware.rs` is `#[ignore]`d).
 
 ## Verify
 
 ```sh
-cargo clippy -p rsl-usdr -p rsl-usdr-sim --all-targets && cargo test -p rsl-usdr -p rsl-usdr-sim
+cargo clippy -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie --all-targets && cargo test -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie
+cargo clippy -p rsl-usdr --all-targets --features pcie && cargo test -p rsl-usdr --features pcie
 cargo fmt --manifest-path rsl-usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path rsl-usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rsl-usdr/oracle/Cargo.toml

@@ -51,6 +51,8 @@ unsafe extern "C" {
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
+    fn rsl_oracle_pcie_devlayout(out: *mut u8, len: usize) -> c_int;
+    fn rsl_oracle_pcie_abi(out: *mut u64, len: usize) -> usize;
     fn usdr_dms_create_ex(
         dev: DmDev,
         sobj: *const c_char,
@@ -159,6 +161,20 @@ impl Oracle {
         let errno = unsafe { usdr_dme_get_uint(dev.as_ptr(), path.as_ptr(), &raw mut value) };
         resume_callback_panic();
         if errno == 0 { Ok(value) } else { Err(errno) }
+    }
+
+    /// The `pcie_driver_devlayout` libusdr's `PCIe` transport would send for this board, built
+    /// from the board description libusdr opened (see the shim for the one difference).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr's description lookups returned.
+    pub fn pcie_devlayout(&mut self) -> Result<[u8; 596], i32> {
+        let mut out = [0; 596];
+        // SAFETY: `out` is valid for its 596 writable bytes, the length passed.
+        let errno = unsafe { rsl_oracle_pcie_devlayout(out.as_mut_ptr(), out.len()) };
+        resume_callback_panic();
+        if errno == 0 { Ok(out) } else { Err(errno) }
     }
 
     /// Sets the RX sample rate in samples per second, leaving TX unset, as the FFI `usdr`
@@ -576,6 +592,16 @@ fn i2c(board: &mut SimBoard, addr: I2cAddress, input: &mut [u8], output: &[u8]) 
     let len = input.len();
     input.copy_from_slice(&word.to_le_bytes()[..len]);
     0
+}
+
+/// The `PCIe` driver interface's sizes, offsets and request codes, from the C header, in the
+/// order `rsl_usdr_pcie::abi()` lists them.
+#[must_use]
+pub fn pcie_abi() -> Vec<u64> {
+    let mut facts = [0_u64; 64];
+    // SAFETY: `facts` is valid for its 64 writable entries, the length passed.
+    let count = unsafe { rsl_oracle_pcie_abi(facts.as_mut_ptr(), facts.len()) };
+    facts[..count.min(facts.len())].to_vec()
 }
 
 #[cfg(test)]

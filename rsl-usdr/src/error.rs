@@ -86,6 +86,10 @@ pub enum Error {
     #[error("LMS6002D synthesizer read back an impossible value")]
     PllFault,
 
+    /// The transport could not open the device.
+    #[error("cannot open the device")]
+    Open(#[source] BusError),
+
     /// A stream operation failed in the transport (opening, waiting for or releasing a
     /// DMA block, closing).
     #[error("RX stream transport failed")]
