@@ -56,9 +56,71 @@ static int sim_destroy(lldev_t dev)
     return 0;
 }
 
+// The PCIe kernel driver's DMA limits (usdr_pcie_uram.c, dmacap 0x855): exactly 32 buffers,
+// each at most 1 MiB.
+enum { SIM_DMA_BUFFERS = 32, SIM_DMA_MAX_BLOCK = 1 << 20 };
+
+// Stream setup as the PCIe transport reports it (pcie_uram_main.c stream_initialize). The
+// kernel's own register writes (buffer addresses, block size) sit below the ls_op seam that
+// rsl-usdr shares, so they are not traced.
+static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
+                                 stream_t* channel)
+{
+    (void)dev;
+    (void)subdev;
+    if (params->buffer_count != SIM_DMA_BUFFERS || params->block_size > SIM_DMA_MAX_BLOCK) {
+        return -EINVAL;
+    }
+    params->underlying_fd = -1;
+    params->out_mtu_size = params->block_size;
+    *channel = params->streamno;
+    return 0;
+}
+
+static int sim_stream_deinitialize(lldev_t dev, subdev_t subdev, stream_t channel)
+{
+    (void)dev;
+    (void)subdev;
+    (void)channel;
+    return 0;
+}
+
+// No sample data is modelled yet: every wait times out at once, with a zeroed out-of-band
+// record so libusdr's timeout log reads defined memory.
+static int sim_recv_dma_wait(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
+                             void* oob_ptr, unsigned* oob_size, unsigned timeout)
+{
+    (void)dev;
+    (void)subdev;
+    (void)channel;
+    (void)timeout;
+    *buffer = NULL;
+    if (oob_ptr != NULL && oob_size != NULL) {
+        unsigned size = *oob_size < 16 ? *oob_size : 16;
+        for (unsigned i = 0; i < size; i++) {
+            ((unsigned char*)oob_ptr)[i] = 0;
+        }
+        *oob_size = size;
+    }
+    return -ETIMEDOUT;
+}
+
+static int sim_recv_dma_release(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer)
+{
+    (void)dev;
+    (void)subdev;
+    (void)channel;
+    (void)buffer;
+    return 0;
+}
+
 static lowlevel_ops_t s_sim_ops = {
     .generic_get = sim_generic_get,
     .ls_op = sim_ls_op,
+    .stream_initialize = sim_stream_initialize,
+    .stream_deinitialize = sim_stream_deinitialize,
+    .recv_dma_wait = sim_recv_dma_wait,
+    .recv_dma_release = sim_recv_dma_release,
     .destroy = sim_destroy,
 };
 
