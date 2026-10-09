@@ -5,7 +5,8 @@
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
 TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
-temperature reading, the RX sample rate, bandwidth and frequency. Added beyond libusdr: the
+temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream's
+register side (create, start, receive's ready signal, stop). Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -35,7 +36,8 @@ Each layer calls only the ones below it.
   `usdr()` constructor whose doc cites the address source (datasheet fixed address or
   libusdr's `I2C_DEV_*`). Sequences, setpoints and policy stay in `src/board/`.
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
-  with the decimator FIR tables in `fir_tables.rs`), then the stream engine.
+  with the decimator FIR tables in `fir_tables.rs`), and the RX stream engine (`stream`:
+  front end, DMA, sync).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
@@ -60,6 +62,9 @@ Each layer calls only the ones below it.
   register globally. The first is the band-crossing fix: gate Si5332 port 3 with
   `OUT3_OE` alone, without cycling USYS_CTRL through READY as libusdr does (and without
   the FFI wrapper's close/reopen workaround); `oracle/tests/rx_parity.rs` whitelists it.
+  The second leaves out stream create's per-channel baseband loop, a libusdr bug that
+  reselects the band, clamps the NCOs and bypasses the filter;
+  `oracle/tests/stream_parity.rs` whitelists it and the mixer exit it leaves libusdr owing.
 - Registers are typed (`src/chips/register.rs`). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
   - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
@@ -80,8 +85,10 @@ Each layer calls only the ones below it.
   - A chip whose register value types outgrow one file is a directory: `mod.rs` holds the
     chip docs, module declarations and re-exports; `<chip>.rs` the driver; the value types
     split by register group, plus any transport helper (the LMS6002D's `spi`). The
-    LMS6002D splits by datasheet block (`top`, `pll`, `tx_rf`, `afe`, `rx_lpf`, `rx_vga2`, `rx_fe`),
-    each with its own `Reg`; blocks with identical maps share a module and an index (`Pll`).
+    LMS6002D splits by datasheet block (`top`, `pll`, `tx_rf`, `afe`, `lpf`, `rx_vga2`,
+    `rx_fe`), each with its own `Reg`; registers several blocks repeat share a module and an
+    index (`Pll`; `Lpf` for the filters' DAC bypass; `DcBlock` in `dc_cal` for the four
+    DC-calibration engines).
     The I2C chips have one flat address space, so their single `Reg` sits in `reg.rs` and
     the value types split by function (Si5332: `state`, `input`, `divider`, `output`). The
     TMP114, with one value type, stays one file.

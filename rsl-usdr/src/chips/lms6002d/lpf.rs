@@ -1,4 +1,6 @@
-//! The RX low-pass filter (datasheet `RxLPF`, registers 0x50-0x56; the driver uses 0x54-0x56).
+//! The low-pass filters: the RX filter (datasheet `RxLPF`, registers 0x50-0x56; the
+//! driver uses 0x54-0x56), and the one register the TX filter (`TxLPF`, 0x30-0x36) shares
+//! with it, the DAC bypass, which the DC calibration writes.
 //!
 //! The channel filter between RXVGA1 and RXVGA2: it limits how much spectrum reaches the
 //! ADC, so it has to suit the sample rate. libusdr picks a bandwidth code and an RC
@@ -8,18 +10,21 @@
 use bnb::{BitEnum, bitfield, u3, u4, u6};
 
 use super::spi::BlockReg;
-use crate::chips::register::Register;
+use crate::chips::register::{IndexedRegister, Register};
 
-/// RX LPF register addresses.
+/// Filter register addresses: the RX filter's, and the TX filter's DAC bypass.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u8, closed)]
 #[repr(u8)]
 pub(super) enum Reg {
+    /// TX LPF `DACBP`; see [`Bypass`].
+    TxBypass = 0x35,
+
     /// Datasheet `BW`; see [`Bandwidth`].
     Bandwidth = 0x54,
 
-    /// Datasheet `DACBP`; see [`Bypass`].
-    Bypass = 0x55,
+    /// RX LPF `DACBP`.
+    RxBypass = 0x55,
 
     /// Datasheet `CTRL`; see [`Control`].
     Control = 0x56,
@@ -102,8 +107,18 @@ impl Register for Bandwidth {
     const ADDR: Reg = Reg::Bandwidth;
 }
 
+/// Which filter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Lpf {
+    /// The TX filter.
+    Tx,
+
+    /// The RX filter.
+    Rx,
+}
+
 /// The filter bypass and the DC-offset DAC's resistor calibration. Datasheet `DACBP`,
-/// register 0x55.
+/// registers 0x35 (TX) and 0x55 (RX).
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Bypass {
@@ -116,9 +131,16 @@ pub(super) struct Bypass {
     #[bits(0..=5)]
     dc_dac_calibration: u6,
 }
-impl Register for Bypass {
+impl IndexedRegister for Bypass {
     type Map = Reg;
-    const ADDR: Reg = Reg::Bypass;
+    type Index = Lpf;
+
+    fn addr(lpf: Lpf) -> Reg {
+        match lpf {
+            Lpf::Tx => Reg::TxBypass,
+            Lpf::Rx => Reg::RxBypass,
+        }
+    }
 }
 
 /// RC calibration and power-downs. Datasheet `CTRL`, register 0x56.

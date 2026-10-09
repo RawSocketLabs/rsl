@@ -66,6 +66,12 @@ unsafe extern "C" {
         pstream: *mut Stream,
     ) -> c_int;
     fn usdr_dms_destroy(stream: Stream) -> c_int;
+    fn usdr_dms_recv(
+        stream: Stream,
+        stream_buffs: *mut *mut c_void,
+        timeout_ms: c_uint,
+        nfo: *mut c_void,
+    ) -> c_int;
 }
 
 /// Opaque libusdr stream handle (`pusdr_dms_t`).
@@ -264,6 +270,34 @@ impl Oracle {
             unsafe { usdr_dms_sync(dev.as_ptr(), c"none".as_ptr(), 1, streams.as_mut_ptr()) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Receives one packet from the RX stream, waiting up to `timeout_ms`
+    /// (`usdr_dms_recv`), and returns its bytes.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ETIMEDOUT` while the sim streams no data);
+    /// `-EINVAL` with no stream.
+    pub fn receive_rx(&mut self, timeout_ms: u32) -> Result<Vec<u8>, i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        // libusdr copies a whole DMA block, which the PCIe driver caps at 1 MiB.
+        let mut buffer = vec![0_u8; 1 << 20];
+        let mut buffers = [buffer.as_mut_ptr().cast::<c_void>()];
+        // SAFETY: `stream` is live and `buffers` holds one buffer of 1 MiB, the largest
+        // block libusdr can copy; no info struct is requested.
+        let errno = unsafe {
+            usdr_dms_recv(
+                stream.as_ptr(),
+                buffers.as_mut_ptr(),
+                timeout_ms,
+                ptr::null_mut(),
+            )
+        };
+        resume_callback_panic();
+        if errno == 0 { Ok(buffer) } else { Err(errno) }
     }
 
     /// Destroys the RX stream (`usdr_dms_destroy`).

@@ -4,8 +4,9 @@
 //! register/SPI/I2C seam libusdr's `ls_op` provides, so the board logic here is checked
 //! against libusdr's on a simulated board (`rsl-usdr-oracle`).
 //!
-//! Status: board power-up and power-down, temperature, the thermal policy, and the RX
-//! sample rate, bandwidth and frequency. Transports and streaming follow.
+//! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
+//! rate, bandwidth and frequency, and the RX stream over any [`lowlevel::Bus`] that streams.
+//! The USB and `PCIe` transports follow.
 //!
 //! # The uSDR board
 //!
@@ -117,6 +118,7 @@ mod fpga;
 pub mod lowlevel;
 mod thermal;
 
+pub use board::RxPacket;
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
 pub use thermal::{HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};

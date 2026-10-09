@@ -9,6 +9,7 @@
 
 use std::fmt;
 
+use super::stream::RxStream;
 use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::{BuckVoltage, Lp8758};
@@ -54,6 +55,13 @@ pub(crate) struct Board {
 
     /// What the receive chain was last set to.
     pub(super) rx: RxState,
+
+    /// libusdr's `rx_run`: set when a stream is created, cleared when it is destroyed, and
+    /// left set by a failed create.
+    pub(super) rx_running: bool,
+
+    /// The RX stream, while one exists.
+    pub(super) rx_stream: Option<RxStream>,
 }
 
 /// The receive chain's settings that later calls depend on, as libusdr tracks them.
@@ -108,6 +116,8 @@ impl fmt::Debug for Board {
             .field("adc_rate_hz", &self.adc_rate_hz)
             .field("mixer_lo_hz", &self.mixer_lo_hz)
             .field("rx", &self.rx)
+            .field("rx_running", &self.rx_running)
+            .field("rx_stream", &self.rx_stream)
             .finish_non_exhaustive()
     }
 }

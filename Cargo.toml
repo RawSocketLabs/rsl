@@ -86,6 +86,8 @@ bytes = "1"
 rustix = { version = "1", features = ["net"] }
 libc = "0.2"
 zeroize = "1"
+# rsl-usdr's sample type, matching the FFI usdr crate's `receive`.
+num-complex = { version = "0.4.6", default-features = false }
 
 # --- bnb proc-macro deps ---
 syn = "3.0"

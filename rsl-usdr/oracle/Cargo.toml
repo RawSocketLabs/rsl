@@ -18,6 +18,7 @@ rsl-usdr-sim = { path = "../sim" }
 thiserror = "2.0"
 
 [dev-dependencies]
+num-complex = { version = "0.4.6", default-features = false }
 rsl-usdr = { path = ".." }
 
 [build-dependencies]

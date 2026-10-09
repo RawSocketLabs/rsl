@@ -202,6 +202,8 @@ impl Identified {
             adc_rate_hz: 0,
             mixer_lo_hz: 0,
             rx: RxState::default(),
+            rx_running: false,
+            rx_stream: None,
         })
     }
 }

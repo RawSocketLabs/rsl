@@ -8,7 +8,7 @@
 //! while its clock is on. [`ReferencePower`] sets up the buffer the Si5332's PLL
 //! reference enters through.
 
-use bnb::{BitEnum, bitfield, u4};
+use bnb::{BitEnum, bitfield, u3, u4};
 
 use super::spi::BlockReg;
 use crate::chips::register::Register;
@@ -23,6 +23,12 @@ pub(super) enum Reg {
 
     /// Datasheet `ENCFG`; see [`EnableConfig`].
     EnableConfig = 0x05,
+
+    /// Datasheet `LPF_CTRL`; see [`LpfTuningControl`].
+    LpfTuningControl = 0x06,
+
+    /// Datasheet `LPF_CAL`; see [`LpfTuning`].
+    LpfTuning = 0x07,
 
     /// Datasheet `ENREG`; see [`ClockEnables`].
     ClockEnables = 0x09,
@@ -165,4 +171,52 @@ impl ReferencePower {
     pub(super) const SELF_BIASED: Self = Self::new()
         .with_xco_buffer_self_biased(true)
         .with_lpf_calibration_reference_off(true);
+}
+
+/// The LPF tuning engine's clock and reset. Datasheet `LPF_CTRL`, register 0x06.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LpfTuningControl {
+    /// Clock the tuning from the PLL reference instead of 40 MHz from the TX PLL. `CLKSEL`,
+    /// bit 3; reset 1.
+    #[bits(3..=3)]
+    reference_clock: bool,
+
+    /// Power the tuning clock generator down. `PD_CLK`, bit 2; reset 1.
+    #[bits(2..=2)]
+    clock_off: bool,
+
+    /// Pass the forced code through instead of the measured one. `ENF_EN`, bit 1; reset 0.
+    #[bits(1..=1)]
+    enforce: bool,
+
+    /// Hold the tuning in reset; must last over 100 ns. `RST_CAL`, bit 0; reset 1.
+    #[bits(0..=0)]
+    reset: bool,
+}
+impl Register for LpfTuningControl {
+    type Map = Reg;
+    const ADDR: Reg = Reg::LpfTuningControl;
+}
+
+/// The LPF tuning engine's enable, forced code and bandwidth. Datasheet `LPF_CAL`,
+/// register 0x07.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LpfTuning {
+    /// Run the RC calibration; enable only while it runs. `EN_CAL`, bit 7; reset 0.
+    #[bits(7..=7)]
+    enabled: bool,
+
+    /// The code passed through in enforce mode. `FORCE_CODE_CAL`, bits 6:4; reset 0.
+    #[bits(4..=6)]
+    forced_code: u3,
+
+    /// The bandwidth code to tune for. `BWC`, bits 3:0.
+    #[bits(0..=3)]
+    bandwidth: u4,
+}
+impl Register for LpfTuning {
+    type Map = Reg;
+    const ADDR: Reg = Reg::LpfTuning;
 }

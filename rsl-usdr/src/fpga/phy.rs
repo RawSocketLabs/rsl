@@ -38,6 +38,18 @@ enum SubReg {
     /// DC correction enable (`CFG_REG_DCCTRL`).
     DcControl = 1,
 
+    /// IQ imbalance correction, I amplitude (`CFG_REG_IQIMB_0`).
+    IqAmplitudeI = 2,
+
+    /// IQ imbalance correction, Q amplitude (`CFG_REG_IQIMB_1`).
+    IqAmplitudeQ = 3,
+
+    /// IQ imbalance correction, I phase term (`CFG_REG_IQIMB_2`).
+    IqPhaseI = 4,
+
+    /// IQ imbalance correction, Q phase term (`CFG_REG_IQIMB_3`).
+    IqPhaseQ = 5,
+
     /// NCO 0 frequency word, low half (`CFG_REG_NCO0_L`).
     Nco0Low = 8,
 
@@ -139,6 +151,26 @@ impl Phy {
     /// Switches the chain's DC correction.
     pub(crate) fn set_dc_correction(self, bus: &mut dyn Bus, on: bool) -> Result<(), Error> {
         self.write(bus, SubReg::DcControl, u32::from(on))
+    }
+
+    /// The IQ correction with no imbalance: libusdr's `usdr_calc_iqimb` for its default
+    /// settings, amplitudes of 0.5 × 8388607 and no phase terms.
+    pub(crate) const NO_IQ_IMBALANCE: [i32; 4] = [4_194_303, 4_194_303, 0, 0];
+
+    /// Writes the IQ imbalance correction: I and Q amplitudes, then I and Q phase terms
+    /// (`usdr_rxupdate_cal`). libusdr keeps each term's low 24 bits.
+    pub(crate) fn set_iq_correction(self, bus: &mut dyn Bus, terms: [i32; 4]) -> Result<(), Error> {
+        let subs = [
+            SubReg::IqAmplitudeI,
+            SubReg::IqAmplitudeQ,
+            SubReg::IqPhaseI,
+            SubReg::IqPhaseQ,
+        ];
+        for (sub, term) in subs.into_iter().zip(terms) {
+            let [b0, b1, b2, _] = term.to_le_bytes();
+            self.write(bus, sub, u32::from_le_bytes([b0, b1, b2, 0]))?;
+        }
+        Ok(())
     }
 
     /// Sets an NCO's frequency word, then pulses the NCO reset (`_usdr_set_nco`).
