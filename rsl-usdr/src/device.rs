@@ -74,6 +74,19 @@ impl Device {
         self.board().set_rx_sample_rate(samples_per_second)
     }
 
+    /// Fixes the RX filter bandwidth in Hz, so later sample-rate and frequency changes keep
+    /// it; 0 returns the filter to following the sample rate.
+    ///
+    /// Like libusdr, setting 0 writes the filter's narrowest setting until the next rate or
+    /// frequency change.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
+        self.board().set_rx_bandwidth(hz)
+    }
+
     /// Waits until the board is below the thermal policy's resume limit, reading every
     /// 5 s and passing each reading to `on_reading`.
     ///

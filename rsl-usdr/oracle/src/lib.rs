@@ -145,6 +145,37 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
+    /// Sets the RX bandwidth in Hz (`/dm/sdr/0/rx/bandwidth`); 0 returns the filter to
+    /// following the sample rate.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/rx/bandwidth", hz.into())
+    }
+
+    /// Tunes the receiver to `hz` (`/dm/sdr/0/rx/freqency`, libusdr's spelling).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ENOLCK` if the PLL cannot lock).
+    pub fn set_rx_frequency(&mut self, hz: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/rx/freqency", hz.into())
+    }
+
+    /// Writes a device-manager value that libusdr reads as a number, never as a pointer.
+    fn set_value(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `dev` is open and `path` is NUL-terminated; callers only pass paths whose
+        // handlers take `value` as a number.
+        let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), path.as_ptr(), value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
     /// How many operations the board has traced so far; slice the trace with it, after
     /// [`Oracle::close`], to isolate one call's operations.
     ///

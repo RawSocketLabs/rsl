@@ -63,9 +63,9 @@ impl Board {
         }
 
         // `_usdr_pwr_state(rx, true)`.
-        if !self.rx_powered {
+        if !self.rx.powered {
             self.lms.set_rx_enabled(bus, true)?;
-            self.rx_powered = true;
+            self.rx.powered = true;
             self.lms.enable_rx_vga2(bus)?;
             bus.sleep(Duration::from_millis(25));
         }
@@ -77,13 +77,13 @@ impl Board {
             Self::MIXER_LO_DIVIDER,
         )?;
 
-        if self.chains.rx && self.rx_decimation != Some(decimation) {
+        if self.chains.rx && self.rx.decimation != Some(decimation) {
             Phy::Rx.reset(bus, 15)?;
             bus.sleep(Duration::from_micros(1));
             Phy::Rx.reset(bus, 9)?;
             Phy::load_rx_fir(bus, decimation)?;
         }
-        self.rx_decimation = Some(decimation);
+        self.rx.decimation = Some(decimation);
 
         // Front-end reset, both chains.
         Phy::Rx.reset(bus, 1)?;
@@ -102,7 +102,19 @@ impl Board {
 
         // `_usdr_update_bandwidth`: with no NCO spread or external LO offset, the
         // bandwidth is the ADC rate over the decimation, the requested rate.
+        if self.rx.bandwidth_fixed {
+            return Ok(());
+        }
         self.lms.set_rx_bandwidth(bus, rate)
+    }
+
+    /// Fixes the RX filter bandwidth in Hz, or with 0 returns it to following the sample
+    /// rate (`usdr_rfic_bb_set_badwidth`). Either way the filter is written now: for 0,
+    /// like libusdr, that is its narrowest setting, until the next rate or frequency
+    /// change.
+    pub(crate) fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
+        self.rx.bandwidth_fixed = hz != 0;
+        self.lms.set_rx_bandwidth(self.bus.as_mut(), hz)
     }
 
     /// The decimation libusdr picks for `rate`, or `None` for a rate it rejects.
