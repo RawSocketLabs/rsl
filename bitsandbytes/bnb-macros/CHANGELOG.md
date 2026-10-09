@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.8.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.7.1...bitsandbytes-macros-v0.8.0) - 2026-10-08
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] emit From conversions for #[bitfield] over its backing integer ([#115](https://github.com/RawSocketLabs/rsl/pull/115))
+- *(bitsandbytes)* add stateless slice prefix decoding ([#108](https://github.com/RawSocketLabs/rsl/pull/108))
+
+### Other
+
+- *(bitsandbytes)* copy byte-aligned byte runs in bulk ([#109](https://github.com/RawSocketLabs/rsl/pull/109))
+
 ## [0.7.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.5.0...bitsandbytes-macros-v0.7.0) - 2026-09-21
 
 ### Added

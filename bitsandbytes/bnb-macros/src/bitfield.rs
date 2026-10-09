@@ -723,6 +723,22 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
             fn from_raw(raw: #backing) -> Self { Self { value: raw } }
         }
 
+        // `num_enum`-style parity with a byte-aligned `BitEnum`: the raw conversions as
+        // `From`, total both ways (`from_raw` never validates).
+        impl ::core::convert::From<#backing> for #name {
+            #[inline]
+            fn from(raw: #backing) -> Self {
+                Self { value: raw }
+            }
+        }
+
+        impl ::core::convert::From<#name> for #backing {
+            #[inline]
+            fn from(value: #name) -> Self {
+                value.value
+            }
+        }
+
         // Force the width-fit assert. `__BITS_FIT` is an associated const, which Rust
         // only const-evaluates when referenced, so a free `const _` that uses it makes
         // an over-wide bitfield a hard compile error instead of a silent truncation.

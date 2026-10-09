@@ -1492,3 +1492,36 @@ equivalent survivors (ledger above), after the default-path tests closed five re
 Fuzzing (`cargo +nightly fuzz run`, `-max_len=2048`): `decode` 2,000,000 runs and
 `stream_decode` 2,000,000 runs, no crashes. Not run: `scripts/ci-act.sh pre-push`, which
 fails locally under Podman 5.8.7; hosted CI is the substitute for this change.
+
+## 17. `From` conversions for `#[bitfield]` (unreleased candidate, breaking)
+
+`#[bitfield(uN)]` now emits `From<uN> for Struct` and `From<Struct> for uN`, delegating to the
+same unvalidated `from_raw`/`to_raw` conversion. A byte-aligned `BitEnum` already has
+`num_enum`-parity `From` impls; a bitfield did not, so a consumer that treats both as a
+register value (`rsl-usdr`'s `Register` trait) needed a macro per register to bridge
+`Bitfield::to_raw` and `Into<u8>`. With this, a plain `T: From<u8> + Into<u8>` bound covers
+both.
+
+| Finding | Consequence | Disposition |
+|---|---|---|
+| High, new: the impls land on the user's own type, so this is a blanket-impl-class addition. A crate that already has any of `impl From<uN> for MyBitfield`, `impl From<MyBitfield> for uN`, `impl Into<uN> for MyBitfield`, `impl TryFrom<uN> for MyBitfield` (the usual way to add reserved-bit validation), or `impl TryFrom<MyBitfield> for uN` now fails with E0119; the `TryFrom`/`Into` cases conflict through core's blanket impls. | Source break on upgrade. | Committed as `feat(bitsandbytes)!` with a `BREAKING CHANGE:` footer naming the five impls, so release-plz cuts 0.8.0 for the version group (a plain `feat` only bumps the patch here). The whole `rsl` workspace checks clean, so no in-repo consumer is affected. A validating `TryFrom<u8>` user moves to a named constructor. Reviewer confirmed the `TryFrom<u8>` E0119 in a scratch crate; the others follow from coherence, not compiled. |
+| Low, by design: `From<uN>` keeps bits beyond `WIDTH`, like `from_raw`. | `From` cannot be used to validate. | Dual-use rule (section 7); tested in `tests/bitfield_from.rs`. |
+
+No runtime path changes: the impls are two inline field moves, so no benchmark applies.
+`public-api.txt` is unaffected (macro output is not bnb's own API).
+
+### Verification (2026-10-08, routine tier)
+
+Passed: `cargo test -p bitsandbytes -p bitsandbytes-macros` (including the trybuild UI suites,
+whose snapshots are unchanged; the reviewer also ran `--features mock`); `cargo check
+--workspace --all-targets` for the whole `rsl` workspace (no conflicting impls); the
+`nostd-check` build for `thumbv7em-none-eabi`; `cargo +1.85.0 check -p bitsandbytes
+--all-features`; `cargo semver-checks --baseline-rev origin/main -p bitsandbytes --release-type
+minor --all-features` ("no semver update required"). `cargo mutants --in-diff`: 1 mutant,
+unviable.
+
+Limitations: semver-checks and cargo-mutants cannot see `quote!` output, so neither says
+anything about the new impls; the breaking classification above rests on coherence rules and
+the scratch-crate E0119. `scripts/ci-act.sh pre-push` runs before publishing. Independent
+reviewer: four blocking findings (semver disposition, conflict list, test module, missing
+evidence), all fixed here.
