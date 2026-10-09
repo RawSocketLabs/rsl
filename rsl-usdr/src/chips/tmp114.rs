@@ -1,5 +1,26 @@
 //! TMP114 temperature sensor, which reads the board temperature for the thermal policy.
 //!
+//! # What it does
+//!
+//! The TMP114 is a small digital thermometer. It converts on its own, continuously, and
+//! holds the latest reading in a result register. A read returns that last result, so it
+//! never waits on a conversion. Until the first conversion completes the result reads
+//! 0 °C, which looks cool; the driver assumes one has completed by the time it reads.
+//! It measures the board where it is mounted, not the die of
+//! any other chip: the FPGA or LMS6002D can be hotter than it reports.
+//!
+//! The TMP114 comes in variants with different fixed I2C addresses; the uSDR
+//! carries the TMP114NB, at 0x4E.
+//!
+//! # How the driver uses it
+//!
+//! It is the first chip the driver talks to after reading the board revision.
+//! [`Tmp114::check_id`] confirms a TMP114 answers, because a missing sensor would read as
+//! −0.0078 °C (0xFFFF) and look cool. [`Tmp114::celsius`] then feeds the thermal policy,
+//! before anything else is powered and again whenever the caller asks.
+//!
+//! # Sources
+//!
 //! Register meanings: TI SNIS214E, "TMP114", §8.6. Its registers are 16 bits wide and sent
 //! MSB first.
 

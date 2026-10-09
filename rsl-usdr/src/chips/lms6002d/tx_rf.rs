@@ -1,5 +1,10 @@
 //! The TX RF section (datasheet `TRF`, registers 0x40-0x4F): the power amplifiers and
 //! their drive.
+//!
+//! The last stages of the transmit chain: TXVGA2 sets the output level and one of two on-chip
+//! amplifiers drives the board's TX balun. Each is matched to its own band, so the board's TX
+//! switch has to follow the [`PowerAmp`] choice. The driver keeps TX off; it sets PA1 at power-up
+//! only so the chip idles in a known state.
 
 use bnb::{BitEnum, bitfield, u2, u4};
 
@@ -25,9 +30,11 @@ impl BlockReg for Reg {}
 pub(crate) enum PowerAmp {
     /// Both amplifiers off.
     Off,
-    /// PA1.
+    /// PA1: up to 2.8 GHz, through the B0322J5050AHF balun, TX switch 1. libusdr's `W`
+    /// path and the power-up default.
     Pa1,
-    /// PA2.
+    /// PA2: up to 3.8 GHz, through the 3600BL14M050 balun, TX switch 0. libusdr's `H`
+    /// path.
     Pa2,
     /// Both amplifiers off: the datasheet's other off encoding, which libusdr uses as its
     /// AUX path (`TXPATH_AUX`).

@@ -1,4 +1,10 @@
 //! The ADC/DAC interface (datasheet `AFE`, registers 0x57-0x5F).
+//!
+//! The converters' analogue settings and the digital bus to the FPGA. Samples cross that
+//! bus one 12-bit word at a time, I and Q alternating, with a frame-sync line marking
+//! which is which. [`Interface`] sets that order, the frame-sync polarity and the clock
+//! edges. They must match what the FPGA gateware expects, or I and Q arrive swapped or
+//! misaligned.
 
 use bnb::{BitEnum, bitfield, u2};
 
