@@ -5,9 +5,10 @@
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
 TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
-temperature reading. Added beyond libusdr: the thermal policy (`src/thermal.rs`), which gates
-start-up before anything is powered and has a 110 °C hard stop no policy can lift. Parity
-tests strip its TMP114 temperature reads, an intentional addition.
+temperature reading, the RX sample rate. Added beyond libusdr: the thermal policy
+(`src/thermal.rs`), which gates start-up before anything is powered and has a 110 °C hard
+stop no policy can lift. Parity tests strip its TMP114 temperature reads, an intentional
+addition.
 
 | Path | Crate | Role |
 |------|-------|------|
@@ -33,7 +34,8 @@ Each layer calls only the ones below it.
   Its only board knowledge is where the uSDR wires it: an `at(addr)` constructor plus a
   `usdr()` constructor whose doc cites the address source (datasheet fixed address or
   libusdr's `I2C_DEV_*`). Sequences, setpoints and policy stay in `src/board/`.
-- `src/fpga/`: gateware registers (GPO/GPI, then the stream engine).
+- `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
+  with the decimator FIR tables in `fir_tables.rs`), then the stream engine.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
@@ -77,7 +79,7 @@ Each layer calls only the ones below it.
   - A chip whose register value types outgrow one file is a directory: `mod.rs` holds the
     chip docs, module declarations and re-exports; `<chip>.rs` the driver; the value types
     split by register group, plus any transport helper (the LMS6002D's `spi`). The
-    LMS6002D splits by datasheet block (`top`, `pll`, `tx_rf`, `afe`, `rx_vga2`, `rx_fe`),
+    LMS6002D splits by datasheet block (`top`, `pll`, `tx_rf`, `afe`, `rx_lpf`, `rx_vga2`, `rx_fe`),
     each with its own `Reg`; blocks with identical maps share a module and an index (`Pll`).
     The I2C chips have one flat address space, so their single `Reg` sits in `reg.rs` and
     the value types split by function (Si5332: `state`, `input`, `divider`, `output`). The

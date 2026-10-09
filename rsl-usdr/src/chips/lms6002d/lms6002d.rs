@@ -3,6 +3,7 @@
 use super::afe::{self, Interface};
 use super::pll::{Pll, VcoRegulator, VcoSelect};
 use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad};
+use super::rx_lpf;
 use super::rx_vga2;
 use super::spi::SpiWriter;
 use super::top::{ChipId, ClockEnables, EnableConfig, ReferencePower};
@@ -100,6 +101,25 @@ impl Lms6002d {
         self.clock_enables.set_rx_pll_modulator_clock(enable);
         self.enable_config.set_rx_enabled(enable);
         self.write_enables(bus)
+    }
+
+    /// Powers RXVGA2 the way libusdr's RX power-up does (`lms6002d_rxvga2_enable(true)`).
+    pub(crate) fn enable_rx_vga2(&self, bus: &mut dyn Bus) -> Result<(), Error> {
+        self.on(bus).write(rx_vga2::Control::RX_POWER_UP)
+    }
+
+    /// Sets the RX channel filter for `bandwidth_hz` from libusdr's table, bypassing it
+    /// above 47 MHz (`lms6002d_set_bandwidth`).
+    pub(crate) fn set_rx_bandwidth(
+        &self,
+        bus: &mut dyn Bus,
+        bandwidth_hz: u32,
+    ) -> Result<(), Error> {
+        let (bandwidth, bypass, control) = rx_lpf::for_bandwidth(bandwidth_hz);
+        let mut regs = self.on(bus);
+        regs.write(bandwidth)?;
+        regs.write(bypass)?;
+        regs.write(control)
     }
 
     /// Makes `lna` the active RX input and powers the RX synthesizer's LO buffer for it.

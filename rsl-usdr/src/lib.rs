@@ -4,8 +4,8 @@
 //! register/SPI/I2C seam libusdr's `ls_op` provides, so the board logic here is checked
 //! against libusdr's on a simulated board (`rsl-usdr-oracle`).
 //!
-//! Status: board power-up and power-down, temperature, and the thermal policy. Transports,
-//! sample rate, tuning and streaming follow.
+//! Status: board power-up and power-down, temperature, the thermal policy, and the RX
+//! sample rate. Transports, tuning and streaming follow.
 //!
 //! # The uSDR board
 //!
@@ -73,8 +73,8 @@
 //! power-up, outputs 0 to 2 carry the 26 MHz reference undivided, and outputs 3 to 5 are
 //! off.
 //!
-//! Setting a sample rate is not yet ported; libusdr does this. On a board with both
-//! chains, it runs the converters faster than the host rate, by a power of two from 1 to
+//! Setting a sample rate ([`Device::set_rx_sample_rate`]) follows libusdr. On a board with
+//! both chains, it runs the converters faster than the host rate, by a power of two from 1 to
 //! 32, aiming for 30.72–60 MS/s, and the FPGA decimates (RX) or interpolates (TX) by the
 //! same factor. Each sample clock runs at twice the converter rate, because I and Q take
 //! turns on the LMS6002D's 12-bit sample bus. The clocks usually come from the Si5332's

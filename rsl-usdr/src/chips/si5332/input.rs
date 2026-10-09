@@ -1,7 +1,7 @@
 //! The input stage: which reference feeds the PLL, how the clock inputs are received, the
 //! crystal's load, and powering down the input-side blocks.
 
-use bnb::{BitEnum, bitfield, u6};
+use bnb::{BitEnum, bitfield, u5, u6};
 
 use super::reg::Reg;
 use crate::chips::register::{IndexedRegister, Register};
@@ -117,4 +117,18 @@ impl IndexedRegister for CrystalTrim {
             CrystalPin::Xb => Reg::CrystalTrimXb,
         }
     }
+}
+
+/// The PLL reference prescaler, which divides references above 50 MHz before the PLL.
+/// `PDIV_DIV`, register 0x75.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Prescaler {
+    /// Divide ratio. Bits 4:0.
+    #[bits(0..=4)]
+    ratio: u5,
+}
+impl Register for Prescaler {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Prescaler;
 }

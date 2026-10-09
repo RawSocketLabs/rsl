@@ -48,6 +48,7 @@ mod afe;
 mod lms6002d;
 mod pll;
 mod rx_fe;
+mod rx_lpf;
 mod rx_vga2;
 mod spi;
 mod top;

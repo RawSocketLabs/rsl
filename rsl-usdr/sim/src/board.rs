@@ -20,6 +20,8 @@ const GPO_ENABLE_OSC: u8 = 17;
 const REG_GPI_HWID: u32 = 16 + 3;
 /// HWID bits 25:24: the board has RX and TX chains.
 const HWID_RX_TX: u32 = 0b11 << 24;
+/// HWID bit 24: the board has a TX chain.
+const HWID_TX: u32 = 1 << 24;
 
 /// SPI bus carrying the LMS6002D.
 const SPI_LMS6: u32 = 0;
@@ -142,6 +144,16 @@ impl SimBoard {
     #[must_use]
     pub fn with_oscillator_off(mut self) -> Self {
         self.oscillator_gated = true;
+        self
+    }
+
+    /// A board whose gateware has an RX chain but no TX chain (HWID bit 24 clear), where
+    /// libusdr neither decimates nor accepts rates below 1 MS/s.
+    #[must_use]
+    pub fn with_rx_only(mut self) -> Self {
+        if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
+            *hwid &= !HWID_TX;
+        }
         self
     }
 

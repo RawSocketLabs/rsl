@@ -49,8 +49,8 @@
 //! the reference straight to outputs 0 to 2 and turns the rest off; the PLL is not yet used.
 //! [`Si5332::wait_active`] then waits for the chip to run. On revision 3 the reference
 //! oscillator starts only after this, so the chip may report no input clock; the board
-//! sequence tolerates exactly that error. Setting a sample rate (not yet ported) will usually
-//! move the sample clocks onto PLL dividers.
+//! sequence tolerates exactly that error. Setting a sample rate then usually moves the sample
+//! clocks onto the PLL with [`Si5332::set_layout`], whose divider plan is a [`Layout`].
 //!
 //! # Register map
 //!
@@ -59,9 +59,11 @@
 
 mod divider;
 mod input;
+mod layout;
 mod output;
 mod reg;
 mod si5332;
 mod state;
 
+pub(crate) use layout::Layout;
 pub(crate) use si5332::{LvpeclOutput, Reference, Si5332};

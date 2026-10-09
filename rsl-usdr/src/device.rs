@@ -62,6 +62,18 @@ impl Device {
         self.board().temperature()
     }
 
+    /// Sets the RX sample rate, in samples per second.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::UnsupportedSampleRate`] outside 960 kS/s to 80 MS/s, or 1 to 80 MS/s on a
+    ///   board with only one DSP chain.
+    /// - [`Error::ClockInputMissing`] if the Si5332 loses its reference while switching.
+    /// - Any bus failure.
+    pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
+        self.board().set_rx_sample_rate(samples_per_second)
+    }
+
     /// Waits until the board is below the thermal policy's resume limit, reading every
     /// 5 s and passing each reading to `on_reading`.
     ///
