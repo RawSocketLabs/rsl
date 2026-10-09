@@ -46,6 +46,7 @@ unsafe extern "C" {
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
+    fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
 }
 
 /// libusdr opened on a simulated board.
@@ -120,6 +121,45 @@ impl Oracle {
         let errno = unsafe { usdr_dme_get_uint(dev.as_ptr(), path.as_ptr(), &raw mut value) };
         resume_callback_panic();
         if errno == 0 { Ok(value) } else { Err(errno) }
+    }
+
+    /// Sets the RX sample rate in samples per second, leaving TX unset, as the FFI `usdr`
+    /// crate does: `/dm/rate/rxtxadcdac` with `{rate, 0, 0, 0}`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ERANGE` outside its supported rates).
+    pub fn set_rx_rate(&mut self, rate: u32) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        // RX, TX, ADC and DAC rates; libusdr ignores the last two.
+        let rates: [u32; 4] = [rate, 0, 0, 0];
+        // libusdr's `dev_m2_lm6_1_rate_m_set` reads the value as a pointer to four rates.
+        let value = rates.as_ptr() as u64;
+        // SAFETY: `dev` is open, the path is NUL-terminated, and `rates` outlives the call,
+        // which reads four `u32`s through `value` and keeps no reference.
+        let errno =
+            unsafe { usdr_dme_set_uint(dev.as_ptr(), c"/dm/rate/rxtxadcdac".as_ptr(), value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// How many operations the board has traced so far; slice the trace with it, after
+    /// [`Oracle::close`], to isolate one call's operations.
+    ///
+    /// # Panics
+    ///
+    /// Only if the oracle's board went missing, which its session lock rules out.
+    #[must_use]
+    pub fn trace_len(&self) -> usize {
+        BOARD
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .expect("invariant: a board is installed while an oracle is open")
+            .trace()
+            .len()
     }
 
     /// Closes libusdr's device, which powers the board down, and returns the board.
