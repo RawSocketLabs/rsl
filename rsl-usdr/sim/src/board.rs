@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
+use crate::stream::RxEngine;
 use crate::trace::Op;
 
 /// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
@@ -112,6 +113,8 @@ pub struct SimBoard {
     now_us: u64,
     /// Every operation performed, in order.
     trace: Vec<Op>,
+    /// The FPGA's RX stream engine.
+    rx: RxEngine,
 }
 
 impl SimBoard {
@@ -135,6 +138,7 @@ impl SimBoard {
             cooling_mc_per_s: 0,
             now_us: 0,
             trace: Vec::new(),
+            rx: RxEngine::default(),
         }
     }
 
@@ -203,6 +207,7 @@ impl SimBoard {
     /// Writes a 32-bit FPGA register.
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });
+        self.rx.on_write(addr, value);
         if addr == REG_GPO && value & GPO_I2C_LUT == 0 {
             let [bank, ..] = value.to_be_bytes();
             self.gpo.insert(bank, value & 0x00ff_ffff);
@@ -257,6 +262,13 @@ impl SimBoard {
             read: read.clone(),
         });
         read
+    }
+
+    /// The next RX block the stream engine delivers, with its two out-of-band words, or
+    /// `None` while the engine is stopped. Below the register seam both drivers share, so
+    /// not traced; see the stream module for what the engine does and does not model.
+    pub fn rx_next_block(&mut self) -> Option<(Vec<u8>, [u64; 2])> {
+        self.rx.next_block()
     }
 
     /// Advances virtual time.

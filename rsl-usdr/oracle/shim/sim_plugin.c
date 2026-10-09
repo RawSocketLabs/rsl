@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "usdr_lowlevel.h"
@@ -15,6 +16,9 @@
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int rsl_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz, const void* pout);
 void rsl_oracle_sleep_us(unsigned long long us);
+// Fills `out` (`len` bytes) with the board's next RX block and `oob` with its two words.
+// Returns 0, or -ETIMEDOUT while the board's stream engine is stopped.
+int rsl_oracle_rx_next(void* out, size_t len, unsigned long long* oob);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
@@ -26,6 +30,8 @@ int usleep(useconds_t us)
 struct sim_dev {
     lowlevel_dev_t ll;  // must be first: libusdr casts lldev_t to it
     device_id_t id;
+    void* rx_block;     // the RX block lent to libusdr between wait and release
+    size_t rx_block_size;
 };
 
 static int sim_generic_get(lldev_t dev, int op, const char** pout)
@@ -49,6 +55,7 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
 
 static int sim_destroy(lldev_t dev)
 {
+    free(((struct sim_dev*)dev)->rx_block);
     if (dev->pdev) {
         dev->pdev->destroy(dev->pdev);
     }
@@ -66,11 +73,18 @@ enum { SIM_DMA_BUFFERS = 32, SIM_DMA_MAX_BLOCK = 1 << 20 };
 static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
                                  stream_t* channel)
 {
-    (void)dev;
     (void)subdev;
-    if (params->buffer_count != SIM_DMA_BUFFERS || params->block_size > SIM_DMA_MAX_BLOCK) {
+    struct sim_dev* d = (struct sim_dev*)dev;
+    if (params->buffer_count != SIM_DMA_BUFFERS || params->block_size == 0 ||
+        params->block_size > SIM_DMA_MAX_BLOCK) {
         return -EINVAL;
     }
+    void* block = realloc(d->rx_block, params->block_size);
+    if (block == NULL) {
+        return -ENOMEM;
+    }
+    d->rx_block = block;
+    d->rx_block_size = params->block_size;
     params->underlying_fd = -1;
     params->out_mtu_size = params->block_size;
     *channel = params->streamno;
@@ -85,24 +99,26 @@ static int sim_stream_deinitialize(lldev_t dev, subdev_t subdev, stream_t channe
     return 0;
 }
 
-// No sample data is modelled yet: every wait times out at once, with a zeroed out-of-band
-// record so libusdr's timeout log reads defined memory.
+// The board's next block, or a timeout at once while its stream engine is stopped. The
+// out-of-band record is always written, so libusdr's timeout log reads defined memory.
 static int sim_recv_dma_wait(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
                              void* oob_ptr, unsigned* oob_size, unsigned timeout)
 {
-    (void)dev;
     (void)subdev;
     (void)channel;
     (void)timeout;
-    *buffer = NULL;
+    struct sim_dev* d = (struct sim_dev*)dev;
+    unsigned long long oob[2] = { 0, 0 };
+    int res = d->rx_block == NULL
+        ? -ETIMEDOUT
+        : rsl_oracle_rx_next(d->rx_block, d->rx_block_size, oob);
+    *buffer = res == 0 ? d->rx_block : NULL;
     if (oob_ptr != NULL && oob_size != NULL) {
-        unsigned size = *oob_size < 16 ? *oob_size : 16;
-        for (unsigned i = 0; i < size; i++) {
-            ((unsigned char*)oob_ptr)[i] = 0;
-        }
+        unsigned size = *oob_size < sizeof(oob) ? *oob_size : (unsigned)sizeof(oob);
+        memcpy(oob_ptr, oob, size);
         *oob_size = size;
     }
-    return -ETIMEDOUT;
+    return res;
 }
 
 static int sim_recv_dma_release(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer)

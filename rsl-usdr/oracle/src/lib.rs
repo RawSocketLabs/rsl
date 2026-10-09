@@ -20,6 +20,8 @@ use rsl_usdr_sim::{I2cAddress, SimBoard};
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
+/// `ETIMEDOUT`: no RX block is ready.
+const ETIMEDOUT: c_int = 110;
 /// `EBUSY`: a stream already exists.
 const EBUSY: c_int = 16;
 /// `EIO`: the Rust side panicked; the panic is resumed once libusdr returns.
@@ -277,7 +279,8 @@ impl Oracle {
     ///
     /// # Errors
     ///
-    /// The negative errno libusdr returned (`-ETIMEDOUT` while the sim streams no data);
+    /// The negative errno libusdr returned (`-ETIMEDOUT` while the sim's stream engine is
+    /// stopped);
     /// `-EINVAL` with no stream.
     pub fn receive_rx(&mut self, timeout_ms: u32) -> Result<Vec<u8>, i32> {
         let Some(stream) = self.stream else {
@@ -450,6 +453,38 @@ extern "C" fn rsl_oracle_sleep_us(us: c_ulonglong) {
         board.sleep_us(us);
         0
     });
+}
+
+/// The sim plugin's RX DMA wait: copies the board's next block into `out` and its
+/// out-of-band words into `oob`, or returns `-ETIMEDOUT` while its stream engine is stopped.
+///
+/// # Safety
+///
+/// `out` must be valid for `len` writable bytes and `oob` for two writable `u64`s.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rsl_oracle_rx_next(out: *mut c_void, len: usize, oob: *mut u64) -> c_int {
+    // SAFETY: the caller guarantees both pointers' extents.
+    let (out, oob) = unsafe {
+        (
+            slice::from_raw_parts_mut(out.cast::<u8>(), len),
+            slice::from_raw_parts_mut(oob, 2),
+        )
+    };
+    with_board(|board| {
+        let Some((block, words)) = board.rx_next_block() else {
+            return -ETIMEDOUT;
+        };
+        // libusdr copies its whole block size out of this buffer; a mismatch would hand it
+        // stale bytes, so it is a harness failure, raised once libusdr returns.
+        assert_eq!(
+            block.len(),
+            out.len(),
+            "the sim's RX block differs from the block size libusdr configured"
+        );
+        out.copy_from_slice(&block);
+        oob.copy_from_slice(&words);
+        0
+    })
 }
 
 /// The sim plugin's `ls_op`: dispatches one libusdr low-level operation to the board.

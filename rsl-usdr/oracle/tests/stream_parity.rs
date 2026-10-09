@@ -229,8 +229,8 @@ fn rev3() -> SimBoard {
 }
 
 /// The FFI crate's flow: rate, frequency, a stream of 1024-sample packets, two receives
-/// (the sim streams no data yet, so both time out, each after telling the DMA engine the
-/// host is ready), a retune while streaming, then stop.
+/// (only the first tells the DMA engine the host is ready), a retune while streaming, then
+/// stop.
 #[test]
 fn a_tuned_stream_matches_libusdr() {
     let outcomes = assert_calls_match(
@@ -245,7 +245,10 @@ fn a_tuned_stream_matches_libusdr() {
             Call::Stop,
         ],
     );
-    assert_eq!(outcomes, [true, true, true, false, false, true, true]);
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
 }
 
 /// With no frequency set, creating the stream tunes to 320 MHz first; a second stream in
@@ -286,4 +289,54 @@ fn a_two_burst_stream_on_rev1_matches_libusdr() {
         outcomes.iter().all(|&ok| ok),
         "every call succeeds: {outcomes:?}"
     );
+}
+
+/// The packets each side receives for `samples_per_packet`, two of them, after the FFI
+/// crate's setup.
+fn received(samples_per_packet: u32) -> (Vec<Complex<i16>>, Vec<Complex<i16>>) {
+    let packet = usize::try_from(samples_per_packet).expect("fits");
+    let mut oracle = Oracle::open(rev3()).expect("libusdr opens the board");
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    oracle
+        .create_rx_stream(samples_per_packet)
+        .expect("creates");
+    oracle.start_rx_stream().expect("starts");
+    oracle.sync_free_run().expect("free-runs");
+    let mut expected = Vec::new();
+    for _ in 0..2 {
+        let bytes = oracle.receive_rx(100).expect("a packet");
+        expected.extend(bytes[..packet * 4].chunks_exact(4).map(|sample| {
+            Complex::new(
+                i16::from_le_bytes([sample[0], sample[1]]),
+                i16::from_le_bytes([sample[2], sample[3]]),
+            )
+        }));
+    }
+    drop(oracle.close());
+
+    let mut device = Device::with_bus(SimBus::new(rev3())).expect("powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    device.start_rx_stream(samples_per_packet).expect("starts");
+    let mut actual = Vec::new();
+    let mut samples = vec![Complex::new(0, 0); packet];
+    for _ in 0..2 {
+        device
+            .receive(&mut samples, Duration::from_millis(100))
+            .expect("a packet");
+        actual.extend_from_slice(&samples);
+    }
+    (expected, actual)
+}
+
+/// The samples themselves match libusdr's, for one-burst and two-burst packets: the sim's
+/// counting pattern arrives in order, I then Q.
+#[test]
+fn received_samples_match_libusdr() {
+    for samples_per_packet in [1024, 16384] {
+        let (expected, actual) = received(samples_per_packet);
+        assert_eq!(actual, expected, "{samples_per_packet}-sample packets");
+        assert_eq!(actual[1], Complex::new(1, -1), "the sim's counting pattern");
+    }
 }

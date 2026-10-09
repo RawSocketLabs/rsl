@@ -5,8 +5,9 @@
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
 TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
-temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream's
-register side (create, start, receive's ready signal, stop). Added beyond libusdr: the
+temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream
+(create, start, receive, stop) over any streaming `Bus`; the USB and PCIe transports are
+next. Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -14,7 +15,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, and the RX stream engine's blocks below it |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
 
 ## Driver layout

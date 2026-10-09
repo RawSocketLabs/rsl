@@ -12,6 +12,7 @@
 
 mod board;
 mod chips;
+mod stream;
 mod trace;
 
 pub use board::{BoardRevision, I2cAddress, SimBoard, SimError};
