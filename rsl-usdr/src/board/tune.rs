@@ -131,9 +131,7 @@ impl Board {
         }
         self.rx.mixer_on = band.mixer();
         switched?;
-        // TX streaming is not ported, so libusdr's `tx_run` is always false here and the TX
-        // sample clock goes off with every mixer change.
-        Self::CLOCK.set_mixer_lo(bus, self.rx.mixer_on, false)
+        Self::CLOCK.set_mixer_lo(bus, self.rx.mixer_on)
     }
 
     /// Powers the LMS6002D's receiver and RXVGA2 if they are off (`_usdr_pwr_state` for

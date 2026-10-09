@@ -32,16 +32,18 @@
 //! The chip runs in one of two states, requested through [`RequestedState`](state::RequestedState)
 //! and reported in [`CurrentState`](state::CurrentState): READY, for changing the configuration,
 //! and ACTIVE, for running it. libusdr's init and sample-rate plans request READY, write, then
-//! request ACTIVE, and poll the state until it reads READY, ACTIVE or "no input clock". Not
-//! verified here: what the outputs do while the chip is in READY. If they stop, every such change
-//! briefly interrupts the LMS6002D's PLL reference and the sample clocks.
+//! request ACTIVE, and poll the state until it reads READY, ACTIVE or "no input clock".
+//! Skyworks' Si5332 Reference Manual (rev 0.6, register-table notes) says the chip drives no
+//! outputs in READY, so each of these stops the LMS6002D's PLL reference and the sample
+//! clocks for a moment; for power-up and a new sample rate that is by design.
 //!
-//! That matters for the band-crossing problem. `si5332_set_port3_en`, which libusdr calls when the
-//! RX path moves into or out of the board-mixer path, writes the output enables, then requests
-//! READY, writes the power-down registers and requests ACTIVE, without polling. It gates output 3
-//! (the mixer LO) by the mixer state and output 2 (the TX clock) by whether TX runs. The suspected
-//! cause of the band-crossing failures is that READY cycle; the planned fix gates output 3 without
-//! leaving ACTIVE, and will be checked against the oracle and hardware.
+//! It also happens on every band crossing. `si5332_set_port3_en`, which libusdr calls when
+//! the RX path moves into or out of the board-mixer path, writes the output enables, then
+//! requests READY, writes the power-down registers and requests ACTIVE, without polling. That
+//! clock stop is the likely cause of the band-crossing failures; not yet confirmed on
+//! hardware. The driver instead flips output 3's enable bit, which the manual allows in
+//! ACTIVE ([`Si5332::set_mixer_lo`]), an intentional divergence the parity tests whitelist
+//! per scenario.
 //!
 //! # How the driver uses it
 //!
@@ -51,8 +53,7 @@
 //! oscillator starts only after this, so the chip may report no input clock; the board
 //! sequence tolerates exactly that error. Setting a sample rate then usually moves the sample
 //! clocks onto the PLL with [`Si5332::set_layout`], whose divider plan is a [`Layout`].
-//! Tuning into or out of the mixer band switches output 3 with [`Si5332::set_mixer_lo`],
-//! which still cycles through READY as libusdr does.
+//! Tuning into or out of the mixer band switches output 3 with [`Si5332::set_mixer_lo`].
 //!
 //! # Register map
 //!

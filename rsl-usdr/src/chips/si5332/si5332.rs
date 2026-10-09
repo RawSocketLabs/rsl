@@ -136,49 +136,24 @@ impl Si5332 {
         self.wait_active(bus)
     }
 
-    /// Switches output 3, the mixer LO, and output 2, the TX sample clock, on or off
-    /// (`si5332_set_port3_en`). Outputs 0 and 1 stay enabled.
+    /// Switches output 3, the mixer LO, on or off with its output-enable bit alone, while
+    /// the chip stays ACTIVE.
     ///
-    /// libusdr cycles the chip through READY to change the power-downs, without polling
-    /// its state; the sample clocks may pause meanwhile. This is the band-crossing problem
-    /// the module docs describe, kept here for parity.
-    pub(crate) fn set_mixer_lo(
-        self,
-        bus: &mut dyn Bus,
-        lo_on: bool,
-        tx_clock_on: bool,
-    ) -> Result<(), Error> {
-        let mut regs = self.on(bus);
-        regs.write(
-            OutputEnables0to3::new()
-                .with_output3(lo_on)
-                .with_output2(tx_clock_on)
-                .with_output1(true)
-                .with_output0(true),
-        )?;
-        regs.write(RequestedState::Ready)?;
-        regs.write(
-            DividerPowerDown::new()
-                .with_high_speed3(!lo_on)
-                .with_high_speed1(true)
-                .with_high_speed2(true)
-                .with_high_speed4(true)
-                .with_interpolative0(true)
-                .with_interpolative1(true),
-        )?;
-        regs.write(
-            SourcePowerDown::new()
-                .with_output3(!lo_on)
-                .with_output2(!tx_clock_on)
-                .with_output4(true)
-                .with_output5(true),
-        )?;
-        regs.write(
-            Output0to3PowerDown::new()
-                .with_output3(!lo_on)
-                .with_output2(!tx_clock_on),
-        )?;
-        regs.write(RequestedState::Active)
+    /// Intentional divergence from libusdr's `si5332_set_port3_en`, which requests READY to
+    /// change the power-down registers; in READY the chip drives no outputs, so the sample
+    /// clocks stop. Skyworks' Si5332 Reference Manual (rev 0.6, "Si5332 32-QFN Specific
+    /// Registers", p. 52) lists `OUT3_OE` as writable in ACTIVE; the uSDR's six-output part
+    /// uses that map, where `OUT3_OE` is bit 6, as in libusdr.
+    ///
+    /// Output 3's divider and driver are powered from [`Self::program`] on, and
+    /// [`Self::set_layout`] configures them, so the enable is all that changes: off, they
+    /// stay powered but disabled, where libusdr powers them down. As in libusdr, output 3
+    /// runs from the first sample rate until the first band crossing, because power-up
+    /// enables every output, and is silent before any rate. Output 2, the TX clock, keeps
+    /// its power-up enable, where libusdr turns it off whenever TX is not streaming;
+    /// revisit [`OutputEnables0to3::ALL`] here when TX is ported.
+    pub(crate) fn set_mixer_lo(self, bus: &mut dyn Bus, on: bool) -> Result<(), Error> {
+        self.on(bus).write(OutputEnables0to3::ALL.with_output3(on))
     }
 
     /// The register writes of `si5332_set_layout`, in order.

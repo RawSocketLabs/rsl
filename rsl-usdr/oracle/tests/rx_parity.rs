@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use rsl_usdr::{Device, Error};
 use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, RxPllLock, SimBoard};
+use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, RxPllLock, SimBoard};
 use sim_bus::SimBus;
 
 /// One RX call, made the same way on both sides.
@@ -45,10 +45,91 @@ impl Call {
     }
 }
 
+/// The Si5332.
+const CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
+
+/// Whether a scenario expects rsl-usdr's band-crossing fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Crossing {
+    /// The scenario never enters or leaves the mixer band.
+    None,
+
+    /// The scenario crosses into or out of the mixer band, so libusdr's
+    /// `si5332_set_port3_en` block is expected to be replaced by rsl-usdr's one write.
+    Fixed,
+}
+
+/// libusdr's window with its `si5332_set_port3_en` block replaced by the single `OUT3_OE`
+/// write rsl-usdr makes instead, and whether the window had one.
+///
+/// Intentional divergence, scoped to the scenarios that ask for it: libusdr requests READY
+/// to rewrite the power-down registers, which stops every Si5332 output; rsl-usdr flips
+/// `OUT3_OE` (0xB6 bit 6) while ACTIVE. The block must be exactly libusdr's six writes for
+/// an RX-only device, so nothing else can hide in the cut.
+fn with_band_crossing_fix(window: &[Op]) -> (Vec<Op>, bool) {
+    let clock_write = |bytes: [u8; 2]| Op::I2c {
+        addr: CLOCK,
+        write: bytes.to_vec(),
+        read: Vec::new(),
+    };
+    let Some(start) = window
+        .iter()
+        .position(|op| matches!(op, Op::I2c { addr, write, .. } if *addr == CLOCK && write.first() == Some(&0xb6)))
+    else {
+        return (window.to_vec(), false);
+    };
+    let on = matches!(&window[start], Op::I2c { write, .. } if write[..] == [0xb6, 0x43]);
+    // OUT3 and OUT0/1 enabled (TX not running); READY; power-downs; ACTIVE.
+    let libusdr_block = if on {
+        [
+            [0xb6, 0x43],
+            [0x06, 0x01],
+            [0xba, 0x76],
+            [0xbb, 0x34],
+            [0xbc, 0x08],
+            [0x06, 0x02],
+        ]
+    } else {
+        [
+            [0xb6, 0x03],
+            [0x06, 0x01],
+            [0xba, 0x7e],
+            [0xbb, 0x3c],
+            [0xbc, 0x48],
+            [0x06, 0x02],
+        ]
+    };
+    let block = window
+        .get(start..start + libusdr_block.len())
+        .expect("libusdr's set_port3_en block is complete");
+    assert_eq!(
+        block,
+        libusdr_block.map(clock_write),
+        "libusdr's set_port3_en block is as expected"
+    );
+    let fixed = clock_write([0xb6, if on { 0xff } else { 0xbf }]);
+    let fixed_window = [
+        &window[..start],
+        &[fixed],
+        &window[start + libusdr_block.len()..],
+    ]
+    .concat();
+    (fixed_window, true)
+}
+
 /// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr,
 /// compares each call's outcome and operations, and returns whether each succeeded.
 /// [`assert_calls_succeed`] is the usual form.
 fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool> {
+    assert_calls_match_crossing(board, calls, Crossing::None)
+}
+
+/// As [`assert_calls_match`], with libusdr's band crossings replaced as `crossing` says.
+fn assert_calls_match_crossing(
+    board: impl Fn() -> SimBoard,
+    calls: &[Call],
+    crossing: Crossing,
+) -> Vec<bool> {
     let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
     let mut expected: Vec<(bool, Range<usize>)> = Vec::new();
     for &call in calls {
@@ -69,6 +150,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
     let board = sim.board();
 
     let mut outcomes = Vec::new();
+    let mut crossings = 0;
     for ((call, (expected_ok, expected)), (result, actual)) in
         calls.iter().zip(expected).zip(actual)
     {
@@ -77,7 +159,15 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
             expected_ok,
             "{call:?}: libusdr ok={expected_ok}, rsl-usdr {result:?}"
         );
-        let expected: &[Op] = &reference.trace()[expected];
+        let expected = &reference.trace()[expected];
+        let expected: &[Op] = &match crossing {
+            Crossing::None => expected.to_vec(),
+            Crossing::Fixed => {
+                let (fixed, crossed) = with_band_crossing_fix(expected);
+                crossings += usize::from(crossed);
+                fixed
+            }
+        };
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
@@ -92,6 +182,12 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
         );
         outcomes.push(expected_ok);
     }
+    if crossing == Crossing::Fixed {
+        assert!(
+            crossings > 0,
+            "the scenario crosses the mixer band at least once"
+        );
+    }
     outcomes
 }
 
@@ -99,6 +195,15 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
 /// sides alike would otherwise pass.
 fn assert_calls_succeed(board: impl Fn() -> SimBoard, calls: &[Call]) {
     let outcomes = assert_calls_match(board, calls);
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {calls:?} -> {outcomes:?}"
+    );
+}
+
+/// As [`assert_calls_succeed`], for scenarios that cross into or out of the mixer band.
+fn assert_crossings_succeed(board: impl Fn() -> SimBoard, calls: &[Call]) {
+    let outcomes = assert_calls_match_crossing(board, calls, Crossing::Fixed);
     assert!(
         outcomes.iter().all(|&ok| ok),
         "every call succeeds: {calls:?} -> {outcomes:?}"
@@ -165,10 +270,10 @@ fn rev2_tuning_matches_libusdr() {
 
 /// Below 230 MHz the board mixer and Si5332 output 3 come on and the PLL tunes above the
 /// signal by the mixer LO; a rate change moves the mixer LO and retunes; leaving the band
-/// turns the mixer and output 3 off again.
+/// turns the mixer and output 3 off again. Band crossings use the fix.
 #[test]
 fn the_mixer_band_matches_libusdr() {
-    assert_calls_succeed(
+    assert_crossings_succeed(
         rev3,
         &[
             Call::Rate(20_000_000),
@@ -182,7 +287,7 @@ fn the_mixer_band_matches_libusdr() {
 /// Revisions 1 and 2 route the RX clock through output 0, not 1.
 #[test]
 fn rev1_mixer_band_matches_libusdr() {
-    assert_calls_succeed(
+    assert_crossings_succeed(
         || SimBoard::new(BoardRevision::Rev1),
         &[Call::Rate(1_000_000), Call::Frequency(100_000_000)],
     );
