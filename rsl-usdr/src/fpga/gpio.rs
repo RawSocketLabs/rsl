@@ -13,6 +13,9 @@ use bnb::{bitfield, u7};
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
 
+/// The gateware's name in errors.
+const FPGA: &str = "FPGA";
+
 /// FPGA register latching one GPO bank per write.
 const REG_GPO: u32 = 0;
 /// First FPGA register of the general-purpose inputs.
@@ -75,7 +78,7 @@ impl Gpo {
             .with_bank(u7::new(self as u8))
             .with_data(value);
         bus.write_regs(REG_GPO, &[write.to_raw()])
-            .during("GPO write")
+            .writing(FPGA, REG_GPO)
     }
 }
 
@@ -93,9 +96,9 @@ pub(crate) enum Gpi {
 impl Gpi {
     /// Reads the 32-bit input word holding this input.
     pub(crate) fn read(self, bus: &mut dyn Bus) -> Result<u32, Error> {
+        let reg = REG_GPI_BASE + self as u32 / 4;
         let mut word = [0];
-        bus.read_regs(REG_GPI_BASE + self as u32 / 4, &mut word)
-            .during("GPI read")?;
+        bus.read_regs(reg, &mut word).reading(FPGA, reg)?;
         Ok(word[0])
     }
 }

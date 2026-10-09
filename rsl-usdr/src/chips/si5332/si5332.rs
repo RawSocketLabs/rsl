@@ -12,7 +12,7 @@ use super::output::{
 };
 use super::reg::{ID_REGS, Reg};
 use super::state::{CurrentState, RequestedState};
-use crate::chips::register::{I2cRegisters, IndexedRegister, Register};
+use crate::chips::register::{I2cChip, IndexedRegister, Register};
 use crate::error::Error;
 use crate::lowlevel::{Bus, I2cAddr};
 
@@ -49,16 +49,22 @@ type RegWrite = (Reg, u8);
 /// A Si5332 on the I2C bus.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Si5332 {
-    /// The chip's registers.
-    regs: I2cRegisters,
+    /// Where the chip answers.
+    addr: I2cAddr,
+}
+
+impl I2cChip for Si5332 {
+    const NAME: &'static str = "Si5332";
+
+    fn addr(&self) -> I2cAddr {
+        self.addr
+    }
 }
 
 impl Si5332 {
     /// The clock generator at `dev`.
     pub(crate) const fn at(dev: I2cAddr) -> Self {
-        Self {
-            regs: I2cRegisters::new(dev, "Si5332 read", "Si5332 write"),
-        }
+        Self { addr: dev }
     }
 
     /// The clock generator where the uSDR wires it: FPGA I2C bus 0, address 0x6A
@@ -76,18 +82,18 @@ impl Si5332 {
         reference: Reference,
         lvpecl: LvpeclOutput,
     ) -> Result<(), Error> {
-        let mut regs = self.regs.on(bus);
+        let mut regs = self.on(bus);
         let mut id = [0; ID_REGS.len()];
         for (reg, byte) in ID_REGS.into_iter().zip(&mut id) {
             *byte = regs.read_raw(reg)?;
         }
         regs.read_raw(Reg::SupplyStatus)?;
         if id[..6].iter().all(|&byte| byte == 0xff) {
-            return Err(Error::ChipMissing("Si5332"));
+            return Err(Error::ChipMissing(Self::NAME));
         }
 
         self.wait_state(bus, false)?;
-        let mut regs = self.regs.on(bus);
+        let mut regs = self.on(bus);
         for (reg, value) in Self::power_up_plan(div, reference, lvpecl) {
             regs.write_raw(reg, value)?;
         }
@@ -191,7 +197,7 @@ impl Si5332 {
         let mut state = CurrentState::Other(0);
         for _ in 0..STATE_POLLS {
             bus.sleep(Duration::from_micros(10));
-            state = self.regs.on(bus).read()?;
+            state = self.on(bus).read()?;
             if !matches!(state, CurrentState::Other(_)) {
                 break;
             }

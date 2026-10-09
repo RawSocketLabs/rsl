@@ -118,5 +118,5 @@ pub mod lowlevel;
 mod thermal;
 
 pub use device::{Device, DeviceBuilder};
-pub use error::Error;
+pub use error::{Access, Error};
 pub use thermal::{HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};

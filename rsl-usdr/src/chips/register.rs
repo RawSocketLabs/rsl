@@ -40,39 +40,33 @@ pub(crate) trait IndexedRegister: Copy + Into<u8> {
     }
 }
 
-/// Byte-wide registers behind an I2C device with an auto-incrementing register pointer.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct I2cRegisters {
+/// A chip whose byte-wide registers sit behind an I2C device with an auto-incrementing
+/// register pointer. Visible only to chip modules, so board code reaches the registers
+/// through the driver's methods.
+pub(in crate::chips) trait I2cChip {
+    /// The chip's name in errors.
+    const NAME: &'static str;
+
+    /// Where the chip answers.
+    fn addr(&self) -> I2cAddr;
+
+    /// This chip's registers on `bus`, for the accesses of one operation.
+    fn on<'a>(&self, bus: &'a mut dyn Bus) -> I2cWriter<'a> {
+        I2cWriter {
+            dev: self.addr(),
+            chip: Self::NAME,
+            bus,
+        }
+    }
+}
+
+/// An [`I2cChip`]'s registers bound to a bus for one operation; it reads and writes.
+pub(in crate::chips) struct I2cWriter<'a> {
     /// Where the chip answers.
     dev: I2cAddr,
 
-    /// Names a failed read in errors.
-    read_op: &'static str,
-
-    /// Names a failed write in errors.
-    write_op: &'static str,
-}
-
-impl I2cRegisters {
-    /// Registers of the chip at `dev`; `read_op` and `write_op` name failures.
-    pub(crate) const fn new(dev: I2cAddr, read_op: &'static str, write_op: &'static str) -> Self {
-        Self {
-            dev,
-            read_op,
-            write_op,
-        }
-    }
-
-    /// These registers on `bus`, for the accesses of one operation.
-    pub(crate) fn on(self, bus: &mut dyn Bus) -> I2cWriter<'_> {
-        I2cWriter { regs: self, bus }
-    }
-}
-
-/// [`I2cRegisters`] bound to a bus for one operation; it reads and writes.
-pub(crate) struct I2cWriter<'a> {
-    /// Which chip.
-    regs: I2cRegisters,
+    /// Names the chip in errors.
+    chip: &'static str,
 
     /// The bus the chip is on.
     bus: &'a mut dyn Bus,
@@ -80,17 +74,17 @@ pub(crate) struct I2cWriter<'a> {
 
 impl I2cWriter<'_> {
     /// Reads a typed register.
-    pub(crate) fn read<R: Register>(&mut self) -> Result<R, Error> {
+    pub(in crate::chips) fn read<R: Register>(&mut self) -> Result<R, Error> {
         self.read_raw(R::ADDR).map(R::from)
     }
 
     /// Writes a typed register.
-    pub(crate) fn write<R: Register>(&mut self, value: R) -> Result<(), Error> {
+    pub(in crate::chips) fn write<R: Register>(&mut self, value: R) -> Result<(), Error> {
         self.write_raw(R::ADDR, value.into())
     }
 
     /// Writes one copy of a repeated register.
-    pub(crate) fn write_to<R: IndexedRegister>(
+    pub(in crate::chips) fn write_to<R: IndexedRegister>(
         &mut self,
         index: R::Index,
         value: R,
@@ -99,18 +93,24 @@ impl I2cWriter<'_> {
     }
 
     /// Reads a register as a byte.
-    pub(crate) fn read_raw(&mut self, reg: impl Into<u8>) -> Result<u8, Error> {
+    pub(in crate::chips) fn read_raw(&mut self, reg: impl Into<u8>) -> Result<u8, Error> {
+        let reg = reg.into();
         let mut value = [0];
         self.bus
-            .i2c(self.regs.dev, &[reg.into()], &mut value)
-            .during(self.regs.read_op)?;
+            .i2c(self.dev, &[reg], &mut value)
+            .reading(self.chip, reg)?;
         Ok(value[0])
     }
 
     /// Writes a register as a byte.
-    pub(crate) fn write_raw(&mut self, reg: impl Into<u8>, value: u8) -> Result<(), Error> {
+    pub(in crate::chips) fn write_raw(
+        &mut self,
+        reg: impl Into<u8>,
+        value: u8,
+    ) -> Result<(), Error> {
+        let reg = reg.into();
         self.bus
-            .i2c(self.regs.dev, &[reg.into(), value], &mut [])
-            .during(self.regs.write_op)
+            .i2c(self.dev, &[reg, value], &mut [])
+            .writing(self.chip, reg)
     }
 }

@@ -66,8 +66,14 @@ pub(crate) struct Tmp114 {
 }
 
 impl Tmp114 {
-    /// The ID libusdr requires: device 0x114 (TMP114), revision 1. An idle bus reads 0xFFFF.
-    const DEVICE_ID: u16 = 0x1114;
+    /// The chip's name in errors.
+    const NAME: &'static str = "TMP114";
+
+    /// The ID libusdr requires: device 0x114 (TMP114), revision 1 (0x1114). An idle bus reads
+    /// 0xFFFF.
+    const DEVICE_ID: DeviceId = DeviceId::new()
+        .with_revision(u4::new(1))
+        .with_device(u12::new(0x114));
 
     /// The sensor at `dev`.
     pub(crate) const fn at(dev: I2cAddr) -> Self {
@@ -82,28 +88,29 @@ impl Tmp114 {
 
     /// Reads the temperature in degrees Celsius.
     pub(crate) fn celsius(self, bus: &mut dyn Bus) -> Result<f32, Error> {
-        let raw = self.read(bus, Reg::Temperature, "TMP114 temperature read")?;
+        let raw = self.read(bus, Reg::Temperature)?;
         Ok(f32::from(i16::from_be_bytes(raw)) / COUNTS_PER_CELSIUS)
     }
 
     /// Checks the device ID register.
     pub(crate) fn check_id(self, bus: &mut dyn Bus) -> Result<(), Error> {
-        let raw = self.read(bus, Reg::DeviceId, "TMP114 ID read")?;
-        let id = DeviceId::from_raw(u16::from_be_bytes(raw));
-        if !(id.device().value() == 0x114 && id.revision().value() == 1) {
-            return Err(Error::ChipId {
-                chip: "TMP114",
-                expected: Self::DEVICE_ID.into(),
-                found: id.to_raw().into(),
-            });
+        let raw = self.read(bus, Reg::DeviceId)?;
+        match DeviceId::from_raw(u16::from_be_bytes(raw)) {
+            Self::DEVICE_ID => Ok(()),
+            found => Err(Error::ChipId {
+                chip: Self::NAME,
+                expected: Self::DEVICE_ID.to_raw().into(),
+                found: found.to_raw().into(),
+            }),
         }
-        Ok(())
     }
 
     /// Reads one 16-bit register, in wire order.
-    fn read(self, bus: &mut dyn Bus, reg: Reg, op: &'static str) -> Result<[u8; 2], Error> {
+    fn read(self, bus: &mut dyn Bus, reg: Reg) -> Result<[u8; 2], Error> {
+        let reg = reg.into();
         let mut raw = [0; 2];
-        bus.i2c(self.dev, &[reg.into()], &mut raw).during(op)?;
+        bus.i2c(self.dev, &[reg], &mut raw)
+            .reading(Self::NAME, reg)?;
         Ok(raw)
     }
 }
