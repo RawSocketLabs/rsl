@@ -20,6 +20,8 @@ use rsl_usdr_sim::{I2cAddress, SimBoard};
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
+/// `EBUSY`: a stream already exists.
+const EBUSY: c_int = 16;
 /// `EIO`: the Rust side panicked; the panic is resumed once libusdr returns.
 const EIO: c_int = 5;
 /// `EOPNOTSUPP`: an operation class the uSDR transports do not provide.
@@ -47,12 +49,39 @@ unsafe extern "C" {
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
+    fn usdr_dms_create_ex(
+        dev: DmDev,
+        sobj: *const c_char,
+        dformat: *const c_char,
+        channels: u64,
+        pktsyms: c_uint,
+        flags: c_uint,
+        outu: *mut Stream,
+    ) -> c_int;
+    fn usdr_dms_op(stream: Stream, command: c_uint, tm: u64) -> c_int;
+    fn usdr_dms_sync(
+        dev: DmDev,
+        synctype: *const c_char,
+        scount: c_uint,
+        pstream: *mut Stream,
+    ) -> c_int;
+    fn usdr_dms_destroy(stream: Stream) -> c_int;
 }
+
+/// Opaque libusdr stream handle (`pusdr_dms_t`).
+type Stream = *mut c_void;
+
+/// `USDR_DMS_START`.
+const DMS_START: c_uint = 0;
+/// `USDR_DMS_STOP`.
+const DMS_STOP: c_uint = 1;
 
 /// libusdr opened on a simulated board.
 pub struct Oracle {
     /// The open libusdr device; `None` once closed.
     dev: Option<NonNull<c_void>>,
+    /// The RX stream, while one exists.
+    stream: Option<NonNull<c_void>>,
     /// Held for the oracle's lifetime; see [`SESSION`].
     _session: MutexGuard<'static, ()>,
 }
@@ -94,6 +123,7 @@ impl Oracle {
         // Owned before any callback panic resumes, so unwinding closes the device.
         let mut oracle = Self {
             dev: Some(dev),
+            stream: None,
             _session: session,
         };
         resume_callback_panic();
@@ -164,6 +194,104 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/rx/freqency", hz.into())
     }
 
+    /// Creates the RX stream the FFI `usdr` crate uses: `/ll/srx/0`, `ci16`, channel 0, with
+    /// `samples_per_packet` samples per packet.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EBUSY` if a stream exists.
+    pub fn create_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        if self.stream.is_some() {
+            return Err(-EBUSY);
+        }
+        let mut stream: Stream = ptr::null_mut();
+        // SAFETY: `dev` is open, the strings are NUL-terminated, `stream` is a valid
+        // out-pointer.
+        let errno = unsafe {
+            usdr_dms_create_ex(
+                dev.as_ptr(),
+                c"/ll/srx/0".as_ptr(),
+                c"ci16".as_ptr(),
+                1,
+                samples_per_packet,
+                0,
+                &raw mut stream,
+            )
+        };
+        resume_callback_panic();
+        if errno != 0 {
+            return Err(errno);
+        }
+        self.stream = NonNull::new(stream);
+        Ok(())
+    }
+
+    /// Starts the RX stream (`usdr_dms_op(USDR_DMS_START)`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn start_rx_stream(&mut self) -> Result<(), i32> {
+        self.stream_op(DMS_START)
+    }
+
+    /// Stops the RX stream (`usdr_dms_op(USDR_DMS_STOP)`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn stop_rx_stream(&mut self) -> Result<(), i32> {
+        self.stream_op(DMS_STOP)
+    }
+
+    /// Lets the RX stream run without synchronisation (`usdr_dms_sync(dev, "none", ..)`), as
+    /// the FFI `usdr` crate does after starting it.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn sync_free_run(&mut self) -> Result<(), i32> {
+        let (Some(dev), Some(stream)) = (self.dev, self.stream) else {
+            return Err(-EINVAL);
+        };
+        let mut streams = [stream.as_ptr()];
+        // SAFETY: `dev` is open, the string is NUL-terminated, and `streams` holds one live
+        // stream for the call.
+        let errno =
+            unsafe { usdr_dms_sync(dev.as_ptr(), c"none".as_ptr(), 1, streams.as_mut_ptr()) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Destroys the RX stream (`usdr_dms_destroy`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn destroy_rx_stream(&mut self) -> Result<(), i32> {
+        let Some(stream) = self.stream.take() else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `stream` came from a successful create and is destroyed once.
+        let errno = unsafe { usdr_dms_destroy(stream.as_ptr()) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Runs a stream operation on the RX stream.
+    fn stream_op(&mut self, command: c_uint) -> Result<(), i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `stream` is live; libusdr ignores the time for START and STOP.
+        let errno = unsafe { usdr_dms_op(stream.as_ptr(), command, 0) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
     /// Writes a device-manager value that libusdr reads as a number, never as a pointer.
     fn set_value(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
         let Some(dev) = self.dev else {
@@ -206,8 +334,13 @@ impl Oracle {
         resume_callback_panic();
     }
 
-    /// Closes the libusdr device if it is still open.
+    /// Destroys the stream, if any, then closes the libusdr device if it is still open.
     fn close_device(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            // SAFETY: `stream` came from a successful create and is destroyed once, before
+            // its device closes.
+            unsafe { usdr_dms_destroy(stream.as_ptr()) };
+        }
         if let Some(dev) = self.dev.take() {
             // SAFETY: `dev` came from a successful `usdr_dmd_create_string` and is closed once.
             unsafe { usdr_dmd_close(dev.as_ptr()) };
