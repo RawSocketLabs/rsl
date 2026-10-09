@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use super::Board;
 use super::board::Chains;
+use super::tune::RxBand;
 use crate::chips::lp8758::Buck;
 use crate::chips::si5332::Layout;
 use crate::error::Error;
@@ -62,20 +63,15 @@ impl Board {
             self.vio_boosted = boost;
         }
 
-        // `_usdr_pwr_state(rx, true)`.
-        if !self.rx.powered {
-            self.lms.set_rx_enabled(bus, true)?;
-            self.rx.powered = true;
-            self.lms.enable_rx_vga2(bus)?;
-            bus.sleep(Duration::from_millis(25));
-        }
-
+        self.power_rx()?;
+        let bus = self.bus.as_mut();
         Self::CLOCK.set_layout(
             bus,
             &layout,
             Self::lvpecl(self.rev3),
             Self::MIXER_LO_DIVIDER,
         )?;
+        self.mixer_lo_hz = layout.vco_hz() / u32::from(Self::MIXER_LO_DIVIDER);
 
         if self.chains.rx && self.rx.decimation != Some(decimation) {
             Phy::Rx.reset(bus, 15)?;
@@ -84,6 +80,7 @@ impl Board {
             Phy::load_rx_fir(bus, decimation)?;
         }
         self.rx.decimation = Some(decimation);
+        self.adc_rate_hz = adc_rate;
 
         // Front-end reset, both chains.
         Phy::Rx.reset(bus, 1)?;
@@ -93,19 +90,18 @@ impl Board {
         Phy::Tx.reset(bus, 0)?;
         Phy::Rx.set_dc_correction(bus, true)?;
 
-        // `usdr_restore_nco`, RX then TX. With no NCO offsets set, every word is 0.
-        for phy in [Phy::Rx, Phy::Tx] {
-            for nco in [Nco::Nco0, Nco::Nco1] {
-                phy.set_nco(bus, nco, 0)?;
-            }
+        // `usdr_restore_nco`, RX then TX. TX has no LO offset, so its words are 0.
+        self.restore_rx_ncos()?;
+        let bus = self.bus.as_mut();
+        for nco in [Nco::Nco0, Nco::Nco1] {
+            Phy::Tx.set_nco(bus, nco, 0)?;
         }
 
-        // `_usdr_update_bandwidth`: with no NCO spread or external LO offset, the
-        // bandwidth is the ADC rate over the decimation, the requested rate.
-        if self.rx.bandwidth_fixed {
-            return Ok(());
+        // `USDR_SAMPLERATE_CHANGED`: the mixer LO moved with the clocks, so retune.
+        if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {
+            self.tune_rx_pll(self.mixer_lo_hz.wrapping_add(self.rx.lo_hz))?;
         }
-        self.lms.set_rx_bandwidth(bus, rate)
+        self.update_rx_bandwidth()
     }
 
     /// Fixes the RX filter bandwidth in Hz, or with 0 returns it to following the sample

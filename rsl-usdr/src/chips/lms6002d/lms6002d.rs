@@ -1,7 +1,14 @@
 //! The LMS6002D driver: power-up configuration and the controls the board uses.
 
 use super::afe::{self, Interface};
-use super::pll::{Pll, VcoRegulator, VcoSelect};
+use std::time::Duration;
+
+use bnb::{u3, u6};
+
+use super::pll::{
+    self, ChargePump, Comparator, DownOffset, FractionalDivider, Pll, PllConfig, VcoCapacitor,
+    VcoRegulator, VcoSelect,
+};
 use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad};
 use super::rx_lpf;
 use super::rx_vga2;
@@ -122,6 +129,76 @@ impl Lms6002d {
         regs.write(control)
     }
 
+    /// Tunes the RX synthesizer's LO to `lo_hz` from a `reference_hz` reference, and returns
+    /// the capacitor codes it locked over (`lms6002d_tune_pll_stat` for RX).
+    ///
+    /// Picks the VCO and divider, writes the fractional divider, checks it reads back, then
+    /// searches the VCO capacitor bank against the tuning-voltage comparator and settles
+    /// mid-window.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFrequency`] below 170 MHz, before any write;
+    /// [`Error::PllUnlocked`] if no code locks, after the writes, as libusdr;
+    /// [`Error::PllFault`] if the divider reads back wrong or the comparator reports both
+    /// bits; any bus failure.
+    pub(crate) fn tune_rx(
+        &mut self,
+        bus: &mut dyn Bus,
+        lo_hz: u32,
+        reference_hz: u32,
+    ) -> Result<CapacitorWindow, Error> {
+        if lo_hz < pll::LOWEST_LO_HZ {
+            return Err(Error::UnsupportedFrequency(lo_hz));
+        }
+        let (vco, exponent) = pll::vco_for(lo_hz);
+        let divider = FractionalDivider::for_vco(reference_hz, u64::from(lo_hz) << (exponent + 1));
+        let divider_bytes = divider.to_raw().to_be_bytes();
+        let tuned = VcoSelect::new()
+            .with_vco(vco)
+            .with_divider_range(u3::new(exponent | 0b100))
+            .with_lo_buffer(self.rx_vco.lo_buffer());
+        self.clock_enables.set_rx_pll_modulator_clock(true);
+
+        let mut regs = self.on(bus);
+        regs.write(self.clock_enables)?;
+        for (reg, byte) in pll::RX_DIVIDER.into_iter().zip(divider_bytes) {
+            regs.write_raw(reg, byte)?;
+        }
+        regs.write_to(Pll::Rx, PllConfig::TUNING)?;
+        // The VCO first with no divider range or LO buffer, then all three.
+        regs.write_to(Pll::Rx, VcoSelect::new().with_vco(vco))?;
+        regs.write_to(Pll::Rx, tuned)?;
+        regs.write_to(Pll::Rx, ChargePump::TUNING)?;
+        regs.write_to(Pll::Rx, VcoRegulator::TUNING)?;
+        regs.write_to(Pll::Rx, DownOffset::TUNING)?;
+        regs.write_to(Pll::Rx, capacitor(32))?;
+        regs.write_raw(pll::Reg::RxComparatorPower, pll::COMPARATOR_ON)?;
+        regs.sleep(Duration::from_micros(100));
+
+        // libusdr ignores read failures here; its zeroed buffer then fails the comparison.
+        let mut readback = [0; 4];
+        for (reg, byte) in pll::RX_DIVIDER.into_iter().zip(&mut readback) {
+            *byte = regs.read_raw(reg).unwrap_or(0);
+        }
+        if readback != divider_bytes {
+            return Err(Error::PllFault);
+        }
+
+        let window = find_rx_capacitor(&mut regs)?;
+        // Mid-window, rounding down as libusdr's integer division does.
+        let mid = u8::midpoint(window.low, window.high);
+        regs.write_to(Pll::Rx, capacitor(i32::from(mid)))?;
+        regs.write_to(Pll::Rx, tuned)?;
+        regs.write_raw(pll::Reg::RxComparatorPower, pll::COMPARATOR_OFF)?;
+        self.rx_vco = tuned;
+        // libusdr's lock test: the search ended with an empty window at the bottom.
+        if window.low > window.high && window.high == 0 {
+            return Err(Error::PllUnlocked(lo_hz));
+        }
+        Ok(window)
+    }
+
     /// Makes `lna` the active RX input and powers the RX synthesizer's LO buffer for it.
     pub(crate) fn select_lna(&mut self, bus: &mut dyn Bus, lna: Lna) -> Result<(), Error> {
         self.rx_vco.set_lo_buffer(lna);
@@ -154,4 +231,71 @@ impl Lms6002d {
         regs.write(self.clock_enables)?;
         regs.write(self.enable_config)
     }
+}
+
+/// The capacitor codes a synthesizer's VCO locked over, inclusive. `low` can exceed `high`
+/// when the search found no lock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CapacitorWindow {
+    /// The lowest code that locked.
+    pub(crate) low: u8,
+
+    /// The highest code that locked.
+    pub(crate) high: u8,
+}
+
+/// A [`VcoCapacitor`] value for `code`, keeping its low six bits as libusdr's macro does.
+fn capacitor(code: i32) -> VcoCapacitor {
+    let code = u8::try_from(code & 0x3f).expect("invariant: masked to six bits");
+    VcoCapacitor::new().with_capacitor(u6::new(code))
+}
+
+/// libusdr's `lms6002d_find_vcocap` for RX: a five-step binary search from code 32, then a
+/// linear scan up from its result until the comparator reports the capacitor too high.
+///
+/// In the binary phase an in-window reading counts as too high, as libusdr's switch falls
+/// through; code 0 is never probed. Each probe writes the code, waits 150 µs and reads the
+/// comparator.
+fn find_rx_capacitor(regs: &mut SpiWriter<'_>) -> Result<CapacitorWindow, Error> {
+    let (mut step, mut code, mut low, mut high) = (4_i32, 32_i32, 0_i32, -1_i32);
+    let mut binary = true;
+    loop {
+        if binary && step < 0 {
+            binary = false;
+            low = code;
+        }
+        if !binary && code >= 64 {
+            if high == -1 {
+                high = 0;
+            }
+            break;
+        }
+        regs.write_to(Pll::Rx, capacitor(code))?;
+        regs.sleep(Duration::from_micros(150));
+        let comparator: Comparator = regs.read_at(Pll::Rx)?;
+        match (comparator.vtune_high(), comparator.vtune_low()) {
+            (true, true) => return Err(Error::PllFault),
+            // Capacitor too low: raise it, or move the window's bottom up.
+            (true, false) if binary => code += 1 << step,
+            (true, false) => low = code + 1,
+            // In the window.
+            (false, false) if !binary => high = code,
+            // Too high, or in the window during the binary phase.
+            _ if binary => code -= 1 << step,
+            _ => {
+                high = (code - 1).max(0);
+                break;
+            }
+        }
+        if binary {
+            step -= 1;
+        } else {
+            code += 1;
+        }
+    }
+    let byte = |value: i32| u8::try_from(value).expect("invariant: the search stays in 0..=64");
+    Ok(CapacitorWindow {
+        low: byte(low),
+        high: byte(high),
+    })
 }

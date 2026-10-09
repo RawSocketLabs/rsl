@@ -223,8 +223,7 @@ pub(super) enum Reg {
     /// Output 5 CMOS drive. `OUT5_CMOS_SLEW`, 0xB0.
     Output5Drive = 0xb0,
 
-    /// Output enables for outputs 0..=3 (bits 0, 1, 3, 6). libusdr writes 0xFF, which also
-    /// sets the undefined bits, so it stays a raw byte. `OUT3210_OE`, 0xB6.
+    /// See [`OutputEnables0to3`](super::output::OutputEnables0to3). `OUT3210_OE`, 0xB6.
     OutputEnables0to3 = 0xb6,
 
     /// Output enables for outputs 4 and 5 (bits 1, 2); written as 0xFF like

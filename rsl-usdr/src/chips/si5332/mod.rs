@@ -51,6 +51,8 @@
 //! oscillator starts only after this, so the chip may report no input clock; the board
 //! sequence tolerates exactly that error. Setting a sample rate then usually moves the sample
 //! clocks onto the PLL with [`Si5332::set_layout`], whose divider plan is a [`Layout`].
+//! Tuning into or out of the mixer band switches output 3 with [`Si5332::set_mixer_lo`],
+//! which still cycles through READY as libusdr does.
 //!
 //! # Register map
 //!

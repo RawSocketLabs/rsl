@@ -5,7 +5,7 @@
 //! against libusdr's on a simulated board (`rsl-usdr-oracle`).
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, and the RX
-//! sample rate. Transports, tuning and streaming follow.
+//! sample rate, bandwidth and frequency. Transports and streaming follow.
 //!
 //! # The uSDR board
 //!

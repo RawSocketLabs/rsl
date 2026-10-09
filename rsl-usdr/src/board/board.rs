@@ -9,6 +9,7 @@
 
 use std::fmt;
 
+use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::{BuckVoltage, Lp8758};
 use crate::chips::si5332::{LvpeclOutput, Si5332};
@@ -43,6 +44,14 @@ pub(crate) struct Board {
     /// [`Self::LMS_VIO_NORMAL`].
     pub(super) vio_boosted: bool,
 
+    /// The ADC's sample rate, the requested rate times the decimation (libusdr's
+    /// `adc_clk`); 0 until a rate is set.
+    pub(super) adc_rate_hz: u32,
+
+    /// The mixer LO: the Si5332 VCO over [`Self::MIXER_LO_DIVIDER`] (libusdr's
+    /// `mixer_lo`); 0 until a rate is set.
+    pub(super) mixer_lo_hz: u32,
+
     /// What the receive chain was last set to.
     pub(super) rx: RxState,
 }
@@ -60,6 +69,23 @@ pub(super) struct RxState {
     /// The decimation of the last sample rate set (libusdr's `rxbb_decim`); `None` until the
     /// first. Its FIR is loaded unless the board has no RX chain.
     pub(super) decimation: Option<Decimation>,
+
+    /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`).
+    pub(super) lo_hz: u32,
+
+    /// The band the frequency selected (libusdr's `rx_cfg_path`); `None` until tuned.
+    pub(super) band: Option<RxBand>,
+
+    /// The board mixer is in the RX path (libusdr's `mexir_en`).
+    pub(super) mixer_on: bool,
+
+    /// The lowest LO the RX PLL was found to lock at below 250 MHz, in Hz (libusdr's
+    /// `rx_minimal_lo`); 0 until a lock failure made the driver search for it.
+    pub(super) minimal_lo_hz: u32,
+
+    /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the NCO
+    /// makes up the difference (libusdr's `rx_exten_lo`).
+    pub(super) lo_offset_hz: i32,
 }
 
 /// Which DSP chains the gateware has (HWID bits 25 and 24).
@@ -79,6 +105,8 @@ impl fmt::Debug for Board {
             .field("rev3", &self.rev3)
             .field("chains", &self.chains)
             .field("vio_boosted", &self.vio_boosted)
+            .field("adc_rate_hz", &self.adc_rate_hz)
+            .field("mixer_lo_hz", &self.mixer_lo_hz)
             .field("rx", &self.rx)
             .finish_non_exhaustive()
     }

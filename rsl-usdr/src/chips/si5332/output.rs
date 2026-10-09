@@ -343,3 +343,36 @@ impl Register for Output4and5PowerDown {
     type Map = Reg;
     const ADDR: Reg = Reg::Output4and5PowerDown;
 }
+
+/// Enables outputs 0..=3 (libusdr's `B6_*`). `OUT3210_OE`, register 0xB6.
+///
+/// At power-up libusdr writes 0xFF, which also sets the bits the map leaves undefined;
+/// [`OutputEnables0to3::ALL`] keeps that byte.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct OutputEnables0to3 {
+    /// Output 3. `OUT3_OE`, bit 6.
+    #[bits(6..=6)]
+    output3: bool,
+
+    /// Output 2. `OUT2_OE`, bit 3.
+    #[bits(3..=3)]
+    output2: bool,
+
+    /// Output 1. `OUT1_OE`, bit 1.
+    #[bits(1..=1)]
+    output1: bool,
+
+    /// Output 0. `OUT0_OE`, bit 0.
+    #[bits(0..=0)]
+    output0: bool,
+}
+impl Register for OutputEnables0to3 {
+    type Map = Reg;
+    const ADDR: Reg = Reg::OutputEnables0to3;
+}
+
+impl OutputEnables0to3 {
+    /// Every bit set, undefined ones included: libusdr's power-up byte.
+    pub(super) const ALL: Self = Self::from_raw(0xff);
+}

@@ -199,6 +199,8 @@ impl Identified {
             rev3,
             chains,
             vio_boosted: false,
+            adc_rate_hz: 0,
+            mixer_lo_hz: 0,
             rx: RxState::default(),
         })
     }

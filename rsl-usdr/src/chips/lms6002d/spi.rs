@@ -4,6 +4,8 @@
 //! register's byte comes back in the low eight bits. The 7-bit address reaches 128 byte
 //! registers, grouped into blocks by address range.
 
+use std::time::Duration;
+
 use bnb::{bitfield, u7};
 
 use crate::chips::register::{IndexedRegister, Register};
@@ -53,7 +55,20 @@ impl<'a> SpiWriter<'a> {
 impl SpiWriter<'_> {
     /// Reads a typed register; its byte comes back in the reply's low eight bits.
     pub(super) fn read<R: Register<Map: BlockReg>>(&mut self) -> Result<R, Error> {
-        let reg = R::ADDR.into();
+        self.read_raw(R::ADDR).map(R::from)
+    }
+
+    /// Reads one copy of a repeated register.
+    pub(super) fn read_at<R: IndexedRegister<Map: BlockReg> + From<u8>>(
+        &mut self,
+        index: R::Index,
+    ) -> Result<R, Error> {
+        self.read_raw(R::addr(index)).map(R::from)
+    }
+
+    /// Reads a register as a byte; it comes back in the reply's low eight bits.
+    pub(super) fn read_raw(&mut self, reg: impl BlockReg) -> Result<u8, Error> {
+        let reg = reg.into();
         let word = SpiWord::new().with_addr(u7::new(reg));
 
         let reply = self
@@ -61,7 +76,12 @@ impl SpiWriter<'_> {
             .spi32(self.target, word.to_raw().into())
             .reading(self.chip, reg)?;
 
-        Ok(R::from(reply.to_le_bytes()[0]))
+        Ok(reply.to_le_bytes()[0])
+    }
+
+    /// Waits on the bus between accesses, as a calibration loop needs.
+    pub(super) fn sleep(&mut self, duration: Duration) {
+        self.bus.sleep(duration);
     }
 
     /// Writes a typed register.
