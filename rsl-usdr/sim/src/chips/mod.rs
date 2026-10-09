@@ -6,7 +6,7 @@ mod si5332;
 mod tmp114;
 
 pub(crate) use lms6002d::Lms6002d;
-pub use lms6002d::RxPllLock;
+pub use lms6002d::{DcCalibration, PllLock};
 pub(crate) use reg8::Reg8File;
 pub(crate) use si5332::Si5332;
 pub(crate) use tmp114::Tmp114;

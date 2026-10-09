@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use rsl_usdr::{Device, Error};
 use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, RxPllLock, SimBoard};
+use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
 
 /// One RX call, made the same way on both sides.
@@ -295,9 +295,9 @@ fn rev1_mixer_band_matches_libusdr() {
 
 /// A board whose RX PLL locks only from 245 MHz up.
 fn rev3_unlocked_below_245m() -> SimBoard {
-    SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(RxPllLock {
+    SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(PllLock {
         unlocked_below_hz: 245_000_000,
-        ..RxPllLock::default()
+        ..PllLock::default()
     })
 }
 
@@ -333,9 +333,9 @@ fn a_fallback_without_nco_room_fails_like_libusdr() {
 fn an_unlockable_lo_above_250m_fails_like_libusdr() {
     let outcomes = assert_calls_match(
         || {
-            SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(RxPllLock {
+            SimBoard::new(BoardRevision::Rev3).with_rx_pll_lock(PllLock {
                 unlocked_below_hz: 2_000_000_000,
-                ..RxPllLock::default()
+                ..PllLock::default()
             })
         },
         &[Call::Rate(20_000_000), Call::Frequency(1_000_000_000)],

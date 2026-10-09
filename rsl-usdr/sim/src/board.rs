@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{I2cChip, Lms6002d, Reg8File, RxPllLock, Si5332, Tmp114};
+use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::trace::Op;
 
 /// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
@@ -158,10 +158,18 @@ impl SimBoard {
     }
 
     /// A board whose RX PLL comparator answers as `lock` describes, instead of
-    /// [`RxPllLock::default`].
+    /// [`PllLock::default`]; the TX PLL keeps the default.
     #[must_use]
-    pub fn with_rx_pll_lock(mut self, lock: RxPllLock) -> Self {
+    pub fn with_rx_pll_lock(mut self, lock: PllLock) -> Self {
         self.lms.rx_lock = lock;
+        self
+    }
+
+    /// A board whose LMS6002D DC calibration engines answer as `calibration` describes,
+    /// instead of [`DcCalibration::default`].
+    #[must_use]
+    pub fn with_dc_calibration(mut self, calibration: DcCalibration) -> Self {
+        self.lms.dc_calibration = calibration;
         self
     }
 
