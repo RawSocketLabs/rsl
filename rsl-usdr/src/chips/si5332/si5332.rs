@@ -73,9 +73,9 @@ impl Si5332 {
         Self::at(I2cAddr::new(0, 0x6a))
     }
 
-    /// Identifies the chip and programs its power-up output plan (`si5332_init`), with
-    /// output 0 divided by `div`.
-    pub(crate) fn init(
+    /// Identifies the chip and writes its power-up output plan, with output 0 divided by
+    /// `div`: `si5332_init` up to its final state poll, which [`Self::wait_active`] does.
+    pub(crate) fn program(
         self,
         bus: &mut dyn Bus,
         div: u8,
@@ -92,14 +92,23 @@ impl Si5332 {
             return Err(Error::ChipMissing(Self::NAME));
         }
 
-        self.wait_state(bus, false)?;
+        // Like libusdr, a state other than ACTIVE is not an error before programming.
+        self.settle(bus)?;
         let mut regs = self.on(bus);
         for (reg, value) in Self::power_up_plan(div, reference, lvpecl) {
             regs.write_raw(reg, value)?;
         }
-        // libusdr reads FPGA register 0xC here and ignores the result; kept so traces line up.
-        let _ = bus.read_regs(0xc, &mut [0]);
-        self.wait_state(bus, true)
+        Ok(())
+    }
+
+    /// Waits for the state requested last to settle; a missing input clock is an error.
+    ///
+    /// Like libusdr, a state that never settles is not.
+    pub(crate) fn wait_active(self, bus: &mut dyn Bus) -> Result<(), Error> {
+        match self.settle(bus)? {
+            CurrentState::NoInputClock => Err(Error::ClockInputMissing),
+            _ => Ok(()),
+        }
     }
 
     /// The register writes of `si5332_init`, in order: hold the outputs, route every output
@@ -189,11 +198,9 @@ impl Si5332 {
         plan
     }
 
-    /// Polls [`CurrentState`] until it settles (`si5532_get_state`).
-    ///
-    /// Like libusdr, a state that never settles is not an error, and a missing input clock
-    /// is one only once programming is done (`after_init`).
-    fn wait_state(self, bus: &mut dyn Bus, after_init: bool) -> Result<(), Error> {
+    /// Polls [`CurrentState`] until it leaves the transitional values, or gives up after
+    /// [`STATE_POLLS`], and returns the last state read (`si5532_get_state`).
+    fn settle(self, bus: &mut dyn Bus) -> Result<CurrentState, Error> {
         let mut state = CurrentState::Other(0);
         for _ in 0..STATE_POLLS {
             bus.sleep(Duration::from_micros(10));
@@ -202,9 +209,6 @@ impl Si5332 {
                 break;
             }
         }
-        match state {
-            CurrentState::NoInputClock if after_init => Err(Error::ClockInputMissing),
-            _ => Ok(()),
-        }
+        Ok(state)
     }
 }
