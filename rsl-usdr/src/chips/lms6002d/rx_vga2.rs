@@ -1,4 +1,9 @@
 //! The second RX variable-gain amplifier (datasheet `RxVGA2`, registers 0x60-0x6F).
+//!
+//! RXVGA2 is the last gain stage before the ADC, after the channel filter, 0 to 30 dB in
+//! libusdr's range, and so sets how fully the signal fills the ADC's input range.
+//! Power-up writes its output common-mode voltage ([`Control`]) to the value from Lime's
+//! LMS6002D FAQ, 5.27.
 
 use bnb::{BitEnum, bitfield, u4};
 

@@ -1,5 +1,11 @@
 //! The RX front end (datasheet `RFE`, registers 0x70-0x7F): the three LNAs and the RX
 //! mixer.
+//!
+//! This is where the antenna signal enters the chip. One LNA at a time is active
+//! ([`LnaControl`]); its gain mode trades sensitivity against the strongest signal it can
+//! take without distorting. Its output goes to the RX mixer, driven by the RX PLL's LO
+//! buffer for the same LNA path, so changing the LNA also means changing that buffer
+//! ([`Lms6002d::select_lna`](super::Lms6002d::select_lna) does both).
 
 use bnb::{BitEnum, bitfield, u2, u4, u6};
 
@@ -22,16 +28,22 @@ pub(super) enum Reg {
 impl BlockReg for Reg {}
 
 /// An LNA input path. On the uSDR, LNA1 is the wideband input.
+///
+/// The uSDR wiring, from libusdr's `usdr_ctrl.c` band table; the RX switch is
+/// [`Gpo::RxSwitch`](crate::fpga::Gpo::RxSwitch).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2)]
 pub(crate) enum Lna {
     /// No LNA.
     None,
-    /// LNA1.
+    /// LNA1: 0.3 to 2.8 GHz through the B0322J5050AHF balun, RX switch 0. libusdr's
+    /// `LNAW` path and the power-up default.
     Lna1,
-    /// LNA2.
+    /// LNA2: 1.5 to 3.8 GHz through the 3600BL14M050 balun, RX switch 1. libusdr's `LNAH`
+    /// path.
     Lna2,
-    /// LNA3.
+    /// LNA3: the low band below 230 MHz, through the board's upconverting mixer, RX switch
+    /// 1; libusdr's wiring table also names the M.2 RF port. libusdr's `LNAL` path.
     Lna3,
 }
 

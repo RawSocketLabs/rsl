@@ -3,6 +3,51 @@
 //!
 //! On the uSDR it turns the reference into the PLL, RX and TX clocks, and drives the
 //! external RX mixer's LO on output 3.
+//!
+//! # What it does
+//!
+//! The Si5332 takes one reference clock and produces up to six output clocks, each at its
+//! own frequency and logic standard. A clock passes through these stages:
+//!
+//! 1. **Input.** The reference comes from the crystal-oscillator pins or a clock input;
+//!    [`PllReference`] picks which feeds the PLL. [`InputMode`] sets how clock input 2 is
+//!    received.
+//! 2. **PLL.** The PLL locks its VCO, somewhere in 2.375–2.625 GHz, to the reference.
+//! 3. **Dividers.** Five high-speed dividers split the VCO by integers. Two interpolative
+//!    dividers split it by fractions, and can add spread spectrum ([`SpreadSpectrum`]).
+//! 4. **Output mux.** Each output takes either a divider's clock or, bypassing the PLL,
+//!    the reference itself ([`OutputSource`]).
+//! 5. **Output stage.** Each output divides again ([`Divider`]), can be delayed
+//!    ([`Skew`]) or inverted ([`Polarity`]), and drives its pins as CMOS, LVDS, LVPECL or
+//!    HCSL ([`DriverMode`], [`CmosDrive`]).
+//!
+//! Unused stages can be powered down ([`InputPowerDown`], [`DividerPowerDown`], [`SourcePowerDown`]
+//! and the output power-down registers).
+//!
+//! # The READY/ACTIVE state machine
+//!
+//! The chip runs in one of two states, requested through [`RequestedState`] and reported
+//! in [`CurrentState`]: READY, for changing the configuration, and ACTIVE, for running
+//! it. libusdr's init and sample-rate plans request READY, write, then request ACTIVE,
+//! and poll the state until it reads READY, ACTIVE or "no input clock". Not verified
+//! here: what the outputs do while the chip is in READY. If they stop, every such
+//! change briefly interrupts the LMS6002D's PLL reference and the sample clocks.
+//!
+//! That matters for the band-crossing problem. `si5332_set_port3_en`, which libusdr
+//! calls when the RX path moves into or out of the board-mixer path, writes the output
+//! enables, then requests READY, writes the power-down registers and requests ACTIVE,
+//! without polling. It gates output 3 (the mixer LO) by the mixer state and output 2 (the
+//! TX clock) by whether TX runs. The suspected cause of the band-crossing failures is
+//! that READY cycle; the planned fix gates output 3 without leaving ACTIVE, and will be
+//! checked against the oracle and hardware.
+//!
+//! # How the driver uses it
+//!
+//! At power-up, [`Si5332::init`] checks a Si5332 answers, then writes a plan that routes
+//! the reference straight to outputs 0 to 2 and turns the rest off; the PLL is not yet
+//! used. On revision 3 the reference oscillator starts only after this, so the chip may
+//! report no input clock; the board sequence tolerates exactly that error. Setting a
+//! sample rate (not yet ported) will usually move the sample clocks onto PLL dividers.
 
 use std::time::Duration;
 
@@ -680,16 +725,20 @@ impl IndexedRegister for CrystalTrim {
 /// Polls of [`CurrentState`] before giving up, 10 µs apart (`si5532_get_state`).
 const STATE_POLLS: usize = 100;
 
-/// Where the PLL reference comes from.
+/// Where the reference comes from: the clock every output is derived from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Reference {
-    /// The on-board oscillator.
+    /// The on-board 26 MHz oscillator, which revision 3 carries and the FPGA switches on.
     Oscillator,
-    /// Clock input 2, differential.
+    /// Clock input 2, received differentially: the reference on revisions 1 and 2.
     Input2,
 }
 
 /// Which of outputs 0 and 1 drives LVPECL; the other drives CMOS.
+///
+/// The LVPECL output carries the LMS6002D's PLL reference, and the CMOS one the RX sample
+/// clock. Revision 3 swapped the two: output 0 is the PLL reference there, output 1 on
+/// revisions 1 and 2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LvpeclOutput {
     /// Output 0 is LVPECL.

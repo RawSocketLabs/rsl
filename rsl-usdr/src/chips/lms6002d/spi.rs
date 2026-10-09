@@ -1,4 +1,8 @@
 //! The LMS6002D SPI protocol: one 16-bit word per register access.
+//!
+//! The FPGA's SPI engine sends the word and returns the chip's reply; for a read, the
+//! register's byte comes back in the low eight bits. The 7-bit address reaches 128 byte
+//! registers, grouped into blocks by address range.
 
 use bnb::{bitfield, u7};
 

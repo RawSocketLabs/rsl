@@ -1,6 +1,16 @@
 //! The TX and RX synthesizers (datasheet `TxPLL`, registers 0x10-0x1F, and `RxPLL`,
 //! 0x20-0x2F). The two blocks have identical maps 0x10 apart, so each register here is
 //! indexed by [`Pll`].
+//!
+//! A synthesizer makes the local oscillator (LO) its mixer multiplies the signal by; the
+//! LO frequency is the frequency the chain is tuned to. Each one locks a VCO to the
+//! reference clock through a fractional-N divider, then divides the VCO down to the LO.
+//! The chip has four VCOs per synthesizer, each covering part of the range, and output
+//! dividers that set which octave the LO falls in ([`VcoSelect`]). Tuning (not yet
+//! ported) picks a VCO and divider, sets the fractional divider, and calibrates the VCO's
+//! capacitor bank. Power-up only sets [`VcoRegulator`] (regulators bypassed and powered
+//! down, fast band-gap settling, and a 30 µA charge-pump up offset on RX) and points the
+//! RX LO at LNA1's mixer.
 
 use bnb::{BitEnum, bitfield, u3, u5};
 

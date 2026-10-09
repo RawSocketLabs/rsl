@@ -1,5 +1,12 @@
 //! The top-level block (datasheet `Top`, registers 0x00-0x0F): chip identity, which
 //! blocks are powered, clock gating, and the reference-clock buffer.
+//!
+//! These registers control the chip as a whole rather than one stage of a signal chain.
+//! [`EnableConfig`] holds the master power switches for the transmitter and receiver,
+//! which is how the driver turns a whole chain on or off. [`ClockEnables`] gates the
+//! clocks of the PLL modulators' SPI and of the calibration engines; a calibration runs only
+//! while its clock is on. [`ReferencePower`] sets up the buffer the Si5332's PLL
+//! reference enters through.
 
 use bnb::{BitEnum, bitfield, u4};
 
