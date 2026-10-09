@@ -7,7 +7,7 @@
 //! buffer for the same LNA path, so changing the LNA also means changing that buffer
 //! ([`Lms6002d::select_lna`](super::Lms6002d::select_lna) does both).
 
-use bnb::{BitEnum, bitfield, u2, u4, u6};
+use bnb::{BitEnum, bitfield, u2, u4, u6, u7};
 
 use super::spi::BlockReg;
 use crate::chips::register::Register;
@@ -23,8 +23,14 @@ pub(super) enum Reg {
     /// Datasheet `GAIN_LNA_SEL`; see [`LnaControl`].
     LnaControl = 0x75,
 
+    /// Datasheet `IN1SEL_DCI`; see [`MixerInput`].
+    MixerInput = 0x71,
+
     /// Datasheet `RDLINT_LNA`; see [`LnaLoad`].
     LnaLoad = 0x79,
+
+    /// Datasheet `LOMIX_GLNA3`; see [`MixerBias`].
+    MixerBias = 0x7c,
 }
 
 impl BlockReg for Reg {}
@@ -128,4 +134,46 @@ impl LnaLoad {
     /// Lime's recommended load, code 0x37, from the LMS6002D FAQ v1.0r12, 5.27 (as libusdr
     /// writes it). Neither libusdr nor its register map gives the resistance per code.
     pub(super) const LIME_RECOMMENDED: Self = Self::new().with_resistance(u6::new(0x37));
+}
+
+/// The mixer's input and the I channel's DC-offset trim. Datasheet `IN1SEL_DCI`,
+/// register 0x71.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct MixerInput {
+    /// Feed the mixer from the on-chip LNA (input 1) rather than the pads (input 2).
+    /// `IN1SEL_MIX`, bit 7; reset 1.
+    #[bits(7..=7)]
+    from_lna: bool,
+
+    /// I-channel DC offset, sign-magnitude: bit 6 the sign, bits 5:0 the magnitude.
+    /// `DCOFF_I`, bits 6:0.
+    #[bits(0..=6)]
+    dc_offset_i: u7,
+}
+impl Register for MixerInput {
+    type Map = Reg;
+    const ADDR: Reg = Reg::MixerInput;
+}
+
+/// The mixer's LO bias and input termination, and LNA3's fine gain. Datasheet
+/// `LOMIX_GLNA3`, register 0x7C.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct MixerBias {
+    /// LO bias of the mixer, for linearity. `LOBN_MIX`, bits 6:3; reset 3.
+    #[bits(3..=6)]
+    lo_bias: u4,
+
+    /// Terminate the external mixer input. `RINEN_MIX`, bit 2; reset 0.
+    #[bits(2..=2)]
+    input_terminated: bool,
+
+    /// LNA3 fine gain, 1 dB per step. `G_FINE_LNA3`, bits 1:0.
+    #[bits(0..=1)]
+    lna3_fine_gain: u2,
+}
+impl Register for MixerBias {
+    type Map = Reg;
+    const ADDR: Reg = Reg::MixerBias;
 }

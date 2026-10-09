@@ -3,7 +3,9 @@
 use std::fmt;
 use std::time::Duration;
 
-use crate::board::Board;
+use num_complex::Complex;
+
+use crate::board::{Board, RxPacket};
 use crate::error::Error;
 use crate::lowlevel::Bus;
 use crate::thermal::{CoolDown, ThermalPolicy};
@@ -68,6 +70,7 @@ impl Device {
     ///
     /// - [`Error::UnsupportedSampleRate`] outside 960 kS/s to 80 MS/s, or 1 to 80 MS/s on a
     ///   board with only one DSP chain.
+    /// - [`Error::AlreadyStreaming`] while an RX stream runs.
     /// - [`Error::ClockInputMissing`] if the Si5332 loses its reference while switching.
     /// - [`Error::PllUnlocked`], [`Error::PllFault`] or [`Error::UnsupportedFrequency`] if
     ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
@@ -92,6 +95,62 @@ impl Device {
     /// - Any bus failure.
     pub fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.board().set_rx_frequency(hz)
+    }
+
+    /// Creates the RX stream and starts it, with `samples_per_packet` samples in each packet
+    /// [`Device::receive`] delivers. Frequency and bandwidth can change while it runs; the
+    /// sample rate cannot.
+    ///
+    /// Creating the stream calibrates the receiver's DC offsets. If no frequency was set,
+    /// the receiver tunes to 320 MHz first, as libusdr does.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AlreadyStreaming`] if a stream is running.
+    /// - [`Error::UnsupportedPacketSize`] for a packet the stream engine cannot split into
+    ///   bursts.
+    /// - [`Error::Stream`] if the transport cannot set up its buffers, or does not stream.
+    /// - [`Error::DmaEngineFault`] if the FPGA's DMA engine does not respond.
+    /// - Tuning and calibration errors, as [`Device::set_rx_frequency`]; any bus failure.
+    ///
+    /// As in libusdr, a failure after the transport set up its buffers leaves the stream in
+    /// place: call [`Device::stop_rx_stream`] before starting again.
+    pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
+        self.board().start_rx_stream(samples_per_packet)
+    }
+
+    /// Samples per packet of the running RX stream, or `None` with no stream.
+    #[must_use]
+    pub fn rx_packet_samples(&self) -> Option<u32> {
+        self.board.as_ref().and_then(Board::rx_packet_samples)
+    }
+
+    /// Receives one packet of IQ samples into the front of `samples`, waiting up to
+    /// `timeout`; the rest of `samples` is untouched.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Timeout`] if no packet arrives in time.
+    /// - [`Error::BufferTooSmall`] if `samples` holds less than one packet.
+    /// - [`Error::NotStreaming`] with no stream.
+    /// - [`Error::Stream`] if the transport fails; any bus failure.
+    pub fn receive(
+        &mut self,
+        samples: &mut [Complex<i16>],
+        timeout: Duration,
+    ) -> Result<RxPacket, Error> {
+        self.board().receive(samples, timeout)
+    }
+
+    /// Stops and destroys the RX stream, powering the receiver down. The frequency,
+    /// bandwidth and sample rate stay set for the next stream.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no stream; otherwise the first failure, after every step
+    /// is attempted.
+    pub fn stop_rx_stream(&mut self) -> Result<(), Error> {
+        self.board().stop_rx_stream()
     }
 
     /// Fixes the RX filter bandwidth in Hz, so later sample-rate and frequency changes keep
@@ -143,9 +202,18 @@ impl Device {
             .expect("invariant: a Device owns its board until close or drop")
     }
 
-    /// Powers the board down if it is still up.
+    /// Stops any RX stream, then powers the board down, if it is still up. Every step is
+    /// attempted; the first failure is returned.
     fn power_down(&mut self) -> Result<(), Error> {
-        self.board.take().map_or(Ok(()), Board::power_down)
+        let Some(mut board) = self.board.take() else {
+            return Ok(());
+        };
+        let stopped = if board.rx_packet_samples().is_some() {
+            board.stop_rx_stream()
+        } else {
+            Ok(())
+        };
+        stopped.and(board.power_down())
     }
 }
 

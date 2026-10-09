@@ -137,13 +137,24 @@ impl Board {
     /// Powers the LMS6002D's receiver and RXVGA2 if they are off (`_usdr_pwr_state` for
     /// RX).
     pub(super) fn power_rx(&mut self) -> Result<(), Error> {
-        if self.rx.powered {
+        self.set_rx_power(true)
+    }
+
+    /// Powers the LMS6002D's receiver and RXVGA2 on or off, if they are not already
+    /// (`_usdr_pwr_state` for RX). Like libusdr, the new state is recorded once the first
+    /// write succeeds, and the 25 ms settling wait follows.
+    pub(super) fn set_rx_power(&mut self, on: bool) -> Result<(), Error> {
+        if self.rx.powered == on {
             return Ok(());
         }
         let bus = self.bus.as_mut();
-        self.lms.set_rx_enabled(bus, true)?;
-        self.rx.powered = true;
-        self.lms.enable_rx_vga2(bus)?;
+        self.lms.set_rx_enabled(bus, on)?;
+        self.rx.powered = on;
+        if on {
+            self.lms.enable_rx_vga2(bus)?;
+        } else {
+            self.lms.disable_rx_vga2(bus)?;
+        }
         bus.sleep(Duration::from_millis(25));
         Ok(())
     }

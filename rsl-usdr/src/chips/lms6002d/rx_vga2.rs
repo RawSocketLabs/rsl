@@ -17,6 +17,12 @@ use crate::chips::register::Register;
 pub(super) enum Reg {
     /// Datasheet `CTRL`; see [`Control`].
     Control = 0x64,
+
+    /// Datasheet `GAIN`; see [`Gain`].
+    Gain = 0x68,
+
+    /// Datasheet `PD_CALIB`; see [`CalibrationPower`].
+    CalibrationPower = 0x6e,
 }
 
 impl BlockReg for Reg {}
@@ -60,4 +66,42 @@ impl Control {
         .with_common_mode(u4::new(7))
         .with_enabled(true)
         .with_test_mode_controls(true);
+
+    /// [`Self::RX_POWER_UP`] powered down, 0x1D (`lms6002d_rxvga2_enable(false)`).
+    pub(super) const RX_POWER_DOWN: Self = Self::RX_POWER_UP.with_enabled(false);
+}
+
+/// The second VGA's two stages' gains, 3 dB per step. Datasheet `GAIN`, register 0x68.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Gain {
+    /// VGA2B gain. `INB_VAL`, bits 7:4.
+    #[bits(4..=7)]
+    b: u4,
+
+    /// VGA2A gain. `INA_VAL`, bits 3:0.
+    #[bits(0..=3)]
+    a: u4,
+}
+impl Register for Gain {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Gain;
+}
+
+/// Power for the DC-calibration comparators of each VGA2 stage. Datasheet `PD_CALIB`,
+/// register 0x6E.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CalibrationPower {
+    /// Power VGA2B's comparator down. `PD_CAL_VGA2B`, bit 7; reset 0.
+    #[bits(7..=7)]
+    b_off: bool,
+
+    /// Power VGA2A's comparator down. `PD_CAL_VGA2A`, bit 6; reset 0.
+    #[bits(6..=6)]
+    a_off: bool,
+}
+impl Register for CalibrationPower {
+    type Map = Reg;
+    const ADDR: Reg = Reg::CalibrationPower;
 }

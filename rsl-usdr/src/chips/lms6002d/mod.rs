@@ -45,10 +45,11 @@
 //! come from `hw/lms6002d/lms6002d.c`.
 
 mod afe;
+mod dc_cal;
 mod lms6002d;
+mod lpf;
 mod pll;
 mod rx_fe;
-mod rx_lpf;
 mod rx_vga2;
 mod spi;
 mod top;

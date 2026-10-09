@@ -124,4 +124,49 @@ pub trait Bus: Send {
     /// Waits for `duration`. Board code never reads the clock itself, so a simulator can
     /// make this virtual.
     fn sleep(&mut self, duration: Duration);
+
+    /// Sets up RX DMA: 32 buffers of `block_bytes` each, as the gateware's DMA engine and
+    /// the `PCIe` driver require (the transport's `stream_initialize`). The driver has
+    /// already configured the engine's registers.
+    ///
+    /// The default supports no streaming, for buses that only control the board.
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Unsupported`] by default; any transport failure.
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        let _ = block_bytes;
+        Err(BusError::Unsupported("RX streaming"))
+    }
+
+    /// Waits up to `timeout` for the next filled RX block, lends it to `consume` with the
+    /// gateware's two out-of-band words, then hands the buffer back to the DMA engine (the
+    /// transport's `recv_dma_wait` and `recv_dma_release`).
+    ///
+    /// The out-of-band words, as libusdr's stream code reads them: the first holds the lost
+    /// packet count in bits 23:0 and the completed-burst mask in bits 63:32; the second the
+    /// DMA status in bits 31:0, with bits 63:32 left to the transport. The driver uses only
+    /// the lost packet count.
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Timeout`] if no block arrives in time; [`BusError::Unsupported`] by
+    /// default; any transport failure.
+    fn rx_stream_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        let _ = (timeout, consume);
+        Err(BusError::Unsupported("RX streaming"))
+    }
+
+    /// Releases the RX DMA buffers (the transport's `stream_deinitialize`).
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Unsupported`] by default; any transport failure.
+    fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        Err(BusError::Unsupported("RX streaming"))
+    }
 }

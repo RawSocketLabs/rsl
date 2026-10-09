@@ -3284,6 +3284,7 @@ name = "rsl-usdr"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "num-complex",
  "rsl-usdr-sim",
  "thiserror 2.0.21",
 ]

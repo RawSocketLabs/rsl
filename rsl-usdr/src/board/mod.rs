@@ -3,6 +3,8 @@
 mod board;
 mod power;
 mod rate;
+mod stream;
 mod tune;
 
 pub(crate) use board::Board;
+pub use stream::RxPacket;

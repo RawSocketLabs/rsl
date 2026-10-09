@@ -44,6 +44,11 @@ impl Board {
     /// and the decimation even when a write fails; this records each only once its writes
     /// succeed, so a retry reissues them.
     pub(crate) fn set_rx_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
+        // The block size and decimation are fixed while a stream runs; libusdr's callers only
+        // set the rate before creating one.
+        if self.rx_stream.is_some() {
+            return Err(Error::AlreadyStreaming);
+        }
         let decimation =
             Self::decimation_for(rate, self.chains).ok_or(Error::UnsupportedSampleRate(rate))?;
         let adc_rate = rate * decimation.factor();

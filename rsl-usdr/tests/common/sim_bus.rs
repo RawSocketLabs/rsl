@@ -68,4 +68,31 @@ impl Bus for SimBus {
             .expect("invariant: board delays fit in u64 microseconds");
         self.board().sleep_us(us);
     }
+
+    /// As the oracle's shim: the `PCIe` driver's limit of 1 MiB per buffer, no tracing.
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        if block_bytes > MAX_DMA_BLOCK {
+            return Err(BusError::Unsupported(
+                "RX block over the PCIe driver's 1 MiB",
+            ));
+        }
+        Ok(())
+    }
+
+    /// As the oracle's shim: no sample data is modelled yet, so every wait times out at
+    /// once.
+    fn rx_stream_recv(
+        &mut self,
+        _timeout: Duration,
+        _consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        Err(BusError::Timeout)
+    }
+
+    fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        Ok(())
+    }
 }
+
+/// The `PCIe` driver's largest DMA buffer, in bytes.
+const MAX_DMA_BLOCK: u32 = 1 << 20;

@@ -23,6 +23,18 @@ use crate::chips::register::IndexedRegister;
 #[bit_enum(u8, closed)]
 #[repr(u8)]
 pub(super) enum Reg {
+    /// TX PLL `NINT_NFRAC`, byte 0 (bits 31:24); see [`FractionalDivider`].
+    TxDivider0 = 0x10,
+
+    /// TX PLL `NINT_NFRAC`, byte 1 (bits 23:16).
+    TxDivider1 = 0x11,
+
+    /// TX PLL `NINT_NFRAC`, byte 2 (bits 15:8).
+    TxDivider2 = 0x12,
+
+    /// TX PLL `NINT_NFRAC`, byte 3 (bits 7:0).
+    TxDivider3 = 0x13,
+
     /// TX PLL `PLL_CFG`; see [`PllConfig`].
     TxPllConfig = 0x14,
 
@@ -43,6 +55,9 @@ pub(super) enum Reg {
 
     /// TX PLL `VTUNE`; see [`Comparator`].
     TxComparator = 0x1a,
+
+    /// TX PLL `VCOCOMO`; as [`Reg::RxComparatorPower`].
+    TxComparatorPower = 0x1b,
 
     /// RX PLL `NINT_NFRAC`, byte 0 (bits 31:24); see [`FractionalDivider`].
     RxDivider0 = 0x20,
@@ -83,13 +98,33 @@ pub(super) enum Reg {
     RxComparatorPower = 0x2b,
 }
 
-/// The RX fractional divider's bytes, most significant first.
-pub(super) const RX_DIVIDER: [Reg; 4] = [
-    Reg::RxDivider0,
-    Reg::RxDivider1,
-    Reg::RxDivider2,
-    Reg::RxDivider3,
-];
+impl Pll {
+    /// The fractional divider's bytes, most significant first.
+    pub(super) const fn divider(self) -> [Reg; 4] {
+        match self {
+            Self::Tx => [
+                Reg::TxDivider0,
+                Reg::TxDivider1,
+                Reg::TxDivider2,
+                Reg::TxDivider3,
+            ],
+            Self::Rx => [
+                Reg::RxDivider0,
+                Reg::RxDivider1,
+                Reg::RxDivider2,
+                Reg::RxDivider3,
+            ],
+        }
+    }
+
+    /// The comparator power register (`VCOCOMO`).
+    pub(super) const fn comparator_power(self) -> Reg {
+        match self {
+            Self::Tx => Reg::TxComparatorPower,
+            Self::Rx => Reg::RxComparatorPower,
+        }
+    }
+}
 
 /// libusdr's `VCOCOMO` byte while it searches the capacitor bank: comparator powered.
 pub(super) const COMPARATOR_ON: u8 = 0x76;

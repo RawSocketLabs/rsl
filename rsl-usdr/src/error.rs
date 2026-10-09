@@ -86,6 +86,54 @@ pub enum Error {
     #[error("LMS6002D synthesizer read back an impossible value")]
     PllFault,
 
+    /// A stream operation failed in the transport (opening, waiting for or releasing a
+    /// DMA block, closing).
+    #[error("RX stream transport failed")]
+    Stream(#[source] BusError),
+
+    /// No RX block arrived within the timeout.
+    #[error("timed out waiting for RX samples")]
+    Timeout,
+
+    /// The receive buffer is smaller than one packet.
+    #[error("receive buffer holds {got} samples, a packet has {needed}")]
+    #[non_exhaustive]
+    BufferTooSmall {
+        /// Samples in a packet.
+        needed: usize,
+
+        /// Samples the buffer holds.
+        got: usize,
+    },
+
+    /// The transport delivered an RX block shorter than the stream's, in bytes; the
+    /// buffer is untouched.
+    #[error("RX block of {got} bytes, the stream's is {expected}")]
+    #[non_exhaustive]
+    ShortRxBlock {
+        /// The stream's block size.
+        expected: usize,
+
+        /// What the transport delivered.
+        got: usize,
+    },
+
+    /// The call needs a running RX stream.
+    #[error("no RX stream is running")]
+    NotStreaming,
+
+    /// The call needs the RX stream stopped first.
+    #[error("the RX stream is running")]
+    AlreadyStreaming,
+
+    /// A packet size the stream engine cannot split into bursts, in samples.
+    #[error("unsupported packet size {0} samples")]
+    UnsupportedPacketSize(u32),
+
+    /// The FPGA's RX DMA engine reads as dead (all status bits set).
+    #[error("FPGA RX DMA engine is not responding")]
+    DmaEngineFault,
+
     /// The Si5332 clock generator lost its input clock.
     #[error("Si5332 has no input clock")]
     ClockInputMissing,

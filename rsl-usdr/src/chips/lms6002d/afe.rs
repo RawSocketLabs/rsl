@@ -21,6 +21,9 @@ pub(super) enum Reg {
 
     /// Datasheet `MISC_CTRL`; see [`Interface`].
     Interface = 0x5a,
+
+    /// Datasheet `MISC`; see [`ConverterEnables`].
+    ConverterEnables = 0x5f,
 }
 
 impl BlockReg for Reg {}
@@ -169,6 +172,55 @@ impl Interface {
         .with_rx_frame_sync_polarity(true)
         .with_dac_negative_edge(true)
         .with_tx_frame_sync_polarity(true);
+}
+
+/// The converters' enables and the DC-offset comparators' power. Datasheet `MISC`,
+/// register 0x5F.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ConverterEnables {
+    /// Power the LPF DC-offset comparators down; power them only while calibrating.
+    /// `DCOCMP_LPF_PD`, bit 7.
+    #[bits(7..=7)]
+    dc_comparators_off: bool,
+
+    /// Enable the DAC. `EN_DAC`, bit 4.
+    #[bits(4..=4)]
+    dac: bool,
+
+    /// Enable the ADC's I channel. `EN_ADC_I`, bit 3.
+    #[bits(3..=3)]
+    adc_i: bool,
+
+    /// Enable the ADC's Q channel. `EN_ADC_Q`, bit 2.
+    #[bits(2..=2)]
+    adc_q: bool,
+
+    /// Enable the ADC reference. `EN_ADC_REF`, bit 1.
+    #[bits(1..=1)]
+    adc_reference: bool,
+
+    /// Enable the master reference. `EN_MASTER_REF`, bit 0.
+    #[bits(0..=0)]
+    master_reference: bool,
+}
+impl Register for ConverterEnables {
+    type Map = Reg;
+    const ADDR: Reg = Reg::ConverterEnables;
+}
+
+impl ConverterEnables {
+    /// Every converter and reference on, the DC-offset comparators powered: libusdr's value
+    /// while it calibrates the LPF, 0x1F.
+    pub(super) const CALIBRATING: Self = Self::new()
+        .with_dac(true)
+        .with_adc_i(true)
+        .with_adc_q(true)
+        .with_adc_reference(true)
+        .with_master_reference(true);
+
+    /// [`Self::CALIBRATING`] with the comparators powered down again, 0x9F.
+    pub(super) const RUNNING: Self = Self::CALIBRATING.with_dc_comparators_off(true);
 }
 
 #[cfg(test)]
