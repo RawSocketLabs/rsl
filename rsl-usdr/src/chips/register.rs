@@ -45,8 +45,10 @@ pub(crate) trait IndexedRegister: Copy + Into<u8> {
 pub(crate) struct I2cRegisters {
     /// Where the chip answers.
     dev: I2cAddr,
+
     /// Names a failed read in errors.
     read_op: &'static str,
+
     /// Names a failed write in errors.
     write_op: &'static str,
 }

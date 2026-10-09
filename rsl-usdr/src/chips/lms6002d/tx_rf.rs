@@ -18,6 +18,7 @@ use crate::chips::register::Register;
 pub(super) enum Reg {
     /// Datasheet `PA_CTRL`; see [`PaSelect`].
     PaSelect = 0x44,
+
     /// Datasheet `CTRL4`; see [`Bias`].
     Bias = 0x47,
 }
@@ -30,12 +31,15 @@ impl BlockReg for Reg {}
 pub(crate) enum PowerAmp {
     /// Both amplifiers off.
     Off,
+
     /// PA1: up to 2.8 GHz, through the B0322J5050AHF balun, TX switch 1. libusdr's `W`
     /// path and the power-up default.
     Pa1,
+
     /// PA2: up to 3.8 GHz, through the 3600BL14M050 balun, TX switch 0. libusdr's `H`
     /// path.
     Pa2,
+
     /// Both amplifiers off: the datasheet's other off encoding, which libusdr uses as its
     /// AUX path (`TXPATH_AUX`).
     OffAlt,
@@ -52,6 +56,7 @@ pub(super) struct PaSelect {
     /// The active amplifier. `EN12`, bits 4:3.
     #[bits(3..=4)]
     amplifier: PowerAmp,
+
     /// Power the auxiliary (RF loopback) amplifier down. `ENAUX`, bit 2; reset 0.
     #[bits(2..=2)]
     aux_pa_off: bool,
@@ -70,6 +75,7 @@ pub(super) struct Bias {
     /// 7:4; reset 6.
     #[bits(4..=7)]
     lo_buffer_current: u4,
+
     /// Lowers the amplifiers' cascode base voltage as it rises. `VBCAS_TXDRV`, bits 3:0;
     /// reset 0 (maximum base voltage).
     #[bits(0..=3)]

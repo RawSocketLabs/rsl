@@ -19,14 +19,19 @@ use crate::lowlevel::{Bus, SpiAddr};
 pub(crate) struct Lms6002d {
     /// SPI target the chip is on.
     target: SpiAddr,
+
     /// Last [`EnableConfig`] written.
     enable_config: EnableConfig,
+
     /// Last [`ClockEnables`] written.
     clock_enables: ClockEnables,
+
     /// Last RX synthesizer [`VcoSelect`] written.
     rx_vco: VcoSelect,
+
     /// Last [`LnaControl`] written.
     lna_control: LnaControl,
+
     /// Last [`PaSelect`] written.
     pa_select: PaSelect,
 }

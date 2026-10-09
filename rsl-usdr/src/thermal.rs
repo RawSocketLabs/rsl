@@ -27,12 +27,15 @@ pub enum ThermalPolicy {
     /// ready again below 70 °C.
     #[default]
     WithinSpec,
+
     /// Run past the rated range, where sample quality and part lifetime are no longer
     /// guaranteed, but stop before damage is likely: refuse at 95 °C, stop at 100 °C,
     /// ready again below 85 °C.
     BeyondSpec,
+
     /// Caller-chosen limits, still capped by [`HARD_STOP_CELSIUS`].
     Custom(ThermalLimits),
+
     /// Only the hard stop: refuse and stop at 110 °C, ready again below 100 °C. For
     /// development; expect degraded samples and shortened part life well before this.
     HardStopOnly,
@@ -68,8 +71,10 @@ impl ThermalPolicy {
 pub struct ThermalLimits {
     /// Refuse to start at or above this.
     start: f32,
+
     /// Stop a running stream at or above this (enforced once streaming is ported).
     stop: f32,
+
     /// After a refusal or stop, ready again only below this.
     resume: f32,
 }
@@ -123,6 +128,7 @@ impl ThermalLimits {
 pub(crate) trait Thermometer {
     /// The board temperature in °C.
     fn celsius(&mut self) -> Result<f32, Error>;
+
     /// Waits for `duration` of bus time.
     fn sleep(&mut self, duration: Duration);
 }
@@ -132,6 +138,7 @@ pub(crate) trait Thermometer {
 pub(crate) struct CoolDown<'a> {
     /// Longest total wait.
     pub(crate) timeout: Duration,
+
     /// Called with every reading taken while waiting.
     pub(crate) on_reading: Box<dyn FnMut(f32) + 'a>,
 }

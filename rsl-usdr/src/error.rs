@@ -12,6 +12,7 @@ pub enum Error {
     Bus {
         /// What the driver was doing.
         op: &'static str,
+
         /// The bus failure.
         #[source]
         source: BusError,
@@ -25,8 +26,10 @@ pub enum Error {
     ChipId {
         /// Which chip.
         chip: &'static str,
+
         /// The ID the driver requires.
         expected: u32,
+
         /// The ID read.
         found: u32,
     },
@@ -39,6 +42,7 @@ pub enum Error {
     Overheated {
         /// The reading that tripped the limit.
         celsius: f32,
+
         /// The limit it was compared with.
         limit: f32,
     },
@@ -48,8 +52,10 @@ pub enum Error {
     InvalidThermalLimits {
         /// Requested start limit.
         start: f32,
+
         /// Requested stop limit.
         stop: f32,
+
         /// Requested resume limit.
         resume: f32,
     },

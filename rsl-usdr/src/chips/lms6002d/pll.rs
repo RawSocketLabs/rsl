@@ -25,10 +25,13 @@ use crate::chips::register::IndexedRegister;
 pub(super) enum Reg {
     /// TX PLL `VCO_DIV` (no output-buffer field); see [`VcoSelect`].
     TxVcoSelect = 0x15,
+
     /// TX PLL `VCO_REG_PFD_U`; see [`VcoRegulator`].
     TxVcoRegulator = 0x17,
+
     /// RX PLL `VCO_DIV_BUFSEL`.
     RxVcoSelect = 0x25,
+
     /// RX PLL `VCO_REG_PFD_U`.
     RxVcoRegulator = 0x27,
 }
@@ -40,6 +43,7 @@ impl BlockReg for Reg {}
 pub(super) enum Pll {
     /// The TX synthesizer.
     Tx,
+
     /// The RX synthesizer.
     Rx,
 }
@@ -52,9 +56,11 @@ pub(super) struct VcoSelect {
     /// Which of the four VCOs runs. `SELVCO`, bits 7:5.
     #[bits(5..=7)]
     vco: u3,
+
     /// Output divider range. `FRANGE`, bits 4:2.
     #[bits(2..=4)]
     divider_range: u3,
+
     /// Which LNA path's LO buffer is powered; RX PLL only. `SELOUT`, bits 1:0; reset LNA1.
     #[bits(0..=1)]
     lo_buffer: Lna,
@@ -80,13 +86,16 @@ pub(super) struct VcoRegulator {
     /// Bypass the VCO regulator. `BYPVCOREG`, bit 7.
     #[bits(7..=7)]
     regulator_bypassed: bool,
+
     /// Power the VCO regulator down. `PDVCOREG`, bit 6.
     #[bits(6..=6)]
     regulator_off: bool,
+
     /// Short the regulator band-gap resistor so it settles faster; disable once charged.
     /// `FSTVCOBG`, bit 5.
     #[bits(5..=5)]
     fast_bandgap_settling: bool,
+
     /// Charge-pump up-current offset, 10 µA per step. `OFFUP`, bits 4:0.
     #[bits(0..=4)]
     charge_pump_up_offset: u5,
