@@ -101,6 +101,21 @@ pub(super) struct VcoRegulator {
     charge_pump_up_offset: u5,
 }
 
+impl VcoRegulator {
+    /// Regulator bypassed and powered down, band gap settling fast, no charge-pump up
+    /// offset: libusdr's power-up value for the TX PLL, 0xE0.
+    pub(super) const BYPASSED: Self = Self::new()
+        .with_regulator_bypassed(true)
+        .with_regulator_off(true)
+        .with_fast_bandgap_settling(true);
+
+    /// [`Self::BYPASSED`] plus a 30 µA charge-pump up offset: libusdr's power-up value for
+    /// the RX PLL, 0xE3. libusdr gives no reason for the offset, or for applying it to RX
+    /// only.
+    pub(super) const BYPASSED_WITH_UP_OFFSET: Self =
+        Self::BYPASSED.with_charge_pump_up_offset(u5::new(3));
+}
+
 impl IndexedRegister for VcoRegulator {
     type Map = Reg;
     type Index = Pll;

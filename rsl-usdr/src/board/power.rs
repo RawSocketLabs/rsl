@@ -8,7 +8,7 @@ use super::Board;
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::lp8758::{Buck, BuckControl, Config};
 use crate::chips::si5332::{LvpeclOutput, Reference};
-use crate::error::{BusContext, Error};
+use crate::error::Error;
 use crate::fpga::{Gpi, Gpo, Hwid};
 use crate::lowlevel::Bus;
 use crate::thermal::Thermometer;
@@ -146,8 +146,7 @@ impl Identified {
         Gpo::Led.set(bus, 1)?;
         Gpo::LmsReset.set(bus, 1)?;
         // libusdr reads the RF chip ID once here for its log, then again in create.
-        bus.spi32(Lms6002d::USDR_TARGET, 0x0400)
-            .during("LMS6002D ID read")?;
+        Lms6002d::read_id(bus, Lms6002d::USDR_TARGET)?;
         bus.sleep(Duration::from_millis(1));
         Lms6002d::create(bus, Lms6002d::USDR_TARGET)
     }

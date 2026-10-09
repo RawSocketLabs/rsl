@@ -16,9 +16,7 @@ use crate::chips::register::Register;
 #[bit_enum(u8, closed)]
 #[repr(u8)]
 pub(super) enum Reg {
-    /// Datasheet `RX_CTRL2`: ADC reference gain (`GAIN_ADJ`, bits 6:5), common mode
-    /// (`CM_ADJ`, bits 4:3) and reference buffer boost (`BUF_BOOST`, bits 2:1). Written as
-    /// a raw byte: libusdr's value also sets bit 0, which the map does not define.
+    /// Datasheet `RX_CTRL2`; see [`AdcReference`].
     AdcReference = 0x59,
 
     /// Datasheet `MISC_CTRL`; see [`Interface`].
@@ -42,6 +40,86 @@ pub(super) enum ClockNonOverlap {
 
     /// +300 ps.
     Plus300ps,
+}
+
+/// ADC reference gain adjust, as libusdr's YAML labels the codes.
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u2)]
+pub(super) enum ReferenceGain {
+    /// 1.50 V.
+    Volts1_50,
+
+    /// 1.75 V.
+    Volts1_75,
+
+    /// 1.00 V.
+    Volts1_00,
+
+    /// 1.25 V.
+    Volts1_25,
+}
+
+/// ADC common-mode voltage.
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u2)]
+pub(super) enum AdcCommonMode {
+    /// 875 mV.
+    Millivolts875,
+
+    /// 960 mV.
+    Millivolts960,
+
+    /// 700 mV.
+    Millivolts700,
+
+    /// 790 mV.
+    Millivolts790,
+}
+
+/// ADC reference buffer boost.
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u2)]
+pub(super) enum BufferBoost {
+    /// 1.0×.
+    X1_0,
+
+    /// 1.5×.
+    X1_5,
+
+    /// 2.0×.
+    X2_0,
+
+    /// 2.5×.
+    X2_5,
+}
+
+/// The ADC's reference: gain, common mode and buffer boost. Datasheet `RX_CTRL2`, register
+/// 0x59. Bit 0 is not in libusdr's map and has no field; [`AdcReference::from_raw`] keeps it.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct AdcReference {
+    /// Reference gain adjust. `GAIN_ADJ`, bits 6:5.
+    #[bits(5..=6)]
+    gain: ReferenceGain,
+
+    /// Common-mode adjust. `CM_ADJ`, bits 4:3.
+    #[bits(3..=4)]
+    common_mode: AdcCommonMode,
+
+    /// Reference buffer boost. `BUF_BOOST`, bits 2:1.
+    #[bits(1..=2)]
+    buffer_boost: BufferBoost,
+}
+impl Register for AdcReference {
+    type Map = Reg;
+    const ADDR: Reg = Reg::AdcReference;
+}
+
+impl AdcReference {
+    /// Lime's recommended setting, 0x29, from the LMS6002D FAQ v1.0r12, 5.27 (as libusdr
+    /// writes it): 1.75 V reference gain, 960 mV common mode, 1.0× buffer boost, and the
+    /// undocumented bit 0 set.
+    pub(super) const LIME_RECOMMENDED: Self = Self::from_raw(0x29);
 }
 
 /// Framing and clocking of the digital IQ interface. Datasheet `MISC_CTRL`, register 0x5A.
@@ -81,4 +159,32 @@ pub(super) struct Interface {
 impl Register for Interface {
     type Map = Reg;
     const ADDR: Reg = Reg::Interface;
+}
+
+impl Interface {
+    /// I then Q in both directions, both frame-sync polarity bits set, DAC on the negative
+    /// edge, ADC on the positive edge (its reset is negative), nominal non-overlap: libusdr's
+    /// power-up value, 0xB0 ("IQ, neg polarity").
+    pub(super) const I_FIRST: Self = Self::new()
+        .with_rx_frame_sync_polarity(true)
+        .with_dac_negative_edge(true)
+        .with_tx_frame_sync_polarity(true);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lime_adc_reference_decodes_and_keeps_bit_0() {
+        let reference = AdcReference::LIME_RECOMMENDED;
+        assert_eq!(reference.gain(), ReferenceGain::Volts1_75);
+        assert_eq!(reference.common_mode(), AdcCommonMode::Millivolts960);
+        assert_eq!(reference.buffer_boost(), BufferBoost::X1_0);
+        assert_eq!(
+            u8::from(reference),
+            0x29,
+            "the FAQ byte, undocumented bit 0 included"
+        );
+    }
 }

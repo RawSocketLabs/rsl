@@ -158,3 +158,11 @@ impl Register for ReferencePower {
     type Map = Reg;
     const ADDR: Reg = Reg::ReferencePower;
 }
+
+impl ReferencePower {
+    /// Reference buffer on and self-biased (its reset state), LPF calibration reference and
+    /// RF loopback off: libusdr's power-up value, 0x0A ("XCO control, with bias").
+    pub(super) const SELF_BIASED: Self = Self::new()
+        .with_xco_buffer_self_biased(true)
+        .with_lpf_calibration_reference_off(true);
+}
