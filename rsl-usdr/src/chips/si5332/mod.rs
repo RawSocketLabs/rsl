@@ -45,11 +45,12 @@
 //!
 //! # How the driver uses it
 //!
-//! At power-up, [`Si5332::init`] checks a Si5332 answers, then writes a plan that routes the
-//! reference straight to outputs 0 to 2 and turns the rest off; the PLL is not yet used. On
-//! revision 3 the reference oscillator starts only after this, so the chip may report no input
-//! clock; the board sequence tolerates exactly that error. Setting a sample rate (not yet ported)
-//! will usually move the sample clocks onto PLL dividers.
+//! At power-up, [`Si5332::program`] checks a Si5332 answers, then writes a plan that routes
+//! the reference straight to outputs 0 to 2 and turns the rest off; the PLL is not yet used.
+//! [`Si5332::wait_active`] then waits for the chip to run. On revision 3 the reference
+//! oscillator starts only after this, so the chip may report no input clock; the board
+//! sequence tolerates exactly that error. Setting a sample rate (not yet ported) will usually
+//! move the sample clocks onto PLL dividers.
 //!
 //! # Register map
 //!

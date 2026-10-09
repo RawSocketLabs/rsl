@@ -128,15 +128,28 @@ impl Identified {
     fn start_clocks(&mut self) -> Result<(), Error> {
         let bus = self.bus.as_mut();
         if !self.rev3 {
-            return Board::CLOCK.init(bus, 1, Reference::Input2, LvpeclOutput::Out1);
+            return Self::init_clock(bus, Reference::Input2, LvpeclOutput::Out1);
         }
-        let clock = Board::CLOCK.init(bus, 1, Reference::Oscillator, LvpeclOutput::Out0);
+        let clock = Self::init_clock(bus, Reference::Oscillator, LvpeclOutput::Out0);
         let oscillator = Gpo::EnableOscillator.set(bus, 1);
         bus.sleep(Duration::from_millis(1));
         match clock {
             Ok(()) | Err(Error::ClockInputMissing) => oscillator,
             Err(err) => Err(err),
         }
+    }
+
+    /// `si5332_init` with output 0 undivided: programs the clock generator, then waits for
+    /// it to run.
+    fn init_clock(
+        bus: &mut dyn Bus,
+        reference: Reference,
+        lvpecl: LvpeclOutput,
+    ) -> Result<(), Error> {
+        Board::CLOCK.program(bus, 1, reference, lvpecl)?;
+        // libusdr reads FPGA register 0xC here and ignores the result; kept so traces line up.
+        let _ = bus.read_regs(0xc, &mut [0]);
+        Board::CLOCK.wait_active(bus)
     }
 
     /// Powers the RF section and releases the LMS6002D from reset.
