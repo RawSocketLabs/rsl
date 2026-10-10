@@ -4,6 +4,7 @@ use std::fmt;
 use std::time::Duration;
 
 use num_complex::Complex;
+use rsl_deps::tracing::warn;
 
 use crate::board::{Board, RxPacket};
 use crate::error::Error;
@@ -267,6 +268,11 @@ impl<'a> DeviceBuilder<'a> {
                     limit: limits.start(),
                 });
             };
+            warn!(
+                celsius,
+                limit = limits.start(),
+                "too hot to start; waiting to cool"
+            );
             cool_down.wait(&mut identified, limits)?;
         }
         let board = identified.power_up()?;
@@ -300,7 +306,9 @@ impl fmt::Debug for DeviceBuilder<'_> {
 
 impl Drop for Device {
     fn drop(&mut self) {
-        // Errors are reported only by `close`.
-        let _ = self.power_down();
+        // Errors are returned only by `close`; here they can only be logged.
+        if let Err(error) = self.power_down() {
+            warn!(%error, "power-down on drop failed");
+        }
     }
 }

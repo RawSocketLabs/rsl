@@ -4,6 +4,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use rsl_deps::tracing::{debug, warn};
+
 use super::Board;
 use super::board::{Chains, RxState};
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
@@ -32,9 +34,16 @@ impl Board {
     /// checks the TMP114. Powers nothing.
     pub(crate) fn identify(mut bus: Box<dyn Bus>) -> Result<Identified, Error> {
         // Gateware build ID: libusdr only logs it.
-        Gpi::UsrAccess2.read(bus.as_mut())?;
+        let build = Gpi::UsrAccess2.read(bus.as_mut())?;
         let hwid = Hwid::from_raw(Gpi::Hwid.read(bus.as_mut())?);
         let revision = hwid.revision();
+        debug!(
+            build = format_args!("{build:#010x}"),
+            revision,
+            rx = hwid.has_rx(),
+            tx = hwid.has_tx(),
+            "gateware identified"
+        );
         if !(1..=3).contains(&revision) {
             return Err(Error::UnsupportedRevision(revision));
         }
@@ -98,13 +107,16 @@ impl Identified {
 
         let clocks = self.start_clocks();
         self.bus.sleep(Duration::from_millis(10));
-        let lms = clocks.and_then(|()| self.release_rf()).inspect_err(|_| {
-            // Best effort: the original failure is the one to report.
-            let bus = self.bus.as_mut();
-            let _ = Gpo::Led.set(bus, 0);
-            let _ = Gpo::LmsReset.set(bus, 0);
-            let _ = Gpo::Booster.set(bus, 0);
-        })?;
+        let lms = clocks
+            .and_then(|()| self.release_rf())
+            .inspect_err(|error| {
+                warn!(%error, "power-up failed; turning the RF section back off");
+                // Best effort: the original failure is the one to report.
+                let bus = self.bus.as_mut();
+                let _ = Gpo::Led.set(bus, 0);
+                let _ = Gpo::LmsReset.set(bus, 0);
+                let _ = Gpo::Booster.set(bus, 0);
+            })?;
         self.configure_rf(lms)
     }
 
@@ -144,7 +156,11 @@ impl Identified {
         let oscillator = Gpo::EnableOscillator.set(bus, 1);
         bus.sleep(Duration::from_millis(1));
         match clock {
-            Ok(()) | Err(Error::ClockInputMissing) => oscillator,
+            Ok(()) => oscillator,
+            Err(Error::ClockInputMissing) => {
+                debug!("Si5332 reported no input before the oscillator started; tolerated");
+                oscillator
+            }
             Err(err) => Err(err),
         }
     }
@@ -169,7 +185,12 @@ impl Identified {
         Gpo::Led.set(bus, 1)?;
         Gpo::LmsReset.set(bus, 1)?;
         // libusdr reads the RF chip ID once here for its log, then again in create.
-        Lms6002d::read_id(bus, Lms6002d::USDR_TARGET)?;
+        let id = Lms6002d::read_id(bus, Lms6002d::USDR_TARGET)?;
+        debug!(
+            chip = Lms6002d::NAME,
+            id = format_args!("{id:#04x}"),
+            "RF transceiver out of reset"
+        );
         bus.sleep(Duration::from_millis(1));
         Lms6002d::create(bus, Lms6002d::USDR_TARGET)
     }
@@ -193,6 +214,7 @@ impl Identified {
         lms.select_lna(io, Lna::Lna1)?;
         lms.select_pa(io, PowerAmp::Pa1)?;
         Gpo::DcCorrection.set(io, 1)?;
+        debug!(rev3, "board powered up");
         Ok(Board {
             bus,
             lms,

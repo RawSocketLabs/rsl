@@ -10,6 +10,7 @@
 use std::time::Duration;
 
 use num_complex::Complex;
+use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
 use crate::error::Error;
@@ -114,7 +115,14 @@ impl Board {
             lost_packets: 0,
         });
         // `usdr_rxupdate_cal`.
-        Phy::Rx.set_iq_correction(self.bus.as_mut(), Phy::NO_IQ_IMBALANCE)
+        Phy::Rx.set_iq_correction(self.bus.as_mut(), Phy::NO_IQ_IMBALANCE)?;
+        debug!(
+            samples_per_packet,
+            samples_per_burst = plan.samples_per_burst(),
+            block_bytes = plan.block_bytes(),
+            "RX stream created"
+        );
+        Ok(())
     }
 
     /// Samples per packet of the running stream.
@@ -175,6 +183,13 @@ impl Board {
         }
 
         let lost = oob[0] & 0xff_ffff;
+        if lost > 0 {
+            warn!(
+                lost,
+                total = stream.lost_packets + lost,
+                "RX packets dropped by the gateware"
+            );
+        }
         stream.lost_packets += lost;
         stream.next_sample += u64::from(stream.samples_per_packet) * lost;
         let first_sample = stream.next_sample;
@@ -201,6 +216,7 @@ impl Board {
         // `_sfetrx4_destroy`: a graceful stop, then the transport.
         let halted = fpga::run_rx(self.bus.as_mut(), false);
         let closed = self.bus.rx_stream_close().map_err(Error::Stream);
+        debug!("RX stream stopped");
         stopped.and(powered_down).and(halted).and(closed)
     }
 }

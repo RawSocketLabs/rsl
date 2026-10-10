@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+use rsl_deps::tracing::{debug, trace};
 use rsl_usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stream};
 
 use super::window::{self, RegisterIo, Window};
@@ -71,6 +72,9 @@ pub const USDR_LAYOUT: BoardLayout = BoardLayout {
     poll_events: (0, 1),
 };
 
+/// The `tracing` target of every bus operation, at TRACE level.
+const BUS_TARGET: &str = "rsl_usdr::bus";
+
 /// The register window [`USDR_LAYOUT`] gives the driver.
 const WINDOW: Window = Window {
     index: USDR_LAYOUT.indexed[0].base,
@@ -92,9 +96,11 @@ impl PcieBus {
     /// [`Error::Open`] if the node cannot be opened, is in use, is another board, or the
     /// driver refuses the layout.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        PcieDevice::open(path.as_ref(), USDR_LAYOUT)
-            .map(|device| Self { device })
-            .map_err(|error| Error::Open(BusError::Other(Box::new(error))))
+        let path = path.as_ref();
+        let device = PcieDevice::open(path, USDR_LAYOUT)
+            .map_err(|error| Error::Open(BusError::Other(Box::new(error))))?;
+        debug!(path = %path.display(), "PCIe device opened");
+        Ok(Self { device })
     }
 
     /// The device nodes of every uSDR the driver has found, in name order.
@@ -120,23 +126,31 @@ impl RegisterIo for PcieDevice {
 
 impl Bus for PcieBus {
     fn read_regs(&mut self, addr: u32, out: &mut [u32]) -> Result<(), BusError> {
-        window::read_regs(&mut self.device, WINDOW, addr, out)
+        window::read_regs(&mut self.device, WINDOW, addr, out)?;
+        trace!(target: BUS_TARGET, addr, values = ?out, "read_regs");
+        Ok(())
     }
 
     fn write_regs(&mut self, addr: u32, values: &[u32]) -> Result<(), BusError> {
+        trace!(target: BUS_TARGET, addr, ?values, "write_regs");
         window::write_regs(&mut self.device, WINDOW, addr, values)
     }
 
     fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
-        self.device
+        let read = self
+            .device
             .spi32(target.bus().into(), word)
-            .map_err(bus_error)
+            .map_err(bus_error)?;
+        trace!(target: BUS_TARGET, bus = target.bus(), word, read, "spi32");
+        Ok(read)
     }
 
     fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
         self.device
             .i2c(dev.bus(), dev.addr(), write, read)
-            .map_err(bus_error)
+            .map_err(bus_error)?;
+        trace!(target: BUS_TARGET, bus = dev.bus(), addr = dev.addr(), ?write, ?read, "i2c");
+        Ok(())
     }
 
     fn sleep(&mut self, duration: Duration) {
