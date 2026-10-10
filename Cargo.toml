@@ -6,6 +6,8 @@ members = [
     "bitsandbytes/bnb-macros",
     # raw-packet I/O
     "rawsock",
+    # USB host access
+    "usb",
     # independent accuracy-first domains
     "crypto",
     "crypto-legacy",
@@ -100,6 +102,7 @@ proc-macro-crate = "3"
 # --- dev / bench / example deps (bnb) ---
 trybuild = "1.0"
 proptest = "1"
+tempfile = "3"
 criterion = "0.8"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 bitbybit = "2.0.1"
