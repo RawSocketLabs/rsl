@@ -34,8 +34,9 @@ FUZZ = {
 # Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
 USDR_ORACLE = "devices/sdr/usdr/oracle"
 DETACHED = (*FUZZ, NOSTD, "usdr", "rust-dsdcc", USDR_ORACLE, "tools/rust-skills")
-# Former paths of moved detached workspaces, read only from historical trees, so a plan across
-# the move still finds the old owner.
+# Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
+# across the move still finds the old owner; a head tree may not use them. An entry can go
+# once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
 MOVED_DETACHED = ("rsl-usdr/oracle",)
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
@@ -61,22 +62,35 @@ class Package:
     bins: tuple[str, ...] = ()
 
 
-def command(root, *args):
-    return subprocess.run(args, cwd=root, check=True, stdout=subprocess.PIPE).stdout
+def command(root, *args, env=None):
+    return subprocess.run(args, cwd=root, check=True, stdout=subprocess.PIPE, env=env).stdout
 
 
-def metadata_graph(root):
-    """Use unfiltered declarations: feature/platform selection must not hide consumers."""
+def metadata_graph(root, *, historical=False, toolchain=None):
+    """Use unfiltered declarations: feature/platform selection must not hide consumers.
+
+    A historical (base) tree also reads MOVED_DETACHED, skips a registered detached path that
+    was still a root-workspace member then, and runs Cargo on `toolchain` (the head's) so the
+    base's own pin cannot trigger a toolchain download.
+    """
     root = Path(root).resolve()
+    if not historical:
+        for directory in MOVED_DETACHED:
+            if (root / directory / "Cargo.toml").exists():
+                raise ValueError(f"register CI ownership for the reused former path: {directory}")
+    env = {**os.environ, "RUSTUP_TOOLCHAIN": toolchain} if toolchain else None
     graph = {}
-    for directory in (".", *DETACHED, *MOVED_DETACHED):
+    for directory in (".", *DETACHED, *(MOVED_DETACHED if historical else ())):
         manifest = root / directory / "Cargo.toml"
         if not manifest.exists():
             if directory == ".":
                 raise ValueError("workspace Cargo.toml is missing")
             continue  # Historical revisions can predate a registered detached workspace.
         data = json.loads(command(root, "cargo", "metadata", "--manifest-path", str(manifest),
-                                  "--locked", "--offline", "--no-deps", "--format-version", "1"))
+                                  "--locked", "--offline", "--no-deps", "--format-version", "1",
+                                  env=env))
+        if historical and directory != "." and Path(data["workspace_root"]) == root:
+            continue  # Then a root-workspace member, already read with ".".
         if directory not in {".", "tools/rust-skills"}:
             package_roots = {Path(p["manifest_path"]).parent.relative_to(root).as_posix()
                              for p in data["packages"]}
@@ -99,7 +113,13 @@ def metadata_graph(root):
     return graph
 
 
-def graph_at(root, revision):
+def toolchain_of(root):
+    """The channel `rust-toolchain.toml` pins at `root`, if any."""
+    pin = Path(root) / "rust-toolchain.toml"
+    return tomllib.loads(pin.read_text())["toolchain"]["channel"] if pin.exists() else None
+
+
+def graph_at(root, revision, *, historical=False):
     """Historical metadata must see historical manifests AND auto-discovered targets."""
     with tempfile.TemporaryDirectory(prefix="rsl-ci-graph-") as directory:
         with tempfile.TemporaryFile() as archive:
@@ -107,7 +127,8 @@ def graph_at(root, revision):
             archive.seek(0)
             with tarfile.open(fileobj=archive) as tree:
                 tree.extractall(directory, filter="data")
-        return metadata_graph(directory)
+        return metadata_graph(directory, historical=historical,
+                              toolchain=toolchain_of(root) if historical else None)
 
 
 def changed_paths(root, base, head):
@@ -271,9 +292,9 @@ def build_plan(root, *, base=None, head="HEAD", full=False, release=False):
     else:
         # Immutable trees prevent unstaged manifests from changing a named commit's plan.
         new = graph_at(root, head)
-        # The base graph is read even when a shared file forces full coverage: a manifest moved
+        # The base graph is read even when a shared file or --full forces full coverage: a manifest moved
         # in the same change must still resolve to its old owner, not look unregistered.
-        old = new if full or base == head else graph_at(root, base)
+        old = new if base in (None, head) else graph_at(root, base, historical=True)
     release_policy(root, head)
     plan = select(paths, old, new, full=full, release=release, full_reason=full_reason)
     plan.update({"base": base, "head": head, "release_candidate": False})

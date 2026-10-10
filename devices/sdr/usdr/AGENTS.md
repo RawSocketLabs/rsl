@@ -109,9 +109,9 @@ Each layer calls only the ones below it.
 ```sh
 cargo clippy -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie --all-targets && cargo test -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie
 cargo clippy -p rsl-usdr --all-targets --features pcie && cargo test -p rsl-usdr --features pcie
-cargo fmt --manifest-path rsl-usdr/oracle/Cargo.toml -- --check
-cargo clippy --manifest-path rsl-usdr/oracle/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path rsl-usdr/oracle/Cargo.toml
+cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
+cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
 ```
 
 The oracle is its own Cargo workspace: it sits inside this package's directory, where the
