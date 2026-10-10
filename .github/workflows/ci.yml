@@ -123,7 +123,7 @@ jobs:
             tools/rust-skills -> target
             usdr -> target
             rust-dsdcc -> target
-            rsl-usdr/oracle -> target
+            devices/sdr/usdr/oracle -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:

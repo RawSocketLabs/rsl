@@ -1,9 +1,9 @@
 # rsl-usdr
 
-> Inherits the workspace-root `../AGENTS.md`.
+> Inherits `../../AGENTS.md` (devices) and the workspace-root `../../../AGENTS.md`.
 
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
-TMP114), replacing the cxx FFI crate `../usdr`. Scope is RX at parity with that crate's API,
+TMP114), replacing the cxx FFI crate `usdr/` at the workspace root. Scope is RX at parity with that crate's API,
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
 temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature

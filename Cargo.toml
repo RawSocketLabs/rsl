@@ -18,9 +18,9 @@ members = [
     # RF parsing
     "rfus",
     # pure-Rust uSDR driver and its board simulator
-    "rsl-usdr",
-    "rsl-usdr/sim",
-    "rsl-usdr/pcie",
+    "devices/sdr/usdr",
+    "devices/sdr/usdr/sim",
+    "devices/sdr/usdr/pcie",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -75,8 +75,8 @@ rsl-x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 rsl-pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 rsl-compression = { path = "compression", version = "0.1.0", default-features = false }
 # unpublished test support, dev-dependency only
-rsl-usdr-sim = { path = "rsl-usdr/sim" }
-rsl-usdr-pcie = { path = "rsl-usdr/pcie" }
+rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
+rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 
 # --- blessed externals used directly by owned crates ---

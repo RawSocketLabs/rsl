@@ -31,9 +31,9 @@ def fixture():
                             False, ("certificate_parse",)),
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
-        "rsl-usdr": Package("rsl-usdr", {BNB, "rsl-usdr/sim"}),
-        "rsl-usdr/sim": Package("rsl-usdr-sim", set()),
-        USDR_ORACLE: Package("rsl-usdr-oracle", {"rsl-usdr", "rsl-usdr/sim"}, False),
+        "devices/sdr/usdr": Package("rsl-usdr", {BNB, "devices/sdr/usdr/sim"}),
+        "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
+        USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -105,7 +105,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("bnb", planned([f"{BNB}/src/lib.rs"])["profiles"])
 
     def test_usdr_sim_changes_rerun_the_driver_and_libusdr_oracle(self):
-        plan = planned(["rsl-usdr/sim/src/board.rs"])
+        plan = planned(["devices/sdr/usdr/sim/src/board.rs"])
         self.assertEqual(plan["packages"], ["rsl-usdr", "rsl-usdr-sim"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
@@ -115,7 +115,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_usdr_driver_changes_rerun_the_libusdr_oracle(self):
-        plan = planned(["rsl-usdr/src/board/power.rs"])
+        plan = planned(["devices/sdr/usdr/src/board/power.rs"])
         self.assertEqual(plan["packages"], ["rsl-usdr"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
@@ -126,7 +126,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan["full"])
 
     def test_usdr_driver_guide_selects_its_crates_not_full_coverage(self):
-        plan = planned(["rsl-usdr/AGENTS.md"])
+        plan = planned(["devices/sdr/usdr/AGENTS.md"])
         self.assertFalse(plan["full"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
