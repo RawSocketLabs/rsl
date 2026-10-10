@@ -31,7 +31,9 @@ FUZZ = {
     # PR runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
-DETACHED = (*FUZZ, NOSTD, "usdr", "rust-dsdcc", "tools/rust-skills")
+# Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
+DETACHED = (*FUZZ, NOSTD, "bindings/usdr", "bindings/rust-dsdcc",
+            "usdr", "rust-dsdcc", "tools/rust-skills")
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
     "rustfmt.toml", "deny.toml", "release-plz.toml", "AGENTS.md",
@@ -216,7 +218,8 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
         profiles.add("msrv")
     if "rsl-deps" in roots or full:
         profiles.add("blessed")
-    profiles.update(roots & {"usdr", "rust-dsdcc"})
+    profiles.update(new[root].name for root in roots
+                    if root in {"bindings/usdr", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release or full:

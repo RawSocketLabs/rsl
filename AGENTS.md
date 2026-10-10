@@ -26,7 +26,7 @@ git-rev pinning.
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rsl-netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `rsl-deps/` | `rsl-deps` | blessed external-dependency stack |
-| `usdr/`, `rust-dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
+| `bindings/usdr/`, `bindings/rust-dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
 | `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)
@@ -45,7 +45,7 @@ git-rev pinning.
 ## FFI members (`usdr`, `rust-dsdcc`)
 
 Excluded from the default workspace build/CI (they need a C++ toolchain + system libs). Build
-them explicitly: `cargo build --manifest-path usdr/Cargo.toml`. `rust-dsdcc` links the external
+them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external
 DSDcc library — its license governs distributed linked binaries.
 
 ## Verify

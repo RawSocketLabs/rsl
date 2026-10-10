@@ -121,8 +121,8 @@ jobs:
             . -> target
             bitsandbytes/bnb/nostd-check -> target
             tools/rust-skills -> target
-            usdr -> target
-            rust-dsdcc -> target
+            bindings/usdr -> target
+            bindings/rust-dsdcc -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:

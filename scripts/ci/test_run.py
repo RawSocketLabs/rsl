@@ -53,6 +53,13 @@ class ProfileTests(unittest.TestCase):
         sequence = commands("package", planned(release=True), BNB_CONFIG)
         self.assertEqual(sequence, [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]])
 
+    def test_ffi_profiles_check_the_relocated_manifests(self):
+        for profile in ("usdr", "rust-dsdcc"):
+            with self.subTest(profile=profile):
+                sequence = commands(profile, planned(full=True), BNB_CONFIG)
+                self.assertEqual(sequence, [["cargo", "check", "--manifest-path",
+                                             f"bindings/{profile}/Cargo.toml"]])
+
 
 if __name__ == "__main__":
     unittest.main()

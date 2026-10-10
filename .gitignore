@@ -1,5 +1,5 @@
 target/
 __pycache__/
-/usdr/Cargo.lock
-/rust-dsdcc/Cargo.lock
+/bindings/usdr/Cargo.lock
+/bindings/rust-dsdcc/Cargo.lock
 /bitsandbytes/bnb/nostd-check/Cargo.lock

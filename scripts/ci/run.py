@@ -88,7 +88,7 @@ def commands(profile, plan, bnb):
         # Verifies both actual archives together; Cargo supplies the temporary local registry.
         return [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]]
     if profile in {"usdr", "rust-dsdcc"}:
-        return [["cargo", "check", "--manifest-path", f"{profile}/Cargo.toml"]]
+        return [["cargo", "check", "--manifest-path", f"bindings/{profile}/Cargo.toml"]]
     if profile == "rust-skills":
         manifest = ["--manifest-path", "tools/rust-skills/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--all", "--", "--check"],

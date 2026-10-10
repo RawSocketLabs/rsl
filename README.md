@@ -28,7 +28,7 @@ no cross-repo version pinning to keep in sync.
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
 - **`rsl-deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
-- **`usdr`, `rust-dsdcc`** — FFI/SDR bindings (excluded from the default build; need a C++
+- **`usdr`, `rust-dsdcc`** (`bindings/*`) — FFI/SDR bindings (excluded from the default build; need a C++
   toolchain).
 
 ## Engineering tooling
@@ -49,7 +49,7 @@ cargo build --workspace       # everything except the FFI members
 cargo test --workspace
 ```
 
-FFI members build on their own (`cargo build --manifest-path usdr/Cargo.toml`) given a C++
+FFI members build on their own (`cargo build --manifest-path bindings/usdr/Cargo.toml`) given a C++
 toolchain. See `AGENTS.md` for the workspace-wide standards.
 
 Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.

@@ -8,6 +8,34 @@ from plan import BNB, SOCKS, metadata_graph, select
 
 
 class CargoMetadataTests(unittest.TestCase):
+    def test_ffi_ownership_resolves_current_and_historical_layouts(self):
+        for prefix in ("", "bindings/"):
+            with self.subTest(prefix=prefix), tempfile.TemporaryDirectory(prefix="rsl-ci-ffi-test-") as directory:
+                root = Path(directory)
+                ffi_roots = [f"{prefix}{name}" for name in ("usdr", "rust-dsdcc")]
+                (root / "Cargo.toml").write_text(
+                    '[workspace]\nresolver="2"\nmembers=["facade"]\nexclude=['
+                    + ", ".join(f'"{path}"' for path in ffi_roots) + "]\n")
+                for path, name in [("facade", "facade"), *zip(ffi_roots, ("usdr", "rust-dsdcc"))]:
+                    crate = root / path
+                    (crate / "src").mkdir(parents=True)
+                    (crate / "src/lib.rs").touch()
+                    manifest = f'[package]\nname="{name}"\nversion="0.1.0"\n'
+                    if name == "facade":
+                        manifest += "[dependencies]\n" + "".join(
+                            f'{ffi}={{path="../{prefix}{ffi}", optional=true}}\n'
+                            for ffi in ("usdr", "rust-dsdcc"))
+                    (crate / "Cargo.toml").write_text(manifest)
+                graph = metadata_graph(root)
+                self.assertEqual(graph["facade"].dependencies, set(ffi_roots))
+                for path, profile in zip(ffi_roots, ("usdr", "rust-dsdcc")):
+                    self.assertFalse(graph[path].workspace)
+                    plan = select([f"{path}/src/lib.rs"], graph, graph)
+                    self.assertFalse(plan["full"])
+                    self.assertEqual(plan["packages"], ["facade"])
+                    self.assertIn(profile, plan["profiles"])
+                    self.assertNotIn("rust-dsdcc" if profile == "usdr" else "usdr", plan["profiles"])
+
     def test_optional_build_dev_and_other_platform_dependencies_are_not_filtered(self):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-cargo-test-") as directory:
             root = Path(directory)
