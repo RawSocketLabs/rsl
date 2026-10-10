@@ -26,7 +26,7 @@ git-rev pinning.
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rsl-netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `rsl-deps/` | `rsl-deps` | blessed external-dependency stack |
-| `bindings/usdr/`, `bindings/rust-dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
+| `bindings/usdr/`, `bindings/dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
 | `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)

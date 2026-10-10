@@ -32,7 +32,7 @@ FUZZ = {
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
-DETACHED = (*FUZZ, NOSTD, "bindings/usdr", "bindings/rust-dsdcc",
+DETACHED = (*FUZZ, NOSTD, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", "tools/rust-skills")
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
@@ -219,7 +219,7 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
     if "rsl-deps" in roots or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
-                    if root in {"bindings/usdr", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})
+                    if root in {"bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release or full:

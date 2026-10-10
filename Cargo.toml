@@ -39,7 +39,7 @@ members = [
 # from the default workspace build; each is built on its own in a dedicated CI job.
 exclude = [
     "bindings/usdr",
-    "bindings/rust-dsdcc",
+    "bindings/dsdcc",
     "bitsandbytes/fuzz",
     "bitsandbytes/bnb/nostd-check",
     "crypto/fuzz",

@@ -9,10 +9,10 @@ from plan import BNB, SOCKS, metadata_graph, select
 
 class CargoMetadataTests(unittest.TestCase):
     def test_ffi_ownership_resolves_current_and_historical_layouts(self):
-        for prefix in ("", "bindings/"):
-            with self.subTest(prefix=prefix), tempfile.TemporaryDirectory(prefix="rsl-ci-ffi-test-") as directory:
+        for ffi_roots in (("usdr", "rust-dsdcc"), ("bindings/usdr", "bindings/rust-dsdcc"),
+                          ("bindings/usdr", "bindings/dsdcc")):
+            with self.subTest(roots=ffi_roots), tempfile.TemporaryDirectory(prefix="rsl-ci-ffi-test-") as directory:
                 root = Path(directory)
-                ffi_roots = [f"{prefix}{name}" for name in ("usdr", "rust-dsdcc")]
                 (root / "Cargo.toml").write_text(
                     '[workspace]\nresolver="2"\nmembers=["facade"]\nexclude=['
                     + ", ".join(f'"{path}"' for path in ffi_roots) + "]\n")
@@ -23,8 +23,8 @@ class CargoMetadataTests(unittest.TestCase):
                     manifest = f'[package]\nname="{name}"\nversion="0.1.0"\n'
                     if name == "facade":
                         manifest += "[dependencies]\n" + "".join(
-                            f'{ffi}={{path="../{prefix}{ffi}", optional=true}}\n'
-                            for ffi in ("usdr", "rust-dsdcc"))
+                            f'{ffi}={{path="../{path}", optional=true}}\n'
+                            for path, ffi in zip(ffi_roots, ("usdr", "rust-dsdcc")))
                     (crate / "Cargo.toml").write_text(manifest)
                 graph = metadata_graph(root)
                 self.assertEqual(graph["facade"].dependencies, set(ffi_roots))

@@ -54,11 +54,11 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(sequence, [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]])
 
     def test_ffi_profiles_check_the_relocated_manifests(self):
-        for profile in ("usdr", "rust-dsdcc"):
+        for profile, manifest in (("usdr", "bindings/usdr/Cargo.toml"),
+                                  ("rust-dsdcc", "bindings/dsdcc/Cargo.toml")):
             with self.subTest(profile=profile):
                 sequence = commands(profile, planned(full=True), BNB_CONFIG)
-                self.assertEqual(sequence, [["cargo", "check", "--manifest-path",
-                                             f"bindings/{profile}/Cargo.toml"]])
+                self.assertEqual(sequence, [["cargo", "check", "--manifest-path", manifest]])
 
 
 if __name__ == "__main__":

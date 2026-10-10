@@ -56,7 +56,7 @@ rfus = { path = "../rfus", version = "0.1.0", optional = true }
 
 # FFI bindings (need a C++ toolchain + system libs to build; opt-in only, off by default).
 usdr = { path = "../bindings/usdr", version = "0.1.0", optional = true }
-"rust-dsdcc" = { path = "../bindings/rust-dsdcc", version = "0.1.0", optional = true }
+"rust-dsdcc" = { path = "../bindings/dsdcc", version = "0.1.0", optional = true }
 
 # NOTE — the private owned crate `libsdr` (`sdr`) is absent by design; it lives in the private
 # `rsl-private` overlay.
