@@ -17,6 +17,7 @@ git-rev pinning.
 |------|----------|-------|
 | `bitsandbytes/bnb`, `bitsandbytes/bnb-macros` | `bitsandbytes`, `bitsandbytes-macros` | the codec; `#![forbid(unsafe_code)]` |
 | `rawsock/` | `rawsock` | L2/L3/L4 raw I/O; `#![forbid(unsafe_code)]` (safe via `rustix`) |
+| `usb/` | `rsl-usb` | owned USB host access (enumerate, claim, queued bulk/interrupt, control); Linux usbfs backend, portable API; unpublished |
 | `crypto/` | `rsl-crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
 | `crypto-legacy/` | `rsl-crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
 | `pki/asn1`, `pki/x509`, `pki/validation` | `rsl-asn1`, `rsl-x509`, `rsl-pki` | strict DER transport, certificate syntax, and path validation; `no_std + alloc`, zero `unsafe` |
