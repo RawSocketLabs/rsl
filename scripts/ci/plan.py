@@ -37,6 +37,9 @@ USDR_ORACLE = "devices/sdr/usdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, "tools/rust-skills")
+# Former paths of moved detached workspaces, read only from historical trees, so a plan across
+# the move still finds the old owner.
+MOVED_DETACHED = ("rsl-usdr/oracle",)
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
     "rustfmt.toml", "deny.toml", "release-plz.toml", "AGENTS.md",
@@ -69,7 +72,7 @@ def metadata_graph(root):
     """Use unfiltered declarations: feature/platform selection must not hide consumers."""
     root = Path(root).resolve()
     graph = {}
-    for directory in (".", *DETACHED):
+    for directory in (".", *DETACHED, *MOVED_DETACHED):
         manifest = root / directory / "Cargo.toml"
         if not manifest.exists():
             if directory == ".":
@@ -275,8 +278,9 @@ def build_plan(root, *, base=None, head="HEAD", full=False, release=False):
     else:
         # Immutable trees prevent unstaged manifests from changing a named commit's plan.
         new = graph_at(root, head)
-        global_change = any(path in GLOBAL_FILES or path.startswith(GLOBAL_PREFIXES) for path in paths)
-        old = new if full or global_change or base == head else graph_at(root, base)
+        # The base graph is read even when a shared file forces full coverage: a manifest moved
+        # in the same change must still resolve to its old owner, not look unregistered.
+        old = new if full or base == head else graph_at(root, base)
     release_policy(root, head)
     plan = select(paths, old, new, full=full, release=release, full_reason=full_reason)
     plan.update({"base": base, "head": head, "release_candidate": False})
