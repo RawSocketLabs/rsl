@@ -108,6 +108,7 @@ src/
     mod.rs
     auth.rs
     mio_io.rs                  bounded, resumable V5 codec adapter
+    sansio/                    no-I/O client handshake shared by every client backend
     client/
       mod.rs
       config.rs
@@ -182,6 +183,9 @@ version-specific exchanges still leave authorization and dialing to their caller
   raw construction and later mutation still permit aliases. Validation leaves the original
   variants and verbatim bytes untouched. No SOCKS-specific builder annotations or registry
   duplication are needed.
+- Sequence the client handshake once, in the sans-I/O `v5::sansio::Client`; backends only
+  move bytes. The machine owns its bounded input so lossless handoff cannot depend on
+  each caller advancing a borrowed buffer correctly.
 - Keep the default wire surface transport- and runtime-independent. I/O drivers are optional;
   feature-gating protocol versions is deferred until more than one version is implemented.
 - Defer `rsl` facade exposure until the wire API survives review; workspace membership makes the
@@ -1867,6 +1871,45 @@ Verification: 126 Tokio-feature package tests, including compiled batch/timer do
 passed. Strict all-feature all-target Clippy, formatting, warnings-denied rustdoc, and
 diff whitespace checks passed. Independent review found no issues. Workspace/release
 matrices, fuzzing, and benchmarks were not repeated for this diagnostics-only change.
+
+## Sans-I/O client handshake (2026-10-03)
+
+The blocking, Tokio, and Mio clients each sequenced method negotiation, RFC 1929
+authentication, and the command reply, so behaviour could diverge per backend and nothing let
+a caller run the handshake over their own transport. `v5::sansio::Client` now holds that
+sequence. `advance` reports `Transmit`, `Receive`, or `Established`; the driver writes
+`transmit`, reports `sent`, reads at most `receive_limit` bytes into `receive`, and reports
+end of stream with `receive_eof`. `finish` returns the unread input and bound endpoint, and
+drivers rebuild `Stream` from them, so bytes coalesced with the reply survive as before.
+
+The machine owns a bounded `BitBuf` rather than reporting consumed bytes from a borrowed
+slice. A borrowed design would move the lossless-handoff invariant into every caller, needs
+contiguous input, and bnb exposes no unread-byte slice of a `BitBuf`. Its decode loop mirrors
+`bnb::net::read_message` without a transport: it skips attempts until bnb's hint is met and
+treats end of stream as finite input. It omits that reader's hint reset on rebase and
+trailing-bit alignment, which SOCKS5's whole-byte, position-free messages do not need.
+
+The machine is compliant-only. The wire types remain the raw path. Its public constructor is
+CONNECT-only; BIND reaches it through the crate-private `prepared` and still reads its second
+reply from the handed-off `Stream`. Making the five client-side guided checks independent
+of transport features was required for the machine to build in the default configuration;
+they remain crate-private. Servers keep their per-backend sequencing until a server machine
+with explicit credential and reply decision points exists.
+
+Verification: socks unit and integration suites with all features, including six machine
+unit tests (byte-at-a-time input, partial writes, credentials, failing reply, EOF, capacity);
+Clippy with `-D warnings` for default, `blocking`, `tokio`, `mio`, and all features; 100k
+runs each of the `session` and `mio_session` fuzz targets.
+
+`session_reads` gained client cases. Three alternating runs against `main` (medians, Linux
+x86_64): no-auth CONNECT to a 255-byte domain is 3–7% faster on every backend and fragment
+size; maximum-length RFC 1929 credentials are about 320 ns (14–26%) slower. `perf` puts the
+difference in `UsernamePasswordRequest::bit_encode`, where bnb writes each credential byte
+through the generic bit writer, not in the machine. The machine encodes all messages at
+construction, so local errors still precede I/O. The fix belongs in bnb as bulk byte-run
+encoding. With that bnb change applied to both sides, every client case is at parity or
+2–18% faster than `main`, once the Mio driver reuses one read scratch per `advance`
+instead of zero-filling 513 bytes for each read.
 
 ## Known limitations
 

@@ -10,7 +10,8 @@ SOCKS wire codecs, beginning with SOCKS5 (RFC 1928 and RFC 1929). refcheck proto
 
 The default feature set provides pure SOCKS5 wire codecs: method negotiation, command and
 reply registries, IPv4/domain/IPv6 endpoints, requests, replies, and RFC 1929 username/password
-messages plus transport-independent client configuration and validation. Optional `blocking`,
+messages plus transport-independent client configuration and validation, and the sans-I/O
+CONNECT client handshake `v5::sansio::Client`. Optional `blocking`,
 `tokio`, and `mio` features add CONNECT operations, embeddable server
 handshakes, complete per-connection proxies, and bounded listeners. Blocking embedded BIND
 has generic two-reply stages and owned TCP helpers with independent phase deadlines;
@@ -98,11 +99,17 @@ GSS-API, SOCKS4, and SOCKS4A remain absent. [`DESIGN.md`](DESIGN.md) records dec
   shared by blocking and Mio, and `tokio.rs` owns Tokio implementations. All driver
   handoffs retain `Stream<S>`, directly or inside a connection; never extract only the
   transport while buffered input remains.
-  Its crate-private `read_message` / `read_message_async` methods own sequential-driver reads;
-  the bounded Mio adapter borrows the same bnb reader through its fairness budget.
+  Its crate-private `read_message` / `read_message_async` methods own sequential server reads;
+  the bounded Mio server adapter borrows the same bnb reader through its fairness budget.
+  `MAX_FRAME_LEN` is defined once in `v5/sansio/client.rs` and re-exported here.
   Scratch stays method-local: retaining it enlarged the wrapper and showed no consistent
   benchmark benefit. It is not an additional queue of unread input.
-- Blocking/Tokio version-specific exchanges delegate whole-message reads to bnb 0.6's
+- `v5/sansio/` owns the client handshake: sequencing, guided checks, and a bounded input
+  buffer returned at handoff. It performs no I/O and builds without transport features.
+  Blocking, Tokio, and Mio clients only move bytes between their transport and it, then
+  rebuild `Stream` from the returned buffer. Its public constructor is CONNECT-only;
+  blocking BIND uses the crate-private `prepared` for the first reply. Servers do not use it yet.
+- Blocking/Tokio server exchanges delegate whole-message reads to bnb 0.6's
   borrowed, hint-aware readers, keeping
   unread application bytes in `Stream`. `blocking` enables `bnb/net`; `tokio` enables
   `bnb/tokio-io`, not `bnb/tokio` or `tokio-util`. Crate-private `Stream::write_message`

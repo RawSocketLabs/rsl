@@ -23,7 +23,8 @@
 //! # Generated API
 //!
 //! For a field `f: T`, you get `f() -> T`, `with_f(T) -> Self` (consuming, chainable),
-//! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `to_raw()`/`from_raw()`, and
+//! and `set_f(&mut self, T)`. Plus `new()` (all-zero), `to_raw()`/`from_raw()` (also as
+//! `From` in both directions, so `u8::from(b)` and `VersionIhl::from(0x45)` work), and
 //! allocation-free byte conversions: `to_bytes`/`from_bytes` serialize in the **declared**
 //! byte order (`bytes = big|little`), while `to_be_bytes`/`to_le_bytes`/`from_be_bytes`/`from_le_bytes`
 //! force a specific endianness (the override). The type also implements [`Bits`](crate::Bits)
@@ -36,6 +37,8 @@
 //! b.set_ihl(u4::new(6));
 //! assert_eq!(b.ihl().value(), 6);
 //! assert_eq!(VersionIhl::from_be_bytes([0x45]).version().value(), 4);
+//! assert_eq!(VersionIhl::from(0x45).version().value(), 4);
+//! assert_eq!(u8::from(b), 0x46);
 //! ```
 //!
 //! # Bit order vs. byte order — two independent knobs

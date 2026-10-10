@@ -4,9 +4,8 @@ use std::io;
 // --- Workspace dependencies ---
 use bnb::{BitBuf, BitError, ErrorKind, Source};
 
-// RFC 1929 §2: VER + ULEN + 255 username bytes + PLEN + 255 password bytes.
-// This also covers every RFC 1928 greeting, selection, request, and reply.
-pub(crate) const MAX_FRAME_LEN: usize = 513;
+// --- Internal modules ---
+pub(crate) use crate::v5::sansio::MAX_FRAME_LEN;
 
 /// A SOCKS transport together with any prefetched application bytes.
 ///

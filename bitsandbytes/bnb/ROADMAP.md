@@ -67,13 +67,18 @@ Audit follow-ups (not silently waived or bundled into this feature):
 - [x] **`#[bitfield]`** — integer-backed packing with independent `bits = msb|lsb` and
       `bytes = big|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
       `with_*`/`set_*`, order-respecting `to_bytes`/`from_bytes` (the declared `bytes`) plus the
-      endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`.
+      endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`;
+      `From` both ways over the backing integer.
+- [ ] **`#[bitfield]` on a generic struct** — generics and `where` clauses are silently dropped
+      (`struct Reg<T>` expands non-generic). Reject them with a spanned error.
 - [x] **`#[derive(BitEnum)]`** — enum ⇄ integer at a chosen width; `#[catch_all]`
       (lossless, dual-use) or `closed` (asserted closed set); a non-exhaustive enum
       with neither is a compile error; `num_enum`-parity `From`/`TryFrom` for
       byte-aligned widths.
 - [x] **`#[bitflags]`** — single-bit flag sets with set algebra, per-flag accessors,
       `iter`, retain-vs-truncate.
+- [ ] **`#[bitflags]` `From` parity** — it wraps a backing integer like `#[bitfield]` but has no
+      `From<uN>`/`From<Self> for uN` pair. Adding one is breaking for the same reason (DESIGN §17).
 - [x] **`#[derive(BitsBuilder)]`** — required-by-default builder; `build()` names the
       first unset field; `#[builder(default)]` / `#[builder(default = expr)]`.
 - [x] **Automatic enum-alias normalization** — generated builders resolve fields, then
@@ -85,9 +90,11 @@ Audit follow-ups (not silently waived or bundled into this feature):
 
 - [x] Folds read + write codecs and the builder over one struct; generates the decode entry
       points — `decode(&mut Source)` (one cursor decode over the whole I/O ladder), `decode_all`/
-      `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), and `decode_exact`/`peek`
-      (one-shot) — the encode entry points (`to_bytes` + the `encode(writer)` convenience, plus
-      `BitEncode::bit_encode` for a `Sink`), and construction (struct literal, `builder()`).
+      `decode_iter` (every message in a `&[u8]`, layout-baked + bit-aware), `decode_exact`/`peek`
+      (one-shot), and `decode_prefix`/`decode_prefix_eof` (one-shot with bytes consumed and a
+      retryable `Incomplete` for a short slice) — the encode entry points (`to_bytes` + the
+      `encode(writer)` convenience, plus `BitEncode::bit_encode` for a `Sink`), and
+      construction (struct literal, `builder()`).
 - [x] **Verbatim vs canonical encode** — `to_bytes` is verbatim (modeled stored fields;
       not unmodeled final padding or custom-codec representations); `to_canonical_bytes` normalizes (`reserved` → spec,
       `calc` recomputed). Generated for a `reserved`/`calc` message, alongside the in-memory
@@ -345,6 +352,13 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       shared CI runners and a hard perf gate would flake. Revisit once there's a stable,
       dedicated bench runner. The bitfield-layer "as fast as hand-written shift/mask" claim
       is already substantiated by `bitfield_bench.rs`.
+- [ ] Incremental-read helper overhead — the `socks` adoption of hinted reads measured
+      8–35% slower in-memory handshakes (~18% more instructions), with out-of-line
+      `net::read_limit` and `shortfall` sampled at ~6% and ~2%. Accepted downstream; profile
+      and reduce here (see `protocols/session/socks/DESIGN.md`, bnb 0.6 adoption). Still
+      open after bulk byte runs (DESIGN.md §16): on `main` at `2e247e38`, the socks
+      `session_reads` profile samples `read_limit` at ~5% and `BitBuf::push` at ~18%,
+      the latter mostly from its one-byte fragment cases.
 - [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
       --timings` / expanded-output size pass on a representative multi-message crate).
 
@@ -448,6 +462,15 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       untrusted `with_capacity`), and its open-coded header size now derives from
       `<Entry as FixedBitLen>::BIT_LEN` (drift-proof); `dns::write_name` labels via
       `write_bytes`. Deliberate public-api addition (+3 methods).
+- [x] **[shipped, candidate] Bulk byte runs in generated codecs.** Defaulted
+      `BitEncode::encode_slice` (the `decode_vec` dual; `u8` → `write_bytes`) for context-free
+      `Vec` fields, `[u8; N]` through `read_into`/`write_bytes`, and byte-aligned copy overrides
+      on `BitWriter`/`BytesWriter`/`BitReader`/`BitBuf`/`BytesReader`. 2×255-byte encode
+      1.50 µs → 98 ns, decode 0.58 µs → 30 ns. See [`DESIGN.md` §16](DESIGN.md#16-bulk-byte-runs-unreleased-candidate).
+- [ ] **[perf] Remaining per-byte runs.** `LimitedSource` (needs a no-allocation,
+      hint-preserving delegation), `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
+      (mid-run EOF/`BufferFull`/I/O semantics must stay per-byte-identical), and unaligned runs
+      (shift-merge). Measure a consumer first; all are correct today.
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building

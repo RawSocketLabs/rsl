@@ -171,7 +171,9 @@ pub(crate) fn const_into_bits(
 /// `new()` (all-zero; derive `Default` yourself if you want it),
 /// `with_<field>`/`set_<field>`, `<field>()`
 /// getters, `to_raw()`/`from_raw()`, `to_be_bytes()`/`to_le_bytes()`/
-/// `from_be_bytes()`/`from_le_bytes()`, and `bnb::{Bits, Bitfield}` impls.
+/// `from_be_bytes()`/`from_le_bytes()`, `bnb::{Bits, Bitfield}` impls, and
+/// `From<backing> for Struct` / `From<Struct> for backing` (the same unvalidated
+/// conversions as `from_raw`/`to_raw`).
 ///
 /// Every accessor is a **`const fn`** (`#[view]` accessors too, when their raw
 /// type is annotated — the view's `const` argument asserts it, `dynamic` opts

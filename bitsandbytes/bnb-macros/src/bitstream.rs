@@ -1263,18 +1263,20 @@ fn field_write_core(
         });
     }
     if let Some(elem) = vec_elem(f) {
-        let write_elem = if let Some(names) = &br.ctx {
-            let elem_ctx = ctx_struct_ty(elem)?;
-            let lit = ctx_literal(&elem_ctx, names, Some(field_set));
-            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        } else {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+        let Some(names) = &br.ctx else {
+            // Context-free: the element type's `encode_slice` (a byte run is one bulk write),
+            // the dual of the `decode_vec` read path.
+            return Ok(
+                quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(&self.#id, __bnb_w)
+                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            );
         };
+        let elem_ctx = ctx_struct_ty(elem)?;
+        let lit = ctx_literal(&elem_ctx, names, Some(field_set));
         Ok(quote! {
             for __e in &self.#id {
-                #write_elem
+                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         })
     } else if let Some(names) = &br.ctx {
@@ -1337,6 +1339,35 @@ fn decode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         named_struct(input)?,
         &parse_bit_stream(input)?,
     )
+}
+
+/// The stateless slice prefix decoders (`decode_prefix`/`decode_prefix_eof`) emitted beside
+/// `peek`/`decode_exact` by every context-free decode surface, with `layout` baked in. The
+/// runtime reports consumed bits; the generated methods round up to whole bytes.
+fn prefix_methods(vis: &TokenStream2, layout: &TokenStream2) -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    quote! {
+        #[doc = "Decode one message from the front of `bytes`, returning it with the number of bytes it consumed. Trailing bytes are ignored; a bit-granular message rounds up, so its final byte's padding counts as consumed."]
+        #[doc = ""]
+        #[doc = "Stateless: each call replays from the start of `bytes`, and error positions are relative to it. A short slice is `ErrorKind::Incomplete` — retry with the same bytes plus at least `needed` more; don't drain a partial message. Malformed input and logical-region overruns are definitive. See `bnb::guide::io`."]
+        #[doc = ""]
+        #[doc = "# Errors"]
+        #[doc = "`Incomplete` for a short slice, else the definitive decode `BitError` (`NoProgress` if nothing was consumed)."]
+        #vis fn decode_prefix(
+            bytes: &[u8],
+        ) -> ::core::result::Result<(Self, usize), #bnb::__private::BitError> {
+            #bnb::__private::decode_prefix(bytes, #layout, false).map(|(v, bits)| (v, bits.div_ceil(8)))
+        }
+        #[doc = "`decode_prefix` with `bytes` declared to be all the input there is: a short slice is a definitive `ErrorKind::UnexpectedEof` (or `IncompleteAtEof` from a custom codec), never `Incomplete`."]
+        #[doc = ""]
+        #[doc = "# Errors"]
+        #[doc = "The definitive decode `BitError` (`NoProgress` if nothing was consumed)."]
+        #vis fn decode_prefix_eof(
+            bytes: &[u8],
+        ) -> ::core::result::Result<(Self, usize), #bnb::__private::BitError> {
+            #bnb::__private::decode_prefix(bytes, #layout, true).map(|(v, bits)| (v, bits.div_ceil(8)))
+        }
+    }
 }
 
 /// Generates the decode side (`BitDecode` + entry points, or `decode_with` for a
@@ -1480,6 +1511,7 @@ fn gen_decode(
     // There is no canonical *decode*: `decode_*` is always verbatim (it retains the wire
     // bits of reserved fields — dual-use). Canonicalization is an encode-side concern
     // (`to_canonical_bytes`) or an explicit in-memory helper.
+    let prefix_decoders = prefix_methods(&quote!(pub), &layout);
 
     Ok(quote! {
         #guard
@@ -1513,7 +1545,7 @@ fn gen_decode(
             ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
                 #bnb::__private::decode_iter(bytes, #layout)
             }
-            #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
+            #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof`, indistinguishable from malformed input — use `decode_prefix` to tell them apart."]
             pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #bnb::__private::decode_peek(bytes, #layout)
             }
@@ -1521,6 +1553,7 @@ fn gen_decode(
             pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #bnb::__private::decode_exact(bytes, #layout)
             }
+            #prefix_decoders
         }
     })
 }
@@ -2325,6 +2358,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
             let tm = args.try_map.as_ref().unwrap();
             quote!(#bnb::__private::decode_try_mapped_msg(__bnb_r, #tm))
         };
+        let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
         quote! {
             impl #bnb::__private::BitDecode for #name {
                 fn bit_decode<__S: #bnb::__private::Source>(
@@ -2354,7 +2388,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
                 {
                     #bnb::__private::decode_iter(bytes, #layout)
                 }
-                #[doc = "Decode one message without consuming the buffer (tail-tolerant)."]
+                #[doc = "Decode one message without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input."]
                 #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_peek(bytes, #layout)
                 }
@@ -2362,6 +2396,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
                 #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_exact(bytes, #layout)
                 }
+                #prefix_decoders
             }
         }
     } else {
@@ -2497,6 +2532,7 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
 
     let decode_ts = if has_decode {
         let parse_fn = args.codec_parse.as_ref().expect("checked above");
+        let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
         quote! {
             impl #bnb::__private::BitDecode for #name {
                 fn bit_decode<__S: #bnb::__private::Source>(
@@ -2529,7 +2565,7 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
                 {
                     #bnb::__private::decode_iter(bytes, #layout)
                 }
-                #[doc = "Decode one value without consuming the buffer (tail-tolerant)."]
+                #[doc = "Decode one value without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input."]
                 #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_peek(bytes, #layout)
                 }
@@ -2537,6 +2573,7 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
                 #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_exact(bytes, #layout)
                 }
+                #prefix_decoders
             }
         }
     } else {
@@ -3188,16 +3225,17 @@ fn variant_field_write(
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
     } else if let Some(elem) = vec_elem(f) {
-        let write_elem = if let Some(names) = &br.ctx {
+        if let Some(names) = &br.ctx {
             let elem_ctx = ctx_struct_ty(elem)?;
             let lit = ctx_literal_variant(&elem_ctx, names, stored);
-            quote!(<#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
+            quote!(for __e in #id {
+                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
+                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+            })
         } else {
-            quote!(<#elem as #bnb::__private::BitEncode>::bit_encode(__e, __bnb_w)
+            quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(#id, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        };
-        quote!(for __e in #id { #write_elem })
+        }
     } else if byte_array_len(f).is_some() {
         quote!(#bnb::__private::write_byte_array(#id, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
@@ -4221,6 +4259,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
         }
     } else {
+        let prefix_decoders = prefix_methods(&quote!(pub), &layout);
         quote! {
             impl #bnb::BitDecode for #name {
                 fn bit_decode<S: #bnb::__private::Source>(
@@ -4248,7 +4287,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
                     #bnb::__private::decode_iter(bytes, #layout)
                 }
-                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant)."]
+                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof`, indistinguishable from malformed input — use `decode_prefix` to tell them apart."]
                 pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_peek(bytes, #layout)
                 }
@@ -4256,6 +4295,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_exact(bytes, #layout)
                 }
+                #prefix_decoders
             }
         }
     };

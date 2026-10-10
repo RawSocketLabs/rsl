@@ -6,7 +6,6 @@ mod endpoint;
 mod method;
 mod request;
 mod username_password;
-#[cfg(any(feature = "blocking", feature = "tokio", feature = "mio"))]
 mod validation;
 mod version;
 
