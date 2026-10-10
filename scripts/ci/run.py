@@ -15,7 +15,7 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import BNB, NOSTD, PKI, PROFILES
+from plan import BNB, NOSTD, PKI, PROFILES, USDR_ORACLE
 
 
 def packages(names):
@@ -89,6 +89,11 @@ def commands(profile, plan, bnb):
         return [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]]
     if profile in {"usdr", "rust-dsdcc"}:
         return [["cargo", "check", "--manifest-path", f"{profile}/Cargo.toml"]]
+    if profile == "usdr-oracle":
+        manifest = ["--manifest-path", f"{USDR_ORACLE}/Cargo.toml"]
+        return [["cargo", "fmt", *manifest, "--", "--check"],
+                ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "test", *manifest, "--locked"]]
     if profile == "rust-skills":
         manifest = ["--manifest-path", "tools/rust-skills/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--all", "--", "--check"],

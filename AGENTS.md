@@ -17,12 +17,14 @@ git-rev pinning.
 |------|----------|-------|
 | `bitsandbytes/bnb`, `bitsandbytes/bnb-macros` | `bitsandbytes`, `bitsandbytes-macros` | the codec; `#![forbid(unsafe_code)]` |
 | `rawsock/` | `rawsock` | L2/L3/L4 raw I/O; `#![forbid(unsafe_code)]` (safe via `rustix`) |
+| `usb/` | `rsl-usb` | owned USB host access (enumerate, claim, queued bulk/interrupt, control); Linux usbfs backend, portable API; unpublished |
 | `crypto/` | `rsl-crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
 | `crypto-legacy/` | `rsl-crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
 | `pki/asn1`, `pki/x509`, `pki/validation` | `rsl-asn1`, `rsl-x509`, `rsl-pki` | strict DER transport, certificate syntax, and path validation; `no_std + alloc`, zero `unsafe` |
 | `compression/` | `rsl-compression` | accuracy-first compression algorithms; `no_std + alloc`, zero `unsafe` |
 | `error-correction/` | `rsl-error-correction` | accuracy-first redundancy coding; `no_std + alloc`, zero `unsafe` |
 | `rfus/` | `rfus` | RF/sample-rate parsing |
+| `devices/<kind>/<device>` | `rsl-usdr`, `rsl-usdr-sim`, `rsl-usdr-pcie`, `rsl-usdr-oracle` | pure-Rust device drivers, grouped by kind (see `devices/AGENTS.md`). Now: `sdr/usdr` — the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, and the libusdr parity oracle (its own workspace: compiles vendored C) |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rsl-netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `rsl-deps/` | `rsl-deps` | blessed external-dependency stack |

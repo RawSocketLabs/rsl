@@ -1,0 +1,28 @@
+[package]
+name = "rsl-usdr"
+version = "0.0.0"
+description = "Pure-Rust driver for the Wavelet Lab uSDR software-defined radio."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+num-complex.workspace = true
+rsl-deps = { workspace = true, features = ["tracing"] }
+thiserror.workspace = true
+
+[features]
+## The PCIe transport over the `usdr_pcie_uram` Linux driver (`transport::pcie`).
+pcie = ["dep:rsl-usdr-pcie"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rsl-usdr-pcie = { workspace = true, optional = true }
+
+[dev-dependencies]
+rsl-usdr-sim.workspace = true
+
+[lints]
+workspace = true

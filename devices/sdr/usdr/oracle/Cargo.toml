@@ -1,0 +1,42 @@
+[package]
+name = "rsl-usdr-oracle"
+version = "0.0.0"
+description = "Runs wavelet-lab libusdr's C driver against rsl-usdr-sim, as the reference for rsl-usdr."
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RawSocketLabs/rsl"
+rust-version = "1.85"
+links = "usdr_oracle"
+
+# Its own workspace root: it sits inside the `rsl-usdr` member's directory, where the root
+# workspace's `exclude` cannot reach it.
+[workspace]
+
+[dependencies]
+rsl-usdr-sim = { path = "../sim" }
+thiserror = "2.0"
+
+[dev-dependencies]
+num-complex = { version = "0.4.6", default-features = false }
+rsl-usdr = { path = "..", features = ["pcie"] }
+rsl-usdr-pcie = { path = "../pcie", features = ["test-abi"] }
+
+[build-dependencies]
+cc = "1.2"
+
+# Detached from the workspace (it compiles vendored C), so the root `[workspace.lints]` policy
+# is restated here, plus `undocumented_unsafe_blocks` for the FFI.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "warn"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_inception = "allow"
+upper_case_acronyms = "allow"
+print_stdout = "warn"
+print_stderr = "warn"
+undocumented_unsafe_blocks = "warn"

@@ -3280,6 +3280,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-usb"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rsl-usdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "num-complex",
+ "rsl-deps",
+ "rsl-usdr-pcie",
+ "rsl-usdr-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rsl-usdr-pcie"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rsl-usdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-x509"
 version = "0.1.0"
 dependencies = [

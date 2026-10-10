@@ -1,0 +1,19 @@
+[package]
+name = "rsl-usb"
+version = "0.0.0"
+description = "Owned USB host access: find, open, reset and claim devices, and queue bulk, interrupt and control transfers. Linux usbfs backend."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event", "fs", "mm"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

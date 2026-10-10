@@ -4,7 +4,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plan import BNB, SOCKS, metadata_graph, select
+from plan import BNB, MOVED_DETACHED, SOCKS, metadata_graph, select
+
+
+def crate(root, path, name):
+    (root / path / "src").mkdir(parents=True)
+    (root / path / "src/lib.rs").touch()
+    (root / path / "Cargo.toml").write_text(f'[package]\nname="{name}"\nversion="0.1.0"\n')
 
 
 class CargoMetadataTests(unittest.TestCase):
@@ -84,6 +90,42 @@ windows = { path = "../windows" }
                 '[package]\nname="fuzzer"\nversion="0.1.0"\n[workspace]\nmembers=["helper"]\n')
             (fuzz / "helper/Cargo.toml").write_text('[package]\nname="helper"\nversion="0.1.0"\n')
             with self.assertRaisesRegex(ValueError, "additional detached members"):
+                metadata_graph(root)
+
+    def test_a_member_moved_with_a_shared_file_change_plans_full_coverage(self):
+        # build_plan reads the base tree as historical; this is that read plus the selection.
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-move-test-") as directory:
+            base, head = Path(directory, "base"), Path(directory, "head")
+            for tree, member in ((base, "old"), (head, "new")):
+                tree.mkdir()
+                (tree / "Cargo.toml").write_text(
+                    f'[workspace]\nresolver = "2"\nmembers = ["{member}"]\n')
+                crate(tree, member, "moved")
+            old = metadata_graph(base, historical=True)
+            new = metadata_graph(head)
+            for full in (False, True):
+                with self.subTest(full=full):
+                    plan = select(["Cargo.toml", "new/Cargo.toml", "old/Cargo.toml"],
+                                  old, new, full=full)
+                    self.assertTrue(plan["full"])
+                    self.assertEqual(plan["packages"], ["moved"])
+
+    def test_a_base_member_now_registered_as_detached_is_read_once(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-detach-test-") as directory:
+            base = Path(directory)
+            (base / "Cargo.toml").write_text(
+                '[workspace]\nresolver = "2"\nmembers = ["usdr", "other"]\n')
+            crate(base, "usdr", "usdr")
+            crate(base, "other", "other")
+            self.assertEqual(set(metadata_graph(base, historical=True)), {"usdr", "other"})
+
+    def test_a_former_detached_path_cannot_be_reused_at_head(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-reuse-test-") as directory:
+            root = Path(directory)
+            crate(root, ".", "owned")
+            (root / MOVED_DETACHED[0]).mkdir(parents=True)
+            (root / MOVED_DETACHED[0] / "Cargo.toml").write_text("[workspace]\n")
+            with self.assertRaisesRegex(ValueError, "reused former path"):
                 metadata_graph(root)
 
 

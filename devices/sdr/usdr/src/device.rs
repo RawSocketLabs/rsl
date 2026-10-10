@@ -1,0 +1,314 @@
+//! The radio as a caller sees it.
+
+use std::fmt;
+use std::time::Duration;
+
+use num_complex::Complex;
+use rsl_deps::tracing::warn;
+
+use crate::board::{Board, RxPacket};
+use crate::error::Error;
+use crate::lowlevel::Bus;
+use crate::thermal::{CoolDown, ThermalPolicy};
+
+/// A powered uSDR.
+///
+/// Dropping a `Device` powers the board down on a best-effort basis; call
+/// [`Device::close`] to see power-down errors.
+pub struct Device {
+    /// The powered board, which owns the bus; `None` only once powered down.
+    board: Option<Board>,
+
+    /// Temperature limits in force.
+    thermal: ThermalPolicy,
+}
+
+/// Options for opening a [`Device`]; see [`Device::builder`]. `'a` bounds the borrow of
+/// a [`DeviceBuilder::wait_for_temperature`] callback.
+pub struct DeviceBuilder<'a> {
+    /// The hardware seam.
+    bus: Box<dyn Bus>,
+
+    /// Temperature limits to enforce.
+    thermal: ThermalPolicy,
+
+    /// Wait for a hot board to cool, reporting each reading, instead of failing.
+    cool_down: Option<CoolDown<'a>>,
+}
+
+impl Device {
+    /// Opening options for a board reached through a custom [`Bus`]. Defaults:
+    /// [`ThermalPolicy::WithinSpec`], and fail at once if the board is too hot.
+    pub fn builder<'a>(bus: impl Bus + 'static) -> DeviceBuilder<'a> {
+        DeviceBuilder {
+            bus: Box::new(bus),
+            thermal: ThermalPolicy::default(),
+            cool_down: None,
+        }
+    }
+
+    /// Powers up a board reached through a custom [`Bus`] with the default options.
+    ///
+    /// # Errors
+    ///
+    /// As [`DeviceBuilder::open`].
+    pub fn with_bus(bus: impl Bus + 'static) -> Result<Self, Error> {
+        Self::builder(bus).open()
+    }
+
+    /// The board temperature in °C.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn temperature(&mut self) -> Result<f32, Error> {
+        self.board().temperature()
+    }
+
+    /// Sets the RX sample rate, in samples per second.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::UnsupportedSampleRate`] outside 960 kS/s to 80 MS/s, or 1 to 80 MS/s on a
+    ///   board with only one DSP chain.
+    /// - [`Error::AlreadyStreaming`] while an RX stream runs.
+    /// - [`Error::ClockInputMissing`] if the Si5332 loses its reference while switching.
+    /// - [`Error::PllUnlocked`], [`Error::PllFault`] or [`Error::UnsupportedFrequency`] if
+    ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
+    /// - Any bus failure.
+    pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
+        self.board().set_rx_sample_rate(samples_per_second)
+    }
+
+    /// Tunes the receiver to `hz`.
+    ///
+    /// Below 230 MHz the board mixer lifts the signal into the LMS6002D's range, so the
+    /// PLL's LO is about 300 MHz higher. If the PLL cannot lock at an LO below 250 MHz (in
+    /// practice a request from 230 to 250 MHz), the receiver tunes the lowest LO that does
+    /// and the NCO covers the rest, which needs a sample rate with room for the offset.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::PllUnlocked`] if the RX PLL cannot lock and no NCO fallback applies.
+    /// - [`Error::UnsupportedFrequency`] for an LO below the PLL's 170 MHz floor, possible
+    ///   only under 230 MHz before a sample rate sets the mixer LO.
+    /// - [`Error::PllFault`] if the LMS6002D reads back impossible PLL values.
+    /// - Any bus failure.
+    pub fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        self.board().set_rx_frequency(hz)
+    }
+
+    /// Creates the RX stream and starts it, with `samples_per_packet` samples in each packet
+    /// [`Device::receive`] delivers. Frequency and bandwidth can change while it runs; the
+    /// sample rate cannot.
+    ///
+    /// Creating the stream calibrates the receiver's DC offsets. If no frequency was set,
+    /// the receiver tunes to 320 MHz first, as libusdr does.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AlreadyStreaming`] if a stream is running.
+    /// - [`Error::UnsupportedPacketSize`] for a packet the stream engine cannot split into
+    ///   bursts.
+    /// - [`Error::Stream`] if the transport cannot set up its buffers, or does not stream.
+    /// - [`Error::DmaEngineFault`] if the FPGA's DMA engine does not respond.
+    /// - Tuning and calibration errors, as [`Device::set_rx_frequency`]; any bus failure.
+    ///
+    /// As in libusdr, a failure after the transport set up its buffers leaves the stream in
+    /// place: call [`Device::stop_rx_stream`] before starting again.
+    pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
+        self.board().start_rx_stream(samples_per_packet)
+    }
+
+    /// Samples per packet of the running RX stream, or `None` with no stream.
+    #[must_use]
+    pub fn rx_packet_samples(&self) -> Option<u32> {
+        self.board.as_ref().and_then(Board::rx_packet_samples)
+    }
+
+    /// Receives one packet of IQ samples into the front of `samples`, waiting up to
+    /// `timeout`; the rest of `samples` is untouched.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Timeout`] if no packet arrives in time.
+    /// - [`Error::BufferTooSmall`] if `samples` holds less than one packet.
+    /// - [`Error::NotStreaming`] with no stream.
+    /// - [`Error::Stream`] if the transport fails; any bus failure.
+    pub fn receive(
+        &mut self,
+        samples: &mut [Complex<i16>],
+        timeout: Duration,
+    ) -> Result<RxPacket, Error> {
+        self.board().receive(samples, timeout)
+    }
+
+    /// Stops and destroys the RX stream, powering the receiver down. The frequency,
+    /// bandwidth and sample rate stay set for the next stream.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no stream; otherwise the first failure, after every step
+    /// is attempted.
+    pub fn stop_rx_stream(&mut self) -> Result<(), Error> {
+        self.board().stop_rx_stream()
+    }
+
+    /// Fixes the RX filter bandwidth in Hz, so later sample-rate and frequency changes keep
+    /// it; 0 returns the filter to following the sample rate.
+    ///
+    /// Like libusdr, setting 0 writes the filter's narrowest setting until the next rate or
+    /// frequency change.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
+        self.board().set_rx_bandwidth(hz)
+    }
+
+    /// Waits until the board is below the thermal policy's resume limit, reading every
+    /// 5 s and passing each reading to `on_reading`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Overheated`], with the resume limit, if the board is still too warm after
+    /// `timeout`; any bus failure.
+    pub fn wait_for_temperature(
+        &mut self,
+        timeout: Duration,
+        on_reading: impl FnMut(f32),
+    ) -> Result<(), Error> {
+        let mut cool_down = CoolDown {
+            timeout,
+            on_reading: Box::new(on_reading),
+        };
+        let limits = self.thermal.limits();
+        cool_down.wait(self.board(), limits)
+    }
+
+    /// Powers the board down.
+    ///
+    /// # Errors
+    ///
+    /// The first bus failure; every power-down step is still attempted.
+    pub fn close(mut self) -> Result<(), Error> {
+        self.power_down()
+    }
+
+    /// The powered board.
+    fn board(&mut self) -> &mut Board {
+        self.board
+            .as_mut()
+            .expect("invariant: a Device owns its board until close or drop")
+    }
+
+    /// Stops any RX stream, then powers the board down, if it is still up. Every step is
+    /// attempted; the first failure is returned.
+    fn power_down(&mut self) -> Result<(), Error> {
+        let Some(mut board) = self.board.take() else {
+            return Ok(());
+        };
+        let stopped = if board.rx_packet_samples().is_some() {
+            board.stop_rx_stream()
+        } else {
+            Ok(())
+        };
+        stopped.and(board.power_down())
+    }
+}
+
+impl<'a> DeviceBuilder<'a> {
+    /// Enforces `policy` instead of [`ThermalPolicy::WithinSpec`].
+    #[must_use]
+    pub fn thermal(mut self, policy: ThermalPolicy) -> Self {
+        self.thermal = policy;
+        self
+    }
+
+    /// If the board is too hot to start, waits up to `timeout` for it to cool below the
+    /// policy's resume limit, passing each reading (every 5 s) to `on_reading`.
+    #[must_use]
+    pub fn wait_for_temperature(
+        mut self,
+        timeout: Duration,
+        on_reading: impl FnMut(f32) + 'a,
+    ) -> Self {
+        self.cool_down = Some(CoolDown {
+            timeout,
+            on_reading: Box::new(on_reading),
+        });
+        self
+    }
+
+    /// Identifies the board, confirms its temperature sensor, applies the thermal policy
+    /// before anything is powered, then powers the board up.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
+    ///   at once, with the resume limit after a configured wait times out.
+    /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.
+    /// - Any bus failure, an unsupported board revision, or another chip that does not
+    ///   identify itself as expected.
+    pub fn open(self) -> Result<Device, Error> {
+        let Self {
+            bus,
+            thermal,
+            cool_down,
+        } = self;
+        let mut identified = Board::identify(bus)?;
+        identified.check_temperature_sensor()?;
+        let limits = thermal.limits();
+        let celsius = identified.temperature()?;
+        if celsius >= limits.start() {
+            let Some(mut cool_down) = cool_down else {
+                return Err(Error::Overheated {
+                    celsius,
+                    limit: limits.start(),
+                });
+            };
+            warn!(
+                celsius,
+                limit = limits.start(),
+                "too hot to start; waiting to cool"
+            );
+            cool_down.wait(&mut identified, limits)?;
+        }
+        let board = identified.power_up()?;
+        Ok(Device {
+            board: Some(board),
+            thermal,
+        })
+    }
+}
+
+impl fmt::Debug for Device {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Device")
+            .field("powered", &self.board.is_some())
+            .field("thermal", &self.thermal)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for DeviceBuilder<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DeviceBuilder")
+            .field("thermal", &self.thermal)
+            .field(
+                "cool_down",
+                &self.cool_down.as_ref().map(|cool_down| cool_down.timeout),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for Device {
+    fn drop(&mut self) {
+        // Errors are returned only by `close`; here they can only be logged.
+        if let Err(error) = self.power_down() {
+            warn!(%error, "power-down on drop failed");
+        }
+    }
+}

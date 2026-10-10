@@ -6,6 +6,8 @@ members = [
     "bitsandbytes/bnb-macros",
     # raw-packet I/O
     "rawsock",
+    # USB host access
+    "usb",
     # independent accuracy-first domains
     "crypto",
     "crypto-legacy",
@@ -17,6 +19,10 @@ members = [
     "error-correction",
     # RF parsing
     "rfus",
+    # pure-Rust uSDR driver and its board simulator
+    "devices/sdr/usdr",
+    "devices/sdr/usdr/sim",
+    "devices/sdr/usdr/pcie",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -70,6 +76,9 @@ rsl-asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
 rsl-x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 rsl-pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 rsl-compression = { path = "compression", version = "0.1.0", default-features = false }
+# unpublished test support, dev-dependency only
+rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
+rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 
 # --- blessed externals used directly by owned crates ---
@@ -81,6 +90,8 @@ bytes = "1"
 rustix = { version = "1", features = ["net"] }
 libc = "0.2"
 zeroize = "1"
+# rsl-usdr's sample type, matching the FFI usdr crate's `receive`.
+num-complex = { version = "0.4.6", default-features = false }
 
 # --- bnb proc-macro deps ---
 syn = "3.0"
@@ -91,6 +102,7 @@ proc-macro-crate = "3"
 # --- dev / bench / example deps (bnb) ---
 trybuild = "1.0"
 proptest = "1"
+tempfile = "3"
 criterion = "0.8"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 bitbybit = "2.0.1"

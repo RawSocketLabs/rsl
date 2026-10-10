@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from gate import check_plan, check_release, check_results
-from plan import BNB, MACROS, SOCKS, NOSTD, Package, affected_packages, changed_paths, select
+from plan import BNB, MACROS, SOCKS, NOSTD, USDR_ORACLE, Package, affected_packages, changed_paths, select
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
 
@@ -31,6 +31,9 @@ def fixture():
                             False, ("certificate_parse",)),
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
+        "devices/sdr/usdr": Package("rsl-usdr", {BNB, "devices/sdr/usdr/sim"}),
+        "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
+        USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -100,6 +103,32 @@ class SelectionTests(unittest.TestCase):
 
     def test_rustdoc_only_source_edits_are_still_code(self):
         self.assertIn("bnb", planned([f"{BNB}/src/lib.rs"])["profiles"])
+
+    def test_usdr_sim_changes_rerun_the_driver_and_libusdr_oracle(self):
+        plan = planned(["devices/sdr/usdr/sim/src/board.rs"])
+        self.assertEqual(plan["packages"], ["rsl-usdr", "rsl-usdr-sim"])
+        self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_bnb_changes_rerun_the_usdr_driver_and_oracle(self):
+        plan = planned([f"{BNB}/src/lib.rs"])
+        self.assertIn("rsl-usdr", plan["packages"])
+        self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_usdr_driver_changes_rerun_the_libusdr_oracle(self):
+        plan = planned(["devices/sdr/usdr/src/board/power.rs"])
+        self.assertEqual(plan["packages"], ["rsl-usdr"])
+        self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_vendored_libusdr_selects_only_the_oracle(self):
+        plan = planned([f"{USDR_ORACLE}/libusdr/lib/hw/lms6002d/lms6002d.c"])
+        self.assertEqual(plan["packages"], [])
+        self.assertIn("usdr-oracle", plan["profiles"])
+        self.assertFalse(plan["full"])
+
+    def test_usdr_driver_guide_selects_its_crates_not_full_coverage(self):
+        plan = planned(["devices/sdr/usdr/AGENTS.md"])
+        self.assertFalse(plan["full"])
+        self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_detached_lockfile_selects_only_its_workspace(self):
         plan = planned(["crypto/fuzz/Cargo.lock"])

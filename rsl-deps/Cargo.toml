@@ -85,7 +85,10 @@ full = [
 # ---- capability features --------------------------------------------------
 error    = ["dep:thiserror"]
 report   = ["dep:color-eyre"]
-log      = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
+# `tracing` alone, for libraries: instrumentation without choosing how it is rendered.
+tracing  = ["dep:tracing"]
+# `tracing` plus the subscriber and appender, for applications.
+log      = ["tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
 serde    = ["dep:serde", "dep:serde_json"]
 bytes    = ["dep:bytes"]
 pod      = ["dep:bytemuck", "num-complex?/bytemuck"]
