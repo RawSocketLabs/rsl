@@ -33,7 +33,7 @@ FUZZ = {
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
 # Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
-USDR_ORACLE = "rsl-usdr/oracle"
+USDR_ORACLE = "devices/sdr/usdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, "tools/rust-skills")

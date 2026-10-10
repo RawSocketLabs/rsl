@@ -124,7 +124,7 @@ jobs:
             bindings/usdr -> target
             bindings/dsdcc -> target
             bindings/bladerf -> target
-            rsl-usdr/oracle -> target
+            devices/sdr/usdr/oracle -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:
