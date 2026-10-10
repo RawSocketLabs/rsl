@@ -8,6 +8,8 @@
 
 use std::time::Duration;
 
+use rsl_deps::tracing::debug;
+
 use super::Board;
 use super::board::Chains;
 use super::tune::RxBand;
@@ -106,7 +108,16 @@ impl Board {
         if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {
             self.tune_rx_pll(self.mixer_lo_hz.wrapping_add(self.rx.lo_hz))?;
         }
-        self.update_rx_bandwidth()
+        self.update_rx_bandwidth()?;
+        debug!(
+            rate,
+            ?decimation,
+            adc_rate_hz = adc_rate,
+            mixer_lo_hz = self.mixer_lo_hz,
+            vio_boosted = self.vio_boosted,
+            "RX sample rate set"
+        );
+        Ok(())
     }
 
     /// Fixes the RX filter bandwidth in Hz, or with 0 returns it to following the sample

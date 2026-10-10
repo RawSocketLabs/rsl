@@ -3285,6 +3285,7 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "num-complex",
+ "rsl-deps",
  "rsl-usdr-pcie",
  "rsl-usdr-sim",
  "thiserror 2.0.21",

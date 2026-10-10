@@ -9,6 +9,8 @@
 
 use std::time::Duration;
 
+use rsl_deps::tracing::debug;
+
 use super::Board;
 use crate::chips::lms6002d::{CapacitorWindow, Lna};
 use crate::error::Error;
@@ -97,6 +99,10 @@ impl Board {
         };
         let mut tuned = self.tune_rx_pll(lo);
         if matches!(tuned, Err(Error::PllUnlocked(_))) {
+            debug!(
+                lo_hz = lo,
+                "RX PLL did not lock; retrying once the LDO settles"
+            );
             // libusdr: the LDO may not be ready yet.
             self.bus.sleep(Duration::from_millis(5));
             tuned = self.tune_rx_pll(lo);
@@ -109,7 +115,15 @@ impl Board {
         }
 
         self.restore_rx_ncos()?;
-        self.update_rx_bandwidth()
+        self.update_rx_bandwidth()?;
+        debug!(
+            hz,
+            band = ?self.rx.band,
+            pll_hz = lo,
+            nco_offset_hz = self.rx.lo_offset_hz,
+            "RX tuned"
+        );
+        Ok(())
     }
 
     /// Powers the receiver if it is off, then routes the RX path for `band`
@@ -188,6 +202,7 @@ impl Board {
                 other => other,
             })?;
             self.rx.minimal_lo_hz = sweep;
+            debug!(minimal_lo_hz = sweep, "lowest RX PLL lock found");
         } else if lo < Self::LOW_LO_HZ {
             self.tune_rx_pll(self.rx.minimal_lo_hz)?;
         } else {

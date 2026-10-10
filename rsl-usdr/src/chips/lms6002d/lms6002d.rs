@@ -44,8 +44,8 @@ pub(crate) struct Lms6002d {
 }
 
 impl Lms6002d {
-    /// The chip's name in errors.
-    const NAME: &'static str = "LMS6002D";
+    /// The chip's name in errors and logs.
+    pub(crate) const NAME: &'static str = "LMS6002D";
 
     /// The TX LO libusdr tunes to before the LPF tuning calibration, in Hz.
     const LPF_TUNING_TX_LO_HZ: u32 = 320_000_000;
