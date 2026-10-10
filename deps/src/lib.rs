@@ -1,6 +1,6 @@
 //! # `rsl-deps` — the RSL blessed external-dependency stack
 //!
-//! One feature-gated crate that pins and re-exports the third-party crates RawSocket Labs
+//! One feature-gated crate that pins and re-exports the third-party crates RSL
 //! libraries and applications build on. Depend on `rsl-deps` instead of pinning `thiserror`,
 //! `tokio`, `serde`, … by hand in every crate; versions are unified here, in one place.
 //!
@@ -32,8 +32,9 @@
 #[doc(inline)]
 pub use thiserror;
 
-/// Structured, leveled application logging/tracing.
-#[cfg(feature = "log")]
+/// Structured, leveled logging/tracing. Libraries enable `tracing` alone; applications
+/// enable `log`, which adds the subscriber and appender.
+#[cfg(feature = "tracing")]
 #[doc(inline)]
 pub use tracing;
 /// Non-blocking file/rolling appender for `tracing`.
@@ -144,7 +145,7 @@ pub use tower;
 #[doc(inline)]
 pub use tower_http;
 
-/// OpenAPI derive.
+/// `OpenAPI` derive.
 #[cfg(feature = "openapi")]
 #[doc(inline)]
 pub use utoipa;
@@ -191,7 +192,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::thiserror::Error as ThisError;
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "tracing")]
     #[doc(no_inline)]
     pub use crate::tracing::{debug, error, info, trace, warn};
 

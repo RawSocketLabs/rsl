@@ -38,7 +38,8 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 |---------|-----------|
 | `error` | `thiserror` (libraries) |
 | `report` | `color_eyre` (binaries and services only; implied by `tui`) |
-| `log` | `tracing`, `tracing_subscriber`, `tracing_appender` |
+| `tracing` | `tracing` alone, for libraries (instrumentation without a subscriber) |
+| `log` | `tracing`, `tracing_subscriber`, `tracing_appender` (applications; implies `tracing`) |
 | `serde` | `serde`, `serde_json` |
 | `bytes` | `bytes` |
 | `pod` | `bytemuck`; also enables `num-complex/bytemuck` when combined with `num` |
