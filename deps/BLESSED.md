@@ -9,7 +9,7 @@ them. Bytemuck is the exception: its derives accept
 
 ## How it works
 
-- **Source of truth:** the pins in `rsl-deps/Cargo.toml`, emitted to [`blessed-versions.toml`](blessed-versions.toml)
+- **Source of truth:** the pins in `deps/Cargo.toml`, emitted to [`blessed-versions.toml`](blessed-versions.toml)
   by `tools/gen-blessed.py` (a CI job fails if the file drifts from the manifest).
 - **The check:** `tools/check-drift.py` scans a consumer's `Cargo.toml`s for **direct** deps and flags any
   governed crate on a **different major line** than blessed (e.g. `async-nats = "0.46"` when blessed is `"0.49"`).
@@ -35,12 +35,12 @@ blessed-drift:
   script:
     - apt-get update && apt-get install -y curl
     - curl -sSfL https://raw.githubusercontent.com/RawSocketLabs/rsl/main/tools/check-drift.py -o check-drift.py
-    - curl -sSfL https://raw.githubusercontent.com/RawSocketLabs/rsl/main/rsl-deps/blessed-versions.toml -o blessed.toml
+    - curl -sSfL https://raw.githubusercontent.com/RawSocketLabs/rsl/main/deps/blessed-versions.toml -o blessed.toml
     - python3 check-drift.py --blessed blessed.toml --repo . --strict
 ```
 
 ## Resolving an alert
 
 Either bump the consumer's direct dep to the blessed major line, or — if the consumer intentionally
-leads — **bless the new version in `rsl-deps/Cargo.toml`** (and regenerate). The blessed list moving is
+leads — **bless the new version in `deps/Cargo.toml`** (and regenerate). The blessed list moving is
 the deliberate, reviewed way to change the whole ecosystem's preferred version.

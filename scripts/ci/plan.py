@@ -138,7 +138,7 @@ def owners(path, graph):
     if path == ".github/ci/bnb.toml":
         return {BNB, MACROS} & graph.keys()
     if path in {"tools/gen-blessed.py", "tools/check-drift.py", ".github/actions/blessed-drift/action.yml"}:
-        return {"rsl-deps"} & graph.keys()
+        return {root for root, package in graph.items() if package.name == "rsl-deps"}
     matches = [root for root in graph if path.startswith(root + "/")]
     if matches:
         return {max(matches, key=len)}
@@ -216,7 +216,7 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
         profiles.add("no-std")
     if NOSTD in roots:
         profiles.add("msrv")
-    if "rsl-deps" in roots or full:
+    if "rsl-deps" in packages or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
                     if root in {"bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})

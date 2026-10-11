@@ -31,7 +31,7 @@ members = [
     "protocols/system/netlink",
     # facades
     "rsl",
-    "rsl-deps",
+    "deps",
     # runnable dual-use demos (privileged injection)
     "demos",
 ]
@@ -62,7 +62,7 @@ rust-version = "1.85"
 bnb = { package = "bitsandbytes", path = "bitsandbytes/bnb", version = "0.8.0", default-features = false }
 bnb-macros = { package = "bitsandbytes-macros", path = "bitsandbytes/bnb-macros", version = "=0.8.0" }
 rawsock = { path = "rawsock", version = "0.1.2", default-features = false }
-rsl-deps = { path = "rsl-deps", version = "0.1.0", default-features = false }
+rsl-deps = { path = "deps", version = "0.1.0", default-features = false }
 rsl-netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
 rsl-crypto = { path = "crypto", version = "0.1.0", default-features = false }
 rsl-crypto-legacy = { path = "crypto-legacy", version = "0.1.0", default-features = false }

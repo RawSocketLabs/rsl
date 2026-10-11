@@ -137,7 +137,7 @@ def main():
             candidate.write_bytes(generated)
             execute(["diff", "-u", str(snapshot), str(candidate)])
     elif args.profile == "blessed":
-        snapshot = Path("rsl-deps/blessed-versions.toml")
+        snapshot = Path("deps/blessed-versions.toml")
         before = snapshot.read_bytes()
         execute([sys.executable, "tools/gen-blessed.py"])
         if snapshot.read_bytes() != before:

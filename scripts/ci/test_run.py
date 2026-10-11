@@ -1,5 +1,9 @@
 """Command-contract tests: preserve gate coverage while limiting package selection."""
 
+from pathlib import Path
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 from run import commands
@@ -9,6 +13,36 @@ BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
 
 
 class ProfileTests(unittest.TestCase):
+    def test_blessed_action_downloads_current_and_historical_snapshot_paths(self):
+        root = Path(__file__).resolve().parents[2]
+        action = (root / ".github/actions/blessed-drift/action.yml").read_text()
+        script = textwrap.dedent(action.split("      run: |\n", 1)[1])
+        script = script.replace("${{ inputs.ref }}", "fixture")
+        script = script.replace("${{ inputs.strict == 'true' && '--strict' || '' }}", "--strict")
+        # HTTP is the boundary: emulate only the requested revision's available files.
+        fixture = '''
+set -euo pipefail
+curl() {
+  printf '%s\\n' "$2"
+  case "$2" in
+    */tools/check-drift.py) printf 'print("drift_checked")\\n' > "$4" ;;
+    */deps/blessed-versions.toml) [[ "$layout" == deps ]] || return 22
+      printf '[versions]\\n' > "$4" ;;
+    */rsl-deps/blessed-versions.toml) [[ "$layout" == rsl-deps ]] || return 22
+      printf '[versions]\\n' > "$4" ;;
+    *) return 22 ;;
+  esac
+}
+'''
+        for layout in ("deps", "rsl-deps"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory(prefix="rsl-ci-drift-") as directory:
+                result = subprocess.run(
+                    ["bash", "-c", fixture + script], check=True, capture_output=True, text=True,
+                    env={"PATH": "/usr/bin:/bin", "RUNNER_TEMP": directory, "layout": layout})
+                self.assertIn("/deps/blessed-versions.toml", result.stdout)
+                self.assertEqual("/rsl-deps/blessed-versions.toml" in result.stdout, layout == "rsl-deps")
+                self.assertTrue(result.stdout.rstrip().endswith("drift_checked"))
+
     def test_scoped_default_tests_and_msrv_never_expand_to_the_workspace(self):
         plan = planned(["protocols/session/socks/src/lib.rs"])
         for profile in ("workspace", "msrv"):

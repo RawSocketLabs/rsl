@@ -83,6 +83,7 @@ windows = { path = "../windows" }
     def test_actual_repository_matches_the_reviewed_blast_radius(self):
         graph = metadata_graph(Path(__file__).resolve().parents[2])
         cases = [
+            ("deps/src/lib.rs", {"rsl-deps", "dns"}, {"socks", "rsl-compression"}, set()),
             (f"{SOCKS}/src/blocking.rs", {"socks"}, set(), {f"{SOCKS}/fuzz"}),
             ("compression/src/lib.rs", {"rsl-compression", "rsl"}, {"socks", "rsl-crypto"}, set()),
             ("crypto/src/lib.rs", {"rsl-crypto", "rsl-crypto-legacy", "rsl-pki", "rsl"},

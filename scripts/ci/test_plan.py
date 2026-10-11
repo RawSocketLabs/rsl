@@ -49,6 +49,18 @@ def results(plan):
 
 
 class SelectionTests(unittest.TestCase):
+    def test_blessed_changes_select_facade_and_consumers_in_both_layouts(self):
+        for root in ("rsl-deps", "deps"):
+            graph = {root: Package("rsl-deps", set()), "consumer": Package("consumer", {root})}
+            for path in (f"{root}/src/lib.rs", "tools/gen-blessed.py", "tools/check-drift.py",
+                         ".github/actions/blessed-drift/action.yml"):
+                with self.subTest(root=root, path=path):
+                    plan = select([path], graph, graph)
+                    self.assertFalse(plan["full"])
+                    self.assertEqual(set(plan["packages"]), {"rsl-deps", "consumer"})
+                    self.assertTrue({"blessed", "facades"} <= set(plan["profiles"]))
+                    self.assertEqual(plan["fuzz"], [])
+
     def test_prose_does_not_select_rust_or_fuzz(self):
         plan = planned(["bitsandbytes/bnb/DESIGN.md", "README.md", "bitsandbytes/docs/RELEASING.md"])
         self.assertEqual(plan["profiles"], [])
