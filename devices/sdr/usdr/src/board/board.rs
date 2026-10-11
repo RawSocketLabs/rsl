@@ -167,9 +167,10 @@ impl Board {
     /// Which of the Si5332's outputs 0 and 1 carries the LMS6002D's PLL reference (LVPECL);
     /// the other is the RX sample clock. Revision 3 swapped them.
     pub(super) const fn lvpecl(rev3: bool) -> LvpeclOutput {
-        match rev3 {
-            true => LvpeclOutput::Out0,
-            false => LvpeclOutput::Out1,
+        if rev3 {
+            LvpeclOutput::Out0
+        } else {
+            LvpeclOutput::Out1
         }
     }
 }
