@@ -1,0 +1,30 @@
+[package]
+name = "bladerf"
+repository = "https://github.com/RawSocketLabs/rsl"
+authors = ["Ryan Kurte <ryankurte@gmail.com>"]
+description = "WIP Rust wrapper for libbladerf"
+readme = "README.md"
+license = "MIT"
+version = "0.1.2"
+edition = "2021"
+
+[workspace]
+members = [".", "sys"]
+
+[dependencies]
+libc = "0.1.10"
+num-complex = "0.4.6"
+bladerf-sys = { path = "sys", version = "0.1.2" }
+thiserror = "2"
+
+[lib]
+name = "bladerf"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bladerf"
+path = "src/bin.rs"
+
+
+[features]
+unimplemented = []

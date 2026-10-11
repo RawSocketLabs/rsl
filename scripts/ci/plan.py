@@ -23,6 +23,7 @@ BNB = "bitsandbytes/bnb"
 MACROS = "bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"
 NOSTD = f"{BNB}/nostd-check"
+BLADERF = "bindings/bladerf"
 PKI = {"pki/asn1", "pki/x509", "pki/validation"}
 FUZZ = {
     "bitsandbytes/fuzz": ["-max_total_time=60", "-runs=2000000"],
@@ -32,7 +33,7 @@ FUZZ = {
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
-DETACHED = (*FUZZ, NOSTD, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
+DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", "tools/rust-skills")
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
@@ -46,7 +47,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "rust-skills",
-    "package",
+    "package", "bladerf",
 }
 
 
@@ -77,7 +78,8 @@ def metadata_graph(root):
         if directory not in {".", "tools/rust-skills"}:
             package_roots = {Path(p["manifest_path"]).parent.relative_to(root).as_posix()
                              for p in data["packages"]}
-            if package_roots != {directory}:
+            expected_roots = {directory, f"{directory}/sys"} if directory == BLADERF else {directory}
+            if package_roots != expected_roots:
                 raise ValueError(f"register validation for additional detached members: {directory}")
         for package in data["packages"]:
             path = Path(package["manifest_path"]).parent.relative_to(root).as_posix()
@@ -220,6 +222,8 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
                     if root in {"bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})
+    if roots & {BLADERF, f"{BLADERF}/sys"}:
+        profiles.add("bladerf")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release or full:

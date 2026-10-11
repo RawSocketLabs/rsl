@@ -15,7 +15,7 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import BNB, NOSTD, PKI, PROFILES
+from plan import BLADERF, BNB, NOSTD, PKI, PROFILES
 
 
 def packages(names):
@@ -87,6 +87,12 @@ def commands(profile, plan, bnb):
     if profile == "package":
         # Verifies both actual archives together; Cargo supplies the temporary local registry.
         return [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]]
+    if profile == "bladerf":
+        manifest = ["--manifest-path", f"{BLADERF}/Cargo.toml"]
+        return [["cargo", "fmt", *manifest, "--all", "--", "--check"],
+                ["cargo", "clippy", *manifest, "--workspace", "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "check", *manifest, "--workspace", "--all-targets"],
+                ["cargo", "test", *manifest, "-p", "bladerf", "--lib", "configure_module_"]]
     if profile in {"usdr", "rust-dsdcc"}:
         directory = {"usdr": "usdr", "rust-dsdcc": "dsdcc"}[profile]
         return [["cargo", "check", "--manifest-path", f"bindings/{directory}/Cargo.toml"]]

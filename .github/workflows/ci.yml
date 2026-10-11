@@ -108,7 +108,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           # trybuild panic snapshots need rust-src. Never silently switch their compiler.
-          components: ${{ contains(fromJSON('["workspace","bnb","socks","rust-skills"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
+          components: ${{ contains(fromJSON('["workspace","bnb","socks","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
           targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
         if: matrix.profile == 'rust-skills'
@@ -123,6 +123,7 @@ jobs:
             tools/rust-skills -> target
             bindings/usdr -> target
             bindings/dsdcc -> target
+            bindings/bladerf -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:
@@ -137,6 +138,9 @@ jobs:
       - name: Fetch DSDcc headers (compile check only, no hardware/native linking)
         if: matrix.profile == 'rust-dsdcc'
         run: git clone --depth 1 https://github.com/f4exb/dsdcc.git "$RUNNER_TEMP/dsdcc"
+      - name: Native development libraries for bladeRF bindings
+        if: matrix.profile == 'bladerf' && inputs.runner != 'beefy'
+        run: sudo apt-get update && sudo apt-get install -y libbladerf-dev libclang-dev
       - uses: EmbarkStudios/cargo-deny-action@v2
         if: matrix.profile == 'deny'
       - name: Run the complete selected profile

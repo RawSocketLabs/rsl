@@ -1,0 +1,15 @@
+[package]
+name = "bladerf-sys"
+repository = "https://github.com/RawSocketLabs/rsl"
+description = "WIP Rust wrapper for libbladerf"
+authors = ["Ryan Kurte <ryankurte@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+version = "0.1.2"
+edition = "2021"
+
+[dependencies]
+
+
+[build-dependencies]
+bindgen = "0.70.1"

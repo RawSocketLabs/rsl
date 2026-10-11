@@ -94,6 +94,16 @@ curl() {
                 sequence = commands(profile, planned(full=True), BNB_CONFIG)
                 self.assertEqual(sequence, [["cargo", "check", "--manifest-path", manifest]])
 
+    def test_bladerf_compiles_all_targets_but_runs_only_hardware_free_tests(self):
+        sequence = commands("bladerf", planned(full=True), BNB_CONFIG)
+        manifest = ["--manifest-path", "bindings/bladerf/Cargo.toml"]
+        self.assertIn(["cargo", "check", *manifest, "--workspace", "--all-targets"], sequence)
+        self.assertIn(["cargo", "fmt", *manifest, "--all", "--", "--check"], sequence)
+        self.assertIn(["cargo", "clippy", *manifest, "--workspace", "--all-targets",
+                       "--", "-D", "warnings"], sequence)
+        tests = [command for command in sequence if command[:2] == ["cargo", "test"]]
+        self.assertEqual(tests, [["cargo", "test", *manifest, "-p", "bladerf", "--lib", "configure_module_"]])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,10 +4,41 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plan import BNB, SOCKS, metadata_graph, select
+from plan import BLADERF, BNB, SOCKS, metadata_graph, select
 
 
 class CargoMetadataTests(unittest.TestCase):
+    def test_bladerf_nested_workspace_preserves_sys_and_downstream_ownership(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-bladerf-") as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text(
+                f'[workspace]\nresolver="2"\nmembers=["consumer"]\nexclude=["{BLADERF}"]\n')
+            for path, name in (("consumer", "consumer"), (BLADERF, "bladerf"),
+                               (f"{BLADERF}/sys", "bladerf-sys")):
+                crate = root / path
+                (crate / "src").mkdir(parents=True)
+                (crate / "src/lib.rs").touch()
+                manifest = f'[package]\nname="{name}"\nversion="0.1.2"\n'
+                if name == "consumer":
+                    manifest += f'[dependencies]\nbladerf={{path="../{BLADERF}", optional=true}}\n'
+                elif name == "bladerf":
+                    manifest += ('[workspace]\nmembers=[".", "sys"]\n'
+                                 '[dependencies]\nbladerf-sys={path="sys", version="0.1.2"}\n')
+                (crate / "Cargo.toml").write_text(manifest)
+            graph = metadata_graph(root)
+            self.assertFalse(graph[BLADERF].workspace)
+            self.assertFalse(graph[f"{BLADERF}/sys"].workspace)
+            self.assertEqual(graph[BLADERF].dependencies, {f"{BLADERF}/sys"})
+            for path, required_roots in ((BLADERF, {BLADERF, "consumer"}),
+                                         (f"{BLADERF}/sys", {BLADERF, f"{BLADERF}/sys", "consumer"})):
+                with self.subTest(path=path):
+                    plan = select([f"{path}/src/lib.rs"], graph, graph)
+                    self.assertFalse(plan["full"])
+                    self.assertEqual(set(plan["roots"]), required_roots)
+                    self.assertEqual(plan["packages"], ["consumer"])
+                    self.assertIn("bladerf", plan["profiles"])
+                    self.assertEqual(plan["fuzz"], [])
+
     def test_ffi_ownership_resolves_current_and_historical_layouts(self):
         for ffi_roots in (("usdr", "rust-dsdcc"), ("bindings/usdr", "bindings/rust-dsdcc"),
                           ("bindings/usdr", "bindings/dsdcc")):

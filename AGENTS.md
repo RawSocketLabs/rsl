@@ -26,7 +26,7 @@ git-rev pinning.
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rsl-netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `rsl-deps` | blessed external-dependency stack |
-| `bindings/usdr/`, `bindings/dsdcc/` | `usdr`, `rust-dsdcc` | **excluded** FFI members (need a C++ toolchain) |
+| `bindings/usdr/`, `bindings/dsdcc/`, `bindings/bladerf/` | `usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | **excluded** FFI workspaces (need native toolchains/libraries) |
 | `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)
@@ -42,11 +42,16 @@ git-rev pinning.
   `publish = false` until the registry decision flips on.
 - **Commits** — Conventional Commits (commitlint). **No `Co-Authored-By:` trailer.**
 
-## FFI members (`usdr`, `rust-dsdcc`)
+## FFI members (`usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys`)
 
 Excluded from the default workspace build/CI (they need a C++ toolchain + system libs). Build
 them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external
 DSDcc library — its license governs distributed linked binaries.
+
+`bindings/bladerf/` retains its own workspace with the `bladerf-sys` member in
+`sys/`. It requires `libbladeRF` development headers/library and `libclang`.
+CI compiles all targets and runs only hardware-free configuration tests; the
+remaining device tests are opt-in and serial (`make -C bindings/bladerf test`).
 
 ## Verify
 
