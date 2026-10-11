@@ -15,4 +15,4 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   lives in `devices/<kind>/` once a second driver needs it, not before.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
   workspace root (`rawsock/`, …), and drivers depend on them.
-- FFI crates wrapping a vendor's C library stay excluded at the workspace root (`usdr/`).
+- FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).
