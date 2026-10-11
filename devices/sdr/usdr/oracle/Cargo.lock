@@ -19,6 +19,7 @@ name = "bitsandbytes"
 version = "0.8.0"
 dependencies = [
  "bitsandbytes-macros",
+ "tracing",
 ]
 
 [[package]]
@@ -176,6 +177,7 @@ dependencies = [
 name = "rsl-usdr-oracle"
 version = "0.0.0"
 dependencies = [
+ "bitsandbytes",
  "cc",
  "num-complex",
  "rsl-usdr",

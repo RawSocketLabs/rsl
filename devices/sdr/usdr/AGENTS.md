@@ -7,7 +7,9 @@ TMP114), replacing the cxx FFI crate `bindings/usdr/`. Scope is RX at parity wit
 over both the USB and PCIe transports. Ported so far: board power-up and power-down,
 temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
-`pcie`; untested on hardware). The USB transport is next. Added beyond libusdr: the
+`pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
+(feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
+USB RX streaming is next. Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -43,7 +45,8 @@ Each layer calls only the ones below it.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
-  Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `window` is the
+  Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
+  `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
@@ -52,6 +55,11 @@ Each layer calls only the ones below it.
 
 - Every ported sequence gets a parity test in `oracle/tests/`. The test compares the Rust
   trace with libusdr's, operation for operation, on fresh boards.
+  USB's simple-I²C LUT/control sequence is checked against the actual C helpers in
+  `oracle/tests/usb_i2c_parity.rs`; USB framing/router fixtures cite the same PIN.
+  The transport fails closed on malformed replies, missing notifications, or ambiguous
+  timeouts, and refuses USB routing while HWID reports `PCIe` ownership. This differs
+  deliberately from C's sequence-gap resynchronization and routing-setup skip.
 
 - libusdr is the reference until hardware is available. Behaviour the Rust driver ports must
   first be exercised through the oracle against `sim`, then matched.
@@ -109,6 +117,7 @@ Each layer calls only the ones below it.
 ```sh
 cargo clippy -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie --all-targets && cargo test -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie
 cargo clippy -p rsl-usdr --all-targets --features pcie && cargo test -p rsl-usdr --features pcie
+cargo clippy -p rsl-usdr --all-targets --all-features -- -D warnings && cargo test -p rsl-usdr --all-features
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml

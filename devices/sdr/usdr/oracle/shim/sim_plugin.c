@@ -18,6 +18,27 @@
 #include "device/device_names.h"
 #include "device/device_vfs.h"
 #include "lowlevel/pcie_uram/pcie_uram_driver_if.h"
+#include "ipblks/si2c.h"
+
+// Stateless oracle for the USB transport's simple-I2C command/cache sequence.
+// Each request is two words: addr|bus<<8|outlen<<16|inlen<<24, then LE outgoing bytes.
+// Output is two words per request: the hardware LUT and the control word.
+int rsl_oracle_si2c_sequence(const unsigned* requests, size_t count, unsigned* out)
+{
+    struct i2c_cache cache[4] = {0};
+    for (size_t i = 0; i < count; i++) {
+        unsigned shape = requests[2 * i];
+        unsigned data = requests[2 * i + 1];
+        unsigned char bytes[3] = {data & 255, (data >> 8) & 255, (data >> 16) & 255};
+        unsigned slot = si2c_update_lut_idx(cache, shape & 127, (shape >> 8) & 1);
+        out[2 * i] = si2c_get_lut(cache);
+        int res = si2c_make_ctrl_reg(slot, bytes, (shape >> 16) & 255,
+                                    (shape >> 24) & 255, &out[2 * i + 1]);
+        if (res)
+            return res;
+    }
+    return 0;
+}
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int rsl_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz, const void* pout);

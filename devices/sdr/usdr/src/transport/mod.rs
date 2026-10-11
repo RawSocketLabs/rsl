@@ -2,5 +2,7 @@
 
 #[cfg(all(feature = "pcie", target_os = "linux"))]
 pub mod pcie;
-#[cfg(any(test, all(feature = "pcie", target_os = "linux")))]
+#[cfg(all(feature = "usb", target_os = "linux"))]
+pub mod usb;
+#[cfg(any(test, all(any(feature = "pcie", feature = "usb"), target_os = "linux")))]
 mod window;

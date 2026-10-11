@@ -27,10 +27,16 @@ def commands(profile, plan, bnb):
     roots = set(plan["roots"])
     workspace = ["--workspace"] if plan["full"] else packages(selected)
     if profile == "workspace":
-        return [["cargo", "fmt", "--all", "--check"],
+        result = [["cargo", "fmt", "--all", "--check"],
                 ["cargo", "clippy", *workspace, "--all-targets"],
-                ["cargo", "test", *workspace],
-                [sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"]]
+                ["cargo", "test", *workspace]]
+        if "rsl-usdr" in selected:
+            result.extend([
+                ["cargo", "clippy", "-p", "rsl-usdr", "--all-targets", "--all-features", "--", "-D", "warnings"],
+                ["cargo", "test", "-p", "rsl-usdr", "--all-features"],
+            ])
+        result.append([sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"])
+        return result
     if profile == "bnb":
         return [["cargo", "clippy", "-p", "bitsandbytes", "-p", "bitsandbytes-macros",
                  "--all-targets", "--all-features", "--", "-D", "warnings"],
@@ -65,7 +71,7 @@ def commands(profile, plan, bnb):
     if profile == "msrv":
         result = [["cargo", "check", *workspace]] if selected else []
         result.extend(["cargo", "check", "-p", name, "--all-features"]
-                      for name in sorted(selected & {"bitsandbytes", "socks"}))
+                      for name in sorted(selected & {"bitsandbytes", "socks", "rsl-usdr"}))
         if NOSTD in roots:
             result.append(["cargo", "check", "--manifest-path", f"{NOSTD}/Cargo.toml"])
         return result

@@ -80,6 +80,7 @@ rsl-compression = { path = "compression", version = "0.1.0", default-features = 
 # unpublished test support, dev-dependency only
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
+rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 
 # --- blessed externals used directly by owned crates ---

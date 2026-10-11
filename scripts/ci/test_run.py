@@ -57,6 +57,17 @@ curl() {
         self.assertIn(["cargo", "test", "--workspace"], sequence)
         self.assertIn(["cargo", "clippy", "--workspace", "--all-targets"], sequence)
 
+    def test_usdr_transports_are_feature_checked_only_when_selected(self):
+        for plan in (planned(["devices/sdr/usdr/src/transport/usb/bus.rs"]), planned(full=True)):
+            sequence = commands("workspace", plan, BNB_CONFIG)
+            self.assertIn(["cargo", "clippy", "-p", "rsl-usdr", "--all-targets",
+                           "--all-features", "--", "-D", "warnings"], sequence)
+            self.assertIn(["cargo", "test", "-p", "rsl-usdr", "--all-features"], sequence)
+            self.assertIn(["cargo", "check", "-p", "rsl-usdr", "--all-features"],
+                          commands("msrv", plan, BNB_CONFIG))
+        sequence = commands("workspace", planned(["protocols/session/socks/src/lib.rs"]), BNB_CONFIG)
+        self.assertFalse(any("rsl-usdr" in command for command in sequence))
+
     def test_bnb_feature_ladder_and_denied_warning_lints_are_retained(self):
         sequence = commands("bnb", planned(release=True), BNB_CONFIG)
         for feature in ("bytes", "mock", "tokio-io"):

@@ -76,7 +76,13 @@ pub(crate) fn read_regs(
     addr: u32,
     out: &mut [u32],
 ) -> Result<(), BusError> {
-    for (reg, value) in (addr..).zip(out) {
+    for (offset, value) in out.iter_mut().enumerate() {
+        let reg = u32::try_from(offset)
+            .ok()
+            .and_then(|offset| addr.checked_add(offset))
+            .ok_or(BusError::Unsupported(
+                "register span wraps the address space",
+            ))?;
         *value = if reg >= window.first {
             io.write(window.index, reg - window.first)?;
             io.read(window.data())?

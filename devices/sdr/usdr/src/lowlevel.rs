@@ -87,6 +87,18 @@ pub enum BusError {
     Other(Box<dyn StdError + Send + Sync>),
 }
 
+#[cfg(all(feature = "usb", target_os = "linux"))]
+impl From<rsl_usb::Error> for BusError {
+    fn from(error: rsl_usb::Error) -> Self {
+        match error {
+            rsl_usb::Error::TimedOut => Self::Timeout,
+            rsl_usb::Error::Disconnected => Self::Disconnected,
+            rsl_usb::Error::Io(error) => Self::Io(error),
+            other => Self::Other(Box::new(other)),
+        }
+    }
+}
+
 /// Register, SPI and I2C access to one uSDR board, plus time.
 ///
 /// Implementations perform each call as one transaction and keep the order of calls.
