@@ -12,6 +12,9 @@ use super::protocol::I2cCache;
 use super::rx::{Rx, RxQueue};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 
+#[path = "execution_tests.rs"]
+mod execution;
+
 /// Scripted complete endpoint transfers and observed outgoing packets.
 #[derive(Default)]
 struct Script {

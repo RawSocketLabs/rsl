@@ -27,5 +27,9 @@ rsl-usb = { workspace = true, optional = true }
 [dev-dependencies]
 rsl-usdr-sim.workspace = true
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Readiness-runner proof over a fake source; no Mio dependency in production/core APIs.
+mio.workspace = true
+
 [lints]
 workspace = true

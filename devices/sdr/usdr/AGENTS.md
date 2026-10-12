@@ -3,9 +3,20 @@
 > Inherits `../../AGENTS.md` (devices) and the workspace-root `../../../AGENTS.md`.
 
 A pure-Rust driver for the Wavelet Lab uSDR (`m2_lm6_1`: LMS6002D, Si5332, LP8758, TPS6381x,
-TMP114), replacing the cxx FFI crate `bindings/usdr/`. Scope is RX at parity with that crate's API,
-over both the USB and PCIe transports. Ported so far: board power-up and power-down,
-temperature reading, the RX sample rate, bandwidth and frequency, and the RX stream
+TMP114), replacing the cxx FFI crate `bindings/usdr/`. The approved program now covers the
+full functional libusdr library in phases: complete uSDR first, then all registered board
+families and shared DSP/transport/service capabilities. The API is Rust-only: no production
+C runtime, C ABI compatibility, Python/Soapy or legacy JSON/RPC adapters. See
+[PORTING.md](PORTING.md) for the pinned capability ledger, acceptance loop and phased roadmap;
+the program is not complete. Linux is first. Sans-I/O state machines and an externally owned
+Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
+opt-in. The first private temperature/USB-I²C execution pilot is implemented; native
+nonblocking attachment and public driver/stream handles remain unimplemented. No hardware
+qualification, release or publication is authorized by this roadmap.
+
+The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
+board power-up and power-down, temperature reading, the RX sample rate, bandwidth and
+frequency, and the RX stream
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
 `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
@@ -49,6 +60,12 @@ Each layer calls only the ones below it.
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
+- `src/chips/tmp114.rs` and `src/transport/usb/i2c.rs`: private sans-I/O temperature and
+  framed I²C machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
+  through the existing blocking pump. `execution_tests.rs` proves the same machines
+  with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
+  bounded synthetic RX loans. It does not establish native readiness/cancellation,
+  independent public RX/TX handles, token retirement/fairness or browser integration.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -79,9 +96,13 @@ Each layer calls only the ones below it.
   in its own change.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Not ported: libusdr's front-end boards (`fe=`), external clock options (`extclk`,
-  `extref`) and its `USDR_BARE_DEV`/`USDR_IGNORE_TMP`/`USDR_FE_TYPE` environment overrides.
-  The oracle's parity tests assume those variables are unset.
+- Currently not ported: front-end boards (`fe=`), external clock options (`extclk`,
+  `extref`) and the remaining controls/TX/shared-library domains in [PORTING.md](PORTING.md).
+  Their functional behaviours are in the approved phased scope; legacy environment
+  variable spelling is not a compatibility requirement. The present oracle assumes
+  `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is
+  blocked on authorized register-sequence/profile evidence; a C plugin fallback is not
+  permitted and must not be counted as a pure-Rust port.
 - Intentional divergences from libusdr are whitelisted per test scenario, never by masking a
   register globally. The first is the band-crossing fix: gate Si5332 port 3 with
   `OUT3_OE` alone, without cycling USYS_CTRL through READY as libusdr does (and without

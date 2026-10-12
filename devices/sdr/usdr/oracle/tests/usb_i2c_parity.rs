@@ -29,6 +29,22 @@ fn wire_headers_match_pinned_usb_fixtures() {
 }
 
 #[test]
+fn complete_notification_packets_validate_before_committing_the_sequence() {
+    // libusb_transfer_ntfy's pinned wire format, including wrapping global sequence.
+    let packet = [6, 0, 0xff, 0xff, 0x0c, 0x80, 0, 0];
+    let mut sequence = Some(0xffff);
+    assert_eq!(
+        protocol::Notification::completion(&packet, 6, &mut sequence),
+        Ok(Some(0x800c))
+    );
+    assert_eq!(sequence, Some(0));
+    // Even a valid target record must not hide a truncated tail.
+    let malformed = [6, 0, 0, 0, 0x0c, 0x80, 0, 0, 2, 0, 1, 0];
+    assert!(protocol::Notification::completion(&malformed, 6, &mut sequence).is_err());
+    assert_eq!(sequence, Some(0));
+}
+
+#[test]
 fn cache_and_control_words_match_c_for_replacement_hits_and_all_lengths() {
     let mut cache = protocol::I2cCache::default();
     let mut requests = Vec::new();

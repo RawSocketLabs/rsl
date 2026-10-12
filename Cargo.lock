@@ -3294,6 +3294,7 @@ name = "rsl-usdr"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "mio",
  "num-complex",
  "rsl-deps",
  "rsl-usb",

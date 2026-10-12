@@ -49,6 +49,55 @@ pub(super) struct Notification {
     pub(super) sequence: u16,
 }
 
+impl Notification {
+    /// Validates a complete IRQ transfer and advances the session's global sequence.
+    /// Scalar replies for `event` are returned only after the entire packet is valid.
+    pub(super) fn completion(
+        packet: &[u8],
+        event: u8,
+        next_sequence: &mut Option<u16>,
+    ) -> Result<Option<u32>, &'static str> {
+        if packet.is_empty() || packet.len() > 64 || packet.len() % 4 != 0 {
+            return Err("invalid USB notification transfer length");
+        }
+        let mut next = *next_sequence;
+        let mut rest = packet;
+        let mut value = None;
+        while !rest.is_empty() {
+            if rest.len() < 8 {
+                return Err("truncated USB notification");
+            }
+            let header = Self::from_raw(u32::from_le_bytes(
+                rest[..4]
+                    .try_into()
+                    .expect("invariant: notification header checked"),
+            ));
+            let sequence = header.sequence();
+            if next.is_some_and(|expected| sequence != expected) {
+                return Err("USB notification sequence gap");
+            }
+            next = Some(sequence.wrapping_add(1));
+            let length = (usize::from(header.extra_words().value()) + 2) * 4;
+            if length > rest.len() || header.event().value() >= 32 {
+                return Err("invalid USB notification record");
+            }
+            if header.event().value() == event {
+                if header.extra_words().value() != 0 || value.is_some() {
+                    return Err("ambiguous USB control completion");
+                }
+                value = Some(u32::from_le_bytes(
+                    rest[4..8]
+                        .try_into()
+                        .expect("invariant: scalar payload checked"),
+                ));
+            }
+            rest = &rest[length..];
+        }
+        *next_sequence = next;
+        Ok(value)
+    }
+}
+
 /// The simple I²C core's control word, `MAKE_I2C_CMD` in `ipblks/si2c.h`.
 #[bitfield(u32)]
 #[derive(Clone, Copy, Debug)]

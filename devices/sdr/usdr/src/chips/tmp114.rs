@@ -24,10 +24,12 @@
 //! Register meanings: TI SNIS214E, "TMP114", §8.6. Its registers are 16 bits wide and sent
 //! MSB first.
 
+use std::io;
+
 use bnb::{BitEnum, bitfield, u4, u12};
 
 use crate::error::{BusContext, Error};
-use crate::lowlevel::{Bus, I2cAddr};
+use crate::lowlevel::{Bus, BusError, I2cAddr};
 
 /// Register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,8 +90,14 @@ impl Tmp114 {
 
     /// Reads the temperature in degrees Celsius.
     pub(crate) fn celsius(self, bus: &mut dyn Bus) -> Result<f32, Error> {
-        let raw = self.read(bus, Reg::Temperature)?;
-        Ok(f32::from(i16::from_be_bytes(raw)) / COUNTS_PER_CELSIUS)
+        let (mut operation, request) = TemperatureRead::begin(self);
+        let mut raw = [0; 2];
+        let result = bus
+            .i2c(request.dev, &request.register, &mut raw)
+            .map(|()| raw.as_slice());
+        operation
+            .complete(result)
+            .expect("invariant: a fresh temperature operation completes exactly once")
     }
 
     /// Checks the device ID register.
@@ -112,5 +120,120 @@ impl Tmp114 {
         bus.i2c(self.dev, &[reg], &mut raw)
             .reading(Self::NAME, reg)?;
         Ok(raw)
+    }
+}
+
+/// The bounded semantic I²C action used by a temperature operation's executor.
+///
+/// This is not USB framing: USB and `PCIe` executors implement the same chip request.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TemperatureRequest {
+    /// Where the TMP114 answers.
+    pub(crate) dev: I2cAddr,
+    /// Selects `Temp_Result`, TI SNIS214E §8.6.1; exactly two bytes must return.
+    pub(crate) register: [u8; 1],
+}
+
+/// One temperature read without I/O, clocks or runtime ownership.
+///
+/// The executor correlates its transport completion before calling [`Self::complete`].
+/// Sensor identification and the board's thermal policy remain the caller's prerequisites.
+/// Completion, including failure, is terminal; duplicate callbacks produce no result.
+pub(crate) struct TemperatureRead {
+    /// Whether its one semantic read can still complete.
+    pending: bool,
+}
+
+impl TemperatureRead {
+    /// Begins a read and returns the action for a blocking, readiness or callback executor.
+    pub(crate) fn begin(sensor: Tmp114) -> (Self, TemperatureRequest) {
+        (
+            Self { pending: true },
+            TemperatureRequest {
+                dev: sensor.dev,
+                register: [Reg::Temperature.into()],
+            },
+        )
+    }
+
+    /// Resolves the read once, preserving transport errors and rejecting malformed data.
+    pub(crate) fn complete(
+        &mut self,
+        result: Result<&[u8], BusError>,
+    ) -> Option<Result<f32, Error>> {
+        if !self.pending {
+            return None;
+        }
+        self.pending = false;
+        let result = result.and_then(|bytes| {
+            let raw: [u8; 2] = bytes.try_into().map_err(|_| {
+                BusError::Io(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TMP114 temperature reply must contain exactly two bytes",
+                ))
+            })?;
+            Ok(f32::from(i16::from_be_bytes(raw)) / COUNTS_PER_CELSIUS)
+        });
+        Some(result.reading(Tmp114::NAME, u8::from(Reg::Temperature)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Access;
+
+    #[test]
+    fn temperature_action_and_signed_wire_values_follow_tmp114_datasheet() {
+        // SNIS214E §8.6.1: signed big-endian counts, 1/128 °C per count.
+        for (wire, expected) in [
+            ([0x00, 0x00], 0.0),
+            ([0x0c, 0x80], 25.0),
+            ([0xe4, 0x80], -55.0),
+            ([0xff, 0xff], -1.0 / 128.0),
+            ([0x00, 0x01], 1.0 / 128.0),
+            ([0x7f, 0xff], 255.992_19),
+            ([0x80, 0x00], -256.0),
+        ] {
+            let (mut operation, request) = TemperatureRead::begin(Tmp114::usdr());
+            assert_eq!((request.dev.bus(), request.dev.addr()), (0, 0x4e));
+            assert_eq!(request.register, [0]);
+            let actual = operation.complete(Ok(&wire)).unwrap().unwrap();
+            assert!((actual - expected).abs() < f32::EPSILON, "wire {wire:?}");
+            assert!(operation.complete(Ok(&wire)).is_none());
+        }
+    }
+
+    #[test]
+    fn malformed_temperature_reply_is_terminal_and_preserves_read_context() {
+        for bytes in [&[][..], &[0][..], &[0, 0, 0][..], &[0; 4][..]] {
+            let (mut operation, _) = TemperatureRead::begin(Tmp114::usdr());
+            assert!(matches!(
+                operation.complete(Ok(bytes)),
+                Some(Err(Error::Bus {
+                    chip: "TMP114",
+                    reg: 0,
+                    access: Access::Read,
+                    source: BusError::Io(ref error),
+                    ..
+                })) if error.kind() == io::ErrorKind::InvalidData
+            ));
+            assert!(operation.complete(Ok(&[0x0c, 0x80])).is_none());
+        }
+    }
+
+    #[test]
+    fn transport_failure_cannot_be_replaced_by_a_late_success() {
+        let (mut operation, _) = TemperatureRead::begin(Tmp114::usdr());
+        assert!(matches!(
+            operation.complete(Err(BusError::Timeout)),
+            Some(Err(Error::Bus {
+                chip: "TMP114",
+                reg: 0,
+                source: BusError::Timeout,
+                ..
+            }))
+        ));
+        assert!(operation.complete(Ok(&[0x0c, 0x80])).is_none());
     }
 }

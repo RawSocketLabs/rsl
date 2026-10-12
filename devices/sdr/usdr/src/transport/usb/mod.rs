@@ -32,6 +32,7 @@
 //! interrupt routing. Hardware operation remains unqualified until tested on a board.
 
 mod bus;
+mod i2c;
 mod protocol;
 mod rx;
 
@@ -39,3 +40,6 @@ pub use bus::UsbBus;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod i2c_tests;
