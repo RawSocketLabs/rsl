@@ -12,12 +12,13 @@ use std::fmt;
 use super::stream::RxStream;
 use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
-use crate::chips::lp8758::{BuckVoltage, Lp8758};
+use crate::chips::lp8758::{BuckControl, BuckVoltage, Config, Lp8758};
 use crate::chips::si5332::{LvpeclOutput, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
 use crate::fpga::Decimation;
 use crate::lowlevel::Bus;
+use crate::portable::power::RailPlan;
 
 /// A powered uSDR board and the bus it is reached through.
 ///
@@ -161,6 +162,24 @@ impl Board {
     /// Boost converter output, 3.45 V, the same whichever level the TPS63811's VSEL pin
     /// sits at.
     pub(super) const BOOST_VOLTAGE: OutputVoltage = OutputVoltage::from_millivolts(3450);
+
+    /// The rails power-up brings up, in `usdr_init`'s order. The PMIC configuration is
+    /// libusdr's `lp8758_ss(0)`: spread spectrum off; the same byte also sets the 105 °C
+    /// die-temperature warning and drops the EN-pin pull-downs. Then channels 1 and 3 are
+    /// set, all four run in forced PWM, and the boost converter starts in forced PWM.
+    pub(super) const RAILS: RailPlan = RailPlan {
+        pmic: Self::PMIC.dev(),
+        config: Config::new().with_warn_at_105c(true),
+        gpio: Self::VGPIO,
+        lms_io: Self::LMS_VIO_NORMAL,
+        control: BuckControl::new()
+            .with_enabled(true)
+            .with_discharge_when_off(true)
+            .with_forced_pwm(true),
+        boost: Self::BOOST.dev(),
+        boost_forced_pwm: true,
+        boost_voltage: Self::BOOST_VOLTAGE,
+    };
 }
 
 impl Board {

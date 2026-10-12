@@ -2,13 +2,13 @@
 
 use bnb::{bitfield, u2, u4};
 
+use super::super::register::Register;
 use super::reg::Reg;
-use crate::chips::register::Register;
 
 /// Manufacturer and silicon revision. `DEVID`, §8.6.1.4 (read-only).
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct DeviceId {
+pub(crate) struct DeviceId {
     /// Manufacturer: 0 is Texas Instruments. `MANUFACTURER`, bits 7:4.
     #[bits(4..=7)]
     manufacturer: u4,
@@ -25,3 +25,6 @@ impl Register for DeviceId {
     type Map = Reg;
     const ADDR: Reg = Reg::DeviceId;
 }
+
+/// The ID libusdr requires: Texas Instruments, silicon revision B0 (0x04).
+pub(crate) const DEVICE_ID: DeviceId = DeviceId::new().with_major(u2::new(1));

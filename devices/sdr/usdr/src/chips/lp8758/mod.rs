@@ -24,10 +24,10 @@
 //!
 //! # How the driver uses it
 //!
-//! Power-up checks the revision ([`Lp8758::check_revision`]), turns spread spectrum off
-//! and the 105 °C warning on ([`Config`]), sets channels 1 and 3 ([`BuckVoltage`]), then
-//! runs all four in forced PWM ([`BuckControl`]). Forced PWM keeps each converter
-//! switching at one fixed frequency even at light load. In the other mode, PFM, the
+//! Power-up (the portable `PowerRails` machine) checks the revision, turns spread
+//! spectrum off and the 105 °C warning on ([`Config`]), sets channels 1 and 3
+//! ([`BuckVoltage`]), then runs all four in forced PWM ([`BuckControl`]). Forced PWM keeps
+//! each converter switching at one fixed frequency even at light load. In the other mode, PFM, the
 //! switching frequency moves with the load to save power, so its ripple can land anywhere,
 //! including inside the band being received. libusdr does not state its reason; this is
 //! the usual one for a radio.
@@ -39,15 +39,10 @@
 //!
 //! # Register map
 //!
-//! One flat address space ([`reg`]); the value types are split into the per-channel
-//! registers ([`buck`]), the chip-wide [`config`] and the revision ([`id`]).
+//! One flat address space; the address map and value types live in the portable core
+//! (`crate::portable::lp8758`), shared with the power-rail machine.
 
-mod buck;
-mod config;
-mod id;
 mod lp8758;
-mod reg;
 
-pub(crate) use buck::{Buck, BuckControl, BuckVoltage};
-pub(crate) use config::Config;
+pub(crate) use crate::portable::lp8758::{Buck, BuckControl, BuckVoltage, Config};
 pub(crate) use lp8758::Lp8758;

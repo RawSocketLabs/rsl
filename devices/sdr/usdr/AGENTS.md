@@ -49,15 +49,19 @@ Each layer calls only the ones below it.
   stateless and borrow `&mut dyn Bus` per call.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
-- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX). `board/board.rs`
-  holds the `Board` struct, its chips and supply setpoints as associated consts
-  (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`). Each sequence file
-  (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay in the chip
-  module.
+- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX) and the executors
+  that run migrated ones from `src/portable/` (power rails so far). `board/board.rs` holds
+  the `Board` struct, its chips and supply setpoints as associated consts
+  (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
+  file (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay with
+  the chip's register values.
 - `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths.
   Its only board knowledge is where the uSDR wires it: an `at(addr)` constructor plus a
   `usdr()` constructor whose doc cites the address source (datasheet fixed address or
-  libusdr's `I2C_DEV_*`). Sequences, setpoints and policy stay in `src/board/`.
+  libusdr's `I2C_DEV_*`). Setpoints and policy stay in `src/board/`; a sequence is in
+  `src/board/` until it migrates to a portable machine. A chip whose values a portable
+  machine uses keeps its address map, value types and ID facts in `src/portable/<chip>/`
+  (LP8758, TPS6381x, TMP114); `src/chips/<chip>/` then keeps the docs, address and driver.
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), and the RX stream engine (`stream`:
   front end, DMA, sync).
@@ -67,9 +71,13 @@ Each layer calls only the ones below it.
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
-- `src/portable/`: platform-independent addresses, TMP114 values/temperature operation,
-  Si5332 divider maths and USB framing/I²C state machine. Uses core types and generic
-  executor errors; no OS/runtime ownership. Keep imports within the portable tree.
+- `src/portable/`: platform-independent addresses, the typed-register traits, TMP114
+  values/temperature operation, LP8758/TPS6381x register values and the power-rail
+  machine (`power.rs`), Si5332 divider maths and USB framing/I²C state machine. Uses core
+  types and generic executor errors; no OS/runtime ownership. Keep imports within the
+  portable tree. Sequences move here as hand-written explicit state machines (decided
+  2026-10-12, over async sequences); the blocking path runs the same machine through a
+  small executor, so each sequence exists once and oracle parity proves it.
   Fixed-size machines do not allocate; the bnb dependency requires alloc. The native
   adapters preserve original bus errors and chip/read context.
 - `src/chips/tmp114.rs` and `src/transport/usb/i2c.rs`: thin host/context adapters around
@@ -144,7 +152,8 @@ Each layer calls only the ones below it.
   The second leaves out stream create's per-channel baseband loop, a libusdr bug that
   reselects the band, clamps the NCOs and bypasses the filter;
   `oracle/tests/stream_parity.rs` whitelists it and the mixer exit it leaves libusdr owing.
-- Registers are typed (`src/chips/register.rs`). Each chip has a `Reg` enum naming every
+- Registers are typed (`src/portable/register.rs`; `src/chips/register.rs` adds blocking I2C
+  access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
   - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
     or a `BitEnum` with a catch-all for whole-byte values. It implements `Register`, or

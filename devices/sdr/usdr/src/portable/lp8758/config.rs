@@ -2,8 +2,8 @@
 
 use bnb::bitfield;
 
+use super::super::register::Register;
 use super::reg::Reg;
-use crate::chips::register::Register;
 
 /// Die-temperature warning level, EN-pin pull-downs, and spread spectrum. `CONFIG`,
 /// §7.6.1.23.

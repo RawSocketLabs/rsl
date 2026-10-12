@@ -1,7 +1,7 @@
 //! The two output-voltage registers, one per VSEL pin level.
 
+use super::super::register::IndexedRegister;
 use super::reg::Reg;
-use crate::chips::register::IndexedRegister;
 
 /// Which output-voltage register, chosen by the VSEL pin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

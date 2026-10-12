@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::lowlevel::BusError;
+use crate::portable::power::{RegisterAccess, SequenceFailure};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -190,5 +191,86 @@ impl<T> BusContext<T> for Result<T, BusError> {
             reg,
             source,
         })
+    }
+}
+
+/// A failed power-rail step, with the register or chip ID it names.
+impl From<SequenceFailure<BusError>> for Error {
+    fn from(failure: SequenceFailure<BusError>) -> Self {
+        match failure {
+            SequenceFailure::Transport {
+                chip,
+                access,
+                source,
+            } => {
+                let (access, reg) = match access {
+                    RegisterAccess::Read { reg, .. } => (Access::Read, reg),
+                    RegisterAccess::Write { reg, .. } => (Access::Write, reg),
+                };
+                Self::Bus {
+                    chip,
+                    access,
+                    reg: reg.into(),
+                    source,
+                }
+            }
+            SequenceFailure::ChipId {
+                chip,
+                expected,
+                found,
+            } => Self::ChipId {
+                chip,
+                expected,
+                found,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowlevel::I2cAddr;
+
+    #[test]
+    fn a_failed_sequence_read_keeps_its_chip_register_and_direction() {
+        let failure = SequenceFailure::Transport {
+            chip: "TPS6381x",
+            access: RegisterAccess::Read {
+                dev: I2cAddr::new(0, 0x75),
+                reg: 0x03,
+            },
+            source: BusError::Disconnected,
+        };
+        assert!(matches!(
+            Error::from(failure),
+            Error::Bus {
+                chip: "TPS6381x",
+                access: Access::Read,
+                reg: 0x03,
+                source: BusError::Disconnected,
+            }
+        ));
+    }
+
+    #[test]
+    fn a_failed_sequence_write_is_reported_as_a_write() {
+        let failure = SequenceFailure::Transport {
+            chip: "TPS6381x",
+            access: RegisterAccess::Write {
+                dev: I2cAddr::new(0, 0x75),
+                reg: 0x01,
+                value: 0x28,
+            },
+            source: BusError::Disconnected,
+        };
+        assert!(matches!(
+            Error::from(failure),
+            Error::Bus {
+                access: Access::Write,
+                reg: 0x01,
+                ..
+            }
+        ));
     }
 }

@@ -17,9 +17,9 @@
 //!
 //! # How the driver uses it
 //!
-//! [`Tps6381x::init`] checks the part is TI silicon revision B0, then enables it in forced
-//! PWM (fixed-frequency switching, for the reason given in the [`lp8758`](super::lp8758)
-//! docs) at 3.45 V.
+//! Power-up (the portable `PowerRails` machine) checks the part is TI silicon revision B0,
+//! then enables it in forced PWM (fixed-frequency switching, for the reason given in the
+//! [`lp8758`](super::lp8758) docs) at 3.45 V.
 //!
 //! # Sources
 //!
@@ -28,14 +28,10 @@
 //!
 //! # Register map
 //!
-//! One flat address space ([`reg`]); the value types are the [`control`] register, the
-//! output [`voltage`] registers and the device [`id`].
+//! One flat address space; the address map and value types (control, output voltages,
+//! device ID) live in the portable core (`crate::portable::tps6381x`).
 
-mod control;
-mod id;
-mod reg;
 mod tps6381x;
-mod voltage;
 
+pub(crate) use crate::portable::tps6381x::OutputVoltage;
 pub(crate) use tps6381x::Tps6381x;
-pub(crate) use voltage::OutputVoltage;

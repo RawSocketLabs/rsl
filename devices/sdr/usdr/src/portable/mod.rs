@@ -3,6 +3,10 @@
 pub(crate) mod address;
 pub(crate) mod clock;
 pub(crate) mod error;
+pub(crate) mod lp8758;
+pub(crate) mod power;
+pub(crate) mod register;
 pub(crate) mod temperature;
+pub(crate) mod tps6381x;
 #[cfg(feature = "usb")]
 pub(crate) mod usb;

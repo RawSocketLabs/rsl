@@ -2,8 +2,8 @@
 
 use bnb::bitfield;
 
+use super::super::register::IndexedRegister;
 use super::reg::Reg;
-use crate::chips::register::IndexedRegister;
 
 /// One converter channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,8 +23,15 @@ pub(crate) enum Buck {
 }
 
 impl Buck {
-    /// Every channel, in register order.
-    pub(crate) const ALL: [Self; 4] = [Self::B0, Self::B1, Self::B2, Self::B3];
+    /// The channel after this one in register order, if any.
+    pub(crate) const fn next(self) -> Option<Self> {
+        match self {
+            Self::B0 => Some(Self::B1),
+            Self::B1 => Some(Self::B2),
+            Self::B2 => Some(Self::B3),
+            Self::B3 => None,
+        }
+    }
 }
 
 /// Turns a channel on or off and sets how it switches. `BUCKn_CTRL1`, §7.6.1.2.

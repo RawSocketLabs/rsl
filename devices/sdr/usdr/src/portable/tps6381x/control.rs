@@ -2,13 +2,13 @@
 
 use bnb::{BitEnum, bitfield, u2};
 
+use super::super::register::Register;
 use super::reg::Reg;
-use crate::chips::register::Register;
 
 /// How fast the output moves to a new voltage.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2)]
-pub(super) enum RampRate {
+pub(crate) enum RampRate {
     /// 1.0 V/ms.
     VoltsPerMs1,
 
@@ -25,7 +25,7 @@ pub(super) enum RampRate {
 /// Turns the converter on and sets its range and switching. `CONTROL`, §8.6.1.2.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Control {
+pub(crate) struct Control {
     /// Use the high output range (2.025 V to 5.2 V) instead of the low (1.8 V to
     /// 4.975 V). `RANGE`, bit 6; reset 0.
     #[bits(6..=6)]

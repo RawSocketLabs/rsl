@@ -9,11 +9,11 @@ use rsl_deps::tracing::{debug, warn};
 use super::Board;
 use super::board::{Chains, RxState};
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
-use crate::chips::lp8758::{Buck, BuckControl, Config};
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::Error;
 use crate::fpga::{Gpi, Gpo, Hwid};
 use crate::lowlevel::Bus;
+use crate::portable::power::{PowerRails, RegisterAccess};
 use crate::thermal::Thermometer;
 
 /// A board identified and held in reset, before anything is powered: where the thermal
@@ -120,23 +120,23 @@ impl Identified {
         self.configure_rf(lms)
     }
 
-    /// Checks the PMIC and boost converter and brings up their rails.
+    /// Checks the PMIC and boost converter and brings up their rails ([`Board::RAILS`]),
+    /// running the portable machine one register access at a time.
     fn power_rails(&mut self) -> Result<(), Error> {
-        let bus = self.bus.as_mut();
-        Board::PMIC.check_revision(bus)?;
-        // libusdr's `lp8758_ss(0)`: spread spectrum off; this byte also sets the 105 °C
-        // die-temperature warning and drops the EN-pin pull-downs.
-        Board::PMIC.configure(bus, Config::new().with_warn_at_105c(true))?;
-        Board::PMIC.set_voltage(bus, Buck::B1, Board::VGPIO)?;
-        Board::PMIC.set_voltage(bus, Buck::B3, Board::LMS_VIO_NORMAL)?;
-        // All four channels on, forced PWM.
-        for buck in Buck::ALL {
-            let on = BuckControl::new()
-                .with_enabled(true)
-                .with_discharge_when_off(true);
-            Board::PMIC.control(bus, buck, on.with_forced_pwm(true))?;
+        let mut rails = PowerRails::new(Board::RAILS);
+        while let Some(access) = rails.next() {
+            let result = match access {
+                RegisterAccess::Read { dev, reg } => {
+                    let mut byte = [0];
+                    self.bus.i2c(dev, &[reg], &mut byte).map(|()| byte[0])
+                }
+                RegisterAccess::Write { dev, reg, value } => {
+                    self.bus.i2c(dev, &[reg, value], &mut []).map(|()| value)
+                }
+            };
+            rails.complete(result)?;
         }
-        Board::BOOST.init(bus, true, Board::BOOST_VOLTAGE)
+        Ok(())
     }
 
     /// Programs the clock generator; on revision 3, then starts the on-board oscillator.

@@ -15,7 +15,10 @@ use bnb::{u4, u12};
 use portable::address::{I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
 use portable::clock::Layout;
 use portable::error::Failure;
+use portable::lp8758::{BuckControl, BuckVoltage, Config};
+use portable::power::{PowerRails, RailPlan, RegisterAccess, SequenceFailure};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
+use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
 use portable::usb::protocol::{Command, I2cCache};
 
@@ -135,9 +138,56 @@ pub fn transport_error_is_preserved(error: u8) -> bool {
         Err(Failure::Transport(found)) if found == error)
 }
 
+/// Runs the real power-rail machine with the board's setpoints, answering its reads from
+/// `reads`; returns the accesses completed, or the name of the chip that failed.
+///
+/// # Errors
+///
+/// The failing chip's name, or `"missing read"` when `reads` runs out.
+pub fn power_rails(reads: &[u8]) -> Result<usize, &'static str> {
+    let mut rails = PowerRails::new(RailPlan {
+        pmic: I2cAddr::new(0, 0x60),
+        config: Config::new().with_warn_at_105c(true),
+        gpio: BuckVoltage::from_millivolts(1800),
+        lms_io: BuckVoltage::from_millivolts(1800),
+        control: BuckControl::new()
+            .with_enabled(true)
+            .with_discharge_when_off(true)
+            .with_forced_pwm(true),
+        boost: I2cAddr::new(0, 0x75),
+        boost_forced_pwm: true,
+        boost_voltage: OutputVoltage::from_millivolts(3450),
+    });
+    let mut reads = reads.iter().copied();
+    let mut completed = 0;
+    while let Some(access) = rails.next() {
+        let byte = match access {
+            RegisterAccess::Read { .. } => reads.next().ok_or("missing read")?,
+            RegisterAccess::Write { value, .. } => value,
+        };
+        rails
+            .complete::<Infallible>(Ok(byte))
+            .map_err(|failure| match failure {
+                SequenceFailure::ChipId { chip, .. } | SequenceFailure::Transport { chip, .. } => {
+                    chip
+                }
+            })?;
+        completed += 1;
+    }
+    Ok(completed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_exact_source_witness_runs_the_pinned_power_rail_sequence() {
+        // Two PMIC revision reads, its configuration, two voltages and four channel
+        // controls, then the boost converter's ID read, control and two voltages.
+        assert_eq!(power_rails(&[0x01, 0xe0, 0x04]), Ok(13));
+        assert_eq!(power_rails(&[0x01, 0xe1]), Err("LP8758"));
+    }
 
     #[test]
     fn the_exact_source_witness_executes_the_pinned_temperature_transaction() {
