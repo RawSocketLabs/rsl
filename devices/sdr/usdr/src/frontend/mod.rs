@@ -13,8 +13,11 @@
 //! | `SuperSync` (`supersync`) | yes | ported (fixed register load) |
 //! | `SimpleSync` (`simplesync`) | yes | detected; bring-up not ported |
 //! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported |
-//! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | no bus access, as in libusdr |
-//! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, fails: needs I2C core 1 | fails as libusdr does |
+//! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | not offered; probing it accesses nothing |
+//! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, cannot work: needs I2C core 1 | not offered; the automatic probe tries it as libusdr does |
+//!
+//! The last two stay in the automatic probe's order for fidelity, but no selection names
+//! them: neither can come up on a uSDR.
 //!
 //! The breakout has no ID and comes up whether or not its DAC answers, so when nothing
 //! else does, libusdr reports a breakout without a DAC even with no board attached.
@@ -76,14 +79,6 @@ pub enum FrontEndSelection {
 
     /// Only `SimpleSync` (`fe=simplesync`), whose bring-up is not ported.
     SimpleSync,
-
-    /// Only the 100–5000 MHz front end (`fe=fe1005000`), which libusdr admits on `LSDr`
-    /// boards only: nothing is probed.
-    Fe1005000,
-
-    /// Only the four-channel 400–7200 MHz front end (`fe=fe4ch4007200`), which needs an
-    /// I2C core the uSDR lacks: the open fails.
-    Fe4ch4007200,
 }
 
 /// The front end a [`Device`](crate::Device) brought up.
@@ -195,7 +190,7 @@ impl Candidate {
                 };
                 Exm2pe::init(bus, options).map(|board| Some(FrontEnd::Exm2pe(board)))
             }
-            // Admitted on LSDr (`lsdr`) only: `-ENODEV` before any bus access.
+            // Admitted on `LSDr` (`lsdr`) only: `-ENODEV` before any bus access.
             Self::Fe1005000 => Ok(None),
             Self::Fe4ch4007200 => fe4ch::init(bus),
         }
@@ -211,8 +206,6 @@ impl Candidate {
             FrontEndSelection::Xmass => Self::Xmass,
             FrontEndSelection::SuperSync => Self::SuperSync,
             FrontEndSelection::SimpleSync => Self::SimpleSync,
-            FrontEndSelection::Fe1005000 => Self::Fe1005000,
-            FrontEndSelection::Fe4ch4007200 => Self::Fe4ch4007200,
         })
     }
 }

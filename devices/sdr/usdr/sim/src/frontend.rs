@@ -143,6 +143,29 @@ impl Model {
         }
     }
 
+    /// Makes the board's DAC identify as `id`; `false` if it has none.
+    pub(crate) fn set_dac_id(&mut self, id: u16) -> bool {
+        match self {
+            Self::Pciefe { dac, .. } | Self::Exm2pe { dac } => {
+                dac.set_id(id);
+                true
+            }
+            Self::SuperSync { .. } | Self::SimpleSync { .. } | Self::Xmass { .. } => false,
+        }
+    }
+
+    /// Makes the `PCIe` front end's RF-path expander read all inputs low; `false` on other
+    /// boards.
+    pub(crate) fn stick_expander_low(&mut self) -> bool {
+        match self {
+            Self::Pciefe { fe, .. } => {
+                fe.stick_inputs_low();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// A clock-synchronizer register, on boards with one.
     pub(crate) fn clock_reg(&self, addr: u16) -> Option<u8> {
         match self {

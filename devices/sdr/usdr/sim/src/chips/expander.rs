@@ -17,7 +17,8 @@ const CONFIG: usize = 6;
 /// (`enum tca6416_regs`, `enum tca9555_regs`).
 ///
 /// Modelling assumptions, from the TCA6416A and TCA9555 datasheets' register descriptions
-/// (TI, not vendored here), as libusdr's `ext_pciefe.c` and `tca9555.c` rely on them:
+/// (TI; not vendored here, literature numbers not checked), as libusdr's `ext_pciefe.c`
+/// and `tca9555.c` rely on them:
 /// - The command byte selects one of eight registers; each further byte read or written
 ///   moves to the other register of the same pair, so a two-byte write sets both ports
 ///   (`tca6416_reg_wr2`) and a four-byte read returns port 0, port 1, port 0, port 1.
@@ -30,6 +31,8 @@ const CONFIG: usize = 6;
 pub(crate) struct Expander {
     /// Register contents, by command byte; the input registers are computed on read.
     regs: [u8; 8],
+    /// A failed part whose input registers read all zeros, whatever the pins do.
+    inputs_stuck_low: bool,
 }
 
 impl Expander {
@@ -40,11 +43,23 @@ impl Expander {
         regs[OUTPUT + 1] = 0xff;
         regs[CONFIG] = 0xff;
         regs[CONFIG + 1] = 0xff;
-        Self { regs }
+        Self {
+            regs,
+            inputs_stuck_low: false,
+        }
+    }
+
+    /// Makes the input registers read all zeros from now on, as a failed part might: what
+    /// libusdr's `ext_pciefe.c` takes for a dead expander.
+    pub(crate) fn stick_inputs_low(&mut self) {
+        self.inputs_stuck_low = true;
     }
 
     /// The pin levels of `port` as its input register reports them.
     fn input(&self, port: usize) -> u8 {
+        if self.inputs_stuck_low {
+            return 0;
+        }
         let config = self.regs[CONFIG + port];
         let pins = (self.regs[OUTPUT + port] & !config) | config;
         pins ^ self.regs[POLARITY + port]

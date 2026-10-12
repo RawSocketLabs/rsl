@@ -21,6 +21,32 @@ use thermal_gate::{assert_same_ops, without_thermal_gate};
 /// The revision every scenario runs on; the probe does not depend on it.
 const REVISION: BoardRevision = BoardRevision::Rev3;
 
+/// rsl-usdr's power-down: LMS6002D reset, LED off, booster off (GPO banks 0, 8, 7).
+const POWER_DOWN: [Op; 3] = [
+    Op::RegWrite { addr: 0, value: 0 },
+    Op::RegWrite {
+        addr: 0,
+        value: 8 << 24,
+    },
+    Op::RegWrite {
+        addr: 0,
+        value: 7 << 24,
+    },
+];
+
+/// rsl-usdr's trace of a failed open without the power-down that ends it.
+///
+/// Intentional divergence, scoped to failed opens: when the front-end probe fails,
+/// rsl-usdr powers the board down again; libusdr leaves it powered and returns.
+fn without_failure_power_down(trace: &[Op]) -> &[Op] {
+    let (kept, tail) = trace.split_at(trace.len() - POWER_DOWN.len());
+    assert_eq!(
+        tail, POWER_DOWN,
+        "a failed open ends in exactly the power-down"
+    );
+    kept
+}
+
 /// Opens fresh copies of `board` through libusdr with `parameters` and through rsl-usdr
 /// with `selection`, closes whichever opened, and compares the whole traces. Returns
 /// rsl-usdr's open result with the front end it reports.
@@ -43,7 +69,12 @@ fn assert_open_matches(
     });
 
     let actual = without_thermal_gate(sim.board().trace(), REVISION);
-    assert_same_ops(reference.trace(), &actual, &format!("{parameters:?}"));
+    let actual = if result.is_ok() {
+        &actual[..]
+    } else {
+        without_failure_power_down(&actual)
+    };
+    assert_same_ops(reference.trace(), actual, &format!("{parameters:?}"));
     result
 }
 
@@ -67,11 +98,11 @@ fn naming_no_board_probes_nothing() {
     assert_eq!(kind, None);
 }
 
-/// The 100–5000 MHz front end is admitted on `LSDr` only: nothing is probed, nothing found.
+/// libusdr admits the 100–5000 MHz front end on `LSDr` only: naming it probes nothing, as
+/// [`FrontEndSelection::None`] does, which is why rsl-usdr offers no selection for it.
 #[test]
-fn the_lsdr_front_end_is_not_admitted() {
-    let kind =
-        assert_open_matches(bare, c"fe=fe1005000", FrontEndSelection::Fe1005000).expect("open");
+fn naming_the_lsdr_front_end_probes_nothing() {
+    let kind = assert_open_matches(bare, c"fe=fe1005000", FrontEndSelection::None).expect("open");
     assert_eq!(kind, None);
 }
 
@@ -142,23 +173,6 @@ fn a_hinted_breakout_without_a_dac_takes_its_options() {
     )
     .expect("both open");
     assert_eq!(kind, Some(FrontEndKind::Exm2pe { dac: false }));
-}
-
-/// The four-channel front end needs a second FPGA I2C core: the open fails at its first
-/// transfer, after its pins are configured.
-#[test]
-fn the_four_channel_front_end_fails_for_want_of_an_i2c_core() {
-    let result = assert_open_matches(bare, c"fe=fe4ch4007200", FrontEndSelection::Fe4ch4007200);
-    assert!(
-        matches!(
-            result,
-            Err(Error::FrontEnd {
-                board: "fe4ch4007200",
-                ..
-            })
-        ),
-        "{result:?}"
-    );
 }
 
 /// A board with the `PCIe` front end attached.
@@ -482,6 +496,7 @@ fn answering_clock_boards_stop_the_open_where_libusdr_carries_on() {
             "{parameters:?}: {result:?}"
         );
         let actual = without_thermal_gate(sim.board().trace(), REVISION);
+        let actual = without_failure_power_down(&actual).to_vec();
         let expected = reference.trace();
         assert!(
             expected.len() > actual.len(),
@@ -493,4 +508,55 @@ fn answering_clock_boards_stop_the_open_where_libusdr_carries_on() {
             &format!("{parameters:?}"),
         );
     }
+}
+
+/// A V0 front end whose DAC reads 0x0000 counts as no board at all, hinted or not: libusdr
+/// passes `dac80501_init`'s `-ENODEV` through. A V1 board fails the open instead.
+#[test]
+fn a_dac_that_reads_absent_unmakes_a_v0_pciefe() {
+    let make = || with_pciefe().with_front_end_dac_id(0x0000);
+    let mut options = PciefeOptions::default();
+    options.revision = PciefeRevision::V0;
+    let kind = assert_open_matches(make, c"fe=pciefev0", FrontEndSelection::Pciefe(options))
+        .expect("open");
+    assert_eq!(kind, None);
+    let result = assert_open_matches(
+        make,
+        c"fe=pciefe:v1",
+        FrontEndSelection::Pciefe(PciefeOptions::default()),
+    );
+    assert!(
+        matches!(
+            result,
+            Err(Error::FrontEnd {
+                board: "pciefe",
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+/// An expander whose inputs read all low is dead: the automatic probe skips the board and
+/// goes on, here to the breakout, whose DAC (the front end's) answers; a hint fails the open.
+#[test]
+fn a_dead_pciefe_expander_is_skipped_or_fails_the_hint() {
+    let make = || with_pciefe().with_dead_front_end_expander();
+    let kind = assert_open_matches(make, c"", FrontEndSelection::Auto).expect("both open");
+    assert_eq!(kind, Some(FrontEndKind::Exm2pe { dac: true }));
+    let result = assert_open_matches(
+        make,
+        c"fe=pciefe:v1",
+        FrontEndSelection::Pciefe(PciefeOptions::default()),
+    );
+    assert!(
+        matches!(
+            result,
+            Err(Error::FrontEnd {
+                board: "pciefe",
+                ..
+            })
+        ),
+        "{result:?}"
+    );
 }

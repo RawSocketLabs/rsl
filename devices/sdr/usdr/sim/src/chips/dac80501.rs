@@ -28,6 +28,11 @@ impl Dac80501 {
         Self { regs }
     }
 
+    /// Makes the DAC identify as `id`.
+    pub(crate) fn set_id(&mut self, id: u16) {
+        self.regs[DEVICE_ID] = id;
+    }
+
     /// The output code.
     pub(crate) fn code(&self) -> u16 {
         self.regs[CODE]

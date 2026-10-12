@@ -1,8 +1,9 @@
 //! The `PCIe` front end's expander outputs (`device/ext_pciefe/pciefe.yaml`): what each
 //! TCA6416 output pin switches, per board version.
 //!
-//! The YAML names some enables `EN_*` although libusdr drives them low to enable
-//! (`pa_en ? 0 : 1`); those fields are named for what a set bit does here.
+//! The V1 YAML names some fields `EN_*` ("Enable ...") although libusdr writes the inverse
+//! (`pa_en ? 0 : 1`). Those fields are named for what a set bit means in libusdr's use
+//! (`pa1_off`, ...); which of the two the hardware follows is not verified here.
 
 use bnb::{BitEnum, bitfield, u2, u3};
 
@@ -181,7 +182,8 @@ pub(super) struct V1Gpio0 {
 }
 
 /// The V1 board's remaining LEDs and level-shifter outputs: the GPIO expander's port 1
-/// (`V1 GPIO1`, 0x23). libusdr leaves the `LS_*` outputs low, so they stay one raw field.
+/// (`V1 GPIO1`, 0x23). libusdr leaves the `LS_*` outputs (bits 5:0) low, so they are not
+/// named.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct V1Gpio1 {

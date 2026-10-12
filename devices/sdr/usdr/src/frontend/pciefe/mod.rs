@@ -483,7 +483,12 @@ impl Pciefe {
 
     /// Drives the fast attenuator lines: step bit 0 on line 1, bit 1 on line 0.
     fn drive_attenuator(&self, bus: &mut dyn Bus) -> Result<(), Error> {
-        let step = self.attenuation as u16;
+        let step: u16 = match self.attenuation {
+            PciefeAttenuation::Db0 => 0,
+            PciefeAttenuation::Db6 => 1,
+            PciefeAttenuation::Db12 => 2,
+            PciefeAttenuation::Db18 => 3,
+        };
         let levels = (step & 1) << SCL | (step >> 1 & 1) << SDA;
         FrontEndGpio::drive(bus, 1 << SCL | 1 << SDA, levels)
     }

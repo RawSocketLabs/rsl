@@ -543,8 +543,9 @@ impl<'a> DeviceBuilder<'a> {
     ///   any bus access. On revision 3 with an external reference the oscillator stays off;
     ///   like libusdr, a Si5332 that then finds no input clock does not fail power-up.
     /// - [`Error::FrontEnd`] if a selected front end does not come up, and
-    ///   [`Error::UnsupportedFrontEnd`] if one answers whose bring-up is not ported. As in
-    ///   libusdr, the board then stays powered: nothing powers it down.
+    ///   [`Error::UnsupportedFrontEnd`] if one answers whose bring-up is not ported (open
+    ///   with [`FrontEndSelection::None`] to skip the probe). The board is then powered down
+    ///   again, where libusdr leaves it powered.
     /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
     ///   at once, with the resume limit after a configured wait times out.
     /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.
@@ -578,7 +579,12 @@ impl<'a> DeviceBuilder<'a> {
             cool_down.wait(&mut identified, limits)?;
         }
         let mut board = identified.power_up(reference)?;
-        board.probe_front_end(&front_end)?;
+        if let Err(error) = board.probe_front_end(&front_end) {
+            warn!(%error, "front-end probe failed; powering the board down");
+            // Best effort: the probe's failure is the one to report.
+            let _ = board.power_down();
+            return Err(error);
+        }
         Ok(Device {
             board: Some(board),
             thermal,

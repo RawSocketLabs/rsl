@@ -174,7 +174,8 @@ Each layer calls only the ones below it.
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
 - Front ends (`fe=`): the probe and the boards the uSDR admits follow libusdr's
   `device_fe_probe`; boards whose bring-up is not ported fail the open when they answer
-  (`Error::UnsupportedFrontEnd`) instead of running half configured. The default `SimBoard`
+  (`Error::UnsupportedFrontEnd`) instead of running half configured, and a failed probe
+  powers the board down again where libusdr leaves it powered. The default `SimBoard`
   has nothing on its connector, so both drivers end the probe at the M.2-to-PCIe breakout
   without a DAC. See the front-end row of [PORTING.md](PORTING.md).
 - Currently not ported: the remaining controls/TX/shared-library domains in
@@ -217,7 +218,9 @@ Each layer calls only the ones below it.
     or a `BitEnum` with a catch-all for whole-byte values. It implements `Register`, or
     `IndexedRegister` when the chip repeats it per channel or output.
   - Opaque bytes, such as undocumented registers and tuning constants, stay `(Reg, u8)`
-    writes.
+    writes. A vendor register load spanning a chip's whole map (the LMK5C33216's
+    `lmk5c33216_rom.h`) stays a raw `(address, value)` table transcribed from the vendored
+    header, the one place raw addresses appear.
   - 16-bit registers (TMP114) use `Reg` plus a value enum, without the traits.
   - Names say what a register, field or variant does (`EnableConfig::rx_enabled`, not
     `TopEncfg::srxen`). Active-low bits get names that read true when set.

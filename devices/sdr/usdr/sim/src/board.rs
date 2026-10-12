@@ -375,6 +375,38 @@ impl SimBoard {
         self.boost.regs[usize::from(addr)]
     }
 
+    /// A board whose front-end DAC identifies as `id` instead of a DAC80501M (0x0195);
+    /// 0x0000 or 0xBEEF is what libusdr takes for no DAC.
+    ///
+    /// # Panics
+    ///
+    /// If no front end with a DAC is attached.
+    #[must_use]
+    pub fn with_front_end_dac_id(mut self, id: u16) -> Self {
+        let has_dac = self
+            .front_end
+            .as_mut()
+            .is_some_and(|front_end| front_end.set_dac_id(id));
+        assert!(has_dac, "no front end with a DAC is attached");
+        self
+    }
+
+    /// A board whose `PCIe` front end's RF-path expander reads all inputs low, as a failed
+    /// part might.
+    ///
+    /// # Panics
+    ///
+    /// If the attached front end is not the `PCIe` front end.
+    #[must_use]
+    pub fn with_dead_front_end_expander(mut self) -> Self {
+        let pciefe = self
+            .front_end
+            .as_mut()
+            .is_some_and(Model::stick_expander_low);
+        assert!(pciefe, "the PCIe front end is not attached");
+        self
+    }
+
     /// The front end's oscillator DAC code, if a front end with one is attached.
     #[must_use]
     pub fn front_end_dac_code(&self) -> Option<u16> {

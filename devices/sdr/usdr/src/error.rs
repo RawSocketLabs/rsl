@@ -191,7 +191,8 @@ pub enum Error {
     },
 
     /// A front-end board answered whose bring-up this driver does not port; libusdr's
-    /// name for it.
+    /// name for it. Opening with
+    /// [`FrontEndSelection::None`](crate::FrontEndSelection::None) skips the probe.
     #[error("{0} front end detected; its bring-up is not supported")]
     UnsupportedFrontEnd(&'static str),
 
