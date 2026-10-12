@@ -14,10 +14,12 @@
 mod board;
 mod chips;
 mod flash;
+mod frontend;
 mod stream;
 mod trace;
 
 pub use board::{BoardRevision, I2cAddress, SimBoard, SimError};
 pub use chips::{DcCalibration, PllLock};
 pub use flash::SimFlash;
+pub use frontend::FrontEnd;
 pub use trace::Op;

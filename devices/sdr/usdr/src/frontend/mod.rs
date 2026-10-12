@@ -39,7 +39,7 @@ pub use self::exm2pe::Exm2peOptions;
 pub(crate) use self::pciefe::Pciefe;
 pub use self::pciefe::{
     PciefeAttenuation, PciefeDuplexer, PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter,
-    PciefeTxFilter,
+    PciefeSetting, PciefeTxFilter,
 };
 use crate::error::Error;
 use crate::lowlevel::Bus;
@@ -118,6 +118,15 @@ impl FrontEnd {
             Self::Exm2pe(board) => FrontEndKind::Exm2pe {
                 dac: board.has_dac(),
             },
+        }
+    }
+
+    /// Sets the oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`): the `PCIe` front end's, or
+    /// the breakout's if it answered.
+    pub(crate) fn set_oscillator_dac(self, bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
+        match self {
+            Self::Pciefe(_) => Pciefe::set_dac(bus, code),
+            Self::Exm2pe(board) => board.set_dac(bus, code),
         }
     }
 }

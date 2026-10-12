@@ -198,6 +198,10 @@ pub enum Error {
     /// No front end with a working oscillator DAC is attached.
     #[error("no front end with an oscillator DAC is attached")]
     NoOscillatorDac,
+
+    /// The call needs a front end that is not attached; libusdr's name for it.
+    #[error("no {0} front end is attached")]
+    FrontEndMissing(&'static str),
 }
 
 /// The direction of a failed register access.

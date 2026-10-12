@@ -250,6 +250,46 @@ pub struct PciefeOptions {
     pub dac: Option<u16>,
 }
 
+/// One `PCIe` front-end control, as libusdr's `/debug/hw/pciefe_cmd/0/reg` commands set
+/// them (`board_ext_pciefe_cmd_wr`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PciefeSetting {
+    /// The oscillator DAC code (`FECMD_DAC`).
+    Dac(u16),
+
+    /// The TX filter (`FECMD_TXSEL`).
+    TxFilter(PciefeTxFilter),
+
+    /// The RX filter (`FECMD_RXSEL`).
+    RxFilter(PciefeRxFilter),
+
+    /// The duplexer path (`FECMD_DUPLSEL`).
+    Duplexer(PciefeDuplexer),
+
+    /// TX-to-RX loopback (`FECMD_LOOPBACK`).
+    Loopback(bool),
+
+    /// The four LED controls, LED 1 first (`FECMD_LED`), written as given; the board
+    /// inverts them.
+    Leds([bool; 4]),
+
+    /// RX attenuation (`FECMD_ATTN`).
+    Attenuation(PciefeAttenuation),
+
+    /// RX LNA (`FECMD_CTRL_LNA`).
+    Lna(bool),
+
+    /// TX power amplifier (`FECMD_CTRL_PA`).
+    Pa(bool),
+
+    /// GPS module power (`FECMD_GPS`).
+    Gps(bool),
+
+    /// Reference oscillator power (`FECMD_OSC`).
+    Oscillator(bool),
+}
+
 /// An attached `PCIe` front end and the settings libusdr tracks for it
 /// (`board_ext_pciefe_t`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -400,6 +440,41 @@ impl Pciefe {
         Ok(Some(board))
     }
 
+    /// Sets the oscillator DAC's code (`board_ext_pciefe_set_dac`).
+    pub(crate) fn set_dac(bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
+        DAC.set_code(bus, code)
+    }
+
+    /// Applies one control (`board_ext_pciefe_cmd_wr`): most update both expanders; on V1
+    /// the attenuator and loopback move their fast lines only.
+    pub(crate) fn apply(&mut self, bus: &mut dyn Bus, setting: PciefeSetting) -> Result<(), Error> {
+        match setting {
+            PciefeSetting::Dac(code) => return Self::set_dac(bus, code),
+            PciefeSetting::TxFilter(tx) => self.tx = tx,
+            PciefeSetting::RxFilter(rx) => self.rx = rx,
+            PciefeSetting::Duplexer(duplexer) => self.duplexer = duplexer,
+            PciefeSetting::Lna(on) => self.lna = on,
+            PciefeSetting::Pa(on) => self.pa = on,
+            PciefeSetting::Gps(on) => self.gps = on,
+            PciefeSetting::Oscillator(on) => self.oscillator = on,
+            PciefeSetting::Leds(leds) => self.leds = leds,
+            PciefeSetting::Loopback(on) => {
+                self.loopback = on;
+                if self.fast_lines() {
+                    return self.drive_loopback(bus);
+                }
+            }
+            PciefeSetting::Attenuation(attenuation) => {
+                self.attenuation = attenuation;
+                if self.fast_lines() {
+                    return self.drive_attenuator(bus);
+                }
+            }
+        }
+        self.update_front_end(bus)?;
+        self.update_power(bus)
+    }
+
     /// The V1 board's fast attenuator and loopback lines are in use (`cfg_fast_attn`,
     /// `cfg_fast_lb`).
     fn fast_lines(&self) -> bool {
@@ -497,11 +572,10 @@ impl Pciefe {
                         PciefeTxFilter::Lpf2100 => V0TxSelect1::Lpf2100,
                         PciefeTxFilter::Bypass => V0TxSelect1::Bypass,
                     });
-                // libusdr skips a register word of zero; `V0 FE0` sits at address 0, so
-                // an all-zero selection is never written.
-                if fe0.to_raw() != 0 {
-                    FE_EXPANDER.write(bus, Reg::OutputPort0, fe0.to_raw())?;
-                }
+                // libusdr skips a register word of zero, which only `V0 FE0` (address 0)
+                // could be; no filter choice makes its selectors all zero, so it is always
+                // written.
+                FE_EXPANDER.write(bus, Reg::OutputPort0, fe0.to_raw())?;
                 // libusdr turns the PA on with the LNA as well.
                 let fe1 = V0FrontEnd1::new()
                     .with_lna_on(self.lna)

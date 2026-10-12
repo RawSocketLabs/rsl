@@ -8,7 +8,7 @@ use rsl_deps::tracing::warn;
 
 use crate::board::{Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
 use crate::error::Error;
-use crate::frontend::{FrontEndKind, FrontEndSelection};
+use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
@@ -103,6 +103,26 @@ impl Device {
     #[must_use]
     pub fn front_end(&self) -> Option<FrontEndKind> {
         self.board.as_ref().and_then(Board::front_end)
+    }
+
+    /// Sets the front end's oscillator DAC to `code`, trimming its reference oscillator
+    /// (libusdr's `/dm/sdr/0/dac_vctcxo`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoOscillatorDac`] without a `PCIe` front end or an M.2-to-`PCIe` breakout
+    /// whose DAC answered (libusdr's `-EINVAL` and `-EACCES`); any bus failure.
+    pub fn set_oscillator_dac(&mut self, code: u16) -> Result<(), Error> {
+        self.board().set_oscillator_dac(code)
+    }
+
+    /// Applies one `PCIe` front-end control (libusdr's `/debug/hw/pciefe_cmd/0/reg` write).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEndMissing`] without a `PCIe` front end; any bus failure.
+    pub fn configure_pciefe(&mut self, setting: PciefeSetting) -> Result<(), Error> {
+        self.board().configure_pciefe(setting)
     }
 
     /// Writes the gateware's clock-measurement control, raw (libusdr's

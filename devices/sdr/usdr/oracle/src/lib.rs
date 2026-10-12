@@ -586,6 +586,28 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/clkmeas", control.into())
     }
 
+    /// Sets the front end's oscillator DAC, `/dm/sdr/0/dac_vctcxo`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-EINVAL` with no front end, `-EACCES` for a
+    /// breakout without a DAC).
+    pub fn set_oscillator_dac(&mut self, code: u16) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/dac_vctcxo", code.into())
+    }
+
+    /// Writes one `PCIe` front-end command, `/debug/hw/pciefe_cmd/0/reg`: `command` is the
+    /// `FECMD_*` address (`pciefe_cmd.yaml`), `value` its data; bit 23 marks the write.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the path exists only while a `PCIe` front end
+    /// is up.
+    pub fn pciefe_command(&mut self, command: u8, value: u16) -> Result<(), i32> {
+        let word = 0x0080_0000 | u64::from(command & 0x7f) << 16 | u64::from(value);
+        self.set_value(c"/debug/hw/pciefe_cmd/0/reg", word)
+    }
+
     /// Writes a device-manager value that libusdr reads as a number, never as a pointer.
     fn set_value(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
         let Some(dev) = self.dev else {

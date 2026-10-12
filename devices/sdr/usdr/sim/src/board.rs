@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::flash::{FlashController, SimFlash};
+use crate::frontend::{FrontEnd, Model};
 use crate::stream::RxEngine;
 use crate::trace::Op;
 
@@ -119,6 +120,8 @@ pub struct SimBoard {
     /// The FPGA's QSPI flash controller and its flash, when the test fits one; without it,
     /// the controller's registers are plain storage as before.
     flash: Option<FlashController>,
+    /// The front end on the M.2 connector, if any; see [`SimBoard::with_front_end`].
+    front_end: Option<Model>,
 }
 
 impl SimBoard {
@@ -144,6 +147,7 @@ impl SimBoard {
             trace: Vec::new(),
             rx: RxEngine::default(),
             flash: None,
+            front_end: None,
         }
     }
 
@@ -166,6 +170,15 @@ impl SimBoard {
             .as_mut()
             .expect("fit a flash with `with_flash` first")
             .stuck = true;
+        self
+    }
+
+    /// A board with `front_end` on its M.2 connector. Without one, as by default, the
+    /// connector's I2C bus reads idle and libusdr's probe settles on a breakout without a
+    /// DAC.
+    #[must_use]
+    pub fn with_front_end(mut self, front_end: FrontEnd) -> Self {
+        self.front_end = Some(Model::new(front_end));
         self
     }
 
@@ -284,7 +297,10 @@ impl SimBoard {
                 Some(&mut self.clock)
             }
             I2C_BOOST => Some(&mut self.boost),
-            _ => None,
+            _ => self
+                .front_end
+                .as_mut()
+                .and_then(|front_end| front_end.chip(addr)),
         };
         let read = chip.map_or_else(
             || vec![0xff; read_len],
@@ -357,6 +373,12 @@ impl SimBoard {
     #[must_use]
     pub fn boost_reg(&self, addr: u8) -> u8 {
         self.boost.regs[usize::from(addr)]
+    }
+
+    /// The front end's oscillator DAC code, if a front end with one is attached.
+    #[must_use]
+    pub fn front_end_dac_code(&self) -> Option<u16> {
+        self.front_end.as_ref().map(Model::dac_code)
     }
 
     /// A Si5332 clock-generator register.
