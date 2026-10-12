@@ -250,7 +250,7 @@ impl Board {
 impl Board {
     /// The Si5332 input `reference` selects on a board of this revision (`si5332_init`'s
     /// `ext_in2`).
-    pub(super) const fn si5332_reference(reference: ReferenceClock, rev3: bool) -> Reference {
+    pub(crate) const fn si5332_reference(reference: ReferenceClock, rev3: bool) -> Reference {
         if reference.uses_input2(rev3) {
             Reference::Input2
         } else {

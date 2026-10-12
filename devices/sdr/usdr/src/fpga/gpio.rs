@@ -11,10 +11,8 @@
 use bnb::{bitfield, u7};
 
 use crate::error::{BusContext, Error};
-#[cfg(all(feature = "mio", target_os = "linux"))]
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
-#[cfg(all(feature = "mio", target_os = "linux"))]
 use crate::portable::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// The gateware's name in errors.
@@ -136,9 +134,9 @@ pub(crate) struct Hwid {
     revision: u8,
 }
 
-/// The gateware identity as a sequence, for executors other than the blocking bus: the build
-/// word, then the hardware ID, as `dev_m2_lm6_1_sdr_revision_get` reads them.
-#[cfg(all(feature = "mio", target_os = "linux"))]
+/// The gateware identity as a sequence: the build word, then the hardware ID, as
+/// `dev_m2_lm6_1_sdr_revision_get` reads them. The blocking board and the native USB handle
+/// both run it.
 #[derive(Debug, Default)]
 pub(crate) struct IdentityRead {
     /// The gateware build word, once read.
@@ -147,7 +145,6 @@ pub(crate) struct IdentityRead {
     hwid: Option<u32>,
 }
 
-#[cfg(all(feature = "mio", target_os = "linux"))]
 impl IdentityRead {
     /// The identity, once both words are read.
     pub(crate) fn identity(&self) -> Option<Identity> {
@@ -163,7 +160,6 @@ impl IdentityRead {
     }
 }
 
-#[cfg(all(feature = "mio", target_os = "linux"))]
 impl Sequence for IdentityRead {
     fn next(&self) -> Option<SequenceAction> {
         let input = match (self.build, self.hwid) {

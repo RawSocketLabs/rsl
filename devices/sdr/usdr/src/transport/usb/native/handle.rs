@@ -14,14 +14,16 @@ use super::super::machine::{Machine, Output, Step};
 use super::super::protocol::I2cCache;
 use super::adapter::Adapter;
 use super::backend::Backend;
-use crate::chips::si5332::{Reference, Si5332};
+use crate::board::Board;
+use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
 use crate::fpga::IdentityRead;
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
-use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
 use crate::portable::si5332::ClockSequence;
+use crate::portable::si5332::sequence::SWITCH_WRITES;
 use crate::portable::usb::register::RegisterTransaction;
 use crate::reference::ReferenceClock;
 
@@ -55,24 +57,6 @@ pub enum NativeEvent {
     ReferenceClock(Result<(), Error>),
 }
 
-/// Object-safe view of a portable sequence with the native error, so one executor runs any.
-trait NativeSequence: Send {
-    /// As [`Sequence::next`].
-    fn next(&self) -> Option<SequenceAction>;
-    /// As [`Sequence::complete`].
-    fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), SequenceFailure<BusError>>;
-}
-
-impl<S: Sequence + Send> NativeSequence for S {
-    fn next(&self) -> Option<SequenceAction> {
-        Sequence::next(self)
-    }
-
-    fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), SequenceFailure<BusError>> {
-        Sequence::complete(self, result)
-    }
-}
-
 /// The operation in flight: what consumes the executor's results.
 enum Operation {
     /// A TMP114 read: one two-byte I²C transaction, then decoding.
@@ -86,15 +70,40 @@ enum SequenceOperation {
     /// The gateware build and hardware ID reads.
     Identity(IdentityRead),
     /// The Si5332 reference switch: state waits, polls and writes.
-    ReferenceClock(Box<dyn NativeSequence>),
+    ReferenceClock(ClockSequence<SWITCH_WRITES>),
 }
 
 impl SequenceOperation {
-    /// The sequence to drive.
-    fn sequence(&mut self) -> &mut dyn NativeSequence {
+    /// The sequence's next action, as [`Sequence::next`].
+    fn next(&self) -> Option<SequenceAction> {
         match self {
-            Self::Identity(identity) => identity,
-            Self::ReferenceClock(switch) => switch.as_mut(),
+            Self::Identity(identity) => identity.next(),
+            Self::ReferenceClock(switch) => switch.next(),
+        }
+    }
+
+    /// Reports an action's outcome, as [`Sequence::complete`], with its register context.
+    fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), Error> {
+        match self {
+            Self::Identity(identity) => identity.complete(result),
+            Self::ReferenceClock(switch) => switch.complete(result),
+        }
+        .map_err(Error::from)
+    }
+
+    /// Reports `error` as the failure of the next register access, with that access's chip
+    /// and register, passing over any wait before it unperformed. Ends the sequence.
+    fn fail_at_access(&mut self, error: BusError) -> Error {
+        while let Some(SequenceAction::Sleep(_)) = self.next() {
+            if self.complete(Ok(0)).is_err() {
+                break;
+            }
+        }
+        match self.complete(Err(error)) {
+            Err(failure) => failure,
+            Ok(()) => Error::Open(BusError::Unsupported(
+                "a native sequence ended without reporting its failed access",
+            )),
         }
     }
 
@@ -191,13 +200,13 @@ impl NativeUsb {
     ///
     /// # Errors
     ///
-    /// [`Error::Bus`] if an operation is already pending, the handle is closed, or the
-    /// command cannot be handed to the worker; all but the first close the handle.
+    /// [`Error::Busy`] if an operation is already pending; [`Error::Bus`] if the handle is
+    /// closed or the command cannot be handed to the worker, which also closes the handle.
     pub fn start_temperature(&mut self, now: Instant) -> Result<(), Error> {
-        let (mut read, request) = TemperatureRead::begin(Tmp114::usdr());
         if self.pending.is_some() {
-            return Err(read.fail(pending()));
+            return Err(Error::Busy);
         }
+        let (mut read, request) = TemperatureRead::begin(Tmp114::usdr());
         let access = RegisterAccess::Read {
             dev: request.dev,
             reg: request.register[0],
@@ -222,8 +231,8 @@ impl NativeUsb {
     ///
     /// # Errors
     ///
-    /// [`Error::Bus`] if an operation is already pending, the handle is closed, or the
-    /// first read cannot be handed to the worker; all but the first close the handle.
+    /// [`Error::Busy`] if an operation is already pending; [`Error::Bus`] if the handle is
+    /// closed or the first read cannot be handed to the worker, which also closes the handle.
     pub fn start_identity(&mut self, now: Instant) -> Result<(), Error> {
         self.start_sequence(SequenceOperation::Identity(IdentityRead::default()), now)
     }
@@ -235,22 +244,19 @@ impl NativeUsb {
     ///
     /// # Errors
     ///
-    /// - [`Error::UnsupportedFrequency`] for an external reference of 0 Hz, before any I/O;
-    ///   the handle stays open.
-    /// - [`Error::Bus`] if an operation is already pending or the handle is closed.
+    /// - [`Error::UnsupportedReferenceClock`] for an external reference the clock plans
+    ///   cannot use, before any I/O; the handle stays open.
+    /// - [`Error::Busy`] if an operation is already pending.
+    /// - [`Error::Bus`] if the handle is closed.
     pub fn start_reference_clock(
         &mut self,
         reference: ReferenceClock,
         now: Instant,
     ) -> Result<(), Error> {
         reference.check()?;
-        let input = if reference.uses_input2(self.session.rev3) {
-            Reference::Input2
-        } else {
-            Reference::Oscillator
-        };
+        let input = Board::si5332_reference(reference, self.session.rev3);
         let switch = ClockSequence::reference_switch(Si5332::usdr().dev(), input);
-        self.start_sequence(SequenceOperation::ReferenceClock(Box::new(switch)), now)
+        self.start_sequence(SequenceOperation::ReferenceClock(switch), now)
     }
 
     /// Starts a sequence operation's first action, refusing it while another is pending.
@@ -259,18 +265,17 @@ impl NativeUsb {
         mut operation: SequenceOperation,
         now: Instant,
     ) -> Result<(), Error> {
-        let sequence = operation.sequence();
         if self.pending.is_some() {
-            return Err(fail_at_access(sequence, pending()));
+            return Err(Error::Busy);
         }
         // An empty sequence finishes at the next poll: its passed wait completes nothing,
         // which a sequence ignores.
-        let wait = match sequence.next().map(|action| self.begin(action, now)) {
+        let wait = match operation.next().map(|action| self.begin(action, now)) {
             None => Wait::Sleep(now),
             Some(Ok(wait)) => wait,
             Some(Err(error)) => {
                 self.adapter.retire_after_completion();
-                return Err(fail_at_access(sequence, error));
+                return Err(operation.fail_at_access(error));
             }
         };
         self.pending = Some(Pending {
@@ -409,17 +414,16 @@ impl NativeUsb {
         outcome: Result<Option<Output>, BusError>,
         now: Instant,
     ) -> Result<Option<Wait>, Error> {
-        let sequence = operation.sequence();
         if outcome.is_err() {
             self.adapter.retire_after_completion();
         }
-        sequence.complete(outcome.map(|output| output.map_or(0, Output::first)))?;
-        let Some(action) = sequence.next() else {
+        operation.complete(outcome.map(|output| output.map_or(0, Output::first)))?;
+        let Some(action) = operation.next() else {
             return Ok(None);
         };
         self.begin(action, now).map(Some).map_err(|error| {
             self.adapter.retire_after_completion();
-            fail_at_access(sequence, error)
+            operation.fail_at_access(error)
         })
     }
 
@@ -479,26 +483,5 @@ impl NativeUsb {
     /// A deregistration error from a failure's automatic close, once.
     pub fn take_retirement_error(&mut self) -> Option<io::Error> {
         self.adapter.take_retirement_error()
-    }
-}
-
-/// Why a second operation is refused.
-fn pending() -> BusError {
-    BusError::Unsupported("a native operation is pending")
-}
-
-/// Reports `error` as the failure of the sequence's next register access, with that access's
-/// chip and register, passing over any wait before it unperformed. Ends the sequence.
-fn fail_at_access(sequence: &mut dyn NativeSequence, error: BusError) -> Error {
-    while let Some(SequenceAction::Sleep(_)) = sequence.next() {
-        if sequence.complete(Ok(0)).is_err() {
-            break;
-        }
-    }
-    match sequence.complete(Err(error)) {
-        Err(failure) => failure.into(),
-        Ok(()) => Error::Open(BusError::Unsupported(
-            "a native sequence ended without reporting its failed access",
-        )),
     }
 }

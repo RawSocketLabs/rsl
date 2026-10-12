@@ -12,7 +12,7 @@ use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::Error;
-use crate::fpga::{self, Gpi, Gpo, Hwid};
+use crate::fpga::{self, Gpi, Gpo, IdentityRead};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::portable::power::PowerRails;
@@ -41,14 +41,13 @@ impl Board {
     /// checks the TMP114. Powers nothing.
     pub(crate) fn identify(mut bus: Box<dyn Bus>) -> Result<Identified, Error> {
         // Gateware build ID: libusdr only logs it.
-        let build = Gpi::UsrAccess2.read(bus.as_mut())?;
-        let hwid = Hwid::from_raw(Gpi::Hwid.read(bus.as_mut())?);
-        let revision = hwid.revision();
+        let identity = Self::read_identity(bus.as_mut())?;
+        let revision = identity.revision;
         debug!(
-            build = format_args!("{build:#010x}"),
+            build = format_args!("{:#010x}", identity.gateware_build),
             revision,
-            rx = hwid.has_rx(),
-            tx = hwid.has_tx(),
+            rx = identity.has_rx,
+            tx = identity.has_tx,
             "gateware identified"
         );
         if !(1..=3).contains(&revision) {
@@ -60,8 +59,8 @@ impl Board {
             Self::TEMP.check_id(bus.as_mut())?;
         }
         let chains = Chains {
-            rx: hwid.has_rx(),
-            tx: hwid.has_tx(),
+            rx: identity.has_rx,
+            tx: identity.has_tx,
         };
         Ok(Identified {
             bus,
@@ -118,17 +117,16 @@ impl Board {
 
     /// Reads the gateware build, then the hardware ID (`dev_m2_lm6_1_sdr_revision_get`).
     pub(crate) fn identity(&mut self) -> Result<Identity, Error> {
-        let bus = self.bus.as_mut();
-        let gateware_build = Gpi::UsrAccess2.read(bus)?;
-        let raw = Gpi::Hwid.read(bus)?;
-        let hwid = Hwid::from_raw(raw);
-        Ok(Identity {
-            revision: hwid.revision(),
-            has_rx: hwid.has_rx(),
-            has_tx: hwid.has_tx(),
-            gateware_build,
-            hwid: raw,
-        })
+        Self::read_identity(self.bus.as_mut())
+    }
+
+    /// Runs the identity sequence over `bus`.
+    fn read_identity(bus: &mut dyn Bus) -> Result<Identity, Error> {
+        let mut read = IdentityRead::default();
+        run_sequence(bus, &mut read)?;
+        Ok(read
+            .identity()
+            .expect("invariant: a finished identity sequence read both words"))
     }
 
     /// Holds the RF transceiver in reset and turns off the LED and booster. Every step is

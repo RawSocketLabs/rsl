@@ -6,7 +6,7 @@ mod divider;
 mod input;
 pub(crate) mod output;
 mod reg;
-mod sequence;
+pub(crate) mod sequence;
 mod state;
 
 pub(crate) use sequence::{ClockSequence, LvpeclOutput, Reference};

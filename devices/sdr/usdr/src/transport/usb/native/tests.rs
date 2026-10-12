@@ -749,7 +749,7 @@ fn a_second_read_is_refused_while_one_is_pending() {
     native.start_temperature(Instant::now()).unwrap();
     assert!(matches!(
         native.start_temperature(Instant::now()),
-        Err(Error::Bus { .. })
+        Err(Error::Busy)
     ));
     assert!(
         reading(&mut native, &mut reactor).is_ok(),
@@ -807,13 +807,14 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
         lut: 0,
         index: 0,
     };
-    let mut bus = UsbBus::from_io(Box::new(io));
-    bus.initialize().unwrap();
-    // The hand-over's own sensor check is one I²C read with one notification record.
+    // No router setup: the hand-over's own operations are the bus's only ones.
+    let bus = UsbBus::from_io(Box::new(io));
+    // The hand-over reads the build and HWID registers, then checks the sensor with one I²C
+    // read whose notification record sets the baseline.
     let (carried, _) = bus.hand_over().unwrap();
     assert_eq!(
-        carried.next_id, 1,
-        "the sensor check used the first operation identity"
+        carried.next_id, 3,
+        "register and I2C operations draw from one identity sequence"
     );
     assert!(
         carried.next_sequence.is_some(),
@@ -1057,20 +1058,20 @@ fn a_second_operation_or_a_bad_argument_is_refused_without_io_or_closing() {
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
     assert!(matches!(
         native.start_reference_clock(ReferenceClock::External { hz: 0 }, Instant::now()),
-        Err(Error::UnsupportedFrequency(0))
+        Err(Error::UnsupportedReferenceClock(0))
     ));
     native.start_identity(Instant::now()).unwrap();
     assert!(matches!(
         native.start_reference_clock(ReferenceClock::Board, Instant::now()),
-        Err(Error::Bus {
-            chip: "Si5332",
-            source: BusError::Unsupported(_),
-            ..
-        })
+        Err(Error::Busy)
     ));
     assert!(matches!(
         native.start_temperature(Instant::now()),
-        Err(Error::Bus { chip: "TMP114", .. })
+        Err(Error::Busy)
+    ));
+    assert!(matches!(
+        native.start_identity(Instant::now()),
+        Err(Error::Busy)
     ));
     assert!(matches!(
         finish(&mut native, &mut reactor),

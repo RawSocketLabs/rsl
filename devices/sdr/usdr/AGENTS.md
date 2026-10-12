@@ -133,8 +133,8 @@ Each layer calls only the ones below it.
   `rsl_usb::Readiness` and endpoints 0x01/0x81/0x82: the reactor only registers, schedules and
   observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
-  the adapter keeps the shared Waker open for the worker's final wake. `into_native` reads
-  the revision and checks the TMP114 ID over the blocking bus, then carries the
+  the adapter keeps the shared Waker open for the worker's final wake. `into_native` runs
+  the identity sequence and checks the TMP114 ID over the blocking bus, then carries the
   notification sequence, I²C table and operation identities over. Notification transfers are sized as in the blocking bus
   and the pinned C (`IN_NTFY_SIZE`). Its unit tests use a socket source, not usbfs; only the
   opt-in `usb_hardware` test reaches real queues. RX/TX handles, fairness and browser

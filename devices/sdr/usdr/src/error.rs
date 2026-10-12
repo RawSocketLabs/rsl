@@ -203,6 +203,10 @@ pub enum Error {
     /// The call needs a front end that is not attached; libusdr's name for it.
     #[error("no {0} front end is attached")]
     FrontEndMissing(&'static str),
+
+    /// The handle already has an operation in flight; nothing was sent for this one.
+    #[error("another operation is in flight")]
+    Busy,
 }
 
 /// The direction of a failed register access.

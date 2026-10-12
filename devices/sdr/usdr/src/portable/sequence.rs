@@ -52,13 +52,6 @@ impl RegisterAccess {
 /// One 32-bit access through the FPGA: a physical gateware register below the stream
 /// engine's index window (`0..=0xFFFF`), or a word shifted through an SPI target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "only the native executor's identity read (feature `mio`) issues one yet"
-    )
-)]
 pub(crate) enum FpgaAccess {
     /// Read one gateware register.
     Read {
@@ -66,6 +59,13 @@ pub(crate) enum FpgaAccess {
         reg: u16,
     },
     /// Write one gateware register.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "no production sequence writes a gateware register yet"
+        )
+    )]
     Write {
         /// The physical register.
         reg: u16,
@@ -73,6 +73,10 @@ pub(crate) enum FpgaAccess {
         value: u32,
     },
     /// Shift `word` through `target` and report the word read back.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "no production sequence uses SPI yet")
+    )]
     Spi {
         /// The SPI target.
         target: SpiAddr,
@@ -131,13 +135,6 @@ pub(crate) enum SequenceAction {
     Access(RegisterAccess),
     /// An FPGA register access or SPI exchange: report the word read, or any value for a
     /// register write.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "only the native executor's sequences (feature `mio`) touch the FPGA yet"
-        )
-    )]
     Fpga(FpgaAccess),
     /// Wait at least this long, then report any value.
     Sleep(Duration),

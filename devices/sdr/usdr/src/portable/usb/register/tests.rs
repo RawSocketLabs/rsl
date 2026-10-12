@@ -176,17 +176,19 @@ fn each_reply_has_its_own_deadline_after_the_command() {
     // The IRQ wait is one second, however many unrelated records arrive.
     let mut spi = Tx::spi32(2, SpiAddr(0), 1, Duration::ZERO).unwrap();
     written(&mut spi, 2).unwrap();
+    let half = IRQ_TIMEOUT / 2;
     assert!(matches!(
         spi.complete(
             Event::Notification {
                 id: 2,
                 packet: &record(0, 6, 0)
             },
-            IRQ_TIMEOUT,
+            half,
             &mut None,
         ),
-        Err(Failure::Timeout)
+        Ok(Action::Notification { timeout, .. }) if timeout == half
     ));
+    assert!(matches!(spi.advance(IRQ_TIMEOUT), Err(Failure::Timeout)));
     // A command that never completes times out too.
     let mut stuck = Tx::write(3, 4, &[1], Duration::ZERO).unwrap();
     command(&mut stuck);

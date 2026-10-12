@@ -20,10 +20,12 @@ use super::native::{self, NativeUsb, Session};
 use super::protocol::I2cCache;
 use super::rx::Rx;
 #[cfg(feature = "mio")]
+use crate::chips::register::run_sequence;
+#[cfg(feature = "mio")]
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
-use crate::fpga::{Gpi, Hwid};
+use crate::fpga::IdentityRead;
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
@@ -183,11 +185,9 @@ pub struct UsbBus {
     next_sequence: Option<u16>,
     /// The simple I²C core's address table.
     i2c: I2cCache,
-    /// Never-reused identity for each prepared I²C operation in this session; carried over
-    /// to a native handle.
-    next_i2c_id: u64,
-    /// Never-reused identity for each register/SPI operation in this session.
-    next_register_id: u64,
+    /// Never-reused identity for each I²C, register or SPI operation in this session;
+    /// carried over to a native handle.
+    next_id: u64,
 }
 
 impl fmt::Debug for UsbBus {
@@ -271,8 +271,7 @@ impl UsbBus {
             healthy: true,
             next_sequence: None,
             i2c: I2cCache::default(),
-            next_i2c_id: 0,
-            next_register_id: 0,
+            next_id: 0,
         }
     }
 
@@ -284,9 +283,10 @@ impl UsbBus {
     /// [`Device`](crate::Device) identifies a board: a missing or wrong sensor fails here
     /// rather than as a plausible reading, and the revision decides what
     /// [`ReferenceClock::Board`](crate::ReferenceClock::Board) selects. The notification
-    /// sequence, I²C table and operation identities carry over. The device must be exclusive to the handle: its
-    /// readiness makes the reactor the device's only completion driver. This blocks (sensor
-    /// I/O, worker start), so call it before driving the reactor, not on its thread. The bus
+    /// sequence, I²C table and operation identities carry over. The device must be exclusive
+    /// to the handle: its readiness makes the reactor the device's only completion driver.
+    /// This blocks (register and sensor I/O, worker start), so call it before driving the
+    /// reactor, not on its thread. The bus
     /// is consumed even on error; the device is then released, possibly by a worker shortly
     /// afterwards, so a reopen can briefly find it busy.
     ///
@@ -308,12 +308,17 @@ impl UsbBus {
         NativeUsb::attach(queues, session, registry, token, waker).map_err(Error::Open)
     }
 
-    /// Reads the revision and checks the sensor over this bus, then gives up its
-    /// control-plane session and transport.
+    /// Identifies the gateware and checks the sensor over this bus, as `Board::identify`
+    /// does, then gives up its control-plane session and transport.
     #[cfg(feature = "mio")]
     pub(super) fn hand_over(mut self) -> Result<(Session, Box<dyn UsbIo>), Error> {
         self.ready().map_err(Error::Open)?;
-        let revision = Hwid::from_raw(Gpi::Hwid.read(&mut self)?).revision();
+        let mut identity = IdentityRead::default();
+        run_sequence(&mut self, &mut identity)?;
+        let revision = identity
+            .identity()
+            .expect("invariant: a finished identity sequence read both words")
+            .revision;
         if !(1..=3).contains(&revision) {
             return Err(Error::UnsupportedRevision(revision));
         }
@@ -321,7 +326,7 @@ impl UsbBus {
         let session = Session {
             i2c: self.i2c,
             next_sequence: self.next_sequence,
-            next_id: self.next_i2c_id,
+            next_id: self.next_id,
             rev3: revision == 3,
         };
         Ok((session, self.io))
@@ -435,23 +440,23 @@ impl UsbBus {
         }
     }
 
-    /// The next register/SPI operation identity; exhaustion poisons the bus.
-    fn register_id(&mut self) -> Result<u64, BusError> {
-        let id = self.next_register_id;
+    /// The next operation identity; exhaustion poisons the bus.
+    fn operation_id(&mut self) -> Result<u64, BusError> {
+        let id = self.next_id;
         let Some(next) = id.checked_add(1) else {
             self.healthy = false;
             return Err(BusError::Unsupported(
-                "USB register operation identity exhausted; reopen it",
+                "USB operation identity exhausted; reopen it",
             ));
         };
-        self.next_register_id = next;
+        self.next_id = next;
         Ok(id)
     }
 
     /// Reads a checked block of 1–64 physical registers; no length header is present.
     fn raw_read(&mut self, address: u16, out: &mut [u32]) -> Result<(), BusError> {
         self.ready()?;
-        let id = self.register_id()?;
+        let id = self.operation_id()?;
         let read = RegisterTransaction::read(id, address, out.len(), Duration::ZERO)?;
         let Output::Words { words, len } = self.run(Machine::Register(read))? else {
             return Err(self.malformed("USB register read completed as another operation"));
@@ -463,7 +468,7 @@ impl UsbBus {
     /// Writes a checked block of 1–63 words, including a four-byte command header.
     fn raw_write(&mut self, address: u16, values: &[u32]) -> Result<(), BusError> {
         self.ready()?;
-        let id = self.register_id()?;
+        let id = self.operation_id()?;
         let write = RegisterTransaction::write(id, address, values, Duration::ZERO)?;
         self.run(Machine::Register(write)).map(|_| ())
     }
@@ -551,7 +556,7 @@ impl Bus for UsbBus {
 
     fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
         self.ready()?;
-        let id = self.register_id()?;
+        let id = self.operation_id()?;
         let exchange = RegisterTransaction::spi32(id, target, word, Duration::ZERO)?;
         match self.run(Machine::Register(exchange))? {
             Output::Words { words, len: 1 } => Ok(words[0]),
@@ -562,16 +567,9 @@ impl Bus for UsbBus {
     fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
         self.ready()?;
         // This compatibility pump blocks; event/callback adapters use the same pure machine.
-        let id = self.next_i2c_id;
-        let Some(next_id) = id.checked_add(1) else {
-            self.healthy = false;
-            return Err(BusError::Unsupported(
-                "USB I2C operation identity exhausted; reopen it",
-            ));
-        };
+        let id = self.operation_id()?;
         let transaction =
             I2cTransaction::new(id, dev, write, read.len(), &mut self.i2c, Duration::ZERO)?;
-        self.next_i2c_id = next_id;
         let Output::I2c { bytes, len } = self.run(Machine::I2c(transaction))? else {
             return Err(self.malformed("USB I2C transfer completed as another operation"));
         };
