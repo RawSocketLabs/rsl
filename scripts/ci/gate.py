@@ -8,7 +8,8 @@ from pathlib import Path
 import re
 import sys
 
-from plan import FUZZ, PROFILES, SCHEMA, command, metadata_graph, release_policy, select
+from plan import (FUZZ, PROFILES, RELEASE_PROFILES, SCHEMA, command, graph_at, metadata_graph,
+                  release_config, release_policy, released_members, select)
 
 
 def validate_plan(plan):
@@ -27,8 +28,17 @@ def validate_plan(plan):
         raise ValueError("invalid validation profiles")
     if plan["roots"] and not profiles:
         raise ValueError("affected packages have no validation")
-    if plan["packages"] and not {"workspace", "msrv"} <= set(profiles):
-        raise ValueError("workspace packages require tests, lint, and MSRV")
+    if plan["packages"] and "workspace" not in profiles:
+        raise ValueError("workspace packages require tests and lint")
+    if plan["products"] != sorted(set(plan["products"])) or bool(plan["products"]) != plan["release"]:
+        raise ValueError("invalid release products")
+    if bool(plan["release_members"]) != plan["release"]:
+        raise ValueError("invalid release members")
+    if sorted({member["product"] for member in plan["release_members"]}) != plan["products"]:
+        raise ValueError("release members differ from selected products")
+    if not plan["release"] and (plan["release_roots"] or plan["release_packages"]
+                               or plan["fuzz"] or set(profiles) & RELEASE_PROFILES):
+        raise ValueError("heavy qualification requires a release product")
     seen = set()
     for item in plan["fuzz"]:
         key = (item["root"], item["target"])
@@ -56,7 +66,7 @@ def check_plan(actual, expected):
         raise ValueError("coverage differs from the plan recomputed from the event and immutable Git trees")
 
 
-def check_release(report, *, sha, run_id, attempt, graph):
+def check_release(report, *, sha, run_id, attempt, graph, members):
     if (report["head"] != sha or report["run_id"] != run_id
             or report["run_attempt"] != attempt or report["plan"]["head"] != sha):
         raise ValueError("coverage belongs to another commit, run, or attempt")
@@ -64,7 +74,10 @@ def check_release(report, *, sha, run_id, attempt, graph):
     actual = report["plan"]
     if report["event"] != "push" or not actual["release_candidate"] or not actual["release"]:
         raise ValueError("CI did not qualify a merged release candidate")
-    required = select([], graph, graph, release=True)
+    required = select([], graph, graph, release_members=members)
+    for key in ("products", "release_members", "release_roots", "release_packages", "fuzz"):
+        if required[key] != actual[key]:
+            raise ValueError(f"release coverage differs from required {key}")
     for key in ("profiles", "roots", "packages"):
         if not set(required[key]) <= set(actual[key]):
             raise ValueError(f"release coverage is missing required {key}")
@@ -105,9 +118,15 @@ def main():
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         print(f"Passed {len(plan['profiles'])} check profiles and {len(plan['fuzz'])} fuzz targets")
     else:
+        root = Path.cwd()
+        graph = metadata_graph(root)
+        sha = os.environ["CANDIDATE_SHA"]
+        # Publication checks the actual merged commit's parent, never a receipt-supplied base.
+        members = released_members(release_config(root, sha),
+                                   graph_at(root, sha + "^", historical=True), graph)
         check_release(json.loads(args.report.read_text()), sha=os.environ["CANDIDATE_SHA"],
                       run_id=int(os.environ["CI_RUN_ID"]), attempt=int(os.environ["CI_RUN_ATTEMPT"]),
-                      graph=metadata_graph(Path.cwd()))
+                      graph=graph, members=members)
         print("Exact-run release qualification verified")
 
 

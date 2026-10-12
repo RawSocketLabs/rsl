@@ -71,7 +71,10 @@ def planning_inputs():
         base=os.environ.get("INPUT_BASE", ""), full=os.environ.get("INPUT_FULL") == "true",
         release=os.environ.get("INPUT_RELEASE") == "true",
         repository=os.environ["GITHUB_REPOSITORY"], prefix=release_policy(root))
-    return root, base, full, release, candidate
+    products = os.environ.get("INPUT_PRODUCTS", "").split()
+    if products and os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch":
+        raise ValueError("explicit products are only allowed for manual qualification")
+    return root, base, full, release, candidate, products or None
 
 
 def needs_cargo(root, base, full, release):
@@ -84,8 +87,8 @@ def needs_cargo(root, base, full, release):
 
 
 def plan_for_event():
-    root, base, full, release, candidate = planning_inputs()
-    plan = build_plan(root, base=base, full=full, release=release)
+    root, base, full, release, candidate, products = planning_inputs()
+    plan = build_plan(root, base=base, full=full, release=release, products=products)
     plan["release_candidate"] = candidate
     if plan["head"] != os.environ["GITHUB_SHA"]:
         raise ValueError("checkout does not match the workflow's tested SHA")
@@ -98,7 +101,7 @@ def main():
     parser.add_argument("--probe", action="store_true", help="decide whether Cargo setup is needed, without Cargo")
     args = parser.parse_args()
     if args.probe:
-        root, base, full, release, _ = planning_inputs()
+        root, base, full, release, _, _ = planning_inputs()
         emit_output("needs_cargo", needs_cargo(root, base, full, release))
         return
     plan = plan_for_event()
@@ -122,7 +125,7 @@ def main():
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
             summary.write("## CI coverage\n\n")
             summary.write(f"Mode: {'full' if plan['full'] else 'affected'}; "
-                          f"release qualification: {plan['release']}.\n\n")
+                          f"release products: {', '.join(plan['products']) or 'none'}.\n\n")
             summary.write(f"{len(plan['packages'])} workspace packages, {len(checks)} check profiles, "
                           f"{len(plan['fuzz'])} fuzz targets.\n\n")
             summary.write("Selection reasons are in the plan step and exact-run coverage artifact.\n")

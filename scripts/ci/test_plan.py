@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from gate import check_plan, check_release, check_results
-from plan import BNB, MACROS, SOCKS, NOSTD, USDR_ORACLE, Package, affected_packages, changed_paths, select
+from plan import (BNB, MACROS, SOCKS, NOSTD, USDR_ORACLE, RELEASE_PROFILES, Package,
+                  affected_packages, changed_paths, released_members, select)
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
 
@@ -40,9 +41,16 @@ def fixture():
 
 def planned(paths=(), **kwargs):
     graph = fixture()
+    if kwargs.pop("release", False):
+        kwargs["release_members"] = codec_members(graph)
     plan = select(paths, graph, graph, **kwargs)
     plan.update(base="a" * 40, head="b" * 40, release_candidate=False)
     return plan
+
+
+def codec_members(graph):
+    return [{"product": "bitsandbytes", "root": root, "name": graph[root].name,
+             "version": graph[root].version} for root in sorted((BNB, MACROS))]
 
 
 def results(plan):
@@ -73,9 +81,8 @@ class SelectionTests(unittest.TestCase):
     def test_socks_does_not_retest_upstream_bnb_or_unrelated_crypto(self):
         plan = planned([f"{SOCKS}/src/blocking.rs"])
         self.assertEqual(plan["packages"], ["socks"])
-        self.assertEqual(set(plan["profiles"]), {"workspace", "msrv", "socks", "deny"})
-        self.assertEqual([(f["root"], f["target"]) for f in plan["fuzz"]],
-                         [(f"{SOCKS}/fuzz", "session")])
+        self.assertEqual(set(plan["profiles"]), {"workspace", "deny"})
+        self.assertEqual(plan["fuzz"], [])
 
     def test_compression_covers_facade_but_not_facades_other_dependencies(self):
         plan = planned(["compression/src/lib.rs"])
@@ -86,14 +93,13 @@ class SelectionTests(unittest.TestCase):
     def test_crypto_covers_legacy_and_pki_consumers(self):
         plan = planned(["crypto/src/lib.rs"])
         self.assertEqual(set(plan["packages"]), {"rsl", "rsl-crypto", "rsl-crypto-legacy", "rsl-pki"})
-        self.assertEqual({f["root"] for f in plan["fuzz"]}, {"crypto/fuzz", "pki/fuzz"})
+        self.assertEqual(plan["fuzz"], [])
 
     def test_bnb_covers_protocol_pki_and_fuzz_consumers_not_crypto(self):
         plan = planned([f"{BNB}/src/lib.rs"])
         self.assertTrue({"socks", "rsl-asn1", "rsl-x509", "rsl-pki"} <= set(plan["packages"]))
         self.assertNotIn("rsl-crypto", plan["packages"])
-        self.assertEqual({f["root"] for f in plan["fuzz"]},
-                         {"bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"})
+        self.assertEqual(plan["fuzz"], [])
 
     def test_macros_propagate_through_runtime(self):
         self.assertIn("socks", planned([f"{MACROS}/src/lib.rs"])["packages"])
@@ -103,7 +109,7 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(suffix=suffix):
                 plan = planned([f"pki/tests/vectors/nist-pkits/example.{suffix}"])
                 self.assertTrue({"rsl-asn1", "rsl-x509", "rsl-pki"} <= set(plan["packages"]))
-                self.assertIn("pki/fuzz", {f["root"] for f in plan["fuzz"]})
+                self.assertEqual(plan["fuzz"], [])
 
     def test_generated_skill_markdown_selects_its_validation(self):
         plan = planned(["tools/rust-skills/generated/agent-skills/rust-core/SKILL.md"])
@@ -111,10 +117,10 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("workspace", plan["profiles"])
 
     def test_fixture_readme_is_not_a_prose_exemption(self):
-        self.assertIn("bnb", planned([f"{BNB}/tests/fixtures/README.md"])["profiles"])
+        self.assertIn("workspace", planned([f"{BNB}/tests/fixtures/README.md"])["profiles"])
 
     def test_rustdoc_only_source_edits_are_still_code(self):
-        self.assertIn("bnb", planned([f"{BNB}/src/lib.rs"])["profiles"])
+        self.assertIn("workspace", planned([f"{BNB}/src/lib.rs"])["profiles"])
 
     def test_usdr_sim_changes_rerun_the_driver_and_libusdr_oracle(self):
         plan = planned(["devices/sdr/usdr/sim/src/board.rs"])
@@ -145,7 +151,7 @@ class SelectionTests(unittest.TestCase):
     def test_detached_lockfile_selects_only_its_workspace(self):
         plan = planned(["crypto/fuzz/Cargo.lock"])
         self.assertEqual(plan["packages"], [])
-        self.assertEqual({f["root"] for f in plan["fuzz"]}, {"crypto/fuzz"})
+        self.assertEqual(plan["fuzz"], [])
 
     def test_shared_or_unknown_changes_force_full_coverage(self):
         for path in ("Cargo.lock", "Cargo.toml", ".cargo/config.toml", "AGENTS.md",
@@ -155,11 +161,12 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue(plan["full"])
                 self.assertIn("rsl-crypto", plan["packages"])
                 self.assertIn("socks", plan["packages"])
-                self.assertIn("package", plan["profiles"])
+                self.assertFalse(RELEASE_PROFILES & set(plan["profiles"]))
+                self.assertEqual(plan["fuzz"], [])
 
     def test_domain_ci_change_does_not_expand_to_unrelated_crypto(self):
         plan = planned([".github/ci/bnb.toml"])
-        self.assertIn("bnb", plan["profiles"])
+        self.assertIn("workspace", plan["profiles"])
         self.assertNotIn("rsl-crypto", plan["packages"])
 
     def test_removed_dependency_still_selects_its_old_consumer(self):
@@ -212,12 +219,46 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("rsl-crypto", plan["packages"])
         self.assertFalse(plan["full"])
 
+    def test_global_changes_cannot_widen_release_qualification(self):
+        scoped = planned(release=True)
+        broad = planned(["Cargo.lock", "scripts/ci/plan.py", "crypto/src/lib.rs"], release=True)
+        self.assertIn("rsl-crypto", broad["packages"])
+        for key in ("products", "release_members", "release_roots", "release_packages", "fuzz"):
+            self.assertEqual(scoped[key], broad[key], key)
+        self.assertNotIn("crypto/fuzz", {item["root"] for item in broad["fuzz"]})
+
+    def test_release_product_uses_forward_dependencies_without_their_other_consumers(self):
+        graph = fixture()
+        members = [{"product": "socks", "root": SOCKS, "name": "socks", "version": "0.0.0"}]
+        plan = select([], graph, graph, release_members=members)
+        self.assertTrue({BNB, MACROS, SOCKS, f"{SOCKS}/fuzz"} <= set(plan["release_roots"]))
+        self.assertNotIn("pki/validation", plan["release_roots"])
+        self.assertNotIn("pki/fuzz", {item["root"] for item in plan["fuzz"]})
+
+    def test_product_selection_requires_enabled_complete_consistent_version_groups(self):
+        old = fixture()
+        new = copy.deepcopy(old)
+        policy = {"package": [{"name": name, "release": True, "version_group": "codec"}
+                               for name in ("bitsandbytes", "bitsandbytes-macros")]}
+        with self.assertRaisesRegex(ValueError, "version changes"):
+            released_members(policy, old, new)
+        new[BNB].version = "1.0.0"
+        with self.assertRaisesRegex(ValueError, "every member"):
+            released_members(policy, old, new)
+        new[MACROS].version = "1.0.0"
+        self.assertEqual({member["product"] for member in released_members(policy, old, new)}, {"codec"})
+        with self.assertRaisesRegex(ValueError, "unknown or disabled"):
+            released_members(policy, old, new, ["crypto"])
+        new[MACROS].version = "1.1.0"
+        with self.assertRaisesRegex(ValueError, "inconsistent"):
+            released_members(policy, old, new, ["codec"])
+
 
 class GateTests(unittest.TestCase):
     def test_omitted_coverage_cannot_pass_against_the_recomputed_plan(self):
         expected = planned([f"{BNB}/src/lib.rs"])
         check_plan(expected, copy.deepcopy(expected))
-        for key in ("roots", "packages", "profiles", "fuzz", "paths"):
+        for key in ("roots", "packages", "profiles", "paths"):
             with self.subTest(key=key):
                 actual = copy.deepcopy(expected)
                 actual[key] = actual[key][1:]
@@ -229,7 +270,7 @@ class GateTests(unittest.TestCase):
         check_results(plan, results(plan))
 
     def test_selected_job_cannot_skip_fail_or_cancel(self):
-        plan = planned([f"{SOCKS}/src/lib.rs"])
+        plan = planned(release=True)
         for job in ("plan", "policy", "checks", "fuzz"):
             for result in ("skipped", "failure", "cancelled"):
                 with self.subTest(job=job, result=result):
@@ -246,7 +287,7 @@ class GateTests(unittest.TestCase):
             check_results(plan, needs)
 
     def test_changed_fuzz_budget_is_not_accepted(self):
-        plan = planned(["crypto/src/lib.rs"])
+        plan = planned(release=True)
         plan["fuzz"] = copy.deepcopy(plan["fuzz"])
         plan["fuzz"][0]["args"] = ["-runs=1"]
         with self.assertRaises(ValueError):
@@ -263,7 +304,8 @@ class GateTests(unittest.TestCase):
         plan["release_candidate"] = True
         report = {"head": plan["head"], "run_id": 42, "run_attempt": 2,
                   "event": "push", "plan": plan, "needs": results(plan)}
-        arguments = dict(sha=plan["head"], run_id=42, attempt=2, graph=fixture())
+        arguments = dict(sha=plan["head"], run_id=42, attempt=2, graph=fixture(),
+                         members=codec_members(fixture()))
         check_release(report, **arguments)
         for field, wrong in (("head", "c" * 40), ("run_id", 43), ("run_attempt", 1)):
             with self.subTest(field=field):
@@ -271,26 +313,33 @@ class GateTests(unittest.TestCase):
                 bad[field] = wrong
                 with self.assertRaises(ValueError):
                     check_release(bad, **arguments)
-        for field in ("profiles", "packages", "roots", "fuzz"):
+        for field in ("profiles", "packages", "roots", "fuzz", "products", "release_members",
+                      "release_roots", "release_packages"):
             with self.subTest(field=field):
                 bad = copy.deepcopy(report)
                 bad["plan"][field] = []
                 with self.assertRaises(ValueError):
                     check_release(bad, **arguments)
+        bad = copy.deepcopy(report)
+        bad["plan"]["release_members"][0]["version"] = "9.9.9"
+        with self.assertRaisesRegex(ValueError, "release_members"):
+            check_release(bad, **arguments)
 
     def test_ordinary_docs_receipt_cannot_qualify_publication(self):
         plan = planned(["README.md"])
         report = {"head": plan["head"], "run_id": 42, "run_attempt": 1,
                   "event": "push", "plan": plan, "needs": results(plan)}
         with self.assertRaises(ValueError):
-            check_release(report, sha=plan["head"], run_id=42, attempt=1, graph=fixture())
+            check_release(report, sha=plan["head"], run_id=42, attempt=1, graph=fixture(),
+                          members=codec_members(fixture()))
 
     def test_manually_forced_release_checks_do_not_authorize_publication(self):
         plan = planned(release=True)
         report = {"head": plan["head"], "run_id": 42, "run_attempt": 1,
                   "event": "workflow_dispatch", "plan": plan, "needs": results(plan)}
         with self.assertRaisesRegex(ValueError, "merged release candidate"):
-            check_release(report, sha=plan["head"], run_id=42, attempt=1, graph=fixture())
+            check_release(report, sha=plan["head"], run_id=42, attempt=1, graph=fixture(),
+                          members=codec_members(fixture()))
 
 
 class GitBoundaryTests(unittest.TestCase):

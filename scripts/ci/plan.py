@@ -18,7 +18,7 @@ import tarfile
 import tempfile
 import tomllib
 
-SCHEMA = 1
+SCHEMA = 2
 BNB = "bitsandbytes/bnb"
 MACROS = "bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"
@@ -29,7 +29,7 @@ FUZZ = {
     "bitsandbytes/fuzz": ["-max_total_time=60", "-runs=2000000"],
     "crypto/fuzz": ["-max_total_time=45", "-runs=500000"],
     "pki/fuzz": ["-max_total_time=45", "-runs=500000"],
-    # PR runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
+    # Release runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
 # Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
@@ -55,6 +55,7 @@ PROFILES = {
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
     "package", "bladerf",
 }
+RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Package:
     dependencies: set[str]
     workspace: bool = True
     bins: tuple[str, ...] = ()
+    version: str = "0.0.0"
 
 
 def command(root, *args, env=None):
@@ -108,7 +110,7 @@ def metadata_graph(root, *, historical=False, toolchain=None):
             }
             graph[path] = Package(package["name"], dependencies, directory == ".",
                                   tuple(sorted(t["name"] for t in package["targets"]
-                                               if "bin" in t["kind"])))
+                                               if "bin" in t["kind"])), package["version"])
     missing = {dep for package in graph.values() for dep in package.dependencies} - graph.keys()
     if missing:
         raise ValueError(f"unregistered owned dependencies: {sorted(missing)}")
@@ -193,7 +195,7 @@ def affected_packages(seeds, old, new):
     return reasons
 
 
-def select(paths, old, new, *, full=False, release=False, full_reason="explicit full run"):
+def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run"):
     seeds = defaultdict(set)
     global_reasons = {full_reason} if full else set()
     docs = []
@@ -215,35 +217,43 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
                 seeds[root].add(f"changed {path}")
                 if root not in new:
                     global_reasons.add(f"removed owned package: {root}")
-    if release:
-        # Scope intentionally follows release-plz.toml's reviewed allowlist, checked below.
-        for root in (BNB, MACROS):
-            if root not in new:
-                raise ValueError(f"release package is missing: {root}")
-            seeds[root].add("release qualification")
+    # Release breadth is independent of changed-files/full breadth. Forward dependencies
+    # are included, but do not seed their unrelated consumers.
+    release_seeds = {member["root"]: {"release qualification"} for member in release_members}
+    release_reasons = affected_packages(release_seeds, old, new)
+    pending = list(release_seeds)
+    dependencies = set(pending)
+    while pending:
+        for dependency in new[pending.pop()].dependencies:
+            if dependency not in dependencies:
+                dependencies.add(dependency)
+                pending.append(dependency)
+    release_roots = (set(release_reasons) | dependencies) & new.keys()
     full = bool(global_reasons)
     if full:
         seeds = {root: global_reasons.copy() for root in old.keys() | new.keys()}
     reasons = affected_packages(seeds, old, new)
+    for root in release_roots:
+        reasons.setdefault(root, set()).add("release qualification")
     roots = set(reasons) & new.keys()
     packages = sorted(new[root].name for root in roots if new[root].workspace)
     profiles = set()
     if roots:
         profiles.add("deny")
     if packages:
-        profiles.update({"workspace", "msrv"})
-    if roots & {BNB, MACROS}:
+        profiles.add("workspace")
+    if release_roots:
+        profiles.add("msrv")
+    if release_roots & {BNB, MACROS}:
         profiles.update({"bnb", "public-api", "semver"})
-    if SOCKS in roots:
+    if SOCKS in release_roots:
         profiles.add("socks")
     if set(packages) & {"rawsock", "dns", "ip", "icmp", "tcp", "udp", "ethernet", "arp"}:
         profiles.add("network")
     if set(packages) & {"rsl", "rsl-deps", "demos"}:
         profiles.add("facades")
-    if roots & (PKI | {BNB, NOSTD}):
+    if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
-    if NOSTD in roots:
-        profiles.add("msrv")
     if "rsl-deps" in packages or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
@@ -254,34 +264,69 @@ def select(paths, old, new, *, full=False, release=False, full_reason="explicit 
         profiles.add("usdr-oracle")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
-    if release or full:
+    if release_members:
         profiles.add("package")
     fuzz = [{"root": root, "target": target, "args": FUZZ[root]}
-            for root in sorted(roots & FUZZ.keys()) for target in new[root].bins]
-    for root in roots & FUZZ.keys():
+            for root in sorted(release_roots & FUZZ.keys()) for target in new[root].bins]
+    for root in release_roots & FUZZ.keys():
         if not new[root].bins:
             raise ValueError(f"fuzz workspace has no targets: {root}")
-    return {"schema": SCHEMA, "full": full, "release": release,
+    return {"schema": SCHEMA, "full": full, "release": bool(release_members),
+            "products": sorted({member["product"] for member in release_members}),
+            "release_members": list(release_members), "release_roots": sorted(release_roots),
+            "release_packages": sorted(new[root].name for root in release_roots if new[root].workspace),
             "paths": sorted(set(paths)), "prose": docs, "packages": packages,
             "roots": sorted(roots), "profiles": sorted(profiles), "fuzz": fuzz,
             "reasons": {root: sorted(reasons[root]) for root in sorted(roots)},
             "full_reasons": sorted(global_reasons)}
 
 
-def release_policy(root, revision=None):
+def release_config(root, revision=None):
     text = (command(root, "git", "show", revision + ":release-plz.toml").decode()
             if revision else (root / "release-plz.toml").read_text())
     policy = tomllib.loads(text)
     workspace = policy["workspace"]
     if workspace.get("release", True) or workspace.get("publish", True) or workspace.get("release_always", True):
         raise ValueError("release qualification requires opt-in, release-PR-only publishing")
-    enabled = {p["name"] for p in policy["package"] if p.get("release", False)}
-    if enabled != {"bitsandbytes", "bitsandbytes-macros"}:
-        raise ValueError("update CI release qualification when changing the release allowlist")
-    return workspace.get("pr_branch_prefix", "release-plz-")
+    return policy
 
 
-def build_plan(root, *, base=None, head="HEAD", full=False, release=False):
+def release_policy(root, revision=None):
+    return release_config(root, revision)["workspace"].get("pr_branch_prefix", "release-plz-")
+
+
+def released_members(policy, old, new, products=None):
+    """Resolve enabled products and bind qualification to exact manifest versions."""
+    catalog = defaultdict(set)
+    for package in policy["package"]:
+        if package.get("release", False):
+            catalog[package.get("version_group", package["name"])].add(package["name"])
+    by_name = {package.name: root for root, package in new.items()}
+    members = []
+    selected = set(products) if products is not None else set()
+    if selected - catalog.keys():
+        raise ValueError(f"unknown or disabled release products: {sorted(selected - catalog.keys())}")
+    for product, names in sorted(catalog.items()):
+        if names - by_name.keys():
+            raise ValueError(f"release product has missing packages: {product}")
+        roots = sorted(by_name[name] for name in names)
+        changed = [root for root in roots if root in old and new[root].version != old[root].version]
+        if products is None and changed:
+            selected.add(product)
+        if product not in selected:
+            continue
+        if products is None and len(changed) != len(roots):
+            raise ValueError(f"release product requires every member's version change: {product}")
+        if len({new[root].version for root in roots}) != 1:
+            raise ValueError(f"release product has inconsistent versions: {product}")
+        members.extend({"product": product, "root": root, "name": new[root].name,
+                        "version": new[root].version} for root in roots)
+    if not members:
+        raise ValueError("release qualification requires a product with version changes or explicit --product")
+    return members
+
+
+def build_plan(root, *, base=None, head="HEAD", full=False, release=False, products=None):
     head = command(root, "git", "rev-parse", "--verify", head + "^{commit}").decode().strip()
     requested_base = base
     base = None
@@ -302,8 +347,11 @@ def build_plan(root, *, base=None, head="HEAD", full=False, release=False):
         # The base graph is read even when a shared file or --full forces full coverage: a manifest moved
         # in the same change must still resolve to its old owner, not look unregistered.
         old = new if base in (None, head) else graph_at(root, base, historical=True)
-    release_policy(root, head)
-    plan = select(paths, old, new, full=full, release=release, full_reason=full_reason)
+    policy = release_config(root, head)
+    members = released_members(policy, old, new, products) if release else []
+    if products and not release:
+        raise ValueError("--product requires release qualification")
+    plan = select(paths, old, new, full=full, release_members=members, full_reason=full_reason)
     plan.update({"base": base, "head": head, "release_candidate": False})
     return plan
 
@@ -314,10 +362,12 @@ def main():
     parser.add_argument("--head", default="HEAD", help="tested tree (defaults to HEAD)")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--release", action="store_true", help="force release checks; not publication authority")
+    parser.add_argument("--product", action="append", help="enabled product/version group to qualify (repeatable)")
     parser.add_argument("--output", type=Path, help="JSON output (otherwise stdout)")
     args = parser.parse_args()
     root = Path(command(Path.cwd(), "git", "rev-parse", "--show-toplevel").decode().strip())
-    plan = build_plan(root, base=args.base, head=args.head, full=args.full, release=args.release)
+    plan = build_plan(root, base=args.base, head=args.head, full=args.full, release=args.release,
+                      products=args.product)
     output = json.dumps(plan, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(output)

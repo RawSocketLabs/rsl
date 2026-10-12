@@ -133,7 +133,8 @@ windows = { path = "../windows" }
                 plan = select([path], graph, graph)
                 self.assertTrue(required <= set(plan["packages"]), plan["packages"])
                 self.assertFalse(unrelated & set(plan["packages"]), plan["packages"])
-                self.assertEqual({item["root"] for item in plan["fuzz"]}, fuzz)
+                self.assertEqual(plan["fuzz"], [])
+                self.assertTrue(fuzz <= set(plan["roots"]))
 
     def test_nested_detached_member_requires_explicit_validation_registration(self):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-detached-test-") as directory:

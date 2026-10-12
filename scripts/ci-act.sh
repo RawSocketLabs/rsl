@@ -5,7 +5,8 @@
 #   scripts/ci-act.sh                 # list jobs
 #   scripts/ci-act.sh pre-push                 # affected coverage against configured trunk
 #   scripts/ci-act.sh pre-push --base REF      # explicit comparison base
-#   scripts/ci-act.sh pre-push --full          # every validation surface
+#   scripts/ci-act.sh pre-push --full          # every package's routine checks
+#   scripts/ci-act.sh release --product NAME  # product release tier, never publication
 #   scripts/ci-act.sh -j checks                # check profiles and their dependencies
 # Extra arguments pass straight through to act.
 set -euo pipefail
@@ -56,13 +57,22 @@ if ! podman image exists "${runner_image}"; then
 fi
 runner=(-P "ubuntu-latest=${runner_image}")
 
-if [[ $1 == "pre-push" ]]; then
+if [[ $1 == "pre-push" || $1 == "release" ]]; then
+  ci_release=false
+  [[ $1 == "release" ]] && ci_release=true
   shift
   ci_full=false
   ci_base=""
+  ci_products=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --full) ci_full=true; shift ;;
+      --product)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "error: --product requires a product" >&2; exit 2; }
+        ci_release=true
+        ci_products="${ci_products:+$ci_products }$2"
+        shift 2
+        ;;
       --base)
         [[ $# -ge 2 && -n "$2" ]] || { echo "error: --base requires a ref" >&2; exit 2; }
         ci_base="$2"
@@ -76,7 +86,8 @@ if [[ $1 == "pre-push" ]]; then
     exit 2
   fi
 
-  if [[ "$ci_full" == false && -z "$ci_base" ]]; then
+  # Full routine breadth must not erase the base needed to infer release version changes.
+  if [[ -z "$ci_base" ]]; then
     ci_remote="$(git config --get repoGuard.remote || true)"
     ci_trunk="$(git config --get repoGuard.trunk || true)"
     if [[ -n "$ci_remote" && -n "$ci_trunk" ]]; then
@@ -89,7 +100,6 @@ if [[ $1 == "pre-push" ]]; then
   fi
   ci_branch="$(git symbolic-ref --quiet --short HEAD || true)"
   ci_release_prefix="$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts/ci"); from plan import release_policy; print(release_policy(Path.cwd()))')"
-  ci_release=false
   [[ "$ci_branch" == "$ci_release_prefix"* ]] && ci_release=true
 
   # act copies a linked worktree's .git file, not its external object database.
@@ -115,6 +125,7 @@ if [[ $1 == "pre-push" ]]; then
     --input "full=$ci_full" \
     --input "base=$ci_base" \
     --input "release=$ci_release" \
+    --input "products=$ci_products" \
     -j ci-ok
 fi
 

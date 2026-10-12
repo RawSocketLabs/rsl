@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fixed validation profiles shared by hosted Actions and local act execution.
 
-The plan selects packages, not arbitrary shell commands. Preserve complete suites;
+The plan selects routine packages and independent release scope, not arbitrary shell commands.
+Preserve complete selected suites;
 dependency builds are expected, but unrelated dependency test suites are not.
 """
 
@@ -25,15 +26,19 @@ def packages(names):
 def commands(profile, plan, bnb):
     selected = set(plan["packages"])
     roots = set(plan["roots"])
+    qualified = set(plan["release_packages"])
+    release_roots = set(plan["release_roots"])
     workspace = ["--workspace"] if plan["full"] else packages(selected)
     if profile == "workspace":
         result = [["cargo", "fmt", "--all", "--check"],
                 ["cargo", "clippy", *workspace, "--all-targets"],
                 ["cargo", "test", *workspace]]
-        if "rsl-usdr" in selected:
+        # One representative configuration keeps optional adapters/transport code in
+        # the routine gate; independent feature ladders and docs stay release-only.
+        for name in sorted(selected & {"bitsandbytes", "socks", "rsl-usdr"}):
             result.extend([
-                ["cargo", "clippy", "-p", "rsl-usdr", "--all-targets", "--all-features", "--", "-D", "warnings"],
-                ["cargo", "test", "-p", "rsl-usdr", "--all-features"],
+                ["cargo", "clippy", "-p", name, "--all-targets", "--all-features", "--", "-D", "warnings"],
+                ["cargo", "test", "-p", name, "--all-features"],
             ])
         result.append([sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"])
         return result
@@ -69,21 +74,21 @@ def commands(profile, plan, bnb):
             result.append(["cargo", "build", "-p", "demos", "--examples"])
         return result
     if profile == "msrv":
-        result = [["cargo", "check", *workspace]] if selected else []
+        result = [["cargo", "check", *packages(qualified)]] if qualified else []
         result.extend(["cargo", "check", "-p", name, "--all-features"]
-                      for name in sorted(selected & {"bitsandbytes", "socks", "rsl-usdr"}))
-        if NOSTD in roots:
+                      for name in sorted(qualified & {"bitsandbytes", "socks", "rsl-usdr"}))
+        if NOSTD in release_roots:
             result.append(["cargo", "check", "--manifest-path", f"{NOSTD}/Cargo.toml"])
         return result
     if profile == "no-std":
         result = []
-        if BNB in roots:
+        if BNB in release_roots:
             result.append(["cargo", "build", "-p", "bitsandbytes", "--no-default-features"])
-        if NOSTD in roots:
+        if NOSTD in release_roots:
             result.append(["cargo", "build", "--manifest-path", f"{NOSTD}/Cargo.toml",
                            "--target", "thumbv7em-none-eabi"])
-        pki = selected & {"rsl-asn1", "rsl-x509", "rsl-pki"}
-        if roots & PKI:
+        pki = qualified & {"rsl-asn1", "rsl-x509", "rsl-pki"}
+        if release_roots & PKI:
             result.append(["cargo", "build", *packages(pki), "--target", "thumbv7em-none-eabi"])
         return result
     if profile == "semver":
@@ -92,7 +97,8 @@ def commands(profile, plan, bnb):
                 for feature in ("--all-features", "--default-features", "--only-explicit-features")]
     if profile == "package":
         # Verifies both actual archives together; Cargo supplies the temporary local registry.
-        return [["cargo", "package", "-p", "bitsandbytes-macros", "-p", "bitsandbytes", "--all-features"]]
+        return [["cargo", "package", *packages({member["name"] for member in plan["release_members"]}),
+                 "--all-features"]]
     if profile == "bladerf":
         manifest = ["--manifest-path", f"{BLADERF}/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--all", "--", "--check"],
@@ -114,7 +120,8 @@ def commands(profile, plan, bnb):
                 ["cargo", "test", *manifest, "--workspace"],
                 ["cargo", "run", *manifest, "--package", "xtask", "--", "validate"],
                 ["cargo", "run", *manifest, "--package", "xtask", "--", "generate", "--check"],
-                ["cargo", "+1.85.0", "check", *manifest, "--workspace"]]
+                *([["cargo", "+1.85.0", "check", *manifest, "--workspace"]]
+                  if any(root.startswith("tools/rust-skills/") for root in release_roots) else [])]
     raise ValueError(f"profile requires a dedicated adapter: {profile}")
 
 

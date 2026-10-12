@@ -80,14 +80,14 @@ inspection, and status questions do not trigger verification runs.
 
 ### Release qualification and publication gates
 
-Release preparation runs the workspace checks below plus the applicable crate's complete
+Release preparation runs the affected product checks below plus its complete
 feature, downstream, fuzz, compatibility, and performance qualification. The routine tier
 does not bypass existing pre-push hooks or change hosted/scheduled CI selection.
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo test --workspace
+cargo clippy -p <affected-package> --all-targets
+cargo test -p <affected-package>
 cargo deny check
 ```
 
@@ -96,11 +96,14 @@ Before pushing a source, dependency, API, FFI, or workflow change, run
 affected-package and downstream-consumer suites from the checked-in GitHub Actions
 workflow in rootless Podman. The selector includes optional/dev/build/platform dependencies,
 detached validation workspaces, and shared fixtures; do not replace it with ad-hoc path filters.
-Shared lockfile/build policy, central CI changes, and unknown ownership select full coverage.
-Use `pre-push --base REF` for an explicit comparison and `pre-push --full` for every surface.
-Missing trunk history also selects full coverage. Full CI runs nightly; ordinary prose-only
-changes run policy checks without Rust builds or fuzzing. Release candidates always require
-complete release and downstream qualification. See [CI policy](docs/CI.md).
+Shared lockfile/build policy, central CI changes, and unknown ownership select full routine coverage.
+Use `pre-push --base REF` for an explicit comparison and `pre-push --full` for all routine checks.
+Missing trunk history also selects full routine coverage. Full routine CI runs nightly;
+ordinary prose-only changes run policy checks without Rust builds or fuzzing.
+Fuzzing, packaging, compatibility and exhaustive feature/MSRV/cross-target qualification
+are release-only and scoped independently to enabled products and their affected closure.
+Use `scripts/ci-act.sh release --product NAME` for explicit qualification (never publication).
+See [CI policy](docs/CI.md).
 
 Set `ACT_CONCURRENT_JOBS` to limit local container load; hosted CI remains the final authority.
 Linked worktrees are validated through a retained, self-contained temporary clone because

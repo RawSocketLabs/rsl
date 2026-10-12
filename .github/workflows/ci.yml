@@ -15,7 +15,7 @@ on:
         options: [ubuntu-24.04, beefy]
         default: ubuntu-24.04
       full:
-        description: Run every validation surface.
+        description: Run routine checks for all packages (does not enable release jobs).
         type: boolean
         default: false
       base:
@@ -23,9 +23,13 @@ on:
         type: string
         default: ''
       release:
-        description: Add release checks; this does not authorize publication.
+        description: Qualify products with version changes; this does not authorize publication.
         type: boolean
         default: false
+      products:
+        description: Explicit enabled product/version groups, space-separated (manual release qualification).
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -51,6 +55,7 @@ jobs:
       has_fuzz: ${{ steps.plan.outputs.has_fuzz }}
       public_api_tool: ${{ steps.plan.outputs.public_api_tool }}
       semver_tool: ${{ steps.plan.outputs.semver_tool }}
+      release: ${{ steps.plan.outputs.release }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,6 +68,7 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
           INPUT_FULL: ${{ inputs.full }}
           INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_PRODUCTS: ${{ inputs.products }}
         run: python3 scripts/ci/prepare.py --probe
       - uses: dtolnay/rust-toolchain@stable
         if: steps.probe.outputs.needs_cargo == 'true'
@@ -73,6 +79,7 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
           INPUT_FULL: ${{ inputs.full }}
           INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_PRODUCTS: ${{ inputs.products }}
         run: python3 scripts/ci/prepare.py
 
   policy:
@@ -111,7 +118,7 @@ jobs:
           components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
           targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
-        if: matrix.profile == 'rust-skills'
+        if: matrix.profile == 'rust-skills' && contains(fromJSON(needs.plan.outputs.plan).release_roots, 'tools/rust-skills/crates/xtask')
       - uses: Swatinem/rust-cache@v2
         if: matrix.profile != 'deny' && matrix.profile != 'blessed'
         with:
@@ -198,6 +205,7 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
           INPUT_FULL: ${{ inputs.full }}
           INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_PRODUCTS: ${{ inputs.products }}
         run: python3 scripts/ci/prepare.py --probe
       - uses: dtolnay/rust-toolchain@stable
         if: steps.probe.outputs.needs_cargo == 'true'
@@ -207,6 +215,7 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
           INPUT_FULL: ${{ inputs.full }}
           INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_PRODUCTS: ${{ inputs.products }}
           CI_PLAN: ${{ needs.plan.outputs.plan }}
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 scripts/ci/gate.py ci --report "$RUNNER_TEMP/ci-coverage.json"
