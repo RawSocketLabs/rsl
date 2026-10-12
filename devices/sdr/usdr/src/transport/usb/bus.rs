@@ -22,6 +22,8 @@ use super::rx::Rx;
 #[cfg(feature = "mio")]
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
+#[cfg(feature = "mio")]
+use crate::fpga::{Gpi, Hwid};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
@@ -278,16 +280,19 @@ impl UsbBus {
     /// `registry` registers it under `token`. `waker` is the reactor's shared [`Waker`], which
     /// the handle's worker uses to report.
     ///
-    /// Checks the TMP114's ID first, over this blocking bus, so a missing or wrong sensor
-    /// fails here rather than as a plausible reading. The notification sequence, I²C table
-    /// and operation identities carry over. The device must be exclusive to the handle: its
+    /// Reads the board revision and checks the TMP114's ID first, over this blocking bus, as
+    /// [`Device`](crate::Device) identifies a board: a missing or wrong sensor fails here
+    /// rather than as a plausible reading, and the revision decides what
+    /// [`ReferenceClock::Board`](crate::ReferenceClock::Board) selects. The notification
+    /// sequence, I²C table and operation identities carry over. The device must be exclusive to the handle: its
     /// readiness makes the reactor the device's only completion driver. This blocks (sensor
     /// I/O, worker start), so call it before driving the reactor, not on its thread. The bus
     /// is consumed even on error; the device is then released, possibly by a worker shortly
     /// afterwards, so a reopen can briefly find it busy.
     ///
     /// # Errors
-    /// [`Error::ChipId`] or [`Error::Bus`] from the sensor check; [`Error::Open`] if the bus
+    /// [`Error::UnsupportedRevision`] outside revisions 1 to 3; [`Error::ChipId`] or
+    /// [`Error::Bus`] from the revision read or sensor check; [`Error::Open`] if the bus
     /// lost synchronization, an RX stream is open or awaiting cleanup, the endpoints cannot be
     /// reopened, the device already has a reactor, or registration fails.
     #[cfg(feature = "mio")]
@@ -303,15 +308,21 @@ impl UsbBus {
         NativeUsb::attach(queues, session, registry, token, waker).map_err(Error::Open)
     }
 
-    /// Checks the sensor over this bus, then gives up its control-plane session and transport.
+    /// Reads the revision and checks the sensor over this bus, then gives up its
+    /// control-plane session and transport.
     #[cfg(feature = "mio")]
     pub(super) fn hand_over(mut self) -> Result<(Session, Box<dyn UsbIo>), Error> {
         self.ready().map_err(Error::Open)?;
+        let revision = Hwid::from_raw(Gpi::Hwid.read(&mut self)?).revision();
+        if !(1..=3).contains(&revision) {
+            return Err(Error::UnsupportedRevision(revision));
+        }
         Tmp114::usdr().check_id(&mut self)?;
         let session = Session {
             i2c: self.i2c,
             next_sequence: self.next_sequence,
             next_id: self.next_i2c_id,
+            rev3: revision == 3,
         };
         Ok((session, self.io))
     }

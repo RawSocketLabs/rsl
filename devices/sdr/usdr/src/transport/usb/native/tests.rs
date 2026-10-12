@@ -13,17 +13,19 @@ use std::time::{Duration, Instant};
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
-use rsl_usdr_sim::{BoardRevision, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
-use super::BoardUsb;
+use super::{BoardUsb, simulated_device};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
-use crate::error::Error;
+use crate::error::{Access, Error};
 use crate::lowlevel::BusError;
+use crate::reference::ReferenceClock;
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
-use crate::transport::usb::i2c::{Action, I2cTransaction};
+use crate::transport::usb::i2c::I2cTransaction;
+use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
     Adapter, Backend, Completion, NativeEvent, NativeUsb, Queues, Reply, Report, Request, Session,
-    Transfer, Turn, Work, Worker,
+    Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 
@@ -229,10 +231,14 @@ impl Backend for Fake {
         }
         assert!(self.completion.is_none(), "one admitted native request");
         let result = match request.transfer {
-            Transfer::Write(packet) => self
+            Transfer::Write(frame) => self
                 .io
-                .write(&packet, Duration::ZERO)
+                .write(frame.as_bytes(), Duration::ZERO)
                 .map(|()| Reply::Written),
+            Transfer::Readback => self
+                .io
+                .read(Endpoint::Registers, Duration::ZERO)
+                .map(Reply::Readback),
             Transfer::Notification => self
                 .io
                 .read(Endpoint::Notification, Duration::ZERO)
@@ -293,9 +299,9 @@ fn budget() -> NonZeroUsize {
 }
 
 /// The real sensor/I²C machines provide the command, expected value and sequence transition.
-fn operation(id: u64) -> (TemperatureRead, I2cTransaction, Action) {
+fn operation(id: u64) -> (TemperatureRead, Machine, Submission) {
     let (temperature, request) = TemperatureRead::begin(Tmp114::usdr());
-    let mut transaction = I2cTransaction::new(
+    let transaction = I2cTransaction::new(
         id,
         request.dev,
         &request.register,
@@ -304,8 +310,11 @@ fn operation(id: u64) -> (TemperatureRead, I2cTransaction, Action) {
         Duration::ZERO,
     )
     .unwrap();
-    let action = transaction.start(Duration::ZERO).unwrap();
-    (temperature, transaction, action)
+    let mut machine = Machine::I2c(transaction);
+    let Step::Submit(submission) = machine.start(Duration::ZERO).unwrap() else {
+        panic!("a fresh machine submits its command");
+    };
+    (temperature, machine, submission)
 }
 
 /// Waits only in the caller's reactor, forwarding native device events as hints.
@@ -353,19 +362,23 @@ fn native_fd_and_worker_execute_the_production_temperature_transaction() {
     let (mut reactor, wake) = reactor();
     let other_producer = Arc::clone(&wake);
     let mut adapter = Adapter::attach(fake, reactor.registry(), DEVICE, wake, budget()).unwrap();
-    let (mut temperature, mut transaction, mut action) = operation(9);
+    let (mut temperature, mut machine, mut submission) = operation(9);
     let mut sequence = None;
     other_producer.wake().unwrap();
     loop {
-        adapter.submit(&action, Instant::now()).unwrap();
-        action = completion(&mut adapter, &mut reactor)
-            .apply(&mut transaction, Duration::ZERO, &mut sequence)
-            .unwrap();
-        if let Action::Complete { bytes, len } = action {
-            let value = temperature.complete(Ok(&bytes[..len])).unwrap().unwrap();
-            assert!((value - 25.0).abs() < f32::EPSILON);
-            assert_eq!(sequence, Some(1));
-            break;
+        adapter.submit(&submission, Instant::now()).unwrap();
+        match completion(&mut adapter, &mut reactor)
+            .apply(&mut machine, Duration::ZERO, &mut sequence)
+            .unwrap()
+        {
+            Step::Submit(next) => submission = next,
+            Step::Done(Output::I2c { bytes, len }) => {
+                let value = temperature.complete(Ok(&bytes[..len])).unwrap().unwrap();
+                assert!((value - 25.0).abs() < f32::EPSILON);
+                assert_eq!(sequence, Some(1));
+                break;
+            }
+            Step::Done(other) => panic!("an I2C read ends with bytes: {other:?}"),
         }
     }
     adapter.close().unwrap();
@@ -670,12 +683,13 @@ fn overlapping_actions_and_reused_operation_ids_are_rejected_before_io() {
     cleanup(&mut adapter, &mut reactor).unwrap();
 }
 
-/// A fresh blocking-bus session: no sequence baseline yet.
+/// A fresh blocking-bus session for a revision 3 board: no sequence baseline yet.
 fn session() -> Session {
     Session {
         i2c: I2cCache::default(),
         next_sequence: None,
         next_id: 0,
+        rev3: true,
     }
 }
 
@@ -805,4 +819,317 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
         carried.next_sequence.is_some(),
         "the sensor check's notification set the sequence baseline"
     );
+}
+
+/// Drives the handle's pending operation through the caller's reactor and its deadlines.
+fn finish(native: &mut NativeUsb, reactor: &mut Poll) -> NativeEvent {
+    let until = Instant::now() + GUARD;
+    let mut events = Events::with_capacity(8);
+    loop {
+        if let Some(event) = native.poll(Instant::now()) {
+            return event;
+        }
+        assert!(Instant::now() < until, "native operation deadline");
+        let timeout = native.deadline().map_or(GUARD, |deadline| {
+            deadline.saturating_duration_since(Instant::now())
+        });
+        reactor.poll(&mut events, Some(timeout)).unwrap();
+        for event in &events {
+            native.on_ready(event.token());
+        }
+    }
+}
+
+/// The board's operations from `start` on, without waits: native waits are caller
+/// deadlines, which the board never sees.
+fn operations(board: &Mutex<SimBoard>, start: usize) -> Vec<Op> {
+    board.lock().unwrap().trace()[start..]
+        .iter()
+        .filter(|op| !matches!(op, Op::Sleep { .. }))
+        .cloned()
+        .collect()
+}
+
+/// A powered-up board's fake backend and a native handle over it, plus the device that
+/// powered it (kept, so its drop does not power the board down mid-test).
+fn powered(
+    revision: BoardRevision,
+    reactor: &Poll,
+    wake: Arc<Waker>,
+) -> (
+    NativeUsb,
+    Arc<Mutex<SimBoard>>,
+    Arc<Mutex<Record>>,
+    crate::Device,
+) {
+    let (device, board, _) = simulated_device(revision);
+    let (mut fake, record, _) = Fake::new();
+    fake.io.board = Arc::clone(&board);
+    let carried = Session {
+        rev3: revision == BoardRevision::Rev3,
+        ..session()
+    };
+    let native = NativeUsb::attach(fake, carried, reactor.registry(), DEVICE, wake).unwrap();
+    (native, board, record, device)
+}
+
+/// Submissions the fake backend has seen.
+fn submits(record: &Mutex<Record>) -> usize {
+    record
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|(name, _)| *name == "submit")
+        .count()
+}
+
+#[test]
+fn the_native_identity_read_reports_what_the_gateware_registers_hold() {
+    let (fake, _, dropped) = Fake::new();
+    let board = Arc::clone(&fake.io.board);
+    let (build, hwid) = {
+        let mut board = board.lock().unwrap();
+        board.write_reg(16, 0x5a5a_0001);
+        (board.read_reg(16), board.read_reg(19))
+    };
+    let start = board.lock().unwrap().trace().len();
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_identity(Instant::now()).unwrap();
+    let NativeEvent::Identity(Ok(identity)) = finish(&mut native, &mut reactor) else {
+        panic!("the identity read succeeds");
+    };
+    assert_eq!(identity.gateware_build, build);
+    assert_eq!(identity.hwid, hwid);
+    assert_eq!(identity.revision, 3, "a revision 3 board");
+    assert!(identity.has_rx && identity.has_tx);
+    assert_eq!(
+        operations(&board, start),
+        [
+            Op::RegRead {
+                addr: 16,
+                value: build
+            },
+            Op::RegRead {
+                addr: 19,
+                value: hwid
+            },
+        ],
+        "the build word, then the hardware ID, as libusdr reads them"
+    );
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+#[test]
+fn the_native_reference_switch_performs_the_blocking_devices_operations() {
+    for (revision, reference) in [
+        (BoardRevision::Rev3, ReferenceClock::Board),
+        (BoardRevision::Rev1, ReferenceClock::Board),
+        (
+            BoardRevision::Rev3,
+            ReferenceClock::External { hz: 40_000_000 },
+        ),
+        (BoardRevision::Rev2, ReferenceClock::Oscillator),
+    ] {
+        let (mut device, blocking, _) = simulated_device(revision);
+        let start = blocking.lock().unwrap().trace().len();
+        let outcome = device
+            .set_reference_clock(reference)
+            .map_err(|error| error.to_string());
+        let expected = operations(&blocking, start);
+
+        let (mut reactor, wake) = reactor();
+        let (mut native, board, _, _device) = powered(revision, &reactor, wake);
+        let start = board.lock().unwrap().trace().len();
+        native
+            .start_reference_clock(reference, Instant::now())
+            .unwrap();
+        let NativeEvent::ReferenceClock(result) = finish(&mut native, &mut reactor) else {
+            panic!("the reference switch reports itself");
+        };
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            outcome,
+            "{revision:?} {reference:?}"
+        );
+        assert_eq!(
+            operations(&board, start),
+            expected,
+            "{revision:?} {reference:?}: the same machine reaches the board"
+        );
+        native.close().unwrap();
+        native_cleanup(&mut native, &mut reactor).unwrap();
+    }
+}
+
+#[test]
+fn a_sequence_wait_is_a_caller_deadline_with_no_transfer() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, _, record, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    let now = Instant::now();
+    native
+        .start_reference_clock(ReferenceClock::Board, now)
+        .unwrap();
+    // The switch begins with libusdr's 10 µs wait before its first state poll.
+    let wait = native
+        .deadline()
+        .expect("a wait schedules the caller's timer");
+    assert_eq!(wait, now + Duration::from_micros(10));
+    assert!(native.poll(now).is_none(), "the wait has not passed yet");
+    assert_eq!(native.deadline(), Some(wait), "no transfer was admitted");
+    assert!(
+        native.poll(wait).is_none(),
+        "the state poll is now in flight"
+    );
+    let transfer = native.deadline().expect("the state poll has a deadline");
+    assert!(
+        transfer >= wait + Duration::from_secs(1),
+        "the passed wait admitted the state poll's command, with its own timeout"
+    );
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::ReferenceClock(Ok(()))
+    ));
+    assert!(submits(&record) > 0);
+}
+
+#[test]
+fn a_missing_input_clock_is_reported_and_leaves_the_handle_open() {
+    let (mut fake, _, _) = Fake::new();
+    // Revisions 1 and 2 carry no on-board oscillator.
+    fake.io.board = Arc::new(Mutex::new(
+        SimBoard::new(BoardRevision::Rev2).with_oscillator_off(),
+    ));
+    let (mut reactor, wake) = reactor();
+    let carried = Session {
+        rev3: false,
+        ..session()
+    };
+    let mut native = NativeUsb::attach(fake, carried, reactor.registry(), DEVICE, wake).unwrap();
+    native
+        .start_reference_clock(ReferenceClock::Oscillator, Instant::now())
+        .unwrap();
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::ReferenceClock(Err(Error::ClockInputMissing))
+    ));
+    native.start_identity(Instant::now()).unwrap();
+    assert!(
+        matches!(
+            finish(&mut native, &mut reactor),
+            NativeEvent::Identity(Ok(_))
+        ),
+        "the transport is still in step after a well-formed failure report"
+    );
+}
+
+#[test]
+fn a_failed_register_transfer_names_its_register_and_closes_the_handle() {
+    let (mut fake, _, dropped) = Fake::new();
+    fake.submit_error = Some(BusError::Io(io::Error::from_raw_os_error(5)));
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_identity(Instant::now()).unwrap();
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::Identity(Err(Error::Bus {
+            chip: "FPGA",
+            access: Access::Read,
+            reg: 16,
+            source: BusError::Io(ref error),
+        })) if error.raw_os_error() == Some(5)
+    ));
+    assert!(
+        native.start_identity(Instant::now()).is_err(),
+        "a transfer failure closes the handle"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+#[test]
+fn a_second_operation_or_a_bad_argument_is_refused_without_io_or_closing() {
+    let (fake, record, _) = Fake::new();
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    assert!(matches!(
+        native.start_reference_clock(ReferenceClock::External { hz: 0 }, Instant::now()),
+        Err(Error::UnsupportedFrequency(0))
+    ));
+    native.start_identity(Instant::now()).unwrap();
+    assert!(matches!(
+        native.start_reference_clock(ReferenceClock::Board, Instant::now()),
+        Err(Error::Bus {
+            chip: "Si5332",
+            source: BusError::Unsupported(_),
+            ..
+        })
+    ));
+    assert!(matches!(
+        native.start_temperature(Instant::now()),
+        Err(Error::Bus { chip: "TMP114", .. })
+    ));
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::Identity(Ok(_))
+    ));
+    assert_eq!(
+        submits(&record),
+        4,
+        "two reads, each a command and a readback"
+    );
+}
+
+#[test]
+fn readback_transfers_need_a_high_speed_endpoint_and_hold_the_largest_reply() {
+    for packet in [64, 256] {
+        assert!(
+            matches!(
+                Queues::readback_capacity(packet),
+                Err(BusError::Unsupported(_))
+            ),
+            "packet size {packet} could end a 256-byte readback without a short packet"
+        );
+    }
+    assert_eq!(Queues::readback_capacity(512).unwrap(), 512);
+    assert_eq!(Queues::readback_capacity(1024).unwrap(), 1024);
+}
+
+#[test]
+fn handing_over_refuses_an_unsupported_revision_and_carries_revision_3() {
+    for (revision, rev3) in [(3, true), (1, false)] {
+        let mut board = SimBoard::new(BoardRevision::Rev3);
+        let hwid = board.read_reg(19) & !0xff00;
+        board.write_reg(19, hwid | 0x4000_0000 | revision << 8);
+        let mut bus = UsbBus::from_io(Box::new(board_usb(board)));
+        bus.initialize().unwrap();
+        let (carried, _) = bus.hand_over().unwrap();
+        assert_eq!(carried.rev3, rev3, "revision {revision}");
+    }
+    let mut board = SimBoard::new(BoardRevision::Rev3);
+    let hwid = board.read_reg(19) & !0xff00;
+    board.write_reg(19, hwid | 0x4000_0000 | 4 << 8);
+    let mut bus = UsbBus::from_io(Box::new(board_usb(board)));
+    bus.initialize().unwrap();
+    assert!(matches!(
+        bus.hand_over(),
+        Err(Error::UnsupportedRevision(4))
+    ));
+}
+
+/// The whole-transfer board model over `board`.
+fn board_usb(board: SimBoard) -> BoardUsb {
+    BoardUsb {
+        script: Arc::default(),
+        rx: None,
+        board: Arc::new(Mutex::new(board)),
+        registers: VecDeque::new(),
+        notifications: VecDeque::new(),
+        sequence: 0,
+        lut: 0,
+        index: 0,
+    }
 }

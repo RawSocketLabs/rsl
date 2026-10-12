@@ -23,7 +23,7 @@ pub(super) enum Machine {
 }
 
 /// One endpoint transfer a machine asked for, with its timeout already refreshed.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Submission {
     /// The operation identity its completion must carry.
     pub id: u64,
@@ -34,7 +34,7 @@ pub(super) struct Submission {
 }
 
 /// The endpoint transfer to perform.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 #[expect(
     clippy::large_enum_variant,
     reason = "one command frame inline, so submitting never allocates"
@@ -71,6 +71,18 @@ pub(super) enum Output {
         words: [u32; MAX_READ_WORDS],
         len: usize,
     },
+}
+
+impl Output {
+    /// The value a sequence action reports: the first byte or word read, zero for a write.
+    #[cfg(feature = "mio")]
+    pub(super) fn first(self) -> u32 {
+        match self {
+            Self::I2c { bytes, len } if len > 0 => bytes[0].into(),
+            Self::Words { words, len } if len > 0 => words[0],
+            _ => 0,
+        }
+    }
 }
 
 impl Machine {

@@ -10,6 +10,8 @@ mod stream;
 
 pub(crate) use diag::{read_atcrbs, read_tx_dma_status, write_atcrbs};
 pub(crate) use fe_gpio::{FrontEndGpio, PinMode};
+#[cfg(all(feature = "mio", target_os = "linux"))]
+pub(crate) use gpio::IdentityRead;
 pub(crate) use gpio::{Gpi, Gpo, Hwid};
 pub(crate) use phy::{Decimation, IqImbalance, Nco, Phy};
 pub(crate) use stream::{

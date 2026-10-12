@@ -14,6 +14,10 @@ use super::backend::{Backend, Request, Turn};
 use crate::lowlevel::BusError;
 
 /// The single admitted worker command; shutdown has a separate, unsaturable path.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one command in flight; its inline frame spares an allocation per transfer"
+)]
 pub(in super::super) enum Work {
     /// Submit without waiting for its USB completion.
     Submit(Request),

@@ -11,7 +11,11 @@
 use bnb::{bitfield, u7};
 
 use crate::error::{BusContext, Error};
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use crate::identity::Identity;
 use crate::lowlevel::Bus;
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use crate::portable::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// The gateware's name in errors.
 pub(super) const FPGA: &str = "FPGA";
@@ -19,7 +23,7 @@ pub(super) const FPGA: &str = "FPGA";
 /// FPGA register latching one GPO bank per write.
 const REG_GPO: u32 = 0;
 /// First FPGA register of the general-purpose inputs.
-const REG_GPI_BASE: u32 = 16;
+const REG_GPI_BASE: u16 = 16;
 
 /// A write to [`REG_GPO`]. Bit 31 set would load the I2C address LUT instead.
 #[bitfield(u32)]
@@ -101,9 +105,14 @@ pub(crate) enum Gpi {
 }
 
 impl Gpi {
+    /// The FPGA register holding this input's 32-bit word.
+    pub(crate) const fn register(self) -> u16 {
+        REG_GPI_BASE + self as u16 / 4
+    }
+
     /// Reads the 32-bit input word holding this input.
     pub(crate) fn read(self, bus: &mut dyn Bus) -> Result<u32, Error> {
-        let reg = REG_GPI_BASE + self as u32 / 4;
+        let reg = u32::from(self.register());
         let mut word = [0];
         bus.read_regs(reg, &mut word).reading(FPGA, reg)?;
         Ok(word[0])
@@ -125,4 +134,62 @@ pub(crate) struct Hwid {
     /// Board revision.
     #[bits(8..=15)]
     revision: u8,
+}
+
+/// The gateware identity as a sequence, for executors other than the blocking bus: the build
+/// word, then the hardware ID, as `dev_m2_lm6_1_sdr_revision_get` reads them.
+#[cfg(all(feature = "mio", target_os = "linux"))]
+#[derive(Debug, Default)]
+pub(crate) struct IdentityRead {
+    /// The gateware build word, once read.
+    build: Option<u32>,
+    /// The hardware ID word, once read.
+    hwid: Option<u32>,
+}
+
+#[cfg(all(feature = "mio", target_os = "linux"))]
+impl IdentityRead {
+    /// The identity, once both words are read.
+    pub(crate) fn identity(&self) -> Option<Identity> {
+        let (gateware_build, raw) = (self.build?, self.hwid?);
+        let hwid = Hwid::from_raw(raw);
+        Some(Identity {
+            revision: hwid.revision(),
+            has_rx: hwid.has_rx(),
+            has_tx: hwid.has_tx(),
+            gateware_build,
+            hwid: raw,
+        })
+    }
+}
+
+#[cfg(all(feature = "mio", target_os = "linux"))]
+impl Sequence for IdentityRead {
+    fn next(&self) -> Option<SequenceAction> {
+        let input = match (self.build, self.hwid) {
+            (None, _) => Gpi::UsrAccess2,
+            (Some(_), None) => Gpi::Hwid,
+            (Some(_), Some(_)) => return None,
+        };
+        Some(SequenceAction::Fpga(FpgaAccess::Read {
+            reg: input.register(),
+        }))
+    }
+
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        let Some(SequenceAction::Fpga(access)) = self.next() else {
+            return Ok(());
+        };
+        let word = result.map_err(|source| SequenceFailure::FpgaTransport {
+            chip: FPGA,
+            access,
+            source,
+        })?;
+        if self.build.is_none() {
+            self.build = Some(word);
+        } else {
+            self.hwid = Some(word);
+        }
+        Ok(())
+    }
 }

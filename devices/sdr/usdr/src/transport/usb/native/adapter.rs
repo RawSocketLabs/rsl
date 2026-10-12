@@ -8,12 +8,12 @@ use std::time::Instant;
 use mio::event::Source;
 use mio::{Interest, Registry, Token, Waker};
 
-use super::super::i2c::Action;
-use super::backend::{Backend, Completion, Request, Transfer};
+use super::super::machine::{Submission, Transfer};
+use super::backend::{Backend, Completion, Request};
 use super::worker::{Report, Work, Worker};
 use crate::lowlevel::BusError;
 
-/// Single-request native pilot registered in an externally owned Poll.
+/// Single-request native executor registered in an externally owned Poll.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent admission, mailbox, edge and cleanup-publication facts"
@@ -82,10 +82,11 @@ impl Adapter {
         })
     }
 
-    /// Admits one real machine action; the worker rechecks expiry before submission.
+    /// Admits one real machine transfer; the worker rechecks expiry before submission. A
+    /// command needs a fresh, increasing identity; a reply transfer continues the last one.
     pub(in super::super) fn submit(
         &mut self,
-        action: &Action,
+        submission: &Submission,
         now: Instant,
     ) -> Result<(), BusError> {
         if self.stopped {
@@ -94,31 +95,22 @@ impl Adapter {
         if self.pending.is_some() || self.busy {
             return Err(BusError::Unsupported("native USB action already pending"));
         }
-        let (id, timeout, transfer) = match *action {
-            Action::Write {
-                id,
-                packet,
-                timeout,
-            } => {
-                if self.last_id.is_some_and(|previous| id <= previous) {
-                    return Err(BusError::Unsupported(
-                        "native USB operation identity reused",
-                    ));
-                }
-                (id, timeout, Transfer::Write(packet))
+        let Submission {
+            id,
+            transfer,
+            timeout,
+        } = *submission;
+        match transfer {
+            Transfer::Write(_) if self.last_id.is_some_and(|previous| id <= previous) => {
+                return Err(BusError::Unsupported(
+                    "native USB operation identity reused",
+                ));
             }
-            Action::Notification { id, timeout } => {
-                if self.last_id != Some(id) {
-                    return Err(BusError::Unsupported(
-                        "native USB notification has no command",
-                    ));
-                }
-                (id, timeout, Transfer::Notification)
+            Transfer::Readback | Transfer::Notification if self.last_id != Some(id) => {
+                return Err(BusError::Unsupported("native USB reply has no command"));
             }
-            Action::Complete { .. } => {
-                return Err(BusError::Unsupported("terminal USB action performs no I/O"));
-            }
-        };
+            _ => {}
+        }
         let expires = now
             .checked_add(timeout)
             .ok_or(BusError::Unsupported("native USB deadline overflow"))?;
