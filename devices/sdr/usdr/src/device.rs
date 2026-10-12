@@ -116,6 +116,9 @@ impl Device {
     ///
     /// As in libusdr, a failure after the transport set up its buffers leaves the stream in
     /// place: call [`Device::stop_rx_stream`] before starting again.
+    /// For USB, an ambiguous control transaction permanently invalidates the bus. Stopping
+    /// still attempts to drain its RX buffers, but close/drop and reopen the device rather
+    /// than retrying start on that handle. Power-down writes may fail on the invalid bus.
     pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         self.board().start_rx_stream(samples_per_packet)
     }

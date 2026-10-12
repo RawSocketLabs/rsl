@@ -375,6 +375,10 @@ struct BoardQueue {
 /// Faults injected below the real RX adapter, never into driver bookkeeping.
 #[derive(Default)]
 struct RxScript {
+    /// Fail this post-allocation control command; true means apply it before timing out.
+    fail_control: Option<(usize, bool)>,
+    /// Complete attempted control packets while RX buffers are owned by the endpoint.
+    control_after_rx: Vec<Vec<u8>>,
     /// Overrides one receive completion; absent entries use the board's next block.
     waits: VecDeque<Result<Option<Vec<u8>>, BusError>>,
     /// The wire's first trailer word, including reserved high bits, for normal blocks.
@@ -553,8 +557,24 @@ impl UsbIo for BoardUsb {
         Rx::close_endpoint(&mut self.rx)
     }
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
-        if self.script.lock().unwrap().unplugged {
-            return Err(BusError::Disconnected);
+        let failure = {
+            let mut script = self.script.lock().unwrap();
+            if script.unplugged {
+                return Err(BusError::Disconnected);
+            }
+            if script.pending > 0 {
+                let index = script.control_after_rx.len();
+                script.control_after_rx.push(packet.to_vec());
+                script
+                    .fail_control
+                    .filter(|(wanted, _)| *wanted == index)
+                    .map(|(_, applied)| applied)
+            } else {
+                None
+            }
+        };
+        if failure == Some(false) {
+            return Err(BusError::Timeout);
         }
         let header = u32::from_le_bytes(packet[..4].try_into().unwrap());
         let address = header & 0xffff;
@@ -572,6 +592,9 @@ impl UsbIo for BoardUsb {
             for (reg, bytes) in (address..).zip(packet[4..].chunks_exact(4)) {
                 self.write_reg(reg, u32::from_le_bytes(bytes.try_into().unwrap()));
             }
+        }
+        if failure == Some(true) {
+            return Err(BusError::Timeout);
         }
         Ok(())
     }

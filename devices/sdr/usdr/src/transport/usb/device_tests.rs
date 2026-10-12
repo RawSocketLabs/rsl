@@ -254,3 +254,162 @@ fn usb_loss_trailer_advances_sample_positions_and_accumulates_only_low24_bits() 
     );
     device.close().unwrap();
 }
+
+/// Successful startup's wire commands after queue priming, independent of driver internals.
+fn post_allocation_start_commands() -> Vec<Vec<u8>> {
+    let (mut device, _, script) = simulated_device(BoardRevision::Rev3);
+    device.start_rx_stream(1024).unwrap();
+    let commands = script.lock().unwrap().control_after_rx.clone();
+    assert!(
+        !commands.is_empty(),
+        "startup sends control commands after allocation"
+    );
+    device.close().unwrap();
+    commands
+}
+
+#[test]
+fn post_allocation_control_failures_retain_the_stream_and_require_reopening() {
+    let commands = post_allocation_start_commands();
+    // Fault every IQ-correction, DMA-enable, front-end/window and free-run transfer.
+    for index in 0..commands.len() {
+        for applied in [false, true] {
+            let (mut device, board, script) = simulated_device(BoardRevision::Rev3);
+            script.lock().unwrap().fail_control = Some((index, applied));
+            let result = device.start_rx_stream(1024);
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Bus {
+                        source: BusError::Timeout,
+                        ..
+                    })
+                ),
+                "transfer {index}, applied={applied}: {result:?}"
+            );
+            assert_eq!(script.lock().unwrap().control_after_rx, commands[..=index]);
+            if index == commands.len() - 1 {
+                assert_eq!(
+                    board.lock().unwrap().rx_next_block().is_some(),
+                    applied,
+                    "a failed final acknowledgment can leave gateware running"
+                );
+            }
+            assert_eq!(script.lock().unwrap().pending, 8);
+            assert_eq!(
+                device.rx_packet_samples(),
+                Some(1024),
+                "allocated stream survives failed start"
+            );
+            assert!(matches!(
+                device.start_rx_stream(1024),
+                Err(Error::AlreadyStreaming)
+            ));
+            let sentinel = Complex::new(1234, -5678);
+            let mut samples = vec![sentinel; 1024];
+            assert!(matches!(
+                device.receive(&mut samples, Duration::ZERO),
+                Err(Error::Bus {
+                    source: BusError::Unsupported(_),
+                    ..
+                })
+            ));
+            assert!(samples.iter().all(|sample| *sample == sentinel));
+            assert!(matches!(
+                device.stop_rx_stream(),
+                Err(Error::Bus {
+                    source: BusError::Unsupported(_),
+                    ..
+                })
+            ));
+            assert_eq!(device.rx_packet_samples(), None);
+            assert_eq!(script.lock().unwrap().pending, 0);
+            assert_eq!(script.lock().unwrap().cancellations, 1);
+            assert!(
+                matches!(
+                    device.start_rx_stream(1024),
+                    Err(Error::Bus {
+                        source: BusError::Unsupported(_),
+                        ..
+                    })
+                ),
+                "draining RX cannot repair the poisoned control plane"
+            );
+            // With no stream left, this error proves close still attempts GPO power-down.
+            assert!(matches!(
+                device.close(),
+                Err(Error::Bus {
+                    chip: "FPGA",
+                    reg: 0,
+                    source: BusError::Unsupported(_),
+                    ..
+                })
+            ));
+            assert!(script.lock().unwrap().dropped);
+            assert_eq!(
+                script.lock().unwrap().control_after_rx,
+                commands[..=index],
+                "no commands reach the endpoint after ambiguous failure"
+            );
+        }
+    }
+}
+
+#[test]
+fn close_after_post_allocation_start_failure_still_drains_the_endpoint() {
+    let commands = post_allocation_start_commands();
+    for index in 0..commands.len() {
+        for applied in [false, true] {
+            let (mut device, _, script) = simulated_device(BoardRevision::Rev3);
+            script.lock().unwrap().fail_control = Some((index, applied));
+            assert!(matches!(
+                device.start_rx_stream(1024),
+                Err(Error::Bus {
+                    source: BusError::Timeout,
+                    ..
+                })
+            ));
+            assert!(
+                matches!(
+                    device.close(),
+                    Err(Error::Bus {
+                        chip: "FPGA",
+                        reg: 5,
+                        source: BusError::Unsupported(_),
+                        ..
+                    })
+                ),
+                "transfer {index}, applied={applied}: close attempts DMA stop"
+            );
+            assert_eq!(script.lock().unwrap().cancellations, 1);
+            assert_eq!(script.lock().unwrap().pending, 0);
+            assert!(script.lock().unwrap().dropped);
+        }
+    }
+}
+
+#[test]
+fn drop_after_post_allocation_start_failure_still_drains_the_endpoint() {
+    let commands = post_allocation_start_commands();
+    for index in 0..commands.len() {
+        for applied in [false, true] {
+            let (mut device, _, script) = simulated_device(BoardRevision::Rev3);
+            script.lock().unwrap().fail_control = Some((index, applied));
+            assert!(matches!(
+                device.start_rx_stream(1024),
+                Err(Error::Bus {
+                    source: BusError::Timeout,
+                    ..
+                })
+            ));
+            drop(device);
+            assert_eq!(
+                script.lock().unwrap().cancellations,
+                1,
+                "transfer {index}, applied={applied}"
+            );
+            assert_eq!(script.lock().unwrap().pending, 0);
+            assert!(script.lock().unwrap().dropped);
+        }
+    }
+}
