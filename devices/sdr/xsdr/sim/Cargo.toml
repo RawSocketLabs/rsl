@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rsl-lms7002m-sim.workspace = true
 thiserror.workspace = true
 
 [lints]

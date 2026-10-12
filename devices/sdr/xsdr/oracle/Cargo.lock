@@ -37,6 +37,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lms7002m-sim"
+version = "0.0.0"
+
+[[package]]
 name = "rsl-xsdr-oracle"
 version = "0.0.0"
 dependencies = [
@@ -49,6 +53,7 @@ dependencies = [
 name = "rsl-xsdr-sim"
 version = "0.0.0"
 dependencies = [
+ "rsl-lms7002m-sim",
  "thiserror",
 ]
 

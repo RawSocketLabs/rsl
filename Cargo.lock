@@ -3261,6 +3261,10 @@ name = "rsl-error-correction"
 version = "0.1.0"
 
 [[package]]
+name = "rsl-lms7002m-sim"
+version = "0.0.0"
+
+[[package]]
 name = "rsl-lsdr-sim"
 version = "0.0.0"
 dependencies = [
@@ -3344,6 +3348,7 @@ dependencies = [
 name = "rsl-xsdr-sim"
 version = "0.0.0"
 dependencies = [
+ "rsl-lms7002m-sim",
  "thiserror 2.0.21",
 ]
 

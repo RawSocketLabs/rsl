@@ -15,6 +15,7 @@ an LMS8001 up/down-converter and AT24 secure EEPROM. Nothing here is hardware-qu
 | `.` | `rsl-xsdr` (planned, not in tree) | The driver |
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `rsl-limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
 
 ## Layout decision (2026-10-12)
 
@@ -72,11 +73,12 @@ Each is stated again, with its evidence, where it is encoded.
 - FPGA registers: plain storage, unwritten reads 0. GPO writes latch `data & 0xff` per
   bank (`dev_gpo_set`). HWID is `device_id << 16`: gateware revision and PHY bits 0
   (not in the source; they do not change the XSDR/XTRX init trace). `USR_ACCESS2` reads 0.
-- LMS7002M: 15-bit address, 16-bit registers, bit 31 = write. **No reset values** (the
-  vendored YAML/header document fields only), so unwritten registers read 0; version
-  `0x002F` reads 0x3840 (VER 7, REV 1 as `lms7002m_create` requires; MASK 0 is a choice).
-  No MAC channel banking, no soft-reset side effects. Reads return 0 in bits 31:16.
-  SPI answers regardless of the board's power GPOs.
+- LMS7002M (`rsl-lms7002m-sim`): 15-bit address, 16-bit registers, bit 31 = write. **No
+  reset values** (the vendored YAML/header document fields only), so unwritten registers
+  read 0; version `0x002F` reads 0x3840 (VER 7, REV 1 as `lms7002m_create` requires; MASK
+  0 is this board's choice, `LMS7_MASK` in `sim/src/board.rs`). No MAC channel banking, no
+  soft-reset side effects. Reads return 0 in bits 31:16. SPI answers regardless of the
+  board's power GPOs, which do not reset the chip model.
 - LP8758: byte registers with an auto-incrementing pointer; revision bytes per variant,
   all else 0. Power-good status 0 is harmless: `lp8758_check_pg(.., 0xf, ..)` accepts any
   status (the derived mask is always a subset of 0xf), so the C's wait ends at once.
@@ -114,9 +116,9 @@ refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state.
 ## Verify
 
 ```sh
-cargo fmt -p rsl-xsdr-sim --check
-cargo clippy -p rsl-xsdr-sim --all-targets -- -D warnings
-cargo test -p rsl-xsdr-sim
+cargo fmt -p rsl-xsdr-sim -p rsl-lms7002m-sim --check
+cargo clippy -p rsl-xsdr-sim -p rsl-lms7002m-sim --all-targets -- -D warnings
+cargo test -p rsl-xsdr-sim -p rsl-lms7002m-sim
 cargo fmt --manifest-path devices/sdr/xsdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/xsdr/oracle/Cargo.toml

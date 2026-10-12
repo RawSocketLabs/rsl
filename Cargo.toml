@@ -29,6 +29,8 @@ members = [
     "devices/sdr/lsdr/sim",
     # PE_SYNC clock-distribution board simulator; its driver is not yet ported
     "devices/sync/pe_sync/sim",
+    # LMS7002M register model shared by the LMS7002M boards' simulators
+    "devices/sdr/chips/lms7002m/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -86,6 +88,7 @@ rsl-compression = { path = "compression", version = "0.1.0", default-features = 
 # unpublished test support, dev-dependency only
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
+rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
 rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 

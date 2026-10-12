@@ -1,11 +1,10 @@
-//! Register-level models of the chips on the LMS7 family boards.
+//! Register-level models of the chips on the LMS7 family boards. The LMS7002M model is
+//! shared with the other LMS7002M boards' simulators, in `rsl-lms7002m-sim`.
 
 mod dac80501;
-mod lms7002m;
 mod lp8758;
 
 pub(crate) use dac80501::Dac80501;
-pub(crate) use lms7002m::Lms7002m;
 pub(crate) use lp8758::Lp8758;
 
 /// A chip on an I2C bus, addressed with a register pointer as the first written byte.

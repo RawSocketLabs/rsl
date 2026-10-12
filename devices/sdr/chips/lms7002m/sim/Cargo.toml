@@ -1,0 +1,12 @@
+[package]
+name = "rsl-lms7002m-sim"
+version = "0.0.0"
+description = "Register-level LMS7002M model shared by the simulated LMS7002M boards (rsl-xsdr-sim, rsl-limesdr-sim)."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

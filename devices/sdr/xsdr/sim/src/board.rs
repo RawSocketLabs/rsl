@@ -6,7 +6,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{Dac80501, I2cChip, Lms7002m, Lp8758};
+use rsl_lms7002m_sim::Lms7002m;
+
+use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
 
 /// FPGA register holding the general-purpose outputs: `dev_gpo_set` writes
@@ -30,6 +32,9 @@ const LMS8_SPI_SELECT: u32 = 1;
 
 /// SPI bus carrying the LMS7002M (`SPI_LMS7`), and on sSDR also the LMS8001.
 const SPI_LMS: u32 = 0;
+/// The LMS7002M's metal-mask revision. `lms7002m_create`, the only version check on this
+/// family's path, ignores it; 0 is a sim choice.
+const LMS7_MASK: u8 = 0;
 
 /// The LP8758 every variant has (`I2C_BUS_LP8758_FPGA`: bus 0, `I2C_DEV_PMIC_FPGA` 0x60).
 const I2C_FPGA_PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
@@ -146,7 +151,7 @@ impl SimBoard {
         Self {
             regs: BTreeMap::from([(REG_GPI_HWID, u32::from(variant.device_id()) << 16)]),
             gpo: BTreeMap::new(),
-            lms: Lms7002m::new(),
+            lms: Lms7002m::new(LMS7_MASK),
             fpga_pmic: Lp8758::with_revision(variant.fpga_pmic_revision()),
             // The C requires 0xe001 here too (`_xsdr_init_revo`).
             lms_pmic: xtrx.then(|| Lp8758::with_revision(0xe001)),
