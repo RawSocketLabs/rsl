@@ -57,7 +57,7 @@ impl Board {
             Self::decimation_for(rate, self.chains).ok_or(Error::UnsupportedSampleRate(rate))?;
         let adc_rate = rate * decimation.factor();
         // The sample clock runs at the link rate, twice the ADC rate.
-        let layout = Layout::new(Self::REFERENCE_HZ, adc_rate * 2)
+        let layout = Layout::new(self.reference.hz(), adc_rate * 2)
             .ok_or(Error::UnsupportedSampleRate(rate))?;
         let bus = self.bus.as_mut();
 

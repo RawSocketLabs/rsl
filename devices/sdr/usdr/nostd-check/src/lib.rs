@@ -215,6 +215,25 @@ pub fn clock_layout(out_hz: u32, state: u8) -> Result<usize, &'static str> {
     )
 }
 
+/// Runs the real Si5332 reference switch to clock input 2 (`external`) or the oscillator.
+///
+/// # Errors
+///
+/// As [`clock_power_up`].
+pub fn clock_reference_switch(external: bool, state: u8) -> Result<usize, &'static str> {
+    let reference = if external {
+        Reference::Input2
+    } else {
+        Reference::Oscillator
+    };
+    let dev = I2cAddr::new(0, 0x6a);
+    drive(
+        &mut ClockSequence::reference_switch(dev, reference),
+        0,
+        state,
+    )
+}
+
 /// Drives one sequence to its end with scripted reads; waits pass at once.
 fn drive(sequence: &mut impl Sequence, id: u8, state: u8) -> Result<usize, &'static str> {
     let mut actions = 0;
@@ -253,6 +272,9 @@ mod tests {
         assert_eq!(clock_power_up(true, 0x00, 0x89), Err("no input clock"));
         // A wait and poll, 25 writes, then another wait and poll.
         assert_eq!(clock_layout(20_000_000, 0x02), Ok(29));
+        // A wait and poll, five writes, then another wait and poll.
+        assert_eq!(clock_reference_switch(true, 0x02), Ok(9));
+        assert_eq!(clock_reference_switch(false, 0x89), Err("no input clock"));
     }
 
     #[test]

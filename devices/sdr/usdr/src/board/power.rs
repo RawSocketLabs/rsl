@@ -17,6 +17,7 @@ use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::portable::power::PowerRails;
 use crate::portable::si5332::ClockSequence;
+use crate::reference::ReferenceClock;
 use crate::thermal::Thermometer;
 
 /// A board identified and held in reset, before anything is powered: where the thermal
@@ -30,6 +31,9 @@ pub(crate) struct Identified {
 
     /// Which DSP chains the gateware has.
     chains: Chains,
+
+    /// Where the clocks' reference comes from; chosen at power-up.
+    reference: ReferenceClock,
 }
 
 impl Board {
@@ -59,12 +63,28 @@ impl Board {
             rx: hwid.has_rx(),
             tx: hwid.has_tx(),
         };
-        Ok(Identified { bus, rev3, chains })
+        Ok(Identified {
+            bus,
+            rev3,
+            chains,
+            reference: ReferenceClock::Board,
+        })
     }
 
     /// The board temperature in °C.
     pub(crate) fn temperature(&mut self) -> Result<f32, Error> {
         Self::TEMP.celsius(self.bus.as_mut())
+    }
+
+    /// Moves the clocks' reference to `reference` (`usdr_set_extref`). Like libusdr, the
+    /// sample clocks and synthesizers keep their settings until next set, which then use
+    /// the new frequency; the on-board oscillator's enable is left as power-up set it.
+    pub(crate) fn set_reference_clock(&mut self, reference: ReferenceClock) -> Result<(), Error> {
+        let input = Self::si5332_reference(reference, self.rev3);
+        let mut switch = ClockSequence::reference_switch(Self::CLOCK.dev(), input);
+        run_sequence(self.bus.as_mut(), &mut switch)?;
+        self.reference = reference;
+        Ok(())
     }
 
     /// Reads the gateware build, then the hardware ID (`dev_m2_lm6_1_sdr_revision_get`).
@@ -119,7 +139,8 @@ impl Identified {
     ///
     /// Failures after the clocks are programmed turn the LED, booster and RF chip back
     /// off, over the same span as libusdr's `fail:` path.
-    pub(crate) fn power_up(mut self) -> Result<Board, Error> {
+    pub(crate) fn power_up(mut self, reference: ReferenceClock) -> Result<Board, Error> {
+        self.reference = reference;
         self.power_rails()?;
         self.bus.sleep(Duration::from_millis(10));
 
@@ -154,11 +175,14 @@ impl Identified {
     fn start_clocks(&mut self) -> Result<(), Error> {
         let bus = self.bus.as_mut();
         let lvpecl = Board::lvpecl(self.rev3);
+        let input = Board::si5332_reference(self.reference, self.rev3);
         if !self.rev3 {
-            return Self::init_clock(bus, Reference::Input2, lvpecl);
+            return Self::init_clock(bus, input, lvpecl);
         }
-        let clock = Self::init_clock(bus, Reference::Oscillator, lvpecl);
-        let oscillator = Gpo::EnableOscillator.set(bus, 1);
+        let clock = Self::init_clock(bus, input, lvpecl);
+        // The on-board oscillator stays off only for an external reference.
+        let external = matches!(self.reference, ReferenceClock::External { .. });
+        let oscillator = Gpo::EnableOscillator.set(bus, u8::from(!external));
         bus.sleep(Duration::from_millis(1));
         match clock {
             Ok(()) => oscillator,
@@ -211,6 +235,7 @@ impl Identified {
             mut bus,
             rev3,
             chains,
+            reference,
         } = self;
         let io = bus.as_mut();
         lms.set_tx_enabled(io, false)?;
@@ -229,6 +254,7 @@ impl Identified {
             lms,
             rev3,
             chains,
+            reference,
             vio_boosted: false,
             adc_rate_hz: 0,
             mixer_lo_hz: 0,

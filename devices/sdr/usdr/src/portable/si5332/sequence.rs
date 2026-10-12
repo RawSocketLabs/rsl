@@ -36,6 +36,9 @@ pub(crate) const POWER_UP_WRITES: usize = 49;
 /// Writes in the sample-clock plan.
 pub(crate) const LAYOUT_WRITES: usize = 25;
 
+/// Writes in the reference switch.
+pub(crate) const SWITCH_WRITES: usize = 5;
+
 /// Where the reference comes from: the clock every output is derived from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Reference {
@@ -174,6 +177,47 @@ impl ClockSequence<LAYOUT_WRITES> {
                 then: AfterSettle::Writes,
             },
         }
+    }
+}
+
+impl ClockSequence<SWITCH_WRITES> {
+    /// Switches the PLL's reference to `reference` in a READY..ACTIVE cycle
+    /// (`si5532_set_ext_clock_sw`). Like libusdr, a state other than ACTIVE is not an error
+    /// before it, and a missing input clock is one after it.
+    pub(crate) fn reference_switch(dev: I2cAddr, reference: Reference) -> Self {
+        let (pll_reference, input2, inputs_off) = reference_inputs(reference);
+        Self {
+            dev,
+            plan: [
+                RequestedState::Ready.entry(),
+                pll_reference.entry(),
+                input2.entry(),
+                inputs_off.entry(),
+                RequestedState::Active.entry(),
+            ],
+            check_after: true,
+            id: [0; ID_REGS.len()],
+            phase: Phase::Wait {
+                left: STATE_POLLS,
+                then: AfterSettle::Writes,
+            },
+        }
+    }
+}
+
+/// The PLL reference, clock input 2's mode and the input power-downs `reference` needs.
+fn reference_inputs(reference: Reference) -> (PllReference, InputMode, InputPowerDown) {
+    match reference {
+        Reference::Oscillator => (
+            PllReference::Oscillator,
+            InputMode::Off,
+            InputPowerDown::new().with_input_buffer0(true),
+        ),
+        Reference::Input2 => (
+            PllReference::Input2,
+            InputMode::Differential,
+            InputPowerDown::new().with_oscillator(true),
+        ),
     }
 }
 
@@ -359,18 +403,7 @@ fn power_up_plan(
     reference: Reference,
     lvpecl: LvpeclOutput,
 ) -> [RegWrite; POWER_UP_WRITES] {
-    let (pll_reference, input2, inputs_off) = match reference {
-        Reference::Oscillator => (
-            PllReference::Oscillator,
-            InputMode::Off,
-            InputPowerDown::new().with_input_buffer0(true),
-        ),
-        Reference::Input2 => (
-            PllReference::Input2,
-            InputMode::Differential,
-            InputPowerDown::new().with_oscillator(true),
-        ),
-    };
+    let (pll_reference, input2, inputs_off) = reference_inputs(reference);
     let (out0_mode, out1_mode) = match lvpecl {
         LvpeclOutput::Out0 => (DriverMode::Lvpecl, DriverMode::CmosPositive),
         LvpeclOutput::Out1 => (DriverMode::CmosPositive, DriverMode::Lvpecl),

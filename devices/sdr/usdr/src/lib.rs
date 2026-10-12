@@ -121,6 +121,7 @@ mod fpga;
 mod identity;
 pub mod lowlevel;
 mod portable;
+mod reference;
 mod thermal;
 pub mod transport;
 
@@ -128,4 +129,5 @@ pub use board::RxPacket;
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
 pub use identity::Identity;
+pub use reference::ReferenceClock;
 pub use thermal::{HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};

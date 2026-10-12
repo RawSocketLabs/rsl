@@ -126,12 +126,22 @@ impl Oracle {
     ///
     /// [`OpenError`] when libusdr's open fails.
     pub fn open(board: SimBoard) -> Result<Self, OpenError> {
+        Self::open_with(board, c"")
+    }
+
+    /// As [`Oracle::open`], with libusdr connection parameters, such as
+    /// `c"extclk=1,extref=40000000"`.
+    ///
+    /// # Errors
+    ///
+    /// [`OpenError`] when libusdr's open fails.
+    pub fn open_with(board: SimBoard, parameters: &CStr) -> Result<Self, OpenError> {
         let session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
         install(Some(board));
 
         let mut dev: DmDev = ptr::null_mut();
         // SAFETY: the connection string is NUL-terminated and `dev` is a valid out-pointer.
-        let errno = unsafe { usdr_dmd_create_string(c"".as_ptr(), &raw mut dev) };
+        let errno = unsafe { usdr_dmd_create_string(parameters.as_ptr(), &raw mut dev) };
 
         let Some(dev) = NonNull::new(dev) else {
             resume_callback_panic();
@@ -353,6 +363,27 @@ impl Oracle {
         };
         // SAFETY: `stream` is live; libusdr ignores the time for START and STOP.
         let errno = unsafe { usdr_dms_op(stream.as_ptr(), command, 0) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets the clocks' reference as libusdr's API does: `/dm/sdr/refclk/frequency` to `hz`,
+    /// then `/dm/sdr/refclk/path` to "external" or "internal".
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_reference_clock(&mut self, external: bool, hz: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/refclk/frequency", hz.into())?;
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let path: &'static CStr = if external { c"external" } else { c"internal" };
+        // libusdr reads values above 4096 as a pointer to a NUL-terminated string.
+        let value = path.as_ptr() as u64;
+        // SAFETY: `dev` is open; the path handler reads `value` as the static string above.
+        let errno =
+            unsafe { usdr_dme_set_uint(dev.as_ptr(), c"/dm/sdr/refclk/path".as_ptr(), value) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
     }

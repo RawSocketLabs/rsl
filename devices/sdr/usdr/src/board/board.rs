@@ -13,12 +13,13 @@ use super::stream::RxStream;
 use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::{BuckControl, BuckVoltage, Config, Lp8758};
-use crate::chips::si5332::{LvpeclOutput, Si5332};
+use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
 use crate::fpga::Decimation;
 use crate::lowlevel::Bus;
 use crate::portable::power::RailPlan;
+use crate::reference::ReferenceClock;
 
 /// A powered uSDR board and the bus it is reached through.
 ///
@@ -41,6 +42,10 @@ pub(crate) struct Board {
 
     /// Which DSP chains the gateware has.
     pub(super) chains: Chains,
+
+    /// The reference every clock derives from; its frequency feeds each sample-clock plan
+    /// and synthesizer tune (libusdr's `fref`).
+    pub(super) reference: ReferenceClock,
 
     /// The LMS6002D I/O rail is at [`Self::LMS_VIO_BOOST`] rather than
     /// [`Self::LMS_VIO_NORMAL`].
@@ -152,10 +157,6 @@ impl Board {
     /// (`LMS6_VIO_BOOST`), "to get stable samplerates over 60Msps" in libusdr's words.
     pub(super) const LMS_VIO_BOOST: BuckVoltage = BuckVoltage::from_millivolts(1925);
 
-    /// The reference every clock derives from: 26 MHz on every revision
-    /// (`USDR_INT_REFCLK`; external references are not ported).
-    pub(super) const REFERENCE_HZ: u32 = 26_000_000;
-
     /// The mixer LO is the Si5332 VCO divided by this (`si_vco_div`, set in `usdr_init`).
     pub(super) const MIXER_LO_DIVIDER: u8 = 8;
 
@@ -183,6 +184,16 @@ impl Board {
 }
 
 impl Board {
+    /// The Si5332 input `reference` selects on a board of this revision (`si5332_init`'s
+    /// `ext_in2`).
+    pub(super) const fn si5332_reference(reference: ReferenceClock, rev3: bool) -> Reference {
+        if reference.uses_input2(rev3) {
+            Reference::Input2
+        } else {
+            Reference::Oscillator
+        }
+    }
+
     /// Which of the Si5332's outputs 0 and 1 carries the LMS6002D's PLL reference (LVPECL);
     /// the other is the RX sample clock. Revision 3 swapped them.
     pub(super) const fn lvpecl(rev3: bool) -> LvpeclOutput {

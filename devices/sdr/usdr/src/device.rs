@@ -10,6 +10,7 @@ use crate::board::{Board, RxPacket};
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
+use crate::reference::ReferenceClock;
 use crate::thermal::{CoolDown, ThermalPolicy};
 
 /// A powered uSDR.
@@ -35,6 +36,9 @@ pub struct DeviceBuilder<'a> {
 
     /// Wait for a hot board to cool, reporting each reading, instead of failing.
     cool_down: Option<CoolDown<'a>>,
+
+    /// Where the clocks' reference comes from.
+    reference: ReferenceClock,
 }
 
 impl Device {
@@ -45,6 +49,7 @@ impl Device {
             bus: Box::new(bus),
             thermal: ThermalPolicy::default(),
             cool_down: None,
+            reference: ReferenceClock::Board,
         }
     }
 
@@ -64,6 +69,22 @@ impl Device {
     /// Any bus failure.
     pub fn temperature(&mut self) -> Result<f32, Error> {
         self.board().temperature()
+    }
+
+    /// Moves the clocks' reference to `reference` (libusdr's `/dm/sdr/refclk/frequency` then
+    /// `/dm/sdr/refclk/path`). The sample rate and RX frequency already set keep running
+    /// from the old plan, as in libusdr; set them again to recompute them for the new
+    /// reference frequency.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::UnsupportedFrequency`] for an external reference of 0 Hz, before any bus
+    ///   access.
+    /// - [`Error::ClockInputMissing`] if the Si5332 finds no clock on the new input.
+    /// - Any bus failure.
+    pub fn set_reference_clock(&mut self, reference: ReferenceClock) -> Result<(), Error> {
+        reference.check()?;
+        self.board().set_reference_clock(reference)
     }
 
     /// The board revision, its gateware's chains and build, read from the gateware now.
@@ -232,6 +253,14 @@ impl Device {
 }
 
 impl<'a> DeviceBuilder<'a> {
+    /// Takes the clocks' reference from `reference` instead of [`ReferenceClock::Board`]
+    /// (libusdr's `extclk` and `extref` options).
+    #[must_use]
+    pub fn reference_clock(mut self, reference: ReferenceClock) -> Self {
+        self.reference = reference;
+        self
+    }
+
     /// Enforces `policy` instead of [`ThermalPolicy::WithinSpec`].
     #[must_use]
     pub fn thermal(mut self, policy: ThermalPolicy) -> Self {
@@ -259,6 +288,8 @@ impl<'a> DeviceBuilder<'a> {
     ///
     /// # Errors
     ///
+    /// - [`Error::UnsupportedFrequency`] for an external reference of 0 Hz, before any bus
+    ///   access.
     /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
     ///   at once, with the resume limit after a configured wait times out.
     /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.
@@ -269,7 +300,9 @@ impl<'a> DeviceBuilder<'a> {
             bus,
             thermal,
             cool_down,
+            reference,
         } = self;
+        reference.check()?;
         let mut identified = Board::identify(bus)?;
         identified.check_temperature_sensor()?;
         let limits = thermal.limits();
@@ -288,7 +321,7 @@ impl<'a> DeviceBuilder<'a> {
             );
             cool_down.wait(&mut identified, limits)?;
         }
-        let board = identified.power_up()?;
+        let board = identified.power_up(reference)?;
         Ok(Device {
             board: Some(board),
             thermal,

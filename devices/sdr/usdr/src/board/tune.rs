@@ -175,7 +175,7 @@ impl Board {
 
     /// Tunes the RX PLL to `lo` (`lms6002d_tune_pll`).
     pub(super) fn tune_rx_pll(&mut self, lo: u32) -> Result<CapacitorWindow, Error> {
-        self.lms.tune_rx(self.bus.as_mut(), lo, Self::REFERENCE_HZ)
+        self.lms.tune_rx(self.bus.as_mut(), lo, self.reference.hz())
     }
 
     /// libusdr's fallback for an LO below 250 MHz the PLL cannot lock at: tune the lowest

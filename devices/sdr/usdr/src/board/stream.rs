@@ -92,7 +92,7 @@ impl Board {
             self.rx.lo_hz = 0;
         }
         self.lms
-            .calibrate_rx_dc(self.bus.as_mut(), Self::REFERENCE_HZ)?;
+            .calibrate_rx_dc(self.bus.as_mut(), self.reference.hz())?;
         // libusdr retunes the TX PLL here when a TX LO is set; TX is not ported, so it never
         // is.
 
