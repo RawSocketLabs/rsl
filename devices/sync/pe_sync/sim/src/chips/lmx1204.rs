@@ -1,0 +1,37 @@
+//! The LMX1204 clock buffer, multiplier and divider (`hw/lmx1204/lmx1204.c`):
+//! `ClockDistrib` on SPI bus 4 (`SPI_LMX1204` in `pe_sync.c`).
+
+use super::spi::{Reset, SpiRegisters};
+
+/// `R75`: lock detect `RB_LD` (bits 9:8; `gen/def_lmx1204.h`), read-only.
+const R75: u8 = 0x4b;
+/// `RB_LD` bits of [`R75`].
+const RB_LD: u16 = 0x0300;
+/// `RB_LD_LOCKED` (2) in place.
+const RB_LD_LOCKED: u16 = 2 << 8;
+
+/// The documented registers' reset values and read-only masks, from the `dflt` and `mode`
+/// of each field in the pinned `hw/lmx1204/lmx1204.yaml`. Other addresses reset to 0.
+#[rustfmt::skip]
+const RESET: [Reset; 35] = [
+    (0x00, 0x0000, 0xfff8), (0x02, 0x0223, 0xf800), (0x03, 0xff86, 0x0000), (0x04, 0x360f, 0xc000),
+    (0x05, 0x4936, 0x8000), (0x06, 0x36dc, 0x0000), (0x07, 0x0000, 0x8000), (0x08, 0x0120, 0xfe00),
+    (0x09, 0x001e, 0x0000), (0x0b, 0xffff, 0xffff), (0x0c, 0xffff, 0xffff), (0x0d, 0x0003, 0xfffc),
+    (0x0e, 0x0002, 0x0000), (0x0f, 0x0901, 0xf000), (0x10, 0x1003, 0x0000), (0x11, 0x07f0, 0xf800),
+    (0x12, 0xfe00, 0x0000), (0x13, 0xfe00, 0x0000), (0x14, 0xfe00, 0x0000), (0x15, 0xfe00, 0x0000),
+    (0x16, 0x0800, 0x0000), (0x17, 0x4000, 0x0000), (0x18, 0x0ffe, 0xcffe), (0x19, 0x0211, 0x0000),
+    (0x1c, 0x0a08, 0xe000), (0x1d, 0x05ff, 0xe000), (0x21, 0x7777, 0x0000), (0x22, 0x0000, 0xc000),
+    (0x41, 0x45f0, 0x01f0), (0x43, 0x50c8, 0x0000), (0x48, 0x0000, 0x8000), (0x4b, 0x5f16, 0xfff0),
+    (0x4f, 0x0104, 0x8000), (0x56, 0x0000, 0x0000), (0x5a, 0x0000, 0xff00),
+];
+
+/// A healthy LMX1204 whose multiplier PLL reports lock.
+///
+/// Assumption: lock is reported from power-on. The YAML resets `RB_LD` to 3 (unlocked, VTUNE
+/// high); `pe_sync.c` asks for a 4x multiplier (1 GHz in, 4 GHz out), so
+/// `lmx1204_wait_pll_lock` polls `RB_LD` until `RB_LD_LOCKED`, timing out by wall clock. A
+/// reported lock ends the wait on its first poll. Temperature (`R24`) and VCO selection
+/// (`R65`) keep their YAML reset values; libusdr only logs them.
+pub(crate) fn lmx1204() -> SpiRegisters {
+    SpiRegisters::new(&RESET).with_status(R75, RB_LD, RB_LD_LOCKED)
+}

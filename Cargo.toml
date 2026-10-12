@@ -27,6 +27,8 @@ members = [
     "devices/sdr/xsdr/sim",
     # LSDr (m2_da09_4_ad45_2) board simulator; its driver is not yet ported
     "devices/sdr/lsdr/sim",
+    # PE_SYNC clock-distribution board simulator; its driver is not yet ported
+    "devices/sync/pe_sync/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
