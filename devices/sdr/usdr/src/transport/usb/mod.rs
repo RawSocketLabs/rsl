@@ -31,9 +31,14 @@
 //! readback or notification to a later request. USB+PCIe mode is refused while `PCIe` owns
 //! interrupt routing. Hardware operation remains unqualified until tested on a board.
 //!
-//! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`: an unstable pilot that
-//! reads the TMP114 from a caller-owned Mio reactor, with every USB call on a worker thread.
-//! It takes over the whole device and does nothing else yet.
+//! Register, SPI and I²C operations run the same portable machines on every path: the
+//! blocking bus pumps them, and the native handle hands their transfers to its worker.
+//!
+//! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`: an unstable pilot driven by
+//! a caller-owned Mio reactor, with every USB call on a worker thread. It reads the TMP114
+//! and the gateware identity and switches the reference clock, running portable sequences
+//! one transfer or caller-time wait at a time. It takes over the whole device; it powers
+//! nothing and streams nothing.
 
 mod bus;
 mod i2c;

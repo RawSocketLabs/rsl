@@ -10,8 +10,9 @@ C runtime, C ABI compatibility, Python/Soapy or legacy JSON/RPC adapters. See
 [PORTING.md](PORTING.md) for the pinned capability ledger, acceptance loop and phased roadmap;
 the program is not complete. Linux is first. Sans-I/O state machines and an externally owned
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
-opt-in. The first temperature/USB-I²C execution pilot is implemented, and feature `mio`
-exposes it as the unstable, temperature-only `NativeUsb` (`UsbBus::into_native`); public
+opt-in. The USB I²C and register/SPI machines run in the blocking bus, and feature `mio`
+exposes the unstable `NativeUsb` (`UsbBus::into_native`), whose generic executor runs any
+portable sequence: temperature, gateware identity and reference-clock switch so far; public
 driver/stream handles for power, RX and TX remain unimplemented. Generic USB offers bounded
 reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
 `mio`), which `transport/usb/native` registers; cancellation remains an owned-worker
@@ -109,10 +110,12 @@ Each layer calls only the ones below it.
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
 - `src/portable/`: platform-independent addresses, the typed-register traits, the
-  sequence seam (`sequence.rs`: register reads/writes and waits, one action at a time),
+  sequence seam (`sequence.rs`: I²C register reads/writes, FPGA register reads/writes and
+  SPI32 with 32-bit results, and waits, one action at a time),
   TMP114 values/temperature operation, LP8758/TPS6381x register values and the power-rail
   machine (`power.rs`), Si5332 register values, divider maths and clock machines
-  (`si5332/sequence.rs`), and USB framing/I²C state machine. `chips::register::run_sequence`
+  (`si5332/sequence.rs`), and USB framing plus the I²C and register/SPI state machines
+  (`usb/`). `chips::register::run_sequence`
   is the blocking executor. Uses core
   types and generic executor errors; no OS/runtime ownership. Keep imports within the
   portable tree. Sequences move here as hand-written explicit state machines (decided
@@ -121,16 +124,18 @@ Each layer calls only the ones below it.
   Fixed-size machines do not allocate; the bnb dependency requires alloc. The native
   adapters preserve original bus errors and chip/read context.
 - `src/chips/tmp114.rs` and `src/transport/usb/i2c.rs`: thin host/context adapters around
-  those shared machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
-  through the existing blocking pump. `execution_tests.rs` proves the same machines
+  those shared machines. `transport/usb/machine.rs` puts the I²C and register/SPI machines
+  behind one transfer vocabulary; `UsbBus`'s register, SPI and I²C calls run them through
+  one blocking pump. `execution_tests.rs` proves the same machines
   with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
   bounded synthetic RX loans. `native/` (feature `mio`; `NativeUsb` in `handle.rs`) runs the
-  I²C machine over `rsl_usb::Readiness`: the reactor only registers, schedules and
+  same machines, and any portable sequence of them with waits as caller deadlines, over
+  `rsl_usb::Readiness` and endpoints 0x01/0x81/0x82: the reactor only registers, schedules and
   observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
-  the adapter keeps the shared Waker open for the worker's final wake. `into_native` checks
-  the TMP114 ID over the blocking bus, then carries the notification sequence, I²C table
-  and operation identities over. Notification transfers are sized as in the blocking bus
+  the adapter keeps the shared Waker open for the worker's final wake. `into_native` reads
+  the revision and checks the TMP114 ID over the blocking bus, then carries the
+  notification sequence, I²C table and operation identities over. Notification transfers are sized as in the blocking bus
   and the pinned C (`IN_NTFY_SIZE`). Its unit tests use a socket source, not usbfs; only the
   opt-in `usb_hardware` test reaches real queues. RX/TX handles, fairness and browser
   integration remain open.
