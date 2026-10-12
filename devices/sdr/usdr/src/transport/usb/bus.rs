@@ -90,21 +90,9 @@ struct Queues {
 
 impl UsbIo for Queues {
     fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
-        if self.rx.is_some() {
-            return Err(BusError::Unsupported(
-                "USB RX already open or awaiting cleanup",
-            ));
-        }
-        let queue = self.interface.in_queue(0x83).map_err(BusError::from)?;
-        let rx = self.rx.insert(Rx::new(queue));
-        if let Err(error) = rx.open(block_bytes) {
-            // Preserve ownership on a failed drain, so reopen cannot steal late transfers.
-            if rx.close().is_ok() {
-                self.rx = None;
-            }
-            return Err(error);
-        }
-        Ok(())
+        Rx::open_endpoint(&mut self.rx, block_bytes, || {
+            self.interface.in_queue(0x83).map_err(BusError::from)
+        })
     }
 
     fn rx_recv(
@@ -119,11 +107,7 @@ impl UsbIo for Queues {
     }
 
     fn rx_close(&mut self) -> Result<(), BusError> {
-        if let Some(rx) = self.rx.as_mut() {
-            rx.close()?;
-            self.rx = None;
-        }
-        Ok(())
+        Rx::close_endpoint(&mut self.rx)
     }
     fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
         self.commands.write(packet, timeout).map_err(BusError::from)

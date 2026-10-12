@@ -78,6 +78,38 @@ pub(super) struct Rx<Q> {
 }
 
 impl<Q: RxQueue> Rx<Q> {
+    /// Opens an idle endpoint, draining failed setup or retaining ownership if drain fails.
+    /// Endpoint acquisition occurs only after rejecting an existing stream.
+    pub(super) fn open_endpoint(
+        slot: &mut Option<Self>,
+        block_bytes: u32,
+        acquire: impl FnOnce() -> Result<Q, BusError>,
+    ) -> Result<(), BusError> {
+        if slot.is_some() {
+            return Err(BusError::Unsupported(
+                "USB RX already open or awaiting cleanup",
+            ));
+        }
+        let rx = slot.insert(Self::new(acquire()?));
+        if let Err(error) = rx.open(block_bytes) {
+            // Keep ownership if cancellation cannot return every posted transfer.
+            if rx.close().is_ok() {
+                *slot = None;
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Releases an endpoint only after cancellation returns all its transfers.
+    pub(super) fn close_endpoint(slot: &mut Option<Self>) -> Result<(), BusError> {
+        if let Some(rx) = slot.as_mut() {
+            rx.close()?;
+            *slot = None;
+        }
+        Ok(())
+    }
+
     /// Takes ownership of an idle endpoint.
     pub(super) fn new(queue: Q) -> Self {
         Self {

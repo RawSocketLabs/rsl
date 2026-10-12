@@ -344,8 +344,10 @@ fn initialization_matches_pinned_router_sequence() {
 
 /// FPGA endpoint emulator: decodes C wire fields, then drives the existing board model.
 struct BoardUsb {
+    /// Faults shared by the control and streaming endpoints.
+    script: Arc<Mutex<RxScript>>,
     /// The production RX adapter, backed by completed simulator frames.
-    rx: Rx<BoardQueue>,
+    rx: Option<Rx<BoardQueue>>,
     /// Shared board for final chip-state assertions.
     board: Arc<Mutex<SimBoard>>,
     /// Complete endpoint readbacks.
@@ -366,6 +368,31 @@ struct BoardQueue {
     board: Arc<Mutex<SimBoard>>,
     /// Owned pending transfer buffers.
     pending: VecDeque<Vec<u8>>,
+    /// Scripted endpoint faults and observable transfer ownership.
+    script: Arc<Mutex<RxScript>>,
+}
+
+/// Faults injected below the real RX adapter, never into driver bookkeeping.
+#[derive(Default)]
+struct RxScript {
+    /// Overrides one receive completion; absent entries use the board's next block.
+    waits: VecDeque<Result<Option<Vec<u8>>, BusError>>,
+    /// The wire's first trailer word, including reserved high bits, for normal blocks.
+    losses: VecDeque<u32>,
+    /// Reject this submission number, including initial priming and later requeues.
+    fail_submit: Option<usize>,
+    /// Simulate a cancellation that has not returned every transfer.
+    fail_cancel: bool,
+    /// Device removal affects both the control and streaming endpoints.
+    unplugged: bool,
+    /// Successfully posted transfer count.
+    submitted: usize,
+    /// Buffers still owned by the endpoint.
+    pending: usize,
+    /// Cancellation attempts, including setup error cleanup.
+    cancellations: usize,
+    /// Endpoint destruction observed after `Device` close/drop.
+    dropped: bool,
 }
 
 impl RxQueue for BoardQueue {
@@ -384,15 +411,42 @@ impl RxQueue for BoardQueue {
     }
 
     fn submit(&mut self, buffer: Vec<u8>) -> Result<(), BusError> {
+        let mut script = self.script.lock().unwrap();
+        if script.fail_submit == Some(script.submitted) {
+            return Err(BusError::Disconnected);
+        }
+        script.submitted += 1;
         self.pending.push_back(buffer);
+        script.pending = self.pending.len();
         Ok(())
     }
 
     fn wait(&mut self, _: Duration) -> Result<Option<Vec<u8>>, BusError> {
-        let Some((block, oob)) = self.board.lock().unwrap().rx_next_block() else {
+        let mut script = self.script.lock().unwrap();
+        if script.unplugged {
+            return Err(BusError::Disconnected);
+        }
+        if let Some(completion) = script.waits.pop_front() {
+            // A polling timeout keeps ownership; completed failures or frames return it.
+            if !matches!(completion, Ok(None)) {
+                self.pending.pop_front().expect("queued RX buffer");
+                script.pending = self.pending.len();
+            }
+            return completion;
+        }
+        let mut board = self.board.lock().unwrap();
+        let lost = script.losses.pop_front().unwrap_or(0);
+        // These tests lose at most three blocks; skip them in the sample generator too.
+        assert!(lost & 0xff_ffff <= 3, "bounded scripted packet loss");
+        for _ in 0..(lost & 0xff_ffff) {
+            board.rx_next_block().expect("the stream is running");
+        }
+        let Some((block, mut oob)) = board.rx_next_block() else {
             return Ok(None);
         };
+        oob[0] |= u64::from(lost);
         let mut buffer = self.pending.pop_front().expect("queued RX buffer");
+        script.pending = self.pending.len();
         buffer.clear();
         buffer.extend(block);
         buffer.extend(oob[0].to_le_bytes());
@@ -401,8 +455,23 @@ impl RxQueue for BoardQueue {
     }
 
     fn cancel(&mut self) -> Result<(), BusError> {
+        let mut script = self.script.lock().unwrap();
+        script.cancellations += 1;
+        if script.fail_cancel {
+            return Err(BusError::Timeout);
+        }
         self.pending.clear();
+        script.pending = 0;
+        script.waits.clear();
+        script.losses.clear();
         Ok(())
+    }
+}
+
+impl Drop for BoardQueue {
+    fn drop(&mut self) {
+        // Fake buffers need no kernel reap, but their owner must still be destroyed.
+        self.script.lock().unwrap().dropped = true;
     }
 }
 
@@ -459,7 +528,14 @@ impl BoardUsb {
 
 impl UsbIo for BoardUsb {
     fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
-        self.rx.open(block_bytes)
+        Rx::open_endpoint(&mut self.rx, block_bytes, || {
+            self.script.lock().unwrap().dropped = false;
+            Ok(BoardQueue {
+                board: Arc::clone(&self.board),
+                script: Arc::clone(&self.script),
+                pending: VecDeque::new(),
+            })
+        })
     }
 
     fn rx_recv(
@@ -467,13 +543,19 @@ impl UsbIo for BoardUsb {
         timeout: Duration,
         consume: &mut dyn FnMut(&[u8], [u64; 2]),
     ) -> Result<(), BusError> {
-        self.rx.receive(timeout, consume)
+        self.rx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB RX is closed"))?
+            .receive(timeout, consume)
     }
 
     fn rx_close(&mut self) -> Result<(), BusError> {
-        self.rx.close()
+        Rx::close_endpoint(&mut self.rx)
     }
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
+        if self.script.lock().unwrap().unplugged {
+            return Err(BusError::Disconnected);
+        }
         let header = u32::from_le_bytes(packet[..4].try_into().unwrap());
         let address = header & 0xffff;
         let count = ((header >> 16) & 0x3f) + 1;
@@ -495,6 +577,9 @@ impl UsbIo for BoardUsb {
     }
 
     fn read(&mut self, reply: Reply, _: Duration) -> Result<Vec<u8>, BusError> {
+        if self.script.lock().unwrap().unplugged {
+            return Err(BusError::Disconnected);
+        }
         match reply {
             Reply::Registers => self.registers.pop_front(),
             Reply::Notification => self.notifications.pop_front(),
@@ -517,25 +602,7 @@ fn usb_control_plane_identifies_powers_reads_temperature_and_closes_all_revision
         BoardRevision::Rev2,
         BoardRevision::Rev3,
     ] {
-        let mut board = SimBoard::new(revision);
-        let hwid = board.read_reg(19);
-        board.write_reg(19, hwid | 0x4000_0000);
-        let board = Arc::new(Mutex::new(board));
-        let io = BoardUsb {
-            rx: Rx::new(BoardQueue {
-                board: Arc::clone(&board),
-                pending: VecDeque::new(),
-            }),
-            board: Arc::clone(&board),
-            registers: VecDeque::new(),
-            notifications: VecDeque::new(),
-            sequence: 0,
-            lut: 0,
-            index: 0,
-        };
-        let mut bus = UsbBus::from_io(Box::new(io));
-        bus.initialize().unwrap();
-        let mut device = crate::Device::with_bus(bus).unwrap();
+        let (mut device, board, _) = simulated_device(revision);
         assert_eq!(device.temperature().unwrap(), 25.0);
         device.set_rx_sample_rate(20_000_000).unwrap();
         device.set_rx_frequency(1_000_000_000).unwrap();
@@ -570,3 +637,30 @@ fn usb_control_plane_identifies_powers_reads_temperature_and_closes_all_revision
         assert_eq!(board.lock().unwrap().gpo(0), Some(0));
     }
 }
+
+/// Powers up a simulated USB device; both endpoint boundaries remain observable.
+fn simulated_device(
+    revision: BoardRevision,
+) -> (crate::Device, Arc<Mutex<SimBoard>>, Arc<Mutex<RxScript>>) {
+    let mut board = SimBoard::new(revision);
+    let hwid = board.read_reg(19);
+    board.write_reg(19, hwid | 0x4000_0000);
+    let board = Arc::new(Mutex::new(board));
+    let script = Arc::new(Mutex::new(RxScript::default()));
+    let io = BoardUsb {
+        script: Arc::clone(&script),
+        rx: None,
+        board: Arc::clone(&board),
+        registers: VecDeque::new(),
+        notifications: VecDeque::new(),
+        sequence: 0,
+        lut: 0,
+        index: 0,
+    };
+    let mut bus = UsbBus::from_io(Box::new(io));
+    bus.initialize().unwrap();
+    (crate::Device::with_bus(bus).unwrap(), board, script)
+}
+
+#[path = "device_tests.rs"]
+mod device_tests;

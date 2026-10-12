@@ -142,8 +142,9 @@ fn raw_samples_and_all_trailer_words_match_the_pinned_c_receiver() {
 
         let state = Arc::new(Mutex::new(State::default()));
         state.lock().unwrap().incoming.push_back(Some(frame));
-        let mut receiver = rx::Rx::new(Queue(Arc::clone(&state)));
-        receiver.open(block).unwrap();
+        let mut endpoint = None;
+        rx::Rx::open_endpoint(&mut endpoint, block, || Ok(Queue(Arc::clone(&state)))).unwrap();
+        let receiver = endpoint.as_mut().unwrap();
         receiver
             .receive(Duration::ZERO, &mut |bytes, metadata| {
                 assert_eq!(
@@ -156,7 +157,7 @@ fn raw_samples_and_all_trailer_words_match_the_pinned_c_receiver() {
                 );
             })
             .unwrap();
-        receiver.close().unwrap();
+        rx::Rx::close_endpoint(&mut endpoint).unwrap();
         let state = state.lock().unwrap();
         assert_eq!(state.submissions, events[0] as usize + events[5] as usize);
         assert_eq!(state.cancellations, events[6] as usize);
@@ -188,8 +189,9 @@ fn timeout_lends_no_buffer_and_both_receivers_can_close_without_release() {
     );
     assert_eq!(&events[5..7], &[0, 1]);
     let state = Arc::new(Mutex::new(State::default()));
-    let mut receiver = rx::Rx::new(Queue(Arc::clone(&state)));
-    receiver.open(4096).unwrap();
+    let mut endpoint = None;
+    rx::Rx::open_endpoint(&mut endpoint, 4096, || Ok(Queue(Arc::clone(&state)))).unwrap();
+    let receiver = endpoint.as_mut().unwrap();
     assert!(matches!(
         receiver.receive(Duration::ZERO, &mut |_, _| panic!(
             "timeout must lend no samples"
@@ -197,6 +199,6 @@ fn timeout_lends_no_buffer_and_both_receivers_can_close_without_release() {
         Err(BusError::Timeout)
     ));
     assert_eq!(state.lock().unwrap().submissions, events[0] as usize);
-    receiver.close().unwrap();
+    rx::Rx::close_endpoint(&mut endpoint).unwrap();
     assert_eq!(state.lock().unwrap().cancellations, events[6] as usize);
 }
