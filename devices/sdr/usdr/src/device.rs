@@ -8,7 +8,7 @@ use rsl_deps::tracing::warn;
 
 use crate::board::{
     Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain,
-    TxIqCorrection, TxPath, TxState,
+    TxIqCorrection, TxPath,
 };
 use crate::error::Error;
 use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
@@ -25,10 +25,6 @@ use crate::thermal::{CoolDown, ThermalPolicy};
 pub struct Device {
     /// The powered board, which owns the bus; `None` only once powered down.
     board: Option<Board>,
-
-    /// The transmit chain's settings, lent to the board's calls that read them (see
-    /// [`TxState`] on why they are not the board's yet).
-    tx: TxState,
 
     /// Temperature limits in force.
     thermal: ThermalPolicy,
@@ -205,8 +201,7 @@ impl Device {
     ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
     /// - Any bus failure.
     pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.set_rx_sample_rate(samples_per_second, tx)
+        self.board().set_rx_sample_rate(samples_per_second)
     }
 
     /// Tunes the receiver to `hz`.
@@ -264,8 +259,7 @@ impl Device {
     ///
     /// [`SyncMode::ExternalAll`]: crate::SyncMode::ExternalAll
     pub fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.create_streams(config, tx)
+        self.board().create_streams(config)
     }
 
     /// Synchronises and starts the stream group: libusdr's `usdr_dms_sync` with the
@@ -329,8 +323,7 @@ impl Device {
     ///
     /// As [`Device::create_streams`] and [`Device::start_streams`].
     pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.start_rx_stream(samples_per_packet, tx)
+        self.board().start_rx_stream(samples_per_packet)
     }
 
     /// Throttles the running RX stream's bursts (`Some`) or delivers them all (`None`),
@@ -474,8 +467,7 @@ impl Device {
     /// - [`Error::PllFault`] if the LMS6002D reads back impossible PLL values.
     /// - Any bus failure.
     pub fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.set_tx_frequency(tx, hz)
+        self.board().set_tx_frequency(hz)
     }
 
     /// Fixes the TX output, or with [`TxPath::Auto`] hands the choice back to the
@@ -486,8 +478,7 @@ impl Device {
     ///
     /// Any bus failure.
     pub fn set_tx_path(&mut self, path: TxPath) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.set_tx_path(tx, path)
+        self.board().set_tx_path(path)
     }
 
     /// Fixes the TX filter bandwidth in Hz, so later TX frequency changes keep it; 0 returns
@@ -500,8 +491,7 @@ impl Device {
     ///
     /// Any bus failure.
     pub fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
-        let (board, tx) = self.board_and_tx();
-        board.set_tx_bandwidth(tx, hz)
+        self.board().set_tx_bandwidth(hz)
     }
 
     /// Sets one TX gain stage; out-of-range figures are clamped, as in libusdr.
@@ -579,15 +569,6 @@ impl Device {
         self.board
             .as_mut()
             .expect("invariant: a Device owns its board until close or drop")
-    }
-
-    /// The powered board and the transmit chain's settings, borrowed together.
-    fn board_and_tx(&mut self) -> (&mut Board, &mut TxState) {
-        let board = self
-            .board
-            .as_mut()
-            .expect("invariant: a Device owns its board until close or drop");
-        (board, &mut self.tx)
     }
 
     /// Stops any stream group, then powers the board down, if it is still up. Every step is
@@ -697,7 +678,6 @@ impl<'a> DeviceBuilder<'a> {
         }
         Ok(Device {
             board: Some(board),
-            tx: TxState::default(),
             thermal,
         })
     }

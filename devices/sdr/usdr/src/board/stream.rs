@@ -15,7 +15,6 @@ use num_complex::Complex;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
-use super::board::TxState;
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{self, BurstPlan, Phy, SyncTrigger};
@@ -133,11 +132,7 @@ impl Board {
     /// stream and an unsupported sync mode are refused before any bus access; the packet
     /// size is checked where libusdr checks it, after calibration. `tx` is the
     /// transmitter's settings: the calibration's TX PLL tune is undone for its frequency.
-    pub(crate) fn create_streams(
-        &mut self,
-        config: StreamsConfig,
-        tx: &TxState,
-    ) -> Result<(), Error> {
+    pub(crate) fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
@@ -147,7 +142,7 @@ impl Board {
         let sync = config.sync.rx_trigger()?;
         let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
             .expect("invariant: libusdr converts every RX wire format to every host format");
-        self.create_rx_stream(rx, converter, sync, tx)
+        self.create_rx_stream(rx, converter, sync)
     }
 
     /// Synchronises and starts the group: `usdr_dms_sync` with the configured mode, then
@@ -169,13 +164,9 @@ impl Board {
     /// Creates, starts and free-runs a `ci16` channel-0 RX stream with `samples_per_packet`
     /// samples per packet, in the FFI `usdr` crate's order: create, `USDR_DMS_START`, then
     /// `usdr_dms_sync(.., "none", ..)`.
-    pub(crate) fn start_rx_stream(
-        &mut self,
-        samples_per_packet: u32,
-        tx: &TxState,
-    ) -> Result<(), Error> {
+    pub(crate) fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         let config = RxConfig::new(samples_per_packet, HostFormat::Ci16, WireFormat::Ci16);
-        self.create_streams(StreamsConfig::rx(config), tx)?;
+        self.create_streams(StreamsConfig::rx(config))?;
         let bus = self.bus.as_mut();
         fpga::run_rx(bus, true)?;
         fpga::sync(bus, SyncTrigger::FreeRun)?;
@@ -198,7 +189,6 @@ impl Board {
         config: RxConfig,
         converter: Converter,
         sync: SyncTrigger,
-        tx: &TxState,
     ) -> Result<(), Error> {
         let RxConfig {
             samples_per_packet,
@@ -225,8 +215,8 @@ impl Board {
         // The calibration tuned the TX PLL to 320 MHz: libusdr tunes it back to the TX LO,
         // when one is set, discarding the result. It tunes the LO itself, not the lowest
         // lock a low-LO fallback found.
-        if tx.lo_hz != 0 {
-            let _ = self.tune_tx_pll(tx.lo_hz);
+        if self.tx.lo_hz != 0 {
+            let _ = self.tune_tx_pll(self.tx.lo_hz);
         }
 
         let bus = self.bus.as_mut();

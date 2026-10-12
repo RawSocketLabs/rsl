@@ -15,7 +15,6 @@ use std::time::Duration;
 use rsl_deps::tracing::debug;
 
 use super::Board;
-use super::board::TxState;
 use crate::chips::lms6002d::{CapacitorWindow, Lna, PowerAmp};
 use crate::error::Error;
 use crate::fpga::{Gpo, Nco, Phy};
@@ -259,17 +258,17 @@ impl Board {
     /// NCO lock fallback fails with [`Error::PllUnlocked`], and the filter is left alone
     /// (`tests/tx_tuning.rs`). On failure, state is left as libusdr leaves it: the power and
     /// band changes, LO offset and minimal LO recorded at the same points.
-    pub(crate) fn set_tx_frequency(&mut self, tx: &mut TxState, hz: u32) -> Result<(), Error> {
-        let first = tx.lo_hz == 0;
-        tx.lo_hz = hz;
+    pub(crate) fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        let first = self.tx.lo_hz == 0;
+        self.tx.lo_hz = hz;
         // `_usdr_signal_event(USDR_TX_LO_CHANGED)`: power the transmitter, then the band for
         // the frequency, if it is not fixed. libusdr discards both results.
-        let _ = self.power_tx(tx);
-        if !tx.band_fixed {
+        let _ = self.power_tx();
+        if !self.tx.band_fixed {
             let _ = self.select_tx_band(TxBand::for_frequency(hz));
         }
 
-        tx.lo_offset_hz = 0;
+        self.tx.lo_offset_hz = 0;
         let mut tuned = self.tune_tx_pll(hz);
         if matches!(tuned, Err(Error::PllUnlocked(_))) {
             debug!(lo_hz = hz, "TX PLL did not lock; retrying");
@@ -281,17 +280,17 @@ impl Board {
             tuned = self.tune_tx_pll(hz);
         }
         if let Err(Error::PllUnlocked(_)) = tuned {
-            let mut minimal_lo_hz = tx.minimal_lo_hz;
+            let mut minimal_lo_hz = self.tx.minimal_lo_hz;
             let offset = self.extend_low_lo(Chain::Tx, hz, &mut minimal_lo_hz);
-            tx.minimal_lo_hz = minimal_lo_hz;
-            tx.lo_offset_hz = offset?;
+            self.tx.minimal_lo_hz = minimal_lo_hz;
+            self.tx.lo_offset_hz = offset?;
         } else {
             tuned?;
         }
 
-        self.restore_ncos(Chain::Tx, tx.lo_offset_hz)?;
-        self.update_tx_bandwidth(tx)?;
-        debug!(hz, nco_offset_hz = tx.lo_offset_hz, "TX tuned");
+        self.restore_ncos(Chain::Tx, self.tx.lo_offset_hz)?;
+        self.update_tx_bandwidth()?;
+        debug!(hz, nco_offset_hz = self.tx.lo_offset_hz, "TX tuned");
         Ok(())
     }
 
@@ -306,13 +305,13 @@ impl Board {
     /// Powers the LMS6002D's transmitter if it is off (`_usdr_pwr_state` for TX). Unlike
     /// the receiver's, libusdr records the new state and takes the 25 ms settling wait even
     /// when the write fails, and so does this.
-    fn power_tx(&mut self, tx: &mut TxState) -> Result<(), Error> {
-        if tx.powered {
+    fn power_tx(&mut self) -> Result<(), Error> {
+        if self.tx.powered {
             return Ok(());
         }
         let bus = self.bus.as_mut();
         let powered = self.lms.set_tx_enabled(bus, true);
-        tx.powered = true;
+        self.tx.powered = true;
         bus.sleep(Duration::from_millis(25));
         powered
     }
@@ -427,11 +426,11 @@ impl Board {
 
     /// Sets the TX filter as [`Self::update_rx_bandwidth`] sets the RX one, from the TX LO
     /// offset (`_usdr_update_bandwidth` for TX).
-    fn update_tx_bandwidth(&mut self, tx: &TxState) -> Result<(), Error> {
-        if tx.bandwidth_fixed {
+    fn update_tx_bandwidth(&mut self) -> Result<(), Error> {
+        if self.tx.bandwidth_fixed {
             return Ok(());
         }
-        let Some(bandwidth) = self.following_bandwidth(tx.lo_offset_hz) else {
+        let Some(bandwidth) = self.following_bandwidth(self.tx.lo_offset_hz) else {
             return Ok(());
         };
         self.lms.set_tx_bandwidth(self.bus.as_mut(), bandwidth)

@@ -8,7 +8,6 @@
 //! the TX mixer's output into the chosen input, for self-test and calibration.
 
 use super::Board;
-use super::board::TxState;
 use super::tune::{RxBand, TxBand};
 use crate::error::Error;
 
@@ -91,10 +90,10 @@ impl Board {
     /// settings. [`TxPath::Auto`] applies the band for the current TX frequency at once,
     /// without powering the transmitter (`_usdr_signal_event(USDR_TX_LNA_CHANGED)`); before
     /// any frequency is set that is PA1, as in libusdr. Neither retunes.
-    pub(crate) fn set_tx_path(&mut self, tx: &mut TxState, path: TxPath) -> Result<(), Error> {
+    pub(crate) fn set_tx_path(&mut self, path: TxPath) -> Result<(), Error> {
         let fixed = path.fixed();
-        tx.band_fixed = fixed.is_some();
-        self.select_tx_band(fixed.unwrap_or_else(|| TxBand::for_frequency(tx.lo_hz)))
+        self.tx.band_fixed = fixed.is_some();
+        self.select_tx_band(fixed.unwrap_or_else(|| TxBand::for_frequency(self.tx.lo_hz)))
     }
 
     /// Selects the RX path (`usdr_rfic_fe_set_rxlna`), then switches the RF loopback.

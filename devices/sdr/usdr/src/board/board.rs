@@ -63,6 +63,9 @@ pub(crate) struct Board {
     /// What the receive chain was last set to.
     pub(super) rx: RxState,
 
+    /// What the transmit chain was last set to.
+    pub(super) tx: TxState,
+
     /// libusdr's `rx_run`: set when a stream is created, cleared when it is destroyed, and
     /// left set by a failed create.
     pub(super) rx_running: bool,
@@ -134,11 +137,8 @@ pub(super) struct RxState {
 /// The transmit chain's settings that later calls depend on, as libusdr tracks them
 /// (its `tx_*` fields).
 ///
-/// [`Device`](crate::Device) holds it beside the [`Board`] and lends it to the board's
-/// TX, sample-rate and stream calls, because the board is built in `board/power.rs`, which
-/// this port leaves untouched while that file migrates; it belongs on the board once that
-/// settles. TX streaming, not yet ported, will add the IQ imbalance libusdr keeps
-/// (`tx_corr`) and rewrites at stream creation. Not `Copy`: lending a copy would lose the
+/// The [`Board`] keeps it with the rest of the radio's state. TX streaming, not yet ported,
+/// will add the IQ imbalance libusdr keeps (`tx_corr`) and rewrites at stream creation. Not `Copy`: lending a copy would lose the
 /// call's updates.
 #[derive(Debug, Default)]
 pub(crate) struct TxState {

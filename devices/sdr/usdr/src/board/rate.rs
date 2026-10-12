@@ -11,7 +11,7 @@ use std::time::Duration;
 use rsl_deps::tracing::debug;
 
 use super::Board;
-use super::board::{Chains, TxState};
+use super::board::Chains;
 use super::tune::{Chain, RxBand};
 use crate::chips::lp8758::Buck;
 use crate::chips::register::run_sequence;
@@ -48,7 +48,7 @@ impl Board {
     /// Divergence on failure only: libusdr records the boosted rail, the powered receiver
     /// and the decimation even when a write fails; this records each only once its writes
     /// succeed, so a retry reissues them.
-    pub(crate) fn set_rx_sample_rate(&mut self, rate: u32, tx: &TxState) -> Result<(), Error> {
+    pub(crate) fn set_rx_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
         // The block size and decimation are fixed while a stream runs; libusdr's callers only
         // set the rate before creating one.
         if self.rx_stream.is_some() {
@@ -103,7 +103,7 @@ impl Board {
 
         // `usdr_restore_nco`, RX then TX.
         self.restore_rx_ncos()?;
-        self.restore_ncos(Chain::Tx, tx.lo_offset_hz)?;
+        self.restore_ncos(Chain::Tx, self.tx.lo_offset_hz)?;
 
         // `USDR_SAMPLERATE_CHANGED`: the mixer LO moved with the clocks, so retune.
         if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {
@@ -134,8 +134,8 @@ impl Board {
     /// rate, as [`Self::set_rx_bandwidth`] does for RX (`usdr_rfic_bb_set_badwidth` for
     /// TX). The rate follows only on a TX tune: libusdr's RX-only rate change leaves the TX
     /// filter alone.
-    pub(crate) fn set_tx_bandwidth(&mut self, tx: &mut TxState, hz: u32) -> Result<(), Error> {
-        tx.bandwidth_fixed = hz != 0;
+    pub(crate) fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
+        self.tx.bandwidth_fixed = hz != 0;
         self.lms.set_tx_bandwidth(self.bus.as_mut(), hz)
     }
 

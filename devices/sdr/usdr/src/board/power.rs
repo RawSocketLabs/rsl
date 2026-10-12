@@ -7,7 +7,7 @@ use std::time::Duration;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
-use super::board::{Chains, RxState};
+use super::board::{Chains, RxState, TxState};
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference};
@@ -288,6 +288,7 @@ impl Identified {
             adc_rate_hz: 0,
             mixer_lo_hz: 0,
             rx: RxState::default(),
+            tx: TxState::default(),
             rx_running: false,
             rx_stream: None,
             front_end: None,
