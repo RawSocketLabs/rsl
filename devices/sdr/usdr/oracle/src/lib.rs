@@ -242,6 +242,46 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/rx/freqency", hz.into())
     }
 
+    /// Writes `value` to the device-manager path `path` through `usdr_dme_set_uint`, such as
+    /// `c"/dm/sdr/0/rx/gain/vga"`.
+    ///
+    /// # Safety
+    ///
+    /// The handler at `path` must read `value` as a number. libusdr's string-valued
+    /// handlers (`/dm/sdr/0/rx/path`, `/dm/sdr/0/tx/path`, `/dm/sdr/refclk/path`) read
+    /// some or all values as `const char*`, and `/dm/rate/rxtxadcdac` reads every value as
+    /// a pointer to four `uint32_t`s; through this function those would dereference an
+    /// arbitrary address. Use [`Oracle::set_str`] for string paths.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub unsafe fn set_uint(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
+        // The caller guarantees what `set_value` asks of its callers.
+        self.set_value(path, value)
+    }
+
+    /// Writes the string `value` to the device-manager path `path`, as libusdr's string
+    /// handlers expect: `usdr_dme_set_uint` with the string's address as the value, which
+    /// they tell from a number by its being above 4096 (`dev_m2_lm6_1_sdr_rx_path_set`).
+    ///
+    /// # Safety
+    ///
+    /// The handler at `path` must read the value as a `const char*` it does not keep past
+    /// the call, or as a number. In particular `/dm/rate/rxtxadcdac` would read 16 bytes
+    /// through it.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub unsafe fn set_str(&mut self, path: &CStr, value: &CStr) -> Result<(), i32> {
+        // A pointer, as libusdr's VFS carries it in its 64-bit value.
+        let pointer = value.as_ptr() as u64;
+        // SAFETY: the caller guarantees the handler reads `pointer` as a string, which
+        // `value` keeps alive and NUL-terminated for the call, or as a number.
+        unsafe { self.set_uint(path, pointer) }
+    }
+
     /// Creates the RX stream the FFI `usdr` crate uses: `/ll/srx/0`, `ci16`, channel 0, with
     /// `samples_per_packet` samples per packet.
     ///

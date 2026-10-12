@@ -152,8 +152,9 @@ Each layer calls only the ones below it.
   in its own change.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Currently not ported: front-end boards (`fe=`) and the remaining controls/TX/shared-library
-  domains in [PORTING.md](PORTING.md).
+- Currently not ported: front-end boards (`fe=`), RX path selection and corrections, and the
+  remaining controls/TX/shared-library domains in [PORTING.md](PORTING.md). The RX gain
+  controls (`Device::set_rx_gain`) are ported.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is

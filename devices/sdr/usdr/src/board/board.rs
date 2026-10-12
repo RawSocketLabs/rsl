@@ -100,6 +100,13 @@ pub(super) struct RxState {
     /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the NCO
     /// makes up the difference (libusdr's `rx_exten_lo`).
     pub(super) lo_offset_hz: i32,
+
+    /// RXVGA2's first-stage gain in 3 dB steps (libusdr's `rx_vga2a`), which the DC
+    /// calibration at stream creation restores.
+    pub(super) vga2a: u8,
+
+    /// RXVGA2's second-stage gain in 3 dB steps (libusdr's `rx_vga2b`).
+    pub(super) vga2b: u8,
 }
 
 /// Which DSP chains the gateware has (HWID bits 25 and 24).

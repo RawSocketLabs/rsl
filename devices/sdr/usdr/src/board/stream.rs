@@ -102,8 +102,11 @@ impl Board {
             self.set_rx_frequency(DEFAULT_RX_HZ)?;
             self.rx.lo_hz = 0;
         }
-        self.lms
-            .calibrate_rx_dc(self.bus.as_mut(), self.reference.hz())?;
+        self.lms.calibrate_rx_dc(
+            self.bus.as_mut(),
+            self.reference.hz(),
+            (self.rx.vga2a, self.rx.vga2b),
+        )?;
         // libusdr retunes the TX PLL here when a TX LO is set; TX is not ported, so it never
         // is.
 

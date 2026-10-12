@@ -3,11 +3,12 @@
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
+use std::ffi::CStr;
 use std::ops::Range;
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr::{Device, Error, RxThrottle};
+use rsl_usdr::{Device, Error, RxGain, RxThrottle};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
 use sim_bus::SimBus;
@@ -20,8 +21,9 @@ const REG_GPO: u32 = 0;
 const REG_PHY_RX: u32 = 56;
 /// The RX DMA status register, read first by libusdr's DMA reset.
 const REG_RX_DMA_STATUS: u32 = 6;
-/// The SPI word that ends libusdr's DC calibration: RXVGA2 gains back to 0.
-const VGA2_GAIN_RESET: u32 = 0xe800;
+/// The SPI write of RXVGA2's gain register (0x68), whose low byte is the stage steps;
+/// libusdr's DC calibration ends by restoring them.
+const VGA2_GAIN_WRITE: u32 = 0xe800;
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -31,6 +33,9 @@ enum Call {
 
     /// `set_rx_frequency`.
     Frequency(u32),
+
+    /// libusdr's numeric RX gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
+    Gain(&'static CStr, u64, RxGain),
 
     /// `start_rx_stream`: libusdr's create, START and sync "none", as one window.
     Start(u32),
@@ -51,6 +56,8 @@ impl Call {
         match self {
             Self::Rate(rate) => oracle.set_rx_rate(rate).is_ok(),
             Self::Frequency(hz) => oracle.set_rx_frequency(hz).is_ok(),
+            // SAFETY: every RX gain handler reads its value as a number.
+            Self::Gain(path, value, _) => unsafe { oracle.set_uint(path, value) }.is_ok(),
             Self::Start(samples) => {
                 oracle.create_rx_stream(samples).is_ok()
                     && oracle.start_rx_stream().is_ok()
@@ -72,6 +79,7 @@ impl Call {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
             Self::Frequency(hz) => device.set_rx_frequency(hz),
+            Self::Gain(_, _, gain) => device.set_rx_gain(gain),
             Self::Start(samples) => device.start_rx_stream(samples),
             Self::Receive => {
                 let mut samples = vec![Complex::new(0, 0); 1 << 16];
@@ -150,7 +158,7 @@ fn without_baseband_loop(window: &[Op]) -> (Vec<Op>, bool) {
         .expect("create resets the DMA engine");
     let calibrated = window[..dma_reset]
         .iter()
-        .rposition(|op| matches!(op, Op::Spi { out, .. } if *out == VGA2_GAIN_RESET))
+        .rposition(|op| matches!(op, Op::Spi { out, .. } if *out & 0xff00 == VGA2_GAIN_WRITE))
         .expect("create calibrates first")
         + 1;
     let cut = &window[calibrated..dma_reset];
@@ -276,6 +284,27 @@ fn an_untuned_stream_and_a_second_one_match_libusdr() {
             Call::Stop,
             Call::Start(1024),
             Call::Frequency(1_000_000_000),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// The DC calibration that starts a stream ends by restoring RXVGA2's stage steps, the
+/// ones set before it, rather than zeroing them.
+#[test]
+fn stream_calibration_restores_the_rx_vga2_gains_like_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Gain(c"/dm/sdr/0/rx/gain/vga2a", 9, RxGain::Vga2a(9)),
+            Call::Gain(c"/dm/sdr/0/rx/gain/vga2b", 12, RxGain::Vga2b(12)),
+            Call::Start(1024),
             Call::Stop,
         ],
     );

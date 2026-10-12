@@ -5,7 +5,8 @@
 //! against libusdr's on a simulated board (`rsl-usdr-oracle`).
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
-//! rate, bandwidth and frequency, and the RX stream over any [`lowlevel::Bus`] that streams.
+//! rate, bandwidth, frequency and gains, and the RX stream over any [`lowlevel::Bus`] that
+//! streams.
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
 //! `mio` adds `transport::usb::NativeUsb`, an unstable temperature-only USB handle driven by
 //! a caller-owned Mio reactor. [`flash`] reads, erases and writes the FPGA's boot flash over
@@ -128,7 +129,7 @@ mod reference;
 mod thermal;
 pub mod transport;
 
-pub use board::{RxPacket, RxThrottle};
+pub use board::{RxGain, RxPacket, RxThrottle};
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
 pub use identity::Identity;

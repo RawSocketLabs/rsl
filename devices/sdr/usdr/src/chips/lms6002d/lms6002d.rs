@@ -11,7 +11,7 @@ use super::pll::{
     self, ChargePump, Comparator, DownOffset, FractionalDivider, Pll, PllConfig, VcoCapacitor,
     VcoRegulator, VcoSelect,
 };
-use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad, MixerBias, MixerInput};
+use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad, MixerBias, MixerInput, TiaFeedback};
 use super::rx_vga2;
 use super::spi::SpiWriter;
 use super::top::{ChipId, ClockEnables, EnableConfig, LpfTuning, LpfTuningControl, ReferencePower};
@@ -128,7 +128,8 @@ impl Lms6002d {
     /// libusdr's RX DC-offset calibration at stream creation (`_usdr_lms6002_dc_calib_rx`):
     /// the LPF's DC DAC, the LPF tuning for every bandwidth code (tuning the TX PLL to
     /// 320 MHz first, from a `reference_hz` reference), the TX and RX LPF offsets, RXVGA2's
-    /// offsets, then RXVGA2's gains back to 0.
+    /// offsets, then RXVGA2's stage A and B steps back to `vga2`, as
+    /// [`Self::set_rx_vga2_gain`] writes them.
     ///
     /// Like libusdr, a calibration that does not converge is not an error, and the TX
     /// synthesizer's modulator clock stays on afterwards.
@@ -141,6 +142,7 @@ impl Lms6002d {
         &mut self,
         bus: &mut dyn Bus,
         reference_hz: u32,
+        vga2: (u8, u8),
     ) -> Result<(), Error> {
         self.calibrate_lpf_dac(bus)?;
         for code in 0..16 {
@@ -151,8 +153,30 @@ impl Lms6002d {
         self.calibrate_lpf_dc(bus, Lpf::Rx)?;
         self.calibrate_rx_vga2_dc(bus)?;
         self.set_rx_external_termination(bus, false)?;
-        // libusdr's RXVGA2 gains, never changed from 0.
-        self.on(bus).write(rx_vga2::Gain::new())
+        self.set_rx_vga2_gain(bus, vga2.0, vga2.1)
+    }
+
+    /// Sets the active LNA's gain mode (`lms6002d_set_rxlna_gain`).
+    pub(crate) fn set_lna_gain(&mut self, bus: &mut dyn Bus, gain: LnaGain) -> Result<(), Error> {
+        self.lna_control.set_gain(gain);
+        self.on(bus).write(self.lna_control)
+    }
+
+    /// Sets RXVGA1's gain to `db`, as [`TiaFeedback::for_gain_db`] converts it
+    /// (`_lms6002d_rxvga1_db_to_int`, then `lms6002d_set_rxvga1_gain`).
+    pub(crate) fn set_rx_vga1_gain(&self, bus: &mut dyn Bus, db: i32) -> Result<(), Error> {
+        self.on(bus).write(TiaFeedback::for_gain_db(db))
+    }
+
+    /// Sets RXVGA2's two stages in 3 dB steps, each held to 10 (30 dB)
+    /// (`lms6002d_set_rxvga2ab_gain`).
+    pub(crate) fn set_rx_vga2_gain(&self, bus: &mut dyn Bus, a: u8, b: u8) -> Result<(), Error> {
+        /// The highest step libusdr writes.
+        const MAX_STEP: u8 = 10;
+        let gain = rx_vga2::Gain::new()
+            .with_a(u4::new(a.min(MAX_STEP)))
+            .with_b(u4::new(b.min(MAX_STEP)));
+        self.on(bus).write(gain)
     }
 
     /// Calibrates the LPF's DC-offset DAC and writes the result to both filters

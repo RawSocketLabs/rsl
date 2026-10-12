@@ -6,7 +6,7 @@ use std::time::Duration;
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
-use crate::board::{Board, RxPacket, RxThrottle};
+use crate::board::{Board, RxGain, RxPacket, RxThrottle};
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
@@ -265,6 +265,17 @@ impl Device {
     /// Any bus failure.
     pub fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
         self.board().set_rx_bandwidth(hz)
+    }
+
+    /// Sets one RX gain stage, or the whole chain with [`RxGain::Auto`]; out-of-range
+    /// figures are clamped, as in libusdr. The gain holds across frequency and sample-rate
+    /// changes, and RXVGA2's stages survive the DC calibration that starts a stream.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_gain(&mut self, gain: RxGain) -> Result<(), Error> {
+        self.board().set_rx_gain(gain)
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every
