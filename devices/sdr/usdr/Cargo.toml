@@ -19,20 +19,22 @@ thiserror.workspace = true
 pcie = ["dep:rsl-usdr-pcie"]
 ## USB control-plane access and RX streaming over the owned Linux usbfs backend.
 usb = ["dep:rsl-usb"]
+## Unstable `transport::usb::NativeUsb`: the USB control plane driven by a caller-owned Mio
+## reactor.
+mio = ["usb", "dep:mio", "rsl-usb/mio"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rsl-usdr-pcie = { workspace = true, optional = true }
 rsl-usb = { workspace = true, optional = true }
+mio = { workspace = true, optional = true }
 
 [dev-dependencies]
 rsl-usdr-sim.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-# Readiness-runner proofs; no Mio dependency in production/core APIs until a native driver
-# is wired in. The native pilot's fake registers a raw socket and its queues use rsl-usb's
-# readiness.
+# Readiness-runner proofs; Mio enters production only through the opt-in `mio` feature. The
+# native pilot's fake registers a raw socket.
 mio = { workspace = true, features = ["os-ext"] }
-rsl-usb = { workspace = true, features = ["mio"] }
 
 [lints]
 workspace = true

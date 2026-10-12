@@ -17,11 +17,13 @@ use rsl_usdr_sim::{BoardRevision, SimBoard};
 
 use super::BoardUsb;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
+use crate::error::Error;
 use crate::lowlevel::BusError;
-use crate::transport::usb::bus::{Reply as Endpoint, UsbIo};
+use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::{Action, I2cTransaction};
 use crate::transport::usb::native::{
-    Adapter, Backend, Completion, Queues, Reply, Report, Request, Transfer, Turn, Work, Worker,
+    Adapter, Backend, Completion, NativeEvent, NativeUsb, Queues, Reply, Report, Request, Session,
+    Transfer, Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 
@@ -564,21 +566,23 @@ fn original_terminal_error_survives_a_lost_registration() {
 }
 
 #[test]
-fn native_notification_capacity_cannot_accept_a_packet_aligned_valid_prefix() {
-    for packet in [0, 8, 16, 64] {
-        assert!(
-            matches!(
-                Queues::notification_capacity(packet),
-                Err(BusError::Unsupported(_))
-            ),
-            "packet size {packet} cannot disambiguate a 64-byte IRQ prefix"
-        );
-    }
-    for packet in [128, 512, 1024] {
+fn notification_transfers_are_the_fewest_whole_packets_holding_a_record() {
+    assert!(matches!(
+        Queues::notification_capacity(0),
+        Err(BusError::Unsupported(_))
+    ));
+    // IN_NTFY_SIZE: one notification transfer carries at most 64 bytes.
+    for packet in [8, 16, 64, 128, 512, 1024] {
         let capacity = Queues::notification_capacity(packet).unwrap();
+        assert!(capacity >= 64, "packet size {packet} holds a whole record");
+        assert_eq!(
+            capacity % packet,
+            0,
+            "packet size {packet} ends on a packet"
+        );
         assert!(
-            capacity > 64,
-            "packet size {packet} must receive beyond the largest valid IRQ"
+            capacity < 64 + packet,
+            "packet size {packet} adds no spare packet"
         );
     }
 }
@@ -664,4 +668,141 @@ fn overlapping_actions_and_reused_operation_ids_are_rejected_before_io() {
     // A stale edge delivered after close is ignored.
     adapter.on_ready(DEVICE).unwrap();
     cleanup(&mut adapter, &mut reactor).unwrap();
+}
+
+/// A fresh blocking-bus session: no sequence baseline yet.
+fn session() -> Session {
+    Session {
+        i2c: I2cCache::default(),
+        next_sequence: None,
+        next_id: 0,
+    }
+}
+
+/// Drives one native read through the caller's reactor until the handle reports it.
+fn reading(native: &mut NativeUsb, reactor: &mut Poll) -> Result<f32, Error> {
+    let until = Instant::now() + GUARD;
+    let mut events = Events::with_capacity(8);
+    loop {
+        if let Some(NativeEvent::Temperature(result)) = native.poll(Instant::now()) {
+            return result;
+        }
+        assert!(Instant::now() < until, "native temperature deadline");
+        reactor.poll(&mut events, Some(GUARD)).unwrap();
+        for event in &events {
+            native.on_ready(event.token());
+        }
+    }
+}
+
+/// Waits in the reactor for the handle's cleanup report.
+fn native_cleanup(native: &mut NativeUsb, reactor: &mut Poll) -> Result<(), BusError> {
+    let until = Instant::now() + GUARD;
+    let mut events = Events::with_capacity(8);
+    loop {
+        if let Some(result) = native.try_cleanup() {
+            return result;
+        }
+        assert!(Instant::now() < until, "native cleanup deadline");
+        reactor.poll(&mut events, Some(GUARD)).unwrap();
+    }
+}
+
+#[test]
+fn the_native_handle_reads_the_sensor_repeatedly_and_cleans_up_on_its_worker() {
+    let (fake, _, dropped) = Fake::new();
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    // The second read is checked against the sequence number the first one established.
+    for _ in 0..2 {
+        native.start_temperature(Instant::now()).unwrap();
+        let celsius = reading(&mut native, &mut reactor).unwrap();
+        assert!(
+            (celsius - 25.0).abs() < f32::EPSILON,
+            "the sim reports 25 °C"
+        );
+    }
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+#[test]
+fn a_second_read_is_refused_while_one_is_pending() {
+    let (fake, record, _) = Fake::new();
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_temperature(Instant::now()).unwrap();
+    assert!(matches!(
+        native.start_temperature(Instant::now()),
+        Err(Error::Bus { .. })
+    ));
+    assert!(
+        reading(&mut native, &mut reactor).is_ok(),
+        "the first read is unaffected"
+    );
+    let submits = record
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|(name, _)| *name == "submit")
+        .count();
+    assert_eq!(
+        submits, 2,
+        "one command and one notification read; nothing for the refusal"
+    );
+}
+
+#[test]
+fn the_handle_continues_the_blocking_bus_notification_sequence() {
+    let (fake, _, dropped) = Fake::new();
+    let (mut reactor, wake) = reactor();
+    // The blocking bus expects record 7 next; the fresh sim sends its first record.
+    let carried = Session {
+        next_sequence: Some(7),
+        ..session()
+    };
+    let mut native = NativeUsb::attach(fake, carried, reactor.registry(), DEVICE, wake).unwrap();
+    native.start_temperature(Instant::now()).unwrap();
+    assert!(
+        reading(&mut native, &mut reactor).is_err(),
+        "a sequence gap at the hand-over fails the read"
+    );
+    assert!(
+        native.start_temperature(Instant::now()).is_err(),
+        "a failure closes the handle"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+#[test]
+fn handing_over_the_blocking_bus_carries_its_notification_session() {
+    let mut board = SimBoard::new(BoardRevision::Rev3);
+    // HWID bit 30: USB, not PCIe, owns interrupt routing.
+    let hwid = board.read_reg(19);
+    board.write_reg(19, hwid | 0x4000_0000);
+    let io = BoardUsb {
+        script: Arc::default(),
+        rx: None,
+        board: Arc::new(Mutex::new(board)),
+        registers: VecDeque::new(),
+        notifications: VecDeque::new(),
+        sequence: 0,
+        lut: 0,
+        index: 0,
+    };
+    let mut bus = UsbBus::from_io(Box::new(io));
+    bus.initialize().unwrap();
+    // The hand-over's own sensor check is one I²C read with one notification record.
+    let (carried, _) = bus.hand_over().unwrap();
+    assert_eq!(
+        carried.next_id, 1,
+        "the sensor check used the first operation identity"
+    );
+    assert!(
+        carried.next_sequence.is_some(),
+        "the sensor check's notification set the sequence baseline"
+    );
 }

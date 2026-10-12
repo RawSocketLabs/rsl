@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use mio::event::Source;
 use rsl_usb::{InQueue, Interface, OutQueue, ReapProgress};
 
+use super::super::bus::{MAX_NOTIFICATION_BYTES, transfer_length};
 use super::super::i2c::{Action, Event, I2cTransaction};
 use crate::lowlevel::BusError;
 
@@ -103,7 +104,7 @@ pub(in super::super) struct Queues {
     commands: OutQueue,
     /// Endpoint 0x82; never shared with another notification consumer.
     notifications: InQueue,
-    /// Receive capacity larger than every valid 64-byte notification frame.
+    /// Receive capacity: whole packets holding the largest (64-byte) notification.
     notification_capacity: usize,
     /// Correlation and endpoint selection for the single submitted request.
     pending: Option<(u64, bool)>,
@@ -113,7 +114,6 @@ impl Queues {
     /// Takes an already-configured interface during blocking setup, before attachment.
     /// The device must be exclusive to this pilot: its readiness makes the reactor the only
     /// completion driver, and the adapter turns only while its own request is pending.
-    #[expect(dead_code, reason = "no native driver handle opens real queues yet")]
     pub(in super::super) fn new(interface: Interface) -> Result<Self, BusError> {
         let commands = interface.out_queue(0x01).map_err(BusError::from)?;
         let notifications = interface.in_queue(0x82).map_err(BusError::from)?;
@@ -127,15 +127,11 @@ impl Queues {
         })
     }
 
-    /// Requires short-packet framing; an aligned valid prefix must not conceal a malformed
-    /// IRQ tail. Aligned/full-speed layouts require separate device-side terminator evidence.
+    /// One notification transfer's length, sized exactly as the blocking bus and the pinned
+    /// C transport size theirs. With packets of 64 bytes or fewer a valid 64-byte record can
+    /// fill the transfer, so an overlong reply is not detected; neither path detects it.
     pub(in super::super) fn notification_capacity(packet_size: usize) -> Result<usize, BusError> {
-        if packet_size <= 64 {
-            return Err(BusError::Unsupported(
-                "native USB notifications require packet size over 64 bytes",
-            ));
-        }
-        Ok(packet_size)
+        transfer_length(MAX_NOTIFICATION_BYTES, packet_size)
     }
 }
 

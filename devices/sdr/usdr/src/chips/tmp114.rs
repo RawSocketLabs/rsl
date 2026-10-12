@@ -105,6 +105,20 @@ impl TemperatureRead {
         (Self(operation), request)
     }
 
+    /// Resolves a read that has not completed yet; see [`Self::complete`].
+    #[cfg(all(feature = "mio", target_os = "linux"))]
+    pub(crate) fn resolve(&mut self, result: Result<&[u8], BusError>) -> Result<f32, Error> {
+        self.complete(result)
+            .expect("invariant: each native read resolves once")
+    }
+
+    /// Fails a read that has not completed yet with a transport error, with its context.
+    #[cfg(all(feature = "mio", target_os = "linux"))]
+    pub(crate) fn fail(&mut self, error: BusError) -> Error {
+        self.resolve(Err(error))
+            .expect_err("invariant: a failed transport yields no temperature")
+    }
+
     /// Resolves the read once, preserving transport errors and rejecting malformed data.
     pub(crate) fn complete(
         &mut self,

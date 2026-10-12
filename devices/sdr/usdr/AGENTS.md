@@ -10,11 +10,11 @@ C runtime, C ABI compatibility, Python/Soapy or legacy JSON/RPC adapters. See
 [PORTING.md](PORTING.md) for the pinned capability ledger, acceptance loop and phased roadmap;
 the program is not complete. Linux is first. Sans-I/O state machines and an externally owned
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
-opt-in. The first private temperature/USB-I²C execution pilot is implemented; native
-nonblocking attachment and public driver/stream handles remain unimplemented. Generic USB
-now offers bounded reap/filed-only completion primitives and an exclusive Mio `Readiness`
-(`rsl-usb` feature `mio`), consumed by the test-only `transport/usb/native` command/IRQ
-pilot, which is not wired into `UsbBus`; cancellation remains an owned-worker
+opt-in. The first temperature/USB-I²C execution pilot is implemented, and feature `mio`
+exposes it as the unstable, temperature-only `NativeUsb` (`UsbBus::into_native`); public
+driver/stream handles for power, RX and TX remain unimplemented. Generic USB offers bounded
+reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
+`mio`), which `transport/usb/native` registers; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. Native executor/worker supervision is
 still open. The private `src/portable` production tree is shared unchanged with an unpublished
 no_std + alloc compilation fixture; the public driver remains std-dependent. No hardware
@@ -76,13 +76,16 @@ Each layer calls only the ones below it.
   those shared machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
   through the existing blocking pump. `execution_tests.rs` proves the same machines
   with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
-  bounded synthetic RX loans. `native/` (test-only until a driver handle uses it) runs the
+  bounded synthetic RX loans. `native/` (feature `mio`; `NativeUsb` in `handle.rs`) runs the
   I²C machine over `rsl_usb::Readiness`: the reactor only registers, schedules and
   observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
-  the adapter keeps the shared Waker open for the worker's final wake. Its tests use a
-  socket source, not usbfs, and do not establish public RX/TX handles, fairness or browser
-  integration.
+  the adapter keeps the shared Waker open for the worker's final wake. `into_native` checks
+  the TMP114 ID over the blocking bus, then carries the notification sequence, I²C table
+  and operation identities over. Notification transfers are sized as in the blocking bus
+  and the pinned C (`IN_NTFY_SIZE`). Its unit tests use a socket source, not usbfs; only the
+  opt-in `usb_hardware` test reaches real queues. RX/TX handles, fairness and browser
+  integration remain open.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -191,7 +194,7 @@ cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked
 # Explicit local portability milestone; hosted cross-target qualification stays release-only.
 cargo check --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 # Opt-in hardware smoke: resets/claims only the explicitly selected USB port.
-RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb --test usb_hardware -- --ignored
+RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb,mio --test usb_hardware -- --ignored
 ```
 
 The oracle is its own Cargo workspace: it sits inside this package's directory, where the

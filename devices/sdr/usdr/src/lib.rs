@@ -6,7 +6,9 @@
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
 //! rate, bandwidth and frequency, and the RX stream over any [`lowlevel::Bus`] that streams.
-//! USB and `PCIe` transports are available behind their respective features (Linux).
+//! USB and `PCIe` transports are available behind their respective features (Linux). Feature
+//! `mio` adds `transport::usb::NativeUsb`, an unstable temperature-only USB handle driven by
+//! a caller-owned Mio reactor.
 //!
 //! # The uSDR board
 //!

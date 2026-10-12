@@ -15,6 +15,7 @@ use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 #[path = "execution_tests.rs"]
 mod execution;
 
+#[cfg(feature = "mio")]
 #[path = "native/tests.rs"]
 mod native;
 

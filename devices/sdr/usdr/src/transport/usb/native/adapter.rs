@@ -219,7 +219,7 @@ impl Adapter {
     }
 
     /// Keeps terminal delivery independent of deregistration errors and cleanup.
-    fn retire_after_completion(&mut self) {
+    pub(in super::super) fn retire_after_completion(&mut self) {
         if let Err(error) = self.close() {
             self.retirement_error = Some(error);
         }

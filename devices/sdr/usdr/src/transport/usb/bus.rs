@@ -2,15 +2,24 @@
 
 use std::fmt;
 use std::io;
+#[cfg(feature = "mio")]
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[cfg(feature = "mio")]
+use mio::{Registry, Token, Waker};
 
 use rsl_deps::tracing::{debug, trace};
 use rsl_usb::{DeviceInfo, InQueue, Interface, OutQueue};
 
 use super::i2c::{Action, Event, I2cTransaction};
+#[cfg(feature = "mio")]
+use super::native::{self, NativeUsb, Session};
 use super::protocol::{Command, I2cCache, Notification};
 use super::rx::Rx;
+#[cfg(feature = "mio")]
+use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 use crate::transport::window::{self, RegisterIo, Window};
@@ -24,7 +33,16 @@ const MAX_WRITE_WORDS: usize = 63;
 /// `MAX_REQUEST_RB_SIZE`: 256 bytes of raw readback.
 const MAX_READ_WORDS: usize = 64;
 /// `IN_NTFY_SIZE`: one notification transfer contains at most 64 bytes.
-const MAX_NOTIFICATION_BYTES: usize = 64;
+pub(super) const MAX_NOTIFICATION_BYTES: usize = 64;
+
+/// One reply transfer's length: `limit` bytes rounded up to whole `packet_size` packets, as
+/// the pinned C transport sizes its notification reads (`IN_NTFY_SIZE`).
+pub(super) fn transfer_length(limit: usize, packet_size: usize) -> Result<usize, BusError> {
+    if packet_size == 0 {
+        return Err(BusError::Unsupported("USB endpoint has zero packet size"));
+    }
+    Ok(limit.div_ceil(packet_size) * packet_size)
+}
 /// The uSDR's index/data window, `s_params_m2_lm6_1_rev000`.
 const WINDOW: Window = Window {
     index: 6,
@@ -73,6 +91,13 @@ pub(super) trait UsbIo: Send {
     fn sleep(&mut self, duration: Duration) {
         thread::sleep(duration);
     }
+    /// Gives up every queue and returns the claimed interface for another control plane.
+    #[cfg(feature = "mio")]
+    fn into_interface(self: Box<Self>) -> Result<Interface, BusError> {
+        Err(BusError::Unsupported(
+            "this USB transport cannot hand over its device",
+        ))
+    }
 }
 
 /// The three claimed control-plane queues; their handles keep the interface/device alive.
@@ -90,6 +115,19 @@ struct Queues {
 }
 
 impl UsbIo for Queues {
+    #[cfg(feature = "mio")]
+    fn into_interface(self: Box<Self>) -> Result<Interface, BusError> {
+        if self.rx.is_some() {
+            return Err(BusError::Unsupported(
+                "stop the RX stream before handing over the USB device",
+            ));
+        }
+        // The command, register and notification queues close here, before another
+        // control plane opens the same endpoints.
+        let Self { interface, .. } = *self;
+        Ok(interface)
+    }
+
     fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
         Rx::open_endpoint(&mut self.rx, block_bytes, || {
             self.interface.in_queue(0x83).map_err(BusError::from)
@@ -119,11 +157,7 @@ impl UsbIo for Queues {
             Reply::Registers => (&mut self.registers, MAX_READ_WORDS * 4),
             Reply::Notification => (&mut self.notifications, MAX_NOTIFICATION_BYTES),
         };
-        let packet_size = queue.max_packet_size();
-        if packet_size == 0 {
-            return Err(BusError::Unsupported("USB endpoint has zero packet size"));
-        }
-        let length = limit.div_ceil(packet_size) * packet_size;
+        let length = transfer_length(limit, queue.max_packet_size())?;
         let buffer = queue.alloc(length).map_err(BusError::from)?;
         queue
             .submit(buffer)
@@ -241,6 +275,48 @@ impl UsbBus {
             i2c: I2cCache::default(),
             next_i2c_id: 0,
         }
+    }
+
+    /// Hands this bus's device to a [`NativeUsb`] driven by the caller's Mio reactor, whose
+    /// `registry` registers it under `token`. `waker` is the reactor's shared [`Waker`], which
+    /// the handle's worker uses to report.
+    ///
+    /// Checks the TMP114's ID first, over this blocking bus, so a missing or wrong sensor
+    /// fails here rather than as a plausible reading. The notification sequence, I²C table
+    /// and operation identities carry over. The device must be exclusive to the handle: its
+    /// readiness makes the reactor the device's only completion driver. This blocks (sensor
+    /// I/O, worker start), so call it before driving the reactor, not on its thread. The bus
+    /// is consumed even on error; the device is then released, possibly by a worker shortly
+    /// afterwards, so a reopen can briefly find it busy.
+    ///
+    /// # Errors
+    /// [`Error::ChipId`] or [`Error::Bus`] from the sensor check; [`Error::Open`] if the bus
+    /// lost synchronization, an RX stream is open or awaiting cleanup, the endpoints cannot be
+    /// reopened, the device already has a reactor, or registration fails.
+    #[cfg(feature = "mio")]
+    pub fn into_native(
+        self,
+        registry: &Registry,
+        token: Token,
+        waker: Arc<Waker>,
+    ) -> Result<NativeUsb, Error> {
+        let (session, io) = self.hand_over()?;
+        let interface = io.into_interface().map_err(Error::Open)?;
+        let queues = native::Queues::new(interface).map_err(Error::Open)?;
+        NativeUsb::attach(queues, session, registry, token, waker).map_err(Error::Open)
+    }
+
+    /// Checks the sensor over this bus, then gives up its control-plane session and transport.
+    #[cfg(feature = "mio")]
+    pub(super) fn hand_over(mut self) -> Result<(Session, Box<dyn UsbIo>), Error> {
+        self.ready().map_err(Error::Open)?;
+        Tmp114::usdr().check_id(&mut self)?;
+        let session = Session {
+            i2c: self.i2c,
+            next_sequence: self.next_sequence,
+            next_id: self.next_i2c_id,
+        };
+        Ok((session, self.io))
     }
 
     /// Matches `usb_uram_generic_create_and_init` before the board's power-up sequence.

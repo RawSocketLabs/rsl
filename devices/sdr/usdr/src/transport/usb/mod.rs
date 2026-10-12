@@ -30,17 +30,21 @@
 //! A failed transaction makes the bus unusable: reopen rather than attributing a late
 //! readback or notification to a later request. USB+PCIe mode is refused while `PCIe` owns
 //! interrupt routing. Hardware operation remains unqualified until tested on a board.
+//!
+//! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`: an unstable pilot that
+//! reads the TMP114 from a caller-owned Mio reactor, with every USB call on a worker thread.
+//! It takes over the whole device and does nothing else yet.
 
 mod bus;
 mod i2c;
-// Private command/IRQ pilot: test-only, so it adds no production Mio dependency, until a
-// native driver handle is wired to it.
-#[cfg(test)]
+#[cfg(feature = "mio")]
 mod native;
 mod protocol;
 mod rx;
 
 pub use bus::UsbBus;
+#[cfg(feature = "mio")]
+pub use native::{NativeEvent, NativeUsb};
 
 #[cfg(test)]
 mod tests;
