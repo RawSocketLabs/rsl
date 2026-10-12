@@ -18,6 +18,8 @@ import tarfile
 import tempfile
 import tomllib
 
+from dependencies import DependencyState, LockGraph, dependency_delta
+
 SCHEMA = 2
 BNB = "bitsandbytes/bnb"
 MACROS = "bitsandbytes/bnb-macros"
@@ -65,6 +67,7 @@ class Package:
     workspace: bool = True
     bins: tuple[str, ...] = ()
     version: str = "0.0.0"
+    state: DependencyState | None = None
 
 
 def command(root, *args, env=None):
@@ -102,6 +105,8 @@ def metadata_graph(root, *, historical=False, toolchain=None):
             expected_roots = {directory, f"{directory}/sys"} if directory == BLADERF else {directory}
             if package_roots != expected_roots:
                 raise ValueError(f"register validation for additional detached members: {directory}")
+        lockfile = (Path(data["workspace_root"]) / "Cargo.lock").relative_to(root).as_posix()
+        locked = LockGraph(root / lockfile)
         for package in data["packages"]:
             path = Path(package["manifest_path"]).parent.relative_to(root).as_posix()
             dependencies = {
@@ -110,7 +115,8 @@ def metadata_graph(root, *, historical=False, toolchain=None):
             }
             graph[path] = Package(package["name"], dependencies, directory == ".",
                                   tuple(sorted(t["name"] for t in package["targets"]
-                                               if "bin" in t["kind"])), package["version"])
+                                               if "bin" in t["kind"])), package["version"],
+                                  locked.snapshot(package, root, lockfile))
     missing = {dep for package in graph.values() for dep in package.dependencies} - graph.keys()
     if missing:
         raise ValueError(f"unregistered owned dependencies: {sorted(missing)}")
@@ -195,17 +201,27 @@ def affected_packages(seeds, old, new):
     return reasons
 
 
-def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run"):
+def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run",
+           dependency_changes=None):
     seeds = defaultdict(set)
     global_reasons = {full_reason} if full else set()
     docs = []
+    dependency_changes = dependency_changes or {}
+    dependency_audit = False
     for path in sorted(set(paths)):
         parent = PurePosixPath(path).parent.as_posix()
         if (PurePosixPath(path).name == "Cargo.toml" and parent != "."
                 and parent not in old and parent not in new and parent not in DETACHED
                 and not path.startswith("tools/rust-skills/evals/")):
             raise ValueError(f"register CI ownership for the Cargo manifest: {path}")
-        if path in GLOBAL_FILES or path.startswith(GLOBAL_PREFIXES):
+        if path in dependency_changes:
+            dependency_audit = True
+            if dependency_changes[path] is None:
+                global_reasons.add(f"dependency impact unavailable: {path}")
+            else:
+                for root in dependency_changes[path]:
+                    seeds[root].add(f"dependency delta: {path}")
+        elif path in GLOBAL_FILES or path.startswith(GLOBAL_PREFIXES):
             global_reasons.add(f"shared CI/build policy: {path}")
         elif is_prose(path):
             docs.append(path)
@@ -238,7 +254,7 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
     roots = set(reasons) & new.keys()
     packages = sorted(new[root].name for root in roots if new[root].workspace)
     profiles = set()
-    if roots:
+    if roots or dependency_audit:
         profiles.add("deny")
     if packages:
         profiles.add("workspace")
@@ -326,6 +342,38 @@ def released_members(policy, old, new, products=None):
     return members
 
 
+def dependency_changes(root, base, head, paths, old, new):
+    """Narrow only proven dependency-only edits; everything else retains its existing fallback."""
+    result = {}
+    if not base:
+        return result
+    for path in paths:
+        name = PurePosixPath(path).name
+        if name not in {"Cargo.toml", "Cargo.lock"}:
+            continue
+        if name == "Cargo.toml" and path != "Cargo.toml":
+            delta = dependency_delta(old, new)
+            result[path] = delta | owners(path, old) | owners(path, new) if delta is not None else None
+            continue
+        try:
+            before, after = (tomllib.loads(command(root, "git", "show", f"{ref}:{path}").decode())
+                             for ref in (base, head))
+            if path == "Cargo.toml":
+                before.get("workspace", {}).pop("dependencies", None)
+                after.get("workspace", {}).pop("dependencies", None)
+                if before != after:
+                    continue  # Resolver/membership/lints/profiles/patch/package policy is shared.
+                result[path] = dependency_delta(old, new)
+            elif ({key: value for key, value in before.items() if key != "package"}
+                  == {key: value for key, value in after.items() if key != "package"}):
+                result[path] = dependency_delta(old, new, lockfile=path)
+            else:
+                result[path] = None  # Unsupported lock header/format changes are not a narrow proof.
+        except (ValueError, OSError, subprocess.CalledProcessError):
+            result[path] = None
+    return result
+
+
 def build_plan(root, *, base=None, head="HEAD", full=False, release=False, products=None):
     head = command(root, "git", "rev-parse", "--verify", head + "^{commit}").decode().strip()
     requested_base = base
@@ -351,7 +399,9 @@ def build_plan(root, *, base=None, head="HEAD", full=False, release=False, produ
     members = released_members(policy, old, new, products) if release else []
     if products and not release:
         raise ValueError("--product requires release qualification")
-    plan = select(paths, old, new, full=full, release_members=members, full_reason=full_reason)
+    deltas = dependency_changes(root, base, head, paths, old, new)
+    plan = select(paths, old, new, full=full, release_members=members, full_reason=full_reason,
+                  dependency_changes=deltas)
     plan.update({"base": base, "head": head, "release_candidate": False})
     return plan
 

@@ -96,7 +96,9 @@ Before pushing a source, dependency, API, FFI, or workflow change, run
 affected-package and downstream-consumer suites from the checked-in GitHub Actions
 workflow in rootless Podman. The selector includes optional/dev/build/platform dependencies,
 detached validation workspaces, and shared fixtures; do not replace it with ad-hoc path filters.
-Shared lockfile/build policy, central CI changes, and unknown ownership select full routine coverage.
+Dependency-only manifest/lockfile deltas select users and old/new consumers, including
+shared feature users. Shared build policy, central CI changes, unknown ownership, and
+unavailable dependency-impact evidence select full routine coverage.
 Use `pre-push --base REF` for an explicit comparison and `pre-push --full` for all routine checks.
 Missing trunk history also selects full routine coverage. Full routine CI runs nightly;
 ordinary prose-only changes run policy checks without Rust builds or fuzzing.

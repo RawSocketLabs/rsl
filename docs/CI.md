@@ -15,8 +15,8 @@ old consumers. Input paths come from NUL-delimited Git diffs, without forge pagi
 
 PRs compare from their merge base and test the checked-out merge revision. Main pushes compare
 the event's before/after revisions. Manual runs without a base, missing comparison history,
-shared root manifests/lockfiles/toolchain/build policy, and central CI changes select full
-routine coverage, never release qualification. Invalid metadata is an error, not an empty plan. A changed unregistered Cargo manifest
+shared toolchain/build policy, and central CI changes select full routine coverage, never
+release qualification. Invalid metadata is an error, not an empty plan. A changed unregistered Cargo manifest
 fails until its validation is registered; deleting an owned package selects full coverage.
 
 Detached fuzz/no_std/FFI/tooling workspaces are registered in the selector. Additional detached
@@ -31,6 +31,22 @@ transports covered even when default features are empty. They do not run fuzzing
 packaging, public-API/semver qualification, cross-target/no_std,
 MSRV, or exhaustive feature ladders. Shared files and missing history can widen routine
 scope, but cannot enable these release-only jobs.
+
+Dependency-only edits to root `workspace.dependencies` are narrowed using Cargo's expanded
+declarations, including renamed, optional, dev/build and platform-specific dependencies.
+Resolver, membership, workspace-package metadata, lints, patches, profiles and other root
+manifest changes retain full routine coverage. Member manifest changes retain their owners
+and consumers, adding shared dependency-feature users where necessary.
+
+Lockfile deltas compare each package's transitive locked closure, including owned/path nodes,
+versions, sources, dependency edges and checksums. Each snapshot uses Cargo's
+`workspace_root` lockfile; detached workspaces remain independent. Declaration and locked-code
+changes also select possible transitive feature-sharing peers; declaration changes cross
+every owned consuming workspace context, while lock-only effects use the edited resolution context.
+Multiple locked versions/sources of one declaration name are unioned conservatively.
+Missing/unsupported relevant lock information falls back to full routine coverage; unrelated
+unchanged ignored locks do not defeat narrowing. Lockfile-only unreachable-node/reordering
+changes retain dependency audit without retesting unaffected packages.
 
 Release products come from enabled `release-plz.toml` packages, grouped by `version_group`
 (or package name). Trusted release PRs/merges infer products from changed manifest versions:
@@ -47,7 +63,8 @@ Currently only the bitsandbytes runtime/macros product is enabled; no release op
 | Compression | Compression and facade tests/builds |
 | Crypto | Crypto, legacy crypto and affected PKI/facade tests/lint |
 | bnb/macros | Codec and affected protocol/PKI/device consumer tests/lint |
-| Root lockfile/shared build policy/central CI | Full routine workspace/detached checks; no heavy jobs |
+| Dependency-only manifests/lockfiles | Changed dependency users and old/new consumers; shared feature users where needed |
+| Shared build policy/central CI | Full routine workspace/detached checks; no heavy jobs |
 | Product release | Relevant fuzzing, feature/MSRV/no_std matrices, compatibility and product packaging |
 
 The prose exemption is deliberately narrow: known README/CHANGELOG/DESIGN/ROADMAP files,
@@ -131,9 +148,9 @@ without version changes. Neither authorizes publication. Superseded commits and
 missing/invalid receipts do not publish. Release-plz still owns version selection, package
 allowlisting, PR discovery, and publication order; tokens and publisher serialization are unchanged.
 
-No success is reused across different SHAs. Root dependency changes still select full routine
-checks; dependency-resolution-delta narrowing is intentionally deferred. Release-only
-qualification remains limited to the releasing product's closure.
+No success is reused across different SHAs. Dependency edits use proven declaration/resolution
+deltas; shared policy or unavailable dependency-impact evidence retains the conservative
+full-routine fallback. Release-only qualification remains limited to the releasing product's closure.
 
 ## Rollout and measurements
 
