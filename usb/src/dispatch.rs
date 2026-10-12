@@ -5,11 +5,17 @@
 //! the reaper role, collects everything that has completed, files each transfer under its
 //! endpoint and wakes the others; the rest wait on a condition variable. Filing and waking
 //! happen under one lock, so a waiter cannot miss its wakeup.
+//!
+//! An external reactor can instead take over reaping for the whole device ([`Driving`]).
+//! Blocking waiters then never wait for readiness themselves: they collect what has already
+//! completed, once, without waiting, and otherwise wait for the reactor to file their
+//! transfer. Cancellation still finishes without the reactor, because the kernel completes
+//! a discarded transfer before the discard returns.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError, TryLockError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 use rustix::io::Errno;
@@ -75,7 +81,7 @@ pub(crate) trait Backend: Send + Sync {
 }
 
 /// A shared backend: the device's node is shared by the dispatcher and its handles.
-impl<B: Backend> Backend for std::sync::Arc<B> {
+impl<B: Backend> Backend for Arc<B> {
     unsafe fn submit(&self, transfer: NonNull<Transfer>) -> Result<(), Errno> {
         // SAFETY: the caller upholds `Backend::submit`.
         unsafe { B::submit(self, transfer) }
@@ -115,7 +121,8 @@ pub(crate) struct Dispatcher {
     /// Filed completions and who is reaping.
     state: Mutex<State>,
 
-    /// Signalled whenever completions are filed or the reaper role is released.
+    /// Signalled when completions are filed, the reaper role is released, disconnect is
+    /// observed or a reactor stops driving.
     filed: Condvar,
 }
 
@@ -124,6 +131,10 @@ pub(crate) struct Dispatcher {
 struct State {
     /// A thread holds the reaper role.
     reaping: bool,
+
+    /// An external reactor drives completions, so blocking waiters do not wait for
+    /// readiness.
+    driven: bool,
 
     /// The device has gone; nothing more will complete.
     disconnected: bool,
@@ -195,6 +206,23 @@ impl Dispatcher {
         }
     }
 
+    /// Makes an external reactor the device's completion driver until the guard is dropped;
+    /// one at a time.
+    #[cfg_attr(
+        not(any(feature = "mio", test)),
+        expect(dead_code, reason = "only readiness drives a device")
+    )]
+    pub(crate) fn drive(self: &Arc<Self>) -> Result<Driving, Error> {
+        let mut state = self.lock();
+        // A blocking reaper may be waiting for readiness for its whole timeout; the
+        // reactor's turns would only see Busy meanwhile.
+        if state.driven || state.reaping {
+            return Err(Error::Busy);
+        }
+        state.driven = true;
+        Ok(Driving(Arc::clone(self)))
+    }
+
     /// Unregisters `endpoint`'s queue, which must have nothing in flight.
     pub(crate) fn close(&self, endpoint: u8) {
         let mut state = self.lock();
@@ -214,10 +242,14 @@ impl Dispatcher {
         }
         // Holding the state lock excludes another reaper for this bounded turn. Unlike
         // `wait`, this path never calls `wait_ready` or waits on the condition variable.
+        let mut filed = false;
         let outcome = (|| {
             for _ in 0..budget.get() {
                 match self.backend.reap() {
-                    Ok(Some(transfer)) => state.push(transfer),
+                    Ok(Some(transfer)) => {
+                        state.push(transfer);
+                        filed = true;
+                    }
                     Ok(None) => return Ok(ReapProgress::Drained),
                     Err(errno @ (Errno::NODEV | Errno::SHUTDOWN)) => {
                         state.disconnected = true;
@@ -228,7 +260,10 @@ impl Dispatcher {
             }
             Ok(ReapProgress::BudgetExhausted)
         })();
-        self.filed.notify_all();
+        // Waiters wait for a filing or a disconnect; an empty turn would only wake them.
+        if filed || state.disconnected {
+            self.filed.notify_all();
+        }
         outcome
     }
 
@@ -260,6 +295,8 @@ impl Dispatcher {
         let mut state = self.lock();
         // Even a wait that is already due collects what has completed, once.
         let mut collected = false;
+        // On a driven device, that one collection is all this waiter reaps itself.
+        let mut drained = false;
         loop {
             if let Some(Reaped(transfer)) =
                 state.done.get_mut(&endpoint).and_then(VecDeque::pop_front)
@@ -274,7 +311,7 @@ impl Dispatcher {
                 return Ok(None);
             }
             collected = true;
-            if state.reaping {
+            if state.reaping || (state.driven && drained) {
                 state = self
                     .filed
                     .wait_timeout(state, remaining)
@@ -284,8 +321,16 @@ impl Dispatcher {
             }
 
             state.reaping = true;
+            let driven = state.driven;
             drop(state);
-            let reaped = self.reap_some(remaining);
+            // A reactor waits for readiness on a driven device; this waiter only collects
+            // what has already completed, such as transfers its own discard returned.
+            let reaped = if driven {
+                drained = true;
+                self.drain()
+            } else {
+                self.reap_some(remaining)
+            };
             state = self.lock();
             state.reaping = false;
             let outcome = state.file(reaped);
@@ -330,6 +375,23 @@ impl Dispatcher {
             Err(TryLockError::Poisoned(error)) => Ok(error.into_inner()),
             Err(TryLockError::WouldBlock) => Err(Error::Busy),
         }
+    }
+}
+
+/// An external reactor's claim on driving a device's completions; releasing it lets blocking
+/// waiters wait for readiness again.
+#[derive(Debug)]
+#[cfg_attr(
+    not(any(feature = "mio", test)),
+    expect(dead_code, reason = "only readiness drives a device")
+)]
+pub(crate) struct Driving(Arc<Dispatcher>);
+
+impl Drop for Driving {
+    fn drop(&mut self) {
+        self.0.lock().driven = false;
+        // Waiters left waiting for the reactor take the reaper role back.
+        self.0.filed.notify_all();
     }
 }
 

@@ -40,19 +40,29 @@
 //! [`Interface::reap`] collects a bounded number of completed transfers across the open
 //! device. Each queue's `try_complete` takes only already-filed completions; it never
 //! performs I/O. Both return [`Error::Busy`] rather than waiting for the dispatcher lock.
-//! Do not wait for a new readiness edge after [`ReapProgress::BudgetExhausted`]. Caller
-//! processing/admission budgets and OS readiness registration remain the driver's concern.
-//! Do not mix blocking waiters with readiness driving without external coordination.
+//! Do not wait for a new readiness edge after [`ReapProgress::BudgetExhausted`] or
+//! [`Error::Busy`]: the completions behind the last edge may still be in the backend, or
+//! filed by the thread that held the lock. Caller processing/admission budgets remain the
+//! driver's concern. Register a `Readiness` (feature `mio`) to wait for completions; while it
+//! lives, blocking calls on the device leave waiting for readiness to its reactor.
 //!
 //! ```no_run
 //! # use std::num::NonZeroUsize;
 //! # use rsl_usb::{Error, Interface, InQueue, ReapProgress};
-//! # fn turn(interface: &Interface, rx: &mut InQueue) -> Result<bool, Error> {
+//! /// One bounded turn; `true` means turn again before waiting for readiness.
+//! fn turn(interface: &Interface, rx: &mut InQueue) -> Result<bool, Error> {
 //! let budget = NonZeroUsize::new(16).expect("nonzero budget");
-//! let progress = interface.reap(budget)?;
+//! let progress = match interface.reap(budget) {
+//!     Err(Error::Busy) => return Ok(true),
+//!     other => other?,
+//! };
 //! let mut filed_drained = false;
 //! for _ in 0..budget.get() {
-//!     let Some(done) = rx.try_complete()? else {
+//!     let done = match rx.try_complete() {
+//!         Err(Error::Busy) => return Ok(true),
+//!         other => other?,
+//!     };
+//!     let Some(done) = done else {
 //!         filed_drained = true;
 //!         break;
 //!     };
@@ -62,7 +72,7 @@
 //! }
 //! // Repeat this for every active queue; pending transfers alone do not require a turn.
 //! Ok(progress == ReapProgress::BudgetExhausted || !filed_drained)
-//! # }
+//! }
 //! ```
 //!
 //! # Caller-owned cleanup workers
@@ -112,6 +122,8 @@ mod enumerate;
 mod error;
 #[cfg(target_os = "linux")]
 mod queue;
+#[cfg(all(target_os = "linux", feature = "mio"))]
+mod readiness;
 #[cfg(target_os = "linux")]
 mod usbfs;
 
@@ -127,3 +139,5 @@ pub use enumerate::{DeviceInfo, PortPath, devices};
 pub use error::{Error, TransferError};
 #[cfg(target_os = "linux")]
 pub use queue::{Completion, InQueue, OutQueue, Rejected};
+#[cfg(all(target_os = "linux", feature = "mio"))]
+pub use readiness::Readiness;

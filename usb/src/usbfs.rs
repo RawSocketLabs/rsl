@@ -3,7 +3,7 @@
 //! header, kernel 7.2, x86-64; the size asserts and the request-code test hold them there.
 
 use std::ffi::c_void;
-use std::os::fd::{AsFd, OwnedFd};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::path::Path;
 use std::ptr::{self, NonNull};
 use std::time::Duration;
@@ -122,6 +122,13 @@ pub(crate) struct Usbfs {
 
     /// The kernel can map transfer buffers from the device.
     can_map: bool,
+}
+
+/// Borrows the device node for Linux readiness registration without issuing an ioctl.
+impl AsFd for Usbfs {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
 }
 
 impl Usbfs {

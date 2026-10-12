@@ -933,4 +933,98 @@ mod tests {
         assert_eq!(fake.discarded(), 1);
         assert!(dispatcher.open(RX).is_ok());
     }
+
+    #[test]
+    fn a_driven_devices_waiter_leaves_readiness_to_the_reactor() {
+        let (fake, dispatcher) = device();
+        let _driving = dispatcher.drive().unwrap();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let collected = fake.pause_reap();
+        let waiter = thread::spawn(move || rx.wait(Duration::from_secs(10)).unwrap());
+        // The waiter's own non-waiting collection finds nothing.
+        collected.entered();
+        collected.release();
+        fake.complete(RX, 0, 512);
+        // The reactor's turn: Busy only while the waiter is collecting, and means turn again.
+        while matches!(dispatcher.reap(budget(1)), Err(Error::Busy)) {
+            thread::yield_now();
+        }
+        let done = waiter.join().unwrap();
+        assert!(done.is_some_and(|done| done.status.is_ok()));
+        assert_eq!(
+            fake.calls().1,
+            0,
+            "only the reactor waits for readiness on a driven device"
+        );
+    }
+
+    #[test]
+    fn a_reactor_cannot_take_over_from_a_waiter_blocked_on_readiness() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let blocked = fake.pause_wait();
+        let waiter = thread::spawn(move || rx.wait(Duration::from_secs(10)).unwrap());
+        blocked.entered();
+        // Its turns would be Busy for as long as the waiter's timeout.
+        assert!(matches!(dispatcher.drive(), Err(Error::Busy)));
+        blocked.release();
+        fake.complete(RX, 0, 512);
+        assert!(waiter.join().unwrap().is_some());
+        assert!(
+            dispatcher.drive().is_ok(),
+            "drivable once the waiter returns"
+        );
+    }
+
+    #[test]
+    fn cancelling_on_a_driven_device_needs_no_reactor_turn() {
+        let (fake, dispatcher) = device();
+        let _driving = dispatcher.drive().unwrap();
+        let mut rx = in_queue(&dispatcher, RX);
+        for _ in 0..2 {
+            let buffer = rx.alloc(512).unwrap();
+            rx.submit(buffer).unwrap();
+        }
+        // On the reactor's own thread: nothing else will reap.
+        let buffers = rx.cancel_all().unwrap();
+        assert_eq!(buffers.len(), 2, "discarded transfers come back at once");
+        assert_eq!(fake.pending(), 0);
+        assert_eq!(fake.calls().1, 0, "cancellation did not wait for readiness");
+    }
+
+    #[test]
+    fn releasing_the_reactor_lets_its_waiters_reap_for_themselves() {
+        let (fake, dispatcher) = device();
+        let driving = dispatcher.drive().unwrap();
+        assert!(
+            matches!(dispatcher.drive(), Err(Error::Busy)),
+            "a device has one reactor"
+        );
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let collected = fake.pause_reap();
+        let waiter = thread::spawn(move || rx.wait(Duration::from_secs(10)).unwrap());
+        collected.entered();
+        collected.release();
+        // A turn that is not Busy finds the waiter waiting for the reactor: it holds the
+        // state lock from giving up the reaper role until it waits.
+        while matches!(dispatcher.reap(budget(1)), Err(Error::Busy)) {
+            thread::yield_now();
+        }
+        drop(driving);
+        fake.complete(RX, 0, 512);
+        assert!(
+            waiter.join().unwrap().is_some(),
+            "the waiter left for the reactor took the reaper role back"
+        );
+        assert!(
+            dispatcher.drive().is_ok(),
+            "the released device can be driven again"
+        );
+    }
 }

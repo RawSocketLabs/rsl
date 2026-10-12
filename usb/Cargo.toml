@@ -8,7 +8,12 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+## Readiness registration with a caller-owned Mio reactor.
+mio = ["dep:mio"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
+mio = { workspace = true, optional = true, features = ["os-ext"] }
 rustix = { workspace = true, features = ["event", "fs", "mm"] }
 thiserror.workspace = true
 

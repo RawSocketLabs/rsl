@@ -6,7 +6,7 @@
 use std::env;
 use std::time::Duration;
 
-use rsl_usb::{Setup, devices};
+use rsl_usb::{DeviceInfo, Setup, devices};
 
 /// `GET_DESCRIPTOR` for the device descriptor (USB 2.0 §9.4.3, §9.6.1).
 const GET_DEVICE_DESCRIPTOR: Setup = Setup {
@@ -16,21 +16,33 @@ const GET_DEVICE_DESCRIPTOR: Setup = Setup {
     index: 0,
 };
 
-#[test]
-#[ignore = "needs RSL_USB_TEST_DEVICE and write access to its node"]
-fn the_device_descriptor_names_the_device_that_was_opened() {
+/// The vendor and product IDs in `RSL_USB_TEST_DEVICE`.
+fn wanted() -> (u16, u16) {
     let wanted = env::var("RSL_USB_TEST_DEVICE").expect("RSL_USB_TEST_DEVICE=vvvv:pppp");
     let (vendor, product) = wanted.split_once(':').expect("vvvv:pppp");
-    let ids = (
+    (
         u16::from_str_radix(vendor, 16).unwrap(),
         u16::from_str_radix(product, 16).unwrap(),
-    );
-    let interface: u8 = env::var("RSL_USB_TEST_INTERFACE").map_or(0, |n| n.parse().unwrap());
+    )
+}
+
+/// The attached test device and the interface number to claim on it.
+fn test_device() -> (DeviceInfo, u8) {
+    let ids = wanted();
+    let interface = env::var("RSL_USB_TEST_INTERFACE").map_or(0, |n| n.parse().unwrap());
     let info = devices()
         .unwrap()
         .into_iter()
         .find(|d| (d.vendor_id(), d.product_id()) == ids)
         .expect("the device is attached");
+    (info, interface)
+}
+
+#[test]
+#[ignore = "needs RSL_USB_TEST_DEVICE and write access to its node"]
+fn the_device_descriptor_names_the_device_that_was_opened() {
+    let ids = wanted();
+    let (info, interface) = test_device();
 
     let device = info.open().unwrap().reset().unwrap();
     let claimed = device.claim_interface(interface).unwrap();
@@ -51,5 +63,58 @@ fn the_device_descriptor_names_the_device_that_was_opened() {
         (vendor, product),
         ids,
         "the descriptor matches what sysfs listed"
+    );
+}
+
+#[cfg(feature = "mio")]
+#[test]
+#[ignore = "needs RSL_USB_TEST_DEVICE and write access to its node"]
+fn readiness_is_exclusive_deregisters_on_drop_and_holds_off_reset() {
+    use std::io::ErrorKind;
+
+    use mio::{Interest, Poll, Token};
+    use rsl_usb::Error;
+
+    let (info, interface) = test_device();
+    let device = info.open().unwrap();
+    let claimed = device.claim_interface(interface).unwrap();
+    let poll = Poll::new().unwrap();
+
+    let mut readiness = claimed.readiness().unwrap();
+    assert!(
+        matches!(claimed.readiness(), Err(Error::Busy)),
+        "a device has one reactor"
+    );
+    let refused = poll
+        .registry()
+        .register(&mut readiness, Token(0), Interest::READABLE)
+        .unwrap_err();
+    assert_eq!(
+        refused.kind(),
+        ErrorKind::InvalidInput,
+        "completions are only reported as writable"
+    );
+    poll.registry()
+        .register(&mut readiness, Token(0), Interest::WRITABLE)
+        .unwrap();
+    let twice = poll
+        .registry()
+        .register(&mut readiness, Token(0), Interest::WRITABLE)
+        .unwrap_err();
+    assert_eq!(
+        twice.kind(),
+        ErrorKind::AlreadyExists,
+        "a registered readiness must be reregistered instead"
+    );
+    drop(readiness);
+
+    let mut again = claimed.readiness().unwrap();
+    poll.registry()
+        .register(&mut again, Token(1), Interest::WRITABLE)
+        .expect("dropping the first readiness removed its epoll entry");
+    drop(claimed);
+    assert!(
+        matches!(device.reset(), Err(Error::Busy)),
+        "readiness keeps the device in use"
     );
 }

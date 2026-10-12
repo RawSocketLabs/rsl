@@ -12,7 +12,8 @@ the program is not complete. Linux is first. Sans-I/O state machines and an exte
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
 opt-in. The first private temperature/USB-I²C execution pilot is implemented; native
 nonblocking attachment and public driver/stream handles remain unimplemented. Generic USB
-now offers bounded reap/filed-only completion primitives; cancellation remains an owned-worker
+now offers bounded reap/filed-only completion primitives and an exclusive Mio `Readiness`
+(`rsl-usb` feature `mio`) that no uSDR adapter consumes yet; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. Native executor/worker supervision is
 still open. The private `src/portable` production tree is shared unchanged with an unpublished
 no_std + alloc compilation fixture; the public driver remains std-dependent. No hardware

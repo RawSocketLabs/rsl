@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::num::NonZeroUsize;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -13,6 +14,8 @@ use crate::dispatch::{Dispatcher, ReapProgress};
 use crate::enumerate::DeviceInfo;
 use crate::error::Error;
 use crate::queue::{InQueue, OutQueue, Pipe};
+#[cfg(feature = "mio")]
+use crate::readiness::Readiness;
 use crate::usbfs::{URB_BULK, URB_INTERRUPT, Usbfs};
 
 /// How long a reset device may take to come back when it re-enumerates.
@@ -176,20 +179,41 @@ impl Interface {
     /// readiness. [`ReapProgress::Drained`] says only that the backend was empty at that
     /// instant, not that the queues have no filed completions or pending transfers.
     ///
-    /// Use one completion-driving mode per device. Mixing this with blocking queue waits
-    /// requires external notification/retry coordination: another waiter can consume the
-    /// readiness and file completions without producing another OS readiness edge.
+    /// Drive it from one reactor holding the device's `Readiness`
+    /// (feature `mio`): while that lives, blocking queue calls collect only what has already
+    /// completed and leave waiting for readiness to the reactor. Without it, a blocking
+    /// waiter can consume readiness and file completions without another readiness edge.
     /// Linux uses `REAPURBNDELAY`, but an ioctl is not a hard-real-time guarantee: kernel
     /// locks and memory faults can still delay it. Keep cancellation and other potentially
     /// blocking device operations on a caller-owned worker, not a reactor thread.
     ///
     /// # Errors
     ///
-    /// [`Error::Busy`] on lock contention or while a blocking reaper holds the role;
+    /// [`Error::Busy`] on lock contention or while a blocking reaper holds the role; like
+    /// [`ReapProgress::BudgetExhausted`], it calls for another turn before waiting;
     /// [`Error::Disconnected`] after disconnect; other backend errors. Completions reaped
     /// before any error remain available through the queues' `try_complete` methods.
     pub fn reap(&self, budget: NonZeroUsize) -> Result<ReapProgress, Error> {
         self.0.dispatcher.reap(budget)
+    }
+
+    /// The device's completion readiness, for a caller-owned Mio reactor. While it lives,
+    /// that reactor drives completions for every interface and queue of the device.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] if the device already has one, or while a blocking call on one of its
+    /// queues is waiting for a completion; retry once that returns.
+    #[cfg(feature = "mio")]
+    pub fn readiness(&self) -> Result<Readiness, Error> {
+        let driving = self.0.dispatcher.drive()?;
+        Ok(Readiness::new(self.clone(), driving))
+    }
+
+    /// The device's node, for readiness registration.
+    #[cfg_attr(not(feature = "mio"), expect(dead_code, reason = "used by readiness"))]
+    pub(crate) fn node(&self) -> BorrowedFd<'_> {
+        self.0.usbfs.as_fd()
     }
 
     /// A control request reading into `data`, waiting up to `timeout`; returns the bytes

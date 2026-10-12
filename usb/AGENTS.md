@@ -18,13 +18,20 @@ belongs here (drivers live under `devices/`). Unpublished (`publish = false`).
   each completion under its endpoint and wakes waiters, all under one lock.
 - Bounded completion driving: `Interface::reap(NonZeroUsize)` files at most the supplied
   budget across the device; queues' `try_complete` only takes filed buffers. Both use
-  `try_lock` and return `Busy` on contention. Exhausting the budget requires rescheduling
-  before waiting for readiness, even if the next turn discovers an empty backend.
+  `try_lock` and return `Busy` on contention. Exhausting the budget or `Busy` requires
+  rescheduling before waiting for readiness, even if the next turn discovers an empty backend.
+- Readiness (feature `mio`, skeptic-reviewed 2026-10-12): `Interface::readiness()` returns the
+  device's one `Readiness`, a `mio::event::Source` over the usbfs node (WRITABLE only). It
+  holds an `Interface` (so `reset` refuses), deregisters itself on Drop, and puts the
+  dispatcher in driven mode: blocking waiters drain once without waiting, then wait for the
+  reactor's filings. Cancellation needs no reactor turn because discard returns after the
+  kernel completes the URB. No raw-fd (`AsFd`) access on public handles: it would bypass
+  the one-driver guard.
 - Cancellation and Drop remain blocking: Linux `USBDEVFS_DISCARDURB` calls `usb_kill_urb`.
   Caller-owned cleanup workers must own the whole queue through cancellation/reap/Drop;
   never pass borrowed pending pointers or join a blocked worker on a reactor. Kernel device
-  locks can delay other ioctls too. Native readiness registration, executor/worker supervision
-  and public async driver handles remain unimplemented; fake tests are not native readiness.
+  locks can delay other ioctls too. Executor/worker supervision and public async driver
+  handles remain unimplemented; readiness registration is untested against a real node.
 - Out of scope for v0: isochronous, hotplug, managed async, descriptor parsing beyond what sysfs
   lists, zero-length-packet flags.
 
@@ -47,5 +54,6 @@ All of it is in `usbfs.rs` (ioctls, mmap), `buffer.rs` (the mapping), `queue.rs`
 ```sh
 cargo clippy -p rsl-usb --all-targets -- -D warnings && cargo test -p rsl-usb
 cargo +nightly miri test -p rsl-usb --lib    # queue/dispatch ownership, against the fake backend
-RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p rsl-usb -- --ignored   # real device, detaches its driver
+cargo clippy -p rsl-usb --all-targets --features mio -- -D warnings && cargo test -p rsl-usb --features mio
+RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p rsl-usb --features mio -- --ignored   # real device, detaches its driver
 ```
