@@ -1,0 +1,92 @@
+# rsl-xsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned
+# libusdr does on rsl-xsdr-sim's modelled board (see devices/sdr/xsdr/AGENTS.md).
+# pin: 3670f15de8e49691db455da03166c17f6dd5770a
+# variant: XTRX revision 5 (HWID 0x002e0000)
+# captured: 2026-10-12
+# scenario: usdr_dmd_create_string(""), /dm/power/en = 1, usdr_dmd_close.
+# Re-bless (RSL_XSDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.
+# Lines: rsl_xsdr_sim::Op's Display; `== <phase>` opens each phase.
+== open
+reg-rd 0x0013 0x002e0000
+reg-rd 0x0013 0x002e0000
+reg-wr 0x0000 0x00000080
+reg-wr 0x0000 0x08000001
+reg-wr 0x0000 0x00000010
+i2c 1:0x60 w=00 r=01
+i2c 1:0x60 w=01 r=e0
+i2c 1:0x60 w=0abe r=-
+i2c 1:0x60 w=0cff r=-
+i2c 1:0x60 w=0eaf r=-
+i2c 1:0x60 w=10a2 r=-
+i2c 1:0x60 w=028a r=-
+i2c 1:0x60 w=048a r=-
+i2c 1:0x60 w=068a r=-
+i2c 1:0x60 w=088a r=-
+i2c 1:0x60 w=1c r=00
+i2c 1:0x60 w=1d r=00
+reg-wr 0x0000 0x00000000
+i2c 0:0x60 w=00 r=01
+i2c 0:0x60 w=01 r=e0
+i2c 0:0x60 w=0ced r=-
+i2c 0:0x60 w=028a r=-
+i2c 0:0x60 w=048a r=-
+i2c 0:0x60 w=068a r=-
+i2c 0:0x60 w=088a r=-
+i2c 0:0x4b w=01 r=0195
+i2c 0:0x4b w=040101 r=-
+i2c 0:0x4b w=08a8f5 r=-
+== power-up
+reg-wr 0x0000 0x00000000
+sleep 5000
+sleep 5000
+reg-wr 0x0000 0x00000001
+sleep 1000
+reg-wr 0x0000 0x00000009
+sleep 2500
+spi 0 0x80200003 0x00000000
+spi 0 0x8020ffff 0x00000000
+spi 0 0x802e0000 0x00000000
+spi 0 0x80920d15 0x00000000
+spi 0 0x809301b1 0x00000000
+spi 0 0x80950000 0x00000000
+spi 0 0x80960000 0x00000000
+spi 0 0x80a6000f 0x00000000
+spi 0 0x80850199 0x00000000
+spi 0 0x8082003e 0x00000000
+spi 0 0x002f0000 0x00003840
+== close
+spi 0 0x840c00ff 0x00000000
+spi 0 0x84000088 0x00000000
+spi 0 0x8020fffd 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x810c881e 0x00000000
+spi 0 0x810d005e 0x00000000
+spi 0 0x810f0042 0x00000000
+spi 0 0x8020fffe 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x810c881e 0x00000000
+spi 0 0x810d005e 0x00000000
+spi 0 0x810f0042 0x00000000
+spi 0 0x8020ffff 0x00000000
+spi 0 0x820800f3 0x00000000
+spi 0 0x82000088 0x00000000
+spi 0 0x8020fffd 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x81002408 0x00000000
+spi 0 0x81016000 0x00000000
+spi 0 0x8020fffe 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x81002408 0x00000000
+spi 0 0x81016000 0x00000000
+spi 0 0x8020ffff 0x00000000
+spi 0 0x81030212 0x00000000
+spi 0 0x8082801e 0x00000000
+spi 0 0x8020fffd 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x8020fffe 0x00000000
+spi 0 0x81240000 0x00000000
+spi 0 0x8082803e 0x00000000
+reg-wr 0x0000 0x00000000
+reg-wr 0x0000 0x11000000
+reg-wr 0x0000 0x12000000
+reg-wr 0x0039 0x02000002
