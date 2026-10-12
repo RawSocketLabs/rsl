@@ -17,6 +17,10 @@ use crate::{Layer, OpenError, Protocol, ProtocolExt, RawIo};
 /// Check [`capabilities`](crate::capabilities) first; without the privilege, `open` returns
 /// [`OpenError::PermissionDenied`].
 ///
+/// **Send-only.** Linux never delivers incoming packets to an `IPPROTO_RAW` socket (raw(7)),
+/// so [`RawIo::recv`] blocks indefinitely. To observe traffic, receive on a
+/// `LinkSocket` (`link` feature) instead.
+///
 /// ```no_run
 /// use rawsock::{NetworkSocket, RawIo, capabilities};
 /// use std::net::Ipv4Addr;
@@ -72,6 +76,7 @@ impl RawIo for NetworkSocket {
     fn send_raw(&mut self, bytes: &[u8]) -> io::Result<usize> {
         rustix::net::send(&self.fd, bytes, SendFlags::empty()).map_err(Into::into)
     }
+    /// Blocks indefinitely: an `IPPROTO_RAW` socket is send-only (raw(7)). See [`NetworkSocket`].
     fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         rustix::net::recv(&self.fd, buf, RecvFlags::empty())
             .map(|(n, _)| n)
