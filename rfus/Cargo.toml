@@ -12,6 +12,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
+thiserror = { workspace = true }
 winnow = { workspace = true }
 serde = { workspace = true, optional = true }
 

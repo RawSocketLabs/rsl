@@ -104,10 +104,7 @@ pub fn parse_frequency_range(input: &str) -> Result<FrequencyRange, ParseUnitErr
 pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseUnitError> {
     match parse_scan_target(input)? {
         ScanTarget::Ranges(ranges) => Ok(ranges),
-        ScanTarget::Static(freq) => Err(ParseUnitError::Parse(format!(
-            "{} is a static frequency, not a range",
-            freq.hz()
-        ))),
+        ScanTarget::Static(freq) => Err(ParseUnitError::NotARange(freq.hz())),
     }
 }
 
@@ -339,27 +336,25 @@ fn scale_number(
     let scale = u32::try_from(fractional.len())
         .ok()
         .and_then(|digits| 10_u128.checked_pow(digits))
-        .ok_or_else(|| overflow_error(base_unit))?;
+        .ok_or_else(|| overflow_error(number, base_unit))?;
 
     let numerator = whole_value
         .checked_mul(scale)
         .and_then(|value| value.checked_add(fractional_value))
         .and_then(|value| value.checked_mul(u128::from(multiplier)))
-        .ok_or_else(|| overflow_error(base_unit))?;
+        .ok_or_else(|| overflow_error(number, base_unit))?;
 
     if numerator % scale != 0 {
         return Err(ParseUnitError::NonInteger(number.to_string()));
     }
 
-    u64::try_from(numerator / scale).map_err(|_| overflow_error(base_unit))
+    u64::try_from(numerator / scale).map_err(|_| overflow_error(number, base_unit))
 }
 
-/// Error for a scaled value that does not fit `u64`.
-fn overflow_error(unit: &'static str) -> ParseUnitError {
-    ParseUnitError::OutOfRange {
-        value: u64::MAX,
-        min: 0,
-        max: u64::MAX,
+/// Error for a literal whose scaled value does not fit `u64`.
+fn overflow_error(number: &str, unit: &'static str) -> ParseUnitError {
+    ParseUnitError::Overflow {
+        value: number.to_string(),
         unit,
     }
 }

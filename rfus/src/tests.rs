@@ -156,12 +156,18 @@ fn reports_overflow_and_u32_bounds() {
     );
     assert_eq!(
         "18446744073709551616hz".parse::<Hertz>().unwrap_err(),
-        ParseUnitError::OutOfRange {
-            value: u64::MAX,
-            min: 0,
-            max: u64::MAX,
+        ParseUnitError::Overflow {
+            value: "18446744073709551616".to_string(),
             unit: "Hz",
         }
+    );
+    assert_eq!(
+        "18446744073709552k".parse::<FrequencyHz>().unwrap_err(),
+        ParseUnitError::Overflow {
+            value: "18446744073709552".to_string(),
+            unit: "Hz",
+        },
+        "overflow must report the literal, not a fabricated value"
     );
     assert_eq!(
         "4294967296".parse::<SampleRateSps>().unwrap_err(),
@@ -183,7 +189,10 @@ fn public_parse_helpers_match_from_str() {
         "1000000,2000000"
     );
     assert_eq!(parse_frequency_ranges("1m-2m;3m-4m").unwrap().len(), 2);
-    assert!(parse_frequency_ranges("450m").is_err());
+    assert_eq!(
+        parse_frequency_ranges("450m").unwrap_err(),
+        ParseUnitError::NotARange(450_000_000)
+    );
 }
 
 #[cfg(feature = "serde")]
