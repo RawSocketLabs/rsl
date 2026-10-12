@@ -2,17 +2,20 @@
 //!
 //! Each port is one FPGA register that takes sub-register writes: bits 30:24 pick the
 //! sub-register (libusdr's `fpga_phy_regs`), bits 23:0 carry its value. Through it the
-//! driver resets the chain, loads the decimator's FIR microcode, switches DC correction and
-//! sets the two NCOs.
+//! driver resets the chain, loads the decimator's FIR microcode, switches RX DC correction,
+//! sets the TX DC offset, the IQ imbalance correction and the two NCOs, and drives the TX
+//! chain's constant generator.
 //!
 //! Source: `REG_CFG_PHY_*` in `device/generic_usdr/generic_regs.h` and `fpga_phy_regs`,
-//! `_usdr_set_nco` and `usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`;
+//! `_usdr_set_nco`, `usdr_set_samplerate_ex`, `usdr_tx_dccorr`, `usdr_calc_iqimb` and
+//! `usdr_tx_gen_set` in `device/m2_lm6_1/usdr_ctrl.c`;
 //! `fgearbox_load_ucode` in `ipblks/fgearbox.c`.
 
 use std::f64::consts::FRAC_PI_4;
 use std::time::Duration;
 
-use bnb::{bitfield, u7, u24};
+use bnb::{BitEnum, bitfield, u7, u12, u24};
+use num_complex::Complex;
 
 use super::fir_tables;
 use super::gpio::FPGA;
@@ -36,7 +39,9 @@ enum SubReg {
     /// (`CFG_REG_RESET`).
     Reset = 0,
 
-    /// DC correction enable (`CFG_REG_DCCTRL`).
+    /// DC correction (`CFG_REG_DCCTRL`): on the RX chain, the automatic correction's enable
+    /// (`usdr_set_rxdccorr`); on the TX chain, the DC offset, Q in bits 23:12 and I in 11:0
+    /// (`usdr_tx_dccorr`).
     DcControl = 1,
 
     /// IQ imbalance correction, I amplitude (`CFG_REG_IQIMB_0`).
@@ -50,6 +55,10 @@ enum SubReg {
 
     /// IQ imbalance correction, Q phase term (`CFG_REG_IQIMB_3`).
     IqPhaseQ = 5,
+
+    /// The TX chain's constant generator, which replaces the samples with a fixed I/Q pair
+    /// (`CFG_REG_DC_GEN`); see [`GeneratorWrite`].
+    Generator = 7,
 
     /// NCO 0 frequency word, low half (`CFG_REG_NCO0_L`).
     Nco0Low = 8,
@@ -78,6 +87,41 @@ struct PhyWrite {
     /// The value written.
     #[bits(0..=23)]
     data: u24,
+}
+
+/// The value of one write to [`SubReg::Generator`] (`MAKE_PHY_WR_SUB_REG`): which of the
+/// generator's own registers, and its 16-bit value.
+#[bitfield(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GeneratorWrite {
+    /// The generator register.
+    #[bits(16..=23)]
+    reg: GeneratorReg,
+
+    /// The value written.
+    #[bits(0..=15)]
+    value: u16,
+}
+
+/// The constant generator's registers (libusdr's `CFG_REG_DC_GEN_*` in `usdr_ctrl.c`).
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u8, closed)]
+#[repr(u8)]
+enum GeneratorReg {
+    /// 1 replaces the TX samples with the constants, 0 passes them (`CFG_REG_DC_GEN_CTRL`).
+    Control = 0,
+
+    /// Channel A's I constant (`CFG_REG_DC_GEN_AI`).
+    ChannelAI = 4,
+
+    /// Channel A's Q constant (`CFG_REG_DC_GEN_AQ`).
+    ChannelAQ = 5,
+
+    /// Channel B's I constant (`CFG_REG_DC_GEN_BI`).
+    ChannelBI = 6,
+
+    /// Channel B's Q constant (`CFG_REG_DC_GEN_BQ`).
+    ChannelBQ = 7,
 }
 
 /// One of a chain's two numerically controlled oscillators.
@@ -114,15 +158,36 @@ impl IqImbalance {
     /// `usdr_ctor`'s setting for RX).
     const RX_SCALE: f32 = 0.5;
 
+    /// The TX chain's headroom scale, 0.35355: two channels with a 3 dB boost
+    /// (`AMP_COMP_2CH_3DB`), libusdr's zeroed default, which `usdr_ctor` leaves for TX.
+    /// libusdr narrows the double literal to float, so this does too.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libusdr narrows its double literal to float"
+    )]
+    const TX_SCALE: f32 = 0.353_55_f64 as f32;
+
     /// The largest 24-bit term (`dsp_amp_max`).
     const TERM_MAX: f32 = 8_388_607.0;
 
-    /// The four correction terms for the RX chain, I and Q amplitudes then I and Q phase
+    /// The four correction terms for the RX chain (`usdr_rxupdate_cal`); see
+    /// [`Self::terms`].
+    pub(crate) fn rx_terms(self) -> [i32; 4] {
+        self.terms(Self::RX_SCALE)
+    }
+
+    /// The four correction terms for the TX chain (`usdr_txupdate_cal`); see
+    /// [`Self::terms`].
+    pub(crate) fn tx_terms(self) -> [i32; 4] {
+        self.terms(Self::TX_SCALE)
+    }
+
+    /// The four correction terms at headroom `scale`, I and Q amplitudes then I and Q phase
     /// terms, in libusdr's arithmetic (`usdr_calc_iqimb`): sine and cosine in double,
     /// narrowed to float, the products in float, then truncated to integers. Exact parity
     /// rests on `f64::cos` and `sin` calling the same libm as libusdr (glibc on the oracle
     /// host); another libm may differ in the last bit.
-    pub(crate) fn rx_terms(self) -> [i32; 4] {
+    fn terms(self, scale: f32) -> [i32; 4] {
         let angle = FRAC_PI_4 * f64::from(self.phase) / Self::PHASE_FULL_SCALE;
         #[expect(
             clippy::cast_possible_truncation,
@@ -146,7 +211,6 @@ impl IqImbalance {
                 1.0
             } as f32,
         );
-        let scale = Self::RX_SCALE;
         #[expect(
             clippy::cast_possible_truncation,
             reason = "libusdr converts the float products to int32_t, truncating"
@@ -225,9 +289,9 @@ impl Phy {
         self.write(bus, SubReg::DcControl, u32::from(on))
     }
 
-    /// Writes the IQ imbalance correction terms, as [`IqImbalance::rx_terms`] makes them:
-    /// I and Q amplitudes, then I and Q phase terms (`usdr_rxupdate_cal`). libusdr keeps
-    /// each term's low 24 bits.
+    /// Writes the IQ imbalance correction terms, as [`IqImbalance::rx_terms`] and
+    /// [`IqImbalance::tx_terms`] make them: I and Q amplitudes, then I and Q phase terms
+    /// (`usdr_rxupdate_cal`, `usdr_txupdate_cal`). libusdr keeps each term's low 24 bits.
     pub(crate) fn set_iq_correction(self, bus: &mut dyn Bus, terms: [i32; 4]) -> Result<(), Error> {
         let subs = [
             SubReg::IqAmplitudeI,
@@ -253,6 +317,37 @@ impl Phy {
         self.write(bus, high, u32::from(u16::from_le_bytes([b2, b3])))?;
         self.reset(bus, 1 << 8)?;
         self.reset(bus, 0)
+    }
+
+    /// Writes the TX chain's DC offset, 12-bit two's-complement `i` and `q`
+    /// (`usdr_tx_dccorr`).
+    pub(crate) fn set_tx_dc_offset(bus: &mut dyn Bus, i: u12, q: u12) -> Result<(), Error> {
+        let data = u32::from(q.value()) << 12 | u32::from(i.value());
+        Self::Tx.write(bus, SubReg::DcControl, data)
+    }
+
+    /// Replaces the TX chain's samples with `constant` on both channels, or with `None`
+    /// passes them again (`usdr_tx_gen_set` with channel mask 3): the enable, then, when
+    /// on, channel A's I and Q and channel B's.
+    pub(crate) fn set_tx_constant(
+        bus: &mut dyn Bus,
+        constant: Option<Complex<i16>>,
+    ) -> Result<(), Error> {
+        let write = |bus: &mut dyn Bus, reg: GeneratorReg, value: u16| {
+            let data = GeneratorWrite::new().with_reg(reg).with_value(value);
+            Self::Tx.write(bus, SubReg::Generator, data.to_raw())
+        };
+        write(bus, GeneratorReg::Control, u16::from(constant.is_some()))?;
+        let Some(constant) = constant else {
+            return Ok(());
+        };
+        // Two's-complement bits, as libusdr's `int16_t` masked to 16 bits.
+        let bits = |value: i16| u16::from_ne_bytes(value.to_ne_bytes());
+        let (i, q) = (bits(constant.re), bits(constant.im));
+        write(bus, GeneratorReg::ChannelAI, i)?;
+        write(bus, GeneratorReg::ChannelAQ, q)?;
+        write(bus, GeneratorReg::ChannelBI, i)?;
+        write(bus, GeneratorReg::ChannelBQ, q)
     }
 
     /// Loads the RX decimator's FIR microcode for `decimation`, a byte per write, 1 µs
@@ -285,6 +380,16 @@ mod tests {
         assert_eq!(
             IqImbalance::default().rx_terms(),
             [4_194_303, 4_194_303, 0, 0]
+        );
+    }
+
+    #[test]
+    fn tx_terms_use_the_3_db_two_channel_scale() {
+        // 0.35355 times 8388607 in float, truncated (worked independently in single
+        // precision): libusdr's `AMP_COMP_2CH_3DB`.
+        assert_eq!(
+            IqImbalance::default().tx_terms(),
+            [2_965_792, 2_965_792, 0, 0]
         );
     }
 

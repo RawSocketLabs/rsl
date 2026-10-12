@@ -1,10 +1,12 @@
-//! rsl-usdr's TX controls (frequency, path, bandwidth, gains) against libusdr's, operation
-//! for operation, one window per call, on fresh boards.
+//! rsl-usdr's TX controls (frequency, path, bandwidth, gains, corrections, constant
+//! generator) against libusdr's, operation for operation, one window per call, on fresh
+//! boards.
 //!
 //! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
 //! the pairing is the mapping under test. libusdr clamps every gain rather than rejecting it,
 //! so out-of-range figures must succeed alike; tuning failures must fail alike, after the
-//! same operations.
+//! same operations. libusdr keeps the low 12 bits of a TX DC offset where rsl-usdr's
+//! [`TxDcOffset`] rejects one that does not fit; that divergence has its own scenario.
 //!
 //! Every scenario that tunes the transmitter sets a sample rate first: before one, libusdr
 //! divides by zero updating the TX filter, which would kill the test process.
@@ -15,7 +17,8 @@ mod sim_bus;
 use std::ffi::CStr;
 use std::ops::Range;
 
-use rsl_usdr::{Device, Error, TxGain, TxPath};
+use num_complex::Complex;
+use rsl_usdr::{Device, Error, TxDcOffset, TxGain, TxIqCorrection, TxPath};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
@@ -30,6 +33,12 @@ const VGA2: &CStr = c"/dm/sdr/0/tx/gain/vga2";
 const AUTO: &CStr = c"/dm/sdr/0/tx/gain/auto";
 /// The TX path, a string.
 const PATH: &CStr = c"/dm/sdr/0/tx/path";
+/// The TX DC offsets, I in bits 31:16 and Q in bits 15:0.
+const DCCORR: &CStr = c"/dm/sdr/0/tx/dccorr";
+/// The IQ correction: I gain in bits 15:0, Q gain in 31:16, phase in 63:48.
+const PHGAINCORR: &CStr = c"/dm/sdr/0/tx/phgaincorr";
+/// The constant generator: I in bits 31:16, Q in 15:0, or all ones for off.
+const GENERATOR: &CStr = c"/dm/sdr/0/tfe/generator/const";
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -58,6 +67,15 @@ enum Call {
 enum Typed {
     /// `set_tx_gain`.
     Gain(TxGain),
+
+    /// `set_tx_dc_offset`.
+    DcOffset(TxDcOffset, TxDcOffset),
+
+    /// `set_tx_iq_correction`.
+    Iq(TxIqCorrection),
+
+    /// `set_tx_constant`.
+    Constant(Option<Complex<i16>>),
 }
 
 impl Call {
@@ -71,7 +89,8 @@ impl Call {
             // SAFETY: `dev_m2_lm6_1_sdr_tx_path_set` reads a value above 4096 as a string
             // and keeps no reference to it; a string's address is always above 4096 here.
             Self::Path(name, _) => unsafe { oracle.set_str(PATH, name) },
-            // SAFETY: every TX gain handler reads its value as a number.
+            // SAFETY: every TX gain, correction and generator handler reads its value as a
+            // number.
             Self::Set(path, value, _) => unsafe { oracle.set_uint(path, value) },
         }
         .is_ok()
@@ -86,8 +105,16 @@ impl Call {
             Self::Bandwidth(hz) => device.set_tx_bandwidth(hz),
             Self::Path(_, path) => device.set_tx_path(path),
             Self::Set(_, _, Typed::Gain(gain)) => device.set_tx_gain(gain),
+            Self::Set(_, _, Typed::DcOffset(i, q)) => device.set_tx_dc_offset(i, q),
+            Self::Set(_, _, Typed::Iq(correction)) => device.set_tx_iq_correction(correction),
+            Self::Set(_, _, Typed::Constant(constant)) => device.set_tx_constant(constant),
         }
     }
+}
+
+/// `value`'s 16 two's-complement bits, as libusdr's packed controls carry them.
+fn bits(value: i16) -> u64 {
+    u64::from(u16::from_ne_bytes(value.to_ne_bytes()))
 }
 
 /// A gain call setting libusdr's `path` and rsl-usdr's `gain` to the same `db`; a negative
@@ -95,6 +122,35 @@ impl Call {
 fn gain(path: &'static CStr, db: i32, gain: fn(i32) -> TxGain) -> Call {
     let value = u64::from_ne_bytes(i64::from(db).to_ne_bytes());
     Call::Set(path, value, Typed::Gain(gain(db)))
+}
+
+/// The offset `value`, which must fit.
+fn offset(value: i16) -> TxDcOffset {
+    TxDcOffset::new(value).expect("a 12-bit offset")
+}
+
+/// A DC offset call with `i` and `q`, packed as `dev_m2_lm6_1_sdr_tx_dccorr_set` unpacks it.
+fn dc(i: i16, q: i16) -> Call {
+    let value = bits(i) << 16 | bits(q);
+    Call::Set(DCCORR, value, Typed::DcOffset(offset(i), offset(q)))
+}
+
+/// An IQ correction call, packed as `dev_m2_lm6_1_sdr_tx_phgaincorr_set` unpacks it.
+fn iq(i_gain: u16, q_gain: u16, phase: i16) -> Call {
+    let value = bits(phase) << 48 | u64::from(q_gain) << 16 | u64::from(i_gain);
+    let correction = TxIqCorrection {
+        i_gain,
+        q_gain,
+        phase,
+    };
+    Call::Set(PHGAINCORR, value, Typed::Iq(correction))
+}
+
+/// A constant generator call: `Some((i, q))` as libusdr packs it, `None` as all ones.
+fn constant(pair: Option<(i16, i16)>) -> Call {
+    let value = pair.map_or(u64::MAX, |(i, q)| bits(i) << 16 | bits(q));
+    let typed = pair.map(|(i, q)| Complex::new(i, q));
+    Call::Set(GENERATOR, value, Typed::Constant(typed))
 }
 
 /// A revision-3 board.
@@ -340,4 +396,91 @@ fn tx_vga2_gain_matches_libusdr_through_all_three_controls() {
         }
     }
     assert_calls_succeed(rev3, &calls);
+}
+
+/// TX DC offsets over sign and both ends of the 12-bit range; libusdr ignores the channel
+/// number above bit 31.
+#[test]
+fn tx_dc_offsets_match_libusdr() {
+    let mut calls = vec![
+        dc(0, 0),
+        dc(2047, -2048),
+        dc(-1, 1),
+        dc(-2048, 2047),
+        dc(564, -564),
+    ];
+    let Call::Set(path, value, typed) = dc(0x123, -0x123) else {
+        unreachable!("dc makes a set call");
+    };
+    calls.push(Call::Set(path, value | 1 << 32, typed));
+    assert_calls_succeed(rev3, &calls);
+}
+
+/// Intentional divergence: libusdr keeps the low 12 bits of each 16-bit offset, so an
+/// oversized one silently writes another. rsl-usdr's [`TxDcOffset`] rejects it before any
+/// operation; what libusdr writes for one is the masked offset's write.
+#[test]
+fn oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
+    let oversized = [2048, -2049, i16::MAX, i16::MIN, 0x1234];
+    for value in oversized {
+        assert_eq!(TxDcOffset::new(value), None, "{value} is rejected");
+    }
+    // The 12 bits libusdr keeps, read back as a 12-bit two's-complement offset.
+    let masked = |value: i16| {
+        let low = i32::from(u16::from_ne_bytes(value.to_ne_bytes()) & 0xfff);
+        let signed = if low > 2047 { low - 4096 } else { low };
+        offset(i16::try_from(signed).expect("12 bits fit"))
+    };
+    let calls: Vec<Call> = oversized
+        .windows(2)
+        .map(|pair| {
+            let value = bits(pair[0]) << 16 | bits(pair[1]);
+            Call::Set(
+                DCCORR,
+                value,
+                Typed::DcOffset(masked(pair[0]), masked(pair[1])),
+            )
+        })
+        .collect();
+    assert_calls_succeed(rev3, &calls);
+}
+
+/// The TX IQ correction's float arithmetic at the TX chain's 3 dB headroom scale, term for
+/// term: no correction, either gain side of 2047, both extremes of the phase, and garbage
+/// in libusdr's unused bits 47:32.
+#[test]
+fn tx_iq_correction_matches_libusdr() {
+    let mut calls = vec![
+        iq(2047, 2047, 0),
+        iq(0, 9999, 0),
+        iq(1023, 2047, 1000),
+        iq(2046, 2048, 1),
+        iq(2047, 0, -1000),
+        iq(2047, u16::MAX, i16::MAX),
+        iq(u16::MAX, 4095, i16::MIN),
+        iq(3000, 1500, 2812),
+    ];
+    let Call::Set(path, value, typed) = iq(1500, 2500, -2812) else {
+        unreachable!("iq makes a set call");
+    };
+    calls.push(Call::Set(path, value | 0xabcd << 32, typed));
+    assert_calls_succeed(rev3, &calls);
+}
+
+/// The constant generator on with zero, mixed-sign and extreme pairs (all-ones bits that
+/// are not libusdr's off value included), off, off again, and on once more.
+#[test]
+fn the_tx_constant_generator_matches_libusdr() {
+    assert_calls_succeed(
+        rev3,
+        &[
+            constant(Some((0, 0))),
+            constant(Some((1234, -5678))),
+            constant(Some((i16::MAX, i16::MIN))),
+            constant(Some((-1, -1))),
+            constant(None),
+            constant(None),
+            constant(Some((1, 0))),
+        ],
+    );
 }

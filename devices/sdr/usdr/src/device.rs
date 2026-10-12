@@ -7,7 +7,8 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxGain, TxPath, TxState,
+    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain,
+    TxIqCorrection, TxPath, TxState,
 };
 use crate::error::Error;
 use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
@@ -510,6 +511,38 @@ impl Device {
     /// Any bus failure.
     pub fn set_tx_gain(&mut self, gain: TxGain) -> Result<(), Error> {
         self.board().set_tx_gain(gain)
+    }
+
+    /// Sets the FPGA TX chain's I and Q DC offsets, which cancel LO leakage (libusdr's
+    /// `tx/dccorr`).
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_dc_offset(&mut self, i: TxDcOffset, q: TxDcOffset) -> Result<(), Error> {
+        self.board().set_tx_dc_offset(i, q)
+    }
+
+    /// Sets the FPGA TX chain's IQ gain and phase imbalance correction (libusdr's
+    /// `tx/phgaincorr`).
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_iq_correction(&mut self, correction: TxIqCorrection) -> Result<(), Error> {
+        self.board().set_tx_iq_correction(correction)
+    }
+
+    /// Replaces the TX chain's samples with the constant I/Q pair `constant` on both
+    /// channels, or with `None` passes the host's samples again (libusdr's
+    /// `tfe/generator/const`). With the TX NCOs offset, the constant becomes a tone: the
+    /// test signal of libusdr's LO leakage calibration.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_constant(&mut self, constant: Option<Complex<i16>>) -> Result<(), Error> {
+        self.board().set_tx_constant(constant)
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every

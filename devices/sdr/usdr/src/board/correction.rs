@@ -1,10 +1,12 @@
-//! RX corrections: `dev_m2_lm6_1_sdr_rx_dccorr_set`, `...rx_dccorrmode_set`,
-//! `...rx_ip2corr_set` and `...rx_phgaincorr_set` in `device/m2_lm6_1/m2_lm6_1.c`.
+//! Corrections: `dev_m2_lm6_1_sdr_rx_dccorr_set`, `...rx_dccorrmode_set`,
+//! `...rx_ip2corr_set`, `...rx_phgaincorr_set`, `...tx_dccorr_set` and
+//! `...tx_phgaincorr_set` in `device/m2_lm6_1/m2_lm6_1.c`.
 //!
-//! The DC and IP2 trims are analog, in the LMS6002D's RX front end; the automatic DC
-//! correction and the IQ imbalance correction are digital, in the FPGA's RX chain.
+//! The RX DC and IP2 trims are analog, in the LMS6002D's RX front end; the RX automatic DC
+//! correction, the TX DC offset and both IQ imbalance corrections are digital, in the
+//! FPGA's chains.
 
-use bnb::u7;
+use bnb::{u7, u12};
 
 use super::Board;
 use crate::error::Error;
@@ -54,30 +56,96 @@ pub struct RxIqCorrection {
 }
 
 impl RxIqCorrection {
-    /// The amplitude imbalance's input scale (`INT16_MAX` in `usdr_rx_iqimb_set`).
-    const AMPLITUDE_SCALE: i64 = 32_767;
+    /// The imbalance this correction asks for (`_phgaincorr_set`, then
+    /// `usdr_rx_iqimb_set`); see [`iq_imbalance`].
+    fn imbalance(self) -> IqImbalance {
+        iq_imbalance(self.i_gain, self.q_gain, self.phase)
+    }
+}
 
+/// A TX IQ imbalance correction, in the terms of libusdr's `tx/phgaincorr`, which decodes
+/// it as [`RxIqCorrection`]'s. The FPGA's TX chain applies it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TxIqCorrection {
+    /// I gain, 2047 being no correction. Below 2047 it alone sets the amplitude
+    /// correction, scaling I by `1 − (2047 − i_gain) · 8 / 32767`.
+    pub i_gain: u16,
+
+    /// Q gain, 2047 being no correction, used when `i_gain` is 2047 or more: below 2047 it
+    /// scales Q by `1 − (2047 − q_gain) · 8 / 32767`, above it scales I by
+    /// `1 − (q_gain − 2047) · 8 / 32767`.
+    pub q_gain: u16,
+
+    /// Phase correction: the terms use the sine and cosine of `phase × 0.016°`
+    /// (libusdr multiplies it by 16 into a scale where 45000 is 45°). Not clamped.
+    pub phase: i16,
+}
+
+impl TxIqCorrection {
+    /// The imbalance this correction asks for (`_phgaincorr_set`, then
+    /// `usdr_tx_iqimb_set`); see [`iq_imbalance`].
+    fn imbalance(self) -> IqImbalance {
+        iq_imbalance(self.i_gain, self.q_gain, self.phase)
+    }
+}
+
+/// The imbalance a phase/gain correction asks for, in libusdr's arithmetic for either
+/// chain: `_phgaincorr_set`'s amplitude from whichever gain is off unity, then
+/// `usdr_*_iqimb_set`'s scaling of it into `IMB_AMPL_MAX` units, truncated.
+fn iq_imbalance(i_gain: u16, q_gain: u16, phase: i16) -> IqImbalance {
+    /// The amplitude imbalance's input scale (`INT16_MAX` in `usdr_*_iqimb_set`).
+    const AMPLITUDE_SCALE: i64 = 32_767;
     /// The amplitude imbalance's full scale (`IMB_AMPL_MAX`).
     const AMPLITUDE_FULL_SCALE: i64 = 262_144;
-
     /// The gain with no correction.
     const UNITY: i32 = 2047;
 
-    /// The imbalance this correction asks for, in libusdr's arithmetic
-    /// (`_phgaincorr_set`, then `usdr_rx_iqimb_set`).
-    fn imbalance(self) -> IqImbalance {
-        let i_gain = i32::from(self.i_gain);
-        let imbalance = if i_gain < Self::UNITY {
-            (Self::UNITY - i_gain) * 8
-        } else {
-            (i32::from(self.q_gain) - Self::UNITY) * 8
-        };
-        let amplitude = i64::from(imbalance) * Self::AMPLITUDE_FULL_SCALE / Self::AMPLITUDE_SCALE;
-        IqImbalance {
-            amplitude: i32::try_from(amplitude)
-                .expect("invariant: at most 507904 * 262144 / 32767"),
-            phase: i32::from(self.phase) * 16,
-        }
+    let i_gain = i32::from(i_gain);
+    let imbalance = if i_gain < UNITY {
+        (UNITY - i_gain) * 8
+    } else {
+        (i32::from(q_gain) - UNITY) * 8
+    };
+    let amplitude = i64::from(imbalance) * AMPLITUDE_FULL_SCALE / AMPLITUDE_SCALE;
+    IqImbalance {
+        amplitude: i32::try_from(amplitude).expect("invariant: at most 507904 * 262144 / 32767"),
+        phase: i32::from(phase) * 16,
+    }
+}
+
+/// A DC offset for one channel of the FPGA's TX chain, a 12-bit two's-complement value
+/// (-2048 to 2047) that cancels the transmitter's LO leakage; libusdr's TX LO calibration
+/// searches it as a signed value.
+///
+/// libusdr takes 16 bits per channel and keeps the low 12, so a value outside the range
+/// silently writes another. It is rejected here instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TxDcOffset(i16);
+
+impl TxDcOffset {
+    /// The lowest offset.
+    pub const MIN: i16 = -2048;
+
+    /// The highest offset.
+    pub const MAX: i16 = 2047;
+
+    /// The offset `value`, or `None` outside [`Self::MIN`]..=[`Self::MAX`].
+    #[must_use]
+    pub fn new(value: i16) -> Option<Self> {
+        (Self::MIN..=Self::MAX)
+            .contains(&value)
+            .then_some(Self(value))
+    }
+
+    /// The offset.
+    #[must_use]
+    pub fn value(self) -> i16 {
+        self.0
+    }
+
+    /// The offset's 12 two's-complement bits.
+    fn bits(self) -> u12 {
+        u12::new(u16::from_ne_bytes(self.0.to_ne_bytes()) & 0xfff)
     }
 }
 
@@ -102,6 +170,18 @@ impl Board {
     pub(crate) fn set_rx_iq_correction(&mut self, correction: RxIqCorrection) -> Result<(), Error> {
         self.rx.iq_imbalance = correction.imbalance();
         Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())
+    }
+
+    /// Writes the TX chain's DC offsets (`usdr_tx_dccorr`).
+    pub(crate) fn set_tx_dc_offset(&mut self, i: TxDcOffset, q: TxDcOffset) -> Result<(), Error> {
+        Phy::set_tx_dc_offset(self.bus.as_mut(), i.bits(), q.bits())
+    }
+
+    /// Writes the TX IQ imbalance correction (`usdr_tx_iqimb_set`, then
+    /// `usdr_txupdate_cal`), at the TX chain's headroom scale.
+    pub(crate) fn set_tx_iq_correction(&mut self, correction: TxIqCorrection) -> Result<(), Error> {
+        let terms = correction.imbalance().tx_terms();
+        Phy::Tx.set_iq_correction(self.bus.as_mut(), terms)
     }
 }
 
@@ -146,6 +226,18 @@ mod tests {
         // Truncated towards zero, as C's int64_t division does.
         assert_eq!(imbalance(2047, 0, 0).amplitude, -131_011);
         assert!(imbalance(u16::MAX, 2048, 0).amplitude > 0);
+    }
+
+    #[test]
+    fn tx_dc_offsets_take_twelve_bit_twos_complement_values_only() {
+        let bits = |value| TxDcOffset::new(value).map(|offset| offset.bits().value());
+        assert_eq!(bits(0), Some(0));
+        assert_eq!(bits(2047), Some(0x7ff));
+        assert_eq!(bits(-1), Some(0xfff));
+        assert_eq!(bits(-2048), Some(0x800));
+        assert_eq!(bits(2048), None);
+        assert_eq!(bits(-2049), None);
+        assert_eq!(bits(i16::MIN), None);
     }
 
     #[test]

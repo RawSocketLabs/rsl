@@ -4,6 +4,7 @@ mod board;
 mod correction;
 mod frontend;
 mod gain;
+mod generator;
 mod path;
 mod power;
 mod rate;
@@ -11,7 +12,7 @@ mod stream;
 mod tune;
 
 pub(crate) use board::{Board, TxState};
-pub use correction::{RxIqCorrection, RxTrim};
+pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use gain::{RxGain, TxGain};
 pub use path::{RxPath, TxPath};
 pub use stream::{RxPacket, RxThrottle};
