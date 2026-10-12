@@ -63,6 +63,8 @@ Each layer calls only the ones below it.
   machine uses keeps its address map, value types and ID facts in `src/portable/<chip>/`
   (LP8758, TPS6381x, Si5332, TMP114); `src/chips/<chip>/` then keeps the docs, address and
   driver.
+- `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
+  libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), and the RX stream engine (`stream`:
   front end, DMA, sync).

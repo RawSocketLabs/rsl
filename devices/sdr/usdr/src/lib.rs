@@ -113,6 +113,7 @@
 #![forbid(unsafe_code)]
 
 mod board;
+pub mod cal;
 mod chips;
 mod device;
 mod error;
