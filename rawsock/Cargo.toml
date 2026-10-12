@@ -30,5 +30,22 @@ link = ["dep:rustix"]
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { version = "1.0", features = ["net"], optional = true }
 
+# Socket examples gate on their layer's feature so `--examples` builds under any feature set.
+[[example]]
+name = "transport_udp"
+required-features = ["transport"]
+
+[[example]]
+name = "network_send"
+required-features = ["network"]
+
+[[example]]
+name = "link_send"
+required-features = ["link"]
+
+[[example]]
+name = "link_sniff"
+required-features = ["link"]
+
 [lints]
 workspace = true
