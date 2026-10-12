@@ -1,8 +1,9 @@
-//! **loopback_inject** — the dual-use sink in miniature: `RawIo::send_raw` transmits
+//! **`loopback_inject`** — the dual-use sink in miniature: `RawIo::send_raw` transmits
 //! exactly the bytes you give it, no validation. Uses the in-memory [`Loopback`] backend
 //! so it runs anywhere, unprivileged.
 //!
 //! Run with: `cargo run --example loopback_inject`
+#![allow(clippy::print_stdout)]
 
 use rawsock::compose::internet_checksum;
 use rawsock::{Layer, Loopback, RawIo};

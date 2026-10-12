@@ -1,5 +1,5 @@
 //! L2 — raw Ethernet via `AF_PACKET` (rustix). The caller supplies the whole Ethernet frame
-//! (dst/src MAC, EtherType, payload); the NIC computes and appends the FCS. Needs `CAP_NET_RAW`.
+//! (dst/src MAC, `EtherType`, payload); the NIC computes and appends the FCS. Needs `CAP_NET_RAW`.
 //!
 //! rustix 1.1.4 (the latest) has no safe link-layer socket address type, so binding the socket
 //! to an interface needs **one** `unsafe` call to build a `sockaddr_ll` — the crate's only
@@ -65,6 +65,10 @@ fn link_addr(ifindex: u32) -> SocketAddrAny {
     // The Linux `sockaddr_ll` (20 bytes, `#[repr(C)]`). Only `sll_family`/`sll_protocol`/
     // `sll_ifindex` matter for a bind; the hardware-address fields are zero.
     #[repr(C)]
+    #[expect(
+        clippy::struct_field_names,
+        reason = "mirrors the kernel's sockaddr_ll field names"
+    )]
     struct SockaddrLl {
         sll_family: u16,
         sll_protocol: u16,
@@ -89,7 +93,8 @@ fn link_addr(ifindex: u32) -> SocketAddrAny {
     unsafe {
         SocketAddrAny::read(
             core::ptr::addr_of!(sll).cast(),
-            core::mem::size_of::<SockaddrLl>() as u32,
+            u32::try_from(core::mem::size_of::<SockaddrLl>())
+                .expect("invariant: sockaddr_ll is 20 bytes"),
         )
     }
 }

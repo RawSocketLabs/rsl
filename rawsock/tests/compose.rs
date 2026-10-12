@@ -55,7 +55,11 @@ struct ToyL3 {
 impl ToyL3 {
     fn protocol(&self) -> u8 {
         self.demux_override
-            .or_else(|| self.payload.protocol_id().map(|id| id as u8))
+            .or_else(|| {
+                self.payload
+                    .protocol_id()
+                    .map(|id| u8::try_from(id).expect("toy protocol ids fit in u8"))
+            })
             .unwrap_or(0)
     }
 }
@@ -75,7 +79,8 @@ impl Protocol for ToyL3 {
         };
         let body = self.payload.encode_with(&child);
         let mut out = vec![proto];
-        out.extend_from_slice(&(body.len() as u16).to_be_bytes());
+        let len = u16::try_from(body.len()).expect("toy bodies fit in u16");
+        out.extend_from_slice(&len.to_be_bytes());
         out.extend_from_slice(&body);
         out
     }
