@@ -125,7 +125,18 @@ def commands(profile, plan, bnb):
     raise ValueError(f"profile requires a dedicated adapter: {profile}")
 
 
+def locked_command(arguments):
+    """Root compilation must not introduce resolutions outside the selected impact graph."""
+    operation = 2 if len(arguments) > 1 and arguments[1].startswith("+") else 1
+    if (arguments[0] == "cargo" and len(arguments) > operation
+            and arguments[operation] in {"build", "check", "clippy", "test", "doc"}
+            and "--manifest-path" not in arguments and "--locked" not in arguments):
+        return [*arguments[:operation + 1], "--locked", *arguments[operation + 1:]]
+    return arguments
+
+
 def execute(arguments):
+    arguments = locked_command(arguments)
     print("+ " + shlex.join(arguments), flush=True)
     environment = os.environ.copy()
     if arguments[:2] == ["cargo", "doc"]:

@@ -7,13 +7,30 @@ import tempfile
 import textwrap
 import unittest
 
-from run import commands
+from run import commands, locked_command
 from test_plan import planned
 
 BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
 
 
 class ProfileTests(unittest.TestCase):
+    def test_root_compilation_cannot_change_resolution_after_impact_selection(self):
+        plan = planned(full=True, release=True)
+        for profile in ("workspace", "network", "facades", "msrv", "no-std", "bnb", "socks"):
+            for arguments in commands(profile, plan, BNB_CONFIG):
+                if arguments[0] == "cargo" and "--manifest-path" not in arguments:
+                    with self.subTest(profile=profile, arguments=arguments):
+                        actual = locked_command(arguments)
+                        if arguments[1] == "fmt":
+                            self.assertEqual(actual, arguments)
+                        else:
+                            self.assertEqual(actual.count("--locked"), 1)
+        detached = ["cargo", "check", "--manifest-path", "bindings/usdr/Cargo.toml"]
+        self.assertEqual(locked_command(detached), detached)
+        pinned = ["cargo", "+1.85.0", "check", "-p", "socks"]
+        self.assertEqual(locked_command(pinned), ["cargo", "+1.85.0", "check", "--locked", "-p", "socks"])
+        already = ["cargo", "test", "--locked", "-p", "socks"]
+        self.assertEqual(locked_command(already), already)
     def test_optional_adapters_are_compiled_and_tested_without_enabling_release_ladders(self):
         for path, name in (("protocols/session/socks/src/mio.rs", "socks"),
                            ("bitsandbytes/bnb/src/io.rs", "bitsandbytes")):

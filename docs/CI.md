@@ -47,6 +47,9 @@ Multiple locked versions/sources of one declaration name are unioned conservativ
 Missing/unsupported relevant lock information falls back to full routine coverage; unrelated
 unchanged ignored locks do not defeat narrowing. Lockfile-only unreachable-node/reordering
 changes retain dependency audit without retesting unaffected packages.
+Root build/check/lint/test/doc commands use `--locked`: a stale manifest/lockfile pair
+fails rather than resolving new, unplanned dependencies after scope selection. Detached
+profiles with intentionally ignored lockfiles retain their existing lock policy.
 
 Release products come from enabled `release-plz.toml` packages, grouped by `version_group`
 (or package name). Trusted release PRs/merges infer products from changed manifest versions:

@@ -1,6 +1,7 @@
 """Dependency impact through real offline Cargo metadata and immutable Git archives."""
 
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -10,6 +11,26 @@ from plan import dependency_changes, graph_at, metadata_graph, select
 
 
 class DependencyMetadataTests(unittest.TestCase):
+    def test_stale_lock_cannot_introduce_unplanned_resolution_in_a_locked_command(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-stale-lock-") as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[workspace]\nresolver="2"\nmembers=["owner","helper"]\n')
+            crate(root, "owner", "owner")
+            crate(root, "helper", "helper")
+            with (root / "owner/Cargo.toml").open("a") as file:
+                file.write('[dependencies]\nhelper={path="../helper"}\n')
+            subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, check=True,
+                           capture_output=True)
+            lock_before = (root / "Cargo.lock").read_bytes()
+            manifest = root / "helper/Cargo.toml"
+            manifest.write_text(manifest.read_text().replace('version="0.1.0"', 'version="0.2.0"'))
+            result = subprocess.run(
+                ["cargo", "metadata", "--locked", "--offline", "--format-version", "1"],
+                cwd=root, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--locked", result.stderr)
+            self.assertEqual((root / "Cargo.lock").read_bytes(), lock_before)
+
     def test_workspace_inheritance_and_detached_resolution_use_distinct_locks(self):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-inherited-") as directory:
             graphs = []
