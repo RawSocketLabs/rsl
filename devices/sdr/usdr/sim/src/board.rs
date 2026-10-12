@@ -378,7 +378,16 @@ impl SimBoard {
     /// The front end's oscillator DAC code, if a front end with one is attached.
     #[must_use]
     pub fn front_end_dac_code(&self) -> Option<u16> {
-        self.front_end.as_ref().map(Model::dac_code)
+        self.front_end.as_ref().and_then(Model::dac_code)
+    }
+
+    /// A register of the front end's clock synchronizer, if a front end with one is
+    /// attached.
+    #[must_use]
+    pub fn front_end_clock_reg(&self, addr: u16) -> Option<u8> {
+        self.front_end
+            .as_ref()
+            .and_then(|front_end| front_end.clock_reg(addr))
     }
 
     /// A Si5332 clock-generator register.

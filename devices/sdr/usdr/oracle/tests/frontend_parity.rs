@@ -405,3 +405,38 @@ fn a_lone_breakout_dac_passes_for_a_pciefe() {
     let kind = assert_open_matches(with_exm2pe, c"", FrontEndSelection::Auto).expect("both open");
     assert_eq!(kind, Some(FrontEndKind::Pciefe));
 }
+
+/// A board with the `SuperSync` clock board attached.
+fn with_supersync() -> SimBoard {
+    SimBoard::new(REVISION).with_front_end(FrontEnd::SuperSync)
+}
+
+/// The automatic probe passes the absent `PCIe` front end and XMASS, then loads
+/// `SuperSync`'s clock synchronizer; so does a hint.
+#[test]
+fn supersync_comes_up_like_libusdr() {
+    for (parameters, selection) in [
+        (c"", FrontEndSelection::Auto),
+        (c"fe=supersync", FrontEndSelection::SuperSync),
+    ] {
+        let kind = assert_open_matches(with_supersync, parameters, selection).expect("both open");
+        assert_eq!(kind, Some(FrontEndKind::SuperSync), "{parameters:?}");
+    }
+}
+
+/// `SuperSync` has no oscillator DAC (libusdr's `-EINVAL`): refused without bus access.
+#[test]
+fn supersync_has_no_oscillator_dac() {
+    let (results, board) = assert_steps_match(
+        with_supersync,
+        c"fe=supersync",
+        FrontEndSelection::SuperSync,
+        &[dac_step(1)],
+    );
+    assert!(
+        matches!(results[..], [Err(Error::NoOscillatorDac)]),
+        "{results:?}"
+    );
+    // The register load's last entry landed.
+    assert_eq!(board.front_end_clock_reg(0x0507), Some(0x02));
+}

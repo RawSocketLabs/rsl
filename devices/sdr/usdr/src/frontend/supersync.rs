@@ -1,7 +1,9 @@
 //! The `SuperSync` clock board (libusdr's `supersync`, `device/ext_supersync/ext_supersync.c`):
-//! an LMK5C33216 clock synchronizer.
+//! an LMK5C33216 clock synchronizer, loaded with libusdr's fixed configuration.
 
 use std::time::Duration;
+
+use rsl_deps::tracing::debug;
 
 use super::{FRONT_END_BUS, FrontEnd, Pin};
 use crate::chips::lmk5c33216::Lmk5c33216;
@@ -9,18 +11,18 @@ use crate::error::Error;
 use crate::fpga::{FrontEndGpio, PinMode};
 use crate::lowlevel::{Bus, I2cAddr};
 
-/// The board's name in errors (libusdr's `supersync`).
-pub(super) const NAME: &str = "supersync";
+/// The board's name in logs (libusdr's `supersync`).
+const NAME: &str = "supersync";
 
 /// The clock synchronizer (`I2C_ADDR_LMK`).
 const LMK: Lmk5c33216 = Lmk5c33216::at(I2cAddr::new(FRONT_END_BUS, 0x64));
 
-/// Looks for the board and brings it up (`board_ext_supersync_init`); `Ok(None)` when its
-/// clock synchronizer does not identify itself.
+/// Looks for the board and brings it up (`board_ext_supersync_init`): `Ok(None)` when its
+/// clock synchronizer does not identify itself, otherwise the synchronizer gets libusdr's
+/// register load.
 ///
 /// # Errors
 ///
-/// [`Error::UnsupportedFrontEnd`] if the board answers: its register load is not ported.
 /// Any bus failure.
 pub(super) fn init(bus: &mut dyn Bus) -> Result<Option<FrontEnd>, Error> {
     // The connector's I2C lines as inputs, then 1PPS in.
@@ -37,5 +39,7 @@ pub(super) fn init(bus: &mut dyn Bus) -> Result<Option<FrontEnd>, Error> {
     if LMK.read_id(bus)? != Lmk5c33216::ID {
         return Ok(None);
     }
-    Err(Error::UnsupportedFrontEnd(NAME))
+    LMK.load(bus)?;
+    debug!(board = NAME, "front end initialized");
+    Ok(Some(FrontEnd::SuperSync))
 }

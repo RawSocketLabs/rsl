@@ -10,7 +10,7 @@
 //! |----------------------|----------|------|
 //! | `PCIe` front end (`pciefe`) | yes | ported |
 //! | XMASS (`xmass`) | yes | detected; bring-up not ported |
-//! | `SuperSync` (`supersync`) | yes | detected; bring-up not ported |
+//! | `SuperSync` (`supersync`) | yes | ported (fixed register load) |
 //! | `SimpleSync` (`simplesync`) | yes | detected; bring-up not ported |
 //! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported |
 //! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | no bus access, as in libusdr |
@@ -71,7 +71,7 @@ pub enum FrontEndSelection {
     /// Only XMASS (`fe=xmass`), whose bring-up is not ported.
     Xmass,
 
-    /// Only `SuperSync` (`fe=supersync`), whose bring-up is not ported.
+    /// Only `SuperSync` (`fe=supersync`).
     SuperSync,
 
     /// Only `SimpleSync` (`fe=simplesync`), whose bring-up is not ported.
@@ -98,6 +98,9 @@ pub enum FrontEndKind {
         /// The oscillator DAC identified itself.
         dac: bool,
     },
+
+    /// The `SuperSync` clock board.
+    SuperSync,
 }
 
 /// A front end that came up, with its driver state.
@@ -108,6 +111,9 @@ pub(crate) enum FrontEnd {
 
     /// The M.2-to-`PCIe` breakout.
     Exm2pe(Exm2pe),
+
+    /// The `SuperSync` clock board; libusdr keeps no state for it beyond the chip address.
+    SuperSync,
 }
 
 impl FrontEnd {
@@ -118,15 +124,17 @@ impl FrontEnd {
             Self::Exm2pe(board) => FrontEndKind::Exm2pe {
                 dac: board.has_dac(),
             },
+            Self::SuperSync => FrontEndKind::SuperSync,
         }
     }
 
     /// Sets the oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`): the `PCIe` front end's, or
-    /// the breakout's if it answered.
+    /// the breakout's if it answered. Other boards have none (libusdr's `-EINVAL`).
     pub(crate) fn set_oscillator_dac(self, bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
         match self {
             Self::Pciefe(_) => Pciefe::set_dac(bus, code),
             Self::Exm2pe(board) => board.set_dac(bus, code),
+            Self::SuperSync => Err(Error::NoOscillatorDac),
         }
     }
 }

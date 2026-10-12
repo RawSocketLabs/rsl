@@ -2,6 +2,7 @@
 
 mod dac80501;
 mod lms6002d;
+mod reg16;
 mod reg8;
 mod si5332;
 mod tca6416;
@@ -11,6 +12,7 @@ pub(crate) use dac80501::Dac80501;
 pub(crate) use lms6002d::Lms6002d;
 pub use lms6002d::{DcCalibration, PllLock};
 pub(crate) use reg8::Reg8File;
+pub(crate) use reg16::Reg16File;
 pub(crate) use si5332::Si5332;
 pub(crate) use tca6416::Tca6416;
 pub(crate) use tmp114::Tmp114;
