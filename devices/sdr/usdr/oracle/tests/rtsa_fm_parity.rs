@@ -226,3 +226,37 @@ fn fm_demodulation_matches_libusdr_bit_for_bit() {
         }
     }
 }
+
+/// Depth alignment and the rounded-down lower bound, against the C body itself.
+#[test]
+fn rtsa_depth_and_lower_bound_match_libusdr() {
+    for (upper, lower, divs) in [
+        (0_i16, -120_i16, 100_u32),
+        (0, -1, 1),
+        (10, -3, 3),
+        (-5, -6, 7),
+        (100, -100, 25),
+        (0, -127, 5),
+    ] {
+        let rust = RtsaSettings::new(upper, lower, divs, 64, 24, 1).expect("valid settings");
+        let c = rsl_usdr_oracle::rtsa::calc_depth(rsl_usdr_oracle::rtsa::Settings {
+            upper_pwr_bound: upper,
+            lower_pwr_bound: lower,
+            divs_for_db: divs,
+            rtsa_depth: 0,
+            charging_frame: 64,
+            raise_coef: 24,
+            decay_coef: 1,
+        });
+        assert_eq!(
+            rust.depth(),
+            c.rtsa_depth,
+            "depth for {upper}..{lower} at {divs}/dB"
+        );
+        assert_eq!(
+            rust.lower(),
+            c.lower_pwr_bound,
+            "lower for {upper}..{lower} at {divs}/dB"
+        );
+    }
+}

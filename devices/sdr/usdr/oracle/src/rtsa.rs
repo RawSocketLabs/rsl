@@ -67,6 +67,7 @@ type UpdateHwFn =
     unsafe extern "C" fn(*mut u16, c_uint, *mut RtsaData, f32, f32, Diap, *const HwConsts);
 
 unsafe extern "C" {
+    fn rsl_oracle_rtsa_calc_depth(st: *mut Settings);
     fn rtsa_init(rtsa_data: *mut RtsaData, fft_size: c_uint);
     fn rtsa_update_c(cpu_cap: c_uint, sfunc: *mut *const c_char) -> UpdateFn;
     fn rtsa_update_hwi16_c(cpu_cap: c_uint, sfunc: *mut *const c_char) -> UpdateHwFn;
@@ -215,4 +216,21 @@ impl Rtsa {
             );
         }
     }
+}
+
+/// libusdr's `rtsa_calc_depth` under the generic build: fills `rtsa_depth` and lowers
+/// `lower_pwr_bound` to the aligned depth.
+///
+/// # Panics
+///
+/// Unless `upper_pwr_bound > lower_pwr_bound`, which the C asserts.
+#[must_use]
+pub fn calc_depth(mut settings: Settings) -> Settings {
+    assert!(
+        settings.upper_pwr_bound > settings.lower_pwr_bound,
+        "the C asserts upper > lower"
+    );
+    // SAFETY: `settings` is a valid, exclusively borrowed `fft_rtsa_settings_t`.
+    unsafe { rsl_oracle_rtsa_calc_depth(&raw mut settings) };
+    settings
 }

@@ -34,6 +34,15 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_usb_rx");
 
+    // Header-only RTSA depth helper, exported for parity under the generic capability set.
+    cc::Build::new()
+        .file("shim/rtsa_depth.c")
+        .includes(&includes)
+        .flag("-std=gnu11")
+        .flag("-ffp-contract=off")
+        .warnings(false)
+        .compile("usdr_oracle_rtsa_depth");
+
     cc::Build::new()
         .files(sources.lines().map(|source| lib.join(source)))
         .includes(&includes)
