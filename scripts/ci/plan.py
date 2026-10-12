@@ -198,6 +198,13 @@ def owners(path, graph):
     matches = [root for root in graph if path.startswith(root + "/")]
     if matches:
         return {max(matches, key=len)}
+    directory = PurePosixPath(path).parent.as_posix()
+    if directory.startswith("devices/"):
+        # A device directory holding only its sim/oracle crates (a family guide above them)
+        # belongs to those crates, not to unknown ownership.
+        nested = {root for root in graph if root.startswith(directory + "/")}
+        if nested:
+            return nested
     if path.startswith("bitsandbytes/"):
         return {BNB, MACROS} & graph.keys()
     return set()

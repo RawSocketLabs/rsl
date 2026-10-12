@@ -209,6 +209,12 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("pe-sync-oracle", plan["profiles"], "it compiles the same vendored C")
         self.assertFalse(plan["full"])
 
+    def test_a_family_guide_above_its_crates_selects_them_not_full_coverage(self):
+        plan = planned(["devices/sdr/xsdr/AGENTS.md"])
+        self.assertFalse(plan["full"])
+        self.assertIn("rsl-xsdr-sim", plan["packages"])
+        self.assertIn("xsdr-oracle", plan["profiles"])
+
     def test_xsdr_simulator_selects_its_oracle_not_the_usdr_one(self):
         plan = planned(["devices/sdr/xsdr/sim/src/lib.rs"])
         self.assertEqual(plan["packages"], ["rsl-xsdr-sim"])
