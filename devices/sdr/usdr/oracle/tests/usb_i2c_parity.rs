@@ -3,7 +3,7 @@
 use rsl_usdr_oracle as _;
 
 // Compile the driver's private wire encoder directly: no mock or testing API is public.
-#[path = "../../src/transport/usb/protocol.rs"]
+#[path = "../../src/portable/usb/protocol.rs"]
 mod protocol;
 
 unsafe extern "C" {

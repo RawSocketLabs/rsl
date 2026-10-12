@@ -36,9 +36,11 @@ FUZZ = {
 }
 # Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
 USDR_ORACLE = "devices/sdr/usdr/oracle"
+USDR = "devices/sdr/usdr"
+USDR_PORTABLE = f"{USDR}/nostd-check"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
-            "usdr", "rust-dsdcc", USDR_ORACLE, "tools/rust-skills")
+            "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
 # once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
@@ -55,7 +57,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
-    "package", "bladerf",
+    "package", "bladerf", "usdr-portable",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
 
@@ -117,6 +119,10 @@ def metadata_graph(root, *, historical=False, toolchain=None):
                                   tuple(sorted(t["name"] for t in package["targets"]
                                                if "bin" in t["kind"])), package["version"],
                                   locked.snapshot(package, root, lockfile))
+    if USDR_PORTABLE in graph:
+        # #[path] imports are production-source dependencies invisible to Cargo metadata.
+        # Never depend on the full std driver merely to make this edge visible to Cargo.
+        graph[USDR_PORTABLE].dependencies.add(USDR)
     missing = {dep for package in graph.values() for dep in package.dependencies} - graph.keys()
     if missing:
         raise ValueError(f"unregistered owned dependencies: {sorted(missing)}")
@@ -159,6 +165,7 @@ def is_prose(path):
     if path.startswith("tools/rust-skills/"):
         return False
     return (PurePosixPath(path).name in PROSE_NAMES
+            or path == f"{USDR}/PORTING.md"
             or (path.endswith(".md") and (path.startswith("docs/")
                 or path.startswith("bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))
@@ -203,6 +210,8 @@ def affected_packages(seeds, old, new):
 
 def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run",
            dependency_changes=None):
+    if any(member["root"] == USDR for member in release_members) and USDR_PORTABLE not in new:
+        raise ValueError("USDR release qualification requires its registered portable fixture")
     seeds = defaultdict(set)
     global_reasons = {full_reason} if full else set()
     docs = []
@@ -270,6 +279,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("facades")
     if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
+    if USDR_PORTABLE in release_roots and any(member["root"] == USDR for member in release_members):
+        profiles.add("no-std")
     if "rsl-deps" in packages or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
@@ -278,6 +289,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("bladerf")
     if USDR_ORACLE in roots:
         profiles.add("usdr-oracle")
+    if USDR_PORTABLE in roots:
+        profiles.add("usdr-portable")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release_members:

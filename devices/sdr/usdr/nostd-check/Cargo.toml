@@ -1,0 +1,28 @@
+[package]
+name = "rsl-usdr-nostd-check"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+build = false
+description = "Exact-source no_std + alloc compilation witness for the private uSDR portable core."
+
+# A validation workspace, not a second production library or an embedded executable.
+[workspace]
+resolver = "3"
+
+[features]
+default = ["usb"]
+# Enables pure USB framing/machines in the shared tree, not the native USB backend.
+usb = []
+
+[dependencies]
+# scripts/ci/portable.py checks this declaration against the actual driver/workspace.
+bnb = { package = "bitsandbytes", path = "../../../../bitsandbytes/bnb", version = "0.8.0", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

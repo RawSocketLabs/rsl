@@ -116,6 +116,7 @@ mod device;
 mod error;
 mod fpga;
 pub mod lowlevel;
+mod portable;
 mod thermal;
 pub mod transport;
 

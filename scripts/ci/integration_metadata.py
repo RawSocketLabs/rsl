@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plan import BLADERF, BNB, MOVED_DETACHED, SOCKS, metadata_graph, select
+from plan import BLADERF, BNB, MOVED_DETACHED, SOCKS, USDR, USDR_PORTABLE, metadata_graph, select
 
 
 def crate(root, path, name):
@@ -14,6 +14,31 @@ def crate(root, path, name):
 
 
 class CargoMetadataTests(unittest.TestCase):
+    def test_exact_source_fixture_has_a_non_cargo_edge_to_its_production_owner(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-portable-") as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text(f'[workspace]\nresolver="2"\nmembers=["{USDR}"]\n')
+            crate(root, USDR, "rsl-usdr")
+            crate(root, USDR_PORTABLE, "rsl-usdr-nostd-check")
+            manifest = root / USDR_PORTABLE / "Cargo.toml"
+            manifest.write_text(manifest.read_text() + '[workspace]\n')
+            graph = metadata_graph(root)
+            self.assertEqual(graph[USDR_PORTABLE].dependencies, {USDR})
+            self.assertFalse(graph[USDR_PORTABLE].workspace)
+            plan = select([f"{USDR}/src/portable/temperature.rs"], graph, graph)
+            self.assertIn("usdr-portable", plan["profiles"])
+            self.assertNotIn("no-std", plan["profiles"])
+
+    def test_a_portable_fixture_without_its_production_owner_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-orphan-portable-") as directory:
+            root = Path(directory)
+            crate(root, ".", "other")
+            crate(root, USDR_PORTABLE, "rsl-usdr-nostd-check")
+            manifest = root / USDR_PORTABLE / "Cargo.toml"
+            manifest.write_text(manifest.read_text() + '[workspace]\n')
+            with self.assertRaisesRegex(ValueError, "unregistered owned dependencies"):
+                metadata_graph(root)
+
     def test_bladerf_nested_workspace_preserves_sys_and_downstream_ownership(self):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-bladerf-") as directory:
             root = Path(directory)

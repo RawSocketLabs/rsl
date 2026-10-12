@@ -1,5 +1,6 @@
 //! Deterministic transaction tests using pinned USB frames, without an executor or hardware.
 
+use std::io;
 use std::time::Duration;
 
 use super::i2c::{Action, Event, I2cTransaction};
@@ -255,6 +256,20 @@ fn transfer_failure_is_terminal_and_keeps_its_error() {
             .complete(Event::Written { id: 7 }, Duration::ZERO, &mut None)
             .is_err()
     );
+}
+
+#[test]
+fn native_io_sources_survive_the_portable_error_boundary() {
+    let mut operation = transaction();
+    operation.start(Duration::ZERO).unwrap();
+    assert!(matches!(
+        operation.complete(
+            Event::Failed { id: 7, error: BusError::Io(io::Error::from_raw_os_error(5)) },
+            Duration::ZERO,
+            &mut None,
+        ),
+        Err(BusError::Io(error)) if error.raw_os_error() == Some(5)
+    ));
 }
 
 #[test]

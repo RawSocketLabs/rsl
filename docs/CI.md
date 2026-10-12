@@ -59,6 +59,14 @@ not pull in their unrelated consumers. Heavy scope is computed independently of 
 changed-file scope: even a root lockfile or CI edit cannot add unrelated release jobs.
 Currently only the bitsandbytes runtime/macros product is enabled; no release opt-ins change here.
 
+The USDR portable-core fixture is a registered detached consumer of both its bnb dependency
+and the production source tree it imports through `#[path]`. Its `usdr-portable` routine
+profile runs the source/dependency consistency contract and host fmt/Clippy/check/tests.
+It installs no bare-metal target and performs no cross-target qualification. A future
+explicitly enabled/releasing USDR product additionally requires its registered fixture and
+selects its thumbv7em-none-eabi compile gate in the release-only `no-std` profile. A codec
+release can reach this fixture as a downstream consumer without enabling that USDR target.
+
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
 | Ordinary allowlisted prose | No Rust setup, builds, or fuzzing |
@@ -71,6 +79,7 @@ Currently only the bitsandbytes runtime/macros product is enabled; no release op
 | Product release | Relevant fuzzing, feature/MSRV/no_std matrices, compatibility and product packaging |
 
 The prose exemption is deliberately narrow: known README/CHANGELOG/DESIGN/ROADMAP files,
+the explicitly approved USDR `PORTING.md` capability ledger,
 reviewed documentation trees/assets, and licenses, excluding fixtures/tests/fuzz and generated
 skills. `.rs` edits remain code even if only rustdoc changed. Unknown paths expand to full
 coverage. A domain gate edit such as `.github/ci/bnb.toml` selects that domain and consumers.

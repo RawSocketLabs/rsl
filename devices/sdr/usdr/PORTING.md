@@ -4,6 +4,9 @@ Approved scope, recorded 2026-10-12: full **functional** libusdr replacement, uS
 then every registered family. Rust API only; Linux first. The program is **not complete**.
 The first private execution pilot is **Present**; the full nonblocking driver is
 **In progress** and physical operation is **Unqualified**.
+The portable-core-first amendment is integrated: selected production algorithms are shared
+unchanged with an unpublished no_std + alloc compile witness. The public driver still uses
+std; no embedded or kernel deployment is implied.
 All crates remain unpublished. This document authorizes neither hardware operations nor
 release/publication, kernel/FPGA rewrites, or a production C fallback.
 
@@ -28,6 +31,7 @@ are distinguished from genuine capability. Split a row before claiming only part
 Test prefixes: `O:` = `oracle/tests/`, `T:` = `tests/`, `UT:` = `src/transport/usb/tests.rs`,
 `I2C:` = `src/transport/usb/i2c_tests.rs`, `EX:` = `src/transport/usb/execution_tests.rs`.
 `USB:` = workspace `usb/src/queue.rs::tests` (generic host-queue boundary).
+`N:` = `nostd-check/src/lib.rs`; `P:` = `src/portable/`.
 `uSDR` means m2_lm6_1 revisions 1–3; `USB/PCIe` means the Linux host implementations.
 Board-parity tests use a simulated bus and do not qualify either physical transport.
 
@@ -55,6 +59,7 @@ Board-parity tests use a simulated bus and do not qualify either physical transp
 | Capability | Pinned C evidence | Rust owner/interface | Variant / path | Implementation / software / hardware | Blocker or boundary |
 |---|---|---|---|---|---|
 | Sans-I/O operation/continuation execution | `C:lowlevel/usdr_lowlevel.h` operations plus board sequences | `TemperatureRead`, `I2cTransaction`; actual blocking temperature/I²C path uses both | uSDR first; private portable core | Partial temperature/I²C / `I2C:tmp114_request_and_scalar_reply_match_pinned_usb_golden`, `unrelated_irqs_do_not_restart_completion_deadline`, cancellation/identity/clock/failure cases / U | Power/RX operations still use the old blocking Bus; no general scheduler or runtime in core. |
+| Portable core: addresses, chip values/math, temperature and framed I²C | Same pinned chip/transport implementations; TMP114 SNIS214E §8.6 | Internal `portable` tree; thin native adapters; exact-source `nostd-check` | Host driver plus thumbv7em-none-eabi compilation witness | Present for listed subset / `N:tests::the_exact_source_witness_executes_the_pinned_temperature_transaction`, `P:temperature::tests`, `P:clock::tests::invalid_clock_inputs_never_reach_a_zero_divisor`; `scripts/ci/portable.py` contract and target compile gate / U | no_std + alloc compilation, not full-driver no_std, embedded linking, allocator-free dependencies or kernel suitability. Invalid zero/wrapped-zero divider inputs reject rather than panic; supported C arithmetic is unchanged. |
 | Bounded native USB completion primitives | `C:lowlevel/usb_uram/usb_uram_libusb.c` async transfer callbacks; Linux usbfs `REAPURBNDELAY` | `rsl_usb::Interface::reap`, `InQueue::try_complete`, `OutQueue::try_complete`; existing owned `submit` | Linux USB; portable host API | Present / `USB:trying_a_completion_never_reaps_or_waits_for_it`, `shared_reaping_stops_at_its_budget_and_routes_both_directions`, budget/contention/prefix-error/disconnect cases / U | No OS readiness attachment or driver scheduling. Kernel ioctl locks/memory faults may delay calls; bounded reaping is not a hard-real-time executor. |
 | Worker-owned USB cancellation boundary | Linux usbfs `DISCARDURB` calls `usb_kill_urb`, not a nonblocking unlink | Whole `InQueue`/`OutQueue` moved to caller-owned worker; existing `cancel_all` and failure-path Drop stay there | Linux USB; fake kernel ownership tests | Partial documented handoff / `USB:worker_cancellation_retains_queue_ownership_until_discard_returns`, `dropping_a_cleanup_observer_does_not_release_the_workers_queue`, partial-discard and concurrent-reap cases / U | No shipped managed worker/executor. Worker must own buffers until return; do not join on reactor. Other ioctls can wait behind the device kernel lock, requiring isolation in the native executor. |
 | External readiness / deadline reactor | C pollable stream interface; `C:models/dm_stream.c::usdr_dms_get_fd` | Planned caller-owned Mio driver; private fake-source proof exists | Linux USB/PCIe first | Missing native adapter / `EX:callback_and_mio_runners_execute_the_same_temperature_and_irq_sequence` (pilot only) / U | Real USB readiness/reap/cancel, registration retirement/fairness and browser integration remain open; fake Waker is not a USB FD. |
@@ -121,6 +126,11 @@ gateware and Linux kernel code remain external dependencies rather than Rust lib
 
 1. **Execution foundation — In progress.** Preserve the existing `Device`/`Bus` baseline
    while extracting real uSDR sequences into typed, bounded sans-I/O state machines.
+   Portable-core-first is now part of this phase: migrated framing, register/divider maths
+   and machines must compile without std through the exact-source witness. Core uses
+   caller-supplied time and bounded actions/events; native adapters preserve OS sources and
+   contextual errors. Allocation dependencies are allowed, while fixed machines remain
+   free of per-operation allocation. Whole board/device migration is not a prerequisite.
    The temperature/I²C pilot now runs in the production blocking path and under test-only
    readiness, managed-thread/future and callback runners. Generic USB now has bounded reap
    and filed-only completion primitives plus a tested whole-queue cleanup-worker handoff.
@@ -146,7 +156,26 @@ gateware and Linux kernel code remain external dependencies rather than Rust lib
 6. **Platform and accelerated implementations.** After Linux software closure, add the
    reference's other host/transport combinations that have demonstrated implementation
    evidence, including WebUSB and optional Verilator bridge. SIMD follows scalar parity
-   and a measured bottleneck. No publication or hardware claim follows from this phase.
+   and a measured bottleneck. Scalar semantics remain authoritative and available as the
+   fallback. Optimized DSP/kernel leaves live beside their owner and require differential
+   tests; USB/PCIe/syscall/queue/scheduling tuning stays in host transports/executors. Do not
+   put OS/runtime dependencies into portable core to enable acceleration. No publication
+   or hardware claim follows from this phase.
+
+## Kernel and deployment boundary
+
+USB uses Linux's existing usbfs/USB host stack and needs device-node access, not a custom
+uSDR kernel module. See [Linux's userspace USB interface](https://docs.kernel.org/driver-api/usb/usb.html).
+PCIe uses the external **C** `usdr_pcie_uram` kernel module, ABI3, for device nodes, BAR
+mapping, interrupts and DMA. It must be installed/loaded separately from Cargo; consult
+[upstream module installation/build guidance](https://github.com/wavelet-lab/usdr-lib#pcie-driver)
+for DKMS or kernel-header builds and deployment-specific module signing. No library API
+may install/load it automatically. Existing typed open/version errors and compiled-header
+ABI tests remain the software boundary; actual kernel/DMA behavior stays unqualified.
+
+The Rust userspace-library replacement does not replace that C kernel module. A Rust
+kernel rewrite, privileged installation, firmware/FPGA changes and embedded deployment
+require separate scope/authority. Portability compilation alone cannot justify them.
 
 ## Acceptance and review loop
 
@@ -155,6 +184,8 @@ identify supported/no-op/declared-only behaviour; write independent C-oracle or
 specification fixtures; implement the smallest typed Rust operation; add deterministic
 failure/cancellation/boundedness tests; review correctness, public API and layering;
 resolve findings; then update the row with exact interface/test names and divergences.
+Each migrated core operation also extends the exact-source portability witness; native
+and fixture dependency declarations must remain consistent, with no substitute algorithms.
 Only status actually established changes. Reviewer findings return to the same row;
 software parity alone never promotes hardware status. New variants need their own evidence.
 
@@ -165,9 +196,15 @@ Qualification is layered, not a repeated full-workspace ritual:
 - **Software closure:** affected default/feature configurations and downstream consumers,
   C parity, state-machine/cancellation faults, docs/examples and variant capability checks.
   Maintain packet/gain/rate/format boundary and scalar-vs-reference oracles.
+  Portable-core milestone acceptance additionally requires an explicit local target check
+  of the shared production tree for thumbv7em-none-eabi; qualify only compilation of the
+  stated subset with alloc, not linking or the whole public crate.
 - **Release qualification:** affected parsers/unsafe seams get the repository's scoped
   fuzz tier; API/MSRV/platform matrices, ownership stress and measured DSP/stream benchmarks
   follow the existing release policy. This roadmap does not authorize running them now.
+  Ordinary CI adds only the selected fixture's host check/lint/tests and manifest contract;
+  bare-metal CI requires an explicitly releasing USDR product, not merely a dependency's
+  release closure reaching the fixture. USDR release opt-ins remain unchanged.
 - **Publication:** preserve repository pre-push/hosted gates; publish only on a separately
   authorized route. `publish = false` stays unchanged.
 - **Physical qualification:** not now. Later explicit opt-in hardware fixtures must record

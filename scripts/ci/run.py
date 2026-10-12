@@ -16,7 +16,7 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import BLADERF, BNB, NOSTD, PKI, PROFILES, USDR_ORACLE
+from plan import BLADERF, BNB, NOSTD, PKI, PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE
 
 
 def packages(names):
@@ -87,6 +87,10 @@ def commands(profile, plan, bnb):
         if NOSTD in release_roots:
             result.append(["cargo", "build", "--manifest-path", f"{NOSTD}/Cargo.toml",
                            "--target", "thumbv7em-none-eabi"])
+        if (USDR_PORTABLE in release_roots
+                and any(member["root"] == USDR for member in plan["release_members"])):
+            result.append(["cargo", "check", "--manifest-path", f"{USDR_PORTABLE}/Cargo.toml",
+                           "--locked", "--target", "thumbv7em-none-eabi"])
         pki = qualified & {"rsl-asn1", "rsl-x509", "rsl-pki"}
         if release_roots & PKI:
             result.append(["cargo", "build", *packages(pki), "--target", "thumbv7em-none-eabi"])
@@ -112,6 +116,13 @@ def commands(profile, plan, bnb):
         manifest = ["--manifest-path", f"{USDR_ORACLE}/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "test", *manifest, "--locked"]]
+    if profile == "usdr-portable":
+        manifest = ["--manifest-path", f"{USDR_PORTABLE}/Cargo.toml"]
+        return [[sys.executable, "scripts/ci/portable.py"],
+                ["cargo", "fmt", *manifest, "--", "--check"],
+                ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "check", *manifest, "--locked"],
                 ["cargo", "test", *manifest, "--locked"]]
     if profile == "rust-skills":
         manifest = ["--manifest-path", "tools/rust-skills/Cargo.toml"]

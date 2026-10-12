@@ -1,6 +1,7 @@
 """Command-contract tests: preserve gate coverage while limiting package selection."""
 
 from pathlib import Path
+import sys
 import subprocess
 import socket
 import tempfile
@@ -8,6 +9,7 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
+from plan import USDR, USDR_PORTABLE
 from test_plan import planned
 
 BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
@@ -157,6 +159,31 @@ curl() {
                       commands("msrv", release, BNB_CONFIG))
         sequence = commands("workspace", planned(["protocols/session/socks/src/lib.rs"]), BNB_CONFIG)
         self.assertFalse(any("rsl-usdr" in command for command in sequence))
+
+    def test_portable_routine_gate_is_locked_host_only_and_checks_manifest_drift(self):
+        sequence = commands("usdr-portable", planned([f"{USDR_PORTABLE}/src/lib.rs"]), BNB_CONFIG)
+        self.assertIn([sys.executable, "scripts/ci/portable.py"], sequence)
+        self.assertEqual({row[1] for row in sequence if row[0] == "cargo"},
+                         {"fmt", "clippy", "check", "test"})
+        for row in sequence:
+            self.assertNotIn("--target", row)
+            self.assertNotIn("--workspace", row)
+            if row[0] == "cargo" and row[1] != "fmt":
+                self.assertIn("--locked", row)
+
+    def test_bnb_release_does_not_qualify_the_usdr_bare_metal_target(self):
+        plan = planned(release=True)
+        self.assertIn(USDR_PORTABLE, plan["release_roots"])
+        sequence = commands("no-std", plan, BNB_CONFIG)
+        self.assertFalse(any(f"{USDR_PORTABLE}/Cargo.toml" in row for row in sequence))
+
+    def test_explicit_usdr_release_qualifies_its_portable_target(self):
+        plan = planned([f"{USDR}/src/portable/temperature.rs"])
+        plan["release_roots"] = [USDR, USDR_PORTABLE]
+        plan["release_members"] = [{"root": USDR}]
+        self.assertIn(["cargo", "check", "--manifest-path", f"{USDR_PORTABLE}/Cargo.toml",
+                       "--locked", "--target", "thumbv7em-none-eabi"],
+                      commands("no-std", plan, BNB_CONFIG))
 
     def test_bnb_feature_ladder_and_denied_warning_lints_are_retained(self):
         sequence = commands("bnb", planned(release=True), BNB_CONFIG)

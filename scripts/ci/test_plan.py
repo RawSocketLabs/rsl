@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from gate import check_plan, check_release, check_results
-from plan import (BNB, MACROS, SOCKS, NOSTD, USDR_ORACLE, RELEASE_PROFILES, Package,
+from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, RELEASE_PROFILES, Package,
                   affected_packages, changed_paths, released_members, select)
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
@@ -35,6 +35,7 @@ def fixture():
         "devices/sdr/usdr": Package("rsl-usdr", {BNB, "devices/sdr/usdr/sim"}),
         "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
         USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
+        USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -136,6 +137,60 @@ class SelectionTests(unittest.TestCase):
         plan = planned(["devices/sdr/usdr/src/board/power.rs"])
         self.assertEqual(plan["packages"], ["rsl-usdr"])
         self.assertIn("usdr-oracle", plan["profiles"])
+
+    def test_portable_fixture_changes_select_only_its_routine_host_gate(self):
+        plan = planned([f"{USDR_PORTABLE}/src/lib.rs"])
+        self.assertEqual(plan["packages"], [])
+        self.assertEqual(set(plan["profiles"]), {"deny", "usdr-portable"})
+        self.assertFalse(plan["release"])
+        self.assertEqual(plan["fuzz"], [])
+
+    def test_portable_source_and_dependency_changes_select_the_same_fixture(self):
+        for path in (f"{USDR}/src/portable/temperature.rs", f"{BNB}/src/lib.rs"):
+            with self.subTest(path=path):
+                plan = planned([path])
+                self.assertIn("usdr-portable", plan["profiles"])
+                self.assertNotIn("no-std", plan["profiles"])
+                self.assertEqual(plan["fuzz"], [])
+
+    def test_the_porting_ledger_is_prose_not_a_build_or_qualification_trigger(self):
+        plan = planned([f"{USDR}/PORTING.md"])
+        self.assertEqual(plan["profiles"], [])
+        self.assertFalse(plan["full"])
+
+    def test_a_base_without_the_portable_fixture_can_select_the_new_owner(self):
+        old = fixture()
+        del old[USDR_PORTABLE]
+        plan = select([f"{USDR_PORTABLE}/Cargo.toml"], old, fixture())
+        self.assertFalse(plan["full"])
+        self.assertIn("usdr-portable", plan["profiles"])
+
+    def test_removing_the_portable_fixture_retains_the_full_routine_fallback(self):
+        new = fixture()
+        del new[USDR_PORTABLE]
+        plan = select([f"{USDR_PORTABLE}/Cargo.toml"], fixture(), new)
+        self.assertTrue(plan["full"])
+        self.assertFalse(RELEASE_PROFILES & set(plan["profiles"]))
+
+    def test_only_an_explicit_usdr_release_qualifies_its_bare_metal_core(self):
+        ordinary = planned([f"{USDR}/src/portable/temperature.rs"])
+        self.assertNotIn("no-std", ordinary["profiles"])
+        codec = planned(release=True)
+        self.assertIn(USDR_PORTABLE, codec["release_roots"])
+        # This fake topology intentionally lacks bnb: the native owner still selects its
+        # own qualification rather than relying on a codec release profile.
+        graph = {USDR: Package("rsl-usdr", set()),
+                 USDR_PORTABLE: Package("rsl-usdr-nostd-check", {USDR}, False)}
+        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        release = select([], graph, graph, release_members=[member])
+        self.assertIn("no-std", release["profiles"])
+        self.assertIn("usdr-portable", release["profiles"])
+
+    def test_an_explicit_usdr_release_cannot_skip_a_missing_portable_fixture(self):
+        graph = {USDR: Package("rsl-usdr", set())}
+        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        with self.assertRaisesRegex(ValueError, "registered portable fixture"):
+            select([], graph, graph, release_members=[member])
 
     def test_vendored_libusdr_selects_only_the_oracle(self):
         plan = planned([f"{USDR_ORACLE}/libusdr/lib/hw/lms6002d/lms6002d.c"])

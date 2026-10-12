@@ -14,7 +14,8 @@ opt-in. The first private temperature/USB-I²C execution pilot is implemented; n
 nonblocking attachment and public driver/stream handles remain unimplemented. Generic USB
 now offers bounded reap/filed-only completion primitives; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. Native executor/worker supervision is
-still open. No hardware
+still open. The private `src/portable` production tree is shared unchanged with an unpublished
+no_std + alloc compilation fixture; the public driver remains std-dependent. No hardware
 qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
@@ -34,6 +35,7 @@ intentional addition.
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, and the RX stream engine's blocks below it |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
+| `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
 
 ## Driver layout
@@ -63,8 +65,13 @@ Each layer calls only the ones below it.
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
-- `src/chips/tmp114.rs` and `src/transport/usb/i2c.rs`: private sans-I/O temperature and
-  framed I²C machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
+- `src/portable/`: platform-independent addresses, TMP114 values/temperature operation,
+  Si5332 divider maths and USB framing/I²C state machine. Uses core types and generic
+  executor errors; no OS/runtime ownership. Keep imports within the portable tree.
+  Fixed-size machines do not allocate; the bnb dependency requires alloc. The native
+  adapters preserve original bus errors and chip/read context.
+- `src/chips/tmp114.rs` and `src/transport/usb/i2c.rs`: thin host/context adapters around
+  those shared machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
   through the existing blocking pump. `execution_tests.rs` proves the same machines
   with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
   bounded synthetic RX loans. It does not establish native readiness/cancellation,
@@ -73,6 +80,20 @@ Each layer calls only the ones below it.
   `#[path]`.
 
 ## Rules
+
+- Portability is qualified per migrated operation, not by declaring the entire driver no_std.
+  The detached fixture must import the exact production module tree, instantiate its real
+  macro/machine paths and pass `scripts/ci/portable.py`; no copied algorithms or host stubs.
+  Bare-metal compilation is not linking, allocation-free operation or hardware evidence.
+- Keep scalar implementations authoritative. SIMD/CPU specialization belongs beside its
+  DSP/kernel owner, with scalar fallback, equivalence tests and a measured bottleneck;
+  USB/PCIe and scheduling tuning stays in transports/executors. Extract sharing only when
+  concrete consumers justify it.
+- USB uses existing Linux usbfs, not a custom uSDR kernel module. PCIe still requires the
+  external C `usdr_pcie_uram` module and ABI3; Rust userspace parity does not remove it.
+  Installation/loading, matching kernel headers/DKMS and module-signing prerequisites are
+  operator responsibilities. Never install/load modules or rewrite kernel/FPGA code as an
+  automatic library side effect.
 
 - Every ported sequence gets a parity test in `oracle/tests/`. The test compares the Rust
   trace with libusdr's, operation for operation, on fresh boards.
@@ -156,6 +177,12 @@ cargo clippy -p rsl-usdr --all-targets --all-features -- -D warnings && cargo te
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
+python3 scripts/ci/portable.py
+cargo fmt --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml -- --check
+cargo clippy --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked
+# Explicit local portability milestone; hosted cross-target qualification stays release-only.
+cargo check --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 # Opt-in hardware smoke: resets/claims only the explicitly selected USB port.
 RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb --test usb_hardware -- --ignored
 ```
@@ -163,3 +190,6 @@ RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb --test usb_hardware 
 The oracle is its own Cargo workspace: it sits inside this package's directory, where the
 root workspace's `exclude` cannot reach. It needs a C compiler only; regenerating the vendored subset also needs `python3`
 with PyYAML.
+
+The portable fixture has its own committed lockfile. Ordinary selected CI uses host-only
+validation; a release of a dependency cannot opt USDR into bare-metal qualification.
