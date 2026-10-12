@@ -27,6 +27,7 @@ are distinguished from genuine capability. Split a row before claiming only part
 
 Test prefixes: `O:` = `oracle/tests/`, `T:` = `tests/`, `UT:` = `src/transport/usb/tests.rs`,
 `I2C:` = `src/transport/usb/i2c_tests.rs`, `EX:` = `src/transport/usb/execution_tests.rs`.
+`USB:` = workspace `usb/src/queue.rs::tests` (generic host-queue boundary).
 `uSDR` means m2_lm6_1 revisions 1–3; `USB/PCIe` means the Linux host implementations.
 Board-parity tests use a simulated bus and do not qualify either physical transport.
 
@@ -54,6 +55,8 @@ Board-parity tests use a simulated bus and do not qualify either physical transp
 | Capability | Pinned C evidence | Rust owner/interface | Variant / path | Implementation / software / hardware | Blocker or boundary |
 |---|---|---|---|---|---|
 | Sans-I/O operation/continuation execution | `C:lowlevel/usdr_lowlevel.h` operations plus board sequences | `TemperatureRead`, `I2cTransaction`; actual blocking temperature/I²C path uses both | uSDR first; private portable core | Partial temperature/I²C / `I2C:tmp114_request_and_scalar_reply_match_pinned_usb_golden`, `unrelated_irqs_do_not_restart_completion_deadline`, cancellation/identity/clock/failure cases / U | Power/RX operations still use the old blocking Bus; no general scheduler or runtime in core. |
+| Bounded native USB completion primitives | `C:lowlevel/usb_uram/usb_uram_libusb.c` async transfer callbacks; Linux usbfs `REAPURBNDELAY` | `rsl_usb::Interface::reap`, `InQueue::try_complete`, `OutQueue::try_complete`; existing owned `submit` | Linux USB; portable host API | Present / `USB:trying_a_completion_never_reaps_or_waits_for_it`, `shared_reaping_stops_at_its_budget_and_routes_both_directions`, budget/contention/prefix-error/disconnect cases / U | No OS readiness attachment or driver scheduling. Kernel ioctl locks/memory faults may delay calls; bounded reaping is not a hard-real-time executor. |
+| Worker-owned USB cancellation boundary | Linux usbfs `DISCARDURB` calls `usb_kill_urb`, not a nonblocking unlink | Whole `InQueue`/`OutQueue` moved to caller-owned worker; existing `cancel_all` and failure-path Drop stay there | Linux USB; fake kernel ownership tests | Partial documented handoff / `USB:worker_cancellation_retains_queue_ownership_until_discard_returns`, `dropping_a_cleanup_observer_does_not_release_the_workers_queue`, partial-discard and concurrent-reap cases / U | No shipped managed worker/executor. Worker must own buffers until return; do not join on reactor. Other ioctls can wait behind the device kernel lock, requiring isolation in the native executor. |
 | External readiness / deadline reactor | C pollable stream interface; `C:models/dm_stream.c::usdr_dms_get_fd` | Planned caller-owned Mio driver; private fake-source proof exists | Linux USB/PCIe first | Missing native adapter / `EX:callback_and_mio_runners_execute_the_same_temperature_and_irq_sequence` (pilot only) / U | Real USB readiness/reap/cancel, registration retirement/fairness and browser integration remain open; fake Waker is not a USB FD. |
 | Managed synchronous/asynchronous driving | Same functional operations, not C threading API compatibility | Planned opt-in drivers; test-only observers share the real machines | Linux first | Missing production adapters / `EX:managed_mio_runner_allows_a_blocking_observer_on_another_thread`, `future_poll_only_observes_and_completion_wakes_the_registered_observer`, observer-drop/driver-drop cases (pilot only) / U | No shipped runtime/driver API; explicit native lifecycle/worker ownership remains open. |
 | Bounded RX/control composition pilot | C's independently progressing control/stream endpoints | Existing `Rx` adapter plus temperature/I²C core at whole-transfer fake boundary | Synthetic frames, Linux host tests | Partial private pilot / `EX:rx_poll_timeout_preserves_eight_leases_while_control_makes_progress`, `a_cross_thread_sample_borrow_is_not_requeued_while_control_completes`, `saturated_rx_does_not_block_abort_and_failed_cleanup_keeps_ownership` / U | Demonstrates loan/requeue/cleanup policy, not native independent stream handles, DMA timing or RF. |
@@ -119,8 +122,11 @@ gateware and Linux kernel code remain external dependencies rather than Rust lib
 1. **Execution foundation — In progress.** Preserve the existing `Device`/`Bus` baseline
    while extracting real uSDR sequences into typed, bounded sans-I/O state machines.
    The temperature/I²C pilot now runs in the production blocking path and under test-only
-   readiness, managed-thread/future and callback runners. The next gate is native USB
-   nonblocking submission/reap/cancellation and externally driven lifecycle; then migrate
+   readiness, managed-thread/future and callback runners. Generic USB now has bounded reap
+   and filed-only completion primitives plus a tested whole-queue cleanup-worker handoff.
+   Cancellation itself can block in the kernel; it must not run on the reactor. The next
+   gate is native USB readiness attachment, blocking-syscall isolation and externally driven
+   lifecycle/worker supervision; then migrate
    power/current RX and introduce public independently owned stream handles. Real token
    retirement, fairness, timer scheduling and browser integration are not established by
    fake-source tests. Managed adapters must remain opt-in consumers of that same engine.

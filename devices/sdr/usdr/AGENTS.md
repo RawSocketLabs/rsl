@@ -11,7 +11,10 @@ C runtime, C ABI compatibility, Python/Soapy or legacy JSON/RPC adapters. See
 the program is not complete. Linux is first. Sans-I/O state machines and an externally owned
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
 opt-in. The first private temperature/USB-I²C execution pilot is implemented; native
-nonblocking attachment and public driver/stream handles remain unimplemented. No hardware
+nonblocking attachment and public driver/stream handles remain unimplemented. Generic USB
+now offers bounded reap/filed-only completion primitives; cancellation remains an owned-worker
+operation because the Linux discard ioctl can block. Native executor/worker supervision is
+still open. No hardware
 qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:

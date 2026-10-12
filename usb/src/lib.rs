@@ -35,6 +35,64 @@
 //! - Completions are collected by whichever thread is waiting, one at a time, and filed under
 //!   the endpoint they belong to: there is no background thread.
 //!
+//! # Bounded completion driving
+//!
+//! [`Interface::reap`] collects a bounded number of completed transfers across the open
+//! device. Each queue's `try_complete` takes only already-filed completions; it never
+//! performs I/O. Both return [`Error::Busy`] rather than waiting for the dispatcher lock.
+//! Do not wait for a new readiness edge after [`ReapProgress::BudgetExhausted`]. Caller
+//! processing/admission budgets and OS readiness registration remain the driver's concern.
+//! Do not mix blocking waiters with readiness driving without external coordination.
+//!
+//! ```no_run
+//! # use std::num::NonZeroUsize;
+//! # use rsl_usb::{Error, Interface, InQueue, ReapProgress};
+//! # fn turn(interface: &Interface, rx: &mut InQueue) -> Result<bool, Error> {
+//! let budget = NonZeroUsize::new(16).expect("nonzero budget");
+//! let progress = interface.reap(budget)?;
+//! let mut filed_drained = false;
+//! for _ in 0..budget.get() {
+//!     let Some(done) = rx.try_complete()? else {
+//!         filed_drained = true;
+//!         break;
+//!     };
+//!     done.status?;
+//!     // Consume the received bytes before handing this buffer back to the kernel.
+//!     rx.submit(done.buffer).map_err(|rejected| rejected.error)?;
+//! }
+//! // Repeat this for every active queue; pending transfers alone do not require a turn.
+//! Ok(progress == ReapProgress::BudgetExhausted || !filed_drained)
+//! # }
+//! ```
+//!
+//! # Caller-owned cleanup workers
+//!
+//! Cancellation and queue Drop are blocking. Linux's `USBDEVFS_DISCARDURB` uses
+//! [`usb_kill_urb`](https://github.com/torvalds/linux/blob/v6.12/drivers/usb/core/devio.c#L1880-L1899);
+//! an ioctl can also wait on the kernel's device lock. Moving the *entire queue* to a
+//! caller-owned worker preserves every in-flight allocation through discard, reap and
+//! failure-path Drop. Never join that worker on a reactor thread. Dropping its observer
+//! does not cancel cleanup or return kernel-owned memory. A driver must also isolate
+//! other ioctls on that device while cancellation can hold its kernel lock; these
+//! primitives are not a complete nonblocking OS executor or managed driver.
+//!
+//! ```no_run
+//! # use std::sync::mpsc::{self, Receiver};
+//! # use std::thread;
+//! # use rsl_usb::{Buffer, Error, InQueue};
+//! # fn retire(mut rx: InQueue, wake: impl FnOnce() + Send + 'static)
+//! #     -> Receiver<Result<Vec<Buffer>, Error>> {
+//! let (finished, observer) = mpsc::channel();
+//! thread::spawn(move || {
+//!     let result = rx.cancel_all();
+//!     drop(rx); // Failure-path cleanup stays on the worker too.
+//!     drop(finished.send(result)); // Observer may already be gone; owned buffers are safe.
+//!     wake(); // Notify through the caller's existing shared wake hook.
+//! });
+//! observer
+//! # }
+//! ```
+//!
 //! # Platforms
 //!
 //! Linux only so far, through usbfs (`/dev/bus/usb`); elsewhere the crate is empty. The API
@@ -61,6 +119,8 @@ mod usbfs;
 pub use buffer::Buffer;
 #[cfg(target_os = "linux")]
 pub use device::{Device, Interface, Setup};
+#[cfg(target_os = "linux")]
+pub use dispatch::ReapProgress;
 #[cfg(target_os = "linux")]
 pub use enumerate::{DeviceInfo, PortPath, devices};
 #[cfg(target_os = "linux")]

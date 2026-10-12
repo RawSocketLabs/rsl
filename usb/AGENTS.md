@@ -16,7 +16,16 @@ belongs here (drivers live under `devices/`). Unpublished (`publish = false`).
   kernel has not returned after a grace period.
 - No internal thread: `dispatch.rs` gives one waiting thread at a time the reaper role, files
   each completion under its endpoint and wakes waiters, all under one lock.
-- Out of scope for v0: isochronous, hotplug, async, descriptor parsing beyond what sysfs
+- Bounded completion driving: `Interface::reap(NonZeroUsize)` files at most the supplied
+  budget across the device; queues' `try_complete` only takes filed buffers. Both use
+  `try_lock` and return `Busy` on contention. Exhausting the budget requires rescheduling
+  before waiting for readiness, even if the next turn discovers an empty backend.
+- Cancellation and Drop remain blocking: Linux `USBDEVFS_DISCARDURB` calls `usb_kill_urb`.
+  Caller-owned cleanup workers must own the whole queue through cancellation/reap/Drop;
+  never pass borrowed pending pointers or join a blocked worker on a reactor. Kernel device
+  locks can delay other ioctls too. Native readiness registration, executor/worker supervision
+  and public async driver handles remain unimplemented; fake tests are not native readiness.
+- Out of scope for v0: isochronous, hotplug, managed async, descriptor parsing beyond what sysfs
   lists, zero-length-packet flags.
 
 ## Unsafe
@@ -27,6 +36,9 @@ All of it is in `usbfs.rs` (ioctls, mmap), `buffer.rs` (the mapping), `queue.rs`
   field, and its buffer pointer is taken after it is boxed (Miri caught the earlier order).
 - The kernel writes a transfer's outcome and IN data during the reap ioctl, so nothing is
   freed before it is reaped.
+- Discard accepts a submitted allocation still owned by its queue, including a reaped/filed
+  completion racing cancellation. The address stays live until the owner takes it back;
+  discard only looks up its identity. A refusal does not itself return buffer ownership.
 - The request codes and structure layouts are checked against `<linux/usbdevice_fs.h>`
   (const size asserts; request-code test on x86-64).
 

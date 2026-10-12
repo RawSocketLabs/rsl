@@ -100,8 +100,24 @@ impl InQueue {
         self.0.wait(timeout)
     }
 
+    /// Takes a completion already filed by [`crate::Interface::reap`] or a blocking waiter.
+    /// Does no I/O or waiting; `None` does not mean the backend has been drained.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] on dispatcher-lock contention; [`Error::Disconnected`] if transfers
+    /// remain owned but none is filed and the dispatcher has observed disconnect.
+    pub fn try_complete(&mut self) -> Result<Option<Completion>, Error> {
+        self.0.try_complete()
+    }
+
     /// Cancels every queued transfer and waits for them to come back, returning their
     /// buffers.
+    /// This is blocking: Linux's discard ioctl itself can wait. For reactor-driven cleanup,
+    /// move the entire queue to a caller-owned worker and keep it there through cleanup and
+    /// Drop. Do not join that worker on the reactor thread or discard using borrowed buffer
+    /// pointers. Dropping this queue can also block; reap/take all completions before Drop
+    /// if it must happen on a reactor thread.
     ///
     /// # Errors
     ///
@@ -178,8 +194,24 @@ impl OutQueue {
         self.0.wait(timeout)
     }
 
+    /// Takes a completion already filed by [`crate::Interface::reap`] or a blocking waiter.
+    /// Does no I/O or waiting; `None` does not mean the backend has been drained.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] on dispatcher-lock contention; [`Error::Disconnected`] if transfers
+    /// remain owned but none is filed and the dispatcher has observed disconnect.
+    pub fn try_complete(&mut self) -> Result<Option<Completion>, Error> {
+        self.0.try_complete()
+    }
+
     /// Cancels every queued transfer and waits for them to come back, returning their
     /// buffers.
+    /// This is blocking: Linux's discard ioctl itself can wait. For reactor-driven cleanup,
+    /// move the entire queue to a caller-owned worker and keep it there through cleanup and
+    /// Drop. Do not join that worker on the reactor thread or discard using borrowed buffer
+    /// pointers. Dropping this queue can also block; reap/take all completions before Drop
+    /// if it must happen on a reactor thread.
     ///
     /// # Errors
     ///
@@ -330,6 +362,17 @@ impl Pipe {
         Ok(Some(self.take(transfer)))
     }
 
+    /// Returns a filed buffer without touching the backend or waiting for another thread.
+    fn try_complete(&mut self) -> Result<Option<Completion>, Error> {
+        if self.pending.is_empty() {
+            return Ok(None);
+        }
+        Ok(self
+            .dispatcher
+            .try_complete(self.endpoint)?
+            .map(|transfer| self.take(transfer)))
+    }
+
     /// Removes a transfer the dispatcher handed back from `pending` and unboxes it.
     fn take(&mut self, transfer: NonNull<Transfer>) -> Completion {
         let position = self
@@ -364,8 +407,10 @@ impl Pipe {
     /// Cancels everything in flight and waits up to `grace` for it all to come back.
     fn cancel_all(&mut self, grace: Duration) -> Result<Vec<Buffer>, Error> {
         for &transfer in &self.pending {
-            // SAFETY: submitted and not yet taken back. A transfer that completed meanwhile
-            // is refused with EINVAL and still comes back, so the result does not matter.
+            // SAFETY: submitted and not yet taken back, so the allocation is still live.
+            // Another reaper may already have filed it; discard uses only its identity.
+            // EINVAL means it is no longer pending in the kernel. Other discard failures
+            // are not proof of cancellation: only the reap below permits freeing a buffer.
             let _ = unsafe { self.dispatcher.backend().discard(transfer) };
         }
         let deadline = Instant::now() + grace;
@@ -394,11 +439,14 @@ impl Drop for Pipe {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+    use std::sync::mpsc::{self, TryRecvError};
     use std::thread;
 
     use rustix::io::Errno;
 
     use super::*;
+    use crate::dispatch::ReapProgress;
     use crate::dispatch::fake::Fake;
     use crate::usbfs::URB_BULK;
 
@@ -406,6 +454,11 @@ mod tests {
     const TX: u8 = 0x03;
     const NOTIFY: u8 = 0x82;
     const SOON: Duration = Duration::from_millis(50);
+
+    /// A nonempty per-turn reap budget.
+    fn budget(transfers: usize) -> NonZeroUsize {
+        NonZeroUsize::new(transfers).unwrap()
+    }
 
     fn device() -> (Arc<Fake>, Arc<Dispatcher>) {
         let fake = Arc::new(Fake::default());
@@ -584,5 +637,300 @@ mod tests {
         let done = rx.wait(SOON).unwrap().unwrap();
         assert!(matches!(done.status, Err(TransferError::Cancelled)));
         assert!(done.buffer.is_empty());
+    }
+
+    #[test]
+    fn trying_a_completion_never_reaps_or_waits_for_it() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        fake.complete(RX, 0, 128);
+        assert!(rx.try_complete().unwrap().is_none());
+        assert_eq!(
+            fake.calls(),
+            (0, 0),
+            "try_complete performs no backend calls"
+        );
+        assert_eq!(rx.pending(), 1, "unreaped memory stays owned by the queue");
+
+        assert_eq!(dispatcher.reap(budget(2)).unwrap(), ReapProgress::Drained);
+        let done = rx.try_complete().unwrap().unwrap();
+        assert!(done.status.is_ok());
+        assert_eq!(done.buffer.len(), 128);
+        assert!(done.buffer.iter().all(|&byte| byte == RX));
+        assert_eq!(fake.calls(), (2, 0));
+        assert!(rx.try_complete().unwrap().is_none());
+        assert_eq!(rx.pending(), 0);
+    }
+
+    #[test]
+    fn shared_reaping_stops_at_its_budget_and_routes_both_directions() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let mut tx = out_queue(&dispatcher, TX);
+        let mut notify = in_queue(&dispatcher, NOTIFY);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let mut buffer = tx.alloc(16);
+        buffer.as_mut_slice().fill(0xa5);
+        buffer.set_len(16);
+        tx.submit(buffer).unwrap();
+        let buffer = notify.alloc(512).unwrap();
+        notify.submit(buffer).unwrap();
+        fake.complete(RX, 0, 512);
+        fake.complete(TX, 0, 16);
+        fake.complete(NOTIFY, 0, 4);
+
+        for (turn, queue) in [(1, &mut rx), (2, &mut notify)] {
+            assert_eq!(
+                dispatcher.reap(budget(1)).unwrap(),
+                ReapProgress::BudgetExhausted
+            );
+            assert_eq!(fake.calls(), (turn, 0), "one backend reap per budget unit");
+            if turn == 1 {
+                assert_eq!(queue.try_complete().unwrap().unwrap().buffer.len(), 512);
+            } else {
+                assert!(
+                    queue.try_complete().unwrap().is_none(),
+                    "notification is not reaped yet"
+                );
+            }
+        }
+        let sent = tx.try_complete().unwrap().unwrap();
+        assert!(sent.status.is_ok());
+        assert_eq!(&*sent.buffer, &[0xa5; 16]);
+        assert_eq!(dispatcher.reap(budget(2)).unwrap(), ReapProgress::Drained);
+        assert_eq!(notify.try_complete().unwrap().unwrap().buffer.len(), 4);
+        assert_eq!(fake.calls(), (4, 0));
+    }
+
+    #[test]
+    fn exact_budget_exhaustion_requires_a_further_turn_even_if_now_empty() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        fake.complete(RX, 0, 512);
+        assert_eq!(
+            dispatcher.reap(budget(1)).unwrap(),
+            ReapProgress::BudgetExhausted
+        );
+        assert_eq!(fake.calls(), (1, 0));
+        assert_eq!(dispatcher.reap(budget(1)).unwrap(), ReapProgress::Drained);
+        assert_eq!(fake.calls(), (2, 0));
+        assert!(rx.try_complete().unwrap().is_some());
+    }
+
+    #[test]
+    fn a_reap_error_does_not_lose_its_already_collected_prefix() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let mut notify = in_queue(&dispatcher, NOTIFY);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let buffer = notify.alloc(512).unwrap();
+        notify.submit(buffer).unwrap();
+        fake.complete(RX, 0, 512);
+        fake.complete(NOTIFY, 0, 4);
+        fake.fail_reap_after(1, Errno::IO);
+        assert!(
+            matches!(dispatcher.reap(budget(3)), Err(Error::Io(error)) if error.raw_os_error() == Some(Errno::IO.raw_os_error()))
+        );
+        assert_eq!(fake.calls(), (2, 0));
+        assert!(
+            rx.try_complete().unwrap().is_some(),
+            "the prefix is still owned and retrievable"
+        );
+        assert!(notify.try_complete().unwrap().is_none());
+        assert_eq!(dispatcher.reap(budget(3)).unwrap(), ReapProgress::Drained);
+        assert!(notify.try_complete().unwrap().is_some());
+    }
+
+    #[test]
+    fn disconnect_preserves_all_completions_reaped_before_its_error() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        for _ in 0..2 {
+            let buffer = rx.alloc(512).unwrap();
+            rx.submit(buffer).unwrap();
+        }
+        fake.unplug();
+        assert!(matches!(
+            dispatcher.reap(budget(3)),
+            Err(Error::Disconnected)
+        ));
+        for remaining in [1, 0] {
+            let done = rx.try_complete().unwrap().unwrap();
+            assert!(matches!(done.status, Err(TransferError::Disconnected)));
+            assert_eq!(rx.pending(), remaining);
+        }
+        assert!(rx.try_complete().unwrap().is_none());
+        assert!(matches!(
+            dispatcher.reap(budget(1)),
+            Err(Error::Disconnected)
+        ));
+        assert!(matches!(
+            dispatcher.try_complete(NOTIFY),
+            Err(Error::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn a_blocking_reaper_does_not_make_a_bounded_turn_wait() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let pause = fake.pause_wait();
+        let worker = thread::spawn(move || rx.wait(Duration::from_secs(10)).unwrap().unwrap());
+        pause.entered();
+        assert!(matches!(dispatcher.reap(budget(1)), Err(Error::Busy)));
+        assert!(dispatcher.try_complete(RX).unwrap().is_none());
+        fake.complete(RX, 0, 512);
+        pause.release();
+        assert!(worker.join().unwrap().status.is_ok());
+    }
+
+    #[test]
+    fn mutex_contention_is_busy_not_a_wait_for_nonblocking_calls() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        fake.complete(RX, 0, 512);
+        let pause = fake.pause_reap();
+        let worker_dispatcher = Arc::clone(&dispatcher);
+        let worker = thread::spawn(move || worker_dispatcher.reap(budget(1)).unwrap());
+        pause.entered();
+        assert!(matches!(dispatcher.reap(budget(1)), Err(Error::Busy)));
+        assert!(matches!(rx.try_complete(), Err(Error::Busy)));
+        pause.release();
+        assert_eq!(worker.join().unwrap(), ReapProgress::BudgetExhausted);
+        assert!(rx.try_complete().unwrap().is_some());
+    }
+
+    #[test]
+    fn worker_cancellation_retains_queue_ownership_until_discard_returns() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let pause = fake.pause_discard();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = rx.cancel_all();
+            drop(rx);
+            sender.send(result).unwrap();
+        });
+        pause.entered();
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(
+            fake.pending(),
+            1,
+            "cancellation has not returned kernel memory"
+        );
+        assert!(matches!(dispatcher.open(RX), Err(Error::Busy)));
+        pause.release();
+        assert_eq!(receiver.recv().unwrap().unwrap().len(), 1);
+        worker.join().unwrap();
+        assert_eq!(fake.pending(), 0);
+        assert!(
+            dispatcher.open(RX).is_ok(),
+            "worker cleanup retired the old queue"
+        );
+    }
+
+    #[test]
+    fn dropping_a_cleanup_observer_does_not_release_the_workers_queue() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let pause = fake.pause_discard();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = rx.cancel_all();
+            drop(rx);
+            assert!(sender.send(result).is_err(), "the observer was dropped");
+        });
+        pause.entered();
+        drop(receiver);
+        assert_eq!(fake.pending(), 1);
+        assert!(matches!(dispatcher.open(RX), Err(Error::Busy)));
+        pause.release();
+        worker.join().unwrap();
+        assert_eq!(fake.pending(), 0);
+        assert!(dispatcher.open(RX).is_ok());
+    }
+
+    #[test]
+    fn a_partial_discard_failure_keeps_the_remaining_buffer_owned_until_reaped() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        for _ in 0..2 {
+            let buffer = rx.alloc(512).unwrap();
+            rx.submit(buffer).unwrap();
+        }
+        fake.fail_discard_after(1, Errno::IO);
+        let pause = fake.pause_wait();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = rx.cancel_all();
+            drop(rx);
+            sender.send(result).unwrap();
+        });
+        pause.entered();
+        assert_eq!(fake.discarded(), 2, "both owned transfers were attempted");
+        assert_eq!(
+            fake.pending(),
+            1,
+            "failed discard did not return the buffer"
+        );
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert!(matches!(dispatcher.open(RX), Err(Error::Busy)));
+        fake.complete(RX, 0, 64);
+        pause.release();
+        let buffers = receiver.recv().unwrap().unwrap();
+        worker.join().unwrap();
+        assert_eq!(buffers.len(), 2);
+        assert!(buffers[0].is_empty());
+        assert_eq!(
+            buffers[1].len(),
+            64,
+            "only reap returns the remaining allocation"
+        );
+        assert!(dispatcher.open(RX).is_ok());
+    }
+
+    #[test]
+    fn worker_cancel_can_race_a_reap_without_freeing_a_filed_transfer() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        fake.complete(RX, 0, 512);
+        let reap_pause = fake.pause_reap();
+        let cancel_pause = fake.pause_discard();
+        let worker_dispatcher = Arc::clone(&dispatcher);
+        let reaper = thread::spawn(move || worker_dispatcher.reap(budget(1)).unwrap());
+        reap_pause.entered();
+        let (sender, receiver) = mpsc::channel();
+        let canceller = thread::spawn(move || sender.send(rx.cancel_all()).unwrap());
+        cancel_pause.entered();
+        cancel_pause.release();
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        reap_pause.release();
+        assert_eq!(reaper.join().unwrap(), ReapProgress::BudgetExhausted);
+        let buffers = receiver.recv().unwrap().unwrap();
+        canceller.join().unwrap();
+        assert_eq!(buffers.len(), 1);
+        assert_eq!(
+            buffers[0].len(),
+            512,
+            "completion won the cancellation race"
+        );
+        assert_eq!(fake.discarded(), 1);
+        assert!(dispatcher.open(RX).is_ok());
     }
 }
