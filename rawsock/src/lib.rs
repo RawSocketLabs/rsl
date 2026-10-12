@@ -1,8 +1,8 @@
 //! `rawsock` — dual-use, layered raw-packet I/O.
 //!
 //! Transmit **exactly the bytes you give it** at a chosen layer — an ordinary L4
-//! payload today, a hand-built IP header (L3) or a forged Ethernet frame (L2) as the
-//! privileged backends land — for spoofing, fuzzing, and interop testing. The
+//! payload, a hand-built IP header (L3), or a forged Ethernet frame (L2) — for
+//! spoofing, fuzzing, and interop testing. The
 //! socket-layer half of the [RawSocketLabs] dual-use philosophy: the protocol crates
 //! *encode* (compliant by default, deliberately violatable, on the [`bnb`] codec);
 //! `rawsock` *transmits* without validating.
@@ -16,18 +16,17 @@
 //!
 //! # Layers are opt-in
 //!
-//! Lower layers are Cargo features. This first cut ships the unprivileged core:
-//! `transport` (L4, default) plus the [`compose`] model, the [`Loopback`] test backend,
-//! and [`capabilities`] probing. The privileged `network` (L3, `IPPROTO_RAW`) and `link`
-//! (L2, `AF_PACKET`) backends land with the header-forging protocols (IP/ICMP/ARP) — see
-//! `ROADMAP.md`. A consumer that doesn't enable a layer cannot construct that socket:
+//! Lower layers are Cargo features: `transport` (L4, default, unprivileged), and the
+//! privileged `network` (L3, raw IPv4 via `IPPROTO_RAW`) and `link` (L2, raw Ethernet via
+//! `AF_PACKET`), both needing `CAP_NET_RAW`. The [`compose`] model, the [`Loopback`] test
+//! backend, and [`capabilities`] probing are always available. A consumer that doesn't enable a layer cannot construct that socket:
 //! misuse is a compile error, not a warning.
 //!
 //! # Upstream crates
 //!
 //! Syscalls go through [`rustix`](https://docs.rs/rustix) (safe, Linux-only, optional) —
 //! **not** `libc`/`socket2`. The crate is `#![deny(unsafe_code)]` with a **single** confined
-//! `unsafe` block, in [`linux::link`] (the `link` feature): rustix (1.1.4, the latest) exposes
+//! `unsafe` block, in `linux/link.rs` (the `link` feature): rustix (1.1.4, the latest) exposes
 //! no safe link-layer socket address, so binding an `AF_PACKET` socket needs one call to
 //! construct a `sockaddr_ll` — no `libc`, and everything else stays safe. See `DESIGN.md`.
 //!

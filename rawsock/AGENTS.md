@@ -33,7 +33,10 @@ name). The L3/L2 backends are privileged (`CAP_NET_RAW`) and are the rungs the `
 - **`loopback`** — in-memory `RawIo` (records + replays); carries most unit coverage.
 - **`capability`** — probes which layers the host+process can open *right now* (never
   assumed) by attempting a socket per layer.
-- **`linux/transport`** — the one shipped socket backend: unprivileged UDP over rustix.
+- **`linux/transport`** — L4: unprivileged UDP over rustix.
+- **`linux/network`** — L3: `NetworkSocket`, raw IPv4 via `IPPROTO_RAW` (`network` feature).
+- **`linux/link`** — L2: `LinkSocket`, raw Ethernet via `AF_PACKET`, bound by interface name
+  (`link` feature); holds the crate's one `unsafe` fn.
 
 ## Dual-use doctrine (load-bearing)
 
@@ -60,8 +63,10 @@ is a deliberate, compile-checked opt-in. Never add validation to the sink.
   IP/UDP `Protocol` impls live in the `protocols` workspace, not here): `Context` threading,
   cross-layer checksum, demux auto-set + override, `encode` vs `encode_raw`, `internet_checksum`.
 - `tests/transport.rs` — a real unprivileged UDP round-trip on loopback (runs in CI).
-- The privileged L3/L2 backends will add namespace-gated tests (`unshare --user
-  --map-root-user --net`, `lo` up) — `RAWSOCK_PRIV_TESTS` guards them; unset ⇒ they no-op.
+- `tests/network.rs`, `tests/link.rs` — the privileged L3/L2 backends: `open()` must agree
+  with `capabilities()` (runs everywhere), and the real loopback send runs only when the probe
+  reports the layer available, otherwise it skips. Exercise it unprivileged under `unshare
+  --user --map-root-user --net` with `lo` up.
 
 `cargo test` · `cargo clippy --all-targets` · `cargo fmt --all --check` · MSRV 1.85.
 

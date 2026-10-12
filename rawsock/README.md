@@ -29,15 +29,14 @@ assert_eq!(sink.last_sent(), Some(&[0xde, 0xad, 0xbe, 0xef][..]));
 ## Layers are opt-in
 
 The dual-use power is gated by Cargo feature, per layer — a consumer that doesn't enable a
-layer **cannot construct that socket** (misuse is a compile error, not a warning). This
-first cut ships the **unprivileged core**:
+layer **cannot construct that socket** (misuse is a compile error, not a warning).
 
-| feature | layer | backend | status |
+| feature | layer | backend | privilege |
 |---|---|---|---|
-| `transport` *(default)* | L4 | ordinary UDP via `rustix` | ✅ shipped |
-| `compute` *(default)* | — | derived-field computation signal | ✅ shipped |
-| `network` | L3 | raw IP (`IPPROTO_RAW`/`IP_HDRINCL`) | 🔜 with IP/ICMP |
-| `link` | L2 | raw Ethernet (`AF_PACKET`) | 🔜 with ARP/Ethernet |
+| `transport` *(default)* | L4 | ordinary UDP via `rustix` | none |
+| `compute` *(default)* | — | derived-field computation signal | — |
+| `network` | L3 | raw IPv4 (`IPPROTO_RAW`, `IP_HDRINCL` implied) — `NetworkSocket` | `CAP_NET_RAW` |
+| `link` | L2 | raw Ethernet (`AF_PACKET`, bound by interface name) — `LinkSocket` | `CAP_NET_RAW` |
 
 Plus the always-available [`Loopback`] in-memory backend (tests, any OS, no privilege) and
 [`capabilities()`] host probing.
@@ -45,11 +44,11 @@ Plus the always-available [`Loopback`] in-memory backend (tests, any OS, no priv
 ## Upstream crates
 
 Syscalls go through **[`rustix`](https://docs.rs/rustix)** (safe, Linux-only, optional) —
-not `libc`/`socket2`/`pnet`/`pcap`. The core here is **100% safe** (`#![forbid(unsafe_code)]`).
-The future `link` backend is the sole planned FFI (`libc`, only for the `AF_PACKET`
-`sockaddr_ll` bind + `if_nametoindex`), isolated to that module — and to be re-checked
-against rustix's `netdevice`/link support first, which may remove the need entirely. See
-[`DESIGN.md`](DESIGN.md).
+not `libc`/`socket2`/`pnet`/`pcap`. The crate is `#![deny(unsafe_code)]` with exactly one
+`#[allow(unsafe_code)]` fn, `link_addr` in `linux/link.rs`: rustix has no safe link-layer
+socket address, so binding an `AF_PACKET` socket builds a `sockaddr_ll` via
+`SocketAddrAny::read`. Interface lookup uses rustix's `name_to_index`; there is no `libc`.
+See [`DESIGN.md`](DESIGN.md).
 
 ## Not this
 

@@ -3,7 +3,7 @@
 Status and plan of record. This crate is extracted from the proven asyio `rawsock` (rev 3)
 and re-homed as a bnb-independent repo.
 
-## Built — the unprivileged core
+## Built — the core
 
 - [x] **`RawIo` / `Layer` / `OpenError`** — the dual-use sink trait + layer taxonomy.
 - [x] **`compose`** — `Protocol`/`ProtocolExt`/`Context`/`Pseudo`, `.payload()` nesting,
@@ -12,7 +12,7 @@ and re-homed as a bnb-independent repo.
 - [x] **`Loopback`** — in-memory `RawIo` for tests/dry-runs (any OS, no privilege).
 - [x] **`capabilities()`** — host+process layer-openability probe.
 - [x] **`transport` (L4)** — unprivileged UDP via `rustix`.
-- [x] 100% safe core (`#![forbid(unsafe_code)]`), rustix-only, CI-testable everywhere.
+- [x] rustix-only core, CI-testable everywhere (now `#![deny(unsafe_code)]`; see `link` below).
 
 ## Next — the privileged backends (trigger: a header-forging protocol crate)
 
@@ -36,10 +36,9 @@ and re-homed as a bnb-independent repo.
 
 ## Open decisions
 
-- [ ] **Dependency in `protocols`** — wire `protocols`' `[workspace.dependencies]` to depend
-      on `rawsock` (git dep, mirroring `bnb`) when the first protocol crate implements
-      `Protocol` (UDP is the trigger). Not consumed yet.
-- [ ] **rustix version** — track 1.x; re-check the L2 link-address story (above) before the
-      `link` backend.
+- [x] **Dependency in `protocols`** — done: `ip`, `icmp`, `udp`, and `ethernet` depend on
+      `rawsock` (workspace path dep) behind their optional `inject` feature.
+- [ ] **rustix version** — track 1.x; on each upgrade, re-check for a safe link-layer socket
+      address that would let `link_addr` drop its `unsafe`.
 - [ ] **macOS / Windows backends** — additive behind `RawIo`; `OpenError::DriverMissing`
       reserved for the Windows (WinDivert/Npcap) path.

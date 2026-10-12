@@ -12,10 +12,9 @@ rev 3), re-homed as its own bnb-independent repo.
   (designed-for, not shipped).
 - **Sockets via `rustix`, not `socket2`/`libc`/`pnet`/`pcap`.** rustix gives safe `AF_PACKET`
   and `SOCK_RAW` syscalls with no libc linkage; `IP_HDRINCL` comes free by opening the L3
-  socket as `IPPROTO_RAW`. The predecessor's Phase-0 spike proved rustix does `AF_PACKET`
-  open + `send`/`recv`; the only residual `libc` need was the `sockaddr_ll` bind +
-  `if_nametoindex` for L2. **This is to be re-verified against rustix 1.x** (the reference
-  pinned 0.38) — its `netdevice` module and any link-address support may eliminate `libc`.
+  socket as `IPPROTO_RAW`. Re-verified against rustix 1.1.4: `netdevice::name_to_index`
+  replaces `if_nametoindex`, but there is still no safe link-layer socket address, so the L2
+  bind builds a `sockaddr_ll` via `SocketAddrAny::read` in one confined `unsafe` fn. No `libc`.
 - **Sync-first**; non-blocking handles leave async additive.
 - **Misuse resistance is first-class:** lower layers are opt-in Cargo features, the default
   path uses maximum kernel help (L4), and sends are typed per layer with an explicit raw
@@ -45,13 +44,15 @@ L4 is the honest top rung (maximum kernel help); dropping lower is a deliberate 
 bnb's `net` feature already covers *typed* L4 message exchange over ordinary sockets —
 `rawsock`'s L4 rung is the thin raw-bytes sink for ladder symmetry, distinct from that.
 
-## This repo's first cut
+## What ships
 
-The **unprivileged core**: `transport` + `compute` features only (rustix, no libc), plus
-`compose`/`loopback`/`capability`. It compiles and tests anywhere in CI with no `CAP_NET_RAW`.
-The privileged `network` (L3) and `link` (L2) backends — and their user-namespace-gated tests
-(`unshare --user --map-root-user --net`, `lo` up, which yields full `CapEff` inside the
-namespace) — land when the header-forging protocol crates (IP/ICMP/ARP) exist to consume them.
+All three rungs: `transport` (L4, default), `network` (L3, `NetworkSocket`), and `link` (L2,
+`LinkSocket`), plus `compose`/`loopback`/`capability`. Default features compile and test
+anywhere in CI with no `CAP_NET_RAW`. The privileged tests check `open()` against
+`capabilities()` everywhere and only perform a real send when the probe reports the layer
+available, so they skip cleanly when unprivileged. Running the suite inside
+`unshare --user --map-root-user --net` (with `lo` up) yields full `CapEff` and exercises the
+real sends.
 
 ## Boundary with bnb
 

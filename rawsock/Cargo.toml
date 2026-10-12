@@ -3,7 +3,7 @@ name = "rawsock"
 version = "0.1.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/RawSocketLabs/rawsock"
+repository.workspace = true
 rust-version = "1.85"
 description = "Dual-use, layered raw-packet I/O: transmit arbitrary bytes at L2/L3/L4 for spoofing, fuzzing, and interop testing."
 readme = "README.md"
@@ -11,8 +11,6 @@ readme = "README.md"
 [features]
 # The dual-use power is opt-in by layer: a consumer that doesn't enable a layer
 # cannot construct that socket at all (misuse is a compile error, not a warning).
-# This first cut ships the unprivileged core; the privileged L3/L2 backends
-# (`network`, `link`) land with the header-forging protocols — see ROADMAP.md.
 default = ["transport", "compute"]
 # L4 — ordinary sockets; the kernel does IP/Ethernet/checksums.
 transport = ["dep:rustix"]

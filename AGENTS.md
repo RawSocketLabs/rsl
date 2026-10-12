@@ -16,7 +16,7 @@ git-rev pinning.
 | Path | Crate(s) | Notes |
 |------|----------|-------|
 | `bitsandbytes/bnb`, `bitsandbytes/bnb-macros` | `bitsandbytes`, `bitsandbytes-macros` | the codec; `#![forbid(unsafe_code)]` |
-| `rawsock/` | `rawsock` | L2/L3/L4 raw I/O; `#![forbid(unsafe_code)]` (safe via `rustix`) |
+| `rawsock/` | `rawsock` | L2/L3/L4 raw I/O via `rustix`; `#![deny(unsafe_code)]`, one confined `unsafe` fn (L2 bind) |
 | `usb/` | `rsl-usb` | owned USB host access (enumerate, claim, queued bulk/interrupt, control); Linux usbfs backend, portable API; unpublished |
 | `crypto/` | `rsl-crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
 | `crypto-legacy/` | `rsl-crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
@@ -38,7 +38,7 @@ git-rev pinning.
   advisories/licenses; duplicate versions are warned (the facade pulls big trees).
 - **Lints** — `[workspace.lints]`; members opt in with `[lints] workspace = true`. The shared
   unsafe policy is `unsafe_op_in_unsafe_fn = deny`; crates that guarantee zero unsafe pin
-  `#![forbid(unsafe_code)]` at crate level (bnb, rawsock).
+  `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one confined `unsafe` fn.
 - **Formatting / toolchain / MSRV** — root `rustfmt.toml`, `rust-toolchain.toml`, MSRV 1.85.
 - **Versioning** — per-crate SemVer via `release-plz` (scope = crate name, e.g. `feat(dns): …`);
   `publish = false` until the registry decision flips on.
