@@ -31,6 +31,8 @@ members = [
     "devices/sync/pe_sync/sim",
     # LMS7002M register model shared by the LMS7002M boards' simulators
     "devices/sdr/chips/lms7002m/sim",
+    # LimeSDR-mini (u3_limesdr) board simulator; its driver is not yet ported
+    "devices/sdr/limesdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
