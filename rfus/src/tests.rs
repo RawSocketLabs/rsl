@@ -221,3 +221,99 @@ fn serde_checks_numeric_boundaries() {
             .is_err()
     );
 }
+
+/// Serde behaviour that depends on the data format: TOML-style signed integers
+/// and non-self-describing binary formats.
+#[cfg(feature = "serde")]
+mod serde_formats {
+    use serde::de::value::{Error, I64Deserializer, SeqDeserializer};
+    use serde::de::{self, IntoDeserializer, Visitor};
+    use serde::{Deserialize, Deserializer, forward_to_deserialize_any};
+
+    use super::*;
+
+    #[test]
+    fn accepts_signed_integers_from_toml_style_formats() {
+        let frequency: I64Deserializer<Error> = 450_000_000_i64.into_deserializer();
+        assert_eq!(
+            FrequencyHz::deserialize(frequency).unwrap().hz(),
+            450_000_000
+        );
+
+        let rate: I64Deserializer<Error> = 2_000_000_i64.into_deserializer();
+        assert_eq!(SampleRateSps::deserialize(rate).unwrap().sps(), 2_000_000);
+
+        let negative: I64Deserializer<Error> = (-1_i64).into_deserializer();
+        assert!(
+            FrequencyHz::deserialize(negative).is_err(),
+            "negative integers must not wrap into a frequency"
+        );
+    }
+
+    #[test]
+    fn reads_scalars_and_ranges_from_binary_formats() {
+        let frequency = FrequencyHz::deserialize(BinaryFormat(vec![450_000_000])).unwrap();
+        assert_eq!(frequency.hz(), 450_000_000);
+
+        let rate = SampleRateSps::deserialize(BinaryFormat(vec![2_000_000])).unwrap();
+        assert_eq!(rate.sps(), 2_000_000);
+
+        let range = FrequencyRange::deserialize(BinaryFormat(vec![1_000_000, 2_000_000])).unwrap();
+        assert_eq!((range.lower.hz(), range.upper.hz()), (1_000_000, 2_000_000));
+
+        assert!(
+            FrequencyRange::deserialize(BinaryFormat(vec![2_000_000, 1_000_000])).is_err(),
+            "binary input must still enforce lower < upper"
+        );
+    }
+
+    /// Stand-in for a non-self-describing binary format such as bincode: it is
+    /// not human-readable, rejects `deserialize_any`, and yields structs as
+    /// sequences.
+    struct BinaryFormat(Vec<u64>);
+
+    impl<'de> Deserializer<'de> for BinaryFormat {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Error> {
+            Err(de::Error::custom(
+                "binary formats do not support deserialize_any",
+            ))
+        }
+
+        fn deserialize_u64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            visitor.visit_u64(self.0[0])
+        }
+
+        fn deserialize_u32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            visitor.visit_u32(u32::try_from(self.0[0]).map_err(de::Error::custom)?)
+        }
+
+        fn deserialize_struct<V: Visitor<'de>>(
+            self,
+            _: &'static str,
+            _: &'static [&'static str],
+            visitor: V,
+        ) -> Result<V::Value, Error> {
+            let fields = self.0.into_iter().map(|value| BinaryFormat(vec![value]));
+            visitor.visit_seq(SeqDeserializer::new(fields))
+        }
+
+        fn is_human_readable(&self) -> bool {
+            false
+        }
+
+        forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u128 f32 f64 char str string bytes byte_buf option
+            unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier ignored_any
+        }
+    }
+
+    impl IntoDeserializer<'_, Error> for BinaryFormat {
+        type Deserializer = Self;
+
+        fn into_deserializer(self) -> Self {
+            self
+        }
+    }
+}

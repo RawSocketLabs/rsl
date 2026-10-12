@@ -1,4 +1,4 @@
-use serde::de::{self, Visitor};
+use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::marker::PhantomData;
@@ -20,6 +20,9 @@ impl<'de> Deserialize<'de> for FrequencyHz {
     where
         D: Deserializer<'de>,
     {
+        if !deserializer.is_human_readable() {
+            return u64::deserialize(deserializer).map(FrequencyHz::new);
+        }
         deserializer.deserialize_any(NumberOrStringVisitor::<FrequencyHz>::new())
     }
 }
@@ -48,22 +51,32 @@ impl<'de> Deserialize<'de> for FrequencyRange {
     where
         D: Deserializer<'de>,
     {
+        /// Explicit `{ lower, upper }` form; the only form binary formats carry.
+        #[derive(Deserialize)]
+        struct Endpoints {
+            lower: FrequencyHz,
+            upper: FrequencyHz,
+        }
+
+        /// Human-readable forms: a range string or explicit endpoints.
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Repr {
             String(String),
-            Object {
-                lower: FrequencyHz,
-                upper: FrequencyHz,
-            },
+            Object(Endpoints),
         }
 
-        match Repr::deserialize(deserializer)? {
-            Repr::String(value) => FrequencyRange::from_str(&value).map_err(de::Error::custom),
-            Repr::Object { lower, upper } => {
-                FrequencyRange::new(lower, upper).map_err(de::Error::custom)
+        let Endpoints { lower, upper } = if deserializer.is_human_readable() {
+            match Repr::deserialize(deserializer)? {
+                Repr::String(value) => {
+                    return FrequencyRange::from_str(&value).map_err(de::Error::custom);
+                }
+                Repr::Object(endpoints) => endpoints,
             }
-        }
+        } else {
+            Endpoints::deserialize(deserializer)?
+        };
+        FrequencyRange::new(lower, upper).map_err(de::Error::custom)
     }
 }
 
@@ -81,6 +94,9 @@ impl<'de> Deserialize<'de> for SampleRateSps {
     where
         D: Deserializer<'de>,
     {
+        if !deserializer.is_human_readable() {
+            return u32::deserialize(deserializer).map(SampleRateSps::new);
+        }
         deserializer.deserialize_any(NumberOrStringVisitor::<SampleRateSps>::new())
     }
 }
@@ -125,6 +141,16 @@ where
     where
         E: de::Error,
     {
+        T::from_number(value)
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        // Formats such as TOML carry every integer as i64.
+        let value =
+            u64::try_from(value).map_err(|_| E::invalid_value(Unexpected::Signed(value), &self))?;
         T::from_number(value)
     }
 
@@ -200,6 +226,8 @@ impl Serialize for ScanTarget {
     }
 }
 
+// `ScanTarget` stays untagged in every format, so it needs a self-describing
+// one (JSON, TOML, CBOR); bincode-style formats cannot carry it.
 impl<'de> Deserialize<'de> for ScanTarget {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
