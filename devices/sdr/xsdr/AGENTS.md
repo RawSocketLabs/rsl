@@ -136,5 +136,5 @@ by a lock: one is open at a time per process.
 - XTRX revision 4 (MCP4725 at 0x62) is not modelled.
 - The MMCM behind DRP (TX via `REG_CFG_PHY_1`, RX via the DRP class) must be modelled
   before sample-rate or LML calibration work.
-- The detached oracle is not registered with CI (`scripts/ci/plan.py` `DETACHED`,
-  `.github/workflows/ci.yml`), so CI does not build or run it yet.
+- CI runs the detached oracle as the `xsdr-oracle` profile; a change to the uSDR oracle's
+  vendored C selects it too (`scripts/ci/plan.py`).
