@@ -85,21 +85,27 @@ impl<'de> Deserialize<'de> for SampleRateSps {
     }
 }
 
+/// Scalar unit type that deserializes from either a raw integer or a human-readable string.
 trait NumberOrStringUnit: Sized {
+    /// `expecting` text shown when the input is neither an integer nor a string.
     const EXPECTING: &'static str;
 
+    /// Build the value from a raw integer in the base unit.
     fn from_number<E>(value: u64) -> Result<Self, E>
     where
         E: de::Error;
 
+    /// Build the value from a human-readable string.
     fn from_string<E>(value: &str) -> Result<Self, E>
     where
         E: de::Error;
 }
 
+/// Visitor that dispatches integers and strings to a [`NumberOrStringUnit`] type.
 struct NumberOrStringVisitor<T>(PhantomData<T>);
 
 impl<T> NumberOrStringVisitor<T> {
+    /// Create the visitor for `T`.
     const fn new() -> Self {
         Self(PhantomData)
     }

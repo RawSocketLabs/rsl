@@ -111,10 +111,13 @@ pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseU
     }
 }
 
+/// Parse a static frequency or a semicolon-separated range list; backs `ScanTarget::from_str`.
 pub(crate) fn parse_scan_target(input: &str) -> Result<ScanTarget, ParseUnitError> {
     parse_complete(input, scan_target_tokens)?.resolve()
 }
 
+/// Run `parser` over the whole input, allowing trailing whitespace, and map any
+/// grammar failure to [`ParseUnitError::Parse`].
 fn parse_complete<'a, T>(
     input: &'a str,
     parser: impl Parser<&'a str, T, ErrMode<ContextError>>,
@@ -128,10 +131,12 @@ fn parse_complete<'a, T>(
         .map_err(|_| ParseUnitError::Parse(input.to_string()))
 }
 
+/// Parse one scalar quantity and scale it to the base unit of `unit_set`.
 pub(crate) fn parse_unit_value(input: &str, unit_set: UnitSet) -> Result<u64, ParseUnitError> {
     parse_complete(input, scalar_token)?.resolve(unit_set)
 }
 
+/// Unscaled scalar as written: the numeric literal and its (possibly empty) unit suffix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ScalarToken<'a> {
     number: &'a str,
@@ -139,12 +144,14 @@ struct ScalarToken<'a> {
 }
 
 impl ScalarToken<'_> {
+    /// Scale the literal by the multiplier of its suffix within `unit_set`.
     fn resolve(self, unit_set: UnitSet) -> Result<u64, ParseUnitError> {
         let multiplier = multiplier_for(self.unit, unit_set)?;
         scale_number(self.number, multiplier, unit_set.base_unit())
     }
 }
 
+/// Unresolved endpoints of one `lower-upper` or `lower,upper` range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FrequencyRangeTokens<'a> {
     lower: ScalarToken<'a>,
@@ -152,6 +159,7 @@ struct FrequencyRangeTokens<'a> {
 }
 
 impl FrequencyRangeTokens<'_> {
+    /// Resolve both endpoints as frequencies and enforce `lower < upper`.
     fn resolve(self) -> Result<FrequencyRange, ParseUnitError> {
         let lower = FrequencyHz::new(self.lower.resolve(UnitSet::Frequency)?);
         let upper = FrequencyHz::new(self.upper.resolve(UnitSet::Frequency)?);
@@ -159,6 +167,7 @@ impl FrequencyRangeTokens<'_> {
     }
 }
 
+/// Unresolved scan target: one scalar or one or more ranges.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ScanTargetTokens<'a> {
     Static(ScalarToken<'a>),
@@ -166,6 +175,7 @@ enum ScanTargetTokens<'a> {
 }
 
 impl ScanTargetTokens<'_> {
+    /// Resolve every token as a frequency into a [`ScanTarget`].
     fn resolve(self) -> Result<ScanTarget, ParseUnitError> {
         match self {
             Self::Static(token) => {
@@ -181,6 +191,7 @@ impl ScanTargetTokens<'_> {
     }
 }
 
+/// Grammar: a range list, falling back to a single scalar.
 fn scan_target_tokens<'a>(input: &mut &'a str) -> winnow::ModalResult<ScanTargetTokens<'a>> {
     alt((
         ranges_list_tokens.map(ScanTargetTokens::Ranges),
@@ -189,6 +200,7 @@ fn scan_target_tokens<'a>(input: &mut &'a str) -> winnow::ModalResult<ScanTarget
     .parse_next(input)
 }
 
+/// Grammar: one or more ranges separated by `;`, with an optional trailing `;`.
 fn ranges_list_tokens<'a>(
     input: &mut &'a str,
 ) -> winnow::ModalResult<Vec<FrequencyRangeTokens<'a>>> {
@@ -199,10 +211,12 @@ fn ranges_list_tokens<'a>(
     .parse_next(input)
 }
 
+/// Grammar: `;` with optional leading whitespace.
 fn range_list_separator(input: &mut &str) -> winnow::ModalResult<char> {
     preceded(multispace0, ';').parse_next(input)
 }
 
+/// Grammar: two scalars joined by a range separator.
 fn frequency_range_tokens<'a>(
     input: &mut &'a str,
 ) -> winnow::ModalResult<FrequencyRangeTokens<'a>> {
@@ -211,16 +225,19 @@ fn frequency_range_tokens<'a>(
         .parse_next(input)
 }
 
+/// Grammar: `,` or `-` with optional leading whitespace.
 fn range_separator(input: &mut &str) -> winnow::ModalResult<char> {
     preceded(multispace0, alt((',', '-'))).parse_next(input)
 }
 
+/// Grammar: optional whitespace, a numeric literal, then an optional unit suffix.
 fn scalar_token<'a>(input: &mut &'a str) -> winnow::ModalResult<ScalarToken<'a>> {
     let number = preceded(multispace0, number_literal).parse_next(input)?;
     let unit = opt(unit_literal).parse_next(input)?.unwrap_or("");
     Ok(ScalarToken { number, unit })
 }
 
+/// Grammar: digits and underscores, optionally followed by `.` and more; validated later by [`scale_number`].
 fn number_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
     (
         take_while(1.., |c: char| c.is_ascii_digit() || c == '_'),
@@ -233,6 +250,7 @@ fn number_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
         .parse_next(input)
 }
 
+/// Grammar: an alphabetic/`/` suffix with optional leading whitespace; validated later by [`multiplier_for`].
 fn unit_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
     preceded(
         multispace0,
@@ -241,6 +259,7 @@ fn unit_literal<'a>(input: &mut &'a str) -> winnow::ModalResult<&'a str> {
     .parse_next(input)
 }
 
+/// Unit family a scalar is parsed against; selects the accepted suffixes and the base-unit label.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnitSet {
     Frequency,
@@ -248,6 +267,7 @@ pub(crate) enum UnitSet {
 }
 
 impl UnitSet {
+    /// Base-unit label used in diagnostics.
     const fn base_unit(self) -> &'static str {
         match self {
             Self::Frequency => "Hz",
@@ -256,6 +276,7 @@ impl UnitSet {
     }
 }
 
+/// Lower-case suffixes accepted for every unit family, with their multipliers.
 const FREQUENCY_UNITS: &[(&str, u64)] = &[
     ("", 1),
     ("h", 1),
@@ -268,6 +289,7 @@ const FREQUENCY_UNITS: &[(&str, u64)] = &[
     ("ghz", 1_000_000_000),
 ];
 
+/// Lower-case suffixes accepted only for sample rates, with their multipliers.
 const SAMPLE_RATE_UNITS: &[(&str, u64)] = &[
     ("s/s", 1),
     ("sps", 1),
@@ -279,30 +301,26 @@ const SAMPLE_RATE_UNITS: &[(&str, u64)] = &[
     ("gsps", 1_000_000_000),
 ];
 
+/// Look up the case-insensitive suffix `unit` in the tables `unit_set` allows.
 fn multiplier_for(unit: &str, unit_set: UnitSet) -> Result<u64, ParseUnitError> {
     let normalized = unit.to_ascii_lowercase();
-
-    if let Some(multiplier) = find_multiplier(&normalized, FREQUENCY_UNITS) {
-        return Ok(multiplier);
-    }
-    match unit_set {
-        UnitSet::Frequency => {}
-        UnitSet::SampleRate => {
-            if let Some(multiplier) = find_multiplier(&normalized, SAMPLE_RATE_UNITS) {
-                return Ok(multiplier);
-            }
-        }
-    }
-
-    Err(ParseUnitError::UnknownUnit(normalized))
+    find_multiplier(&normalized, FREQUENCY_UNITS)
+        .or_else(|| match unit_set {
+            UnitSet::Frequency => None,
+            UnitSet::SampleRate => find_multiplier(&normalized, SAMPLE_RATE_UNITS),
+        })
+        .ok_or(ParseUnitError::UnknownUnit(normalized))
 }
 
+/// Find the multiplier for an already lower-cased suffix in one table.
 fn find_multiplier(unit: &str, units: &[(&str, u64)]) -> Option<u64> {
     units
         .iter()
         .find_map(|(name, multiplier)| (*name == unit).then_some(*multiplier))
 }
 
+/// Multiply the literal `number` by `multiplier` exactly, rejecting results that
+/// are fractional or overflow `u64`.
 fn scale_number(
     number: &str,
     multiplier: u64,
@@ -336,6 +354,7 @@ fn scale_number(
     u64::try_from(numerator / scale).map_err(|_| overflow_error(base_unit))
 }
 
+/// Error for a scaled value that does not fit `u64`.
 fn overflow_error(unit: &'static str) -> ParseUnitError {
     ParseUnitError::OutOfRange {
         value: u64::MAX,
@@ -345,6 +364,8 @@ fn overflow_error(unit: &'static str) -> ParseUnitError {
     }
 }
 
+/// Strip single interior underscores from one side of the decimal point; `original`
+/// is reported on error.
 fn normalize_digits(input: &str, original: &str) -> Result<String, ParseUnitError> {
     if input.is_empty() {
         return Ok(String::new());
@@ -361,6 +382,7 @@ fn normalize_digits(input: &str, original: &str) -> Result<String, ParseUnitErro
     }
 }
 
+/// Parse normalized digits as `u128`, treating an empty side as zero.
 fn parse_u128_digits(input: &str, original: &str) -> Result<u128, ParseUnitError> {
     if input.is_empty() {
         return Ok(0);
