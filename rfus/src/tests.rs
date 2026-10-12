@@ -33,8 +33,8 @@ fn parses_unbounded_hertz_for_bandwidths() {
 #[test]
 fn parses_frequency_ranges() {
     let range = "1mhz-20mhz".parse::<FrequencyRange>().unwrap();
-    assert_eq!(range.lower.hz(), 1_000_000);
-    assert_eq!(range.upper.hz(), 20_000_000);
+    assert_eq!(range.lower().hz(), 1_000_000);
+    assert_eq!(range.upper().hz(), 20_000_000);
     assert_eq!(
         "1m,2m".parse::<FrequencyRange>().unwrap().canonical(),
         "1000000,2000000"
@@ -58,8 +58,8 @@ fn parses_scan_targets() {
     match "1m-2m; 400m-520m".parse::<ScanTarget>().unwrap() {
         ScanTarget::Ranges(ranges) => {
             assert_eq!(ranges.len(), 2);
-            assert_eq!(ranges[0].lower.hz(), 1_000_000);
-            assert_eq!(ranges[1].upper.hz(), 520_000_000);
+            assert_eq!(ranges[0].lower().hz(), 1_000_000);
+            assert_eq!(ranges[1].upper().hz(), 520_000_000);
         }
         ScanTarget::Static(_) => panic!("expected ranges"),
     }
@@ -208,8 +208,8 @@ fn serde_accepts_dense_and_explicit_scan_targets() {
     .unwrap()
     {
         ScanTarget::Ranges(ranges) => {
-            assert_eq!(ranges[0].lower.hz(), 400_000_000);
-            assert_eq!(ranges[0].upper.hz(), 520_000_000);
+            assert_eq!(ranges[0].lower().hz(), 400_000_000);
+            assert_eq!(ranges[0].upper().hz(), 520_000_000);
         }
         ScanTarget::Static(_) => panic!("expected ranges"),
     }
@@ -268,7 +268,10 @@ mod serde_formats {
         assert_eq!(rate.sps(), 2_000_000);
 
         let range = FrequencyRange::deserialize(BinaryFormat(vec![1_000_000, 2_000_000])).unwrap();
-        assert_eq!((range.lower.hz(), range.upper.hz()), (1_000_000, 2_000_000));
+        assert_eq!(
+            (range.lower().hz(), range.upper().hz()),
+            (1_000_000, 2_000_000)
+        );
 
         assert!(
             FrequencyRange::deserialize(BinaryFormat(vec![2_000_000, 1_000_000])).is_err(),

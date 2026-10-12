@@ -154,16 +154,16 @@ impl FromStr for SampleRateSps {
 ///
 /// ```
 /// let range: rfus::FrequencyRange = "400m-520m".parse().unwrap();
-/// assert_eq!(range.lower.hz(), 400_000_000);
-/// assert_eq!(range.upper.hz(), 520_000_000);
+/// assert_eq!(range.lower().hz(), 400_000_000);
+/// assert_eq!(range.upper().hz(), 520_000_000);
 /// assert_eq!(range.canonical(), "400000000,520000000");
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FrequencyRange {
-    /// Lower bound in Hz.
-    pub lower: FrequencyHz,
-    /// Upper bound in Hz.
-    pub upper: FrequencyHz,
+    /// Lower bound in Hz; always below `upper`.
+    lower: FrequencyHz,
+    /// Upper bound in Hz; always above `lower`.
+    upper: FrequencyHz,
 }
 
 impl FrequencyRange {
@@ -181,6 +181,18 @@ impl FrequencyRange {
             });
         }
         Ok(Self { lower, upper })
+    }
+
+    /// Return the lower bound, which is always below [`FrequencyRange::upper`].
+    #[must_use]
+    pub const fn lower(&self) -> FrequencyHz {
+        self.lower
+    }
+
+    /// Return the upper bound, which is always above [`FrequencyRange::lower`].
+    #[must_use]
+    pub const fn upper(&self) -> FrequencyHz {
+        self.upper
     }
 
     /// Return the canonical wire/debug form: `lower,upper` in integer Hz.

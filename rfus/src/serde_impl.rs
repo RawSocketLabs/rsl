@@ -39,8 +39,8 @@ impl Serialize for FrequencyRange {
         }
 
         Range {
-            lower: self.lower.hz(),
-            upper: self.upper.hz(),
+            lower: self.lower().hz(),
+            upper: self.upper().hz(),
         }
         .serialize(serializer)
     }
