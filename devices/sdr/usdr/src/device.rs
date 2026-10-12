@@ -8,6 +8,7 @@ use rsl_deps::tracing::warn;
 
 use crate::board::{Board, RxPacket};
 use crate::error::Error;
+use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::thermal::{CoolDown, ThermalPolicy};
 
@@ -63,6 +64,15 @@ impl Device {
     /// Any bus failure.
     pub fn temperature(&mut self) -> Result<f32, Error> {
         self.board().temperature()
+    }
+
+    /// The board revision, its gateware's chains and build, read from the gateware now.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn identity(&mut self) -> Result<Identity, Error> {
+        self.board().identity()
     }
 
     /// Sets the RX sample rate, in samples per second.

@@ -13,6 +13,7 @@ use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::Error;
 use crate::fpga::{Gpi, Gpo, Hwid};
+use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::portable::power::PowerRails;
 use crate::portable::si5332::ClockSequence;
@@ -64,6 +65,21 @@ impl Board {
     /// The board temperature in °C.
     pub(crate) fn temperature(&mut self) -> Result<f32, Error> {
         Self::TEMP.celsius(self.bus.as_mut())
+    }
+
+    /// Reads the gateware build, then the hardware ID (`dev_m2_lm6_1_sdr_revision_get`).
+    pub(crate) fn identity(&mut self) -> Result<Identity, Error> {
+        let bus = self.bus.as_mut();
+        let gateware_build = Gpi::UsrAccess2.read(bus)?;
+        let raw = Gpi::Hwid.read(bus)?;
+        let hwid = Hwid::from_raw(raw);
+        Ok(Identity {
+            revision: hwid.revision(),
+            has_rx: hwid.has_rx(),
+            has_tx: hwid.has_tx(),
+            gateware_build,
+            hwid: raw,
+        })
     }
 
     /// Holds the RF transceiver in reset and turns off the LED and booster. Every step is
