@@ -7,7 +7,9 @@ use winnow::error::{ContextError, ErrMode};
 use winnow::token::{one_of, take_while};
 
 use crate::error::ParseUnitError;
-use crate::types::{FrequencyHz, FrequencyRange, Hertz, SampleRateSps, ScanTarget};
+use crate::types::{
+    FrequencyHz, FrequencyRange, FrequencyRanges, Hertz, SampleRateSps, ScanTarget,
+};
 
 /// Parse a user-facing RF frequency and return Hz.
 ///
@@ -103,7 +105,7 @@ pub fn parse_frequency_range(input: &str) -> Result<FrequencyRange, ParseUnitErr
 /// single static frequency.
 pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseUnitError> {
     match parse_scan_target(input)? {
-        ScanTarget::Ranges(ranges) => Ok(ranges),
+        ScanTarget::Ranges(ranges) => Ok(ranges.into_iter().collect()),
         ScanTarget::Static(freq) => Err(ParseUnitError::NotARange(freq.hz())),
     }
 }
@@ -183,6 +185,7 @@ impl ScanTargetTokens<'_> {
                 .into_iter()
                 .map(FrequencyRangeTokens::resolve)
                 .collect::<Result<Vec<_>, _>>()
+                .and_then(FrequencyRanges::new)
                 .map(ScanTarget::Ranges),
         }
     }

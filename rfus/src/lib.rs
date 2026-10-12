@@ -22,6 +22,7 @@
 //! - [`Hertz`] for unconstrained hertz quantities such as bandwidths.
 //! - [`SampleRateSps`] for validated sample rates.
 //! - [`FrequencyRange`] for ordered `lower < upper` frequency ranges.
+//! - [`FrequencyRanges`] for a non-empty list of ranges.
 //! - [`ScanTarget`] for either one static frequency or one or more ranges.
 //! - [`ParseUnitError`] for parse and validation failures.
 //!
@@ -80,4 +81,4 @@ pub use parser::{
     parse_frequency_hz, parse_frequency_range, parse_frequency_ranges, parse_hertz_u32,
     parse_sample_rate_sps,
 };
-pub use types::{FrequencyHz, FrequencyRange, Hertz, SampleRateSps, ScanTarget};
+pub use types::{FrequencyHz, FrequencyRange, FrequencyRanges, Hertz, SampleRateSps, ScanTarget};

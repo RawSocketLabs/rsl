@@ -57,6 +57,9 @@ pub enum ParseUnitError {
         /// Upper range endpoint in Hz.
         upper: u64,
     },
+    /// A range list was built with no ranges.
+    #[error("a range list needs at least one range")]
+    EmptyRanges,
     /// Range-only input was a single static frequency, in Hz.
     #[error("{0} Hz is a static frequency, not a range")]
     NotARange(u64),

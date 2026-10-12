@@ -4,7 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::types::{FrequencyHz, FrequencyRange, SampleRateSps, ScanTarget};
+use crate::types::{FrequencyHz, FrequencyRange, FrequencyRanges, SampleRateSps, ScanTarget};
 
 impl Serialize for FrequencyHz {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -77,6 +77,25 @@ impl<'de> Deserialize<'de> for FrequencyRange {
             Endpoints::deserialize(deserializer)?
         };
         FrequencyRange::new(lower, upper).map_err(de::Error::custom)
+    }
+}
+
+impl Serialize for FrequencyRanges {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.as_slice().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FrequencyRanges {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let ranges = Vec::<FrequencyRange>::deserialize(deserializer)?;
+        FrequencyRanges::new(ranges).map_err(de::Error::custom)
     }
 }
 
@@ -220,7 +239,10 @@ impl Serialize for ScanTarget {
                 struct Ranges<'a> {
                     ranges: &'a [FrequencyRange],
                 }
-                Ranges { ranges }.serialize(serializer)
+                Ranges {
+                    ranges: ranges.as_slice(),
+                }
+                .serialize(serializer)
             }
         }
     }
@@ -238,7 +260,7 @@ impl<'de> Deserialize<'de> for ScanTarget {
         enum Repr {
             String(String),
             Static { static_frequency: FrequencyHz },
-            Ranges { ranges: Vec<FrequencyRange> },
+            Ranges { ranges: FrequencyRanges },
         }
 
         match Repr::deserialize(deserializer)? {

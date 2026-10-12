@@ -57,6 +57,7 @@ fn parses_scan_targets() {
 
     match "1m-2m; 400m-520m".parse::<ScanTarget>().unwrap() {
         ScanTarget::Ranges(ranges) => {
+            let ranges = ranges.as_slice();
             assert_eq!(ranges.len(), 2);
             assert_eq!(ranges[0].lower().hz(), 1_000_000);
             assert_eq!(ranges[1].upper().hz(), 520_000_000);
@@ -105,11 +106,19 @@ fn reports_specific_scalar_errors() {
 }
 
 #[test]
+fn rejects_empty_range_lists() {
+    assert_eq!(
+        FrequencyRanges::new(Vec::new()).unwrap_err(),
+        ParseUnitError::EmptyRanges
+    );
+}
+
+#[test]
 fn requires_semicolons_between_ranges() {
     assert!("1m-2m 3m-4m".parse::<ScanTarget>().is_err());
 
     match "1m-2m;".parse::<ScanTarget>().unwrap() {
-        ScanTarget::Ranges(ranges) => assert_eq!(ranges.len(), 1),
+        ScanTarget::Ranges(ranges) => assert_eq!(ranges.as_slice().len(), 1),
         ScanTarget::Static(_) => panic!("expected ranges"),
     }
 }
@@ -208,11 +217,21 @@ fn serde_accepts_dense_and_explicit_scan_targets() {
     .unwrap()
     {
         ScanTarget::Ranges(ranges) => {
-            assert_eq!(ranges[0].lower().hz(), 400_000_000);
-            assert_eq!(ranges[0].upper().hz(), 520_000_000);
+            let range = ranges.as_slice()[0];
+            assert_eq!(range.lower().hz(), 400_000_000);
+            assert_eq!(range.upper().hz(), 520_000_000);
         }
         ScanTarget::Static(_) => panic!("expected ranges"),
     }
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_rejects_empty_range_lists() {
+    assert!(
+        serde_json::from_str::<ScanTarget>(r#"{ "ranges": [] }"#).is_err(),
+        "a scan target must carry at least one range"
+    );
 }
 
 #[cfg(feature = "serde")]

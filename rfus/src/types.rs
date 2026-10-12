@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+use std::{slice, vec};
 
 use crate::error::ParseUnitError;
 use crate::parser::{self, UnitSet};
@@ -216,6 +217,64 @@ impl FromStr for FrequencyRange {
     }
 }
 
+/// One or more frequency ranges; never empty.
+///
+/// Produced by parsing a [`ScanTarget`] range list, or built with
+/// [`FrequencyRanges::new`].
+///
+/// # Examples
+///
+/// ```
+/// let ranges = rfus::FrequencyRanges::new(vec!["400m-520m".parse().unwrap()]).unwrap();
+/// assert_eq!(ranges.as_slice().len(), 1);
+/// assert!(rfus::FrequencyRanges::new(Vec::new()).is_err());
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrequencyRanges(Vec<FrequencyRange>);
+
+impl FrequencyRanges {
+    /// Wrap a list of ranges, rejecting an empty list.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseUnitError::EmptyRanges`] when `ranges` is empty.
+    pub fn new(ranges: Vec<FrequencyRange>) -> Result<Self, ParseUnitError> {
+        if ranges.is_empty() {
+            return Err(ParseUnitError::EmptyRanges);
+        }
+        Ok(Self(ranges))
+    }
+
+    /// Return the ranges in input order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[FrequencyRange] {
+        &self.0
+    }
+
+    /// Iterate over the ranges in input order.
+    pub fn iter(&self) -> slice::Iter<'_, FrequencyRange> {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for FrequencyRanges {
+    type Item = FrequencyRange;
+    type IntoIter = vec::IntoIter<FrequencyRange>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a FrequencyRanges {
+    type Item = &'a FrequencyRange;
+    type IntoIter = slice::Iter<'a, FrequencyRange>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// A scan target provided by the user.
 ///
 /// A single frequency such as `450m` becomes [`ScanTarget::Static`]. One or
@@ -235,7 +294,7 @@ pub enum ScanTarget {
     /// A single static frequency in Hz.
     Static(FrequencyHz),
     /// One or more frequency ranges.
-    Ranges(Vec<FrequencyRange>),
+    Ranges(FrequencyRanges),
 }
 
 impl FromStr for ScanTarget {
