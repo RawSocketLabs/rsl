@@ -1,0 +1,73 @@
+# rsl-limesdr-oracle CHARACTERIZATION golden, not a specification: what the pinned
+# libusdr does on rsl-limesdr-sim's modelled board (see devices/sdr/limesdr/AGENTS.md).
+# pin: 3670f15de8e49691db455da03166c17f6dd5770a
+# board: LimeSDR-mini (U3_LIMESDR device ID), LMS7002M 0x3841, 40 MHz reference
+# captured: 2026-10-12
+# scenario: usdr_dmd_create_string(""), /dm/power/en = 1, usdr_dmd_close.
+# req/rep frame encoding is the oracle shim's assumption (FT601 transport not vendored).
+# Re-bless (RSL_LIMESDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.
+# Lines: rsl_limesdr_sim::Op's Display; `== <phase>` opens each phase.
+== open
+req cmd=0x55 st=0 blk=1 id=0 d=00610000
+fpga-wr 0x0061 0x0000
+rep cmd=0x55 st=1 blk=1 id=0 d=-
+req cmd=0x55 st=0 blk=1 id=0 d=00630000
+fpga-wr 0x0063 0x0000
+rep cmd=0x55 st=1 blk=1 id=0 d=-
+req cmd=0x55 st=0 blk=1 id=0 d=00610004
+fpga-wr 0x0061 0x0004
+rep cmd=0x55 st=1 blk=1 id=0 d=-
+req cmd=0x56 st=0 blk=1 id=0 d=00650000
+fpga-rd 0x0065 0x0004
+rep cmd=0x56 st=1 blk=1 id=0 d=00650004
+req cmd=0x56 st=0 blk=2 id=0 d=00720073
+fpga-rd 0x0072 0x6664
+fpga-rd 0x0073 0x0066
+rep cmd=0x56 st=1 blk=2 id=0 d=0072666400730066
+req cmd=0x20 st=0 blk=1 id=0 d=02000000
+lms7-reset
+rep cmd=0x20 st=1 blk=1 id=0 d=-
+req cmd=0x22 st=0 blk=1 id=0 d=002f0000
+lms7-rd 0x002f 0x3841
+rep cmd=0x22 st=1 blk=1 id=0 d=002f3841
+req cmd=0x21 st=0 blk=1 id=0 d=80200003
+lms7-wr 0x8020 0x0003
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=8020ffff
+lms7-wr 0x8020 0xffff
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=802e0000
+lms7-wr 0x802e 0x0000
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80920000
+lms7-wr 0x8092 0x0000
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80930000
+lms7-wr 0x8093 0x0000
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80950000
+lms7-wr 0x8095 0x0000
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80960000
+lms7-wr 0x8096 0x0000
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80a6000f
+lms7-wr 0x80a6 0x000f
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=80850181
+lms7-wr 0x8085 0x0181
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x21 st=0 blk=1 id=0 d=8082003e
+lms7-wr 0x8082 0x003e
+rep cmd=0x21 st=1 blk=1 id=0 d=-
+req cmd=0x22 st=0 blk=1 id=0 d=002f0000
+lms7-rd 0x002f 0x3841
+rep cmd=0x22 st=1 blk=1 id=0 d=002f3841
+req cmd=0x56 st=0 blk=1 id=0 d=000a0000
+fpga-rd 0x000a 0x0000
+rep cmd=0x56 st=1 blk=1 id=0 d=000a0000
+req cmd=0x55 st=0 blk=1 id=0 d=000a0000
+fpga-wr 0x000a 0x0000
+rep cmd=0x55 st=1 blk=1 id=0 d=-
+== power-up
+== close
