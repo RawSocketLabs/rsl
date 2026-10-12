@@ -1,0 +1,68 @@
+# rsl-lsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned
+# libusdr does on rsl-lsdr-sim's modelled board (see devices/sdr/lsdr/AGENTS.md).
+# pin: 3670f15de8e49691db455da03166c17f6dd5770a
+# variant: single ADC (registered s_uuid_000 board), default connection
+# captured: 2026-10-12
+# scenario: usdr_dmd_create_string(""), /dm/power/en = 1, usdr_dmd_close.
+# Re-bless (RSL_LSDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.
+# Lines: rsl_lsdr_sim::Op's Display; `== <phase>` opens each phase.
+== open
+reg-rd 0x0000 0x00000000
+i2c 0:0x48 w=01 r=00
+i2c 0:0x48 w=02 r=00
+i2c 0:0x48 w=03 r=00
+i2c 0:0x48 w=0e4f r=-
+i2c 0:0x48 w=104f r=-
+i2c 0:0x48 w=12c6 r=-
+i2c 0:0x48 w=147d r=-
+i2c 0:0x48 w=2020 r=-
+sleep 1000
+i2c 0:0x67 w=1100 r=-
+sleep 1000
+i2c 0:0x48 w=2033 r=-
+sleep 2500
+spi 0 0x00008d00 0x0000006c
+spi 1 0x00008d00 0xffffffff
+i2c 0:0x48 w=2020 r=-
+reg-wr 0x0003 0xf0000002
+reg-wr 0x0003 0xf4000002
+reg-wr 0x0003 0xf8000002
+reg-wr 0x0003 0xec000002
+reg-wr 0x0003 0xd0000002
+reg-wr 0x0003 0xdc000002
+reg-wr 0x0003 0xd8000002
+reg-wr 0x003a 0x00004719
+spi 4 0x00008cff 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00000c03 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00000ec0 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00000400 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00000600 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00008cff 0xffffffff
+reg-wr 0x003a 0x00004719
+spi 4 0x00008eff 0xffffffff
+reg-wr 0x0003 0xd8000003
+reg-wr 0x0003 0xc4000003
+reg-wr 0x0003 0xd4000003
+i2c 0:0x4e w=0b r=ffff
+i2c 0:0x22 w=8c r=ffff
+i2c 0:0x23 w=8c r=ffff
+i2c 1:0x22 w=8c r=ffff
+i2c 1:0x23 w=8c r=ffff
+== power-up
+i2c 0:0x48 w=2033 r=-
+sleep 10000
+reg-wr 0x0000 0x02000003
+sleep 1000
+reg-wr 0x0000 0x020000f0
+sleep 1000
+reg-wr 0x0000 0x02000000
+== close
+i2c 0:0x67 w=1100 r=-
+i2c 0:0x48 w=2020 r=-
+spi 0 0x000008e0 0x00000000
+spi 1 0x000008e0 0xffffffff
