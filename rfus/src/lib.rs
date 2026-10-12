@@ -48,7 +48,8 @@
 //! integer values or human-readable strings and serialize as integer values.
 //! [`FrequencyRange`] deserializes from a range string or `{ lower, upper }`.
 //! [`ScanTarget`] deserializes from a compact string, `{ static_frequency }`,
-//! or `{ ranges }`.
+//! or a non-empty `{ ranges }`, and needs a self-describing format such as JSON
+//! or TOML. Non-human-readable formats read scalars as raw integers.
 //!
 //! # Examples
 //!
