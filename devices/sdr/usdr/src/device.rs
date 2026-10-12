@@ -7,7 +7,7 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxPath, TxState,
+    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxGain, TxPath, TxState,
 };
 use crate::error::Error;
 use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
@@ -501,6 +501,15 @@ impl Device {
     pub fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
         let (board, tx) = self.board_and_tx();
         board.set_tx_bandwidth(tx, hz)
+    }
+
+    /// Sets one TX gain stage; out-of-range figures are clamped, as in libusdr.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_gain(&mut self, gain: TxGain) -> Result<(), Error> {
+        self.board().set_tx_gain(gain)
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every

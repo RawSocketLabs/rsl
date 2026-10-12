@@ -26,7 +26,7 @@ frequency, gains, path and corrections, the RX stream group
 (`create_streams`, `start_streams` with sync `None`/`All`, `receive_into` from `ci16`/`ci12`
 wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `stop_streams`; plus the
 `start_rx_stream`/`receive`/`stop_rx_stream` ci16 shim) over any streaming `Bus`, the TX
-controls (frequency, path and bandwidth; not TX streaming), and the PCIe transport (feature `pcie`; untested on hardware). USB
+controls (frequency, path, bandwidth and gains; not TX streaming), and the PCIe transport (feature `pcie`; untested on hardware). USB
 register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
 USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
@@ -187,7 +187,7 @@ Each layer calls only the ones below it.
   [PORTING.md](PORTING.md). The RX gain, path and correction controls
   (`Device::set_rx_gain`, `set_rx_path`, `set_rx_dc_trim`, `set_rx_auto_dc_correction`,
   `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported, and so are the TX controls
-  (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`); TX streaming waits for the stream-group API.
+  (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`, `set_tx_gain`); TX streaming waits for the stream-group API.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is

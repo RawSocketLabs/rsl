@@ -1,9 +1,10 @@
-//! rsl-usdr's TX controls (frequency, path, bandwidth) against libusdr's, operation for
-//! operation, one window per call, on fresh boards.
+//! rsl-usdr's TX controls (frequency, path, bandwidth, gains) against libusdr's, operation
+//! for operation, one window per call, on fresh boards.
 //!
 //! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
-//! the pairing is the mapping under test. Tuning failures must fail alike, after the same
-//! operations.
+//! the pairing is the mapping under test. libusdr clamps every gain rather than rejecting it,
+//! so out-of-range figures must succeed alike; tuning failures must fail alike, after the
+//! same operations.
 //!
 //! Every scenario that tunes the transmitter sets a sample rate first: before one, libusdr
 //! divides by zero updating the TX filter, which would kill the test process.
@@ -14,11 +15,19 @@ mod sim_bus;
 use std::ffi::CStr;
 use std::ops::Range;
 
-use rsl_usdr::{Device, Error, TxPath};
+use rsl_usdr::{Device, Error, TxGain, TxPath};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
 
+/// TXVGA2, as libusdr's plain TX gain.
+const GAIN: &CStr = c"/dm/sdr/0/tx/gain";
+/// TXVGA1.
+const VGA1: &CStr = c"/dm/sdr/0/tx/gain/vga1";
+/// TXVGA2.
+const VGA2: &CStr = c"/dm/sdr/0/tx/gain/vga2";
+/// libusdr's automatic TX gain: TXVGA2 again.
+const AUTO: &CStr = c"/dm/sdr/0/tx/gain/auto";
 /// The TX path, a string.
 const PATH: &CStr = c"/dm/sdr/0/tx/path";
 
@@ -39,6 +48,16 @@ enum Call {
 
     /// libusdr's `tx/path` set to a string; rsl-usdr's `set_tx_path`.
     Path(&'static CStr, TxPath),
+
+    /// libusdr's numeric control `path` set to `value`; rsl-usdr's matching call.
+    Set(&'static CStr, u64, Typed),
+}
+
+/// rsl-usdr's side of a [`Call::Set`].
+#[derive(Clone, Copy, Debug)]
+enum Typed {
+    /// `set_tx_gain`.
+    Gain(TxGain),
 }
 
 impl Call {
@@ -52,6 +71,8 @@ impl Call {
             // SAFETY: `dev_m2_lm6_1_sdr_tx_path_set` reads a value above 4096 as a string
             // and keeps no reference to it; a string's address is always above 4096 here.
             Self::Path(name, _) => unsafe { oracle.set_str(PATH, name) },
+            // SAFETY: every TX gain handler reads its value as a number.
+            Self::Set(path, value, _) => unsafe { oracle.set_uint(path, value) },
         }
         .is_ok()
     }
@@ -64,8 +85,16 @@ impl Call {
             Self::Frequency(hz) => device.set_tx_frequency(hz),
             Self::Bandwidth(hz) => device.set_tx_bandwidth(hz),
             Self::Path(_, path) => device.set_tx_path(path),
+            Self::Set(_, _, Typed::Gain(gain)) => device.set_tx_gain(gain),
         }
     }
+}
+
+/// A gain call setting libusdr's `path` and rsl-usdr's `gain` to the same `db`; a negative
+/// figure travels as its 64-bit two's complement, which the handler truncates to `int`.
+fn gain(path: &'static CStr, db: i32, gain: fn(i32) -> TxGain) -> Call {
+    let value = u64::from_ne_bytes(i64::from(db).to_ne_bytes());
+    Call::Set(path, value, Typed::Gain(gain(db)))
 }
 
 /// A revision-3 board.
@@ -288,4 +317,27 @@ fn tx_bandwidth_matches_libusdr() {
             Call::Bandwidth(1),
         ],
     );
+}
+
+/// TXVGA1 across and beyond its -35 to -4 dB range, untuned.
+#[test]
+fn tx_vga1_gain_matches_libusdr_across_its_range() {
+    let calls: Vec<Call> = [i32::MIN, -36, -35, -34, -20, -5, -4, -3, 0, i32::MAX]
+        .into_iter()
+        .map(|db| gain(VGA1, db, TxGain::Vga1))
+        .collect();
+    assert_calls_succeed(rev3, &calls);
+}
+
+/// TXVGA2 across and beyond its 0 to 25 dB range, through each of libusdr's three paths to
+/// it, untuned.
+#[test]
+fn tx_vga2_gain_matches_libusdr_through_all_three_controls() {
+    let mut calls = Vec::new();
+    for path in [GAIN, VGA2, AUTO] {
+        for db in [i32::MIN, -1, 0, 1, 12, 24, 25, 26, i32::MAX] {
+            calls.push(gain(path, db, TxGain::Vga2));
+        }
+    }
+    assert_calls_succeed(rev3, &calls);
 }

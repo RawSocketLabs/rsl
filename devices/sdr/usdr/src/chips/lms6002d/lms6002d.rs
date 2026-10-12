@@ -20,7 +20,7 @@ use super::spi::SpiWriter;
 use super::top::{
     ChipId, ClockEnables, EnableConfig, Loopback, LpfTuning, LpfTuningControl, ReferencePower,
 };
-use super::tx_rf::{Bias, PaSelect, PowerAmp};
+use super::tx_rf::{Bias, PaSelect, PowerAmp, Vga1Gain, Vga2Gain};
 
 use crate::error::Error;
 use crate::lowlevel::{Bus, SpiAddr};
@@ -334,6 +334,18 @@ impl Lms6002d {
         regs.write_to(lpf, bandwidth)?;
         regs.write_to(lpf, bypass)?;
         regs.write_to(lpf, control)
+    }
+
+    /// Sets TXVGA1's gain to `db`, held to -35..=-4 dB (`lms6002d_set_txvga1_gain`, after
+    /// libusdr's clamp).
+    pub(crate) fn set_tx_vga1_gain(&self, bus: &mut dyn Bus, db: i32) -> Result<(), Error> {
+        self.on(bus).write(Vga1Gain::for_db(db))
+    }
+
+    /// Sets TXVGA2's gain to `db`, held to 0..=25 dB, with the detector multiplexer at 0
+    /// (`lms6002d_set_txvga2_gain`, after libusdr's clamp).
+    pub(crate) fn set_tx_vga2_gain(&self, bus: &mut dyn Bus, db: i32) -> Result<(), Error> {
+        self.on(bus).write(Vga2Gain::for_db(db))
     }
 
     /// Tunes the RX synthesizer's LO to `lo_hz` from a `reference_hz` reference, and returns

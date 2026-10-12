@@ -12,6 +12,6 @@ mod tune;
 
 pub(crate) use board::{Board, TxState};
 pub use correction::{RxIqCorrection, RxTrim};
-pub use gain::RxGain;
+pub use gain::{RxGain, TxGain};
 pub use path::{RxPath, TxPath};
 pub use stream::{RxPacket, RxThrottle};

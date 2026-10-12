@@ -1,9 +1,10 @@
-//! RX gain: `usdr_rfic_set_gain` for the RX stages in `device/m2_lm6_1/usdr_ctrl.c`, as
-//! the `/dm/sdr/0/rx/gain*` controls reach it.
+//! Gains: `usdr_rfic_set_gain` in `device/m2_lm6_1/usdr_ctrl.c`, as the
+//! `/dm/sdr/0/rx/gain*` and `/dm/sdr/0/tx/gain*` controls reach it.
 //!
-//! The chain is LNA, mixer, RXVGA1, filter, RXVGA2 (two stages, A then B), ADC. Each stage
-//! can be set alone, or [`RxGain::Auto`] splits one figure across the LNA, RXVGA1 and
-//! RXVGA2's first stage. Like libusdr, every figure is clamped to its stage's range, never
+//! The RX chain is LNA, mixer, RXVGA1, filter, RXVGA2 (two stages, A then B), ADC. Each
+//! stage can be set alone, or [`RxGain::Auto`] splits one figure across the LNA, RXVGA1 and
+//! RXVGA2's first stage. The TX chain is DAC, filter, TXVGA1, mixer, TXVGA2, PA; each VGA
+//! is set alone. Like libusdr, every figure is clamped to its stage's range, never
 //! rejected.
 
 use rsl_deps::tracing::debug;
@@ -69,6 +70,21 @@ impl RxGain {
         let step = db.clamp(0, Self::VGA2_MAX_DB) / Self::VGA2_STEP_DB;
         u8::try_from(step).expect("invariant: 0..=30 dB is step 0..=10")
     }
+}
+
+/// A TX gain setting in dB, for one stage.
+///
+/// Values outside a stage's range are clamped to it, as libusdr does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxGain {
+    /// TXVGA1, the baseband level into the TX mixer, -35 to -4 dB in 1 dB steps
+    /// (`tx/gain/vga1`).
+    Vga1(i32),
+
+    /// TXVGA2, the RF level after the TX mixer, 0 to 25 dB in 1 dB steps. libusdr's
+    /// `tx/gain`, `tx/gain/vga2` and `tx/gain/auto` all set this stage alone: its automatic
+    /// TX gain is no split.
+    Vga2(i32),
 }
 
 /// The LNA gain mode for `db` (`GAIN_RX_LNA` in `usdr_rfic_set_gain`).
@@ -232,6 +248,16 @@ impl Board {
                 self.rx.vga2b = RxGain::vga2_step(db);
                 self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
             }
+        }
+    }
+
+    /// Sets a TX gain (`usdr_rfic_set_gain` for the TX stages); the LMS6002D driver holds
+    /// each figure to its stage's range.
+    pub(crate) fn set_tx_gain(&mut self, gain: TxGain) -> Result<(), Error> {
+        let bus = self.bus.as_mut();
+        match gain {
+            TxGain::Vga1(db) => self.lms.set_tx_vga1_gain(bus, db),
+            TxGain::Vga2(db) => self.lms.set_tx_vga2_gain(bus, db),
         }
     }
 }
