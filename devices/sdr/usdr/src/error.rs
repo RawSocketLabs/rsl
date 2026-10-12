@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::lowlevel::BusError;
 use crate::portable::sequence::{RegisterAccess, SequenceFailure};
+use crate::stream::{HostFormat, SyncMode};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -127,13 +128,44 @@ pub enum Error {
         got: usize,
     },
 
-    /// The call needs a running RX stream.
-    #[error("no RX stream is running")]
+    /// The call needs a stream: none was created, or it was stopped.
+    #[error("no stream group exists")]
     NotStreaming,
 
-    /// The call needs the RX stream stopped first.
-    #[error("the RX stream is running")]
+    /// The call needs the stream group stopped first, or (starting it) not yet started.
+    #[error("a stream group exists")]
     AlreadyStreaming,
+
+    /// A stream configuration with no stream in it.
+    #[error("no stream to create")]
+    NoStreams,
+
+    /// A synchronisation mode libusdr's uSDR stream sync (`sfetrx4_stream_sync`) refuses.
+    #[error("unsupported stream synchronisation {0:?}")]
+    UnsupportedSync(SyncMode),
+
+    /// The receive buffers' element type is not the stream's host format.
+    #[error("receive buffers hold {buffer:?} samples, the stream delivers {stream:?}")]
+    #[non_exhaustive]
+    HostFormatMismatch {
+        /// The stream's host format.
+        stream: HostFormat,
+
+        /// The buffers' format.
+        buffer: HostFormat,
+    },
+
+    /// The receive call passed a different number of channel buffers than the stream has
+    /// channels.
+    #[error("{got} channel buffers for a stream of {expected} channels")]
+    #[non_exhaustive]
+    ChannelBuffers {
+        /// The stream's channel count.
+        expected: usize,
+
+        /// The buffers passed.
+        got: usize,
+    },
 
     /// A packet size the stream engine cannot split into bursts, in samples.
     #[error("unsupported packet size {0} samples")]

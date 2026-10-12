@@ -11,6 +11,7 @@ use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
+use crate::stream::{HostSample, RxMetadata, StreamsConfig};
 use crate::thermal::{CoolDown, ThermalPolicy};
 
 /// A powered uSDR.
@@ -158,7 +159,7 @@ impl Device {
     ///
     /// - [`Error::UnsupportedSampleRate`] outside 960 kS/s to 80 MS/s, or 1 to 80 MS/s on a
     ///   board with only one DSP chain.
-    /// - [`Error::AlreadyStreaming`] while an RX stream runs.
+    /// - [`Error::AlreadyStreaming`] while a stream group exists.
     /// - [`Error::ClockInputMissing`] if the Si5332 loses its reference while switching.
     /// - [`Error::PllUnlocked`], [`Error::PllFault`] or [`Error::UnsupportedFrequency`] if
     ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
@@ -188,27 +189,101 @@ impl Device {
         self.board().set_rx_frequency(hz)
     }
 
-    /// Creates the RX stream and starts it, with `samples_per_packet` samples in each packet
-    /// [`Device::receive`] delivers. Frequency and bandwidth can change while it runs; the
-    /// sample rate cannot.
+    /// Creates the stream group `config` describes, stopped: libusdr's `usdr_dms_create`
+    /// for each stream. Frequency and bandwidth can change while it exists; the sample rate
+    /// cannot. Start it with [`Device::start_streams`].
     ///
-    /// Creating the stream calibrates the receiver's DC offsets. If no frequency was set,
-    /// the receiver tunes to 320 MHz first, as libusdr does.
+    /// Creating the RX stream calibrates the receiver's DC offsets. If no frequency was set,
+    /// the receiver tunes to 320 MHz first, as libusdr does. The streams' wire formats
+    /// are converted to their host formats inside each receive.
     ///
     /// # Errors
     ///
-    /// - [`Error::AlreadyStreaming`] if a stream is running.
+    /// Before any bus access:
+    /// - [`Error::AlreadyStreaming`] if a group exists.
+    /// - [`Error::NoStreams`] if `config` has no stream.
+    /// - [`Error::UnsupportedSync`] for [`SyncMode::ExternalAll`]: libusdr's
+    ///   `sfetrx4_stream_sync` has no `extall` case (it creates the stream, then fails
+    ///   `usdr_dms_sync` with `-EINVAL`).
+    ///
+    /// Then:
     /// - [`Error::UnsupportedPacketSize`] for a packet the stream engine cannot split into
-    ///   bursts.
+    ///   bursts in the wire format.
     /// - [`Error::Stream`] if the transport cannot set up its buffers, or does not stream.
     /// - [`Error::DmaEngineFault`] if the FPGA's DMA engine does not respond.
     /// - Tuning and calibration errors, as [`Device::set_rx_frequency`]; any bus failure.
     ///
-    /// As in libusdr, a failure after the transport set up its buffers leaves the stream in
-    /// place: call [`Device::stop_rx_stream`] before starting again.
-    /// For USB, an ambiguous control transaction permanently invalidates the bus. Stopping
-    /// still attempts to drain its RX buffers, but close/drop and reopen the device rather
-    /// than retrying start on that handle. Power-down writes may fail on the invalid bus.
+    /// As in libusdr, a failure after the transport set up its buffers leaves the group in
+    /// place: call [`Device::stop_streams`] before creating again. For USB, an ambiguous
+    /// control transaction permanently invalidates the bus. Stopping still attempts to
+    /// drain its RX buffers, but close/drop and reopen the device rather than retrying on
+    /// that handle. Power-down writes may fail on the invalid bus.
+    ///
+    /// [`SyncMode::ExternalAll`]: crate::SyncMode::ExternalAll
+    pub fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
+        self.board().create_streams(config)
+    }
+
+    /// Synchronises and starts the stream group: libusdr's `usdr_dms_sync` with the
+    /// group's [`SyncMode`](crate::SyncMode), then `USDR_DMS_START` for each stream.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no group; [`Error::AlreadyStreaming`] once started;
+    /// any bus failure.
+    pub fn start_streams(&mut self) -> Result<(), Error> {
+        self.board().start_streams()
+    }
+
+    /// Receives one RX packet into the front of each channel's buffer (one buffer per
+    /// channel of the stream), waiting up to `timeout`; the rest of each buffer is
+    /// untouched. The buffers' element type must be the stream's
+    /// [`HostFormat`](crate::HostFormat).
+    ///
+    /// Before [`Device::start_streams`], the sync unit holds the stream: the call tells
+    /// the DMA engine the host is ready, as every call does until the first packet, then
+    /// waits out `timeout`.
+    ///
+    /// Divergence from libusdr: a packet whose bursts end in padding (bursts that do not
+    /// fill whole 8-byte words) arrives without it, where libusdr converts the padding
+    /// into the samples.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::NotStreaming`] with no group.
+    /// - [`Error::HostFormatMismatch`], [`Error::ChannelBuffers`] or
+    ///   [`Error::BufferTooSmall`] for buffers that cannot hold the packet, before any bus
+    ///   access.
+    /// - [`Error::Timeout`] if no packet arrives in time.
+    /// - [`Error::ShortRxBlock`] or [`Error::Stream`] if the transport fails; any bus
+    ///   failure.
+    pub fn receive_into<S: HostSample>(
+        &mut self,
+        channels: &mut [&mut [S]],
+        timeout: Duration,
+    ) -> Result<RxMetadata, Error> {
+        self.board().receive_into(channels, timeout)
+    }
+
+    /// Stops and destroys the stream group, powering the receiver down. The frequency,
+    /// bandwidth and sample rate stay set for the next group.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no group; otherwise the first failure, after every step
+    /// is attempted.
+    pub fn stop_streams(&mut self) -> Result<(), Error> {
+        self.board().stop_streams()
+    }
+
+    /// Creates and starts a `ci16` channel-0 RX stream, unsynchronised, with
+    /// `samples_per_packet` samples in each packet [`Device::receive`] delivers: the FFI
+    /// `usdr` crate's flow (create, start, then sync `"none"`), otherwise as
+    /// [`Device::create_streams`] then [`Device::start_streams`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::create_streams`] and [`Device::start_streams`].
     pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         self.board().start_rx_stream(samples_per_packet)
     }
@@ -223,21 +298,18 @@ impl Device {
         self.board().set_rx_throttle(throttle)
     }
 
-    /// Samples per packet of the running RX stream, or `None` with no stream.
+    /// Samples per packet of the RX stream, or `None` with no stream.
     #[must_use]
     pub fn rx_packet_samples(&self) -> Option<u32> {
         self.board.as_ref().and_then(Board::rx_packet_samples)
     }
 
-    /// Receives one packet of IQ samples into the front of `samples`, waiting up to
-    /// `timeout`; the rest of `samples` is untouched.
+    /// Receives one packet of `ci16` IQ samples into the front of `samples`, waiting up to
+    /// `timeout`: [`Device::receive_into`] for the one channel.
     ///
     /// # Errors
     ///
-    /// - [`Error::Timeout`] if no packet arrives in time.
-    /// - [`Error::BufferTooSmall`] if `samples` holds less than one packet.
-    /// - [`Error::NotStreaming`] with no stream.
-    /// - [`Error::Stream`] if the transport fails; any bus failure.
+    /// As [`Device::receive_into`].
     pub fn receive(
         &mut self,
         samples: &mut [Complex<i16>],
@@ -246,15 +318,13 @@ impl Device {
         self.board().receive(samples, timeout)
     }
 
-    /// Stops and destroys the RX stream, powering the receiver down. The frequency,
-    /// bandwidth and sample rate stay set for the next stream.
+    /// Stops and destroys the RX stream: [`Device::stop_streams`].
     ///
     /// # Errors
     ///
-    /// [`Error::NotStreaming`] with no stream; otherwise the first failure, after every step
-    /// is attempted.
+    /// As [`Device::stop_streams`].
     pub fn stop_rx_stream(&mut self) -> Result<(), Error> {
-        self.board().stop_rx_stream()
+        self.board().stop_streams()
     }
 
     /// Fixes the RX filter bandwidth in Hz, so later sample-rate and frequency changes keep
@@ -377,14 +447,14 @@ impl Device {
             .expect("invariant: a Device owns its board until close or drop")
     }
 
-    /// Stops any RX stream, then powers the board down, if it is still up. Every step is
+    /// Stops any stream group, then powers the board down, if it is still up. Every step is
     /// attempted; the first failure is returned.
     fn power_down(&mut self) -> Result<(), Error> {
         let Some(mut board) = self.board.take() else {
             return Ok(());
         };
         let stopped = if board.rx_packet_samples().is_some() {
-            board.stop_rx_stream()
+            board.stop_streams()
         } else {
             Ok(())
         };

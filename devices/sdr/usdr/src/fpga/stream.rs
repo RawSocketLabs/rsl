@@ -3,7 +3,8 @@
 //!
 //! The front end takes commands through one register, `cmd << 28 | value`; the DMA engine
 //! has a control and a status register and two configuration registers; the sync unit one
-//! register. libusdr's single-channel `ci16` RX stream sets them as this module does.
+//! register. libusdr's single-channel complex RX stream (`ci16` or `ci12` on the wire)
+//! sets them as this module does.
 //!
 //! Source: `ipblks/streams/sfe_rx_4.c`, `dma_rx_32.c` and `stream_sfetrx4_dma32.c`;
 //! addresses from `device/m2_lm6_1/m2_lm6_1.c` (`M2PCI_REG_WR_RXDMA_CONFIRM`,
@@ -14,6 +15,7 @@ use bnb::{BitEnum, bitfield, u2, u3, u4, u10, u13, u28};
 use super::gpio::FPGA;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
+use crate::stream::WireFormat;
 
 /// RX DMA control: enable, reset, host ready (`M2PCI_REG_WR_RXDMA_CONFIRM + 1`).
 const REG_RX_DMA_CONTROL: u32 = 5;
@@ -38,8 +40,6 @@ const MAX_BURSTS: u32 = 32;
 const MAX_BURST_WORDS: u32 = 1 << 13;
 /// Most bursts the FIFO count field holds (`SFE_CMD_BF_BTOTAL_MASK`).
 const MAX_FIFO_BURSTS: u32 = (1 << 10) - 1;
-/// Bits per `ci16` sample on the single-channel front end: two raw lanes of 16 bits.
-const SAMPLE_BITS: u32 = 32;
 
 /// RX DMA status: the engine reports active.
 const STATUS_ACTIVE: u32 = 1 << 30;
@@ -47,9 +47,12 @@ const STATUS_ACTIVE: u32 = 1 << 30;
 const STATUS_DEAD: u32 = 0xffff_ffff;
 
 /// How a stream's packets split into bursts and fit the front end's FIFO
-/// (`burst_fe_calculate` for one `ci16` channel).
+/// (`burst_fe_calculate` for one complex channel).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BurstPlan {
+    /// The format the front end packs.
+    wire: WireFormat,
+
     /// Bytes in one burst, padded to whole words.
     bytes_per_burst: u32,
 
@@ -64,16 +67,20 @@ pub(crate) struct BurstPlan {
 }
 
 impl BurstPlan {
-    /// The plan for packets of `samples`, or `None` where libusdr returns `-EINVAL` (or
-    /// would divide by zero, for packets too small to fill a word per burst).
+    /// The plan for packets of `samples` in `wire` format, or `None` where libusdr returns
+    /// `-EINVAL` (or would divide by zero, for packets too small to fill a word per burst).
     ///
     /// libusdr's search: the fewest bursts that divide the packet evenly, keep each burst
     /// within 8192 samples and words, leave room for two bursts in the FIFO and split the
     /// words evenly; failing an even split, the one with the least padding. Its FIFO count
-    /// comes from the last burst count it tried, as here.
-    pub(crate) fn for_packet(samples: u32) -> Option<Self> {
+    /// comes from the last burst count it tried, as here. Samples pack back to back across
+    /// words: two lanes of 16 or 12 bits each (`bps = chans_raw * ch_bits`).
+    pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
         // libusdr's 32-bit product would wrap here; no such packet fits a burst anyway.
-        let words = SAMPLE_BITS.checked_mul(samples)?.div_ceil(WORD_BYTES * 8);
+        let words = wire
+            .sample_bits()
+            .checked_mul(samples)?
+            .div_ceil(WORD_BYTES * 8);
         if words == 0 {
             return None;
         }
@@ -106,6 +113,7 @@ impl BurstPlan {
         }
         let bursts = even.or(best.map(|(bursts, _)| bursts))?;
         Some(Self {
+            wire,
             bytes_per_burst: words.div_ceil(bursts) * WORD_BYTES,
             bursts,
             samples_per_burst: samples / bursts,
@@ -224,6 +232,16 @@ enum SampleFormat {
     Bits16,
 }
 
+impl From<WireFormat> for SampleFormat {
+    /// `sfe_rx4_configure`'s `fe_format` for the wire format's bits.
+    fn from(wire: WireFormat) -> Self {
+        match wire {
+            WireFormat::Ci16 => Self::Bits16,
+            WireFormat::Ci12 => Self::Bits12,
+        }
+    }
+}
+
 /// Which raw lanes a burst carries (`IFMT_CH_*`); lane 0 is I and lane 1 Q of channel 0.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u3)]
@@ -291,13 +309,17 @@ struct DmaControl {
     enabled: bool,
 }
 
-/// The sync unit's modes (`ST_*`).
+/// The sync unit's modes (`ST_*`), those the RX streams use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SyncMode {
-    /// Streams held stopped.
+pub(crate) enum SyncTrigger {
+    /// Streams held stopped (`ST_STOP`, libusdr's `"off"`).
     Stop = 0,
 
-    /// Streams run as soon as started.
+    /// Streams start on the RX front end's activity (`ST_ADCACT`: `"all"` with RX alone,
+    /// or `"rx"`).
+    RxActivity = 2,
+
+    /// Streams run as soon as started (`ST_FREERUN`, `"none"`).
     FreeRun = 7,
 }
 
@@ -320,8 +342,8 @@ pub(crate) fn reset_rx_dma(bus: &mut dyn Bus) -> Result<(), Error> {
 }
 
 /// Puts the front end in reset, sets the burst size and format for `plan`, and releases it
-/// (`_configure_simple_fe_generic` for one `ci16` channel), then sizes the DMA blocks
-/// (`dma_rx32_configure`).
+/// (`_configure_simple_fe_generic` for one complex channel, `IFMT_CH_xx10`), then sizes the
+/// DMA blocks (`dma_rx32_configure`).
 pub(crate) fn configure_rx(bus: &mut dyn Bus, plan: &BurstPlan) -> Result<(), Error> {
     let all_reset = FrontEndControl::new()
         .with_reset_burster(true)
@@ -340,7 +362,7 @@ pub(crate) fn configure_rx(bus: &mut dyn Bus, plan: &BurstPlan) -> Result<(), Er
             u16::try_from(words - 1).expect("invariant: at most 8191"),
         ))
         .with_lanes(Lanes::Lanes10)
-        .with_format(SampleFormat::Bits16);
+        .with_format(plan.wire.into());
     front_end(bus, Command::BurstFormat, format.to_raw())?;
     write(bus, REG_RX_DMA_BURST_WORDS, words - 1)?;
     write(bus, REG_RX_DMA_BURSTS, plan.bursts - 1)
@@ -377,7 +399,7 @@ pub(crate) fn signal_rx_ready(bus: &mut dyn Bus) -> Result<(), Error> {
 }
 
 /// Sets the sync unit's mode (`sfetrx4_stream_sync`).
-pub(crate) fn sync(bus: &mut dyn Bus, mode: SyncMode) -> Result<(), Error> {
+pub(crate) fn sync(bus: &mut dyn Bus, mode: SyncTrigger) -> Result<(), Error> {
     write(bus, REG_SYNC, 1 << 31 | (mode as u32) << 16)
 }
 
@@ -407,10 +429,11 @@ mod tests {
 
     #[test]
     fn a_1024_sample_packet_is_one_4096_byte_burst() {
-        let plan = BurstPlan::for_packet(1024).expect("valid");
+        let plan = BurstPlan::for_packet(1024, WireFormat::Ci16).expect("valid");
         assert_eq!(
             plan,
             BurstPlan {
+                wire: WireFormat::Ci16,
                 bytes_per_burst: 4096,
                 bursts: 1,
                 samples_per_burst: 1024,
@@ -423,7 +446,7 @@ mod tests {
     #[test]
     fn a_packet_too_big_for_one_burst_splits_evenly() {
         // 16384 samples are 8192 words: one burst would leave no FIFO room for two.
-        let plan = BurstPlan::for_packet(16384).expect("valid");
+        let plan = BurstPlan::for_packet(16384, WireFormat::Ci16).expect("valid");
         assert_eq!(
             (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
             (2, 8192, 32768)
@@ -433,14 +456,14 @@ mod tests {
     #[test]
     fn small_packets_get_a_deep_fifo() {
         // 256 samples are 128 words: 64 bursts fit the FIFO, past the bottom 24 bits.
-        let plan = BurstPlan::for_packet(256).expect("valid");
+        let plan = BurstPlan::for_packet(256, WireFormat::Ci16).expect("valid");
         assert_eq!((plan.bursts, plan.fifo_bursts), (1, 64));
     }
 
     #[test]
     fn a_packet_that_cannot_split_evenly_pads_each_burst() {
         // 16383 = 3 × 43 × 127: three bursts of 5461 samples, each 2730.5 words, so 2731.
-        let plan = BurstPlan::for_packet(16383).expect("valid");
+        let plan = BurstPlan::for_packet(16383, WireFormat::Ci16).expect("valid");
         assert_eq!(
             (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
             (3, 5461, 21848)
@@ -448,8 +471,32 @@ mod tests {
     }
 
     #[test]
+    fn twelve_bit_samples_pack_three_bytes_each_across_words() {
+        // 1024 samples of 24 bits are 384 words: one burst, 3072 bytes, 21 in the FIFO.
+        let plan = BurstPlan::for_packet(1024, WireFormat::Ci12).expect("valid");
+        assert_eq!(
+            (plan.bursts, plan.bytes_per_burst, plan.fifo_bursts),
+            (1, 3072, 21)
+        );
+        // 1023 samples are 3069 bytes, so the burst ends in a 3-byte stub.
+        let plan = BurstPlan::for_packet(1023, WireFormat::Ci12).expect("valid");
+        assert_eq!((plan.bursts, plan.bytes_per_burst), (1, 3072));
+    }
+
+    #[test]
+    fn a_twelve_bit_packet_splits_by_its_own_word_count() {
+        // 16384 samples are 6144 words: one burst fits 8192 words but leaves no FIFO room
+        // for two (65536 / 49152 bytes), so two bursts of 3072 words.
+        let plan = BurstPlan::for_packet(16384, WireFormat::Ci12).expect("valid");
+        assert_eq!(
+            (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
+            (2, 8192, 24576)
+        );
+    }
+
+    #[test]
     fn a_packet_too_large_to_count_is_refused() {
-        assert_eq!(BurstPlan::for_packet(1 << 27), None);
+        assert_eq!(BurstPlan::for_packet(1 << 27, WireFormat::Ci16), None);
     }
 
     #[test]
@@ -466,5 +513,8 @@ mod tests {
             .with_reset_ddr(true)
             .with_reset_dsp(true);
         assert_eq!(all_reset.to_raw(), 0xe100);
+        // `IFMT_12BIT` is 2 in bits 1:0.
+        let twelve = format.with_format(WireFormat::Ci12.into());
+        assert_eq!(twelve.to_raw(), 0x0040_3fe6);
     }
 }

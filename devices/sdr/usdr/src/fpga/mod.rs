@@ -11,5 +11,5 @@ pub(crate) use diag::{read_atcrbs, read_tx_dma_status, write_atcrbs};
 pub(crate) use gpio::{Gpi, Gpo, Hwid};
 pub(crate) use phy::{Decimation, IqImbalance, Nco, Phy};
 pub(crate) use stream::{
-    BurstPlan, SyncMode, configure_rx, reset_rx_dma, run_rx, signal_rx_ready, sync, throttle_rx,
+    BurstPlan, SyncTrigger, configure_rx, reset_rx_dma, run_rx, signal_rx_ready, sync, throttle_rx,
 };
