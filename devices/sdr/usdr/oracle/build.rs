@@ -43,8 +43,33 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_rtsa_depth");
 
+    // nco.c has no generic path: without SSSE3 it compiles a stub that writes nothing. On
+    // x86 it is built alone with SSSE3 so the NCO port can be compared; elsewhere it stays
+    // in the main build as libusdr ships it.
+    let x86 = matches!(
+        std::env::var("CARGO_CFG_TARGET_ARCH").as_deref(),
+        Ok("x86" | "x86_64")
+    );
+    let nco = "xdsp/nco.c";
+    if x86 {
+        cc::Build::new()
+            .file(lib.join(nco))
+            .includes(&includes)
+            .include(libusdr.join("gen"))
+            .flag("-std=gnu11")
+            .flag("-ffp-contract=off")
+            .flag("-mssse3")
+            .warnings(false)
+            .compile("usdr_oracle_nco");
+    }
+
     cc::Build::new()
-        .files(sources.lines().map(|source| lib.join(source)))
+        .files(
+            sources
+                .lines()
+                .filter(|source| !(x86 && *source == nco))
+                .map(|source| lib.join(source)),
+        )
         .includes(&includes)
         .include(libusdr.join("gen"))
         .flag("-std=gnu11")

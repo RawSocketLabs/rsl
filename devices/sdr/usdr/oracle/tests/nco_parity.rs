@@ -239,11 +239,14 @@ fn libusdrs_nco_shift_is_the_ssse3_kernel_or_the_stub() {
 }
 
 #[test]
-#[ignore = "needs libusdr built with CFLAGS=-mssse3; the default build compiles nco.c's stub"]
+#[cfg_attr(
+    not(any(target_arch = "x86", target_arch = "x86_64")),
+    ignore = "build.rs compiles nco.c's SSSE3 kernel only on x86"
+)]
 fn nco_shifts_like_libusdrs_ssse3_kernel() {
     assert!(
         nco::nco_compiled(),
-        "nco_shift is the stub: rebuild the oracle with CFLAGS=-mssse3"
+        "nco_shift is the stub: the oracle should build nco.c with -mssse3 on x86"
     );
     let mut rng = Rng(0x8c3f_8f8e_4f2a_9b61);
     // Multiples of eight: the kernel's block size.
