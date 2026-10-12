@@ -2,6 +2,7 @@
 
 mod diag;
 mod fir_tables;
+pub(crate) mod flash;
 mod gpio;
 mod phy;
 mod stream;

@@ -8,7 +8,8 @@
 //! rate, bandwidth and frequency, and the RX stream over any [`lowlevel::Bus`] that streams.
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
 //! `mio` adds `transport::usb::NativeUsb`, an unstable temperature-only USB handle driven by
-//! a caller-owned Mio reactor.
+//! a caller-owned Mio reactor. [`flash`] reads, erases and writes the FPGA's boot flash over
+//! a bus of its own, with the destructive operations behind a separate handle.
 //!
 //! # The uSDR board
 //!
@@ -118,6 +119,7 @@ mod chips;
 mod device;
 pub mod dsp;
 mod error;
+pub mod flash;
 mod fpga;
 mod identity;
 pub mod lowlevel;

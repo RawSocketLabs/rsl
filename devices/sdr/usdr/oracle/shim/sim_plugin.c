@@ -19,6 +19,7 @@
 #include "device/device_vfs.h"
 #include "lowlevel/pcie_uram/pcie_uram_driver_if.h"
 #include "ipblks/si2c.h"
+#include "ipblks/espi_flash.h"
 
 // Stateless oracle for the USB transport's simple-I2C command/cache sequence.
 // Each request is two words: addr|bus<<8|outlen<<16|inlen<<24, then LE outgoing bytes.
@@ -343,6 +344,33 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
 {
     (void)pcount; (void)devparam; (void)devval; (void)odev; (void)vidpid; (void)webops; (void)param;
     return -ENODEV;
+}
+
+// libusdr's flash driver against the board directly. It needs only `ls_op`, so the device
+// is a bare transport handle with no board description and no bring-up: the parity tests
+// compare the flash operations alone. The register bases are the caller's.
+static lowlevel_dev_t s_flash_dev = { .ops = &s_sim_ops, .pdev = NULL };
+
+int rsl_oracle_flash_get_id(unsigned base, uint32_t* id, char* out, size_t maxstr)
+{
+    return espi_flash_get_id(&s_flash_dev, 0, base, id, out, maxstr);
+}
+
+int rsl_oracle_flash_read(unsigned base, unsigned mmap_base, uint32_t offset, uint32_t size,
+                          uint8_t* out)
+{
+    return espi_flash_read(&s_flash_dev, 0, base, mmap_base, offset, size, out);
+}
+
+int rsl_oracle_flash_erase(unsigned base, uint32_t size, uint32_t offset)
+{
+    return espi_flash_erase(&s_flash_dev, 0, base, size, offset);
+}
+
+int rsl_oracle_flash_write(unsigned base, unsigned mmap_base, const uint8_t* in, uint32_t size,
+                           uint32_t offset, unsigned flags)
+{
+    return espi_flash_write(&s_flash_dev, 0, base, mmap_base, in, size, offset, flags);
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

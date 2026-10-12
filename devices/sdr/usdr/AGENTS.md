@@ -35,7 +35,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, and the RX stream engine's blocks below it |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it, and the QSPI flash controller with a fake flash (opt-in, `with_flash`) |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
@@ -66,8 +66,13 @@ Each layer calls only the ones below it.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
-  with the decimator FIR tables in `fir_tables.rs`), and the RX stream engine (`stream`:
-  front end, DMA, sync).
+  with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
+  front end, DMA, sync), and the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
+  plus the public `FlashId`, `FlashError` and `WriteOptions`).
+- `src/flash.rs`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
+  `Device`, nothing powered) and reads the ID and contents; erase and write sit on the
+  separate `Programmer` from `Flash::programmer`. Image headers and the update procedure
+  are not ported (`PORTING.md`).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
 - `src/dsp/`: public `rsl_usdr::dsp`, libusdr's host sample conversions and channel
@@ -161,6 +166,10 @@ Each layer calls only the ones below it.
   The second leaves out stream create's per-channel baseband loop, a libusdr bug that
   reselects the band, clamps the NCOs and bypasses the filter;
   `oracle/tests/stream_parity.rs` whitelists it and the mixer exit it leaves libusdr owing.
+  The flash maintenance refuses, before any bus access, ranges libusdr would mishandle
+  (past 16 MiB, partial erases, page-crossing chunks) and reports large capacities whole;
+  `oracle/tests/flash_parity.rs` whitelists each. Two more cannot run in libusdr safely
+  (its header-length underflow, its staging `assert`), so `tests/flash.rs` covers them.
 - Registers are typed (`src/portable/register.rs`; `src/chips/register.rs` adds blocking I2C
   access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.

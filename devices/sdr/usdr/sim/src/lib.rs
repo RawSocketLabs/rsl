@@ -2,7 +2,8 @@
 //!
 //! The board is modelled at libusdr's low-level operation seam (`ls_op`): FPGA register
 //! reads and writes, 32-bit SPI transactions to the LMS6002D, and I2C transfers to the
-//! board's support chips. Both libusdr (through `rsl-usdr-oracle`) and `rsl-usdr` drive
+//! board's support chips, plus the FPGA's QSPI flash controller with a fake flash behind it
+//! ([`SimBoard::with_flash`]). Both libusdr (through `rsl-usdr-oracle`) and `rsl-usdr` drive
 //! the same model, so their recorded [`Op`] traces and final chip state can be compared
 //! without hardware.
 //!
@@ -12,9 +13,11 @@
 
 mod board;
 mod chips;
+mod flash;
 mod stream;
 mod trace;
 
 pub use board::{BoardRevision, I2cAddress, SimBoard, SimError};
 pub use chips::{DcCalibration, PllLock};
+pub use flash::SimFlash;
 pub use trace::Op;

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
+use crate::flash::{FlashController, SimFlash};
 use crate::stream::RxEngine;
 use crate::trace::Op;
 
@@ -115,6 +116,9 @@ pub struct SimBoard {
     trace: Vec<Op>,
     /// The FPGA's RX stream engine.
     rx: RxEngine,
+    /// The FPGA's QSPI flash controller and its flash, when the test fits one; without it,
+    /// the controller's registers are plain storage as before.
+    flash: Option<FlashController>,
 }
 
 impl SimBoard {
@@ -139,7 +143,30 @@ impl SimBoard {
             now_us: 0,
             trace: Vec::new(),
             rx: RxEngine::default(),
+            flash: None,
         }
+    }
+
+    /// A board whose FPGA flash controller has `flash` behind it; see [`SimFlash`] for what
+    /// the controller model assumes.
+    #[must_use]
+    pub fn with_flash(mut self, flash: SimFlash) -> Self {
+        self.flash = Some(FlashController::new(flash));
+        self
+    }
+
+    /// A board whose flash controller reports busy forever, so its status polls time out.
+    ///
+    /// # Panics
+    ///
+    /// Unless [`SimBoard::with_flash`] fitted a flash first.
+    #[must_use]
+    pub fn with_stuck_flash_controller(mut self) -> Self {
+        self.flash
+            .as_mut()
+            .expect("fit a flash with `with_flash` first")
+            .stuck = true;
+        self
     }
 
     /// A board whose clock generator has no input until the driver enables the on-board
@@ -208,6 +235,10 @@ impl SimBoard {
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });
         self.rx.on_write(addr, value);
+        if let Some(flash) = self.flash.as_mut().filter(|_| FlashController::owns(addr)) {
+            flash.write(addr, value, self.now_us);
+            return;
+        }
         if addr == REG_GPO && value & GPO_I2C_LUT == 0 {
             let [bank, ..] = value.to_be_bytes();
             self.gpo.insert(bank, value & 0x00ff_ffff);
@@ -217,7 +248,10 @@ impl SimBoard {
 
     /// Reads a 32-bit FPGA register.
     pub fn read_reg(&mut self, addr: u32) -> u32 {
-        let value = self.regs.get(&addr).copied().unwrap_or(0);
+        let value = match &self.flash {
+            Some(flash) if FlashController::owns(addr) => flash.read(addr),
+            _ => self.regs.get(&addr).copied().unwrap_or(0),
+        };
         self.trace.push(Op::RegRead { addr, value });
         value
     }
@@ -299,6 +333,12 @@ impl SimBoard {
     #[must_use]
     pub fn gpo(&self, bank: u8) -> Option<u32> {
         self.gpo.get(&bank).copied()
+    }
+
+    /// The flash behind the FPGA's flash controller, if [`SimBoard::with_flash`] fitted one.
+    #[must_use]
+    pub fn flash(&self) -> Option<&SimFlash> {
+        self.flash.as_ref().map(|flash| &flash.chip)
     }
 
     /// An LMS6002D register.
