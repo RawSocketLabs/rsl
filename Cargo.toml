@@ -19,6 +19,8 @@ members = [
     "error-correction",
     # RF parsing
     "rfus",
+    # the register/SPI/I2C seam and sequence types the device drivers share
+    "devices/lowlevel",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -87,6 +89,8 @@ rsl-asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
 rsl-x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 rsl-pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 rsl-compression = { path = "compression", version = "0.1.0", default-features = false }
+# unpublished device crates shared by the drivers
+rsl-lowlevel = { path = "devices/lowlevel", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }

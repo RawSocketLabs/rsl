@@ -319,7 +319,7 @@ impl<const N: usize> Sequence for ClockSequence<N> {
                     match then {
                         AfterSettle::Writes => self.first_write(),
                         AfterSettle::Check if state == CurrentState::NoInputClock => {
-                            return self.fail(SequenceFailure::ClockInputMissing);
+                            return self.fail(SequenceFailure::InputMissing { chip: NAME });
                         }
                         AfterSettle::Check => Phase::Done,
                     }
@@ -576,7 +576,7 @@ mod tests {
         let layout = Layout::new(26_000_000, 20_000_000).expect("a valid sample clock");
         let mut sequence = ClockSequence::layout(DEV, &layout, LvpeclOutput::Out0, 8);
         let (counts, outcome) = run(&mut sequence, 0, &[NO_INPUT_CLOCK]);
-        assert_eq!(outcome, Err(SequenceFailure::ClockInputMissing));
+        assert_eq!(outcome, Err(SequenceFailure::InputMissing { chip: NAME }));
         assert_eq!(
             counts.writes, LAYOUT_WRITES,
             "the state before the plan is not checked"

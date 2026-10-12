@@ -281,7 +281,7 @@ pub fn power_rails(reads: &[u8]) -> Result<usize, &'static str> {
                 | SequenceFailure::Transport { chip, .. }
                 | SequenceFailure::FpgaTransport { chip, .. }
                 | SequenceFailure::ChipMissing { chip } => chip,
-                SequenceFailure::ClockInputMissing => "no input clock",
+                SequenceFailure::InputMissing { .. } => "no input clock",
             })?;
         completed += 1;
     }
@@ -357,7 +357,7 @@ fn drive(sequence: &mut impl Sequence, id: u8, state: u8) -> Result<usize, &'sta
             .complete::<Infallible>(Ok(byte.into()))
             .map_err(|failure| match failure {
                 SequenceFailure::ChipMissing { .. } => "missing",
-                SequenceFailure::ClockInputMissing => "no input clock",
+                SequenceFailure::InputMissing { .. } => "no input clock",
                 SequenceFailure::ChipId { chip, .. }
                 | SequenceFailure::Transport { chip, .. }
                 | SequenceFailure::FpgaTransport { chip, .. } => chip,

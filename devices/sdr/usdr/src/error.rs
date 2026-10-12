@@ -1,9 +1,9 @@
 //! The driver's error type.
 
-use std::fmt;
+pub use rsl_lowlevel::Access;
 
 use crate::lowlevel::BusError;
-use crate::portable::sequence::{FpgaAccess, RegisterAccess, SequenceFailure};
+use crate::portable::sequence::SequenceFailure;
 use crate::stream::{HostFormat, SyncMode};
 
 /// A failed driver operation.
@@ -209,25 +209,6 @@ pub enum Error {
     Busy,
 }
 
-/// The direction of a failed register access.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Access {
-    /// A register read.
-    Read,
-
-    /// A register write.
-    Write,
-}
-
-impl fmt::Display for Access {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Read => "read",
-            Self::Write => "write",
-        })
-    }
-}
-
 /// Attaches the register access to a bus failure.
 pub(crate) trait BusContext<T> {
     /// Names the register read that failed.
@@ -267,37 +248,12 @@ impl From<SequenceFailure<BusError>> for Error {
                 chip,
                 access,
                 source,
-            } => {
-                let (access, reg) = match access {
-                    RegisterAccess::Read { reg, .. } => (Access::Read, reg),
-                    RegisterAccess::Write { reg, .. } => (Access::Write, reg),
-                };
-                Self::Bus {
-                    chip,
-                    access,
-                    reg: reg.into(),
-                    source,
-                }
-            }
+            } => Self::bus(chip, access.context(), source),
             SequenceFailure::FpgaTransport {
                 chip,
                 access,
                 source,
-            } => {
-                let (access, reg) = match access {
-                    FpgaAccess::Read { reg } => (Access::Read, reg.into()),
-                    FpgaAccess::Write { reg, .. } => (Access::Write, reg.into()),
-                    FpgaAccess::Spi { reg, write, .. } => {
-                        (if write { Access::Write } else { Access::Read }, reg.into())
-                    }
-                };
-                Self::Bus {
-                    chip,
-                    access,
-                    reg,
-                    source,
-                }
-            }
+            } => Self::bus(chip, access.context(), source),
             SequenceFailure::ChipId {
                 chip,
                 expected,
@@ -308,7 +264,20 @@ impl From<SequenceFailure<BusError>> for Error {
                 found,
             },
             SequenceFailure::ChipMissing { chip } => Self::ChipMissing(chip),
-            SequenceFailure::ClockInputMissing => Self::ClockInputMissing,
+            // Only the Si5332's clock sequences report a missing input.
+            SequenceFailure::InputMissing { .. } => Self::ClockInputMissing,
+        }
+    }
+}
+
+impl Error {
+    /// A failed register access, from the direction and register a sequence decoded.
+    fn bus(chip: &'static str, (access, reg): (Access, u32), source: BusError) -> Self {
+        Self::Bus {
+            chip,
+            access,
+            reg,
+            source,
         }
     }
 }
@@ -316,7 +285,8 @@ impl From<SequenceFailure<BusError>> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lowlevel::I2cAddr;
+    use crate::lowlevel::{I2cAddr, SpiAddr};
+    use crate::portable::sequence::{FpgaAccess, RegisterAccess};
 
     #[test]
     fn a_failed_sequence_read_keeps_its_chip_register_and_direction() {
@@ -358,5 +328,34 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn a_failed_spi_exchange_names_the_chip_register_and_direction() {
+        let failure = SequenceFailure::FpgaTransport {
+            chip: "LMS6002D",
+            access: FpgaAccess::Spi {
+                target: SpiAddr(0),
+                word: 0x8412,
+                reg: 4,
+                write: true,
+            },
+            source: BusError::Timeout,
+        };
+        assert!(matches!(
+            Error::from(failure),
+            Error::Bus {
+                chip: "LMS6002D",
+                access: Access::Write,
+                reg: 4,
+                source: BusError::Timeout,
+            }
+        ));
+    }
+
+    #[test]
+    fn a_missing_input_is_the_si5332_clock_input() {
+        let failure = SequenceFailure::InputMissing { chip: "Si5332" };
+        assert!(matches!(Error::from(failure), Error::ClockInputMissing));
     }
 }

@@ -26,7 +26,7 @@ use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
 use crate::fpga::IdentityRead;
-use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, usb_error};
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
 /// `IN_NTFY_SIZE`: one notification transfer contains at most 64 bytes.
@@ -127,7 +127,7 @@ impl UsbIo for Queues {
 
     fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
         Rx::open_endpoint(&mut self.rx, block_bytes, || {
-            self.interface.in_queue(0x83).map_err(BusError::from)
+            self.interface.in_queue(0x83).map_err(usb_error)
         })
     }
 
@@ -146,7 +146,7 @@ impl UsbIo for Queues {
         Rx::close_endpoint(&mut self.rx)
     }
     fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
-        self.commands.write(packet, timeout).map_err(BusError::from)
+        self.commands.write(packet, timeout).map_err(usb_error)
     }
 
     fn read(&mut self, reply: Reply, timeout: Duration) -> Result<Vec<u8>, BusError> {
@@ -155,11 +155,11 @@ impl UsbIo for Queues {
             Reply::Notification => (&mut self.notifications, MAX_NOTIFICATION_BYTES),
         };
         let length = transfer_length(limit, queue.max_packet_size())?;
-        let buffer = queue.alloc(length).map_err(BusError::from)?;
+        let buffer = queue.alloc(length).map_err(usb_error)?;
         queue
             .submit(buffer)
-            .map_err(|rejected| BusError::from(rejected.error))?;
-        let Some(done) = queue.wait(timeout).map_err(BusError::from)? else {
+            .map_err(|rejected| usb_error(rejected.error))?;
+        let Some(done) = queue.wait(timeout).map_err(usb_error)? else {
             // The bus is poisoned by the caller regardless of whether cancellation succeeds.
             // Queue Drop still owns any transfer not returned by the kernel.
             let _ = queue.cancel_all();
@@ -167,7 +167,7 @@ impl UsbIo for Queues {
         };
         done.status
             .map_err(rsl_usb::Error::from)
-            .map_err(BusError::from)?;
+            .map_err(usb_error)?;
         Ok(done.buffer.to_vec())
     }
 }
@@ -211,7 +211,7 @@ impl UsbBus {
                     .filter(|info| Self::supported(info.vendor_id(), info.product_id()))
                     .collect()
             })
-            .map_err(|error| Error::Open(error.into()))
+            .map_err(|error| Error::Open(usb_error(error)))
     }
 
     /// Opens and resets this uSDR, claims interface 0, and configures USB notification routing.
@@ -229,22 +229,22 @@ impl UsbBus {
         let device = info
             .open()
             .and_then(rsl_usb::Device::reset)
-            .map_err(|error| Error::Open(error.into()))?;
+            .map_err(|error| Error::Open(usb_error(error)))?;
         let interface = device
             .claim_interface(0)
-            .map_err(|error| Error::Open(error.into()))?;
+            .map_err(|error| Error::Open(usb_error(error)))?;
         let queues = Queues {
             interface: interface.clone(),
             rx: None,
             commands: interface
                 .out_queue(0x01)
-                .map_err(|error| Error::Open(error.into()))?,
+                .map_err(|error| Error::Open(usb_error(error)))?,
             registers: interface
                 .in_queue(0x81)
-                .map_err(|error| Error::Open(error.into()))?,
+                .map_err(|error| Error::Open(usb_error(error)))?,
             notifications: interface
                 .in_queue(0x82)
-                .map_err(|error| Error::Open(error.into()))?,
+                .map_err(|error| Error::Open(usb_error(error)))?,
         };
         // A 256-byte readback must end in a short bulk packet. With full-speed MPS=64,
         // valid word counts divisible by 16 could otherwise wait forever for a ZLP.

@@ -8,6 +8,33 @@ import tomllib
 
 USDR = "devices/sdr/usdr"
 FIXTURE = f"{USDR}/nostd-check"
+# Every dependency of the portable core, with the features only the std driver may add to it.
+# The fixture declares each with the workspace's path and version, without default features,
+# and enables exactly the driver's remaining features (none today); never `std`.
+DEPENDENCIES = {"bnb": set(), "rsl-lowlevel": {"std"}}
+
+
+def check_dependency(root, name, host_only, shared, member, candidate):
+    """One fixture dependency must be the production declaration minus host-only features."""
+    if not isinstance(member, dict) or member.get("workspace") is not True:
+        raise ValueError(f"production {name} must use the shared workspace declaration")
+    if not isinstance(shared, dict) or not isinstance(candidate, dict):
+        raise ValueError(f"portable {name} must use the production path dependency")
+    if set(candidate) - {"package", "path", "version", "default-features", "features"}:
+        raise ValueError(f"portable {name} has an unsupported dependency override")
+    if (root / shared["path"]).resolve() != (root / FIXTURE / candidate["path"]).resolve():
+        raise ValueError(f"portable {name} path differs from the production dependency")
+    for field in ("package", "version"):
+        if candidate.get(field) != shared.get(field):
+            raise ValueError(f"portable {name} {field} differs from production")
+    if (shared.get("default-features", True) is not False
+            or member.get("default-features", False) is not False
+            or candidate.get("default-features", True) is not False):
+        raise ValueError(f"portable {name} must not enable default/std features")
+    expected = (set(shared.get("features", [])) | set(member.get("features", []))) - host_only
+    features = set(candidate.get("features", []))
+    if features != expected or expected:
+        raise ValueError(f"portable {name} must retain the production core-only feature set")
 
 
 def validate(root):
@@ -27,29 +54,11 @@ def validate(root):
         if package.get(field) != workspace["package"][field]:
             raise ValueError(f"portable fixture {field} differs from production workspace")
     dependencies = fixture.get("dependencies", {})
-    if set(dependencies) != {"bnb"}:
+    if set(dependencies) != DEPENDENCIES.keys():
         raise ValueError("register any new portable-core dependencies in the consistency check")
-    member = driver["dependencies"]["bnb"]
-    if not isinstance(member, dict) or member.get("workspace") is not True:
-        raise ValueError("production bnb must use the shared workspace declaration")
-    shared = workspace["dependencies"]["bnb"]
-    candidate = dependencies["bnb"]
-    if not isinstance(shared, dict) or not isinstance(candidate, dict):
-        raise ValueError("portable bnb must use the production path dependency")
-    if set(candidate) - {"package", "path", "version", "default-features", "features"}:
-        raise ValueError("portable bnb has an unsupported dependency override")
-    if (root / shared["path"]).resolve() != (root / FIXTURE / candidate["path"]).resolve():
-        raise ValueError("portable bnb path differs from the production dependency")
-    for field in ("package", "version"):
-        if candidate.get(field) != shared.get(field):
-            raise ValueError(f"portable bnb {field} differs from production")
-    if (shared.get("default-features", True) is not False
-            or member.get("default-features", False) is not False
-            or candidate.get("default-features", True) is not False):
-        raise ValueError("portable bnb must not enable default/std features")
-    expected = set(shared.get("features", [])) | set(member.get("features", []))
-    if set(candidate.get("features", [])) != expected or expected:
-        raise ValueError("portable bnb must retain the production core-only feature set")
+    for name, host_only in DEPENDENCIES.items():
+        check_dependency(root, name, host_only, workspace["dependencies"].get(name),
+                         driver["dependencies"].get(name), dependencies[name])
     source = root / FIXTURE / "src/lib.rs"
     text = source.read_text()
     imports = re.findall(r'#\[path\s*=\s*"([^"]+)"\]\s*mod\s+portable\s*;', text)

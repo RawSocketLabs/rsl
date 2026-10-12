@@ -146,6 +146,9 @@ impl Bus for PcieBus {
     }
 
     fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
+        if dev.core() != 0 {
+            return Err(BusError::Unsupported("the uSDR has one I2C core"));
+        }
         self.device
             .i2c(dev.bus(), dev.addr(), write, read)
             .map_err(bus_error)?;

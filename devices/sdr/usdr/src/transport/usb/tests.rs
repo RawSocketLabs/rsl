@@ -307,6 +307,10 @@ fn unsupported_requests_do_not_send_or_poison() {
     let (mut bus, script) = scripted(vec![]);
     assert!(bus.spi32(SpiAddr(1), 0).is_err());
     assert!(bus.i2c(I2cAddr::new(2, 0x60), &[], &mut []).is_err());
+    assert!(
+        bus.i2c(I2cAddr::on_core(1, 0, 0x60), &[], &mut []).is_err(),
+        "the uSDR has one I2C core"
+    );
     assert!(bus.i2c(I2cAddr::new(0, 0x60), &[0; 4], &mut []).is_err());
     assert!(bus.i2c(I2cAddr::new(0, 0x60), &[], &mut [0; 5]).is_err());
     assert!(bus.read_regs(u32::MAX, &mut [0; 2]).is_err());

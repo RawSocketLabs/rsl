@@ -9,7 +9,7 @@ use rsl_usb::{InQueue, Interface, OutQueue, ReapProgress};
 use super::super::bus::{MAX_NOTIFICATION_BYTES, transfer_length};
 use super::super::i2c::Event;
 use super::super::machine::{Machine, Step, Transfer};
-use crate::lowlevel::BusError;
+use crate::lowlevel::{BusError, usb_error};
 use crate::portable::usb::register::MAX_READ_WORDS;
 
 /// One bounded endpoint action with an absolute, non-renewable submission deadline.
@@ -130,9 +130,9 @@ impl Queues {
     /// The device must be exclusive to this pilot: its readiness makes the reactor the only
     /// completion driver, and the adapter turns only while its own request is pending.
     pub(in super::super) fn new(interface: Interface) -> Result<Self, BusError> {
-        let commands = interface.out_queue(0x01).map_err(BusError::from)?;
-        let registers = interface.in_queue(0x81).map_err(BusError::from)?;
-        let notifications = interface.in_queue(0x82).map_err(BusError::from)?;
+        let commands = interface.out_queue(0x01).map_err(usb_error)?;
+        let registers = interface.in_queue(0x81).map_err(usb_error)?;
+        let notifications = interface.in_queue(0x82).map_err(usb_error)?;
         let readback_capacity = Self::readback_capacity(registers.max_packet_size())?;
         let notification_capacity = Self::notification_capacity(notifications.max_packet_size())?;
         Ok(Self {
@@ -168,21 +168,19 @@ impl Queues {
 
     /// Submits one whole-reply receive of `capacity` bytes unless `expires` has passed.
     fn receive(queue: &mut InQueue, capacity: usize, expires: Instant) -> Result<(), BusError> {
-        let buffer = queue.alloc(capacity).map_err(BusError::from)?;
+        let buffer = queue.alloc(capacity).map_err(usb_error)?;
         if Instant::now() >= expires {
             return Err(BusError::Timeout);
         }
         queue
             .submit(buffer)
-            .map_err(|rejected| BusError::from(rejected.error))
+            .map_err(|rejected| usb_error(rejected.error))
     }
 }
 
 impl Backend for Queues {
     fn readiness(&self) -> Result<Box<dyn Source + Send>, BusError> {
-        Ok(Box::new(
-            self.interface.readiness().map_err(BusError::from)?,
-        ))
+        Ok(Box::new(self.interface.readiness().map_err(usb_error)?))
     }
 
     fn submit(&mut self, request: Request) -> Result<(), BusError> {
@@ -200,7 +198,7 @@ impl Backend for Queues {
                 }
                 self.commands
                     .submit(buffer)
-                    .map_err(|rejected| BusError::from(rejected.error))?;
+                    .map_err(|rejected| usb_error(rejected.error))?;
                 Endpoint::Commands
             }
             Transfer::Readback => {
@@ -234,14 +232,14 @@ impl Backend for Queues {
                 Endpoint::Notifications => self.notifications.try_complete(),
             } {
                 Err(rsl_usb::Error::Busy) => return Ok(Turn::AGAIN),
-                done => done.map_err(BusError::from)?,
+                done => done.map_err(usb_error)?,
             };
             done.map(|done| {
                 self.pending = None;
                 let result = done
                     .status
                     .map_err(rsl_usb::Error::from)
-                    .map_err(BusError::from)
+                    .map_err(usb_error)
                     .map(|()| match endpoint {
                         Endpoint::Commands => Reply::Written,
                         Endpoint::Registers => Reply::Readback(done.buffer.to_vec()),
@@ -254,7 +252,7 @@ impl Backend for Queues {
         };
         let exhausted = match reaped {
             Ok(progress) => progress == ReapProgress::BudgetExhausted,
-            Err(error) if completion.is_none() => return Err(error.into()),
+            Err(error) if completion.is_none() => return Err(usb_error(error)),
             // The error recurs on the next turn.
             Err(_) => true,
         };
@@ -265,9 +263,9 @@ impl Backend for Queues {
     }
 
     fn cleanup(&mut self) -> Result<(), BusError> {
-        let commands = self.commands.cancel_all().map_err(BusError::from);
-        let registers = self.registers.cancel_all().map_err(BusError::from);
-        let notifications = self.notifications.cancel_all().map_err(BusError::from);
+        let commands = self.commands.cancel_all().map_err(usb_error);
+        let registers = self.registers.cancel_all().map_err(usb_error);
+        let notifications = self.notifications.cancel_all().map_err(usb_error);
         // Attempt every queue even when one failed. Drop retains any remaining URBs.
         commands.and(registers).and(notifications).map(|_| ())
     }

@@ -3272,6 +3272,13 @@ name = "rsl-lms7002m-sim"
 version = "0.0.0"
 
 [[package]]
+name = "rsl-lowlevel"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-lsdr-sim"
 version = "0.0.0"
 dependencies = [
@@ -3323,6 +3330,7 @@ dependencies = [
  "mio",
  "num-complex",
  "rsl-deps",
+ "rsl-lowlevel",
  "rsl-usb",
  "rsl-usdr-pcie",
  "rsl-usdr-sim",

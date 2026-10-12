@@ -71,7 +71,11 @@ impl<E> I2cTransaction<E> {
         cache: &mut I2cCache,
         now: Duration,
     ) -> Result<Self, Failure<E>> {
-        if dev.bus() > 1 || write.len() > I2C_MAX_WRITE || read_len > I2C_MAX_READ {
+        if dev.core() != 0
+            || dev.bus() > 1
+            || write.len() > I2C_MAX_WRITE
+            || read_len > I2C_MAX_READ
+        {
             return Err(Failure::Unsupported(
                 "I2C transfer over the uSDR core limits",
             ));

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use rsl_usb::{Buffer, InQueue};
 
-use crate::lowlevel::BusError;
+use crate::lowlevel::{BusError, usb_error};
 
 /// Linux libusdr's `MAX_IN_STRM_REQS`; keep eight reusable transfers in flight.
 const TRANSFERS: usize = 8;
@@ -44,26 +44,26 @@ impl RxQueue for InQueue {
     }
 
     fn alloc(&mut self, capacity: usize) -> Result<Buffer, BusError> {
-        self.alloc(capacity).map_err(BusError::from)
+        self.alloc(capacity).map_err(usb_error)
     }
 
     fn submit(&mut self, buffer: Buffer) -> Result<(), BusError> {
         self.submit(buffer)
-            .map_err(|rejected| BusError::from(rejected.error))
+            .map_err(|rejected| usb_error(rejected.error))
     }
 
     fn wait(&mut self, timeout: Duration) -> Result<Option<Buffer>, BusError> {
-        let Some(done) = self.wait(timeout).map_err(BusError::from)? else {
+        let Some(done) = self.wait(timeout).map_err(usb_error)? else {
             return Ok(None);
         };
         done.status
             .map_err(rsl_usb::Error::from)
-            .map_err(BusError::from)?;
+            .map_err(usb_error)?;
         Ok(Some(done.buffer))
     }
 
     fn cancel(&mut self) -> Result<(), BusError> {
-        self.cancel_all().map(|_| ()).map_err(BusError::from)
+        self.cancel_all().map(|_| ()).map_err(usb_error)
     }
 }
 
