@@ -40,9 +40,12 @@ USDR = "devices/sdr/usdr"
 USDR_PORTABLE = f"{USDR}/nostd-check"
 # Runs libusdr's LMS7 family against rsl-xsdr-sim, compiling the uSDR oracle's vendored C.
 XSDR_ORACLE = "devices/sdr/xsdr/oracle"
+# Runs libusdr's LSDr family against rsl-lsdr-sim, compiling the uSDR oracle's vendored C.
+LSDR_ORACLE = "devices/sdr/lsdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
-            "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, "tools/rust-skills")
+            "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, LSDR_ORACLE,
+            "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
 # once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
@@ -59,7 +62,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
-    "package", "bladerf", "usdr-portable", "xsdr-oracle",
+    "package", "bladerf", "usdr-portable", "xsdr-oracle", "lsdr-oracle",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
 
@@ -125,10 +128,11 @@ def metadata_graph(root, *, historical=False, toolchain=None):
         # #[path] imports are production-source dependencies invisible to Cargo metadata.
         # Never depend on the full std driver merely to make this edge visible to Cargo.
         graph[USDR_PORTABLE].dependencies.add(USDR)
-    if XSDR_ORACLE in graph and USDR_ORACLE in graph:
-        # The XSDR oracle compiles the uSDR oracle's vendored libusdr by path, so changes
-        # there must reach it; Cargo metadata cannot see a C source dependency.
-        graph[XSDR_ORACLE].dependencies.add(USDR_ORACLE)
+    for oracle in (XSDR_ORACLE, LSDR_ORACLE):
+        if oracle in graph and USDR_ORACLE in graph:
+            # These oracles compile the uSDR oracle's vendored libusdr by path, so changes
+            # there must reach them; Cargo metadata cannot see a C source dependency.
+            graph[oracle].dependencies.add(USDR_ORACLE)
     missing = {dep for package in graph.values() for dep in package.dependencies} - graph.keys()
     if missing:
         raise ValueError(f"unregistered owned dependencies: {sorted(missing)}")
@@ -299,6 +303,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("usdr-portable")
     if XSDR_ORACLE in roots:
         profiles.add("xsdr-oracle")
+    if LSDR_ORACLE in roots:
+        profiles.add("lsdr-oracle")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release_members:

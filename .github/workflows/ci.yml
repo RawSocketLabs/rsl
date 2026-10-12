@@ -115,7 +115,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           # trybuild panic snapshots need rust-src. Never silently switch their compiler.
-          components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","usdr-portable","xsdr-oracle","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
+          components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","usdr-portable","xsdr-oracle","lsdr-oracle","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
           targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
         if: matrix.profile == 'rust-skills' && contains(fromJSON(needs.plan.outputs.plan).release_roots, 'tools/rust-skills/crates/xtask')
@@ -134,6 +134,7 @@ jobs:
             devices/sdr/usdr/oracle -> target
             devices/sdr/usdr/nostd-check -> target
             devices/sdr/xsdr/oracle -> target
+            devices/sdr/lsdr/oracle -> target
       - uses: taiki-e/install-action@v2
         if: matrix.profile == 'public-api'
         with:
@@ -143,7 +144,7 @@ jobs:
         with:
           tool: ${{ needs.plan.outputs.semver_tool }}
       - name: Native compiler for FFI bridge checks
-        if: contains(fromJSON('["usdr","rust-dsdcc","usdr-oracle","xsdr-oracle"]'), matrix.profile) && inputs.runner != 'beefy'
+        if: contains(fromJSON('["usdr","rust-dsdcc","usdr-oracle","xsdr-oracle","lsdr-oracle"]'), matrix.profile) && inputs.runner != 'beefy'
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - name: Fetch DSDcc headers (compile check only, no hardware/native linking)
         if: matrix.profile == 'rust-dsdcc'
