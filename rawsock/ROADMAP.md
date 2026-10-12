@@ -14,7 +14,7 @@ and re-homed as a bnb-independent repo.
 - [x] **`transport` (L4)** — unprivileged UDP via `rustix`.
 - [x] rustix-only core, CI-testable everywhere (now `#![deny(unsafe_code)]`; see `link` below).
 
-## Next — the privileged backends (trigger: a header-forging protocol crate)
+## The privileged backends
 
 - [x] **`network` (L3)** — **done** (`network` feature): `NetworkSocket`, raw IPv4 via
       `SOCK_RAW`/`IPPROTO_RAW` (`IP_HDRINCL` free), `send(&impl Protocol)` + `RawIo`. Triggered by
@@ -36,8 +36,8 @@ and re-homed as a bnb-independent repo.
 
 ## Open decisions
 
-- [x] **Dependency in `protocols`** — done: `ip`, `icmp`, `udp`, and `ethernet` depend on
-      `rawsock` (workspace path dep) behind their optional `inject` feature.
+- [x] **Dependency in `protocols`** — done: the IP/ICMP/UDP/TCP/Ethernet/ARP crates depend
+      on `rawsock` (workspace path dep) behind their optional `inject` feature.
 - [ ] **rustix version** — track 1.x; on each upgrade, re-check for a safe link-layer socket
       address that would let `link_addr` drop its `unsafe`.
 - [ ] **macOS / Windows backends** — additive behind `RawIo`; `OpenError::DriverMissing`

@@ -19,8 +19,8 @@
 //! Lower layers are Cargo features: `transport` (L4, default, unprivileged), and the
 //! privileged `network` (L3, raw IPv4 via `IPPROTO_RAW`) and `link` (L2, raw Ethernet via
 //! `AF_PACKET`), both needing `CAP_NET_RAW`. The [`compose`] model, the [`Loopback`] test
-//! backend, and [`capabilities`] probing are always available. A consumer that doesn't enable a layer cannot construct that socket:
-//! misuse is a compile error, not a warning.
+//! backend, and [`capabilities`] probing are always available. A consumer that doesn't
+//! enable a layer cannot construct that socket: misuse is a compile error, not a warning.
 //!
 //! # Upstream crates
 //!
