@@ -8,7 +8,7 @@ import unittest
 
 from gate import check_plan, check_release, check_results
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE,
-                  LSDR_ORACLE, RELEASE_PROFILES, Package,
+                  LSDR_ORACLE, PE_SYNC_ORACLE, RELEASE_PROFILES, Package,
                   affected_packages, changed_paths, released_members, select)
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
@@ -41,6 +41,9 @@ def fixture():
         XSDR_ORACLE: Package("rsl-xsdr-oracle", {"devices/sdr/xsdr/sim", USDR_ORACLE}, False),
         "devices/sdr/lsdr/sim": Package("rsl-lsdr-sim", set()),
         LSDR_ORACLE: Package("rsl-lsdr-oracle", {"devices/sdr/lsdr/sim", USDR_ORACLE}, False),
+        "devices/sync/pe_sync/sim": Package("rsl-pe-sync-sim", set()),
+        PE_SYNC_ORACLE: Package("rsl-pe-sync-oracle", {"devices/sync/pe_sync/sim", USDR_ORACLE},
+                                False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -203,6 +206,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("usdr-oracle", plan["profiles"])
         self.assertIn("xsdr-oracle", plan["profiles"], "it compiles the same vendored C")
         self.assertIn("lsdr-oracle", plan["profiles"], "it compiles the same vendored C")
+        self.assertIn("pe-sync-oracle", plan["profiles"], "it compiles the same vendored C")
         self.assertFalse(plan["full"])
 
     def test_xsdr_simulator_selects_its_oracle_not_the_usdr_one(self):
@@ -218,6 +222,13 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("lsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("xsdr-oracle", plan["profiles"])
+
+    def test_pe_sync_simulator_selects_its_oracle_not_the_sdr_ones(self):
+        plan = planned(["devices/sync/pe_sync/sim/src/lib.rs"])
+        self.assertEqual(plan["packages"], ["rsl-pe-sync-sim"])
+        self.assertIn("pe-sync-oracle", plan["profiles"])
+        for sdr_oracle in ("usdr-oracle", "xsdr-oracle", "lsdr-oracle"):
+            self.assertNotIn(sdr_oracle, plan["profiles"])
 
     def test_usdr_driver_guide_selects_its_crates_not_full_coverage(self):
         plan = planned(["devices/sdr/usdr/AGENTS.md"])
