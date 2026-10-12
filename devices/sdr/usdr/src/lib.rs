@@ -116,6 +116,7 @@ mod board;
 pub mod cal;
 mod chips;
 mod device;
+pub mod dsp;
 mod error;
 mod fpga;
 mod identity;

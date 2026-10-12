@@ -19,6 +19,7 @@ use std::thread;
 use rsl_usdr_sim::{I2cAddress, SimBoard};
 
 pub mod cal;
+pub mod conv;
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;

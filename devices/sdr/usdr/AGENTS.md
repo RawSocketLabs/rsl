@@ -70,6 +70,9 @@ Each layer calls only the ones below it.
   front end, DMA, sync).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
+- `src/dsp/`: public `rsl_usdr::dsp`, libusdr's host sample conversions and channel
+  (de)interleaving (`xdsp/conv.c` generic kernels), core-only scalar code;
+  `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
