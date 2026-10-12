@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from gate import check_plan, check_release, check_results
-from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, RELEASE_PROFILES, Package,
+from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE,
+                  RELEASE_PROFILES, Package,
                   affected_packages, changed_paths, released_members, select)
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
@@ -36,6 +37,8 @@ def fixture():
         "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
         USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR}, False),
+        "devices/sdr/xsdr/sim": Package("rsl-xsdr-sim", set()),
+        XSDR_ORACLE: Package("rsl-xsdr-oracle", {"devices/sdr/xsdr/sim", USDR_ORACLE}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -192,11 +195,18 @@ class SelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "registered portable fixture"):
             select([], graph, graph, release_members=[member])
 
-    def test_vendored_libusdr_selects_only_the_oracle(self):
+    def test_vendored_libusdr_selects_only_the_oracles(self):
         plan = planned([f"{USDR_ORACLE}/libusdr/lib/hw/lms6002d/lms6002d.c"])
         self.assertEqual(plan["packages"], [])
         self.assertIn("usdr-oracle", plan["profiles"])
+        self.assertIn("xsdr-oracle", plan["profiles"], "it compiles the same vendored C")
         self.assertFalse(plan["full"])
+
+    def test_xsdr_simulator_selects_its_oracle_not_the_usdr_one(self):
+        plan = planned(["devices/sdr/xsdr/sim/src/lib.rs"])
+        self.assertEqual(plan["packages"], ["rsl-xsdr-sim"])
+        self.assertIn("xsdr-oracle", plan["profiles"])
+        self.assertNotIn("usdr-oracle", plan["profiles"])
 
     def test_usdr_driver_guide_selects_its_crates_not_full_coverage(self):
         plan = planned(["devices/sdr/usdr/AGENTS.md"])

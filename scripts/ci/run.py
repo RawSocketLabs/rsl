@@ -16,7 +16,8 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import BLADERF, BNB, NOSTD, PKI, PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE
+from plan import (BLADERF, BNB, NOSTD, PKI, PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE,
+                  XSDR_ORACLE)
 
 
 def packages(names):
@@ -112,8 +113,9 @@ def commands(profile, plan, bnb):
     if profile in {"usdr", "rust-dsdcc"}:
         directory = {"usdr": "usdr", "rust-dsdcc": "dsdcc"}[profile]
         return [["cargo", "check", "--manifest-path", f"bindings/{directory}/Cargo.toml"]]
-    if profile == "usdr-oracle":
-        manifest = ["--manifest-path", f"{USDR_ORACLE}/Cargo.toml"]
+    if profile in {"usdr-oracle", "xsdr-oracle"}:
+        oracle = USDR_ORACLE if profile == "usdr-oracle" else XSDR_ORACLE
+        manifest = ["--manifest-path", f"{oracle}/Cargo.toml"]
         return [["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "test", *manifest, "--locked"]]
