@@ -52,7 +52,10 @@ anywhere in CI with no `CAP_NET_RAW`. The privileged tests check `open()` agains
 `capabilities()` everywhere and only perform a real send when the probe reports the layer
 available, so they skip cleanly when unprivileged. Running the suite inside
 `unshare --user --map-root-user --net` (with `lo` up) yields full `CapEff` and exercises the
-real sends.
+real sends; set `RAWSOCK_PRIV_TESTS` there so a missing privilege fails instead of skipping.
+
+`NetworkSocket` is send-only: Linux never delivers to an `IPPROTO_RAW` socket (raw(7)), so its
+`recv` returns `ErrorKind::Unsupported` instead of blocking. Receive on `LinkSocket`.
 
 ## Boundary with bnb
 

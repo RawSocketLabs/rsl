@@ -5,9 +5,7 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::os::fd::OwnedFd;
 
-use rustix::net::{
-    AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType, ipproto, socket_with,
-};
+use rustix::net::{AddressFamily, SendFlags, SocketFlags, SocketType, ipproto, socket_with};
 
 use crate::{Layer, OpenError, Protocol, ProtocolExt, RawIo};
 
@@ -18,8 +16,8 @@ use crate::{Layer, OpenError, Protocol, ProtocolExt, RawIo};
 /// [`OpenError::PermissionDenied`].
 ///
 /// **Send-only.** Linux never delivers incoming packets to an `IPPROTO_RAW` socket (raw(7)),
-/// so [`RawIo::recv`] blocks indefinitely. To observe traffic, receive on a
-/// `LinkSocket` (`link` feature) instead.
+/// so [`RawIo::recv`] returns [`io::ErrorKind::Unsupported`] rather than blocking forever. To
+/// observe traffic, receive on a `LinkSocket` (`link` feature) instead.
 ///
 /// ```no_run
 /// use rawsock::{NetworkSocket, RawIo, capabilities};
@@ -76,11 +74,13 @@ impl RawIo for NetworkSocket {
     fn send_raw(&mut self, bytes: &[u8]) -> io::Result<usize> {
         rustix::net::send(&self.fd, bytes, SendFlags::empty()).map_err(Into::into)
     }
-    /// Blocks indefinitely: an `IPPROTO_RAW` socket is send-only (raw(7)). See [`NetworkSocket`].
-    fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        rustix::net::recv(&self.fd, buf, RecvFlags::empty())
-            .map(|(n, _)| n)
-            .map_err(Into::into)
+    /// Always [`io::ErrorKind::Unsupported`]: an `IPPROTO_RAW` socket is send-only (raw(7)), so
+    /// a real `recv` would block forever. See [`NetworkSocket`].
+    fn recv(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "IPPROTO_RAW sockets are send-only (raw(7)); receive on a link-layer socket",
+        ))
     }
     fn layer(&self) -> Layer {
         Layer::Network

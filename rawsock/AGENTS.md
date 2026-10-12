@@ -62,13 +62,22 @@ is a deliberate, compile-checked opt-in. Never add validation to the sink.
 - `tests/compose.rs` — the composition model via a small **in-test toy stack** (the real
   IP/UDP `Protocol` impls live in the `protocols` workspace, not here): `Context` threading,
   cross-layer checksum, demux auto-set + override, `encode` vs `encode_raw`, `internet_checksum`.
-- `tests/transport.rs` — a real unprivileged UDP round-trip on loopback (runs in CI).
+- `tests/transport.rs` — real unprivileged UDP on loopback, send and `recv` (runs in CI).
 - `tests/network.rs`, `tests/link.rs` — the privileged L3/L2 backends: `open()` must agree
-  with `capabilities()` (runs everywhere), and the real loopback send runs only when the probe
-  reports the layer available, otherwise it skips. Exercise it unprivileged under `unshare
-  --user --map-root-user --net` with `lo` up.
+  with `capabilities()` (runs everywhere); the real loopback send (and L3's `Unsupported`
+  `recv`) runs only when the probe reports the layer available, otherwise it skips.
+  `RAWSOCK_PRIV_TESTS` (`tests/common`) turns that skip into a failure, so a privileged run
+  cannot pass by skipping. Run them for real, unprivileged, in a user + network namespace:
 
-`cargo test` · `cargo clippy --all-targets` · `cargo fmt --all --check` · MSRV 1.85.
+  ```sh
+  RAWSOCK_PRIV_TESTS=1 unshare --user --map-root-user --net \
+    sh -c 'ip link set lo up && cargo test --offline -p rawsock --all-features'
+  ```
+- Doctests: the README's code block (`ReadmeDoctests` in `lib.rs`) and one example per socket
+  type; the L3/L2 ones are `no_run`.
+
+`cargo test` · `cargo clippy --all-targets -- -D warnings` (default, `--all-features`, and
+`--no-default-features` are all clean) · `cargo fmt --all --check` · MSRV 1.85.
 
 ## Conventions
 

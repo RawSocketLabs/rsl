@@ -1,8 +1,12 @@
 //! The privileged L3 backend. The capability-consistency check runs everywhere (CI included);
-//! the real raw send is gated on `CAP_NET_RAW` and skips cleanly when unprivileged.
+//! the real raw send is gated on `CAP_NET_RAW` and skips cleanly when unprivileged, unless
+//! `RAWSOCK_PRIV_TESTS` is set (see `common::privileged`).
 #![cfg(all(target_os = "linux", feature = "network"))]
 
+mod common;
+
 use rawsock::{Layer, NetworkSocket, OpenError, RawIo, capabilities};
+use std::io::ErrorKind;
 use std::net::Ipv4Addr;
 
 #[test]
@@ -39,7 +43,7 @@ fn loopback_datagram() -> Vec<u8> {
 
 #[test]
 fn privileged_raw_send_to_loopback() {
-    if !capabilities().network {
+    if !common::privileged(capabilities().network) {
         return; // needs CAP_NET_RAW — skipped on an unprivileged runner (CI)
     }
     let mut sock = NetworkSocket::open().unwrap();
@@ -47,4 +51,15 @@ fn privileged_raw_send_to_loopback() {
     let datagram = loopback_datagram();
     let n = sock.send_raw(&datagram).unwrap();
     assert_eq!(n, datagram.len());
+}
+
+#[test]
+fn recv_is_unsupported_on_a_send_only_socket() {
+    if !common::privileged(capabilities().network) {
+        return; // needs CAP_NET_RAW to open the socket at all
+    }
+    let mut sock = NetworkSocket::open().unwrap();
+    let mut buf = [0u8; 64];
+    let err = sock.recv(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Unsupported);
 }

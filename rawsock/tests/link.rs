@@ -1,6 +1,9 @@
 //! The privileged L2 (`AF_PACKET`) backend. The capability-consistency check runs everywhere
-//! (CI included); the real frame send is gated on `CAP_NET_RAW` and skips cleanly unprivileged.
+//! (CI included); the real frame send is gated on `CAP_NET_RAW` and skips cleanly unprivileged
+//! unless `RAWSOCK_PRIV_TESTS` is set (see `common::privileged`).
 #![cfg(all(target_os = "linux", feature = "link"))]
+
+mod common;
 
 use rawsock::{Layer, LinkSocket, OpenError, RawIo, capabilities};
 
@@ -25,7 +28,7 @@ fn open_is_consistent_with_the_capability_probe() {
 
 #[test]
 fn open_of_an_unknown_interface_is_a_clean_error() {
-    if !capabilities().link {
+    if !common::privileged(capabilities().link) {
         return; // the socket open itself is denied first when unprivileged
     }
     // A bogus interface name — name_to_index fails, and it must be an error, not a panic.
@@ -34,7 +37,7 @@ fn open_of_an_unknown_interface_is_a_clean_error() {
 
 #[test]
 fn privileged_frame_send_on_loopback() {
-    if !capabilities().link {
+    if !common::privileged(capabilities().link) {
         return; // needs CAP_NET_RAW — skipped on an unprivileged runner (CI)
     }
     let mut sock = LinkSocket::open("lo").unwrap();
