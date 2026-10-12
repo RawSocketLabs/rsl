@@ -109,6 +109,36 @@ impl Device {
         self.board().clock_measurement()
     }
 
+    /// Writes the gateware's ATCRBS DSP core register, raw (libusdr's
+    /// `/dm/sdr/0/core/atcrbs/reg`). The pinned libusdr documents no fields.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_atcrbs_register(&mut self, value: u32) -> Result<(), Error> {
+        self.board().set_atcrbs_register(value)
+    }
+
+    /// Reads the gateware's ATCRBS DSP core register, raw.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn atcrbs_register(&mut self) -> Result<u32, Error> {
+        self.board().atcrbs_register()
+    }
+
+    /// The TX DMA engine's four status words, raw, in register order (`STAT`, `STATM`,
+    /// `STATTS`, `STAT_CPL`): libusdr's `/dm/debug/all`. The pinned libusdr documents no
+    /// fields.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn tx_dma_status(&mut self) -> Result<[u32; 4], Error> {
+        self.board().tx_dma_status()
+    }
+
     /// The board revision, its gateware's chains and build, read from the gateware now.
     ///
     /// # Errors

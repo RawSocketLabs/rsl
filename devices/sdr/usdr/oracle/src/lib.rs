@@ -389,6 +389,34 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
+    /// Writes libusdr's ATCRBS core register, `/dm/sdr/0/core/atcrbs/reg`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_atcrbs_register(&mut self, value: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/core/atcrbs/reg", value.into())
+    }
+
+    /// Reads libusdr's `/dm/debug/all`: two 64-bit words, though `usdr_dme_get_uint` takes
+    /// one, so it is called here with room for both.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn debug_all(&mut self) -> Result<[u64; 2], i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let mut words = [0_u64; 2];
+        // SAFETY: `dev` is open; the handler writes two words, and `words` holds two.
+        let errno = unsafe {
+            usdr_dme_get_uint(dev.as_ptr(), c"/dm/debug/all".as_ptr(), words.as_mut_ptr())
+        };
+        resume_callback_panic();
+        if errno == 0 { Ok(words) } else { Err(errno) }
+    }
+
     /// Writes libusdr's RX burst throttle, `/dm/sdr/0/rfe/throttle`: bit 16 enables it,
     /// bits 15:8 and 7:0 are the bursts sent and skipped, less one.
     ///

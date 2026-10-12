@@ -12,7 +12,7 @@ use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
 use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::Error;
-use crate::fpga::{Gpi, Gpo, Hwid};
+use crate::fpga::{self, Gpi, Gpo, Hwid};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::portable::power::PowerRails;
@@ -95,6 +95,21 @@ impl Board {
     /// Reads the clock-measurement word (`dev_m2_lm6_1_sdr_clkmeas_get`).
     pub(crate) fn clock_measurement(&mut self) -> Result<u32, Error> {
         Gpi::ClockMeasurement.read(self.bus.as_mut())
+    }
+
+    /// Writes the ATCRBS DSP core's register.
+    pub(crate) fn set_atcrbs_register(&mut self, value: u32) -> Result<(), Error> {
+        fpga::write_atcrbs(self.bus.as_mut(), value)
+    }
+
+    /// Reads the ATCRBS DSP core's register.
+    pub(crate) fn atcrbs_register(&mut self) -> Result<u32, Error> {
+        fpga::read_atcrbs(self.bus.as_mut())
+    }
+
+    /// Reads the TX DMA engine's four status words.
+    pub(crate) fn tx_dma_status(&mut self) -> Result<[u32; 4], Error> {
+        fpga::read_tx_dma_status(self.bus.as_mut())
     }
 
     /// Reads the gateware build, then the hardware ID (`dev_m2_lm6_1_sdr_revision_get`).
