@@ -1,5 +1,6 @@
 //! The top-level block (datasheet `Top`, registers 0x00-0x0F): chip identity, which
-//! blocks are powered, clock gating, and the reference-clock buffer.
+//! blocks are powered, clock gating, the reference-clock buffer, and the loopbacks from
+//! the transmitter into the receiver ([`Loopback`]).
 //!
 //! These registers control the chip as a whole rather than one stage of a signal chain.
 //! [`EnableConfig`] holds the master power switches for the transmitter and receiver,
@@ -29,6 +30,9 @@ pub(super) enum Reg {
 
     /// Datasheet `LPF_CAL`; see [`LpfTuning`].
     LpfTuning = 0x07,
+
+    /// Datasheet `LOOPBACK`; see [`Loopback`].
+    Loopback = 0x08,
 
     /// Datasheet `ENREG`; see [`ClockEnables`].
     ClockEnables = 0x09,
@@ -171,6 +175,36 @@ impl ReferencePower {
     pub(super) const SELF_BIASED: Self = Self::new()
         .with_xco_buffer_self_biased(true)
         .with_lpf_calibration_reference_off(true);
+}
+
+/// The transmitter's baseband and RF loopbacks into the receiver. Datasheet `LOOPBACK`,
+/// register 0x08.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Loopback {
+    /// Feed the TX baseband loopback to the RX LPF input; power RXTIA down first.
+    /// `LBEN_LPFIN`, bit 6; reset 0.
+    #[bits(6..=6)]
+    baseband_to_lpf: bool,
+
+    /// Feed the TX baseband loopback to RXVGA2's input; power the LPF down first.
+    /// `LBEN_VGA2IN`, bit 5; reset 0.
+    #[bits(5..=5)]
+    baseband_to_vga2: bool,
+
+    /// Feed the TX baseband loopback to the RX output pins; power the RX LPF and RXVGA2
+    /// down first. `LBEN_OPIN`, bit 4; reset 0.
+    #[bits(4..=4)]
+    baseband_to_output: bool,
+
+    /// Connect the TX mixer's output to an LNA path, with the LNAs powered down: 0 off
+    /// (reset), 1 to 3 the LNA1 to LNA3 path, 4 to 15 reserved. `LBRFEN`, bits 3:0.
+    #[bits(0..=3)]
+    rf_to_lna_path: u4,
+}
+impl Register for Loopback {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Loopback;
 }
 
 /// The LPF tuning engine's clock and reset. Datasheet `LPF_CTRL`, register 0x06.

@@ -129,7 +129,7 @@ mod reference;
 mod thermal;
 pub mod transport;
 
-pub use board::{RxGain, RxPacket, RxThrottle};
+pub use board::{RxGain, RxPacket, RxPath, RxThrottle};
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
 pub use identity::Identity;

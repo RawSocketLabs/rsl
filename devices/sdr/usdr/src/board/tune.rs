@@ -3,7 +3,8 @@
 //!
 //! The frequency picks a band: below 230 MHz the board mixer adds the Si5332's mixer LO
 //! (output 3) to lift the signal into LNA3's range, so the LMS6002D tunes that much higher;
-//! up to 2.8 GHz LNA1 takes it directly, and LNA2 above. The RX PLL then tunes. Below
+//! up to 2.8 GHz LNA1 takes it directly, and LNA2 above, unless the caller fixed the path
+//! (`board/path.rs`). The RX PLL then tunes. Below
 //! 250 MHz, if it cannot lock, libusdr finds the lowest LO that does and makes up the
 //! difference with the NCO, if the sample rate leaves room.
 
@@ -38,7 +39,7 @@ impl RxBand {
     const WIDE_BELOW_HZ: u32 = 2_800_000_000;
 
     /// The band for a frequency (`get_antenna_cfg_by_freq`).
-    fn for_frequency(hz: u32) -> Self {
+    pub(super) fn for_frequency(hz: u32) -> Self {
         if hz < Self::MIXER_BELOW_HZ {
             Self::Mixer
         } else if hz < Self::WIDE_BELOW_HZ {
@@ -81,15 +82,21 @@ impl Board {
 
     /// Tunes the receiver to `hz`.
     ///
+    /// The band follows the frequency unless [`Self::set_rx_path`] fixed it.
+    ///
     /// Divergences, both where libusdr would divide by zero before any sample rate is set:
     /// the NCO lock fallback fails with [`Error::PllUnlocked`], and the filter is left
     /// alone. On failure, the band change leaves state as libusdr does (see
-    /// [`Self::power_rx_and_select_band`]), but this call records the LO offset and the
-    /// minimal LO only once their writes succeed.
+    /// [`Self::select_rx_band`]), but this call records the LO offset and the minimal LO
+    /// only once their writes succeed.
     pub(crate) fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.rx.lo_hz = hz;
-        // `_usdr_signal_event(USDR_RX_LO_CHANGED)`; libusdr discards its result.
-        let _ = self.power_rx_and_select_band(RxBand::for_frequency(hz));
+        // `_usdr_signal_event(USDR_RX_LO_CHANGED)`: power the receiver, ignoring a failure,
+        // then the band for the frequency, if it is not fixed. libusdr discards the result.
+        let _ = self.power_rx();
+        if !self.rx.band_fixed {
+            let _ = self.select_rx_band(RxBand::for_frequency(hz));
+        }
 
         self.rx.lo_offset_hz = 0;
         let lo = if self.rx.mixer_on {
@@ -126,14 +133,12 @@ impl Board {
         Ok(())
     }
 
-    /// Powers the receiver if it is off, then routes the RX path for `band`
-    /// (`_usdr_pwr_state`, `_usdr_set_lna_rx`, `usdr_set_rx_port_switch`).
+    /// Routes the RX path for `band` (`_usdr_set_lna_rx`, `usdr_set_rx_port_switch`).
     ///
-    /// Error handling follows libusdr's: a power-up failure is ignored, a failed LNA
+    /// Error handling follows libusdr's: the band is recorded first, a failed LNA
     /// selection stops before the switches, and the mixer state is recorded even when a
     /// switch write fails, though the Si5332 is then not touched.
-    fn power_rx_and_select_band(&mut self, band: RxBand) -> Result<(), Error> {
-        let _ = self.power_rx();
+    pub(super) fn select_rx_band(&mut self, band: RxBand) -> Result<(), Error> {
         self.rx.band = Some(band);
         let bus = self.bus.as_mut();
         self.lms.select_lna(bus, band.lna())?;

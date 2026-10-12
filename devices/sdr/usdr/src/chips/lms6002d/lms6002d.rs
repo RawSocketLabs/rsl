@@ -11,10 +11,14 @@ use super::pll::{
     self, ChargePump, Comparator, DownOffset, FractionalDivider, Pll, PllConfig, VcoCapacitor,
     VcoRegulator, VcoSelect,
 };
-use super::rx_fe::{self, Lna, LnaControl, LnaGain, LnaLoad, MixerBias, MixerInput, TiaFeedback};
+use super::rx_fe::{
+    self, Lna, LnaControl, LnaGain, LnaLoad, MixerBias, MixerInput, PowerDown, TiaFeedback,
+};
 use super::rx_vga2;
 use super::spi::SpiWriter;
-use super::top::{ChipId, ClockEnables, EnableConfig, LpfTuning, LpfTuningControl, ReferencePower};
+use super::top::{
+    ChipId, ClockEnables, EnableConfig, Loopback, LpfTuning, LpfTuningControl, ReferencePower,
+};
 use super::tx_rf::{Bias, PaSelect, PowerAmp};
 
 use crate::error::Error;
@@ -414,6 +418,42 @@ impl Lms6002d {
         let mut regs = self.on(bus);
         regs.write_to(Pll::Rx, self.rx_vco)?;
         regs.write(self.lna_control)
+    }
+
+    /// Loops the TX mixer's output into the active LNA's path, with the LNA powered down
+    /// (`lms6002d_rf_loopback_en`). As in libusdr, the RX front end is left taking its
+    /// controls from the test-mode registers, both PAs go off, and the loopback stays on
+    /// the LNA path active now even if the LNA changes later.
+    pub(crate) fn enable_rf_loopback(&self, bus: &mut dyn Bus) -> Result<(), Error> {
+        // `LBRFEN` numbers the LNA paths as `LNASEL` does.
+        let path = match self.lna_control.active() {
+            Lna::None => 0,
+            Lna::Lna1 => 1,
+            Lna::Lna2 => 2,
+            Lna::Lna3 => 3,
+        };
+        let mut regs = self.on(bus);
+        regs.write(PowerDown::new().with_lna_off(true))?;
+        regs.write(
+            rx_fe::Control::new()
+                .with_test_mode_controls(true)
+                .with_enabled(true),
+        )?;
+        regs.write(PaSelect::new())?;
+        regs.write(ReferencePower::SELF_BIASED.with_rf_loopback_on(true))?;
+        regs.write(Loopback::new().with_rf_to_lna_path(u4::new(path)))
+    }
+
+    /// Undoes [`Self::enable_rf_loopback`] (`lms6002d_rf_loopback_dis`): the loopback
+    /// switch off twice, as libusdr writes it, the cached PA selection back and the LNA
+    /// powered. The RX front end keeps taking its controls from the test-mode registers.
+    pub(crate) fn disable_rf_loopback(&self, bus: &mut dyn Bus) -> Result<(), Error> {
+        let mut regs = self.on(bus);
+        regs.write(ReferencePower::SELF_BIASED)?;
+        regs.write(Loopback::new())?;
+        regs.write(self.pa_select)?;
+        regs.write(ReferencePower::SELF_BIASED)?;
+        regs.write(PowerDown::new())
     }
 
     /// Makes `amplifier` the TX output and clears `ENAUX`, as libusdr does for PA1 and PA2;

@@ -2,6 +2,7 @@
 
 mod board;
 mod gain;
+mod path;
 mod power;
 mod rate;
 mod stream;
@@ -9,4 +10,5 @@ mod tune;
 
 pub(crate) use board::Board;
 pub use gain::RxGain;
+pub use path::RxPath;
 pub use stream::{RxPacket, RxThrottle};

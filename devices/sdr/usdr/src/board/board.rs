@@ -72,6 +72,10 @@ pub(crate) struct Board {
 
 /// The receive chain's settings that later calls depend on, as libusdr tracks them.
 #[derive(Clone, Copy, Debug, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags, each one of libusdr's, not states of one machine"
+)]
 pub(super) struct RxState {
     /// The LMS6002D's receiver and RXVGA2 are powered (libusdr's `rx_pwren`).
     pub(super) powered: bool,
@@ -87,8 +91,17 @@ pub(super) struct RxState {
     /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`).
     pub(super) lo_hz: u32,
 
-    /// The band the frequency selected (libusdr's `rx_cfg_path`); `None` until tuned.
+    /// The band in use (libusdr's `rx_cfg_path`): the frequency's, unless the caller fixed
+    /// one; `None` until either happens.
     pub(super) band: Option<RxBand>,
+
+    /// The caller fixed the band with [`Board::set_rx_path`], so frequency changes leave
+    /// it alone (libusdr's `rx_rfic_path` other than `USDR_RX_AUTO`).
+    pub(super) band_fixed: bool,
+
+    /// The TX mixer's output is looped back into the RX path (libusdr's
+    /// `rf_loopback_active`).
+    pub(super) rf_loopback: bool,
 
     /// The board mixer is in the RX path (libusdr's `mexir_en`).
     pub(super) mixer_on: bool,

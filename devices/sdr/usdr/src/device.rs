@@ -6,7 +6,7 @@ use std::time::Duration;
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
-use crate::board::{Board, RxGain, RxPacket, RxThrottle};
+use crate::board::{Board, RxGain, RxPacket, RxPath, RxThrottle};
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
@@ -276,6 +276,21 @@ impl Device {
     /// Any bus failure.
     pub fn set_rx_gain(&mut self, gain: RxGain) -> Result<(), Error> {
         self.board().set_rx_gain(gain)
+    }
+
+    /// Fixes the RX input, optionally with the TX mixer's output looped back into it, or
+    /// with [`RxPath::Auto`] hands the choice back to the frequency. A fixed input holds
+    /// across frequency changes.
+    ///
+    /// Selecting [`RxPath::Auto`] applies the band for the current frequency at once; before
+    /// any frequency is set that is the low band, as in libusdr. Entering or leaving the
+    /// low band gates the mixer LO as tuning does (Si5332 output 3 alone).
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_path(&mut self, path: RxPath) -> Result<(), Error> {
+        self.board().set_rx_path(path)
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every

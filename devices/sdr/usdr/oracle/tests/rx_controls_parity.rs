@@ -1,17 +1,20 @@
-//! rsl-usdr's RX gain controls against libusdr's, operation for operation, one window per
-//! call, on fresh boards.
+//! rsl-usdr's RX gain and path controls against libusdr's, operation for operation, one
+//! window per call, on fresh boards.
 //!
 //! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
 //! the pairing is the mapping under test (`rx/gain/pga` doubling its value, say). libusdr
 //! clamps every gain rather than rejecting it, so out-of-range values must succeed alike.
 
+#[path = "common/crossing.rs"]
+mod crossing;
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
 use std::ffi::CStr;
 use std::ops::Range;
 
-use rsl_usdr::{Device, Error, RxGain};
+use crossing::{Crossing, with_band_crossing_fix};
+use rsl_usdr::{Device, Error, RxGain, RxPath};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
@@ -30,6 +33,8 @@ const VGA2B: &CStr = c"/dm/sdr/0/rx/gain/vga2b";
 const LNA: &CStr = c"/dm/sdr/0/rx/gain/lna";
 /// The automatic split.
 const AUTO: &CStr = c"/dm/sdr/0/rx/gain/auto";
+/// The RX path, a string.
+const PATH: &CStr = c"/dm/sdr/0/rx/path";
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -42,6 +47,9 @@ enum Call {
 
     /// libusdr's numeric gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
     Gain(&'static CStr, u64, RxGain),
+
+    /// libusdr's `rx/path` set to a string; rsl-usdr's `set_rx_path`.
+    Path(&'static CStr, RxPath),
 }
 
 impl Call {
@@ -52,6 +60,9 @@ impl Call {
             Self::Frequency(hz) => oracle.set_rx_frequency(hz),
             // SAFETY: every RX gain handler reads its value as a number.
             Self::Gain(path, value, _) => unsafe { oracle.set_uint(path, value) },
+            // SAFETY: `dev_m2_lm6_1_sdr_rx_path_set` reads a value above 4096 as a string
+            // and keeps no reference to it.
+            Self::Path(name, _) => unsafe { oracle.set_str(PATH, name) },
         }
         .is_ok()
     }
@@ -62,6 +73,7 @@ impl Call {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
             Self::Frequency(hz) => device.set_rx_frequency(hz),
             Self::Gain(_, _, gain) => device.set_rx_gain(gain),
+            Self::Path(_, path) => device.set_rx_path(path),
         }
     }
 }
@@ -81,6 +93,12 @@ fn gain(path: &'static CStr, db: i32, gain: fn(i32) -> RxGain) -> Call {
 /// compares each call's outcome and operations. Every call must succeed: a regression
 /// that failed both sides alike would otherwise pass.
 fn assert_calls_succeed(calls: &[Call]) {
+    assert_calls_succeed_crossing(calls, Crossing::None);
+}
+
+/// As [`assert_calls_succeed`], with libusdr's band crossings replaced as `crossing` says;
+/// [`Crossing::Fixed`] requires at least one.
+fn assert_calls_succeed_crossing(calls: &[Call], crossing: Crossing) {
     let board = || SimBoard::new(BoardRevision::Rev3);
     let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
     let mut expected: Vec<(bool, Range<usize>)> = Vec::new();
@@ -101,12 +119,21 @@ fn assert_calls_succeed(calls: &[Call]) {
     }
     let board = sim.board();
 
+    let mut crossings = 0;
     for ((call, (expected_ok, expected)), (result, actual)) in
         calls.iter().zip(expected).zip(actual)
     {
         assert!(expected_ok, "{call:?}: libusdr succeeds");
         assert!(result.is_ok(), "{call:?}: rsl-usdr {result:?}");
-        let expected: &[Op] = &reference.trace()[expected];
+        let expected = &reference.trace()[expected];
+        let expected: &[Op] = &match crossing {
+            Crossing::None => expected.to_vec(),
+            Crossing::Fixed => {
+                let (fixed, crossed) = with_band_crossing_fix(expected);
+                crossings += usize::from(crossed);
+                fixed
+            }
+        };
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
@@ -118,6 +145,12 @@ fn assert_calls_succeed(calls: &[Call]) {
             expected.len(),
             actual.len(),
             "{call:?}: same prefix, different lengths"
+        );
+    }
+    if crossing == Crossing::Fixed {
+        assert!(
+            crossings > 0,
+            "the scenario crosses the mixer band at least once"
         );
     }
 }
@@ -180,4 +213,86 @@ fn rx_auto_gain_matches_libusdr_across_frequencies() {
         calls.extend(figures.map(|db| gain(AUTO, db, RxGain::Auto)));
     }
     assert_calls_succeed(&calls);
+}
+
+/// Fixed paths, named as libusdr spells them in any case, hold across retunes and rate
+/// changes; entering and leaving the low band gate the mixer LO (with the band-crossing
+/// fix); `auto` and an unknown name hand the band back to the frequency.
+#[test]
+fn manual_rx_paths_match_libusdr() {
+    assert_calls_succeed_crossing(
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Path(c"rxh", RxPath::High),
+            Call::Frequency(433_000_000),
+            Call::Path(c"RXW", RxPath::Wide),
+            Call::Frequency(3_000_000_000),
+            Call::Path(c"rxl", RxPath::Low),
+            Call::Frequency(433_000_000),
+            Call::Rate(10_000_000),
+            Call::Path(c"auto", RxPath::Auto),
+            Call::Path(c"rxh", RxPath::High),
+            Call::Path(c"no-such-path", RxPath::Auto),
+        ],
+        Crossing::Fixed,
+    );
+}
+
+/// libusdr's band names reach the same paths as its `rx*` names.
+#[test]
+fn libusdr_band_names_select_the_same_paths() {
+    assert_calls_succeed(&[
+        Call::Rate(20_000_000),
+        Call::Frequency(1_000_000_000),
+        Call::Path(c"LNAH", RxPath::High),
+        Call::Path(c"w", RxPath::Wide),
+        Call::Path(c"H", RxPath::High),
+        Call::Path(c"lnaw", RxPath::Wide),
+    ]);
+}
+
+/// The loopback paths switch the RF loopback on once, keep it across a change of loopback
+/// input (still on the first input's LNA path, as libusdr leaves it), and off again when
+/// a plain or automatic path follows.
+#[test]
+fn rf_loopback_paths_match_libusdr() {
+    assert_calls_succeed_crossing(
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Path(c"rxw_lb", RxPath::WideLoopback),
+            Call::Path(c"RXH_LB", RxPath::HighLoopback),
+            Call::Path(c"rxw", RxPath::Wide),
+            Call::Path(c"rxl_lb", RxPath::LowLoopback),
+            Call::Path(c"auto", RxPath::Auto),
+        ],
+        Crossing::Fixed,
+    );
+}
+
+/// Before any frequency is set, `auto` selects the band for 0 Hz: the low band, mixer on.
+#[test]
+fn auto_rx_path_before_tuning_selects_the_low_band_like_libusdr() {
+    assert_calls_succeed_crossing(
+        &[Call::Rate(20_000_000), Call::Path(c"auto", RxPath::Auto)],
+        Crossing::Fixed,
+    );
+}
+
+/// libusdr rejects a path given as a number (4096 or less) with `-EINVAL` before any
+/// operation. rsl-usdr's [`RxPath`] cannot express one, so there is no call to compare.
+#[test]
+fn a_numeric_rx_path_is_rejected_by_libusdr_before_any_operation() {
+    /// `EINVAL`.
+    const EINVAL: i32 = 22;
+    let mut oracle = Oracle::open(SimBoard::new(BoardRevision::Rev3)).expect("opens");
+    for value in [0, 1, 4096] {
+        let start = oracle.trace_len();
+        // SAFETY: the handler rejects values of 4096 or less without reading them.
+        let result = unsafe { oracle.set_uint(PATH, value) };
+        assert_eq!(result, Err(-EINVAL), "libusdr rejects {value}");
+        assert_eq!(oracle.trace_len(), start, "{value}: no operation");
+    }
+    drop(oracle.close());
 }

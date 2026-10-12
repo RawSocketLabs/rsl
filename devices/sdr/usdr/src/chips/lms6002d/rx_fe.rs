@@ -35,6 +35,9 @@ pub(super) enum Reg {
 
     /// Datasheet `LOMIX_GLNA3`; see [`MixerBias`].
     MixerBias = 0x7c,
+
+    /// Datasheet `PD`; see [`PowerDown`].
+    PowerDown = 0x7d,
 }
 
 impl BlockReg for Reg {}
@@ -218,6 +221,31 @@ pub(super) struct MixerBias {
 impl Register for MixerBias {
     type Map = Reg;
     const ADDR: Reg = Reg::MixerBias;
+}
+
+/// Powers individual RX front-end stages down. Datasheet `PD`, register 0x7D.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PowerDown {
+    /// Power the TIA (RXVGA1) down. `TIA`, bit 3; reset 0.
+    #[bits(3..=3)]
+    tia_off: bool,
+
+    /// Power the mixer's LO buffer down. `MXLOB`, bit 2; reset 0.
+    #[bits(2..=2)]
+    lo_buffer_off: bool,
+
+    /// Power the mixer down. `MIX`, bit 1; reset 0.
+    #[bits(1..=1)]
+    mixer_off: bool,
+
+    /// Power the LNA down. `LNA`, bit 0; reset 0.
+    #[bits(0..=0)]
+    lna_off: bool,
+}
+impl Register for PowerDown {
+    type Map = Reg;
+    const ADDR: Reg = Reg::PowerDown;
 }
 
 #[cfg(test)]
