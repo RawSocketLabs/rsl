@@ -44,10 +44,12 @@ XSDR_ORACLE = "devices/sdr/xsdr/oracle"
 LSDR_ORACLE = "devices/sdr/lsdr/oracle"
 # Runs libusdr's PE_SYNC clock board against rsl-pe-sync-sim, compiling the same vendored C.
 PE_SYNC_ORACLE = "devices/sync/pe_sync/oracle"
+# Runs libusdr's LimeSDR-mini against rsl-limesdr-sim, compiling the same vendored C.
+LIMESDR_ORACLE = "devices/sdr/limesdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, LSDR_ORACLE,
-            PE_SYNC_ORACLE, "tools/rust-skills")
+            PE_SYNC_ORACLE, LIMESDR_ORACLE, "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
 # once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
@@ -65,7 +67,7 @@ PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
     "package", "bladerf", "usdr-portable", "xsdr-oracle", "lsdr-oracle",
-    "pe-sync-oracle",
+    "pe-sync-oracle", "limesdr-oracle",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
 
@@ -131,7 +133,7 @@ def metadata_graph(root, *, historical=False, toolchain=None):
         # #[path] imports are production-source dependencies invisible to Cargo metadata.
         # Never depend on the full std driver merely to make this edge visible to Cargo.
         graph[USDR_PORTABLE].dependencies.add(USDR)
-    for oracle in (XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE):
+    for oracle in (XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE):
         if oracle in graph and USDR_ORACLE in graph:
             # These oracles compile the uSDR oracle's vendored libusdr by path, so changes
             # there must reach them; Cargo metadata cannot see a C source dependency.
@@ -317,6 +319,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("lsdr-oracle")
     if PE_SYNC_ORACLE in roots:
         profiles.add("pe-sync-oracle")
+    if LIMESDR_ORACLE in roots:
+        profiles.add("limesdr-oracle")
     if any(root.startswith("tools/rust-skills/") for root in roots):
         profiles.add("rust-skills")
     if release_members:
