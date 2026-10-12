@@ -80,6 +80,10 @@ Each layer calls only the ones below it.
   `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
   `window`, `fftad`, `rtsa` and `fm` port FFT windowing, log-power averaging, the RTSA
   histogram and FM quadrature (`oracle/tests/{fft,rtsa_fm}_parity.rs`).
+- `src/dsp/{filter,trig,nco,sincos}.rs`: block FIR (`xdsp/filter.c`, `conv_filter.c` generic
+  kernels), fixed-point sine (`trig.c`), the NCO (scalar port of `nco.c`'s SSSE3-only kernel) and
+  float tone/chirp tables (`sincos_functions.c`; std `sinf`/`cosf`), checked by
+  `oracle/tests/{filter,nco}_parity.rs` (the oracle builds `nco.c` with SSSE3 on x86).
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the

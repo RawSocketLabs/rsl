@@ -21,8 +21,10 @@ use rsl_usdr_sim::{I2cAddress, SimBoard};
 pub mod cal;
 pub mod conv;
 pub mod fft;
+pub mod filter;
 pub mod flash;
 pub mod fm;
+pub mod nco;
 pub mod rtsa;
 
 /// `EINVAL`: an operation shape the board's transports reject.
