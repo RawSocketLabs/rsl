@@ -144,6 +144,17 @@ gateware and Linux kernel code remain external dependencies rather than Rust lib
    power/current RX and introduce public independently owned stream handles. Real token
    retirement, fairness, timer scheduling and browser integration are not established by
    fake-source tests. Managed adapters must remain opt-in consumers of that same engine.
+   *Stream-handle shape (skeptic-reviewed 2026-10-12, pending owner review):* streams are one
+   device-owned group, not independently owned handles. libusdr's sync/retimer register is
+   per device (creating any stream writes sync `off`, `stream_sfetrx4_dma32.c:813,1069`),
+   `receive` writes control registers until the first packet, and USB TX telemetry arrives
+   in RX's out-of-band word, so separate RX/TX handles cannot be independent on this
+   hardware. Planned: `Device::create_streams(StreamsConfig { rx, tx, sync })`, then
+   `start_streams`, typed `receive_into`/`send` with wire/host formats converted inside the
+   transfer loan, `StreamTime` valid within one group. `start_rx_stream` stays as the
+   ci16/channel-0/sync-none shim, keeping stream parity. Two-thread use goes through an
+   opt-in managed driver or the reactor, which owns the group. This departs from
+   "independently owned stream handles" above; revisit if the owner prefers otherwise.
 2. **Complete uSDR RX/control/clock/calibration.** Port remaining per-stage gain, path,
    corrections, independent rate/NCO plans, external clocks and calibration results in
    small ledger-row changes. Retain temperature, startup DC/LPF, tuning and stream parity.
