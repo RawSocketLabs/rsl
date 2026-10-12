@@ -87,6 +87,16 @@ impl Board {
         Ok(())
     }
 
+    /// Writes the clock-measurement control (`dev_m2_lm6_1_sdr_clkmeas_set`).
+    pub(crate) fn set_clock_measurement(&mut self, control: u8) -> Result<(), Error> {
+        Gpo::ClockMeasurement.set(self.bus.as_mut(), control)
+    }
+
+    /// Reads the clock-measurement word (`dev_m2_lm6_1_sdr_clkmeas_get`).
+    pub(crate) fn clock_measurement(&mut self) -> Result<u32, Error> {
+        Gpi::ClockMeasurement.read(self.bus.as_mut())
+    }
+
     /// Reads the gateware build, then the hardware ID (`dev_m2_lm6_1_sdr_revision_get`).
     pub(crate) fn identity(&mut self) -> Result<Identity, Error> {
         let bus = self.bus.as_mut();

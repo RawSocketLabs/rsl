@@ -388,6 +388,15 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
+    /// Writes libusdr's clock-measurement control, `/dm/sdr/0/clkmeas`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_clock_measurement(&mut self, control: u8) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/clkmeas", control.into())
+    }
+
     /// Writes a device-manager value that libusdr reads as a number, never as a pointer.
     fn set_value(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
         let Some(dev) = self.dev else {

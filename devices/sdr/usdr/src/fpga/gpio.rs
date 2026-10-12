@@ -67,6 +67,9 @@ pub(crate) enum Gpo {
     /// documented.
     DcCorrection = 9,
 
+    /// Clock-measurement control (`IGPO_CLKMEAS`), written raw by libusdr's
+    /// `/dm/sdr/0/clkmeas`; the vendored source does not document its bits.
+    ClockMeasurement = 16,
     /// On-board 26 MHz oscillator enable, revision 3 only: the Si5332's reference there.
     EnableOscillator = 17,
 }
@@ -91,6 +94,10 @@ pub(crate) enum Gpi {
 
     /// Hardware ID; see [`Hwid`].
     Hwid = 12,
+    /// The word libusdr's `/dm/sdr/0/clkmeas` reads back as the clock measurement. Its
+    /// header names offset 24 `IGPI_USBC`; the vendored source does not document what the
+    /// gateware reports there.
+    ClockMeasurement = 24,
 }
 
 impl Gpi {

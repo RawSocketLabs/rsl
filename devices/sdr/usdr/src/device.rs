@@ -87,6 +87,28 @@ impl Device {
         self.board().set_reference_clock(reference)
     }
 
+    /// Writes the gateware's clock-measurement control, raw (libusdr's
+    /// `/dm/sdr/0/clkmeas` write, GPO `IGPO_CLKMEAS`). Its bits are not documented in the
+    /// pinned libusdr; libusdr's GPSDO tool drives it.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_clock_measurement(&mut self, control: u8) -> Result<(), Error> {
+        self.board().set_clock_measurement(control)
+    }
+
+    /// Reads the gateware's clock-measurement word, raw (libusdr's `/dm/sdr/0/clkmeas`
+    /// read: GPI word 24, which libusdr's header names `IGPI_USBC`). Its meaning is not
+    /// documented in the pinned libusdr.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn clock_measurement(&mut self) -> Result<u32, Error> {
+        self.board().clock_measurement()
+    }
+
     /// The board revision, its gateware's chains and build, read from the gateware now.
     ///
     /// # Errors
