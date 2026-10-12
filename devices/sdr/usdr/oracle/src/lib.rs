@@ -389,6 +389,16 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
+    /// Writes libusdr's RX burst throttle, `/dm/sdr/0/rfe/throttle`: bit 16 enables it,
+    /// bits 15:8 and 7:0 are the bursts sent and skipped, less one.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-EINVAL` with no RX stream).
+    pub fn set_rx_throttle(&mut self, value: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/rfe/throttle", value.into())
+    }
+
     /// Writes libusdr's clock-measurement control, `/dm/sdr/0/clkmeas`.
     ///
     /// # Errors

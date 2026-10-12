@@ -141,7 +141,7 @@ enum Command {
     /// The burst format; see [`BurstFormat`].
     BurstFormat = 1,
 
-    /// Burst throttling (unused here).
+    /// Burst throttling; see [`throttle_rx`].
     Throttle = 2,
 
     /// Reset and run control; see [`FrontEndControl`].
@@ -359,6 +359,16 @@ pub(crate) fn run_rx(bus: &mut dyn Bus, run: bool) -> Result<(), Error> {
         Command::Control,
         FrontEndControl::new().with_run(command).to_raw(),
     )
+}
+
+/// Throttles the front end's bursts (`sfe_rx4_throttle`): when `throttle` is `Some((send,
+/// skip))`, it delivers `send + 1` of every `send + skip + 2` bursts and drops the rest;
+/// `None` delivers every burst. The command's run state stays idle.
+pub(crate) fn throttle_rx(bus: &mut dyn Bus, throttle: Option<(u8, u8)>) -> Result<(), Error> {
+    let value = throttle.map_or(0, |(send, skip)| {
+        1 << 16 | u32::from(send) << 8 | u32::from(skip)
+    });
+    front_end(bus, Command::Throttle, value)
 }
 
 /// Tells the RX DMA engine the host is ready, before the first block arrives.

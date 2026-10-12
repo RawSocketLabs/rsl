@@ -6,7 +6,7 @@ use std::time::Duration;
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
-use crate::board::{Board, RxPacket};
+use crate::board::{Board, RxPacket, RxThrottle};
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
@@ -174,6 +174,16 @@ impl Device {
     /// than retrying start on that handle. Power-down writes may fail on the invalid bus.
     pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         self.board().start_rx_stream(samples_per_packet)
+    }
+
+    /// Throttles the running RX stream's bursts (`Some`) or delivers them all (`None`),
+    /// as libusdr's `/dm/sdr/0/rfe/throttle` does.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no stream; any bus failure.
+    pub fn set_rx_throttle(&mut self, throttle: Option<RxThrottle>) -> Result<(), Error> {
+        self.board().set_rx_throttle(throttle)
     }
 
     /// Samples per packet of the running RX stream, or `None` with no stream.

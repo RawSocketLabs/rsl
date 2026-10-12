@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr::{Device, Error};
+use rsl_usdr::{Device, Error, RxThrottle};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
 use sim_bus::SimBus;
@@ -40,6 +40,9 @@ enum Call {
 
     /// `stop_rx_stream`: libusdr's STOP and destroy, as one window.
     Stop,
+
+    /// `set_rx_throttle`: send and skip, or off.
+    Throttle(Option<(u8, u8)>),
 }
 
 impl Call {
@@ -55,6 +58,12 @@ impl Call {
             }
             Self::Receive => oracle.receive_rx(100).is_ok(),
             Self::Stop => oracle.stop_rx_stream().is_ok() && oracle.destroy_rx_stream().is_ok(),
+            Self::Throttle(throttle) => {
+                let value = throttle.map_or(0, |(send, skip)| {
+                    1 << 16 | u32::from(send) << 8 | u32::from(skip)
+                });
+                oracle.set_rx_throttle(value).is_ok()
+            }
         }
     }
 
@@ -71,6 +80,9 @@ impl Call {
                     .map(|_| ())
             }
             Self::Stop => device.stop_rx_stream(),
+            Self::Throttle(throttle) => {
+                device.set_rx_throttle(throttle.map(|(send, skip)| RxThrottle { send, skip }))
+            }
         }
     }
 }
@@ -339,4 +351,28 @@ fn received_samples_match_libusdr() {
         assert_eq!(actual, expected, "{samples_per_packet}-sample packets");
         assert_eq!(actual[1], Complex::new(1, -1), "the sim's counting pattern");
     }
+}
+
+/// Throttling needs a stream (libusdr refuses with -EINVAL before one exists); while one
+/// runs, enabling and disabling it is one front-end command each.
+#[test]
+fn throttling_a_stream_matches_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Throttle(Some((0, 0))),
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Start(1024),
+            Call::Throttle(Some((3, 1))),
+            Call::Receive,
+            Call::Throttle(None),
+            Call::Stop,
+        ],
+    );
+    assert_eq!(
+        outcomes,
+        [false, true, true, true, true, true, true, true],
+        "only the throttle before the stream fails"
+    );
 }

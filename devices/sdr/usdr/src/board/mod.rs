@@ -7,4 +7,4 @@ mod stream;
 mod tune;
 
 pub(crate) use board::Board;
-pub use stream::RxPacket;
+pub use stream::{RxPacket, RxThrottle};

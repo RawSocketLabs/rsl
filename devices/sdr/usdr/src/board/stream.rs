@@ -20,6 +20,17 @@ use crate::lowlevel::BusError;
 /// The frequency a stream tunes to if none was set, in Hz.
 const DEFAULT_RX_HZ: u32 = 320_000_000;
 
+/// RX burst throttling: of every `send + skip + 2` bursts the front end delivers the first
+/// `send + 1` and drops the rest, so a host that cannot keep up sees whole bursts missing
+/// rather than overruns (libusdr's `/dm/sdr/0/rfe/throttle`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxThrottle {
+    /// Bursts delivered per cycle, less one.
+    pub send: u8,
+    /// Bursts dropped per cycle, less one.
+    pub skip: u8,
+}
+
 /// One packet [`Device::receive`](crate::Device::receive) delivered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -123,6 +134,16 @@ impl Board {
             "RX stream created"
         );
         Ok(())
+    }
+
+    /// Throttles the stream's bursts, or stops throttling (`_sfetrx4_option_set`'s
+    /// "throttle").
+    pub(crate) fn set_rx_throttle(&mut self, throttle: Option<RxThrottle>) -> Result<(), Error> {
+        if self.rx_stream.is_none() {
+            return Err(Error::NotStreaming);
+        }
+        let throttle = throttle.map(|RxThrottle { send, skip }| (send, skip));
+        fpga::throttle_rx(self.bus.as_mut(), throttle)
     }
 
     /// Samples per packet of the running stream.
