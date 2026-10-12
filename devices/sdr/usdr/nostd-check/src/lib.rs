@@ -17,12 +17,13 @@ use portable::clock::Layout;
 use portable::error::Failure;
 use portable::lp8758::{BuckControl, BuckVoltage, Config};
 use portable::power::{PowerRails, RailPlan};
-use portable::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use portable::sequence::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use portable::si5332::{ClockSequence, LvpeclOutput, Reference};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
 use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
 use portable::usb::protocol::{Command, I2cCache};
+use portable::usb::register::{self as register_usb, RegisterTransaction};
 
 /// Exercises real chip register macro expansions, including checked enum conversion.
 #[must_use]
@@ -140,6 +141,112 @@ pub fn transport_error_is_preserved(error: u8) -> bool {
         Err(Failure::Transport(found)) if found == error)
 }
 
+/// Reads gateware register `reg` through the real sequence action and register machine,
+/// answered by the whole `readback` transfer.
+///
+/// # Errors
+///
+/// As [`fpga_action`].
+pub fn fpga_read(reg: u16, readback: &[u8]) -> Result<u32, &'static str> {
+    fpga_action(
+        SequenceAction::Fpga(FpgaAccess::Read { reg }),
+        readback,
+        &[],
+    )
+}
+
+/// Writes gateware register `reg` through the real sequence action and register machine.
+///
+/// # Errors
+///
+/// As [`fpga_action`].
+pub fn fpga_write(reg: u16, value: u32) -> Result<u32, &'static str> {
+    fpga_action(
+        SequenceAction::Fpga(FpgaAccess::Write { reg, value }),
+        &[],
+        &[],
+    )
+}
+
+/// Shifts `word` through SPI bus `bus` through the real sequence action and register machine,
+/// answered by the whole IRQ transfer `notification`.
+///
+/// # Errors
+///
+/// As [`fpga_action`].
+pub fn spi_exchange(bus: u32, word: u32, notification: &[u8]) -> Result<u32, &'static str> {
+    let access = FpgaAccess::Spi {
+        target: SpiAddr(bus),
+        word,
+        reg: 0,
+        write: true,
+    };
+    fpga_action(SequenceAction::Fpga(access), &[], notification)
+}
+
+/// Runs one FPGA sequence action end to end through the real register/SPI machine, answering
+/// a readback or IRQ wait with the given whole transfers; returns the word it reports (zero
+/// for a write).
+///
+/// # Errors
+///
+/// The machine's refusal or failure reason, `"timeout"`, or `"not an FPGA action"`.
+fn fpga_action(
+    action: SequenceAction,
+    readback: &[u8],
+    notification: &[u8],
+) -> Result<u32, &'static str> {
+    let SequenceAction::Fpga(access) = action else {
+        return Err("not an FPGA action");
+    };
+    let mut transaction =
+        RegisterTransaction::<Infallible>::access(3, access, Duration::ZERO).map_err(reason)?;
+    let mut sequence = None;
+    let mut action = transaction.start(Duration::ZERO).map_err(reason)?;
+    loop {
+        action = transaction
+            .dispatch(action, Duration::ZERO)
+            .map_err(reason)?;
+        let event = match action {
+            register_usb::Action::Write { id, .. } => Event::Written { id },
+            register_usb::Action::Readback { id, .. } => Event::Readback {
+                id,
+                packet: readback,
+            },
+            register_usb::Action::Notification { id, .. } => Event::Notification {
+                id,
+                packet: notification,
+            },
+            register_usb::Action::Complete { words, len } => {
+                return Ok(words[..len].first().copied().unwrap_or(0));
+            }
+        };
+        action = transaction
+            .complete(event, Duration::ZERO, &mut sequence)
+            .map_err(reason)?;
+    }
+}
+
+/// The command frame length of a real multi-word register write, or `None` when refused.
+#[must_use]
+pub fn register_write_frame_len(values: &[u32]) -> Option<usize> {
+    let mut transaction =
+        RegisterTransaction::<Infallible>::write(4, 0x10, values, Duration::ZERO).ok()?;
+    match transaction.start(Duration::ZERO).ok()? {
+        register_usb::Action::Write { frame, .. } => Some(frame.as_bytes().len()),
+        _ => None,
+    }
+}
+
+/// A portable failure as the witness reports it; `Infallible` transport errors cannot occur.
+fn reason(failure: Failure<Infallible>) -> &'static str {
+    match failure {
+        Failure::Timeout => "timeout",
+        Failure::Unsupported(reason) | Failure::InvalidData(reason) => reason,
+        Failure::Transport(never) => match never {},
+    }
+}
+
 /// Runs the real power-rail machine with the board's setpoints, answering its reads from
 /// `reads`; returns the accesses completed, or the name of the chip that failed.
 ///
@@ -172,6 +279,7 @@ pub fn power_rails(reads: &[u8]) -> Result<usize, &'static str> {
             .map_err(|failure| match failure {
                 SequenceFailure::ChipId { chip, .. }
                 | SequenceFailure::Transport { chip, .. }
+                | SequenceFailure::FpgaTransport { chip, .. }
                 | SequenceFailure::ChipMissing { chip } => chip,
                 SequenceFailure::ClockInputMissing => "no input clock",
             })?;
@@ -243,15 +351,16 @@ fn drive(sequence: &mut impl Sequence, id: u8, state: u8) -> Result<usize, &'sta
             SequenceAction::Access(RegisterAccess::Read { .. }) => id,
             SequenceAction::Access(RegisterAccess::Write { value, .. }) => value,
             SequenceAction::Sleep(_) => 0,
+            SequenceAction::Fpga(_) => return Err("unexpected FPGA access"),
         };
         sequence
-            .complete::<Infallible>(Ok(byte))
+            .complete::<Infallible>(Ok(byte.into()))
             .map_err(|failure| match failure {
                 SequenceFailure::ChipMissing { .. } => "missing",
                 SequenceFailure::ClockInputMissing => "no input clock",
-                SequenceFailure::ChipId { chip, .. } | SequenceFailure::Transport { chip, .. } => {
-                    chip
-                }
+                SequenceFailure::ChipId { chip, .. }
+                | SequenceFailure::Transport { chip, .. }
+                | SequenceFailure::FpgaTransport { chip, .. } => chip,
             })?;
         actions += 1;
     }
@@ -275,6 +384,31 @@ mod tests {
         // A wait and poll, five writes, then another wait and poll.
         assert_eq!(clock_reference_switch(true, 0x02), Ok(9));
         assert_eq!(clock_reference_switch(false, 0x89), Err("no input clock"));
+    }
+
+    #[test]
+    fn the_exact_source_witness_runs_every_fpga_action_through_the_register_machine() {
+        // HWID readback: raw little-endian words with no length header (PIN 3670f15).
+        let hwid = [0x00, 0x03, 0x00, 0x42];
+        assert_eq!(fpga_read(19, &hwid), Ok(0x4200_0300));
+        assert_eq!(
+            fpga_read(19, &hwid[..2]),
+            Err("USB register readback length differs from request")
+        );
+        assert_eq!(fpga_write(0, 1), Ok(0));
+        // Scalar IRQ 2, sequence 0, SPI reply 0xabcd.
+        let reply = [2, 0, 0, 0, 0xcd, 0xab, 0, 0];
+        assert_eq!(spi_exchange(0, 0x8000_0001, &reply), Ok(0xabcd));
+        assert_eq!(
+            spi_exchange(1, 0x8000_0001, &reply),
+            Err("uSDR has only simple SPI bus 0")
+        );
+        assert_eq!(
+            fpga_action(SequenceAction::Sleep(Duration::ZERO), &[], &[]),
+            Err("not an FPGA action")
+        );
+        assert_eq!(register_write_frame_len(&[0; 63]), Some(256));
+        assert_eq!(register_write_frame_len(&[0; 64]), None);
     }
 
     #[test]

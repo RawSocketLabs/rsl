@@ -13,25 +13,18 @@ use mio::{Registry, Token, Waker};
 use rsl_deps::tracing::{debug, trace};
 use rsl_usb::{DeviceInfo, InQueue, Interface, OutQueue};
 
-use super::i2c::{Action, Event, I2cTransaction};
+use super::i2c::{Event, I2cTransaction};
+use super::machine::{Machine, Output, Step, Submission, Transfer};
 #[cfg(feature = "mio")]
 use super::native::{self, NativeUsb, Session};
-use super::protocol::{Command, I2cCache, Notification};
+use super::protocol::I2cCache;
 use super::rx::Rx;
 #[cfg(feature = "mio")]
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
-
-/// The reference's `USB_IO_TIMEOUT`, in `usb_uram_generic.h` (milliseconds).
-const REGISTER_TIMEOUT: Duration = Duration::from_secs(20);
-/// The reference's `usb_read_bus` event wait.
-const COMPLETION_TIMEOUT: Duration = Duration::from_secs(1);
-/// `OUT_REGOUT_SIZE` includes the command word: 63 payload words fit in 256 bytes.
-const MAX_WRITE_WORDS: usize = 63;
-/// `MAX_REQUEST_RB_SIZE`: 256 bytes of raw readback.
-const MAX_READ_WORDS: usize = 64;
 /// `IN_NTFY_SIZE`: one notification transfer contains at most 64 bytes.
 pub(super) const MAX_NOTIFICATION_BYTES: usize = 64;
 
@@ -188,8 +181,11 @@ pub struct UsbBus {
     next_sequence: Option<u16>,
     /// The simple I²C core's address table.
     i2c: I2cCache,
-    /// Never-reused identity for each prepared I²C operation in this session.
+    /// Never-reused identity for each prepared I²C operation in this session; carried over
+    /// to a native handle.
     next_i2c_id: u64,
+    /// Never-reused identity for each register/SPI operation in this session.
+    next_register_id: u64,
 }
 
 impl fmt::Debug for UsbBus {
@@ -274,6 +270,7 @@ impl UsbBus {
             next_sequence: None,
             i2c: I2cCache::default(),
             next_i2c_id: 0,
+            next_register_id: 0,
         }
     }
 
@@ -360,66 +357,104 @@ impl UsbBus {
         BusError::Io(io::Error::new(io::ErrorKind::InvalidData, reason))
     }
 
-    /// Sends one packet; any ambiguous write failure poisons the bus.
-    fn send(&mut self, packet: &[u8]) -> Result<(), BusError> {
+    /// Runs one prepared control machine to its result: the blocking executor. Any failure
+    /// once it has started poisons the bus, since a late reply could still arrive.
+    fn run(&mut self, mut machine: Machine) -> Result<Output, BusError> {
         self.ready()?;
-        trace!(target: "rsl_usdr::bus", bytes = ?packet, "USB command");
-        let result = self.io.write(packet, REGISTER_TIMEOUT);
+        let result = self.pump(&mut machine);
         if result.is_err() {
             self.healthy = false;
         }
         result
     }
 
-    /// Receives a full transfer; a failed read cannot be reused by another request.
-    fn receive(&mut self, reply: Reply, timeout: Duration) -> Result<Vec<u8>, BusError> {
-        let result = self.io.read(reply, timeout);
-        if result.is_err() {
-            self.healthy = false;
+    /// Performs each transfer the machine asks for and reports its completion.
+    fn pump(&mut self, machine: &mut Machine) -> Result<Output, BusError> {
+        // The machine was prepared at time zero; this pump supplies its clock.
+        let started = Instant::now();
+        let mut step = machine.start(started.elapsed())?;
+        loop {
+            let Submission {
+                id,
+                transfer,
+                timeout,
+            } = match step {
+                Step::Submit(submission) => submission,
+                Step::Done(output) => return Ok(output),
+            };
+            step = match transfer {
+                Transfer::Write(frame) => {
+                    trace!(target: "rsl_usdr::bus", bytes = ?frame.as_bytes(), "USB command");
+                    let event = match self.io.write(frame.as_bytes(), timeout) {
+                        Ok(()) => Event::Written { id },
+                        Err(error) => Event::Failed { id, error },
+                    };
+                    machine.complete(event, started.elapsed(), &mut self.next_sequence)
+                }
+                Transfer::Readback => self.deliver(machine, id, Reply::Registers, timeout, started),
+                Transfer::Notification => {
+                    self.deliver(machine, id, Reply::Notification, timeout, started)
+                }
+            }?;
         }
-        result
+    }
+
+    /// Receives one whole reply transfer and reports it, or its failure, to the machine.
+    fn deliver(
+        &mut self,
+        machine: &mut Machine,
+        id: u64,
+        reply: Reply,
+        timeout: Duration,
+        started: Instant,
+    ) -> Result<Step, BusError> {
+        let received = self.io.read(reply, timeout);
+        let now = started.elapsed();
+        let sequence = &mut self.next_sequence;
+        match received {
+            Ok(packet) => {
+                let packet = packet.as_slice();
+                let event = match reply {
+                    Reply::Registers => Event::Readback { id, packet },
+                    Reply::Notification => Event::Notification { id, packet },
+                };
+                machine.complete(event, now, sequence)
+            }
+            Err(error) => machine.complete(Event::Failed { id, error }, now, sequence),
+        }
+    }
+
+    /// The next register/SPI operation identity; exhaustion poisons the bus.
+    fn register_id(&mut self) -> Result<u64, BusError> {
+        let id = self.next_register_id;
+        let Some(next) = id.checked_add(1) else {
+            self.healthy = false;
+            return Err(BusError::Unsupported(
+                "USB register operation identity exhausted; reopen it",
+            ));
+        };
+        self.next_register_id = next;
+        Ok(id)
     }
 
     /// Reads a checked block of 1–64 physical registers; no length header is present.
     fn raw_read(&mut self, address: u16, out: &mut [u32]) -> Result<(), BusError> {
-        let count = u8::try_from(out.len()).expect("register reads split into 64-word blocks");
-        self.send(&Command::encode(address, count, true))?;
-        let bytes = self.receive(Reply::Registers, REGISTER_TIMEOUT)?;
-        if bytes.len() != out.len() * 4 {
-            return Err(self.malformed("USB register readback length differs from request"));
-        }
-        for (value, bytes) in out.iter_mut().zip(bytes.chunks_exact(4)) {
-            *value = u32::from_le_bytes(bytes.try_into().expect("four-byte chunks"));
-        }
+        self.ready()?;
+        let id = self.register_id()?;
+        let read = RegisterTransaction::read(id, address, out.len(), Duration::ZERO)?;
+        let Output::Words { words, len } = self.run(Machine::Register(read))? else {
+            return Err(self.malformed("USB register read completed as another operation"));
+        };
+        out.copy_from_slice(&words[..len]);
         Ok(())
     }
 
     /// Writes a checked block of 1–63 words, including a four-byte command header.
     fn raw_write(&mut self, address: u16, values: &[u32]) -> Result<(), BusError> {
-        let count = u8::try_from(values.len()).expect("register writes split into 63-word blocks");
-        let mut bytes = Vec::with_capacity((values.len() + 1) * 4);
-        bytes.extend_from_slice(&Command::encode(address, count, false));
-        for value in values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        self.send(&bytes)
-    }
-
-    /// Waits for one scalar IRQ reply, checking the entire packet including its tail.
-    fn completion(&mut self, event: u8) -> Result<u32, BusError> {
-        let started = Instant::now();
-        loop {
-            let Some(timeout) = COMPLETION_TIMEOUT.checked_sub(started.elapsed()) else {
-                self.healthy = false;
-                return Err(BusError::Timeout);
-            };
-            let packet = self.receive(Reply::Notification, timeout)?;
-            match Notification::completion(&packet, event, &mut self.next_sequence) {
-                Ok(Some(value)) => return Ok(value),
-                Ok(None) => {}
-                Err(reason) => return Err(self.malformed(reason)),
-            }
-        }
+        self.ready()?;
+        let id = self.register_id()?;
+        let write = RegisterTransaction::write(id, address, values, Duration::ZERO)?;
+        self.run(Machine::Register(write)).map(|_| ())
     }
 
     /// Validates the whole caller-supplied span before making any bus access.
@@ -505,17 +540,17 @@ impl Bus for UsbBus {
 
     fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
         self.ready()?;
-        if target.0 != 0 {
-            return Err(BusError::Unsupported("uSDR has only simple SPI bus 0"));
+        let id = self.register_id()?;
+        let exchange = RegisterTransaction::spi32(id, target, word, Duration::ZERO)?;
+        match self.run(Machine::Register(exchange))? {
+            Output::Words { words, len: 1 } => Ok(words[0]),
+            _ => Err(self.malformed("USB SPI exchange completed without one reply word")),
         }
-        self.write(2, word)?;
-        self.completion(2)
     }
 
     fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
         self.ready()?;
         // This compatibility pump blocks; event/callback adapters use the same pure machine.
-        let started = Instant::now();
         let id = self.next_i2c_id;
         let Some(next_id) = id.checked_add(1) else {
             self.healthy = false;
@@ -523,69 +558,14 @@ impl Bus for UsbBus {
                 "USB I2C operation identity exhausted; reopen it",
             ));
         };
-        let mut transaction =
+        let transaction =
             I2cTransaction::new(id, dev, write, read.len(), &mut self.i2c, Duration::ZERO)?;
         self.next_i2c_id = next_id;
-        let mut action = match transaction.start(started.elapsed()) {
-            Ok(action) => action,
-            Err(error) => {
-                self.healthy = false;
-                return Err(error);
-            }
+        let Output::I2c { bytes, len } = self.run(Machine::I2c(transaction))? else {
+            return Err(self.malformed("USB I2C transfer completed as another operation"));
         };
-        loop {
-            if let Action::Write { packet, .. } = &action {
-                trace!(target: "rsl_usdr::bus", bytes = ?packet, "USB command");
-            }
-            action = match transaction.dispatch(action, started.elapsed()) {
-                Ok(action) => action,
-                Err(error) => {
-                    self.healthy = false;
-                    return Err(error);
-                }
-            };
-            let next = match action {
-                Action::Write {
-                    id,
-                    packet,
-                    timeout,
-                } => {
-                    let event = match self.io.write(&packet, timeout) {
-                        Ok(()) => Event::Written { id },
-                        Err(error) => Event::Failed { id, error },
-                    };
-                    transaction.complete(event, started.elapsed(), &mut self.next_sequence)
-                }
-                Action::Notification { id, timeout } => {
-                    match self.io.read(Reply::Notification, timeout) {
-                        Ok(packet) => transaction.complete(
-                            Event::Notification {
-                                id,
-                                packet: &packet,
-                            },
-                            started.elapsed(),
-                            &mut self.next_sequence,
-                        ),
-                        Err(error) => transaction.complete(
-                            Event::Failed { id, error },
-                            started.elapsed(),
-                            &mut self.next_sequence,
-                        ),
-                    }
-                }
-                Action::Complete { bytes, len } => {
-                    read.copy_from_slice(&bytes[..len]);
-                    return Ok(());
-                }
-            };
-            match next {
-                Ok(next) => action = next,
-                Err(error) => {
-                    self.healthy = false;
-                    return Err(error);
-                }
-            }
-        }
+        read.copy_from_slice(&bytes[..len]);
+        Ok(())
     }
 
     fn sleep(&mut self, duration: Duration) {

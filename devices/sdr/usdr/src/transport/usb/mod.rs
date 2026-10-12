@@ -37,6 +37,7 @@
 
 mod bus;
 mod i2c;
+mod machine;
 #[cfg(feature = "mio")]
 mod native;
 mod protocol;

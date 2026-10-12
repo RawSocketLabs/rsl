@@ -6,6 +6,7 @@ use core::time::Duration;
 use super::super::address::{I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr};
 use super::super::error::Failure;
 use super::protocol::{Command, I2cCache, Notification};
+pub(crate) use super::transfer::Event;
 
 /// `USB_IO_TIMEOUT` in the pinned C transport, before the separate IRQ wait.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -25,25 +26,6 @@ pub(crate) enum Action {
     Notification { id: u64, timeout: Duration },
     /// Readback bytes in I²C wire order; only the first `len` bytes are valid.
     Complete { bytes: [u8; 4], len: usize },
-}
-
-/// A correlated executor result; the machine never owns transport buffers.
-pub(crate) enum Event<'a, E> {
-    /// The command transfer completed successfully.
-    Written { id: u64 },
-    /// One complete notification transfer, borrowed only for this transition.
-    Notification { id: u64, packet: &'a [u8] },
-    /// The identified transfer failed; hardware state may be uncertain.
-    Failed { id: u64, error: E },
-}
-
-impl<E> Event<'_, E> {
-    /// The operation identity supplied with the transfer action.
-    fn id(&self) -> u64 {
-        match self {
-            Self::Written { id } | Self::Notification { id, .. } | Self::Failed { id, .. } => *id,
-        }
-    }
 }
 
 /// Only one command and one scalar completion can be in flight for this transaction.

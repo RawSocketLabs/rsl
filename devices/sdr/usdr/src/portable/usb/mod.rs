@@ -2,3 +2,5 @@
 
 pub(crate) mod i2c;
 pub(crate) mod protocol;
+pub(crate) mod register;
+pub(crate) mod transfer;

@@ -3,7 +3,7 @@
 use std::fmt;
 
 use crate::lowlevel::BusError;
-use crate::portable::sequence::{RegisterAccess, SequenceFailure};
+use crate::portable::sequence::{FpgaAccess, RegisterAccess, SequenceFailure};
 use crate::stream::{HostFormat, SyncMode};
 
 /// A failed driver operation.
@@ -272,6 +272,25 @@ impl From<SequenceFailure<BusError>> for Error {
                     chip,
                     access,
                     reg: reg.into(),
+                    source,
+                }
+            }
+            SequenceFailure::FpgaTransport {
+                chip,
+                access,
+                source,
+            } => {
+                let (access, reg) = match access {
+                    FpgaAccess::Read { reg } => (Access::Read, reg.into()),
+                    FpgaAccess::Write { reg, .. } => (Access::Write, reg.into()),
+                    FpgaAccess::Spi { reg, write, .. } => {
+                        (if write { Access::Write } else { Access::Read }, reg.into())
+                    }
+                };
+                Self::Bus {
+                    chip,
+                    access,
+                    reg,
                     source,
                 }
             }

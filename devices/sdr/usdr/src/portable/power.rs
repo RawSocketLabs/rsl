@@ -9,7 +9,7 @@
 use super::address::I2cAddr;
 use super::lp8758::{self, Buck, BuckControl, BuckVoltage, Config, Revision};
 use super::register::{IndexedRegister, Register};
-use super::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use super::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte};
 use super::tps6381x::{self, Control, DeviceId, OutputVoltage, Vsel};
 
 /// The board's choices for its rails.
@@ -189,8 +189,8 @@ impl Sequence for PowerRails {
         self.access().map(SequenceAction::Access)
     }
 
-    fn complete<E>(&mut self, result: Result<u8, E>) -> Result<(), SequenceFailure<E>> {
-        PowerRails::complete(self, result)
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        PowerRails::complete(self, i2c_byte(result))
     }
 }
 

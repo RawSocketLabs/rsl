@@ -11,7 +11,7 @@ use bnb::{u2, u5, u6};
 use super::super::address::I2cAddr;
 use super::super::clock::Layout;
 use super::super::register::{IndexedRegister, Register};
-use super::super::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use super::super::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte};
 use super::NAME;
 use super::divider::{DividerPowerDown, HsBank, HsDivider, SpreadBank, SpreadSpectrum};
 use super::input::{
@@ -265,14 +265,21 @@ impl<const N: usize> Sequence for ClockSequence<N> {
         })
     }
 
-    fn complete<E>(&mut self, result: Result<u8, E>) -> Result<(), SequenceFailure<E>> {
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
         let Some(action) = self.next() else {
             return Ok(());
         };
-        let byte = match (result, action) {
+        let byte = match (i2c_byte(result), action) {
             (Ok(byte), _) => byte,
             (Err(source), SequenceAction::Access(access)) => {
                 return self.fail(SequenceFailure::Transport {
+                    chip: NAME,
+                    access,
+                    source,
+                });
+            }
+            (Err(source), SequenceAction::Fpga(access)) => {
+                return self.fail(SequenceFailure::FpgaTransport {
                     chip: NAME,
                     access,
                     source,
@@ -527,8 +534,11 @@ mod tests {
                     counts.writes += 1;
                     0
                 }
+                SequenceAction::Fpga(access) => {
+                    panic!("no Si5332 step touches the FPGA: {access:?}")
+                }
             };
-            if let Err(failure) = sequence.complete::<()>(Ok(byte)) {
+            if let Err(failure) = sequence.complete::<()>(Ok(byte.into())) {
                 return (counts, Err(failure));
             }
         }
