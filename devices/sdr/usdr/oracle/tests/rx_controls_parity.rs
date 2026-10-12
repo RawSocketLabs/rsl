@@ -294,36 +294,54 @@ fn rx_auto_gain_matches_libusdr_across_frequencies() {
     assert_calls_succeed(&calls);
 }
 
-/// Fixed paths, named as libusdr spells them in any case, hold across retunes and rate
-/// changes; entering and leaving the low band gate the mixer LO (with the band-crossing
-/// fix); `auto` and an unknown name hand the band back to the frequency.
+/// A fixed path holds across retunes, in and out of its band, and a rate change, which
+/// retunes the PLL in the low band; entering the low band gates the mixer LO (with the
+/// band-crossing fix).
 #[test]
-fn manual_rx_paths_match_libusdr() {
+fn a_fixed_rx_path_holds_across_retunes_and_rate_changes_like_libusdr() {
     assert_calls_succeed_crossing(
         &[
             Call::Rate(20_000_000),
             Call::Frequency(1_000_000_000),
             Call::Path(c"rxh", RxPath::High),
             Call::Frequency(433_000_000),
-            Call::Path(c"RXW", RxPath::Wide),
+            Call::Path(c"rxw", RxPath::Wide),
             Call::Frequency(3_000_000_000),
             Call::Path(c"rxl", RxPath::Low),
             Call::Frequency(433_000_000),
             Call::Rate(10_000_000),
-            Call::Path(c"auto", RxPath::Auto),
-            Call::Path(c"rxh", RxPath::High),
-            Call::Path(c"no-such-path", RxPath::Auto),
         ],
         Crossing::Fixed,
     );
 }
 
-/// libusdr's band names reach the same paths as its `rx*` names.
+/// `auto` and any name libusdr does not know hand the band back to the frequency at once,
+/// leaving the low band where the frequency is above it; later retunes follow it again.
 #[test]
-fn libusdr_band_names_select_the_same_paths() {
+fn auto_and_unknown_rx_path_names_follow_the_frequency_like_libusdr() {
+    assert_calls_succeed_crossing(
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(433_000_000),
+            Call::Path(c"rxh", RxPath::High),
+            Call::Path(c"auto", RxPath::Auto),
+            Call::Path(c"rxl", RxPath::Low),
+            Call::Path(c"no-such-path", RxPath::Auto),
+            Call::Frequency(100_000_000),
+        ],
+        Crossing::Fixed,
+    );
+}
+
+/// libusdr's names are case-insensitive, and its band names reach the same paths as its
+/// `rx*` names.
+#[test]
+fn rx_path_names_match_libusdr_in_any_case_and_spelling() {
     assert_calls_succeed(&[
         Call::Rate(20_000_000),
         Call::Frequency(1_000_000_000),
+        Call::Path(c"RXH", RxPath::High),
+        Call::Path(c"rXw", RxPath::Wide),
         Call::Path(c"LNAH", RxPath::High),
         Call::Path(c"w", RxPath::Wide),
         Call::Path(c"H", RxPath::High),
@@ -359,8 +377,9 @@ fn auto_rx_path_before_tuning_selects_the_low_band_like_libusdr() {
     );
 }
 
-/// libusdr rejects a path given as a number (4096 or less) with `-EINVAL` before any
-/// operation. rsl-usdr's [`RxPath`] cannot express one, so there is no call to compare.
+/// Characterization of libusdr alone: it rejects a path given as a number (4096 or less)
+/// with `-EINVAL` before any operation. rsl-usdr's [`RxPath`] cannot express one, so
+/// there is no call to compare.
 #[test]
 fn a_numeric_rx_path_is_rejected_by_libusdr_before_any_operation() {
     /// `EINVAL`.
@@ -400,9 +419,10 @@ fn rx_dc_and_ip2_trims_match_libusdr() {
     assert_calls_succeed(&calls);
 }
 
-/// Intentional divergence: libusdr keeps the low seven bits of each 16-bit trim (through
-/// an `int8_t` and its register macro's mask), so an oversized code silently writes
-/// another; rsl-usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
+/// Intentional divergence: libusdr narrows each 16-bit trim to `int8_t` and shifts it into
+/// its register macro's mask, implementation-defined and, for a negative value, undefined
+/// in C; this compiler keeps the low seven bits, so an oversized code silently writes
+/// another. rsl-usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
 /// for one is the masked code's write.
 #[test]
 fn oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
@@ -461,4 +481,53 @@ fn rx_iq_correction_matches_libusdr() {
     };
     calls.push(Call::Correct(path, value | 0xabcd << 32, correction));
     assert_calls_succeed(&calls);
+}
+
+/// Intentional divergence: with the low band fixed, 4.2 GHz plus the mixer LO passes
+/// `u32::MAX`. libusdr adds in double and converts back to `unsigned`, undefined in C
+/// (here it wraps, to about 200 MHz), and tunes that; rsl-usdr refuses with
+/// `UnsupportedFrequency` where libusdr starts tuning, after the same operations.
+#[test]
+fn a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it() {
+    /// Above `u32::MAX` less any mixer LO the sim's 20 MS/s rate gives.
+    const HZ: u32 = 4_200_000_000;
+    let setup = [Call::Rate(20_000_000), Call::Path(c"rxl", RxPath::Low)];
+    let board = || SimBoard::new(BoardRevision::Rev3);
+
+    let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
+    for call in setup {
+        assert!(call.on_libusdr(&mut oracle), "{call:?}: libusdr succeeds");
+    }
+    let start = oracle.trace_len();
+    oracle
+        .set_rx_frequency(HZ)
+        .expect("libusdr tunes the wrapped LO");
+    let window = start..oracle.trace_len();
+    let reference = oracle.close();
+    let expected = &reference.trace()[window];
+
+    let sim = SimBus::new(board());
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    for call in setup {
+        call.on_rsl(&mut device).expect("the setup succeeds");
+    }
+    let start = sim.board().trace().len();
+    let result = device.set_rx_frequency(HZ);
+    assert!(
+        matches!(result, Err(Error::UnsupportedFrequency(HZ))),
+        "rsl-usdr refuses the overflowing LO: {result:?}"
+    );
+    let board = sim.board();
+    let actual = &board.trace()[start..];
+    assert_eq!(
+        actual,
+        &expected[..actual.len()],
+        "rsl-usdr's operations are libusdr's up to the tune"
+    );
+    assert!(
+        expected[actual.len()..]
+            .iter()
+            .any(|op| matches!(op, Op::Spi { .. })),
+        "libusdr goes on to tune the PLL"
+    );
 }

@@ -76,9 +76,9 @@ impl Board {
     ///
     /// Intentional divergence: libusdr's create then reapplies each channel's LO as a
     /// baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX, .., rx_raw.lo[i])`), which
-    /// selects the mixer band, clamps the NCOs and bypasses the filter until the caller
-    /// tunes again. That loop is left out, so a new stream keeps the band, NCOs and filter
-    /// the caller set.
+    /// selects the mixer band (unless the path is fixed), clamps the NCOs and bypasses the
+    /// filter until the caller tunes again. That loop is left out, so a new stream keeps
+    /// the band, NCOs and filter the caller set.
     pub(crate) fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);

@@ -14,8 +14,10 @@ use crate::fpga::{IqImbalance, Phy};
 /// bits 5:0 the magnitude, as the datasheet gives `DCOFF_I`, `DCOFF_Q`, `IP2TRIM_I` and
 /// `IP2TRIM_Q`. The datasheet does not say which sign bit value is negative.
 ///
-/// libusdr takes 16 bits per channel and keeps the low seven; a code that does not fit is
-/// rejected here instead.
+/// libusdr takes 16 bits per channel, narrows them to `int8_t` (implementation-defined)
+/// and shifts the possibly negative result into its register macro (undefined in C11 for a
+/// negative value), which GCC and Clang reduce to keeping the low seven bits. A code that
+/// does not fit is rejected here instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxTrim(u7);
 
@@ -115,8 +117,8 @@ mod tests {
         assert_eq!(RxTrim::new(u8::MAX), None);
     }
 
-    /// A correction with `i_gain`, `q_gain` and `phase`.
-    fn correction(i_gain: u16, q_gain: u16, phase: i16) -> IqImbalance {
+    /// The imbalance a correction with `i_gain`, `q_gain` and `phase` asks for.
+    fn imbalance(i_gain: u16, q_gain: u16, phase: i16) -> IqImbalance {
         RxIqCorrection {
             i_gain,
             q_gain,
@@ -127,44 +129,28 @@ mod tests {
 
     #[test]
     fn unity_gains_and_no_phase_ask_for_no_correction() {
-        assert_eq!(correction(2047, 2047, 0), IqImbalance::default());
+        assert_eq!(imbalance(2047, 2047, 0), IqImbalance::default());
     }
 
     #[test]
     fn i_below_unity_sets_the_amplitude_and_ignores_q() {
         // (2047 - 0) * 8 = 16376, then * 262144 / 32767, truncated.
-        let full = correction(0, 9999, 0);
+        let full = imbalance(0, 9999, 0);
         assert_eq!(full.amplitude, 131_011);
-        assert_eq!(full.amplitude, correction(0, 2047, 0).amplitude);
-        assert!(correction(2046, 0, 0).amplitude > 0);
+        assert_eq!(full.amplitude, imbalance(0, 2047, 0).amplitude);
+        assert!(imbalance(2046, 0, 0).amplitude > 0);
     }
 
     #[test]
     fn from_unity_up_q_sets_the_amplitude_either_way() {
         // Truncated towards zero, as C's int64_t division does.
-        assert_eq!(correction(2047, 0, 0).amplitude, -131_011);
-        assert!(correction(u16::MAX, 2048, 0).amplitude > 0);
+        assert_eq!(imbalance(2047, 0, 0).amplitude, -131_011);
+        assert!(imbalance(u16::MAX, 2048, 0).amplitude > 0);
     }
 
     #[test]
     fn phase_is_scaled_by_16_without_clamping() {
-        assert_eq!(correction(2047, 2047, -1).phase, -16);
-        assert_eq!(correction(2047, 2047, i16::MAX).phase, 524_272);
-    }
-
-    #[test]
-    fn no_imbalance_gives_half_scale_amplitudes_and_no_phase_terms() {
-        // RX's two-channel scale of 0.5 times 8388607, truncated.
-        assert_eq!(
-            IqImbalance::default().rx_terms(),
-            [4_194_303, 4_194_303, 0, 0]
-        );
-    }
-
-    #[test]
-    fn amplitude_scales_one_channel_and_phase_mirrors_the_cross_terms() {
-        let [amp_i, amp_q, tan_i, tan_q] = correction(1023, 2047, 1000).rx_terms();
-        assert!(amp_i < amp_q, "a positive imbalance scales I down");
-        assert!(tan_i < 0 && tan_q > 0, "phase terms take opposite signs");
+        assert_eq!(imbalance(2047, 2047, -1).phase, -16);
+        assert_eq!(imbalance(2047, 2047, i16::MAX).phase, 524_272);
     }
 }

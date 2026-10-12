@@ -119,7 +119,9 @@ impl IqImbalance {
 
     /// The four correction terms for the RX chain, I and Q amplitudes then I and Q phase
     /// terms, in libusdr's arithmetic (`usdr_calc_iqimb`): sine and cosine in double,
-    /// narrowed to float, the products in float, then truncated to integers.
+    /// narrowed to float, the products in float, then truncated to integers. Exact parity
+    /// rests on `f64::cos` and `sin` calling the same libm as libusdr (glibc on the oracle
+    /// host); another libm may differ in the last bit.
     pub(crate) fn rx_terms(self) -> [i32; 4] {
         let angle = FRAC_PI_4 * f64::from(self.phase) / Self::PHASE_FULL_SCALE;
         #[expect(
@@ -270,5 +272,30 @@ impl Phy {
             .with_data(u24::new(data));
         let reg = self as u32;
         bus.write_regs(reg, &[word.to_raw()]).writing(FPGA, reg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_imbalance_gives_half_scale_amplitudes_and_no_phase_terms() {
+        // RX's two-channel scale of 0.5 times 8388607, truncated.
+        assert_eq!(
+            IqImbalance::default().rx_terms(),
+            [4_194_303, 4_194_303, 0, 0]
+        );
+    }
+
+    #[test]
+    fn amplitude_scales_one_channel_and_phase_mirrors_the_cross_terms() {
+        let imbalance = IqImbalance {
+            amplitude: 65_536,
+            phase: 16_000,
+        };
+        let [amp_i, amp_q, tan_i, tan_q] = imbalance.rx_terms();
+        assert!(amp_i < amp_q, "a positive imbalance scales I down");
+        assert!(tan_i < 0 && tan_q > 0, "phase terms take opposite signs");
     }
 }

@@ -164,7 +164,8 @@ Each layer calls only the ones below it.
 - Intentional divergences from libusdr are whitelisted per test scenario, never by masking a
   register globally. The first is the band-crossing fix: gate Si5332 port 3 with
   `OUT3_OE` alone, without cycling USYS_CTRL through READY as libusdr does (and without
-  the FFI wrapper's close/reopen workaround); `oracle/tests/rx_parity.rs` whitelists it.
+  the FFI wrapper's close/reopen workaround); `oracle/tests/common/crossing.rs` holds the
+  whitelist, which scenarios in `rx_parity.rs` and `rx_controls_parity.rs` opt into.
   The second leaves out stream create's per-channel baseband loop, a libusdr bug that
   reselects the band, clamps the NCOs and bypasses the filter;
   `oracle/tests/stream_parity.rs` whitelists it and the mixer exit it leaves libusdr owing.
@@ -172,6 +173,11 @@ Each layer calls only the ones below it.
   (past 16 MiB, partial erases, page-crossing chunks) and reports large capacities whole;
   `oracle/tests/flash_parity.rs` whitelists each. Two more cannot run in libusdr safely
   (its header-length underflow, its staging `assert`), so `tests/flash.rs` covers them.
+  The RX controls reject trim codes libusdr masks to seven bits (`RxTrim`;
+  `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr`)
+  and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes
+  `u32::MAX`, where libusdr's double-to-`unsigned` conversion is undefined
+  (`rx_controls_parity.rs::a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it`).
 - Registers are typed (`src/portable/register.rs`; `src/chips/register.rs` adds blocking I2C
   access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.

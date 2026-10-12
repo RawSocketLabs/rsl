@@ -11,6 +11,7 @@
 
 use bnb::{BitEnum, bitfield, u3, u4};
 
+use super::rx_fe::Lna;
 use super::spi::BlockReg;
 use crate::chips::register::Register;
 
@@ -197,14 +198,49 @@ pub(super) struct Loopback {
     #[bits(4..=4)]
     baseband_to_output: bool,
 
-    /// Connect the TX mixer's output to an LNA path, with the LNAs powered down: 0 off
-    /// (reset), 1 to 3 the LNA1 to LNA3 path, 4 to 15 reserved. `LBRFEN`, bits 3:0.
+    /// Connect the TX mixer's output to an LNA path, with the LNAs powered down.
+    /// `LBRFEN`, bits 3:0; reset off.
     #[bits(0..=3)]
-    rf_to_lna_path: u4,
+    rf: RfLoopback,
 }
 impl Register for Loopback {
     type Map = Reg;
     const ADDR: Reg = Reg::Loopback;
+}
+
+/// Where the RF loopback feeds the TX mixer's output (`LBRFEN`).
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u4)]
+#[repr(u8)]
+pub(super) enum RfLoopback {
+    /// RF loopback off.
+    Off = 0,
+
+    /// Into the LNA1 path.
+    Lna1 = 1,
+
+    /// Into the LNA2 path.
+    Lna2 = 2,
+
+    /// Into the LNA3 path.
+    Lna3 = 3,
+
+    /// 4 to 15, reserved and "not valid for settings".
+    #[catch_all]
+    Reserved(u4),
+}
+
+/// The loopback into `lna`'s path; none for no LNA. `LBRFEN` numbers the paths as
+/// `LNASEL` numbers the LNAs.
+impl From<Lna> for RfLoopback {
+    fn from(lna: Lna) -> Self {
+        match lna {
+            Lna::None => Self::Off,
+            Lna::Lna1 => Self::Lna1,
+            Lna::Lna2 => Self::Lna2,
+            Lna::Lna3 => Self::Lna3,
+        }
+    }
 }
 
 /// The LPF tuning engine's clock and reset. Datasheet `LPF_CTRL`, register 0x06.

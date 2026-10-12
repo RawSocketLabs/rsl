@@ -169,16 +169,19 @@ impl Device {
 
     /// Tunes the receiver to `hz`.
     ///
-    /// Below 230 MHz the board mixer lifts the signal into the LMS6002D's range, so the
-    /// PLL's LO is about 300 MHz higher. If the PLL cannot lock at an LO below 250 MHz (in
-    /// practice a request from 230 to 250 MHz), the receiver tunes the lowest LO that does
-    /// and the NCO covers the rest, which needs a sample rate with room for the offset.
+    /// In the low band (below 230 MHz, unless [`Device::set_rx_path`] fixed the band) the
+    /// board mixer lifts the signal into the LMS6002D's range, so the PLL's LO is about
+    /// 300 MHz higher. If the PLL cannot lock at an LO below 250 MHz (in practice a request
+    /// from 230 to 250 MHz), the receiver tunes the lowest LO that does and the NCO covers
+    /// the rest, which needs a sample rate with room for the offset.
     ///
     /// # Errors
     ///
     /// - [`Error::PllUnlocked`] if the RX PLL cannot lock and no NCO fallback applies.
-    /// - [`Error::UnsupportedFrequency`] for an LO below the PLL's 170 MHz floor, possible
-    ///   only under 230 MHz before a sample rate sets the mixer LO.
+    /// - [`Error::UnsupportedFrequency`] for an LO below the PLL's 170 MHz floor: in the
+    ///   low band before a sample rate sets the mixer LO, or below 170 MHz on a fixed
+    ///   wide or high band. Also, in the low band, where `hz` plus the mixer LO does not
+    ///   fit in a `u32` (libusdr's result there is undefined).
     /// - [`Error::PllFault`] if the LMS6002D reads back impossible PLL values.
     /// - Any bus failure.
     pub fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
@@ -284,7 +287,9 @@ impl Device {
     ///
     /// Selecting [`RxPath::Auto`] applies the band for the current frequency at once; before
     /// any frequency is set that is the low band, as in libusdr. Entering or leaving the
-    /// low band gates the mixer LO as tuning does (Si5332 output 3 alone).
+    /// low band gates the mixer LO as tuning does (Si5332 output 3 alone), but, as in
+    /// libusdr, does not retune the PLL: its LO stays off by the mixer LO until the next
+    /// [`Device::set_rx_frequency`] (or, in the low band, sample-rate change).
     ///
     /// # Errors
     ///

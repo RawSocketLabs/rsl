@@ -86,9 +86,12 @@ impl Board {
     ///
     /// Divergences, both where libusdr would divide by zero before any sample rate is set:
     /// the NCO lock fallback fails with [`Error::PllUnlocked`], and the filter is left
-    /// alone. On failure, the band change leaves state as libusdr does (see
-    /// [`Self::select_rx_band`]), but this call records the LO offset and the minimal LO
-    /// only once their writes succeed.
+    /// alone. A third, reachable only with the mixer band fixed: where `hz` plus the mixer
+    /// LO passes `u32::MAX`, libusdr converts the double sum to `unsigned`, which C leaves
+    /// undefined (x86 wraps it), and tunes that; this fails with
+    /// [`Error::UnsupportedFrequency`] before tuning. On failure, the band change leaves
+    /// state as libusdr does (see [`Self::select_rx_band`]), but this call records the LO
+    /// offset and the minimal LO only once their writes succeed.
     pub(crate) fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.rx.lo_hz = hz;
         // `_usdr_signal_event(USDR_RX_LO_CHANGED)`: power the receiver, ignoring a failure,
@@ -100,7 +103,8 @@ impl Board {
 
         self.rx.lo_offset_hz = 0;
         let lo = if self.rx.mixer_on {
-            hz.wrapping_add(self.mixer_lo_hz)
+            hz.checked_add(self.mixer_lo_hz)
+                .ok_or(Error::UnsupportedFrequency(hz))?
         } else {
             hz
         };

@@ -1,5 +1,12 @@
 //! rsl-usdr's RX stream (start, receive, stop) against libusdr's, operation for operation.
 
+// Only the Si5332 block and its address are used here; the fix itself is not.
+#[allow(
+    dead_code,
+    reason = "this test shares the module but not the band-crossing fix"
+)]
+#[path = "common/crossing.rs"]
+mod crossing;
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
@@ -7,14 +14,13 @@ use std::ffi::CStr;
 use std::ops::Range;
 use std::time::Duration;
 
+use crossing::{CLOCK, mixer_lo_block};
 use num_complex::Complex;
-use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxThrottle};
+use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim};
 use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
 
-/// The Si5332.
-const CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
 /// FPGA register latching GPO banks.
 const REG_GPO: u32 = 0;
 /// The RX DSP chain's configuration port.
@@ -40,8 +46,18 @@ enum Call {
     /// libusdr's `rx/phgaincorr` set to `value`; rsl-usdr's `set_rx_iq_correction`.
     IqCorrection(u64, RxIqCorrection),
 
+    /// libusdr's `rx/path` set to a string; rsl-usdr's `set_rx_path`.
+    Path(&'static CStr, RxPath),
+
     /// `start_rx_stream`: libusdr's create, START and sync "none", as one window.
     Start(u32),
+
+    /// As [`Call::Start`], where libusdr's baseband loop does nothing (see
+    /// [`without_baseband_loop`]).
+    StartWithIdleLoop(u32),
+
+    /// libusdr's `rx/dccorr` set to `value`; rsl-usdr's `set_rx_dc_trim`.
+    DcTrim(u64, RxTrim, RxTrim),
 
     /// `receive`, with a 100 ms timeout.
     Receive,
@@ -65,7 +81,16 @@ impl Call {
                 // SAFETY: `dev_m2_lm6_1_sdr_rx_phgaincorr_set` reads its value as a number.
                 unsafe { oracle.set_uint(c"/dm/sdr/0/rx/phgaincorr", value) }.is_ok()
             }
-            Self::Start(samples) => {
+            Self::Path(name, _) => {
+                // SAFETY: `dev_m2_lm6_1_sdr_rx_path_set` reads a value above 4096 as a
+                // string and keeps no reference to it.
+                unsafe { oracle.set_str(c"/dm/sdr/0/rx/path", name) }.is_ok()
+            }
+            Self::DcTrim(value, ..) => {
+                // SAFETY: `dev_m2_lm6_1_sdr_rx_dccorr_set` reads its value as a number.
+                unsafe { oracle.set_uint(c"/dm/sdr/0/rx/dccorr", value) }.is_ok()
+            }
+            Self::Start(samples) | Self::StartWithIdleLoop(samples) => {
                 oracle.create_rx_stream(samples).is_ok()
                     && oracle.start_rx_stream().is_ok()
                     && oracle.sync_free_run().is_ok()
@@ -88,7 +113,11 @@ impl Call {
             Self::Frequency(hz) => device.set_rx_frequency(hz),
             Self::Gain(_, _, gain) => device.set_rx_gain(gain),
             Self::IqCorrection(_, correction) => device.set_rx_iq_correction(correction),
-            Self::Start(samples) => device.start_rx_stream(samples),
+            Self::Path(_, path) => device.set_rx_path(path),
+            Self::DcTrim(_, i, q) => device.set_rx_dc_trim(i, q),
+            Self::Start(samples) | Self::StartWithIdleLoop(samples) => {
+                device.start_rx_stream(samples)
+            }
             Self::Receive => {
                 let mut samples = vec![Complex::new(0, 0); 1 << 16];
                 device
@@ -101,36 +130,6 @@ impl Call {
             }
         }
     }
-}
-
-/// libusdr's `si5332_set_port3_en` writes for an RX-only device: OUT3 on or off, READY,
-/// the power-downs, ACTIVE.
-fn mixer_lo_block(on: bool) -> [Op; 6] {
-    let write = |bytes: [u8; 2]| Op::I2c {
-        addr: CLOCK,
-        write: bytes.to_vec(),
-        read: Vec::new(),
-    };
-    if on {
-        [
-            [0xb6, 0x43],
-            [0x06, 0x01],
-            [0xba, 0x76],
-            [0xbb, 0x34],
-            [0xbc, 0x08],
-            [0x06, 0x02],
-        ]
-    } else {
-        [
-            [0xb6, 0x03],
-            [0x06, 0x01],
-            [0xba, 0x7e],
-            [0xbb, 0x3c],
-            [0xbc, 0x48],
-            [0x06, 0x02],
-        ]
-    }
-    .map(write)
 }
 
 /// The window without libusdr's mixer-off block, which the baseband loop's mixer-on left
@@ -151,15 +150,19 @@ fn without_owed_mixer_exit(window: &[Op]) -> Vec<Op> {
 /// reapplies each channel's LO as a baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX,
 /// .., rx_raw.lo[i])` in `usdr_device_m2_lm6_1_create_stream`), a bug that reselects the
 /// band, clamps the NCOs and bypasses the filter. rsl-usdr leaves it out. The cut runs from
-/// the calibration's last write to the DMA engine's status read; it must be non-empty and
-/// hold only what that loop does (LMS6002D SPI, GPO and PHY writes, Si5332 writes, sleeps),
-/// so nothing else can hide in it. The window between also holds libusdr's TX PLL retune
-/// when a TX LO is set; TX is not ported, so it never is, and the cut never hides one.
+/// the calibration's last write to the DMA engine's status read; it must hold only what
+/// that loop does (LMS6002D SPI, GPO and PHY writes, Si5332 writes, sleeps), so nothing
+/// else can hide in it, and be non-empty unless `idle_loop`. The window between also holds
+/// libusdr's TX PLL retune when a TX LO is set; TX is not ported, so it never is, and the
+/// cut never hides one.
+///
+/// With `idle_loop` the cut must be empty: untuned, with a wide or high path fixed, the
+/// loop selects no band and retunes to 0 Hz, which fails before any operation.
 ///
 /// Returns the trimmed window and whether the cut turned the board mixer on: with no
 /// frequency set, libusdr's loop selects the mixer band, and its next tune out of that band
 /// writes a mixer-off block rsl-usdr has no reason to (see [`without_owed_mixer_exit`]).
-fn without_baseband_loop(window: &[Op]) -> (Vec<Op>, bool) {
+fn without_baseband_loop(window: &[Op], idle_loop: bool) -> (Vec<Op>, bool) {
     let dma_reset = window
         .iter()
         .position(|op| matches!(op, Op::RegRead { addr, .. } if *addr == REG_RX_DMA_STATUS))
@@ -172,7 +175,11 @@ fn without_baseband_loop(window: &[Op]) -> (Vec<Op>, bool) {
         .expect("create calibrates first")
         + 1;
     let cut = &window[calibrated..dma_reset];
-    assert!(!cut.is_empty(), "libusdr's baseband loop ran");
+    assert_eq!(
+        cut.is_empty(),
+        idle_loop,
+        "libusdr's baseband loop operates unless the scenario says it idles"
+    );
     assert!(
         cut.iter().all(|op| matches!(
             op,
@@ -230,8 +237,9 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
             expected = without_owed_mixer_exit(&expected);
             owed_mixer_exit = false;
         }
-        if let Call::Start(_) = call {
-            let (trimmed, mixer_on) = without_baseband_loop(&expected);
+        if let Call::Start(_) | Call::StartWithIdleLoop(_) = call {
+            let idle_loop = matches!(call, Call::StartWithIdleLoop(_));
+            let (trimmed, mixer_on) = without_baseband_loop(&expected, idle_loop);
             expected = trimmed;
             owed_mixer_exit |= mixer_on;
         }
@@ -345,6 +353,68 @@ fn stream_creation_reapplies_the_rx_iq_correction_like_libusdr() {
             Call::Stop,
             Call::Start(1024),
             Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// A path fixed before the first tune holds through the default 320 MHz tune at stream
+/// creation. libusdr's baseband loop then selects no band and fails to retune at 0 Hz
+/// before any operation, so here the divergence has nothing to cut.
+#[test]
+fn a_path_fixed_before_tuning_holds_through_stream_creation_like_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Path(c"rxh", RxPath::High),
+            Call::StartWithIdleLoop(1024),
+            Call::Frequency(1_000_000_000),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// The DC calibration that starts a stream rewrites the mixer input with no I trim, as
+/// libusdr's does from a cache nothing sets; the Q trim register is not touched.
+#[test]
+fn stream_calibration_clears_the_i_dc_trim_like_libusdr() {
+    let trim = |code| RxTrim::new(code).expect("a seven-bit code");
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::DcTrim(0x0015_006a, trim(0x15), trim(0x6a)),
+            Call::Start(1024),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// The DC calibration that starts a stream runs the same with the RF loopback on.
+#[test]
+fn a_stream_starts_with_the_rf_loopback_on_like_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Path(c"rxw_lb", RxPath::WideLoopback),
+            Call::Start(1024),
+            Call::Stop,
+            Call::Path(c"auto", RxPath::Auto),
         ],
     );
     assert!(

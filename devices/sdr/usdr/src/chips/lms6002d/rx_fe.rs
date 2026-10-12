@@ -251,7 +251,8 @@ impl Register for ExternalLoad {
     const ADDR: Reg = Reg::ExternalLoad;
 }
 
-/// The Q channel's IP2 trim. Datasheet `IP2Q`, register 0x74.
+/// The Q channel's IP2 trim. Datasheet `IP2Q`, register 0x74. The YAML documents bits
+/// 6:0 only; bit 7 is written as 0, as libusdr's macro does.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Ip2TrimQ {

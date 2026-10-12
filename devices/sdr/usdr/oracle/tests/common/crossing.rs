@@ -25,11 +25,6 @@ pub(crate) enum Crossing {
 /// `OUT3_OE` (0xB6 bit 6) while ACTIVE. The block must be exactly libusdr's six writes for
 /// an RX-only device, so nothing else can hide in the cut.
 pub(crate) fn with_band_crossing_fix(window: &[Op]) -> (Vec<Op>, bool) {
-    let clock_write = |bytes: [u8; 2]| Op::I2c {
-        addr: CLOCK,
-        write: bytes.to_vec(),
-        read: Vec::new(),
-    };
     let Some(start) = window
         .iter()
         .position(|op| matches!(op, Op::I2c { addr, write, .. } if *addr == CLOCK && write.first() == Some(&0xb6)))
@@ -37,8 +32,28 @@ pub(crate) fn with_band_crossing_fix(window: &[Op]) -> (Vec<Op>, bool) {
         return (window.to_vec(), false);
     };
     let on = matches!(&window[start], Op::I2c { write, .. } if write[..] == [0xb6, 0x43]);
-    // OUT3 and OUT0/1 enabled (TX not running); READY; power-downs; ACTIVE.
-    let libusdr_block = if on {
+    let libusdr_block = mixer_lo_block(on);
+    let block = window
+        .get(start..start + libusdr_block.len())
+        .expect("libusdr's set_port3_en block is complete");
+    assert_eq!(
+        block, libusdr_block,
+        "libusdr's set_port3_en block is as expected"
+    );
+    let fixed = clock_write([0xb6, if on { 0xff } else { 0xbf }]);
+    let fixed_window = [
+        &window[..start],
+        &[fixed],
+        &window[start + libusdr_block.len()..],
+    ]
+    .concat();
+    (fixed_window, true)
+}
+
+/// libusdr's `si5332_set_port3_en` writes for an RX-only device: OUT3 (with OUT0/1, TX not
+/// running) on or off, READY, the power-downs, ACTIVE.
+pub(crate) fn mixer_lo_block(on: bool) -> [Op; 6] {
+    if on {
         [
             [0xb6, 0x43],
             [0x06, 0x01],
@@ -56,21 +71,15 @@ pub(crate) fn with_band_crossing_fix(window: &[Op]) -> (Vec<Op>, bool) {
             [0xbc, 0x48],
             [0x06, 0x02],
         ]
-    };
-    let block = window
-        .get(start..start + libusdr_block.len())
-        .expect("libusdr's set_port3_en block is complete");
-    assert_eq!(
-        block,
-        libusdr_block.map(clock_write),
-        "libusdr's set_port3_en block is as expected"
-    );
-    let fixed = clock_write([0xb6, if on { 0xff } else { 0xbf }]);
-    let fixed_window = [
-        &window[..start],
-        &[fixed],
-        &window[start + libusdr_block.len()..],
-    ]
-    .concat();
-    (fixed_window, true)
+    }
+    .map(clock_write)
+}
+
+/// A write of `[register, value]` to the Si5332.
+fn clock_write(bytes: [u8; 2]) -> Op {
+    Op::I2c {
+        addr: CLOCK,
+        write: bytes.to_vec(),
+        read: Vec::new(),
+    }
 }

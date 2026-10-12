@@ -448,13 +448,6 @@ impl Lms6002d {
     /// controls from the test-mode registers, both PAs go off, and the loopback stays on
     /// the LNA path active now even if the LNA changes later.
     pub(crate) fn enable_rf_loopback(&self, bus: &mut dyn Bus) -> Result<(), Error> {
-        // `LBRFEN` numbers the LNA paths as `LNASEL` does.
-        let path = match self.lna_control.active() {
-            Lna::None => 0,
-            Lna::Lna1 => 1,
-            Lna::Lna2 => 2,
-            Lna::Lna3 => 3,
-        };
         let mut regs = self.on(bus);
         regs.write(PowerDown::new().with_lna_off(true))?;
         regs.write(
@@ -464,7 +457,7 @@ impl Lms6002d {
         )?;
         regs.write(PaSelect::new())?;
         regs.write(ReferencePower::SELF_BIASED.with_rf_loopback_on(true))?;
-        regs.write(Loopback::new().with_rf_to_lna_path(u4::new(path)))
+        regs.write(Loopback::new().with_rf(self.lna_control.active().into()))
     }
 
     /// Undoes [`Self::enable_rf_loopback`] (`lms6002d_rf_loopback_dis`): the loopback
