@@ -178,6 +178,26 @@ pub enum Error {
     /// The Si5332 clock generator lost its input clock.
     #[error("Si5332 has no input clock")]
     ClockInputMissing,
+
+    /// A front-end board was selected or answered, but did not come up.
+    #[error("{board} front end failed: {reason}")]
+    #[non_exhaustive]
+    FrontEnd {
+        /// libusdr's name for the board, such as `"pciefe"`.
+        board: &'static str,
+
+        /// What went wrong.
+        reason: &'static str,
+    },
+
+    /// A front-end board answered whose bring-up this driver does not port; libusdr's
+    /// name for it.
+    #[error("{0} front end detected; its bring-up is not supported")]
+    UnsupportedFrontEnd(&'static str),
+
+    /// No front end with a working oscillator DAC is attached.
+    #[error("no front end with an oscillator DAC is attached")]
+    NoOscillatorDac,
 }
 
 /// The direction of a failed register access.

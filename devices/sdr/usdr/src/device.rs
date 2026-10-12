@@ -8,6 +8,7 @@ use rsl_deps::tracing::warn;
 
 use crate::board::{Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
 use crate::error::Error;
+use crate::frontend::{FrontEndKind, FrontEndSelection};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
@@ -40,6 +41,9 @@ pub struct DeviceBuilder<'a> {
 
     /// Where the clocks' reference comes from.
     reference: ReferenceClock,
+
+    /// Which front end to look for after power-up.
+    front_end: FrontEndSelection,
 }
 
 impl Device {
@@ -51,6 +55,7 @@ impl Device {
             thermal: ThermalPolicy::default(),
             cool_down: None,
             reference: ReferenceClock::Board,
+            front_end: FrontEndSelection::Auto,
         }
     }
 
@@ -90,6 +95,14 @@ impl Device {
     pub fn set_reference_clock(&mut self, reference: ReferenceClock) -> Result<(), Error> {
         reference.check()?;
         self.board().set_reference_clock(reference)
+    }
+
+    /// The front end the power-up probe brought up, if any. On a uSDR with nothing on its
+    /// connector this is the M.2-to-`PCIe` breakout without a DAC, as in libusdr: that board
+    /// cannot be told apart from no board.
+    #[must_use]
+    pub fn front_end(&self) -> Option<FrontEndKind> {
+        self.board.as_ref().and_then(Board::front_end)
     }
 
     /// Writes the gateware's clock-measurement control, raw (libusdr's
@@ -471,6 +484,14 @@ impl<'a> DeviceBuilder<'a> {
         self
     }
 
+    /// Looks for the front end `selection` names after power-up instead of probing every
+    /// board ([`FrontEndSelection::Auto`], libusdr's default; libusdr's `fe` option).
+    #[must_use]
+    pub fn front_end(mut self, selection: FrontEndSelection) -> Self {
+        self.front_end = selection;
+        self
+    }
+
     /// Enforces `policy` instead of [`ThermalPolicy::WithinSpec`].
     #[must_use]
     pub fn thermal(mut self, policy: ThermalPolicy) -> Self {
@@ -494,13 +515,16 @@ impl<'a> DeviceBuilder<'a> {
     }
 
     /// Identifies the board, confirms its temperature sensor, applies the thermal policy
-    /// before anything is powered, then powers the board up.
+    /// before anything is powered, powers the board up, then probes for a front end.
     ///
     /// # Errors
     ///
     /// - [`Error::UnsupportedReferenceClock`] for an unusable external reference, before
     ///   any bus access. On revision 3 with an external reference the oscillator stays off;
     ///   like libusdr, a Si5332 that then finds no input clock does not fail power-up.
+    /// - [`Error::FrontEnd`] if a selected front end does not come up, and
+    ///   [`Error::UnsupportedFrontEnd`] if one answers whose bring-up is not ported. As in
+    ///   libusdr, the board then stays powered: nothing powers it down.
     /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
     ///   at once, with the resume limit after a configured wait times out.
     /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.
@@ -512,6 +536,7 @@ impl<'a> DeviceBuilder<'a> {
             thermal,
             cool_down,
             reference,
+            front_end,
         } = self;
         reference.check()?;
         let mut identified = Board::identify(bus)?;
@@ -532,7 +557,8 @@ impl<'a> DeviceBuilder<'a> {
             );
             cool_down.wait(&mut identified, limits)?;
         }
-        let board = identified.power_up(reference)?;
+        let mut board = identified.power_up(reference)?;
+        board.probe_front_end(&front_end)?;
         Ok(Device {
             board: Some(board),
             thermal,
@@ -557,6 +583,7 @@ impl fmt::Debug for DeviceBuilder<'_> {
                 "cool_down",
                 &self.cool_down.as_ref().map(|cool_down| cool_down.timeout),
             )
+            .field("front_end", &self.front_end)
             .finish_non_exhaustive()
     }
 }

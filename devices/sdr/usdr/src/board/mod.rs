@@ -2,6 +2,7 @@
 
 mod board;
 mod correction;
+mod frontend;
 mod gain;
 mod path;
 mod power;

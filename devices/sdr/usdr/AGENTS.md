@@ -74,12 +74,19 @@ Each layer calls only the ones below it.
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
-  front end, DMA, sync), and the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
+  front end, DMA, sync), the M.2 connector's GPIO core (`fe_gpio`, register 3), and
+  the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash.rs`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
   `Device`, nothing powered) and reads the ID and contents; erase and write sit on the
   separate `Programmer` from `Flash::programmer`. Image headers and the update procedure
   are not ported (`PORTING.md`).
+- `src/frontend/`: public `rsl_usdr::frontend`, the boards libusdr probes on the M.2
+  connector (`device/device_fe.c`, `device/ext_*`), one module per board; their chips are
+  in `src/chips/` (TCA6416, TCA9555, DACx0501, LMK05318, LMK5C33216). `board/frontend.rs`
+  runs the probe at the end of power-up and owns the board that came up. Blocking code:
+  the probes interleave GPIO-core writes with I2C transfers the `Sequence` seam cannot
+  express.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
   sleeps only through `Bus::sleep`.
 - `src/dsp/`: public `rsl_usdr::dsp`, libusdr's host sample conversions and channel
@@ -165,8 +172,13 @@ Each layer calls only the ones below it.
   in its own change.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Currently not ported: front-end boards (`fe=`) and the remaining controls/TX/shared-library
-  domains in [PORTING.md](PORTING.md). The RX gain, path and correction controls
+- Front ends (`fe=`): the probe and the boards the uSDR admits follow libusdr's
+  `device_fe_probe`; boards whose bring-up is not ported fail the open when they answer
+  (`Error::UnsupportedFrontEnd`) instead of running half configured. The default `SimBoard`
+  has nothing on its connector, so both drivers end the probe at the M.2-to-PCIe breakout
+  without a DAC. See the front-end row of [PORTING.md](PORTING.md).
+- Currently not ported: the remaining controls/TX/shared-library domains in
+  [PORTING.md](PORTING.md). The RX gain, path and correction controls
   (`Device::set_rx_gain`, `set_rx_path`, `set_rx_dc_trim`, `set_rx_auto_dc_correction`,
   `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported.
   Their functional behaviours are in the approved phased scope; legacy environment

@@ -17,6 +17,7 @@ use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
 use crate::fpga::{Decimation, IqImbalance};
+use crate::frontend::FrontEnd;
 use crate::lowlevel::Bus;
 use crate::portable::power::RailPlan;
 use crate::reference::ReferenceClock;
@@ -68,6 +69,10 @@ pub(crate) struct Board {
 
     /// The RX stream, while one exists.
     pub(super) rx_stream: Option<RxStream>,
+
+    /// The front end on the M.2 connector, once the probe brought one up (libusdr's
+    /// `fe`).
+    pub(super) front_end: Option<FrontEnd>,
 }
 
 /// The receive chain's settings that later calls depend on, as libusdr tracks them.
@@ -148,6 +153,7 @@ impl fmt::Debug for Board {
             .field("rx", &self.rx)
             .field("rx_running", &self.rx_running)
             .field("rx_stream", &self.rx_stream)
+            .field("front_end", &self.front_end)
             .finish_non_exhaustive()
     }
 }

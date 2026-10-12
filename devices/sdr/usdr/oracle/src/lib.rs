@@ -775,6 +775,12 @@ unsafe extern "C" fn rsl_oracle_ls_op(
         LSOP_HWREG => hwreg(board, addr, input, output),
         // SPI addresses carry config in [31:16]; the bus is [7:0] (`SPIEXT_LSOP_GET_BUS`).
         LSOP_SPI => spi(board, addr & 0xff, input, output),
+        // The uSDR has one FPGA I2C core (`/ll/i2c/0`), and both transports reject any
+        // other instance (bits 31:24) with `-EINVAL` before reaching the bus: the PCIe
+        // kernel driver's and USB transport's `instance >= i2c_count` checks at the pinned
+        // commit (`pcie_uram/driver/usdr_pcie_uram.c`, `usb_uram/usb_uram_generic.c`, not
+        // vendored). Only `fe4ch4007200`'s probe addresses core 1.
+        LSOP_I2C_DEV if addr >> 24 != 0 => -EINVAL,
         LSOP_I2C_DEV => i2c(board, I2cAddress::from_lsop(addr), input, output),
         _ => -EOPNOTSUPP,
     })

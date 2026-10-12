@@ -290,6 +290,7 @@ impl Identified {
             rx: RxState::default(),
             rx_running: false,
             rx_stream: None,
+            front_end: None,
         })
     }
 }

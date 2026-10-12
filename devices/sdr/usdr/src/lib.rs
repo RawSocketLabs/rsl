@@ -123,6 +123,7 @@ pub mod dsp;
 mod error;
 pub mod flash;
 mod fpga;
+pub mod frontend;
 mod identity;
 pub mod lowlevel;
 mod portable;
@@ -134,6 +135,7 @@ pub mod transport;
 pub use board::{RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
+pub use frontend::{FrontEndKind, FrontEndSelection};
 pub use identity::Identity;
 pub use reference::ReferenceClock;
 pub use stream::{
