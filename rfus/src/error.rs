@@ -29,7 +29,9 @@ pub enum ParseUnitError {
     /// represented as a whole hertz value.
     #[error("'{0}' does not resolve to a whole Hz or S/s value")]
     NonInteger(String),
-    /// The numeric literal, scaled by its suffix, does not fit `u64`.
+    /// The numeric literal, scaled by its suffix, exceeds `u64`, or has more
+    /// digits than the exact `u128` intermediate arithmetic can hold (for
+    /// example a fraction with dozens of trailing zeros).
     #[error("'{value}' scaled to {unit} does not fit u64")]
     Overflow {
         /// Numeric literal as written, without its unit suffix.

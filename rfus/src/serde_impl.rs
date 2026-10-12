@@ -13,7 +13,7 @@ impl Serialize for Hertz {
     where
         S: Serializer,
     {
-        serializer.serialize_u64(self.hz())
+        serialize_scalar(self, serializer)
     }
 }
 
@@ -31,7 +31,7 @@ impl Serialize for FrequencyHz {
     where
         S: Serializer,
     {
-        serializer.serialize_u64(self.hz())
+        serialize_scalar(self, serializer)
     }
 }
 
@@ -68,30 +68,35 @@ impl<'de> Deserialize<'de> for FrequencyRange {
     where
         D: Deserializer<'de>,
     {
-        /// Explicit `{ lower, upper }` form; the only form binary formats carry.
+        /// Binary-format form: the `{ lower, upper }` struct as serialized.
         #[derive(Deserialize)]
         struct Endpoints {
             lower: FrequencyHz,
             upper: FrequencyHz,
         }
 
-        /// Human-readable forms: a range string or explicit endpoints.
+        /// Human-readable forms: a range string or an explicit `{ lower, upper }`
+        /// map. A struct variant, unlike a derived struct, rejects `[lower, upper]`.
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Repr {
             String(String),
-            Object(Endpoints),
+            Object {
+                lower: FrequencyHz,
+                upper: FrequencyHz,
+            },
         }
 
-        let Endpoints { lower, upper } = if deserializer.is_human_readable() {
+        let (lower, upper) = if deserializer.is_human_readable() {
             match Repr::deserialize(deserializer)? {
                 Repr::String(value) => {
                     return FrequencyRange::from_str(&value).map_err(de::Error::custom);
                 }
-                Repr::Object(endpoints) => endpoints,
+                Repr::Object { lower, upper } => (lower, upper),
             }
         } else {
-            Endpoints::deserialize(deserializer)?
+            let Endpoints { lower, upper } = Endpoints::deserialize(deserializer)?;
+            (lower, upper)
         };
         FrequencyRange::new(lower, upper).map_err(de::Error::custom)
     }
@@ -121,7 +126,7 @@ impl Serialize for SampleRateSps {
     where
         S: Serializer,
     {
-        serializer.serialize_u32(self.sps())
+        serialize_scalar(self, serializer)
     }
 }
 
@@ -132,6 +137,15 @@ impl<'de> Deserialize<'de> for SampleRateSps {
     {
         deserialize_scalar(deserializer)
     }
+}
+
+/// Serialize a scalar unit as its raw integer, in every format.
+fn serialize_scalar<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: NumberOrStringUnit,
+    S: Serializer,
+{
+    value.to_raw().serialize(serializer)
 }
 
 /// Deserialize a scalar unit: the raw integer it serializes as in binary formats,
@@ -151,10 +165,15 @@ where
 /// Scalar unit type that deserializes from either a raw integer or a human-readable string.
 trait NumberOrStringUnit: Sized {
     /// Integer type the unit serializes as; read directly in binary formats.
-    type Raw: DeserializeOwned + Into<u64>;
+    ///
+    /// This fixes the binary wire width, so changing it is a format break.
+    type Raw: Serialize + DeserializeOwned + Into<u64>;
 
     /// `expecting` text shown when the input is neither an integer nor a string.
     const EXPECTING: &'static str;
+
+    /// Return the raw integer the value serializes as.
+    fn to_raw(&self) -> Self::Raw;
 
     /// Build the value from a raw integer in the base unit.
     fn from_number<E>(value: u64) -> Result<Self, E>
@@ -217,6 +236,10 @@ impl NumberOrStringUnit for Hertz {
 
     const EXPECTING: &'static str = "a quantity as Hz number or human-readable string";
 
+    fn to_raw(&self) -> u64 {
+        self.hz()
+    }
+
     fn from_number<E>(value: u64) -> Result<Self, E>
     where
         E: de::Error,
@@ -237,6 +260,10 @@ impl NumberOrStringUnit for FrequencyHz {
 
     const EXPECTING: &'static str = "a frequency as Hz number or human-readable string";
 
+    fn to_raw(&self) -> u64 {
+        self.hz()
+    }
+
     fn from_number<E>(value: u64) -> Result<Self, E>
     where
         E: de::Error,
@@ -256,6 +283,10 @@ impl NumberOrStringUnit for SampleRateSps {
     type Raw = u32;
 
     const EXPECTING: &'static str = "a sample rate as S/s number or human-readable string";
+
+    fn to_raw(&self) -> u32 {
+        self.sps()
+    }
 
     fn from_number<E>(value: u64) -> Result<Self, E>
     where
@@ -304,7 +335,9 @@ impl Serialize for ScanTarget {
 }
 
 // `ScanTarget` stays untagged in every format, so it needs a self-describing
-// one (JSON, TOML, CBOR); bincode-style formats cannot carry it.
+// one (JSON, TOML, CBOR); bincode-style formats cannot carry it. Within CBOR or
+// MessagePack its buffered fields are read as human-readable, so nested range
+// strings still parse there.
 impl<'de> Deserialize<'de> for ScanTarget {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -237,9 +237,50 @@ fn serde_round_trips_hertz_like_the_other_scalars() {
 #[cfg(feature = "serde")]
 #[test]
 fn serde_rejects_empty_range_lists() {
+    let error = serde_json::from_str::<FrequencyRanges>("[]").unwrap_err();
+    assert!(
+        error.to_string().contains("at least one range"),
+        "an empty list must fail on the EmptyRanges rule, got: {error}"
+    );
     assert!(
         serde_json::from_str::<ScanTarget>(r#"{ "ranges": [] }"#).is_err(),
         "a scan target must carry at least one range"
+    );
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_rejects_sequence_form_ranges_in_json() {
+    assert!(
+        serde_json::from_str::<FrequencyRange>("[1000000, 2000000]").is_err(),
+        "0.1.0 accepted only a range string or a {{ lower, upper }} map"
+    );
+}
+
+/// Characterization: the JSON wire format as written by rfus 0.1.0 (verified
+/// byte-identical against 0.1.0 on 2026-10-12). Change these strings only with
+/// a deliberate, breaking format change.
+#[cfg(feature = "serde")]
+#[test]
+fn serde_json_output_matches_0_1_0() {
+    let range =
+        FrequencyRange::new(FrequencyHz::new(1_000_000), FrequencyHz::new(2_000_000)).unwrap();
+    assert_eq!(
+        serde_json::to_string(&range).unwrap(),
+        r#"{"lower":1000000,"upper":2000000}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&ScanTarget::Static(FrequencyHz::new(450_000_000))).unwrap(),
+        r#"{"static_frequency":450000000}"#
+    );
+    let ranges = ScanTarget::Ranges(FrequencyRanges::new(vec![range]).unwrap());
+    assert_eq!(
+        serde_json::to_string(&ranges).unwrap(),
+        r#"{"ranges":[{"lower":1000000,"upper":2000000}]}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&SampleRateSps::new(2_000_000)).unwrap(),
+        "2000000"
     );
 }
 
@@ -263,6 +304,7 @@ fn serde_checks_numeric_boundaries() {
 /// and non-self-describing binary formats.
 #[cfg(feature = "serde")]
 mod serde_formats {
+    use serde::de::Error as _;
     use serde::de::value::{Error, I64Deserializer, SeqDeserializer};
     use serde::de::{self, IntoDeserializer, Visitor};
     use serde::{Deserialize, Deserializer, forward_to_deserialize_any};
@@ -289,31 +331,51 @@ mod serde_formats {
 
     #[test]
     fn reads_scalars_and_ranges_from_binary_formats() {
-        let frequency = FrequencyHz::deserialize(BinaryFormat(vec![450_000_000])).unwrap();
+        let frequency = FrequencyHz::deserialize(BinaryFormat::u64s(&[450_000_000])).unwrap();
         assert_eq!(frequency.hz(), 450_000_000);
 
-        let bandwidth = Hertz::deserialize(BinaryFormat(vec![12_500])).unwrap();
+        let bandwidth = Hertz::deserialize(BinaryFormat::u64s(&[12_500])).unwrap();
         assert_eq!(bandwidth.hz(), 12_500);
 
-        let rate = SampleRateSps::deserialize(BinaryFormat(vec![2_000_000])).unwrap();
+        // 0.1.0 wrote sample rates with serialize_u32; the binary width is part of the format.
+        let rate = SampleRateSps::deserialize(BinaryFormat(vec![Word::U32(2_000_000)])).unwrap();
         assert_eq!(rate.sps(), 2_000_000);
+        assert!(
+            SampleRateSps::deserialize(BinaryFormat::u64s(&[2_000_000])).is_err(),
+            "sample rates must read a u32 in binary formats"
+        );
 
-        let range = FrequencyRange::deserialize(BinaryFormat(vec![1_000_000, 2_000_000])).unwrap();
+        let range =
+            FrequencyRange::deserialize(BinaryFormat::u64s(&[1_000_000, 2_000_000])).unwrap();
         assert_eq!(
             (range.lower().hz(), range.upper().hz()),
             (1_000_000, 2_000_000)
         );
 
         assert!(
-            FrequencyRange::deserialize(BinaryFormat(vec![2_000_000, 1_000_000])).is_err(),
+            FrequencyRange::deserialize(BinaryFormat::u64s(&[2_000_000, 1_000_000])).is_err(),
             "binary input must still enforce lower < upper"
         );
     }
 
     /// Stand-in for a non-self-describing binary format such as bincode: it is
-    /// not human-readable, rejects `deserialize_any`, and yields structs as
-    /// sequences.
-    struct BinaryFormat(Vec<u64>);
+    /// not human-readable, rejects `deserialize_any`, yields structs as
+    /// sequences, and rejects reading an integer at the wrong width.
+    struct BinaryFormat(Vec<Word>);
+
+    /// One fixed-width integer as a binary format would encode it.
+    #[derive(Clone, Copy)]
+    enum Word {
+        U32(u32),
+        U64(u64),
+    }
+
+    impl BinaryFormat {
+        /// Input made only of `u64` words.
+        fn u64s(values: &[u64]) -> Self {
+            Self(values.iter().copied().map(Word::U64).collect())
+        }
+    }
 
     impl<'de> Deserializer<'de> for BinaryFormat {
         type Error = Error;
@@ -325,11 +387,17 @@ mod serde_formats {
         }
 
         fn deserialize_u64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-            visitor.visit_u64(self.0[0])
+            match self.0[0] {
+                Word::U64(value) => visitor.visit_u64(value),
+                Word::U32(_) => Err(Error::custom("expected a u64 word, found u32")),
+            }
         }
 
         fn deserialize_u32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-            visitor.visit_u32(u32::try_from(self.0[0]).map_err(de::Error::custom)?)
+            match self.0[0] {
+                Word::U32(value) => visitor.visit_u32(value),
+                Word::U64(_) => Err(Error::custom("expected a u32 word, found u64")),
+            }
         }
 
         fn deserialize_struct<V: Visitor<'de>>(
@@ -338,7 +406,7 @@ mod serde_formats {
             _: &'static [&'static str],
             visitor: V,
         ) -> Result<V::Value, Error> {
-            let fields = self.0.into_iter().map(|value| BinaryFormat(vec![value]));
+            let fields = self.0.into_iter().map(|word| BinaryFormat(vec![word]));
             visitor.visit_seq(SeqDeserializer::new(fields))
         }
 
