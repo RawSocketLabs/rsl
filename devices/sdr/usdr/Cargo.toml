@@ -28,8 +28,11 @@ rsl-usb = { workspace = true, optional = true }
 rsl-usdr-sim.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-# Readiness-runner proof over a fake source; no Mio dependency in production/core APIs.
-mio.workspace = true
+# Readiness-runner proofs; no Mio dependency in production/core APIs until a native driver
+# is wired in. The native pilot's fake registers a raw socket and its queues use rsl-usb's
+# readiness.
+mio = { workspace = true, features = ["os-ext"] }
+rsl-usb = { workspace = true, features = ["mio"] }
 
 [lints]
 workspace = true

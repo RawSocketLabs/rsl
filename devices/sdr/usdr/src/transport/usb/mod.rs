@@ -33,6 +33,10 @@
 
 mod bus;
 mod i2c;
+// Private command/IRQ pilot: test-only, so it adds no production Mio dependency, until a
+// native driver handle is wired to it.
+#[cfg(test)]
+mod native;
 mod protocol;
 mod rx;
 

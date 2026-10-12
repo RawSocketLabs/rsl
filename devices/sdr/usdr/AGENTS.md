@@ -13,7 +13,8 @@ Mio reactor are the primary execution model; managed synchronous/asynchronous dr
 opt-in. The first private temperature/USB-I²C execution pilot is implemented; native
 nonblocking attachment and public driver/stream handles remain unimplemented. Generic USB
 now offers bounded reap/filed-only completion primitives and an exclusive Mio `Readiness`
-(`rsl-usb` feature `mio`) that no uSDR adapter consumes yet; cancellation remains an owned-worker
+(`rsl-usb` feature `mio`), consumed by the test-only `transport/usb/native` command/IRQ
+pilot, which is not wired into `UsbBus`; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. Native executor/worker supervision is
 still open. The private `src/portable` production tree is shared unchanged with an unpublished
 no_std + alloc compilation fixture; the public driver remains std-dependent. No hardware
@@ -75,8 +76,13 @@ Each layer calls only the ones below it.
   those shared machines. The actual `Device::temperature`/`UsbBus::i2c` paths execute these
   through the existing blocking pump. `execution_tests.rs` proves the same machines
   with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
-  bounded synthetic RX loans. It does not establish native readiness/cancellation,
-  independent public RX/TX handles, token retirement/fairness or browser integration.
+  bounded synthetic RX loans. `native/` (test-only until a driver handle uses it) runs the
+  I²C machine over `rsl_usb::Readiness`: the reactor only registers, schedules and
+  observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
+  and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
+  the adapter keeps the shared Waker open for the worker's final wake. Its tests use a
+  socket source, not usbfs, and do not establish public RX/TX handles, fairness or browser
+  integration.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
