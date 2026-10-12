@@ -3,8 +3,8 @@
 
 use bnb::BitEnum;
 
+use super::super::register::Register;
 use super::reg::Reg;
-use crate::chips::register::Register;
 
 /// The operating state the device is commanded into (write-only). `USYS_CTRL`, 0x06.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

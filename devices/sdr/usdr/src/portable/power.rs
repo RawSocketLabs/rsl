@@ -3,76 +3,14 @@
 //! `hw/tps6381x/tps6381x.c`).
 //!
 //! [`PowerRails`] yields one single-byte I²C register access at a time and takes its
-//! outcome back. The blocking driver and any other executor run the same machine, so the
+//! outcome back (a [`Sequence`]). The blocking driver and any other executor run the same machine, so the
 //! sequence exists once. The board chooses the setpoints ([`RailPlan`]).
 
 use super::address::I2cAddr;
 use super::lp8758::{self, Buck, BuckControl, BuckVoltage, Config, Revision};
 use super::register::{IndexedRegister, Register};
+use super::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use super::tps6381x::{self, Control, DeviceId, OutputVoltage, Vsel};
-
-/// One single-byte register access on an I²C chip.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RegisterAccess {
-    /// Write the register address, then read one byte.
-    Read {
-        /// Where the chip answers.
-        dev: I2cAddr,
-        /// The register.
-        reg: u8,
-    },
-    /// Write the register address and one byte.
-    Write {
-        /// Where the chip answers.
-        dev: I2cAddr,
-        /// The register.
-        reg: u8,
-        /// The byte written.
-        value: u8,
-    },
-}
-
-impl RegisterAccess {
-    /// Reads `reg` on `dev`.
-    fn read(dev: I2cAddr, reg: impl Into<u8>) -> Self {
-        Self::Read {
-            dev,
-            reg: reg.into(),
-        }
-    }
-
-    /// Writes an `(address, byte)` entry on `dev`.
-    fn write<M: Into<u8>>(dev: I2cAddr, (reg, value): (M, u8)) -> Self {
-        Self::Write {
-            dev,
-            reg: reg.into(),
-            value,
-        }
-    }
-}
-
-/// Why a register sequence stopped. `E` is the executor's transport error, kept unchanged.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum SequenceFailure<E> {
-    /// The access failed in the executor's transport.
-    Transport {
-        /// The chip's name.
-        chip: &'static str,
-        /// The access that failed.
-        access: RegisterAccess,
-        /// The executor's error.
-        source: E,
-    },
-    /// A chip identified itself with an unexpected ID.
-    ChipId {
-        /// The chip's name.
-        chip: &'static str,
-        /// The ID the sequence requires.
-        expected: u32,
-        /// The ID read.
-        found: u32,
-    },
-}
 
 /// The board's choices for its rails.
 #[derive(Clone, Copy, Debug)]
@@ -146,7 +84,7 @@ impl PowerRails {
     }
 
     /// The access to perform next; `None` once the rails are up or a step failed.
-    pub(crate) fn next(&self) -> Option<RegisterAccess> {
+    pub(crate) fn access(&self) -> Option<RegisterAccess> {
         let plan = &self.plan;
         let (pmic, boost) = (plan.pmic, plan.boost);
         Some(match self.step {
@@ -176,7 +114,7 @@ impl PowerRails {
     /// write. A failure ends the sequence. An outcome with no access pending is ignored,
     /// like a duplicate.
     pub(crate) fn complete<E>(&mut self, result: Result<u8, E>) -> Result<(), SequenceFailure<E>> {
-        let Some(access) = self.next() else {
+        let Some(access) = self.access() else {
             return Ok(());
         };
         let chip = self.chip();
@@ -246,6 +184,16 @@ impl PowerRails {
     }
 }
 
+impl Sequence for PowerRails {
+    fn next(&self) -> Option<SequenceAction> {
+        self.access().map(SequenceAction::Access)
+    }
+
+    fn complete<E>(&mut self, result: Result<u8, E>) -> Result<(), SequenceFailure<E>> {
+        PowerRails::complete(self, result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,7 +237,7 @@ mod tests {
             accesses: [None; 16],
             len: 0,
         };
-        while let Some(access) = rails.next() {
+        while let Some(access) = rails.access() {
             log.accesses[log.len] = Some(access);
             log.len += 1;
             let byte = match access {
@@ -323,7 +271,11 @@ mod tests {
                 .all(|access| matches!(access, RegisterAccess::Read { .. })),
             "nothing is written to an unrecognised PMIC"
         );
-        assert_eq!(rails.next(), None, "a failed sequence issues nothing more");
+        assert_eq!(
+            rails.access(),
+            None,
+            "a failed sequence issues nothing more"
+        );
     }
 
     #[test]
@@ -367,20 +319,20 @@ mod tests {
                 source: "bus down",
             })
         );
-        assert_eq!(rails.next(), None);
+        assert_eq!(rails.access(), None);
     }
 
     #[test]
     fn a_failed_boost_write_names_the_boost_converter() {
         let mut rails = PowerRails::new(plan());
         // The PMIC steps and the boost DEVID read succeed; CONTROL is pending.
-        while rails.next()
+        while rails.access()
             != Some(RegisterAccess::Read {
                 dev: I2cAddr::new(0, 0x75),
                 reg: 0x03,
             })
         {
-            let byte = match rails.next() {
+            let byte = match rails.access() {
                 Some(RegisterAccess::Read { reg: 0x00, .. }) => 0x01,
                 Some(RegisterAccess::Read { reg: 0x01, .. }) => 0xe0,
                 _ => 0,
@@ -403,7 +355,7 @@ mod tests {
         let mut rails = PowerRails::new(plan());
         let (log, outcome) = run(&mut rails, &GOOD_IDS);
         assert_eq!(outcome, Ok(()));
-        assert_eq!(rails.next(), None, "the rails are up");
+        assert_eq!(rails.access(), None, "the rails are up");
         let controls = log.iter().filter_map(|access| match access {
             RegisterAccess::Write { dev, reg, .. }
                 if dev == I2cAddr::new(0, 0x60) && [2, 4, 6, 8].contains(&reg) =>
@@ -421,6 +373,6 @@ mod tests {
             Ok(()),
             "a late outcome is ignored"
         );
-        assert_eq!(rails.next(), None);
+        assert_eq!(rails.access(), None);
     }
 }

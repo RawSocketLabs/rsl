@@ -16,7 +16,9 @@ use portable::address::{I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
 use portable::clock::Layout;
 use portable::error::Failure;
 use portable::lp8758::{BuckControl, BuckVoltage, Config};
-use portable::power::{PowerRails, RailPlan, RegisterAccess, SequenceFailure};
+use portable::power::{PowerRails, RailPlan};
+use portable::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use portable::si5332::{ClockSequence, LvpeclOutput, Reference};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
 use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
@@ -160,7 +162,7 @@ pub fn power_rails(reads: &[u8]) -> Result<usize, &'static str> {
     });
     let mut reads = reads.iter().copied();
     let mut completed = 0;
-    while let Some(access) = rails.next() {
+    while let Some(access) = rails.access() {
         let byte = match access {
             RegisterAccess::Read { .. } => reads.next().ok_or("missing read")?,
             RegisterAccess::Write { value, .. } => value,
@@ -168,18 +170,90 @@ pub fn power_rails(reads: &[u8]) -> Result<usize, &'static str> {
         rails
             .complete::<Infallible>(Ok(byte))
             .map_err(|failure| match failure {
-                SequenceFailure::ChipId { chip, .. } | SequenceFailure::Transport { chip, .. } => {
-                    chip
-                }
+                SequenceFailure::ChipId { chip, .. }
+                | SequenceFailure::Transport { chip, .. }
+                | SequenceFailure::ChipMissing { chip } => chip,
+                SequenceFailure::ClockInputMissing => "no input clock",
             })?;
         completed += 1;
     }
     Ok(completed)
 }
 
+/// Runs the real Si5332 power-up program and state wait for a revision 3 board (on-board
+/// oscillator, output 0 LVPECL) or an earlier one, answering identification reads with
+/// `id` and state polls with `state`; returns the actions taken.
+///
+/// # Errors
+///
+/// `"missing"`, `"no input clock"` or the failing chip's name.
+pub fn clock_power_up(rev3: bool, id: u8, state: u8) -> Result<usize, &'static str> {
+    let dev = I2cAddr::new(0, 0x6a);
+    let (reference, lvpecl) = if rev3 {
+        (Reference::Oscillator, LvpeclOutput::Out0)
+    } else {
+        (Reference::Input2, LvpeclOutput::Out1)
+    };
+    let mut program = ClockSequence::program(dev, 1, reference, lvpecl);
+    let mut actions = drive(&mut program, id, state)?;
+    actions += drive(&mut ClockSequence::wait_active(dev), id, state)?;
+    Ok(actions)
+}
+
+/// Runs the real Si5332 sample-clock plan for `out_hz` from the 26 MHz reference.
+///
+/// # Errors
+///
+/// `"no plan"` for an unreachable rate, else as [`clock_power_up`].
+pub fn clock_layout(out_hz: u32, state: u8) -> Result<usize, &'static str> {
+    let layout = Layout::new(26_000_000, out_hz).ok_or("no plan")?;
+    let dev = I2cAddr::new(0, 0x6a);
+    drive(
+        &mut ClockSequence::layout(dev, &layout, LvpeclOutput::Out0, 8),
+        0,
+        state,
+    )
+}
+
+/// Drives one sequence to its end with scripted reads; waits pass at once.
+fn drive(sequence: &mut impl Sequence, id: u8, state: u8) -> Result<usize, &'static str> {
+    let mut actions = 0;
+    while let Some(action) = sequence.next() {
+        let byte = match action {
+            SequenceAction::Access(RegisterAccess::Read { reg: 0x07, .. }) => state,
+            SequenceAction::Access(RegisterAccess::Read { .. }) => id,
+            SequenceAction::Access(RegisterAccess::Write { value, .. }) => value,
+            SequenceAction::Sleep(_) => 0,
+        };
+        sequence
+            .complete::<Infallible>(Ok(byte))
+            .map_err(|failure| match failure {
+                SequenceFailure::ChipMissing { .. } => "missing",
+                SequenceFailure::ClockInputMissing => "no input clock",
+                SequenceFailure::ChipId { chip, .. } | SequenceFailure::Transport { chip, .. } => {
+                    chip
+                }
+            })?;
+        actions += 1;
+    }
+    Ok(actions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_exact_source_witness_runs_the_pinned_clock_sequences() {
+        // Nine identification reads, the supply read, one wait and poll, 49 writes; then
+        // one wait and poll.
+        assert_eq!(clock_power_up(true, 0x00, 0x02), Ok(63));
+        assert_eq!(clock_power_up(false, 0x00, 0x02), Ok(63));
+        assert_eq!(clock_power_up(true, 0xff, 0x02), Err("missing"));
+        assert_eq!(clock_power_up(true, 0x00, 0x89), Err("no input clock"));
+        // A wait and poll, 25 writes, then another wait and poll.
+        assert_eq!(clock_layout(20_000_000, 0x02), Ok(29));
+    }
 
     #[test]
     fn the_exact_source_witness_runs_the_pinned_power_rail_sequence() {

@@ -9,11 +9,13 @@ use rsl_deps::tracing::{debug, warn};
 use super::Board;
 use super::board::{Chains, RxState};
 use crate::chips::lms6002d::{Lms6002d, Lna, PowerAmp};
+use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference};
 use crate::error::Error;
 use crate::fpga::{Gpi, Gpo, Hwid};
 use crate::lowlevel::Bus;
-use crate::portable::power::{PowerRails, RegisterAccess};
+use crate::portable::power::PowerRails;
+use crate::portable::si5332::ClockSequence;
 use crate::thermal::Thermometer;
 
 /// A board identified and held in reset, before anything is powered: where the thermal
@@ -121,22 +123,9 @@ impl Identified {
     }
 
     /// Checks the PMIC and boost converter and brings up their rails ([`Board::RAILS`]),
-    /// running the portable machine one register access at a time.
+    /// running the portable machine.
     fn power_rails(&mut self) -> Result<(), Error> {
-        let mut rails = PowerRails::new(Board::RAILS);
-        while let Some(access) = rails.next() {
-            let result = match access {
-                RegisterAccess::Read { dev, reg } => {
-                    let mut byte = [0];
-                    self.bus.i2c(dev, &[reg], &mut byte).map(|()| byte[0])
-                }
-                RegisterAccess::Write { dev, reg, value } => {
-                    self.bus.i2c(dev, &[reg, value], &mut []).map(|()| value)
-                }
-            };
-            rails.complete(result)?;
-        }
-        Ok(())
+        run_sequence(self.bus.as_mut(), &mut PowerRails::new(Board::RAILS))
     }
 
     /// Programs the clock generator; on revision 3, then starts the on-board oscillator.
@@ -172,10 +161,14 @@ impl Identified {
         reference: Reference,
         lvpecl: LvpeclOutput,
     ) -> Result<(), Error> {
-        Board::CLOCK.program(bus, 1, reference, lvpecl)?;
+        let clock = Board::CLOCK.dev();
+        run_sequence(
+            bus,
+            &mut ClockSequence::program(clock, 1, reference, lvpecl),
+        )?;
         // libusdr reads FPGA register 0xC here and ignores the result; kept so traces line up.
         let _ = bus.read_regs(0xc, &mut [0]);
-        Board::CLOCK.wait_active(bus)
+        run_sequence(bus, &mut ClockSequence::wait_active(clock))
     }
 
     /// Powers the RF section and releases the LMS6002D from reset.

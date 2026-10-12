@@ -4,6 +4,29 @@
 use crate::error::{BusContext, Error};
 use crate::lowlevel::{Bus, I2cAddr};
 pub(crate) use crate::portable::register::{IndexedRegister, Register};
+use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
+
+/// Runs a portable register sequence to its end over `bus`, one action at a time: the
+/// blocking executor, so the sequence's operations reach the bus exactly as written.
+pub(crate) fn run_sequence(bus: &mut dyn Bus, sequence: &mut impl Sequence) -> Result<(), Error> {
+    while let Some(action) = sequence.next() {
+        let result = match action {
+            SequenceAction::Access(RegisterAccess::Read { dev, reg }) => {
+                let mut byte = [0];
+                bus.i2c(dev, &[reg], &mut byte).map(|()| byte[0])
+            }
+            SequenceAction::Access(RegisterAccess::Write { dev, reg, value }) => {
+                bus.i2c(dev, &[reg, value], &mut []).map(|()| value)
+            }
+            SequenceAction::Sleep(duration) => {
+                bus.sleep(duration);
+                Ok(0)
+            }
+        };
+        sequence.complete(result)?;
+    }
+    Ok(())
+}
 
 /// A chip whose byte-wide registers sit behind an I2C device with an auto-incrementing
 /// register pointer. Visible only to chip modules, so board code reaches the registers
@@ -25,7 +48,8 @@ pub(in crate::chips) trait I2cChip {
     }
 }
 
-/// An [`I2cChip`]'s registers bound to a bus for one operation; it reads and writes.
+/// An [`I2cChip`]'s registers bound to a bus for one operation; it writes. Reads run in
+/// portable sequences.
 pub(in crate::chips) struct I2cWriter<'a> {
     /// Where the chip answers.
     dev: I2cAddr,
@@ -38,11 +62,6 @@ pub(in crate::chips) struct I2cWriter<'a> {
 }
 
 impl I2cWriter<'_> {
-    /// Reads a typed register.
-    pub(in crate::chips) fn read<R: Register>(&mut self) -> Result<R, Error> {
-        self.read_raw(R::ADDR).map(R::from)
-    }
-
     /// Writes a typed register.
     pub(in crate::chips) fn write<R: Register>(&mut self, value: R) -> Result<(), Error> {
         self.write_raw(R::ADDR, value.into())
@@ -55,16 +74,6 @@ impl I2cWriter<'_> {
         value: R,
     ) -> Result<(), Error> {
         self.write_raw(R::addr(index), value.into())
-    }
-
-    /// Reads a register as a byte.
-    pub(in crate::chips) fn read_raw(&mut self, reg: impl Into<u8>) -> Result<u8, Error> {
-        let reg = reg.into();
-        let mut value = [0];
-        self.bus
-            .i2c(self.dev, &[reg], &mut value)
-            .reading(self.chip, reg)?;
-        Ok(value[0])
     }
 
     /// Writes a register as a byte.

@@ -14,9 +14,11 @@ use super::Board;
 use super::board::Chains;
 use super::tune::RxBand;
 use crate::chips::lp8758::Buck;
+use crate::chips::register::run_sequence;
 use crate::chips::si5332::Layout;
 use crate::error::Error;
 use crate::fpga::{Decimation, Nco, Phy};
+use crate::portable::si5332::ClockSequence;
 
 impl Board {
     /// Highest sample rate, in S/s (`RATE_MAX`).
@@ -72,12 +74,13 @@ impl Board {
 
         self.power_rx()?;
         let bus = self.bus.as_mut();
-        Self::CLOCK.set_layout(
-            bus,
+        let mut clocks = ClockSequence::layout(
+            Self::CLOCK.dev(),
             &layout,
             Self::lvpecl(self.rev3),
             Self::MIXER_LO_DIVIDER,
-        )?;
+        );
+        run_sequence(bus, &mut clocks)?;
         self.mixer_lo_hz = layout.vco_hz() / u32::from(Self::MIXER_LO_DIVIDER);
 
         if self.chains.rx && self.rx.decimation != Some(decimation) {

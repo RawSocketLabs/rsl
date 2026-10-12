@@ -10,27 +10,27 @@
 //! frequency and logic standard. A clock passes through these stages:
 //!
 //! 1. **Input.** The reference comes from the crystal-oscillator pins or a clock input;
-//!    [`PllReference`](input::PllReference) picks which feeds the PLL.
-//!    [`InputMode`](input::InputMode) sets how clock input 2 is received.
+//!    `PllReference` picks which feeds the PLL.
+//!    `InputMode` sets how clock input 2 is received.
 //! 2. **PLL.** The PLL locks its VCO, somewhere in 2.375–2.625 GHz, to the reference.
 //! 3. **Dividers.** Five high-speed dividers split the VCO by integers. Two interpolative dividers
 //!    split it by fractions, and can add spread spectrum
-//!    ([`SpreadSpectrum`](divider::SpreadSpectrum)).
+//!    (`SpreadSpectrum`).
 //! 4. **Output mux.** Each output takes either a divider's clock or, bypassing the PLL, the
-//!    reference itself ([`OutputSource`](output::OutputSource)).
-//! 5. **Output stage.** Each output divides again ([`Divider`](output::Divider)), can be delayed
-//!    ([`Skew`](output::Skew)) or inverted ([`Polarity`](output::Polarity)), and drives its pins as
-//!    CMOS, LVDS, LVPECL or HCSL ([`DriverMode`](output::DriverMode),
-//!    [`CmosDrive`](output::CmosDrive)).
+//!    reference itself (`OutputSource`).
+//! 5. **Output stage.** Each output divides again (`Divider`), can be delayed
+//!    (`Skew`) or inverted (`Polarity`), and drives its pins as
+//!    CMOS, LVDS, LVPECL or HCSL (`DriverMode`,
+//!    `CmosDrive`).
 //!
-//! Unused stages can be powered down ([`InputPowerDown`](input::InputPowerDown),
-//! [`DividerPowerDown`](divider::DividerPowerDown), [`SourcePowerDown`](output::SourcePowerDown)
+//! Unused stages can be powered down (`InputPowerDown`,
+//! `DividerPowerDown`, `SourcePowerDown`
 //! and the output power-down registers).
 //!
 //! # The READY/ACTIVE state machine
 //!
-//! The chip runs in one of two states, requested through [`RequestedState`](state::RequestedState)
-//! and reported in [`CurrentState`](state::CurrentState): READY, for changing the configuration,
+//! The chip runs in one of two states, requested through `RequestedState`
+//! and reported in `CurrentState`: READY, for changing the configuration,
 //! and ACTIVE, for running it. libusdr's init and sample-rate plans request READY, write, then
 //! request ACTIVE, and poll the state until it reads READY, ACTIVE or "no input clock".
 //! Skyworks' Si5332 Reference Manual (rev 0.6, register-table notes) says the chip drives no
@@ -47,26 +47,22 @@
 //!
 //! # How the driver uses it
 //!
-//! At power-up, [`Si5332::program`] checks a Si5332 answers, then writes a plan that routes
+//! At power-up, `ClockSequence::program` checks a Si5332 answers, then writes a plan that routes
 //! the reference straight to outputs 0 to 2 and turns the rest off; the PLL is not yet used.
-//! [`Si5332::wait_active`] then waits for the chip to run. On revision 3 the reference
+//! `ClockSequence::wait_active` then waits for the chip to run. On revision 3 the reference
 //! oscillator starts only after this, so the chip may report no input clock; the board
 //! sequence tolerates exactly that error. Setting a sample rate then usually moves the sample
-//! clocks onto the PLL with [`Si5332::set_layout`], whose divider plan is a [`Layout`].
+//! clocks onto the PLL with `ClockSequence::layout`, whose divider plan is a [`Layout`].
 //! Tuning into or out of the mixer band switches output 3 with [`Si5332::set_mixer_lo`].
 //!
 //! # Register map
 //!
-//! One flat address space ([`reg`]); the value types are split by stage, as above: [`input`],
-//! [`divider`], [`output`], and the [`state`] machine.
+//! One flat address space; the address map, the value types (split by stage, as above) and
+//! the sequence machines live in the portable core (`crate::portable::si5332`).
 
-mod divider;
-mod input;
 mod layout;
-mod output;
-mod reg;
 mod si5332;
-mod state;
 
+pub(crate) use crate::portable::si5332::{LvpeclOutput, Reference};
 pub(crate) use layout::Layout;
-pub(crate) use si5332::{LvpeclOutput, Reference, Si5332};
+pub(crate) use si5332::Si5332;

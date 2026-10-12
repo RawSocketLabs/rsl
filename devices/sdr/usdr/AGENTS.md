@@ -50,7 +50,7 @@ Each layer calls only the ones below it.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX) and the executors
-  that run migrated ones from `src/portable/` (power rails so far). `board/board.rs` holds
+  that run migrated ones from `src/portable/` (power rails and Si5332 clocks so far). `board/board.rs` holds
   the `Board` struct, its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
   file (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay with
@@ -61,7 +61,8 @@ Each layer calls only the ones below it.
   libusdr's `I2C_DEV_*`). Setpoints and policy stay in `src/board/`; a sequence is in
   `src/board/` until it migrates to a portable machine. A chip whose values a portable
   machine uses keeps its address map, value types and ID facts in `src/portable/<chip>/`
-  (LP8758, TPS6381x, TMP114); `src/chips/<chip>/` then keeps the docs, address and driver.
+  (LP8758, TPS6381x, Si5332, TMP114); `src/chips/<chip>/` then keeps the docs, address and
+  driver.
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), and the RX stream engine (`stream`:
   front end, DMA, sync).
@@ -71,9 +72,12 @@ Each layer calls only the ones below it.
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
-- `src/portable/`: platform-independent addresses, the typed-register traits, TMP114
-  values/temperature operation, LP8758/TPS6381x register values and the power-rail
-  machine (`power.rs`), Si5332 divider maths and USB framing/I²C state machine. Uses core
+- `src/portable/`: platform-independent addresses, the typed-register traits, the
+  sequence seam (`sequence.rs`: register reads/writes and waits, one action at a time),
+  TMP114 values/temperature operation, LP8758/TPS6381x register values and the power-rail
+  machine (`power.rs`), Si5332 register values, divider maths and clock machines
+  (`si5332/sequence.rs`), and USB framing/I²C state machine. `chips::register::run_sequence`
+  is the blocking executor. Uses core
   types and generic executor errors; no OS/runtime ownership. Keep imports within the
   portable tree. Sequences move here as hand-written explicit state machines (decided
   2026-10-12, over async sequences); the blocking path runs the same machine through a

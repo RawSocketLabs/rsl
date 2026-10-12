@@ -3,7 +3,7 @@
 use std::fmt;
 
 use crate::lowlevel::BusError;
-use crate::portable::power::{RegisterAccess, SequenceFailure};
+use crate::portable::sequence::{RegisterAccess, SequenceFailure};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -194,7 +194,7 @@ impl<T> BusContext<T> for Result<T, BusError> {
     }
 }
 
-/// A failed power-rail step, with the register or chip ID it names.
+/// A failed portable register sequence, with the register or chip it names.
 impl From<SequenceFailure<BusError>> for Error {
     fn from(failure: SequenceFailure<BusError>) -> Self {
         match failure {
@@ -223,6 +223,8 @@ impl From<SequenceFailure<BusError>> for Error {
                 expected,
                 found,
             },
+            SequenceFailure::ChipMissing { chip } => Self::ChipMissing(chip),
+            SequenceFailure::ClockInputMissing => Self::ClockInputMissing,
         }
     }
 }

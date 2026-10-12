@@ -3,8 +3,8 @@
 
 use bnb::{bitfield, u2};
 
+use super::super::register::{IndexedRegister, Register};
 use super::reg::Reg;
-use crate::chips::register::{IndexedRegister, Register};
 
 /// The interpolative dividers' spread-spectrum banks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

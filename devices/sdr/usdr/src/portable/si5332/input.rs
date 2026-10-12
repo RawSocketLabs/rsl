@@ -3,8 +3,8 @@
 
 use bnb::{BitEnum, bitfield, u5, u6};
 
+use super::super::register::{IndexedRegister, Register};
 use super::reg::Reg;
-use crate::chips::register::{IndexedRegister, Register};
 
 /// The PLL's reference input. `IMUX_SEL`, 0x24 (libusdr's `IMUX_*` values).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

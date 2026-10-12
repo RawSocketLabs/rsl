@@ -10,7 +10,7 @@ use bnb::BitEnum;
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u8, closed)]
 #[repr(u8)]
-pub(super) enum Reg {
+pub(crate) enum Reg {
     /// Supply status flags (`VDDO_OK`, `VDD_XTAL_OK`), read for diagnostics only. `VDD_OK`,
     /// 0x05.
     SupplyStatus = 0x05,
