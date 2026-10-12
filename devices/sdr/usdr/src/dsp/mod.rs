@@ -38,12 +38,21 @@
 //! last value as the low byte, then the high byte shifted down four bits, which libusdr's
 //! own unpacking of a lone value does not invert.
 //!
-//! The code uses only `core`, so it can join the portable tree unchanged.
+//! The conversion code uses only `core`, so it can join the portable tree unchanged.
+//!
+//! Spectrum and demodulation kernels, from libusdr's other `xdsp` files, are in
+//! [`window`], [`fftad`], [`rtsa`] and [`fm`]. libusdr's integer FFT (`xdsp/intfft.c`) is
+//! compiled out (`#if 0`) in the reference, so there is no FFT to port.
 
 mod conv;
+pub mod fftad;
+pub mod fm;
 mod format;
+mod log2;
+pub mod rtsa;
 #[cfg(test)]
 mod tests;
+pub mod window;
 
 pub use conv::{ConversionError, Converter};
 pub use format::SampleFormat;
