@@ -158,7 +158,9 @@ fn without_baseband_loop(window: &[Op]) -> (Vec<Op>, bool) {
         .expect("create resets the DMA engine");
     let calibrated = window[..dma_reset]
         .iter()
-        .rposition(|op| matches!(op, Op::Spi { out, .. } if *out & 0xff00 == VGA2_GAIN_WRITE))
+        .rposition(
+            |op| matches!(op, Op::Spi { bus: 0, out, .. } if *out & !0xff == VGA2_GAIN_WRITE),
+        )
         .expect("create calibrates first")
         + 1;
     let cut = &window[calibrated..dma_reset];

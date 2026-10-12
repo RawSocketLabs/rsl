@@ -20,8 +20,10 @@ pub enum RxGain {
     /// The whole chain, 0 to 85 dB, split by libusdr's policy (`rx/gain/auto`): the LNA
     /// takes the largest of its steps that fits, from a table of its gain against the
     /// tuned frequency; RXVGA1 takes up to 25 dB above its 5 dB floor, and RXVGA2's
-    /// first stage the rest in 6 dB steps; its second stage goes to 0 dB.
+    /// first stage the rest; its second stage goes to 0 dB.
     ///
+    /// libusdr counts each RXVGA2 stage-A step as 6 dB, though the stage's steps are
+    /// 3 dB, so above 25 dB past the LNA the chain gets 3 dB less than asked per step.
     /// This is libusdr's open-loop split, not a closed-loop AGC.
     Auto(i32),
 
@@ -47,26 +49,24 @@ pub enum RxGain {
 }
 
 impl RxGain {
-    /// RXVGA1's range in dB (`GAIN_RX_VGA1_MIN`, `GAIN_RX_VGA1_MAX`).
-    const VGA1_DB: (i32, i32) = (5, 31);
+    /// RXVGA1's lowest gain in dB (`GAIN_RX_VGA1_MIN`).
+    const VGA1_MIN_DB: i32 = 5;
 
-    /// RXVGA2's range in dB, either stage or both (`GAIN_RX_VGA2_MIN`, `GAIN_RX_VGA2_MAX`).
-    const VGA2_DB: (i32, i32) = (0, 30);
+    /// RXVGA1's highest gain in dB (`GAIN_RX_VGA1_MAX`).
+    const VGA1_MAX_DB: i32 = 31;
 
-    /// The automatic split's range in dB (`GAIN_RX_AUTO_MIN`, `GAIN_RX_AUTO_MAX`).
-    const AUTO_DB: (i32, i32) = (0, 85);
+    /// RXVGA2's highest gain in dB, either stage or both, from 0 (`GAIN_RX_VGA2_MAX`).
+    const VGA2_MAX_DB: i32 = 30;
+
+    /// The automatic split's highest figure in dB, from 0 (`GAIN_RX_AUTO_MAX`).
+    const AUTO_MAX_DB: i32 = 85;
 
     /// RXVGA2's step in dB.
     const VGA2_STEP_DB: i32 = 3;
 
-    /// `db` held to `(low, high)` (`_usdr_gain_clamp`).
-    fn clamp(db: i32, (low, high): (i32, i32)) -> i32 {
-        db.clamp(low, high)
-    }
-
-    /// The RXVGA2 step for `db` (`ngain / 3` after the clamp).
+    /// The RXVGA2 step for `db` (`_usdr_gain_clamp`, then `ngain / 3`).
     fn vga2_step(db: i32) -> u8 {
-        let step = Self::clamp(db, Self::VGA2_DB) / Self::VGA2_STEP_DB;
+        let step = db.clamp(0, Self::VGA2_MAX_DB) / Self::VGA2_STEP_DB;
         u8::try_from(step).expect("invariant: 0..=30 dB is step 0..=10")
     }
 }
@@ -173,7 +173,7 @@ impl AutoSplit {
         let (mid, max) = lna_steps(lo_hz / 1_000_000);
         let to_mid = (mid + 5) / 10;
         let to_max = (mid + max + 5) / 10;
-        let db = RxGain::clamp(db, RxGain::AUTO_DB);
+        let db = db.clamp(0, RxGain::AUTO_MAX_DB);
         let (lna, rest) = if db >= to_max {
             (LnaGain::Max, db - to_max)
         } else if db >= to_mid {
@@ -212,13 +212,13 @@ impl Board {
                 self.rx.vga2b = 0;
                 self.lms.set_lna_gain(bus, split.lna)?;
                 self.lms
-                    .set_rx_vga1_gain(bus, RxGain::VGA1_DB.0 + split.vga1_db)?;
+                    .set_rx_vga1_gain(bus, RxGain::VGA1_MIN_DB + split.vga1_db)?;
                 self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
             }
             RxGain::Lna(db) => self.lms.set_lna_gain(bus, lna_mode(db)),
             RxGain::Vga1(db) => self
                 .lms
-                .set_rx_vga1_gain(bus, RxGain::clamp(db, RxGain::VGA1_DB)),
+                .set_rx_vga1_gain(bus, db.clamp(RxGain::VGA1_MIN_DB, RxGain::VGA1_MAX_DB)),
             RxGain::Vga2(db) => {
                 self.rx.vga2a = RxGain::vga2_step(db);
                 self.rx.vga2b = 0;

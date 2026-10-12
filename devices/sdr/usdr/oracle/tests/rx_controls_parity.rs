@@ -201,6 +201,22 @@ fn rx_lna_gain_matches_libusdr_at_its_thresholds() {
     assert_calls_succeed(&calls);
 }
 
+/// The LNA's gain mode lives in the register that also selects the LNA, so a band change
+/// rewrites it: a mode other than the power-up maximum must survive retuning.
+#[test]
+fn the_lna_gain_mode_holds_across_band_changes_like_libusdr() {
+    assert_calls_succeed(&[
+        Call::Rate(20_000_000),
+        Call::Frequency(1_000_000_000),
+        gain(LNA, 0, RxGain::Lna),
+        Call::Frequency(3_000_000_000),
+        gain(AUTO, 10, RxGain::Auto),
+        Call::Frequency(1_000_000_000),
+        gain(LNA, 3, RxGain::Lna),
+        Call::Frequency(3_000_000_000),
+    ]);
+}
+
 /// The automatic split across its 0 to 85 dB range and beyond, untuned (libusdr's table
 /// held at 230 MHz) and at frequencies on, between and at the ends of its LNA table.
 #[test]

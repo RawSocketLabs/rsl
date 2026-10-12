@@ -247,11 +247,12 @@ impl Oracle {
     ///
     /// # Safety
     ///
-    /// The handler at `path` must read `value` as a number. libusdr's string-valued
-    /// handlers (`/dm/sdr/0/rx/path`, `/dm/sdr/0/tx/path`, `/dm/sdr/refclk/path`) read
-    /// some or all values as `const char*`, and `/dm/rate/rxtxadcdac` reads every value as
-    /// a pointer to four `uint32_t`s; through this function those would dereference an
-    /// arbitrary address. Use [`Oracle::set_str`] for string paths.
+    /// The handler at `path` must read `value` as a number; check the handler before
+    /// adding a path. Among those that do not: `/dm/sdr/0/rx/path`, `/dm/sdr/0/tx/path`,
+    /// `/dm/sdr/refclk/path` and `/dm/sdr/0/calibrate` read some or all values as
+    /// `const char*`, and `/dm/rate/rxtxadcdac` reads every value as a pointer to four
+    /// `uint32_t`s; through this function those would dereference an arbitrary address.
+    /// Use [`Oracle::set_str`] for string paths.
     ///
     /// # Errors
     ///

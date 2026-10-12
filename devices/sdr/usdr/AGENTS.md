@@ -21,8 +21,8 @@ no_std + alloc compilation fixture; the public driver remains std-dependent. No 
 qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
-board power-up and power-down, temperature reading, the RX sample rate, bandwidth and
-frequency, and the RX stream
+board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
+frequency, gains and path, and the RX stream
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
 `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).

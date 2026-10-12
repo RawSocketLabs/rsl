@@ -128,8 +128,8 @@ impl Register for LnaControl {
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct TiaFeedback {
-    /// Feedback resistor code; the gain rises with it: 120 (the reset value) gives 30 dB,
-    /// 102 gives 19 dB and 2 gives 5 dB. `RFB_TIA`, bits 6:0.
+    /// Feedback resistor code; the gain rises with it: 120 gives 30 dB, 102 gives 19 dB
+    /// and 2 gives 5 dB. `RFB_TIA`, bits 6:0; reset 120.
     #[bits(0..=6)]
     resistance: u7,
 }
@@ -265,11 +265,12 @@ mod tests {
     }
 
     #[test]
-    fn rxvga1_gain_is_held_to_5_db_and_above_30_db_to_30_17() {
+    fn rxvga1_gain_is_held_to_5_db_and_to_the_30_db_code_above() {
         assert_eq!(code(5), 0);
         assert_eq!(code(i32::MIN), code(5));
-        // 30.17 dB: 127.5 - 127 / 10^(25.17 / 20) = 120.5, truncated.
-        assert_eq!(code(31), 120);
-        assert_eq!(code(i32::MAX), code(31));
+        // libusdr's 30.17 dB case gives 120.5, truncated to the 30 dB code, so it cannot
+        // be told apart from 30 dB.
+        assert_eq!(code(31), code(30));
+        assert_eq!(code(i32::MAX), code(30));
     }
 }
