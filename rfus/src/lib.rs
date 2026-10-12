@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
 //! Human-readable RF unit parsing.
 //!

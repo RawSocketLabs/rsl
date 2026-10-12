@@ -23,17 +23,19 @@ pub struct Hertz(u64);
 
 impl Hertz {
     /// Return the quantity in whole hertz.
+    #[must_use]
     pub const fn hz(self) -> u64 {
         self.0
     }
 
     /// Return the quantity as `u32` when required by hardware APIs.
     ///
+    /// # Errors
+    ///
     /// Returns [`ParseUnitError::OutOfRange`] when the value is larger than
     /// `u32::MAX`.
     pub fn as_u32(self) -> Result<u32, ParseUnitError> {
-        validate_range(self.0, 0, u32::MAX as u64, "Hz")?;
-        Ok(self.0 as u32)
+        fit_u32(self.0, "Hz")
     }
 }
 
@@ -70,11 +72,13 @@ pub struct FrequencyHz(u64);
 
 impl FrequencyHz {
     /// Create a frequency from a raw Hz value.
+    #[must_use]
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
     /// Return the frequency in whole hertz.
+    #[must_use]
     pub const fn hz(self) -> u64 {
         self.0
     }
@@ -113,11 +117,13 @@ pub struct SampleRateSps(u32);
 
 impl SampleRateSps {
     /// Create a sample rate from a raw S/s value.
+    #[must_use]
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
     /// Return the sample rate in whole samples per second.
+    #[must_use]
     pub const fn sps(self) -> u32 {
         self.0
     }
@@ -135,8 +141,7 @@ impl FromStr for SampleRateSps {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let value = parser::parse_unit_value(input, UnitSet::SampleRate)?;
         // Only a type-fit check: the value must fit u32. No RF range bounds.
-        validate_range(value, 0, u32::MAX as u64, "S/s")?;
-        Ok(Self(value as u32))
+        fit_u32(value, "S/s").map(Self)
     }
 }
 
@@ -164,6 +169,8 @@ pub struct FrequencyRange {
 impl FrequencyRange {
     /// Create a range and validate that `lower < upper`.
     ///
+    /// # Errors
+    ///
     /// Returns [`ParseUnitError::InvalidRange`] when the endpoints are equal or
     /// reversed.
     pub fn new(lower: FrequencyHz, upper: FrequencyHz) -> Result<Self, ParseUnitError> {
@@ -177,6 +184,7 @@ impl FrequencyRange {
     }
 
     /// Return the canonical wire/debug form: `lower,upper` in integer Hz.
+    #[must_use]
     pub fn canonical(&self) -> String {
         format!("{},{}", self.lower.hz(), self.upper.hz())
     }
@@ -226,19 +234,14 @@ impl FromStr for ScanTarget {
     }
 }
 
-fn validate_range(
-    value: u64,
-    min: u64,
-    max: u64,
-    unit: &'static str,
-) -> Result<(), ParseUnitError> {
-    if !(min..=max).contains(&value) {
-        return Err(ParseUnitError::OutOfRange {
-            value,
-            min,
-            max,
-            unit,
-        });
-    }
-    Ok(())
+/// Narrow a parsed `u64` quantity to `u32`, reporting the `unit` on overflow.
+///
+/// Used by the `u32`-backed accessors and types; it applies no RF bounds.
+fn fit_u32(value: u64, unit: &'static str) -> Result<u32, ParseUnitError> {
+    u32::try_from(value).map_err(|_| ParseUnitError::OutOfRange {
+        value,
+        min: 0,
+        max: u64::from(u32::MAX),
+        unit,
+    })
 }

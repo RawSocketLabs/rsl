@@ -19,6 +19,10 @@ use crate::types::{FrequencyHz, FrequencyRange, Hertz, SampleRateSps, ScanTarget
 /// ```
 /// assert_eq!(rfus::parse_frequency_hz("450m").unwrap(), 450_000_000);
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseUnitError`] when the input is not a whole-Hz frequency.
 pub fn parse_frequency_hz(input: &str) -> Result<u64, ParseUnitError> {
     Ok(FrequencyHz::from_str(input)?.hz())
 }
@@ -33,6 +37,11 @@ pub fn parse_frequency_hz(input: &str) -> Result<u64, ParseUnitError> {
 /// ```
 /// assert_eq!(rfus::parse_hertz_u32("12.5khz").unwrap(), 12_500);
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseUnitError`] when the input is not a whole-Hz quantity or
+/// exceeds `u32::MAX`.
 pub fn parse_hertz_u32(input: &str) -> Result<u32, ParseUnitError> {
     Hertz::from_str(input)?.as_u32()
 }
@@ -47,6 +56,11 @@ pub fn parse_hertz_u32(input: &str) -> Result<u32, ParseUnitError> {
 /// ```
 /// assert_eq!(rfus::parse_sample_rate_sps("2msps").unwrap(), 2_000_000);
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseUnitError`] when the input is not a whole-S/s rate or
+/// exceeds `u32::MAX`.
 pub fn parse_sample_rate_sps(input: &str) -> Result<u32, ParseUnitError> {
     Ok(SampleRateSps::from_str(input)?.sps())
 }
@@ -62,6 +76,11 @@ pub fn parse_sample_rate_sps(input: &str) -> Result<u32, ParseUnitError> {
 /// let range = rfus::parse_frequency_range("400m-520m").unwrap();
 /// assert_eq!(range.canonical(), "400000000,520000000");
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseUnitError`] when an endpoint fails to parse or
+/// `lower >= upper`.
 pub fn parse_frequency_range(input: &str) -> Result<FrequencyRange, ParseUnitError> {
     parse_complete(input, frequency_range_tokens)?.resolve()
 }
@@ -77,6 +96,11 @@ pub fn parse_frequency_range(input: &str) -> Result<FrequencyRange, ParseUnitErr
 /// let ranges = rfus::parse_frequency_ranges("400m-520m;800m-900m").unwrap();
 /// assert_eq!(ranges.len(), 2);
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseUnitError`] when any range fails to parse or the input is a
+/// single static frequency.
 pub fn parse_frequency_ranges(input: &str) -> Result<Vec<FrequencyRange>, ParseUnitError> {
     match parse_scan_target(input)? {
         ScanTarget::Ranges(ranges) => Ok(ranges),
@@ -294,25 +318,22 @@ fn scale_number(
 
     let whole_value = parse_u128_digits(&whole, number)?;
     let fractional_value = parse_u128_digits(&fractional, number)?;
-    let scale = 10_u128
-        .checked_pow(fractional.len() as u32)
+    let scale = u32::try_from(fractional.len())
+        .ok()
+        .and_then(|digits| 10_u128.checked_pow(digits))
         .ok_or_else(|| overflow_error(base_unit))?;
 
     let numerator = whole_value
         .checked_mul(scale)
         .and_then(|value| value.checked_add(fractional_value))
-        .and_then(|value| value.checked_mul(multiplier as u128))
+        .and_then(|value| value.checked_mul(u128::from(multiplier)))
         .ok_or_else(|| overflow_error(base_unit))?;
 
     if numerator % scale != 0 {
         return Err(ParseUnitError::NonInteger(number.to_string()));
     }
 
-    let value = numerator / scale;
-    if value > u64::MAX as u128 {
-        return Err(overflow_error(base_unit));
-    }
-    Ok(value as u64)
+    u64::try_from(numerator / scale).map_err(|_| overflow_error(base_unit))
 }
 
 fn overflow_error(unit: &'static str) -> ParseUnitError {

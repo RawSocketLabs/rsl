@@ -54,25 +54,21 @@ impl Display for ParseUnitError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty => write!(f, "value is empty"),
-            Self::InvalidNumber(value) => write!(f, "'{}' is not a valid number", value),
-            Self::UnknownUnit(unit) => write!(f, "'{}' is not a supported unit", unit),
+            Self::InvalidNumber(value) => write!(f, "'{value}' is not a valid number"),
+            Self::UnknownUnit(unit) => write!(f, "'{unit}' is not a supported unit"),
             Self::NonInteger(value) => {
-                write!(f, "'{}' does not resolve to a whole Hz or S/s value", value)
+                write!(f, "'{value}' does not resolve to a whole Hz or S/s value")
             }
             Self::OutOfRange {
                 value,
                 min,
                 max,
                 unit,
-            } => write!(
-                f,
-                "{} {} is outside the valid range {}-{}",
-                value, unit, min, max
-            ),
+            } => write!(f, "{value} {unit} is outside the valid range {min}-{max}"),
             Self::InvalidRange { lower, upper } => {
-                write!(f, "range lower {} must be less than upper {}", lower, upper)
+                write!(f, "range lower {lower} must be less than upper {upper}")
             }
-            Self::Parse(value) => write!(f, "could not parse '{}'", value),
+            Self::Parse(value) => write!(f, "could not parse '{value}'"),
         }
     }
 }

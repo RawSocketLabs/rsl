@@ -105,7 +105,7 @@ impl<T> NumberOrStringVisitor<T> {
     }
 }
 
-impl<'de, T> Visitor<'de> for NumberOrStringVisitor<T>
+impl<T> Visitor<'_> for NumberOrStringVisitor<T>
 where
     T: NumberOrStringUnit,
 {

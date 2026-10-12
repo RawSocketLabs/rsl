@@ -150,7 +150,7 @@ fn reports_overflow_and_u32_bounds() {
         ParseUnitError::OutOfRange {
             value: 4_294_967_296,
             min: 0,
-            max: u32::MAX as u64,
+            max: u64::from(u32::MAX),
             unit: "Hz",
         }
     );
@@ -168,7 +168,7 @@ fn reports_overflow_and_u32_bounds() {
         ParseUnitError::OutOfRange {
             value: 4_294_967_296,
             min: 0,
-            max: u32::MAX as u64,
+            max: u64::from(u32::MAX),
             unit: "S/s",
         }
     );
