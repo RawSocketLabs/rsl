@@ -6,7 +6,7 @@
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
 //! rate, bandwidth and frequency, and the RX stream over any [`lowlevel::Bus`] that streams.
-//! The USB and `PCIe` transports follow.
+//! USB and `PCIe` transports are available behind their respective features (Linux).
 //!
 //! # The uSDR board
 //!

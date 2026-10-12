@@ -9,7 +9,8 @@ temperature reading, the RX sample rate, bandwidth and frequency, and the RX str
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
 `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
-USB RX streaming is next. Added beyond libusdr: the
+USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
+transport's 16-byte trailer. Hardware operation remains unqualified. Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -57,6 +58,16 @@ Each layer calls only the ones below it.
   trace with libusdr's, operation for operation, on fresh boards.
   USB's simple-I²C LUT/control sequence is checked against the actual C helpers in
   `oracle/tests/usb_i2c_parity.rs`; USB framing/router fixtures cite the same PIN.
+  `oracle/tests/usb_rx_parity.rs` compares RX payload/OOB and lifecycle against compiled,
+  mechanically exported C helpers (`vendor.sh --usb-rx-only` refreshes them without
+  changing the PIN). It replaces only the host-buffer boundary, not C trailer parsing.
+  Unlike C's discard-buffer/autorestart scheme, RX retains eight bounded transfers and
+  requeues each after consumption, leaving gateware to report backpressure losses.
+  USB RX fails closed on partial/malformed blocks rather than exposing stale bytes;
+  ordinary receive timeouts preserve pending transfers and control-plane health.
+  Receive capacity exceeds the frame length so packet-aligned frames keep their terminating
+  ZLP in the same transfer. Failed cancellation during setup/stop requires dropping or
+  closing the `Device` and reopening it; do not claim an in-place retry through `Device`.
   The transport fails closed on malformed replies, missing notifications, or ambiguous
   timeouts, and refuses USB routing while HWID reports `PCIe` ownership. This differs
   deliberately from C's sequence-gap resynchronization and routing-setup skip.
@@ -121,6 +132,8 @@ cargo clippy -p rsl-usdr --all-targets --all-features -- -D warnings && cargo te
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
+# Opt-in hardware smoke: resets/claims only the explicitly selected USB port.
+RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb --test usb_hardware -- --ignored
 ```
 
 The oracle is its own Cargo workspace: it sits inside this package's directory, where the

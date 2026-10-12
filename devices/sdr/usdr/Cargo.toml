@@ -17,7 +17,7 @@ thiserror.workspace = true
 [features]
 ## The PCIe transport over the `usdr_pcie_uram` Linux driver (`transport::pcie`).
 pcie = ["dep:rsl-usdr-pcie"]
-## USB control-plane access over the owned Linux usbfs backend (no RX streaming yet).
+## USB control-plane access and RX streaming over the owned Linux usbfs backend.
 usb = ["dep:rsl-usb"]
 
 [target.'cfg(target_os = "linux")'.dependencies]

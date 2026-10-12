@@ -163,12 +163,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-usb"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "thiserror",
+]
+
+[[package]]
 name = "rsl-usdr"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "num-complex",
  "rsl-deps",
+ "rsl-usb",
  "rsl-usdr-pcie",
  "thiserror",
 ]
@@ -180,6 +189,7 @@ dependencies = [
  "bitsandbytes",
  "cc",
  "num-complex",
+ "rsl-usb",
  "rsl-usdr",
  "rsl-usdr-pcie",
  "rsl-usdr-sim",

@@ -9,6 +9,7 @@ use rsl_usdr_sim::{BoardRevision, I2cAddress, SimBoard};
 use super::UsbBus;
 use super::bus::{Reply, UsbIo};
 use super::protocol::I2cCache;
+use super::rx::{Rx, RxQueue};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 
 /// Scripted complete endpoint transfers and observed outgoing packets.
@@ -20,9 +21,23 @@ struct Script {
     replies: VecDeque<(Reply, Result<Vec<u8>, BusError>)>,
     /// Inject an ambiguous send failure.
     fail_write: bool,
+    /// RX cleanup is independent of failed control transactions.
+    rx_closes: usize,
 }
 
 impl UsbIo for Arc<Mutex<Script>> {
+    fn rx_open(&mut self, _: u32) -> Result<(), BusError> {
+        Ok(())
+    }
+
+    fn rx_recv(&mut self, _: Duration, _: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<(), BusError> {
+        Err(BusError::Timeout)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        self.lock().unwrap().rx_closes += 1;
+        Ok(())
+    }
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
         let mut script = self.lock().unwrap();
         script.writes.push(packet.to_vec());
@@ -60,6 +75,29 @@ fn words(values: &[u32]) -> Vec<u8> {
         .iter()
         .flat_map(|value| value.to_le_bytes())
         .collect()
+}
+
+#[test]
+fn rx_timeout_keeps_control_usable_and_cleanup_survives_control_failure() {
+    let (mut bus, script) = scripted(vec![
+        (Reply::Registers, Ok(words(&[42]))),
+        (Reply::Registers, Ok(vec![0])),
+    ]);
+    bus.rx_stream_open(4096).unwrap();
+    assert!(matches!(
+        bus.rx_stream_recv(Duration::ZERO, &mut |_, _| panic!()),
+        Err(BusError::Timeout)
+    ));
+    let mut value = [0];
+    bus.read_regs(20, &mut value).unwrap();
+    assert_eq!(value, [42]);
+    assert!(bus.read_regs(20, &mut value).is_err());
+    assert!(
+        bus.rx_stream_recv(Duration::ZERO, &mut |_, _| panic!())
+            .is_err()
+    );
+    bus.rx_stream_close().unwrap();
+    assert_eq!(script.lock().unwrap().rx_closes, 1);
 }
 
 /// Scalar IRQ format from `libusb_transfer_ntfy` at the pinned C revision.
@@ -306,6 +344,8 @@ fn initialization_matches_pinned_router_sequence() {
 
 /// FPGA endpoint emulator: decodes C wire fields, then drives the existing board model.
 struct BoardUsb {
+    /// The production RX adapter, backed by completed simulator frames.
+    rx: Rx<BoardQueue>,
     /// Shared board for final chip-state assertions.
     board: Arc<Mutex<SimBoard>>,
     /// Complete endpoint readbacks.
@@ -318,6 +358,52 @@ struct BoardUsb {
     lut: u32,
     /// Current virtual register.
     index: u32,
+}
+
+/// Whole USB transfers over the board's sample generator, below the production RX adapter.
+struct BoardQueue {
+    /// The same board the control endpoint configures.
+    board: Arc<Mutex<SimBoard>>,
+    /// Owned pending transfer buffers.
+    pending: VecDeque<Vec<u8>>,
+}
+
+impl RxQueue for BoardQueue {
+    type Buffer = Vec<u8>;
+
+    fn data(buffer: &Vec<u8>) -> &[u8] {
+        buffer
+    }
+
+    fn packet_size(&self) -> usize {
+        512
+    }
+
+    fn alloc(&mut self, capacity: usize) -> Result<Vec<u8>, BusError> {
+        Ok(vec![0; capacity])
+    }
+
+    fn submit(&mut self, buffer: Vec<u8>) -> Result<(), BusError> {
+        self.pending.push_back(buffer);
+        Ok(())
+    }
+
+    fn wait(&mut self, _: Duration) -> Result<Option<Vec<u8>>, BusError> {
+        let Some((block, oob)) = self.board.lock().unwrap().rx_next_block() else {
+            return Ok(None);
+        };
+        let mut buffer = self.pending.pop_front().expect("queued RX buffer");
+        buffer.clear();
+        buffer.extend(block);
+        buffer.extend(oob[0].to_le_bytes());
+        buffer.extend(oob[1].to_le_bytes());
+        Ok(Some(buffer))
+    }
+
+    fn cancel(&mut self) -> Result<(), BusError> {
+        self.pending.clear();
+        Ok(())
+    }
 }
 
 impl BoardUsb {
@@ -372,6 +458,21 @@ impl BoardUsb {
 }
 
 impl UsbIo for BoardUsb {
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.rx.open(block_bytes)
+    }
+
+    fn rx_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        self.rx.receive(timeout, consume)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        self.rx.close()
+    }
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
         let header = u32::from_le_bytes(packet[..4].try_into().unwrap());
         let address = header & 0xffff;
@@ -421,6 +522,10 @@ fn usb_control_plane_identifies_powers_reads_temperature_and_closes_all_revision
         board.write_reg(19, hwid | 0x4000_0000);
         let board = Arc::new(Mutex::new(board));
         let io = BoardUsb {
+            rx: Rx::new(BoardQueue {
+                board: Arc::clone(&board),
+                pending: VecDeque::new(),
+            }),
             board: Arc::clone(&board),
             registers: VecDeque::new(),
             notifications: VecDeque::new(),
@@ -432,6 +537,35 @@ fn usb_control_plane_identifies_powers_reads_temperature_and_closes_all_revision
         bus.initialize().unwrap();
         let mut device = crate::Device::with_bus(bus).unwrap();
         assert_eq!(device.temperature().unwrap(), 25.0);
+        device.set_rx_sample_rate(20_000_000).unwrap();
+        device.set_rx_frequency(1_000_000_000).unwrap();
+        let mut generated = 0_u64;
+        for count in [1024, 16383, 1024] {
+            device.start_rx_stream(count).unwrap();
+            let mut samples =
+                vec![num_complex::Complex::new(0, 0); usize::try_from(count).unwrap()];
+            for packet in 0..2 {
+                let received = device.receive(&mut samples, Duration::ZERO).unwrap();
+                assert_eq!(received.samples, usize::try_from(count).unwrap());
+                assert_eq!(received.first_sample, u64::from(count) * packet);
+                assert_eq!(received.lost_packets, 0);
+                let expected: Vec<_> = (0..count)
+                    .map(|index| {
+                        let raw = u64::from(index) + generated;
+                        let bytes = raw.to_le_bytes();
+                        let value = i16::from_le_bytes([bytes[0], bytes[1]]);
+                        num_complex::Complex::new(value, value.wrapping_neg())
+                    })
+                    .collect();
+                assert!(
+                    samples == expected,
+                    "revision {revision:?}, packet size {count}: first mismatch {:?}",
+                    samples.iter().zip(&expected).position(|(a, b)| a != b)
+                );
+                generated += u64::from(count);
+            }
+            device.stop_rx_stream().unwrap();
+        }
         device.close().unwrap();
         assert_eq!(board.lock().unwrap().gpo(0), Some(0));
     }

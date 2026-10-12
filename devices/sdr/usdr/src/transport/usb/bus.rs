@@ -6,9 +6,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rsl_deps::tracing::{debug, trace};
-use rsl_usb::{DeviceInfo, InQueue, OutQueue};
+use rsl_usb::{DeviceInfo, InQueue, Interface, OutQueue};
 
 use super::protocol::{Command, I2cCache, Notification};
+use super::rx::Rx;
 use crate::error::Error;
 use crate::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
 use crate::transport::window::{self, RegisterIo, Window};
@@ -55,6 +56,18 @@ pub(super) trait UsbIo: Send {
     fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError>;
     /// Receives one complete transfer, never truncating it to the expected reply length.
     fn read(&mut self, reply: Reply, timeout: Duration) -> Result<Vec<u8>, BusError>;
+    /// Allocates and primes the optional RX endpoint.
+    fn rx_open(&mut self, _: u32) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB RX streaming"))
+    }
+    /// Lends a completed sample block and its two trailer words.
+    fn rx_recv(&mut self, _: Duration, _: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB RX streaming"))
+    }
+    /// Cancels and drains RX even after control-plane failure.
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB RX streaming"))
+    }
     /// Waits between chip operations; the test board advances virtual time.
     fn sleep(&mut self, duration: Duration) {
         thread::sleep(duration);
@@ -63,6 +76,10 @@ pub(super) trait UsbIo: Send {
 
 /// The three claimed control-plane queues; their handles keep the interface/device alive.
 struct Queues {
+    /// Retains the claim so RX can be opened lazily.
+    interface: Interface,
+    /// Bulk sample endpoint 0x83, including failed streams awaiting cleanup.
+    rx: Option<Rx<InQueue>>,
     /// Register command endpoint 0x01.
     commands: OutQueue,
     /// Raw register response endpoint 0x81.
@@ -72,6 +89,42 @@ struct Queues {
 }
 
 impl UsbIo for Queues {
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        if self.rx.is_some() {
+            return Err(BusError::Unsupported(
+                "USB RX already open or awaiting cleanup",
+            ));
+        }
+        let queue = self.interface.in_queue(0x83).map_err(BusError::from)?;
+        let rx = self.rx.insert(Rx::new(queue));
+        if let Err(error) = rx.open(block_bytes) {
+            // Preserve ownership on a failed drain, so reopen cannot steal late transfers.
+            if rx.close().is_ok() {
+                self.rx = None;
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn rx_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        let Some(rx) = self.rx.as_mut() else {
+            return Err(BusError::Unsupported("USB RX is closed"));
+        };
+        rx.receive(timeout, consume)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        if let Some(rx) = self.rx.as_mut() {
+            rx.close()?;
+            self.rx = None;
+        }
+        Ok(())
+    }
     fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
         self.commands.write(packet, timeout).map_err(BusError::from)
     }
@@ -105,7 +158,7 @@ impl UsbIo for Queues {
 
 /// A uSDR reached over USB. Owns interface 0 and its serialized control-plane queues.
 ///
-/// Supports register/SPI/I²C operations, but not RX streaming. An ambiguous transaction
+/// Supports register/SPI/I²C operations and RX streaming. An ambiguous control transaction
 /// failure permanently disables this handle; reopen it instead of reusing late replies.
 pub struct UsbBus {
     /// Real queues, or the hardware-free transfer boundary.
@@ -162,6 +215,8 @@ impl UsbBus {
             .claim_interface(0)
             .map_err(|error| Error::Open(error.into()))?;
         let queues = Queues {
+            interface: interface.clone(),
+            rx: None,
             commands: interface
                 .out_queue(0x01)
                 .map_err(|error| Error::Open(error.into()))?,
@@ -448,5 +503,23 @@ impl Bus for UsbBus {
 
     fn sleep(&mut self, duration: Duration) {
         self.io.sleep(duration);
+    }
+
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.ready()?;
+        self.io.rx_open(block_bytes)
+    }
+
+    fn rx_stream_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        self.ready()?;
+        self.io.rx_recv(timeout, consume)
+    }
+
+    fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        self.io.rx_close()
     }
 }

@@ -25,6 +25,15 @@ fn main() {
         .flag("-Werror")
         .compile("usdr_oracle_shim");
 
+    // Compile exact upstream USB RX functions over a resource-free buffer boundary.
+    // The include retains upstream's unused parameters; its warnings are not ours to fix.
+    cc::Build::new()
+        .file("shim/usb_rx.c")
+        .includes(&includes)
+        .flag("-std=gnu11")
+        .warnings(false)
+        .compile("usdr_oracle_usb_rx");
+
     cc::Build::new()
         .files(sources.lines().map(|source| lib.join(source)))
         .includes(&includes)
