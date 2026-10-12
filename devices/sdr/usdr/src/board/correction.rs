@@ -1,0 +1,170 @@
+//! RX corrections: `dev_m2_lm6_1_sdr_rx_dccorr_set`, `...rx_dccorrmode_set`,
+//! `...rx_ip2corr_set` and `...rx_phgaincorr_set` in `device/m2_lm6_1/m2_lm6_1.c`.
+//!
+//! The DC and IP2 trims are analog, in the LMS6002D's RX front end; the automatic DC
+//! correction and the IQ imbalance correction are digital, in the FPGA's RX chain.
+
+use bnb::u7;
+
+use super::Board;
+use crate::error::Error;
+use crate::fpga::{IqImbalance, Phy};
+
+/// A 7-bit sign-magnitude trim code for the LMS6002D's RX front end: bit 6 the sign,
+/// bits 5:0 the magnitude, as the datasheet gives `DCOFF_I`, `DCOFF_Q`, `IP2TRIM_I` and
+/// `IP2TRIM_Q`. The datasheet does not say which sign bit value is negative.
+///
+/// libusdr takes 16 bits per channel and keeps the low seven; a code that does not fit is
+/// rejected here instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxTrim(u7);
+
+impl RxTrim {
+    /// The trim for `code`, or `None` above 0x7F.
+    #[must_use]
+    pub fn new(code: u8) -> Option<Self> {
+        (code <= 0x7f).then(|| Self(u7::new(code)))
+    }
+
+    /// The code.
+    #[must_use]
+    pub fn code(self) -> u8 {
+        self.0.value()
+    }
+}
+
+/// An RX IQ imbalance correction, in the terms of libusdr's `rx/phgaincorr`. The FPGA's RX
+/// chain applies it; stream creation writes it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxIqCorrection {
+    /// I gain, 2047 being no correction. Below 2047 it alone sets the amplitude
+    /// correction, scaling I by `1 − (2047 − i_gain) · 8 / 32767`.
+    pub i_gain: u16,
+
+    /// Q gain, 2047 being no correction, used when `i_gain` is 2047 or more: below 2047 it
+    /// scales Q by `1 − (2047 − q_gain) · 8 / 32767`, above it scales I by
+    /// `1 − (q_gain − 2047) · 8 / 32767`.
+    pub q_gain: u16,
+
+    /// Phase correction: the terms use the sine and cosine of `phase × 0.016°`
+    /// (libusdr multiplies it by 16 into a scale where 45000 is 45°). Not clamped.
+    pub phase: i16,
+}
+
+impl RxIqCorrection {
+    /// The amplitude imbalance's input scale (`INT16_MAX` in `usdr_rx_iqimb_set`).
+    const AMPLITUDE_SCALE: i64 = 32_767;
+
+    /// The amplitude imbalance's full scale (`IMB_AMPL_MAX`).
+    const AMPLITUDE_FULL_SCALE: i64 = 262_144;
+
+    /// The gain with no correction.
+    const UNITY: i32 = 2047;
+
+    /// The imbalance this correction asks for, in libusdr's arithmetic
+    /// (`_phgaincorr_set`, then `usdr_rx_iqimb_set`).
+    fn imbalance(self) -> IqImbalance {
+        let i_gain = i32::from(self.i_gain);
+        let imbalance = if i_gain < Self::UNITY {
+            (Self::UNITY - i_gain) * 8
+        } else {
+            (i32::from(self.q_gain) - Self::UNITY) * 8
+        };
+        let amplitude = i64::from(imbalance) * Self::AMPLITUDE_FULL_SCALE / Self::AMPLITUDE_SCALE;
+        IqImbalance {
+            amplitude: i32::try_from(amplitude)
+                .expect("invariant: at most 507904 * 262144 / 32767"),
+            phase: i32::from(self.phase) * 16,
+        }
+    }
+}
+
+impl Board {
+    /// Writes the RX front end's DC-offset trims (`lms6002d_set_rxfedc`).
+    pub(crate) fn set_rx_dc_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
+        self.lms.set_rx_dc_trim(self.bus.as_mut(), i.0, q.0)
+    }
+
+    /// Writes the RX front end's IP2 trims (`lms6002d_set_rxfe_ip2corr`).
+    pub(crate) fn set_rx_ip2_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
+        self.lms.set_rx_ip2_trim(self.bus.as_mut(), i.0, q.0)
+    }
+
+    /// Switches the RX chain's automatic DC correction (`usdr_set_rxdccorr`).
+    pub(crate) fn set_rx_auto_dc_correction(&mut self, enabled: bool) -> Result<(), Error> {
+        Phy::Rx.set_dc_correction(self.bus.as_mut(), enabled)
+    }
+
+    /// Records and writes the RX IQ imbalance correction (`usdr_rx_iqimb_set`, then
+    /// `usdr_rxupdate_cal`). As in libusdr, it is recorded even if a write fails.
+    pub(crate) fn set_rx_iq_correction(&mut self, correction: RxIqCorrection) -> Result<(), Error> {
+        self.rx.iq_imbalance = correction.imbalance();
+        Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trims_take_seven_bit_codes_only() {
+        assert_eq!(RxTrim::new(0x7f).map(RxTrim::code), Some(0x7f));
+        assert_eq!(RxTrim::new(0).map(RxTrim::code), Some(0));
+        assert_eq!(RxTrim::new(0x80), None);
+        assert_eq!(RxTrim::new(u8::MAX), None);
+    }
+
+    /// A correction with `i_gain`, `q_gain` and `phase`.
+    fn correction(i_gain: u16, q_gain: u16, phase: i16) -> IqImbalance {
+        RxIqCorrection {
+            i_gain,
+            q_gain,
+            phase,
+        }
+        .imbalance()
+    }
+
+    #[test]
+    fn unity_gains_and_no_phase_ask_for_no_correction() {
+        assert_eq!(correction(2047, 2047, 0), IqImbalance::default());
+    }
+
+    #[test]
+    fn i_below_unity_sets_the_amplitude_and_ignores_q() {
+        // (2047 - 0) * 8 = 16376, then * 262144 / 32767, truncated.
+        let full = correction(0, 9999, 0);
+        assert_eq!(full.amplitude, 131_011);
+        assert_eq!(full.amplitude, correction(0, 2047, 0).amplitude);
+        assert!(correction(2046, 0, 0).amplitude > 0);
+    }
+
+    #[test]
+    fn from_unity_up_q_sets_the_amplitude_either_way() {
+        // Truncated towards zero, as C's int64_t division does.
+        assert_eq!(correction(2047, 0, 0).amplitude, -131_011);
+        assert!(correction(u16::MAX, 2048, 0).amplitude > 0);
+    }
+
+    #[test]
+    fn phase_is_scaled_by_16_without_clamping() {
+        assert_eq!(correction(2047, 2047, -1).phase, -16);
+        assert_eq!(correction(2047, 2047, i16::MAX).phase, 524_272);
+    }
+
+    #[test]
+    fn no_imbalance_gives_half_scale_amplitudes_and_no_phase_terms() {
+        // RX's two-channel scale of 0.5 times 8388607, truncated.
+        assert_eq!(
+            IqImbalance::default().rx_terms(),
+            [4_194_303, 4_194_303, 0, 0]
+        );
+    }
+
+    #[test]
+    fn amplitude_scales_one_channel_and_phase_mirrors_the_cross_terms() {
+        let [amp_i, amp_q, tan_i, tan_q] = correction(1023, 2047, 1000).rx_terms();
+        assert!(amp_i < amp_q, "a positive imbalance scales I down");
+        assert!(tan_i < 0 && tan_q > 0, "phase terms take opposite signs");
+    }
+}

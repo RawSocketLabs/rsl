@@ -1,9 +1,11 @@
-//! rsl-usdr's RX gain and path controls against libusdr's, operation for operation, one
-//! window per call, on fresh boards.
+//! rsl-usdr's RX gain, path and correction controls against libusdr's, operation for
+//! operation, one window per call, on fresh boards.
 //!
 //! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
 //! the pairing is the mapping under test (`rx/gain/pga` doubling its value, say). libusdr
 //! clamps every gain rather than rejecting it, so out-of-range values must succeed alike.
+//! libusdr masks trim codes to seven bits where rsl-usdr's [`RxTrim`] rejects them; that
+//! divergence has its own scenario.
 
 #[path = "common/crossing.rs"]
 mod crossing;
@@ -14,7 +16,7 @@ use std::ffi::CStr;
 use std::ops::Range;
 
 use crossing::{Crossing, with_band_crossing_fix};
-use rsl_usdr::{Device, Error, RxGain, RxPath};
+use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxTrim};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
@@ -35,6 +37,14 @@ const LNA: &CStr = c"/dm/sdr/0/rx/gain/lna";
 const AUTO: &CStr = c"/dm/sdr/0/rx/gain/auto";
 /// The RX path, a string.
 const PATH: &CStr = c"/dm/sdr/0/rx/path";
+/// The front end's DC trims, I in bits 31:16 and Q in bits 15:0.
+const DCCORR: &CStr = c"/dm/sdr/0/rx/dccorr";
+/// The FPGA chain's automatic DC correction, bit 0.
+const DCCORRMODE: &CStr = c"/dm/sdr/0/rx/dccorrmode";
+/// The front end's IP2 trims, packed as [`DCCORR`].
+const IP2CORR: &CStr = c"/dm/sdr/0/rx/ip2corr";
+/// The IQ correction: I gain in bits 15:0, Q gain in 31:16, phase in 63:48.
+const PHGAINCORR: &CStr = c"/dm/sdr/0/rx/phgaincorr";
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -50,6 +60,26 @@ enum Call {
 
     /// libusdr's `rx/path` set to a string; rsl-usdr's `set_rx_path`.
     Path(&'static CStr, RxPath),
+
+    /// libusdr's numeric correction control `path` set to `value`; rsl-usdr's matching
+    /// call.
+    Correct(&'static CStr, u64, Correction),
+}
+
+/// rsl-usdr's side of a [`Call::Correct`].
+#[derive(Clone, Copy, Debug)]
+enum Correction {
+    /// `set_rx_dc_trim`.
+    DcTrim(RxTrim, RxTrim),
+
+    /// `set_rx_auto_dc_correction`.
+    AutoDc(bool),
+
+    /// `set_rx_ip2_trim`.
+    Ip2Trim(RxTrim, RxTrim),
+
+    /// `set_rx_iq_correction`.
+    Iq(RxIqCorrection),
 }
 
 impl Call {
@@ -58,8 +88,10 @@ impl Call {
         match self {
             Self::Rate(rate) => oracle.set_rx_rate(rate),
             Self::Frequency(hz) => oracle.set_rx_frequency(hz),
-            // SAFETY: every RX gain handler reads its value as a number.
-            Self::Gain(path, value, _) => unsafe { oracle.set_uint(path, value) },
+            // SAFETY: every RX gain and correction handler reads its value as a number.
+            Self::Gain(path, value, _) | Self::Correct(path, value, _) => unsafe {
+                oracle.set_uint(path, value)
+            },
             // SAFETY: `dev_m2_lm6_1_sdr_rx_path_set` reads a value above 4096 as a string
             // and keeps no reference to it.
             Self::Path(name, _) => unsafe { oracle.set_str(PATH, name) },
@@ -74,6 +106,12 @@ impl Call {
             Self::Frequency(hz) => device.set_rx_frequency(hz),
             Self::Gain(_, _, gain) => device.set_rx_gain(gain),
             Self::Path(_, path) => device.set_rx_path(path),
+            Self::Correct(_, _, Correction::DcTrim(i, q)) => device.set_rx_dc_trim(i, q),
+            Self::Correct(_, _, Correction::AutoDc(on)) => device.set_rx_auto_dc_correction(on),
+            Self::Correct(_, _, Correction::Ip2Trim(i, q)) => device.set_rx_ip2_trim(i, q),
+            Self::Correct(_, _, Correction::Iq(correction)) => {
+                device.set_rx_iq_correction(correction)
+            }
         }
     }
 }
@@ -82,6 +120,31 @@ impl Call {
 /// which the handlers truncate back to `int`.
 fn raw(db: i32) -> u64 {
     u64::from_ne_bytes(i64::from(db).to_ne_bytes())
+}
+
+/// The trim for a seven-bit `code`.
+fn trim(code: u8) -> RxTrim {
+    RxTrim::new(code).expect("a seven-bit code")
+}
+
+/// A trim call on libusdr's `path` (`DCCORR` or `IP2CORR`) with codes `i` and `q`, and
+/// rsl-usdr's `call` with the same codes.
+fn trims(path: &'static CStr, i: u8, q: u8, call: fn(RxTrim, RxTrim) -> Correction) -> Call {
+    let value = u64::from(i) << 16 | u64::from(q);
+    Call::Correct(path, value, call(trim(i), trim(q)))
+}
+
+/// An IQ correction call, packed for libusdr as `dev_m2_lm6_1_sdr_rx_phgaincorr_set`
+/// unpacks it.
+fn iq(i_gain: u16, q_gain: u16, phase: i16) -> Call {
+    let phase_bits = u64::from(u16::from_ne_bytes(phase.to_ne_bytes()));
+    let value = phase_bits << 48 | u64::from(q_gain) << 16 | u64::from(i_gain);
+    let correction = RxIqCorrection {
+        i_gain,
+        q_gain,
+        phase,
+    };
+    Call::Correct(PHGAINCORR, value, Correction::Iq(correction))
 }
 
 /// A gain call setting libusdr's `path` and rsl-usdr's `gain` to the same `db`.
@@ -311,4 +374,91 @@ fn a_numeric_rx_path_is_rejected_by_libusdr_before_any_operation() {
         assert_eq!(oracle.trace_len(), start, "{value}: no operation");
     }
     drop(oracle.close());
+}
+
+/// DC and IP2 trims over sign, magnitude and both ends of the seven-bit codes; libusdr
+/// ignores the channel number above bit 31.
+#[test]
+fn rx_dc_and_ip2_trims_match_libusdr() {
+    let codes = [
+        (0, 0),
+        (0x3f, 0x40),
+        (0x7f, 0x01),
+        (0x15, 0x6a),
+        (0x40, 0x7f),
+    ];
+    let mut calls = Vec::new();
+    for (i, q) in codes {
+        calls.push(trims(DCCORR, i, q, Correction::DcTrim));
+        calls.push(trims(IP2CORR, i, q, Correction::Ip2Trim));
+    }
+    calls.push(Call::Correct(
+        DCCORR,
+        1 << 32 | 0x0012_0034,
+        Correction::DcTrim(trim(0x12), trim(0x34)),
+    ));
+    assert_calls_succeed(&calls);
+}
+
+/// Intentional divergence: libusdr keeps the low seven bits of each 16-bit trim (through
+/// an `int8_t` and its register macro's mask), so an oversized code silently writes
+/// another; rsl-usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
+/// for one is the masked code's write.
+#[test]
+fn oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
+    for code in 0x80..=u8::MAX {
+        assert_eq!(RxTrim::new(code), None, "{code:#x} is rejected");
+    }
+    let mut calls = Vec::new();
+    for (i, q) in [(0x80_u16, 0xff_u16), (0x1234, 0xffff), (0x7f80, 0x0100)] {
+        let value = u64::from(i) << 16 | u64::from(q);
+        let masked = |code: u16| trim(code.to_le_bytes()[0] & 0x7f);
+        calls.push(Call::Correct(
+            DCCORR,
+            value,
+            Correction::DcTrim(masked(i), masked(q)),
+        ));
+        calls.push(Call::Correct(
+            IP2CORR,
+            value,
+            Correction::Ip2Trim(masked(i), masked(q)),
+        ));
+    }
+    assert_calls_succeed(&calls);
+}
+
+/// The FPGA chain's automatic DC correction keeps bit 0 of libusdr's value; a rate change
+/// turns it back on on both sides.
+#[test]
+fn rx_auto_dc_correction_matches_libusdr() {
+    assert_calls_succeed(&[
+        Call::Correct(DCCORRMODE, 0, Correction::AutoDc(false)),
+        Call::Correct(DCCORRMODE, 1, Correction::AutoDc(true)),
+        Call::Correct(DCCORRMODE, 2, Correction::AutoDc(false)),
+        Call::Correct(DCCORRMODE, u64::MAX, Correction::AutoDc(true)),
+        Call::Correct(DCCORRMODE, 0, Correction::AutoDc(false)),
+        Call::Rate(20_000_000),
+    ]);
+}
+
+/// The IQ correction's float arithmetic, term for term: no correction, either gain side
+/// of 2047, both extremes of the phase, and garbage in libusdr's unused bits 47:32.
+#[test]
+fn rx_iq_correction_matches_libusdr() {
+    let mut calls = vec![
+        iq(2047, 2047, 0),
+        iq(0, 9999, 0),
+        iq(1023, 2047, 1000),
+        iq(2046, 2048, 1),
+        iq(2047, 0, -1000),
+        iq(2047, 2048, -1),
+        iq(2047, u16::MAX, i16::MAX),
+        iq(u16::MAX, 4095, i16::MIN),
+        iq(3000, 1500, 2812),
+    ];
+    let Call::Correct(path, value, correction) = iq(1500, 2500, -2812) else {
+        unreachable!("iq makes a correction call");
+    };
+    calls.push(Call::Correct(path, value | 0xabcd << 32, correction));
+    assert_calls_succeed(&calls);
 }

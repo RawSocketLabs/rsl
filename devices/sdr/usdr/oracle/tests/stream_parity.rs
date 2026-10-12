@@ -8,7 +8,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr::{Device, Error, RxGain, RxThrottle};
+use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxThrottle};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
 use sim_bus::SimBus;
@@ -37,6 +37,9 @@ enum Call {
     /// libusdr's numeric RX gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
     Gain(&'static CStr, u64, RxGain),
 
+    /// libusdr's `rx/phgaincorr` set to `value`; rsl-usdr's `set_rx_iq_correction`.
+    IqCorrection(u64, RxIqCorrection),
+
     /// `start_rx_stream`: libusdr's create, START and sync "none", as one window.
     Start(u32),
 
@@ -58,6 +61,10 @@ impl Call {
             Self::Frequency(hz) => oracle.set_rx_frequency(hz).is_ok(),
             // SAFETY: every RX gain handler reads its value as a number.
             Self::Gain(path, value, _) => unsafe { oracle.set_uint(path, value) }.is_ok(),
+            Self::IqCorrection(value, _) => {
+                // SAFETY: `dev_m2_lm6_1_sdr_rx_phgaincorr_set` reads its value as a number.
+                unsafe { oracle.set_uint(c"/dm/sdr/0/rx/phgaincorr", value) }.is_ok()
+            }
             Self::Start(samples) => {
                 oracle.create_rx_stream(samples).is_ok()
                     && oracle.start_rx_stream().is_ok()
@@ -80,6 +87,7 @@ impl Call {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
             Self::Frequency(hz) => device.set_rx_frequency(hz),
             Self::Gain(_, _, gain) => device.set_rx_gain(gain),
+            Self::IqCorrection(_, correction) => device.set_rx_iq_correction(correction),
             Self::Start(samples) => device.start_rx_stream(samples),
             Self::Receive => {
                 let mut samples = vec![Complex::new(0, 0); 1 << 16];
@@ -306,6 +314,35 @@ fn stream_calibration_restores_the_rx_vga2_gains_like_libusdr() {
             Call::Frequency(1_000_000_000),
             Call::Gain(c"/dm/sdr/0/rx/gain/vga2a", 9, RxGain::Vga2a(9)),
             Call::Gain(c"/dm/sdr/0/rx/gain/vga2b", 12, RxGain::Vga2b(12)),
+            Call::Start(1024),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// Stream creation writes the IQ correction set before it, for this stream and the next,
+/// rather than a neutral one.
+#[test]
+fn stream_creation_reapplies_the_rx_iq_correction_like_libusdr() {
+    let correction = RxIqCorrection {
+        i_gain: 1500,
+        q_gain: 2047,
+        phase: 700,
+    };
+    // Phase 700 in bits 63:48, Q gain 2047 in 31:16, I gain 1500 in 15:0.
+    let value = 0x02bc << 48 | 0x07ff << 16 | 0x05dc;
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::IqCorrection(value, correction),
+            Call::Start(1024),
+            Call::Stop,
             Call::Start(1024),
             Call::Stop,
         ],

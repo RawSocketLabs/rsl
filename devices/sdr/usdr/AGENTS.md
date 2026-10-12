@@ -22,7 +22,7 @@ qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
 board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
-frequency, gains and path, and the RX stream
+frequency, gains, path and corrections, and the RX stream
 (create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
 `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
@@ -152,9 +152,10 @@ Each layer calls only the ones below it.
   in its own change.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Currently not ported: front-end boards (`fe=`), the RX corrections, and the remaining
-  controls/TX/shared-library domains in [PORTING.md](PORTING.md). The RX gain and path
-  controls (`Device::set_rx_gain`, `Device::set_rx_path`) are ported.
+- Currently not ported: front-end boards (`fe=`) and the remaining controls/TX/shared-library
+  domains in [PORTING.md](PORTING.md). The RX gain, path and correction controls
+  (`Device::set_rx_gain`, `set_rx_path`, `set_rx_dc_trim`, `set_rx_auto_dc_correction`,
+  `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is

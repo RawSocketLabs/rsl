@@ -16,7 +16,7 @@ use crate::chips::lp8758::{BuckControl, BuckVoltage, Config, Lp8758};
 use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
-use crate::fpga::Decimation;
+use crate::fpga::{Decimation, IqImbalance};
 use crate::lowlevel::Bus;
 use crate::portable::power::RailPlan;
 use crate::reference::ReferenceClock;
@@ -120,6 +120,10 @@ pub(super) struct RxState {
 
     /// RXVGA2's second-stage gain in 3 dB steps (libusdr's `rx_vga2b`).
     pub(super) vga2b: u8,
+
+    /// The IQ imbalance correction (libusdr's `rx_corr`), which stream creation writes
+    /// again.
+    pub(super) iq_imbalance: IqImbalance,
 }
 
 /// Which DSP chains the gateware has (HWID bits 25 and 24).

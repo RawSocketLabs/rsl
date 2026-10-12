@@ -129,7 +129,7 @@ impl Board {
             lost_packets: 0,
         });
         // `usdr_rxupdate_cal`.
-        Phy::Rx.set_iq_correction(self.bus.as_mut(), Phy::NO_IQ_IMBALANCE)?;
+        Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())?;
         debug!(
             samples_per_packet,
             samples_per_burst = plan.samples_per_burst(),

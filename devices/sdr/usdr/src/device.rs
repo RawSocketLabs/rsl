@@ -6,7 +6,7 @@ use std::time::Duration;
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
-use crate::board::{Board, RxGain, RxPacket, RxPath, RxThrottle};
+use crate::board::{Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
@@ -291,6 +291,49 @@ impl Device {
     /// Any bus failure.
     pub fn set_rx_path(&mut self, path: RxPath) -> Result<(), Error> {
         self.board().set_rx_path(path)
+    }
+
+    /// Trims the RX mixer's I and Q DC offsets in the LMS6002D (libusdr's `rx/dccorr`).
+    ///
+    /// As in libusdr, starting a stream calibrates DC and leaves the I trim at 0; the Q
+    /// trim stays.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_dc_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
+        self.board().set_rx_dc_trim(i, q)
+    }
+
+    /// Switches the FPGA RX chain's automatic DC-offset correction (libusdr's
+    /// `rx/dccorrmode`, which keeps bit 0 of its value). It is on from the first sample
+    /// rate, and every sample-rate change turns it back on, as in libusdr.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_auto_dc_correction(&mut self, enabled: bool) -> Result<(), Error> {
+        self.board().set_rx_auto_dc_correction(enabled)
+    }
+
+    /// Trims the RX mixer's I and Q second-order intermodulation (IP2) in the LMS6002D
+    /// (libusdr's `rx/ip2corr`).
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_rx_ip2_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
+        self.board().set_rx_ip2_trim(i, q)
+    }
+
+    /// Sets the FPGA RX chain's IQ gain and phase imbalance correction (libusdr's
+    /// `rx/phgaincorr`). It holds for later streams.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure; the correction is still kept for the next stream, as in libusdr.
+    pub fn set_rx_iq_correction(&mut self, correction: RxIqCorrection) -> Result<(), Error> {
+        self.board().set_rx_iq_correction(correction)
     }
 
     /// Waits until the board is below the thermal policy's resume limit, reading every

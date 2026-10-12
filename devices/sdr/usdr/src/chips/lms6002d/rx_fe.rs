@@ -5,8 +5,10 @@
 //! ([`LnaControl`]); its gain mode trades sensitivity against the strongest signal it can
 //! take without distorting. Its output goes to the RX mixer, driven by the RX PLL's LO
 //! buffer for the same LNA path, so changing the LNA also means changing that buffer
-//! ([`Lms6002d::select_lna`](super::Lms6002d::select_lna) does both). RXVGA1's feedback
-//! resistor sets its gain ([`TiaFeedback`]).
+//! ([`Lms6002d::select_lna`](super::Lms6002d::select_lna) does both). The mixer's output
+//! is trimmed for DC offset ([`MixerInput`], [`InternalLoad`]) and second-order
+//! intermodulation ([`ExternalLoad`], [`Ip2TrimQ`]), and RXVGA1's feedback resistor sets
+//! its gain ([`TiaFeedback`]).
 
 use bnb::{BitEnum, bitfield, u2, u4, u6, u7};
 
@@ -26,6 +28,15 @@ pub(super) enum Reg {
 
     /// Datasheet `IN1SEL_DCI`; see [`MixerInput`].
     MixerInput = 0x71,
+
+    /// Datasheet `INLOAD_DCQ`; see [`InternalLoad`].
+    InternalLoad = 0x72,
+
+    /// Datasheet `XLD_IP2I`; see [`ExternalLoad`].
+    ExternalLoad = 0x73,
+
+    /// Datasheet `IP2Q`; see [`Ip2TrimQ`].
+    Ip2TrimQ = 0x74,
 
     /// Datasheet `RFB_TIA`; see [`TiaFeedback`].
     TiaFeedback = 0x76,
@@ -199,6 +210,59 @@ pub(super) struct MixerInput {
 impl Register for MixerInput {
     type Map = Reg;
     const ADDR: Reg = Reg::MixerInput;
+}
+
+/// The LNA's internal load and the Q channel's DC-offset trim. Datasheet `INLOAD_DCQ`,
+/// register 0x72.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct InternalLoad {
+    /// Use the LNA's internal load. `INLOAD_LNA`, bit 7; reset 1.
+    #[bits(7..=7)]
+    internal_load: bool,
+
+    /// Q-channel DC offset, sign-magnitude: bit 6 the sign, bits 5:0 the magnitude.
+    /// `DCOFF_Q`, bits 6:0 (the YAML's description says "I channel", a copy of
+    /// `DCOFF_I`'s).
+    #[bits(0..=6)]
+    dc_offset_q: u7,
+}
+impl Register for InternalLoad {
+    type Map = Reg;
+    const ADDR: Reg = Reg::InternalLoad;
+}
+
+/// The LNA's external load and the I channel's IP2 trim. Datasheet `XLD_IP2I`, register
+/// 0x73.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ExternalLoad {
+    /// Use the LNA's external load. `XLOAD_LNA`, bit 7; reset 0.
+    #[bits(7..=7)]
+    external_load: bool,
+
+    /// I-channel second-order intermodulation (IP2) cancellation, sign-magnitude: bit 6 the
+    /// sign, bits 5:0 the magnitude. `IP2TRIM_I`, bits 6:0.
+    #[bits(0..=6)]
+    ip2_trim_i: u7,
+}
+impl Register for ExternalLoad {
+    type Map = Reg;
+    const ADDR: Reg = Reg::ExternalLoad;
+}
+
+/// The Q channel's IP2 trim. Datasheet `IP2Q`, register 0x74.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Ip2TrimQ {
+    /// Q-channel IP2 cancellation, sign-magnitude: bit 6 the sign, bits 5:0 the
+    /// magnitude. `IP2TRIM_Q`, bits 6:0.
+    #[bits(0..=6)]
+    ip2_trim_q: u7,
+}
+impl Register for Ip2TrimQ {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Ip2TrimQ;
 }
 
 /// The mixer's LO bias and input termination, and LNA3's fine gain. Datasheet

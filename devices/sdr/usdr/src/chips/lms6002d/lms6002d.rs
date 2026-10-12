@@ -4,7 +4,7 @@ use super::afe::{self, ConverterEnables, Interface};
 use super::dc_cal::{DcBlock, DcControl, DcStatus, DcValue};
 use std::time::Duration;
 
-use bnb::{u3, u4, u6};
+use bnb::{u3, u4, u6, u7};
 
 use super::lpf::{self, Lpf};
 use super::pll::{
@@ -12,7 +12,8 @@ use super::pll::{
     VcoRegulator, VcoSelect,
 };
 use super::rx_fe::{
-    self, Lna, LnaControl, LnaGain, LnaLoad, MixerBias, MixerInput, PowerDown, TiaFeedback,
+    self, ExternalLoad, InternalLoad, Ip2TrimQ, Lna, LnaControl, LnaGain, LnaLoad, MixerBias,
+    MixerInput, PowerDown, TiaFeedback,
 };
 use super::rx_vga2;
 use super::spi::SpiWriter;
@@ -418,6 +419,28 @@ impl Lms6002d {
         let mut regs = self.on(bus);
         regs.write_to(Pll::Rx, self.rx_vco)?;
         regs.write(self.lna_control)
+    }
+
+    /// Writes the mixer's I and Q DC-offset trims, with the mixer fed from the LNA and the
+    /// LNA's internal load on (`lms6002d_set_rxfedc`). The I trim shares its register
+    /// with the mixer input, which the stream's DC calibration rewrites with no trim, as
+    /// libusdr's does.
+    pub(crate) fn set_rx_dc_trim(&self, bus: &mut dyn Bus, i: u7, q: u7) -> Result<(), Error> {
+        let mut regs = self.on(bus);
+        regs.write(MixerInput::new().with_from_lna(true).with_dc_offset_i(i))?;
+        regs.write(
+            InternalLoad::new()
+                .with_internal_load(true)
+                .with_dc_offset_q(q),
+        )
+    }
+
+    /// Writes the mixer's I and Q IP2 trims, with the LNA's external load off
+    /// (`lms6002d_set_rxfe_ip2corr`).
+    pub(crate) fn set_rx_ip2_trim(&self, bus: &mut dyn Bus, i: u7, q: u7) -> Result<(), Error> {
+        let mut regs = self.on(bus);
+        regs.write(ExternalLoad::new().with_ip2_trim_i(i))?;
+        regs.write(Ip2TrimQ::new().with_ip2_trim_q(q))
     }
 
     /// Loops the TX mixer's output into the active LNA's path, with the LNA powered down

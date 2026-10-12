@@ -9,6 +9,7 @@
 //! `_usdr_set_nco` and `usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`;
 //! `fgearbox_load_ucode` in `ipblks/fgearbox.c`.
 
+use std::f64::consts::FRAC_PI_4;
 use std::time::Duration;
 
 use bnb::{bitfield, u7, u24};
@@ -89,6 +90,75 @@ pub(crate) enum Nco {
     Nco1,
 }
 
+/// An IQ imbalance as libusdr keeps it for a chain (`struct imb_data`); the default is
+/// none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct IqImbalance {
+    /// Amplitude imbalance, ±262144 full scale (`ampl`, `IMB_AMPL_MAX`): positive scales
+    /// I down by that fraction, negative scales Q down.
+    pub(crate) amplitude: i32,
+
+    /// Phase imbalance, 45000 being a π/4 rotation of each channel (`pahse`,
+    /// `IMB_PHASE_MAX`). libusdr does not clamp either field.
+    pub(crate) phase: i32,
+}
+
+impl IqImbalance {
+    /// The amplitude full scale (`IMB_AMPL_MAX`).
+    const AMPLITUDE_FULL_SCALE: f64 = 262_144.0;
+
+    /// The phase that rotates by π/4 (`IMB_PHASE_MAX`).
+    const PHASE_FULL_SCALE: f64 = 45_000.0;
+
+    /// The RX chain's headroom scale: two channels, no 3 dB boost (`AMP_COMP_2CH_0DB`,
+    /// `usdr_ctor`'s setting for RX).
+    const RX_SCALE: f32 = 0.5;
+
+    /// The largest 24-bit term (`dsp_amp_max`).
+    const TERM_MAX: f32 = 8_388_607.0;
+
+    /// The four correction terms for the RX chain, I and Q amplitudes then I and Q phase
+    /// terms, in libusdr's arithmetic (`usdr_calc_iqimb`): sine and cosine in double,
+    /// narrowed to float, the products in float, then truncated to integers.
+    pub(crate) fn rx_terms(self) -> [i32; 4] {
+        let angle = FRAC_PI_4 * f64::from(self.phase) / Self::PHASE_FULL_SCALE;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "libusdr stores these doubles in floats"
+        )]
+        let (cos, sin) = (angle.cos() as f32, angle.sin() as f32);
+        let amplitude = f64::from(self.amplitude) / Self::AMPLITUDE_FULL_SCALE;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "libusdr stores these doubles in floats"
+        )]
+        let (alpha, beta) = (
+            if self.amplitude > 0 {
+                1.0 - amplitude
+            } else {
+                1.0
+            } as f32,
+            if self.amplitude < 0 {
+                1.0 + amplitude
+            } else {
+                1.0
+            } as f32,
+        );
+        let scale = Self::RX_SCALE;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "libusdr converts the float products to int32_t, truncating"
+        )]
+        let term = |factor: f32| (Self::TERM_MAX * factor) as i32;
+        [
+            term(scale * cos * alpha),
+            term(scale * cos * beta),
+            term(-scale * sin * alpha),
+            term(scale * sin * beta),
+        ]
+    }
+}
+
 /// The decimator's rate-change factor, with the FIR microcode for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Decimation {
@@ -153,12 +223,9 @@ impl Phy {
         self.write(bus, SubReg::DcControl, u32::from(on))
     }
 
-    /// The IQ correction with no imbalance: libusdr's `usdr_calc_iqimb` for its default
-    /// settings, amplitudes of 0.5 × 8388607 and no phase terms.
-    pub(crate) const NO_IQ_IMBALANCE: [i32; 4] = [4_194_303, 4_194_303, 0, 0];
-
-    /// Writes the IQ imbalance correction: I and Q amplitudes, then I and Q phase terms
-    /// (`usdr_rxupdate_cal`). libusdr keeps each term's low 24 bits.
+    /// Writes the IQ imbalance correction terms, as [`IqImbalance::rx_terms`] makes them:
+    /// I and Q amplitudes, then I and Q phase terms (`usdr_rxupdate_cal`). libusdr keeps
+    /// each term's low 24 bits.
     pub(crate) fn set_iq_correction(self, bus: &mut dyn Bus, terms: [i32; 4]) -> Result<(), Error> {
         let subs = [
             SubReg::IqAmplitudeI,
