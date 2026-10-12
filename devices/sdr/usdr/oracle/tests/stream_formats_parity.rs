@@ -1,0 +1,382 @@
+//! rsl-usdr's stream group (create, sync and start, receive, stop) against libusdr's
+//! `usdr_dms_*` calls, for every host@wire format pair the uSDR's RX front end offers:
+//! each call's operations, and the host buffers libusdr's own converters fill, byte for
+//! byte.
+
+#[path = "common/baseband.rs"]
+mod baseband;
+#[allow(
+    dead_code,
+    reason = "only the Si5332 address and mixer block are used, through the baseband cut"
+)]
+#[path = "common/crossing.rs"]
+mod crossing;
+#[path = "../../tests/common/sim_bus.rs"]
+mod sim_bus;
+
+use std::ffi::CStr;
+use std::ops::Range;
+use std::time::Duration;
+
+use baseband::without_baseband_loop;
+use num_complex::Complex;
+use rsl_usdr::{
+    Ci12, Device, Error, HostFormat, HostSample, RxConfig, RxMetadata, StreamsConfig, SyncMode,
+    WireFormat,
+};
+use rsl_usdr_oracle::{Oracle, RecvInfo};
+use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use sim_bus::SimBus;
+
+/// The RX front end's command register.
+const REG_RX_FRONT_END: u32 = 0x1_0100;
+
+/// A host buffer element as little-endian bytes, as libusdr's converters write it.
+trait LeBytes: HostSample {
+    /// The element's bytes.
+    fn le_bytes(&self) -> Vec<u8>;
+}
+
+impl LeBytes for Complex<i16> {
+    fn le_bytes(&self) -> Vec<u8> {
+        [self.re.to_le_bytes(), self.im.to_le_bytes()].concat()
+    }
+}
+
+impl LeBytes for Complex<f32> {
+    fn le_bytes(&self) -> Vec<u8> {
+        [self.re.to_le_bytes(), self.im.to_le_bytes()].concat()
+    }
+}
+
+impl LeBytes for Ci12 {
+    fn le_bytes(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
+}
+
+/// One stream scenario, made the same way on both sides.
+#[derive(Clone, Copy, Debug)]
+struct Scenario {
+    /// libusdr's data format string.
+    dformat: &'static CStr,
+
+    /// libusdr's sync type.
+    synctype: &'static CStr,
+
+    /// rsl-usdr's configuration for the same stream.
+    config: StreamsConfig,
+}
+
+impl Scenario {
+    /// A channel-0 stream of `samples` per packet in `dformat`, which is `host@wire`,
+    /// started unsynchronised.
+    fn new(dformat: &'static CStr, samples: u32, host: HostFormat, wire: WireFormat) -> Self {
+        Self {
+            dformat,
+            synctype: c"none",
+            config: StreamsConfig::rx(RxConfig::new(samples, host, wire)),
+        }
+    }
+
+    /// This scenario, started with libusdr's `synctype`, rsl-usdr's `sync`.
+    fn synced(mut self, synctype: &'static CStr, sync: SyncMode) -> Self {
+        self.synctype = synctype;
+        self.config = self.config.with_sync(sync);
+        self
+    }
+
+    /// Samples per packet.
+    fn samples(&self) -> usize {
+        let rx = self.config.rx.expect("an RX stream");
+        usize::try_from(rx.samples_per_packet).expect("fits")
+    }
+}
+
+/// A received packet's host bytes, and its time, samples and lost packets (libusdr's
+/// `fsymtime`, `totsyms`, `totlost`).
+type Packet = (Vec<u8>, (u64, usize, u64));
+
+/// What one side did: each step's operations and each packet received.
+struct Run {
+    /// The board's trace after the run.
+    trace: Vec<Op>,
+    /// Each step's name and trace range: create, start (sync then start), each receive,
+    /// stop.
+    windows: Vec<(&'static str, Range<usize>)>,
+    /// Each received packet.
+    packets: Vec<Packet>,
+}
+
+/// The trace range `step` adds, `trace_len` reading the trace's length.
+fn window(trace_len: impl Fn() -> usize, step: impl FnOnce()) -> Range<usize> {
+    let start = trace_len();
+    step();
+    start..trace_len()
+}
+
+/// libusdr: rate, frequency, create, sync and START, `receives` packets, STOP and destroy.
+fn on_libusdr(scenario: Scenario, receives: usize) -> Run {
+    let mut oracle = Oracle::open(SimBoard::new(BoardRevision::Rev3)).expect("libusdr opens");
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    oracle.set_rx_frequency(1_000_000_000).expect("tunes");
+    let samples = u32::try_from(scenario.samples()).expect("fits");
+    let mut windows = Vec::new();
+    let start = oracle.trace_len();
+    oracle
+        .create_rx_stream_as(scenario.dformat, samples)
+        .expect("libusdr creates the stream");
+    windows.push(("create", start..oracle.trace_len()));
+    let start = oracle.trace_len();
+    oracle
+        .sync_rx_stream(scenario.synctype)
+        .expect("libusdr syncs");
+    oracle.start_rx_stream().expect("libusdr starts");
+    windows.push(("start", start..oracle.trace_len()));
+    let mut packets = Vec::new();
+    for _ in 0..receives {
+        let start = oracle.trace_len();
+        let (bytes, info) = oracle.receive_rx_packet(100).expect("a packet");
+        windows.push(("receive", start..oracle.trace_len()));
+        let RecvInfo {
+            fsymtime,
+            totsyms,
+            totlost,
+            ..
+        } = info;
+        let summary = (
+            fsymtime,
+            usize::try_from(totsyms).expect("fits"),
+            u64::from(totlost),
+        );
+        packets.push((bytes, summary));
+    }
+    let start = oracle.trace_len();
+    oracle.stop_rx_stream().expect("libusdr stops");
+    oracle.destroy_rx_stream().expect("libusdr destroys");
+    windows.push(("stop", start..oracle.trace_len()));
+    Run {
+        trace: oracle.close().trace().to_vec(),
+        windows,
+        packets,
+    }
+}
+
+/// Receives one packet into a buffer of `S`, returning its bytes and information.
+fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize) -> Packet {
+    let mut buffer = vec![S::default(); samples];
+    let RxMetadata {
+        time,
+        samples,
+        lost_packets,
+        ..
+    } = device
+        .receive_into(&mut [&mut buffer], Duration::from_millis(100))
+        .expect("a packet");
+    let bytes = buffer.iter().flat_map(LeBytes::le_bytes).collect();
+    (bytes, (time.samples(), samples, lost_packets))
+}
+
+/// rsl-usdr: the same calls through `create_streams`, `start_streams`, `receive_into` and
+/// `stop_streams`.
+fn on_rsl(scenario: Scenario, receives: usize) -> Run {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    device.set_rx_frequency(1_000_000_000).expect("tunes");
+    let trace_len = || sim.board().trace().len();
+    let mut windows = vec![
+        (
+            "create",
+            window(trace_len, || {
+                device
+                    .create_streams(scenario.config)
+                    .expect("rsl-usdr creates the stream");
+            }),
+        ),
+        (
+            "start",
+            window(trace_len, || {
+                device.start_streams().expect("rsl-usdr starts");
+            }),
+        ),
+    ];
+    let host = scenario.config.rx.expect("an RX stream").host;
+    let mut packets = Vec::new();
+    for _ in 0..receives {
+        let mut packet = None;
+        let range = window(trace_len, || {
+            packet = Some(match host {
+                HostFormat::Ci16 => receive::<Complex<i16>>(&mut device, scenario.samples()),
+                HostFormat::Cf32 => receive::<Complex<f32>>(&mut device, scenario.samples()),
+                HostFormat::Ci12 => receive::<Ci12>(&mut device, scenario.samples()),
+                other => panic!("{other:?} has no buffer type here"),
+            });
+        });
+        windows.push(("receive", range));
+        packets.push(packet.expect("received"));
+    }
+    let stopped = window(trace_len, || {
+        device.stop_streams().expect("rsl-usdr stops");
+    });
+    windows.push(("stop", stopped));
+    let trace = sim.board().trace().to_vec();
+    Run {
+        trace,
+        windows,
+        packets,
+    }
+}
+
+/// Asserts both sides made the same operations in each step, libusdr's create without
+/// its baseband loop (the whitelisted divergence), and returns both runs.
+fn assert_windows_match(scenario: Scenario, receives: usize) -> (Run, Run) {
+    let expected = on_libusdr(scenario, receives);
+    let actual = on_rsl(scenario, receives);
+    for ((name, expected_window), (_, actual_window)) in
+        expected.windows.iter().zip(&actual.windows)
+    {
+        let mut expected_ops = expected.trace[expected_window.clone()].to_vec();
+        if *name == "create" {
+            (expected_ops, _) = without_baseband_loop(&expected_ops, false);
+        }
+        let actual_ops = &actual.trace[actual_window.clone()];
+        assert_eq!(
+            expected_ops, actual_ops,
+            "{scenario:?}: the {name} step's operations differ"
+        );
+    }
+    (expected, actual)
+}
+
+/// Every host@wire pair, at a packet size whose bursts need no padding in either wire
+/// format (1024 samples: 4096 bytes of `ci16`, 3072 of `ci12`), sync "none": the same
+/// operations, the same host bytes from libusdr's converters, the same packet times.
+#[test]
+fn every_format_pair_matches_libusdr_operations_and_bytes() {
+    use HostFormat as H;
+    use WireFormat as W;
+    let pairs: [(&CStr, H, W); 6] = [
+        (c"ci16", H::Ci16, W::Ci16),
+        (c"cf32", H::Cf32, W::Ci16),
+        (c"ci12@ci16", H::Ci12, W::Ci16),
+        (c"ci12", H::Ci12, W::Ci12),
+        (c"ci16@ci12", H::Ci16, W::Ci12),
+        (c"cf32@ci12", H::Cf32, W::Ci12),
+    ];
+    for (dformat, host, wire) in pairs {
+        let scenario = Scenario::new(dformat, 1024, host, wire);
+        let (expected, actual) = assert_windows_match(scenario, 2);
+        assert_eq!(
+            expected.packets, actual.packets,
+            "{scenario:?}: received bytes and packet information"
+        );
+    }
+}
+
+/// The 12-bit wire format splits a 16384-sample packet into two bursts by its own word
+/// count, and the samples still arrive in order.
+#[test]
+fn a_two_burst_twelve_bit_stream_matches_libusdr() {
+    let scenario = Scenario::new(c"cf32@ci12", 16384, HostFormat::Cf32, WireFormat::Ci12);
+    let (expected, actual) = assert_windows_match(scenario, 2);
+    assert_eq!(expected.packets, actual.packets, "received bytes");
+}
+
+/// The 12-bit format bits reach the front end: libusdr's burst-format word for `ci12`
+/// differs from `ci16`'s in its sample format, and rsl-usdr writes the same.
+#[test]
+fn the_twelve_bit_burst_format_is_libusdrs() {
+    let scenario = Scenario::new(c"ci16@ci12", 1024, HostFormat::Ci16, WireFormat::Ci12);
+    let (expected, _) = assert_windows_match(scenario, 0);
+    let burst_format = expected.trace[expected.windows[0].1.clone()]
+        .iter()
+        .find_map(|op| match op {
+            Op::RegWrite {
+                addr: REG_RX_FRONT_END,
+                value,
+            } if value >> 28 == 1 => Some(*value),
+            _ => None,
+        })
+        .expect("create writes the burst format");
+    // 21 bursts in the FIFO, 384 words less one, channel 0's lanes, `IFMT_12BIT`.
+    assert_eq!(burst_format, 0x1000_0000 | 21 << 18 | 383 << 5 | 1 << 2 | 2);
+}
+
+/// libusdr's "all" sync with RX alone waits on the RX front end's activity; rsl-usdr's
+/// `SyncMode::All` writes the same, and the stream flows.
+#[test]
+fn an_all_synchronised_stream_matches_libusdr() {
+    let scenario = Scenario::new(c"cf32@ci12", 1024, HostFormat::Cf32, WireFormat::Ci12)
+        .synced(c"all", SyncMode::All);
+    let (expected, actual) = assert_windows_match(scenario, 2);
+    assert_eq!(expected.packets, actual.packets, "received bytes");
+}
+
+/// A packet whose 12-bit burst ends in a stub: the operations match, and so do the
+/// packet's samples. Whitelisted divergence (rsl-usdr's documented stub skipping):
+/// libusdr converts the whole block, so its buffer holds one more sample, converted from
+/// the zero stub; rsl-usdr's ends at the packet.
+#[test]
+fn a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
+    // 1023 samples are 3069 bytes in a 3072-byte burst: a 3-byte stub, one ci12 sample.
+    let scenario = Scenario::new(c"ci16@ci12", 1023, HostFormat::Ci16, WireFormat::Ci12);
+    let (expected, actual) = assert_windows_match(scenario, 1);
+    let (expected_bytes, expected_info) = &expected.packets[0];
+    let (actual_bytes, actual_info) = &actual.packets[0];
+    assert_eq!(expected_info, actual_info, "packet information");
+    assert_eq!(
+        expected_bytes.len(),
+        actual_bytes.len() + 4,
+        "libusdr's buffer holds the stub's sample too"
+    );
+    assert_eq!(
+        &expected_bytes[..actual_bytes.len()],
+        &actual_bytes[..],
+        "the packet's samples"
+    );
+    assert_eq!(
+        expected_bytes[actual_bytes.len()..],
+        [0; 4],
+        "libusdr's extra sample is the zero stub"
+    );
+}
+
+/// libusdr's uSDR sync core has no "extall": it creates the stream, then refuses the
+/// sync without an operation. rsl-usdr refuses `SyncMode::ExternalAll` at create, before
+/// any operation.
+#[test]
+fn external_sync_is_refused_by_both_before_any_sync_operation() {
+    let mut oracle = Oracle::open(SimBoard::new(BoardRevision::Rev3)).expect("libusdr opens");
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    oracle
+        .create_rx_stream_as(c"cf32@ci12", 1024)
+        .expect("libusdr creates the stream");
+    let start = oracle.trace_len();
+    assert_eq!(oracle.sync_rx_stream(c"extall"), Err(-22), "-EINVAL");
+    assert_eq!(oracle.trace_len(), start, "libusdr's sync wrote nothing");
+    drop(oracle.close());
+
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let start = sim.board().trace().len();
+    let config = StreamsConfig::rx(RxConfig::new(1024, HostFormat::Cf32, WireFormat::Ci12))
+        .with_sync(SyncMode::ExternalAll);
+    assert!(
+        matches!(
+            device.create_streams(config),
+            Err(Error::UnsupportedSync(SyncMode::ExternalAll))
+        ),
+        "rsl-usdr refuses external sync"
+    );
+    assert_eq!(
+        sim.board().trace().len(),
+        start,
+        "nothing reached the board"
+    );
+}

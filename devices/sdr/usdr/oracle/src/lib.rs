@@ -79,12 +79,48 @@ unsafe extern "C" {
         pstream: *mut Stream,
     ) -> c_int;
     fn usdr_dms_destroy(stream: Stream) -> c_int;
+    fn usdr_dms_info(stream: Stream, nfo: *mut StreamInfo) -> c_int;
     fn usdr_dms_recv(
         stream: Stream,
         stream_buffs: *mut *mut c_void,
         timeout_ms: c_uint,
-        nfo: *mut c_void,
+        nfo: *mut RecvInfo,
     ) -> c_int;
+}
+
+/// libusdr's `usdr_dms_nfo`: what a stream delivers.
+#[repr(C)]
+#[derive(Default)]
+struct StreamInfo {
+    /// `USDR_DMS_RX` or `USDR_DMS_TX`.
+    kind: c_uint,
+    /// Logical channels.
+    channels: c_uint,
+    /// Host bytes per packet, per channel (`pktbszie`).
+    packet_bytes: c_uint,
+    /// Samples per packet, per channel.
+    packet_samples: c_uint,
+    /// Samples per time tick over all channels; not set for this stream type.
+    tick_samples: c_uint,
+    /// Bursts per packet.
+    bursts: c_uint,
+}
+
+/// libusdr's `usdr_dms_recv_nfo` for one received packet, without the flexible `parts`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecvInfo {
+    /// The packet's first sample, counted on the host from the stream's start, lost packets
+    /// included (`fsymtime`).
+    pub fsymtime: u64,
+    /// Samples in the packet (`totsyms`).
+    pub totsyms: c_uint,
+    /// Packets lost since the stream started (`totlost`).
+    pub totlost: c_uint,
+    /// Unused by this stream type (`max_parts`).
+    pub max_parts: c_uint,
+    /// The DMA status out-of-band word (`extra`).
+    pub extra: u64,
 }
 
 /// One fact about the `PCIe` driver interface: the C expression and its value
@@ -295,6 +331,21 @@ impl Oracle {
     ///
     /// The negative errno libusdr returned; `-EBUSY` if a stream exists.
     pub fn create_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), i32> {
+        self.create_rx_stream_as(c"ci16", samples_per_packet)
+    }
+
+    /// Creates an RX stream on `/ll/srx/0`, channel 0, in libusdr's data format `dformat`
+    /// (`"host@wire"`, or a host format alone, such as `c"cf32@ci12"` or `c"cf32"`), with
+    /// `samples_per_packet` samples per packet.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EBUSY` if a stream exists.
+    pub fn create_rx_stream_as(
+        &mut self,
+        dformat: &CStr,
+        samples_per_packet: u32,
+    ) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
@@ -308,7 +359,7 @@ impl Oracle {
             usdr_dms_create_ex(
                 dev.as_ptr(),
                 c"/ll/srx/0".as_ptr(),
-                c"ci16".as_ptr(),
+                dformat.as_ptr(),
                 1,
                 samples_per_packet,
                 0,
@@ -348,6 +399,16 @@ impl Oracle {
     ///
     /// The negative errno libusdr returned; `-EINVAL` with no stream.
     pub fn sync_free_run(&mut self) -> Result<(), i32> {
+        self.sync_rx_stream(c"none")
+    }
+
+    /// Synchronises the RX stream with libusdr's `synctype`, such as `c"all"`
+    /// (`usdr_dms_sync(dev, synctype, 1, [rx])`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn sync_rx_stream(&mut self, synctype: &CStr) -> Result<(), i32> {
         let (Some(dev), Some(stream)) = (self.dev, self.stream) else {
             return Err(-EINVAL);
         };
@@ -355,7 +416,7 @@ impl Oracle {
         // SAFETY: `dev` is open, the string is NUL-terminated, and `streams` holds one live
         // stream for the call.
         let errno =
-            unsafe { usdr_dms_sync(dev.as_ptr(), c"none".as_ptr(), 1, streams.as_mut_ptr()) };
+            unsafe { usdr_dms_sync(dev.as_ptr(), synctype.as_ptr(), 1, streams.as_mut_ptr()) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
@@ -387,6 +448,48 @@ impl Oracle {
         };
         resume_callback_panic();
         if errno == 0 { Ok(buffer) } else { Err(errno) }
+    }
+
+    /// Receives one packet from the RX stream, waiting up to `timeout_ms`
+    /// (`usdr_dms_recv`), and returns exactly the host bytes libusdr converted into
+    /// (`usdr_dms_info`'s packet size) with the packet's information.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ETIMEDOUT` while the sim's stream engine is
+    /// stopped); `-EINVAL` with no stream.
+    pub fn receive_rx_packet(&mut self, timeout_ms: u32) -> Result<(Vec<u8>, RecvInfo), i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        let mut info = StreamInfo::default();
+        // SAFETY: `stream` is live and `info` is a valid out-pointer.
+        let errno = unsafe { usdr_dms_info(stream.as_ptr(), &raw mut info) };
+        resume_callback_panic();
+        if errno != 0 {
+            return Err(errno);
+        }
+        let packet_bytes = usize::try_from(info.packet_bytes).map_err(|_| -EINVAL)?;
+        let mut buffer = vec![0_u8; packet_bytes];
+        let mut buffers = [buffer.as_mut_ptr().cast::<c_void>()];
+        let mut recv = RecvInfo::default();
+        // SAFETY: `stream` is live, `buffers` holds the one channel buffer of the packet's
+        // host size, the most libusdr's converter writes, and `recv` is a valid
+        // out-pointer.
+        let errno = unsafe {
+            usdr_dms_recv(
+                stream.as_ptr(),
+                buffers.as_mut_ptr(),
+                timeout_ms,
+                &raw mut recv,
+            )
+        };
+        resume_callback_panic();
+        if errno == 0 {
+            Ok((buffer, recv))
+        } else {
+            Err(errno)
+        }
     }
 
     /// Destroys the RX stream (`usdr_dms_destroy`).

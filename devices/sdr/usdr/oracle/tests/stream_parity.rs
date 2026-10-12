@@ -1,6 +1,8 @@
 //! rsl-usdr's RX stream (start, receive, stop) against libusdr's, operation for operation.
 
 // Only the Si5332 block and its address are used here; the fix itself is not.
+#[path = "common/baseband.rs"]
+mod baseband;
 #[allow(
     dead_code,
     reason = "this test shares the module but not the band-crossing fix"
@@ -14,22 +16,13 @@ use std::ffi::CStr;
 use std::ops::Range;
 use std::time::Duration;
 
-use crossing::{CLOCK, mixer_lo_block};
+use baseband::without_baseband_loop;
+use crossing::mixer_lo_block;
 use num_complex::Complex;
 use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
-
-/// FPGA register latching GPO banks.
-const REG_GPO: u32 = 0;
-/// The RX DSP chain's configuration port.
-const REG_PHY_RX: u32 = 56;
-/// The RX DMA status register, read first by libusdr's DMA reset.
-const REG_RX_DMA_STATUS: u32 = 6;
-/// The SPI write of RXVGA2's gain register (0x68), whose low byte is the stage steps;
-/// libusdr's DC calibration ends by restoring them.
-const VGA2_GAIN_WRITE: u32 = 0xe800;
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -142,61 +135,6 @@ fn without_owed_mixer_exit(window: &[Op]) -> Vec<Op> {
         .position(|ops| ops == block)
         .expect("libusdr leaves the mixer band its baseband loop entered");
     [&window[..start], &window[start + block.len()..]].concat()
-}
-
-/// libusdr's create window without the per-channel baseband loop.
-///
-/// Intentional divergence, the second: after its DC calibration, libusdr's stream create
-/// reapplies each channel's LO as a baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX,
-/// .., rx_raw.lo[i])` in `usdr_device_m2_lm6_1_create_stream`), a bug that reselects the
-/// band, clamps the NCOs and bypasses the filter. rsl-usdr leaves it out. The cut runs from
-/// the calibration's last write to the DMA engine's status read; it must hold only what
-/// that loop does (LMS6002D SPI, GPO and PHY writes, Si5332 writes, sleeps), so nothing
-/// else can hide in it, and be non-empty unless `idle_loop`. The window between also holds
-/// libusdr's TX PLL retune when a TX LO is set; TX is not ported, so it never is, and the
-/// cut never hides one.
-///
-/// With `idle_loop` the cut must be empty: untuned, with a wide or high path fixed, the
-/// loop selects no band and retunes to 0 Hz, which fails before any operation.
-///
-/// Returns the trimmed window and whether the cut turned the board mixer on: with no
-/// frequency set, libusdr's loop selects the mixer band, and its next tune out of that band
-/// writes a mixer-off block rsl-usdr has no reason to (see [`without_owed_mixer_exit`]).
-fn without_baseband_loop(window: &[Op], idle_loop: bool) -> (Vec<Op>, bool) {
-    let dma_reset = window
-        .iter()
-        .position(|op| matches!(op, Op::RegRead { addr, .. } if *addr == REG_RX_DMA_STATUS))
-        .expect("create resets the DMA engine");
-    let calibrated = window[..dma_reset]
-        .iter()
-        .rposition(
-            |op| matches!(op, Op::Spi { bus: 0, out, .. } if *out & !0xff == VGA2_GAIN_WRITE),
-        )
-        .expect("create calibrates first")
-        + 1;
-    let cut = &window[calibrated..dma_reset];
-    assert_eq!(
-        cut.is_empty(),
-        idle_loop,
-        "libusdr's baseband loop operates unless the scenario says it idles"
-    );
-    assert!(
-        cut.iter().all(|op| matches!(
-            op,
-            Op::Spi { .. }
-                | Op::Sleep { .. }
-                | Op::RegWrite {
-                    addr: REG_GPO | REG_PHY_RX,
-                    ..
-                }
-        ) || matches!(op, Op::I2c { addr, .. } if *addr == CLOCK)),
-        "the cut holds only the baseband loop's operations: {cut:x?}"
-    );
-    let mixer_on = cut.windows(6).any(|ops| ops == mixer_lo_block(true));
-    (
-        [&window[..calibrated], &window[dma_reset..]].concat(),
-        mixer_on,
-    )
 }
 
 /// Makes `calls` in turn on fresh boards through libusdr and rsl-usdr and compares each
