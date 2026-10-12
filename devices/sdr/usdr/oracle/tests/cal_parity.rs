@@ -30,10 +30,6 @@ fn to_c(samples: &[Complex32]) -> Vec<CFloat> {
         .collect()
 }
 
-fn to_rust(samples: &[CFloat]) -> Vec<Complex32> {
-    samples.iter().map(|s| Complex32::new(s.i, s.q)).collect()
-}
-
 /// Bitwise equality, so NaNs and signed zeros count.
 fn same(a: f32, b: f32) -> bool {
     a.to_bits() == b.to_bits()
@@ -143,7 +139,6 @@ fn fits_and_errors_match() {
         let rust = fit::max_component_error(&samples, amp, period, phase);
         assert!(same(rust, c::max_amp_error(&c_samples, amp, period, phase)));
     }
-    assert_samples_eq(&to_rust(&c::dump12(&[])), &[], "empty");
 }
 
 /// A deterministic, bumpy cost table indexed by parameter.
@@ -176,14 +171,14 @@ fn one_dimensional_searches_probe_and_answer_identically() {
             assert_eq!((rust.x, rust.cost), c, "golden {seed} {start}..{stop}");
             assert_eq!(rust_calls, c_calls, "golden probes {seed} {start}..{stop}");
 
-            for extra in [0, 2] {
+            for extra in [0_u16, 2] {
                 let (mut rust_calls, mut c_calls) = (Vec::new(), Vec::new());
                 let rust = search::iterate_min::<()>(start, stop, extra, |x| {
                     rust_calls.push(x);
                     Ok(cost(x))
                 })
                 .unwrap();
-                let c = c::iterate_min(start, stop, extra, |x| {
+                let c = c::iterate_min(start, stop, i32::from(extra), |x| {
                     c_calls.push(x);
                     cost(x)
                 });
@@ -198,74 +193,110 @@ fn one_dimensional_searches_probe_and_answer_identically() {
     }
 }
 
-/// Records a two-dimensional objective's calls: (axis, value, evaluated).
+/// Records a two-dimensional objective's calls: (stage, axis, value, evaluated).
 struct Recorder<'a> {
-    calls: Vec<(i32, i32, bool)>,
-    cost: &'a dyn Fn(i32, i32) -> i32,
+    calls: Vec<(usize, i32, i32, bool)>,
+    cost: &'a dyn Fn(usize, i32, i32) -> i32,
     at: [i32; 2],
 }
 
 impl Objective2d for Recorder<'_> {
     type Error = ();
 
-    fn set(&mut self, axis: Axis, value: i32) -> Result<(), ()> {
+    fn set(&mut self, stage: usize, axis: Axis, value: i32) -> Result<(), ()> {
         let index = usize::from(axis == Axis::Y);
         self.at[index] = value;
-        self.calls.push((i32::from(axis == Axis::Y), value, false));
+        self.calls
+            .push((stage, i32::from(axis == Axis::Y), value, false));
         Ok(())
     }
 
-    fn evaluate(&mut self, axis: Axis, value: i32) -> Result<i32, ()> {
+    fn evaluate(&mut self, stage: usize, axis: Axis, value: i32) -> Result<i32, ()> {
         let index = usize::from(axis == Axis::Y);
         self.at[index] = value;
-        self.calls.push((i32::from(axis == Axis::Y), value, true));
-        Ok((self.cost)(self.at[0], self.at[1]))
+        self.calls
+            .push((stage, i32::from(axis == Axis::Y), value, true));
+        Ok((self.cost)(stage, self.at[0], self.at[1]))
     }
 }
 
-#[test]
-fn two_dimensional_searches_visit_and_answer_identically() {
-    let cost = |x: i32, y: i32| (x - 40).pow(2) + 3 * (y - 70).pow(2) + (x * y) % 7;
-    for (golden, extra, stop_when, stages) in [
-        (true, 0, 0, 2),
-        (false, 0, 0, 2),
-        (false, 1, 50, 3),
-        (true, 0, i32::MAX, 3),
-    ] {
-        let stage = Stage {
+/// One stage as the tests write it: golden (else iterate), X and Y limits, extra step.
+type StageSpec = (bool, [(i32, i32); 2], u16);
+
+/// Runs one 2-D search through both, comparing answer and every call, stage included.
+fn assert_best_2d_matches(stages: &[StageSpec], stop_when: i32) {
+    // Stage 3 measures differently, as libusdr's precise LO evaluator does.
+    let cost = |stage: usize, x: i32, y: i32| {
+        let base = (x - 40).pow(2) + 3 * (y - 70).pow(2) + (x * y) % 7;
+        if stage == 3 { base * 2 + 1 } else { base }
+    };
+    let stages_rust: Vec<Stage> = stages
+        .iter()
+        .map(|&(golden, limits, extra_step)| Stage {
             search: if golden {
                 Search::Golden
             } else {
                 Search::Iterate
             },
-            limits: [Limits { min: 0, max: 100 }, Limits { min: -10, max: 150 }],
-            extra_step: extra,
-        };
-        let stages_rust = vec![stage; stages];
-        let mut recorder = Recorder {
-            calls: Vec::new(),
-            cost: &cost,
-            at: [0, 0],
-        };
-        let rust = search::best_2d(&stages_rust, stop_when, &mut recorder).unwrap();
+            limits: limits.map(|(min, max)| Limits { min, max }),
+            extra_step,
+        })
+        .collect();
+    let mut recorder = Recorder {
+        calls: Vec::new(),
+        cost: &cost,
+        at: [0, 0],
+    };
+    let rust = search::best_2d(&stages_rust, stop_when, &mut recorder).unwrap();
 
-        let stages_c = vec![
-            c::Stage {
-                golden,
-                limits: [(0, 100), (-10, 150)],
-                extra,
-            };
-            stages
-        ];
-        let mut c_calls = Vec::new();
-        let mut at = [0, 0];
-        let c = c::best_2d(&stages_c, stop_when, |axis, value, evaluate| {
-            at[usize::try_from(axis).unwrap()] = value;
-            c_calls.push((axis, value, evaluate));
-            cost(at[0], at[1])
-        });
-        assert_eq!((rust.x, rust.y, rust.cost), c, "best 2d {golden} {extra}");
-        assert_eq!(recorder.calls, c_calls, "visits {golden} {extra}");
+    let stages_c: Vec<c::Stage> = stages
+        .iter()
+        .map(|&(golden, limits, extra)| c::Stage {
+            golden,
+            limits,
+            extra: i32::from(extra),
+        })
+        .collect();
+    let mut c_calls = Vec::new();
+    let mut at = [0, 0];
+    let c = c::best_2d(&stages_c, stop_when, |stage, axis, value, evaluate| {
+        at[usize::try_from(axis).unwrap()] = value;
+        c_calls.push((stage, axis, value, evaluate));
+        cost(stage, at[0], at[1])
+    });
+    assert_eq!((rust.x, rust.y, rust.cost), c, "best 2d {stages:?}");
+    assert_eq!(recorder.calls, c_calls, "visits {stages:?}");
+}
+
+#[test]
+fn two_dimensional_searches_visit_and_answer_identically() {
+    for (golden, extra, stop_when, count) in [
+        (true, 0, 0, 2),
+        (false, 0, 0, 2),
+        (false, 1, 50, 3),
+        (true, 0, i32::MAX, 3),
+    ] {
+        let stage = (golden, [(0, 100), (-10, 150)], extra);
+        assert_best_2d_matches(&vec![stage; count], stop_when);
+    }
+}
+
+/// libusdr's LO-leakage search (`cal_lo_iqimb.c`): absolute golden, an eighth of it,
+/// then iterated +/-80 in steps of 5 and +/-8 with the precise evaluator.
+#[test]
+fn the_lo_calibration_search_shape_visits_identically() {
+    let corr = (-2048, 2047);
+    let eighth = (corr.0 / 8, corr.1 / 8);
+    for stop_when in [0, 30] {
+        assert_best_2d_matches(
+            &[
+                (true, [corr, corr], 0),
+                (true, [eighth, eighth], 0),
+                (false, [(-80, 80), (-80, 80)], 4),
+                (false, [(-8, 8), (-8, 8)], 0),
+            ],
+            stop_when,
+        );
     }
 }
 

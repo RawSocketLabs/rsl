@@ -82,9 +82,13 @@ impl Board {
     pub(crate) fn set_reference_clock(&mut self, reference: ReferenceClock) -> Result<(), Error> {
         let input = Self::si5332_reference(reference, self.rev3);
         let mut switch = ClockSequence::reference_switch(Self::CLOCK.dev(), input);
-        run_sequence(self.bus.as_mut(), &mut switch)?;
-        self.reference = reference;
-        Ok(())
+        let switched = run_sequence(self.bus.as_mut(), &mut switch);
+        // A missing input clock is reported only after every write, ACTIVE included: the
+        // chip is on the new input, so later plans must use its frequency.
+        if matches!(switched, Ok(()) | Err(Error::ClockInputMissing)) {
+            self.reference = reference;
+        }
+        switched
     }
 
     /// Writes the clock-measurement control (`dev_m2_lm6_1_sdr_clkmeas_set`).

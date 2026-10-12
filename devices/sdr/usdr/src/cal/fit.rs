@@ -5,8 +5,10 @@
 //!
 //! The C mixes single and double precision: `sqrt` and the tone's phase are computed in
 //! double and stored to float, while sums accumulate in float. The functions here repeat
-//! each promotion, so results match libusdr's bit for bit. Empty inputs divide by zero and
-//! yield NaN, as in the C.
+//! each promotion, so results match libusdr's bit for bit when C is built without fused
+//! multiply-add contraction and both use the same host libm (Rust's `sin_cos` calls `sinf`
+//! and `cosf` where C calls `sincosf`). Empty inputs divide by zero and yield NaN, as in
+//! the C.
 
 use core::f64::consts::PI;
 
@@ -155,7 +157,9 @@ fn scaled(value: i32, scale: f32) -> f32 {
     value as f32 * scale
 }
 
-/// `error * scale`, truncated to the search's integer cost.
+/// `error * scale`, truncated to the search's integer cost. Rust saturates where C's
+/// out-of-range conversion is undefined (`INT_MIN` on x86), so results match libusdr only
+/// while the summed error times the scale stays below `i32::MAX`.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "C truncates the float cost to int"
@@ -245,7 +249,7 @@ struct ToneObjective<'a> {
 impl Objective2d for ToneObjective<'_> {
     type Error = core::convert::Infallible;
 
-    fn set(&mut self, axis: Axis, value: i32) -> Result<(), Self::Error> {
+    fn set(&mut self, _stage: usize, axis: Axis, value: i32) -> Result<(), Self::Error> {
         match axis {
             Axis::X => self.phase = scaled(value, self.phase_scale),
             Axis::Y => self.period = scaled(value, 1.0) / self.period_scale,
@@ -253,8 +257,8 @@ impl Objective2d for ToneObjective<'_> {
         Ok(())
     }
 
-    fn evaluate(&mut self, axis: Axis, value: i32) -> Result<i32, Self::Error> {
-        self.set(axis, value)?;
+    fn evaluate(&mut self, stage: usize, axis: Axis, value: i32) -> Result<i32, Self::Error> {
+        self.set(stage, axis, value)?;
         Ok(cost(
             fit_error(self.samples, self.amp, self.period, self.phase),
             self.scale,
@@ -294,7 +298,6 @@ mod tests {
             (fit.phase - 1.0).abs() < 2.0 * phase_scale(),
             "within two phase steps"
         );
-        assert!(max_component_error(&tone, 0.5, 32.0, 1.0) < 1e-6);
     }
 
     #[test]

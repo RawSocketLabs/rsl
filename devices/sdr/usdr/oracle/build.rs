@@ -39,6 +39,9 @@ fn main() {
         .includes(&includes)
         .include(libusdr.join("gen"))
         .flag("-std=gnu11")
+        // No fused multiply-adds, so float results compare bit for bit with Rust's scalar
+        // ports on every target (GCC fuses by default in GNU mode where FMA exists).
+        .flag("-ffp-contract=off")
         // Upstream's own warnings are not ours to fix.
         .warnings(false)
         .define("USDR_DEFAULT_AFECFG_PATH", "\"/nonexistent\"")

@@ -259,11 +259,11 @@ pub fn iterate_min(start: i32, stop: i32, extra: i32, cost: impl FnMut(i32) -> i
     search_1d(find_iterate_min, start, stop, extra, cost)
 }
 
-/// A two-dimensional objective the C calls back: `(axis, value, evaluate) -> cost`.
-type Cost2d<'a> = &'a mut dyn FnMut(i32, i32, bool) -> i32;
+/// A two-dimensional objective the C calls back: `(stage, axis, value, evaluate) -> cost`.
+type Cost2d<'a> = &'a mut dyn FnMut(usize, i32, i32, bool) -> i32;
 
-/// `evaluate_fnN_t` over a [`Cost2d`].
-unsafe extern "C" fn evaluate_2d(
+/// `evaluate_fnN_t` over a [`Cost2d`], one instance per stage so the stage is known.
+unsafe extern "C" fn evaluate_2d<const STAGE: usize>(
     param: *mut c_void,
     axis: c_int,
     value: c_int,
@@ -271,7 +271,7 @@ unsafe extern "C" fn evaluate_2d(
 ) -> c_int {
     // SAFETY: `param` is the `Cost2d` the wrapper passed, alive for the C call.
     let cost = unsafe { &mut *param.cast::<Cost2d>() };
-    let result = cost(axis, value, !func.is_null());
+    let result = cost(STAGE, axis, value, !func.is_null());
     if !func.is_null() {
         // SAFETY: non-null result pointers from the C are valid.
         unsafe { *func = result };
@@ -290,7 +290,15 @@ pub struct Stage {
     pub extra: i32,
 }
 
-/// `find_best_2d`: `(x, y, cost)`.
+/// The per-stage evaluators `best_2d` hands the C; at most four stages, as libusdr uses.
+const EVALUATORS: [EvaluateFnN; 4] = [
+    evaluate_2d::<0>,
+    evaluate_2d::<1>,
+    evaluate_2d::<2>,
+    evaluate_2d::<3>,
+];
+
+/// `find_best_2d`: `(x, y, cost)`; `cost` receives the calling stage's index.
 ///
 /// # Panics
 ///
@@ -298,12 +306,13 @@ pub struct Stage {
 pub fn best_2d(
     stages: &[Stage],
     stop_when: i32,
-    mut cost: impl FnMut(i32, i32, bool) -> i32,
+    mut cost: impl FnMut(usize, i32, i32, bool) -> i32,
 ) -> (i32, i32, i32) {
     let mut ops: Vec<Iteration2d> = stages
         .iter()
-        .map(|stage| Iteration2d {
-            func: evaluate_2d,
+        .zip(EVALUATORS)
+        .map(|(stage, func)| Iteration2d {
+            func,
             sf: if stage.golden {
                 find_golden_min
             } else {

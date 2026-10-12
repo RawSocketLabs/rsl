@@ -90,14 +90,11 @@ pub fn golden_min<E>(
 pub fn iterate_min<E>(
     start: i32,
     stop: i32,
-    extra_step: i32,
+    extra_step: u16,
     mut cost: impl FnMut(i32) -> Result<i32, E>,
 ) -> Result<Minimum, E> {
-    let delta = if start > stop {
-        -1 - extra_step
-    } else {
-        1 + extra_step
-    };
+    let extra = i32::from(extra_step);
+    let delta = if start > stop { -1 - extra } else { 1 + extra };
     let mut best = Minimum {
         x: -1,
         cost: i32::MAX,
@@ -122,7 +119,8 @@ pub enum Search {
     Golden,
 }
 
-/// An inclusive bound pair (`opt_par_limits_t`).
+/// A bound pair (`opt_par_limits_t`): both ends are searched by [`Search::Golden`], while
+/// [`Search::Iterate`] stops before `max`, as in libusdr.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     /// Lower bound.
@@ -131,8 +129,9 @@ pub struct Limits {
     pub max: i32,
 }
 
-/// One round of [`best_2d`] (`struct opt_iteration2d`, with the evaluator shared by every
-/// round, as libusdr's only caller does).
+/// One round of [`best_2d`] (`struct opt_iteration2d`). Its evaluator is the
+/// [`Objective2d`] called with this stage's index, so stages can measure differently, as
+/// libusdr's LO calibration does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stage {
     /// The search along each axis.
@@ -141,7 +140,7 @@ pub struct Stage {
     /// offsets from the current best, clamped to the first stage's.
     pub limits: [Limits; 2],
     /// [`iterate_min`]'s extra step.
-    pub extra_step: i32,
+    pub extra_step: u16,
 }
 
 /// One coordinate of a two-dimensional search.
@@ -155,23 +154,25 @@ pub enum Axis {
 
 /// A two-dimensional objective: setting a coordinate moves the system there; evaluating
 /// sets it and measures the cost (`evaluate_fnN_t` with and without a result pointer).
+/// `stage` is the index of the [`Stage`] whose evaluator libusdr would call.
 pub trait Objective2d {
-    /// What a failed evaluation reports.
+    /// What a failed set or evaluation reports.
     type Error;
 
     /// Moves `axis` to `value` without measuring.
     ///
     /// # Errors
     ///
-    /// Reported but ignored by [`best_2d`], as in libusdr.
-    fn set(&mut self, axis: Axis, value: i32) -> Result<(), Self::Error>;
+    /// Stops the search. libusdr ignores these failures and keeps measuring at the wrong
+    /// point; a successful search makes the same calls either way.
+    fn set(&mut self, stage: usize, axis: Axis, value: i32) -> Result<(), Self::Error>;
 
     /// Moves `axis` to `value` and returns the cost there.
     ///
     /// # Errors
     ///
     /// Stops the search.
-    fn evaluate(&mut self, axis: Axis, value: i32) -> Result<i32, Self::Error>;
+    fn evaluate(&mut self, stage: usize, axis: Axis, value: i32) -> Result<i32, Self::Error>;
 }
 
 /// The best point of a two-dimensional search.
@@ -214,8 +215,8 @@ pub fn best_2d<O: Objective2d>(
     let mut y = (y_limits.min + y_limits.max) / 2;
     let (mut best_x, mut best_y, mut best_cost) = (x, y, i32::MAX);
     // Set the starting Y, as X is searched first.
-    let _ = objective.set(Axis::Y, y);
-    for stage in stages {
+    objective.set(0, Axis::Y, y)?;
+    for (index, stage) in stages.iter().enumerate() {
         let window = |at: i32, axis: usize, limits: Limits| {
             (
                 max(at.saturating_add(stage.limits[axis].min), limits.min),
@@ -224,25 +225,25 @@ pub fn best_2d<O: Objective2d>(
         };
         let (start, stop) = window(x, 0, x_limits);
         let found = search(stage, start, stop, |value| {
-            objective.evaluate(Axis::X, value)
+            objective.evaluate(index, Axis::X, value)
         })?;
         x = found.x;
         if found.cost < best_cost {
             best_x = x;
             best_cost = found.cost;
         }
-        let _ = objective.set(Axis::X, best_x);
+        objective.set(index, Axis::X, best_x)?;
 
         let (start, stop) = window(y, 1, y_limits);
         let found = search(stage, start, stop, |value| {
-            objective.evaluate(Axis::Y, value)
+            objective.evaluate(index, Axis::Y, value)
         })?;
         y = found.x;
         if found.cost < best_cost {
             best_y = y;
             best_cost = found.cost;
         }
-        let _ = objective.set(Axis::Y, best_y);
+        objective.set(index, Axis::Y, best_y)?;
         if found.cost < stop_when {
             break;
         }

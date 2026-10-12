@@ -72,16 +72,20 @@ impl Device {
     }
 
     /// Moves the clocks' reference to `reference` (libusdr's `/dm/sdr/refclk/frequency` then
-    /// `/dm/sdr/refclk/path`). The sample rate and RX frequency already set keep running
-    /// from the old plan, as in libusdr; set them again to recompute them for the new
-    /// reference frequency.
+    /// `/dm/sdr/refclk/path`). As in libusdr, the dividers already programmed stay, so the
+    /// sample clock and LO frequencies scale with the new reference until set again: set the
+    /// sample rate, then the RX frequency. On revision 3, after powering up with an external
+    /// reference the on-board oscillator stays disabled, so switching to
+    /// [`ReferenceClock::Oscillator`] then reports a missing input clock.
     ///
     /// # Errors
     ///
-    /// - [`Error::UnsupportedFrequency`] for an external reference of 0 Hz, before any bus
-    ///   access.
-    /// - [`Error::ClockInputMissing`] if the Si5332 finds no clock on the new input.
-    /// - Any bus failure.
+    /// - [`Error::UnsupportedReferenceClock`] for an external reference outside
+    ///   [`ReferenceClock::MIN_EXTERNAL_HZ`]..=[`ReferenceClock::MAX_EXTERNAL_HZ`], before
+    ///   any bus access.
+    /// - [`Error::ClockInputMissing`] if the Si5332 finds no clock on the new input. The
+    ///   switch has still happened, and later plans use the new frequency.
+    /// - Any bus failure, after which the clock state is unknown.
     pub fn set_reference_clock(&mut self, reference: ReferenceClock) -> Result<(), Error> {
         reference.check()?;
         self.board().set_reference_clock(reference)
@@ -350,8 +354,9 @@ impl<'a> DeviceBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// - [`Error::UnsupportedFrequency`] for an external reference of 0 Hz, before any bus
-    ///   access.
+    /// - [`Error::UnsupportedReferenceClock`] for an unusable external reference, before
+    ///   any bus access. On revision 3 with an external reference the oscillator stays off;
+    ///   like libusdr, a Si5332 that then finds no input clock does not fail power-up.
     /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
     ///   at once, with the resume limit after a configured wait times out.
     /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.

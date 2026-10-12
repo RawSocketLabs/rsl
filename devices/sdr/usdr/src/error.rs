@@ -77,6 +77,10 @@ pub enum Error {
     #[error("unsupported frequency {0} Hz")]
     UnsupportedFrequency(u32),
 
+    /// An external reference the Si5332's PLL cannot use, in Hz.
+    #[error("unsupported reference clock {0} Hz")]
+    UnsupportedReferenceClock(u32),
+
     /// The LMS6002D's RX synthesizer found no capacitor code that locks at this LO, in Hz.
     #[error("RX PLL cannot lock at {0} Hz")]
     PllUnlocked(u32),

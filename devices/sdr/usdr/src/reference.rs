@@ -12,10 +12,12 @@ pub enum ReferenceClock {
     #[default]
     Board,
     /// The on-board 26 MHz oscillator (`extclk=0`, `/dm/sdr/refclk/path` "internal").
-    /// Revisions 1 and 2 do not carry one, so their Si5332 then reports no input clock.
+    /// Inferred from libusdr, not checked on hardware: revisions 1 and 2 carry none, so their
+    /// Si5332 would then report no input clock.
     Oscillator,
     /// Clock input 2, received differentially, at `hz` (`extclk=1` with `extref`;
-    /// "external"). libusdr suggests 23 to 41 MHz for the LMS6002D.
+    /// "external"): between [`Self::MIN_EXTERNAL_HZ`] and [`Self::MAX_EXTERNAL_HZ`]; libusdr
+    /// suggests 23 to 41 MHz for the LMS6002D.
     External {
         /// The reference frequency, in Hz.
         hz: u32,
@@ -26,10 +28,23 @@ impl ReferenceClock {
     /// The on-board oscillator's and libusdr's default frequency (`USDR_INT_REFCLK`).
     pub const INTERNAL_HZ: u32 = 26_000_000;
 
-    /// Rejects an external reference of 0 Hz, which libusdr would silently treat as 26 MHz.
+    /// The lowest external reference the Si5332 plans can use: below it, the PLL's 15-bit
+    /// integer term (`128 * 2.625 GHz / reference`) overflows.
+    pub const MIN_EXTERNAL_HZ: u32 = 10_253_907;
+
+    /// The highest external reference: one /2 prescale must bring it within the PLL's 50 MHz
+    /// input limit (`si5332_Fref_max`).
+    pub const MAX_EXTERNAL_HZ: u32 = 100_000_000;
+
+    /// Rejects an external reference the clock plans cannot use. libusdr accepts any value
+    /// (and treats 0 as 26 MHz), then programs garbage clocks at the next rate change.
     pub(crate) fn check(self) -> Result<(), Error> {
         match self {
-            Self::External { hz: 0 } => Err(Error::UnsupportedFrequency(0)),
+            Self::External { hz }
+                if !(Self::MIN_EXTERNAL_HZ..=Self::MAX_EXTERNAL_HZ).contains(&hz) =>
+            {
+                Err(Error::UnsupportedReferenceClock(hz))
+            }
             _ => Ok(()),
         }
     }
@@ -65,11 +80,19 @@ mod tests {
     }
 
     #[test]
-    fn an_external_reference_needs_a_frequency() {
-        assert!(matches!(
-            ReferenceClock::External { hz: 0 }.check(),
-            Err(Error::UnsupportedFrequency(0))
-        ));
+    fn an_external_reference_must_suit_the_si5332_plans() {
+        for hz in [0, 40_000, ReferenceClock::MIN_EXTERNAL_HZ - 1, 100_000_001] {
+            assert!(
+                matches!(
+                    ReferenceClock::External { hz }.check(),
+                    Err(Error::UnsupportedReferenceClock(found)) if found == hz
+                ),
+                "{hz} Hz"
+            );
+        }
+        for hz in [ReferenceClock::MIN_EXTERNAL_HZ, 26_000_000, 100_000_000] {
+            assert!(ReferenceClock::External { hz }.check().is_ok(), "{hz} Hz");
+        }
         assert_eq!(ReferenceClock::External { hz: 40_000_000 }.hz(), 40_000_000);
         assert_eq!(ReferenceClock::Board.hz(), ReferenceClock::INTERNAL_HZ);
     }
