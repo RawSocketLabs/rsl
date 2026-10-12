@@ -11,7 +11,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
 
 - A new driver goes under the kind it is (`sdr/`, …); add a kind when the first device of it
   arrives. Crate names stay `rsl-<device>` (`rsl-usdr`), independent of the path.
-- Kinds now: `sdr/` (uSDR, LMS7 family, LSDr) and `sync/` (PE_SYNC clock distribution).
+- Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
   lives in `devices/<kind>/` once a second driver needs it, not before. Shared chip code
   goes under `devices/<kind>/chips/<chip>/`, one directory per chip, with the per-device
