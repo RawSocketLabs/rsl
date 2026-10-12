@@ -22,9 +22,11 @@ qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
 board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
-frequency, gains, path and corrections, and the RX stream
-(create, start, receive, stop) over any streaming `Bus`, and the PCIe transport (feature
-`pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
+frequency, gains, path and corrections, and the RX stream group
+(`create_streams`, `start_streams` with sync `None`/`All`, `receive_into` from `ci16`/`ci12`
+wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `stop_streams`; plus the
+`start_rx_stream`/`receive`/`stop_rx_stream` ci16 shim) over any streaming `Bus`, and the
+PCIe transport (feature `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
 USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
 transport's 16-byte trailer. Hardware operation remains unqualified. Added beyond libusdr: the
@@ -35,7 +37,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it, and the QSPI flash controller with a fake flash (opt-in, `with_flash`) |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit channel-0 packing), and the QSPI flash controller with a fake flash (opt-in, `with_flash`) |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
@@ -47,6 +49,11 @@ Each layer calls only the ones below it.
 - `src/device.rs`: `Device`, the public API. It owns the `Board`, and the `Board` owns the bus
   (before power-up, `Identified` does). Board methods use `self.bus`; chip drivers stay
   stateless and borrow `&mut dyn Bus` per call.
+- `src/stream.rs`: the stream group's public configuration and results (`StreamsConfig`,
+  `RxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`, `RxMetadata`, the
+  sealed `HostSample` buffer elements). One device-owned group per PORTING.md's
+  stream-handle decision; `board/stream.rs` runs it, `fpga/stream.rs` holds the
+  registers and burst maths.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX) and the executors
@@ -174,7 +181,14 @@ Each layer calls only the ones below it.
   whitelist, which scenarios in `rx_parity.rs` and `rx_controls_parity.rs` opt into.
   The second leaves out stream create's per-channel baseband loop, a libusdr bug that
   reselects the band, clamps the NCOs and bypasses the filter;
-  `oracle/tests/stream_parity.rs` whitelists it and the mixer exit it leaves libusdr owing.
+  `oracle/tests/common/baseband.rs` holds the cut, which `stream_parity.rs` and
+  `stream_formats_parity.rs` apply, and `stream_parity.rs` whitelists the mixer exit it
+  leaves libusdr owing. RX receive drops burst padding stubs that libusdr converts into
+  its host buffer
+  (`stream_formats_parity.rs::a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub`),
+  and `SyncMode::ExternalAll` fails at create, before any bus access, where libusdr
+  creates and then fails the sync
+  (`stream_formats_parity.rs::external_sync_is_refused_by_both_before_any_sync_operation`).
   The flash maintenance refuses, before any bus access, ranges libusdr would mishandle
   (past 16 MiB, partial erases, page-crossing chunks) and reports large capacities whole;
   `oracle/tests/flash_parity.rs` whitelists each. Two more cannot run in libusdr safely
