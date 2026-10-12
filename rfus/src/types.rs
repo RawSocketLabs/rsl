@@ -23,6 +23,12 @@ use crate::parser::{self, UnitSet};
 pub struct Hertz(u64);
 
 impl Hertz {
+    /// Create a quantity from a raw Hz value.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
     /// Return the quantity in whole hertz.
     #[must_use]
     pub const fn hz(self) -> u64 {

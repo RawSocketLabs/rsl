@@ -227,6 +227,15 @@ fn serde_accepts_dense_and_explicit_scan_targets() {
 
 #[cfg(feature = "serde")]
 #[test]
+fn serde_round_trips_hertz_like_the_other_scalars() {
+    let bandwidth: Hertz = serde_json::from_str(r#""12.5khz""#).unwrap();
+    assert_eq!(bandwidth.hz(), 12_500);
+    assert_eq!(serde_json::to_string(&bandwidth).unwrap(), "12500");
+    assert_eq!(serde_json::from_str::<Hertz>("12500").unwrap(), bandwidth);
+}
+
+#[cfg(feature = "serde")]
+#[test]
 fn serde_rejects_empty_range_lists() {
     assert!(
         serde_json::from_str::<ScanTarget>(r#"{ "ranges": [] }"#).is_err(),
@@ -282,6 +291,9 @@ mod serde_formats {
     fn reads_scalars_and_ranges_from_binary_formats() {
         let frequency = FrequencyHz::deserialize(BinaryFormat(vec![450_000_000])).unwrap();
         assert_eq!(frequency.hz(), 450_000_000);
+
+        let bandwidth = Hertz::deserialize(BinaryFormat(vec![12_500])).unwrap();
+        assert_eq!(bandwidth.hz(), 12_500);
 
         let rate = SampleRateSps::deserialize(BinaryFormat(vec![2_000_000])).unwrap();
         assert_eq!(rate.sps(), 2_000_000);

@@ -1,10 +1,30 @@
-use serde::de::{self, Unexpected, Visitor};
+use serde::de::{self, DeserializeOwned, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::types::{FrequencyHz, FrequencyRange, FrequencyRanges, SampleRateSps, ScanTarget};
+use crate::types::{
+    FrequencyHz, FrequencyRange, FrequencyRanges, Hertz, SampleRateSps, ScanTarget,
+};
+
+impl Serialize for Hertz {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(self.hz())
+    }
+}
+
+impl<'de> Deserialize<'de> for Hertz {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_scalar(deserializer)
+    }
+}
 
 impl Serialize for FrequencyHz {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -20,10 +40,7 @@ impl<'de> Deserialize<'de> for FrequencyHz {
     where
         D: Deserializer<'de>,
     {
-        if !deserializer.is_human_readable() {
-            return u64::deserialize(deserializer).map(FrequencyHz::new);
-        }
-        deserializer.deserialize_any(NumberOrStringVisitor::<FrequencyHz>::new())
+        deserialize_scalar(deserializer)
     }
 }
 
@@ -113,15 +130,29 @@ impl<'de> Deserialize<'de> for SampleRateSps {
     where
         D: Deserializer<'de>,
     {
-        if !deserializer.is_human_readable() {
-            return u32::deserialize(deserializer).map(SampleRateSps::new);
-        }
-        deserializer.deserialize_any(NumberOrStringVisitor::<SampleRateSps>::new())
+        deserialize_scalar(deserializer)
+    }
+}
+
+/// Deserialize a scalar unit: the raw integer it serializes as in binary formats,
+/// or an integer or human-readable string otherwise.
+fn deserialize_scalar<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: NumberOrStringUnit,
+    D: Deserializer<'de>,
+{
+    if deserializer.is_human_readable() {
+        deserializer.deserialize_any(NumberOrStringVisitor::<T>::new())
+    } else {
+        T::Raw::deserialize(deserializer).and_then(|raw| T::from_number(raw.into()))
     }
 }
 
 /// Scalar unit type that deserializes from either a raw integer or a human-readable string.
 trait NumberOrStringUnit: Sized {
+    /// Integer type the unit serializes as; read directly in binary formats.
+    type Raw: DeserializeOwned + Into<u64>;
+
     /// `expecting` text shown when the input is neither an integer nor a string.
     const EXPECTING: &'static str;
 
@@ -181,7 +212,29 @@ where
     }
 }
 
+impl NumberOrStringUnit for Hertz {
+    type Raw = u64;
+
+    const EXPECTING: &'static str = "a quantity as Hz number or human-readable string";
+
+    fn from_number<E>(value: u64) -> Result<Self, E>
+    where
+        E: de::Error,
+    {
+        Ok(Hertz::new(value))
+    }
+
+    fn from_string<E>(value: &str) -> Result<Self, E>
+    where
+        E: de::Error,
+    {
+        Hertz::from_str(value).map_err(E::custom)
+    }
+}
+
 impl NumberOrStringUnit for FrequencyHz {
+    type Raw = u64;
+
     const EXPECTING: &'static str = "a frequency as Hz number or human-readable string";
 
     fn from_number<E>(value: u64) -> Result<Self, E>
@@ -200,6 +253,8 @@ impl NumberOrStringUnit for FrequencyHz {
 }
 
 impl NumberOrStringUnit for SampleRateSps {
+    type Raw = u32;
+
     const EXPECTING: &'static str = "a sample rate as S/s number or human-readable string";
 
     fn from_number<E>(value: u64) -> Result<Self, E>
