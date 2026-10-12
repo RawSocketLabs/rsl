@@ -440,3 +440,57 @@ fn supersync_has_no_oscillator_dac() {
     // The register load's last entry landed.
     assert_eq!(board.front_end_clock_reg(0x0507), Some(0x02));
 }
+
+/// Intentional divergence, scoped to these scenarios: when XMASS or `SimpleSync` answers,
+/// rsl-usdr stops the open (their LMK05318 bring-up is not ported) where libusdr carries
+/// on. Up to that point the traces must agree, so rsl-usdr's whole trace is a prefix of
+/// libusdr's and libusdr went on to talk to the board.
+#[test]
+fn answering_clock_boards_stop_the_open_where_libusdr_carries_on() {
+    for (board, parameters, selection, name) in [
+        (FrontEnd::Xmass, c"", FrontEndSelection::Auto, "xmass"),
+        (
+            FrontEnd::Xmass,
+            c"fe=xmass",
+            FrontEndSelection::Xmass,
+            "xmass",
+        ),
+        (
+            FrontEnd::SimpleSync,
+            c"",
+            FrontEndSelection::Auto,
+            "simplesync",
+        ),
+        (
+            FrontEnd::SimpleSync,
+            c"fe=simplesync",
+            FrontEndSelection::SimpleSync,
+            "simplesync",
+        ),
+    ] {
+        let make = || SimBoard::new(REVISION).with_front_end(board);
+        // libusdr's lock waits run on the wall clock against a model that never locks, so
+        // its trace past detection is not deterministic: only the prefix is compared.
+        let reference = match Oracle::open_with(make(), parameters) {
+            Ok(oracle) => oracle.close(),
+            Err(error) => *error.board,
+        };
+        let sim = SimBus::new(make());
+        let result = Device::builder(sim.clone()).front_end(selection).open();
+        assert!(
+            matches!(result, Err(Error::UnsupportedFrontEnd(found)) if found == name),
+            "{parameters:?}: {result:?}"
+        );
+        let actual = without_thermal_gate(sim.board().trace(), REVISION);
+        let expected = reference.trace();
+        assert!(
+            expected.len() > actual.len(),
+            "{parameters:?}: libusdr carries on"
+        );
+        assert_same_ops(
+            &expected[..actual.len()],
+            &actual,
+            &format!("{parameters:?}"),
+        );
+    }
+}

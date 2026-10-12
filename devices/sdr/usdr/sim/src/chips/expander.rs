@@ -1,4 +1,5 @@
-//! TCA6416 16-bit I2C GPIO expander: eight byte registers in four port pairs.
+//! TCA6416/TCA9555-style 16-bit I2C GPIO expander: eight byte registers in four port
+//! pairs.
 
 use super::I2cChip;
 
@@ -11,10 +12,12 @@ const POLARITY: usize = 4;
 /// Configuration port 0 (`CONFIG_P0`); a 0 bit makes the pin an output.
 const CONFIG: usize = 6;
 
-/// A TCA6416 whose input-configured pins are pulled high.
+/// A TCA6416 (the `PCIe` front end's) or TCA9555-compatible (XMASS's) expander whose
+/// input-configured pins are pulled high. libusdr gives both the same register map
+/// (`enum tca6416_regs`, `enum tca9555_regs`).
 ///
-/// Modelling assumptions, from the TCA6416A datasheet's register description (TI, not
-/// vendored here), as libusdr's `ext_pciefe.c` relies on them:
+/// Modelling assumptions, from the TCA6416A and TCA9555 datasheets' register descriptions
+/// (TI, not vendored here), as libusdr's `ext_pciefe.c` and `tca9555.c` rely on them:
 /// - The command byte selects one of eight registers; each further byte read or written
 ///   moves to the other register of the same pair, so a two-byte write sets both ports
 ///   (`tca6416_reg_wr2`) and a four-byte read returns port 0, port 1, port 0, port 1.
@@ -24,12 +27,12 @@ const CONFIG: usize = 6;
 ///   drives the board's pins in the sim.
 /// - Writes to the input registers are ignored.
 #[derive(Debug)]
-pub(crate) struct Tca6416 {
+pub(crate) struct Expander {
     /// Register contents, by command byte; the input registers are computed on read.
     regs: [u8; 8],
 }
 
-impl Tca6416 {
+impl Expander {
     /// An expander at its reset state.
     pub(crate) fn new() -> Self {
         let mut regs = [0; 8];
@@ -57,7 +60,7 @@ impl Tca6416 {
     }
 }
 
-impl I2cChip for Tca6416 {
+impl I2cChip for Expander {
     fn transfer(&mut self, write: &[u8], read_len: usize) -> Vec<u8> {
         let Some((&command, data)) = write.split_first() else {
             return vec![0xff; read_len];
@@ -85,7 +88,7 @@ mod tests {
 
     #[test]
     fn a_pair_write_sets_both_ports_and_reads_alternate() {
-        let mut expander = Tca6416::new();
+        let mut expander = Expander::new();
         expander.transfer(&[0x06, 0x00, 0x00], 0);
         expander.transfer(&[0x02, 0x12, 0x34], 0);
         assert_eq!(expander.transfer(&[0x00], 4), vec![0x12, 0x34, 0x12, 0x34]);
@@ -93,7 +96,7 @@ mod tests {
 
     #[test]
     fn input_pins_read_high_until_made_outputs() {
-        let mut expander = Tca6416::new();
+        let mut expander = Expander::new();
         expander.transfer(&[0x02, 0x00], 0);
         assert_eq!(expander.transfer(&[0x00], 1), vec![0xff]);
         expander.transfer(&[0x06, 0x0f], 0);
