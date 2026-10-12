@@ -10,6 +10,25 @@ use rustix::net::{AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType, 
 use crate::{Layer, OpenError, Protocol, ProtocolExt, RawIo};
 
 /// A connected UDP socket.
+///
+/// ```
+/// use rawsock::{RawIo, TransportSocket};
+/// use std::net::{SocketAddr, UdpSocket};
+/// use std::time::Duration;
+///
+/// let peer = UdpSocket::bind("127.0.0.1:0")?;
+/// peer.set_read_timeout(Some(Duration::from_secs(2)))?;
+/// let SocketAddr::V4(addr) = peer.local_addr()? else { unreachable!() };
+///
+/// let mut sock = TransportSocket::udp()?;
+/// sock.connect(addr)?;
+/// sock.send_raw(b"payload")?; // the kernel adds UDP, IP, and link headers
+///
+/// let mut buf = [0u8; 16];
+/// let n = peer.recv(&mut buf)?;
+/// assert_eq!(&buf[..n], b"payload");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct TransportSocket {
     fd: OwnedFd,
 }

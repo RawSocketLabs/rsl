@@ -21,6 +21,21 @@ const ETH_P_ALL: u16 = 0x0003; // every protocol, in host order (network order a
 /// A raw `AF_PACKET` socket bound to an interface: you provide the entire Ethernet frame; the
 /// NIC adds only the FCS. Requires `CAP_NET_RAW` — the dual-use rung for forged L2 frames
 /// (raw Ethernet, ARP spoofing).
+///
+/// Check [`capabilities`](crate::capabilities) first; without the privilege, `open` returns
+/// [`OpenError::PermissionDenied`].
+///
+/// ```no_run
+/// use rawsock::{LinkSocket, RawIo, capabilities};
+///
+/// # fn frame() -> Vec<u8> { Vec::new() }
+/// if capabilities().link {
+///     let mut sock = LinkSocket::open("lo")?;
+///     // `frame()` is the caller's complete Ethernet frame (MACs, EtherType, payload).
+///     sock.send_raw(&frame())?;
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct LinkSocket {
     fd: OwnedFd,
 }

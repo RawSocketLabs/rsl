@@ -55,6 +55,11 @@ pub use linux::network::NetworkSocket;
 #[cfg(all(target_os = "linux", feature = "transport"))]
 pub use linux::transport::TransportSocket;
 
+/// Compiles the README's code blocks as doctests so the front-page example cannot rot.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 /// The layer at which raw bytes are transmitted — i.e. how much of the stack the
 /// caller supplies versus the kernel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

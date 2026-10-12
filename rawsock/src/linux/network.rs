@@ -13,6 +13,23 @@ use crate::{Layer, OpenError, Protocol, ProtocolExt, RawIo};
 
 /// A raw IPv4 socket (`IPPROTO_RAW`): you provide the entire IP datagram; the kernel adds
 /// only L2. Requires `CAP_NET_RAW` — the dual-use rung where forged IP headers reach the wire.
+///
+/// Check [`capabilities`](crate::capabilities) first; without the privilege, `open` returns
+/// [`OpenError::PermissionDenied`].
+///
+/// ```no_run
+/// use rawsock::{NetworkSocket, RawIo, capabilities};
+/// use std::net::Ipv4Addr;
+///
+/// # fn datagram() -> Vec<u8> { Vec::new() }
+/// if capabilities().network {
+///     let mut sock = NetworkSocket::open()?;
+///     sock.connect(Ipv4Addr::LOCALHOST)?;
+///     // `datagram()` is the caller's complete IPv4 header + payload, sent verbatim.
+///     sock.send_raw(&datagram())?;
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct NetworkSocket {
     fd: OwnedFd,
 }
