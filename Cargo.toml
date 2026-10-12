@@ -23,6 +23,8 @@ members = [
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
     "devices/sdr/usdr/pcie",
+    # LMS7 family (XSDR/XTRX) board simulator; its driver is not yet ported
+    "devices/sdr/xsdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",

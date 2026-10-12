@@ -3327,6 +3327,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-xsdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rust-dsdcc"
 version = "0.1.0"
 dependencies = [
