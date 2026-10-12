@@ -1,21 +1,44 @@
-//! Tuning the receiver: `usdr_rfic_fe_set_freq` for RX in `device/m2_lm6_1/usdr_ctrl.c`,
-//! as `/dm/sdr/0/rx/freqency` reaches it.
+//! Tuning: `usdr_rfic_fe_set_freq` for the RX and TX LOs in `device/m2_lm6_1/usdr_ctrl.c`,
+//! as `/dm/sdr/0/rx/freqency` and `/dm/sdr/0/tx/frequency` reach it (every channel at
+//! once).
 //!
-//! The frequency picks a band: below 230 MHz the board mixer adds the Si5332's mixer LO
+//! The RX frequency picks a band: below 230 MHz the board mixer adds the Si5332's mixer LO
 //! (output 3) to lift the signal into LNA3's range, so the LMS6002D tunes that much higher;
 //! up to 2.8 GHz LNA1 takes it directly, and LNA2 above, unless the caller fixed the path
-//! (`board/path.rs`). The RX PLL then tunes. Below
-//! 250 MHz, if it cannot lock, libusdr finds the lowest LO that does and makes up the
-//! difference with the NCO, if the sample rate leaves room.
+//! (`board/path.rs`). The TX frequency picks PA1 up to 2.8 GHz and PA2 above, unless fixed.
+//! The chain's PLL then tunes. Below 250 MHz, if it cannot lock, libusdr finds the lowest LO
+//! that does and makes up the difference with the chain's NCOs, if the sample rate leaves
+//! room.
 
 use std::time::Duration;
 
 use rsl_deps::tracing::debug;
 
 use super::Board;
-use crate::chips::lms6002d::{CapacitorWindow, Lna};
+use super::board::TxState;
+use crate::chips::lms6002d::{CapacitorWindow, Lna, PowerAmp};
 use crate::error::Error;
 use crate::fpga::{Gpo, Nco, Phy};
+
+/// A signal chain: which synthesizer, NCOs and filter a tune drives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Chain {
+    /// The receive chain.
+    Rx,
+
+    /// The transmit chain.
+    Tx,
+}
+
+impl Chain {
+    /// The chain's FPGA configuration port, where its NCOs are.
+    fn phy(self) -> Phy {
+        match self {
+            Self::Rx => Phy::Rx,
+            Self::Tx => Phy::Tx,
+        }
+    }
+}
 
 /// Where the RX path runs (libusdr's `cfg_auto_rx` on boards with the mixer, which every
 /// supported revision has).
@@ -72,6 +95,46 @@ impl RxBand {
     }
 }
 
+/// Where the TX path runs (libusdr's `cfg_auto_tx`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TxBand {
+    /// Below 2.8 GHz: PA1 (`W`, also `B1`).
+    Wide,
+
+    /// 2.8 GHz and up: PA2 (`H`, also `B2`).
+    High,
+}
+
+impl TxBand {
+    /// The wide band ends here, in Hz.
+    const WIDE_BELOW_HZ: u32 = 2_800_000_000;
+
+    /// The band for a frequency (`get_antenna_cfg_by_freq`).
+    pub(super) fn for_frequency(hz: u32) -> Self {
+        if hz < Self::WIDE_BELOW_HZ {
+            Self::Wide
+        } else {
+            Self::High
+        }
+    }
+
+    /// The LMS6002D output amplifier.
+    fn amplifier(self) -> PowerAmp {
+        match self {
+            Self::Wide => PowerAmp::Pa1,
+            Self::High => PowerAmp::Pa2,
+        }
+    }
+
+    /// The TX antenna switch setting ([`Gpo::TxSwitch`]).
+    fn tx_switch(self) -> u8 {
+        match self {
+            Self::Wide => 1,
+            Self::High => 0,
+        }
+    }
+}
+
 impl Board {
     /// Below this LO, in Hz, a PLL that cannot lock falls back to the lowest LO that can,
     /// plus an NCO offset (`USDR_LO_LOW_RANGE`).
@@ -89,9 +152,9 @@ impl Board {
     /// alone. A third, reachable only with the mixer band fixed: where `hz` plus the mixer
     /// LO passes `u32::MAX`, libusdr converts the double sum to `unsigned`, which C leaves
     /// undefined (x86 wraps it), and tunes that; this fails with
-    /// [`Error::UnsupportedFrequency`] before tuning. On failure, the band change leaves
-    /// state as libusdr does (see [`Self::select_rx_band`]), but this call records the LO
-    /// offset and the minimal LO only once their writes succeed.
+    /// [`Error::UnsupportedFrequency`] before tuning. On failure, state is left as libusdr
+    /// leaves it: the band change as [`Self::select_rx_band`] says, and the LO offset and
+    /// minimal LO recorded at the same points.
     pub(crate) fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.rx.lo_hz = hz;
         // `_usdr_signal_event(USDR_RX_LO_CHANGED)`: power the receiver, ignoring a failure,
@@ -118,11 +181,13 @@ impl Board {
             self.bus.sleep(Duration::from_millis(5));
             tuned = self.tune_rx_pll(lo);
         }
-        match tuned {
-            Err(Error::PllUnlocked(_)) => self.extend_low_lo(lo)?,
-            other => {
-                other?;
-            }
+        if let Err(Error::PllUnlocked(_)) = tuned {
+            let mut minimal_lo_hz = self.rx.minimal_lo_hz;
+            let offset = self.extend_low_lo(Chain::Rx, lo, &mut minimal_lo_hz);
+            self.rx.minimal_lo_hz = minimal_lo_hz;
+            self.rx.lo_offset_hz = offset?;
+        } else {
+            tuned?;
         }
 
         self.restore_rx_ncos()?;
@@ -182,20 +247,113 @@ impl Board {
         Ok(())
     }
 
+    /// Tunes the TX chain to `hz` (`usdr_rfic_fe_set_freq` for the TX LO), with `tx` the
+    /// transmitter's settings.
+    ///
+    /// The band follows the frequency unless [`Self::set_tx_path`] fixed it. As in libusdr,
+    /// the first TX tune that cannot lock, with no RX frequency set, tunes the RX PLL to
+    /// the same LO before retrying ("some LMS6002 chips fail to lock TX pll before RX
+    /// initialization"), and the low-LO fallback is the receiver's, on the TX PLL and NCOs.
+    ///
+    /// Divergences, where libusdr would divide by zero before any sample rate is set: the
+    /// NCO lock fallback fails with [`Error::PllUnlocked`], and the filter is left alone
+    /// (`tests/tx_tuning.rs`). On failure, state is left as libusdr leaves it: the power and
+    /// band changes, LO offset and minimal LO recorded at the same points.
+    pub(crate) fn set_tx_frequency(&mut self, tx: &mut TxState, hz: u32) -> Result<(), Error> {
+        let first = tx.lo_hz == 0;
+        tx.lo_hz = hz;
+        // `_usdr_signal_event(USDR_TX_LO_CHANGED)`: power the transmitter, then the band for
+        // the frequency, if it is not fixed. libusdr discards both results.
+        let _ = self.power_tx(tx);
+        if !tx.band_fixed {
+            let _ = self.select_tx_band(TxBand::for_frequency(hz));
+        }
+
+        tx.lo_offset_hz = 0;
+        let mut tuned = self.tune_tx_pll(hz);
+        if matches!(tuned, Err(Error::PllUnlocked(_))) {
+            debug!(lo_hz = hz, "TX PLL did not lock; retrying");
+            if first && self.rx.lo_hz == 0 {
+                // libusdr discards this tune's result too.
+                let _ = self.tune_rx_pll(hz);
+            }
+            self.bus.sleep(Duration::from_millis(5));
+            tuned = self.tune_tx_pll(hz);
+        }
+        if let Err(Error::PllUnlocked(_)) = tuned {
+            let mut minimal_lo_hz = tx.minimal_lo_hz;
+            let offset = self.extend_low_lo(Chain::Tx, hz, &mut minimal_lo_hz);
+            tx.minimal_lo_hz = minimal_lo_hz;
+            tx.lo_offset_hz = offset?;
+        } else {
+            tuned?;
+        }
+
+        self.restore_ncos(Chain::Tx, tx.lo_offset_hz)?;
+        self.update_tx_bandwidth(tx)?;
+        debug!(hz, nco_offset_hz = tx.lo_offset_hz, "TX tuned");
+        Ok(())
+    }
+
+    /// Routes the TX path for `band` (`_usdr_set_lna_tx`): the LMS6002D's amplifier, then,
+    /// if that write succeeds, the antenna switch.
+    pub(super) fn select_tx_band(&mut self, band: TxBand) -> Result<(), Error> {
+        let bus = self.bus.as_mut();
+        self.lms.select_pa(bus, band.amplifier())?;
+        Gpo::TxSwitch.set(bus, band.tx_switch())
+    }
+
+    /// Powers the LMS6002D's transmitter if it is off (`_usdr_pwr_state` for TX). Unlike
+    /// the receiver's, libusdr records the new state and takes the 25 ms settling wait even
+    /// when the write fails, and so does this.
+    fn power_tx(&mut self, tx: &mut TxState) -> Result<(), Error> {
+        if tx.powered {
+            return Ok(());
+        }
+        let bus = self.bus.as_mut();
+        let powered = self.lms.set_tx_enabled(bus, true);
+        tx.powered = true;
+        bus.sleep(Duration::from_millis(25));
+        powered
+    }
+
     /// Tunes the RX PLL to `lo` (`lms6002d_tune_pll`).
     pub(super) fn tune_rx_pll(&mut self, lo: u32) -> Result<CapacitorWindow, Error> {
         self.lms.tune_rx(self.bus.as_mut(), lo, self.reference.hz())
     }
 
-    /// libusdr's fallback for an LO below 250 MHz the PLL cannot lock at: tune the lowest
-    /// LO that locks, found once by stepping up 1 MHz at a time, and record the gap for the
-    /// NCO, provided the ADC rate leaves room for it.
-    fn extend_low_lo(&mut self, lo: u32) -> Result<(), Error> {
-        if lo < Self::LOW_LO_HZ && self.rx.minimal_lo_hz == 0 {
+    /// Tunes the TX PLL to `lo` (`lms6002d_tune_pll`).
+    pub(super) fn tune_tx_pll(&mut self, lo: u32) -> Result<CapacitorWindow, Error> {
+        self.lms.tune_tx(self.bus.as_mut(), lo, self.reference.hz())
+    }
+
+    /// Tunes `chain`'s PLL to `lo`.
+    fn tune_pll(&mut self, chain: Chain, lo: u32) -> Result<CapacitorWindow, Error> {
+        match chain {
+            Chain::Rx => self.tune_rx_pll(lo),
+            Chain::Tx => self.tune_tx_pll(lo),
+        }
+    }
+
+    /// libusdr's fallback for an LO below 250 MHz `chain`'s PLL cannot lock at: tune the
+    /// lowest LO that locks, found once by stepping up 1 MHz at a time and kept in
+    /// `minimal_lo_hz` (0 until found), and return the gap for the NCOs, provided the
+    /// converter rate leaves room for it. The minimal LO is kept even when the room check
+    /// then fails, as libusdr keeps it.
+    ///
+    /// Both chains use the ADC rate and RX decimation: libusdr sets its DAC rate and TX
+    /// interpolation (`dac_clk`, `txbb_intr`) to the same values on every rate change.
+    fn extend_low_lo(
+        &mut self,
+        chain: Chain,
+        lo: u32,
+        minimal_lo_hz: &mut u32,
+    ) -> Result<i32, Error> {
+        if lo < Self::LOW_LO_HZ && *minimal_lo_hz == 0 {
             let mut sweep = lo;
             let mut result = Err(Error::PllUnlocked(lo));
             while sweep < Self::LOW_LO_HZ {
-                result = self.tune_rx_pll(sweep);
+                result = self.tune_pll(chain, sweep);
                 match result {
                     Err(Error::PllUnlocked(_)) => {}
                     Err(error) => return Err(error),
@@ -210,10 +368,10 @@ impl Board {
                 Error::PllUnlocked(_) => Error::PllUnlocked(lo),
                 other => other,
             })?;
-            self.rx.minimal_lo_hz = sweep;
-            debug!(minimal_lo_hz = sweep, "lowest RX PLL lock found");
+            *minimal_lo_hz = sweep;
+            debug!(?chain, minimal_lo_hz = sweep, "lowest PLL lock found");
         } else if lo < Self::LOW_LO_HZ {
-            self.tune_rx_pll(self.rx.minimal_lo_hz)?;
+            self.tune_pll(chain, *minimal_lo_hz)?;
         } else {
             return Err(Error::PllUnlocked(lo));
         }
@@ -221,7 +379,7 @@ impl Board {
         let Some(decimation) = self.rx.decimation else {
             return Err(Error::PllUnlocked(lo));
         };
-        let offset = i64::from(lo) - i64::from(self.rx.minimal_lo_hz);
+        let offset = i64::from(lo) - i64::from(*minimal_lo_hz);
         let baseband = self.adc_rate_hz / decimation.factor();
         #[expect(
             clippy::cast_possible_truncation,
@@ -236,16 +394,21 @@ impl Board {
             reason = "libusdr stores the offset in a 32-bit int"
         )]
         let offset = offset as i32;
-        self.rx.lo_offset_hz = offset;
-        Ok(())
+        Ok(offset)
     }
 
-    /// Points both RX NCOs at the LO offset (`usdr_restore_nco` for RX).
+    /// Points both RX NCOs at the RX LO offset (`usdr_restore_nco` for RX).
     pub(super) fn restore_rx_ncos(&mut self) -> Result<(), Error> {
-        let word = nco_word(self.rx.lo_offset_hz, self.adc_rate_hz);
+        self.restore_ncos(Chain::Rx, self.rx.lo_offset_hz)
+    }
+
+    /// Points both of `chain`'s NCOs at `offset_hz` (`usdr_restore_nco`). libusdr adds each
+    /// channel's baseband offset, which a whole-device tune leaves at 0.
+    pub(super) fn restore_ncos(&mut self, chain: Chain, offset_hz: i32) -> Result<(), Error> {
+        let word = nco_word(offset_hz, self.adc_rate_hz);
         let bus = self.bus.as_mut();
         for nco in [Nco::Nco0, Nco::Nco1] {
-            Phy::Rx.set_nco(bus, nco, word)?;
+            chain.phy().set_nco(bus, nco, word)?;
         }
         Ok(())
     }
@@ -256,12 +419,31 @@ impl Board {
         if self.rx.bandwidth_fixed {
             return Ok(());
         }
-        let Some(decimation) = self.rx.decimation else {
+        let Some(bandwidth) = self.following_bandwidth(self.rx.lo_offset_hz) else {
             return Ok(());
         };
-        let bandwidth = (self.adc_rate_hz / decimation.factor())
-            .wrapping_add(self.rx.lo_offset_hz.wrapping_mul(2).unsigned_abs());
         self.lms.set_rx_bandwidth(self.bus.as_mut(), bandwidth)
+    }
+
+    /// Sets the TX filter as [`Self::update_rx_bandwidth`] sets the RX one, from the TX LO
+    /// offset (`_usdr_update_bandwidth` for TX).
+    fn update_tx_bandwidth(&mut self, tx: &TxState) -> Result<(), Error> {
+        if tx.bandwidth_fixed {
+            return Ok(());
+        }
+        let Some(bandwidth) = self.following_bandwidth(tx.lo_offset_hz) else {
+            return Ok(());
+        };
+        self.lms.set_tx_bandwidth(self.bus.as_mut(), bandwidth)
+    }
+
+    /// The bandwidth a filter that follows the sample rate gets with LO offset `offset_hz`:
+    /// the sample rate plus twice the offset, in libusdr's wrapping 32-bit arithmetic.
+    /// `None` before any rate is set, where libusdr divides by zero.
+    fn following_bandwidth(&self, offset_hz: i32) -> Option<u32> {
+        let decimation = self.rx.decimation?;
+        let rate = self.adc_rate_hz / decimation.factor();
+        Some(rate.wrapping_add(offset_hz.wrapping_mul(2).unsigned_abs()))
     }
 }
 
@@ -294,6 +476,22 @@ mod tests {
         assert_eq!(RxBand::for_frequency(230_000_000), RxBand::Wide);
         assert_eq!(RxBand::for_frequency(2_799_999_999), RxBand::Wide);
         assert_eq!(RxBand::for_frequency(2_800_000_000), RxBand::High);
+    }
+
+    #[test]
+    fn tx_bands_split_at_2_8_ghz_onto_pa1_and_pa2() {
+        assert_eq!(TxBand::for_frequency(0), TxBand::Wide);
+        assert_eq!(TxBand::for_frequency(2_799_999_999), TxBand::Wide);
+        assert_eq!(TxBand::for_frequency(2_800_000_000), TxBand::High);
+        // libusdr's `cfg_auto_tx`: PA1 on switch 1, PA2 on switch 0.
+        assert_eq!(
+            (TxBand::Wide.amplifier(), TxBand::Wide.tx_switch()),
+            (PowerAmp::Pa1, 1)
+        );
+        assert_eq!(
+            (TxBand::High.amplifier(), TxBand::High.tx_switch()),
+            (PowerAmp::Pa2, 0)
+        );
     }
 
     #[test]

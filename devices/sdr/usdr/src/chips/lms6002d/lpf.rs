@@ -1,33 +1,41 @@
-//! The low-pass filters: the RX filter (datasheet `RxLPF`, registers 0x50-0x56; the
-//! driver uses 0x54-0x56), and the one register the TX filter (`TxLPF`, 0x30-0x36) shares
-//! with it, the DAC bypass, which the DC calibration writes.
+//! The low-pass filters: the TX filter (datasheet `TxLPF`, registers 0x30-0x36) and the RX
+//! filter (`RxLPF`, 0x50-0x56). The two blocks share a map 0x20 apart; the driver uses
+//! their bandwidth, bypass and control registers (0x34-0x36 and 0x54-0x56), each indexed
+//! by [`Lpf`].
 //!
-//! The channel filter between RXVGA1 and RXVGA2: it limits how much spectrum reaches the
-//! ADC, so it has to suit the sample rate. libusdr picks a bandwidth code and an RC
-//! calibration value from a fixed table ([`for_bandwidth`]); above its last entry it
-//! bypasses the filter.
+//! The RX filter sits between RXVGA1 and RXVGA2 and limits how much spectrum reaches the
+//! ADC; the TX filter sits between the DAC and TXVGA1 and limits what the DAC's images
+//! leave in the output. Each has to suit the sample rate. libusdr picks a bandwidth code and
+//! an RC calibration value from one fixed table for both ([`for_bandwidth`]); above its last
+//! entry it bypasses the filter.
 
 use bnb::{BitEnum, bitfield, u3, u4, u6};
 
 use super::spi::BlockReg;
-use crate::chips::register::{IndexedRegister, Register};
+use crate::chips::register::IndexedRegister;
 
-/// Filter register addresses: the RX filter's, and the TX filter's DAC bypass.
+/// Filter register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u8, closed)]
 #[repr(u8)]
 pub(super) enum Reg {
+    /// TX LPF `BW`; see [`Bandwidth`].
+    TxBandwidth = 0x34,
+
     /// TX LPF `DACBP`; see [`Bypass`].
     TxBypass = 0x35,
 
-    /// Datasheet `BW`; see [`Bandwidth`].
-    Bandwidth = 0x54,
+    /// TX LPF `CTRL`; see [`Control`].
+    TxControl = 0x36,
+
+    /// RX LPF `BW`.
+    RxBandwidth = 0x54,
 
     /// RX LPF `DACBP`.
     RxBypass = 0x55,
 
-    /// Datasheet `CTRL`; see [`Control`].
-    Control = 0x56,
+    /// RX LPF `CTRL`.
+    RxControl = 0x56,
 }
 
 impl BlockReg for Reg {}
@@ -85,7 +93,7 @@ pub(super) enum LpfBandwidth {
     Mhz0_75,
 }
 
-/// The filter's bandwidth and power. Datasheet `BW`, register 0x54.
+/// The filter's bandwidth and power. Datasheet `BW`, registers 0x34 (TX) and 0x54 (RX).
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Bandwidth {
@@ -102,9 +110,16 @@ pub(super) struct Bandwidth {
     #[bits(0..=0)]
     test_mode_controls: bool,
 }
-impl Register for Bandwidth {
+impl IndexedRegister for Bandwidth {
     type Map = Reg;
-    const ADDR: Reg = Reg::Bandwidth;
+    type Index = Lpf;
+
+    fn addr(lpf: Lpf) -> Reg {
+        match lpf {
+            Lpf::Tx => Reg::TxBandwidth,
+            Lpf::Rx => Reg::RxBandwidth,
+        }
+    }
 }
 
 /// Which filter.
@@ -143,7 +158,11 @@ impl IndexedRegister for Bypass {
     }
 }
 
-/// RC calibration and power-downs. Datasheet `CTRL`, register 0x56.
+/// RC calibration and power-downs. Datasheet `CTRL`, registers 0x36 (TX) and 0x56 (RX).
+///
+/// The TX filter's register also has `TX_DACBUF_PD` (bit 7: power the TX DAC's buffers
+/// down; reset 0), which the RX filter's lacks. libusdr writes it 0 with every bandwidth,
+/// as this type, which leaves the bit out, does.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Control {
@@ -164,9 +183,16 @@ pub(super) struct Control {
     #[bits(0..=0)]
     filter_off: bool,
 }
-impl Register for Control {
+impl IndexedRegister for Control {
     type Map = Reg;
-    const ADDR: Reg = Reg::Control;
+    type Index = Lpf;
+
+    fn addr(lpf: Lpf) -> Reg {
+        match lpf {
+            Lpf::Tx => Reg::TxControl,
+            Lpf::Rx => Reg::RxControl,
+        }
+    }
 }
 
 /// libusdr's `DACCAL` value, written on every bandwidth change.
@@ -217,8 +243,9 @@ const LUT: [(u32, LpfBandwidth, u8); 39] = [
     (47000, LpfBandwidth::Mhz14, 0),
 ];
 
-/// The three register values libusdr writes for `bandwidth_hz` (`lms6002d_set_bandwidth`):
-/// the first [`LUT`] entry at or above it, or the filter bypassed above 47 MHz.
+/// The three register values libusdr writes for `bandwidth_hz` (`lms6002d_set_bandwidth`),
+/// the same for either filter: the first [`LUT`] entry at or above it, or the filter
+/// bypassed above 47 MHz.
 pub(super) fn for_bandwidth(bandwidth_hz: u32) -> (Bandwidth, Bypass, Control) {
     let khz = bandwidth_hz / 1000;
     let entry = LUT.iter().find(|&&(limit_khz, ..)| khz <= limit_khz);

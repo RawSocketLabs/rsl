@@ -6,7 +6,9 @@ use std::time::Duration;
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
-use crate::board::{Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
+use crate::board::{
+    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxPath, TxState,
+};
 use crate::error::Error;
 use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
 use crate::identity::Identity;
@@ -22,6 +24,10 @@ use crate::thermal::{CoolDown, ThermalPolicy};
 pub struct Device {
     /// The powered board, which owns the bus; `None` only once powered down.
     board: Option<Board>,
+
+    /// The transmit chain's settings, lent to the board's calls that read them (see
+    /// [`TxState`] on why they are not the board's yet).
+    tx: TxState,
 
     /// Temperature limits in force.
     thermal: ThermalPolicy,
@@ -198,7 +204,8 @@ impl Device {
     ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
     /// - Any bus failure.
     pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
-        self.board().set_rx_sample_rate(samples_per_second)
+        let (board, tx) = self.board_and_tx();
+        board.set_rx_sample_rate(samples_per_second, tx)
     }
 
     /// Tunes the receiver to `hz`.
@@ -227,8 +234,10 @@ impl Device {
     /// cannot. Start it with [`Device::start_streams`].
     ///
     /// Creating the RX stream calibrates the receiver's DC offsets. If no frequency was set,
-    /// the receiver tunes to 320 MHz first, as libusdr does. The streams' wire formats
-    /// are converted to their host formats inside each receive.
+    /// the receiver tunes to 320 MHz first, as libusdr does. The calibration borrows the
+    /// TX PLL; with a TX frequency set, it is tuned back to it, with any failure ignored
+    /// as libusdr ignores it. The streams' wire formats are converted to their host formats
+    /// inside each receive.
     ///
     /// # Errors
     ///
@@ -254,7 +263,8 @@ impl Device {
     ///
     /// [`SyncMode::ExternalAll`]: crate::SyncMode::ExternalAll
     pub fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
-        self.board().create_streams(config)
+        let (board, tx) = self.board_and_tx();
+        board.create_streams(config, tx)
     }
 
     /// Synchronises and starts the stream group: libusdr's `usdr_dms_sync` with the
@@ -318,7 +328,8 @@ impl Device {
     ///
     /// As [`Device::create_streams`] and [`Device::start_streams`].
     pub fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
-        self.board().start_rx_stream(samples_per_packet)
+        let (board, tx) = self.board_and_tx();
+        board.start_rx_stream(samples_per_packet, tx)
     }
 
     /// Throttles the running RX stream's bursts (`Some`) or delivers them all (`None`),
@@ -444,6 +455,54 @@ impl Device {
         self.board().set_rx_iq_correction(correction)
     }
 
+    /// Tunes the transmitter to `hz`, powering it on the first call (libusdr's
+    /// `/dm/sdr/0/tx/frequency`, every channel).
+    ///
+    /// The output follows the frequency, PA1 below 2.8 GHz and PA2 from there, unless
+    /// [`Device::set_tx_path`] fixed it. If the PLL cannot lock at an LO below 250 MHz, the
+    /// transmitter tunes the lowest LO that does and the TX NCOs cover the rest, which needs
+    /// a sample rate with room for the offset, as for RX. The TX filter follows the sample
+    /// rate unless [`Device::set_tx_bandwidth`] fixed it. Set a sample rate first: before
+    /// one, the NCO fallback fails and the filter is left alone (libusdr divides by zero).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::PllUnlocked`] if the TX PLL cannot lock and no NCO fallback applies.
+    /// - [`Error::UnsupportedFrequency`] below the PLL's 170 MHz floor, after the
+    ///   transmitter is powered and its output selected, as in libusdr.
+    /// - [`Error::PllFault`] if the LMS6002D reads back impossible PLL values.
+    /// - Any bus failure.
+    pub fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        let (board, tx) = self.board_and_tx();
+        board.set_tx_frequency(tx, hz)
+    }
+
+    /// Fixes the TX output, or with [`TxPath::Auto`] hands the choice back to the
+    /// frequency, applying the band for the current TX frequency at once (before any, PA1).
+    /// A fixed output holds across frequency changes; neither retunes.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_path(&mut self, path: TxPath) -> Result<(), Error> {
+        let (board, tx) = self.board_and_tx();
+        board.set_tx_path(tx, path)
+    }
+
+    /// Fixes the TX filter bandwidth in Hz, so later TX frequency changes keep it; 0 returns
+    /// the filter to following the sample rate. Above 47 MHz the filter is bypassed.
+    ///
+    /// Like libusdr, setting 0 writes the filter's narrowest setting until the next TX
+    /// frequency change; sample-rate changes leave the TX filter alone.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure.
+    pub fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
+        let (board, tx) = self.board_and_tx();
+        board.set_tx_bandwidth(tx, hz)
+    }
+
     /// Waits until the board is below the thermal policy's resume limit, reading every
     /// 5 s and passing each reading to `on_reading`.
     ///
@@ -478,6 +537,15 @@ impl Device {
         self.board
             .as_mut()
             .expect("invariant: a Device owns its board until close or drop")
+    }
+
+    /// The powered board and the transmit chain's settings, borrowed together.
+    fn board_and_tx(&mut self) -> (&mut Board, &mut TxState) {
+        let board = self
+            .board
+            .as_mut()
+            .expect("invariant: a Device owns its board until close or drop");
+        (board, &mut self.tx)
     }
 
     /// Stops any stream group, then powers the board down, if it is still up. Every step is
@@ -587,6 +655,7 @@ impl<'a> DeviceBuilder<'a> {
         }
         Ok(Device {
             board: Some(board),
+            tx: TxState::default(),
             thermal,
         })
     }

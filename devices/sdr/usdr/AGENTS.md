@@ -22,11 +22,12 @@ qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
 board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
-frequency, gains, path and corrections, and the RX stream group
+frequency, gains, path and corrections, the RX stream group
 (`create_streams`, `start_streams` with sync `None`/`All`, `receive_into` from `ci16`/`ci12`
 wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `stop_streams`; plus the
-`start_rx_stream`/`receive`/`stop_rx_stream` ci16 shim) over any streaming `Bus`, and the
-PCIe transport (feature `pcie`; untested on hardware). USB register/SPI/I²C control-plane access is available
+`start_rx_stream`/`receive`/`stop_rx_stream` ci16 shim) over any streaming `Bus`, the TX
+controls (frequency, path and bandwidth; not TX streaming), and the PCIe transport (feature `pcie`; untested on hardware). USB
+register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
 USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
 transport's 16-byte trailer. Hardware operation remains unqualified. Added beyond libusdr: the
@@ -48,7 +49,10 @@ Each layer calls only the ones below it.
 
 - `src/device.rs`: `Device`, the public API. It owns the `Board`, and the `Board` owns the bus
   (before power-up, `Identified` does). Board methods use `self.bus`; chip drivers stay
-  stateless and borrow `&mut dyn Bus` per call.
+  stateless and borrow `&mut dyn Bus` per call. One exception, temporary: `Device` also holds
+  the transmit chain's `TxState` and lends it to the board's TX, sample-rate and stream calls,
+  because adding it to `Board` means editing its construction in `board/power.rs`, which is
+  migrating; move it onto `Board` once that settles.
 - `src/stream.rs`: the stream group's public configuration and results (`StreamsConfig`,
   `RxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`, `RxMetadata`, the
   sealed `HostSample` buffer elements). One device-owned group per PORTING.md's
@@ -56,7 +60,8 @@ Each layer calls only the ones below it.
   registers and burst maths.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
-- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune and RX) and the executors
+- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune, the RX and TX controls and RX
+  streaming) and the executors
   that run migrated ones from `src/portable/` (power rails and Si5332 clocks so far). `board/board.rs` holds
   the `Board` struct, its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
@@ -181,7 +186,8 @@ Each layer calls only the ones below it.
 - Currently not ported: the remaining controls/TX/shared-library domains in
   [PORTING.md](PORTING.md). The RX gain, path and correction controls
   (`Device::set_rx_gain`, `set_rx_path`, `set_rx_dc_trim`, `set_rx_auto_dc_correction`,
-  `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported.
+  `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported, and so are the TX controls
+  (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`); TX streaming waits for the stream-group API.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is
@@ -195,9 +201,9 @@ Each layer calls only the ones below it.
   The second leaves out stream create's per-channel baseband loop, a libusdr bug that
   reselects the band, clamps the NCOs and bypasses the filter;
   `oracle/tests/common/baseband.rs` holds the cut, which `stream_parity.rs` and
-  `stream_formats_parity.rs` apply, and `stream_parity.rs` whitelists the mixer exit it
-  leaves libusdr owing. RX receive drops burst padding stubs that libusdr converts into
-  its host buffer
+  `stream_formats_parity.rs` apply (the TX PLL retune before it stays compared), and
+  `stream_parity.rs` whitelists the mixer exit it leaves libusdr owing. RX receive drops
+  burst padding stubs that libusdr converts into its host buffer
   (`stream_formats_parity.rs::a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub`),
   and `SyncMode::ExternalAll` fails at create, before any bus access, where libusdr
   creates and then fails the sync
@@ -211,6 +217,9 @@ Each layer calls only the ones below it.
   and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes
   `u32::MAX`, where libusdr's double-to-`unsigned` conversion is undefined
   (`rx_controls_parity.rs::a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it`).
+  Tuning before any sample rate, where libusdr divides by zero, skips the filter and fails
+  the low-LO fallback for both chains; the oracle cannot run that, so `tests/tx_tuning.rs`
+  covers it on the sim alone.
 - Registers are typed (`src/portable/register.rs`; `src/chips/register.rs` adds blocking I2C
   access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.

@@ -209,6 +209,14 @@ impl SimBoard {
         self
     }
 
+    /// A board whose TX PLL comparator answers as `lock` describes, instead of
+    /// [`PllLock::default`]; the RX PLL keeps the default.
+    #[must_use]
+    pub fn with_tx_pll_lock(mut self, lock: PllLock) -> Self {
+        self.lms.tx_lock = lock;
+        self
+    }
+
     /// A board whose LMS6002D DC calibration engines answer as `calibration` describes,
     /// instead of [`DcCalibration::default`].
     #[must_use]

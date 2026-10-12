@@ -112,7 +112,7 @@ pub(crate) struct Lms6002d {
     /// How the RX synthesizer's comparator answers.
     pub(crate) rx_lock: PllLock,
 
-    /// How the TX synthesizer's comparator answers; libusdr tunes TX only to calibrate.
+    /// How the TX synthesizer's comparator answers.
     pub(crate) tx_lock: PllLock,
 
     /// How the DC calibration engines answer.

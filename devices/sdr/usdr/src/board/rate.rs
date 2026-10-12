@@ -11,13 +11,13 @@ use std::time::Duration;
 use rsl_deps::tracing::debug;
 
 use super::Board;
-use super::board::Chains;
-use super::tune::RxBand;
+use super::board::{Chains, TxState};
+use super::tune::{Chain, RxBand};
 use crate::chips::lp8758::Buck;
 use crate::chips::register::run_sequence;
 use crate::chips::si5332::Layout;
 use crate::error::Error;
-use crate::fpga::{Decimation, Nco, Phy};
+use crate::fpga::{Decimation, Phy};
 use crate::portable::si5332::ClockSequence;
 
 impl Board {
@@ -42,12 +42,13 @@ impl Board {
     /// Sets the RX sample rate, in samples per second.
     ///
     /// libusdr's quirks are kept where they reach the registers: it powers the receiver,
-    /// pulses the TX chain's reset and sets the TX NCOs even for an RX-only rate.
+    /// pulses the TX chain's reset and sets the TX NCOs (to `tx`'s LO offset, at the new
+    /// rate) even for an RX-only rate.
     ///
     /// Divergence on failure only: libusdr records the boosted rail, the powered receiver
     /// and the decimation even when a write fails; this records each only once its writes
     /// succeed, so a retry reissues them.
-    pub(crate) fn set_rx_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
+    pub(crate) fn set_rx_sample_rate(&mut self, rate: u32, tx: &TxState) -> Result<(), Error> {
         // The block size and decimation are fixed while a stream runs; libusdr's callers only
         // set the rate before creating one.
         if self.rx_stream.is_some() {
@@ -100,12 +101,9 @@ impl Board {
         Phy::Tx.reset(bus, 0)?;
         Phy::Rx.set_dc_correction(bus, true)?;
 
-        // `usdr_restore_nco`, RX then TX. TX has no LO offset, so its words are 0.
+        // `usdr_restore_nco`, RX then TX.
         self.restore_rx_ncos()?;
-        let bus = self.bus.as_mut();
-        for nco in [Nco::Nco0, Nco::Nco1] {
-            Phy::Tx.set_nco(bus, nco, 0)?;
-        }
+        self.restore_ncos(Chain::Tx, tx.lo_offset_hz)?;
 
         // `USDR_SAMPLERATE_CHANGED`: the mixer LO moved with the clocks, so retune.
         if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {
@@ -130,6 +128,15 @@ impl Board {
     pub(crate) fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
         self.rx.bandwidth_fixed = hz != 0;
         self.lms.set_rx_bandwidth(self.bus.as_mut(), hz)
+    }
+
+    /// Fixes the TX filter bandwidth in Hz, or with 0 returns it to following the sample
+    /// rate, as [`Self::set_rx_bandwidth`] does for RX (`usdr_rfic_bb_set_badwidth` for
+    /// TX). The rate follows only on a TX tune: libusdr's RX-only rate change leaves the TX
+    /// filter alone.
+    pub(crate) fn set_tx_bandwidth(&mut self, tx: &mut TxState, hz: u32) -> Result<(), Error> {
+        tx.bandwidth_fixed = hz != 0;
+        self.lms.set_tx_bandwidth(self.bus.as_mut(), hz)
     }
 
     /// The decimation libusdr picks for `rate`, or `None` for a rate it rejects.

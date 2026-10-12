@@ -308,17 +308,32 @@ impl Lms6002d {
     }
 
     /// Sets the RX channel filter for `bandwidth_hz` from libusdr's table, bypassing it
-    /// above 47 MHz (`lms6002d_set_bandwidth`).
+    /// above 47 MHz (`lms6002d_set_bandwidth` for RX).
     pub(crate) fn set_rx_bandwidth(
         &self,
         bus: &mut dyn Bus,
         bandwidth_hz: u32,
     ) -> Result<(), Error> {
+        self.set_bandwidth(bus, Lpf::Rx, bandwidth_hz)
+    }
+
+    /// Sets the TX filter as [`Self::set_rx_bandwidth`] sets the RX one
+    /// (`lms6002d_set_bandwidth` for TX).
+    pub(crate) fn set_tx_bandwidth(
+        &self,
+        bus: &mut dyn Bus,
+        bandwidth_hz: u32,
+    ) -> Result<(), Error> {
+        self.set_bandwidth(bus, Lpf::Tx, bandwidth_hz)
+    }
+
+    /// Writes `lpf`'s bandwidth, bypass and control for `bandwidth_hz`, in that order.
+    fn set_bandwidth(&self, bus: &mut dyn Bus, lpf: Lpf, bandwidth_hz: u32) -> Result<(), Error> {
         let (bandwidth, bypass, control) = lpf::for_bandwidth(bandwidth_hz);
         let mut regs = self.on(bus);
-        regs.write(bandwidth)?;
-        regs.write_to(Lpf::Rx, bypass)?;
-        regs.write(control)
+        regs.write_to(lpf, bandwidth)?;
+        regs.write_to(lpf, bypass)?;
+        regs.write_to(lpf, control)
     }
 
     /// Tunes the RX synthesizer's LO to `lo_hz` from a `reference_hz` reference, and returns
@@ -341,6 +356,21 @@ impl Lms6002d {
         reference_hz: u32,
     ) -> Result<CapacitorWindow, Error> {
         self.tune(bus, Pll::Rx, lo_hz, reference_hz)
+    }
+
+    /// Tunes the TX synthesizer's LO to `lo_hz`, as [`Self::tune_rx`] tunes the RX one
+    /// (`lms6002d_tune_pll_stat` for TX).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::tune_rx`].
+    pub(crate) fn tune_tx(
+        &mut self,
+        bus: &mut dyn Bus,
+        lo_hz: u32,
+        reference_hz: u32,
+    ) -> Result<CapacitorWindow, Error> {
+        self.tune(bus, Pll::Tx, lo_hz, reference_hz)
     }
 
     /// Tunes either synthesizer, as [`Self::tune_rx`] describes. The TX synthesizer has no

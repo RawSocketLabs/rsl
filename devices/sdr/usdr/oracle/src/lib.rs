@@ -283,6 +283,29 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/rx/freqency", hz.into())
     }
 
+    /// Tunes the transmitter to `hz` (`/dm/sdr/0/tx/frequency`), every channel.
+    ///
+    /// Call it only after a sample rate is set: before one, libusdr divides by zero
+    /// (`_usdr_update_bandwidth`), which kills the process.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ENOLCK` if the PLL cannot lock, `-ERANGE`
+    /// below 170 MHz).
+    pub fn set_tx_frequency(&mut self, hz: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/tx/frequency", hz.into())
+    }
+
+    /// Sets the TX bandwidth in Hz (`/dm/sdr/0/tx/bandwidth`); 0 returns the filter to
+    /// following the sample rate.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/tx/bandwidth", hz.into())
+    }
+
     /// Writes `value` to the device-manager path `path` through `usdr_dme_set_uint`, such as
     /// `c"/dm/sdr/0/rx/gain/vga"`.
     ///

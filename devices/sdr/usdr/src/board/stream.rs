@@ -6,8 +6,8 @@
 //! Creating a stream powers the receiver, calibrates its DC offsets, configures the FPGA's
 //! front end and DMA, holds the sync unit stopped and asks the transport for its buffers;
 //! synchronising sets the sync unit's trigger; starting runs the DMA and front end. Blocks
-//! flow once both have happened. The RX stream is the whole group for now: TX is not
-//! ported.
+//! flow once both have happened. The RX stream is the whole group for now: TX streaming is
+//! not ported.
 
 use std::time::Duration;
 
@@ -15,6 +15,7 @@ use num_complex::Complex;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
+use super::board::TxState;
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{self, BurstPlan, Phy, SyncTrigger};
@@ -130,8 +131,13 @@ impl Board {
     /// Creates the group's streams (libusdr's `usdr_dms_create` for each), leaving them
     /// stopped until [`Board::start_streams`]. An existing group, a configuration with no
     /// stream and an unsupported sync mode are refused before any bus access; the packet
-    /// size is checked where libusdr checks it, after calibration.
-    pub(crate) fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
+    /// size is checked where libusdr checks it, after calibration. `tx` is the
+    /// transmitter's settings: the calibration's TX PLL tune is undone for its frequency.
+    pub(crate) fn create_streams(
+        &mut self,
+        config: StreamsConfig,
+        tx: &TxState,
+    ) -> Result<(), Error> {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
@@ -141,7 +147,7 @@ impl Board {
         let sync = config.sync.rx_trigger()?;
         let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
             .expect("invariant: libusdr converts every RX wire format to every host format");
-        self.create_rx_stream(rx, converter, sync)
+        self.create_rx_stream(rx, converter, sync, tx)
     }
 
     /// Synchronises and starts the group: `usdr_dms_sync` with the configured mode, then
@@ -163,9 +169,13 @@ impl Board {
     /// Creates, starts and free-runs a `ci16` channel-0 RX stream with `samples_per_packet`
     /// samples per packet, in the FFI `usdr` crate's order: create, `USDR_DMS_START`, then
     /// `usdr_dms_sync(.., "none", ..)`.
-    pub(crate) fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
+    pub(crate) fn start_rx_stream(
+        &mut self,
+        samples_per_packet: u32,
+        tx: &TxState,
+    ) -> Result<(), Error> {
         let config = RxConfig::new(samples_per_packet, HostFormat::Ci16, WireFormat::Ci16);
-        self.create_streams(StreamsConfig::rx(config))?;
+        self.create_streams(StreamsConfig::rx(config), tx)?;
         let bus = self.bus.as_mut();
         fpga::run_rx(bus, true)?;
         fpga::sync(bus, SyncTrigger::FreeRun)?;
@@ -176,7 +186,7 @@ impl Board {
         Ok(())
     }
 
-    /// libusdr's stream create for RX.
+    /// libusdr's stream create for RX, with `tx` the transmitter's settings.
     ///
     /// Intentional divergence: libusdr's create then reapplies each channel's LO as a
     /// baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX, .., rx_raw.lo[i])`), which
@@ -188,6 +198,7 @@ impl Board {
         config: RxConfig,
         converter: Converter,
         sync: SyncTrigger,
+        tx: &TxState,
     ) -> Result<(), Error> {
         let RxConfig {
             samples_per_packet,
@@ -211,8 +222,12 @@ impl Board {
             self.reference.hz(),
             (self.rx.vga2a, self.rx.vga2b),
         )?;
-        // libusdr retunes the TX PLL here when a TX LO is set; TX is not ported, so it never
-        // is.
+        // The calibration tuned the TX PLL to 320 MHz: libusdr tunes it back to the TX LO,
+        // when one is set, discarding the result. It tunes the LO itself, not the lowest
+        // lock a low-LO fallback found.
+        if tx.lo_hz != 0 {
+            let _ = self.tune_tx_pll(tx.lo_hz);
+        }
 
         let bus = self.bus.as_mut();
         fpga::reset_rx_dma(bus)?;

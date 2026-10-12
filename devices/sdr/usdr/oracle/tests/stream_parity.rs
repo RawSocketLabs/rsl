@@ -21,7 +21,7 @@ use crossing::mixer_lo_block;
 use num_complex::Complex;
 use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim};
 use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
 
 /// One call, made the same way on both sides.
@@ -32,6 +32,9 @@ enum Call {
 
     /// `set_rx_frequency`.
     Frequency(u32),
+
+    /// `set_tx_frequency`.
+    TxFrequency(u32),
 
     /// libusdr's numeric RX gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
     Gain(&'static CStr, u64, RxGain),
@@ -68,6 +71,7 @@ impl Call {
         match self {
             Self::Rate(rate) => oracle.set_rx_rate(rate).is_ok(),
             Self::Frequency(hz) => oracle.set_rx_frequency(hz).is_ok(),
+            Self::TxFrequency(hz) => oracle.set_tx_frequency(hz).is_ok(),
             // SAFETY: every RX gain handler reads its value as a number.
             Self::Gain(path, value, _) => unsafe { oracle.set_uint(path, value) }.is_ok(),
             Self::IqCorrection(value, _) => {
@@ -104,6 +108,7 @@ impl Call {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
             Self::Frequency(hz) => device.set_rx_frequency(hz),
+            Self::TxFrequency(hz) => device.set_tx_frequency(hz),
             Self::Gain(_, _, gain) => device.set_rx_gain(gain),
             Self::IqCorrection(_, correction) => device.set_rx_iq_correction(correction),
             Self::Path(_, path) => device.set_rx_path(path),
@@ -289,6 +294,55 @@ fn stream_creation_reapplies_the_rx_iq_correction_like_libusdr() {
             Call::IqCorrection(value, correction),
             Call::Start(1024),
             Call::Stop,
+            Call::Start(1024),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// The DC calibration borrows the TX PLL; with a TX frequency set, stream creation tunes it
+/// back there, and a second stream does again.
+#[test]
+fn stream_creation_retunes_the_tx_pll_like_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Rate(20_000_000),
+            Call::TxFrequency(2_400_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::Start(1024),
+            Call::Stop,
+            Call::Start(1024),
+            Call::Stop,
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|&ok| ok),
+        "every call succeeds: {outcomes:?}"
+    );
+}
+
+/// After a TX low-LO fallback, stream creation retunes the TX PLL to the TX frequency
+/// itself, not the lowest lock the fallback found; that tune fails, and libusdr ignores
+/// it, so the stream still starts.
+#[test]
+fn stream_creation_retunes_a_fallen_back_tx_lo_like_libusdr() {
+    let board = || {
+        SimBoard::new(BoardRevision::Rev3).with_tx_pll_lock(PllLock {
+            unlocked_below_hz: 245_000_000,
+            ..PllLock::default()
+        })
+    };
+    let outcomes = assert_calls_match(
+        board,
+        &[
+            Call::Rate(1_000_000),
+            Call::Frequency(1_000_000_000),
+            Call::TxFrequency(240_000_000),
             Call::Start(1024),
             Call::Stop,
         ],

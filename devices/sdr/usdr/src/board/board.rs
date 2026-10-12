@@ -131,6 +131,40 @@ pub(super) struct RxState {
     pub(super) iq_imbalance: IqImbalance,
 }
 
+/// The transmit chain's settings that later calls depend on, as libusdr tracks them
+/// (its `tx_*` fields).
+///
+/// [`Device`](crate::Device) holds it beside the [`Board`] and lends it to the board's
+/// TX, sample-rate and stream calls, because the board is built in `board/power.rs`, which
+/// this port leaves untouched while that file migrates; it belongs on the board once that
+/// settles. TX streaming, not yet ported, will add the IQ imbalance libusdr keeps
+/// (`tx_corr`) and rewrites at stream creation. Not `Copy`: lending a copy would lose the
+/// call's updates.
+#[derive(Debug, Default)]
+pub(crate) struct TxState {
+    /// The LMS6002D's transmitter is powered (libusdr's `tx_pwren`).
+    pub(super) powered: bool,
+
+    /// The caller fixed the TX bandwidth (libusdr's `tx_bw.set`), so frequency changes leave
+    /// the filter alone.
+    pub(super) bandwidth_fixed: bool,
+
+    /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`); 0 until tuned.
+    pub(super) lo_hz: u32,
+
+    /// The caller fixed the band with [`Board::set_tx_path`], so frequency changes leave it
+    /// alone (libusdr's `tx_rfic_path` other than `USDR_TX_AUTO`).
+    pub(super) band_fixed: bool,
+
+    /// The lowest LO the TX PLL was found to lock at below 250 MHz, in Hz (libusdr's
+    /// `tx_minimal_lo`); 0 until a lock failure made the driver search for it.
+    pub(super) minimal_lo_hz: u32,
+
+    /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the TX NCOs
+    /// make up the difference (libusdr's `tx_exten_lo`).
+    pub(super) lo_offset_hz: i32,
+}
+
 /// Which DSP chains the gateware has (HWID bits 25 and 24).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Chains {

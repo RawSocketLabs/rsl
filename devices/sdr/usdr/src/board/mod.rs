@@ -10,8 +10,8 @@ mod rate;
 mod stream;
 mod tune;
 
-pub(crate) use board::Board;
+pub(crate) use board::{Board, TxState};
 pub use correction::{RxIqCorrection, RxTrim};
 pub use gain::RxGain;
-pub use path::RxPath;
+pub use path::{RxPath, TxPath};
 pub use stream::{RxPacket, RxThrottle};

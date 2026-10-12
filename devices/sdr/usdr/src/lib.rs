@@ -5,9 +5,10 @@
 //! against libusdr's on a simulated board (`rsl-usdr-oracle`).
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
-//! rate, bandwidth, frequency, gains, path and corrections, and the RX stream group
+//! rate, bandwidth, frequency, gains, path and corrections, the RX stream group
 //! ([`Device::create_streams`]: `ci16`/`ci12` on the wire, `ci16`/`cf32`/`ci12` on the
-//! host) over any [`lowlevel::Bus`] that streams.
+//! host) over any [`lowlevel::Bus`] that streams, and the TX frequency, path and
+//! bandwidth; TX streaming is not yet ported.
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
 //! `mio` adds `transport::usb::NativeUsb`, an unstable temperature-only USB handle driven by
 //! a caller-owned Mio reactor. [`flash`] reads, erases and writes the FPGA's boot flash over
@@ -132,7 +133,7 @@ mod stream;
 mod thermal;
 pub mod transport;
 
-pub use board::{RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim};
+pub use board::{RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxPath};
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
 pub use frontend::{FrontEndKind, FrontEndSelection};
