@@ -13,9 +13,11 @@ use std::time::{Duration, Instant};
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
+use num_complex::Complex;
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
 use super::{BoardUsb, simulated_device};
+use crate::Device;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
 use crate::lowlevel::{Bus, BusError, TxFill};
@@ -24,8 +26,8 @@ use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
-    Adapter, Backend, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues, Reply,
-    Report, Request, Session, Turn, Work, Worker,
+    Adapter, Backend, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues, RX_BACKLOG,
+    Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 use crate::transport::usb::tx::TxStatus;
@@ -119,6 +121,9 @@ struct Fake {
     submit_error: Option<BusError>,
     /// Native error from cleanup, observed separately from operation completion.
     cleanup_error: Option<BusError>,
+    /// When set, RX blocks the worker may take: as on usbfs, only a reap turn files them,
+    /// a whole ring's worth each turn. Unset, every block is filed at once.
+    rx_filed: Option<usize>,
     /// Shared boundary log; no adapter state is inspected.
     record: Arc<Mutex<Record>>,
     /// Signals backend Drop without joining the worker.
@@ -155,6 +160,7 @@ impl Fake {
                 panic_submit: false,
                 submit_error: None,
                 cleanup_error: None,
+                rx_filed: None,
                 record: Arc::clone(&record),
                 dropped,
             },
@@ -258,6 +264,9 @@ impl Backend for Fake {
         if let Some(pause) = self.turn_pause.take() {
             pause.wait();
         }
+        if let Some(filed) = &mut self.rx_filed {
+            *filed = 8;
+        }
         if let Some(exhausted) = self.turns.pop_front() {
             return Ok(Turn {
                 completion: None,
@@ -287,6 +296,11 @@ impl Backend for Fake {
 
     fn rx_receive(&mut self, consume: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<Filing, BusError> {
         self.record("rx receive");
+        match &mut self.rx_filed {
+            Some(0) => return Ok(Filing::Empty),
+            Some(filed) => *filed -= 1,
+            None => {}
+        }
         filing(self.io.rx_recv(Duration::ZERO, consume))
     }
 
@@ -912,12 +926,7 @@ fn powered(
     revision: BoardRevision,
     reactor: &Poll,
     wake: Arc<Waker>,
-) -> (
-    NativeUsb,
-    Arc<Mutex<SimBoard>>,
-    Arc<Mutex<Record>>,
-    crate::Device,
-) {
+) -> (NativeUsb, Arc<Mutex<SimBoard>>, Arc<Mutex<Record>>, Device) {
     let (device, board, _) = simulated_device(revision);
     let (mut fake, record, _) = Fake::new();
     fake.io.board = Arc::clone(&board);
@@ -1216,7 +1225,7 @@ const RX_BLOCK: u32 = 4096;
 
 /// A tuned board whose RX stream engine runs 1024-sample `ci16` packets, dropping
 /// `losses` packets before successive blocks; started by the blocking driver.
-fn rx_streaming(losses: &[u32]) -> (crate::Device, Arc<Mutex<SimBoard>>) {
+fn rx_streaming(losses: &[u32]) -> (Device, Arc<Mutex<SimBoard>>) {
     let (mut device, board, script) = simulated_device(BoardRevision::Rev3);
     script.lock().unwrap().losses.extend(losses);
     device.set_rx_sample_rate(20_000_000).unwrap();
@@ -1242,7 +1251,7 @@ fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
     // one, the native handle the other, its worker copying each block off its transfer.
     let losses = [0, 2, 0, 1];
     let (mut blocking, _) = rx_streaming(&losses);
-    let mut samples = vec![num_complex::Complex::new(0, 0); 1024];
+    let mut samples = vec![Complex::new(0, 0); 1024];
     let expected: Vec<_> = losses
         .iter()
         .map(|_| {
@@ -1274,7 +1283,7 @@ fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
             .payload
             .chunks_exact(4)
             .map(|sample| {
-                num_complex::Complex::new(
+                Complex::new(
                     i16::from_le_bytes([sample[0], sample[1]]),
                     i16::from_le_bytes([sample[2], sample[3]]),
                 )
@@ -1284,10 +1293,12 @@ fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
         lost += block.oob[0] & 0xff_ffff;
         assert_eq!(lost, lost_packets, "block {index} reports the same losses");
     }
+    // Every block taken was requeued; this fake files blocks as fast as they are asked for,
+    // so the exact count depends on scheduling (the gated test below pins it).
     let taken = script.lock().unwrap().submitted - 8;
     assert!(
-        (4..=4 + 8).contains(&taken),
-        "the worker copies at most a ring's worth ahead of the caller ({taken} taken)"
+        taken <= 4 + RX_BACKLOG,
+        "the worker copies at most the backlog ahead of the caller ({taken} taken)"
     );
     native.start_rx_close().unwrap();
     expect_event(
@@ -1648,5 +1659,107 @@ fn the_managed_runner_drives_the_handle_without_a_caller_reactor() {
         "nothing else is in flight"
     );
     managed.close(GUARD).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+/// Waits through the reactor for the adapter's next stream outcome.
+fn outcome(adapter: &mut Adapter, reactor: &mut Poll) -> StreamOutcome {
+    let until = Instant::now() + GUARD;
+    loop {
+        if let Some(outcome) = adapter.try_outcome() {
+            return outcome;
+        }
+        assert!(Instant::now() < until, "native stream outcome deadline");
+        poll(adapter, reactor);
+    }
+}
+
+/// Waits through the reactor for the adapter's next RX block.
+fn block(adapter: &mut Adapter, reactor: &mut Poll) {
+    let until = Instant::now() + GUARD;
+    loop {
+        if let Some(block) = adapter.try_block() {
+            block.unwrap();
+            return;
+        }
+        assert!(Instant::now() < until, "native RX block deadline");
+        poll(adapter, reactor);
+    }
+}
+
+#[test]
+fn room_freed_after_a_turn_with_none_takes_the_blocks_that_turn_filed() {
+    // A control transfer's turns keep reaping while the backlog is full: they file RX
+    // completions no later edge announces, so freeing room must bring a turn by itself.
+    let (_device, board) = rx_streaming(&[]);
+    let (mut fake, _, _) = Fake::new();
+    fake.io.board = board;
+    fake.rx_filed = Some(0);
+    let script = Arc::clone(&fake.io.script);
+    let (mut reactor, wake) = reactor();
+    let mut adapter = Adapter::attach(fake, reactor.registry(), DEVICE, wake, budget()).unwrap();
+    // Consume the registration's own edge: from here, no device edge arrives.
+    reactor
+        .poll(&mut Events::with_capacity(8), Some(Duration::ZERO))
+        .unwrap();
+    adapter.command(StreamCommand::RxOpen(RX_BLOCK)).unwrap();
+    assert!(matches!(
+        outcome(&mut adapter, &mut reactor),
+        StreamOutcome::Command(Ok(()))
+    ));
+    adapter.want_rx(true);
+    adapter.submit(&operation(1).2, Instant::now()).unwrap();
+    assert!(completion(&mut adapter, &mut reactor).result.is_ok());
+    // The first read can leave a turn owed. The second runs on a full backlog: once its
+    // acknowledgement is published, one turn (taking no block) pays what is owed and
+    // brings its completion, and nothing more is owed.
+    adapter.submit(&operation(2).2, Instant::now()).unwrap();
+    reactor
+        .poll(&mut Events::with_capacity(8), Some(GUARD))
+        .unwrap();
+    assert!(completion(&mut adapter, &mut reactor).result.is_ok());
+    assert_eq!(
+        script.lock().unwrap().submitted,
+        8 + RX_BACKLOG,
+        "the ring, then exactly the backlog's blocks taken and requeued"
+    );
+    for _ in 0..=RX_BACKLOG {
+        block(&mut adapter, &mut reactor);
+    }
+    adapter.close().unwrap();
+    cleanup(&mut adapter, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_failed_status_read_closes_the_handle_and_is_no_full_ring() {
+    let (mut fake, _, dropped) = Fake::new();
+    // TX opens without a control transfer: the first one is the first send's status read.
+    fake.submit_error = Some(BusError::Timeout);
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_tx_open(4096, 4).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxOpened(Ok(()))),
+        "TX opens",
+    );
+    native
+        .start_send(None, &[1; 64], GUARD, Instant::now())
+        .unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(event, NativeEvent::Sent(Err(Error::Stream(BusError::Io(error))))
+                if error.kind() == io::ErrorKind::TimedOut)
+        },
+        "a status-read timeout is an I/O failure, not Error::Timeout",
+    );
+    assert!(
+        native.start_temperature(Instant::now()).is_err(),
+        "a control-plane failure closes the handle"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
     assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
 }

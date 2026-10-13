@@ -2,6 +2,7 @@
 //! the calling thread, for callers without an event loop. The same engine runs underneath;
 //! the worker still performs every USB call.
 
+use std::fmt;
 use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,8 +36,8 @@ pub struct ManagedUsb {
     events: Events,
 }
 
-impl std::fmt::Debug for ManagedUsb {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ManagedUsb {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ManagedUsb")
             .field("native", &self.native)
             .finish_non_exhaustive()
@@ -95,7 +96,7 @@ impl ManagedUsb {
                 (deadline, until) => deadline.or(until),
             };
             let wait = wake.map(|wake| wake.saturating_duration_since(now));
-            self.poll.poll(&mut self.events, wait)?;
+            self.wait(wait)?;
             for event in &self.events {
                 self.native.on_ready(event.token());
             }
@@ -121,7 +122,19 @@ impl ManagedUsb {
                 return Err(BusError::Timeout);
             }
             let wait = until.map(|until| until.saturating_duration_since(now));
-            self.poll.poll(&mut self.events, wait)?;
+            self.wait(wait)?;
+        }
+    }
+
+    /// Waits in the reactor up to `timeout`; a signal's interruption is an empty wait, so
+    /// the caller's loop simply looks again.
+    fn wait(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        match self.poll.poll(&mut self.events, timeout) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                self.events.clear();
+                Ok(())
+            }
+            polled => polled,
         }
     }
 }

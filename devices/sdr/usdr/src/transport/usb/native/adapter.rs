@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::io;
+use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -64,15 +65,22 @@ pub(in super::super) struct Adapter {
     dirty: bool,
     /// Turns take RX blocks, up to the room left in `blocks`.
     rx_wanted: bool,
+    /// A turn ran while RX was wanted but `blocks` was full: it may have filed RX
+    /// completions that no later edge announces, so freeing room calls for a turn.
+    rx_starved: bool,
     /// Turns try for a free TX transfer.
     tx_wanted: bool,
+    /// Counts the sends that wanted a free TX transfer; a turn carries the current one, so
+    /// an older turn's "every transfer in flight" is not taken for a newer send's attempt.
+    tx_generation: u64,
     /// A control completion drained from the worker, for the next `try_event`.
     completed: Option<Completion>,
     /// RX blocks drained from the worker, oldest first; at most [`RX_BACKLOG`].
     blocks: VecDeque<Result<RxBlock, BusError>>,
     /// Acquisitions and stream-command results drained from the worker, oldest first.
     outcomes: VecDeque<StreamOutcome>,
-    /// Why the adapter stopped, when no control completion carried it.
+    /// Why the adapter stopped by failure, for the streams; the control request, if one was
+    /// pending, carries the original.
     fault: Option<BusError>,
     /// Cleanup publication is consumed once, even after a worker disconnect.
     cleanup_observed: bool,
@@ -111,7 +119,9 @@ impl Adapter {
             turning: false,
             dirty: false,
             rx_wanted: false,
+            rx_starved: false,
             tx_wanted: false,
+            tx_generation: 0,
             completed: None,
             blocks: VecDeque::new(),
             outcomes: VecDeque::new(),
@@ -185,6 +195,7 @@ impl Adapter {
     /// stopping drops the blocks not yet taken.
     pub(in super::super) fn want_rx(&mut self, wanted: bool) {
         self.rx_wanted = wanted;
+        self.rx_starved = false;
         if wanted {
             self.dirty = true;
             self.schedule();
@@ -193,11 +204,12 @@ impl Adapter {
         }
     }
 
-    /// Starts or stops trying for a free TX transfer on each turn. Starting covers an edge
-    /// that came before it.
+    /// Starts or stops trying for a free TX transfer on each turn, for a new send when
+    /// starting. Starting covers an edge that came before it.
     pub(in super::super) fn want_tx(&mut self, wanted: bool) {
         self.tx_wanted = wanted;
         if wanted {
+            self.tx_generation = self.tx_generation.wrapping_add(1);
             self.dirty = true;
             self.schedule();
         }
@@ -225,11 +237,13 @@ impl Adapter {
         if self.pending.is_none() && rx == 0 && !self.tx_wanted {
             return;
         }
-        let acquire = self.tx_wanted;
+        let acquire = self.tx_wanted.then_some(self.tx_generation);
         match self.worker.send(Work::Turn { rx, acquire }) {
             Ok(()) => {
                 self.turning = true;
                 self.dirty = false;
+                // Its reap can file RX completions it has no room to take.
+                self.rx_starved |= self.rx_wanted && rx == 0;
             }
             Err(error) => self.collapse(error),
         }
@@ -255,6 +269,9 @@ impl Adapter {
     pub(in super::super) fn try_block(&mut self) -> Option<Result<RxBlock, BusError>> {
         self.pump();
         let block = self.blocks.pop_front();
+        if block.is_some() && mem::take(&mut self.rx_starved) {
+            self.dirty = true;
+        }
         self.schedule();
         block
     }
@@ -325,8 +342,13 @@ impl Adapter {
         if self.rx_wanted {
             self.blocks.extend(rx);
         }
-        if let Some(acquired) = acquired {
-            self.outcomes.push_back(StreamOutcome::Acquired(acquired));
+        if let Some((generation, acquired)) = acquired {
+            // An older send's "every transfer in flight" is no attempt for the current one;
+            // a held transfer or a failure still is.
+            let stale = generation != self.tx_generation && matches!(acquired, Ok(false));
+            if !stale {
+                self.outcomes.push_back(StreamOutcome::Acquired(acquired));
+            }
         }
         let Some(completion) = completion else {
             return;
@@ -342,10 +364,12 @@ impl Adapter {
         self.completed = Some(completion);
     }
 
-    /// Ends the session on a failure no single operation owns: the control request gets
-    /// `error`, or, if none is pending, it is kept for [`take_fault`](Self::take_fault).
+    /// Ends the session on a failure no single operation owns: a pending control request
+    /// gets `error`, and the streams it (or a copy) through [`take_fault`](Self::take_fault).
     fn collapse(&mut self, error: BusError) {
         if let Some((id, _)) = self.pending {
+            // Open streams outlive the control request: they get a copy.
+            self.fault.get_or_insert_with(|| duplicate(&error));
             self.completed = Some(self.fail(id, error));
         } else {
             self.fault.get_or_insert(error);
@@ -433,6 +457,18 @@ impl Adapter {
         let result = self.worker.cleanup()?;
         self.cleanup_observed = true;
         Some(result)
+    }
+}
+
+/// A copy of `error` for a second recipient: exact for the plain variants, kind and message
+/// for an OS error, the message for any other.
+fn duplicate(error: &BusError) -> BusError {
+    match error {
+        BusError::Timeout => BusError::Timeout,
+        BusError::Disconnected => BusError::Disconnected,
+        BusError::Unsupported(reason) => BusError::Unsupported(reason),
+        BusError::Io(error) => BusError::Io(io::Error::new(error.kind(), error.to_string())),
+        other => BusError::Io(io::Error::other(other.to_string())),
     }
 }
 

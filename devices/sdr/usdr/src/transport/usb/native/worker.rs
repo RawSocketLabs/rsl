@@ -29,8 +29,9 @@ pub(in super::super) enum Work {
     /// Submit without waiting for its USB completion.
     Submit(Request),
     /// Drive bounded reaping after an edge or an exhausted budget, then take up to `rx`
-    /// filed RX blocks and, if `acquire`, try for a free TX transfer.
-    Turn { rx: usize, acquire: bool },
+    /// filed RX blocks and, for the send of generation `acquire`, try for a free TX
+    /// transfer.
+    Turn { rx: usize, acquire: Option<u64> },
     /// Open, close or send on a stream; may block (cancellation) on the worker.
     Stream(StreamCommand),
 }
@@ -59,8 +60,9 @@ pub(in super::super) struct Harvest {
     pub completion: Option<Completion>,
     /// RX blocks taken, oldest first; an error ends the list and the stream.
     pub rx: Vec<Result<RxBlock, BusError>>,
-    /// The TX acquisition attempt, if asked for: whether a free transfer is now held.
-    pub acquired: Option<Result<bool, BusError>>,
+    /// The TX acquisition attempt, if asked for, with the send generation it was for:
+    /// whether a free transfer is now held.
+    pub acquired: Option<(u64, Result<bool, BusError>)>,
     /// Another turn is due without a new readiness edge.
     pub exhausted: bool,
 }
@@ -222,14 +224,14 @@ impl Worker {
     }
 
     /// One bounded turn: reaps and takes the control completion, then copies up to `rx`
-    /// filed RX blocks (each transfer requeued as it is copied) and, if `acquire`, tries
-    /// for a free TX transfer. Stream work stops at the first failure; a reap failure
-    /// skips it.
+    /// filed RX blocks (each transfer requeued as it is copied) and, for the send of
+    /// generation `acquire`, tries for a free TX transfer. Stream work stops at the first
+    /// failure; a reap failure skips it.
     fn harvest<B: Backend>(
         backend: &mut B,
         budget: NonZeroUsize,
         rx: usize,
-        acquire: bool,
+        acquire: Option<u64>,
     ) -> Result<Harvest, BusError> {
         let Turn {
             completion,
@@ -260,12 +262,15 @@ impl Worker {
         }
         // Blocks may still be filed beyond the room the reactor gave this turn.
         exhausted |= rx > 0 && blocks.len() == rx && blocks.last().is_some_and(Result::is_ok);
-        let acquired = acquire.then(|| match backend.tx_acquire() {
-            Ok(filing) => {
-                exhausted |= filing == Filing::Again;
-                Ok(filing == Filing::Taken)
-            }
-            Err(error) => Err(error),
+        let acquired = acquire.map(|generation| {
+            let acquired = match backend.tx_acquire() {
+                Ok(filing) => {
+                    exhausted |= filing == Filing::Again;
+                    Ok(filing == Filing::Taken)
+                }
+                Err(error) => Err(error),
+            };
+            (generation, acquired)
         });
         Ok(Harvest {
             completion,

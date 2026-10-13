@@ -67,7 +67,9 @@ pub enum NativeEvent {
     /// opening it again.
     RxOpened(Result<(), Error>),
     /// One RX block arrived, or RX failed ([`Error::Stream`]). A failed stream delivers
-    /// nothing more until it is closed and opened again; the handle stays open.
+    /// nothing more until it is closed and opened again; the handle stays open, unless the
+    /// failure was the session's own end (a transport failure that closed the handle),
+    /// which an open stream reports here once.
     Received(Result<RxBlock, Error>),
     /// RX closed: every transfer was cancelled and came back, and the endpoint is free. On
     /// failure the endpoint stays held; close again.

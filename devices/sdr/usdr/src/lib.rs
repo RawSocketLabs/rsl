@@ -8,7 +8,8 @@
 //! rate, bandwidth, frequency, gains, path and corrections, the RX stream group
 //! ([`Device::create_streams`]: `ci16`/`ci12` on the wire, `ci16`/`cf32`/`ci12` on the
 //! host) over any [`lowlevel::Bus`] that streams, and the TX controls (frequency, path,
-//! bandwidth, gains, corrections, constant generator); TX streaming is not yet ported.
+//! bandwidth, gains, corrections, constant generator) and TX streaming on the original TX
+//! core ([`Device::send`]).
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
 //! `mio` adds `transport::usb::NativeUsb`, an unstable USB handle driven by a caller-owned
 //! Mio reactor (a few control operations and the transport's RX and TX streams), and
