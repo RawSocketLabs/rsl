@@ -202,6 +202,10 @@ unsafe extern "C" {
     fn free(ptr: *mut c_void);
 }
 
+/// The shim's `RSL_ORACLE_TOOL_SETUP_FAILED`: the tool's streams could not be set up, so
+/// it did not run.
+const TOOL_SETUP_FAILED: c_int = -1;
+
 /// What libusdr's flash tool did to a board.
 pub struct ToolRun {
     /// The tool's exit status: 0, or the code its failure path returns.
@@ -256,8 +260,8 @@ pub fn usdr_flash(board: SimBoard, args: &[&str], reply: &str) -> ToolRun {
     let board = take_board();
     resume_callback_panic();
     assert!(
-        !log.is_null(),
-        "the shim could not set up the tool ({status})"
+        status != TOOL_SETUP_FAILED && !log.is_null(),
+        "the shim could not set up the tool's streams"
     );
     // SAFETY: `open_memstream` left `log_len` bytes at `log`.
     let text =

@@ -483,8 +483,11 @@ int rsl_oracle_flash_write(unsigned base, unsigned mmap_base, const uint8_t* in,
 // lowlevel_create also brings the board up (and lowlevel_destroy powers it down); here its
 // device gets the board description (the flash base and master offset the tool reads) and
 // nothing else, so the board's trace holds the tool's own operations. rsl-usdr's flash
-// maintenance powers nothing either.
+// maintenance powers nothing either. Returns RSL_ORACLE_TOOL_SETUP_FAILED, which the tool
+// never does (its statuses are 0 to 9), with no log if its streams cannot be set up.
 int rsl_oracle_usdr_flash_main(int argc, char** argv);
+
+enum { RSL_ORACLE_TOOL_SETUP_FAILED = -1 };
 
 int rsl_oracle_usdr_flash(int argc, char** argv, const char* reply, char** log, size_t* log_len)
 {
@@ -496,8 +499,10 @@ int rsl_oracle_usdr_flash(int argc, char** argv, const char* reply, char** log, 
         }
         if (err) {
             fclose(err);
+            free(*log);
         }
-        return -ENOMEM;
+        *log = NULL;
+        return RSL_ORACLE_TOOL_SETUP_FAILED;
     }
     FILE* saved_in = stdin;
     FILE* saved_err = stderr;

@@ -22,7 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, PoisonError};
 
-use bitstream::{Facts, XC7A50T};
+use bitstream::{AXSS, Bitstream, Facts, IDCODE, NOOP, WBSTAR, XC7A35T, XC7A50T};
 use rsl_usdr::flash::{
     Flash, Image, ImageError, ImageMismatch, MASTER_IMAGE_OFFSET, Slot, UpdateError, UpdateOptions,
 };
@@ -300,6 +300,49 @@ fn builds_already_flashed_are_refused_like_libusdr_unless_forced() {
 }
 
 #[test]
+fn a_master_header_refused_after_its_build_still_counts_as_flashed_like_libusdr() {
+    // The new build's stamp within the first 256 bytes, its WBSTAR past them: libusdr's
+    // parse of the master header fails, but the build it read is still compared.
+    let master = Bitstream::new()
+        .write(IDCODE, &[XC7A35T])
+        .write(AXSS, &[NEW])
+        .raw(&[NOOP; 64])
+        .write(WBSTAR, &[0])
+        .bytes();
+    let board = || {
+        let offset = usize::try_from(MASTER_IMAGE_OFFSET).expect("fits");
+        let flash = SimFlash::new(ID, SIZE)
+            .with_contents(0, &Facts::golden(GOLDEN).bytes())
+            .with_contents(offset, &master);
+        SimBoard::new(BoardRevision::Rev3)
+            .with_gateware_build(RUNNING)
+            .with_flash(flash)
+    };
+    let facts = Facts::master(NEW);
+    let (c, rust) = update(
+        "partial_master",
+        board,
+        facts,
+        Slot::Master,
+        &[],
+        UpdateOptions::new(),
+    );
+    assert_eq!(c.status, ALREADY, "libusdr refuses: {}", c.log);
+    assert!(c.log.contains("M image is corrupted"), "{}", c.log);
+    assert!(
+        matches!(
+            rust,
+            Err(UpdateError::AlreadyFlashed {
+                slot: Slot::Master,
+                build: NEW,
+                ..
+            })
+        ),
+        "rsl-usdr compares the build it read: {rust:?}"
+    );
+}
+
+#[test]
 fn images_for_the_wrong_slot_are_refused_like_libusdr() {
     let unaligned = || {
         let golden = Facts {
@@ -346,7 +389,7 @@ fn images_for_the_wrong_slot_are_refused_like_libusdr() {
             matches!(
                 m,
                 ImageMismatch::DeviceId {
-                    flash: bitstream::XC7A35T,
+                    flash: XC7A35T,
                     image: XC7A50T,
                     ..
                 }
