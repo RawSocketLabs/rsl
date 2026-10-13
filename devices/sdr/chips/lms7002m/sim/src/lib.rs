@@ -53,6 +53,9 @@ pub struct Lms7002m {
     /// The reference clock in hertz, which the VCO comparators need; `None` reads them as
     /// stored.
     reference: Option<u64>,
+    /// A cap code at which both comparators read "fail"
+    /// ([`Lms7002m::with_comparator_failure`]).
+    failing_cap: Option<u8>,
 }
 
 impl Lms7002m {
@@ -70,7 +73,17 @@ impl Lms7002m {
             regs: BTreeMap::new(),
             version: VER_REV | u16::from(mask),
             reference: None,
+            failing_cap: None,
         }
+    }
+
+    /// The same chip with its VCO comparators reading "fail" (`VCO_CMPLO` alone) whenever
+    /// the cap code last written is `cap`, in CGEN and SXX alike: a fault injection for the
+    /// tuning searches' error paths, not a modelled behaviour. Needs a reference.
+    #[must_use]
+    pub fn with_comparator_failure(mut self, cap: u8) -> Self {
+        self.failing_cap = Some(cap);
+        self
     }
 
     /// The same chip clocked from a `hertz` reference, so its VCO comparators answer the
@@ -113,13 +126,29 @@ impl Lms7002m {
         match (addr, self.reference) {
             (VERSION, _) => self.version,
             (vco::CGEN_COMPARATORS, Some(reference)) => {
-                vco::merge(stored(addr), vco::cgen(stored, reference))
+                let reading = if self.fails_at(vco::cgen_cap(stored)) {
+                    vco::FAIL
+                } else {
+                    vco::cgen(stored, reference)
+                };
+                vco::merge(stored(addr), reading)
             }
             (vco::SXX_COMPARATORS, Some(reference)) => {
-                vco::merge(stored(addr), vco::sxx(stored, reference))
+                let reading = if self.fails_at(vco::sxx_cap(stored)) {
+                    vco::FAIL
+                } else {
+                    vco::sxx(stored, reference)
+                };
+                vco::merge(stored(addr), reading)
             }
             _ => stored(addr),
         }
+    }
+
+    /// Whether the comparators are forced to fail at cap code `cap`.
+    fn fails_at(&self, cap: u16) -> bool {
+        self.failing_cap
+            .is_some_and(|failing| u16::from(failing) == cap)
     }
 
     /// Pulses the chip's reset pin (`RESET`): every register returns to its power-on state,
@@ -193,6 +222,18 @@ mod tests {
             0x3f0f,
             "the slowest code reads high (both comparators) over the stored bits"
         );
+    }
+
+    #[test]
+    fn a_forced_failure_reads_fail_at_its_cap_code_only() {
+        let mut chip = Lms7002m::new(0)
+            .with_reference(26_000_000)
+            .with_comparator_failure(128);
+        chip.write(0x0088, 89 << 4);
+        chip.write(0x008b, 128 << 1);
+        assert_eq!(chip.reg(0x008c) >> 12, 0b01, "VCO_CMPLO alone");
+        chip.write(0x008b, 127 << 1);
+        assert_ne!(chip.reg(0x008c) >> 12, 0b01);
     }
 
     #[test]

@@ -52,6 +52,9 @@ const HIGH: u16 = 0b11 << 12;
 const OK: u16 = 0b10 << 12;
 /// Neither set: the VCO is too fast (`LMS7002M_VCO_LOW`).
 const LOW: u16 = 0;
+/// Only `VCO_CMPLO` set: libusdr's `LMS7002M_VCO_FAIL`, never produced by the model; a
+/// board can force it at one cap code ([`crate::Lms7002m::with_comparator_failure`]).
+pub(crate) const FAIL: u16 = 0b01 << 12;
 
 /// Half the width, in cap codes, of the band that reads OK. A sim choice: wide enough for
 /// libusdr's search to find a range of several codes.
@@ -73,7 +76,7 @@ const SXX_SPANS: [(u64, u64); 3] = [
 /// The comparator bits `CGEN_0x008C` reports, given a register reader and the reference.
 pub(crate) fn cgen(reg: impl Fn(u16) -> u16, reference: u64) -> u16 {
     let target = target(reg(CGEN_INT_FRAC), reg(CGEN_FRAC_LOW), 1, reference);
-    let cap = (reg(CGEN_VCO_CAP) >> 1) & 0xff;
+    let cap = cgen_cap(&reg);
     compare(CGEN_SPAN, cap, target)
 }
 
@@ -81,11 +84,21 @@ pub(crate) fn cgen(reg: impl Fn(u16) -> u16, reference: u64) -> u16 {
 pub(crate) fn sxx(reg: impl Fn(u16) -> u16, reference: u64) -> u16 {
     let target = target(reg(SXX_INT_FRAC), reg(SXX_FRAC_LOW), 4, reference);
     let vco_cap = reg(SXX_VCO_CAP);
-    let cap = (vco_cap >> 3) & 0xff;
+    let cap = sxx_cap(&reg);
     let Some(&span) = SXX_SPANS.get(usize::from((vco_cap >> 1) & 0b11)) else {
         return LOW;
     };
     compare(span, cap, target)
+}
+
+/// The CGEN cap code last written (`CSW_VCO_CGEN`).
+pub(crate) fn cgen_cap(reg: impl Fn(u16) -> u16) -> u16 {
+    (reg(CGEN_VCO_CAP) >> 1) & 0xff
+}
+
+/// The SXX cap code last written (`CSW_VCO`).
+pub(crate) fn sxx_cap(reg: impl Fn(u16) -> u16) -> u16 {
+    (reg(SXX_VCO_CAP) >> 3) & 0xff
 }
 
 /// The comparator bits of the register at `addr` with its other bits from `stored`.
