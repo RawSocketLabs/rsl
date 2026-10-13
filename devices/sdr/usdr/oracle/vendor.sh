@@ -3,8 +3,9 @@
 #
 # Usage: vendor.sh [--usb-only] <path-to-usdr-lib-checkout>
 # --usb-only refreshes only the exported USB RX/TX reference functions (libusdr/reference).
-# A full refresh also copies three tools (libusdr/tools): the flash tool, and
-# usdr_dm_create and usdr_dm_gpsdo, whose generators and discipline loop rsl-usdr ports.
+# A full refresh also copies four tools (libusdr/tools): the flash tool, usdr_dm_create and
+# usdr_dm_gpsdo, whose generators and discipline loop rsl-usdr ports, and xmass_fwupd, the
+# XMASS switch's firmware tool.
 # Needs git, python3 and PyYAML (upstream's register-header generator).
 set -euo pipefail
 
@@ -96,9 +97,10 @@ if $usb_only; then
     exit 0
 fi
 # The tools are evidence too: the oracle runs the flash update procedure, the TX
-# generators and the discipline loop against the sim.
+# generators and the discipline loop against the sim, and the XMASS firmware update
+# against a fake XMASS device.
 git -C "$upstream" diff --quiet "$pin" -- src/tools/usdr_flash.c src/tools/usdr_dm_create.c \
-    src/tools/usdr_dm_gpsdo.c
+    src/tools/usdr_dm_gpsdo.c src/tools/xmass_fwupd.c
 rm -rf "$dest/lib" "$dest/gen" "$dest/tools"
 mkdir -p "$dest/lib" "$dest/gen" "$dest/tools"
 
@@ -135,6 +137,9 @@ cp "$src/tools/usdr_flash.c" "$dest/tools/usdr_flash.c"
 # usdr_dm_create's TX generators and usdr_dm_gpsdo's discipline loop, verbatim; the
 # oracle's shims compile each whole (its `main` renamed) over buffer boundaries.
 cp "$src/tools/usdr_dm_create.c" "$src/tools/usdr_dm_gpsdo.c" "$dest/tools/"
+# libusdr's XMASS switch firmware tool (MIT), compiled by build.rs inside shim/xmass_fwupd.c,
+# which redirects its device calls to a fake `/dev/xmassN`.
+cp "$src/tools/xmass_fwupd.c" "$dest/tools/xmass_fwupd.c"
 
 cp "$upstream/LICENSE" "$dest/LICENSE"
 (cd "$dest/lib" && find . -name '*.c' -not -path '*/templates/*' | sed 's|^\./||' | LC_ALL=C sort) > "$dest/sources.txt"
