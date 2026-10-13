@@ -45,7 +45,9 @@ USDR_PORTABLE = f"{USDR}/nostd-check"
 LOWLEVEL = "devices/lowlevel"
 LP8758 = "devices/sdr/chips/lp8758"
 LMS7002M = "devices/sdr/chips/lms7002m"
-BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: "rsl-lms7002m"}
+LMK05318 = "devices/sdr/chips/lmk05318"
+BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: "rsl-lms7002m",
+                      LMK05318: "rsl-lmk05318"}
 # The LMS7 family driver; its oracle runs libusdr's LMS7 family against rsl-xsdr-sim,
 # compiling the uSDR oracle's vendored C.
 XSDR = "devices/sdr/xsdr"
@@ -61,16 +63,20 @@ LSDR_PORTABLE = f"{LSDR}/nostd-check"
 LIMESDR = "devices/sdr/limesdr"
 LIMESDR_ORACLE = f"{LIMESDR}/oracle"
 LIMESDR_PORTABLE = f"{LIMESDR}/nostd-check"
+# The PE_SYNC clock-board driver; its oracle runs libusdr's PE_SYNC against rsl-pe-sync-sim,
+# compiling the same vendored C.
+PE_SYNC = "devices/sync/pe_sync"
+PE_SYNC_ORACLE = f"{PE_SYNC}/oracle"
+PE_SYNC_PORTABLE = f"{PE_SYNC}/nostd-check"
 # Each driver with a detached exact-source no_std fixture, and the fixture.
 PORTABLE_FIXTURES = {USDR: USDR_PORTABLE, XSDR: XSDR_PORTABLE, LSDR: LSDR_PORTABLE,
-                     LIMESDR: LIMESDR_PORTABLE}
-# Runs libusdr's PE_SYNC clock board against rsl-pe-sync-sim, compiling the same vendored C.
-PE_SYNC_ORACLE = "devices/sync/pe_sync/oracle"
+                     LIMESDR: LIMESDR_PORTABLE, PE_SYNC: PE_SYNC_PORTABLE}
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, XSDR_PORTABLE,
             LSDR_ORACLE, LSDR_PORTABLE,
-            PE_SYNC_ORACLE, LIMESDR_ORACLE, LIMESDR_PORTABLE, "tools/rust-skills")
+            PE_SYNC_ORACLE, PE_SYNC_PORTABLE, LIMESDR_ORACLE, LIMESDR_PORTABLE,
+            "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
 # once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
@@ -88,7 +94,7 @@ PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
     "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-portable", "lsdr-oracle",
-    "pe-sync-oracle", "limesdr-oracle", "limesdr-portable",
+    "pe-sync-oracle", "pe-sync-portable", "limesdr-oracle", "limesdr-portable",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
 
@@ -203,7 +209,7 @@ def is_prose(path):
         return False
     return (PurePosixPath(path).name in PROSE_NAMES
             or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md", f"{LSDR}/PORTING.md",
-                        f"{LIMESDR}/PORTING.md"}
+                        f"{LIMESDR}/PORTING.md", f"{PE_SYNC}/PORTING.md"}
             or (path.endswith(".md") and (path.startswith("docs/")
                 or path.startswith("bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))
@@ -361,6 +367,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("lsdr-oracle")
     if LSDR_PORTABLE in roots:
         profiles.add("lsdr-portable")
+    if PE_SYNC_PORTABLE in roots:
+        profiles.add("pe-sync-portable")
     if PE_SYNC_ORACLE in roots:
         profiles.add("pe-sync-oracle")
     if LIMESDR_ORACLE in roots:

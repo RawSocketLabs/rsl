@@ -130,7 +130,9 @@ def commands(profile, plan, bnb):
         return [["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "test", *manifest, "--locked"]]
-    portable = {f"{PurePosixPath(driver).name}-portable": fixture
+    # Profiles and portable.py fixtures are named for the driver directory, dashed
+    # (`pe_sync` is `pe-sync-portable`).
+    portable = {f"{PurePosixPath(driver).name.replace('_', '-')}-portable": fixture
                 for driver, fixture in PORTABLE_FIXTURES.items()}
     if profile in portable:
         name = profile.removesuffix("-portable")

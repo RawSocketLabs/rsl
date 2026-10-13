@@ -115,7 +115,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           # trybuild panic snapshots need rust-src. Never silently switch their compiler.
-          components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","usdr-portable","xsdr-portable","xsdr-oracle","lsdr-portable","lsdr-oracle","pe-sync-oracle","limesdr-oracle","limesdr-portable","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
+          components: ${{ contains(fromJSON('["workspace","bnb","socks","usdr-oracle","usdr-portable","xsdr-portable","xsdr-oracle","lsdr-portable","lsdr-oracle","pe-sync-oracle","pe-sync-portable","limesdr-oracle","limesdr-portable","rust-skills","bladerf"]'), matrix.profile) && 'rustfmt,clippy,rust-src' || '' }}
           targets: ${{ matrix.profile == 'no-std' && 'thumbv7em-none-eabi' || '' }}
       - uses: dtolnay/rust-toolchain@1.85.0
         if: matrix.profile == 'rust-skills' && contains(fromJSON(needs.plan.outputs.plan).release_roots, 'tools/rust-skills/crates/xtask')
@@ -138,6 +138,7 @@ jobs:
             devices/sdr/lsdr/oracle -> target
             devices/sdr/lsdr/nostd-check -> target
             devices/sync/pe_sync/oracle -> target
+            devices/sync/pe_sync/nostd-check -> target
             devices/sdr/limesdr/oracle -> target
             devices/sdr/limesdr/nostd-check -> target
       - uses: taiki-e/install-action@v2

@@ -10,10 +10,12 @@ from portable import FIXTURES, validate
 
 # The registered dependencies' own manifests, which the contract also reads.
 OWNED = ("bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
-         "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml")
+         "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml",
+         "devices/sdr/chips/lmk05318/Cargo.toml")
 USDR = FIXTURES["usdr"]
 XSDR = FIXTURES["xsdr"]
 LIMESDR = FIXTURES["limesdr"]
+PE_SYNC = FIXTURES["pe-sync"]
 
 
 class PortableContractTests(unittest.TestCase):
@@ -48,6 +50,10 @@ class PortableContractTests(unittest.TestCase):
             (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '../../src/portable/mod.rs',
              '../../../xsdr/src/portable/mod.rs'),
             (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '#![forbid(unsafe_code)]', ''),
+            (PE_SYNC, f"{PE_SYNC.path}/Cargo.toml", 'rsl-lmk05318 = { path',
+             'rsl-lmk05318 = { features = ["std"], path'),
+            (PE_SYNC, f"{PE_SYNC.path}/src/lib.rs", '../../src/portable/mod.rs',
+             '../../../../sdr/lsdr/src/portable/mod.rs'),
         ]
         for fixture, relative, before, after in cases:
             with (self.subTest(fixture=fixture.driver, change=after),
@@ -64,6 +70,7 @@ class PortableContractTests(unittest.TestCase):
         self.assertEqual(USDR.dependencies["rsl-lowlevel"], {"std"})
         self.assertEqual(XSDR.dependencies["rsl-lowlevel"], {"std"})
         self.assertEqual(LIMESDR.dependencies["rsl-lowlevel"], {"std"})
+        self.assertEqual(PE_SYNC.dependencies["rsl-lowlevel"], {"std"})
         source = Path(__file__).resolve().parents[2]
         for fixture in FIXTURES.values():
             declared = tomllib.loads((source / fixture.path / "Cargo.toml").read_text())

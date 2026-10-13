@@ -9,7 +9,7 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
-from plan import (LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE, USDR,
+from plan import (LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE, PE_SYNC_PORTABLE, USDR,
                   USDR_PORTABLE, XSDR, XSDR_PORTABLE)
 from test_plan import planned
 
@@ -165,7 +165,8 @@ curl() {
         for profile, name, fixture in (("usdr-portable", "usdr", USDR_PORTABLE),
                                        ("xsdr-portable", "xsdr", XSDR_PORTABLE),
                                        ("lsdr-portable", "lsdr", LSDR_PORTABLE),
-                                       ("limesdr-portable", "limesdr", LIMESDR_PORTABLE)):
+                                       ("limesdr-portable", "limesdr", LIMESDR_PORTABLE),
+                                       ("pe-sync-portable", "pe-sync", PE_SYNC_PORTABLE)):
             with self.subTest(profile=profile):
                 sequence = commands(profile, planned([f"{fixture}/src/lib.rs"]), BNB_CONFIG)
                 self.assertIn([sys.executable, "scripts/ci/portable.py", name], sequence)

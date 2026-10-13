@@ -11,6 +11,7 @@ USDR = "devices/sdr/usdr"
 XSDR = "devices/sdr/xsdr"
 LSDR = "devices/sdr/lsdr"
 LIMESDR = "devices/sdr/limesdr"
+PE_SYNC = "devices/sync/pe_sync"
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,8 @@ FIXTURES = {
                     None),
     "lsdr": Fixture(LSDR, {"bnb": set(), "rsl-lowlevel": {"std"}}, None),
     "limesdr": Fixture(LIMESDR, {"rsl-lms7002m": set(), "rsl-lowlevel": {"std"}}, None),
+    "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "rsl-lmk05318": set(), "rsl-lowlevel": {"std"}},
+                       None),
 }
 # Every crate a fixture compiles without std, directly or through an owned dependency (the
 # chip crates' `bnb`, listed explicitly: the XSDR and LimeSDR fixtures reach it only through
