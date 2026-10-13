@@ -1,10 +1,10 @@
 //! The XSDR's wiring and setpoints, as the pinned libusdr's `_xsdr_init_revx` and
 //! `xsdr_pwren` choose them (`device/m2_lm7_1/xsdr_ctrl.c`).
 
+use rsl_lms7002m::ResetPlan;
 use rsl_lowlevel::{I2cAddr, SpiAddr};
 use rsl_lp8758::{Buck, BuckControl, BuckVoltage};
 
-use crate::portable::lms7002m::ResetPlan;
 use crate::portable::supplies::SupplyPlan;
 
 /// The FPGA-side LP8758: `I2C_BUS_LP8758_FPGA`, bus 0, `I2C_DEV_PMIC_FPGA` 0x60.

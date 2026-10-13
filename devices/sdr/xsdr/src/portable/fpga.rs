@@ -27,6 +27,9 @@ pub(crate) enum Gpo {
 
     /// The LMS7002M's external LDOs (`IGPO_LDOLMS_EN`): 1 enables them.
     LmsLdo = 17,
+
+    /// The board LED (`IGPO_LED`): `xsdr_dtor` writes 0.
+    Led = 18,
 }
 
 impl Gpo {
@@ -38,6 +41,23 @@ impl Gpo {
         }
     }
 }
+
+/// The TX PHY's configuration port (`REG_CFG_PHY_1`, `generic_regs.h`): `xsdr_phy_tx_reg`
+/// writes `register << 24 | value & 0xFFFFFF` here.
+const REG_CFG_PHY_1: u16 = 57;
+
+/// The TX PHY register controlling its MMCM (`PHY_REG_MMCM_CTRL`, `xsdr_ctrl.c`).
+const PHY_MMCM_CTRL: u8 = 2;
+
+/// What `_xsdr_mmcm_pd` writes to [`PHY_MMCM_CTRL`], commented nowhere; the function name
+/// says it powers the TX MMCM down.
+const MMCM_POWER_DOWN: u32 = 2;
+
+/// `_xsdr_mmcm_pd`: the TX MMCM powered down through the TX PHY's port.
+pub(crate) const TX_MMCM_POWER_DOWN: FpgaAccess = FpgaAccess::Write {
+    reg: REG_CFG_PHY_1,
+    value: (PHY_MMCM_CTRL as u32) << 24 | MMCM_POWER_DOWN,
+};
 
 /// [`Gpo::LmsPower`] bit 0: the LMS7002M's LDOs on (`IGPO_LMS_PWR_LDOEN`).
 pub(crate) const LMS_LDO_ENABLE: u8 = 1 << 0;

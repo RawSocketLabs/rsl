@@ -91,6 +91,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lms7002m"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "rsl-lms7002m-sim"
 version = "0.0.0"
 
@@ -113,6 +121,7 @@ dependencies = [
 name = "rsl-xsdr"
 version = "0.0.0"
 dependencies = [
+ "rsl-lms7002m",
  "rsl-lowlevel",
  "rsl-lp8758",
  "thiserror",

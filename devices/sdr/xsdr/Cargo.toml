@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rsl-lms7002m.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
 rsl-lp8758.workspace = true
 thiserror.workspace = true

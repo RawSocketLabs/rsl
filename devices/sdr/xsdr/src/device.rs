@@ -1,13 +1,15 @@
-//! The public device: identification, supply bring-up and RFIC power-up.
+//! The public device: identification, supply bring-up, RFIC power-up and close.
 
 use std::fmt;
 
+use rsl_lms7002m::Lms7002m;
 use rsl_lowlevel::{Sequence, run_sequence};
 use rsl_lp8758::{self as lp8758, Revision};
 
 use crate::board::{XSDR_LMS, XSDR_SUPPLIES};
 use crate::error::Error;
 use crate::lowlevel::Bus;
+use crate::portable::close::Close;
 use crate::portable::hwid::{IdentityRead, Variant};
 use crate::portable::power::PowerUp;
 use crate::portable::supplies::Supplies;
@@ -22,6 +24,9 @@ pub struct Device {
 
     /// The PMIC's revision, read at open.
     pmic: Revision,
+
+    /// The LMS7002M's cached state: zeroed until a power-up creates it, as in libusdr.
+    lms: Lms7002m,
 }
 
 impl Device {
@@ -53,6 +58,7 @@ impl Device {
             bus,
             hwid,
             pmic: supplies.pmic_revision(),
+            lms: Lms7002m::new(XSDR_LMS.target),
         })
     }
 
@@ -72,7 +78,29 @@ impl Device {
                 found: self.pmic.to_raw().into(),
             });
         }
-        run(&mut *self.bus, &mut PowerUp::new(XSDR_LMS))
+        let mut power = PowerUp::new(XSDR_LMS);
+        run(&mut *self.bus, &mut power)?;
+        if let Some(lms) = power.chip() {
+            self.lms = lms;
+        }
+        Ok(())
+    }
+
+    /// Closes the board as libusdr's `usdr_dmd_close` does on an XSDR without streams
+    /// (`xsdr_dtor`): the LMS7002M's receive and transmit paths brought down and the chip
+    /// destroyed, its power control, LDOs and the LED off, the TX MMCM powered down.
+    ///
+    /// The chip writes follow its cached state, so a board never powered up gets the words
+    /// libusdr sends from its zeroed state. A device dropped without `close` leaves the
+    /// board as it is.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Bus`] for the first failure that ends the close, as libusdr's: the AFE write
+    /// that ends streaming-down, a `lms7002m_destroy` write or a board write. Failed writes
+    /// earlier in streaming-down are skipped without an error, as libusdr skips them.
+    pub fn close(mut self) -> Result<(), Error> {
+        run(&mut *self.bus, &mut Close::new(self.lms))
     }
 
     /// The hardware ID word: device ID in bits 23:16, gateware revision in 15:8, PHY

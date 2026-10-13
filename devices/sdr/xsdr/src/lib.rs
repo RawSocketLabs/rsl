@@ -4,11 +4,12 @@
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
 //! (`rsl-xsdr-oracle`).
 //!
-//! **First slice; unstable; unpublished.** Ported: identification by HWID, the XSDR's supply
-//! bring-up at open ([`Device::open`]) and the RFIC power-up ([`Device::power_up`]). Not yet
-//! ported: the XSDR front-end probe libusdr runs at the end of its open, close and power-down,
-//! the XTRX and sSDR variants (identified, then refused), and everything after power-up
-//! (rate, tuning, gain, streams, calibration). See `PORTING.md` beside this crate.
+//! **Unstable; unpublished.** Ported: identification by HWID, the XSDR's supply bring-up at
+//! open ([`Device::open`]), the RFIC power-up ([`Device::power_up`]) and the close
+//! ([`Device::close`]). Not yet ported: the XSDR front-end probe libusdr runs at the end of
+//! its open, the XTRX and sSDR variants (identified, then refused), and everything between
+//! power-up and close (rate, tuning, gain, streams, calibration). The LMS7002M's register
+//! values and chip operations are `rsl-lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!
@@ -21,7 +22,8 @@
 //! checks the LP8758's revision, sets three of its rails and turns on all four converters,
 //! then selects the internal 26 MHz reference. [`Device::power_up`] then enables the
 //! LMS7002M's LDOs, releases its reset, loads its reset register programme and checks its
-//! version.
+//! version. [`Device::close`] brings the LMS7002M's paths down, powers its converters
+//! down, holds it in reset with its supplies off and powers the TX MMCM down.
 #![forbid(unsafe_code)]
 
 mod board;

@@ -2,15 +2,15 @@
 //! `_xsdr_pwren_revx` in `device/m2_lm7_1/xsdr_ctrl.c`, then `lms7002m_create`.
 //!
 //! The LMS7002M is held in reset while its external LDOs come on, then its own LDOs, then
-//! the reset is released and the chip programmed ([`Lms7002mCreate`]). The waits are
-//! libusdr's.
+//! the reset is released and the chip programmed (`rsl-lms7002m`'s [`Create`]). The waits
+//! are libusdr's.
 
 use core::time::Duration;
 
+use rsl_lms7002m::{Create, Lms7002m, ResetPlan};
 use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE};
-use super::lms7002m::{Lms7002mCreate, ResetPlan};
 use super::outcome::outcome;
 
 /// Where the sequence is.
@@ -49,7 +49,7 @@ pub(crate) struct PowerUp {
     step: Step,
 
     /// The LMS7002M's part, run at [`Step::Create`].
-    create: Lms7002mCreate,
+    create: Create,
 
     /// A step failed; nothing more is issued.
     failed: bool,
@@ -57,12 +57,17 @@ pub(crate) struct PowerUp {
 
 impl PowerUp {
     /// Starts the sequence; nothing has been accessed yet.
-    pub(crate) const fn new(lms: ResetPlan) -> Self {
+    pub(crate) fn new(lms: ResetPlan) -> Self {
         Self {
             step: Step::Reset,
-            create: Lms7002mCreate::new(lms),
+            create: Create::new(lms),
             failed: false,
         }
+    }
+
+    /// The LMS7002M as `lms7002m_create` left it, once the power-up succeeded.
+    pub(crate) const fn chip(&self) -> Option<Lms7002m> {
+        self.create.chip()
     }
 }
 
@@ -140,7 +145,9 @@ mod tests {
 
     #[test]
     fn a_wait_reported_as_failed_still_counts_as_waited() {
-        assert_eq!(run(&mut PowerUp::new(LMS), 0x3840), Ok(()));
+        let mut power = PowerUp::new(LMS);
+        assert_eq!(run(&mut power, 0x3840), Ok(()));
+        assert!(power.chip().is_some(), "the LMS7002M is created");
     }
 
     #[test]
@@ -154,5 +161,6 @@ mod tests {
             })
         ));
         assert_eq!(power.next(), None);
+        assert_eq!(power.chip(), None, "a refused chip is not created");
     }
 }

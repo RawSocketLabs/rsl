@@ -1,6 +1,6 @@
-//! Opening and powering up an XSDR on the simulated board: the board state libusdr's
-//! sequence leaves (`device/m2_lm7_1/xsdr_ctrl.c`), and the refusals before it. Operation
-//! parity with libusdr itself is `oracle/tests/open_parity.rs`.
+//! Opening, powering up and closing an XSDR on the simulated board: the board state
+//! libusdr's sequence leaves (`device/m2_lm7_1/xsdr_ctrl.c`), and the refusals before it.
+//! Operation parity with libusdr itself is `oracle/tests/open_parity.rs`.
 
 mod common;
 
@@ -14,6 +14,8 @@ const GPO_LMS_PWR: u8 = 0;
 const GPO_CLK_CFG: u8 = 1;
 /// GPO bank `IGPO_LDOLMS_EN`.
 const GPO_LDOLMS_EN: u8 = 17;
+/// GPO bank `IGPO_LED`.
+const GPO_LED: u8 = 18;
 /// The LP8758's `BUCKn_CTRL1` registers, channels 0 to 3.
 const BUCK_CONTROLS: [u8; 4] = [0x02, 0x04, 0x06, 0x08];
 
@@ -107,6 +109,25 @@ fn power_up_releases_the_lms7002m_reset_before_any_spi_and_keeps_its_afe_down() 
         0b11_1110,
         "AFE powered down, its global enable off (\"Disable RF\")"
     );
+}
+
+#[test]
+fn close_powers_the_rfic_down_and_holds_it_in_reset() {
+    let (device, sim) = open_xsdr(SimBoard::new(SimVariant::Xsdr));
+    let mut device = device.expect("an XSDR opens");
+    device.power_up().expect("its RFIC powers up");
+    device.close().expect("it closes");
+
+    let board = sim.board();
+    assert_eq!(board.gpo(GPO_LMS_PWR), Some(0), "the LMS7002M is in reset");
+    assert_eq!(board.gpo(GPO_LDOLMS_EN), Some(0), "its LDOs are off");
+    assert_eq!(board.gpo(GPO_LED), Some(0), "the LED is off");
+    assert_eq!(
+        board.lms7_reg(0x0082) & 0b10_0001,
+        0b10_0000,
+        "the whole AFE powered down (PD_AFE), its global enable off"
+    );
+    assert_eq!(board.lms7_reg(0x0124), 0, "lms7002m_destroy clears EN_DIR");
 }
 
 #[test]
