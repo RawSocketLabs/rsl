@@ -152,31 +152,31 @@ pub(crate) const INTERFACE_VERSION: u32 = 3;
 /// The XMASS device's ioctl group (`PCIE_XMASS_DRIVER_MAGIC`), on `/dev/xmassN`.
 const XMASS_MAGIC: u8 = 0xdc;
 
-/// The bytes the XMASS flash requests move through their buffer: the bridge flash's first
-/// 64 KiB. The header does not say; libusdr's `tools/xmass_fwupd.c` (`BUFFER_SIZE`) and
-/// the driver (`ASM28XX_FLASH_IMAGE_SIZE`) do.
+/// The bytes the XMASS flash requests move through their buffer: the switch flash's first
+/// 64 KiB. The header does not say; libusdr's `tools/xmass_fwupd.c` passes buffers of this
+/// size (`BUFFER_SIZE`), and the driver's observed interface behaviour matches (see
+/// PORTING.md's provenance note).
 pub const XMASS_FLASH_BYTES: usize = 65_536;
 
-/// The bytes `PCIE_GETIDS` writes: the bridge's firmware ID (6), then the flash's (4).
-/// From the driver, as for [`XMASS_FLASH_BYTES`]; `xmass_fwupd.c` passes `uint8_t[10]`.
+/// The bytes `PCIE_GETIDS` writes: the switch's firmware ID (6), then the flash's (4).
+/// `xmass_fwupd.c` passes `uint8_t[10]` and prints those two parts; the split is the
+/// driver's observed behaviour, as for [`XMASS_FLASH_BYTES`].
 pub const XMASS_IDS_BYTES: usize = 10;
 
 // The XMASS requests' argument is a pointer to a buffer (`uint8_t*`) or an integer, and
-// their codes encode that argument's size, not the buffer's: the driver copies
-// `XMASS_FLASH_BYTES` or `XMASS_IDS_BYTES` regardless.
+// their codes encode that argument's size, not the buffer's, which is
+// `XMASS_FLASH_BYTES` or `XMASS_IDS_BYTES`.
 
-/// `PCIE_FLASH_READ`: the driver reads [`XMASS_FLASH_BYTES`] of the bridge flash into the
-/// buffer the argument points at, and returns 1 on success.
+/// `PCIE_FLASH_READ`: reads [`XMASS_FLASH_BYTES`] of the switch flash into the buffer the
+/// argument points at. Observed to return 1 on success.
 pub(crate) const FLASH_READ: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 1);
-/// `PCIE_FLASH_ERASE`: the driver erases the bridge flash's first [`XMASS_FLASH_BYTES`]; it
-/// ignores the argument, which `xmass_fwupd.c` passes as the integer 0.
+/// `PCIE_FLASH_ERASE`: erases the switch flash's first [`XMASS_FLASH_BYTES`]. The argument
+/// is the integer `xmass_fwupd.c` passes, 0.
 pub(crate) const FLASH_ERASE: Opcode = opcode::read_write::<u32>(XMASS_MAGIC, 2);
-/// `PCIE_FLASH_WRITE`: the driver copies [`XMASS_FLASH_BYTES`] from the buffer the argument
-/// points at, writes its own signature over parts of bytes `0xe00..0xf00` and programs
-/// the result.
+/// `PCIE_FLASH_WRITE`: programs [`XMASS_FLASH_BYTES`] from the buffer the argument points
+/// at. Bytes `0xe00..0xf00` may read back changed (`xmass_fwupd.c` does not compare them).
 pub(crate) const FLASH_WRITE: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 3);
-/// `PCIE_GETIDS`: the driver writes [`XMASS_IDS_BYTES`] to the buffer the argument points
-/// at.
+/// `PCIE_GETIDS`: writes [`XMASS_IDS_BYTES`] to the buffer the argument points at.
 pub(crate) const GETIDS: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 4);
 
 // Layout checks against the C header, for 64-bit targets; the oracle repeats them against

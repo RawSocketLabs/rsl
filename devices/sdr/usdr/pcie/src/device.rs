@@ -721,8 +721,8 @@ fn count(len: usize) -> u32 {
 }
 
 /// The XMASS device's requests (`/dev/xmassN`), each paired here with the buffer the driver
-/// copies, so the pairing sits beside the `unsafe` it upholds. [`crate::XmassDevice`] makes
-/// them.
+/// copies, so the pairing sits beside the `unsafe` it upholds. Each returns the driver's
+/// return value as it is; [`crate::XmassDevice`] makes them and judges it.
 pub(crate) mod xmass_requests {
     use std::os::fd::BorrowedFd;
 
@@ -732,27 +732,29 @@ pub(crate) mod xmass_requests {
     use crate::uapi::{self, XMASS_FLASH_BYTES, XMASS_IDS_BYTES};
 
     /// `PCIE_GETIDS` into `ids`.
-    pub(crate) fn ids(fd: BorrowedFd<'_>, ids: &mut [u8; XMASS_IDS_BYTES]) -> Result<(), Errno> {
-        request_with(fd, uapi::GETIDS, ids).map(drop)
+    pub(crate) fn ids(fd: BorrowedFd<'_>, ids: &mut [u8; XMASS_IDS_BYTES]) -> Result<i32, Errno> {
+        request_with(fd, uapi::GETIDS, ids)
     }
 
     /// `PCIE_FLASH_ERASE`, with `xmass_fwupd.c`'s argument, 0.
-    pub(crate) fn erase(fd: BorrowedFd<'_>) -> Result<(), Errno> {
-        request_value(fd, uapi::FLASH_ERASE, 0).map(drop)
+    pub(crate) fn erase(fd: BorrowedFd<'_>) -> Result<i32, Errno> {
+        request_value(fd, uapi::FLASH_ERASE, 0)
     }
 
-    /// `PCIE_FLASH_WRITE` from `image`. The driver only reads it.
+    /// `PCIE_FLASH_WRITE` from `image`, which the driver only reads.
     pub(crate) fn write(
         fd: BorrowedFd<'_>,
         image: &mut [u8; XMASS_FLASH_BYTES],
-    ) -> Result<(), Errno> {
-        request_with(fd, uapi::FLASH_WRITE, image).map(drop)
+    ) -> Result<i32, Errno> {
+        request_with(fd, uapi::FLASH_WRITE, image)
     }
 
-    /// `PCIE_FLASH_READ` into `out`. Success is any return value that is not an error: the
-    /// driver returns 1.
-    pub(crate) fn read(fd: BorrowedFd<'_>, out: &mut [u8; XMASS_FLASH_BYTES]) -> Result<(), Errno> {
-        request_with(fd, uapi::FLASH_READ, out).map(drop)
+    /// `PCIE_FLASH_READ` into `out`.
+    pub(crate) fn read(
+        fd: BorrowedFd<'_>,
+        out: &mut [u8; XMASS_FLASH_BYTES],
+    ) -> Result<i32, Errno> {
+        request_with(fd, uapi::FLASH_READ, out)
     }
 }
 
@@ -765,7 +767,8 @@ fn request_with<T>(fd: BorrowedFd<'_>, opcode: Opcode, data: &mut T) -> Result<i
     // SAFETY: every opcode passed here takes a pointer to a `T`, through which the driver
     // reads or writes `size_of::<T>()` bytes at most (see `uapi`; for the XMASS requests in
     // `xmass_requests` the opcode's size field is a pointer's, and `T` is the whole buffer
-    // the driver copies). `data` stays valid and exclusively borrowed for the call.
+    // the driver copies, as observed and listed in PORTING.md's provenance note). `data`
+    // stays valid and exclusively borrowed for the call.
     unsafe { rustix::ioctl::ioctl(fd, request) }
 }
 
