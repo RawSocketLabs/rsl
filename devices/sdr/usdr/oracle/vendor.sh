@@ -5,7 +5,8 @@
 # --usb-only refreshes only the exported USB RX/TX reference functions (libusdr/reference).
 # A full refresh also copies four tools (libusdr/tools): the flash tool, usdr_dm_create and
 # usdr_dm_gpsdo, whose generators and discipline loop rsl-usdr ports, and xmass_fwupd, the
-# XMASS switch's firmware tool.
+# XMASS switch's firmware tool; and the Verilator
+# host bridge (libusdr/lib/lowlevel/verilator_ll), outside sources.txt.
 # Needs git, python3 and PyYAML (upstream's register-header generator).
 set -euo pipefail
 
@@ -101,15 +102,19 @@ fi
 # against a fake XMASS device.
 git -C "$upstream" diff --quiet "$pin" -- src/tools/usdr_flash.c src/tools/usdr_dm_create.c \
     src/tools/usdr_dm_gpsdo.c src/tools/xmass_fwupd.c
+# So is the Verilator host bridge, which the oracle compiles against a fake model.
+git -C "$upstream" diff --quiet "$pin" -- src/lib/lowlevel/verilator_ll
 rm -rf "$dest/lib" "$dest/gen" "$dest/tools"
 mkdir -p "$dest/lib" "$dest/gen" "$dest/tools"
 
-# The hardware transports (USB, PCIe, FT601, WebUSB, Verilator) are replaced by the sim plugin
-# in shim/; everything else in src/lib is kept so libusdr's device registry links unmodified.
+# The hardware transports (USB, PCIe, FT601, WebUSB) are replaced by the sim plugin in
+# shim/; everything else in src/lib is kept so libusdr's device registry links unmodified.
+# The Verilator host bridge (lowlevel/verilator_ll) is kept but left out of sources.txt:
+# shim/verilator.c compiles it whole, with the API it predates adapted by macro.
 # The register YAMLs are kept too: they are the generated headers' source and document every field.
 (cd "$src/lib" && find . \( -name '*.c' -o -name '*.h' -o -name '*.t' -o -name '*.inc' -o -name '*.yaml' \) \
     -not -path './lowlevel/usb_uram/*' -not -path './lowlevel/pcie_uram/*' \
-    -not -path './lowlevel/usb_ft601/*' -not -path './lowlevel/verilator_ll/*' \
+    -not -path './lowlevel/usb_ft601/*' \
     -not -path './webusb/*' -not -path '*/utests/*' \
     -not -name 'libusb_generic.[ch]' -not -name 'test_*' -print0 \
     | xargs -0 cp --parents -t "$dest/lib")
@@ -142,5 +147,6 @@ cp "$src/tools/usdr_dm_create.c" "$src/tools/usdr_dm_gpsdo.c" "$dest/tools/"
 cp "$src/tools/xmass_fwupd.c" "$dest/tools/xmass_fwupd.c"
 
 cp "$upstream/LICENSE" "$dest/LICENSE"
-(cd "$dest/lib" && find . -name '*.c' -not -path '*/templates/*' | sed 's|^\./||' | LC_ALL=C sort) > "$dest/sources.txt"
+(cd "$dest/lib" && find . -name '*.c' -not -path '*/templates/*' -not -path './lowlevel/verilator_ll/*' \
+    | sed 's|^\./||' | LC_ALL=C sort) > "$dest/sources.txt"
 echo "vendored $(wc -l < "$dest/sources.txt") sources at $pin"
