@@ -36,6 +36,8 @@ const REG_GPI_CLOCK_MEASUREMENT: u32 = 16 + 6;
 const HWID_RX_TX: u32 = 0b11 << 24;
 /// HWID bit 24: the board has a TX chain.
 const HWID_TX: u32 = 1 << 24;
+/// HWID bit 25: the board has an RX chain.
+const HWID_RX: u32 = 1 << 25;
 /// HWID bit 26: the TX chain has the extended stream core.
 const HWID_EXTENDED_TX: u32 = 1 << 26;
 
@@ -228,6 +230,15 @@ impl SimBoard {
     pub fn with_rx_only(mut self) -> Self {
         if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
             *hwid &= !HWID_TX;
+        }
+        self
+    }
+
+    /// A board whose gateware has a TX chain but no RX chain (HWID bit 25 clear).
+    #[must_use]
+    pub fn with_tx_only(mut self) -> Self {
+        if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
+            *hwid &= !HWID_RX;
         }
         self
     }

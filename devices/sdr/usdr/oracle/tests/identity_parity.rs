@@ -43,3 +43,43 @@ fn rev2_identity_matches_libusdr() {
 fn rev3_identity_matches_libusdr() {
     assert_identity_matches(BoardRevision::Rev3);
 }
+
+#[test]
+fn channel_capabilities_match_libusdr_for_each_chain() {
+    let boards: [(&str, fn() -> SimBoard); 4] = [
+        ("both chains", || SimBoard::new(BoardRevision::Rev3)),
+        ("RX only", || {
+            SimBoard::new(BoardRevision::Rev3).with_rx_only()
+        }),
+        ("TX only", || {
+            SimBoard::new(BoardRevision::Rev3).with_tx_only()
+        }),
+        ("extended TX core", || {
+            SimBoard::new(BoardRevision::Rev3).with_extended_tx_core()
+        }),
+    ];
+    for (name, board) in boards {
+        let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
+        let mut get = |path| oracle.get_uint(path).expect("libusdr answers");
+        let expected = [
+            get(c"/ll/sdr/max_sw_rx_chans"),
+            get(c"/ll/sdr/max_sw_tx_chans"),
+            get(c"/ll/sdr/max_hw_rx_chans"),
+            get(c"/ll/sdr/max_hw_tx_chans"),
+            get(c"/dm/revision") >> 58 & 1,
+        ];
+        let _ = oracle.close();
+
+        let sim = SimBus::new(board());
+        let mut device = Device::with_bus(sim).expect("rsl-usdr powers up the board");
+        let identity = device.identity().expect("rsl-usdr reads its identity");
+        let actual = [
+            identity.max_rx_channels().into(),
+            identity.max_tx_channels().into(),
+            1,
+            1,
+            identity.has_extended_tx_core().into(),
+        ];
+        assert_eq!(actual, expected, "{name}: channels and TX core");
+    }
+}

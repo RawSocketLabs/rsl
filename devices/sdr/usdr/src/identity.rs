@@ -27,9 +27,28 @@ impl Identity {
         (self.hwid as u64) << 32 | self.gateware_build as u64
     }
 
-    /// The TX chain has the extended stream core (hardware ID bit 26), whose stream setup
-    /// this driver does not port.
-    pub(crate) const fn has_extended_tx_core(self) -> bool {
+    /// The TX chain has the extended stream core (hardware ID bit 26) rather than the
+    /// original one.
+    #[must_use]
+    pub const fn has_extended_tx_core(self) -> bool {
         Hwid::from_raw(self.hwid).has_extended_tx_core()
+    }
+
+    /// The most channels an RX stream carries ([`RxChannels`](crate::RxChannels)): 2 with
+    /// an RX chain, whose two NCOs each feed one, else 1 (libusdr's
+    /// `/ll/sdr/max_sw_rx_chans`). The board has one receiver either way
+    /// (`/ll/sdr/max_hw_rx_chans`, 1).
+    #[must_use]
+    pub const fn max_rx_channels(self) -> u8 {
+        if self.has_rx { 2 } else { 1 }
+    }
+
+    /// The most channels a TX stream carries ([`TxChannels`](crate::TxChannels)): 2 with a
+    /// TX chain, whose two NCOs each take one, else 1 (libusdr's
+    /// `/ll/sdr/max_sw_tx_chans`). The board has one transmitter either way
+    /// (`/ll/sdr/max_hw_tx_chans`, 1).
+    #[must_use]
+    pub const fn max_tx_channels(self) -> u8 {
+        if self.has_tx { 2 } else { 1 }
     }
 }
