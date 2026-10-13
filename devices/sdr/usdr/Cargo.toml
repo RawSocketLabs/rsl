@@ -26,6 +26,9 @@ usb = ["dep:rsl-usb"]
 ## Unstable `transport::usb::NativeUsb`: the USB control plane driven by a caller-owned Mio
 ## reactor.
 mio = ["usb", "dep:mio", "rsl-usb/mio"]
+## The Verilator host bridge (`transport::verilator`): a simulated uSDR gateware model over
+## libusdr's Unix-socket and shared-file protocol.
+verilator = []
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rsl-usdr-pcie = { workspace = true, optional = true }
