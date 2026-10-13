@@ -19,7 +19,7 @@ use super::tx_stream::TxStream;
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
-use crate::fpga::{BurstPlan, Phy};
+use crate::fpga::{BurstPlan, StreamPhyWrites};
 use crate::lowlevel::BusError;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{
@@ -321,7 +321,8 @@ impl Board {
             lost_packets: 0,
         });
         // `usdr_rxupdate_cal`.
-        Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())?;
+        let mut correction = StreamPhyWrites::rx(self.rx.iq_imbalance);
+        run_sequence(self.bus.as_mut(), &mut correction)?;
         debug!(
             samples_per_packet,
             ?wire,

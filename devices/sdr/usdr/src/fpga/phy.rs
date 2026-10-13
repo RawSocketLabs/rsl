@@ -21,6 +21,7 @@ use super::fir_tables;
 use super::gpio::FPGA;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
+use crate::portable::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// A DSP chain's configuration port.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -307,17 +308,26 @@ impl Phy {
     /// [`IqImbalance::tx_terms`] make them: I and Q amplitudes, then I and Q phase terms
     /// (`usdr_rxupdate_cal`, `usdr_txupdate_cal`). libusdr keeps each term's low 24 bits.
     pub(crate) fn set_iq_correction(self, bus: &mut dyn Bus, terms: [i32; 4]) -> Result<(), Error> {
+        for word in Self::iq_correction_words(terms) {
+            self.write_word(bus, word)?;
+        }
+        Ok(())
+    }
+
+    /// The words [`Self::set_iq_correction`] writes for `terms`, in its order.
+    fn iq_correction_words(terms: [i32; 4]) -> [u32; 4] {
         let subs = [
             SubReg::IqAmplitudeI,
             SubReg::IqAmplitudeQ,
             SubReg::IqPhaseI,
             SubReg::IqPhaseQ,
         ];
-        for (sub, term) in subs.into_iter().zip(terms) {
+        let mut words = [0; 4];
+        for ((word, sub), term) in words.iter_mut().zip(subs).zip(terms) {
             let [b0, b1, b2, _] = term.to_le_bytes();
-            self.write(bus, sub, u32::from_le_bytes([b0, b1, b2, 0]))?;
+            *word = Self::word(sub, u32::from_le_bytes([b0, b1, b2, 0]));
         }
-        Ok(())
+        words
     }
 
     /// Sets an NCO's frequency word, then pulses the NCO reset (`_usdr_set_nco`).
@@ -348,8 +358,7 @@ impl Phy {
         constant: Option<Complex<i16>>,
     ) -> Result<(), Error> {
         let write = |bus: &mut dyn Bus, reg: GeneratorReg, value: u16| {
-            let data = GeneratorWrite::new().with_reg(reg).with_value(value);
-            Self::Tx.write(bus, SubReg::Generator, data.to_raw())
+            Self::Tx.write_word(bus, Self::generator_word(reg, value))
         };
         write(bus, GeneratorReg::Control, u16::from(constant.is_some()))?;
         let Some(constant) = constant else {
@@ -384,19 +393,139 @@ impl Phy {
         Ok(())
     }
 
+    /// The port word writing `value` to the constant generator's register `reg`.
+    fn generator_word(reg: GeneratorReg, value: u16) -> u32 {
+        let data = GeneratorWrite::new().with_reg(reg).with_value(value);
+        Self::word(SubReg::Generator, data.to_raw())
+    }
+
+    /// The port word writing `data` to a sub-register (`MAKE_PHY_WR_REG`).
+    fn word(sub: SubReg, data: u32) -> u32 {
+        PhyWrite::new()
+            .with_sub(u7::new(sub as u8))
+            .with_data(u24::new(data))
+            .to_raw()
+    }
+
     /// Writes `data` to a sub-register.
     fn write(self, bus: &mut dyn Bus, sub: SubReg, data: u32) -> Result<(), Error> {
-        let word = PhyWrite::new()
-            .with_sub(u7::new(sub as u8))
-            .with_data(u24::new(data));
+        self.write_word(bus, Self::word(sub, data))
+    }
+
+    /// Writes one port word.
+    fn write_word(self, bus: &mut dyn Bus, word: u32) -> Result<(), Error> {
         let reg = self as u32;
-        bus.write_regs(reg, &[word.to_raw()]).writing(FPGA, reg)
+        bus.write_regs(reg, &[word]).writing(FPGA, reg)
+    }
+}
+
+/// The DSP ports' part of a stream create, as a sequence of writes the blocking board and
+/// the native USB handle both run: RX writes its IQ correction again (`usdr_rxupdate_cal`);
+/// TX turns the constant generator off (`usdr_tx_gen_set(.., false, ..)`), then writes its
+/// IQ correction again (`usdr_txupdate_cal`). Fixed size; it does not allocate.
+#[derive(Debug)]
+pub(crate) struct StreamPhyWrites {
+    /// The port written.
+    phy: Phy,
+    /// The words, the first `len` in use.
+    words: [u32; 5],
+    /// Words in use.
+    len: usize,
+    /// Words written.
+    done: usize,
+    /// A write failed; nothing follows.
+    failed: bool,
+}
+
+impl StreamPhyWrites {
+    /// An RX stream create's writes: the RX chain's IQ correction for `imbalance`.
+    pub(crate) fn rx(imbalance: IqImbalance) -> Self {
+        let [a, b, c, d] = Phy::iq_correction_words(imbalance.rx_terms());
+        Self::new(Phy::Rx, [a, b, c, d, 0], 4)
+    }
+
+    /// A TX stream create's writes: the constant generator off, then the TX chain's IQ
+    /// correction for `imbalance`.
+    pub(crate) fn tx(imbalance: IqImbalance) -> Self {
+        let off = Phy::generator_word(GeneratorReg::Control, 0);
+        let [a, b, c, d] = Phy::iq_correction_words(imbalance.tx_terms());
+        Self::new(Phy::Tx, [off, a, b, c, d], 5)
+    }
+
+    /// The first `len` of `words`, to `phy`.
+    const fn new(phy: Phy, words: [u32; 5], len: usize) -> Self {
+        Self {
+            phy,
+            words,
+            len,
+            done: 0,
+            failed: false,
+        }
+    }
+
+    /// The write in progress, if any.
+    fn access(&self) -> Option<FpgaAccess> {
+        if self.failed {
+            return None;
+        }
+        let value = *self.words[..self.len].get(self.done)?;
+        Some(FpgaAccess::Write {
+            reg: self.phy as u32,
+            value,
+        })
+    }
+}
+
+impl Sequence for StreamPhyWrites {
+    fn next(&self) -> Option<SequenceAction> {
+        self.access().map(SequenceAction::Fpga)
+    }
+
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        let Some(access) = self.access() else {
+            return Ok(());
+        };
+        if let Err(source) = result {
+            self.failed = true;
+            return Err(SequenceFailure::FpgaTransport {
+                chip: FPGA,
+                access,
+                source,
+            });
+        }
+        self.done += 1;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tx_create_turns_the_generator_off_first_and_stops_at_a_failed_write() {
+        let mut dsp = StreamPhyWrites::tx(IqImbalance::default());
+        // Sub-register 7, generator register 0, value 0: `CFG_REG_DC_GEN_CTRL` off.
+        let off = FpgaAccess::Write {
+            reg: 57,
+            value: 0x0700_0000,
+        };
+        assert_eq!(dsp.next(), Some(SequenceAction::Fpga(off)));
+        dsp.complete::<()>(Ok(0)).unwrap();
+        let Some(SequenceAction::Fpga(access @ FpgaAccess::Write { reg: 57, .. })) = dsp.next()
+        else {
+            panic!("the IQ correction follows on the TX port");
+        };
+        assert_eq!(
+            dsp.complete(Err(())),
+            Err(SequenceFailure::FpgaTransport {
+                chip: FPGA,
+                access,
+                source: (),
+            })
+        );
+        assert_eq!(dsp.next(), None, "nothing follows a failed write");
+    }
 
     #[test]
     fn no_imbalance_gives_half_scale_amplitudes_and_no_phase_terms() {
