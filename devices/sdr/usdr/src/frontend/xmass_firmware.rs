@@ -4,33 +4,37 @@
 //! This is neither the uSDR's boot flash ([`crate::flash`]) nor libusdr's library: the
 //! switch keeps its firmware in a flash of its own, which the `usdr_pcie_uram` Linux
 //! driver erases, programs and reads on request through its XMASS device, `/dev/xmassN`.
-//! The tool makes four such requests; [`BridgeFlash`] is them, implemented over the device
+//! The tool makes four such requests; [`SwitchFlash`] is them, implemented over the device
 //! by `transport::pcie` (feature `pcie`, Linux) for `rsl_usdr_pcie::XmassDevice`.
 //!
 //! [`update`] is the tool's update: read the IDs, erase, write the image, read it all back
-//! and compare it, except bytes `0xe00..0xf00` ([`SIGNATURE`]), where the driver writes
-//! its own signature before programming. [`read_ids`] is the tool's `info`. The tool checks
-//! nothing of an image but its size, and neither does [`Firmware`]: the bytes are the
-//! switch's, in a format neither libusdr nor the driver describes.
+//! and compare it, except bytes `0xe00..0xf00` ([`SIGNATURE`]), which the tool does not
+//! compare. [`read_ids`] is the tool's `info`. The tool checks nothing of an image but its
+//! size, and neither does [`Firmware`]: the bytes are the switch's, in a format neither
+//! libusdr nor the driver's interface describes.
 //!
-//! Recovery, from the driver's order (`usdr_pcie_uram.c` at libusdr's pinned commit,
-//! GPL-2.0, not vendored):
-//! - A failure reading the IDs changes nothing.
-//! - Erasing first clears the flash's write protection (and never sets it again), then
-//!   erases 4 KiB sectors from address 0 up; writing programs 256-byte pages from address 0
-//!   up. A failed erase or write leaves the flash part erased or part programmed, and a
-//!   failed read-back or [`UpdateError::VerifyFailed`] leaves it holding the write.
+//! Sources: the tool (MIT) and the driver's interface header, `pcie_uram_driver_if.h`
+//! (taken under MIT). The driver itself is GPL-2.0 and nothing is taken from it; what is
+//! said below of its behaviour beyond those sources is observed interface behaviour, listed
+//! in PORTING.md's provenance note.
+//!
+//! Recovery:
+//! - A failure reading the IDs leaves the flash as it was.
+//! - The driver is observed to clear the flash's write protection when erasing (and not to
+//!   set it again), to erase 4 KiB sectors from address 0 up, and to program 256-byte pages
+//!   from address 0 up. A failed erase or write leaves the flash part erased or part
+//!   programmed, and a failed read-back or [`UpdateError::VerifyFailed`] leaves it holding
+//!   the write.
 //! - The IDs the tool reports as the firmware in use come from the switch, not its flash.
 //!   When the switch loads its flash again, and what it does with an erased or partial one,
-//!   neither libusdr nor the driver says, so recover before it restarts (a reset or power
-//!   cycle): run [`update`] again. It erases first, so it can be repeated after a failure
-//!   at any step.
-//! - The driver creates `/dev/xmassN` when it loads, for each ASM2806 upstream port whose
-//!   firmware ID it can read. A switch that does not come up after a restart gets no node,
-//!   and only programming its flash by other means recovers it.
-//! - The driver stages writes and reads in one buffer shared by all XMASS devices, with no
-//!   lock. `XmassDevice` serialises its own process's requests; update one XMASS board at
-//!   a time across processes.
+//!   the sources do not say, so recover before it restarts (a reset or power cycle): run
+//!   [`update`] again. It erases first, so it can be repeated after a failure at any step.
+//! - The driver is observed to offer `/dev/xmassN` only for a switch it finds, with a
+//!   readable firmware ID, when it loads. A switch that does not come up after a restart
+//!   gets no node, and only programming its flash by other means recovers it.
+//! - The driver is observed to stage writes and reads in one buffer shared by all XMASS
+//!   devices, with no lock. `XmassDevice` serialises its own process's requests; update one
+//!   XMASS board at a time across processes.
 
 use std::fmt;
 use std::io;
@@ -43,42 +47,44 @@ pub const FIRMWARE_BYTES: usize = 65_536;
 /// The bytes the driver returns for the IDs: the tool's `info[10]` (`xmass_fwupd.c`:27).
 pub const IDS_BYTES: usize = 10;
 
-/// The bytes a read-back is not compared over, because the driver writes its own signature
-/// there (`xmass_fwupd.c`:101).
+/// The bytes a read-back is not compared over (`xmass_fwupd.c`:101): the driver may change
+/// them when it programs the flash.
 pub const SIGNATURE: Range<usize> = 0xe00..0xf00;
 
+/// What `PCIE_FLASH_READ` is observed to return on success; the other requests return 0.
+pub const READ_SUCCESS: i32 = 1;
+
 /// The four requests the tool makes of the XMASS device, in the driver's terms. Each is one
-/// ioctl, and fails with the driver's errno.
-pub trait BridgeFlash {
-    /// The switch's firmware ID and the flash's JEDEC ID reply (`PCIE_GETIDS`); see
-    /// [`BridgeIds`].
+/// ioctl: it fails with the driver's errno, or returns the driver's return value as it is.
+pub trait SwitchFlash {
+    /// Reads the IDs into `out` (`PCIE_GETIDS`); [`read_ids`] decodes them.
     ///
     /// # Errors
     ///
     /// The driver's.
-    fn ids(&mut self) -> io::Result<[u8; IDS_BYTES]>;
+    fn ids(&mut self, out: &mut [u8; IDS_BYTES]) -> io::Result<i32>;
 
     /// Erases the flash's first [`FIRMWARE_BYTES`] (`PCIE_FLASH_ERASE`).
     ///
     /// # Errors
     ///
     /// The driver's; the flash may then be part erased.
-    fn erase(&mut self) -> io::Result<()>;
+    fn erase(&mut self) -> io::Result<i32>;
 
     /// Programs `image` into the flash's first [`FIRMWARE_BYTES`], without erasing
-    /// (`PCIE_FLASH_WRITE`). The driver writes its signature into [`SIGNATURE`] first.
+    /// (`PCIE_FLASH_WRITE`).
     ///
     /// # Errors
     ///
     /// The driver's; the flash may then be part programmed.
-    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<()>;
+    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<i32>;
 
     /// Reads the flash's first [`FIRMWARE_BYTES`] into `out` (`PCIE_FLASH_READ`).
     ///
     /// # Errors
     ///
     /// The driver's; `out` then holds nothing meaningful.
-    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<()>;
+    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<i32>;
 }
 
 /// A firmware image for the switch: exactly [`FIRMWARE_BYTES`], the only check the tool
@@ -100,10 +106,12 @@ impl Firmware {
     ///
     /// [`FirmwareSizeError`] unless `bytes` is exactly [`FIRMWARE_BYTES`] long.
     pub fn new(bytes: &[u8]) -> Result<Self, FirmwareSizeError> {
-        let bytes = Box::<[u8]>::from(bytes)
+        let image: &[u8; FIRMWARE_BYTES] = bytes
             .try_into()
-            .map_err(|bytes: Box<[u8]>| FirmwareSizeError { len: bytes.len() })?;
-        Ok(Self { bytes })
+            .map_err(|_| FirmwareSizeError { len: bytes.len() })?;
+        Ok(Self {
+            bytes: Box::new(*image),
+        })
     }
 
     /// The image.
@@ -130,35 +138,38 @@ pub struct FirmwareSizeError {
     pub len: usize,
 }
 
-/// What the driver reports before any change, and the tool prints (`xmass_fwupd.c`:69-71).
+/// The switch's IDs, as the tool prints them before any change (`xmass_fwupd.c`:69-71).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub struct BridgeIds {
-    /// The firmware the switch runs, as six bytes from its configuration space; the tool
-    /// prints them as one hex string, `ASM2806 Firmware in use`.
+pub struct SwitchIds {
+    /// The firmware the switch runs, six bytes; the tool prints them as one hex string,
+    /// `ASM2806 Firmware in use`.
     pub firmware: [u8; 6],
 
-    /// The flash's reply to the JEDEC read-identification command, as four bytes; the tool
-    /// prints the first three, `FlashID` (manufacturer, memory type, capacity).
+    /// The flash's ID, four bytes; the tool prints the first three, `FlashID` (observed: the
+    /// JEDEC read-identification reply, manufacturer, memory type and capacity first).
     pub flash_id: [u8; 4],
 }
 
-impl From<[u8; IDS_BYTES]> for BridgeIds {
-    fn from(ids: [u8; IDS_BYTES]) -> Self {
-        let [f0, f1, f2, f3, f4, f5, j0, j1, j2, j3] = ids;
-        Self {
-            firmware: [f0, f1, f2, f3, f4, f5],
-            flash_id: [j0, j1, j2, j3],
-        }
-    }
+/// A request returned a value that is neither an error nor its success value. The tool
+/// takes any such value as success; the driver is observed to pass positive failure codes
+/// through, after which a read's buffer holds no read-back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the XMASS driver returned {returned:#x}, not its success value {success}")]
+pub struct UnexpectedReturn {
+    /// What the driver returned.
+    pub returned: i32,
+    /// What it returns on success.
+    pub success: i32,
 }
 
 /// A failed switch firmware update, by the step that failed. See the module's recovery
-/// notes for what the flash holds after each.
+/// notes for what the flash holds after each. An [`UnexpectedReturn`] arrives as the
+/// `io::Error`'s inner error.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum UpdateError {
-    /// Reading the IDs failed, before anything changed ("Unable to get ids").
+    /// Reading the IDs failed, before the flash changed ("Unable to get ids").
     #[error("reading the XMASS switch's IDs failed")]
     Ids(#[source] io::Error),
 
@@ -191,31 +202,46 @@ pub enum UpdateError {
 ///
 /// # Errors
 ///
-/// The driver's.
-pub fn read_ids(bridge: &mut dyn BridgeFlash) -> io::Result<BridgeIds> {
-    bridge.ids().map(BridgeIds::from)
+/// The driver's, or an [`UnexpectedReturn`].
+pub fn read_ids(switch: &mut dyn SwitchFlash) -> io::Result<SwitchIds> {
+    let mut ids = [0; IDS_BYTES];
+    succeeded(switch.ids(&mut ids), 0)?;
+    let [f0, f1, f2, f3, f4, f5, j0, j1, j2, j3] = ids;
+    Ok(SwitchIds {
+        firmware: [f0, f1, f2, f3, f4, f5],
+        flash_id: [j0, j1, j2, j3],
+    })
 }
 
 /// Replaces the switch's firmware with `firmware`, as the tool does
 /// (`xmass_fwupd.c`:63-104): reads the IDs, erases, writes, reads back and compares.
 /// Returns the IDs read first, the firmware that was running.
 ///
+/// Unlike the tool, a request counts as done only if it returns its success value (0, or
+/// [`READ_SUCCESS`] for the read); see [`UnexpectedReturn`].
+///
 /// A free function rather than a method: it is the tool's procedure over any
-/// [`BridgeFlash`], and the image is only its input.
+/// [`SwitchFlash`], and the image is only its input.
 ///
 /// # Errors
 ///
 /// [`UpdateError`], at the step that failed; the steps after it are not made.
-pub fn update(bridge: &mut dyn BridgeFlash, firmware: &Firmware) -> Result<BridgeIds, UpdateError> {
-    let ids = read_ids(bridge).map_err(UpdateError::Ids)?;
-    bridge.erase().map_err(UpdateError::Erase)?;
-    bridge
-        .write(firmware.as_bytes())
-        .map_err(UpdateError::Write)?;
+pub fn update(switch: &mut dyn SwitchFlash, firmware: &Firmware) -> Result<SwitchIds, UpdateError> {
+    let ids = read_ids(switch).map_err(UpdateError::Ids)?;
+    succeeded(switch.erase(), 0).map_err(UpdateError::Erase)?;
+    succeeded(switch.write(firmware.as_bytes()), 0).map_err(UpdateError::Write)?;
     let mut back = filled(0);
-    bridge.read(&mut back).map_err(UpdateError::ReadBack)?;
+    succeeded(switch.read(&mut back), READ_SUCCESS).map_err(UpdateError::ReadBack)?;
     verify(firmware.as_bytes(), &back)?;
     Ok(ids)
+}
+
+/// A request's outcome: its error, or an [`UnexpectedReturn`] unless it returned `success`.
+fn succeeded(returned: io::Result<i32>, success: i32) -> io::Result<()> {
+    match returned? {
+        value if value == success => Ok(()),
+        returned => Err(io::Error::other(UnexpectedReturn { returned, success })),
+    }
 }
 
 /// A flash-sized buffer of `byte`, on the heap.
@@ -248,64 +274,39 @@ fn verify(written: &[u8; FIRMWARE_BYTES], back: &[u8; FIRMWARE_BYTES]) -> Result
 mod tests {
     use super::*;
 
-    /// A flash that programs faithfully, with the driver's signature stood in for by
-    /// inverting [`SIGNATURE`]'s bytes, and one byte that reads back wrong if asked.
-    struct FakeFlash {
-        flash: Box<[u8; FIRMWARE_BYTES]>,
-        misread: Option<usize>,
-        steps: Vec<&'static str>,
+    /// A switch whose requests all succeed, and whose read hands back what was last
+    /// written (as a stale staging buffer would), returning `read_returns`.
+    struct EchoingSwitch {
+        written: Box<[u8; FIRMWARE_BYTES]>,
+        read_returns: i32,
     }
 
-    impl FakeFlash {
-        fn new() -> Self {
-            Self {
-                flash: filled(0x5a),
-                misread: None,
-                steps: Vec::new(),
-            }
-        }
-    }
-
-    impl BridgeFlash for FakeFlash {
-        fn ids(&mut self) -> io::Result<[u8; IDS_BYTES]> {
-            self.steps.push("ids");
-            Ok([1, 2, 3, 4, 5, 6, 0xc2, 0x20, 0x11, 0xc2])
+    impl SwitchFlash for EchoingSwitch {
+        fn ids(&mut self, out: &mut [u8; IDS_BYTES]) -> io::Result<i32> {
+            *out = [1, 2, 3, 4, 5, 6, 0xc2, 0x20, 0x11, 0xc2];
+            Ok(0)
         }
 
-        fn erase(&mut self) -> io::Result<()> {
-            self.steps.push("erase");
-            self.flash.fill(0xff);
-            Ok(())
+        fn erase(&mut self) -> io::Result<i32> {
+            Ok(0)
         }
 
-        fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<()> {
-            self.steps.push("write");
-            for (at, (cell, byte)) in self.flash.iter_mut().zip(image).enumerate() {
-                let byte = if SIGNATURE.contains(&at) {
-                    !byte
-                } else {
-                    *byte
-                };
-                *cell &= byte;
-            }
-            Ok(())
+        fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<i32> {
+            *self.written = *image;
+            Ok(0)
         }
 
-        fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<()> {
-            self.steps.push("read");
-            out.copy_from_slice(&*self.flash);
-            if let Some(at) = self.misread {
-                out[at] ^= 1;
-            }
-            Ok(())
+        fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<i32> {
+            *out = *self.written;
+            Ok(self.read_returns)
         }
     }
 
-    fn image() -> Firmware {
-        let bytes: Vec<u8> = (0..FIRMWARE_BYTES)
-            .map(|i| u8::try_from(i * 7 % 251).expect("below 251"))
-            .collect();
-        Firmware::new(&bytes).expect("64 KiB")
+    fn switch(read_returns: i32) -> EchoingSwitch {
+        EchoingSwitch {
+            written: filled(0),
+            read_returns,
+        }
     }
 
     #[test]
@@ -320,35 +321,30 @@ mod tests {
     }
 
     #[test]
-    fn the_ids_split_into_the_switch_firmware_and_the_flash_reply() {
-        let ids = read_ids(&mut FakeFlash::new()).expect("the fake answers");
+    fn the_ids_split_into_the_switch_firmware_and_the_flash_id() {
+        let ids = read_ids(&mut switch(READ_SUCCESS)).expect("the fake answers");
         assert_eq!(ids.firmware, [1, 2, 3, 4, 5, 6]);
         assert_eq!(ids.flash_id, [0xc2, 0x20, 0x11, 0xc2]);
     }
 
     #[test]
-    fn the_drivers_signature_does_not_fail_the_read_back() {
-        let mut flash = FakeFlash::new();
-        let firmware = image();
-        update(&mut flash, &firmware).expect("only the signature differs");
-        assert_eq!(flash.steps, ["ids", "erase", "write", "read"]);
-        assert_ne!(
-            flash.flash[SIGNATURE],
-            firmware.as_bytes()[SIGNATURE],
-            "the fake changed the signature bytes, so the comparison skipped them"
+    fn a_read_returning_a_positive_failure_code_is_not_verified_against_its_stale_buffer() {
+        let firmware = Firmware::new(&vec![0x5a; FIRMWARE_BYTES]).expect("64 KiB");
+        update(&mut switch(READ_SUCCESS), &firmware).expect("the echo verifies");
+        let error = update(&mut switch(0x87), &firmware).expect_err("0x87 is not success");
+        let UpdateError::ReadBack(source) = error else {
+            panic!("the read-back failed, not {error:?}");
+        };
+        let inner = source
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<UnexpectedReturn>());
+        assert_eq!(
+            inner,
+            Some(&UnexpectedReturn {
+                returned: 0x87,
+                success: READ_SUCCESS
+            }),
+            "the driver's value is reported"
         );
-    }
-
-    #[test]
-    fn a_byte_just_outside_the_signature_that_reads_back_wrong_fails_the_update() {
-        for at in [0, SIGNATURE.start - 1, SIGNATURE.end, FIRMWARE_BYTES - 1] {
-            let mut flash = FakeFlash::new();
-            flash.misread = Some(at);
-            let error = update(&mut flash, &image()).expect_err("a byte differs");
-            assert!(
-                matches!(error, UpdateError::VerifyFailed { first, bytes: 1 } if first == at),
-                "{error:?} names byte {at:#x}"
-            );
-        }
     }
 }

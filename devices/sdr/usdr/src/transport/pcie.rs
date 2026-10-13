@@ -8,7 +8,7 @@
 //!
 //! The same driver's XMASS device (`/dev/xmassN`), the firmware flash of the XMASS board's
 //! `PCIe` switch, is [`XmassDevice`], a
-//! [`BridgeFlash`](crate::frontend::xmass_firmware::BridgeFlash) for
+//! [`SwitchFlash`](crate::frontend::xmass_firmware::SwitchFlash) for
 //! [`xmass_firmware::update`](crate::frontend::xmass_firmware::update).
 
 use std::io;
@@ -25,7 +25,7 @@ use rsl_usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stre
 
 use super::window::{self, RegisterIo, Window};
 use crate::error::Error;
-use crate::frontend::xmass_firmware::{BridgeFlash, FIRMWARE_BYTES, IDS_BYTES};
+use crate::frontend::xmass_firmware::{FIRMWARE_BYTES, IDS_BYTES, SwitchFlash};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
 
 /// The uSDR's cores as the driver needs them: libusdr's `s_params_m2_lm6_1_rev000` in
@@ -226,21 +226,21 @@ impl Bus for PcieBus {
     }
 }
 
-/// The four requests, one ioctl each.
-impl BridgeFlash for XmassDevice {
-    fn ids(&mut self) -> io::Result<[u8; IDS_BYTES]> {
-        XmassDevice::ids(self)
+/// The four requests, one ioctl each, their return values unjudged.
+impl SwitchFlash for XmassDevice {
+    fn ids(&mut self, out: &mut [u8; IDS_BYTES]) -> io::Result<i32> {
+        XmassDevice::ids(self, out)
     }
 
-    fn erase(&mut self) -> io::Result<()> {
+    fn erase(&mut self) -> io::Result<i32> {
         XmassDevice::erase(self)
     }
 
-    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<()> {
+    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<i32> {
         XmassDevice::write(self, image)
     }
 
-    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<()> {
+    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<i32> {
         XmassDevice::read(self, out)
     }
 }
