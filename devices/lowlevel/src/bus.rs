@@ -1,6 +1,7 @@
 //! The blocking bus: what a transport (USB, `PCIe`, or a simulator) must provide, and the
 //! executor that runs a portable sequence over it.
 
+use std::any::Any;
 use std::boxed::Box;
 use std::error::Error as StdError;
 use std::io;
@@ -168,6 +169,13 @@ pub trait Bus: Send {
     /// [`BusError::Unsupported`] by default; any transport failure.
     fn tx_stream_close(&mut self) -> Result<(), BusError> {
         Err(BusError::Unsupported("TX streaming"))
+    }
+
+    /// This bus as [`Any`], so a driver can reach the concrete transport behind a
+    /// `dyn Bus`: rsl-usdr hands a powered device's USB bus over to a reactor-driven
+    /// handle this way. `None`, the default, for a bus that offers no such access.
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        None
     }
 }
 
