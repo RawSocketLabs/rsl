@@ -3367,6 +3367,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-sdr-frontend"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-usb"
 version = "0.0.0"
 dependencies = [
