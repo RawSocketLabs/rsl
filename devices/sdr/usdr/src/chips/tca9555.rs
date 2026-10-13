@@ -19,6 +19,9 @@ use crate::lowlevel::{Bus, I2cAddr};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum Reg {
+    /// Output latches; a 1 bit drives the pin high where it is an output (`TCA9555_OUT0`).
+    Output0 = 2,
+
     /// Port direction; a 0 bit makes the pin an output, 1 an input (`TCA9555_CFG0`).
     Config0 = 6,
 }

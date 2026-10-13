@@ -9,9 +9,9 @@
 //! | Board (libusdr name) | Admitted | Here |
 //! |----------------------|----------|------|
 //! | `PCIe` front end (`pciefe`) | yes | ported |
-//! | XMASS (`xmass`) | yes | detected; bring-up not ported |
+//! | XMASS (`xmass`) | yes | ported (LMK05318 bring-up, calibration LO and path) |
 //! | `SuperSync` (`supersync`) | yes | ported (fixed register load) |
-//! | `SimpleSync` (`simplesync`) | yes | detected; bring-up not ported |
+//! | `SimpleSync` (`simplesync`) | yes | ported (LMK05318 bring-up, measurement LO) |
 //! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported |
 //! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | not offered; probing it accesses nothing |
 //! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, cannot work: needs I2C core 1 | not offered; the automatic probe tries it as libusdr does |
@@ -44,6 +44,9 @@ pub use self::pciefe::{
     PciefeAttenuation, PciefeDuplexer, PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter,
     PciefeSetting, PciefeTxFilter,
 };
+pub(crate) use self::simplesync::SimpleSync;
+pub(crate) use self::xmass::Xmass;
+pub use self::xmass::XmassCalibrationPath;
 use crate::error::Error;
 use crate::lowlevel::Bus;
 
@@ -71,13 +74,13 @@ pub enum FrontEndSelection {
     /// Only the M.2-to-`PCIe` breakout, with these options.
     Exm2pe(Exm2peOptions),
 
-    /// Only XMASS (`fe=xmass`), whose bring-up is not ported.
+    /// Only XMASS (`fe=xmass`).
     Xmass,
 
     /// Only `SuperSync` (`fe=supersync`).
     SuperSync,
 
-    /// Only `SimpleSync` (`fe=simplesync`), whose bring-up is not ported.
+    /// Only `SimpleSync` (`fe=simplesync`).
     SimpleSync,
 }
 
@@ -94,12 +97,18 @@ pub enum FrontEndKind {
         dac: bool,
     },
 
+    /// The XMASS synchronization board.
+    Xmass,
+
     /// The `SuperSync` clock board.
     SuperSync,
+
+    /// The `SimpleSync` clock board.
+    SimpleSync,
 }
 
 /// A front end that came up, with its driver state.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FrontEnd {
     /// The `PCIe` front end.
     Pciefe(Pciefe),
@@ -107,8 +116,14 @@ pub(crate) enum FrontEnd {
     /// The M.2-to-`PCIe` breakout.
     Exm2pe(Exm2pe),
 
+    /// The XMASS board; boxed, its clock synchronizer's state is large.
+    Xmass(Box<Xmass>),
+
     /// The `SuperSync` clock board; libusdr keeps no state for it beyond the chip address.
     SuperSync,
+
+    /// The `SimpleSync` clock board; boxed as XMASS.
+    SimpleSync(Box<SimpleSync>),
 }
 
 impl FrontEnd {
@@ -119,20 +134,44 @@ impl FrontEnd {
             Self::Exm2pe(board) => FrontEndKind::Exm2pe {
                 dac: board.has_dac(),
             },
+            Self::Xmass(_) => FrontEndKind::Xmass,
             Self::SuperSync => FrontEndKind::SuperSync,
+            Self::SimpleSync(_) => FrontEndKind::SimpleSync,
         }
     }
 
     /// Sets the oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`): the `PCIe` front end's, or
     /// the breakout's if it answered. Other boards have none (libusdr's `-EINVAL`).
-    pub(crate) fn set_oscillator_dac(self, bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
+    pub(crate) fn set_oscillator_dac(&self, bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
         match self {
             Self::Pciefe(_) => Pciefe::set_dac(bus, code),
             Self::Exm2pe(board) => board.set_dac(bus, code),
-            Self::SuperSync => Err(Error::NoOscillatorDac),
+            Self::Xmass(_) | Self::SuperSync | Self::SimpleSync(_) => Err(Error::NoOscillatorDac),
+        }
+    }
+
+    /// Retunes the synchronization board's calibration or measurement LO
+    /// (`/dm/sync/cal/freq`): XMASS's output 4, `SimpleSync`'s outputs 0 to 3.
+    pub(crate) fn set_sync_calibration_hz(
+        &mut self,
+        bus: &mut dyn Bus,
+        hz: u32,
+    ) -> Result<(), Error> {
+        match self {
+            Self::Xmass(board) => board.tune_calibration(bus, hz),
+            Self::SimpleSync(board) => board.tune_lo(bus, hz),
+            Self::Pciefe(_) | Self::Exm2pe(_) | Self::SuperSync => {
+                Err(Error::FrontEndMissing(SYNC_CALIBRATION_BOARDS))
+            }
         }
     }
 }
+
+/// The boards with a calibration LO, for [`Error::FrontEndMissing`].
+pub(crate) const SYNC_CALIBRATION_BOARDS: &str = "xmass or simplesync";
+
+/// The XMASS board's name, for [`Error::FrontEndMissing`].
+pub(crate) const XMASS: &str = xmass::NAME;
 
 /// The boards libusdr tries, in its order (`enum fe_type`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -180,9 +219,9 @@ impl Candidate {
                 };
                 Ok(Pciefe::init(bus, options)?.map(FrontEnd::Pciefe))
             }
-            Self::Xmass => xmass::init(bus),
+            Self::Xmass => Ok(Xmass::init(bus)?.map(FrontEnd::from)),
             Self::SuperSync => supersync::init(bus),
-            Self::SimpleSync => simplesync::init(bus),
+            Self::SimpleSync => Ok(SimpleSync::init(bus)?.map(FrontEnd::from)),
             Self::Exm2pe => {
                 let options = match selection {
                     FrontEndSelection::Exm2pe(options) => Some(options),
@@ -214,9 +253,7 @@ impl Candidate {
 /// and brings up the first that answers.
 ///
 /// A hinted board's failure fails the probe; while probing automatically, a failing board
-/// is logged and skipped, as libusdr does. A board that answers but whose bring-up is not
-/// ported fails the probe either way ([`Error::UnsupportedFrontEnd`]), where libusdr would
-/// have brought it up.
+/// is logged and skipped, as libusdr does.
 pub(crate) fn probe(
     bus: &mut dyn Bus,
     selection: &FrontEndSelection,
@@ -234,7 +271,6 @@ pub(crate) fn probe(
                 return Ok(Some(front_end));
             }
             Ok(None) => {}
-            Err(error @ Error::UnsupportedFrontEnd(_)) => return Err(error),
             Err(error) => warn!(?candidate, %error, "front end failed to come up; skipped"),
         }
     }

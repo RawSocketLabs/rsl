@@ -3,7 +3,10 @@
 
 use super::Board;
 use crate::error::Error;
-use crate::frontend::{self, FrontEnd, FrontEndKind, FrontEndSelection, PciefeSetting};
+use crate::frontend::{
+    self, FrontEnd, FrontEndKind, FrontEndSelection, PciefeSetting, SYNC_CALIBRATION_BOARDS, XMASS,
+    Xmass, XmassCalibrationPath,
+};
 
 impl Board {
     /// Looks for a front end as `selection` says and brings it up.
@@ -19,7 +22,7 @@ impl Board {
 
     /// Sets the front end's oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`).
     pub(crate) fn set_oscillator_dac(&mut self, code: u16) -> Result<(), Error> {
-        let front_end = self.front_end.ok_or(Error::NoOscillatorDac)?;
+        let front_end = self.front_end.as_ref().ok_or(Error::NoOscillatorDac)?;
         front_end.set_oscillator_dac(self.bus.as_mut(), code)
     }
 
@@ -29,5 +32,33 @@ impl Board {
             return Err(Error::FrontEndMissing("pciefe"));
         };
         board.apply(self.bus.as_mut(), setting)
+    }
+
+    /// Retunes a synchronization board's calibration LO (`/dm/sync/cal/freq`).
+    pub(crate) fn set_sync_calibration_hz(&mut self, hz: u32) -> Result<(), Error> {
+        let front_end = self
+            .front_end
+            .as_mut()
+            .ok_or(Error::FrontEndMissing(SYNC_CALIBRATION_BOARDS))?;
+        front_end.set_sync_calibration_hz(self.bus.as_mut(), hz)
+    }
+
+    /// The XMASS calibration LO last requested (`/dm/sync/cal/freq` read).
+    pub(crate) fn sync_calibration_hz(&self) -> Result<u32, Error> {
+        let Some(FrontEnd::Xmass(board)) = &self.front_end else {
+            return Err(Error::FrontEndMissing(XMASS));
+        };
+        Ok(board.calibration_hz())
+    }
+
+    /// Switches XMASS's calibration path (`/dm/sdr/0/sync/cal/path`).
+    pub(crate) fn set_sync_calibration_path(
+        &mut self,
+        path: XmassCalibrationPath,
+    ) -> Result<(), Error> {
+        let Some(FrontEnd::Xmass(_)) = &self.front_end else {
+            return Err(Error::FrontEndMissing(XMASS));
+        };
+        Xmass::set_calibration_path(self.bus.as_mut(), path)
     }
 }

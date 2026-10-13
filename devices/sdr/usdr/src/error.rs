@@ -221,19 +221,24 @@ pub enum Error {
         reason: &'static str,
     },
 
-    /// A front-end board answered whose bring-up this driver does not port; libusdr's
-    /// name for it. Opening with
-    /// [`FrontEndSelection::None`](crate::FrontEndSelection::None) skips the probe.
-    #[error("{0} front end detected; its bring-up is not supported")]
-    UnsupportedFrontEnd(&'static str),
-
     /// No front end with a working oscillator DAC is attached.
     #[error("no front end with an oscillator DAC is attached")]
     NoOscillatorDac,
 
-    /// The call needs a front end that is not attached; libusdr's name for it.
+    /// The call needs a front end that is not attached; libusdr's name for it, or the names
+    /// of the boards that would do.
     #[error("no {0} front end is attached")]
     FrontEndMissing(&'static str),
+
+    /// A front end's clock synthesizer has no configuration for the requested frequencies
+    /// (libusdr's `-EINVAL`); what failed.
+    #[error("{0}")]
+    ClockPlan(&'static str),
+
+    /// A front end's clock synthesizer did not report lock in time (libusdr's
+    /// `-ETIMEDOUT`); which PLL, such as `"LMK05318 APLL1"`.
+    #[error("{0} did not lock")]
+    ClockUnlocked(&'static str),
 
     /// The handle already has an operation in flight; nothing was sent for this one.
     #[error("another operation is in flight")]

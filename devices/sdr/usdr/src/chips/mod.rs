@@ -21,6 +21,7 @@
 //! | [`tca9555`] | TCA9555-compatible GPIO expander | XMASS: board control |
 //! | [`lmk5c33216`] | LMK5C33216 clock synchronizer | `SuperSync` |
 //! | [`lmk05318`] | LMK05318 clock synchronizer | `SimpleSync`, XMASS |
+//! | [`at24`] | AT24 EEPROM (security registers) | XMASS revision 1a: serial number |
 //!
 //! A chip driver is a small `Copy` value naming where the chip answers. `at(addr)` builds
 //! one anywhere; `usdr()` builds the one the uSDR has, and its doc says where the address
@@ -28,6 +29,7 @@
 //! driver: like libusdr, it caches the registers it updates field by field instead of
 //! reading them back.
 
+pub(crate) mod at24;
 pub(crate) mod dac80501;
 pub(crate) mod lmk05318;
 pub(crate) mod lmk5c33216;

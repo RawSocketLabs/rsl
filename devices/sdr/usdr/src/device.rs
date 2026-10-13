@@ -11,7 +11,9 @@ use crate::board::{
     TxIqCorrection, TxPath,
 };
 use crate::error::Error;
-use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
+use crate::frontend::{
+    FrontEndKind, FrontEndSelection, PciefeSetting, XMASS, XmassCalibrationPath,
+};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
@@ -126,6 +128,45 @@ impl Device {
     /// [`Error::FrontEndMissing`] without a `PCIe` front end; any bus failure.
     pub fn configure_pciefe(&mut self, setting: PciefeSetting) -> Result<(), Error> {
         self.board().configure_pciefe(setting)
+    }
+
+    /// Retunes the synchronization board's calibration LO to `hz` (libusdr's
+    /// `/dm/sync/cal/freq`, on XMASS also `/dm/sdr/0/sync/cal/freq`), waiting for its
+    /// clock synthesizer to lock: XMASS's calibration source (off below 3.1 MHz), or
+    /// `SimpleSync`'s measurement LO on its outputs 0 to 3 (off below 3.5 MHz).
+    ///
+    /// On XMASS the request is kept even if it fails, as libusdr keeps it.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEndMissing`] without XMASS or `SimpleSync`, before any bus access;
+    /// [`Error::ClockPlan`] for a frequency the clock synthesizer cannot reach, before
+    /// writing it; [`Error::ClockUnlocked`] if it does not lock; any bus failure.
+    pub fn set_sync_calibration_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        self.board().set_sync_calibration_hz(hz)
+    }
+
+    /// The XMASS calibration LO last requested, in Hz (libusdr's `/dm/sync/cal/freq` read):
+    /// 444 MHz after power-up.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEndMissing`] without XMASS (`SimpleSync` has no such reading in
+    /// libusdr).
+    pub fn sync_calibration_frequency(&self) -> Result<u32, Error> {
+        self.board
+            .as_ref()
+            .ok_or(Error::FrontEndMissing(XMASS))?
+            .sync_calibration_hz()
+    }
+
+    /// Routes XMASS's calibration signal (libusdr's `/dm/sdr/0/sync/cal/path`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEndMissing`] without XMASS, before any bus access; any bus failure.
+    pub fn set_sync_calibration_path(&mut self, path: XmassCalibrationPath) -> Result<(), Error> {
+        self.board().set_sync_calibration_path(path)
     }
 
     /// Writes the gateware's clock-measurement control, raw (libusdr's
@@ -703,10 +744,10 @@ impl<'a> DeviceBuilder<'a> {
     /// - [`Error::UnsupportedReferenceClock`] for an unusable external reference, before
     ///   any bus access. On revision 3 with an external reference the oscillator stays off;
     ///   like libusdr, a Si5332 that then finds no input clock does not fail power-up.
-    /// - [`Error::FrontEnd`] if a selected front end does not come up, and
-    ///   [`Error::UnsupportedFrontEnd`] if one answers whose bring-up is not ported (open
-    ///   with [`FrontEndSelection::None`] to skip the probe). The board is then powered down
-    ///   again, where libusdr leaves it powered.
+    /// - Whatever a selected front end's bring-up fails with ([`Error::FrontEnd`],
+    ///   [`Error::ClockUnlocked`], a bus error, ...; open with [`FrontEndSelection::None`]
+    ///   to skip the probe). The board is then powered down again, where libusdr leaves it
+    ///   powered.
     /// - [`Error::Overheated`] if the board is too hot: with the start limit when failing
     ///   at once, with the resume limit after a configured wait times out.
     /// - [`Error::ChipId`] if no TMP114 answers, so temperature cannot be trusted.
