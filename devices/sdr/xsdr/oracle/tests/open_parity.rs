@@ -1,5 +1,5 @@
-//! rsl-xsdr's open and RFIC power-up against libusdr's, operation for operation, on fresh
-//! simulated boards.
+//! rsl-xsdr's open, RFIC power-up and close against libusdr's, operation for operation, on
+//! fresh simulated boards.
 //!
 //! Whitelisted divergences, each confined to the scenario that shows it:
 //! - libusdr ends an XSDR open with its front-end probe on I2C bus 1 (`device_fe_probe`),
@@ -28,20 +28,22 @@ const REG_FRONT_END_GPIO: u32 = 3;
 /// The front-end connector's I2C bus.
 const FRONT_END_BUS: u8 = 1;
 
-/// libusdr's open and power-up of `board`: the open's operations before its front-end
-/// probe (checked to hold only probe traffic) and the power-up's (or its errno).
+/// libusdr's session on `board`: the open's operations before its front-end probe
+/// (checked to hold only probe traffic), the power-up's (or its errno) and the close's.
 struct Reference {
     /// The open up to the probe.
     open: Vec<Op>,
-    /// The power-up's operations and outcome.
+    /// The power-up's operations and outcome; empty and `Ok` when not powered up.
     power_up: (Vec<Op>, Result<(), i32>),
+    /// The close's operations.
+    close: Vec<Op>,
 }
 
-/// Runs libusdr on `board`.
-fn reference(board: SimBoard) -> Reference {
+/// Runs libusdr on `board`: open, `/dm/power/en` = 1 if `power_up`, close.
+fn reference(board: SimBoard, power_up: bool) -> Reference {
     let mut oracle = Oracle::open(board).expect("libusdr opens the board");
     let opened = oracle.trace_len();
-    let outcome = oracle.power_up();
+    let outcome = if power_up { oracle.power_up() } else { Ok(()) };
     let powered = oracle.trace_len();
     let board = oracle.close();
     let trace = board.trace();
@@ -72,6 +74,7 @@ fn reference(board: SimBoard) -> Reference {
     Reference {
         open: open.to_vec(),
         power_up: (trace[opened..powered].to_vec(), outcome),
+        close: trace[powered..].to_vec(),
     }
 }
 
@@ -89,19 +92,44 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
 }
 
 #[test]
-fn xsdr_open_and_power_up_match_libusdr_up_to_its_front_end_probe() {
-    let libusdr = reference(SimBoard::new(Variant::Xsdr));
+fn an_xsdr_session_matches_libusdr_except_its_front_end_probe() {
+    let libusdr = reference(SimBoard::new(Variant::Xsdr), true);
     assert_eq!(libusdr.power_up.1, Ok(()), "libusdr powers the RFIC up");
 
     let sim = SimBus::new(SimBoard::new(Variant::Xsdr));
     let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
     let opened = sim.board().trace().len();
     device.power_up().expect("rsl-xsdr powers the RFIC up");
+    let powered = sim.board().trace().len();
+    device.close().expect("rsl-xsdr closes the XSDR");
 
     let board = sim.board();
-    let (open, power_up) = board.trace().split_at(opened);
-    assert_same_ops(&libusdr.open, open, "open");
-    assert_same_ops(&libusdr.power_up.0, power_up, "power-up");
+    let trace = board.trace();
+    assert_same_ops(&libusdr.open, &trace[..opened], "open");
+    assert_same_ops(&libusdr.power_up.0, &trace[opened..powered], "power-up");
+    assert_same_ops(&libusdr.close, &trace[powered..], "close");
+}
+
+#[test]
+fn closing_an_xsdr_never_powered_up_matches_libusdrs_zeroed_chip_state() {
+    let libusdr = reference(SimBoard::new(Variant::Xsdr), false);
+    assert!(
+        matches!(
+            libusdr.close.first(),
+            Some(Op::Spi {
+                out: 0x8020_0003,
+                ..
+            })
+        ),
+        "libusdr selects both banks first, from its zeroed cache: {:?}",
+        libusdr.close.first()
+    );
+
+    let sim = SimBus::new(SimBoard::new(Variant::Xsdr));
+    let device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
+    let opened = sim.board().trace().len();
+    device.close().expect("rsl-xsdr closes the XSDR");
+    assert_same_ops(&libusdr.close, &sim.board().trace()[opened..], "close");
 }
 
 #[test]
@@ -150,7 +178,7 @@ fn unported_variants_stop_after_the_identification_libusdr_shares() {
 #[test]
 fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
     let board = || SimBoard::new(Variant::Xsdr).with_fpga_pmic_revision(0xe101);
-    let libusdr = reference(board());
+    let libusdr = reference(board(), true);
     let (ops, outcome) = &libusdr.power_up;
     assert_eq!(
         *outcome,
@@ -182,5 +210,11 @@ fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
         sim.board().trace().len(),
         opened,
         "rsl-xsdr's refusal drives nothing"
+    );
+    device.close().expect("rsl-xsdr closes it");
+    assert_same_ops(
+        &libusdr.close,
+        &sim.board().trace()[opened..],
+        "close after the refused power-up",
     );
 }
