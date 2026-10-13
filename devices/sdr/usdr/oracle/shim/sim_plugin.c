@@ -20,6 +20,7 @@
 #include "lowlevel/pcie_uram/pcie_uram_driver_if.h"
 #include "ipblks/si2c.h"
 #include "ipblks/espi_flash.h"
+#include "ipblks/streams/streams_api.h"
 
 // Stateless oracle for the USB transport's simple-I2C command/cache sequence.
 // Each request is two words: addr|bus<<8|outlen<<16|inlen<<24, then LE outgoing bytes.
@@ -47,6 +48,15 @@ void rsl_oracle_sleep_us(unsigned long long us);
 // Fills `out` (`len` bytes) with the board's next RX block and `oob` with its two words.
 // Returns 0, or -ETIMEDOUT while the board's stream engine is stopped.
 int rsl_oracle_rx_next(void* out, size_t len, unsigned long long* oob);
+// Sets the board's TX buffers up, `block` bytes each.
+void rsl_oracle_tx_open(size_t block);
+// Releases the board's TX buffers.
+void rsl_oracle_tx_close(void);
+// Takes the board's next free TX buffer: 0 with `*has_record` set and `words` filled when
+// a played packet freed it, or -ETIMEDOUT while every buffer waits to play.
+int rsl_oracle_tx_grant(unsigned* words, int* has_record);
+// Hands the bytes libusdr wrote into the granted buffer to the board.
+void rsl_oracle_tx_load(const void* bytes, size_t len);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
@@ -60,6 +70,10 @@ struct sim_dev {
     device_id_t id;
     void* rx_block;     // the RX block lent to libusdr between wait and release
     size_t rx_block_size;
+    void* tx_block;     // the TX buffer lent to libusdr between get and commit
+    size_t tx_block_size;
+    void* tx_param;     // the TX stream's commit callback and its argument
+    soft_tx_commit_fn_t tx_commit;
 };
 
 static int sim_generic_get(lldev_t dev, int op, const char** pout)
@@ -84,6 +98,7 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
 static int sim_destroy(lldev_t dev)
 {
     free(((struct sim_dev*)dev)->rx_block);
+    free(((struct sim_dev*)dev)->tx_block);
     if (dev->pdev) {
         dev->pdev->destroy(dev->pdev);
     }
@@ -95,24 +110,32 @@ static int sim_destroy(lldev_t dev)
 // each at most 1 MiB.
 enum { SIM_DMA_BUFFERS = 32, SIM_DMA_MAX_BLOCK = 1 << 20 };
 
-// Stream setup as the PCIe transport reports it (pcie_uram_main.c stream_initialize). The
-// kernel's own register writes (buffer addresses, block size) sit below the ls_op seam that
-// rsl-usdr shares, so they are not traced.
+// Stream setup as the PCIe transport reports it (pcie_uram_main.c stream_initialize): stream
+// 0 is RX, 1 TX. The kernel's own register writes (buffer addresses, block size) sit below
+// the ls_op seam that rsl-usdr shares, so they are not traced.
 static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
                                  stream_t* channel)
 {
     (void)subdev;
     struct sim_dev* d = (struct sim_dev*)dev;
-    if (params->buffer_count != SIM_DMA_BUFFERS || params->block_size == 0 ||
-        params->block_size > SIM_DMA_MAX_BLOCK) {
+    if (params->streamno > 1 || params->buffer_count != SIM_DMA_BUFFERS ||
+        params->block_size == 0 || params->block_size > SIM_DMA_MAX_BLOCK) {
         return -EINVAL;
     }
-    void* block = realloc(d->rx_block, params->block_size);
+    void** slot = params->streamno == 0 ? &d->rx_block : &d->tx_block;
+    void* block = realloc(*slot, params->block_size);
     if (block == NULL) {
         return -ENOMEM;
     }
-    d->rx_block = block;
-    d->rx_block_size = params->block_size;
+    *slot = block;
+    if (params->streamno == 0) {
+        d->rx_block_size = params->block_size;
+    } else {
+        d->tx_block_size = params->block_size;
+        d->tx_param = params->param;
+        d->tx_commit = params->soft_tx_commit;
+        rsl_oracle_tx_open(params->block_size);
+    }
     params->underlying_fd = -1;
     params->out_mtu_size = params->block_size;
     *channel = params->streamno;
@@ -123,8 +146,60 @@ static int sim_stream_deinitialize(lldev_t dev, subdev_t subdev, stream_t channe
 {
     (void)dev;
     (void)subdev;
-    (void)channel;
+    if (channel == 1) {
+        rsl_oracle_tx_close();
+    }
     return 0;
+}
+
+// The board's next free TX buffer, or a timeout at once while every buffer waits to play.
+// Like the PCIe transport's, the out-of-band record is the driver's completion record when
+// there is one, and empty (size 0) for the buffers it starts with.
+static int sim_send_dma_get(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
+                            void* oob_ptr, unsigned* oob_size, unsigned timeout)
+{
+    (void)subdev;
+    (void)channel;
+    (void)timeout;
+    struct sim_dev* d = (struct sim_dev*)dev;
+    unsigned words[4] = { 0, 0, 0, 0 };
+    int has_record = 0;
+    int res = d->tx_block == NULL ? -ETIMEDOUT : rsl_oracle_tx_grant(words, &has_record);
+    if (res) {
+        return res;
+    }
+    *buffer = d->tx_block;
+    if (oob_ptr != NULL && oob_size != NULL) {
+        if (has_record && *oob_size >= sizeof(words)) {
+            memcpy(oob_ptr, words, sizeof(words));
+            *oob_size = sizeof(words);
+        } else {
+            *oob_size = 0;
+        }
+    }
+    return 0;
+}
+
+// As the PCIe transport's commit: the size check, then the stream's own commit, which
+// announces the buffer through the TX core's registers. The bytes reach the board first.
+static int sim_send_dma_commit(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer,
+                               unsigned sz, const void* oob_ptr, unsigned oob_size)
+{
+    (void)subdev;
+    (void)channel;
+    struct sim_dev* d = (struct sim_dev*)dev;
+    if (buffer != d->tx_block || sz > d->tx_block_size || d->tx_commit == NULL) {
+        return -EINVAL;
+    }
+    rsl_oracle_tx_load(buffer, sz);
+    return d->tx_commit(d->tx_param, sz, oob_ptr, oob_size);
+}
+
+// A stream option libusdr's public API does not reach, such as the TX stream's "mute".
+int rsl_oracle_stream_option_set(void* stream, const char* name, long long value)
+{
+    stream_handle_t* h = (stream_handle_t*)stream;
+    return h->ops->option_set(h, name, value);
 }
 
 // The board's next block, or a timeout at once while its stream engine is stopped. The
@@ -165,6 +240,8 @@ static lowlevel_ops_t s_sim_ops = {
     .stream_deinitialize = sim_stream_deinitialize,
     .recv_dma_wait = sim_recv_dma_wait,
     .recv_dma_release = sim_recv_dma_release,
+    .send_dma_get = sim_send_dma_get,
+    .send_dma_commit = sim_send_dma_commit,
     .destroy = sim_destroy,
 };
 

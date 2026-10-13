@@ -26,6 +26,9 @@ pub mod flash;
 pub mod fm;
 pub mod nco;
 pub mod rtsa;
+mod tx;
+
+pub use tx::SendStat;
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
@@ -147,6 +150,8 @@ pub struct Oracle {
     dev: Option<NonNull<c_void>>,
     /// The RX stream, while one exists.
     stream: Option<NonNull<c_void>>,
+    /// The TX stream, while one exists.
+    tx: Option<NonNull<c_void>>,
     /// Held for the oracle's lifetime; see [`SESSION`].
     _session: MutexGuard<'static, ()>,
 }
@@ -199,6 +204,7 @@ impl Oracle {
         let mut oracle = Self {
             dev: Some(dev),
             stream: None,
+            tx: None,
             _session: session,
         };
         resume_callback_panic();
@@ -673,9 +679,9 @@ impl Oracle {
         resume_callback_panic();
     }
 
-    /// Destroys the stream, if any, then closes the libusdr device if it is still open.
+    /// Destroys the streams, if any, then closes the libusdr device if it is still open.
     fn close_device(&mut self) {
-        if let Some(stream) = self.stream.take() {
+        for stream in [self.stream.take(), self.tx.take()].into_iter().flatten() {
             // SAFETY: `stream` came from a successful create and is destroyed once, before
             // its device closes.
             unsafe { usdr_dms_destroy(stream.as_ptr()) };
