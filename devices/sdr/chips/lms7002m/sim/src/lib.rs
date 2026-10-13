@@ -9,13 +9,24 @@
 //! Assumptions, each a sim choice the pinned source cannot settle:
 //! - Reset values: the vendored YAML and header document fields but no reset values, so
 //!   every register reads 0 until written, except the read-only version register below.
-//!   Init/power-up never reads a register it has not written except that one.
+//!   No libusdr path the drivers port reads a register it has not written except that one,
+//!   the VCO comparators and the processors' built-in self-test status. The self-test
+//!   status (`RXTSP` `0x040E`, `TXTSP` `0x0209`, read by `lms7002m_xxtsp_bst_isdone`) is
+//!   never written, so it reads 0: bit 0 clear, which libusdr takes for "done".
+//! - VCO comparators (`CGEN_0x008C`, `SXX_0x0123`): with a reference clock given
+//!   ([`Lms7002m::with_reference`]), their comparator bits follow the cap code and divider
+//!   the driver programmed; the model and its assumptions are in `vco.rs`. Without one
+//!   they read as stored, like any register.
 //! - Channel banking: the chip duplicates some registers per channel, selected by
 //!   `LML_0x0020` MAC bits; which ones is not in the vendored source, so the file is flat
-//!   and MAC writes are stored like any other register.
+//!   and MAC writes are stored like any other register. libusdr selects the bank before
+//!   each comparator read and rewrites every register the read depends on first, so a
+//!   flat file reads the same there.
 //! - Soft resets (`LML_0x0020` reset bits) do not clear the file: with no reset values to
 //!   restore, clearing would invent them. The reset pin does ([`Lms7002m::reset`]).
 #![forbid(unsafe_code)]
+
+mod vco;
 
 use std::collections::BTreeMap;
 
@@ -39,6 +50,9 @@ pub struct Lms7002m {
     regs: BTreeMap<u16, u16>,
     /// What [`VERSION`] reads.
     version: u16,
+    /// The reference clock in hertz, which the VCO comparators need; `None` reads them as
+    /// stored.
+    reference: Option<u64>,
 }
 
 impl Lms7002m {
@@ -55,7 +69,16 @@ impl Lms7002m {
         Self {
             regs: BTreeMap::new(),
             version: VER_REV | u16::from(mask),
+            reference: None,
         }
+    }
+
+    /// The same chip clocked from a `hertz` reference, so its VCO comparators answer the
+    /// cap codes a tuning search writes (see the crate docs).
+    #[must_use]
+    pub fn with_reference(mut self, hertz: u32) -> Self {
+        self.reference = Some(hertz.into());
+        self
     }
 
     /// Shifts one SPI word through the chip and returns the word read back: the register's
@@ -86,10 +109,17 @@ impl Lms7002m {
     #[must_use]
     pub fn reg(&self, addr: u16) -> u16 {
         let addr = addr & ADDR_MASK;
-        if addr == VERSION {
-            return self.version;
+        let stored = |addr| self.regs.get(&addr).copied().unwrap_or(0);
+        match (addr, self.reference) {
+            (VERSION, _) => self.version,
+            (vco::CGEN_COMPARATORS, Some(reference)) => {
+                vco::merge(stored(addr), vco::cgen(stored, reference))
+            }
+            (vco::SXX_COMPARATORS, Some(reference)) => {
+                vco::merge(stored(addr), vco::sxx(stored, reference))
+            }
+            _ => stored(addr),
         }
-        self.regs.get(&addr).copied().unwrap_or(0)
     }
 
     /// Pulses the chip's reset pin (`RESET`): every register returns to its power-on state,
@@ -141,6 +171,28 @@ mod tests {
         let mut chip = Lms7002m::new(0);
         chip.transact(WRITE | u32::from(VERSION) << 16);
         assert_eq!(chip.reg(VERSION), 0x3840);
+    }
+
+    #[test]
+    fn comparators_answer_only_with_a_reference_and_keep_their_other_bits() {
+        // CGEN at 90 * 26 MHz; cap 0 is far too fast for it.
+        let program = |chip: &mut Lms7002m| {
+            chip.write(0x0088, 89 << 4);
+            chip.write(0x008b, 0);
+            chip.write(0x008c, 0x0f0f);
+        };
+        let mut plain = Lms7002m::new(0);
+        program(&mut plain);
+        assert_eq!(plain.transact(0x008c << 16), 0x0f0f, "read as stored");
+
+        let mut clocked = Lms7002m::new(0).with_reference(26_000_000);
+        program(&mut clocked);
+        clocked.write(0x008b, 255 << 1);
+        assert_eq!(
+            clocked.transact(0x008c << 16),
+            0x3f0f,
+            "the slowest code reads high (both comparators) over the stored bits"
+        );
     }
 
     #[test]
