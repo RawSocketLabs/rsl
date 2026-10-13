@@ -17,7 +17,9 @@
 
 use std::io;
 
-pub use rsl_lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxFill};
+pub use rsl_lowlevel::{
+    Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxCommit, TxFill,
+};
 
 use crate::portable::error::Failure;
 

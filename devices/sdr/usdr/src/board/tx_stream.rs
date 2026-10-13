@@ -20,7 +20,7 @@ use super::stream::{CHUNK_SAMPLES, MAX_HOST_SAMPLE_BYTES};
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{self, MAX_TX_PACKET_BYTES, MAX_TX_TIMESTAMP, Phy, SyncTrigger, TxCoreStatus};
-use crate::lowlevel::{Bus, BusError};
+use crate::lowlevel::{Bus, BusError, TxCommit};
 use crate::stream::{
     HostFormat, HostSample, StreamTime, SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry,
     WireFormat,
@@ -134,7 +134,8 @@ impl Board {
             .checked_mul(fpga::TX_SAMPLE_BYTES)
             .filter(|&bytes| bytes <= MAX_TX_PACKET_BYTES)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
-        bus.tx_stream_open(block_bytes).map_err(Error::Stream)?;
+        bus.tx_stream_open(block_bytes, fpga::TX_SAMPLE_BYTES)
+            .map_err(Error::Stream)?;
         self.group(mode).tx = Some(TxStream {
             samples_per_packet,
             host,
@@ -179,8 +180,9 @@ impl Board {
     /// Sends one packet: the front of each channel's buffer, all of it, waiting up to
     /// `timeout` for a transport buffer, to play at `time` or, with `None`, as soon as it
     /// reaches the core (`_sfetrx4_stream_send`). The samples are converted to the wire
-    /// format while the transport lends the buffer, through a bounded scratch. Returns
-    /// the core's telemetry when the transport had status words for the buffer.
+    /// format while the transport lends the buffer, through a bounded scratch; the packet
+    /// is then announced at the core's registers unless the transport framed it (USB).
+    /// Returns the core's telemetry when the transport had status words for the buffer.
     ///
     /// On a timeout, libusdr reads the core's status words for its log; so does this.
     pub(crate) fn send<S: HostSample>(
@@ -228,7 +230,7 @@ impl Board {
         let mut status = None;
         let mut written = 0;
         let bus = self.bus.as_mut();
-        let sent = bus.tx_stream_send(timeout, &mut |buffer, words| {
+        let sent = bus.tx_stream_send(timeout, stamp, &mut |buffer, words| {
             status = words;
             let Some(wire) = buffer.get_mut(..wire_bytes) else {
                 return 0;
@@ -237,23 +239,25 @@ impl Board {
             written = wire_bytes;
             wire_bytes
         });
-        match sent {
-            Ok(()) => {}
+        let commit = match sent {
+            Ok(commit) => commit,
             Err(BusError::Timeout) => {
                 let words = fpga::read_tx_status(bus)?;
                 warn!(status = ?words, "no TX buffer freed in time");
                 return Err(Error::Timeout);
             }
             Err(other) => return Err(Error::Stream(other)),
-        }
+        };
         if written != wire_bytes {
             return Err(Error::Stream(BusError::Unsupported(
                 "TX buffer shorter than the stream's packet",
             )));
         }
         let telemetry = status.map(|words| stream.account(words));
-        let count = u32::try_from(samples.len()).expect("invariant: at most one packet");
-        fpga::push_tx(bus, count, stamp)?;
+        if commit == TxCommit::Registers {
+            let count = u32::try_from(samples.len()).expect("invariant: at most one packet");
+            fpga::push_tx(bus, count, stamp)?;
+        }
         Ok(telemetry)
     }
 }

@@ -26,7 +26,7 @@ mod sequence;
 
 pub use address::{I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
 #[cfg(feature = "std")]
-pub use bus::{Bus, BusError, TxFill, run_sequence};
+pub use bus::{Bus, BusError, TxCommit, TxFill, run_sequence};
 pub use register::{IndexedRegister, Register};
 pub use sequence::{
     Access, FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte,

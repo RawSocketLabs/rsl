@@ -119,33 +119,45 @@ pub trait Bus: Send {
         Err(BusError::Unsupported("RX streaming"))
     }
 
-    /// Sets up transport buffers for TX blocks of up to `block_bytes` (the transport's
-    /// `stream_initialize` for the TX stream). The driver has already configured the
-    /// engine's registers.
+    /// Sets up transport buffers for TX blocks of up to `block_bytes`, each sample taking
+    /// `sample_bytes` across all channels (the transport's `stream_initialize` for the TX
+    /// stream, with libusdr's `block_size` and `bits_per_sym` / 8). The driver has already
+    /// configured the engine's registers.
     ///
     /// The default supports no TX streaming.
     ///
     /// # Errors
     ///
     /// [`BusError::Unsupported`] by default; any transport failure.
-    fn tx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
-        let _ = block_bytes;
+    fn tx_stream_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        let _ = (block_bytes, sample_bytes);
         Err(BusError::Unsupported("TX streaming"))
     }
 
     /// Waits up to `timeout` for a free TX buffer and lends it to `fill` (the transport's
     /// `send_dma_get`), with the four status words the transport has for this buffer, if
     /// any; `fill` writes the block from the buffer's start and returns its length in
-    /// bytes (see [`TxFill`]). Telling the gateware the block is there is the driver's,
-    /// through its registers, unless the transport frames it (libusdr's `soft_tx_commit`,
-    /// which a commit may call).
+    /// bytes (see [`TxFill`]). Then commits the block (`send_dma_commit`), to play at
+    /// `time` in samples or, with `None`, as soon as it reaches the gateware.
+    ///
+    /// Who tells the gateware the block is there depends on the transport, as in
+    /// libusdr, and the result says which: [`TxCommit::Registers`] leaves it to the
+    /// driver, through the TX core's registers (libusdr's `soft_tx_commit`, which the
+    /// `PCIe` transport's commit calls); [`TxCommit::Framed`] means the transport framed
+    /// the block with its length and `time` and queued it (USB), and the driver writes
+    /// nothing more.
     ///
     /// # Errors
     ///
     /// [`BusError::Timeout`] if no buffer frees in time; [`BusError::Unsupported`] by
     /// default; any transport failure.
-    fn tx_stream_send(&mut self, timeout: Duration, fill: &mut TxFill<'_>) -> Result<(), BusError> {
-        let _ = (timeout, fill);
+    fn tx_stream_send(
+        &mut self,
+        timeout: Duration,
+        time: Option<u64>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<TxCommit, BusError> {
+        let _ = (timeout, time, fill);
         Err(BusError::Unsupported("TX streaming"))
     }
 
@@ -165,6 +177,19 @@ pub trait Bus: Send {
 /// one whose gateware learns it from the driver's registers may only check it against
 /// the buffer.
 pub type TxFill<'a> = dyn FnMut(&mut [u8], Option<[u32; 4]>) -> usize + 'a;
+
+/// Who tells the gateware a block [`Bus::tx_stream_send`] committed is there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[must_use]
+pub enum TxCommit {
+    /// The driver, through the TX core's registers: the transport only handed the
+    /// buffer over (libusdr's `PCIe` commit, which calls back `soft_tx_commit`).
+    Registers,
+
+    /// The transport, which framed the block with its length and time and queued it
+    /// (libusdr's USB commit); the driver writes nothing more.
+    Framed,
+}
 
 /// Runs a portable register sequence to its end over `bus`, one action at a time: the
 /// blocking executor, so the sequence's operations reach the bus exactly as written.
