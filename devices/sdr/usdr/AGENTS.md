@@ -28,13 +28,14 @@ frequency, gains, path and corrections, the stream group
 `ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `send`/`send_with_stat`
 from those host formats to `ci16` wire on TX channel 0 with timestamps and telemetry,
 `set_tx_mute`, `stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16
-shim) over any streaming `Bus` (TX over the sim and PCIe; USB TX not ported), the TX
+shim) over any streaming `Bus` (TX over the sim, PCIe and USB), the TX
 controls (frequency, path, bandwidth, gains, corrections, constant generator), and the
 PCIe transport (feature `pcie`; untested on hardware). USB
 register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
 USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
-transport's 16-byte trailer. Hardware operation remains unqualified. Added beyond libusdr: the
+transport's 16-byte trailer; USB TX up to 32 on endpoint 0x03, each block behind its
+16-byte header, with the TX core's status read every 64th send. Hardware operation remains unqualified. Added beyond libusdr: the
 thermal policy (`src/thermal.rs`), which gates start-up before anything is powered and has
 a 110 °C hard stop no policy can lift. Parity tests strip its TMP114 temperature reads, an
 intentional addition.
@@ -178,8 +179,16 @@ Each layer calls only the ones below it.
   USB's simple-I²C LUT/control sequence is checked against the actual C helpers in
   `oracle/tests/usb_i2c_parity.rs`; USB framing/router fixtures cite the same PIN.
   `oracle/tests/usb_rx_parity.rs` compares RX payload/OOB and lifecycle against compiled,
-  mechanically exported C helpers (`vendor.sh --usb-rx-only` refreshes them without
-  changing the PIN). It replaces only the host-buffer boundary, not C trailer parsing.
+  mechanically exported C helpers (`vendor.sh --usb-only` refreshes them, and the TX
+  ones, without changing the PIN). It replaces only the host-buffer boundary, not C
+  trailer parsing. `oracle/tests/usb_tx_parity.rs` does the same for TX: block limits,
+  header bytes for full and partial blocks at every time and host format, and the
+  throttled status reads, over a fake buffer and register boundary; libusdr's own
+  `usb_async_start` statistics lines come along verbatim. The bus seam's `TxCommit`
+  says who announces a block: USB frames it, so the driver writes no push registers.
+  USB TX fails a stream on a failed transfer (libusdr loses the buffer silently) and
+  refuses commits of no bytes, more than a block or part samples, which the driver
+  never makes.
   Unlike C's discard-buffer/autorestart scheme, RX retains eight bounded transfers and
   requeues each after consumption, leaving gateware to report backpressure losses.
   USB RX fails closed on partial/malformed blocks rather than exposing stale bytes;
@@ -213,8 +222,9 @@ Each layer calls only the ones below it.
   (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`, `set_tx_gain`,
   `set_tx_dc_offset`, `set_tx_iq_correction`, `set_tx_constant`) and TX streaming on the
   original TX core (`Device::send`, `send_with_stat`, `set_tx_mute`; `oracle/tests/
-  tx_stream_parity.rs`); USB TX and the extended TX core are not, and the antenna-timing
-  mockup gets no method.
+  tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`); the extended TX core
+  is not, nor are native (`NativeUsb`) stream handles, and the antenna-timing mockup gets
+  no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is
