@@ -9,7 +9,7 @@
 //! The driver keeps these sequences private, so the test compiles its `src/portable` tree
 //! directly, as its `no_std` witness does.
 
-#[allow(
+#[expect(
     dead_code,
     reason = "the board sequences and helpers the chip sweeps do not use"
 )]
@@ -271,7 +271,7 @@ type SysrefSetup = (bool, SysrefModeCode, u64, u64);
     reason = "the sweep's tables read best beside the loops over them"
 )]
 fn lmx1204_solutions_and_lock_waits_match_libusdr_across_modes() {
-    let clkins: [u64; 12] = [
+    let clkins: [u64; 13] = [
         299_999_999,
         300_000_000,
         500_000_000,
@@ -284,9 +284,11 @@ fn lmx1204_solutions_and_lock_waits_match_libusdr_across_modes() {
         8_000_000_000,
         12_800_000_000,
         12_800_000_001,
+        // 2^33: a 1 Hz SYSREF needs a divider of 2^32, which C's `(unsigned)` wraps to 0.
+        8_589_934_592,
     ];
     // libusdr divides by a pulser's or generator's zero-hertz output; none is swept.
-    let sysrefs: [SysrefSetup; 7] = [
+    let sysrefs: [SysrefSetup; 9] = [
         (false, SysrefModeCode::Continuous, 0, 0),
         (true, SysrefModeCode::Continuous, 3_125_000, 25_000_000),
         (true, SysrefModeCode::Continuous, 25_000_000, 0),
@@ -294,6 +296,9 @@ fn lmx1204_solutions_and_lock_waits_match_libusdr_across_modes() {
         (true, SysrefModeCode::Pulser, 1_000_000, 0),
         (true, SysrefModeCode::Repeater, 10_000_000, 10_000_000),
         (true, SysrefModeCode::Repeater, 10_000_000, 20_000_000),
+        (true, SysrefModeCode::Continuous, 1, 0),
+        // No pre-divider leaves a divider within 4095: libusdr carries on past the last.
+        (true, SysrefModeCode::Continuous, 50_000, 0),
     ];
     let all = Channel {
         enabled: true,
