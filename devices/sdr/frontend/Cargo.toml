@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
+rsl-lmk05318.workspace = true
 rsl-lowlevel.workspace = true
 thiserror = { workspace = true, optional = true }
 

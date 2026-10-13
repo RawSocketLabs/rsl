@@ -40,7 +40,7 @@ def fixture():
         LOWLEVEL: Package("rsl-lowlevel", set()),
         LP8758: Package("rsl-lp8758", {BNB, LOWLEVEL}),
         LMK05318: Package("rsl-lmk05318", {BNB}),
-        FRONTEND: Package("rsl-sdr-frontend", {BNB, LOWLEVEL}),
+        FRONTEND: Package("rsl-sdr-frontend", {BNB, LMK05318, LOWLEVEL}),
         "devices/sdr/usdr": Package("rsl-usdr", {BNB, FRONTEND, LMK05318, LOWLEVEL, LP8758,
                                                  "devices/sdr/usdr/sim"}),
         "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
@@ -235,7 +235,7 @@ class SelectionTests(unittest.TestCase):
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "xsdr-portable"} <= set(release["profiles"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
-                         {LOWLEVEL, LP8758, LMS7002M, FRONTEND})
+                         {LOWLEVEL, LP8758, LMS7002M, FRONTEND, LMK05318})
         graph = fixture()
         del graph[XSDR_PORTABLE]
         with self.assertRaisesRegex(ValueError, "registered portable fixture"):
@@ -338,7 +338,7 @@ class SelectionTests(unittest.TestCase):
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "lsdr-portable"} <= set(release["profiles"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
-                         {LOWLEVEL, FRONTEND})
+                         {LOWLEVEL, FRONTEND, LMK05318})
         graph = fixture()
         del graph[LSDR_PORTABLE]
         with self.assertRaisesRegex(ValueError, "registered portable fixture"):
@@ -460,10 +460,12 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(plan["profiles"], [])
         self.assertFalse(plan["full"])
 
-    def test_the_lmk05318_chip_crate_reruns_both_of_its_drivers_and_their_oracles(self):
+    def test_the_lmk05318_chip_crate_reruns_its_drivers_and_their_oracles(self):
         plan = planned([f"{LMK05318}/src/plan.rs"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-lmk05318", "rsl-pe-sync", "rsl-usdr"])
+        # The front-end probe checks SimpleSync's LMK05318 ID, so its three drivers rerun.
+        self.assertEqual(plan["packages"], ["rsl-lmk05318", "rsl-lsdr", "rsl-pe-sync",
+                                            "rsl-sdr-frontend", "rsl-usdr", "rsl-xsdr"])
         self.assertTrue({"usdr-oracle", "pe-sync-oracle", "pe-sync-portable"}
                         <= set(plan["profiles"]))
         self.assertNotIn("no-std", plan["profiles"])

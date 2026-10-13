@@ -91,6 +91,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "rsl-lms7002m"
 version = "0.0.0"
 dependencies = [
@@ -122,6 +129,7 @@ name = "rsl-sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "rsl-lmk05318",
  "rsl-lowlevel",
  "thiserror",
 ]

@@ -14,14 +14,6 @@ use crate::gpio::{FrontEndGpio, GpioCommand, Pin, PinMode};
 /// The clock synchronizer (`I2C_ADDR_LMK`).
 pub const LMK05318: I2cAddr = I2cAddr::new(FRONT_END_BUS, 0x65);
 
-/// The synchronizer's name in errors.
-const CHIP: &str = "LMK05318";
-
-/// The LMK05318's identification bytes from address 0, in wire order, as
-/// `lmk05318_create` checks them. A copy of the four bytes `rsl-usdr`'s LMK05318 driver
-/// checks too, kept here because the board's probe needs only them.
-const ID: [u8; 4] = [0x10, 0x0b, 0x35, 0x42];
-
 /// The clock tree's power enable (`GPIO_ENCLKPWR`).
 const EN_CLOCK_POWER: Pin = 5;
 /// The GPS module's enable (`GPIO_ENGPS`).
@@ -56,5 +48,5 @@ const POWER_UP: Duration = Duration::from_millis(50);
 pub(crate) fn detect(bus: &mut dyn Bus) -> Result<bool, Error> {
     FrontEndGpio::run(bus, &SETUP)?;
     bus.sleep(POWER_UP);
-    Ok(clock_id::read(bus, LMK05318, CHIP)? == ID)
+    Ok(clock_id::read(bus, LMK05318, rsl_lmk05318::NAME)? == rsl_lmk05318::ID)
 }

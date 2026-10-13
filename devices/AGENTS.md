@@ -38,7 +38,8 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   `DACx0501`) sit in `rsl-sdr-frontend` until a driver needs one directly (the XTRX's
   DAC80501 trim would move it to `sdr/chips/dac80501`).
 - A chip drivers of both kinds use stays under the kind that used it first:
-  `sdr/chips/lmk05318` (`rsl-lmk05318`) serves the uSDR's front ends and PE_SYNC.
+  `sdr/chips/lmk05318` (`rsl-lmk05318`) serves the uSDR's front ends and PE_SYNC (and
+  `rsl-sdr-frontend`'s `SimpleSync` ID check).
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `rsl-lms7002m` ports
   libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose

@@ -3372,6 +3372,7 @@ name = "rsl-sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "rsl-lmk05318",
  "rsl-lowlevel",
  "thiserror 2.0.21",
 ]

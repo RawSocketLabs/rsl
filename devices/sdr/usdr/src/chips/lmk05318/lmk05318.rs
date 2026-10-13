@@ -43,8 +43,7 @@ impl Lmk05318 {
     /// The chip's name in errors.
     pub(crate) const NAME: &'static str = "LMK05318";
 
-    /// The identification bytes from address 0, in wire order. `rsl-sdr-frontend`'s
-    /// `SimpleSync` probe checks a copy of them.
+    /// The identification bytes from address 0, in wire order.
     pub(crate) const ID: [u8; 4] = [0x10, 0x0b, 0x35, 0x42];
 
     /// How long a lock wait sleeps between polls (`usleep(100)`).
