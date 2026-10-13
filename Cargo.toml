@@ -30,7 +30,8 @@ members = [
     # pure-Rust LMS7 family (XSDR/XTRX) driver, first slice, and its board simulator
     "devices/sdr/xsdr",
     "devices/sdr/xsdr/sim",
-    # LSDr (m2_da09_4_ad45_2) board simulator; its driver is not yet ported
+    # pure-Rust LSDr (m2_da09_4_ad45_2) driver, first slice, and its board simulator
+    "devices/sdr/lsdr",
     "devices/sdr/lsdr/sim",
     # PE_SYNC clock-distribution board simulator; its driver is not yet ported
     "devices/sync/pe_sync/sim",
@@ -103,6 +104,7 @@ rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
 rsl-xsdr-sim = { path = "devices/sdr/xsdr/sim" }
+rsl-lsdr-sim = { path = "devices/sdr/lsdr/sim" }
 rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 

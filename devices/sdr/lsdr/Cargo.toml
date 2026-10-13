@@ -1,0 +1,20 @@
+[package]
+name = "rsl-lsdr"
+version = "0.0.0"
+description = "Pure-Rust driver for libusdr's LSDr (m2_da09_4_ad45_2), the receive-only ADS42LBx9 ADC board."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+rsl-lowlevel = { workspace = true, features = ["std"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+rsl-lsdr-sim.workspace = true
+
+[lints]
+workspace = true

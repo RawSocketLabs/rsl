@@ -3295,6 +3295,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lsdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+ "rsl-lsdr-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-lsdr-sim"
 version = "0.0.0"
 dependencies = [
