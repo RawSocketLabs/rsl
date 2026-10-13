@@ -68,7 +68,8 @@ impl NativeUsb {
     /// followed on the wire by the transport's 16-byte trailer) and priming its eight
     /// transfers; [`poll`](Self::poll) reports [`NativeEvent::RxOpened`], then each block
     /// as [`NativeEvent::Received`]. It configures no stream engine: the gateware must
-    /// already be producing blocks of that size.
+    /// already be producing blocks of that size, as after
+    /// [`start_create_streams`](Self::start_create_streams), which opens RX itself.
     ///
     /// Blocks are copied off their transfers on the worker, which requeues each at once;
     /// at most eight copies wait for [`poll`](Self::poll), after which the device's ring
@@ -77,11 +78,12 @@ impl NativeUsb {
     /// # Errors
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] unless RX
-    /// is closed; [`Error::Stream`] if the handle is closed.
+    /// is closed, or while a stream group exists; [`Error::Stream`] if the handle is closed.
     pub fn start_rx_open(&mut self, block_bytes: u32) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
+        self.refuse_in_group()?;
         if self.rx != StreamState::Closed {
             return Err(Error::AlreadyStreaming);
         }
@@ -95,30 +97,31 @@ impl NativeUsb {
     ///
     /// # Errors
     ///
-    /// [`Error::Busy`] if an operation is pending; [`Error::Stream`] if the handle is closed.
+    /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
+    /// stream group exists (stop it instead); [`Error::Stream`] if the handle is closed.
     pub fn start_rx_close(&mut self) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
-        self.start_stream(StreamOperation::RxClose, StreamCommand::RxClose)?;
-        self.rx = StreamState::Closed;
-        self.adapter.want_rx(false);
-        Ok(())
+        self.refuse_in_group()?;
+        self.start_stream(StreamOperation::RxClose, StreamCommand::RxClose)
     }
 
     /// Starts opening TX endpoint 0x03 for blocks of up to `block_bytes` of samples of
     /// `sample_bytes` (64 to 126976 bytes, as libusdr); [`poll`](Self::poll) reports
     /// [`NativeEvent::TxOpened`]. Transfers are allocated as sends need them, up to 32 in
-    /// flight.
+    /// flight. It configures no stream engine;
+    /// [`start_create_streams`](Self::start_create_streams) opens TX itself.
     ///
     /// # Errors
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] unless TX
-    /// is closed; [`Error::Stream`] if the handle is closed.
+    /// is closed, or while a stream group exists; [`Error::Stream`] if the handle is closed.
     pub fn start_tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
+        self.refuse_in_group()?;
         if self.tx != StreamState::Closed {
             return Err(Error::AlreadyStreaming);
         }
@@ -179,14 +182,14 @@ impl NativeUsb {
     ///
     /// # Errors
     ///
-    /// [`Error::Busy`] if an operation is pending; [`Error::Stream`] if the handle is closed.
+    /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
+    /// stream group exists (stop it instead); [`Error::Stream`] if the handle is closed.
     pub fn start_tx_close(&mut self) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
-        self.start_stream(StreamOperation::TxClose, StreamCommand::TxClose)?;
-        self.tx = StreamState::Closed;
-        Ok(())
+        self.refuse_in_group()?;
+        self.start_stream(StreamOperation::TxClose, StreamCommand::TxClose)
     }
 
     /// Hands a stream command to the worker as the operation in flight.
@@ -195,7 +198,7 @@ impl NativeUsb {
         operation: StreamOperation,
         command: StreamCommand,
     ) -> Result<(), Error> {
-        self.adapter.command(command).map_err(Error::Stream)?;
+        self.begin_stream(operation, command)?;
         self.pending = Some(Pending::Stream(operation));
         Ok(())
     }
@@ -206,48 +209,73 @@ impl NativeUsb {
             self.pending = Some(Pending::Stream(operation));
             return None;
         };
-        let result = result.map_err(Error::Stream);
-        let opened = |result: &Result<(), Error>| {
-            if result.is_ok() {
-                StreamState::Open
-            } else {
-                StreamState::Failed
-            }
-        };
-        let closed = |result: &Result<(), Error>| {
-            if result.is_ok() {
-                StreamState::Closed
-            } else {
-                StreamState::Failed
-            }
-        };
+        let result = self.settle_stream(operation, result);
         Some(match operation {
+            StreamOperation::RxOpen => NativeEvent::RxOpened(result),
+            StreamOperation::RxClose => NativeEvent::RxClosed(result),
+            StreamOperation::TxOpen => NativeEvent::TxOpened(result),
+            StreamOperation::TxClose => NativeEvent::TxClosed(result),
+        })
+    }
+
+    /// Hands `command` to the worker for `operation`; a close takes its stream out of
+    /// service at once.
+    pub(super) fn begin_stream(
+        &mut self,
+        operation: StreamOperation,
+        command: StreamCommand,
+    ) -> Result<(), Error> {
+        self.adapter.command(command).map_err(Error::Stream)?;
+        match operation {
+            StreamOperation::RxClose => {
+                self.rx = StreamState::Closed;
+                self.adapter.want_rx(false);
+            }
+            StreamOperation::TxClose => self.tx = StreamState::Closed,
+            StreamOperation::RxOpen | StreamOperation::TxOpen => {}
+        }
+        Ok(())
+    }
+
+    /// Records the worker's answer to a stream command in the stream's state.
+    pub(super) fn settle_stream(
+        &mut self,
+        operation: StreamOperation,
+        result: Result<(), BusError>,
+    ) -> Result<(), Error> {
+        let result = result.map_err(Error::Stream);
+        let (opened, closed) = if result.is_ok() {
+            (StreamState::Open, StreamState::Closed)
+        } else {
+            (StreamState::Failed, StreamState::Failed)
+        };
+        match operation {
             StreamOperation::RxOpen => {
-                self.rx = opened(&result);
+                self.rx = opened;
                 if result.is_ok() {
                     self.adapter.want_rx(true);
                 }
-                NativeEvent::RxOpened(result)
             }
-            StreamOperation::RxClose => {
-                self.rx = closed(&result);
-                NativeEvent::RxClosed(result)
-            }
-            StreamOperation::TxOpen => {
-                self.tx = opened(&result);
-                NativeEvent::TxOpened(result)
-            }
-            StreamOperation::TxClose => {
-                self.tx = closed(&result);
-                NativeEvent::TxClosed(result)
-            }
-        })
+            StreamOperation::RxClose => self.rx = closed,
+            StreamOperation::TxOpen => self.tx = opened,
+            StreamOperation::TxClose => self.tx = closed,
+        }
+        result
+    }
+
+    /// Refuses a transport-level open or close while a stream group holds the streams:
+    /// the group's own operations open and close them.
+    fn refuse_in_group(&self) -> Result<(), Error> {
+        if self.group.is_some() {
+            return Err(Error::AlreadyStreaming);
+        }
+        Ok(())
     }
 
     /// The worker's answer to the outstanding stream command, or the failure that ended
     /// the session; `None` while it is outstanding. A late acquisition for a send that
     /// timed out is passed over: its transfer stays held for the next send.
-    fn command_result(&mut self) -> Option<Result<(), BusError>> {
+    pub(super) fn command_result(&mut self) -> Option<Result<(), BusError>> {
         loop {
             match self.adapter.try_outcome() {
                 Some(StreamOutcome::Command(result)) => return Some(result),

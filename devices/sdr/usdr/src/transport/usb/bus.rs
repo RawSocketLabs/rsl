@@ -54,7 +54,7 @@ pub(super) fn tx_status_failure(error: BusError) -> BusError {
     }
 }
 /// The uSDR's index/data window, `s_params_m2_lm6_1_rev000`.
-const WINDOW: Window = Window {
+pub(super) const WINDOW: Window = Window {
     index: 6,
     first: 0x1_0000,
 };
@@ -386,10 +386,10 @@ impl UsbBus {
         self.ready().map_err(Error::Open)?;
         let mut identity = IdentityRead::default();
         run_sequence(&mut self, &mut identity)?;
-        let revision = identity
+        let identity = identity
             .identity()
-            .expect("invariant: a finished identity sequence read both words")
-            .revision;
+            .expect("invariant: a finished identity sequence read both words");
+        let revision = identity.revision;
         if !(1..=3).contains(&revision) {
             return Err(Error::UnsupportedRevision(revision));
         }
@@ -399,6 +399,7 @@ impl UsbBus {
             next_sequence: self.next_sequence,
             next_id: self.next_id,
             rev3: revision == 3,
+            extended_tx_core: identity.has_extended_tx_core(),
             tx_status: self.tx_status,
         };
         Ok((session, self.io))

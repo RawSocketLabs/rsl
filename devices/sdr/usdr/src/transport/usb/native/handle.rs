@@ -1,7 +1,9 @@
 //! The public reactor-driven handle over the native adapter: one generic executor runs the
-//! TMP114 read and portable sequences (gateware identity, reference-clock switch), and the
-//! RX and TX streams' operations (`stream`).
+//! TMP114 read and portable sequences (gateware identity, reference-clock switch), the RX
+//! and TX streams' operations at the transport (`stream`), and the stream group's create,
+//! start and stop, which compose both (`group`).
 
+mod group;
 mod stream;
 
 use std::fmt;
@@ -12,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use mio::{Registry, Token, Waker};
 
+use self::group::{GroupRun, NativeGroup};
 use self::stream::{Send, StreamOperation};
 use super::super::i2c::I2cTransaction;
 use super::super::machine::{Machine, Output, Step};
@@ -19,16 +22,18 @@ use super::super::protocol::I2cCache;
 use super::super::tx::TxStatus;
 use super::adapter::Adapter;
 use super::backend::Backend;
+use super::window::Windowed;
 use crate::board::Board;
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
-use crate::fpga::IdentityRead;
+use crate::fpga::{self, IdentityRead};
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
 use crate::portable::si5332::ClockSequence;
 use crate::portable::si5332::sequence::SWITCH_WRITES;
+use crate::portable::stream::EngineSequence;
 use crate::portable::usb::register::RegisterTransaction;
 use crate::reference::ReferenceClock;
 
@@ -48,6 +53,9 @@ pub(in super::super) struct Session {
     /// Revision 3, read from the hardware ID at hand-over: decides which Si5332 input
     /// [`ReferenceClock::Board`] selects.
     pub rev3: bool,
+    /// The gateware's TX core is the extended one, read from the hardware ID at hand-over:
+    /// a stream group refuses TX on it before any I/O, as the blocking device does.
+    pub extended_tx_core: bool,
     /// The TX core's throttled status words, per device as in libusdr.
     pub tx_status: TxStatus,
 }
@@ -85,6 +93,18 @@ pub enum NativeEvent {
     /// TX closed: every transfer, sent or not, was cancelled and came back. On failure the
     /// endpoint stays held; close again.
     TxClosed(Result<(), Error>),
+    /// The stream group's create finished: each stream's engine is configured and its
+    /// transport open, or the first failure. As on the blocking device, a stream whose
+    /// transport opened stays in the group after a later failure, until the group stops.
+    StreamsCreated(Result<(), Error>),
+    /// The stream group started, or failed to.
+    StreamsStarted(Result<(), Error>),
+    /// The RX DMA engine was told the host is ready, or the write failed.
+    RxReady(Result<(), Error>),
+    /// The stream group stopped: every step was attempted and the group is gone; the first
+    /// failure, if any. A stream whose transport failed to close stays held; close it
+    /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`].
+    StreamsStopped(Result<(), Error>),
 }
 
 /// One RX block a [`NativeUsb`] received, copied off its transfer, which was then
@@ -111,6 +131,8 @@ enum Pending {
     Stream(StreamOperation),
     /// A TX send.
     Send(Send),
+    /// A stream-group operation's steps.
+    Group(GroupRun),
 }
 
 /// The sequences the handle runs, and how each reports its end.
@@ -119,24 +141,56 @@ enum SequenceOperation {
     Identity(IdentityRead),
     /// The Si5332 reference switch: state waits, polls and writes.
     ReferenceClock(ClockSequence<SWITCH_WRITES>),
+    /// A stream group's engine registers, through the index window. A group step.
+    Engine(Windowed<EngineSequence>),
+    /// A TX create's gateware read, then its minimum-build check. A group step.
+    TxGate(IdentityRead),
+}
+
+/// Where a sequence is after an outcome.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "moved straight back into the pending operation; boxing would allocate per action"
+)]
+enum Progress {
+    /// It waits for its current action.
+    Running(SequenceOperation, Wait),
+    /// It ended with this result.
+    Finished(SequenceOperation, Result<(), Error>),
 }
 
 impl SequenceOperation {
     /// The sequence's next action, as [`Sequence::next`].
     fn next(&self) -> Option<SequenceAction> {
         match self {
-            Self::Identity(identity) => identity.next(),
+            Self::Identity(identity) | Self::TxGate(identity) => identity.next(),
             Self::ReferenceClock(switch) => switch.next(),
+            Self::Engine(engine) => engine.next(),
         }
     }
 
     /// Reports an action's outcome, as [`Sequence::complete`], with its register context.
     fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), Error> {
         match self {
-            Self::Identity(identity) => identity.complete(result),
+            Self::Identity(identity) | Self::TxGate(identity) => identity.complete(result),
             Self::ReferenceClock(switch) => switch.complete(result),
+            Self::Engine(engine) => engine.complete(result),
         }
         .map_err(Error::from)
+    }
+
+    /// A group step's result for a run that ended with `result`: a TX gate also refuses
+    /// gateware older than libusdr's minimum, as the blocking TX create does.
+    fn step_result(&self, result: Result<(), Error>) -> Result<(), Error> {
+        let Self::TxGate(identity) = self else {
+            return result;
+        };
+        result?;
+        let build = identity
+            .identity()
+            .expect("invariant: a finished identity sequence read both words")
+            .gateware_build;
+        fpga::check_tx_gateware(build)
     }
 
     /// Reports `error` as the failure of the next register access, with that access's chip
@@ -164,6 +218,9 @@ impl SequenceOperation {
                     .expect("invariant: a finished identity sequence read both words")
             })),
             Self::ReferenceClock(_) => NativeEvent::ReferenceClock(result),
+            Self::Engine(_) | Self::TxGate(_) => {
+                unreachable!("invariant: group steps end through their group's run")
+            }
         }
     }
 }
@@ -195,10 +252,12 @@ enum StreamState {
 /// `mio`), made by [`UsbBus::into_native`](super::super::UsbBus::into_native).
 ///
 /// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
-/// the reference clock, and runs the RX and TX streams at the transport (the blocks on
-/// endpoints 0x83 and 0x03, framed and throttled as the blocking bus frames them). It
-/// powers nothing and configures no stream engine, so it applies no thermal policy and
-/// streams only what the gateware was already set to stream. The reactor thread only
+/// the reference clock, creates, starts and stops a stream group's engine registers as
+/// [`Device`](crate::Device)'s stream group does (the same portable sequences), and runs
+/// the RX and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed
+/// and throttled as the blocking bus frames them). It powers nothing, so it applies no
+/// thermal policy, and it neither powers nor calibrates the RF chains nor writes their DSP
+/// corrections: those stay as the blocking device left them. The reactor thread only
 /// registers, schedules and observes; a worker thread owns the USB queues and performs
 /// every USB call, stream cancellation and cleanup included. Waits inside an operation are
 /// deadlines the caller's reactor honours, never sleeps.
@@ -226,6 +285,8 @@ pub struct NativeUsb {
     rx: StreamState,
     /// The TX stream.
     tx: StreamState,
+    /// The stream group, from its first stream's transport open until it stops.
+    group: Option<NativeGroup>,
 }
 
 impl fmt::Debug for NativeUsb {
@@ -234,6 +295,7 @@ impl fmt::Debug for NativeUsb {
             .field("pending", &self.pending.is_some())
             .field("rx", &self.rx)
             .field("tx", &self.tx)
+            .field("group", &self.group)
             .finish_non_exhaustive()
     }
 }
@@ -254,6 +316,7 @@ impl NativeUsb {
             pending: None,
             rx: StreamState::Closed,
             tx: StreamState::Closed,
+            group: None,
         })
     }
 
@@ -318,14 +381,21 @@ impl NativeUsb {
     }
 
     /// Starts a sequence operation's first action, refusing it while another is pending.
-    fn start_sequence(
-        &mut self,
-        mut operation: SequenceOperation,
-        now: Instant,
-    ) -> Result<(), Error> {
+    fn start_sequence(&mut self, operation: SequenceOperation, now: Instant) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
+        let (operation, wait) = self.begin_sequence(operation, now)?;
+        self.pending = Some(Pending::Sequence(operation, wait));
+        Ok(())
+    }
+
+    /// Starts a sequence's first action. A failure to start it ends the session.
+    fn begin_sequence(
+        &mut self,
+        mut operation: SequenceOperation,
+        now: Instant,
+    ) -> Result<(SequenceOperation, Wait), Error> {
         // An empty sequence finishes at the next poll: its passed wait completes nothing,
         // which a sequence ignores.
         let wait = match operation.next().map(|action| self.begin(action, now)) {
@@ -336,8 +406,7 @@ impl NativeUsb {
                 return Err(operation.fail_at_access(error));
             }
         };
-        self.pending = Some(Pending::Sequence(operation, wait));
-        Ok(())
+        Ok((operation, wait))
     }
 
     /// Starts `action`: a machine whose command goes to the worker now, or a wait.
@@ -431,31 +500,45 @@ impl NativeUsb {
             Pending::Sequence(operation, wait) => self.poll_sequence(operation, wait, now),
             Pending::Stream(operation) => self.poll_stream(operation),
             Pending::Send(send) => self.poll_send(send, now),
+            Pending::Group(run) => self.poll_group(run, now),
         }
     }
 
     /// Advances a sequence past its current action, once that has an outcome.
     fn poll_sequence(
         &mut self,
+        operation: SequenceOperation,
+        wait: Wait,
+        now: Instant,
+    ) -> Option<NativeEvent> {
+        match self.progress(operation, wait, now) {
+            Progress::Running(operation, wait) => {
+                self.pending = Some(Pending::Sequence(operation, wait));
+                None
+            }
+            Progress::Finished(operation, result) => Some(operation.finish(result)),
+        }
+    }
+
+    /// Advances a sequence past its current action, if that has an outcome yet, and starts
+    /// its next.
+    fn progress(
+        &mut self,
         mut operation: SequenceOperation,
         mut wait: Wait,
         now: Instant,
-    ) -> Option<NativeEvent> {
+    ) -> Progress {
         let outcome = match &mut wait {
             Wait::Sleep(until) => (now >= *until).then_some(Ok(None)),
             Wait::Transfer(machine) => self.observe(machine, now),
         };
         let Some(outcome) = outcome else {
-            self.pending = Some(Pending::Sequence(operation, wait));
-            return None;
+            return Progress::Running(operation, wait);
         };
         match self.advance(&mut operation, outcome, now) {
-            Ok(Some(wait)) => {
-                self.pending = Some(Pending::Sequence(operation, wait));
-                None
-            }
-            Ok(None) => Some(operation.finish(Ok(()))),
-            Err(error) => Some(operation.finish(Err(error))),
+            Ok(Some(wait)) => Progress::Running(operation, wait),
+            Ok(None) => Progress::Finished(operation, Ok(())),
+            Err(error) => Progress::Finished(operation, Err(error)),
         }
     }
 
@@ -527,6 +610,7 @@ impl NativeUsb {
         match &self.pending {
             Some(Pending::Sequence(_, Wait::Sleep(until))) => Some(*until),
             Some(Pending::Send(send)) => send.deadline().or_else(|| self.adapter.deadline()),
+            Some(Pending::Group(run)) => run.deadline().or_else(|| self.adapter.deadline()),
             _ => self.adapter.deadline(),
         }
     }
@@ -542,6 +626,7 @@ impl NativeUsb {
         self.pending = None;
         self.rx = StreamState::Closed;
         self.tx = StreamState::Closed;
+        self.group = None;
         self.adapter.close()
     }
 

@@ -18,7 +18,7 @@ pub(crate) struct Window {
 
 impl Window {
     /// The data register.
-    const fn data(self) -> u32 {
+    pub(crate) const fn data(self) -> u32 {
         self.index + 1
     }
 }

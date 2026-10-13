@@ -22,6 +22,7 @@ use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
 use crate::lowlevel::{Bus, BusError, TxFill};
 use crate::reference::ReferenceClock;
+use crate::stream::{HostFormat, RxConfig, StreamsConfig, SyncMode, TxConfig, WireFormat};
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
@@ -757,6 +758,7 @@ fn session() -> Session {
         next_sequence: None,
         next_id: 0,
         rev3: true,
+        extended_tx_core: false,
         tx_status: TxStatus::default(),
     }
 }
@@ -1762,4 +1764,220 @@ fn a_failed_status_read_closes_the_handle_and_is_no_full_ring() {
     );
     native_cleanup(&mut native, &mut reactor).unwrap();
     assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+/// The stream engine's share of a blocking trace: what the native group performs. It
+/// leaves out the RF chains' power, calibration and tuning (SPI and I²C), their waits, and
+/// the DSP chains' configuration ports (registers 56 and 57: IQ correction, the TX
+/// constant generator), which need board state the native handle does not hold.
+fn engine_operations(board: &Mutex<SimBoard>, start: usize) -> Vec<Op> {
+    operations(board, start)
+        .into_iter()
+        .filter(|op| match op {
+            Op::RegWrite { addr, .. } => !matches!(addr, 56 | 57),
+            Op::RegRead { .. } => true,
+            Op::Spi { .. } | Op::I2c { .. } | Op::Sleep { .. } => false,
+        })
+        .collect()
+}
+
+/// A 1024-sample `ci16` RX stream on channel 0.
+fn rx_config() -> RxConfig {
+    RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16)
+}
+
+/// A 1024-sample TX stream from `ci16` host buffers.
+fn tx_config() -> TxConfig {
+    TxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16)
+}
+
+/// A tuned board's blocking device, and the board's trace length once tuned: the stream
+/// group's create then finds an RX LO and tunes nothing itself.
+fn tuned_device() -> (Device, Arc<Mutex<SimBoard>>, usize) {
+    let (mut device, board, _) = simulated_device(BoardRevision::Rev3);
+    device.set_rx_sample_rate(20_000_000).unwrap();
+    device.set_rx_frequency(1_000_000_000).unwrap();
+    let start = board.lock().unwrap().trace().len();
+    (device, board, start)
+}
+
+#[test]
+fn a_native_stream_group_writes_the_blocking_groups_engine_registers() {
+    for config in [
+        StreamsConfig::rx(rx_config()),
+        StreamsConfig::tx(tx_config()),
+        StreamsConfig::rx(rx_config())
+            .with_tx(tx_config())
+            .with_sync(SyncMode::All),
+    ] {
+        let (mut device, blocking, start) = tuned_device();
+        device.create_streams(config).unwrap();
+        let created = engine_operations(&blocking, start);
+        let start = blocking.lock().unwrap().trace().len();
+        device.start_streams().unwrap();
+        let started = engine_operations(&blocking, start);
+        let start = blocking.lock().unwrap().trace().len();
+        device.stop_streams().unwrap();
+        let stopped = engine_operations(&blocking, start);
+        let hold = Op::RegWrite {
+            addr: 14,
+            value: 0x8000_0000,
+        };
+        assert!(
+            created.contains(&hold) && !started.is_empty() && !stopped.is_empty(),
+            "{config:?}: the blocking group wrote the engine (sync held, then released)"
+        );
+
+        let (mut reactor, wake) = reactor();
+        let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+        let start = board.lock().unwrap().trace().len();
+        native.start_create_streams(config, Instant::now()).unwrap();
+        expect_event(
+            &mut native,
+            &mut reactor,
+            |event| matches!(event, NativeEvent::StreamsCreated(Ok(()))),
+            "the group is created",
+        );
+        assert_eq!(
+            operations(&board, start),
+            created,
+            "{config:?}: create writes the engine as the blocking group does"
+        );
+        let start = board.lock().unwrap().trace().len();
+        native.start_streams(Instant::now()).unwrap();
+        expect_event(
+            &mut native,
+            &mut reactor,
+            |event| matches!(event, NativeEvent::StreamsStarted(Ok(()))),
+            "the group starts",
+        );
+        assert_eq!(operations(&board, start), started, "{config:?}: start");
+        if config.rx.is_some() {
+            let NativeEvent::Received(Ok(block)) = finish(&mut native, &mut reactor) else {
+                panic!("{config:?}: a started RX stream delivers blocks");
+            };
+            assert_eq!(block.payload.len(), 4096, "one 1024-sample ci16 packet");
+        }
+        let start = board.lock().unwrap().trace().len();
+        native.start_stop_streams(Instant::now()).unwrap();
+        let stopped_event = loop {
+            match finish(&mut native, &mut reactor) {
+                NativeEvent::Received(_) => {}
+                event => break event,
+            }
+        };
+        assert!(
+            matches!(stopped_event, NativeEvent::StreamsStopped(Ok(()))),
+            "{config:?}: the group stops: got {stopped_event:?}"
+        );
+        assert_eq!(operations(&board, start), stopped, "{config:?}: stop");
+        native.close().unwrap();
+        native_cleanup(&mut native, &mut reactor).unwrap();
+    }
+}
+
+#[test]
+fn native_create_refusals_happen_where_the_blocking_groups_do() {
+    // An RX packet the burst plan cannot split fails after the DMA reset; a TX packet over
+    // the core's FIFO after the gateware read and the sync hold.
+    for config in [
+        StreamsConfig::rx(RxConfig::new(0, HostFormat::Ci16, WireFormat::Ci16)),
+        StreamsConfig::tx(TxConfig::new(40_000, HostFormat::Ci16, WireFormat::Ci16)),
+    ] {
+        let (mut device, blocking, start) = tuned_device();
+        let expected = device.create_streams(config).unwrap_err().to_string();
+        let created = engine_operations(&blocking, start);
+
+        let (mut reactor, wake) = reactor();
+        let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+        let start = board.lock().unwrap().trace().len();
+        native.start_create_streams(config, Instant::now()).unwrap();
+        let NativeEvent::StreamsCreated(Err(error)) = finish(&mut native, &mut reactor) else {
+            panic!("{config:?}: the create fails");
+        };
+        assert_eq!(error.to_string(), expected, "{config:?}: the same refusal");
+        assert_eq!(
+            operations(&board, start),
+            created,
+            "{config:?}: at the same point"
+        );
+        assert!(
+            matches!(
+                native.start_streams(Instant::now()),
+                Err(Error::NotStreaming)
+            ),
+            "{config:?}: no stream joined the group"
+        );
+    }
+}
+
+#[test]
+fn group_operations_refuse_before_any_io_as_the_blocking_group_does() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, record, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    let start = board.lock().unwrap().trace().len();
+    assert!(matches!(
+        native.start_streams(Instant::now()),
+        Err(Error::NotStreaming)
+    ));
+    assert!(matches!(
+        native.start_stop_streams(Instant::now()),
+        Err(Error::NotStreaming)
+    ));
+    assert!(matches!(
+        native.start_rx_ready(Instant::now()),
+        Err(Error::NotStreaming)
+    ));
+    let none = StreamsConfig::rx(rx_config());
+    let none = StreamsConfig { rx: None, ..none };
+    assert!(matches!(
+        native.start_create_streams(none, Instant::now()),
+        Err(Error::NoStreams)
+    ));
+    let external = StreamsConfig::rx(rx_config()).with_sync(SyncMode::ExternalAll);
+    assert!(matches!(
+        native.start_create_streams(external, Instant::now()),
+        Err(Error::UnsupportedSync(SyncMode::ExternalAll))
+    ));
+    let twelve = StreamsConfig::tx(TxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci12));
+    assert!(matches!(
+        native.start_create_streams(twelve, Instant::now()),
+        Err(Error::UnsupportedWireFormat(WireFormat::Ci12))
+    ));
+    assert_eq!(operations(&board, start), [], "nothing reached the board");
+    assert_eq!(submits(&record), 0, "nothing reached the worker");
+
+    native
+        .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
+        .unwrap();
+    assert!(matches!(
+        native.start_streams(Instant::now()),
+        Err(Error::Busy)
+    ));
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::StreamsCreated(Ok(()))),
+        "the group is created",
+    );
+    assert!(matches!(
+        native.start_create_streams(StreamsConfig::rx(rx_config()), Instant::now()),
+        Err(Error::AlreadyStreaming)
+    ));
+    assert!(
+        matches!(native.start_rx_close(), Err(Error::AlreadyStreaming)),
+        "the group's streams close with the group"
+    );
+    native.start_rx_ready(Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxReady(Ok(()))),
+        "the host-ready write",
+    );
+    assert_eq!(
+        operations(&board, 0).last(),
+        Some(&Op::RegWrite { addr: 5, value: 4 }),
+        "the DMA control register's ready bit, as Device::set_rx_ready writes it"
+    );
 }

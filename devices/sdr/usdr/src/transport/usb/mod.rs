@@ -40,11 +40,12 @@
 //! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`: an unstable pilot driven by
 //! a caller-owned Mio reactor, with every USB call on a worker thread. It reads the TMP114
 //! and the gateware identity and switches the reference clock, running portable sequences
-//! one transfer or caller-time wait at a time, and opens, receives on, sends on and closes
-//! the RX and TX streams at the transport, through the same `Rx`/`Tx` adapters and send
-//! order as the blocking bus. It takes over the whole device; it powers nothing and
-//! configures no stream engine. `ManagedUsb` drives one on a reactor of its own, on the
-//! calling thread, for callers without an event loop.
+//! one transfer or caller-time wait at a time; creates, starts and stops a stream group's
+//! engine with the blocking device's own sequences; and opens, receives on, sends on and
+//! closes the RX and TX streams at the transport, through the same `Rx`/`Tx` adapters and
+//! send order as the blocking bus. It takes over the whole device; it powers nothing, and
+//! leaves the RF chains as the blocking device set them. `ManagedUsb` drives one on a
+//! reactor of its own, on the calling thread, for callers without an event loop.
 
 mod bus;
 mod i2c;
