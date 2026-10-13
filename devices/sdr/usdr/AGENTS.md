@@ -100,7 +100,7 @@ Each layer calls only the ones below it.
   front end, DMA, sync), the original TX stream core (`tx_stream`), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
-- `src/flash.rs`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
+- `src/flash/`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
   `Device`, nothing powered) and reads the ID and contents; erase and write sit on the
   separate `Programmer` from `Flash::programmer`. Image headers and the update procedure
   are not ported (`PORTING.md`).
