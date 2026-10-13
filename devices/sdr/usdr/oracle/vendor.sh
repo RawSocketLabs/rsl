@@ -3,7 +3,8 @@
 #
 # Usage: vendor.sh [--usb-only] <path-to-usdr-lib-checkout>
 # --usb-only refreshes only the exported USB RX/TX reference functions (libusdr/reference).
-# A full refresh also copies the flash tool, tools/usdr_flash.c (libusdr/tools).
+# A full refresh also copies three tools (libusdr/tools): the flash tool, and
+# usdr_dm_create and usdr_dm_gpsdo, whose generators and discipline loop rsl-usdr ports.
 # Needs git, python3 and PyYAML (upstream's register-header generator).
 set -euo pipefail
 
@@ -94,8 +95,10 @@ if $usb_only; then
     echo "exported USB RX/TX reference at $pin"
     exit 0
 fi
-# The flash tool is evidence too: the oracle runs its update procedure against the sim.
-git -C "$upstream" diff --quiet "$pin" -- src/tools/usdr_flash.c
+# The tools are evidence too: the oracle runs the flash update procedure, the TX
+# generators and the discipline loop against the sim.
+git -C "$upstream" diff --quiet "$pin" -- src/tools/usdr_flash.c src/tools/usdr_dm_create.c \
+    src/tools/usdr_dm_gpsdo.c
 rm -rf "$dest/lib" "$dest/gen" "$dest/tools"
 mkdir -p "$dest/lib" "$dest/gen" "$dest/tools"
 
@@ -129,6 +132,9 @@ done
 # libusdr's flash update tool (MIT), compiled by build.rs with its `main` renamed; not
 # listed in sources.txt, which holds the library.
 cp "$src/tools/usdr_flash.c" "$dest/tools/usdr_flash.c"
+# usdr_dm_create's TX generators and usdr_dm_gpsdo's discipline loop, verbatim; the
+# oracle's shims compile each whole (its `main` renamed) over buffer boundaries.
+cp "$src/tools/usdr_dm_create.c" "$src/tools/usdr_dm_gpsdo.c" "$dest/tools/"
 
 cp "$upstream/LICENSE" "$dest/LICENSE"
 (cd "$dest/lib" && find . -name '*.c' -not -path '*/templates/*' | sed 's|^\./||' | LC_ALL=C sort) > "$dest/sources.txt"
