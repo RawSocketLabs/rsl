@@ -3,7 +3,9 @@
 //! This crate is the only place in the rsl-usdr stack that uses `unsafe`: ioctls against
 //! the driver, the mapped register page and the mapped DMA buffers. It knows the driver's
 //! protocol and nothing about the board beyond the layout the caller passes in;
-//! `rsl-usdr`'s `pcie` feature builds its `Bus` on [`PcieDevice`].
+//! `rsl-usdr`'s `pcie` feature builds its `Bus` on [`PcieDevice`]. The same driver's
+//! XMASS device, the firmware flash of the XMASS board's `PCIe` switch, is
+//! [`XmassDevice`].
 //!
 //! Linux on 64-bit targets only; elsewhere the crate is empty.
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -16,11 +18,15 @@ mod layout;
 mod ring;
 #[cfg(target_os = "linux")]
 mod uapi;
+#[cfg(target_os = "linux")]
+mod xmass;
 
 #[cfg(target_os = "linux")]
 pub use device::{OpenError, PcieDevice, PcieError, TxFill, discover};
 #[cfg(target_os = "linux")]
 pub use layout::{BoardLayout, Core, IndexedSpace, LayoutTooLarge, Stream};
+#[cfg(target_os = "linux")]
+pub use xmass::{XMASS_FLASH_BYTES, XMASS_IDS_BYTES, XmassDevice};
 
 /// The driver's structure sizes, field offsets and request codes as this crate encodes them,
 /// each named by the C expression it stands for. Only with the `test-abi` feature, which
@@ -88,5 +94,9 @@ pub fn abi() -> Vec<(&'static str, u64)> {
         ("PCIE_DRIVER_DMA_ALLOC_OOB", u64::from(uapi::DMA_ALLOC_OOB)),
         ("PCIE_DRIVER_CLAIM_VERSION", u64::from(uapi::CLAIM_VERSION)),
         ("PCIE_DRIVER_DMA_RELEASE", u64::from(uapi::DMA_RELEASE)),
+        ("PCIE_FLASH_READ", u64::from(uapi::FLASH_READ)),
+        ("PCIE_FLASH_ERASE", u64::from(uapi::FLASH_ERASE)),
+        ("PCIE_FLASH_WRITE", u64::from(uapi::FLASH_WRITE)),
+        ("PCIE_GETIDS", u64::from(uapi::GETIDS)),
     ]
 }

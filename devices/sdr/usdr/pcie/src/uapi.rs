@@ -149,6 +149,36 @@ pub(crate) const DMA_RELEASE: Opcode = opcode::write::<u32>(MAGIC, 24);
 /// The interface version this transport speaks (`CLAIM_VERSION`'s argument).
 pub(crate) const INTERFACE_VERSION: u32 = 3;
 
+/// The XMASS device's ioctl group (`PCIE_XMASS_DRIVER_MAGIC`), on `/dev/xmassN`.
+const XMASS_MAGIC: u8 = 0xdc;
+
+/// The bytes the XMASS flash requests move through their buffer: the bridge flash's first
+/// 64 KiB. The header does not say; libusdr's `tools/xmass_fwupd.c` (`BUFFER_SIZE`) and
+/// the driver (`ASM28XX_FLASH_IMAGE_SIZE`) do.
+pub const XMASS_FLASH_BYTES: usize = 65_536;
+
+/// The bytes `PCIE_GETIDS` writes: the bridge's firmware ID (6), then the flash's (4).
+/// From the driver, as for [`XMASS_FLASH_BYTES`]; `xmass_fwupd.c` passes `uint8_t[10]`.
+pub const XMASS_IDS_BYTES: usize = 10;
+
+// The XMASS requests' argument is a pointer to a buffer (`uint8_t*`) or an integer, and
+// their codes encode that argument's size, not the buffer's: the driver copies
+// `XMASS_FLASH_BYTES` or `XMASS_IDS_BYTES` regardless.
+
+/// `PCIE_FLASH_READ`: the driver reads [`XMASS_FLASH_BYTES`] of the bridge flash into the
+/// buffer the argument points at, and returns 1 on success.
+pub(crate) const FLASH_READ: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 1);
+/// `PCIE_FLASH_ERASE`: the driver erases the bridge flash's first [`XMASS_FLASH_BYTES`]; it
+/// ignores the argument, which `xmass_fwupd.c` passes as the integer 0.
+pub(crate) const FLASH_ERASE: Opcode = opcode::read_write::<u32>(XMASS_MAGIC, 2);
+/// `PCIE_FLASH_WRITE`: the driver copies [`XMASS_FLASH_BYTES`] from the buffer the argument
+/// points at, writes its own signature over parts of bytes `0xe00..0xf00` and programs
+/// the result.
+pub(crate) const FLASH_WRITE: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 3);
+/// `PCIE_GETIDS`: the driver writes [`XMASS_IDS_BYTES`] to the buffer the argument points
+/// at.
+pub(crate) const GETIDS: Opcode = opcode::read_write::<*mut u8>(XMASS_MAGIC, 4);
+
 // Layout checks against the C header, for 64-bit targets; the oracle repeats them against
 // the header itself.
 const _: () = {
@@ -169,4 +199,9 @@ const _: () = {
     assert!(core::mem::offset_of!(SdmaConf, out_vma_off) == 16);
     assert!(size_of::<WaitOob>() == 16);
     assert!(core::mem::offset_of!(WaitOob, oobdata) == 8);
+    // `_IOWR(0xDC, n, uint8_t*)` and `_IOWR(0xDC, 2, uint32_t)` on 64-bit Linux.
+    assert!(FLASH_READ == 0xc008_dc01);
+    assert!(FLASH_ERASE == 0xc004_dc02);
+    assert!(FLASH_WRITE == 0xc008_dc03);
+    assert!(GETIDS == 0xc008_dc04);
 };

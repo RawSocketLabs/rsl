@@ -720,14 +720,52 @@ fn count(len: usize) -> u32 {
     u32::try_from(len).unwrap_or(u32::MAX)
 }
 
+/// The XMASS device's requests (`/dev/xmassN`), each paired here with the buffer the driver
+/// copies, so the pairing sits beside the `unsafe` it upholds. [`crate::XmassDevice`] makes
+/// them.
+pub(crate) mod xmass_requests {
+    use std::os::fd::BorrowedFd;
+
+    use rustix::io::Errno;
+
+    use super::{request_value, request_with};
+    use crate::uapi::{self, XMASS_FLASH_BYTES, XMASS_IDS_BYTES};
+
+    /// `PCIE_GETIDS` into `ids`.
+    pub(crate) fn ids(fd: BorrowedFd<'_>, ids: &mut [u8; XMASS_IDS_BYTES]) -> Result<(), Errno> {
+        request_with(fd, uapi::GETIDS, ids).map(drop)
+    }
+
+    /// `PCIE_FLASH_ERASE`, with `xmass_fwupd.c`'s argument, 0.
+    pub(crate) fn erase(fd: BorrowedFd<'_>) -> Result<(), Errno> {
+        request_value(fd, uapi::FLASH_ERASE, 0).map(drop)
+    }
+
+    /// `PCIE_FLASH_WRITE` from `image`. The driver only reads it.
+    pub(crate) fn write(
+        fd: BorrowedFd<'_>,
+        image: &mut [u8; XMASS_FLASH_BYTES],
+    ) -> Result<(), Errno> {
+        request_with(fd, uapi::FLASH_WRITE, image).map(drop)
+    }
+
+    /// `PCIE_FLASH_READ` into `out`. Success is any return value that is not an error: the
+    /// driver returns 1.
+    pub(crate) fn read(fd: BorrowedFd<'_>, out: &mut [u8; XMASS_FLASH_BYTES]) -> Result<(), Errno> {
+        request_with(fd, uapi::FLASH_READ, out).map(drop)
+    }
+}
+
 /// One driver request whose argument points at `data`, returning the driver's return value.
 fn request_with<T>(fd: BorrowedFd<'_>, opcode: Opcode, data: &mut T) -> Result<i32, Errno> {
     let request = Request {
         opcode,
         arg: ptr::from_mut(data).cast(),
     };
-    // SAFETY: every opcode passed here takes a pointer to exactly `T` (see `uapi`), which
-    // stays valid and exclusively borrowed for the call.
+    // SAFETY: every opcode passed here takes a pointer to a `T`, through which the driver
+    // reads or writes `size_of::<T>()` bytes at most (see `uapi`; for the XMASS requests in
+    // `xmass_requests` the opcode's size field is a pointer's, and `T` is the whole buffer
+    // the driver copies). `data` stays valid and exclusively borrowed for the call.
     unsafe { rustix::ioctl::ioctl(fd, request) }
 }
 
