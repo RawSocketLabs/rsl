@@ -602,57 +602,10 @@ impl Oracle {
         Ok((std::mem::take(buffer), recv))
     }
 
-    /// As [`Oracle::receive_rx_packet`], one buffer per channel of the stream
-    /// (`usdr_dms_info`'s channel count).
-    ///
-    /// # Errors
-    ///
-    /// The negative errno libusdr returned (`-ETIMEDOUT` while the sim's stream engine is
-    /// stopped); `-EINVAL` with no stream.
-    pub fn receive_rx_channels(
-        &mut self,
-        timeout_ms: u32,
-    ) -> Result<(Vec<Vec<u8>>, RecvInfo), i32> {
-        let Some(stream) = self.stream else {
-            return Err(-EINVAL);
-        };
-        let mut info = StreamInfo::default();
-        // SAFETY: `stream` is live and `info` is a valid out-pointer.
-        let errno = unsafe { usdr_dms_info(stream.as_ptr(), &raw mut info) };
-        resume_callback_panic();
-        if errno != 0 {
-            return Err(errno);
-        }
-        let packet_bytes = usize::try_from(info.packet_bytes).map_err(|_| -EINVAL)?;
-        let channels = usize::try_from(info.channels).map_err(|_| -EINVAL)?;
-        let mut buffers = vec![vec![0_u8; packet_bytes]; channels];
-        let mut pointers: Vec<*mut c_void> = buffers
-            .iter_mut()
-            .map(|buffer| buffer.as_mut_ptr().cast::<c_void>())
-            .collect();
-        let mut recv = RecvInfo::default();
-        // SAFETY: `stream` is live, `pointers` holds one buffer per channel of the packet's
-        // host size per channel, the most libusdr's converter writes to each, and `recv` is
-        // a valid out-pointer.
-        let errno = unsafe {
-            usdr_dms_recv(
-                stream.as_ptr(),
-                pointers.as_mut_ptr(),
-                timeout_ms,
-                &raw mut recv,
-            )
-        };
-        resume_callback_panic();
-        if errno == 0 {
-            Ok((buffers, recv))
-        } else {
-            Err(errno)
-        }
-    }
-
     /// As [`Oracle::receive_rx_packet`], into one buffer per channel of the stream, as
-    /// `usdr_dms_info` reports them: libusdr's aggregate fills buffer `i` from device `i`
-    /// (one channel each on the uSDR) and reports the master's packet information alone.
+    /// `usdr_dms_info` reports them: a uSDR stream of both channels fills two; libusdr's
+    /// aggregate fills buffer `i` from device `i` (one channel each on the uSDR) and
+    /// reports the master's packet information alone.
     ///
     /// # Errors
     ///

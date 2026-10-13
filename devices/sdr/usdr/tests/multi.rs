@@ -16,7 +16,7 @@ use num_complex::Complex;
 use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
 use rsl_usdr::{
     Device, Error, HostFormat, MultiDevice, MultiError, MultiStep, Outcome, RxConfig,
-    StreamsConfig, SyncMode, TxConfig, WireFormat,
+    StreamsConfig, SyncMode, TxChannels, TxConfig, WireFormat,
 };
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
@@ -229,21 +229,22 @@ fn a_device_that_fails_to_open_powers_the_ones_before_it_down() {
     );
 }
 
-/// A stream configuration one device's gateware cannot take is refused on that device
-/// before any device's bus is touched.
+/// A stream configuration one device's gateware cannot take (a second TX channel without
+/// the TX chain) is refused on that device before any device's bus is touched.
 #[test]
 fn a_device_that_refuses_the_streams_stops_the_create_before_any_bus_access() {
     let rig = Rig::new(|index, board| {
         if index == 1 {
-            board.with_extended_tx_core()
+            board.with_rx_only()
         } else {
             board
         }
     });
     let mut multi = rig.tuned();
     let before = rig.lens();
-    let config = rx().with_tx(TxConfig::new(SAMPLES, HostFormat::Ci16, WireFormat::Ci16));
-    let result = multi.create_streams(config);
+    let tx = TxConfig::new(SAMPLES, HostFormat::Ci16, WireFormat::Ci16)
+        .with_channels(TxChannels::Channel1);
+    let result = multi.create_streams(rx().with_tx(tx));
     let Err(MultiError::Devices { step, outcomes }) = result else {
         panic!("device 1 refuses: {result:?}");
     };
@@ -253,7 +254,7 @@ fn a_device_that_refuses_the_streams_stops_the_create_before_any_bus_access() {
             outcomes[..],
             [
                 Outcome::NotReached,
-                Outcome::Failed(Error::UnsupportedTxCore),
+                Outcome::Failed(Error::UnsupportedTxChannels { .. }),
                 Outcome::NotReached
             ]
         ),
