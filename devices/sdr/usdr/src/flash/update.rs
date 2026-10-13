@@ -12,9 +12,8 @@ use std::time::Duration;
 
 use super::image::{GOLDEN_BOOT_BYTES, HeaderError, Image, ImageHeader, ImageMismatch, Slot};
 use super::{FlashError, FlashId, HEADER_BYTES, MASTER_IMAGE_OFFSET, SECTOR_BYTES, WriteOptions};
-use crate::error::Access;
 use crate::fpga::{Gpi, flash};
-use crate::lowlevel::Bus;
+use crate::lowlevel::{Bus, BusError};
 
 /// The tool's wait after reading the board's description, before the flash
 /// (`usleep(1000)`, `usdr_flash.c`:157).
@@ -125,6 +124,15 @@ impl UpdateOptions {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum UpdateError {
+    /// Reading the running gateware's build failed, before anything else was done.
+    #[error("reading the running gateware's build failed")]
+    #[non_exhaustive]
+    RunningBuild {
+        /// The bus failure.
+        #[source]
+        source: BusError,
+    },
+
     /// A flash access failed, or a write was refused before it started; see
     /// [`FlashError`] for what the flash holds then.
     #[error(transparent)]
@@ -137,7 +145,7 @@ pub enum UpdateError {
 
     /// The golden image's header is unreadable, so nothing more was done ("the FPGA G
     /// image is corrupted").
-    #[error("the golden image's header is unreadable: {0}")]
+    #[error("the golden image's header is unreadable")]
     GoldenHeader(#[source] HeaderError),
 
     /// The image does not belong in the slot; nothing was written.
@@ -178,7 +186,8 @@ pub enum UpdateError {
     },
 
     /// The image was written, but reads back differently. libusdr reports this and
-    /// succeeds.
+    /// succeeds. The slot's header now reads as the image's build, so writing the image
+    /// again needs [`UpdateOptions::reflash`].
     #[error("{blocks} 256-byte blocks read back wrong, the first at {first:#x}")]
     #[non_exhaustive]
     VerifyFailed {
@@ -208,11 +217,10 @@ pub(super) fn update(
         Slot::Golden => {
             // The boot sector, with its warm-boot trampoline, then the rest.
             let (boot, body) = data
-                .split_at_checked(GOLDEN_BOOT_BYTES)
+                .split_at_checked(GOLDEN_BOOT_BYTES as usize)
                 .expect("invariant: an image is whole 64 KiB sectors");
             flash::write(bus, offset, boot, WriteOptions::new())?;
-            let body_offset = offset + u32::try_from(GOLDEN_BOOT_BYTES).expect("4096");
-            flash::write(bus, body_offset, body, WriteOptions::new())?;
+            flash::write(bus, offset + GOLDEN_BOOT_BYTES, body, WriteOptions::new())?;
         }
         Slot::Master => {
             // Everything but the header, so an interrupted write leaves no master image
@@ -257,14 +265,9 @@ fn verify(bus: &mut dyn Bus, offset: u32, data: &[u8]) -> Result<(), UpdateError
 }
 
 /// Reads the running gateware's build stamp (`dev_gpi_get32(dev, 0)`, `usdr_flash.c`:29-32).
-fn read_running_build(bus: &mut dyn Bus) -> Result<u32, FlashError> {
-    let reg = Gpi::UsrAccess2.register();
+fn read_running_build(bus: &mut dyn Bus) -> Result<u32, UpdateError> {
     let mut word = [0];
-    bus.read_regs(reg, &mut word)
-        .map_err(|source| FlashError::Bus {
-            access: Access::Read,
-            reg,
-            source,
-        })?;
+    bus.read_regs(Gpi::UsrAccess2.register(), &mut word)
+        .map_err(|source| UpdateError::RunningBuild { source })?;
     Ok(word[0])
 }

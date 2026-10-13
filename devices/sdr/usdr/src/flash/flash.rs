@@ -59,7 +59,7 @@ impl<B: Bus> Flash<B> {
     ///
     /// [`UpdateError::UnrecognizedFlash`] for a part libusdr does not know;
     /// [`UpdateError::GoldenHeader`] if the golden image's header is unreadable;
-    /// [`UpdateError::Flash`] if a read fails.
+    /// [`UpdateError::RunningBuild`] or [`UpdateError::Flash`] if a read fails.
     pub fn boot_images(&mut self) -> Result<BootImages, UpdateError> {
         BootImages::read(&mut self.bus)
     }
@@ -152,7 +152,8 @@ impl<B: Bus> Programmer<'_, B> {
     /// [`FlashError::OutOfRange`] for an image past the flash's 16 MiB. Then
     /// [`UpdateError::Flash`] with the master slot partly erased or written but its header
     /// still blank, unless the failure was writing the header; or
-    /// [`UpdateError::VerifyFailed`] once all of it was written.
+    /// [`UpdateError::VerifyFailed`] once all of it was written. Once the header is
+    /// written, retrying needs [`UpdateOptions::reflash`] (see the module's recovery notes).
     pub fn update_master(
         &mut self,
         image: &Image,
@@ -166,10 +167,11 @@ impl<B: Bus> Programmer<'_, B> {
     /// refuses an image that is not a golden image for this FPGA or is already there, writes
     /// the 4 KiB boot sector, then the rest, and reads everything back.
     ///
-    /// This is the one operation here that can leave the board unable to load any
-    /// gateware: interrupted, the golden image is incomplete, and only rewriting the flash
-    /// by other means (JTAG) recovers the board. Update the master image instead unless the
-    /// golden image itself must change.
+    /// This is the one checked operation that can leave the board unable to load any
+    /// gateware: interrupted, the golden image is incomplete. It must be rewritten before
+    /// the board is power-cycled (the module's recovery notes say how); after that, only
+    /// rewriting the flash by other means (JTAG) recovers the board. Update the master
+    /// image instead unless the golden image itself must change.
     ///
     /// # Errors
     ///

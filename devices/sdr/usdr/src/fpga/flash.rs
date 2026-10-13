@@ -437,9 +437,8 @@ pub enum FlashError {
     #[error("flash stayed busy")]
     FlashTimeout,
 
-    /// A register access failed on the bus: the flash controller's, or the running
-    /// gateware's build word an update reads first.
-    #[error("register {reg:#x} {access} for the flash failed")]
+    /// A controller register access failed on the bus.
+    #[error("flash controller register {reg:#x} {access} failed")]
     #[non_exhaustive]
     Bus {
         /// Whether it was a read or a write.

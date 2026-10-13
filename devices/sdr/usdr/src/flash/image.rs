@@ -40,7 +40,7 @@ const CRC_POLYNOMIAL: u32 = 0x82f6_3b78;
 
 /// The bytes the golden image's first write covers, the boot sector with the warm-boot
 /// trampoline, before the rest of the image (`usdr_flash.c`:292-301).
-pub(super) const GOLDEN_BOOT_BYTES: usize = 4096;
+pub(super) const GOLDEN_BOOT_BYTES: u32 = 4096;
 
 /// The configuration registers libusdr's parser treats specially (`enum`,
 /// `xlnx_bitstream.c`:18-51). Any other register's writes only count towards the CRC.
@@ -421,7 +421,7 @@ pub enum ImageError {
     },
 
     /// The header is refused (libusdr: "It looks like the file is corrupted").
-    #[error("image header refused: {0}")]
+    #[error("image header refused")]
     Header(#[source] HeaderError),
 }
 
@@ -434,10 +434,9 @@ impl Image {
     /// [`ImageError::TooLarge`] past 16 MiB; [`ImageError::Header`] where libusdr refuses
     /// the file.
     pub fn new(file: &[u8]) -> Result<Self, ImageError> {
-        Self::check(
-            file,
-            ImageHeader::parse(file, ParseOptions::new().check_crc()),
-        )
+        Self::check(file, |file| {
+            ImageHeader::parse(file, ParseOptions::new().check_crc())
+        })
     }
 
     /// Checks `file` as libusdr's update does when told not to check CRCs (`-k`): only its
@@ -447,13 +446,12 @@ impl Image {
     ///
     /// As [`Image::new`].
     pub fn without_crc_check(file: &[u8]) -> Result<Self, ImageError> {
-        let mut head = [0xff; HEADER_BYTES];
-        let len = file.len().min(HEADER_BYTES);
-        head[..len].copy_from_slice(&file[..len]);
-        Self::check(
-            file,
-            ImageHeader::parse(&head, ParseOptions::new().allow_crop()),
-        )
+        Self::check(file, |file| {
+            let mut head = [0xff; HEADER_BYTES];
+            let len = file.len().min(HEADER_BYTES);
+            head[..len].copy_from_slice(&file[..len]);
+            ImageHeader::parse(&head, ParseOptions::new().allow_crop())
+        })
     }
 
     /// The image's header.
@@ -468,13 +466,16 @@ impl Image {
         &self.bytes
     }
 
-    /// Builds the image once its header is checked.
-    fn check(file: &[u8], header: Result<ImageHeader, HeaderError>) -> Result<Self, ImageError> {
+    /// Builds the image from `file` once it fits and `parse` accepts its header.
+    fn check(
+        file: &[u8],
+        parse: impl FnOnce(&[u8]) -> Result<ImageHeader, HeaderError>,
+    ) -> Result<Self, ImageError> {
         let space = usize::try_from(ADDRESS_SPACE).expect("invariant: 16 MiB fits usize");
         if file.len() > space {
             return Err(ImageError::TooLarge { len: file.len() });
         }
-        let header = header.map_err(ImageError::Header)?;
+        let header = parse(file).map_err(ImageError::Header)?;
         let sector = usize::try_from(SECTOR_BYTES).expect("invariant: 64 KiB fits usize");
         let mut bytes = file.to_vec();
         bytes.resize(file.len().next_multiple_of(sector), 0xff);
