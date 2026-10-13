@@ -16,6 +16,13 @@ links = "pe_sync_oracle"
 rsl-pe-sync-sim = { path = "../sim" }
 thiserror = "2.0"
 
+[dev-dependencies]
+rsl-pe-sync = { path = ".." }
+# chip_parity.rs compiles rsl-pe-sync's private src/portable tree, which needs its crates.
+bnb = { package = "bitsandbytes", path = "../../../../bitsandbytes/bnb" }
+rsl-lmk05318 = { path = "../../../sdr/chips/lmk05318" }
+rsl-lowlevel = { path = "../../../lowlevel", features = ["std"] }
+
 [build-dependencies]
 cc = "1.2"
 

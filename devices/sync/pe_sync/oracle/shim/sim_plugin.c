@@ -9,11 +9,15 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "usdr_lowlevel.h"
 #include "device/device.h"
 #include "device/device_ids.h"
+#include "hw/lmx1204/lmx1204.h"
+#include "hw/lmx1214/lmx1214.h"
+#include "hw/lmx2820/lmx2820.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int rsl_pe_sync_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
@@ -111,6 +115,100 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
 {
     (void)pcount; (void)devparam; (void)devval; (void)odev; (void)vidpid; (void)webops; (void)param;
     return -ENODEV;
+}
+
+// The clock chips' drivers called directly, for the chip parity tests: each runs libusdr's
+// chip calls on a zeroed chip state (as pe_sync's malloc'd state is zeroed by each
+// *_create) whose SPI reaches the installed board through this plugin's ls_op, and returns
+// the result. The device ID stays zero: nothing here reads it.
+
+static void sim_attach(struct sim_dev* d)
+{
+    memset(d, 0, sizeof(*d));
+    d->ll.ops = &s_sim_ops;
+}
+
+// lmx2820_tune on SPI bus `bus`, SYSREF off (zeroed): solver, registers, lock wait.
+int rsl_pe_sync_oracle_lmx2820_tune(unsigned bus, uint64_t osc_in, unsigned mash_order,
+                                    unsigned force_mult, uint64_t rfouta, uint64_t rfoutb)
+{
+    struct sim_dev d;
+    sim_attach(&d);
+    lmx2820_state_t st;
+    memset(&st, 0, sizeof(st));
+    st.dev = &d.ll;
+    st.lsaddr = bus;
+    return lmx2820_tune(&st, osc_in, mash_order, force_mult, rfouta, rfoutb);
+}
+
+// lmx1214_solver's arguments; `outputs` holds out_en[n] in bit n.
+struct rsl_lmx1214_request {
+    uint64_t in, out;
+    unsigned outputs, aux_enable, aux_fmt;
+    double aux_freq;
+};
+
+// lmx1214_solver on SPI bus 5, writing its registers, without precision mode.
+int rsl_pe_sync_oracle_lmx1214_solver(const struct rsl_lmx1214_request* r)
+{
+    struct sim_dev d;
+    sim_attach(&d);
+    lmx1214_state_t st;
+    memset(&st, 0, sizeof(st));
+    st.dev = &d.ll;
+    st.lsaddr = 5;
+    bool en[LMX1214_OUT_CNT];
+    for (unsigned i = 0; i < LMX1214_OUT_CNT; i++) {
+        en[i] = (r->outputs >> i) & 1;
+    }
+    lmx1214_auxclkout_cfg_t aux;
+    aux.freq = r->aux_freq;
+    aux.enable = r->aux_enable != 0;
+    aux.fmt = (uint8_t)r->aux_fmt;
+    return lmx1214_solver(&st, r->in, r->out, en, &aux, false, false);
+}
+
+// The lmx1204_state_t fields a board sets; the masks hold channel n (4: logic) in bit n.
+struct rsl_lmx1204_request {
+    uint64_t clkin, sysrefreq;
+    unsigned filter_mode, sysref_mode, sysref_en, ch_en, clkout_en, sysrefout_en;
+    unsigned logiclkout_fmt, logisysrefout_fmt;
+    double clkout, sysrefout, logiclkout;
+};
+
+// lmx1204_solver on SPI bus 4, writing its registers, without precision mode; then, if it
+// succeeded, lmx1204_wait_pll_lock(.., 1000000) as pe_sync waits. The state starts as
+// lmx1204_create leaves it: zeroed but for every output's SYSREF delay (phase QCLK0 = 1,
+// I = 7, Q = 0x7f - 7).
+int rsl_pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
+{
+    struct sim_dev d;
+    sim_attach(&d);
+    lmx1204_state_t st;
+    memset(&st, 0, sizeof(st));
+    st.dev = &d.ll;
+    st.lsaddr = 4;
+    for (unsigned i = 0; i <= LMX1204_CH_LOGIC; i++) {
+        lmx1204_sysrefout_channel_delay_t* delay = &st.sysref_indiv_ch_delay[i];
+        delay->phase = 1;
+        delay->i = 7;
+        delay->q = 0x7f - delay->i;
+        st.ch_en[i] = (r->ch_en >> i) & 1;
+        st.clkout_en[i] = (r->clkout_en >> i) & 1;
+        st.sysrefout_en[i] = (r->sysrefout_en >> i) & 1;
+    }
+    st.clkin = r->clkin;
+    st.sysrefreq = r->sysrefreq;
+    st.filter_mode = r->filter_mode != 0;
+    st.sysref_mode = (uint8_t)r->sysref_mode;
+    st.sysref_en = r->sysref_en != 0;
+    st.clkout = r->clkout;
+    st.sysrefout = r->sysrefout;
+    st.logiclkout = r->logiclkout;
+    st.logiclkout_fmt = (uint8_t)r->logiclkout_fmt;
+    st.logisysrefout_fmt = (uint8_t)r->logisysrefout_fmt;
+    int res = lmx1204_solver(&st, false, false);
+    return res ? res : lmx1204_wait_pll_lock(&st, 1000000);
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

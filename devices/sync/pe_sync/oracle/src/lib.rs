@@ -49,7 +49,148 @@ static PANIC: Mutex<Option<Box<dyn Any + Send>>> = Mutex::new(None);
 /// Opaque libusdr device-manager handle (`pdm_dev_t`).
 type DmDev = *mut c_void;
 
+/// `lmx2820_tune`'s arguments (`hw/lmx2820/lmx2820.c`); enum arguments take libusdr's codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lmx2820Tune {
+    /// The SPI bus the chip answers on (`lsaddr`): 2 or 3 on `PE_SYNC`.
+    pub bus: u32,
+    /// `osc_in`, in Hz.
+    pub osc_in: u64,
+    /// `mash_order`, 0 to 3 (`MASH_ORDER_*`).
+    pub mash_order: u32,
+    /// `force_mult`; 0 lets the solver choose.
+    pub force_mult: u32,
+    /// `rfouta`, in Hz.
+    pub rfouta: u64,
+    /// `rfoutb`, in Hz.
+    pub rfoutb: u64,
+}
+
+/// `lmx1214_solver`'s arguments, the shim's `struct rsl_lmx1214_request`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lmx1214Request {
+    /// `in`, in Hz.
+    pub input: u64,
+    /// `out`, in Hz.
+    pub output: u64,
+    /// `out_en[n]` in bit n.
+    pub outputs: c_uint,
+    /// `aux->enable`.
+    pub aux_enable: c_uint,
+    /// `aux->fmt`: `LMX1214_FMT_LVDS` 0, `LMX1214_FMT_CML` 2.
+    pub aux_format: c_uint,
+    /// `aux->freq`, in Hz.
+    pub aux_freq: f64,
+}
+
+/// The `lmx1204_state_t` fields a board sets, the shim's `struct rsl_lmx1204_request`; the
+/// masks hold channel n (4: the logic channel) in bit n; enums take libusdr's codes.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lmx1204Request {
+    /// `clkin`, in Hz.
+    pub clkin: u64,
+    /// `sysrefreq`, in Hz.
+    pub sysrefreq: u64,
+    /// `filter_mode`.
+    pub filter_mode: c_uint,
+    /// `sysref_mode`: `LMX1204_CONTINUOUS` 0, `LMX1204_PULSER` 1, `LMX1204_REPEATER` 2.
+    pub sysref_mode: c_uint,
+    /// `sysref_en`.
+    pub sysref_en: c_uint,
+    /// `ch_en`.
+    pub ch_en: c_uint,
+    /// `clkout_en`.
+    pub clkout_en: c_uint,
+    /// `sysrefout_en`.
+    pub sysrefout_en: c_uint,
+    /// `logiclkout_fmt`: `LMX1204_FMT_LVDS` 0, `_LVPECL` 1, `_CML` 2.
+    pub logiclkout_fmt: c_uint,
+    /// `logisysrefout_fmt`, as `logiclkout_fmt`.
+    pub logisysrefout_fmt: c_uint,
+    /// `clkout`, in Hz.
+    pub clkout: f64,
+    /// `sysrefout`, in Hz.
+    pub sysrefout: f64,
+    /// `logiclkout`, in Hz.
+    pub logiclkout: f64,
+}
+
+/// Runs libusdr's `lmx2820_tune` (solver, registers, lock wait) on a zeroed chip state whose
+/// SPI reaches `board`: the result (0 or a negative errno) and the board with its trace.
+/// Serialised with [`Oracle`]s, which share the board slot.
+///
+/// # Panics
+///
+/// If a callback panicked (resumed here).
+#[must_use]
+pub fn lmx2820_tune(board: SimBoard, tune: Lmx2820Tune) -> (i32, SimBoard) {
+    let Lmx2820Tune {
+        bus,
+        osc_in,
+        mash_order,
+        force_mult,
+        rfouta,
+        rfoutb,
+    } = tune;
+    // SAFETY: the shim takes plain values and keeps nothing.
+    run_on(board, || unsafe {
+        rsl_pe_sync_oracle_lmx2820_tune(bus, osc_in, mash_order, force_mult, rfouta, rfoutb)
+    })
+}
+
+/// Runs libusdr's `lmx1214_solver` (registers written, no precision mode) on a zeroed chip
+/// state on SPI bus 5 of `board`; result and board, as [`lmx2820_tune`].
+///
+/// # Panics
+///
+/// If a callback panicked (resumed here).
+#[must_use]
+pub fn lmx1214_solver(board: SimBoard, request: &Lmx1214Request) -> (i32, SimBoard) {
+    // SAFETY: `request` is valid for the call; the shim only reads it.
+    run_on(board, || unsafe {
+        rsl_pe_sync_oracle_lmx1214_solver(request)
+    })
+}
+
+/// Runs libusdr's `lmx1204_solver` (registers written, no precision mode) on SPI bus 4 of
+/// `board`, from the state `lmx1204_create` leaves, then, if it succeeded, its
+/// `lmx1204_wait_pll_lock`; result and board, as [`lmx2820_tune`].
+///
+/// # Panics
+///
+/// If a callback panicked (resumed here).
+#[must_use]
+pub fn lmx1204_solver(board: SimBoard, request: &Lmx1204Request) -> (i32, SimBoard) {
+    // SAFETY: `request` is valid for the call; the shim only reads it.
+    run_on(board, || unsafe {
+        rsl_pe_sync_oracle_lmx1204_solver(request)
+    })
+}
+
+/// Installs `board` for the duration of `call` (one shim entry), then returns its result
+/// and the board.
+fn run_on(board: SimBoard, call: impl FnOnce() -> c_int) -> (i32, SimBoard) {
+    let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
+    install(Some(board));
+    let result = call();
+    let board = take_board();
+    resume_callback_panic();
+    (result, board)
+}
+
 unsafe extern "C" {
+    fn rsl_pe_sync_oracle_lmx2820_tune(
+        bus: c_uint,
+        osc_in: u64,
+        mash_order: c_uint,
+        force_mult: c_uint,
+        rfouta: u64,
+        rfoutb: u64,
+    ) -> c_int;
+    fn rsl_pe_sync_oracle_lmx1214_solver(request: *const Lmx1214Request) -> c_int;
+    fn rsl_pe_sync_oracle_lmx1204_solver(request: *const Lmx1204Request) -> c_int;
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
