@@ -172,8 +172,8 @@ pub trait Bus: Send {
     }
 
     /// This bus as [`Any`], so a driver can reach the concrete transport behind a
-    /// `dyn Bus`: rsl-usdr hands a powered device's USB bus over to a reactor-driven
-    /// handle this way. `None`, the default, for a bus that offers no such access.
+    /// `dyn Bus`, say to hand it over to another executor. `None`, the default, for a bus
+    /// that offers no such access.
     fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
         None
     }
