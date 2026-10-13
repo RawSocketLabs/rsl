@@ -5,8 +5,8 @@
 //! - libusdr ends every open with its front-end probe (`device_fe_probe`), which rsl-lsdr
 //!   does not port yet. The cut starts at libusdr's first write to the front-end GPIO core
 //!   (FPGA register 3) and must hold nothing but probe traffic: GPIO-core and SPI-extension
-//!   configuration writes, the front-end connector's SPI bus, I2C away from the board's
-//!   PMIC and oscillator, and waits. Every later phase is compared whole.
+//!   configuration writes, the front-end connector's SPI bus, reads of the I2C devices the
+//!   probe looks for, and waits. Every later phase is compared whole.
 //! - A PGA setting above 31: libusdr clamps it to 31; rsl-lsdr's `PgaGain` cannot hold it.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -28,10 +28,14 @@ const REG_FRONT_END_GPIO: u32 = 3;
 const REG_SPI_EXT_CONFIG: u32 = 58;
 /// The front-end connector's SPI bus (`SPI_EXTERNAL`).
 const SPI_EXTERNAL: u32 = 4;
-/// The board's own I2C devices, which the probe must not reach: TPS6594, Si549.
-const BOARD_I2C: [I2cAddress; 2] = [
-    I2cAddress { bus: 0, addr: 0x48 },
-    I2cAddress { bus: 0, addr: 0x67 },
+/// The I2C devices the probe reads (fe4ch4007200's TMP114 and four TCA6424s,
+/// `ext_fe_ch4_400_7200_init`); the sim drops their I2C instance.
+const PROBE_I2C: [I2cAddress; 5] = [
+    I2cAddress { bus: 0, addr: 0x4e },
+    I2cAddress { bus: 0, addr: 0x22 },
+    I2cAddress { bus: 0, addr: 0x23 },
+    I2cAddress { bus: 1, addr: 0x22 },
+    I2cAddress { bus: 1, addr: 0x23 },
 ];
 
 /// One step of a session after open.
@@ -86,7 +90,7 @@ fn without_front_end_probe(mut open: Vec<Op>) -> Vec<Op> {
         probe.iter().all(|op| match op {
             Op::RegWrite { addr, .. } => [REG_FRONT_END_GPIO, REG_SPI_EXT_CONFIG].contains(addr),
             Op::Spi { bus, .. } => *bus == SPI_EXTERNAL,
-            Op::I2c { addr, .. } => !BOARD_I2C.contains(addr),
+            Op::I2c { addr, .. } => PROBE_I2C.contains(addr),
             Op::Sleep { .. } => true,
             Op::RegRead { .. } => false,
         }),
