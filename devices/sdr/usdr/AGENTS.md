@@ -48,8 +48,8 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, or of lane 0 or 1 alone), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and its flash tool, `libusdr/tools/usdr_flash.c`) driving `sim` through `oracle/shim/sim_plugin.c` |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, or of lane 0 or 1 alone), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
+| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and three of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`) driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
 
@@ -143,6 +143,15 @@ Each layer calls only the ones below it.
   kernels), fixed-point sine (`trig.c`), the NCO (scalar port of `nco.c`'s SSSE3-only kernel) and
   float tone/chirp tables (`sincos_functions.c`; std `sinf`/`cosf`), checked by
   `oracle/tests/{filter,nco}_parity.rs` (the oracle builds `nco.c` with SSSE3 on x86).
+  `sincos` also holds what libusdr's `usdr_dm_create` tool wires its TX test signals with
+  (turns to phases, dBFS to gain, `Chirp::sweep`, complex fills, the `cf32` `ToneF32`),
+  checked against the tool's own producer threads and TX loop by
+  `oracle/tests/generator_parity.rs`; the tool's option policy is not ported.
+- `src/discipline.rs`: public `rsl_usdr::discipline`, the oscillator discipline loop of
+  libusdr's `usdr_dm_gpsdo` tool as a sans-I/O machine (`OscillatorDiscipline`): the caller
+  reads the measurement, steps it with the time and writes and confirms the DAC code.
+  `oracle/tests/gpsdo_parity.rs` runs the tool's own `main`; which gateware word carries the
+  PPS count on the uSDR is unresolved (PORTING.md), so no `Device` method composes it.
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
@@ -251,7 +260,11 @@ Each layer calls only the ones below it.
   first be exercised through the oracle against `sim`, then matched.
 - The vendored subset under `oracle/libusdr/` is never edited by hand. Refresh it with
   `oracle/vendor.sh <usdr-lib checkout>` at the commit in `oracle/libusdr/PIN`. Bump the PIN
-  in its own change.
+  in its own change. Three tools come along verbatim (`oracle/libusdr/tools/`); of them,
+  `usdr_dm_create.c` and `usdr_dm_gpsdo.c` reach `oracle/shim/{dm_create,gpsdo}.c`, which compile each
+  whole with its `main` renamed, the gpsdo shim redirecting the tool's I/O, set-up and
+  clock by macro before including it, and build them and `sincos_functions.c` with
+  `-fwrapv`, so phases that wrap in signed C arithmetic compare with Rust's.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
 - Front ends (`fe=`): the probe (`rsl-sdr-frontend`, shared with the XSDR and LSDr) and
@@ -332,6 +345,13 @@ Each layer calls only the ones below it.
   Tuning before any sample rate, where libusdr divides by zero, skips the filter and fails
   the low-LO fallback for both chains; the oracle cannot run that, so `tests/tx_tuning.rs`
   covers it on the sim alone.
+  The oscillator discipline rejects counts more than 2% below the expected frequency, which
+  libusdr's tool follows to a railed DAC
+  (`gpsdo_parity.rs::a_count_far_below_is_rejected_where_the_tool_rails_the_dac`), clamps
+  DAC codes at 0 where the tool wraps them to full scale
+  (`gpsdo_parity.rs::the_dac_holds_at_zero_where_the_tool_wraps_it_to_full_scale`), and
+  steps from the last confirmed code after a failed write, where the tool steps from the
+  errno.
 - Registers are typed (`rsl-lowlevel`'s traits, through `src/portable/register.rs`;
   `src/chips/register.rs` adds blocking I2C access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
