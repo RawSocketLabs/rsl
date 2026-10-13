@@ -18,11 +18,14 @@ mod sim_bus;
 mod thermal_gate;
 
 use std::ffi::CStr;
+use std::iter;
 use std::ops::Range;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use baseband::without_baseband_loop;
 use num_complex::Complex;
+use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
 use rsl_usdr::{
     Device, Error, FrontEndKind, FrontEndSelection, HostFormat, MultiDevice, MultiError, MultiStep,
     Outcome, RxConfig, StreamTime, StreamsConfig, SyncMode, TxConfig, WireFormat,
@@ -78,6 +81,10 @@ struct Run {
     traces: Vec<Vec<Op>>,
     /// Each step's name and range on each board.
     windows: Vec<(&'static str, Vec<Range<usize>>)>,
+    /// The board of every operation, in the order they were performed across boards.
+    order: Vec<usize>,
+    /// Each step's range in `order`.
+    order_windows: Vec<Range<usize>>,
     /// Each receive's bytes, per device.
     received: Vec<Vec<Vec<u8>>>,
     /// The packets each board's TX core played.
@@ -94,6 +101,109 @@ impl Run {
             .expect("the run has the step");
         &self.traces[board][ranges[board].clone()]
     }
+
+    /// Every board's operations in the step named `name`, as (board, operation), in the
+    /// order they were performed across the boards.
+    fn interleaved(&self, name: &str) -> Vec<(usize, Op)> {
+        let position = self
+            .windows
+            .iter()
+            .position(|(step, _)| *step == name)
+            .expect("the run has the step");
+        let mut cursors: Vec<usize> = self.windows[position]
+            .1
+            .iter()
+            .map(|range| range.start)
+            .collect();
+        self.order[self.order_windows[position].clone()]
+            .iter()
+            .map(|&board| {
+                let op = self.traces[board][cursors[board]].clone();
+                cursors[board] += 1;
+                (board, op)
+            })
+            .collect()
+    }
+}
+
+/// A board's bus that records, in an order the boards share, the board of each operation
+/// its board traces.
+struct Ordered {
+    /// The board.
+    sim: SimBus,
+    /// Its index in the aggregate.
+    index: usize,
+    /// The shared order.
+    order: Arc<Mutex<Vec<usize>>>,
+}
+
+impl Ordered {
+    /// Runs `f` on the board's bus, recording each operation it traces.
+    fn ordered<R>(&mut self, f: impl FnOnce(&mut SimBus) -> R) -> R {
+        let before = self.sim.board().trace().len();
+        let result = f(&mut self.sim);
+        let added = self.sim.board().trace().len() - before;
+        self.order
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(iter::repeat_n(self.index, added));
+        result
+    }
+}
+
+impl Bus for Ordered {
+    fn read_regs(&mut self, addr: u32, out: &mut [u32]) -> Result<(), BusError> {
+        self.ordered(|sim| sim.read_regs(addr, out))
+    }
+
+    fn write_regs(&mut self, addr: u32, values: &[u32]) -> Result<(), BusError> {
+        self.ordered(|sim| sim.write_regs(addr, values))
+    }
+
+    fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
+        self.ordered(|sim| sim.spi32(target, word))
+    }
+
+    fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
+        self.ordered(|sim| sim.i2c(dev, write, read))
+    }
+
+    fn sleep(&mut self, duration: Duration) {
+        self.ordered(|sim| sim.sleep(duration));
+    }
+
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.ordered(|sim| sim.rx_stream_open(block_bytes))
+    }
+
+    fn rx_stream_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        self.ordered(|sim| sim.rx_stream_recv(timeout, consume))
+    }
+
+    fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        self.ordered(SimBus::rx_stream_close)
+    }
+
+    fn tx_stream_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        self.ordered(|sim| sim.tx_stream_open(block_bytes, sample_bytes))
+    }
+
+    fn tx_stream_send(
+        &mut self,
+        timeout: Duration,
+        time: Option<u64>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<TxCommit, BusError> {
+        self.ordered(|sim| sim.tx_stream_send(timeout, time, fill))
+    }
+
+    fn tx_stream_close(&mut self) -> Result<(), BusError> {
+        self.ordered(SimBus::tx_stream_close)
+    }
 }
 
 /// Records the trace ranges a step adds on each board.
@@ -101,13 +211,16 @@ fn ranges(before: &[usize], after: &[usize]) -> Vec<Range<usize>> {
     before.iter().zip(after).map(|(&b, &a)| b..a).collect()
 }
 
-/// rsl-usdr's sims and their trace lengths.
-struct Sims(Vec<SimBus>);
+/// rsl-usdr's sims, their trace lengths and the order of their operations.
+struct Sims(Vec<SimBus>, Arc<Mutex<Vec<usize>>>);
 
 impl Sims {
     /// Wraps `boards`.
     fn new(boards: Vec<SimBoard>) -> Self {
-        Self(boards.into_iter().map(SimBus::new).collect())
+        Self(
+            boards.into_iter().map(SimBus::new).collect(),
+            Arc::default(),
+        )
     }
 
     /// Each board's trace length now.
@@ -115,10 +228,25 @@ impl Sims {
         self.0.iter().map(|sim| sim.board().trace().len()).collect()
     }
 
+    /// The board of every operation so far, in order across the boards.
+    fn order(&self) -> Vec<usize> {
+        self.1
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     /// Opens the aggregate over the sims with `front_end` on each.
     fn open(&self, front_end: FrontEndSelection) -> Result<MultiDevice, MultiError<()>> {
-        let builder = |sim: &SimBus| Device::builder(sim.clone()).front_end(front_end);
-        MultiDevice::open(builder(&self.0[0]), self.0[1..].iter().map(builder))
+        let builder = |index: usize| {
+            let bus = Ordered {
+                sim: self.0[index].clone(),
+                index,
+                order: Arc::clone(&self.1),
+            };
+            Device::builder(bus).front_end(front_end)
+        };
+        MultiDevice::open(builder(0), (1..self.0.len()).map(builder))
     }
 
     /// Each board's trace and played packets.
@@ -196,10 +324,13 @@ fn send_time(k: usize) -> u64 {
 fn on_libusdr(scenario: Scenario) -> Run {
     let mut oracle = Oracle::open_multi(boards(plain), c"").expect("libusdr opens the aggregate");
     let mut windows = vec![("open", ranges(&[0; 3], &oracle_lens(&oracle)))];
+    let mut order_windows = Vec::new();
+    order_windows.push(0..oracle.order().len());
     let mut step = |oracle: &mut Oracle, name, run: &mut dyn FnMut(&mut Oracle)| {
-        let before = oracle_lens(oracle);
+        let (before, order_before) = (oracle_lens(oracle), oracle.order().len());
         run(oracle);
         windows.push((name, ranges(&before, &oracle_lens(oracle))));
+        order_windows.push(order_before..oracle.order().len());
     };
     step(&mut oracle, "rate", &mut |o| {
         o.set_rx_rate(20_000_000).expect("rate");
@@ -256,12 +387,17 @@ fn on_libusdr(scenario: Scenario) -> Run {
         }
     });
     let before = oracle_lens(&oracle);
+    let order = oracle.order();
     let boards = oracle.close_all();
     let after: Vec<usize> = boards.iter().map(|board| board.trace().len()).collect();
     windows.push(("close", ranges(&before, &after)));
+    // The order is taken before the close, so the close has none.
+    order_windows.push(order.len()..order.len());
     Run {
         traces: boards.iter().map(|board| board.trace().to_vec()).collect(),
         windows,
+        order,
+        order_windows,
         received,
         played: boards
             .iter()
@@ -277,10 +413,13 @@ fn on_rsl(scenario: Scenario) -> Run {
         .open(FrontEndSelection::Auto)
         .expect("rsl-usdr opens the aggregate");
     let mut windows = vec![("open", ranges(&[0; 3], &sims.lens()))];
+    let mut order_windows = Vec::new();
+    order_windows.push(0..sims.order().len());
     let mut step = |multi: &mut MultiDevice, name, run: &mut dyn FnMut(&mut MultiDevice)| {
-        let before = sims.lens();
+        let (before, order_before) = (sims.lens(), sims.order().len());
         run(multi);
         windows.push((name, ranges(&before, &sims.lens())));
+        order_windows.push(order_before..sims.order().len());
     };
     step(&mut multi, "rate", &mut |m| {
         m.broadcast(|device| device.set_rx_sample_rate(20_000_000))
@@ -330,12 +469,16 @@ fn on_rsl(scenario: Scenario) -> Run {
         m.stop_streams().expect("rsl-usdr stops");
     });
     let before = sims.lens();
+    let order = sims.order();
     multi.close().expect("rsl-usdr closes");
     windows.push(("close", ranges(&before, &sims.lens())));
+    order_windows.push(order.len()..order.len());
     let (traces, played) = sims.finish();
     Run {
         traces,
         windows,
+        order,
+        order_windows,
         received,
         played,
     }
@@ -373,6 +516,19 @@ fn assert_runs_match(expected: &Run, actual: &Run, context: &str) {
     }
 }
 
+/// The start and stop happen in the same order across the boards on both sides: each
+/// part of the start on every device before the next part, the master's SYSREF after
+/// every device's sync, each part of the stop on every device before the next.
+fn assert_interleaving_matches(expected: &Run, actual: &Run, context: &str) {
+    for name in ["start", "stop"] {
+        assert_eq!(
+            expected.interleaved(name),
+            actual.interleaved(name),
+            "{context}: the {name} step's operations across the boards, in order"
+        );
+    }
+}
+
 /// An RX group free-running on every device: each board's operations, and each device's
 /// samples in its own channel.
 #[test]
@@ -385,6 +541,7 @@ fn a_free_running_rx_group_spans_the_devices_like_libusdr() {
     };
     let (expected, actual) = (on_libusdr(scenario), on_rsl(scenario));
     assert_runs_match(&expected, &actual, "free-running RX");
+    assert_interleaving_matches(&expected, &actual, "free-running RX");
     assert_eq!(expected.received.len(), 2);
     assert_eq!(
         expected.received, actual.received,
@@ -404,6 +561,7 @@ fn an_activity_synchronised_rx_group_matches_libusdr() {
     };
     let (expected, actual) = (on_libusdr(scenario), on_rsl(scenario));
     assert_runs_match(&expected, &actual, "RX on activity");
+    assert_interleaving_matches(&expected, &actual, "RX on activity");
     assert_eq!(expected.received, actual.received);
 }
 
@@ -419,6 +577,7 @@ fn a_duplex_group_plays_each_devices_channel_like_libusdr() {
     };
     let (expected, actual) = (on_libusdr(scenario), on_rsl(scenario));
     assert_runs_match(&expected, &actual, "duplex");
+    assert_interleaving_matches(&expected, &actual, "duplex");
     assert!(expected.played.iter().all(|played| played.len() == 2));
     assert_eq!(
         expected.played, actual.played,
@@ -441,6 +600,7 @@ fn a_one_pps_group_waits_on_every_device_like_libusdr() {
     };
     let (expected, actual) = (on_libusdr(scenario), on_rsl(scenario));
     assert_runs_match(&expected, &actual, "1PPS");
+    assert_interleaving_matches(&expected, &actual, "1PPS");
     for board in 0..3 {
         let start = actual.step(board, "start");
         assert_eq!(
@@ -467,6 +627,7 @@ fn a_generated_sysref_group_has_the_master_generate_it_like_libusdr() {
     };
     let (expected, actual) = (on_libusdr(scenario), on_rsl(scenario));
     assert_runs_match(&expected, &actual, "generated SYSREF");
+    assert_interleaving_matches(&expected, &actual, "generated SYSREF");
     let start = |board: usize| actual.step(board, "start");
     assert!(
         start(0).ends_with(&[sync_write(1), sync_write(9)]),

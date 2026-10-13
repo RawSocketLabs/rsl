@@ -9,6 +9,7 @@
 // plugin once per bus name, and `simN` selects the oracle's board N. Without a `bus`
 // parameter the plugin opens board 0. Every callback names its board.
 
+#include <ctype.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -303,7 +304,7 @@ static int sim_board_of(unsigned pcount, const char** devparam, const char** dev
             continue;
         }
         const char* name = devval[i];
-        if (name == NULL || strncmp(name, "sim", 3) != 0 || name[3] == 0) {
+        if (name == NULL || strncmp(name, "sim", 3) != 0 || !isdigit((unsigned char)name[3])) {
             return -ENODEV;
         }
         char* end = NULL;

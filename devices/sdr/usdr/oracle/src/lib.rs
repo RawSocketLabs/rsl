@@ -12,6 +12,7 @@
 
 use std::any::Any;
 use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_ulonglong, c_void};
+use std::iter;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr::{self, NonNull};
@@ -69,6 +70,8 @@ static CURRENT: Mutex<usize> = Mutex::new(0);
 /// ([`CURRENT`]). An assumption of the harness, checked by the multi-device parity tests'
 /// per-board traces. With one board, sleeps reach it at once.
 static SLEEPS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// The board of every operation traced since the boards were installed, in order.
+static ORDER: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 /// A panic raised inside a callback, held until control is back in Rust.
 static PANIC: Mutex<Option<Box<dyn Any + Send>>> = Mutex::new(None);
 
@@ -232,7 +235,7 @@ impl Oracle {
     /// # Panics
     ///
     /// If `boards` holds fewer than two boards (libusdr opens one without the aggregate)
-    /// or more than 32 (the aggregate's limit), or `parameters` is not UTF-8.
+    /// or more than 32 (the aggregate's limit), or `parameters` is not UTF-8 or names a `bus`.
     pub fn open_multi(boards: Vec<SimBoard>, parameters: &CStr) -> Result<Self, MultiOpenError> {
         assert!(
             (2..=32).contains(&boards.len()),
@@ -240,6 +243,12 @@ impl Oracle {
         );
         let buses: Vec<String> = (0..boards.len()).map(|i| format!("sim{i}")).collect();
         let parameters = parameters.to_str().expect("the parameters are UTF-8");
+        assert!(
+            !parameters
+                .split(',')
+                .any(|parameter| parameter.starts_with("bus=")),
+            "the oracle names the buses itself"
+        );
         let mut connection = format!("bus={}", buses.join(":"));
         if !parameters.is_empty() {
             connection = format!("{connection},{parameters}");
@@ -913,6 +922,13 @@ impl Oracle {
             .len()
     }
 
+    /// The board each operation libusdr performed went to, in the order it performed them,
+    /// across every board: with each board's trace, the operations' global order.
+    #[must_use]
+    pub fn order(&self) -> Vec<usize> {
+        ORDER.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
     /// Closes libusdr's device, which powers the board down, and returns the board (the
     /// master, for an aggregate).
     #[must_use]
@@ -968,6 +984,7 @@ fn install(boards: Vec<SimBoard>) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clear();
+    ORDER.lock().unwrap_or_else(PoisonError::into_inner).clear();
 }
 
 /// Removes the installed boards.
@@ -992,12 +1009,24 @@ fn resume_callback_panic() {
     let mut boards = BOARDS.lock().unwrap_or_else(PoisonError::into_inner);
     let current = *CURRENT.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(board) = boards.get_mut(current) {
-        take_sleeps(board);
+        ordered(current, board, take_sleeps);
     }
     drop(boards);
     if let Some(payload) = PANIC.lock().unwrap_or_else(PoisonError::into_inner).take() {
         panic::resume_unwind(payload);
     }
+}
+
+/// Runs `f` on board `index`, recording in [`ORDER`] each operation it traces.
+fn ordered<R>(index: usize, board: &mut SimBoard, f: impl FnOnce(&mut SimBoard) -> R) -> R {
+    let before = board.trace().len();
+    let result = f(board);
+    let added = board.trace().len() - before;
+    ORDER
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .extend(iter::repeat_n(index, added));
+    result
 }
 
 /// Gives `board` the sleeps pending, in order.
@@ -1022,8 +1051,10 @@ fn with_board(index: c_uint, f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
             .get_mut(index)
             .expect("invariant: libusdr calls back only for an installed board");
         *CURRENT.lock().unwrap_or_else(PoisonError::into_inner) = index;
-        take_sleeps(board);
-        f(board)
+        ordered(index, board, |board| {
+            take_sleeps(board);
+            f(board)
+        })
     }));
     result.unwrap_or_else(|payload| {
         // Keep the first panic: later ones are usually libusdr's error path calling back.
