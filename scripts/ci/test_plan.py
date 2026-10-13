@@ -8,8 +8,10 @@ import unittest
 
 from gate import check_plan, check_release, check_results
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE,
-                  LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE, RELEASE_PROFILES, Package,
-                  affected_packages, changed_paths, released_members, select)
+                  LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE, LOWLEVEL, LP8758,
+                  RELEASE_PROFILES, Package,
+                  affected_packages, bare_metal_devices, changed_paths, released_members,
+                  select)
 from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
 
 
@@ -33,10 +35,12 @@ def fixture():
                             False, ("certificate_parse",)),
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
-        "devices/sdr/usdr": Package("rsl-usdr", {BNB, "devices/sdr/usdr/sim"}),
+        LOWLEVEL: Package("rsl-lowlevel", set()),
+        LP8758: Package("rsl-lp8758", {BNB, LOWLEVEL}),
+        "devices/sdr/usdr": Package("rsl-usdr", {BNB, LOWLEVEL, LP8758, "devices/sdr/usdr/sim"}),
         "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
         USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
-        USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR}, False),
+        USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR, LOWLEVEL, LP8758}, False),
         "devices/sdr/chips/lms7002m/sim": Package("rsl-lms7002m-sim", set()),
         "devices/sdr/xsdr/sim": Package("rsl-xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
         XSDR_ORACLE: Package("rsl-xsdr-oracle", {"devices/sdr/xsdr/sim", USDR_ORACLE}, False),
@@ -164,6 +168,31 @@ class SelectionTests(unittest.TestCase):
                 self.assertIn("usdr-portable", plan["profiles"])
                 self.assertNotIn("no-std", plan["profiles"])
                 self.assertEqual(plan["fuzz"], [])
+
+    def test_shared_device_crates_rerun_their_consumers_and_the_portable_host_gate(self):
+        cases = [
+            (f"{LOWLEVEL}/src/bus.rs", {"rsl-lowlevel", "rsl-lp8758", "rsl-usdr"}),
+            (f"{LP8758}/src/buck.rs", {"rsl-lp8758", "rsl-usdr"}),
+        ]
+        for path, packages in cases:
+            with self.subTest(path=path):
+                plan = planned([path])
+                self.assertFalse(plan["full"])
+                self.assertEqual(set(plan["packages"]), packages)
+                self.assertTrue({"usdr-portable", "usdr-oracle"} <= set(plan["profiles"]))
+                self.assertNotIn("no-std", plan["profiles"])
+
+    def test_only_an_explicit_device_release_qualifies_shared_bare_metal_crates(self):
+        codec = planned(release=True)
+        self.assertIn(LP8758, codec["release_roots"])
+        self.assertEqual(bare_metal_devices(codec["release_roots"], codec["release_members"]),
+                         set())
+        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        release = select([], fixture(), fixture(), release_members=[member])
+        self.assertIn("no-std", release["profiles"])
+        self.assertTrue({LOWLEVEL, LP8758} <= set(release["release_roots"]))
+        self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
+                         {LOWLEVEL, LP8758})
 
     def test_the_porting_ledger_is_prose_not_a_build_or_qualification_trigger(self):
         plan = planned([f"{USDR}/PORTING.md"])

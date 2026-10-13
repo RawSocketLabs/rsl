@@ -16,8 +16,9 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import (BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE, NOSTD, PE_SYNC_ORACLE, PKI,
-                  PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE)
+from plan import (BARE_METAL_DEVICES, BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE, NOSTD,
+                  PE_SYNC_ORACLE, PKI, PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE,
+                  bare_metal_devices)
 
 
 def packages(names):
@@ -92,6 +93,12 @@ def commands(profile, plan, bnb):
                 and any(member["root"] == USDR for member in plan["release_members"])):
             result.append(["cargo", "check", "--manifest-path", f"{USDR_PORTABLE}/Cargo.toml",
                            "--locked", "--target", "thumbv7em-none-eabi"])
+        devices = bare_metal_devices(release_roots, plan["release_members"])
+        if devices:
+            # Default features only: `std` (rsl-lowlevel's Bus) is the host driver's.
+            result.append(["cargo", "check",
+                           *packages(BARE_METAL_DEVICES[root] for root in devices),
+                           "--target", "thumbv7em-none-eabi"])
         pki = qualified & {"rsl-asn1", "rsl-x509", "rsl-pki"}
         if release_roots & PKI:
             result.append(["cargo", "build", *packages(pki), "--target", "thumbv7em-none-eabi"])

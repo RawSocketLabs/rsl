@@ -9,7 +9,7 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
-from plan import USDR, USDR_PORTABLE
+from plan import LOWLEVEL, LP8758, USDR, USDR_PORTABLE
 from test_plan import planned
 
 BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
@@ -184,6 +184,20 @@ curl() {
         self.assertIn(["cargo", "check", "--manifest-path", f"{USDR_PORTABLE}/Cargo.toml",
                        "--locked", "--target", "thumbv7em-none-eabi"],
                       commands("no-std", plan, BNB_CONFIG))
+
+    def test_shared_device_crates_get_a_bare_metal_check_only_from_a_device_release(self):
+        bare = ["cargo", "check", "-p", "rsl-lowlevel", "-p", "rsl-lp8758",
+                "--target", "thumbv7em-none-eabi"]
+        codec = planned(release=True)
+        self.assertIn(LP8758, codec["release_roots"])
+        self.assertFalse(any("rsl-lp8758" in row for row in commands("no-std", codec, BNB_CONFIG)))
+        plan = planned([f"{LOWLEVEL}/src/lib.rs"])
+        plan["release_roots"] = [USDR, USDR_PORTABLE, LOWLEVEL, LP8758]
+        plan["release_members"] = [{"root": USDR}]
+        sequence = commands("no-std", plan, BNB_CONFIG)
+        self.assertIn(bare, sequence)
+        self.assertNotIn("--features", bare)
+        self.assertEqual(locked_command(bare).count("--locked"), 1)
 
     def test_bnb_feature_ladder_and_denied_warning_lints_are_retained(self):
         sequence = commands("bnb", planned(release=True), BNB_CONFIG)

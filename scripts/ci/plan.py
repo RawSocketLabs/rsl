@@ -38,6 +38,12 @@ FUZZ = {
 USDR_ORACLE = "devices/sdr/usdr/oracle"
 USDR = "devices/sdr/usdr"
 USDR_PORTABLE = f"{USDR}/nostd-check"
+# Shared no_std device crates (the bus seam, per-chip register values) by root. Like every
+# cross-target check, their bare-metal gate is release-only: an explicit release of one of
+# them or of the uSDR driver selects it; a codec release reaching them does not.
+LOWLEVEL = "devices/lowlevel"
+LP8758 = "devices/sdr/chips/lp8758"
+BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758"}
 # Runs libusdr's LMS7 family against rsl-xsdr-sim, compiling the uSDR oracle's vendored C.
 XSDR_ORACLE = "devices/sdr/xsdr/oracle"
 # Runs libusdr's LSDr family against rsl-lsdr-sim, compiling the uSDR oracle's vendored C.
@@ -230,6 +236,14 @@ def affected_packages(seeds, old, new):
     return reasons
 
 
+def bare_metal_devices(release_roots, release_members):
+    """Shared no_std device crates whose bare-metal gate an explicit device release selects."""
+    released = {member["root"] for member in release_members}
+    if not released & (BARE_METAL_DEVICES.keys() | {USDR}):
+        return set()
+    return set(release_roots) & BARE_METAL_DEVICES.keys()
+
+
 def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run",
            dependency_changes=None):
     if any(member["root"] == USDR for member in release_members) and USDR_PORTABLE not in new:
@@ -302,6 +316,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
     if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
     if USDR_PORTABLE in release_roots and any(member["root"] == USDR for member in release_members):
+        profiles.add("no-std")
+    if bare_metal_devices(release_roots, release_members):
         profiles.add("no-std")
     if "rsl-deps" in packages or full:
         profiles.add("blessed")
