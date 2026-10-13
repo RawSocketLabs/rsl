@@ -11,6 +11,7 @@ use crate::board::{
     RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
 };
 use crate::error::Error;
+use crate::fpga::IqImbalance;
 use crate::frontend::{
     FrontEndKind, FrontEndSelection, PciefeSetting, XMASS, XmassCalibrationPath,
 };
@@ -586,8 +587,18 @@ impl Device {
     /// the TX DC offset and the TX IQ correction, as `calibration` asks, and leaves what it
     /// found applied, for later streams too. A calibration needs its chain tuned: RX IQ an
     /// RX frequency, the TX ones a TX frequency; one without is skipped (`None` in the
-    /// report). A chain the calibration had to power goes down again; the tuning, RX input,
-    /// gains, NCOs and filters return to the caller's settings. Set a sample rate first.
+    /// report). Set a sample rate first.
+    ///
+    /// Afterwards the tuning, RX input, RXVGA1 gain, generator, NCOs and filters return
+    /// to the caller's settings, and TXVGA1's gain does after the TX IQ search; a chain
+    /// with no frequency is powered down. As in libusdr, some changes stay: the RX IQ
+    /// search can leave TXVGA1 raised to level its tone; the analog LO stage leaves
+    /// TXVGA1's DC shift (which the report does not give); a chain that was tuned but
+    /// powered down (as TX is after a stream group with TX) is powered and left on; and a
+    /// receiver the TX calibrations had to wake keeps the DC calibration they ran on it
+    /// at 320 MHz. To reapply the results after reopening, pass the report's offsets to
+    /// [`Device::set_tx_dc_offset`] and its corrections to
+    /// [`Device::set_rx_iq_imbalance`] and [`Device::set_tx_iq_imbalance`].
     ///
     /// # Errors
     ///
@@ -602,6 +613,27 @@ impl Device {
     ///   as in libusdr.
     pub fn calibrate(&mut self, calibration: Calibration) -> Result<CalibrationReport, Error> {
         self.board().calibrate(calibration)
+    }
+
+    /// Sets the FPGA RX chain's IQ correction in the terms [`Device::calibrate`] reports,
+    /// such as a saved calibration result; it holds for later streams. libusdr has no
+    /// control for these terms: its calibration writes them through `usdr_rxupdate_cal`.
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure; the correction is still kept for the next stream.
+    pub fn set_rx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
+        self.board().set_rx_iq_imbalance(imbalance)
+    }
+
+    /// Sets the FPGA TX chain's IQ correction in the terms [`Device::calibrate`] reports,
+    /// as [`Device::set_rx_iq_imbalance`] does for RX (`usdr_txupdate_cal`).
+    ///
+    /// # Errors
+    ///
+    /// Any bus failure; the correction is still kept for the next TX stream.
+    pub fn set_tx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
+        self.board().set_tx_iq_imbalance(imbalance)
     }
 
     /// Fixes the TX output, or with [`TxPath::Auto`] hands the choice back to the

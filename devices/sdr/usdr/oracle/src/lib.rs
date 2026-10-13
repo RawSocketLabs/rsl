@@ -623,7 +623,8 @@ impl Oracle {
         // Flags up to 2 * 65536 with channel 0 in the high word are read as a number.
         self.set_value(c"/dm/sdr/0/calibrate", flags.into())?;
         let address = self.get_uint(c"/dm/sdr/0/calibrate")?;
-        let results = address as usize as *const [i32; 8];
+        let address = usize::try_from(address).map_err(|_| -EINVAL)?;
+        let results = address as *const [i32; 8];
         // SAFETY: the getter returns the address of the open device's `int cal_data[8]`,
         // which lives as long as the device; it is read once, unaligned-safe, while the
         // device is open and no libusdr call runs.

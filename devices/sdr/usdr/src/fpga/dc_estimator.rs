@@ -126,7 +126,7 @@ fn millidecibels(i: i32, q: i32) -> i32 {
     let power = (i * i + q * q).max(1e-18);
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "libusdr truncates the double to int; it lies within -180000..=+7000"
+        reason = "libusdr truncates the double to int; it lies within -180000..=+3011"
     )]
     let millidecibels = (1000.0 * 10.0 * power.log10()) as i32;
     millidecibels

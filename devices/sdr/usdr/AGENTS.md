@@ -72,6 +72,10 @@ Each layer calls only the ones below it.
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
   file (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay with
   the chip's register values.
+  `board/calibration.rs` runs libusdr's LO-leakage and IQ-imbalance calibration
+  (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) on `cal::search::best_2d`, measuring with the
+  gateware's DC estimator (`fpga/dc_estimator.rs`, `ipblks/dc_estim.c`); blocking
+  register code, no streaming (`oracle/tests/calibration_parity.rs`).
 - `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths.
   Its only board knowledge is where the uSDR wires it: an `at(addr)` constructor plus a
   `usdr()` constructor whose doc cites the address source (datasheet fixed address or
@@ -83,10 +87,6 @@ Each layer calls only the ones below it.
   then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
-  `board/calibration.rs` runs libusdr's LO-leakage and IQ-imbalance calibration
-  (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) on `search::best_2d`, measuring with the
-  gateware's DC estimator (`fpga/dc_estimator.rs`, `ipblks/dc_estim.c`); blocking
-  register code, no streaming (`oracle/tests/calibration_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
   front end, DMA, sync), the original TX stream core (`tx_stream`), the M.2 connector's GPIO core (`fe_gpio`, register 3), and

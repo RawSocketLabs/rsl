@@ -142,8 +142,9 @@ impl Vga1Gain {
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Vga1DcShift {
-    /// The shift, offset binary: 0x80 is none, one step 0.0625 mV, from -16 mV (0x00) to
-    /// 15.9375 mV (0xFF). `VGA1DC_I` or `VGA1DC_Q`, bits 7:0.
+    /// The shift, offset binary, 0x80 none (libusdr writes `0x80 + shift`). The YAML gives
+    /// 0.0625 mV per step and a range of -16 to 15.9375 mV, which disagree: 256 such steps
+    /// span 16 mV, not 32. `VGA1DC_I` or `VGA1DC_Q`, bits 7:0.
     #[bits(0..=7)]
     code: u8,
 }

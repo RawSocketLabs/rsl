@@ -15,7 +15,7 @@ mod sim_bus;
 use std::ops::Range;
 
 use rsl_usdr::Error;
-use rsl_usdr::{Calibration, CalibrationReport, Device, Feedback, IqCalibration, RxGain};
+use rsl_usdr::{Calibration, CalibrationReport, Device, Feedback, IqCalibration, RxGain, TxGain};
 use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Imbalance, Loopback, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
@@ -49,6 +49,20 @@ enum Setup {
     TxFrequency(u32),
     /// `set_rx_gain(RxGain::Vga1)`, libusdr's `rx/gain/vga`.
     RxVga1(i32),
+    /// `set_rx_gain(RxGain::Auto)`, libusdr's `rx/gain/auto`.
+    RxAuto(i32),
+    /// `set_tx_gain(TxGain::Vga1)`, libusdr's `tx/gain/vga1`.
+    TxVga1(i32),
+    /// `set_rx_bandwidth`.
+    RxBandwidth(u32),
+    /// `set_tx_bandwidth`.
+    TxBandwidth(u32),
+}
+
+/// `db` as libusdr's numeric controls carry it: the 64-bit two's complement, which the
+/// handler truncates to `int`.
+fn gain_value(db: i32) -> u64 {
+    u64::from_ne_bytes(i64::from(db).to_ne_bytes())
 }
 
 impl Setup {
@@ -58,10 +72,20 @@ impl Setup {
             Self::Rate(rate) => oracle.set_rx_rate(rate),
             Self::RxFrequency(hz) => oracle.set_rx_frequency(hz),
             Self::TxFrequency(hz) => oracle.set_tx_frequency(hz),
-            // SAFETY: the RX gain handlers read their value as a number.
+            // SAFETY: the gain handlers read their value as a number.
             Self::RxVga1(db) => unsafe {
-                oracle.set_uint(c"/dm/sdr/0/rx/gain/vga", u64::from(db.unsigned_abs()))
+                oracle.set_uint(c"/dm/sdr/0/rx/gain/vga", gain_value(db))
             },
+            // SAFETY: as above.
+            Self::RxAuto(db) => unsafe {
+                oracle.set_uint(c"/dm/sdr/0/rx/gain/auto", gain_value(db))
+            },
+            // SAFETY: as above.
+            Self::TxVga1(db) => unsafe {
+                oracle.set_uint(c"/dm/sdr/0/tx/gain/vga1", gain_value(db))
+            },
+            Self::RxBandwidth(hz) => oracle.set_rx_bandwidth(hz),
+            Self::TxBandwidth(hz) => oracle.set_tx_bandwidth(hz),
         }
         .unwrap_or_else(|errno| panic!("libusdr {self:?}: {errno}"));
     }
@@ -73,6 +97,10 @@ impl Setup {
             Self::RxFrequency(hz) => device.set_rx_frequency(hz),
             Self::TxFrequency(hz) => device.set_tx_frequency(hz),
             Self::RxVga1(db) => device.set_rx_gain(RxGain::Vga1(db)),
+            Self::RxAuto(db) => device.set_rx_gain(RxGain::Auto(db)),
+            Self::TxVga1(db) => device.set_tx_gain(TxGain::Vga1(db)),
+            Self::RxBandwidth(hz) => device.set_rx_bandwidth(hz),
+            Self::TxBandwidth(hz) => device.set_tx_bandwidth(hz),
         }
         .unwrap_or_else(|error| panic!("rsl-usdr {self:?}: {error}"));
     }
@@ -455,4 +483,38 @@ fn an_unreachable_measuring_frequency_fails_like_libusdr() {
         &board.trace()[rsl_start..],
         "failed calibration",
     );
+}
+
+/// The caller's settings the calibration reads and restores: fixed RX and TX filters,
+/// RXVGA1 from the automatic split (the TX IQ search raises it from there and puts it
+/// back) and TXVGA1 set by hand (the TX IQ search runs at -7 dB and returns to it), with
+/// every search over an external loop.
+#[test]
+fn a_calibration_restores_the_callers_settings_like_libusdr() {
+    let outcome = assert_calibration_matches(
+        || {
+            board(Loopback {
+                external: true,
+                ..loopback()
+            })
+        },
+        &[
+            Setup::Rate(RATE),
+            Setup::RxFrequency(1_000_000_000),
+            Setup::TxFrequency(1_000_000_000),
+            Setup::RxBandwidth(5_000_000),
+            Setup::TxBandwidth(3_000_000),
+            Setup::RxAuto(40),
+            Setup::TxVga1(-20),
+        ],
+        RXIQIMB | TXLO | TXIQIMB | EXTERNAL,
+        Calibration {
+            tx_lo_leakage: true,
+            tx_iq_imbalance: true,
+            rx_iq_imbalance: true,
+            feedback: Feedback::External,
+            ..Calibration::default()
+        },
+    );
+    assert_tx_lo_matches(&outcome);
 }

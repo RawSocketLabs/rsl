@@ -51,10 +51,10 @@ pub enum RxGain {
 
 impl RxGain {
     /// RXVGA1's lowest gain in dB (`GAIN_RX_VGA1_MIN`).
-    const VGA1_MIN_DB: i32 = 5;
+    pub(super) const VGA1_MIN_DB: i32 = 5;
 
     /// RXVGA1's highest gain in dB (`GAIN_RX_VGA1_MAX`).
-    const VGA1_MAX_DB: i32 = 31;
+    pub(super) const VGA1_MAX_DB: i32 = 31;
 
     /// RXVGA2's highest gain in dB, either stage or both, from 0 (`GAIN_RX_VGA2_MAX`).
     const VGA2_MAX_DB: i32 = 30;

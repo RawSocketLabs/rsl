@@ -130,8 +130,9 @@ pub(crate) struct Lms6002d {
 
 impl Lms6002d {
     /// A chip whose version register (0x04) reads 0x22, the `LMS6002Dr2` datasheet value,
-    /// and whose TXVGA1 DC shifts (0x42, 0x43) start at 0x80, no shift. Lime does not give
-    /// those registers' reset value; 0x80 is the code libusdr centres its search on.
+    /// and whose TXVGA1 DC shifts (0x42, 0x43) start at 0x80, no shift. The vendored
+    /// register YAML gives no reset value for them; 0x80 is the code libusdr centres its
+    /// search on.
     pub(crate) fn new() -> Self {
         let mut regs = [0; 128];
         regs[0x04] = 0x22;

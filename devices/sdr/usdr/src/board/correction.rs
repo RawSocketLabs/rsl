@@ -168,8 +168,14 @@ impl Board {
     /// Records and writes the RX IQ imbalance correction (`usdr_rx_iqimb_set`, then
     /// `usdr_rxupdate_cal`). As in libusdr, it is recorded even if a write fails.
     pub(crate) fn set_rx_iq_correction(&mut self, correction: RxIqCorrection) -> Result<(), Error> {
-        self.rx.iq_imbalance = correction.imbalance();
-        Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())
+        self.set_rx_iq_imbalance(correction.imbalance())
+    }
+
+    /// Records and writes the RX IQ imbalance correction in the calibration's terms
+    /// (libusdr's `rx_corr` set, then `usdr_rxupdate_cal`).
+    pub(crate) fn set_rx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
+        self.rx.iq_imbalance = imbalance;
+        Phy::Rx.set_iq_correction(self.bus.as_mut(), imbalance.rx_terms())
     }
 
     /// Writes the TX chain's DC offsets (`usdr_tx_dccorr`).
@@ -181,8 +187,14 @@ impl Board {
     /// `usdr_txupdate_cal`), at the TX chain's headroom scale, and keeps it for TX stream
     /// creation, which writes it again.
     pub(crate) fn set_tx_iq_correction(&mut self, correction: TxIqCorrection) -> Result<(), Error> {
-        self.tx.iq_imbalance = correction.imbalance();
-        Phy::Tx.set_iq_correction(self.bus.as_mut(), self.tx.iq_imbalance.tx_terms())
+        self.set_tx_iq_imbalance(correction.imbalance())
+    }
+
+    /// Records and writes the TX IQ imbalance correction in the calibration's terms
+    /// (libusdr's `tx_corr` set, then `usdr_txupdate_cal`).
+    pub(crate) fn set_tx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
+        self.tx.iq_imbalance = imbalance;
+        Phy::Tx.set_iq_correction(self.bus.as_mut(), imbalance.tx_terms())
     }
 }
 

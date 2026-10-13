@@ -14,9 +14,13 @@
 //! - TX IQ imbalance: the tone sits off the TX LO; the search moves the TX IQ correction
 //!   to null the tone's image.
 //!
-//! Afterwards the PLLs, RX input, gains, generator, NCOs and filters go back, and a chain
-//! the calibration powered goes down again. The corrections found stay applied and kept,
-//! as libusdr keeps them.
+//! Afterwards the PLLs, RX input, RXVGA1 and TXVGA1 gains (after the TX IQ search),
+//! generator, NCOs and filters go back, and a chain with no LO goes down again. The
+//! corrections found stay applied and kept, as libusdr keeps them, and so do, as in
+//! libusdr: TXVGA1 at whatever gain the RX IQ search's tone levelling raised it to;
+//! TXVGA1's analog DC shift from the analog LO stage; a chain that was tuned but
+//! unpowered, which the calibration powers and leaves on; and the DC calibration of a
+//! receiver the TX calibrations had to wake, run with its PLL at 320 MHz.
 //!
 //! Everything here is register access, so it runs as blocking code like the other
 //! sequences; it does not stream.
@@ -29,6 +33,7 @@ use rsl_deps::tracing::debug;
 
 use super::Board;
 use super::correction::TxDcOffset;
+use super::gain::RxGain;
 use super::tune::{Chain, nco_word};
 use crate::cal::search::{Axis, Best2d, Limits, Objective2d, Search, Stage, best_2d};
 use crate::chips::lms6002d::Lna;
@@ -217,9 +222,6 @@ impl Objective2d for Objective<'_> {
     }
 }
 
-/// A gain step the TX power search asked for beyond the stage's range (`-E2BIG`).
-struct GainAtMaximum;
-
 impl Board {
     /// Runs the calibrations `request` asks for, in libusdr's order (RX IQ, then TX LO, then
     /// TX IQ), and restores the board's tuning and filters (`usdr_calibrate`).
@@ -254,7 +256,8 @@ impl Board {
             tx_hz: as_int(tx_lo),
         };
         if self.tx.lo_offset_hz != 0 {
-            // Extend the measurement to fit RX: libusdr's `int += double`.
+            // Extend the measurement to fit RX: libusdr's `int += double`, with its TX
+            // rate (`dac_clk / txbb_intr`), which equals the RX rate on the uSDR.
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "libusdr converts the double sum back to int"
@@ -353,9 +356,10 @@ impl Board {
 
     /// Restores what the TX calibrations moved: the TX PLL if it ran on an NCO offset,
     /// the RX PLL (or turns it off if it had no LO), the RX input and loopback, and
-    /// RXVGA1's gain. As in libusdr, a failed step skips the rest, except that a TX PLL
-    /// out of range turns the RX PLL off, and an RX PLL that will not lock is not an
-    /// error.
+    /// RXVGA1's gain. As in libusdr, a failed step skips the rest, except that a PLL out
+    /// of range (the TX PLL's retune, or else the RX PLL's) turns the RX PLL off, and one
+    /// that will not lock is not an error: libusdr checks the RX step's status, which
+    /// still holds a failed TX retune's.
     fn finish_tx_calibration(
         &mut self,
         tx_lo: u32,
@@ -386,7 +390,7 @@ impl Board {
             self.lms.disable_rf_loopback(bus)?;
         }
         self.lms
-            .set_rx_vga1_gain(bus, i32::from(self.rx.vga1_db) + RX_VGA1_FLOOR_DB)
+            .set_rx_vga1_gain(bus, i32::from(self.rx.vga1_db) + RxGain::VGA1_MIN_DB)
     }
 
     /// Turns the constant generator off and points the NCOs and filters back where the
@@ -436,7 +440,13 @@ impl Board {
         self.set_calibration_bandwidth(Chain::Rx, needed)?;
         self.set_calibration_bandwidth(Chain::Tx, tone_hz.abs())?;
         self.set_rx_nco_offset(signal_hz)?;
-        let Some(signal) = self.level_tone(tone_hz, target == Target::TxIq)? else {
+        // The other chain's gain makes up a weak loop.
+        let boost = if target == Target::TxIq {
+            Chain::Rx
+        } else {
+            Chain::Tx
+        };
+        let Some(signal) = self.level_tone(tone_hz, boost)? else {
             return Ok(IqCalibration::SignalTooLow);
         };
         self.set_rx_nco_offset(image_hz)?;
@@ -546,10 +556,10 @@ impl Board {
     }
 
     /// Raises the tone at `tone_hz` until it measures above -7 dBFS, then, if it is still
-    /// under -10 dBFS, the gain of the chain not being calibrated, RXVGA1 for a TX search
-    /// (`tx`), TXVGA1 otherwise, until it is above or at the stage's maximum
-    /// (`_calibrate_txpwr`). Returns the level, or `None` under -70 dBFS.
-    fn level_tone(&mut self, tone_hz: i32, tx: bool) -> Result<Option<i32>, Error> {
+    /// under -10 dBFS, `boost`'s VGA1 gain (the chain not being calibrated) until it is
+    /// above or at the stage's maximum (`_calibrate_txpwr`). Returns the level, or `None`
+    /// under -70 dBFS.
+    fn level_tone(&mut self, tone_hz: i32, boost: Chain) -> Result<Option<i32>, Error> {
         let mut level = -120_000;
         let mut amplitude = 128_u32;
         while amplitude <= 32_768 {
@@ -562,7 +572,7 @@ impl Board {
         }
         if level < -10_000 {
             for step in 0..32 {
-                if self.raise_gain(tx, step)?.is_err() {
+                if !self.raise_gain(boost, step)? {
                     break;
                 }
                 level = dc_estimator::measure(self.bus.as_mut(), CHANNEL)?;
@@ -575,23 +585,27 @@ impl Board {
         Ok((level >= -70_000).then_some(level))
     }
 
-    /// Sets the gain `step` dB above the caller's RXVGA1 gain (`rx`), or TXVGA1 to code
-    /// `10 + step` (`CORR_OP_SET_GAIN`); past the stage's maximum, writes nothing.
-    fn raise_gain(&mut self, rx: bool, step: u8) -> Result<Result<(), GainAtMaximum>, Error> {
+    /// Sets RXVGA1 `step` dB above the caller's gain, or TXVGA1 to code `10 + step`
+    /// (`CORR_OP_SET_GAIN`). Past the stage's maximum (libusdr's `-E2BIG`) it writes
+    /// nothing and returns `false`.
+    fn raise_gain(&mut self, chain: Chain, step: u8) -> Result<bool, Error> {
         let bus = self.bus.as_mut();
-        if rx {
-            let db = i32::from(self.rx.vga1_db) + i32::from(step) + RX_VGA1_FLOOR_DB;
-            if db > RX_VGA1_CEILING_DB {
-                return Ok(Err(GainAtMaximum));
+        match chain {
+            Chain::Rx => {
+                let db = i32::from(self.rx.vga1_db) + i32::from(step) + RxGain::VGA1_MIN_DB;
+                if db > RxGain::VGA1_MAX_DB {
+                    return Ok(false);
+                }
+                self.lms.set_rx_vga1_gain(bus, db)?;
             }
-            self.lms.set_rx_vga1_gain(bus, db)?;
-        } else {
-            if step > 21 {
-                return Ok(Err(GainAtMaximum));
+            Chain::Tx => {
+                if step > 21 {
+                    return Ok(false);
+                }
+                self.lms.set_tx_vga1_code(bus, u5::new(10 + step))?;
             }
-            self.lms.set_tx_vga1_code(bus, u5::new(10 + step))?;
         }
-        Ok(Ok(()))
+        Ok(true)
     }
 
     /// Sends the constant generator's I at `power` (at most 30000), Q 0, shifted by both TX
@@ -613,12 +627,8 @@ impl Board {
 
     /// Tunes `chain`'s PLL to `hz`, a C `int` as libusdr passes it (`CORR_OP_SET_FREQ`).
     fn tune_for_calibration(&mut self, chain: Chain, hz: i32) -> Result<(), Error> {
-        let hz = u32::from_ne_bytes(hz.to_ne_bytes());
-        match chain {
-            Chain::Rx => self.tune_rx_pll(hz),
-            Chain::Tx => self.tune_tx_pll(hz),
-        }
-        .map(drop)
+        self.tune_pll(chain, u32::from_ne_bytes(hz.to_ne_bytes()))
+            .map(drop)
     }
 
     /// Opens `chain`'s filter to [`BANDWIDTH_FACTOR`] times `hz`, in libusdr's float
@@ -680,12 +690,6 @@ impl Board {
         }
     }
 }
-
-/// RXVGA1's lowest gain in dB (`GAIN_RX_VGA1_MIN`).
-const RX_VGA1_FLOOR_DB: i32 = 5;
-
-/// RXVGA1's highest gain in dB (`GAIN_RX_VGA1_MAX`).
-const RX_VGA1_CEILING_DB: i32 = 31;
 
 impl Plan {
     /// `fraction` of the RX rate, in Hz: `(rate · fraction) >> 31`.

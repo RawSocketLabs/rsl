@@ -333,7 +333,7 @@ impl Board {
     }
 
     /// Tunes `chain`'s PLL to `lo`.
-    fn tune_pll(&mut self, chain: Chain, lo: u32) -> Result<CapacitorWindow, Error> {
+    pub(super) fn tune_pll(&mut self, chain: Chain, lo: u32) -> Result<CapacitorWindow, Error> {
         match chain {
             Chain::Rx => self.tune_rx_pll(lo),
             Chain::Tx => self.tune_tx_pll(lo),
