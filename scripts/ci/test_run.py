@@ -9,7 +9,8 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
-from plan import (LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE, PE_SYNC_PORTABLE, USDR,
+from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE,
+                  PE_SYNC_PORTABLE, USDR,
                   USDR_PORTABLE, XSDR, XSDR_PORTABLE)
 from test_plan import planned
 
@@ -231,6 +232,15 @@ curl() {
         self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "--target", "thumbv7em-none-eabi"],
                       sequence)
         self.assertFalse(any(f"{XSDR_PORTABLE}/Cargo.toml" in row for row in sequence))
+
+    def test_the_front_end_crate_gets_its_bare_metal_check_without_std(self):
+        plan = planned([f"{FRONTEND}/src/gpio.rs"])
+        self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
+        plan["release_roots"] = [LSDR, LSDR_PORTABLE, LOWLEVEL, FRONTEND]
+        plan["release_members"] = [{"root": LSDR}]
+        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "-p", "rsl-sdr-frontend",
+                       "--target", "thumbv7em-none-eabi"],
+                      commands("no-std", plan, BNB_CONFIG))
 
     def test_bnb_feature_ladder_and_denied_warning_lints_are_retained(self):
         sequence = commands("bnb", planned(release=True), BNB_CONFIG)

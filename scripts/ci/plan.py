@@ -38,16 +38,17 @@ FUZZ = {
 USDR_ORACLE = "devices/sdr/usdr/oracle"
 USDR = "devices/sdr/usdr"
 USDR_PORTABLE = f"{USDR}/nostd-check"
-# Shared no_std device crates (the bus seam, per-chip register values and sequences) by
-# root. Like every cross-target check, their bare-metal gate is release-only: an explicit
+# Shared no_std device crates (the bus seam, per-chip register values and sequences, the
+# SDR front-end probe) by root. Like every cross-target check, their bare-metal gate is release-only: an explicit
 # release of a driver with a portable fixture selects it; a codec release reaching them does
 # not. They are not release-enabled.
 LOWLEVEL = "devices/lowlevel"
 LP8758 = "devices/sdr/chips/lp8758"
 LMS7002M = "devices/sdr/chips/lms7002m"
 LMK05318 = "devices/sdr/chips/lmk05318"
+FRONTEND = "devices/sdr/frontend"
 BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: "rsl-lms7002m",
-                      LMK05318: "rsl-lmk05318"}
+                      LMK05318: "rsl-lmk05318", FRONTEND: "rsl-sdr-frontend"}
 # The LMS7 family driver; its oracle runs libusdr's LMS7 family against rsl-xsdr-sim,
 # compiling the uSDR oracle's vendored C.
 XSDR = "devices/sdr/xsdr"
