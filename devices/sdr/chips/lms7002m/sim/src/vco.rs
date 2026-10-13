@@ -11,8 +11,11 @@
 //!
 //! The model, a sim choice with no silicon evidence beyond that ordering:
 //! - Each VCO's free-running frequency falls linearly with the code, from its span's top
-//!   at code 0 to its bottom at code 255. The spans are libusdr's own tuning limits
-//!   (`enum sxx_vco_params`, `enum cgen_vco_params`), not datasheet figures.
+//!   at code 0 to its bottom at code 255. The SXX spans are libusdr's own tuning limits
+//!   (`enum sxx_vco_params`), not datasheet figures. The CGEN span is a sim choice, 1.9 to
+//!   2.9 GHz: wider than libusdr's nominal 2.0 to 2.7 GHz (`enum cgen_vco_params`), which
+//!   `lms7002m_cgen_tune` itself leaves with only a warning ("VCO may not lock") for
+//!   common rates (30.72 MS/s programs 1.966 GHz), so those can lock.
 //! - The PLL's target is the reference times the feedback divider the registers program:
 //!   `INT_SDM + 1` (CGEN) or `INT_SDM + 4` (SXX, as `lms7002m_sxx_tune` writes `nint - 4`)
 //!   plus `FRAC_SDM / 2^20`.
@@ -56,8 +59,9 @@ const WINDOW: i64 = 4;
 /// The highest cap code.
 const CAP_MAX: i64 = 255;
 
-/// The CGEN VCO's span in hertz: libusdr's `CGEN_VCO_MIN` and `CGEN_VCO_MAX`.
-const CGEN_SPAN: (u64, u64) = (2_000_000_000, 2_700_000_000);
+/// The CGEN VCO's span in hertz: a sim choice around libusdr's `CGEN_VCO_MIN` (2 GHz)
+/// and `CGEN_VCO_MAX` (2.7 GHz); see the module docs.
+const CGEN_SPAN: (u64, u64) = (1_900_000_000, 2_900_000_000);
 /// The SXX VCOs' spans in hertz by `SEL_VCO`: libusdr's `SXX_VCOL_*`, `SXX_VCOM_*` and
 /// `SXX_VCOH_*`. Code 3 selects nothing the source names; the model gives it no span.
 const SXX_SPANS: [(u64, u64); 3] = [
@@ -154,9 +158,9 @@ mod tests {
 
     #[test]
     fn a_target_outside_the_span_never_reads_ok() {
-        // 120 * 26 MHz = 3.12 GHz, above the CGEN span's 2.7 GHz.
+        // 120 * 26 MHz = 3.12 GHz, above the CGEN span's 2.9 GHz.
         assert!((0..=255).all(|cap| cgen_at(120, cap) == HIGH));
-        // 70 * 26 MHz = 1.82 GHz, below its 2 GHz.
+        // 70 * 26 MHz = 1.82 GHz, below its 1.9 GHz.
         assert!((0..=255).all(|cap| cgen_at(70, cap) == LOW));
     }
 
