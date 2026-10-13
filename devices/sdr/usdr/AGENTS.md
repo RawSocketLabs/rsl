@@ -22,7 +22,7 @@ no_std + alloc compilation fixture; the public driver remains std-dependent. No 
 qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
-board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
+board power-up and power-down, temperature reading, the RX, TX and both-chain sample rates, RX bandwidth,
 frequency, gains, path and corrections, the stream group
 (`create_streams`, `start_streams` with every sync type libusdr offers the uSDR but `ExternalAll`, `receive_into` from
 `ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `send`/`send_with_stat`

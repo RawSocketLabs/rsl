@@ -166,6 +166,12 @@ pub(crate) struct TxState {
     /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`); 0 until tuned.
     pub(super) lo_hz: u32,
 
+    /// The interpolation of the last sample rate set (libusdr's `txbb_intr`); `None`
+    /// until the first. Every rate change sets it, TX's or not, but only a TX rate loads
+    /// its FIR, and only when it changes, so after an RX rate a TX rate of the same factor
+    /// loads none, as in libusdr.
+    pub(super) interpolation: Option<Decimation>,
+
     /// The caller fixed the band with [`Board::set_tx_path`], so frequency changes leave it
     /// alone (libusdr's `tx_rfic_path` other than `USDR_TX_AUTO`).
     pub(super) band_fixed: bool,

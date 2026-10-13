@@ -7,8 +7,8 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, Calibration, CalibrationReport, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle,
-    RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
+    Board, Calibration, CalibrationReport, RateChains, RxGain, RxIqCorrection, RxPacket, RxPath,
+    RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
 };
 use crate::error::Error;
 use crate::fpga::IqImbalance;
@@ -231,7 +231,12 @@ impl Device {
         self.board().identity()
     }
 
-    /// Sets the RX sample rate, in samples per second.
+    /// Sets the RX sample rate, in samples per second (libusdr's `/dm/rate/rxtxadcdac`
+    /// with `{rate, 0, 0, 0}`).
+    ///
+    /// The board has one sample clock, so the TX chain runs at this rate too, but keeps
+    /// its interpolation filter and bandwidth until [`Device::set_tx_sample_rate`] or a TX
+    /// tune, as in libusdr.
     ///
     /// # Errors
     ///
@@ -243,7 +248,40 @@ impl Device {
     ///   the receiver is tuned below 230 MHz and retuning it for the new mixer LO fails.
     /// - Any bus failure.
     pub fn set_rx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
-        self.board().set_rx_sample_rate(samples_per_second)
+        self.board()
+            .set_sample_rate(samples_per_second, RateChains::Rx)
+    }
+
+    /// Sets the TX sample rate, in samples per second (libusdr's `/dm/rate/rxtxadcdac`
+    /// with `{0, rate, 0, 0}`): the TX interpolation filter for it, unless the last rate
+    /// already had the same factor, and the TX bandwidth if it follows the rate.
+    ///
+    /// The board has one sample clock, so the RX chain runs at this rate too, keeping its
+    /// decimation filter and bandwidth; as in libusdr, the receiver is powered all the
+    /// same.
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_rx_sample_rate`].
+    pub fn set_tx_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
+        self.board()
+            .set_sample_rate(samples_per_second, RateChains::Tx)
+    }
+
+    /// Sets both chains' sample rate, in samples per second (libusdr's `/dm/rate/master`):
+    /// [`Device::set_rx_sample_rate`] and [`Device::set_tx_sample_rate`] in one step.
+    ///
+    /// The board has one sample clock, so there is no call for different RX and TX rates:
+    /// libusdr, handed two, runs both chains at the RX rate. It also ignores the ADC and
+    /// DAC rates its `/dm/rate/rxtxadcdac` takes; the converter rate is always the sample
+    /// rate times the chains' rate factor.
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_rx_sample_rate`].
+    pub fn set_sample_rate(&mut self, samples_per_second: u32) -> Result<(), Error> {
+        self.board()
+            .set_sample_rate(samples_per_second, RateChains::Both)
     }
 
     /// Tunes the receiver to `hz`.

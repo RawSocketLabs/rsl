@@ -225,7 +225,8 @@ impl IqImbalance {
     }
 }
 
-/// The decimator's rate-change factor, with the FIR microcode for it.
+/// The DSP chains' rate-change factor, with the FIR microcode for it: the RX chain's
+/// decimation and the TX chain's interpolation, which libusdr always sets alike.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Decimation {
     /// No decimation: the FIR passes samples through.
@@ -273,6 +274,19 @@ impl Decimation {
             Self::X8 => &fir_tables::DECIMATE_8,
             Self::X16 => &fir_tables::DECIMATE_16,
             Self::X32 => &fir_tables::DECIMATE_32,
+        }
+    }
+
+    /// The TX FIR microcode libusdr loads for this interpolation factor on the uSDR's
+    /// 7-series FPGA (`fgearbox_load_fir_i_ex` with `DSP_7SERIES`).
+    fn tx_fir(self) -> &'static [u8; 1280] {
+        match self {
+            Self::X1 => &fir_tables::BYPASS,
+            Self::X2 => &fir_tables::INTERPOLATE_2,
+            Self::X4 => &fir_tables::INTERPOLATE_4,
+            Self::X8 => &fir_tables::INTERPOLATE_8,
+            Self::X16 => &fir_tables::INTERPOLATE_16,
+            Self::X32 => &fir_tables::INTERPOLATE_32,
         }
     }
 }
@@ -356,6 +370,16 @@ impl Phy {
         for &byte in decimation.rx_fir() {
             Self::Rx.write(bus, SubReg::FirLoad, byte.into())?;
             bus.sleep(Duration::from_micros(1));
+        }
+        Ok(())
+    }
+
+    /// Loads the TX interpolator's FIR microcode for `interpolation`, a byte per write,
+    /// 10 µs apart (`fgearbox_load_fir_i_ex` with `sleep_us` 10).
+    pub(crate) fn load_tx_fir(bus: &mut dyn Bus, interpolation: Decimation) -> Result<(), Error> {
+        for &byte in interpolation.tx_fir() {
+            Self::Tx.write(bus, SubReg::FirLoad, byte.into())?;
+            bus.sleep(Duration::from_micros(10));
         }
         Ok(())
     }

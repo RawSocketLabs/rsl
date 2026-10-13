@@ -18,4 +18,5 @@ pub use calibration::{Calibration, CalibrationReport, Feedback, IqCalibration, T
 pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use gain::{RxGain, TxGain};
 pub use path::{RxPath, TxPath};
+pub(crate) use rate::RateChains;
 pub use stream::{RxPacket, RxThrottle};

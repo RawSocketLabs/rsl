@@ -257,11 +257,22 @@ impl Oracle {
     ///
     /// The negative errno libusdr returned (`-ERANGE` outside its supported rates).
     pub fn set_rx_rate(&mut self, rate: u32) -> Result<(), i32> {
+        self.set_rates(rate, 0)
+    }
+
+    /// Sets the RX and TX sample rates through `/dm/rate/rxtxadcdac` with
+    /// `{rx, tx, 0, 0}`; 0 leaves a chain unset.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-EINVAL` for two zeros, `-ERANGE` outside its
+    /// supported rates).
+    pub fn set_rates(&mut self, rx: u32, tx: u32) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
         // RX, TX, ADC and DAC rates; libusdr ignores the last two.
-        let rates: [u32; 4] = [rate, 0, 0, 0];
+        let rates: [u32; 4] = [rx, tx, 0, 0];
         // libusdr's `dev_m2_lm6_1_rate_m_set` reads the value as a pointer to four rates.
         let value = rates.as_ptr() as u64;
         // SAFETY: `dev` is open, the path is NUL-terminated, and `rates` outlives the call,
@@ -270,6 +281,15 @@ impl Oracle {
             unsafe { usdr_dme_set_uint(dev.as_ptr(), c"/dm/rate/rxtxadcdac".as_ptr(), value) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets both chains' sample rate, `/dm/rate/master`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ERANGE` outside its supported rates).
+    pub fn set_master_rate(&mut self, rate: u32) -> Result<(), i32> {
+        self.set_value(c"/dm/rate/master", rate.into())
     }
 
     /// Sets the RX bandwidth in Hz (`/dm/sdr/0/rx/bandwidth`); 0 returns the filter to

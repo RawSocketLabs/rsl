@@ -1,10 +1,13 @@
-//! Setting the RX sample rate: `usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`,
-//! as `dev_m2_lm6_1_rate_m_set` reaches it with `{rate, 0, 0, 0}` (what the FFI `usdr`
-//! crate sends).
+//! Setting the sample rate: `usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`, as
+//! `dev_m2_lm6_1_rate_m_set` reaches it with `{rx, tx, 0, 0}` (the FFI `usdr` crate sends
+//! `{rate, 0, 0, 0}`) and `dev_m2_lm6_1_rate_set` (`/dm/rate/master`) with the same rate
+//! for both chains.
 //!
-//! The ADC runs at the requested rate times a decimation factor, chosen to keep it between
-//! 30.72 and 60 MS/s; the FPGA's decimator brings it back down. The Si5332 makes the sample
-//! clock at twice the ADC rate, the link rate.
+//! The board has one sample clock. The ADC and DAC run at the requested rate times a rate
+//! factor, chosen to keep them between 30.72 and 60 MS/s; the FPGA's decimator and
+//! interpolator bring it back down and up. The Si5332 makes the sample clock at twice the
+//! converter rate, the link rate. A rate for one chain reloads only that chain's FIR and
+//! filter; the other chain's rate follows the clock all the same.
 
 use std::time::Duration;
 
@@ -19,6 +22,32 @@ use crate::chips::si5332::Layout;
 use crate::error::Error;
 use crate::fpga::{Decimation, Phy};
 use crate::portable::si5332::ClockSequence;
+
+/// The chains a sample-rate change is for: the nonzero entries of libusdr's `{rx, tx}`
+/// rates. The board's one sample clock serves both either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RateChains {
+    /// The RX chain (`{rate, 0}`).
+    Rx,
+
+    /// The TX chain (`{0, rate}`).
+    Tx,
+
+    /// Both (`{rate, rate}`, `/dm/rate/master`).
+    Both,
+}
+
+impl RateChains {
+    /// The RX entry is set.
+    const fn rx(self) -> bool {
+        matches!(self, Self::Rx | Self::Both)
+    }
+
+    /// The TX entry is set.
+    const fn tx(self) -> bool {
+        matches!(self, Self::Tx | Self::Both)
+    }
+}
 
 impl Board {
     /// Highest sample rate, in S/s (`RATE_MAX`).
@@ -39,24 +68,26 @@ impl Board {
     /// ADC rates from here up need the 1.925 V I/O rail, in S/s.
     const VIO_BOOST_FROM: u32 = 62_000_000;
 
-    /// Sets the RX sample rate, in samples per second.
+    /// Sets the sample rate for `chains`, in samples per second.
     ///
-    /// libusdr's quirks are kept where they reach the registers: it powers the receiver,
-    /// pulses the TX chain's reset and sets the TX NCOs (to `tx`'s LO offset, at the new
-    /// rate) even for an RX-only rate.
+    /// libusdr's quirks are kept where they reach the registers: it powers the receiver
+    /// and pulses both chains' front-end resets for any rate, sets both chains' NCOs at
+    /// the new rate, and records the rate factor for both chains, so a chain whose FIR a
+    /// rate did not load keeps the old one until a rate for it changes the factor. Only a
+    /// chain the rate is for gets its filter following the new rate.
     ///
     /// Divergence on failure only: libusdr records the boosted rail, the powered receiver
-    /// and the decimation even when a write fails; this records each only once its writes
-    /// succeed, so a retry reissues them.
-    pub(crate) fn set_rx_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
+    /// and the rate factors even when a write fails; this records each only once its
+    /// writes succeed, so a retry reissues them.
+    pub(crate) fn set_sample_rate(&mut self, rate: u32, chains: RateChains) -> Result<(), Error> {
         // The block size and decimation are fixed while a stream runs; libusdr's callers only
         // set the rate before creating one.
         if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let decimation =
+        let factor =
             Self::decimation_for(rate, self.chains).ok_or(Error::UnsupportedSampleRate(rate))?;
-        let adc_rate = rate * decimation.factor();
+        let adc_rate = rate * factor.factor();
         // The sample clock runs at the link rate, twice the ADC rate.
         let layout = Layout::new(self.reference.hz(), adc_rate * 2)
             .ok_or(Error::UnsupportedSampleRate(rate))?;
@@ -84,13 +115,20 @@ impl Board {
         run_sequence(bus, &mut clocks)?;
         self.mixer_lo_hz = layout.vco_hz() / u32::from(Self::MIXER_LO_DIVIDER);
 
-        if self.chains.rx && self.rx.decimation != Some(decimation) {
+        if self.chains.rx && chains.rx() && self.rx.decimation != Some(factor) {
             Phy::Rx.reset(bus, 15)?;
             bus.sleep(Duration::from_micros(1));
             Phy::Rx.reset(bus, 9)?;
-            Phy::load_rx_fir(bus, decimation)?;
+            Phy::load_rx_fir(bus, factor)?;
         }
-        self.rx.decimation = Some(decimation);
+        if self.chains.tx && chains.tx() && self.tx.interpolation != Some(factor) {
+            Phy::Tx.reset(bus, 7)?;
+            bus.sleep(Duration::from_micros(1));
+            Phy::Tx.reset(bus, 0)?;
+            Phy::load_tx_fir(bus, factor)?;
+        }
+        self.rx.decimation = Some(factor);
+        self.tx.interpolation = Some(factor);
         self.adc_rate_hz = adc_rate;
 
         // Front-end reset, both chains.
@@ -110,14 +148,20 @@ impl Board {
             self.rx.pll_lo_hz = self.mixer_lo_hz.wrapping_add(self.rx.lo_hz);
             self.tune_rx_pll(self.rx.pll_lo_hz)?;
         }
-        self.update_rx_bandwidth()?;
+        if chains.rx() {
+            self.update_rx_bandwidth()?;
+        }
+        if chains.tx() {
+            self.update_tx_bandwidth()?;
+        }
         debug!(
             rate,
-            ?decimation,
+            ?chains,
+            ?factor,
             adc_rate_hz = adc_rate,
             mixer_lo_hz = self.mixer_lo_hz,
             vio_boosted = self.vio_boosted,
-            "RX sample rate set"
+            "sample rate set"
         );
         Ok(())
     }
@@ -133,8 +177,8 @@ impl Board {
 
     /// Fixes the TX filter bandwidth in Hz, or with 0 returns it to following the sample
     /// rate, as [`Self::set_rx_bandwidth`] does for RX (`usdr_rfic_bb_set_badwidth` for
-    /// TX). The rate follows only on a TX tune: libusdr's RX-only rate change leaves the TX
-    /// filter alone.
+    /// TX). The rate follows on a TX tune and a rate for TX: libusdr's RX-only rate change
+    /// leaves the TX filter alone.
     pub(crate) fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
         self.tx.fixed_bandwidth_hz = (hz != 0).then_some(hz);
         self.lms.set_tx_bandwidth(self.bus.as_mut(), hz)

@@ -80,7 +80,8 @@
 //! power-up, outputs 0 to 2 carry the 26 MHz reference undivided, and outputs 3 to 5 are
 //! off.
 //!
-//! Setting a sample rate ([`Device::set_rx_sample_rate`]) follows libusdr. On a board with
+//! Setting a sample rate ([`Device::set_rx_sample_rate`], [`Device::set_tx_sample_rate`],
+//! [`Device::set_sample_rate`]) follows libusdr. On a board with
 //! both chains, it runs the converters faster than the host rate, by a power of two from 1 to
 //! 32, aiming for 30.72–60 MS/s, and the FPGA decimates (RX) or interpolates (TX) by the
 //! same factor. Each sample clock runs at twice the converter rate, because I and Q take
