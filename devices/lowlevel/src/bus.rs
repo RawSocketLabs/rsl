@@ -200,15 +200,17 @@ pub enum TxCommit {
 }
 
 /// Runs a portable register sequence to its end over `bus`, one action at a time: the
-/// blocking executor, so the sequence's operations reach the bus exactly as written.
+/// blocking executor, so the sequence's operations reach the bus exactly as written. Any
+/// actions a sequence names after a failure run too (see [`Sequence`]).
 ///
 /// # Errors
 ///
-/// The sequence's failure, with the bus error and the access it struck.
+/// The sequence's first failure, with the bus error and the access it struck.
 pub fn run_sequence(
     bus: &mut dyn Bus,
     sequence: &mut impl Sequence,
 ) -> Result<(), SequenceFailure<BusError>> {
+    let mut first = None;
     while let Some(action) = sequence.next() {
         let result = match action {
             SequenceAction::Access(RegisterAccess::Read { dev, reg }) => {
@@ -231,9 +233,14 @@ pub fn run_sequence(
                 Ok(0)
             }
         };
-        sequence.complete(result)?;
+        if let Err(failure) = sequence.complete(result) {
+            first.get_or_insert(failure);
+            if !sequence.attempts_after_failure() {
+                break;
+            }
+        }
     }
-    Ok(())
+    first.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
@@ -370,5 +377,53 @@ mod tests {
             }
         ));
         assert_eq!(bus.calls, [Call::Read(19)], "nothing follows the failure");
+    }
+
+    /// Reads registers 19, then 20, then 21, attempting each whatever the others did and
+    /// reporting every failure, as a power-down that tries every write does.
+    #[derive(Default)]
+    struct EveryRead {
+        done: u32,
+    }
+
+    impl Sequence for EveryRead {
+        fn next(&self) -> Option<SequenceAction> {
+            (self.done < 3).then_some(SequenceAction::Fpga(FpgaAccess::Read {
+                reg: 19 + self.done,
+            }))
+        }
+
+        fn attempts_after_failure(&self) -> bool {
+            true
+        }
+
+        fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+            let Some(SequenceAction::Fpga(access)) = self.next() else {
+                return Ok(());
+            };
+            self.done += 1;
+            result
+                .map(drop)
+                .map_err(|source| SequenceFailure::FpgaTransport {
+                    chip: "FPGA",
+                    access,
+                    source,
+                })
+        }
+    }
+
+    #[test]
+    fn actions_named_after_a_failure_run_and_the_first_failure_is_reported() {
+        let mut bus = Recorder {
+            fail: Some(19),
+            ..Recorder::default()
+        };
+        let failure = run_sequence(&mut bus, &mut EveryRead::default()).unwrap_err();
+        assert_eq!(
+            bus.calls,
+            [Call::Read(19), Call::Read(20), Call::Read(21)],
+            "the steps after the failure are still attempted"
+        );
+        assert_eq!(failure.access(), Some(("FPGA", Access::Read, 19)));
     }
 }

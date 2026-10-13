@@ -6,7 +6,8 @@
 //! - bus identities and bounds: [`I2cAddr`], [`SpiAddr`], [`I2C_MAX_WRITE`], [`I2C_MAX_READ`];
 //! - typed registers: [`Register`] and [`IndexedRegister`];
 //! - the sequence seam: a [`Sequence`] names one [`SequenceAction`] at a time and stops
-//!   with a [`SequenceFailure`] that keeps the executor's error unchanged;
+//!   with a [`SequenceFailure`] that keeps the executor's error unchanged, or, if it
+//!   [attempts steps after a failure](Sequence::attempts_after_failure), runs them first;
 //!   [`RegisterAccess::context`] and [`FpgaAccess::context`] decode a failed access into the
 //!   [`Access`] direction and register a driver's error reports.
 //!

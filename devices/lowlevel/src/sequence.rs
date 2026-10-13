@@ -198,13 +198,27 @@ pub enum SequenceAction {
 }
 
 /// A register sequence an executor drives one action at a time.
+///
+/// A failure ends the sequence, unless it [attempts steps after a
+/// failure](Self::attempts_after_failure): a sequence whose source tries further steps
+/// after one (a power-down that tries every write, a settling wait taken even after a
+/// failed write) keeps naming actions after reporting it; executors perform them and
+/// report each outcome as usual, and the run fails with the first failure reported.
 pub trait Sequence {
-    /// The action to perform next; `None` once the sequence finished or failed.
+    /// The action to perform next; `None` once the sequence has finished. After a failure
+    /// it is not consulted, unless [`Self::attempts_after_failure`].
     fn next(&self) -> Option<SequenceAction>;
 
-    /// Applies the outcome of [`Self::next`]'s action. A failure ends the sequence; an
-    /// outcome with no action pending is ignored, like a duplicate. An I²C byte arrives
-    /// zero-extended (see [`i2c_byte`]).
+    /// Whether this sequence names further actions after reporting a failure, and returns
+    /// `None` from [`Self::next`] once it has attempted them all. `false`, the default,
+    /// ends the run at the first failure.
+    fn attempts_after_failure(&self) -> bool {
+        false
+    }
+
+    /// Applies the outcome of [`Self::next`]'s action. An outcome with no action pending
+    /// is ignored, like a duplicate. An I²C byte arrives zero-extended (see
+    /// [`i2c_byte`]).
     ///
     /// # Errors
     ///
