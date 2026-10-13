@@ -54,6 +54,15 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_usb_rx");
 
+    // Likewise the USB TX functions; their status read reaches a fake register file
+    // through libusdr's own `lowlevel_get_ops`, so this archive precedes the main one.
+    cc::Build::new()
+        .file("shim/usb_tx.c")
+        .includes(&includes)
+        .flag("-std=gnu11")
+        .warnings(false)
+        .compile("usdr_oracle_usb_tx");
+
     // Header-only RTSA depth helper, exported for parity under the generic capability set.
     cc::Build::new()
         .file("shim/rtsa_depth.c")
