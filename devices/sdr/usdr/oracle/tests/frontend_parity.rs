@@ -10,7 +10,7 @@ use std::ffi::CStr;
 
 use rsl_usdr::frontend::{
     Exm2peOptions, PciefeAttenuation, PciefeDuplexer, PciefeOptions, PciefePath, PciefeRevision,
-    PciefeRxFilter, PciefeSetting, PciefeTxFilter,
+    PciefeRxFilter, PciefeSetting, PciefeTxFilter, XmassCalibrationPath,
 };
 use rsl_usdr::{Device, Error, FrontEndKind, FrontEndSelection};
 use rsl_usdr_oracle::Oracle;
@@ -455,61 +455,6 @@ fn supersync_has_no_oscillator_dac() {
     assert_eq!(board.front_end_clock_reg(0x0507), Some(0x02));
 }
 
-/// Intentional divergence, scoped to these scenarios: when XMASS or `SimpleSync` answers,
-/// rsl-usdr stops the open (their LMK05318 bring-up is not ported) where libusdr carries
-/// on. Up to that point the traces must agree, so rsl-usdr's whole trace is a prefix of
-/// libusdr's and libusdr went on to talk to the board.
-#[test]
-fn answering_clock_boards_stop_the_open_where_libusdr_carries_on() {
-    for (board, parameters, selection, name) in [
-        (FrontEnd::Xmass, c"", FrontEndSelection::Auto, "xmass"),
-        (
-            FrontEnd::Xmass,
-            c"fe=xmass",
-            FrontEndSelection::Xmass,
-            "xmass",
-        ),
-        (
-            FrontEnd::SimpleSync,
-            c"",
-            FrontEndSelection::Auto,
-            "simplesync",
-        ),
-        (
-            FrontEnd::SimpleSync,
-            c"fe=simplesync",
-            FrontEndSelection::SimpleSync,
-            "simplesync",
-        ),
-    ] {
-        let make = || SimBoard::new(REVISION).with_front_end(board);
-        // libusdr's lock waits run on the wall clock against a model that never locks, so
-        // its trace past detection is not deterministic: only the prefix is compared.
-        let reference = match Oracle::open_with(make(), parameters) {
-            Ok(oracle) => oracle.close(),
-            Err(error) => *error.board,
-        };
-        let sim = SimBus::new(make());
-        let result = Device::builder(sim.clone()).front_end(selection).open();
-        assert!(
-            matches!(result, Err(Error::UnsupportedFrontEnd(found)) if found == name),
-            "{parameters:?}: {result:?}"
-        );
-        let actual = without_thermal_gate(sim.board().trace(), REVISION);
-        let actual = without_failure_power_down(&actual).to_vec();
-        let expected = reference.trace();
-        assert!(
-            expected.len() > actual.len(),
-            "{parameters:?}: libusdr carries on"
-        );
-        assert_same_ops(
-            &expected[..actual.len()],
-            &actual,
-            &format!("{parameters:?}"),
-        );
-    }
-}
-
 /// A V0 front end whose DAC reads 0x0000 counts as no board at all, hinted or not: libusdr
 /// passes `dac80501_init`'s `-ENODEV` through. A V1 board fails the open instead.
 #[test]
@@ -558,5 +503,231 @@ fn a_dead_pciefe_expander_is_skipped_or_fails_the_hint() {
             })
         ),
         "{result:?}"
+    );
+}
+
+/// A board with `front_end` attached.
+fn with(front_end: FrontEnd) -> impl Fn() -> SimBoard {
+    move || SimBoard::new(REVISION).with_front_end(front_end)
+}
+
+/// XMASS comes up as libusdr brings it up: expander check, LMK05318 bring-up (identity,
+/// staged registers in address order, soft reset), both lock waits, `SYNC_N` pulse; on
+/// revision 1a also both sensors and the serial number. Found automatically after the
+/// absent `PCIe` front end, or hinted.
+#[test]
+fn xmass_comes_up_like_libusdr() {
+    for board in [FrontEnd::Xmass, FrontEnd::XmassRev1a] {
+        for (parameters, selection) in [
+            (c"", FrontEndSelection::Auto),
+            (c"fe=xmass", FrontEndSelection::Xmass),
+        ] {
+            let kind = assert_open_matches(with(board), parameters, selection).expect("open");
+            assert_eq!(kind, Some(FrontEndKind::Xmass), "{board:?} {parameters:?}");
+        }
+    }
+}
+
+/// `SimpleSync` comes up as libusdr brings it up: its enables, the LMK05318 bring-up with
+/// four 25 MHz references, its LO outputs off, both lock waits and a sync. The automatic
+/// probe first passes XMASS and `SuperSync`, which do not answer.
+#[test]
+fn simplesync_comes_up_like_libusdr() {
+    for (parameters, selection) in [
+        (c"", FrontEndSelection::Auto),
+        (c"fe=simplesync", FrontEndSelection::SimpleSync),
+    ] {
+        let kind =
+            assert_open_matches(with(FrontEnd::SimpleSync), parameters, selection).expect("open");
+        assert_eq!(kind, Some(FrontEndKind::SimpleSync), "{parameters:?}");
+    }
+}
+
+/// With XMASS's LMK05318 silent, libusdr logs the failed identity check and carries on: the
+/// idle bus reads as a locked APLL1 (all ones), APLL2 is unused, so the board comes up.
+/// rsl-usdr does the same.
+#[test]
+fn xmass_without_its_clock_carries_on_like_libusdr() {
+    let make = || with(FrontEnd::Xmass)().without_front_end_clock();
+    for (parameters, selection) in [
+        (c"", FrontEndSelection::Auto),
+        (c"fe=xmass", FrontEndSelection::Xmass),
+    ] {
+        let kind = assert_open_matches(make, parameters, selection).expect("open");
+        assert_eq!(kind, Some(FrontEndKind::Xmass), "{parameters:?}");
+    }
+}
+
+/// A step retuning the synchronization board's calibration LO; `sdr_path` uses XMASS's
+/// second path to the control.
+fn calibration_step(hz: u32, sdr_path: bool) -> Step {
+    Step {
+        name: format!("calibration LO {hz} Hz"),
+        libusdr: Box::new(move |oracle| {
+            if sdr_path {
+                oracle.set_sdr_sync_calibration_frequency(hz.into())
+            } else {
+                oracle.set_sync_calibration_frequency(hz.into())
+            }
+        }),
+        rsl_usdr: Box::new(move |device| device.set_sync_calibration_frequency(hz)),
+    }
+}
+
+/// A step routing XMASS's calibration signal, with libusdr's number for the path.
+fn calibration_path_step(code: u64, path: XmassCalibrationPath) -> Step {
+    Step {
+        name: format!("calibration path {path:?}"),
+        libusdr: Box::new(move |oracle| oracle.set_sync_calibration_path(code)),
+        rsl_usdr: Box::new(move |device| device.set_sync_calibration_path(path)),
+    }
+}
+
+/// LO frequencies the controls try: off, at and around the cut-offs, typical, the edges of
+/// what the LMK05318 reaches, and beyond.
+const CALIBRATION_HZ: [u32; 14] = [
+    444_000_000,
+    100_000_000,
+    0,
+    3_099_999,
+    3_100_000,
+    3_500_000,
+    10_000_000,
+    25_000_001,
+    402_529_374,
+    1_000_000_000,
+    1_250_000_000,
+    3_000_000_000,
+    13_020_833,
+    250_000_000,
+];
+
+/// XMASS's calibration LO, by both paths, including frequencies the LMK05318 cannot reach
+/// (refused before any write, after which libusdr still pauses and logs the lock), and its
+/// calibration paths; the LO reading follows each request, failed or not.
+#[test]
+fn xmass_calibration_controls_match_libusdr() {
+    let mut steps: Vec<Step> = CALIBRATION_HZ
+        .iter()
+        .enumerate()
+        .map(|(index, &hz)| calibration_step(hz, index % 2 == 1))
+        .collect();
+    steps.extend([
+        calibration_path_step(1, XmassCalibrationPath::Lo),
+        calibration_path_step(2, XmassCalibrationPath::Noise),
+        calibration_path_step(3, XmassCalibrationPath::LoToLna3),
+        calibration_path_step(4, XmassCalibrationPath::NoiseToLna3),
+        calibration_path_step(0, XmassCalibrationPath::Off),
+    ]);
+    let (results, _) = assert_steps_match(
+        with(FrontEnd::Xmass),
+        c"fe=xmass",
+        FrontEndSelection::Xmass,
+        &steps,
+    );
+    assert!(
+        results.iter().any(Result::is_err) && results.iter().any(Result::is_ok),
+        "both reachable and unreachable LOs: {results:?}"
+    );
+
+    for &hz in &CALIBRATION_HZ {
+        let mut oracle = Oracle::open_with(with(FrontEnd::Xmass)(), c"fe=xmass").expect("open");
+        let _ = oracle.set_sync_calibration_frequency(hz.into());
+        let expected = oracle.sync_calibration_frequency().expect("XMASS reads it");
+        let _ = oracle.close();
+        let mut device = Device::builder(SimBus::new(with(FrontEnd::Xmass)()))
+            .front_end(FrontEndSelection::Xmass)
+            .open()
+            .expect("opens");
+        let _ = device.set_sync_calibration_frequency(hz);
+        let actual = device.sync_calibration_frequency().expect("XMASS reads it");
+        assert_eq!(u64::from(actual), expected, "after {hz} Hz");
+    }
+}
+
+/// A sweep of XMASS calibration LOs, each compared register for register, each retune
+/// starting from the last one's APLL2.
+#[test]
+fn an_xmass_calibration_sweep_matches_libusdr() {
+    let steps: Vec<Step> = (0..60_u32)
+        .map(|step| calibration_step(3_100_000 + step * 21_234_567, false))
+        .collect();
+    assert_steps_match(
+        with(FrontEnd::XmassRev1a),
+        c"",
+        FrontEndSelection::Auto,
+        &steps,
+    );
+}
+
+/// `SimpleSync`'s measurement LO: outputs 0 to 3 turned off below 3.5 MHz, otherwise
+/// planned from APLL2, locked and synced; unreachable LOs refused before any write.
+#[test]
+fn simplesync_lo_controls_match_libusdr() {
+    let mut steps: Vec<Step> = CALIBRATION_HZ
+        .iter()
+        .map(|&hz| calibration_step(hz, false))
+        .collect();
+    steps.extend((0..40_u32).map(|step| calibration_step(3_500_000 + step * 31_234_567, false)));
+    let (results, _) = assert_steps_match(
+        with(FrontEnd::SimpleSync),
+        c"fe=simplesync",
+        FrontEndSelection::SimpleSync,
+        &steps,
+    );
+    assert!(
+        results
+            .iter()
+            .any(|result| matches!(result, Err(Error::ClockPlan(_)))),
+        "{results:?}"
+    );
+}
+
+/// `SimpleSync` has no LO reading (libusdr: no getter, `-ENOENT`) and no calibration path
+/// (no such control); neither touches the bus.
+#[test]
+fn simplesync_has_no_calibration_reading_or_path() {
+    let mut oracle =
+        Oracle::open_with(with(FrontEnd::SimpleSync)(), c"fe=simplesync").expect("open");
+    let start = oracle.trace_len();
+    assert!(oracle.sync_calibration_frequency().is_err());
+    assert!(oracle.set_sync_calibration_path(1).is_err());
+    assert_eq!(oracle.trace_len(), start);
+    let _ = oracle.close();
+
+    let sim = SimBus::new(with(FrontEnd::SimpleSync)());
+    let mut device = Device::builder(sim.clone())
+        .front_end(FrontEndSelection::SimpleSync)
+        .open()
+        .expect("opens");
+    let start = sim.board().trace().len();
+    assert!(matches!(
+        device.sync_calibration_frequency(),
+        Err(Error::FrontEndMissing("xmass"))
+    ));
+    assert!(matches!(
+        device.set_sync_calibration_path(XmassCalibrationPath::Lo),
+        Err(Error::FrontEndMissing("xmass"))
+    ));
+    assert_eq!(sim.board().trace().len(), start);
+}
+
+/// Without a synchronization board both refuse the calibration controls untouched.
+#[test]
+fn calibration_controls_need_a_synchronization_board() {
+    let steps = [
+        calibration_step(100_000_000, false),
+        calibration_path_step(1, XmassCalibrationPath::Lo),
+    ];
+    let (results, _) = assert_steps_match(bare, c"", FrontEndSelection::Auto, &steps);
+    assert!(
+        matches!(
+            results[..],
+            [
+                Err(Error::FrontEndMissing("xmass or simplesync")),
+                Err(Error::FrontEndMissing("xmass"))
+            ]
+        ),
+        "{results:?}"
     );
 }

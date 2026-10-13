@@ -24,6 +24,7 @@ pub mod fft;
 pub mod filter;
 pub mod flash;
 pub mod fm;
+pub mod lmk05318;
 pub mod nco;
 pub mod rtsa;
 mod tx;
@@ -635,6 +636,45 @@ impl Oracle {
     pub fn pciefe_command(&mut self, command: u8, value: u16) -> Result<(), i32> {
         let word = 0x0080_0000 | u64::from(command & 0x7f) << 16 | u64::from(value);
         self.set_value(c"/debug/hw/pciefe_cmd/0/reg", word)
+    }
+
+    /// Retunes a synchronization board's calibration LO, `/dm/sync/cal/freq` (XMASS:
+    /// `board_xmass_tune_cal_lo`; `SimpleSync`: `simplesync_tune_lo`), in Hz.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the path exists only while XMASS or
+    /// `SimpleSync` is up.
+    pub fn set_sync_calibration_frequency(&mut self, hz: u64) -> Result<(), i32> {
+        self.set_value(c"/dm/sync/cal/freq", hz)
+    }
+
+    /// XMASS's second path to the same control, `/dm/sdr/0/sync/cal/freq`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the path exists only while XMASS is up.
+    pub fn set_sdr_sync_calibration_frequency(&mut self, hz: u64) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/sync/cal/freq", hz)
+    }
+
+    /// Reads `/dm/sync/cal/freq`: XMASS's calibration LO last requested, in Hz.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-ENOENT` for `SimpleSync`, which has no getter).
+    pub fn sync_calibration_frequency(&mut self) -> Result<u64, i32> {
+        self.get_uint(c"/dm/sync/cal/freq")
+    }
+
+    /// Routes XMASS's calibration signal, `/dm/sdr/0/sync/cal/path`
+    /// (`board_xmass_sync_source`: 0 off, 1 LO, 2 noise, 3 LO to LNA3, 4 noise to LNA3).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned (`-EINVAL` past 4).
+    pub fn set_sync_calibration_path(&mut self, path: u64) -> Result<(), i32> {
+        self.set_value(c"/dm/sdr/0/sync/cal/path", path)
     }
 
     /// Writes a device-manager value that libusdr reads as a number, never as a pointer.
