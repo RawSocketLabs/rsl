@@ -2,7 +2,13 @@
 //!
 //! **Unstable before 1.0.** This mirrors libusdr's `lowlevel_ops.ls_op` so custom buses,
 //! including the board simulator, can drive a [`Device`](crate::Device). The seam itself is
-//! the shared `rsl-lowlevel` crate's, re-exported here; the uSDR uses I2C core 0 only.
+//! the shared `rsl-lowlevel` crate's, re-exported here. On the uSDR:
+//!
+//! - I2C uses core 0 only; the transports refuse any other [`I2cAddr::core`].
+//! - RX streaming ([`Bus::rx_stream_open`]): `PCIe` uses 32 DMA buffers; USB queues eight
+//!   transfers with additional trailer space.
+//! - Of [`Bus::rx_stream_recv`]'s out-of-band words, the driver uses only the lost packet
+//!   count.
 
 use std::io;
 

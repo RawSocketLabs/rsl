@@ -54,6 +54,9 @@ impl Bus for SimBus {
                 "I2C transfer over the FPGA core limits",
             ));
         }
+        if dev.core() != 0 {
+            return Err(BusError::Unsupported("the uSDR has one I2C core"));
+        }
         let addr = I2cAddress {
             bus: dev.bus(),
             addr: dev.addr().into(),

@@ -1,5 +1,6 @@
-//! Register access for the blocking drivers. The typed-register traits live in the
-//! portable core ([`Register`], [`IndexedRegister`]), shared with its sans-I/O machines.
+//! Register access for the blocking drivers: `rsl-lowlevel`'s executor with the driver's
+//! errors, and blocking I2C writes. The typed-register traits ([`Register`],
+//! [`IndexedRegister`]) are `rsl-lowlevel`'s, shared with the sans-I/O machines.
 
 use rsl_lowlevel::run_sequence as run_on_bus;
 

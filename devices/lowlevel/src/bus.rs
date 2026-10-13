@@ -77,9 +77,7 @@ pub trait Bus: Send {
     fn sleep(&mut self, duration: Duration);
 
     /// Sets up transport buffers for RX blocks of `block_bytes` (the transport's
-    /// `stream_initialize`). The uSDR's `PCIe` uses 32 DMA buffers; its USB queues eight
-    /// transfers with additional trailer space. The driver has already configured the
-    /// engine's registers.
+    /// `stream_initialize`). The driver has already configured the engine's registers.
     ///
     /// The default supports no streaming, for buses that only control the board.
     ///
@@ -97,8 +95,7 @@ pub trait Bus: Send {
     ///
     /// The out-of-band words, as libusdr's stream code reads them: the first holds the lost
     /// packet count in bits 23:0 and the completed-burst mask in bits 63:32; the second the
-    /// DMA status in bits 31:0 for `PCIe`, or USB's TX statistics. The uSDR driver uses only
-    /// the lost packet count.
+    /// DMA status in bits 31:0 for `PCIe`, or USB's TX statistics.
     ///
     /// # Errors
     ///
