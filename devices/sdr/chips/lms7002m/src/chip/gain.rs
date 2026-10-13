@@ -147,8 +147,9 @@ impl RxGainStage {
 }
 
 impl Lms7002m {
-    /// Sets `stage` on the selected channels to the code nearest `gain_x10` tenths of a dB
-    /// (a gain, so 0 or below: −30 dB is 30 dB of attenuation), then writes both channels'
+    /// Sets `stage` on the selected channels to the first code whose attenuation is
+    /// strictly below the one `gain_x10` tenths of a dB asks for (a gain, so 0 or below:
+    /// −30 dB is 30 dB of attenuation), else the last code, then writes both channels'
     /// gains (`lms7002m_rfe_gain`). Returns the gain the code gives, in tenths of a dB.
     ///
     /// libusdr's search takes the first code *below* the attenuation asked for, so an

@@ -27,6 +27,8 @@ pub use rate::{RateFlags, RateRequest};
 
 pub use crate::chip::Synthesizer;
 
+use core::num::NonZeroU32;
+
 use rsl_lowlevel::Sequence;
 
 use crate::chip::{LmlConfig, LmlMap, Lms7002m, LpfParams, RbbPath, TbbPath};
@@ -90,24 +92,39 @@ pub trait Frontend: Copy {
     /// Sets the `direction` antenna switch to `position` (a band's `switch`).
     fn antenna_switch(&self, direction: Direction, position: u8) -> Self::Switch;
 
-    /// The `LimeLight` sample order for a stream on `channels` with libusdr's stream
-    /// `flags` (`RFIC_SWAP_*`).
-    fn lml_map(&self, rx: bool, channels: Mac, flags: u32) -> LmlMap;
+    /// The `LimeLight` sample order for a stream on `channels` with `flags`.
+    fn lml_map(&self, rx: bool, channels: Mac, flags: StreamFlags) -> LmlMap;
 }
 
-/// A board that needs nothing: the operations that call no hook.
+/// The stream flags the ported control code reads: libusdr's `RFIC_SWAP_AB`,
+/// `RFIC_SWAP_IQ` and `RFIC_NO_DC_COMP`. Its `RFIC_LFSR` and `RFIC_DIGITAL_LB`, which
+/// reconfigure the `LimeLight` interface at the end of streaming up, are not ported.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StreamFlags {
+    /// Channel B's samples where channel A's go (`RFIC_SWAP_AB`); with SISO, stream B.
+    pub swap_ab: bool,
+
+    /// Q where I goes (`RFIC_SWAP_IQ`).
+    pub swap_iq: bool,
+
+    /// The RX DC corrector bypassed (`RFIC_NO_DC_COMP`).
+    pub no_dc_correction: bool,
+}
+
+/// The board of the operations that call no hook. Only this crate builds one, so an
+/// operation that needs a board's hooks cannot be given it.
 #[derive(Clone, Copy, Debug)]
-pub struct NoFrontend;
+pub struct NoFrontend(());
 
 impl Frontend for NoFrontend {
     type Switch = NoBoard;
 
     fn antenna_switch(&self, _direction: Direction, _position: u8) -> NoBoard {
-        unreachable!("invariant: operations without a frontend switch no antenna")
+        unreachable!("invariant: no operation given NoFrontend switches an antenna")
     }
 
-    fn lml_map(&self, _rx: bool, _channels: Mac, _flags: u32) -> LmlMap {
-        unreachable!("invariant: operations without a frontend map no stream")
+    fn lml_map(&self, _rx: bool, _channels: Mac, _flags: StreamFlags) -> LmlMap {
+        unreachable!("invariant: no operation given NoFrontend maps a stream")
     }
 }
 
@@ -203,7 +220,7 @@ pub struct Control {
     chip: Lms7002m,
 
     /// The reference clock in hertz (`fref`).
-    reference: u32,
+    reference: NonZeroU32,
 
     /// Each channel's receive path runs (`rx_run`).
     rx_running: [bool; 2],
@@ -235,12 +252,6 @@ pub struct Control {
     /// The board's transmit bands (`cfg_auto_tx`).
     tx_bands: [TxAntenna; 2],
 
-    /// The receive band in use (`rx_cfg_path`).
-    rx_band: usize,
-
-    /// The transmit band in use (`tx_cfg_path`).
-    tx_band: usize,
-
     /// The receive stream's sample order (`map_rx`).
     rx_map: LmlMap,
 
@@ -260,7 +271,7 @@ impl Control {
     #[must_use]
     pub const fn new(
         chip: Lms7002m,
-        reference: u32,
+        reference: NonZeroU32,
         rx_bands: [RxAntenna; 3],
         tx_bands: [TxAntenna; 2],
     ) -> Self {
@@ -297,8 +308,6 @@ impl Control {
             tx_lo: 0,
             rx_bands,
             tx_bands,
-            rx_band: 0,
-            tx_band: 0,
             rx_map: [LmlSample::AI; 4],
             tx_map: [LmlSample::AI; 4],
             rx_siso: false,
@@ -402,9 +411,9 @@ impl Control {
                 Direction::Rx => self.rx_bandwidth[index] = setting,
                 Direction::Tx => self.tx_bandwidth[index] = setting,
             }
-            if hertz == 0 {
+            let Some(hertz) = NonZeroU32::new(hertz) else {
                 continue;
-            }
+            };
             calls.push(ChipCall::MacSet(bank));
             push_bandwidth(&mut calls, direction, hertz);
         }
@@ -424,18 +433,18 @@ impl Control {
 }
 
 /// `lms7002m_rbb_bandwidth` or `lms7002m_tbb_bandwidth`: the filter path, then its codes.
-fn push_bandwidth(calls: &mut Calls, direction: Direction, hertz: u32) {
+fn push_bandwidth(calls: &mut Calls, direction: Direction, hertz: NonZeroU32) {
     match direction {
         Direction::Rx => {
-            let path = rbb_filter(hertz);
+            let path = rbb_filter(hertz.get());
             let params = LpfParams::rbb_default(hertz, path == RbbPath::LowBand);
             calls
                 .push(ChipCall::RbbPath(path, crate::RbbMode::Normal))
                 .push(ChipCall::RbbLpf(params));
         }
         Direction::Tx => {
-            let path = tbb_filter(hertz);
-            let params = LpfParams::tbb_default(hertz, path == TbbPath::Ladder);
+            let path = tbb_filter(hertz.get());
+            let params = LpfParams::tbb_default(hertz.get(), path == TbbPath::Ladder);
             calls
                 .push(ChipCall::TbbPath(path, crate::TbbMode::Normal))
                 .push(ChipCall::TbbLpf(params));

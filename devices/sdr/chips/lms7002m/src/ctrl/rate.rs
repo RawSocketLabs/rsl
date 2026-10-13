@@ -1,10 +1,12 @@
 //! The sample-rate plan of `lms7002m_samplerate`: the CGEN frequency, converter and
 //! processor dividers for the rates asked, and the writes that follow a locked CGEN.
 
+use core::num::NonZeroU32;
+
 use bnb::u2;
 
 use super::calls::{Calls, ChipCall};
-use super::{Clocks, Control, Direction, order, push_bandwidth};
+use super::{Clocks, Control, ControlError, Direction, order, push_bandwidth};
 use crate::chip::{LmlConfig, Tsp};
 use crate::regs::Mac;
 
@@ -98,10 +100,20 @@ impl RateRequest {
         if self.flags.extended_cgen { 2 } else { 1 }
     }
 
-    /// Pass `pass`'s candidate (one iteration of `citer`), or `None` when a processor
-    /// cannot divide down to its rate (libusdr's `-EINVAL`). Unsigned arithmetic wraps, as
-    /// in C.
-    pub(super) fn candidate(&self, pass: u8) -> Option<Candidate> {
+    /// Whether libusdr could run the request without dividing by zero or looping: a board
+    /// decimation and interpolation, and a non-zero bandwidth for each direction asked.
+    pub(super) const fn sound(&self) -> bool {
+        self.rx_decimation != 0
+            && self.tx_interpolation != 0
+            && (self.rx <= 1 || self.rx / self.rx_decimation != 0)
+            && (self.tx <= 1 || self.tx / self.tx_interpolation != 0)
+    }
+
+    /// Pass `pass`'s candidate (one iteration of `citer`): [`ControlError::Decimation`]
+    /// when a processor cannot divide down to its rate (libusdr's `-EINVAL`), or
+    /// [`ControlError::InvalidRate`] when CGEN would be 0 (libusdr then loops forever or
+    /// divides by zero). Unsigned arithmetic wraps, as in C.
+    pub(super) fn candidate(&self, pass: u8) -> Result<Candidate, ControlError> {
         let Self { rx, tx, flags, .. } = *self;
         let rx_min_div = if flags.rx_siso_ddr || flags.rx_external_fifo_clock {
             1
@@ -128,6 +140,9 @@ impl RateRequest {
                 .wrapping_mul(rx_min_div)
                 .wrapping_mul(ADC_DIVIDER)
                 .max(tx.wrapping_mul(tx_min_div).wrapping_mul(dac_divider));
+            if cgen == 0 {
+                return Err(ControlError::InvalidRate);
+            }
             let low = |rate: u32| rate > 1 && rate < LOW_RATE;
             if low(rx) || low(tx) || flags.max_conversion {
                 while cgen <= cgen_max {
@@ -158,9 +173,9 @@ impl RateRequest {
             }
         }
         if (rx > 1 && !valid(rx_div)) || (tx > 1 && !valid(tx_div)) {
-            return None;
+            return Err(ControlError::Decimation);
         }
-        Some(Candidate {
+        Ok(Candidate {
             cgen,
             dac_divider,
             rx_div,
@@ -226,10 +241,15 @@ impl RateRequest {
 }
 
 impl Control {
-    /// The writes after CGEN locked on `candidate`: the processors' dividers where a path
-    /// runs, the `LimeLight` configuration, and each running channel's bandwidth (and, for
-    /// TX, its amplifier and pad gains) where none was set.
-    pub(super) fn rate_writes(&mut self, request: &RateRequest, candidate: Candidate) -> Calls {
+    /// The writes after CGEN locked on `candidate`, and the `LimeLight` configuration they
+    /// set (cached once written): the processors' dividers where a path runs, the
+    /// `LimeLight` configuration, and each running channel's bandwidth (and, for TX, its
+    /// amplifier and pad gains) where none was set.
+    pub(super) fn rate_writes(
+        &self,
+        request: &RateRequest,
+        candidate: Candidate,
+    ) -> (Calls, LmlConfig) {
         let mut calls = Calls::new();
         if self.rx_running.contains(&true) {
             calls
@@ -243,14 +263,17 @@ impl Control {
         }
         let lml = request.lml(candidate);
         calls.push(ChipCall::LimelightConfigure(lml));
-        self.lml = lml;
+        let bandwidth = |rate: u32, divider: u32| {
+            NonZeroU32::new(rate / divider)
+                .expect("invariant: sample_rate refuses a zero bandwidth")
+        };
         for (index, bank) in [Mac::A, Mac::B].into_iter().enumerate() {
             if request.rx > 1 && self.rx_running[index] && self.rx_bandwidth[index].is_none() {
                 calls.push(ChipCall::MacSet(bank));
                 push_bandwidth(
                     &mut calls,
                     Direction::Rx,
-                    request.rx / request.rx_decimation,
+                    bandwidth(request.rx, request.rx_decimation),
                 );
             }
             if request.tx > 1 && self.tx_running[index] && self.tx_bandwidth[index].is_none() {
@@ -258,7 +281,7 @@ impl Control {
                 push_bandwidth(
                     &mut calls,
                     Direction::Tx,
-                    request.tx / request.tx_interpolation,
+                    bandwidth(request.tx, request.tx_interpolation),
                 );
                 // `lms7002m_set_gain(.., RFIC_LMS7_TX_PGA_GAIN, 13)` and
                 // `(.., RFIC_LMS7_TX_PAD_GAIN, 0)`, each selecting the channel first.
@@ -269,7 +292,7 @@ impl Control {
                     .push(ChipCall::TrfGain(crate::TxGainStage::Pad, 0));
             }
         }
-        calls
+        (calls, lml)
     }
 }
 
@@ -326,11 +349,40 @@ mod tests {
         };
         // CGEN = 2 * 3 MHz * 4: RX divides by 2. A 10 MHz ADC floor makes CGEN 40 MHz,
         // and 40 / 3 / 4 truncates to 3, which no processor divides by.
-        assert!(request.candidate(0).is_some());
+        assert!(request.candidate(0).is_ok());
         let floored = RateRequest {
             adc: 10_000_000,
             ..request
         };
-        assert_eq!(floored.candidate(0), None);
+        assert_eq!(floored.candidate(0), Err(ControlError::Decimation));
+    }
+
+    #[test]
+    fn requests_libusdr_would_hang_or_divide_by_zero_on_are_unsound() {
+        let none = RateRequest {
+            rx: 0,
+            tx: 0,
+            ..master(0)
+        };
+        assert_eq!(
+            none.candidate(0),
+            Err(ControlError::InvalidRate),
+            "CGEN 0: libusdr doubles it forever"
+        );
+        assert!(
+            !RateRequest {
+                rx_decimation: 0,
+                ..master(1_000_000)
+            }
+            .sound()
+        );
+        assert!(
+            !RateRequest {
+                tx_interpolation: 2_000_000,
+                ..master(1_000_000)
+            }
+            .sound()
+        );
+        assert!(master(1_000_000).sound());
     }
 }

@@ -1,6 +1,8 @@
 //! The receive and transmit basebands: filter paths and their codes, the receive PGA and
 //! the transmit amplifier's gain (`lms7002m_rbb_*`, `lms7002m_tbb_*`).
 
+use core::num::NonZeroU32;
+
 use bnb::{u2, u3, u5, u6, u11};
 
 use super::Lms7002m;
@@ -96,10 +98,11 @@ pub struct LpfParams {
 
 impl LpfParams {
     /// The receive filter's codes for `bandwidth` hertz (`lms7002m_rbb_lpf_def`), for the
-    /// low-band filter or the high-band one. `bandwidth` must not be 0 (libusdr divides by
-    /// it; its callers never pass 0).
+    /// low-band filter or the high-band one. libusdr divides by the bandwidth, so it is
+    /// non-zero here.
     #[must_use]
-    pub fn rbb_default(bandwidth: u32, low_band: bool) -> Self {
+    pub fn rbb_default(bandwidth: NonZeroU32, low_band: bool) -> Self {
+        let bandwidth = bandwidth.get();
         if low_band {
             // `(int)(2160000000U / bw - 103)`: unsigned, so a quotient under 103 wraps
             // negative and clamps to 0.
@@ -371,7 +374,7 @@ mod tests {
     #[test]
     fn a_wide_low_band_bandwidth_clamps_the_capacitor_to_zero() {
         // 2.16 GHz / 30 MHz = 72, under 103: libusdr's unsigned subtraction wraps.
-        let params = LpfParams::rbb_default(30_000_000, true);
+        let params = LpfParams::rbb_default(NonZeroU32::new(30_000_000).unwrap(), true);
         assert_eq!((params.c, params.rcc, params.r), (0, 5, 16));
     }
 

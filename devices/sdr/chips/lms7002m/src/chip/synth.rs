@@ -2,6 +2,8 @@
 //! and the RX and TX LO synthesizers (`lms7002m_sxx_tune`, `lms7002m_sxx_disable`),
 //! whose tunings search the VCO capacitor bank against the chip's comparators.
 
+use core::num::NonZeroU32;
+
 use bnb::{u2, u3, u4, u5, u6, u10};
 use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
@@ -70,10 +72,10 @@ const CANDIDATE_VCOS: [SxxVcoSelect; 4] = [
 const SXX_PASSES: u32 = 8;
 
 /// A PLL's feedback divider: integer part and 20-bit fraction (`struct pll_cfg`).
-fn pll(reference: u32, vco: u32) -> (u32, u32) {
+fn pll(reference: NonZeroU32, vco: u32) -> (u32, u32) {
     let integer = vco / reference;
-    let remainder = u64::from(vco - integer * reference);
-    let fraction = (remainder << 20) / u64::from(reference);
+    let remainder = u64::from(vco - integer * reference.get());
+    let fraction = (remainder << 20) / u64::from(reference.get());
     (
         integer,
         u32::try_from(fraction).expect("invariant: below 2^20"),
@@ -201,7 +203,8 @@ impl CgenTune {
                 (CgenStage::Done(outcome), self.part)
             }
             (CgenStage::Disable, _) => (CgenStage::Done(Err(TuneError::OutOfRange)), self.part),
-            (stage, part) => (stage, part),
+            (CgenStage::Done(outcome), part) => (CgenStage::Done(outcome), part),
+            (stage, _) => unreachable!("invariant: {stage:?} runs its own part"),
         };
         self.stage = stage;
         self.part = part;
@@ -304,8 +307,8 @@ pub struct SxxTune {
     /// The cached selection, restored at the end.
     mac: crate::regs::LmlControl,
 
-    /// The reference clock in hertz.
-    reference: u32,
+    /// The reference clock in hertz, at least 2 (the fourth candidate halves it).
+    reference: NonZeroU32,
 
     /// The VCO frequency before the high-at-half candidate's doubling.
     vco: u32,
@@ -348,7 +351,8 @@ impl SxxTune {
     /// Candidate `candidate`'s divider writes (`_lms7002m_sxx_pll_vco_set`).
     fn divider(&self, candidate: usize) -> Part {
         let reference = if candidate == 3 {
-            self.reference / 2
+            NonZeroU32::new(self.reference.get() / 2)
+                .expect("invariant: sxx_tune refuses references below 2")
         } else {
             self.reference
         };
@@ -429,7 +433,7 @@ impl SxxTune {
             }
             SxxStage::Search { pass, candidate } => {
                 let Part::Search(search) = self.part else {
-                    return;
+                    unreachable!("invariant: a search stage runs a search");
                 };
                 match search.result() {
                     Some(Search::Failed) | None => {
@@ -491,11 +495,29 @@ fn sxx_lo_divider(divider: u8) -> SxxLoDivider {
 impl Lms7002m {
     /// Tunes the clock generator to `output` hertz from a `reference` hertz clock, the DAC
     /// clock divided by `2^dac_order` from the ADC's (`lms7002m_cgen_tune`).
+    ///
+    /// An output of 0, or one whose VCO frequency overflows 32 bits, is
+    /// [`TuneError::OutOfRange`] at once with nothing written; libusdr divides by zero or
+    /// wraps.
     #[must_use]
-    pub fn cgen_tune(&self, reference: u32, output: u32, dac_order: u2) -> CgenTune {
+    pub fn cgen_tune(&self, reference: NonZeroU32, output: u32, dac_order: u2) -> CgenTune {
+        let refused = CgenTune {
+            target: self.target,
+            stage: CgenStage::Done(Err(TuneError::OutOfRange)),
+            part: Part::Writes(Batch::new(self.target)),
+            failed: false,
+        };
         // The output divider closest to centring the VCO, in libusdr's 2..=512 range.
-        let half_divider = (CGEN_VCO_MID / output).div_ceil(2).clamp(1, 256);
-        let vco = half_divider * output * 2;
+        let Some(quotient) = CGEN_VCO_MID.checked_div(output) else {
+            return refused;
+        };
+        let half_divider = quotient.div_ceil(2).clamp(1, 256);
+        let Some(vco) = half_divider
+            .checked_mul(output)
+            .and_then(|vco| vco.checked_mul(2))
+        else {
+            return refused;
+        };
         let (integer, fraction) = pll(reference, vco);
         let (low, high) = fraction_halves(fraction);
         let [divider, ..] = (half_divider - 1).to_le_bytes();
@@ -537,7 +559,8 @@ impl Lms7002m {
     /// (`lms7002m_sxx_tune`), its TX-to-RX LO buffer on for TDD (`lo_to_rx`).
     ///
     /// An LO above the high VCO's range, or too low for six halvings to reach the low
-    /// VCO's, is [`TuneError::OutOfRange`] at once, with nothing changed or written.
+    /// VCO's, is [`TuneError::OutOfRange`] at once, with nothing changed or written; so is
+    /// a reference below 2 Hz, whose half (the fourth candidate's) libusdr divides by.
     /// Otherwise the synthesizer's `EN_DIR_SXX` is cached set first; a synthesizer
     /// already running gets its bank selected only, a stopped one its bias, charge pump,
     /// controls and LO divider too and 10 ms to settle. The bank selection is restored
@@ -546,7 +569,7 @@ impl Lms7002m {
     pub fn sxx_tune(
         &mut self,
         synthesizer: Synthesizer,
-        reference: u32,
+        reference: NonZeroU32,
         lo: u32,
         lo_to_rx: bool,
     ) -> SxxTune {
@@ -565,7 +588,7 @@ impl Lms7002m {
             part: Part::Writes(Batch::new(self.target)),
             failed: false,
         };
-        if lo > SXX_RANGES[2].1 {
+        if lo > SXX_RANGES[2].1 || reference.get() < 2 {
             return tune;
         }
         while tune.vco < VCOL_MIN {
@@ -643,17 +666,38 @@ impl Lms7002m {
 mod tests {
     use super::*;
 
+    /// The XSDR's 26 MHz reference.
+    const FREF: NonZeroU32 = NonZeroU32::new(26_000_000).unwrap();
+
+    #[test]
+    fn an_output_libusdr_would_divide_by_or_overflow_is_refused_before_any_write() {
+        let chip = Lms7002m::created(SpiAddr(0));
+        for output in [0, 3_000_000_000] {
+            let tune = chip.cgen_tune(FREF, output, u2::new(0));
+            assert_eq!(tune.next(), None, "{output} Hz: nothing written");
+            assert_eq!(tune.outcome(), Some(Err(TuneError::OutOfRange)));
+        }
+    }
+
+    #[test]
+    fn a_reference_too_small_to_halve_is_refused_before_any_write() {
+        let mut chip = Lms7002m::created(SpiAddr(0));
+        let tune = chip.sxx_tune(Synthesizer::Tx, NonZeroU32::MIN, 1_000_000_000, false);
+        assert_eq!(tune.next(), None);
+        assert_eq!(tune.outcome(), Some(Err(TuneError::OutOfRange)));
+    }
+
     #[test]
     fn the_divider_is_the_integer_part_and_a_twenty_bit_fraction() {
-        assert_eq!(pll(26_000_000, 2_340_000_000), (90, 0));
-        assert_eq!(pll(26_000_000, 2_353_000_000), (90, 1 << 19), "one half");
+        assert_eq!(pll(FREF, 2_340_000_000), (90, 0));
+        assert_eq!(pll(FREF, 2_353_000_000), (90, 1 << 19), "one half");
     }
 
     #[test]
     fn an_lo_too_high_or_too_low_is_refused_before_any_write() {
         let mut chip = Lms7002m::created(SpiAddr(0));
         for lo in [4_000_000_000, 1_000_000] {
-            let tune = chip.sxx_tune(Synthesizer::Rx, 26_000_000, lo, false);
+            let tune = chip.sxx_tune(Synthesizer::Rx, FREF, lo, false);
             assert_eq!(tune.next(), None);
             assert_eq!(tune.outcome(), Some(Err(TuneError::OutOfRange)));
         }

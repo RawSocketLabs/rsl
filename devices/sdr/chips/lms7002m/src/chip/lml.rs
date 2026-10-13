@@ -69,8 +69,8 @@ impl LmlConfig {
 
     /// The FIFOs' multiplexers (`LML_0x002A`): the TX FIFO takes the transmit port and is
     /// read on the TX processor clock and written on the transmit port's `FCLK`; the RX
-    /// FIFO is written on the RX processor clock and read on the receive port's `MCLK`, or
-    /// on the *other* port's `FCLK` with [`Self::rx_fclk_read`], as libusdr selects them.
+    /// FIFO is written on the RX processor clock and read on the receive port's own `MCLK`,
+    /// or its own `FCLK` with [`Self::rx_fclk_read`], as libusdr selects them.
     fn clock_mux(&self) -> LmlClockMux {
         let port = |port1: bool| u2::new(u8::from(!port1));
         let rx_read = match (self.rx_fclk_read, self.rx_port1) {
