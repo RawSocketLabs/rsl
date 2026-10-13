@@ -163,6 +163,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lowlevel"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "rsl-lp8758"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "rsl-usb"
 version = "0.0.0"
 dependencies = [
@@ -177,6 +192,8 @@ dependencies = [
  "bitsandbytes",
  "num-complex",
  "rsl-deps",
+ "rsl-lowlevel",
+ "rsl-lp8758",
  "rsl-usb",
  "rsl-usdr-pcie",
  "thiserror",

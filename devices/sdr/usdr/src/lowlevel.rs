@@ -26,10 +26,15 @@ impl From<Failure<BusError>> for BusError {
     }
 }
 
-/// A USB host failure as a bus failure. A function, not `From`: both types are foreign
-/// here, and `rsl-lowlevel` stays independent of `rsl-usb`.
+/// A USB host failure as the bus failure the uSDR's USB transport reports: timeouts and
+/// disconnects keep their variants, I/O errors their source, anything else is
+/// [`BusError::Other`].
+///
+/// A function, not `From` (which this replaces): both types are foreign here, and
+/// `rsl-lowlevel` stays independent of `rsl-usb`.
 #[cfg(all(feature = "usb", target_os = "linux"))]
-pub(crate) fn usb_error(error: rsl_usb::Error) -> BusError {
+#[must_use]
+pub fn usb_error(error: rsl_usb::Error) -> BusError {
     match error {
         rsl_usb::Error::TimedOut => BusError::Timeout,
         rsl_usb::Error::Disconnected => BusError::Disconnected,

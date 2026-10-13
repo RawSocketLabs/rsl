@@ -12,7 +12,7 @@ use rsl_usdr_oracle as _;
 
 /// Satisfies the production RX module's normal error import without copying that module.
 mod lowlevel {
-    pub(crate) use rsl_usdr::lowlevel::BusError;
+    pub(crate) use rsl_usdr::lowlevel::{BusError, usb_error};
 }
 
 #[path = "../../src/transport/usb/rx.rs"]
