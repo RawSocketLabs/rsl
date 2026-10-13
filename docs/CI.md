@@ -78,7 +78,10 @@ The LMS7 family driver's fixture (`devices/sdr/xsdr/nostd-check`, profile `xsdr-
 follows the same contract for `rsl-xsdr`'s `src/portable` tree, on `rsl-lowlevel`,
 `rsl-lp8758` and `rsl-lms7002m` (`portable.py xsdr`); `rsl-lms7002m` is a registered
 bare-metal device crate. No XSDR product is release-enabled, so its cross-target checks are
-registered but not selected today.
+registered but not selected today. The LimeSDR-mini driver's fixture
+(`devices/sdr/limesdr/nostd-check`, profile `limesdr-portable`) does the same for
+`rsl-limesdr`'s tree, on `rsl-lowlevel` and `rsl-lms7002m` (`portable.py limesdr`); it is not
+release-enabled either.
 
 The LSDr driver's fixture (`devices/sdr/lsdr/nostd-check`, profile `lsdr-portable`) does the
 same for `rsl-lsdr`'s `src/portable` tree, on `bnb` and `rsl-lowlevel` (`portable.py lsdr`);

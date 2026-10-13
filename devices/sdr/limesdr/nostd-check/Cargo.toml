@@ -1,0 +1,24 @@
+[package]
+name = "rsl-limesdr-nostd-check"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+build = false
+description = "Exact-source no_std compilation witness for the private rsl-limesdr portable code."
+
+# A validation workspace, not a second production library or an embedded executable.
+[workspace]
+resolver = "3"
+
+[dependencies]
+# scripts/ci/portable.py checks these declarations against the actual driver/workspace.
+rsl-lms7002m = { path = "../../chips/lms7002m", version = "0.0.0", default-features = false }
+rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

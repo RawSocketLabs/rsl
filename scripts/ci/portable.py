@@ -10,6 +10,7 @@ import tomllib
 USDR = "devices/sdr/usdr"
 XSDR = "devices/sdr/xsdr"
 LSDR = "devices/sdr/lsdr"
+LIMESDR = "devices/sdr/limesdr"
 
 
 @dataclass(frozen=True)
@@ -37,10 +38,12 @@ FIXTURES = {
     "xsdr": Fixture(XSDR, {"rsl-lms7002m": set(), "rsl-lowlevel": {"std"}, "rsl-lp8758": set()},
                     None),
     "lsdr": Fixture(LSDR, {"bnb": set(), "rsl-lowlevel": {"std"}}, None),
+    "limesdr": Fixture(LIMESDR, {"rsl-lms7002m": set(), "rsl-lowlevel": {"std"}}, None),
 }
 # Every crate a fixture compiles without std, directly or through an owned dependency (the
-# chip crates' `bnb`, listed explicitly: the XSDR fixture reaches it only through them): an
-# owned dependency may enable none of their default or std features behind a fixture's back.
+# chip crates' `bnb`, listed explicitly: the XSDR and LimeSDR fixtures reach it only through
+# them): an owned dependency may enable none of their default or std features behind a
+# fixture's back.
 CORE_ONLY = {"bnb"} | {name for fixture in FIXTURES.values() for name in fixture.dependencies}
 
 

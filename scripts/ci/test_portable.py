@@ -13,6 +13,7 @@ OWNED = ("bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
          "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml")
 USDR = FIXTURES["usdr"]
 XSDR = FIXTURES["xsdr"]
+LIMESDR = FIXTURES["limesdr"]
 
 
 class PortableContractTests(unittest.TestCase):
@@ -43,6 +44,10 @@ class PortableContractTests(unittest.TestCase):
             (XSDR, f"{XSDR.path}/src/lib.rs", '../../src/portable/mod.rs',
              '../../../usdr/src/portable/mod.rs'),
             (XSDR, f"{XSDR.path}/src/lib.rs", '#![no_std]', ''),
+            (LIMESDR, f"{LIMESDR.path}/Cargo.toml", 'build = false', ''),
+            (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '../../src/portable/mod.rs',
+             '../../../xsdr/src/portable/mod.rs'),
+            (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '#![forbid(unsafe_code)]', ''),
         ]
         for fixture, relative, before, after in cases:
             with (self.subTest(fixture=fixture.driver, change=after),
@@ -58,6 +63,7 @@ class PortableContractTests(unittest.TestCase):
     def test_every_portable_dependency_is_held_to_the_same_contract(self):
         self.assertEqual(USDR.dependencies["rsl-lowlevel"], {"std"})
         self.assertEqual(XSDR.dependencies["rsl-lowlevel"], {"std"})
+        self.assertEqual(LIMESDR.dependencies["rsl-lowlevel"], {"std"})
         source = Path(__file__).resolve().parents[2]
         for fixture in FIXTURES.values():
             declared = tomllib.loads((source / fixture.path / "Cargo.toml").read_text())
@@ -140,7 +146,8 @@ class PortableContractTests(unittest.TestCase):
 
     def test_production_dependency_feature_changes_cannot_silently_change_the_proof(self):
         for fixture, line in ((USDR, "bnb.workspace = true"),
-                              (XSDR, "rsl-lms7002m.workspace = true")):
+                              (XSDR, "rsl-lms7002m.workspace = true"),
+                              (LIMESDR, "rsl-lms7002m.workspace = true")):
             crate = line.split(".")[0]
             with (self.subTest(fixture=fixture.driver),
                   tempfile.TemporaryDirectory(prefix="rsl-portable-contract-") as directory):
