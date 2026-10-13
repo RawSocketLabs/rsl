@@ -94,8 +94,8 @@ impl Pattern for Ci12 {
     }
 }
 
-/// One send: its time, or `None` for "now".
-type Send = Option<u64>;
+/// One send: its time, or `None` for "now", and its samples, at most a packet.
+type Send = (Option<u64>, u32);
 
 /// What one side did: each step's operations, each send's statistics, what the TX core
 /// played and the board's final trace.
@@ -125,6 +125,8 @@ struct Scenario {
     with_rx: bool,
     /// Tune the transmitter before creating, which powers it.
     tune_tx: bool,
+    /// Mute both lanes between create and start, which the start then applies.
+    mute_before_start: bool,
 }
 
 impl Scenario {
@@ -137,6 +139,7 @@ impl Scenario {
             sync: (c"none", SyncMode::None),
             with_rx: false,
             tune_tx: true,
+            mute_before_start: false,
         }
     }
 
@@ -197,6 +200,11 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
         .expect("libusdr creates TX");
     windows.push(("create", start..oracle.trace_len()));
     let start = oracle.trace_len();
+    if scenario.mute_before_start {
+        oracle
+            .set_tx_mute(3)
+            .expect("libusdr mutes before starting");
+    }
     if scenario.with_rx {
         oracle.start_rx_stream().expect("libusdr starts RX");
     }
@@ -204,13 +212,13 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
     oracle.sync_streams(scenario.sync.0).expect("libusdr syncs");
     windows.push(("start", start..oracle.trace_len()));
     let mut stats = Vec::new();
-    let samples = usize::try_from(scenario.samples).expect("fits");
-    for (k, time) in sends.iter().enumerate() {
+    for (k, &(time, count)) in sends.iter().enumerate() {
         oracle.board(|board| board.set_tx_status(status(k)));
+        let samples = usize::try_from(count).expect("fits");
         let bytes: Vec<u8> = S::packet(k, samples).iter().flat_map(S::le_bytes).collect();
         let start = oracle.trace_len();
         let report = oracle
-            .send_tx(&bytes, scenario.samples, time.unwrap_or(u64::MAX), 100)
+            .send_tx(&bytes, count, time.unwrap_or(u64::MAX), 100)
             .expect("libusdr sends");
         windows.push(("send", start..oracle.trace_len()));
         stats.push(report.map(
@@ -270,15 +278,19 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
         (
             "start",
             window(trace_len, || {
+                if scenario.mute_before_start {
+                    device
+                        .set_tx_mute(TxMute::Both)
+                        .expect("rsl-usdr mutes before starting");
+                }
                 device.start_streams().expect("rsl-usdr starts");
             }),
         ),
     ];
     let mut stats = Vec::new();
-    let samples = usize::try_from(scenario.samples).expect("fits");
-    for (k, time) in sends.iter().enumerate() {
+    for (k, &(time, count)) in sends.iter().enumerate() {
         sim.board().set_tx_status(status(k));
-        let packet = S::packet(k, samples);
+        let packet = S::packet(k, usize::try_from(count).expect("fits"));
         let mut report = None;
         let range = window(trace_len, || {
             report = device
@@ -345,8 +357,15 @@ fn assert_windows_match<S: Pattern>(scenario: Scenario, sends: &[Send]) -> (Run,
     (expected, actual)
 }
 
-/// The sends of the format tests: timed packets and "now" ones.
-const SENDS: [Send; 4] = [Some(0x10_0000), None, Some(0x7fff_0000_1234), None];
+/// The sends of the format tests: timed packets and "now" ones, whole 1024-sample packets
+/// and partial ones of 1 sample and of one more than rsl-usdr's 512-sample conversion
+/// chunk.
+const SENDS: [Send; 4] = [
+    (Some(0x10_0000), 1024),
+    (None, 1),
+    (Some(0x7fff_0000_1234), 513),
+    (None, 1024),
+];
 
 /// Every host format libusdr converts to the TX core's `ci16`: the same operations in
 /// every step, and the TX core receives the same bytes at the same times.
@@ -381,8 +400,33 @@ fn every_host_format_matches_libusdr_operations_and_bytes() {
 fn an_untuned_transmitter_is_powered_by_the_stream_like_libusdr() {
     let mut scenario = Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 512);
     scenario.tune_tx = false;
-    let (expected, _) = assert_windows_match::<Complex<i16>>(scenario, &[None]);
+    let (expected, _) = assert_windows_match::<Complex<i16>>(scenario, &[(None, 512)]);
     assert_eq!(expected.played.len(), 1);
+}
+
+/// Muting before the start: the stream keeps the mute and its start applies it, on both
+/// sides.
+#[test]
+fn a_mute_before_start_is_applied_by_the_start_like_libusdr() {
+    let mut scenario = Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256);
+    scenario.mute_before_start = true;
+    let (expected, _) = assert_windows_match::<Complex<i16>>(scenario, &[(None, 256)]);
+    let start = &expected.trace[expected.windows[1].1.clone()];
+    assert_eq!(
+        start.last(),
+        Some(&Op::RegWrite {
+            addr: REG_SYNC,
+            value: 1 << 31 | 7 << 16,
+        }),
+        "the free-run sync comes last"
+    );
+    assert!(
+        start.contains(&Op::RegWrite {
+            addr: REG_SYNC,
+            value: 0x303,
+        }),
+        "the start carries both lanes muted"
+    );
 }
 
 /// The statistics `usdr_dms_send_stat` reports: none for the 32 buffers the driver starts
@@ -391,7 +435,7 @@ fn an_untuned_transmitter_is_powered_by_the_stream_like_libusdr() {
 #[test]
 fn send_statistics_match_libusdr_across_counter_wraps() {
     let scenario = Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256);
-    let sends: Vec<Send> = (0..48).map(|k| Some(1000 + 256 * k)).collect();
+    let sends: Vec<Send> = (0..48).map(|k| (Some(1000 + 256 * k), 256)).collect();
     let (expected, actual) = assert_windows_match::<Complex<i16>>(scenario, &sends);
     assert!(
         expected.stats[..32].iter().all(Option::is_none),
@@ -500,7 +544,7 @@ fn sync_modes_match_libusdr_for_every_group() {
                 ..Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256)
             };
             // A held group takes sends but plays none; one send keeps every mode alike.
-            assert_windows_match::<Complex<i16>>(scenario, &[None]);
+            assert_windows_match::<Complex<i16>>(scenario, &[(None, 256)]);
         }
     }
 }
@@ -536,16 +580,13 @@ fn a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up() {
 }
 
 /// Refusals both drivers make at the same point, with the same operations before it: a
-/// gateware build older than libusdr's minimum, and packets over the core's FIFO or
-/// empty.
+/// gateware build older than libusdr's minimum, and a packet over the core's FIFO. A size
+/// of 0, which libusdr takes as the transport's largest buffer, rsl-usdr refuses before
+/// the bus (`tests/tx_stream.rs`, a whitelisted divergence).
 #[test]
 fn refused_creates_match_libusdr_up_to_the_refusal() {
     let old_build = 0xd2b1_0c08;
-    for (build, samples, errno) in [
-        (old_build, 1024, -104),
-        (0xd2b1_0c09, 31_745, -22),
-        (0xd2b1_0c09, 0, -22),
-    ] {
+    for (build, samples, errno) in [(old_build, 1024, -104), (0xd2b1_0c09, 31_745, -22)] {
         let mut oracle = Oracle::open(board().with_gateware_build(build)).expect("libusdr opens");
         oracle.set_rx_rate(20_000_000).expect("sets the rate");
         let start = oracle.trace_len();

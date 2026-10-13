@@ -22,7 +22,8 @@ use crate::error::Error;
 use crate::fpga::{self, MAX_TX_PACKET_BYTES, MAX_TX_TIMESTAMP, Phy, SyncTrigger, TxCoreStatus};
 use crate::lowlevel::{Bus, BusError};
 use crate::stream::{
-    HostFormat, HostSample, StreamTime, TxChannels, TxConfig, TxMute, TxTelemetry, WireFormat,
+    HostFormat, HostSample, StreamTime, SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry,
+    WireFormat,
 };
 
 /// The oldest gateware build libusdr streams TX from (`MINIM_FWID_COMPAT`), as the FPGA's
@@ -78,8 +79,11 @@ impl TxStream {
 
 impl Board {
     /// Refuses, before any bus access, a TX stream the ported core cannot take: the
-    /// gateware's extended TX core, whose setup is not ported, and any wire format but
-    /// `ci16`, which libusdr refuses only after powering the transmitter.
+    /// gateware's extended TX core, whose setup is not ported; any wire format but `ci16`,
+    /// which libusdr refuses only after powering the transmitter; and a packet size of 0.
+    ///
+    /// Intentional divergence: libusdr takes a size of 0 to mean the transport's largest
+    /// buffer (its `PCIe` driver's, capped at the core's FIFO); a `TxConfig` names its size.
     pub(super) fn check_tx_stream(&self, config: TxConfig) -> Result<(), Error> {
         if self.chains.extended_tx_core {
             return Err(Error::UnsupportedTxCore);
@@ -87,18 +91,21 @@ impl Board {
         if config.wire != WireFormat::Ci16 {
             return Err(Error::UnsupportedWireFormat(config.wire));
         }
+        if config.samples_per_packet == 0 {
+            return Err(Error::UnsupportedPacketSize(0));
+        }
         Ok(())
     }
 
     /// libusdr's stream create for TX on the original core (`initialize_stream_tx_32`),
-    /// joining the group made for `sync`. Call [`Board::check_tx_stream`] first.
+    /// joining the group made to start with `mode`. Call [`Board::check_tx_stream`] first.
     ///
     /// Divergence on a failed read only: libusdr logs a failed gateware read and compares
     /// whatever it holds; this returns the failure.
     pub(super) fn create_tx_stream(
         &mut self,
         config: TxConfig,
-        sync: SyncTrigger,
+        mode: SyncMode,
     ) -> Result<(), Error> {
         let TxConfig {
             samples_per_packet,
@@ -122,14 +129,13 @@ impl Board {
         }
         let bus = self.bus.as_mut();
         fpga::sync(bus, SyncTrigger::Stop)?;
-        // libusdr fails a packet over the core's FIFO here; an empty one fails at the
-        // transport's setup, which this never asks for.
+        // libusdr fails a packet over the core's FIFO here (`sfe_tx4_mtu_get`).
         let block_bytes = samples_per_packet
             .checked_mul(fpga::TX_SAMPLE_BYTES)
-            .filter(|&bytes| bytes != 0 && bytes <= MAX_TX_PACKET_BYTES)
+            .filter(|&bytes| bytes <= MAX_TX_PACKET_BYTES)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
         bus.tx_stream_open(block_bytes).map_err(Error::Stream)?;
-        self.group(sync).tx = Some(TxStream {
+        self.group(mode).tx = Some(TxStream {
             samples_per_packet,
             host,
             channels,
@@ -147,7 +153,9 @@ impl Board {
 
     /// Destroys the TX stream (`unregister_stream`): powers the transmitter down, then
     /// `_sfetrx4_destroy` clears the core's control register and releases the transport.
-    /// Every step is attempted; the first failure is returned.
+    /// Every step is attempted; the first failure is returned. libusdr skips the
+    /// transport's release when the register write fails; this releases it anyway, as the
+    /// RX stream's stop does, since the group is gone either way.
     pub(super) fn destroy_tx_stream(&mut self) -> Result<(), Error> {
         // `usdr_rfic_streaming_down`.
         self.tx_running = false;

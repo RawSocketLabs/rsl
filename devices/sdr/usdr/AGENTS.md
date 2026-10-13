@@ -226,8 +226,8 @@ Each layer calls only the ones below it.
   and `SyncMode::ExternalAll` fails at create, before any bus access, where libusdr
   creates and then fails the sync
   (`stream_formats_parity.rs::external_sync_is_refused_by_both_before_any_sync_operation`).
-  TX streams refuse, before any bus access, a `ci12` wire, which libusdr refuses only
-  after powering the transmitter
+  TX streams refuse, before any bus access, a packet size of 0 (libusdr's "largest
+  buffer"), a `ci12` wire, which libusdr refuses only after powering the transmitter
   (`tx_stream_parity.rs::a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up`),
   the extended TX core, sends of no samples or more than a packet (libusdr splits them and
   times the later bursts of a "now" send) and times past 47 bits (`tests/tx_stream.rs`).

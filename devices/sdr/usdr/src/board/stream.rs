@@ -70,20 +70,21 @@ pub(crate) struct StreamGroup {
     /// The TX stream, if created.
     pub(super) tx: Option<TxStream>,
 
-    /// The sync unit's trigger, set when the group starts.
-    sync: SyncTrigger,
+    /// How the group starts. Its trigger follows the streams actually created, as
+    /// libusdr's sync follows the handles passed to it.
+    mode: SyncMode,
 
     /// The group has started.
     started: bool,
 }
 
 impl StreamGroup {
-    /// A group with no stream yet, to start with `sync`.
-    const fn new(sync: SyncTrigger) -> Self {
+    /// A group with no stream yet, to start with `mode`.
+    const fn new(mode: SyncMode) -> Self {
         Self {
             rx: None,
             tx: None,
-            sync,
+            mode,
             started: false,
         }
     }
@@ -173,19 +174,20 @@ impl Board {
         if config.rx.is_none() && config.tx.is_none() {
             return Err(Error::NoStreams);
         }
-        let sync = config
-            .sync
-            .trigger(config.rx.is_some(), config.tx.is_some())?;
+        let mode = config.sync;
+        // Refuses a mode with no trigger now; the trigger itself is chosen at start, for
+        // the streams the group then holds.
+        mode.trigger(config.rx.is_some(), config.tx.is_some())?;
         if let Some(tx) = config.tx {
             self.check_tx_stream(tx)?;
         }
         if let Some(rx) = config.rx {
             let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
                 .expect("invariant: libusdr converts every RX wire format to every host format");
-            self.create_rx_stream(rx, converter, sync)?;
+            self.create_rx_stream(rx, converter, mode)?;
         }
         if let Some(tx) = config.tx {
-            self.create_tx_stream(tx, sync)?;
+            self.create_tx_stream(tx, mode)?;
         }
         Ok(())
     }
@@ -196,6 +198,9 @@ impl Board {
     /// order `dm_stream.h` prescribes. With TX: `USDR_DMS_START` for RX, then TX, then the
     /// sync, the order every libusdr client uses (`usdr_dm_create`, the JSON controller,
     /// Soapy), because the TX core's start writes the sync unit's register.
+    ///
+    /// The trigger is for the streams the group holds: after a failed create left only
+    /// RX, `SyncMode::All` waits for RX alone, as libusdr's sync of the handles it has.
     pub(crate) fn start_streams(&mut self) -> Result<(), Error> {
         let Some(group) = self.streams.as_mut() else {
             return Err(Error::NotStreaming);
@@ -203,10 +208,11 @@ impl Board {
         if group.started {
             return Err(Error::AlreadyStreaming);
         }
+        let trigger = group.mode.trigger(group.rx.is_some(), group.tx.is_some())?;
         let bus = self.bus.as_mut();
         match &group.tx {
             None => {
-                fpga::sync(bus, group.sync)?;
+                fpga::sync(bus, trigger)?;
                 if group.rx.is_some() {
                     fpga::run_rx(bus, true)?;
                 }
@@ -216,7 +222,7 @@ impl Board {
                     fpga::run_rx(bus, true)?;
                 }
                 tx.start(bus)?;
-                fpga::sync(bus, group.sync)?;
+                fpga::sync(bus, trigger)?;
             }
         }
         group.started = true;
@@ -239,10 +245,10 @@ impl Board {
         Ok(())
     }
 
-    /// The group, created for `sync` if it does not exist yet: a stream joins it once its
-    /// transport buffers are set up.
-    pub(super) fn group(&mut self, sync: SyncTrigger) -> &mut StreamGroup {
-        self.streams.get_or_insert(StreamGroup::new(sync))
+    /// The group, created to start with `mode` if it does not exist yet: a stream joins it
+    /// once its transport buffers are set up.
+    pub(super) fn group(&mut self, mode: SyncMode) -> &mut StreamGroup {
+        self.streams.get_or_insert(StreamGroup::new(mode))
     }
 
     /// libusdr's stream create for RX.
@@ -256,7 +262,7 @@ impl Board {
         &mut self,
         config: RxConfig,
         converter: Converter,
-        sync: SyncTrigger,
+        mode: SyncMode,
     ) -> Result<(), Error> {
         let RxConfig {
             samples_per_packet,
@@ -296,7 +302,7 @@ impl Board {
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
         let size = |bytes: u32| usize::try_from(bytes).expect("invariant: a block fits in usize");
-        self.group(sync).rx = Some(RxStream {
+        self.group(mode).rx = Some(RxStream {
             samples_per_packet,
             layout: BlockLayout {
                 samples_per_burst: size(plan.samples_per_burst()),

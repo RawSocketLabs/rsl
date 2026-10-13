@@ -136,9 +136,9 @@ pub trait Bus: Send {
     /// Waits up to `timeout` for a free TX buffer and lends it to `fill` (the transport's
     /// `send_dma_get`), with the four status words the transport has for this buffer, if
     /// any; `fill` writes the block from the buffer's start and returns its length in
-    /// bytes, which the transport hands to the DMA engine. Telling the gateware the block
-    /// is there is the driver's, through its registers, unless the transport frames it
-    /// (libusdr's `soft_tx_commit`, which a commit may call).
+    /// bytes (see [`TxFill`]). Telling the gateware the block is there is the driver's,
+    /// through its registers, unless the transport frames it (libusdr's `soft_tx_commit`,
+    /// which a commit may call).
     ///
     /// # Errors
     ///
@@ -161,7 +161,9 @@ pub trait Bus: Send {
 
 /// What [`Bus::tx_stream_send`] lends a TX buffer to: it takes the buffer and the status
 /// words the transport has for it, if any, writes the block from the buffer's start and
-/// returns its length in bytes.
+/// returns its length in bytes. A transport that frames the block itself uses the length;
+/// one whose gateware learns it from the driver's registers may only check it against
+/// the buffer.
 pub type TxFill<'a> = dyn FnMut(&mut [u8], Option<[u32; 4]>) -> usize + 'a;
 
 /// Runs a portable register sequence to its end over `bus`, one action at a time: the

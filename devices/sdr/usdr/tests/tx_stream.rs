@@ -11,9 +11,67 @@ use std::time::Duration;
 use common::sim_bus::SimBus;
 use num_complex::Complex;
 use rsl_usdr::{
-    Device, Error, HostFormat, RxConfig, StreamTime, StreamsConfig, TxConfig, TxMute, WireFormat,
+    Device, Error, HostFormat, RxConfig, StreamTime, StreamsConfig, SyncMode, TxConfig, TxMute,
+    WireFormat,
 };
-use rsl_usdr_sim::{BoardRevision, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+
+/// The sync unit's register.
+const REG_SYNC: u32 = 14;
+
+/// A TX packet of 0 samples is refused before the bus. Intentional divergence: libusdr
+/// takes 0 to mean the transport's largest buffer.
+#[test]
+fn an_empty_tx_packet_size_is_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    let config = TxConfig::new(0, HostFormat::Ci16, WireFormat::Ci16);
+    assert!(matches!(
+        untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
+        Err(Error::UnsupportedPacketSize(0))
+    ));
+}
+
+/// When TX fails to join an RX+TX group created with `SyncMode::All`, the group starts as
+/// what it holds, RX alone: the sync unit waits for RX activity (`ST_ADCACT`), not for
+/// both (`ST_DELAYADCDAC`), and RX flows.
+#[test]
+fn a_group_left_with_rx_alone_starts_on_rx_activity() {
+    let board = SimBoard::new(BoardRevision::Rev3).with_gateware_build(0xd2b1_0c08);
+    let sim = SimBus::new(board);
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let rx = RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16);
+    let tx = TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16);
+    let config = StreamsConfig::rx(rx).with_tx(tx).with_sync(SyncMode::All);
+    assert!(matches!(
+        device.create_streams(config),
+        Err(Error::OutdatedGateware(0xd2b1_0c08))
+    ));
+    let start = sim.board().trace().len();
+    device.start_streams().expect("starts what was created");
+    let syncs: Vec<u32> = sim.board().trace()[start..]
+        .iter()
+        .filter_map(|op| match op {
+            Op::RegWrite {
+                addr: REG_SYNC,
+                value,
+            } => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        syncs,
+        [1 << 31 | 2 << 16],
+        "RX activity, not the duplex start"
+    );
+    let mut samples = vec![Complex::new(0_i16, 0); 1024];
+    device
+        .receive_into(&mut [&mut samples], TIMEOUT)
+        .expect("RX flows");
+}
 
 /// A wait long enough for the sim, which never makes a send wait.
 const TIMEOUT: Duration = Duration::from_millis(10);

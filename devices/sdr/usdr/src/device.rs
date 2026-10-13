@@ -248,11 +248,13 @@ impl Device {
     /// - [`Error::UnsupportedTxCore`] for a TX stream on gateware with the extended TX
     ///   core, and [`Error::UnsupportedWireFormat`] for a TX wire format other than
     ///   [`WireFormat::Ci16`] (libusdr refuses it once the transmitter is powered).
+    /// - [`Error::UnsupportedPacketSize`] for a TX packet of 0 samples, which libusdr takes
+    ///   to mean the transport's largest buffer.
     ///
     /// Then:
     /// - [`Error::UnsupportedPacketSize`] for an RX packet the stream engine cannot split
-    ///   into bursts in the wire format, or a TX packet empty or past the core's
-    ///   126976-byte FIFO.
+    ///   into bursts in the wire format, or a TX packet past the core's 126976-byte FIFO
+    ///   (31744 samples).
     /// - [`Error::OutdatedGateware`] for a TX stream on gateware older than libusdr's TX
     ///   streaming requires.
     /// - [`Error::Stream`] if the transport cannot set up its buffers, or does not stream.
@@ -333,7 +335,9 @@ impl Device {
     ///   [`Error::UnsupportedTimestamp`] (past 47 bits), before any bus access.
     /// - [`Error::Timeout`] if no transport buffer frees in time: a stream not yet started
     ///   (or held by its sync) fills them all and stops taking packets.
-    /// - [`Error::Stream`] if the transport fails; any bus failure.
+    /// - [`Error::Stream`] if the transport fails; any bus failure. A transport failure
+    ///   after it lent a buffer leaves that buffer's place in the ring unknown: stop the
+    ///   group (or close the device) and create it again rather than sending on.
     pub fn send<S: HostSample>(
         &mut self,
         channels: &[&[S]],
