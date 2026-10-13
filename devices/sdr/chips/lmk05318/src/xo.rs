@@ -9,7 +9,7 @@ use super::reg::{Lmk05318Register, Reg};
 /// The XO path's controls. `XO_CLKCTL1`, 0x2A.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct XoControl {
+pub struct XoControl {
     /// The XO doubler is on. `OSCIN_DBLR_EN`, bit 4.
     #[bits(4..=4)]
     doubler: bool,
@@ -33,7 +33,7 @@ impl Lmk05318Register for XoControl {
 impl XoControl {
     /// The controls for `xo` reaching APLL1 through `path`, buffer on, amplitude detector
     /// active (`lmk05318_set_xo_fref`).
-    pub(super) fn for_path(xo: Xo, path: XoPath) -> Self {
+    pub(crate) fn for_path(xo: Xo, path: XoPath) -> Self {
         Self::new()
             .with_doubler(path.doubler)
             .with_frequency_detector_bypass(xo.detector_bypass)
@@ -45,7 +45,7 @@ impl XoControl {
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u4)]
 #[repr(u8)]
-pub(super) enum XoTypeCode {
+pub enum XoTypeCode {
     /// DC-coupled differential, external termination (`DC_DIFF_EXT`).
     DcDifferentialExternal = 0x0,
 
@@ -85,7 +85,7 @@ impl From<XoInput> for XoTypeCode {
 /// The XO input type and two reserved fields. `XO_CLKCTL2`, 0x2B.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct XoInputType {
+pub struct XoInputType {
     /// Reserved; the YAML gives its reset as 1 and libusdr writes 1.
     /// `XO_CLKCTL2_RESERVED7`, bit 7.
     #[bits(7..=7)]
@@ -106,7 +106,7 @@ impl Lmk05318Register for XoInputType {
 
 impl XoInputType {
     /// The value libusdr writes for `input`: its type, reserved fields 1 and 2.
-    pub(super) fn for_input(input: XoInput) -> Self {
+    pub(crate) fn for_input(input: XoInput) -> Self {
         Self::new()
             .with_reserved_7(true)
             .with_input(input.into())
@@ -117,7 +117,7 @@ impl XoInputType {
 /// The XO's divider towards APLL1. `XO_CONFIG`, 0x2C.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct XoDivider {
+pub struct XoDivider {
     /// The divide ratio less one, 0 to 31. `OSCIN_RDIV`, bits 4:0.
     #[bits(0..=4)]
     ratio_minus_one: u5,
@@ -128,7 +128,7 @@ impl Lmk05318Register for XoDivider {
 
 impl XoDivider {
     /// The register for `path`'s divider, masked to five bits as the C's macro masks it.
-    pub(super) fn for_path(path: XoPath) -> Self {
+    pub(crate) fn for_path(path: XoPath) -> Self {
         let ratio = path.divider.wrapping_sub(1).to_le_bytes()[0];
         Self::new().with_ratio_minus_one(u5::from_raw(ratio))
     }
@@ -172,7 +172,7 @@ const fn baw_detection(count: [u8; 2]) -> [(Reg, u8); 19] {
 
 /// libusdr's BAW lock-detection constants for an `xo_hz` XO; `None` for XOs it has none
 /// for (only 12.8, 25, 26 and 52 MHz).
-pub(super) const fn baw_detection_for(xo_hz: u32) -> Option<&'static [(Reg, u8); 19]> {
+pub(crate) const fn baw_detection_for(xo_hz: u32) -> Option<&'static [(Reg, u8); 19]> {
     match xo_hz {
         12_800_000 => Some(&BAW_DETECTION_12_8),
         25_000_000 => Some(&BAW_DETECTION_25),

@@ -163,6 +163,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
 dependencies = [
@@ -192,6 +199,7 @@ dependencies = [
  "bitsandbytes",
  "num-complex",
  "rsl-deps",
+ "rsl-lmk05318",
  "rsl-lowlevel",
  "rsl-lp8758",
  "rsl-usb",
@@ -206,6 +214,7 @@ dependencies = [
  "bitsandbytes",
  "cc",
  "num-complex",
+ "rsl-lmk05318",
  "rsl-usb",
  "rsl-usdr",
  "rsl-usdr-pcie",

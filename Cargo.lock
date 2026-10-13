@@ -3278,6 +3278,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "rsl-lms7002m"
 version = "0.0.0"
 dependencies = [
@@ -3366,6 +3373,7 @@ dependencies = [
  "mio",
  "num-complex",
  "rsl-deps",
+ "rsl-lmk05318",
  "rsl-lowlevel",
  "rsl-lp8758",
  "rsl-usb",

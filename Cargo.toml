@@ -23,6 +23,9 @@ members = [
     "devices/lowlevel",
     # LP8758 PMIC register values shared by the SDR drivers
     "devices/sdr/chips/lp8758",
+    # LMK05318 network synchronizer register values and frequency plans, shared by the uSDR
+    # front ends and PE_SYNC
+    "devices/sdr/chips/lmk05318",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -100,6 +103,7 @@ rsl-compression = { path = "compression", version = "0.1.0", default-features = 
 rsl-lowlevel = { path = "devices/lowlevel", version = "0.0.0", default-features = false }
 rsl-lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
 rsl-lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-features = false }
+rsl-lmk05318 = { path = "devices/sdr/chips/lmk05318", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }

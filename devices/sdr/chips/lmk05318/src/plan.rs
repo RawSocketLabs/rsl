@@ -27,24 +27,28 @@
 //! refuses to build with another C compiler. Another compiler or target can change the
 //! C's last bits, not this port's.
 //!
-//! The module is self-contained but for [`gcd`], so the oracle's parity tests compile it
-//! directly and compare its plans with libusdr's.
+//! The uSDR oracle's parity tests (`lmk05318_parity.rs`) compare its plans with libusdr's.
+//! `core` has no `ceil` or `abs` for `f64` at this crate's MSRV; [`c_ceil`] and [`abs`] are
+//! exact equivalents for the values used here.
 //!
 //! # Not ported
 //!
 //! The DPLL (`lmk05318_dpll_config` and the DPLL halves of APLL1 tuning and the common
-//! registers): neither front end enables it, so APLL1 always runs free with a programmed
+//! registers): no board here enables it, so APLL1 always runs free with a programmed
 //! 24-bit denominator.
 
-use crate::cal::search::gcd;
+use core::{error, fmt};
+
+use alloc::vec;
+use alloc::vec::Vec;
 
 /// APLL1's VCO, fixed by the chip's BAW resonator (`VCO_APLL1`), in Hz.
-pub(crate) const VCO1_HZ: u64 = 2_500_000_000;
+pub const VCO1_HZ: u64 = 2_500_000_000;
 /// [`VCO1_HZ`] as the C converts it to `double` (exactly).
 const VCO1_F64: f64 = 2_500_000_000.0;
 /// `1 / VCO_APLL1` rounded to `f64`: GCC's `-Ofast` replaces `calc_vco2_div`'s division by
 /// `VCO_APLL1` with a multiplication by this.
-pub(crate) const VCO1_RECIPROCAL: f64 = 1.0 / 2_500_000_000.0;
+pub const VCO1_RECIPROCAL: f64 = 1.0 / 2_500_000_000.0;
 /// APLL2's VCO range (`VCO_APLL2_MIN`, `VCO_APLL2_MAX`), in Hz.
 const VCO2_MIN_HZ: u64 = 5_500_000_000;
 /// See [`VCO2_MIN_HZ`].
@@ -78,57 +82,61 @@ const FREQ_DELTA_HZ: u32 = 2;
 /// (`LMK05318_MAX_REAL_PORTS`).
 const SLOTS: usize = 6;
 
-/// Why the LMK05318 clock synthesizer of a front end has no configuration for a request
-/// (libusdr's `-EINVAL` for each).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+/// Why the LMK05318 has no configuration for a request (libusdr's `-EINVAL` for each).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ClockPlanError {
     /// The XO frequency is outside 10–100 MHz, or its phase-detector frequency outside
     /// APLL1's 1–80 MHz.
-    #[error("LMK05318 XO frequency out of range")]
     XoOutOfRange,
     /// No BAW lock-detection settings exist for this XO (12.8, 25, 26 or 52 MHz only).
-    #[error("LMK05318 has no BAW lock settings for this XO")]
     UnsupportedXo,
     /// APLL1's fraction does not fit 24 bits or misses the VCO by more than 0.1 mHz.
-    #[error("LMK05318 APLL1 cannot reach its VCO exactly")]
     Apll1Inexact,
     /// No requests, more than eight, or an output number past 7.
-    #[error("LMK05318 output request malformed")]
     BadRequest,
     /// An LVCMOS format on outputs 0 to 3, which only drive differential formats.
-    #[error("LMK05318 outputs 0 to 3 cannot drive LVCMOS")]
     LvcmosOnLowOutput,
     /// Two requests for one divider (the same output, or 0 and 1, or 2 and 3) differ.
-    #[error("LMK05318 output requests sharing a divider differ")]
     ConflictingRequests,
     /// An inverted output that APLL1 cannot reach; only APLL1 inverts.
-    #[error("LMK05318 can invert only outputs APLL1 drives")]
     InversionNeedsApll1,
     /// A frequency no APLL2 post-divider and output divider can reach.
-    #[error("LMK05318 output frequency out of range")]
     OutOfRange,
     /// No APLL2 VCO frequency serves every output the solver routed to it.
-    #[error("no LMK05318 APLL2 plan serves every output")]
     NoSolution,
     /// A solved output misses its frequency by more than its tolerance.
-    #[error("LMK05318 output frequency missed")]
     Inexact,
     /// APLL2's phase-detector frequency is outside 10–150 MHz.
-    #[error("LMK05318 APLL2 phase detector out of range")]
     Apll2PhaseDetector,
     /// An output divider beyond its output's range.
-    #[error("LMK05318 output divider out of range")]
     BadDivider,
 }
 
+impl fmt::Display for ClockPlanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::XoOutOfRange => "LMK05318 XO frequency out of range",
+            Self::UnsupportedXo => "LMK05318 has no BAW lock settings for this XO",
+            Self::Apll1Inexact => "LMK05318 APLL1 cannot reach its VCO exactly",
+            Self::BadRequest => "LMK05318 output request malformed",
+            Self::LvcmosOnLowOutput => "LMK05318 outputs 0 to 3 cannot drive LVCMOS",
+            Self::ConflictingRequests => "LMK05318 output requests sharing a divider differ",
+            Self::InversionNeedsApll1 => "LMK05318 can invert only outputs APLL1 drives",
+            Self::OutOfRange => "LMK05318 output frequency out of range",
+            Self::NoSolution => "no LMK05318 APLL2 plan serves every output",
+            Self::Inexact => "LMK05318 output frequency missed",
+            Self::Apll2PhaseDetector => "LMK05318 APLL2 phase detector out of range",
+            Self::BadDivider => "LMK05318 output divider out of range",
+        })
+    }
+}
+
+impl error::Error for ClockPlanError {}
+
 /// The XO input buffer's type (`enum xo_input_type`, the YAML's `x-in-opts`).
-#[allow(
-    dead_code,
-    reason = "libusdr's full set; the front ends use two, the oracle's plan tests all"
-)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum XoInput {
+pub enum XoInput {
     /// DC-coupled differential, external termination (`XO_DC_DIFF_EXT`).
     DcDifferentialExternal,
     /// AC-coupled differential, external termination (`XO_AC_DIFF_EXT`).
@@ -145,28 +153,28 @@ pub(crate) enum XoInput {
 
 /// The XO, as `lmk05318_create` takes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Xo {
+pub struct Xo {
     /// Its frequency, in Hz.
-    pub(crate) hz: u32,
+    pub hz: u32,
     /// Its input buffer.
-    pub(crate) input: XoInput,
+    pub input: XoInput,
     /// Ignore the XO frequency detector (`xo_fdet_bypass`).
-    pub(crate) detector_bypass: bool,
+    pub detector_bypass: bool,
 }
 
 /// How the XO reaches APLL1's phase detector: through the doubler or a divider, never both
 /// (`pll1_fref_rdiv`, `doubler_enabled`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct XoPath {
+pub struct XoPath {
     /// The doubler is on.
-    pub(crate) doubler: bool,
+    pub doubler: bool,
     /// The reference divider, 1 to 32.
-    pub(crate) divider: u32,
+    pub divider: u32,
 }
 
 /// A sigma-delta modulator order libusdr picks (`SDM_ORDER_*`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SdmOrder {
+pub enum SdmOrder {
     /// Integer division: no fraction.
     Integer = 0,
     /// Third order, for a fractional divider.
@@ -183,21 +191,25 @@ impl SdmOrder {
 /// APLL1's feedback divider without the DPLL: `n + num / den`, with a programmed 24-bit
 /// denominator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Apll1Plan {
+pub struct Apll1Plan {
     /// Integer part, at most 65535.
-    pub(crate) n: u32,
+    pub n: u32,
     /// Fraction numerator, 24 bits.
-    pub(crate) num: u64,
+    pub num: u64,
     /// Fraction denominator, 24 bits.
-    pub(crate) den: u64,
+    pub den: u64,
     /// The modulator order.
-    pub(crate) order: SdmOrder,
+    pub order: SdmOrder,
 }
 
 impl Xo {
     /// The XO path (`lmk05318_set_xo_fref`): the doubler when twice the XO stays within
     /// APLL1's phase detector, otherwise the smallest divider that does.
-    pub(crate) fn path(self) -> Result<XoPath, ClockPlanError> {
+    ///
+    /// # Errors
+    ///
+    /// [`ClockPlanError::XoOutOfRange`] for an XO outside 10–100 MHz.
+    pub fn path(self) -> Result<XoPath, ClockPlanError> {
         if self.hz < XO_MIN_HZ || self.hz > XO_MAX_HZ {
             return Err(ClockPlanError::XoOutOfRange);
         }
@@ -207,7 +219,7 @@ impl Xo {
                 divider: 1,
             }
         } else {
-            let divider = (f64::from(self.hz) / f64::from(APLL1_PD_MAX_HZ)).ceil();
+            let divider = c_ceil(f64::from(self.hz) / f64::from(APLL1_PD_MAX_HZ));
             XoPath {
                 doubler: false,
                 // The C converts the double to `unsigned`; the value is at most 2 here.
@@ -223,7 +235,12 @@ impl Xo {
     /// APLL1's divider for this XO without the DPLL (`lmk05318_tune_apll1`): the fraction
     /// over the phase-detector frequency, reduced, which must land on the VCO within
     /// 0.1 mHz.
-    pub(crate) fn apll1(self, path: XoPath) -> Result<Apll1Plan, ClockPlanError> {
+    ///
+    /// # Errors
+    ///
+    /// [`ClockPlanError::XoOutOfRange`] for a phase-detector frequency outside 1–80 MHz;
+    /// [`ClockPlanError::Apll1Inexact`] when no 24-bit fraction reaches the VCO.
+    pub fn apll1(self, path: XoPath) -> Result<Apll1Plan, ClockPlanError> {
         let doubling = if path.doubler { 2.0_f32 } else { 1.0_f32 };
         let fpd1 = (f64::from(self.hz) / f64::from(path.divider)) * f64::from(doubling);
         if fpd1 < f64::from(APLL1_PD_MIN_HZ) || fpd1 > f64::from(APLL1_PD_MAX_HZ) {
@@ -246,7 +263,7 @@ impl Xo {
             return Err(ClockPlanError::Apll1Inexact);
         }
         let vco = fpd1 * (f64::from(n) + c_f64(num) / c_f64(den));
-        if (vco - VCO1_F64).abs() > 1e-4 {
+        if abs(vco - VCO1_F64) > 1e-4 {
             return Err(ClockPlanError::Apll1Inexact);
         }
         Ok(Apll1Plan {
@@ -259,12 +276,8 @@ impl Xo {
 }
 
 /// An output's driver format (`enum lmk05318_type`).
-#[allow(
-    dead_code,
-    reason = "libusdr's full set; the front ends use three, the oracle's plan tests all"
-)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OutputFormat {
+pub enum OutputFormat {
     /// Off (`OUT_OFF`).
     Off,
     /// AC-coupled LVDS (`LVDS`).
@@ -309,7 +322,7 @@ impl OutputFormat {
 
 /// Which APLL may drive an output (`enum lmk05318_port_affinity`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Affinity {
+pub enum Affinity {
     /// APLL1 when it reaches the frequency exactly, otherwise APLL2 (`AFF_ANY`).
     #[default]
     Any,
@@ -321,7 +334,7 @@ pub(crate) enum Affinity {
 
 /// The clock an output's mux selects (`enum lmk05318_out_pll_sel_t`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Mux {
+pub enum Mux {
     /// APLL1 (`OUT_PLL_SEL_APLL1_P1`).
     #[default]
     Apll1 = 0,
@@ -335,27 +348,28 @@ pub(crate) enum Mux {
 
 /// What one output should carry (`lmk05318_port_request`, `lmk05318_set_port_affinity`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct OutputRequest {
+pub struct OutputRequest {
     /// The output, 0 to 7.
-    pub(crate) port: u8,
+    pub port: u8,
     /// Its frequency in Hz; 0 turns it off.
-    pub(crate) hz: u32,
+    pub hz: u32,
     /// How far above `hz` it may land, in Hz.
-    pub(crate) above_hz: u32,
+    pub above_hz: u32,
     /// How far below `hz` it may land, in Hz.
-    pub(crate) below_hz: u32,
+    pub below_hz: u32,
     /// Invert it; only APLL1 can.
-    pub(crate) inverted: bool,
+    pub inverted: bool,
     /// Its driver format.
-    pub(crate) format: OutputFormat,
+    pub format: OutputFormat,
     /// Which APLL may drive it.
-    pub(crate) affinity: Affinity,
+    pub affinity: Affinity,
 }
 
 impl OutputRequest {
     /// Output `port` at `hz` in `format`, within libusdr's 2 Hz either side, from either
     /// APLL (`lmk05318_port_request`).
-    pub(crate) const fn new(port: u8, hz: u32, format: OutputFormat) -> Self {
+    #[must_use]
+    pub const fn new(port: u8, hz: u32, format: OutputFormat) -> Self {
         Self {
             port,
             hz,
@@ -368,7 +382,8 @@ impl OutputRequest {
     }
 
     /// The same request, restricted to `affinity` (`lmk05318_set_port_affinity`).
-    pub(crate) const fn with_affinity(mut self, affinity: Affinity) -> Self {
+    #[must_use]
+    pub const fn with_affinity(mut self, affinity: Affinity) -> Self {
         self.affinity = affinity;
         self
     }
@@ -387,27 +402,27 @@ impl OutputRequest {
 
 /// How the solver reaches an output.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Route {
+pub struct Route {
     /// The clock the output's mux selects.
-    pub(crate) mux: Mux,
+    pub mux: Mux,
     /// The output divider.
-    pub(crate) divider: u64,
+    pub divider: u64,
     /// The frequency that results, in Hz.
-    pub(crate) hz: f64,
+    pub hz: f64,
 }
 
 /// One output of a plan, in output order.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct OutputPlan {
+pub struct OutputPlan {
     /// The request.
-    pub(crate) request: OutputRequest,
+    pub request: OutputRequest,
     /// How it is reached; `None` for an output turned off.
-    pub(crate) route: Option<Route>,
+    pub route: Option<Route>,
 }
 
 /// APLL2's settings once a plan is made (`lmk05318_tune_apll2`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Apll2Setting {
+pub enum Apll2Setting {
     /// Powered down: no output uses it, or its last plan is out of range.
     Off,
     /// Running.
@@ -429,34 +444,34 @@ pub(crate) enum Apll2Setting {
 
 /// A plan: APLL2's settings and every requested output, in output order.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Plan {
+pub struct Plan {
     /// APLL2.
-    pub(crate) apll2: Apll2Setting,
+    pub apll2: Apll2Setting,
     /// The outputs.
-    pub(crate) outputs: Vec<OutputPlan>,
+    pub outputs: Vec<OutputPlan>,
 }
 
 /// APLL2's state between plans, cascaded from APLL1 (the APLL2 fields of
 /// `lmk05318_state_t`). A plan that routes nothing to APLL2 keeps the last one's numbers,
 /// as libusdr does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Apll2 {
+pub struct Apll2 {
     /// Primary reference divider, 3 to 6 (`fref_pll2_div_rp`).
-    pub(crate) primary_divider: u32,
+    pub primary_divider: u32,
     /// Secondary reference divider, 1 to 32 (`fref_pll2_div_rs`).
-    pub(crate) secondary_divider: u32,
+    pub secondary_divider: u32,
     /// The VCO frequency, in Hz; 0 until a plan uses APLL2 (`vco2_freq`).
-    pub(crate) vco_hz: u64,
+    pub vco_hz: u64,
     /// Feedback divider integer part (`vco2_n`).
-    pub(crate) n: u32,
+    pub n: u32,
     /// Feedback fraction numerator (`vco2_num`).
-    pub(crate) num: u32,
+    pub num: u32,
     /// Feedback fraction denominator (`vco2_den`).
-    pub(crate) den: u32,
+    pub den: u32,
     /// Post-divider 1; 0 when unused (`pd1`).
-    pub(crate) pd1: u32,
+    pub pd1: u32,
     /// Post-divider 2; 0 when unused (`pd2`).
-    pub(crate) pd2: u32,
+    pub pd2: u32,
 }
 
 /// An APLL2 feedback fraction `n + num / den`.
@@ -473,7 +488,8 @@ struct Fraction {
 impl Apll2 {
     /// APLL2 as `lmk05318_create` sets it up: reference dividers 3 and the smallest
     /// secondary that keeps the phase detector at or below 150 MHz, nothing planned.
-    pub(crate) fn cascaded() -> Self {
+    #[must_use]
+    pub fn cascaded() -> Self {
         let primary: u32 = 3;
         // The C computes this in 64 bits (`VCO_APLL1` is 64-bit): ceil(2.5e9 / 150e6) is
         // 17, then rounded up over the primary divider: 6.
@@ -550,7 +566,11 @@ impl Apll2 {
     ///
     /// On failure the state may have moved on, as libusdr's does: APLL2's numbers change
     /// once its routing succeeds, even if the final checks then fail.
-    pub(crate) fn plan(&mut self, requests: &[OutputRequest]) -> Result<Plan, ClockPlanError> {
+    ///
+    /// # Errors
+    ///
+    /// The [`ClockPlanError`] that names why no plan serves `requests`.
+    pub fn plan(&mut self, requests: &[OutputRequest]) -> Result<Plan, ClockPlanError> {
         if requests.is_empty() || requests.len() > 8 {
             return Err(ClockPlanError::BadRequest);
         }
@@ -652,7 +672,7 @@ impl Apll2 {
                     continue;
                 }
                 let whole = c_u64(hz);
-                if (hz - c_f64(whole)).abs() > 1e-6 {
+                if abs(hz - c_f64(whole)) > 1e-6 {
                     continue;
                 }
                 if binding.divide(slots, hz) {
@@ -729,7 +749,7 @@ impl Slot {
             return (divider, false);
         }
         let reached = input_hz / c_f64(divider);
-        (divider, (reached - wanted).abs() < 1e-6)
+        (divider, abs(reached - wanted) < 1e-6)
     }
 }
 
@@ -1034,7 +1054,8 @@ impl Binding {
 
 /// Output 7's two divider stages for a total of `divider`, 1 to 2^32
 /// (`lmk05318_set_out_div`): a first stage up to 256 and the second it leaves, rounded.
-pub(crate) fn out7_stages(divider: u64) -> (u16, u64) {
+#[must_use]
+pub fn out7_stages(divider: u64) -> (u16, u64) {
     let first = out7_first_stage(divider);
     let second = c_u64(c_f64(divider) / f64::from(first) + 0.5);
     (first, second)
@@ -1057,7 +1078,8 @@ fn out7_first_stage(divider: u64) -> u16 {
 }
 
 /// Whether output `port` takes `divider` (`lmk05318_set_out_div`'s range check).
-pub(crate) const fn divider_fits(port: u8, divider: u64) -> bool {
+#[must_use]
+pub const fn divider_fits(port: u8, divider: u64) -> bool {
     port <= 7 && divider >= 1 && divider <= max_divider(port)
 }
 
@@ -1102,9 +1124,60 @@ const fn c_u32(value: u64) -> u32 {
     value as u32
 }
 
+/// C's `ceil` of a non-negative double below 2^64: truncation and its conversion back are
+/// both exact there, so this is `ceil` bit for bit.
+fn c_ceil(value: f64) -> f64 {
+    let whole = c_f64(c_u64(value));
+    if whole < value { whole + 1.0 } else { whole }
+}
+
+/// C's `fabs`: the sign bit cleared, nothing else changed.
+const fn abs(value: f64) -> f64 {
+    f64::from_bits(value.to_bits() & !(1 << 63))
+}
+
+/// The greatest common divisor (libusdr's `find_gcd`); zero only for `gcd(0, 0)`.
+const fn gcd(a: u64, b: u64) -> u64 {
+    let (mut a, mut b) = (a, b);
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_core_float_helpers_match_std() {
+        for value in [
+            0.0,
+            0.25,
+            1.0,
+            1.5,
+            2.0 - f64::EPSILON,
+            31.25,
+            1.25e9,
+            4_503_599_627_370_495.5,
+            9.007_199_254_740_992e15,
+            1.8e19,
+        ] {
+            assert_eq!(
+                c_ceil(value).to_bits(),
+                value.ceil().to_bits(),
+                "ceil({value})"
+            );
+            for signed in [value, -value] {
+                assert_eq!(
+                    abs(signed).to_bits(),
+                    signed.abs().to_bits(),
+                    "abs({signed})"
+                );
+            }
+        }
+        assert_eq!((gcd(0, 0), gcd(0, 7), gcd(12, 18)), (0, 7, 6));
+    }
 
     #[test]
     fn the_cascaded_apll2_reference_stays_within_its_phase_detector() {

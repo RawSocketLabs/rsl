@@ -21,20 +21,19 @@
 //! These run as blocking code: the 16-bit addresses and four-byte identity read do not fit
 //! the portable `Sequence` seam.
 //!
+//! The plan, staging map, address map and value types are the shared `rsl-lmk05318` crate
+//! (`PE_SYNC` uses the chip too), re-exported here under their former module names; the
+//! bus code in `lmk05318.rs` is the uSDR driver's.
+//!
 //! # Sources
 //!
 //! libusdr's `hw/lmk05318/lmk05318.c` and register YAML `lmk05318.yaml` (vendored beside
 //! it) for fields and meanings. The YAML does not document addresses 0 to 3, so the
 //! identity stays four raw bytes.
 
-mod apll;
-mod control;
 mod lmk05318;
-mod map;
-mod output;
-pub(crate) mod plan;
-mod reg;
-mod staging;
-mod xo;
+
+pub(crate) use rsl_lmk05318::plan;
+use rsl_lmk05318::{apll, control, map, output, reg, staging};
 
 pub(crate) use self::lmk05318::Lmk05318;

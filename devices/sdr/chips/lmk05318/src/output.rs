@@ -11,7 +11,7 @@ use super::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
 
 /// An output with its own mux: 0 (for 0 and 1), 2 (for 2 and 3), 4, 5, 6 or 7.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum MuxedOutput {
+pub enum MuxedOutput {
     /// Outputs 0 and 1.
     Out0,
     /// Outputs 2 and 3.
@@ -28,7 +28,7 @@ pub(super) enum MuxedOutput {
 
 /// An output whose mux and divider are its pair's: 1 or 3.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PairedOutput {
+pub enum PairedOutput {
     /// Output 1, paired with 0.
     Out1,
     /// Output 3, paired with 2.
@@ -37,7 +37,7 @@ pub(super) enum PairedOutput {
 
 /// An output divider: 0 and 1's, 2 and 3's, or output 4, 5, 6 or 7's (7's first stage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum DividedOutput {
+pub enum DividedOutput {
     /// Outputs 0 and 1.
     Out01,
     /// Outputs 2 and 3.
@@ -55,7 +55,7 @@ pub(super) enum DividedOutput {
 /// Where output `port`'s control sits: its own mux register or, for 1 and 3, a format-only
 /// one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum OutputControlReg {
+pub enum OutputControlReg {
     /// A mux and format register.
     Muxed(MuxedOutput),
     /// A format-only register.
@@ -64,7 +64,8 @@ pub(super) enum OutputControlReg {
 
 impl OutputControlReg {
     /// The control register of output `port`, 0 to 7.
-    pub(super) const fn of(port: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn of(port: u8) -> Option<Self> {
         Some(match port {
             0 => Self::Muxed(MuxedOutput::Out0),
             1 => Self::Paired(PairedOutput::Out1),
@@ -79,7 +80,8 @@ impl OutputControlReg {
     }
 
     /// Its address.
-    pub(super) fn addr(self) -> Reg {
+    #[must_use]
+    pub fn addr(self) -> Reg {
         match self {
             Self::Muxed(output) => OutputControl::addr(output),
             Self::Paired(output) => OutputFormatOnly::addr(output),
@@ -89,7 +91,7 @@ impl OutputControlReg {
 
 impl DividedOutput {
     /// The divider of output `port`, 0 to 7.
-    pub(super) const fn of(port: u8) -> Option<Self> {
+    pub(crate) const fn of(port: u8) -> Option<Self> {
         Some(match port {
             0 | 1 => Self::Out01,
             2 | 3 => Self::Out23,
@@ -105,7 +107,7 @@ impl DividedOutput {
 /// The clock an output's mux selects (`CHn_MUX`; the YAML's `x-out-pll-sel`).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2, closed)]
-pub(super) enum MuxCode {
+pub enum MuxCode {
     /// APLL1 (`APLL1_P1`).
     Apll1 = 0,
     /// APLL1, inverted (`APLL1 P1_INV`).
@@ -132,7 +134,7 @@ impl From<Mux> for MuxCode {
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u6)]
 #[repr(u8)]
-pub(super) enum FormatCode {
+pub enum FormatCode {
     /// Disabled.
     Disabled = 0x00,
     /// AC-coupled LVDS.
@@ -198,7 +200,7 @@ impl From<OutputFormat> for FormatCode {
 /// format); `OUTCTL_2`, 0x36; `OUTCTL_4`-`OUTCTL_7`, 0x39, 0x3B, 0x3D, 0x3F.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OutputControl {
+pub struct OutputControl {
     /// The source. `CHn_MUX`, bits 7:6.
     #[bits(6..=7)]
     mux: MuxCode,
@@ -226,7 +228,7 @@ impl IndexedLmk05318Register for OutputControl {
 /// `OUTCTL_1`, 0x34; `OUTCTL_3`, 0x37.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OutputFormatOnly {
+pub struct OutputFormatOnly {
     /// The driver format. `OUT1_FMT`/`OUT3_FMT`, bits 5:0.
     #[bits(0..=5)]
     format: FormatCode,
@@ -246,7 +248,7 @@ impl IndexedLmk05318Register for OutputFormatOnly {
 /// 0x38; `OUTDIV_4`-`OUTDIV_6`, 0x3A, 0x3C, 0x3E; `OUTDIV_7` (the first stage), 0x43.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OutputDivider {
+pub struct OutputDivider {
     /// The ratio less one. `OUTn_DIV`, bits 7:0.
     #[bits(0..=7)]
     ratio_minus_one: u8,
@@ -268,7 +270,7 @@ impl IndexedLmk05318Register for OutputDivider {
 
 impl OutputDivider {
     /// The register for a divide ratio, truncated to eight bits as the C's macros do.
-    pub(super) fn ratio(ratio: u64) -> Self {
+    pub(crate) fn ratio(ratio: u64) -> Self {
         Self::new().with_ratio_minus_one(ratio.wrapping_sub(1).to_le_bytes()[0])
     }
 }
@@ -276,7 +278,7 @@ impl OutputDivider {
 /// Divider synchronization per post-divider. `OUTSYNCCTL`, 0x46.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PostDividerSync {
+pub struct PostDividerSync {
     /// APLL2 post-divider 2's channels. `PLL2_P2_SYNC_EN`, bit 2.
     #[bits(2..=2)]
     apll2_post2: bool,
@@ -296,7 +298,7 @@ impl Lmk05318Register for PostDividerSync {
 /// Output synchronization per channel. `OUTSYNCEN`, 0x47.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OutputSync {
+pub struct OutputSync {
     /// Output 7. `CH7_SYNC_EN`, bit 5.
     #[bits(5..=5)]
     output7: bool,
@@ -328,7 +330,7 @@ impl Lmk05318Register for OutputSync {
 /// Muted outputs, one bit each, output 7 in bit 7. `OUT_MUTE`, 0x19.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct OutputMute {
+pub struct OutputMute {
     /// Output 7. `CH7_MUTE`, bit 7.
     #[bits(7..=7)]
     output7: bool,
@@ -368,7 +370,7 @@ impl Lmk05318Register for OutputMute {
 /// Outputs muted while a PLL locks. `DPLL_MUTE`, 0x1D.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct LockMute {
+pub struct LockMute {
     /// While APLL2 locks. `MUTE_APLL2_LOCK`, bit 4.
     #[bits(4..=4)]
     apll2: bool,
@@ -392,7 +394,7 @@ impl Lmk05318Register for LockMute {
 /// What a muted output drives (`CHn_MUTE_LVL`; the YAML's `x-mute-lvl`).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2, closed)]
-pub(super) enum MuteLevel {
+pub enum MuteLevel {
     /// Muting bypassed: normal operation.
     Bypass = 0,
     /// Differential: P at the common-mode voltage, N low.
@@ -407,7 +409,7 @@ pub(super) enum MuteLevel {
 /// outputs 7 to 4.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct MuteLevels {
+pub struct MuteLevels {
     /// Output 3 or 7. `CH3_MUTE_LVL`/`CH7_MUTE_LVL`, bits 7:6.
     #[bits(6..=7)]
     fourth: MuteLevel,
@@ -427,7 +429,7 @@ pub(super) struct MuteLevels {
 
 /// A group of four outputs sharing a [`MuteLevels`] register.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum MuteGroup {
+pub enum MuteGroup {
     /// Outputs 0 to 3.
     Low,
     /// Outputs 4 to 7.
@@ -447,7 +449,7 @@ impl IndexedLmk05318Register for MuteLevels {
 
 impl MuteLevels {
     /// All four outputs at `level`.
-    pub(super) fn all(level: MuteLevel) -> Self {
+    pub(crate) fn all(level: MuteLevel) -> Self {
         Self::new()
             .with_fourth(level)
             .with_third(level)
@@ -458,6 +460,7 @@ impl MuteLevels {
 
 /// Clears an output control register's format bits, keeping the rest
 /// (`lmk05318_disable_port`'s `regval & ~OUT0_FMT_MSK`).
-pub(super) fn without_format(control: u8) -> u8 {
+#[must_use]
+pub fn without_format(control: u8) -> u8 {
     u8::from(OutputControl::from(control).with_format(FormatCode::Disabled))
 }

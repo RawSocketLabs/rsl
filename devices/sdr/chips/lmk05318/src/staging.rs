@@ -4,8 +4,8 @@
 //! `lmk05318_set_out_div`) and the common settings (`lmk05318_set_common_registers`
 //! without the DPLL), into a [`RegisterMap`].
 //!
-//! Register values only, no bus, so the oracle's parity tests compile this module (with
-//! the plan, map and value types) directly and compare the map with libusdr's.
+//! Register values only, no bus: the uSDR oracle's parity tests compare the map with
+//! libusdr's.
 
 use bnb::{u2, u3};
 
@@ -28,7 +28,12 @@ use super::xo::{XoControl, XoDivider, XoInputType, baw_detection_for};
 
 /// Stages the XO path and its BAW detection constants (`lmk05318_set_xo_fref`). An XO
 /// without BAW settings fails after its path is staged, as in libusdr.
-pub(crate) fn stage_xo(map: &mut RegisterMap, xo: Xo) -> Result<XoPath, ClockPlanError> {
+///
+/// # Errors
+///
+/// [`ClockPlanError::XoOutOfRange`] for an XO outside 10–100 MHz, before anything is
+/// staged; [`ClockPlanError::UnsupportedXo`] for an XO without BAW settings.
+pub fn stage_xo(map: &mut RegisterMap, xo: Xo) -> Result<XoPath, ClockPlanError> {
     let path = xo.path()?;
     map.stage(XoControl::for_path(xo, path));
     map.stage(XoInputType::for_input(xo.input));
@@ -42,7 +47,7 @@ pub(crate) fn stage_xo(map: &mut RegisterMap, xo: Xo) -> Result<XoPath, ClockPla
 
 /// Stages APLL1 running free with a programmed 24-bit fraction (`lmk05318_tune_apll1`
 /// without a DPLL).
-pub(crate) fn stage_apll1(map: &mut RegisterMap, plan: Apll1Plan) {
+pub fn stage_apll1(map: &mut RegisterMap, plan: Apll1Plan) {
     map.stage(
         Pll1Modulator::new()
             .with_dither(Dither::Weak)
@@ -70,11 +75,7 @@ pub(crate) fn stage_apll1(map: &mut RegisterMap, plan: Apll1Plan) {
 ///
 /// [`ClockPlanError::BadDivider`] for a divider past its output's range, after its source
 /// is staged, as in libusdr; the solver never plans one.
-pub(crate) fn stage_plan(
-    map: &mut RegisterMap,
-    apll2: &Apll2,
-    plan: &Plan,
-) -> Result<(), ClockPlanError> {
+pub fn stage_plan(map: &mut RegisterMap, apll2: &Apll2, plan: &Plan) -> Result<(), ClockPlanError> {
     stage_apll2(map, apll2, plan.apll2);
     plan.outputs
         .iter()
@@ -160,7 +161,7 @@ fn stage_output(map: &mut RegisterMap, output: &OutputPlan) -> Result<(), ClockP
 /// (`lmk05318_set_common_registers`): APLL1 running free with programmed denominators,
 /// BAW lock detection, cascaded APLLs, every output synchronized and unmuted, muted
 /// outputs driven low, and the loss flags and interrupt cleared.
-pub(crate) fn stage_common(map: &mut RegisterMap) {
+pub fn stage_common(map: &mut RegisterMap) {
     map.stage(
         DeviceControl::new()
             .with_sync_after_apll_lock(true)

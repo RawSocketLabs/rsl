@@ -5,14 +5,13 @@
 //! Multi-byte numbers (the YAML's address ranges, such as `PLL1_NDIV` at `0x6C:0x6D`) are
 //! sent most significant byte first and written as bytes.
 //!
-//! The shared [`Register`](crate::chips::register::Register) traits take 8-bit addresses,
-//! so this chip's value types implement the 16-bit [`Lmk05318Register`] and
-//! [`IndexedLmk05318Register`] instead.
+//! `rsl-lowlevel`'s shared `Register` traits take 8-bit addresses, so this chip's value
+//! types implement the 16-bit [`Lmk05318Register`] and [`IndexedLmk05318Register`] instead.
 
 /// Register addresses, with the YAML's names (`hw/lmk05318/lmk05318.yaml`) in the docs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
-pub(crate) enum Reg {
+pub enum Reg {
     /// The first identification byte; libusdr reads four from here and requires
     /// `10 0B 35 42`. Undocumented in the vendored YAML. 0x0000.
     Id = 0x0000,
@@ -283,16 +282,16 @@ impl Reg {
     pub(super) const LAST_STAGED: u16 = 0x019b;
 }
 
-/// A byte register at one fixed address; the 16-bit counterpart of
-/// [`Register`](crate::chips::register::Register).
-pub(super) trait Lmk05318Register: Copy + From<u8> + Into<u8> {
+/// A byte register at one fixed address; the 16-bit counterpart of `rsl-lowlevel`'s
+/// `Register`.
+pub trait Lmk05318Register: Copy + From<u8> + Into<u8> {
     /// Where this register lives.
     const ADDR: Reg;
 }
 
-/// A byte register the chip repeats; the 16-bit counterpart of
-/// [`IndexedRegister`](crate::chips::register::IndexedRegister).
-pub(super) trait IndexedLmk05318Register: Copy + From<u8> + Into<u8> {
+/// A byte register the chip repeats; the 16-bit counterpart of `rsl-lowlevel`'s
+/// `IndexedRegister`.
+pub trait IndexedLmk05318Register: Copy + From<u8> + Into<u8> {
     /// What selects one copy.
     type Index: Copy;
     /// Where the copy for `index` lives.

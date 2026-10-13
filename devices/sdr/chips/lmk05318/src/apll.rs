@@ -9,7 +9,7 @@ use super::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
 
 /// One of the two APLLs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Apll {
+pub enum Apll {
     /// APLL1, the BAW VCO.
     Apll1,
     /// APLL2, cascaded from APLL1.
@@ -19,7 +19,7 @@ pub(super) enum Apll {
 /// How APLL1's fraction is held. `SPARE_NVMBASE2_BY2`, 0x27.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Apll1DenominatorMode {
+pub struct Apll1DenominatorMode {
     /// GPIO2 drives LVCMOS rather than open-drain NMOS. `GPIO2_OUT`, bit 1.
     #[bits(1..=1)]
     gpio2_lvcmos: bool,
@@ -37,7 +37,7 @@ impl Lmk05318Register for Apll1DenominatorMode {
 /// `SPARE_NVMBASE2_BY1`, 0x28.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Apll2DenominatorMode {
+pub struct Apll2DenominatorMode {
     /// SECREF is DC-coupled internally. `SECREF_DC_MODE`, bit 3.
     #[bits(3..=3)]
     secondary_reference_dc: bool,
@@ -58,7 +58,7 @@ impl Lmk05318Register for Apll2DenominatorMode {
 /// The PLLs' clocking. `PLL_CLK_CFG`, 0x2F.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PllClocks {
+pub struct PllClocks {
     /// APLL2's reference is the XO rather than APLL1's VCO (cascaded). `PLL2_RCLK_SEL`,
     /// bit 7.
     #[bits(7..=7)]
@@ -77,7 +77,7 @@ impl Lmk05318Register for PllClocks {
 /// APLL1's power. `PLL1_CTRL0`, 0x4A.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll1Control {
+pub struct Pll1Control {
     /// APLL1 powered down; clearing it after a set starts a calibration. `PLL1_PDN`,
     /// bit 0.
     #[bits(0..=0)]
@@ -90,7 +90,7 @@ impl Lmk05318Register for Pll1Control {
 /// APLL1's VCO calibration. `PLL1_CALCTRL0`, 0x4F.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll1Calibration {
+pub struct Pll1Calibration {
     /// BAW lock detection on. `BAW_LOCKDET_EN`, bit 4.
     #[bits(4..=4)]
     baw_lock_detect: bool,
@@ -112,7 +112,7 @@ impl Lmk05318Register for Pll1Calibration {
 /// `BAW_LOCKDET_PPM_MAX_BY1`, 0x50.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct BawLock {
+pub struct BawLock {
     /// The BAW VCO is locked; libusdr also writes it, 1 without the DPLL. `BAW_LOCK`,
     /// bit 7.
     #[bits(7..=7)]
@@ -129,7 +129,7 @@ impl Lmk05318Register for BawLock {
 /// APLL2's reference dividers and power. `PLL2_CTRL0`, 0x64.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll2Control {
+pub struct Pll2Control {
     /// The secondary reference divider less one (divides by 1 to 32) in cascaded mode.
     /// `PLL2_RDIV_SEC`, bits 7:3.
     #[bits(3..=7)]
@@ -152,7 +152,8 @@ impl Lmk05318Register for Pll2Control {
 impl Pll2Control {
     /// APLL2 with reference dividers `primary` and `secondary`, masked into their fields as
     /// the C's macro masks them.
-    pub(super) fn with_dividers(primary: u32, secondary: u32, powered_down: bool) -> Self {
+    #[must_use]
+    pub fn with_dividers(primary: u32, secondary: u32, powered_down: bool) -> Self {
         Self::new()
             .with_secondary_divider_minus_one(u5::from_raw(low_byte(secondary.wrapping_sub(1))))
             .with_primary_divider_minus_three(u2::from_raw(low_byte(primary.wrapping_sub(3))))
@@ -164,7 +165,7 @@ impl Pll2Control {
 /// changing them. `PLL2_CTRL2`, 0x66.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll2PostDividers {
+pub struct Pll2PostDividers {
     /// Post-divider 2 less one. `PLL2_P2`, bits 6:4.
     #[bits(4..=6)]
     second_minus_one: u3,
@@ -179,7 +180,7 @@ impl Lmk05318Register for Pll2PostDividers {
 
 impl Pll2PostDividers {
     /// Post-dividers `pd1` and `pd2`, masked as the C's macro masks them.
-    pub(super) fn with_dividers(pd1: u32, pd2: u32) -> Self {
+    pub(crate) fn with_dividers(pd1: u32, pd2: u32) -> Self {
         Self::new()
             .with_second_minus_one(u3::from_raw(low_byte(pd2.wrapping_sub(1))))
             .with_first_minus_one(u3::from_raw(low_byte(pd1.wrapping_sub(1))))
@@ -189,7 +190,7 @@ impl Pll2PostDividers {
 /// A sigma-delta modulator's dither (`SDM_DITHER_MODE_*`).
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2, closed)]
-pub(super) enum Dither {
+pub enum Dither {
     /// Weak (`SDM_DITHER_MODE_WEAK`); what libusdr uses.
     Weak = 0,
     /// Medium.
@@ -204,7 +205,7 @@ pub(super) enum Dither {
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u3)]
 #[repr(u8)]
-pub(super) enum OrderCode {
+pub enum OrderCode {
     /// Integer mode.
     Integer = 0,
     /// First order.
@@ -232,7 +233,7 @@ impl From<SdmOrder> for OrderCode {
 /// APLL1's sigma-delta modulator. `PLL1_MASHCTRL`, 0x73.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll1Modulator {
+pub struct Pll1Modulator {
     /// Dual-phase feedback. `PLL1_DUAL_PH_EN`, bit 7.
     #[bits(7..=7)]
     dual_phase: bool,
@@ -260,7 +261,7 @@ impl Lmk05318Register for Pll1Modulator {
 /// APLL1's mode. `PLL1_MODE`, 0x74.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll1Mode {
+pub struct Pll1Mode {
     /// Ignore frequency steps from the pins. `PLL1_IGNORE_GPIO_PIN`, bit 2.
     #[bits(2..=2)]
     ignore_pins: bool,
@@ -280,7 +281,7 @@ impl Lmk05318Register for Pll1Mode {
 /// APLL2's sigma-delta modulator. `PLL2_MASHCTRL`, 0x8B.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Pll2Modulator {
+pub struct Pll2Modulator {
     /// Dither. `PLL2_DTHRMODE`, bits 4:3.
     #[bits(3..=4)]
     dither: Dither,
@@ -296,7 +297,7 @@ impl Lmk05318Register for Pll2Modulator {
 /// An APLL's VCO status. `PLL1_CALSTAT1`, 0x165; `PLL2_CALSTAT1`, 0x16F.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct VcoStatus {
+pub struct VcoStatus {
     /// The charge-pump voltage is within its operating range. `PLLn_VM_INSIDE`, bit 5.
     #[bits(5..=5)]
     in_range: bool,

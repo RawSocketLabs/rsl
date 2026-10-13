@@ -1,32 +1,17 @@
-//! rsl-usdr's LMK05318 frequency plans and the registers it stages for them against
-//! libusdr's (`hw/lmk05318/lmk05318.c`), number for number and bit for bit: the XO path and
-//! APLL1, the output solver with APLL2's state, and output 7's divider stages. The solver's
-//! `-Ofast` arithmetic makes the float results the sharpest check. Bus traces are compared
-//! by `frontend_parity.rs`.
-
-// Compile the driver's private plan, staging, map and register types directly: no testing
-// API is public. The plan names `gcd` by its crate path, provided here.
-mod cal {
-    pub(crate) mod search {
-        pub(crate) use rsl_usdr::cal::search::gcd;
-    }
-}
-#[allow(
-    dead_code,
-    unreachable_pub,
-    reason = "the driver-side items of these modules are not exercised here"
-)]
-#[path = "common/lmk05318.rs"]
-mod lmk05318;
+//! rsl-usdr's LMK05318 frequency plans and the registers it stages for them (the shared
+//! `rsl-lmk05318` crate) against libusdr's (`hw/lmk05318/lmk05318.c`), number for number
+//! and bit for bit: the XO path and APLL1, the output solver with APLL2's state, and output
+//! 7's divider stages. The solver's `-Ofast` arithmetic makes the float results the
+//! sharpest check. Bus traces are compared by `frontend_parity.rs`.
 
 use std::collections::BTreeSet;
 
-use lmk05318::map::RegisterMap;
-use lmk05318::plan::{
+use rsl_lmk05318::map::RegisterMap;
+use rsl_lmk05318::plan::{
     self, Affinity, Apll2, Apll2Setting, ClockPlanError, Mux, OutputFormat, OutputRequest, Plan,
     Xo, XoInput, out7_stages,
 };
-use lmk05318::staging::{stage_apll1, stage_plan, stage_xo};
+use rsl_lmk05318::staging::{stage_apll1, stage_plan, stage_xo};
 use rsl_usdr_oracle::lmk05318::{self as oracle, Apll2State, MAP_LEN, PortRequest, Staged};
 
 /// Every XO input buffer with its C value (`enum xo_input_type`).

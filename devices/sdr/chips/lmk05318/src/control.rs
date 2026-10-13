@@ -7,7 +7,7 @@ use bnb::bitfield;
 /// Device-wide control. `DEV_CTL`, 0x0C.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct DeviceControl {
+pub struct DeviceControl {
     /// Software reset of every function, while set. `RESET_SW`, bit 7.
     #[bits(7..=7)]
     reset: bool,
@@ -45,7 +45,7 @@ impl Lmk05318Register for DeviceControl {
 /// written 0. `INT_FLAG0`, 0x13.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct LossFlags {
+pub struct LossFlags {
     /// The XO frequency detector lost its source. `LOS_FDET_XO_INTR`, bit 4.
     #[bits(4..=4)]
     xo_frequency_lost: bool,
@@ -70,7 +70,7 @@ impl Lmk05318Register for LossFlags {
 /// `INT_FLAG1`, 0x14.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct DpllFlags {
+pub struct DpllFlags {
     /// The DPLL lost phase lock. `LOPL_DPLL_INTR`, bit 7.
     #[bits(7..=7)]
     phase_lock_lost: bool,
@@ -110,7 +110,7 @@ impl Lmk05318Register for DpllFlags {
 /// The interrupt output. `INTCTL`, 0x15.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct InterruptControl {
+pub struct InterruptControl {
     /// Raise the interrupt only when every unmasked flag is set, rather than any.
     /// `INT_AND_OR`, bit 1.
     #[bits(1..=1)]
@@ -127,7 +127,7 @@ impl Lmk05318Register for InterruptControl {
 /// The DPLL's general control. `DPLL_GEN_CTL`, 0xFC.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct DpllControl {
+pub struct DpllControl {
     /// Zero-delay synchronization. `DPLL_ZDM_SYNC_EN`, bit 7.
     #[bits(7..=7)]
     zero_delay_sync: bool,

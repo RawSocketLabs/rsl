@@ -13,14 +13,15 @@ const LEN: usize = Reg::LAST_STAGED as usize + 1;
 
 /// Registers staged for writing, by address.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RegisterMap {
+pub struct RegisterMap {
     /// The staged byte per address, if any.
     staged: [Option<u8>; LEN],
 }
 
 impl RegisterMap {
     /// An empty map.
-    pub(crate) const fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             staged: [None; LEN],
         }
@@ -42,20 +43,28 @@ impl RegisterMap {
     }
 
     /// The staged registers in address order.
-    pub(crate) fn staged(&self) -> impl Iterator<Item = (u16, u8)> + '_ {
+    pub fn staged(&self) -> impl Iterator<Item = (u16, u8)> + '_ {
         (0..)
             .zip(self.staged)
             .filter_map(|(addr, value)| Some((addr, value?)))
     }
 
     /// Empties the map (`lmk05318_registers_map_reset`).
-    pub(super) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.staged = [None; LEN];
+    }
+}
+
+impl Default for RegisterMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::*;
 
     #[test]
