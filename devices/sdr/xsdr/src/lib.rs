@@ -5,11 +5,13 @@
 //! (`rsl-xsdr-oracle`).
 //!
 //! **Unstable; unpublished.** Ported: identification by HWID, the XSDR's supply bring-up at
-//! open ([`Device::open`]), the RFIC power-up ([`Device::power_up`]) and the close
-//! ([`Device::close`]). Not yet ported: the XSDR front-end probe libusdr runs at the end of
-//! its open, the XTRX and sSDR variants (identified, then refused), and everything between
-//! power-up and close (rate, tuning, gain, streams, calibration). The LMS7002M's register
-//! values and chip operations are `rsl-lms7002m`'s. See `PORTING.md` beside this crate.
+//! open ([`Device::open`]), the RFIC power-up ([`Device::power_up`]), the sample rate on
+//! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
+//! baseband bandwidths, and the close ([`Device::close`]). Not yet ported: the XSDR
+//! front-end probe libusdr runs at the end of its open, the XTRX and sSDR variants
+//! (identified, then refused), gateware with an RX or shared MMCM or a DUC/DDC, explicit
+//! paths, streams and calibration. The LMS7002M's register values, chip operations and
+//! control code are `rsl-lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!

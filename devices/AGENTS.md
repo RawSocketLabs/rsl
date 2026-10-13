@@ -39,7 +39,12 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   LMS7002M control code too, despite its directory (the LimeSDR's `limesdr_ctrl.c` calls
   its `lms7002m_streaming_up`): its functions belong in `rsl-lms7002m` once a second
   driver needs them; until then a port of one may sit in its first driver
-  (`lms7002m_streaming_down` in `rsl-xsdr`'s `Close`). Board composition stays in drivers.
+  (`lms7002m_streaming_down` in `rsl-xsdr`'s `Close`). Those both LMS7 drivers call
+  (`lms7002m_samplerate`, `_set_gain`, `_bb_set_badwidth`, `_fe_set_freq`,
+  `_streaming_up`) are `rsl-lms7002m::ctrl` (2026-10-13): `Control` is
+  `lms7002_dev_t`, each operation a sans-I/O `Operation`, and what libusdr's callbacks
+  ask of the board (antenna switches, `LimeLight` sample order) its `Frontend`. Board
+  composition stays in drivers.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
   workspace root (`rawsock/`, …), and drivers depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).

@@ -7,7 +7,8 @@
 
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
 oracle. The driver covers XSDR identification, supply bring-up at open (up to libusdr's
-front-end probe), RFIC power-up and close; see [PORTING.md](PORTING.md) for done,
+front-end probe), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
+gains, baseband bandwidths and close; see [PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
@@ -18,7 +19,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
-| `../chips/lms7002m/` | `rsl-lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`) and the `hw/lms7002m` operations on its cached state (`Lms7002m`), shared with `rsl-limesdr` (`../limesdr`) |
+| `../chips/lms7002m/` | `rsl-lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`), the `hw/lms7002m` operations on its cached state (`Lms7002m`, CGEN/SXX tuning machines) and `lms7002m_ctrl.c`'s control code (`ctrl`: `Control`, `Operation`, the board's `Frontend` hooks), shared with `rsl-limesdr` (`../limesdr`) |
 | `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `rsl-limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
 
 ## Layout decision (2026-10-12)
@@ -34,20 +35,25 @@ pattern instead of sharing it; a shared harness is extracted later, once both ar
 Mirrors `rsl-usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
 
 - `src/device.rs`: `Device`, the public API: `open` (identification, then the XSDR's
-  supplies), `power_up` and `close`. It owns the bus (`Box<dyn Bus>`) and the LMS7002M's
-  cached state (`rsl_lms7002m::Lms7002m`, zeroed until a power-up creates it), and runs the
-  portable sequences with `rsl-lowlevel`'s blocking `run_sequence`.
-- `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`), each
-  citing the libusdr call it reproduces.
+  supplies), `power_up`, `set_sample_rate`, `set_rx_frequency`, `set_tx_frequency`,
+  `set_gain`, `set_bandwidth` and `close`. It owns the bus (`Box<dyn Bus>`), the LMS7002M
+  control state (`rsl_lms7002m::ctrl::Control`, its chip cache zeroed until a power-up
+  creates it) and the board's rate and LO state, and runs the portable sequences and
+  control operations with `rsl-lowlevel`'s blocking `run_sequence`, keeping the state an
+  operation leaves even when it fails.
+- `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`,
+  `REFERENCE_HZ`), each citing the libusdr call it reproduces.
 - `src/portable/`: hand-written sans-I/O `Sequence` machines (`IdentityRead`, `Supplies`,
-  `PowerUp`, `Close`) and the facts they need (`fpga`: GPO banks and bits, the HWID
-  register, the TX MMCM power-down). The LMS7002M's own operations are `rsl-lms7002m`'s;
-  how the family composes them (`lms7002m_ctrl.c`'s streaming-down in `Close`) is here.
+  `PowerUp`, `SetSampleRate` in `rate`, `Close`), the XSDR's control-code hooks
+  (`frontend`: antenna switches, `LimeLight` maps, band tables), a one-action sequence
+  (`step`) and the facts they need (`fpga`: GPO banks and bits, the HWID register, the RX
+  PHY port, the TX MMCM power-down and delay). The LMS7002M's own operations and control
+  code are `rsl-lms7002m`'s; how the family composes them (`xsdr_ctrl.c`) is here.
   Core only, no allocation; imports stay within the tree and the shared `no_std` crates
   (`nostd-check` compiles it unchanged).
 - `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
-- `tests/common/sim_bus.rs`: `Bus` over `rsl-xsdr-sim`; `oracle/tests/open_parity.rs`
-  includes it with `#[path]`.
+- `tests/common/sim_bus.rs`: `Bus` over `rsl-xsdr-sim`; the oracle's parity tests include
+  it with `#[path]`.
 
 Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
 libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
@@ -101,14 +107,22 @@ changes logging.
 
 Each is stated again, with its evidence, where it is encoded.
 
+- RX PHY port (`REG_CFG_PHY_0`, 56): reads return 0, an error-free `LimeLight` link, so
+  libusdr's LFSR checkers count nothing (a sim choice; capture and DC estimator not
+  modelled). The TX PHY port (57) is plain storage: no MMCM or DRP behind it.
+- HWID PHY bits: 0 by default, which libusdr's rate path treats as gateware without a TX
+  MMCM (its calibration then fails); the rate tests use `with_hwid(0x0030_0020)`.
 - FPGA registers: plain storage, unwritten reads 0. GPO writes latch `data & 0xff` per
   bank (`dev_gpo_set`). HWID is `device_id << 16`: gateware revision and PHY bits 0
   (not in the source; they do not change the XSDR/XTRX init trace). `USR_ACCESS2` reads 0.
 - LMS7002M (`rsl-lms7002m-sim`): 15-bit address, 16-bit registers, bit 31 = write. **No
   reset values** (the vendored YAML/header document fields only), so unwritten registers
   read 0; version `0x002F` reads 0x3840 (VER 7, REV 1 as `lms7002m_create` requires; MASK
-  0 is this board's choice, `LMS7_MASK` in `sim/src/board.rs`). No MAC channel banking, no
-  soft-reset side effects. Reads return 0 in bits 31:16. SPI answers regardless of the
+  0 is this board's choice, `LMS7_MASK` in `sim/src/board.rs`). VCO comparators answer from
+  the 26 MHz internal reference (`LMS7_REFERENCE_HZ`; model in
+  `../chips/lms7002m/sim/src/vco.rs`); never-written self-test status reads 0 (done). No
+  MAC channel banking, no soft-reset side effects. Reads return 0 in bits 31:16. SPI
+  answers regardless of the
   board's power GPOs, which do not reset the chip model.
 - LP8758: byte registers with an auto-incrementing pointer; revision bytes per variant
   (`SimBoard::with_fpga_pmic_revision` overrides the FPGA-side one), all else 0.
@@ -141,7 +155,8 @@ format, `== open` / `== power-up` / `== close` phase markers, and a provenance h
   power/LDO/LED off, TX MMCM power-down).
 - XTRX, 81 ops: open 28 (both PMICs, DAC trim), power-up 18, close 35.
 
-Not covered: sample rate, tuning, gain, streams, calibration, temperature, sSDR.
+Not covered by the goldens: sample rate, tuning, gain, streams, calibration, temperature,
+sSDR; `oracle/tests/rate_parity.rs` compares the ported ones with live libusdr instead.
 `oracle/tests/identify.rs` covers every variant's classification and the unknown-ID
 refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state. The driver
 is compared with live libusdr, not with these files: `oracle/tests/open_parity.rs` covers
@@ -150,7 +165,11 @@ XSDR golden lines 10–26 (open up to the front-end probe), 78–97 (power-up) a
 LMS7002M state). `oracle/tests/lms7002m_parity.rs` calls the compiled
 `hw/lms7002m/lms7002m.c` directly (`rsl_xsdr_oracle::lms7002m_run`, a zeroed chip state on
 the sim's SPI) and compares `rsl-lms7002m`'s words for every bank selection, RFE/TRF path
-and mode, MIMO hand-over, AFE combination and processor enable, which no session reaches.
+and mode, MIMO hand-over, AFE combination and processor enable, and every chip operation
+the rate, tuning, gain and bandwidth paths use (whole traces, comparator reads included),
+which no session reaches. `oracle/tests/rate_parity.rs` drives libusdr's `/dm/rate`,
+`/dm/sdr/0/{rx,tx}/frequency`, gain and bandwidth paths and compares everything between
+the open and the close.
 
 ## Verify
 
@@ -176,13 +195,16 @@ by a lock: one is open at a time per process.
 
 ## Open items and blockers
 
-- LMS7002M reset values and channel-banked register set: needed before any sequence that
-  reads back unwritten registers (VCO trims at rate/tune). Source: datasheet or a vendored
+- LMS7002M reset values and channel-banked register set: not needed by the ported paths
+  (they read only the version, the VCO comparators and the self-test status); a sequence
+  that reads back an unwritten register would need them. Source: datasheet or a vendored
   register map with defaults; neither is in the PIN subset.
 - sSDR/sSDR Pro: an LMS8001 model (SPI mux, `lms8001_create`, ID 0x4040) and AT24.
 - XTRX revision 4 (MCP4725 at 0x62) is not modelled.
-- The MMCM behind DRP (TX via `REG_CFG_PHY_1`, RX via the DRP class) must be modelled
-  before sample-rate or LML calibration work.
+- The MMCM behind DRP (TX port served by `m2_lm7_1` as `REG_CFG_PHY_1` writes with busy
+  bit 9 and lock bit 8; RX port via the DRP class) must be modelled before RX/shared-MMCM
+  gateware or TX streaming. libusdr's RX MMCM path indexes the 64-entry `mmcm_rom` with
+  feedback dividers up to 126 at low rates.
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
   `xsdr-portable` (host only); a change to `rsl-xsdr` or to the shared crates it builds on
   selects both, a change to the uSDR oracle's vendored C only the oracle
