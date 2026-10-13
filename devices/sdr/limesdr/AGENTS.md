@@ -50,8 +50,8 @@ Mirrors `rsl-xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   one frame. `fpga.rs`: gateware registers. `reference.rs`: the reference-clock rule.
   `open.rs`: `Open`, the hand-written sans-I/O `limesdr_init`, which runs `rsl-lms7002m`'s
   `Create` for `lms7002m_create`.
-- `src/error.rs`: `Error` and `ExchangeError` (transport failure, or a reply status other
-  than completed).
+- `src/error.rs`: `Error` and `ExchangeError` (transport failure, a reply status other
+  than completed, or a reply to another command).
 - `tests/common/sim_port.rs`: `ControlPort` over `rsl-limesdr-sim`; the oracle's parity
   tests include it with `#[path]`.
 
@@ -115,7 +115,8 @@ the vendored `lms64c_proto.c`. `rsl-limesdr` adopts the same mapping
   compares the whole word). Peripheral 0.
 - `CUSTOM_CMD` 0 → `CMD_LMS7002_RST` with `LMS_RST_PULSE`.
 - A reply status other than `STATUS_COMPLETED_CMD` is `-EIO`; no USB framing, endpoints or
-  FT601 configuration is modelled.
+  FT601 configuration is modelled. `rsl-limesdr` also refuses a reply naming another
+  command than its request (`ExchangeError::Mismatched`), which the shim does not check.
 
 ## What the sim models, and its assumptions
 
@@ -142,11 +143,16 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
 ## libusdr behaviour a port must reproduce or deliberately fix
 
 - `limesdr_detect_refclk`: its `ABS` macro evaluates `clkTbl[i++]` twice and the subtraction
-  is unsigned, so the nearest-entry walk skips entries and wraps. On an ideal counter only
-  references measuring 40-41 MHz open; 10 MHz is taken for 30.72 MHz and refused; counts
-  just below 40 MHz, 30.72 MHz or exactly 52 MHz read `clkTbl[5]` (out of bounds; the
-  52 MHz test row passes only because the sim's integer count reads 51 999 998). Its poll loop tests
-  `j == 100` after at most 10 iterations, so a detector that never finishes is not caught.
+  is unsigned, so the nearest-entry walk skips entries and wraps. By measured frequency:
+  below 10 or above 110 MHz it stops at the first entry and logs `clkTbl[i - 1]` with
+  unsigned `i` = 0 (out of bounds, whatever the log level: the arguments are evaluated),
+  then `-EFAULT`; exactly 10 MHz is taken for 30.72 MHz and refused; (10, 30.72),
+  (38.4, 40) and [52, 110] MHz read `clkTbl[5]` (out of bounds); [30.72, 31.72] MHz opens
+  as 30.72 MHz and [40, 41] MHz as 40 MHz; (31.72, 38.4] and (41, 52) MHz are refused
+  (`src/portable/reference.rs` has the table). The sim's integer counts keep the test rows
+  deterministic: 52 MHz measures 51 999 998 Hz, 38.4 MHz 38 399 996 Hz, 10 MHz exactly.
+  Its poll loop tests `j == 100` after at most 10 iterations, so a detector that never
+  finishes is not caught.
   `rsl-limesdr` fixes both deliberately (`src/portable/reference.rs`, `open.rs`): the
   nominal reference nearest the measurement within 1 MHz (the walk with `ABS` evaluated
   once and signed), and `Error::DetectorStalled` after the same ten polls and waits.
