@@ -1880,12 +1880,21 @@ fn a_native_stream_group_writes_the_blocking_groups_engine_registers() {
 fn native_create_refusals_happen_where_the_blocking_groups_do() {
     // An RX packet the burst plan cannot split fails after the DMA reset; a TX packet over
     // the core's FIFO after the gateware read and the sync hold.
-    for config in [
-        StreamsConfig::rx(RxConfig::new(0, HostFormat::Ci16, WireFormat::Ci16)),
-        StreamsConfig::tx(TxConfig::new(40_000, HostFormat::Ci16, WireFormat::Ci16)),
+    for (config, samples) in [
+        (
+            StreamsConfig::rx(RxConfig::new(0, HostFormat::Ci16, WireFormat::Ci16)),
+            0,
+        ),
+        (
+            StreamsConfig::tx(TxConfig::new(40_000, HostFormat::Ci16, WireFormat::Ci16)),
+            40_000,
+        ),
     ] {
+        let refused =
+            |error: &Error| matches!(error, Error::UnsupportedPacketSize(n) if *n == samples);
         let (mut device, blocking, start) = tuned_device();
-        let expected = device.create_streams(config).unwrap_err().to_string();
+        let blocking_error = device.create_streams(config).unwrap_err();
+        assert!(refused(&blocking_error), "{config:?}: {blocking_error}");
         let created = engine_operations(&blocking, start);
 
         let (mut reactor, wake) = reactor();
@@ -1895,7 +1904,7 @@ fn native_create_refusals_happen_where_the_blocking_groups_do() {
         let NativeEvent::StreamsCreated(Err(error)) = finish(&mut native, &mut reactor) else {
             panic!("{config:?}: the create fails");
         };
-        assert_eq!(error.to_string(), expected, "{config:?}: the same refusal");
+        assert!(refused(&error), "{config:?}: the same refusal, got {error}");
         assert_eq!(
             operations(&board, start),
             created,
@@ -1909,6 +1918,151 @@ fn native_create_refusals_happen_where_the_blocking_groups_do() {
             "{config:?}: no stream joined the group"
         );
     }
+}
+
+#[test]
+fn a_create_that_fails_after_rx_opened_keeps_rx_in_the_group_as_the_blocking_one_does() {
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(TxConfig::new(40_000, HostFormat::Ci16, WireFormat::Ci16))
+        .with_sync(SyncMode::All);
+    let (mut device, blocking, start) = tuned_device();
+    assert!(matches!(
+        device.create_streams(config),
+        Err(Error::UnsupportedPacketSize(40_000))
+    ));
+    let created = engine_operations(&blocking, start);
+    let start = blocking.lock().unwrap().trace().len();
+    device.start_streams().unwrap();
+    let started = engine_operations(&blocking, start);
+
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    let start = board.lock().unwrap().trace().len();
+    native.start_create_streams(config, Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(
+                event,
+                NativeEvent::StreamsCreated(Err(Error::UnsupportedPacketSize(40_000)))
+            )
+        },
+        "the TX packet is refused after RX opened",
+    );
+    assert_eq!(operations(&board, start), created, "the same create");
+    let start = board.lock().unwrap().trace().len();
+    native.start_streams(Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::StreamsStarted(Ok(()))),
+        "the RX-only group starts",
+    );
+    assert_eq!(
+        operations(&board, start),
+        started,
+        "SyncMode::All waits for RX alone, as the blocking group's start does"
+    );
+}
+
+#[test]
+fn a_dead_rx_dma_engine_fails_the_create_and_leaves_the_handle_open() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    // The RX DMA status as an absent or dead engine reads it.
+    board.lock().unwrap().write_reg(6, 0xffff_ffff);
+    let start = board.lock().unwrap().trace().len();
+    native
+        .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
+        .unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(
+                event,
+                NativeEvent::StreamsCreated(Err(Error::DmaEngineFault))
+            )
+        },
+        "the dead engine is reported as the blocking device reports it",
+    );
+    assert_eq!(
+        operations(&board, start),
+        [Op::RegRead {
+            addr: 6,
+            value: 0xffff_ffff
+        }],
+        "nothing follows the status read"
+    );
+    native.start_identity(Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::Identity(Ok(_))),
+        "a fault found in good data keeps the handle open",
+    );
+}
+
+#[test]
+fn a_stop_attempts_every_step_after_a_failed_close() {
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config())
+        .with_sync(SyncMode::All);
+    let (mut reactor, wake) = reactor();
+    let (_device, board, _) = simulated_device(BoardRevision::Rev3);
+    let (mut fake, record, _) = Fake::new();
+    fake.io.board = Arc::clone(&board);
+    let script = Arc::clone(&fake.io.script);
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_create_streams(config, Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::StreamsCreated(Ok(()))),
+        "the group is created",
+    );
+    script.lock().unwrap().fail_cancel = true;
+    let start = board.lock().unwrap().trace().len();
+    native.start_stop_streams(Instant::now()).unwrap();
+    let stopped = loop {
+        match finish(&mut native, &mut reactor) {
+            NativeEvent::Received(_) => {}
+            event => break event,
+        }
+    };
+    assert!(
+        matches!(
+            stopped,
+            NativeEvent::StreamsStopped(Err(Error::Stream(BusError::Timeout)))
+        ),
+        "the RX close's failure is reported: got {stopped:?}"
+    );
+    let tx_stop = Op::RegWrite { addr: 14, value: 0 };
+    assert_eq!(
+        operations(&board, start).last(),
+        Some(&tx_stop),
+        "TX's destroy still stopped its core after RX's close failed"
+    );
+    assert!(
+        calls(&record, "tx close").len() == 1,
+        "TX's transport still closed"
+    );
+    assert!(
+        matches!(
+            native.start_streams(Instant::now()),
+            Err(Error::NotStreaming)
+        ),
+        "the group is gone"
+    );
+    script.lock().unwrap().fail_cancel = false;
+    native.start_rx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxClosed(Ok(()))),
+        "the held RX stream closes outside the group",
+    );
 }
 
 #[test]

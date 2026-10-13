@@ -428,4 +428,12 @@ mod tests {
         let failure = SequenceFailure::InputMissing { chip: "Si5332" };
         assert!(matches!(Error::from(failure), Error::ClockInputMissing));
     }
+
+    #[test]
+    fn a_dead_rx_dma_engine_is_a_dma_fault_and_other_missing_chips_stay_missing() {
+        let dead = SequenceFailure::<BusError>::ChipMissing { chip: RX_DMA };
+        assert!(matches!(Error::from(dead), Error::DmaEngineFault));
+        let missing = SequenceFailure::<BusError>::ChipMissing { chip: "Si5332" };
+        assert!(matches!(Error::from(missing), Error::ChipMissing("Si5332")));
+    }
 }

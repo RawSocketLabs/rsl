@@ -125,12 +125,8 @@ impl BurstPlan {
             ))
             .with_lanes(Lanes::for_channel(self.wire, channels))
             .with_format(self.wire.into());
-        RxFormat {
-            samples_per_burst: self.samples_per_burst,
-            words_per_burst: words,
-            bursts: self.bursts,
-            burst_format: format.to_raw(),
-        }
+        RxFormat::new(self.samples_per_burst, words, self.bursts, format.to_raw())
+            .expect("invariant: a plan has at least one sample, word and burst per block")
     }
 }
 
@@ -307,13 +303,8 @@ mod tests {
         let plan = BurstPlan::for_packet(1024, WireFormat::Ci16).expect("valid");
         assert_eq!(
             plan.rx_format(RxChannels::Channel0),
-            RxFormat {
-                samples_per_burst: 1024,
-                words_per_burst: 512,
-                bursts: 1,
-                // 16 bursts in the FIFO, 511 words, lanes 1 and 0, 16 bits.
-                burst_format: 0x0040_3fe7,
-            }
+            // 16 bursts in the FIFO, 511 words, lanes 1 and 0, 16 bits.
+            RxFormat::new(1024, 512, 1, 0x0040_3fe7).expect("valid")
         );
         // `IFMT_12BIT` is 2 in bits 1:0.
         let format = BurstFormat::new()

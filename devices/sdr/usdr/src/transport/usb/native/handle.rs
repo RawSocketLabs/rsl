@@ -96,6 +96,9 @@ pub enum NativeEvent {
     /// The stream group's create finished: each stream's engine is configured and its
     /// transport open, or the first failure. As on the blocking device, a stream whose
     /// transport opened stays in the group after a later failure, until the group stops.
+    /// A stream whose transport open itself failed is not in the group and stays held:
+    /// close it with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`] before
+    /// creating a group again.
     StreamsCreated(Result<(), Error>),
     /// The stream group started, or failed to.
     StreamsStarted(Result<(), Error>),
@@ -103,7 +106,10 @@ pub enum NativeEvent {
     RxReady(Result<(), Error>),
     /// The stream group stopped: every step was attempted and the group is gone; the first
     /// failure, if any. A stream whose transport failed to close stays held; close it
-    /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`].
+    /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`]. A register
+    /// transfer failure instead ends the session: the handle closes, the later steps fail
+    /// at once, and the worker's cleanup cancels the streams (see
+    /// [`NativeUsb::try_cleanup`]).
     StreamsStopped(Result<(), Error>),
 }
 

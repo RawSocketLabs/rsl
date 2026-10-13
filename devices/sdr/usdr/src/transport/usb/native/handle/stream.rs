@@ -98,12 +98,12 @@ impl NativeUsb {
     /// # Errors
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
-    /// stream group exists (stop it instead); [`Error::Stream`] if the handle is closed.
+    /// stream group holds RX (stop the group instead); [`Error::Stream`] if the handle is closed.
     pub fn start_rx_close(&mut self) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
-        self.refuse_in_group()?;
+        self.refuse_group_close(true)?;
         self.start_stream(StreamOperation::RxClose, StreamCommand::RxClose)
     }
 
@@ -183,12 +183,12 @@ impl NativeUsb {
     /// # Errors
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
-    /// stream group exists (stop it instead); [`Error::Stream`] if the handle is closed.
+    /// stream group holds TX (stop the group instead); [`Error::Stream`] if the handle is closed.
     pub fn start_tx_close(&mut self) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
-        self.refuse_in_group()?;
+        self.refuse_group_close(false)?;
         self.start_stream(StreamOperation::TxClose, StreamCommand::TxClose)
     }
 
@@ -263,10 +263,27 @@ impl NativeUsb {
         result
     }
 
-    /// Refuses a transport-level open or close while a stream group holds the streams:
-    /// the group's own operations open and close them.
+    /// Refuses a transport-level open while a stream group exists: the group's own
+    /// operations open its streams.
     fn refuse_in_group(&self) -> Result<(), Error> {
         if self.group.is_some() {
+            return Err(Error::AlreadyStreaming);
+        }
+        Ok(())
+    }
+
+    /// Refuses a transport-level close of the RX stream if `rx`, else TX, while the group
+    /// holds it: the group's stop closes it. A stream outside the group (one whose open
+    /// failed) closes here.
+    fn refuse_group_close(&self, rx: bool) -> Result<(), Error> {
+        let held = self.group.is_some_and(|group| {
+            if rx {
+                group.holds_rx()
+            } else {
+                group.holds_tx()
+            }
+        });
+        if held {
             return Err(Error::AlreadyStreaming);
         }
         Ok(())

@@ -248,22 +248,47 @@ impl TxControl {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RxFormat {
     /// Samples in one burst, at least one.
-    pub(crate) samples_per_burst: u32,
+    samples_per_burst: u32,
 
     /// Front-end words in one burst, at least one.
-    pub(crate) words_per_burst: u32,
+    words_per_burst: u32,
 
     /// Bursts in one DMA block, at least one.
-    pub(crate) bursts: u32,
+    bursts: u32,
 
-    /// The `FE_CMD_BURST_FORMAT` value.
-    pub(crate) burst_format: u32,
+    /// The `FE_CMD_BURST_FORMAT` value, within its 28 bits.
+    burst_format: u32,
 }
 
-/// The most steps one engine sequence takes: an RX setup's status read, two DMA control
-/// writes, four front-end commands, two DMA sizes and the sync write; or a TX start's three
-/// core writes between the RX run's two and the sync write.
-const MAX_STEPS: usize = 10;
+impl RxFormat {
+    /// The format for bursts of `samples_per_burst` samples in `words_per_burst` words,
+    /// `bursts` to a block, announced by `burst_format`; `None` for a zero count, whose
+    /// less-one register value would wrap, or a format word past 28 bits.
+    pub(crate) const fn new(
+        samples_per_burst: u32,
+        words_per_burst: u32,
+        bursts: u32,
+        burst_format: u32,
+    ) -> Option<Self> {
+        if samples_per_burst == 0 || words_per_burst == 0 || bursts == 0 {
+            return None;
+        }
+        if burst_format >= 1 << 28 {
+            return None;
+        }
+        Some(Self {
+            samples_per_burst,
+            words_per_burst,
+            bursts,
+            burst_format,
+        })
+    }
+}
+
+/// The most steps one engine sequence takes: an RX configuration's four front-end
+/// commands, two DMA sizes and the sync write; a duplex start takes six (the RX run's two,
+/// the TX core's three and the sync write).
+const MAX_STEPS: usize = 7;
 
 /// One step of an engine sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -293,7 +318,7 @@ impl Step {
 
 /// A run of stream-engine register accesses, built from the engine's operations in the
 /// order the stream group performs them. Fixed size; it does not allocate.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(crate) struct EngineSequence {
     /// The steps, the first `len` in use.
     steps: [Step; MAX_STEPS],
@@ -316,16 +341,17 @@ impl EngineSequence {
         }
     }
 
-    /// The register part of libusdr's RX stream create: check the DMA engine is alive,
-    /// stop it and reset the front end, then, with a `format` (libusdr checks the packet
-    /// size between the two), configure the front end and DMA for it and hold the sync
-    /// unit stopped.
-    pub(crate) fn rx_setup(format: Option<&RxFormat>) -> Self {
-        let reset = Self::new().reset_rx_dma();
-        match format {
-            Some(format) => reset.configure_rx(format).sync(SyncTrigger::Stop),
-            None => reset,
-        }
+    /// The first register part of libusdr's RX stream create: check the DMA engine is
+    /// alive, stop it and reset the front end. libusdr checks the packet size next, before
+    /// [`Self::rx_configure`].
+    pub(crate) fn rx_reset() -> Self {
+        Self::new().reset_rx_dma()
+    }
+
+    /// The second register part of libusdr's RX stream create: configure the front end
+    /// and DMA for `format` and hold the sync unit stopped.
+    pub(crate) fn rx_configure(format: &RxFormat) -> Self {
+        Self::new().configure_rx(format).sync(SyncTrigger::Stop)
     }
 
     /// Starts a group with an RX stream if `rx` and a TX stream muted as `tx_mute` says,
@@ -539,20 +565,19 @@ mod tests {
     #[test]
     fn an_rx_setup_writes_libusdrs_words_in_its_order() {
         // One 1024-sample ci16 burst: 512 words, 16 bursts in the FIFO, lanes 1 and 0.
-        let format = RxFormat {
-            samples_per_burst: 1024,
-            words_per_burst: 512,
-            bursts: 1,
-            burst_format: 0x0040_3fe7,
-        };
-        let setup = run(EngineSequence::rx_setup(Some(&format)), 0);
-        assert_eq!(setup.outcome, Ok(()));
+        let format = RxFormat::new(1024, 512, 1, 0x0040_3fe7).expect("valid");
+        let reset = run(EngineSequence::rx_reset(), 0);
+        assert_eq!(reset.outcome, Ok(()));
         assert_eq!(
-            setup.accesses(),
+            reset.accesses(),
+            [FpgaAccess::Read { reg: 6 }, write(5, 0b010), write(5, 0)],
+            "the status, then the DMA reset and release"
+        );
+        let configure = run(EngineSequence::rx_configure(&format), 0);
+        assert_eq!(configure.outcome, Ok(()));
+        assert_eq!(
+            configure.accesses(),
             [
-                FpgaAccess::Read { reg: 6 },
-                write(5, 0b010),
-                write(5, 0),
                 write(0x1_0100, 0x3000_e100),
                 write(0x1_0100, 1023),
                 write(0x1_0100, 0x3000_0000),
@@ -565,36 +590,44 @@ mod tests {
     }
 
     #[test]
-    fn a_dead_rx_dma_engine_stops_the_setup_after_its_status() {
-        let dead = run(EngineSequence::rx_setup(None), 0xffff_ffff);
+    fn a_format_whose_less_one_registers_would_wrap_is_refused() {
+        assert_eq!(RxFormat::new(0, 1, 1, 0), None);
+        assert_eq!(RxFormat::new(1, 0, 1, 0), None);
+        assert_eq!(RxFormat::new(1, 1, 0, 0), None);
+        assert_eq!(
+            RxFormat::new(1, 1, 1, 1 << 28),
+            None,
+            "past BTOTAL's 28 bits"
+        );
+    }
+
+    #[test]
+    fn a_dead_rx_dma_engine_stops_the_reset_after_its_status() {
+        let dead = run(EngineSequence::rx_reset(), 0xffff_ffff);
         assert_eq!(
             dead.outcome,
             Err(SequenceFailure::ChipMissing { chip: RX_DMA })
         );
         assert_eq!(dead.accesses(), [FpgaAccess::Read { reg: 6 }]);
         // Active but not all ones is only logged by libusdr.
-        let active = run(EngineSequence::rx_setup(None), 0x4000_0000);
+        let active = run(EngineSequence::rx_reset(), 0x4000_0000);
         assert_eq!(active.outcome, Ok(()));
-        assert_eq!(
-            active.accesses(),
-            [FpgaAccess::Read { reg: 6 }, write(5, 0b010), write(5, 0)],
-            "without a format: the status, then the DMA reset and release"
-        );
+        assert_eq!(active.accesses().len(), 3);
     }
 
     #[test]
     fn a_failed_write_names_its_register_and_ends_the_sequence() {
-        let mut setup = EngineSequence::rx_setup(None);
-        setup.complete::<()>(Ok(0)).unwrap();
+        let mut reset = EngineSequence::rx_reset();
+        reset.complete::<()>(Ok(0)).unwrap();
         assert_eq!(
-            setup.complete(Err(())),
+            reset.complete(Err(())),
             Err(SequenceFailure::FpgaTransport {
                 chip: FPGA,
                 access: write(5, 0b010),
                 source: (),
             })
         );
-        assert_eq!(setup.next(), None);
+        assert_eq!(reset.next(), None);
     }
 
     #[test]
@@ -644,13 +677,8 @@ mod tests {
 
     #[test]
     fn the_largest_composition_fits() {
-        let format = RxFormat {
-            samples_per_burst: 1,
-            words_per_burst: 1,
-            bursts: 1,
-            burst_format: 0,
-        };
-        assert_eq!(EngineSequence::rx_setup(Some(&format)).len, MAX_STEPS);
+        let format = RxFormat::new(1, 1, 1, 0).expect("valid");
+        assert_eq!(EngineSequence::rx_configure(&format).len, MAX_STEPS);
     }
 
     #[test]

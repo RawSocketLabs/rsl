@@ -349,17 +349,13 @@ pub fn clock_reference_switch(external: bool, state: u8) -> Result<usize, &'stat
 ///
 /// # Errors
 ///
-/// The failing engine's name, or `"unexpected access"`.
+/// The failing engine's name, `"invalid format"` or `"unexpected access"`.
 pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
-    let format = RxFormat {
-        samples_per_burst: 1024,
-        words_per_burst: 512,
-        bursts: 1,
-        burst_format: 0x0040_3fe7,
-    };
+    let format = RxFormat::new(1024, 512, 1, 0x0040_3fe7).ok_or("invalid format")?;
     let mut accesses = 0;
     for sequence in [
-        EngineSequence::rx_setup(Some(&format)),
+        EngineSequence::rx_reset(),
+        EngineSequence::rx_configure(&format),
         EngineSequence::start(true, Some(2), SyncTrigger::Duplex),
         EngineSequence::new().run_rx(false),
         EngineSequence::new().stop_tx(),

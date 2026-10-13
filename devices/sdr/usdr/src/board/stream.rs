@@ -296,12 +296,12 @@ impl Board {
             let _ = self.tune_tx_pll(self.tx.lo_hz);
         }
 
-        // libusdr checks the packet size between the DMA reset and the configuration.
-        let plan = BurstPlan::for_packet(samples_per_packet, wire);
-        let format = plan.map(|plan| plan.rx_format(channels));
         let bus = self.bus.as_mut();
-        run_sequence(bus, &mut EngineSequence::rx_setup(format.as_ref()))?;
-        let plan = plan.ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
+        run_sequence(bus, &mut EngineSequence::rx_reset())?;
+        let plan = BurstPlan::for_packet(samples_per_packet, wire)
+            .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
+        let format = plan.rx_format(channels);
+        run_sequence(bus, &mut EngineSequence::rx_configure(&format))?;
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
         let size = |bytes: u32| usize::try_from(bytes).expect("invariant: a block fits in usize");

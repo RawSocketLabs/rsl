@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::mem;
 use std::time::Instant;
 
+use super::super::window::Windowed;
 use super::super::worker::StreamCommand;
 use super::stream::StreamOperation;
 use super::{NativeEvent, NativeUsb, Pending, Progress, SequenceOperation, StreamState, Wait};
@@ -17,8 +18,6 @@ use crate::fpga::{self, BurstPlan, IdentityRead};
 use crate::lowlevel::BusError;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{StreamsConfig, SyncMode, TxMute};
-
-use super::super::window::Windowed;
 
 /// The stream group the handle holds: which streams joined it and how it starts.
 #[derive(Clone, Copy, Debug)]
@@ -31,6 +30,18 @@ pub(super) struct NativeGroup {
     mode: SyncMode,
     /// The group has started.
     started: bool,
+}
+
+impl NativeGroup {
+    /// The group holds the RX stream.
+    pub(super) const fn holds_rx(self) -> bool {
+        self.rx
+    }
+
+    /// The group holds the TX stream.
+    pub(super) const fn holds_tx(self) -> bool {
+        self.tx
+    }
 }
 
 /// Which group operation a run performs, and so how it ends.
@@ -131,8 +142,8 @@ impl NativeUsb {
     /// # Errors
     ///
     /// Before any I/O, refusing it as the blocking device does: [`Error::Busy`] if an
-    /// operation is pending; [`Error::AlreadyStreaming`] while a group exists or a stream
-    /// the configuration names is open at the transport; [`Error::NoStreams`],
+    /// operation is pending; [`Error::AlreadyStreaming`] while a group exists or either
+    /// stream is open, or failed and not yet closed, at the transport; [`Error::NoStreams`],
     /// [`Error::UnsupportedSync`], [`Error::UnsupportedTxCore`] and the format and packet
     /// refusals of [`Device::create_streams`](crate::Device::create_streams);
     /// [`Error::Stream`] if the handle is closed.
@@ -142,27 +153,28 @@ impl NativeUsb {
         now: Instant,
     ) -> Result<(), Error> {
         self.refuse_group_operation()?;
-        if self.group.is_some() {
+        if self.group.is_some() || self.rx != StreamState::Closed || self.tx != StreamState::Closed
+        {
             return Err(Error::AlreadyStreaming);
         }
         config.check(self.session.extended_tx_core)?;
-        let busy = |wanted: bool, state: StreamState| wanted && state != StreamState::Closed;
-        if busy(config.rx.is_some(), self.rx) || busy(config.tx.is_some(), self.tx) {
-            return Err(Error::AlreadyStreaming);
-        }
         let mut steps = VecDeque::new();
         if let Some(rx) = config.rx {
             // libusdr checks the packet size between the DMA reset and the configuration.
-            let plan = BurstPlan::for_packet(rx.samples_per_packet, rx.wire);
-            let format = plan.map(|plan| plan.rx_format(rx.channels));
-            steps.push_back(engine(EngineSequence::rx_setup(format.as_ref())));
-            steps.push_back(match plan {
-                Some(plan) => GroupStep::Stream(
-                    StreamOperation::RxOpen,
-                    StreamCommand::RxOpen(plan.block_bytes()),
-                ),
-                None => GroupStep::Fail(Error::UnsupportedPacketSize(rx.samples_per_packet)),
-            });
+            steps.push_back(engine(EngineSequence::rx_reset()));
+            match BurstPlan::for_packet(rx.samples_per_packet, rx.wire) {
+                Some(plan) => {
+                    let format = plan.rx_format(rx.channels);
+                    steps.push_back(engine(EngineSequence::rx_configure(&format)));
+                    steps.push_back(GroupStep::Stream(
+                        StreamOperation::RxOpen,
+                        StreamCommand::RxOpen(plan.block_bytes()),
+                    ));
+                }
+                None => steps.push_back(GroupStep::Fail(Error::UnsupportedPacketSize(
+                    rx.samples_per_packet,
+                ))),
+            }
         }
         if let Some(tx) = config.tx {
             let gate = SequenceOperation::TxGate(IdentityRead::default());
