@@ -1,8 +1,12 @@
 //! libusdr's flash driver (`ipblks/espi_flash.c`) on a simulated board, without the rest of
 //! libusdr: the shim hands it a bare transport handle, so no board bring-up runs and the
-//! board's trace holds the flash operations alone.
+//! board's trace holds the flash operations alone. [`usdr_flash`] runs libusdr's flash
+//! update tool (`tools/usdr_flash.c`) the same way.
 
-use std::ffi::{CStr, c_char, c_int, c_uint};
+use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use std::iter;
+use std::ptr;
+use std::slice;
 use std::sync::{MutexGuard, PoisonError};
 
 use rsl_usdr_sim::SimBoard;
@@ -184,5 +188,85 @@ impl FlashOracle {
 impl Drop for FlashOracle {
     fn drop(&mut self) {
         install(None);
+    }
+}
+
+unsafe extern "C" {
+    fn rsl_oracle_usdr_flash(
+        argc: c_int,
+        argv: *mut *mut c_char,
+        reply: *const c_char,
+        log: *mut *mut c_char,
+        log_len: *mut usize,
+    ) -> c_int;
+    fn free(ptr: *mut c_void);
+}
+
+/// What libusdr's flash tool did to a board.
+pub struct ToolRun {
+    /// The tool's exit status: 0, or the code its failure path returns.
+    pub status: i32,
+    /// What it wrote to stderr: its messages and libusdr's log.
+    pub log: String,
+    /// The board, with the tool's operations in its trace.
+    pub board: SimBoard,
+}
+
+/// Runs libusdr's flash tool (`tools/usdr_flash.c`) on `board`, with `args` after its
+/// program name and `reply` typed at its prompt. Its device has the uSDR's description but
+/// is neither brought up nor powered down (see `rsl_oracle_usdr_flash` in the shim), so
+/// the trace holds the tool's own operations. File arguments are real paths.
+///
+/// Holds the oracle session while it runs.
+///
+/// # Panics
+///
+/// If an argument or the reply holds a NUL byte, or the shim cannot set up the tool's
+/// streams.
+#[must_use]
+pub fn usdr_flash(board: SimBoard, args: &[&str], reply: &str) -> ToolRun {
+    let strings: Vec<CString> = iter::once("usdr_flash")
+        .chain(args.iter().copied())
+        .map(|arg| CString::new(arg).expect("no NUL in tool arguments"))
+        .collect();
+    // getopt may permute the pointers, never the strings.
+    let mut pointers: Vec<*mut c_char> = strings
+        .iter()
+        .map(|arg| arg.as_ptr().cast_mut())
+        .chain(iter::once(ptr::null_mut()))
+        .collect();
+    let count = c_int::try_from(strings.len()).expect("few arguments");
+    let reply = CString::new(reply).expect("no NUL in the reply");
+    let mut log: *mut c_char = ptr::null_mut();
+    let mut log_len = 0;
+
+    let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
+    install(Some(board));
+    // SAFETY: `pointers` holds `count` NUL-terminated strings that outlive the call, then a
+    // null; `reply` is NUL-terminated; `log` and `log_len` are valid out-pointers.
+    let status = unsafe {
+        rsl_oracle_usdr_flash(
+            count,
+            pointers.as_mut_ptr(),
+            reply.as_ptr(),
+            &raw mut log,
+            &raw mut log_len,
+        )
+    };
+    let board = take_board();
+    resume_callback_panic();
+    assert!(
+        !log.is_null(),
+        "the shim could not set up the tool ({status})"
+    );
+    // SAFETY: `open_memstream` left `log_len` bytes at `log`.
+    let text =
+        String::from_utf8_lossy(unsafe { slice::from_raw_parts(log.cast(), log_len) }).into_owned();
+    // SAFETY: `log` is `open_memstream`'s allocation, freed once, here.
+    unsafe { free(log.cast()) };
+    ToolRun {
+        status,
+        log: text,
+        board,
     }
 }

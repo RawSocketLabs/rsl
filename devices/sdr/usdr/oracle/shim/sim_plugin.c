@@ -20,6 +20,7 @@
 #include "lowlevel/pcie_uram/pcie_uram_driver_if.h"
 #include "ipblks/si2c.h"
 #include "ipblks/espi_flash.h"
+#include "ipblks/xlnx_bitstream.h"
 #include "ipblks/streams/streams_api.h"
 
 // Stateless oracle for the USB transport's simple-I2C command/cache sequence.
@@ -261,6 +262,26 @@ static int sim_discovery(unsigned pcount, const char** filterparams, const char*
 // The device the sim plugin created last, for the PCIe layout check below.
 static struct sim_dev* s_last_dev;
 
+// Set while libusdr's flash tool runs: see rsl_oracle_usdr_flash below.
+static int s_tool_mode;
+
+// A tool-mode device's teardown: its description only, no power-down.
+static int sim_tool_destroy(lldev_t dev)
+{
+    if (dev->pdev) {
+        usdr_device_base_destroy(dev->pdev);
+        free(dev->pdev);
+    }
+    free(dev);
+    return 0;
+}
+
+static lowlevel_ops_t s_sim_tool_ops = {
+    .generic_get = sim_generic_get,
+    .ls_op = sim_ls_op,
+    .destroy = sim_tool_destroy,
+};
+
 static int sim_create(unsigned pcount, const char** devparam, const char** devval,
                       lldev_t* odev, unsigned vidpid, void* webops, uintptr_t param)
 {
@@ -269,18 +290,23 @@ static int sim_create(unsigned pcount, const char** devparam, const char** devva
     if (d == NULL) {
         return -ENOMEM;
     }
-    d->ll.ops = &s_sim_ops;
+    d->ll.ops = s_tool_mode ? &s_sim_tool_ops : &s_sim_ops;
     d->id = M2_LM6_1_DEVICE_ID_C;
 
     // Same order as pcie_uram_plugin_create; like it, a failed init frees only the handle.
+    // The flash tool's device gets its description but no bring-up (see below).
     int err = usdr_device_create(&d->ll, d->id);
-    err = err ? err : d->ll.pdev->initialize(d->ll.pdev, pcount, devparam, devval);
+    if (!s_tool_mode) {
+        err = err ? err : d->ll.pdev->initialize(d->ll.pdev, pcount, devparam, devval);
+    }
     if (err) {
         free(d);
         return err;
     }
     *odev = &d->ll;
-    s_last_dev = d;
+    if (!s_tool_mode) {
+        s_last_dev = d;
+    }
     return 0;
 }
 
@@ -449,6 +475,76 @@ int rsl_oracle_flash_write(unsigned base, unsigned mmap_base, const uint8_t* in,
                            uint32_t offset, unsigned flags)
 {
     return espi_flash_write(&s_flash_dev, 0, base, mmap_base, in, size, offset, flags);
+}
+
+// libusdr's flash tool (tools/usdr_flash.c, its `main` renamed by build.rs) on the board,
+// with `argv` as its command line and `reply` as what is typed at its prompt; its log goes
+// to a buffer the caller frees. Returns the tool's exit status. On hardware the tool's
+// lowlevel_create also brings the board up (and lowlevel_destroy powers it down); here its
+// device gets the board description (the flash base and master offset the tool reads) and
+// nothing else, so the board's trace holds the tool's own operations. rsl-usdr's flash
+// maintenance powers nothing either.
+int rsl_oracle_usdr_flash_main(int argc, char** argv);
+
+int rsl_oracle_usdr_flash(int argc, char** argv, const char* reply, char** log, size_t* log_len)
+{
+    FILE* in = fmemopen((void*)reply, strlen(reply) + 1, "r");
+    FILE* err = open_memstream(log, log_len);
+    if (in == NULL || err == NULL) {
+        if (in) {
+            fclose(in);
+        }
+        if (err) {
+            fclose(err);
+        }
+        return -ENOMEM;
+    }
+    FILE* saved_in = stdin;
+    FILE* saved_err = stderr;
+    stdin = in;
+    stderr = err;
+    optind = 0; // glibc: a full rescan, as on a fresh process
+    s_tool_mode = 1;
+    int status = rsl_oracle_usdr_flash_main(argc, argv);
+    s_tool_mode = 0;
+    stdin = saved_in;
+    stderr = saved_err;
+    fclose(in);
+    fclose(err);
+    return status;
+}
+
+// Sets `res` to `call`'s result with libusdr's log lines discarded: the parity tests feed the image header
+// parser and update check thousands of images they refuse.
+#define QUIETLY(call)                                \
+    do {                                             \
+        FILE* saved = stderr;                        \
+        FILE* sink = fopen("/dev/null", "w");        \
+        if (sink) {                                  \
+            stderr = sink;                           \
+        }                                            \
+        res = (call);                                \
+        stderr = saved;                              \
+        if (sink) {                                  \
+            fclose(sink);                            \
+        }                                            \
+    } while (0)
+
+int rsl_oracle_btstrm_parse(const uint32_t* mem, unsigned len, xlnx_image_params_t* stat,
+                            unsigned flags)
+{
+    int res;
+    QUIETLY(xlnx_btstrm_parse_header_ex(mem, len, stat, flags));
+    return res;
+}
+
+int rsl_oracle_btstrm_iprgcheck(const xlnx_image_params_t* golden,
+                                const xlnx_image_params_t* image, unsigned wbstar,
+                                bool golden_image)
+{
+    int res;
+    QUIETLY(xlnx_btstrm_iprgcheck(golden, image, wbstar, golden_image));
+    return res;
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

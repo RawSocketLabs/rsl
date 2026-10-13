@@ -72,6 +72,17 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_rtsa_depth");
 
+    // libusdr's flash update tool, its `main` renamed so the shim can run it like a
+    // function (`rsl_oracle_usdr_flash`). It includes its headers relative to itself.
+    cc::Build::new()
+        .file(libusdr.join("tools/usdr_flash.c"))
+        .includes(&includes)
+        .include(libusdr.join("gen"))
+        .flag("-std=gnu11")
+        .define("main", "rsl_oracle_usdr_flash_main")
+        .warnings(false)
+        .compile("usdr_oracle_usdr_flash");
+
     // nco.c has no generic path: without SSSE3 it compiles a stub that writes nothing. On
     // x86 it is built alone with SSSE3 so the NCO port can be compared; elsewhere it stays
     // in the main build as libusdr ships it.

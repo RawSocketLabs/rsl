@@ -18,6 +18,7 @@ use std::thread;
 
 use rsl_usdr_sim::{I2cAddress, SimBoard};
 
+pub mod bitstream;
 pub mod cal;
 pub mod conv;
 pub mod fft;
