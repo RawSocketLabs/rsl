@@ -29,6 +29,9 @@ const REG_GPI_BUILD: u32 = 16;
 const DEFAULT_BUILD: u32 = 0xd2b1_0c09;
 /// General-purpose input bank 3: the hardware ID.
 const REG_GPI_HWID: u32 = 16 + 3;
+/// General-purpose input word 24, in bank 6: the clock measurement libusdr's
+/// `/dm/sdr/0/clkmeas` reads.
+const REG_GPI_CLOCK_MEASUREMENT: u32 = 16 + 6;
 /// HWID bits 25:24: the board has RX and TX chains.
 const HWID_RX_TX: u32 = 0b11 << 24;
 /// HWID bit 24: the board has a TX chain.
@@ -295,6 +298,14 @@ impl SimBoard {
     pub fn set_temperature(&mut self, millicelsius: i32) {
         self.temperature_mc = millicelsius;
         self.temp.set_millicelsius(millicelsius);
+    }
+
+    /// Sets the word the gateware reports at GPI word 24 (register 22), which libusdr's
+    /// `/dm/sdr/0/clkmeas` reads, without tracing anything. The sim does not model a clock
+    /// measurement: the pinned source documents neither the word nor its control (GPO 16),
+    /// so the word is whatever a test loads, and writes to the control leave it alone.
+    pub fn set_clock_measurement(&mut self, word: u32) {
+        self.regs.insert(REG_GPI_CLOCK_MEASUREMENT, word);
     }
 
     /// Writes a 32-bit FPGA register.
