@@ -13,10 +13,18 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   arrives. Crate names stay `rsl-<device>` (`rsl-usdr`), independent of the path.
 - Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
-  lives in `devices/<kind>/` once a second driver needs it, not before. Shared chip code
-  goes under `devices/<kind>/chips/<chip>/`, one directory per chip, with the per-device
-  crate roles beside it (`sdr/chips/lms7002m/sim`: `rsl-lms7002m-sim`, the LMS7002M model
-  the XSDR and LimeSDR sims share).
+  lives in `devices/<kind>/` once a second driver needs it, not before.
+- Code every kind's drivers share lives in `devices/lowlevel` (`rsl-lowlevel`): libusdr's
+  `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
+  portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind
+  feature `std`), knows no board, chip or transport crate, and depends on nothing owned;
+  board-specific limits (which I2C cores or buses exist) stay in the driver's transports.
+- Shared chip code goes under `devices/<kind>/chips/<chip>/`, one directory per chip: the
+  chip's register values and identity facts are the crate at the directory itself
+  (`sdr/chips/lp8758`: `rsl-lp8758`, `no_std`, on `rsl-lowlevel` and `bnb`), and per-chip
+  crate roles sit beside it (`sdr/chips/lms7002m/sim`: `rsl-lms7002m-sim`, the LMS7002M
+  model the XSDR and LimeSDR sims share). Board wiring, setpoints and sequences stay in
+  the drivers. A driver keeps stable internal paths by re-exporting such a crate.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
   workspace root (`rawsock/`, …), and drivers depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).

@@ -75,8 +75,9 @@ Each layer calls only the ones below it.
   libusdr's `I2C_DEV_*`). Setpoints and policy stay in `src/board/`; a sequence is in
   `src/board/` until it migrates to a portable machine. A chip whose values a portable
   machine uses keeps its address map, value types and ID facts in `src/portable/<chip>/`
-  (LP8758, TPS6381x, Si5332, TMP114); `src/chips/<chip>/` then keeps the docs, address and
-  driver.
+  (TPS6381x, Si5332, TMP114), or in a shared per-chip crate another driver needs too
+  (LP8758: `rsl-lp8758`, re-exported as `src/portable/lp8758.rs`); `src/chips/<chip>/`
+  then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
@@ -94,8 +95,11 @@ Each layer calls only the ones below it.
   runs the probe at the end of power-up and owns the board that came up. Blocking code:
   the probes interleave GPIO-core writes with I2C transfers the `Sequence` seam cannot
   express.
-- `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`. Board code
-  sleeps only through `Bus::sleep`.
+- `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
+  `rsl-lowlevel` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
+  rsl-usdr's own conversions into `BusError` (`usb_error` for `rsl_usb::Error`: `From`
+  would be an orphan impl). Board code sleeps only through `Bus::sleep`. The uSDR has one
+  I2C core; its transports refuse any `I2cAddr` core but 0.
 - `src/dsp/`: public `rsl_usdr::dsp`, libusdr's host sample conversions and channel
   (de)interleaving (`xdsp/conv.c` generic kernels, core-only scalar code);
   `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
@@ -109,14 +113,16 @@ Each layer calls only the ones below it.
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
   `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
   register-window and pair-write access libusdr's transports share.
-- `src/portable/`: platform-independent addresses, the typed-register traits, the
-  sequence seam (`sequence.rs`: I²C register reads/writes, FPGA register reads/writes and
-  SPI32 with 32-bit results, and waits, one action at a time),
-  TMP114 values/temperature operation, LP8758/TPS6381x register values and the power-rail
-  machine (`power.rs`), Si5332 register values, divider maths and clock machines
+- `src/portable/`: platform-independent addresses, the typed-register traits and the
+  sequence seam (`address.rs`, `register.rs`, `sequence.rs`: thin re-exports of
+  `rsl-lowlevel`; I²C register reads/writes, FPGA register reads/writes and SPI32 with
+  32-bit results, and waits, one action at a time), LP8758 values (`lp8758.rs`, re-exporting
+  `rsl-lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
+  power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
   (`si5332/sequence.rs`), and USB framing plus the I²C and register/SPI state machines
-  (`usb/`). `chips::register::run_sequence`
-  is the blocking executor. Uses core
+  (`usb/`). `chips::register::run_sequence` wraps `rsl-lowlevel`'s blocking executor and
+  turns its `SequenceFailure` into `Error` through the accesses' shared `context()`
+  decoding. Uses core
   types and generic executor errors; no OS/runtime ownership. Keep imports within the
   portable tree. Sequences move here as hand-written explicit state machines (decided
   2026-10-12, over async sequences); the blocking path runs the same machine through a
@@ -230,8 +236,8 @@ Each layer calls only the ones below it.
   Tuning before any sample rate, where libusdr divides by zero, skips the filter and fails
   the low-LO fallback for both chains; the oracle cannot run that, so `tests/tx_tuning.rs`
   covers it on the sim alone.
-- Registers are typed (`src/portable/register.rs`; `src/chips/register.rs` adds blocking I2C
-  access). Each chip has a `Reg` enum naming every
+- Registers are typed (`rsl-lowlevel`'s traits, through `src/portable/register.rs`;
+  `src/chips/register.rs` adds blocking I2C access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
   - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
     or a `BitEnum` with a catch-all for whole-byte values. It implements `Register`, or
@@ -276,6 +282,9 @@ cargo clippy -p rsl-usdr --all-targets --all-features -- -D warnings && cargo te
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
+cargo clippy -p rsl-lowlevel -p rsl-lp8758 --all-targets -- -D warnings && cargo clippy -p rsl-lowlevel --features std --all-targets -- -D warnings
+cargo test -p rsl-lowlevel --features std && cargo test -p rsl-lp8758
+cargo check -p rsl-lowlevel -p rsl-lp8758 --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py
 cargo fmt --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings

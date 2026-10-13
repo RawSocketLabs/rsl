@@ -4,6 +4,9 @@ This unpublished, detached validation workspace imports the **exact production**
 `../src/portable` module tree. The native driver and this fixture compile the same address
 types, TMP114 register values/temperature machine, Si5332 divider plan, USB wire fields and
 I²C transaction machine. There are no copied algorithms or substitute host errors.
+Where the tree re-exports the shared no_std crates (`rsl-lowlevel`'s addresses, register
+traits and sequence seam; `rsl-lp8758`'s LP8758 values), the fixture depends on them by
+path without default features, so it compiles exactly what the driver does minus `std`.
 
 ```sh
 python3 scripts/ci/portable.py
@@ -12,7 +15,9 @@ cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --of
 ```
 
 Run from the repository root with the pinned toolchain and target installed. The dependency
-check compares the fixture's path/version/features with the actual production manifests.
+check compares each fixture dependency's path/version/features with the actual production
+manifests (a per-dependency table in `scripts/ci/portable.py`; `rsl-lowlevel`'s `std` is the
+only host-only feature).
 It deliberately does not depend on the whole std/native driver just to expose ownership;
 the CI selector explicitly records that production-source edge.
 

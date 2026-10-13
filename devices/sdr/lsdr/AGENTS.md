@@ -6,10 +6,10 @@
 > facts.
 
 Groundwork for a pure-Rust port of libusdr's LSDr: the board simulator and the libusdr
-reference oracle. The driver `rsl-lsdr` is **not started**; it waits for a shared seam
-crate. The board is a **receive-only** ADC card: ADS42LBx9 dual-channel ADC(s), Si549
-oscillator (ADC sample clock), TPS6594 PMIC, and on dual-ADC fits an LMK04832 clock
-generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
+reference oracle. The driver `rsl-lsdr` is **not started**; the shared seam it waited for
+now exists (`rsl-lowlevel`, `../../lowlevel`). The board is a **receive-only** ADC card:
+ADS42LBx9 dual-channel ADC(s), Si549 oscillator (ADC sample clock), TPS6594 PMIC, and on
+dual-ADC fits an LMK04832 clock generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 `dac38rf_present` never set); do not invent TX support. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
@@ -152,8 +152,8 @@ by a lock: one is open at a time per process.
 
 ## Open items and blockers
 
-- `rsl-lsdr` waits for the shared seam crate (a `Bus`/`ls_op` abstraction several drivers
-  use); nothing here depends on `rsl-usdr`.
+- `rsl-lsdr` can build on `rsl-lowlevel` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must
+  not depend on `rsl-usdr`.
 - LMK04832 ID byte order: libusdr's `lmk04832_read16` assembles `R(addr+1) << 8 | R(addr)`,
   so it accepts `PROD_HI` = 0x63. If TI's datasheet (not vendored) gives `PROD_HI` = 0xD1,
   as the register names suggest, libusdr would report a real LMK04832 absent. Resolve with
