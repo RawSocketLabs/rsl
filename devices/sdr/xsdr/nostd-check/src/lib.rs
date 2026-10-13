@@ -4,6 +4,8 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+use core::num::NonZeroU32;
+
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
@@ -89,7 +91,8 @@ pub fn close(powered: bool, failing: Option<usize>) -> Result<usize, &'static st
 /// A created chip's control state on the XSDR's 26 MHz reference and bands.
 fn control() -> Result<Control, &'static str> {
     let chip = power_up_chip(0x3840)?.1.ok_or("not created")?;
-    Ok(Control::new(chip, 26_000_000, RX_BANDS, TX_BANDS))
+    let reference = NonZeroU32::new(26_000_000).ok_or("zero reference")?;
+    Ok(Control::new(chip, reference, RX_BANDS, TX_BANDS))
 }
 
 /// Sets a sample rate on chips whose VCO comparators always read low, with or without a

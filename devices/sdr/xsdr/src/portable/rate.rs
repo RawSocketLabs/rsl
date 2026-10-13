@@ -11,7 +11,7 @@
 //! rate with `-ERANGE`, its RX badness never having been measured; that is reproduced.
 
 use rsl_lms7002m::Batch;
-use rsl_lms7002m::ctrl::{Control, ControlError, Operation, RateFlags, RateRequest};
+use rsl_lms7002m::ctrl::{Control, ControlError, Operation, RateFlags, RateRequest, StreamFlags};
 use rsl_lms7002m::{BistCheck, Mac, Tsp};
 use rsl_lowlevel::{
     FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
@@ -400,8 +400,11 @@ impl SetSampleRate {
             Stage::RxPower => self.step(Stage::RxPowerSettle, Step::wait(1000)),
             Stage::RxPowerSettle => {
                 self.stage = Stage::StreamUp;
-                self.part =
-                    Part::StreamUp(self.control.streaming_up_rx(XsdrFrontend, Mac::Both, 0));
+                self.part = Part::StreamUp(self.control.streaming_up_rx(
+                    XsdrFrontend,
+                    Mac::Both,
+                    StreamFlags::default(),
+                ));
             }
             Stage::StreamUp => {
                 if let Part::StreamUp(op) = self.part {

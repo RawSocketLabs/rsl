@@ -302,6 +302,7 @@ fn control_error(error: ControlError) -> Error {
         // The frequency is filled in by the tuning that failed.
         ControlError::Tune(TuneError::OutOfRange) => Error::TuneOutOfRange(0),
         ControlError::NoRate => Error::NoSampleRate,
+        ControlError::InvalidRate => Error::InvalidRate(0),
     }
 }
 

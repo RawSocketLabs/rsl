@@ -2,16 +2,11 @@
 //! (`_xsdr_antenna_port_switch`) and `LimeLight` sample orders (`lms7nfe_get_lml_portcfg`),
 //! and its automatic bands (`_xsdr_init_revx`).
 
-use rsl_lms7002m::ctrl::{Direction, Frontend, RxAntenna, TxAntenna};
+use rsl_lms7002m::ctrl::{Direction, Frontend, RxAntenna, StreamFlags, TxAntenna};
 use rsl_lms7002m::{LmlMap, LmlSample, Mac, RxPath, TxPath};
 
 use super::fpga::Gpo;
 use super::step::Step;
-
-/// libusdr's `RFIC_SWAP_AB` stream flag.
-const SWAP_AB: u32 = 1 << 0;
-/// libusdr's `RFIC_SWAP_IQ` stream flag.
-const SWAP_IQ: u32 = 1 << 1;
 
 /// The XSDR's receive bands (`cfg_auto_rx`): the wide-band LNA below 2.2 GHz, the high
 /// band below 4 GHz, and the low band (named "EXT") past the last edge.
@@ -63,10 +58,10 @@ impl Frontend for XsdrFrontend {
         Step::fpga(bank.write(position))
     }
 
-    fn lml_map(&self, _rx: bool, channels: Mac, flags: u32) -> LmlMap {
+    fn lml_map(&self, _rx: bool, channels: Mac, flags: StreamFlags) -> LmlMap {
         use LmlSample::{AI, AQ, BI, BQ};
-        let swap_ab = (channels == Mac::Both && flags & SWAP_AB != 0) || channels == Mac::B;
-        match (swap_ab, flags & SWAP_IQ != 0) {
+        let swap_ab = (channels == Mac::Both && flags.swap_ab) || channels == Mac::B;
+        match (swap_ab, flags.swap_iq) {
             (false, false) => [AI, AQ, BI, BQ],
             (false, true) => [AQ, AI, BQ, BI],
             (true, false) => [BI, BQ, AI, AQ],
