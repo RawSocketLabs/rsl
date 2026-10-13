@@ -1,10 +1,11 @@
-//! rsl-usdr's LMK05318 frequency plans against libusdr's (`hw/lmk05318/lmk05318.c`), number
-//! for number and bit for bit: the XO path and APLL1, the output solver with APLL2's state,
-//! and output 7's divider stages. The solver's `-Ofast` arithmetic makes the float results
-//! the sharpest check. Register traces are compared by `frontend_parity.rs`.
+//! rsl-usdr's LMK05318 frequency plans and the registers it stages for them against
+//! libusdr's (`hw/lmk05318/lmk05318.c`), number for number and bit for bit: the XO path and
+//! APLL1, the output solver with APLL2's state, and output 7's divider stages. The solver's
+//! `-Ofast` arithmetic makes the float results the sharpest check. Bus traces are compared
+//! by `frontend_parity.rs`.
 
-// Compile the driver's private plan directly: no testing API is public. It names `gcd` by
-// its crate path, provided here.
+// Compile the driver's private plan, staging, map and register types directly: no testing
+// API is public. The plan names `gcd` by its crate path, provided here.
 mod cal {
     pub(crate) mod search {
         pub(crate) use rsl_usdr::cal::search::gcd;
@@ -12,16 +13,21 @@ mod cal {
 }
 #[allow(
     dead_code,
-    reason = "the plan's driver-side items are not exercised here"
+    unreachable_pub,
+    reason = "the driver-side items of these modules are not exercised here"
 )]
-#[path = "../../src/chips/lmk05318/plan.rs"]
-mod plan;
+#[path = "common/lmk05318.rs"]
+mod lmk05318;
 
-use plan::{
-    Affinity, Apll2, Apll2Setting, Mux, OutputFormat, OutputRequest, PlanError, Xo, XoInput,
-    out7_stages,
+use std::collections::BTreeSet;
+
+use lmk05318::map::RegisterMap;
+use lmk05318::plan::{
+    self, Affinity, Apll2, Apll2Setting, ClockPlanError, Mux, OutputFormat, OutputRequest, Plan,
+    Xo, XoInput, out7_stages,
 };
-use rsl_usdr_oracle::lmk05318::{self as oracle, Apll2State, PortRequest, Staged};
+use lmk05318::staging::{stage_apll1, stage_plan, stage_xo};
+use rsl_usdr_oracle::lmk05318::{self as oracle, Apll2State, MAP_LEN, PortRequest, Staged};
 
 /// Every XO input buffer with its C value (`enum xo_input_type`).
 const XO_INPUTS: [(XoInput, i32); 6] = [
@@ -104,23 +110,52 @@ fn to_c_request(request: &OutputRequest) -> PortRequest {
     }
 }
 
+/// A staging map as the shim reports libusdr's: a byte or nothing per address.
+fn staged(map: &RegisterMap) -> Staged {
+    let mut regs = vec![None; MAP_LEN];
+    for (addr, value) in map.staged() {
+        regs[usize::from(addr)] = Some(value);
+    }
+    regs
+}
+
+/// The staged addresses where `actual` and libusdr's `expected` differ, for messages.
+fn differences(actual: &Staged, expected: &Staged) -> Vec<(usize, Option<u8>, Option<u8>)> {
+    (0..MAP_LEN)
+        .filter(|&addr| actual[addr] != expected[addr])
+        .map(|addr| (addr, actual[addr], expected[addr]))
+        .collect()
+}
+
 /// Plans `requests` in both from equal APLL2 states and compares the outcome, the states
-/// after (which libusdr changes even on some failures) and each output's route, frequency
-/// bits included. Returns rsl-usdr's outcome.
-fn assert_plans_match(apll2: &mut Apll2, requests: &[OutputRequest], what: &str) -> bool {
+/// after (which libusdr changes even on some failures), each output's route (frequency bits
+/// included) and every register staged. Returns rsl-usdr's plan.
+fn assert_plans_match(apll2: &mut Apll2, requests: &[OutputRequest], what: &str) -> Option<Plan> {
     let mut c_state = to_c(apll2);
     let c_requests: Vec<PortRequest> = requests.iter().map(to_c_request).collect();
-    let (c_res, c_outputs, _) = oracle::solve(&mut c_state, &c_requests);
+    let (c_status, c_outputs, c_regs) = oracle::solve(&mut c_state, &c_requests);
     let plan = apll2.plan(requests);
     assert_eq!(
         plan.is_ok(),
-        c_res == 0,
-        "{what}: outcome ({plan:?}, C {c_res})"
+        c_status == 0,
+        "{what}: outcome ({plan:?}, C {c_status})"
     );
     assert_eq!(to_c(apll2), c_state, "{what}: APLL2 state");
     let Ok(plan) = plan else {
-        return false;
+        assert!(
+            c_regs.iter().all(Option::is_none),
+            "{what}: libusdr staged registers for a refused plan"
+        );
+        return None;
     };
+    let mut map = RegisterMap::new();
+    stage_plan(&mut map, apll2, &plan).expect("a plan stages");
+    let regs = staged(&map);
+    assert!(
+        regs == c_regs,
+        "{what}: staged registers (address, rsl-usdr, libusdr): {:x?}",
+        differences(&regs, &c_regs)
+    );
     // The C settles APLL2 into its state; so does rsl-usdr's plan, and its setting agrees.
     match plan.apll2 {
         Apll2Setting::Off => {}
@@ -169,7 +204,7 @@ fn assert_plans_match(apll2: &mut Apll2, requests: &[OutputRequest], what: &str)
             c.freq_out
         );
     }
-    true
+    Some(plan)
 }
 
 /// XO paths and APLL1 fractions across the XO range and every input type, with
@@ -194,6 +229,7 @@ fn xo_paths_and_apll1_match_libusdr() {
     frequencies.extend((0..400).map(|_| 9_000_000 + lcg.below(92_000_000)));
     frequencies.extend((0..200).map(|_| 10_000_000 + 1000 * lcg.below(90_001)));
     let mut exact = 0;
+    let mut baw_tables = BTreeSet::new();
     for hz in frequencies {
         for (input, c_input) in XO_INPUTS {
             let detector_bypass = lcg.below(2) == 1;
@@ -209,10 +245,27 @@ fn xo_paths_and_apll1_match_libusdr() {
                 continue;
             };
             assert_eq!((path.doubler, path.divider), (c.doubler, c.rdiv), "{what}");
-            let supported = [12_800_000, 25_000_000, 26_000_000, 52_000_000].contains(&hz);
-            assert_eq!(c.xo_res == 0, supported, "{what}: BAW settings exist");
+            let mut map = RegisterMap::new();
+            let staged_xo = stage_xo(&mut map, xo);
+            assert_eq!(
+                staged_xo.is_ok(),
+                c.xo_res == 0,
+                "{what}: BAW settings exist"
+            );
+            if staged_xo.is_ok() {
+                baw_tables.insert(hz);
+            }
             let apll1 = xo.apll1(path);
             assert_eq!(apll1.is_ok(), c.apll1_res == 0, "{what}: APLL1 ({apll1:?})");
+            if let Ok(apll1) = apll1 {
+                stage_apll1(&mut map, apll1);
+            }
+            let regs = staged(&map);
+            assert!(
+                regs == c.regs,
+                "{what}: staged registers (address, rsl-usdr, libusdr): {:x?}",
+                differences(&regs, &c.regs)
+            );
             let Ok(apll1) = apll1 else {
                 continue;
             };
@@ -227,6 +280,11 @@ fn xo_paths_and_apll1_match_libusdr() {
         }
     }
     assert!(exact > 100, "the sweep reaches APLL1 often ({exact})");
+    assert_eq!(
+        baw_tables.into_iter().collect::<Vec<_>>(),
+        [12_800_000, 25_000_000, 26_000_000, 52_000_000],
+        "every BAW table is staged"
+    );
 }
 
 /// `SimpleSync`'s measurement LO, retuned again and again as its control does: outputs 0
@@ -249,7 +307,8 @@ fn simplesync_lo_plans_match_libusdr() {
         let lo = [0, 1, 2, 3].map(|port| {
             OutputRequest::new(port, hz, OutputFormat::Lvds).with_affinity(Affinity::Apll2)
         });
-        solved += usize::from(assert_plans_match(&mut apll2, &lo, &format!("LO {hz} Hz")));
+        solved +=
+            usize::from(assert_plans_match(&mut apll2, &lo, &format!("LO {hz} Hz")).is_some());
     }
     assert!(solved > 250, "many LOs are reachable ({solved})");
 }
@@ -300,8 +359,20 @@ fn xmass_calibration_plans_match_libusdr() {
 fn mixed_request_plans_match_libusdr() {
     let mut lcg = Lcg(0x00f0_5318);
     let mut outcomes = [0_usize; 2];
-    for case in 0..1500 {
-        let mut apll2 = Apll2::cascaded();
+    let (mut muxes, mut formats, mut seen) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+    // Designed: 857142857 Hz needs post-divider 7 (VCO 5999999999 Hz), 1 GHz one of 2, 3
+    // or 6 from the same VCO, so one output takes post-divider 2 (`APLL2_P2`).
+    let lo =
+        |port, hz| OutputRequest::new(port, hz, OutputFormat::Lvds).with_affinity(Affinity::Apll2);
+    let mut cases = vec![
+        vec![lo(4, 857_142_857), lo(5, 1_000_000_000)],
+        vec![
+            lo(5, 1_000_000_000),
+            lo(4, 857_142_857),
+            lo(1, 1_000_000_000),
+        ],
+    ];
+    for _ in 0..1500 {
         let count = 1 + lcg.below(4) as usize;
         let mut ports: Vec<u8> = Vec::new();
         while ports.len() < count {
@@ -329,23 +400,57 @@ fn mixed_request_plans_match_libusdr() {
                 request
             })
             .collect();
-        let ok = assert_plans_match(&mut apll2, &requests, &format!("case {case}: {requests:?}"));
-        outcomes[usize::from(ok)] += 1;
+        cases.push(requests);
+    }
+    for (case, requests) in cases.iter().enumerate() {
+        let mut apll2 = Apll2::cascaded();
+        let plan = assert_plans_match(&mut apll2, requests, &format!("case {case}: {requests:?}"));
+        outcomes[usize::from(plan.is_some())] += 1;
+        let Some(plan) = plan else {
+            continue;
+        };
+        if let Apll2Setting::On { pd1, pd2, .. } = plan.apll2 {
+            seen.insert(if pd1 == pd2 {
+                "one post-divider"
+            } else {
+                "two post-dividers"
+            });
+        }
+        for output in &plan.outputs {
+            let Some(route) = output.route else {
+                continue;
+            };
+            muxes.insert(route.mux as u8);
+            formats.insert(output.request.format as u8);
+            match output.request.port {
+                1 | 3 => _ = seen.insert("format-only output"),
+                7 if route.divider > 256 => _ = seen.insert("output 7 second stage"),
+                _ => {}
+            }
+        }
     }
     assert!(
         outcomes.iter().all(|&n| n > 100),
         "both outcomes occur ({outcomes:?})"
     );
+    assert_eq!(muxes.len(), 4, "every mux code is staged: {muxes:?}");
+    assert_eq!(formats.len(), 16, "every format is staged: {formats:?}");
+    assert_eq!(seen.len(), 4, "{seen:?}");
 }
 
 /// A plan refused before routing leaves no trace in either; the refusals are the C's.
 #[test]
 fn malformed_requests_are_refused_like_libusdr() {
-    let cases: [(&str, Vec<OutputRequest>, PlanError); 3] = [
+    let cases: [(&str, Vec<OutputRequest>, ClockPlanError); 4] = [
+        (
+            "output 8",
+            vec![OutputRequest::new(8, 25_000_000, OutputFormat::Lvds)],
+            ClockPlanError::BadRequest,
+        ),
         (
             "LVCMOS on output 2",
             vec![OutputRequest::new(2, 25_000_000, OutputFormat::LvcmosPN)],
-            PlanError::LvcmosOnLowOutput,
+            ClockPlanError::LvcmosOnLowOutput,
         ),
         (
             "outputs 0 and 1 differ",
@@ -353,7 +458,7 @@ fn malformed_requests_are_refused_like_libusdr() {
                 OutputRequest::new(0, 25_000_000, OutputFormat::Lvds),
                 OutputRequest::new(1, 50_000_000, OutputFormat::Lvds),
             ],
-            PlanError::ConflictingRequests,
+            ClockPlanError::ConflictingRequests,
         ),
         (
             "inverted from APLL2",
@@ -362,12 +467,12 @@ fn malformed_requests_are_refused_like_libusdr() {
                 request.inverted = true;
                 request
             }],
-            PlanError::InversionNeedsApll1,
+            ClockPlanError::InversionNeedsApll1,
         ),
     ];
     for (what, requests, error) in cases {
         let mut apll2 = Apll2::cascaded();
-        assert!(!assert_plans_match(&mut apll2, &requests, what));
+        assert!(assert_plans_match(&mut apll2, &requests, what).is_none());
         assert_eq!(Apll2::cascaded().plan(&requests), Err(error), "{what}");
     }
 }
@@ -414,8 +519,11 @@ fn output_7_divider_stages_match_libusdr() {
     }
 }
 
-/// GCC's `-Ofast` constant: the reciprocal the oracle build's disassembly of
-/// `lmk05318_calc_vco2_div` multiplies by (`.LC70`, 0x3DFB7CDFD9D7BDBB).
+/// Characterization, not specification: the constant GCC's `-Ofast` puts in place of the
+/// division by `VCO_APLL1` in `lmk05318_calc_vco2_div` (`.LC70`, 0x3DFB7CDFD9D7BDBB), read
+/// from `gcc -S` output of GCC 16.2.1 (Fedora, x86-64) on 2026-10-12. It is `1 / 2.5e9`
+/// rounded to `f64`; re-read it if the oracle's compiler changes. The solver results it
+/// feeds do not depend on it (see `plan.rs`), so no parity test can catch it.
 #[test]
 fn the_vco1_reciprocal_is_gccs_constant() {
     assert_eq!(plan::VCO1_RECIPROCAL.to_bits(), 0x3dfb_7cdf_d9d7_bdbb);

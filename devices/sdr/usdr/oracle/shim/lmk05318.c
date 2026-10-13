@@ -117,6 +117,14 @@ int rsl_oracle_lmk05318_solve(struct rsl_lmk_apll2* apll2, struct rsl_lmk_port* 
     st.pd1 = apll2->pd1;
     st.pd2 = apll2->pd2;
 
+    // lmk05318_port_request refuses an output past 7 without filling the request; the
+    // solver would then read it uninitialised. Refuse it as the solver's own check would.
+    for (unsigned i = 0; i < count; i++) {
+        if (ports[i].port > LMK05318_MAX_OUT_PORTS - 1) {
+            return -EINVAL;
+        }
+    }
+
     lmk05318_out_config_t outs[LMK05318_MAX_OUT_PORTS];
     for (unsigned i = 0; i < count; i++) {
         lmk05318_port_request(&outs[i], ports[i].port, ports[i].freq, ports[i].revert != 0,

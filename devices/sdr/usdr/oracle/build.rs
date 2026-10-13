@@ -14,6 +14,16 @@ fn main() {
 
     let includes = ["", "port", "lowlevel", "common", "models", "xdsp"].map(|dir| lib.join(dir));
 
+    // libusdr marks hot maths `optimize("-Ofast")`, a GCC attribute other compilers ignore,
+    // and rsl-usdr's ports (the LMK05318 solver) reproduce what GCC makes of it. Another
+    // compiler would build a different reference.
+    let compiler = cc::Build::new().get_compiler();
+    assert!(
+        compiler.is_like_gnu() && !compiler.is_like_clang(),
+        "the oracle needs GCC as its C compiler (CC), not {}",
+        compiler.path().display()
+    );
+
     // The shim is ours, so it builds with -Wall -Werror in its own archive. cc's default
     // warning set would add -Wextra, which trips on unused parameters in libusdr's headers.
     cc::Build::new()

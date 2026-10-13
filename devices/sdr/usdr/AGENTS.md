@@ -97,9 +97,11 @@ Each layer calls only the ones below it.
   `board/frontend.rs` runs the probe at the end of power-up and owns the board that came
   up. Blocking code: the probes interleave GPIO-core writes with I2C transfers the
   `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
-  `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map) and its
-  frequency plan in `plan.rs`, a register-free module the oracle compiles directly
-  (`oracle/tests/lmk05318_parity.rs`, against the C through `oracle/shim/lmk05318.c`). Its
+  `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
+  frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
+  the oracle compiles them with the map and value types directly
+  (`oracle/tests/common/lmk05318.rs`; `lmk05318_parity.rs` compares plans and staged
+  registers with the C through `oracle/shim/lmk05318.c`, which needs GCC). Its
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
   place of the 8-bit shared ones. It stays in rsl-usdr until PE_SYNC's driver needs it.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared

@@ -731,3 +731,107 @@ fn calibration_controls_need_a_synchronization_board() {
         "{results:?}"
     );
 }
+
+/// One poll of an LMK05318 lock wait: its VCO status, the three lock-status reads, the
+/// 100 µs sleep.
+const POLL_LEN: usize = 5;
+
+/// `trace` with each run of identical lock polls collapsed to its first. libusdr's lock waits
+/// time out on the host's wall clock, so how many polls it makes before giving up depends
+/// on the host; rsl-usdr counts its sleeps instead. Everything else must agree.
+fn collapse_polls(trace: &[Op]) -> Vec<Op> {
+    let mut kept: Vec<Op> = Vec::with_capacity(trace.len());
+    let mut index = 0;
+    while index < trace.len() {
+        let poll = trace.get(index..index + POLL_LEN);
+        let repeats = poll.is_some_and(|poll| {
+            poll[POLL_LEN - 1] == Op::Sleep { us: 100 }
+                && kept.len() >= POLL_LEN
+                && kept[kept.len() - POLL_LEN..] == *poll
+        });
+        if repeats {
+            index += POLL_LEN;
+        } else {
+            kept.push(trace[index].clone());
+            index += 1;
+        }
+    }
+    kept
+}
+
+/// The lock-status reads that end every failed wait and follow it in libusdr
+/// (`lmk05318_check_lock`: `INT_FLAG0`, `INT_FLAG1`, `BAW_LOCKDET_PPM_MAX_BY1`).
+fn is_lock_status_read(op: &Op) -> bool {
+    matches!(op, Op::I2c { addr, write, read }
+        if addr.addr == 0x65 && read.len() == 1
+            && matches!(write[..], [0x00, 0x13 | 0x14 | 0x50]))
+}
+
+/// Clock boards whose LMK05318 never locks: both drivers spend their lock wait (libusdr on
+/// the wall clock, rsl-usdr in counted sleeps; repeated polls collapsed), skip APLL2's wait
+/// and XMASS's `SYNC_N` pulse, read the lock status once more, and fail the board: a hint
+/// fails the open, the automatic probe moves on (past XMASS, then `SimpleSync`, whose
+/// probe meets the same chip, to the breakout).
+#[test]
+fn clock_boards_that_never_lock_fail_like_libusdr() {
+    for (board, parameters, selection, opens) in [
+        (
+            FrontEnd::Xmass,
+            c"fe=xmass",
+            FrontEndSelection::Xmass,
+            false,
+        ),
+        (FrontEnd::Xmass, c"", FrontEndSelection::Auto, true),
+        (
+            FrontEnd::SimpleSync,
+            c"fe=simplesync",
+            FrontEndSelection::SimpleSync,
+            false,
+        ),
+    ] {
+        let make = || with(board)().with_unlocked_front_end_clock();
+        let what = format!("{board:?} {parameters:?}");
+        let reference = match Oracle::open_with(make(), parameters) {
+            Ok(oracle) => oracle.close(),
+            Err(error) => *error.board,
+        };
+        let sim = SimBus::new(make());
+        let result = Device::builder(sim.clone()).front_end(selection).open();
+        let result = result.map(|device| {
+            let kind = device.front_end();
+            device.close().expect("rsl-usdr powers down");
+            kind
+        });
+        assert_eq!(result.is_ok(), opens, "{what}: {result:?}");
+        if opens {
+            assert_eq!(
+                result.ok().flatten(),
+                Some(FrontEndKind::Exm2pe { dac: false }),
+                "{what}"
+            );
+        } else {
+            assert!(
+                matches!(result, Err(Error::ClockUnlocked("LMK05318 APLL1"))),
+                "{what}: {result:?}"
+            );
+        }
+        let actual = without_thermal_gate(sim.board().trace(), REVISION);
+        let actual = if opens {
+            &actual[..]
+        } else {
+            without_failure_power_down(&actual)
+        };
+        let expected = collapse_polls(reference.trace());
+        let actual = collapse_polls(actual);
+        assert_same_ops(&expected, &actual, &what);
+        // Each failed wait polled at least once and read the lock status after giving up.
+        let ends = actual
+            .windows(POLL_LEN + 3)
+            .filter(|window| {
+                window[POLL_LEN - 1] == Op::Sleep { us: 100 }
+                    && window[POLL_LEN..].iter().all(is_lock_status_read)
+            })
+            .count();
+        assert_eq!(ends, if opens { 2 } else { 1 }, "{what}: failed waits");
+    }
+}
