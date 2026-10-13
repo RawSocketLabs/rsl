@@ -9,7 +9,8 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
-from plan import LMS7002M, LOWLEVEL, LP8758, USDR, USDR_PORTABLE, XSDR, XSDR_PORTABLE
+from plan import (LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE, USDR, USDR_PORTABLE, XSDR,
+                  XSDR_PORTABLE)
 from test_plan import planned
 
 BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
@@ -162,7 +163,8 @@ curl() {
 
     def test_portable_routine_gate_is_locked_host_only_and_checks_manifest_drift(self):
         for profile, name, fixture in (("usdr-portable", "usdr", USDR_PORTABLE),
-                                       ("xsdr-portable", "xsdr", XSDR_PORTABLE)):
+                                       ("xsdr-portable", "xsdr", XSDR_PORTABLE),
+                                       ("lsdr-portable", "lsdr", LSDR_PORTABLE)):
             with self.subTest(profile=profile):
                 sequence = commands(profile, planned([f"{fixture}/src/lib.rs"]), BNB_CONFIG)
                 self.assertIn([sys.executable, "scripts/ci/portable.py", name], sequence)
@@ -215,6 +217,18 @@ curl() {
         self.assertIn(["cargo", "check", "-p", "rsl-lms7002m", "-p", "rsl-lowlevel",
                        "-p", "rsl-lp8758", "--target", "thumbv7em-none-eabi"], sequence)
         self.assertFalse(any(f"{USDR_PORTABLE}/Cargo.toml" in row for row in sequence))
+
+    def test_an_explicit_lsdr_release_checks_its_core_on_bare_metal(self):
+        plan = planned([f"{LSDR}/src/portable/probes.rs"])
+        self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
+        plan["release_roots"] = [LSDR, LSDR_PORTABLE, LOWLEVEL]
+        plan["release_members"] = [{"root": LSDR}]
+        sequence = commands("no-std", plan, BNB_CONFIG)
+        self.assertIn(["cargo", "check", "--manifest-path", f"{LSDR_PORTABLE}/Cargo.toml",
+                       "--locked", "--target", "thumbv7em-none-eabi"], sequence)
+        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "--target", "thumbv7em-none-eabi"],
+                      sequence)
+        self.assertFalse(any(f"{XSDR_PORTABLE}/Cargo.toml" in row for row in sequence))
 
     def test_bnb_feature_ladder_and_denied_warning_lints_are_retained(self):
         sequence = commands("bnb", planned(release=True), BNB_CONFIG)

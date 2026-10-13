@@ -8,8 +8,8 @@ import unittest
 
 from gate import check_plan, check_release, check_results
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR, XSDR_ORACLE,
-                  XSDR_PORTABLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE, LOWLEVEL, LP8758,
-                  LMS7002M,
+                  XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC_ORACLE,
+                  LIMESDR_ORACLE, LOWLEVEL, LP8758, LMS7002M,
                   RELEASE_PROFILES, Package,
                   affected_packages, bare_metal_devices, changed_paths, released_members,
                   select)
@@ -49,8 +49,11 @@ def fixture():
         "devices/sdr/xsdr/sim": Package("rsl-xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
         XSDR_ORACLE: Package("rsl-xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
                              False),
+        LSDR: Package("rsl-lsdr", {BNB, LOWLEVEL, "devices/sdr/lsdr/sim"}),
+        LSDR_PORTABLE: Package("rsl-lsdr-nostd-check", {LSDR, BNB, LOWLEVEL}, False),
         "devices/sdr/lsdr/sim": Package("rsl-lsdr-sim", set()),
-        LSDR_ORACLE: Package("rsl-lsdr-oracle", {"devices/sdr/lsdr/sim", USDR_ORACLE}, False),
+        LSDR_ORACLE: Package("rsl-lsdr-oracle", {LSDR, "devices/sdr/lsdr/sim", USDR_ORACLE},
+                             False),
         "devices/sync/pe_sync/sim": Package("rsl-pe-sync-sim", set()),
         PE_SYNC_ORACLE: Package("rsl-pe-sync-oracle", {"devices/sync/pe_sync/sim", USDR_ORACLE},
                                 False),
@@ -177,7 +180,7 @@ class SelectionTests(unittest.TestCase):
     def test_shared_device_crates_rerun_their_consumers_and_the_portable_host_gate(self):
         cases = [
             (f"{LOWLEVEL}/src/bus.rs",
-             {"rsl-lowlevel", "rsl-lp8758", "rsl-lms7002m", "rsl-usdr", "rsl-xsdr"}),
+             {"rsl-lowlevel", "rsl-lp8758", "rsl-lms7002m", "rsl-lsdr", "rsl-usdr", "rsl-xsdr"}),
             (f"{LP8758}/src/buck.rs", {"rsl-lp8758", "rsl-usdr", "rsl-xsdr"}),
         ]
         for path, packages in cases:
@@ -277,10 +280,45 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan["full"])
 
     def test_a_family_guide_above_its_crates_selects_them_not_full_coverage(self):
-        plan = planned(["devices/sdr/lsdr/AGENTS.md"])
+        plan = planned(["devices/sdr/limesdr/AGENTS.md"])
         self.assertFalse(plan["full"])
-        self.assertIn("rsl-lsdr-sim", plan["packages"])
+        self.assertIn("rsl-limesdr-sim", plan["packages"])
+        self.assertIn("limesdr-oracle", plan["profiles"])
+
+    def test_lsdr_driver_guide_selects_the_driver_its_oracle_and_fixture(self):
+        plan = planned([f"{LSDR}/AGENTS.md"])
+        self.assertFalse(plan["full"])
+        self.assertEqual(plan["packages"], ["rsl-lsdr"])
+        self.assertTrue({"lsdr-oracle", "lsdr-portable"} <= set(plan["profiles"]))
+
+    def test_lsdr_driver_changes_rerun_its_oracle_and_fixture_not_the_usdr_ones(self):
+        plan = planned([f"{LSDR}/src/portable/probes.rs"])
+        self.assertEqual(plan["packages"], ["rsl-lsdr"])
         self.assertIn("lsdr-oracle", plan["profiles"])
+        self.assertIn("lsdr-portable", plan["profiles"], "its exact-source fixture imports it")
+        for other in ("usdr-oracle", "usdr-portable", "xsdr-oracle", "xsdr-portable", "no-std"):
+            self.assertNotIn(other, plan["profiles"])
+
+    def test_the_lsdr_porting_ledger_is_prose_not_a_build_trigger(self):
+        plan = planned([f"{LSDR}/PORTING.md"])
+        self.assertEqual(plan["profiles"], [])
+        self.assertFalse(plan["full"])
+
+    def test_lsdr_portable_fixture_changes_select_only_its_routine_host_gate(self):
+        plan = planned([f"{LSDR_PORTABLE}/src/lib.rs"])
+        self.assertEqual(plan["packages"], [])
+        self.assertEqual(set(plan["profiles"]), {"deny", "lsdr-portable"})
+        self.assertFalse(plan["release"])
+
+    def test_an_explicit_lsdr_release_qualifies_its_core_on_bare_metal(self):
+        member = {"product": "rsl-lsdr", "root": LSDR, "name": "rsl-lsdr", "version": "0.0.0"}
+        release = select([], fixture(), fixture(), release_members=[member])
+        self.assertTrue({"no-std", "lsdr-portable"} <= set(release["profiles"]))
+        self.assertEqual(bare_metal_devices(release["release_roots"], [member]), {LOWLEVEL})
+        graph = fixture()
+        del graph[LSDR_PORTABLE]
+        with self.assertRaisesRegex(ValueError, "registered portable fixture"):
+            select([], graph, graph, release_members=[member])
 
     def test_xsdr_driver_guide_selects_the_driver_and_its_oracle_not_full_coverage(self):
         plan = planned([f"{XSDR}/AGENTS.md"])
@@ -308,9 +346,9 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("lsdr-oracle", plan["profiles"])
 
-    def test_lsdr_simulator_selects_its_oracle_not_the_other_families(self):
+    def test_lsdr_simulator_selects_its_driver_and_oracle_not_the_other_families(self):
         plan = planned(["devices/sdr/lsdr/sim/src/lib.rs"])
-        self.assertEqual(plan["packages"], ["rsl-lsdr-sim"])
+        self.assertEqual(plan["packages"], ["rsl-lsdr", "rsl-lsdr-sim"])
         self.assertIn("lsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("xsdr-oracle", plan["profiles"])

@@ -51,10 +51,13 @@ BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: 
 XSDR = "devices/sdr/xsdr"
 XSDR_ORACLE = f"{XSDR}/oracle"
 XSDR_PORTABLE = f"{XSDR}/nostd-check"
+# The LSDr driver; its oracle runs libusdr's LSDr family against rsl-lsdr-sim, compiling the
+# uSDR oracle's vendored C.
+LSDR = "devices/sdr/lsdr"
+LSDR_ORACLE = f"{LSDR}/oracle"
+LSDR_PORTABLE = f"{LSDR}/nostd-check"
 # Each driver with a detached exact-source no_std fixture, and the fixture.
-PORTABLE_FIXTURES = {USDR: USDR_PORTABLE, XSDR: XSDR_PORTABLE}
-# Runs libusdr's LSDr family against rsl-lsdr-sim, compiling the uSDR oracle's vendored C.
-LSDR_ORACLE = "devices/sdr/lsdr/oracle"
+PORTABLE_FIXTURES = {USDR: USDR_PORTABLE, XSDR: XSDR_PORTABLE, LSDR: LSDR_PORTABLE}
 # Runs libusdr's PE_SYNC clock board against rsl-pe-sync-sim, compiling the same vendored C.
 PE_SYNC_ORACLE = "devices/sync/pe_sync/oracle"
 # Runs libusdr's LimeSDR-mini against rsl-limesdr-sim, compiling the same vendored C.
@@ -62,7 +65,7 @@ LIMESDR_ORACLE = "devices/sdr/limesdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, XSDR_PORTABLE,
-            LSDR_ORACLE,
+            LSDR_ORACLE, LSDR_PORTABLE,
             PE_SYNC_ORACLE, LIMESDR_ORACLE, "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
@@ -80,7 +83,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
-    "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-oracle",
+    "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-portable", "lsdr-oracle",
     "pe-sync-oracle", "limesdr-oracle",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
@@ -195,7 +198,7 @@ def is_prose(path):
     if path.startswith("tools/rust-skills/"):
         return False
     return (PurePosixPath(path).name in PROSE_NAMES
-            or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md"}
+            or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md", f"{LSDR}/PORTING.md"}
             or (path.endswith(".md") and (path.startswith("docs/")
                 or path.startswith("bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))
@@ -252,7 +255,7 @@ def released_portable_drivers(release_members):
 
 def bare_metal_devices(release_roots, release_members):
     """Shared no_std device crates whose bare-metal gate an explicit release of a driver with
-    a portable fixture (uSDR, XSDR) selects."""
+    a portable fixture (uSDR, XSDR, LSDr) selects."""
     if not released_portable_drivers(release_members):
         return set()
     return set(release_roots) & BARE_METAL_DEVICES.keys()
@@ -351,6 +354,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("xsdr-oracle")
     if LSDR_ORACLE in roots:
         profiles.add("lsdr-oracle")
+    if LSDR_PORTABLE in roots:
+        profiles.add("lsdr-portable")
     if PE_SYNC_ORACLE in roots:
         profiles.add("pe-sync-oracle")
     if LIMESDR_ORACLE in roots:

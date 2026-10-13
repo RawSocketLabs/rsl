@@ -80,6 +80,12 @@ follows the same contract for `rsl-xsdr`'s `src/portable` tree, on `rsl-lowlevel
 bare-metal device crate. No XSDR product is release-enabled, so its cross-target checks are
 registered but not selected today.
 
+The LSDr driver's fixture (`devices/sdr/lsdr/nostd-check`, profile `lsdr-portable`) does the
+same for `rsl-lsdr`'s `src/portable` tree, on `bnb` and `rsl-lowlevel` (`portable.py lsdr`);
+its chips' register values live in that tree, so it adds no device crate. No LSDr product is
+release-enabled either. Its oracle runs as `lsdr-oracle`, which a change to `rsl-lsdr`
+selects too (the oracle's parity tests depend on the driver).
+
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
 | Ordinary allowlisted prose | No Rust setup, builds, or fuzzing |

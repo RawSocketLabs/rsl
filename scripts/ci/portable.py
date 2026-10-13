@@ -9,6 +9,7 @@ import tomllib
 
 USDR = "devices/sdr/usdr"
 XSDR = "devices/sdr/xsdr"
+LSDR = "devices/sdr/lsdr"
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ FIXTURES = {
                     {"default": ["usb"], "usb": []}),
     "xsdr": Fixture(XSDR, {"rsl-lms7002m": set(), "rsl-lowlevel": {"std"}, "rsl-lp8758": set()},
                     None),
+    "lsdr": Fixture(LSDR, {"bnb": set(), "rsl-lowlevel": {"std"}}, None),
 }
 # Every crate a fixture compiles without std, directly or through an owned dependency (the
 # chip crates' `bnb`, listed explicitly: the XSDR fixture reaches it only through them): an
