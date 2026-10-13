@@ -21,7 +21,7 @@ thiserror = "2.0"
 bnb = { package = "bitsandbytes", path = "../../../../bitsandbytes/bnb" }
 num-complex = { version = "0.4.6", default-features = false }
 rsl-lmk05318 = { path = "../../chips/lmk05318" }
-rsl-usdr = { path = "..", features = ["pcie", "usb"] }
+rsl-usdr = { path = "..", features = ["pcie", "usb", "verilator"] }
 rsl-usb = { path = "../../../../usb" }
 rsl-usdr-pcie = { path = "../pcie", features = ["test-abi"] }
 

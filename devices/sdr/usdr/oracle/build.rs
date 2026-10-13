@@ -63,6 +63,9 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_usb_tx");
 
+    // libusdr's Verilator host bridge; it calls into the main archive, so it precedes it.
+    compile_verilator_bridge(libusdr, &includes);
+
     // Header-only RTSA depth helper, exported for parity under the generic capability set.
     cc::Build::new()
         .file("shim/rtsa_depth.c")
@@ -160,4 +163,22 @@ fn compile_wrapping(file: &Path, archive: &str, includes: &[PathBuf]) {
         .flag("-fwrapv")
         .warnings(false)
         .compile(archive);
+}
+
+/// Compiles libusdr's Verilator host bridge whole through `shim/verilator.c` (which says what
+/// it adapts), with the bridge's wire framing and socket helpers verbatim beside it. The
+/// bridge assigns pointers between its device and libusdr's handle types, which name the
+/// same object; GCC 14 made that an error.
+fn compile_verilator_bridge(libusdr: &Path, includes: &[PathBuf]) {
+    let bridge = libusdr.join("lib/lowlevel/verilator_ll");
+    cc::Build::new()
+        .file("shim/verilator.c")
+        .file(bridge.join("vpu.c"))
+        .file(bridge.join("unix_vll.c"))
+        .includes(includes)
+        .include(libusdr.join("gen"))
+        .flag("-std=gnu11")
+        .flag("-Wno-incompatible-pointer-types")
+        .warnings(false)
+        .compile("usdr_oracle_verilator");
 }
