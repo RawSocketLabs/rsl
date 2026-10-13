@@ -9,12 +9,17 @@ repository = "https://github.com/RawSocketLabs/rsl"
 rust-version = "1.85"
 links = "xsdr_oracle"
 
-# Its own workspace root: it compiles vendored C, which the root workspace must not build.
+# Its own workspace root: it compiles vendored C, which the root workspace must not build, and
+# sits inside the `rsl-xsdr` member's directory, where the root workspace's `exclude` cannot
+# reach it.
 [workspace]
 
 [dependencies]
 rsl-xsdr-sim = { path = "../sim" }
 thiserror = "2.0"
+
+[dev-dependencies]
+rsl-xsdr = { path = ".." }
 
 [build-dependencies]
 cc = "1.2"
