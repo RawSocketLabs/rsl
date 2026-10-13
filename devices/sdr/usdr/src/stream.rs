@@ -279,11 +279,23 @@ pub enum SyncMode {
     /// The group starts on either front end's activity (`"any"`, `ST_ADCORDACACT`).
     Any,
 
+    /// The group starts on the RX front end's activity, whatever streams it holds (`"rx"`,
+    /// `ST_ADCACT`). A TX-only group waits for an RX stream this group cannot start.
+    RxActivity,
+
+    /// The group starts on the TX front end's activity, whatever streams it holds (`"tx"`,
+    /// `ST_DACACT`). An RX-only group waits for a TX stream this group cannot start.
+    TxActivity,
+
     /// The group starts on a pulse at the board's 1PPS input (`"1pps"`, which libusdr
-    /// also spells `"sysref"`: `ST_ONEPPS`). libusdr's generated SYSREF (`"sysref+gen"`)
-    /// has no mode here: nothing in the pinned source says the uSDR's sync unit generates
-    /// one.
+    /// also spells `"sysref"`: `ST_ONEPPS`).
     OnePps,
+
+    /// The group starts on a SYSREF pulse the sync unit generates itself (`"sysref+gen"`:
+    /// `ST_ONEPPS | ST_SYSREF_GEN`, mode 9), which libusdr writes for the uSDR as for any
+    /// board. Nothing in the pinned source shows the uSDR's sync unit honours the
+    /// generator bit; on gateware that ignores it this is [`SyncMode::OnePps`].
+    GeneratedSysref,
 
     /// The group starts on an external sync event, such as 1PPS (`"extall"`). libusdr's
     /// `sfetrx4_stream_sync` has no `extall` case and returns `-EINVAL`, so

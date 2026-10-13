@@ -13,7 +13,7 @@
 //!   core started (`ST_DACACT`), either (`ST_ADCORDACACT`), or both (`ST_ADCANDDACACT`,
 //!   and `ST_DELAYADCDAC`, libusdr's `"all"` for RX with TX, whose delay is not
 //!   modelled). Stop, 1PPS (`ST_ONEPPS`; the sim raises no pulse) and generated SYSREF
-//!   hold them.
+//!   (`ST_ONEPPS | ST_SYSREF_GEN`, 9) hold them.
 
 /// The register the sync unit shares with the TX core's commands.
 pub(crate) const REG_SYNC: u32 = 14;

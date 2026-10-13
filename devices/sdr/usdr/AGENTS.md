@@ -24,7 +24,7 @@ qualification, release or publication is authorized by this roadmap.
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
 board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
 frequency, gains, path and corrections, the stream group
-(`create_streams`, `start_streams` with sync `None`/`All`/`Any`/`OnePps`, `receive_into` from
+(`create_streams`, `start_streams` with every sync type libusdr offers the uSDR but `ExternalAll`, `receive_into` from
 `ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `send`/`send_with_stat`
 from those host formats to `ci16` wire on TX channel 0 with timestamps and telemetry,
 `set_tx_mute`, `stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16

@@ -527,14 +527,20 @@ fn a_duplex_group_matches_libusdr() {
 }
 
 /// Each sync mode libusdr offers for the uSDR's groups, with and without RX: the same
-/// start, so the same trigger.
+/// start, so the same trigger. The single-direction triggers write their own activity
+/// whatever the group holds, and generated SYSREF writes the 1PPS mode with the generator
+/// bit.
 #[test]
 fn sync_modes_match_libusdr_for_every_group() {
     let modes = [
         (c"none", SyncMode::None),
         (c"all", SyncMode::All),
         (c"any", SyncMode::Any),
+        (c"rx", SyncMode::RxActivity),
+        (c"tx", SyncMode::TxActivity),
         (c"1pps", SyncMode::OnePps),
+        (c"sysref", SyncMode::OnePps),
+        (c"sysref+gen", SyncMode::GeneratedSysref),
     ];
     for with_rx in [false, true] {
         for sync in modes {

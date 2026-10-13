@@ -315,6 +315,34 @@ fn an_all_synchronised_stream_matches_libusdr() {
     assert_eq!(expected.packets, actual.packets, "received bytes");
 }
 
+/// libusdr's single-direction "rx" trigger releases an RX-only stream on its own
+/// activity, as "all" does; "tx" and the generated SYSREF hold it in the sim (no TX stream
+/// runs, no pulse is raised), and rsl-usdr's modes write the same triggers.
+#[test]
+fn single_direction_and_generated_triggers_match_libusdr_for_rx() {
+    let scenario = Scenario::new(c"ci16", 1024, HostFormat::Ci16, WireFormat::Ci16)
+        .synced(c"rx", SyncMode::RxActivity);
+    let (expected, actual) = assert_windows_match(scenario, 2);
+    assert_eq!(expected.packets, actual.packets, "received bytes");
+    for (synctype, sync) in [
+        (c"tx", SyncMode::TxActivity),
+        (c"sysref+gen", SyncMode::GeneratedSysref),
+    ] {
+        let scenario =
+            Scenario::new(c"ci16", 1024, HostFormat::Ci16, WireFormat::Ci16).synced(synctype, sync);
+        let (expected, _) = assert_windows_match(scenario, 0);
+        let mode = expected.trace[expected.windows[1].1.clone()]
+            .iter()
+            .find_map(|op| match op {
+                Op::RegWrite { addr: 14, value } => Some(*value),
+                _ => None,
+            })
+            .expect("start writes the sync unit");
+        let expected_mode = if sync == SyncMode::TxActivity { 3 } else { 9 };
+        assert_eq!(mode, 1 << 31 | expected_mode << 16, "{synctype:?}");
+    }
+}
+
 /// A packet whose 12-bit burst ends in a stub: the operations match, and so do the
 /// packet's samples. Whitelisted divergence (rsl-usdr's documented stub skipping):
 /// libusdr converts the whole block, so its buffer holds one more sample, converted from

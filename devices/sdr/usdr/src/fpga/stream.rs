@@ -334,6 +334,10 @@ pub(crate) enum SyncTrigger {
 
     /// Streams run as soon as started (`ST_FREERUN`, `"none"`).
     FreeRun = 7,
+
+    /// Streams start on a SYSREF the sync unit generates (`ST_ONEPPS | ST_SYSREF_GEN`,
+    /// `"sysref+gen"`).
+    GeneratedSysref = 9,
 }
 
 /// Checks the RX DMA engine is alive, then stops it and resets the front end

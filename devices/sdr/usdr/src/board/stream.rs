@@ -152,7 +152,10 @@ impl SyncMode {
                 (false, false) => SyncTrigger::FreeRun,
             }),
             Self::Any => Ok(SyncTrigger::EitherActivity),
+            Self::RxActivity => Ok(SyncTrigger::RxActivity),
+            Self::TxActivity => Ok(SyncTrigger::TxActivity),
             Self::OnePps => Ok(SyncTrigger::OnePps),
+            Self::GeneratedSysref => Ok(SyncTrigger::GeneratedSysref),
             Self::ExternalAll => Err(Error::UnsupportedSync(self)),
         }
     }
