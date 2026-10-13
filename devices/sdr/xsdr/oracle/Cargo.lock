@@ -131,8 +131,10 @@ dependencies = [
 name = "rsl-xsdr-oracle"
 version = "0.0.0"
 dependencies = [
+ "bitsandbytes",
  "cc",
  "rsl-lms7002m",
+ "rsl-lowlevel",
  "rsl-xsdr",
  "rsl-xsdr-sim",
  "thiserror",

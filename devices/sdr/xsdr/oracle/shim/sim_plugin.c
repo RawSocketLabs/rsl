@@ -115,15 +115,47 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
 }
 
 // One call into libusdr's LMS7002M chip driver (hw/lms7002m/lms7002m.c), for
-// rsl_xsdr_oracle_lms7002m_run. Kinds: 0 mac_set(a), 1 rfe_path(a, b), 2 trf_path(a, b),
-// 3 afe_enable(a, b, c, d), 4 xxtsp_enable(a, b), 5 destroy.
+// rsl_xsdr_oracle_lms7002m_run. Kinds and arguments are rsl_xsdr_oracle::Lms7002mCall's
+// (src/lib.rs); a call that reports values beside its result writes them to out.
 struct rsl_lms7002m_op {
     unsigned kind, a, b, c, d;
+    int out[3];
 };
+
+// lms7002m_limelight_conf_t from its flags (a: bit 0 rxsisoddr, 1 txsisoddr, 2 ds_high,
+// 3 rx_ext_rd_fclk, 4 rx_lfsr, 5 rx_tx_dig_loopback, 6 rx_port) and bytes (b: rxdiv,
+// txdiv, txtspdelay, txlmldelay from the low byte up).
+static lms7002m_limelight_conf_t unpack_conf(unsigned a, unsigned b)
+{
+    lms7002m_limelight_conf_t c;
+    memset(&c, 0, sizeof(c));
+    c.rxsisoddr = a & 1;
+    c.txsisoddr = (a >> 1) & 1;
+    c.ds_high = (a >> 2) & 1;
+    c.rx_ext_rd_fclk = (a >> 3) & 1;
+    c.rx_lfsr = (a >> 4) & 1;
+    c.rx_tx_dig_loopback = (a >> 5) & 1;
+    c.rx_port = (a >> 6) & 1;
+    c.rxdiv = b & 0xff;
+    c.txdiv = (b >> 8) & 0xff;
+    c.txtspdelay = (b >> 16) & 0xff;
+    c.txlmldelay = (b >> 24) & 0xff;
+    return c;
+}
+
+// lms7002m_lml_map_t from four 2-bit slots, slot 0 lowest.
+static lms7002m_lml_map_t unpack_map(unsigned x)
+{
+    lms7002m_lml_map_t m;
+    for (unsigned i = 0; i < 4; i++) {
+        m.m[i] = (x >> (2 * i)) & 3;
+    }
+    return m;
+}
 
 // Runs ops in order on a zeroed lms7002m_state_t (as xsdr_ctor leaves it) whose SPI
 // reaches the installed board through this plugin's ls_op, storing each call's result.
-int rsl_xsdr_oracle_lms7002m_run(const struct rsl_lms7002m_op* ops, unsigned count, int* results)
+int rsl_xsdr_oracle_lms7002m_run(struct rsl_lms7002m_op* ops, unsigned count, int* results)
 {
     struct sim_dev d;
     memset(&d, 0, sizeof(d));
@@ -132,7 +164,10 @@ int rsl_xsdr_oracle_lms7002m_run(const struct rsl_lms7002m_op* ops, unsigned cou
     memset(&m, 0, sizeof(m));
     m.dev = &d.ll;
     for (unsigned i = 0; i < count; i++) {
-        const struct rsl_lms7002m_op* op = &ops[i];
+        struct rsl_lms7002m_op* op = &ops[i];
+        lms7002m_lpf_params_t p = { .rcc = op->a, .r = op->b, .c = op->c };
+        bool done = false;
+        int gain = 0;
         switch (op->kind) {
         case 0: results[i] = lms7002m_mac_set(&m, op->a); break;
         case 1: results[i] = lms7002m_rfe_path(&m, (lms7002m_rfe_path_t)op->a, (lms7002m_rfe_mode_t)op->b); break;
@@ -140,6 +175,38 @@ int rsl_xsdr_oracle_lms7002m_run(const struct rsl_lms7002m_op* ops, unsigned cou
         case 3: results[i] = lms7002m_afe_enable(&m, op->a, op->b, op->c, op->d); break;
         case 4: results[i] = lms7002m_xxtsp_enable(&m, (lms7002m_xxtsp_t)op->a, op->b); break;
         case 5: results[i] = lms7002m_destroy(&m); break;
+        case 6: results[i] = lms7002m_limelight_configure(&m, unpack_conf(op->a, op->b)); break;
+        case 7: results[i] = lms7002m_limelight_reset(&m); break;
+        case 8: results[i] = lms7002m_limelight_fifo_reset(&m, op->a, op->b); break;
+        case 9: results[i] = lms7002m_limelight_map(&m, op->a & 1, (op->a >> 1) & 1, unpack_map(op->b), unpack_map(op->c)); break;
+        case 10: results[i] = lms7002m_limelight_switch_rx_mode(&m, unpack_conf(op->a, op->b)); break;
+        case 11: results[i] = lms7002m_xxtsp_int_dec(&m, (lms7002m_xxtsp_t)op->a, op->b); break;
+        case 12: results[i] = lms7002m_rxtsp_dc_corr(&m, op->a, op->b); break;
+        case 13: results[i] = lms7002m_xxtsp_cmix(&m, (lms7002m_xxtsp_t)op->a, (int32_t)op->b); break;
+        case 14: results[i] = lms7002m_xxtsp_bst(&m, (lms7002m_xxtsp_t)op->a); break;
+        case 15: results[i] = lms7002m_xxtsp_reset(&m, (lms7002m_xxtsp_t)op->a); break;
+        case 16: results[i] = lms7002m_xxtsp_bst_isdone(&m, (lms7002m_xxtsp_t)op->a, &done); op->out[0] = done; break;
+        case 17: results[i] = lms7002m_rbb_path(&m, (lms7002m_rbb_path_t)op->a, (lms7002m_rbb_mode_t)op->b); break;
+        case 18: results[i] = lms7002m_rbb_pga(&m, (int)op->a); break;
+        case 19: results[i] = lms7002m_rbb_lpf_raw(&m, p); break;
+        case 20: results[i] = lms7002m_tbb_path(&m, (lms7002m_tbb_path_t)op->a, (lms7002m_tbb_mode_t)op->b); break;
+        case 21: results[i] = lms7002m_tbb_lpf_raw(&m, p); break;
+        case 22: results[i] = lms7002m_tbb_gain(&m, (int8_t)op->a); break;
+        case 23: results[i] = lms7002m_rfe_gain(&m, (lms7002m_rfe_gain_t)op->a, (int)op->b, &gain); op->out[0] = gain; break;
+        case 24: results[i] = lms7002m_trf_gain(&m, (lms7002m_trf_gain_t)op->a, (int)op->b, &gain); op->out[0] = gain; break;
+        case 25: results[i] = lms7002m_cgen_tune(&m, op->a, op->b, op->c); break;
+        case 26: results[i] = lms7002m_cgen_disable(&m); break;
+        case 27: results[i] = lms7002m_sxx_tune(&m, (lms7002m_sxx_path_t)op->a, op->b, op->c, op->d); break;
+        case 28: results[i] = lms7002m_sxx_disable(&m, (lms7002m_sxx_path_t)op->a); break;
+        case 29:
+            results[i] = lms7002m_rbb_lpf_def(op->a, op->b, &p);
+            op->out[0] = p.rcc; op->out[1] = p.r; op->out[2] = p.c;
+            break;
+        case 30:
+            results[i] = lms7002m_tbb_lpf_def(op->a, op->b, &p);
+            op->out[0] = p.rcc; op->out[1] = p.r; op->out[2] = p.c;
+            break;
+        case 31: results[i] = lms7002m_create(&d.ll, 0, 0, op->a, op->b, &m); break;
         default: return -EINVAL;
         }
     }
