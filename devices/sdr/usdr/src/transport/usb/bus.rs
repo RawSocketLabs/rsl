@@ -798,7 +798,7 @@ impl Bus for UsbBus {
         self.io.tx_open(block_bytes, sample_bytes)
     }
 
-    /// [`TxDevice::send`] on endpoint 0x03, the status read over the control plane.
+    /// `TxDevice::send` on endpoint 0x03, the status read over the control plane.
     fn tx_stream_send(
         &mut self,
         timeout: Duration,
