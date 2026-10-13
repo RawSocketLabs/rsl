@@ -5,17 +5,27 @@
 //! [`Device::builder`](crate::Device::builder). Registers go through the mapped BAR, with
 //! the stream engine's configuration space reached through the index/data window; SPI, I2C
 //! and DMA through the driver.
+//!
+//! The same driver's XMASS device (`/dev/xmassN`), the firmware flash of the XMASS board's
+//! `PCIe` switch, is [`XmassDevice`], a
+//! [`BridgeFlash`](crate::frontend::xmass_firmware::BridgeFlash) for
+//! [`xmass_firmware::update`](crate::frontend::xmass_firmware::update).
 
+use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
 use rsl_deps::tracing::{debug, trace};
+/// An open XMASS device (`/dev/xmassN`): [`XmassDevice::open`], then
+/// [`xmass_firmware::update`](crate::frontend::xmass_firmware::update) over it.
+pub use rsl_usdr_pcie::XmassDevice;
 use rsl_usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stream};
 
 use super::window::{self, RegisterIo, Window};
 use crate::error::Error;
+use crate::frontend::xmass_firmware::{BridgeFlash, FIRMWARE_BYTES, IDS_BYTES};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
 
 /// The uSDR's cores as the driver needs them: libusdr's `s_params_m2_lm6_1_rev000` in
@@ -213,6 +223,25 @@ impl Bus for PcieBus {
 
     fn tx_stream_close(&mut self) -> Result<(), BusError> {
         self.device.tx_dma_close().map_err(bus_error)
+    }
+}
+
+/// The four requests, one ioctl each.
+impl BridgeFlash for XmassDevice {
+    fn ids(&mut self) -> io::Result<[u8; IDS_BYTES]> {
+        XmassDevice::ids(self)
+    }
+
+    fn erase(&mut self) -> io::Result<()> {
+        XmassDevice::erase(self)
+    }
+
+    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<()> {
+        XmassDevice::write(self, image)
+    }
+
+    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<()> {
+        XmassDevice::read(self, out)
     }
 }
 

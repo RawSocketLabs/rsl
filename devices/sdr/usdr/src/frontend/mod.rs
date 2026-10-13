@@ -24,10 +24,14 @@
 //!
 //! The breakout has no ID and comes up whether or not its DAC answers, so when nothing
 //! else does, libusdr reports a breakout without a DAC even with no board attached.
+//!
+//! [`xmass_firmware`] replaces the firmware of the XMASS board's `PCIe` switch, as
+//! libusdr's `xmass_fwupd` tool does, through the `usdr_pcie_uram` driver's XMASS device.
 
 mod simplesync;
 mod supersync;
 mod xmass;
+pub mod xmass_firmware;
 
 use rsl_deps::tracing::{debug, warn};
 use rsl_sdr_frontend::{Board, BringUp, Connector, Detected, Exm2pe, Failure, Pciefe};
