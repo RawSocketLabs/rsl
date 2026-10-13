@@ -251,12 +251,14 @@ impl SimBoard {
         self
     }
 
-    /// A board whose gateware has the extended TX stream core (HWID bit 26).
+    /// A board whose gateware has the extended TX stream core (HWID bit 26), announced
+    /// through registers 28 to 31; see the TX stream module.
     #[must_use]
     pub fn with_extended_tx_core(mut self) -> Self {
         if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
             *hwid |= HWID_EXTENDED_TX;
         }
+        self.tx.extended = true;
         self
     }
 

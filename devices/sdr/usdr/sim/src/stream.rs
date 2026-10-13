@@ -11,8 +11,13 @@
 //!
 //! Formats: the burst format's sample format (bits 1:0) selects 16-bit (3) or 12-bit (2)
 //! lanes; its lanes (bits 4:2) are 1, channel 0's I and Q on lanes 0 and 1, 2, lane 0
-//! (I) alone, or 3, lane 1 (Q) alone: the lanes the uSDR's single receiver drives. Others
+//! (I) alone, 3, lane 1 (Q) alone, 5, channel 1's I and Q on lanes 2 and 3, or 0, all
+//! four, channel 0 then channel 1 for each sample. Others (lanes 2 or 3 alone, 2 and 0)
 //! are not modelled and panic.
+//! - Channel 1: assumed, as libusdr's lane selection and its RX chain's second NCO
+//!   suggest (no gateware source is vendored), to be a second complex channel on lanes 2
+//!   and 3, sample-aligned with channel 0, lanes packed in order within each sample: the
+//!   layout libusdr's one-to-two converters split (`xdsp/conv.c`).
 //! - 16-bit: each lane value is a little-endian `i16`; a complex sample is I then Q, 4
 //!   bytes, a real one 2 bytes.
 //! - 12-bit: assumed, from the C that reads it rather than gateware source (none is
@@ -30,8 +35,8 @@
 //! - Timing and overruns. A block is ready whenever the engine runs, without advancing
 //!   virtual time, and none is ever lost.
 //! - The signal. The samples are a counting test pattern in the lanes' own width: sample
-//!   `n` reads `I = n`, `Q = -n`, wrapping at 16 or 12 bits, whichever lanes a burst
-//!   carries.
+//!   `n` reads `I = n`, `Q = -n` on channel 0 and `I = n + 0x400`, `Q = -(n + 0x400)` on
+//!   channel 1, wrapping at 16 or 12 bits, whichever lanes a burst carries.
 //! - The DMA's own words-per-burst register (0x10020). Block sizes come from the front
 //!   end's burst format instead; both drivers write the two consistently.
 //! - The host-ready strobe (register 5, value 4). Blocks flow without it; libusdr writes
@@ -75,7 +80,16 @@ enum Lanes {
 
     /// Lane 1, Q alone (`IFMT_CH_xx1x`, 3).
     Q,
+
+    /// Lanes 2 and 3, channel 1's I then Q (`IFMT_CH_32xx`, 5).
+    Channel1,
+
+    /// All four lanes: channel 0's I and Q, then channel 1's (`IFMT_CH_3210`, 0).
+    Both,
 }
+
+/// How far channel 1's test pattern runs ahead of channel 0's.
+const CHANNEL_1_OFFSET: u16 = 0x400;
 
 /// How the front end packs a burst (`IFMT_*` and `IFMT_CH_*`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -98,7 +112,9 @@ impl Packing {
             1 => Lanes::IAndQ,
             2 => Lanes::I,
             3 => Lanes::Q,
-            lanes => panic!("RX lanes {lanes} are not modelled; only lanes 0 and 1 (1, 2, 3) are"),
+            5 => Lanes::Channel1,
+            0 => Lanes::Both,
+            lanes => panic!("RX lanes {lanes} are not modelled; only 0, 1, 2, 3 and 5 are"),
         };
         let twelve_bit = match value & 0b11 {
             3 => false,
@@ -111,10 +127,14 @@ impl Packing {
     /// Appends sample `n`'s lane values of the counting pattern to `values`.
     fn push_values(self, values: &mut Vec<u16>, n: u16) {
         let q = n.wrapping_neg();
+        let n1 = n.wrapping_add(CHANNEL_1_OFFSET);
+        let q1 = n1.wrapping_neg();
         match self.lanes {
             Lanes::IAndQ => values.extend([n, q]),
             Lanes::I => values.push(n),
             Lanes::Q => values.push(q),
+            Lanes::Channel1 => values.extend([n1, q1]),
+            Lanes::Both => values.extend([n, q, n1, q1]),
         }
     }
 
@@ -349,6 +369,18 @@ mod tests {
         let mut engine = running(3, 1, 3 << 2 | 2, 1);
         let (block, _) = engine.next_block(true).expect("running");
         assert_eq!(block, [0x00, 0xf0, 0xff, 0xfe, 0x0f, 0, 0, 0]);
+    }
+
+    #[test]
+    fn channel_1_rides_lanes_2_and_3_after_channel_0() {
+        // One sample per burst: channel 1 alone is (0x400, -0x400); both channels carry
+        // channel 0's (0, 0) first.
+        let mut engine = running(1, 1, 5 << 2 | 3, 1);
+        let (block, _) = engine.next_block(true).expect("running");
+        assert_eq!(block, [0x00, 0x04, 0x00, 0xfc, 0, 0, 0, 0]);
+        let mut engine = running(1, 1, 3, 1);
+        let (block, _) = engine.next_block(true).expect("running");
+        assert_eq!(block, [0, 0, 0, 0, 0x00, 0x04, 0x00, 0xfc]);
     }
 
     #[test]
