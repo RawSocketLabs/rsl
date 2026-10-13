@@ -537,7 +537,8 @@ fn a_full_usb_tx_ring_times_out_keeping_its_transfers_and_stop_cancels_them() {
     assert_eq!(
         status_reads(&board, start),
         1,
-        "a timeout reads the status for its report, as libusdr"
+        "a timeout reads the status for its report; libusdr does so only after a wait, \
+         its zero-wait EAGAIN skips the read (divergence)"
     );
     script.lock().unwrap().tx_finished = 1;
     device.send(&[&samples], None, TIMEOUT).unwrap();

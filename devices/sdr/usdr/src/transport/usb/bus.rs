@@ -19,7 +19,7 @@ use super::machine::{Machine, Output, Step, Submission, Transfer};
 use super::native::{self, NativeUsb, Session};
 use super::protocol::I2cCache;
 use super::rx::Rx;
-use super::tx::{self, Tx, TxStatus};
+use super::tx::{self, Tx, TxDevice, TxStatus};
 #[cfg(feature = "mio")]
 use crate::chips::register::run_sequence;
 #[cfg(feature = "mio")]
@@ -663,9 +663,7 @@ impl Bus for UsbBus {
         self.io.tx_open(block_bytes, sample_bytes)
     }
 
-    /// libusdr's USB `send_dma_get` then `send_dma_commit`: a free buffer, the TX core's
-    /// status words (read over the control plane on every 64th send, else the last
-    /// reading), then the block, framed with its length and time on endpoint 0x03.
+    /// [`TxDevice::send`] on endpoint 0x03, the status read over the control plane.
     fn tx_stream_send(
         &mut self,
         timeout: Duration,
@@ -673,18 +671,45 @@ impl Bus for UsbBus {
         fill: &mut TxFill<'_>,
     ) -> Result<TxCommit, BusError> {
         self.ready()?;
-        self.io.tx_acquire(timeout)?;
-        if self.tx_status.count_send() {
-            let mut words = [0; 4];
-            self.read_regs(tx::STATUS_REGISTER, &mut words)?;
-            self.tx_status.record(words);
-        }
-        self.io
-            .tx_commit(time, Some(self.tx_status.words()), fill)?;
+        TxDevice::send(self, timeout, time, fill)?;
         Ok(TxCommit::Framed)
     }
 
     fn tx_stream_close(&mut self) -> Result<(), BusError> {
         self.io.tx_close()
+    }
+}
+
+impl TxDevice for UsbBus {
+    fn acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        self.io.tx_acquire(timeout)
+    }
+
+    /// A control-plane timeout here is not a full TX ring: it reaches the driver as an
+    /// I/O error, the bus already poisoned.
+    fn read_status(&mut self) -> Result<[u32; 4], BusError> {
+        let mut words = [0; 4];
+        self.read_regs(tx::STATUS_REGISTER, &mut words)
+            .map_err(|error| match error {
+                BusError::Timeout => BusError::Io(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "USB TX status read timed out",
+                )),
+                other => other,
+            })?;
+        Ok(words)
+    }
+
+    fn status(&mut self) -> &mut TxStatus {
+        &mut self.tx_status
+    }
+
+    fn commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.io.tx_commit(time, status, fill)
     }
 }

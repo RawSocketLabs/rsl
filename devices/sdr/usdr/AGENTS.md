@@ -186,9 +186,11 @@ Each layer calls only the ones below it.
   throttled status reads, over a fake buffer and register boundary; libusdr's own
   `usb_async_start` statistics lines come along verbatim. The bus seam's `TxCommit`
   says who announces a block: USB frames it, so the driver writes no push registers.
-  USB TX fails a stream on a failed transfer (libusdr loses the buffer silently) and
-  refuses commits of no bytes, more than a block or part samples, which the driver
-  never makes.
+  The parity test drives the same `TxDevice::send` sequence `UsbBus` runs. USB TX fails
+  a stream on a failed transfer, at the send that would reuse its buffer (libusdr loses
+  the buffer silently), refuses commits of no bytes, more than a block or part samples,
+  which the driver never makes, and treats a zero-wait full ring as any timeout, where
+  libusdr returns `-EAGAIN` without its status read.
   Unlike C's discard-buffer/autorestart scheme, RX retains eight bounded transfers and
   requeues each after consumption, leaving gateware to report backpressure losses.
   USB RX fails closed on partial/malformed blocks rather than exposing stale bytes;

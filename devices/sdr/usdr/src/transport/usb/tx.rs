@@ -86,8 +86,8 @@ struct Shape {
 pub(super) struct Tx<Q: TxQueue> {
     /// Owns in-flight transfers even after a failure.
     queue: Q,
-    /// The block sizes while open.
-    shape: Option<Shape>,
+    /// The block sizes.
+    shape: Shape,
     /// Transfers submitted and not yet waited for.
     in_flight: usize,
     /// The buffer the next commit fills, taken by [`Tx::acquire`].
@@ -97,8 +97,9 @@ pub(super) struct Tx<Q: TxQueue> {
 }
 
 impl<Q: TxQueue> Tx<Q> {
-    /// Opens an idle endpoint, draining failed setup or retaining ownership if drain fails.
-    /// Endpoint acquisition occurs only after rejecting an existing stream.
+    /// Opens an idle endpoint for blocks of up to `block_bytes`, samples of
+    /// `sample_bytes`. The endpoint is acquired only after rejecting an existing stream or
+    /// an unusable size.
     pub(super) fn open_endpoint(
         slot: &mut Option<Self>,
         block_bytes: u32,
@@ -111,29 +112,29 @@ impl<Q: TxQueue> Tx<Q> {
             ));
         }
         let shape = Self::shape(block_bytes, sample_bytes)?;
-        let tx = slot.insert(Self::new(acquire()?));
-        tx.shape = Some(shape);
-        Ok(())
-    }
-
-    /// Releases an endpoint only after cancellation returns all its transfers.
-    pub(super) fn close_endpoint(slot: &mut Option<Self>) -> Result<(), BusError> {
-        if let Some(tx) = slot.as_mut() {
-            tx.close()?;
-            *slot = None;
-        }
-        Ok(())
-    }
-
-    /// Takes ownership of an idle endpoint.
-    pub(super) fn new(queue: Q) -> Self {
-        Self {
-            queue,
-            shape: None,
+        *slot = Some(Self {
+            queue: acquire()?,
+            shape,
             in_flight: 0,
             ready: None,
             failed: false,
+        });
+        Ok(())
+    }
+
+    /// Cancels every transfer, sent or not (libusdr's `buffers_usb_free`), and releases
+    /// the endpoint only once cancellation returns them all; a failed drain keeps it,
+    /// failed, for a retry.
+    pub(super) fn close_endpoint(slot: &mut Option<Self>) -> Result<(), BusError> {
+        let Some(tx) = slot.as_mut() else {
+            return Ok(());
+        };
+        if let Err(error) = tx.queue.cancel() {
+            tx.failed = true;
+            return Err(error);
         }
+        *slot = None;
+        Ok(())
     }
 
     /// Checks a block size as `_usb_uram_init_txstream` does: 64 bytes to
@@ -157,16 +158,18 @@ impl<Q: TxQueue> Tx<Q> {
         })
     }
 
-    /// The open stream's shape, unless it failed.
+    /// The stream's shape, unless it failed.
     fn usable(&self) -> Result<Shape, BusError> {
-        self.shape
-            .filter(|_| !self.failed)
-            .ok_or(BusError::Unsupported("USB TX is closed or failed"))
+        if self.failed {
+            return Err(BusError::Unsupported("USB TX failed; stop the stream"));
+        }
+        Ok(self.shape)
     }
 
     /// Takes a buffer for the next commit (`usb_uram_send_dma_get`'s wait): a new one
     /// while fewer than 32 transfers are in flight, else the oldest once it completes,
-    /// waiting up to `timeout`. A timeout leaves every transfer in flight.
+    /// waiting up to `timeout`. A timeout leaves every transfer in flight. A transfer's
+    /// failure is reported here, by the send that would reuse its buffer.
     pub(super) fn acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
         let shape = self.usable()?;
         if self.ready.is_some() {
@@ -223,19 +226,42 @@ impl<Q: TxQueue> Tx<Q> {
         self.in_flight += 1;
         Ok(())
     }
+}
 
-    /// Cancels every transfer, sent or not (libusdr's `buffers_usb_free`); a failed
-    /// drain remains retryable.
-    pub(super) fn close(&mut self) -> Result<(), BusError> {
-        if let Err(error) = self.queue.cancel() {
-            self.failed = true;
-            return Err(error);
+/// The device side of a USB TX send: its endpoint, its control-plane read of the TX core's
+/// status words and their throttle. [`TxDevice::send`] runs them in libusdr's order.
+pub(super) trait TxDevice {
+    /// [`Tx::acquire`] on the open endpoint.
+    fn acquire(&mut self, timeout: Duration) -> Result<(), BusError>;
+    /// Reads the TX core's four status words from [`STATUS_REGISTER`].
+    fn read_status(&mut self) -> Result<[u32; 4], BusError>;
+    /// The device's status throttle.
+    fn status(&mut self) -> &mut TxStatus;
+    /// [`Tx::commit`] on the open endpoint.
+    fn commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError>;
+
+    /// libusdr's USB `send_dma_get` then `send_dma_commit`: a free buffer, waiting up to
+    /// `timeout`; then the status words, read afresh on the device's first counted send
+    /// and every 64th after, else the last reading (a send that finds no buffer is not
+    /// counted); then the block `fill` writes, framed with its length and `time`.
+    fn send(
+        &mut self,
+        timeout: Duration,
+        time: Option<u64>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.acquire(timeout)?;
+        if self.status().count_send() {
+            let words = self.read_status()?;
+            self.status().record(words);
         }
-        self.shape = None;
-        self.in_flight = 0;
-        self.ready = None;
-        self.failed = false;
-        Ok(())
+        let words = self.status().words();
+        self.commit(time, Some(words), fill)
     }
 }
 
