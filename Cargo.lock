@@ -3396,6 +3396,7 @@ dependencies = [
  "rsl-lmk05318",
  "rsl-lowlevel",
  "rsl-lp8758",
+ "rsl-sdr-frontend",
  "rsl-usb",
  "rsl-usdr-pcie",
  "rsl-usdr-sim",

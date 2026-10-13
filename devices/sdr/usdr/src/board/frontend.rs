@@ -5,7 +5,7 @@ use super::Board;
 use crate::error::Error;
 use crate::frontend::{
     self, FrontEnd, FrontEndKind, FrontEndSelection, PciefeSetting, SYNC_CALIBRATION_BOARDS, XMASS,
-    Xmass, XmassCalibrationPath,
+    XmassCalibrationPath,
 };
 
 impl Board {
@@ -31,7 +31,7 @@ impl Board {
         let Some(FrontEnd::Pciefe(board)) = &mut self.front_end else {
             return Err(Error::FrontEndMissing("pciefe"));
         };
-        board.apply(self.bus.as_mut(), setting)
+        Ok(board.apply(self.bus.as_mut(), setting)?)
     }
 
     /// Retunes a synchronization board's calibration LO (`/dm/sync/cal/freq`).
@@ -59,6 +59,6 @@ impl Board {
         let Some(FrontEnd::Xmass(_)) = &self.front_end else {
             return Err(Error::FrontEndMissing(XMASS));
         };
-        Xmass::set_calibration_path(self.bus.as_mut(), path)
+        Ok(path.select(self.bus.as_mut())?)
     }
 }

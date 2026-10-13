@@ -43,7 +43,8 @@ impl Lmk05318 {
     /// The chip's name in errors.
     pub(crate) const NAME: &'static str = "LMK05318";
 
-    /// The identification bytes from address 0, in wire order.
+    /// The identification bytes from address 0, in wire order. `rsl-sdr-frontend`'s
+    /// `SimpleSync` probe checks a copy of them.
     pub(crate) const ID: [u8; 4] = [0x10, 0x0b, 0x35, 0x42];
 
     /// How long a lock wait sleeps between polls (`usleep(100)`).
@@ -90,6 +91,23 @@ impl Lmk05318 {
                 found: u32::from_be_bytes(id),
             });
         }
+        self.configure(bus, xo, outputs)
+    }
+
+    /// The rest of `lmk05318_create` once the chip has identified itself (`SimpleSync`'s
+    /// probe in `rsl-sdr-frontend` reads the ID): plans `xo`, APLL1 and `outputs`, writes
+    /// the plan with the common settings, waits for it to settle and soft-resets. Call it
+    /// on a state fresh from [`Lmk05318::at`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ClockPlan`] when no plan exists; any bus failure.
+    pub(crate) fn configure(
+        &mut self,
+        bus: &mut dyn Bus,
+        xo: Xo,
+        outputs: &[OutputRequest],
+    ) -> Result<(), Error> {
         let path = stage_xo(&mut self.map, xo)?;
         stage_apll1(&mut self.map, xo.apll1(path)?);
         self.plan(outputs)?;

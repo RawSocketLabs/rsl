@@ -2,7 +2,6 @@
 
 pub(crate) mod dc_estimator;
 mod diag;
-mod fe_gpio;
 mod fir_tables;
 pub(crate) mod flash;
 mod gpio;
@@ -11,7 +10,6 @@ mod stream;
 mod tx_stream;
 
 pub(crate) use diag::{read_atcrbs, read_tx_dma_status, write_atcrbs};
-pub(crate) use fe_gpio::{FrontEndGpio, PinMode};
 pub(crate) use gpio::{Gpi, Gpo, Hwid, IdentityRead};
 pub use phy::IqImbalance;
 pub(crate) use phy::{Decimation, Nco, Phy};

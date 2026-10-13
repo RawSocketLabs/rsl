@@ -185,6 +185,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-sdr-frontend"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+ "thiserror",
+]
+
+[[package]]
 name = "rsl-usb"
 version = "0.0.0"
 dependencies = [
@@ -202,6 +211,7 @@ dependencies = [
  "rsl-lmk05318",
  "rsl-lowlevel",
  "rsl-lp8758",
+ "rsl-sdr-frontend",
  "rsl-usb",
  "rsl-usdr-pcie",
  "thiserror",

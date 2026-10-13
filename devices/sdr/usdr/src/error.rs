@@ -340,6 +340,31 @@ impl From<SequenceFailure<BusError>> for Error {
     }
 }
 
+/// A failed front-end probe or board access in `rsl-sdr-frontend`, as this driver reports
+/// it.
+impl From<rsl_sdr_frontend::Error> for Error {
+    fn from(error: rsl_sdr_frontend::Error) -> Self {
+        match error {
+            rsl_sdr_frontend::Error::Bus {
+                chip,
+                access,
+                reg,
+                source,
+                ..
+            } => Self::Bus {
+                chip,
+                access,
+                reg,
+                source,
+            },
+            rsl_sdr_frontend::Error::Board { board, reason, .. } => {
+                Self::FrontEnd { board, reason }
+            }
+            rsl_sdr_frontend::Error::NoOscillatorDac => Self::NoOscillatorDac,
+        }
+    }
+}
+
 impl Error {
     /// A failed register access, from the direction and register a sequence decoded.
     fn bus(chip: &'static str, (access, reg): (Access, u32), source: BusError) -> Self {

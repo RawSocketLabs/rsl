@@ -3,110 +3,48 @@
 //!
 //! After power-up libusdr probes for a front end with the uSDR's compatibility string
 //! `m2a+e`, trying each board in a fixed order until one comes up. A board reaches the
-//! uSDR through the connector's GPIO pins (FPGA register 3, [`FrontEndGpio`]) and the
-//! FPGA's I2C bus 1 (`I2C_BUS_FRONTEND`). Which boards the uSDR admits:
+//! uSDR through the connector's GPIO pins (FPGA register 3) and the FPGA's I2C bus 1
+//! (`I2C_BUS_FRONTEND`). The probe, every board's identification, and the `PCIe` front end
+//! and breakout whole, are `rsl-sdr-frontend`'s, shared with the other drivers whose
+//! devices have a front-end connector; the bring-ups that need the LMK05318 or LMK5C33216
+//! are here. Which boards the uSDR admits:
 //!
 //! | Board (libusdr name) | Admitted | Here |
 //! |----------------------|----------|------|
-//! | `PCIe` front end (`pciefe`) | yes | ported |
+//! | `PCIe` front end (`pciefe`) | yes | ported (`rsl-sdr-frontend`) |
 //! | XMASS (`xmass`) | yes | ported (LMK05318 bring-up, calibration LO and path) |
 //! | `SuperSync` (`supersync`) | yes | ported (fixed register load) |
 //! | `SimpleSync` (`simplesync`) | yes | ported (LMK05318 bring-up, measurement LO) |
-//! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported |
+//! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported (`rsl-sdr-frontend`) |
 //! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | not offered; probing it accesses nothing |
-//! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, cannot work: needs I2C core 1 | not offered; the automatic probe tries it as libusdr does |
+//! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, cannot work: needs I2C core 1 | not offered; the automatic probe tries it as libusdr does, and the uSDR's transports refuse its first transfer |
 //!
 //! The last two stay in the automatic probe's order for fidelity, but no selection names
 //! them: neither can come up on a uSDR.
 //!
 //! The breakout has no ID and comes up whether or not its DAC answers, so when nothing
 //! else does, libusdr reports a breakout without a DAC even with no board attached.
-//!
-//! These sequences interleave connector-GPIO register writes with I2C transfers wider than
-//! one byte (four-byte reads, 16-bit register addresses, three-byte writes), which the
-//! portable `Sequence` seam does not express, so they run as blocking code over [`Bus`].
-//!
-//! [`FrontEndGpio`]: crate::fpga::FrontEndGpio
 
-mod exm2pe;
-mod fe4ch;
-mod pciefe;
 mod simplesync;
 mod supersync;
 mod xmass;
 
 use rsl_deps::tracing::{debug, warn};
-
-pub(crate) use self::exm2pe::Exm2pe;
-pub use self::exm2pe::Exm2peOptions;
-pub(crate) use self::pciefe::Pciefe;
-pub use self::pciefe::{
-    PciefeAttenuation, PciefeDuplexer, PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter,
-    PciefeSetting, PciefeTxFilter,
+use rsl_sdr_frontend::{Board, BringUp, Connector, Detected, Exm2pe, Failure, Pciefe};
+pub use rsl_sdr_frontend::{
+    Exm2peOptions, FrontEndKind, FrontEndSelection, PciefeAttenuation, PciefeDuplexer,
+    PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter, PciefeSetting, PciefeTxFilter,
+    XmassCalibrationPath,
 };
+
 pub(crate) use self::simplesync::SimpleSync;
 pub(crate) use self::xmass::Xmass;
-pub use self::xmass::XmassCalibrationPath;
 pub use crate::chips::lmk05318::plan::ClockPlanError;
 use crate::error::Error;
 use crate::lowlevel::Bus;
 
 /// The FPGA I2C bus on the M.2 connector (libusdr's `I2C_BUS_FRONTEND`).
 const FRONT_END_BUS: u8 = 1;
-
-/// A pin of the connector's GPIO core, 0 to 14.
-type Pin = u8;
-
-/// Which front end to look for after power-up: libusdr's `fe=` option, typed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum FrontEndSelection {
-    /// Try every board in libusdr's order and keep the first that comes up; a board that
-    /// fails is skipped. libusdr's default (no `fe=`).
-    #[default]
-    Auto,
-
-    /// Probe nothing. libusdr does this for an `fe=` naming no board (`fe=none`).
-    None,
-
-    /// Only the `PCIe` front end, with these options; a failure fails the open.
-    Pciefe(PciefeOptions),
-
-    /// Only the M.2-to-`PCIe` breakout, with these options.
-    Exm2pe(Exm2peOptions),
-
-    /// Only XMASS (`fe=xmass`).
-    Xmass,
-
-    /// Only `SuperSync` (`fe=supersync`).
-    SuperSync,
-
-    /// Only `SimpleSync` (`fe=simplesync`).
-    SimpleSync,
-}
-
-/// The front end a [`Device`](crate::Device) brought up.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum FrontEndKind {
-    /// The `PCIe` front end.
-    Pciefe,
-
-    /// The M.2-to-`PCIe` breakout; `dac` says whether its oscillator DAC answered.
-    Exm2pe {
-        /// The oscillator DAC identified itself.
-        dac: bool,
-    },
-
-    /// The XMASS synchronization board.
-    Xmass,
-
-    /// The `SuperSync` clock board.
-    SuperSync,
-
-    /// The `SimpleSync` clock board.
-    SimpleSync,
-}
 
 /// A front end that came up, with its driver state.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -145,8 +83,8 @@ impl FrontEnd {
     /// the breakout's if it answered. Other boards have none (libusdr's `-EINVAL`).
     pub(crate) fn set_oscillator_dac(&self, bus: &mut dyn Bus, code: u16) -> Result<(), Error> {
         match self {
-            Self::Pciefe(_) => Pciefe::set_dac(bus, code),
-            Self::Exm2pe(board) => board.set_dac(bus, code),
+            Self::Pciefe(_) => Ok(Pciefe::set_dac(bus, code)?),
+            Self::Exm2pe(board) => Ok(board.set_dac(bus, code)?),
             Self::Xmass(_) | Self::SuperSync | Self::SimpleSync(_) => Err(Error::NoOscillatorDac),
         }
     }
@@ -174,107 +112,53 @@ pub(crate) const SYNC_CALIBRATION_BOARDS: &str = "xmass or simplesync";
 /// The XMASS board's name, for [`Error::FrontEndMissing`].
 pub(crate) const XMASS: &str = xmass::NAME;
 
-/// The boards libusdr tries, in its order (`enum fe_type`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Candidate {
-    /// `FET_PCIE_DEVBOARD`.
-    Pciefe,
-    /// `FET_PCIE_XMASS`.
-    Xmass,
-    /// `FET_PCIE_SUPER_SYNC`.
-    SuperSync,
-    /// `FET_PCIE_SIMPLE_SYNC`.
-    SimpleSync,
-    /// `FET_PICE_BREAKOUT`.
-    Exm2pe,
-    /// `FET_PCIE_FE1005000`.
-    Fe1005000,
-    /// `FET_PCIE_FE4CH4007200`.
-    Fe4ch4007200,
-}
-
-impl Candidate {
-    /// Every board, in probe order.
-    const ALL: [Self; 7] = [
-        Self::Pciefe,
-        Self::Xmass,
-        Self::SuperSync,
-        Self::SimpleSync,
-        Self::Exm2pe,
-        Self::Fe1005000,
-        Self::Fe4ch4007200,
-    ];
-
-    /// Brings this board up; `Ok(None)` when it is absent or not admitted on the uSDR.
-    /// `selection` carries a hint's options, if any.
-    fn init(
-        self,
-        bus: &mut dyn Bus,
-        selection: &FrontEndSelection,
-    ) -> Result<Option<FrontEnd>, Error> {
-        match self {
-            Self::Pciefe => {
-                let options = match selection {
-                    FrontEndSelection::Pciefe(options) => Some(options),
-                    _ => None,
-                };
-                Ok(Pciefe::init(bus, options)?.map(FrontEnd::Pciefe))
-            }
-            Self::Xmass => Ok(Xmass::init(bus)?.map(FrontEnd::from)),
-            Self::SuperSync => supersync::init(bus),
-            Self::SimpleSync => Ok(SimpleSync::init(bus)?.map(FrontEnd::from)),
-            Self::Exm2pe => {
-                let options = match selection {
-                    FrontEndSelection::Exm2pe(options) => Some(options),
-                    _ => None,
-                };
-                Exm2pe::init(bus, options).map(|board| Some(FrontEnd::Exm2pe(board)))
-            }
-            // Admitted on `LSDr` (`lsdr`) only: `-ENODEV` before any bus access.
-            Self::Fe1005000 => Ok(None),
-            Self::Fe4ch4007200 => fe4ch::init(bus),
-        }
-    }
-
-    /// The board a hint names, or `None` for [`FrontEndSelection::Auto`] and
-    /// [`FrontEndSelection::None`].
-    fn hinted(selection: &FrontEndSelection) -> Option<Self> {
-        Some(match selection {
-            FrontEndSelection::Auto | FrontEndSelection::None => return None,
-            FrontEndSelection::Pciefe(_) => Self::Pciefe,
-            FrontEndSelection::Exm2pe(_) => Self::Exm2pe,
-            FrontEndSelection::Xmass => Self::Xmass,
-            FrontEndSelection::SuperSync => Self::SuperSync,
-            FrontEndSelection::SimpleSync => Self::SimpleSync,
-        })
-    }
-}
-
 /// Looks for a front end as `selection` says (`device_fe_probe` with compatibility `m2a+e`)
 /// and brings up the first that answers.
 ///
 /// A hinted board's failure fails the probe; while probing automatically, a failing board
-/// is logged and skipped, as libusdr does.
+/// is logged and skipped, as libusdr does. A hint that finds nothing is no error: the
+/// uSDR's libusdr ignores the probe's `-ENODEV`.
 pub(crate) fn probe(
     bus: &mut dyn Bus,
     selection: &FrontEndSelection,
 ) -> Result<Option<FrontEnd>, Error> {
-    if *selection == FrontEndSelection::None {
-        return Ok(None);
+    let front_end = Connector::M2KeyAE.probe(bus, selection, &mut UsdrBringUp)?;
+    if *selection == FrontEndSelection::Auto {
+        let kind = front_end.as_ref().map(FrontEnd::kind);
+        debug!(?kind, "front-end probe finished");
     }
-    if let Some(candidate) = Candidate::hinted(selection) {
-        return candidate.init(bus, selection);
-    }
-    for candidate in Candidate::ALL {
-        match candidate.init(bus, selection) {
-            Ok(Some(front_end)) => {
-                debug!(kind = ?front_end.kind(), "front end detected");
-                return Ok(Some(front_end));
-            }
-            Ok(None) => {}
-            Err(error) => warn!(?candidate, %error, "front end failed to come up; skipped"),
+    Ok(front_end)
+}
+
+/// The uSDR's part of the probe: the bring-ups that need its LMK drivers.
+struct UsdrBringUp;
+
+impl BringUp for UsdrBringUp {
+    type FrontEnd = FrontEnd;
+    type Error = Error;
+
+    fn bring_up(
+        &mut self,
+        bus: &mut dyn Bus,
+        detected: Detected,
+    ) -> Result<FrontEnd, Failure<Error>> {
+        match detected {
+            Detected::Pciefe(board) => Ok(FrontEnd::Pciefe(board)),
+            Detected::Exm2pe(board) => Ok(FrontEnd::Exm2pe(board)),
+            Detected::Xmass => Xmass::bring_up(bus).map(FrontEnd::from),
+            Detected::SuperSync => supersync::bring_up(bus).map(|()| FrontEnd::SuperSync),
+            Detected::SimpleSync => SimpleSync::bring_up(bus).map(FrontEnd::from),
+            // The connector does not admit fe1005000, and fe4ch4007200's first transfer
+            // needs an I2C core the uSDR lacks.
+            other => Err(Error::FrontEnd {
+                board: other.board().name(),
+                reason: "it cannot come up on the uSDR",
+            }),
         }
+        .map_err(Failure::Board)
     }
-    debug!("no front end detected");
-    Ok(None)
+
+    fn skipped(&mut self, board: Board, error: &Error) {
+        warn!(board = board.name(), %error, "front end failed to come up; skipped");
+    }
 }

@@ -12,13 +12,12 @@
 //! access in [`register`]. The LMS6002D is on SPI and has its own word format.
 //!
 //! The front-end boards (`crate::frontend`) carry their own chips on I2C bus 1, the M.2
-//! connector's bus:
+//! connector's bus. Those the shared probe and the `PCIe` front end and breakout need (the
+//! TCA6416 and TCA9555 expanders, the `DACx0501`) are `rsl-sdr-frontend`'s; the ones the
+//! uSDR's bring-ups need are here:
 //!
 //! | Module | Chip | Front end |
 //! |--------|------|-----------|
-//! | [`tca6416`] | TCA6416 GPIO expander | `PCIe` front end: RF switches, amplifiers, LEDs |
-//! | [`dac80501`] | `DACx0501` DAC | `PCIe` and M.2-to-`PCIe` front ends: oscillator trim |
-//! | [`tca9555`] | TCA9555-compatible GPIO expander | XMASS: board control |
 //! | [`lmk5c33216`] | LMK5C33216 clock synchronizer | `SuperSync` |
 //! | [`lmk05318`] | LMK05318 clock synchronizer | `SimpleSync`, XMASS |
 //! | [`at24`] | AT24 EEPROM (security registers) | XMASS revision 1a: serial number |
@@ -30,14 +29,11 @@
 //! reading them back.
 
 pub(crate) mod at24;
-pub(crate) mod dac80501;
 pub(crate) mod lmk05318;
 pub(crate) mod lmk5c33216;
 pub(crate) mod lms6002d;
 pub(crate) mod lp8758;
 pub(crate) mod register;
 pub(crate) mod si5332;
-pub(crate) mod tca6416;
-pub(crate) mod tca9555;
 pub(crate) mod tmp114;
 pub(crate) mod tps6381x;

@@ -5,25 +5,21 @@
 //! Outputs 4 to 7 carry a 25 MHz reference each (`CLK B`, `C`, `D`, `A`), from APLL1;
 //! outputs 0 to 3 (`RF D`, `A`, `B`, `C`) carry an optional measurement LO from APLL2, off
 //! until one is requested.
+//!
+//! `rsl-sdr-frontend` finds the board (pins, power, the LMK05318's ID); the LMK05318
+//! bring-up and the LO controls are here.
 
 use std::time::Duration;
 
 use rsl_deps::tracing::info;
 
-use super::{FRONT_END_BUS, FrontEnd, Pin};
+use rsl_sdr_frontend::simplesync::LMK05318;
+
+use super::FrontEnd;
 use crate::chips::lmk05318::Lmk05318;
 use crate::chips::lmk05318::plan::{Affinity, OutputFormat, OutputRequest, Xo, XoInput};
 use crate::error::Error;
-use crate::fpga::{FrontEndGpio, PinMode};
-use crate::lowlevel::{Bus, I2cAddr};
-
-/// The clock synchronizer (`I2C_ADDR_LMK`).
-const LMK: I2cAddr = I2cAddr::new(FRONT_END_BUS, 0x65);
-
-/// The clock tree's power enable (`GPIO_ENCLKPWR`).
-const EN_CLOCK_POWER: Pin = 5;
-/// The GPS module's enable (`GPIO_ENGPS`).
-const EN_GPS: Pin = 6;
+use crate::lowlevel::Bus;
 
 /// The LMK05318's XO: 26 MHz LVCMOS.
 const XO: Xo = Xo {
@@ -54,39 +50,20 @@ pub(crate) struct SimpleSync {
 }
 
 impl SimpleSync {
-    /// Looks for the board and brings it up (`board_ext_simplesync_init`); `Ok(None)` when
-    /// its clock synchronizer does not identify itself, leaving the board's clock tree and
-    /// GPS powered, as libusdr does.
+    /// Brings up a board `rsl-sdr-frontend` found (`board_ext_simplesync_init` after
+    /// `lmk05318_create`'s ID check): the LMK05318 with the references on outputs 4 to 7,
+    /// the LO outputs off, both APLLs locked and the outputs synchronized.
     ///
     /// # Errors
     ///
     /// [`Error::ClockUnlocked`] if an APLL does not lock; any bus failure.
-    pub(super) fn init(bus: &mut dyn Bus) -> Result<Option<Self>, Error> {
-        // The connector's I2C lines to the core, the SYSREF generator out, and both enables.
-        const CONFIG: [(Pin, PinMode); 5] = [
-            (0, PinMode::Alternate0),
-            (1, PinMode::Alternate0),
-            (7, PinMode::Alternate0),
-            (EN_CLOCK_POWER, PinMode::Output),
-            (EN_GPS, PinMode::Output),
-        ];
-        for (pin, mode) in CONFIG {
-            FrontEndGpio::configure(bus, pin, mode)?;
-        }
-        let enables = 1 << EN_CLOCK_POWER | 1 << EN_GPS;
-        FrontEndGpio::drive(bus, enables, enables)?;
-        // Wait for the board to power up.
-        bus.sleep(Duration::from_millis(50));
-
+    pub(super) fn bring_up(bus: &mut dyn Bus) -> Result<Self, Error> {
         let references = [4, 5, 6, 7].map(|port| {
             OutputRequest::new(port, REFERENCE_HZ, OutputFormat::LvcmosPN)
                 .with_affinity(Affinity::Apll1)
         });
-        let mut lmk = Lmk05318::at(LMK);
-        match lmk.create(bus, XO, &references) {
-            Err(Error::ChipId { .. }) => return Ok(None),
-            result => result?,
-        }
+        let mut lmk = Lmk05318::at(LMK05318);
+        lmk.configure(bus, XO, &references)?;
         let board = Self { lmk };
         let ready = board
             .power_down_lo(bus)
@@ -96,7 +73,7 @@ impl SimpleSync {
         board.lmk.log_lock(bus);
         ready?;
         info!("SimpleSync LMK05318 initialized");
-        Ok(Some(board))
+        Ok(board)
     }
 
     /// Puts a measurement LO of `hz` on outputs 0 to 3 from APLL2, or turns them off below
