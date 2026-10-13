@@ -178,7 +178,7 @@ impl Device {
 
     /// Writes the gateware's clock-measurement control, raw (libusdr's
     /// `/dm/sdr/0/clkmeas` write, GPO `IGPO_CLKMEAS`). Its bits are not documented in the
-    /// pinned libusdr; libusdr's GPSDO tool drives it.
+    /// pinned libusdr, and nothing there writes it.
     ///
     /// # Errors
     ///
@@ -189,7 +189,8 @@ impl Device {
 
     /// Reads the gateware's clock-measurement word, raw (libusdr's `/dm/sdr/0/clkmeas`
     /// read: GPI word 24, which libusdr's header names `IGPI_USBC`). Its meaning is not
-    /// documented in the pinned libusdr.
+    /// documented in the pinned libusdr; libusdr's GPSDO tool names this read as the
+    /// alternative to the PPS counter it decodes ([`crate::discipline`]).
     ///
     /// # Errors
     ///

@@ -124,6 +124,7 @@ mod board;
 pub mod cal;
 mod chips;
 mod device;
+pub mod discipline;
 pub mod dsp;
 mod error;
 pub mod flash;
