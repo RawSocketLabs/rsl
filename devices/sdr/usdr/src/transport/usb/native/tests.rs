@@ -24,8 +24,8 @@ use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
-    Adapter, Backend, Completion, Filing, NativeEvent, NativeUsb, Queues, Reply, Report, Request,
-    Session, Turn, Work, Worker,
+    Adapter, Backend, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues, Reply,
+    Report, Request, Session, Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 use crate::transport::usb::tx::TxStatus;
@@ -1616,4 +1616,37 @@ fn closing_the_handle_cancels_its_open_streams_on_the_worker() {
             .all(|thread| *thread == worker),
         "cancellation ran on the worker"
     );
+}
+
+#[test]
+fn the_managed_runner_drives_the_handle_without_a_caller_reactor() {
+    let (fake, _, dropped) = Fake::new();
+    let mut managed = ManagedUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    managed.native().start_temperature(Instant::now()).unwrap();
+    assert!(matches!(
+        managed.next_event(GUARD).unwrap(),
+        Some(NativeEvent::Temperature(Ok(celsius))) if (celsius - 25.0).abs() < f32::EPSILON
+    ));
+    managed.native().start_tx_open(4096, 4).unwrap();
+    assert!(matches!(
+        managed.next_event(GUARD).unwrap(),
+        Some(NativeEvent::TxOpened(Ok(())))
+    ));
+    managed
+        .native()
+        .start_send(None, &[5; 256], GUARD, Instant::now())
+        .unwrap();
+    assert!(matches!(
+        managed.next_event(GUARD).unwrap(),
+        Some(NativeEvent::Sent(Ok(_)))
+    ));
+    assert!(
+        managed.next_event(Duration::ZERO).unwrap().is_none(),
+        "nothing else is in flight"
+    );
+    managed.close(GUARD).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
 }

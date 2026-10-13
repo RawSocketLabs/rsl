@@ -43,7 +43,8 @@
 //! one transfer or caller-time wait at a time, and opens, receives on, sends on and closes
 //! the RX and TX streams at the transport, through the same `Rx`/`Tx` adapters and send
 //! order as the blocking bus. It takes over the whole device; it powers nothing and
-//! configures no stream engine.
+//! configures no stream engine. `ManagedUsb` drives one on a reactor of its own, on the
+//! calling thread, for callers without an event loop.
 
 mod bus;
 mod i2c;
@@ -56,7 +57,7 @@ mod tx;
 
 pub use bus::UsbBus;
 #[cfg(feature = "mio")]
-pub use native::{NativeEvent, NativeUsb, RxBlock};
+pub use native::{ManagedUsb, NativeEvent, NativeUsb, RxBlock};
 
 #[cfg(test)]
 mod tests;
