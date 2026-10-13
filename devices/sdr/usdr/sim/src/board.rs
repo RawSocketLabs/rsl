@@ -507,6 +507,32 @@ impl SimBoard {
         self
     }
 
+    /// A board whose front end's LMK05318 (`SimpleSync`, XMASS) reports its charge pumps
+    /// out of range forever, so its APLLs never lock.
+    ///
+    /// # Panics
+    ///
+    /// If no front end with an LMK05318 is attached.
+    #[must_use]
+    pub fn with_unlocked_front_end_clock(mut self) -> Self {
+        let unlocked = self.front_end.as_mut().is_some_and(Model::unlock_lmk05318);
+        assert!(unlocked, "no front end with an LMK05318 is attached");
+        self
+    }
+
+    /// A board whose front end's LMK05318 (`SimpleSync`, XMASS) does not answer: its reads
+    /// return the idle bus, as for an absent chip.
+    ///
+    /// # Panics
+    ///
+    /// If no front end with an LMK05318 is attached.
+    #[must_use]
+    pub fn without_front_end_clock(mut self) -> Self {
+        let removed = self.front_end.as_mut().is_some_and(Model::remove_lmk05318);
+        assert!(removed, "no front end with an LMK05318 is attached");
+        self
+    }
+
     /// The front end's oscillator DAC code, if a front end with one is attached.
     #[must_use]
     pub fn front_end_dac_code(&self) -> Option<u16> {

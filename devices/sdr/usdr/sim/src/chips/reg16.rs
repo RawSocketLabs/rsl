@@ -1,4 +1,5 @@
-//! A 16-bit-address, 8-bit-data I2C register file (the LMK5C33216 clock synchronizer).
+//! A 16-bit-address, 8-bit-data I2C register file (the LMK5C33216 clock synchronizer, and
+//! the LMK05318's storage).
 
 use super::I2cChip;
 
@@ -30,6 +31,11 @@ impl Reg16File {
     pub(crate) fn reg(&self, addr: u16) -> u8 {
         self.regs[usize::from(addr)]
     }
+
+    /// Stores `value` at `addr`, as a one-byte write would.
+    pub(crate) fn set(&mut self, addr: u16, value: u8) {
+        self.regs[usize::from(addr)] = value;
+    }
 }
 
 impl I2cChip for Reg16File {
@@ -39,7 +45,7 @@ impl I2cChip for Reg16File {
         };
         let mut addr = u16::from_be_bytes([*high, *low]);
         for &byte in data {
-            self.regs[usize::from(addr)] = byte;
+            self.set(addr, byte);
             addr = addr.wrapping_add(1);
         }
         (0..read_len)

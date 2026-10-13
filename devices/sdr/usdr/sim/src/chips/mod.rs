@@ -2,6 +2,7 @@
 
 mod dac80501;
 mod expander;
+mod lmk05318;
 mod lms6002d;
 mod reg16;
 mod reg8;
@@ -10,6 +11,7 @@ mod tmp114;
 
 pub(crate) use dac80501::Dac80501;
 pub(crate) use expander::Expander;
+pub(crate) use lmk05318::Lmk05318;
 pub(crate) use lms6002d::Lms6002d;
 pub use lms6002d::{DcCalibration, PllLock};
 pub(crate) use reg8::Reg8File;
