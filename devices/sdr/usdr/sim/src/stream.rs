@@ -29,6 +29,9 @@
 //!   end's burst format instead; both drivers write the two consistently.
 //! - The host-ready strobe (register 5, value 4). Blocks flow without it; libusdr writes
 //!   it before every receive until the first succeeds, and so does rsl-usdr.
+//! - The DMA status, the second out-of-band word, whose fields libusdr only logs
+//!   (`_sfetrx4_stream_recv`). Only its transferred-buffer count, bits 13:8, moves: the
+//!   blocks delivered so far, the one just delivered included, modulo 64. The rest reads 0.
 
 /// RX DMA control: 1 runs the DMA; 0 and 2 (stop and front-end reset) halt it; 4 (the host
 /// is ready) leaves it as it is.
@@ -124,6 +127,9 @@ pub(crate) struct RxEngine {
 
     /// The next sample of the test pattern.
     next_sample: u16,
+
+    /// Blocks delivered so far.
+    blocks: u64,
 }
 
 impl RxEngine {
@@ -170,8 +176,8 @@ impl RxEngine {
     }
 
     /// The next block and its out-of-band words (no packets lost; the completed-burst
-    /// mask; a zero status), or `None` while the engine is stopped or the sync unit holds
-    /// it (`released` false).
+    /// mask; the DMA status with its block count), or `None` while the engine is stopped
+    /// or the sync unit holds it (`released` false).
     pub(crate) fn next_block(&mut self, released: bool) -> Option<(Vec<u8>, [u64; 2])> {
         if !(self.running() && released) {
             return None;
@@ -193,7 +199,9 @@ impl RxEngine {
         }
         // One bit per burst, from the top.
         let mask = ((1_u64 << self.bursts) - 1) << (32 - self.bursts);
-        Some((block, [mask << 32, 0]))
+        self.blocks += 1;
+        let status = (self.blocks % 64) << 8;
+        Some((block, [mask << 32, status]))
     }
 }
 
@@ -262,7 +270,17 @@ mod tests {
             block,
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0xff, 0xff, 0, 0, 0, 0]
         );
-        assert_eq!(oob, [0xc000_0000 << 32, 0]);
+        assert_eq!(oob, [0xc000_0000 << 32, 1 << 8]);
+    }
+
+    #[test]
+    fn the_dma_status_counts_delivered_blocks_modulo_64() {
+        let mut engine = running(1, 1, FORMAT_16, 1);
+        let counts: Vec<u64> = (0..65)
+            .map(|_| engine.next_block(true).expect("running").1[1] >> 8)
+            .collect();
+        assert_eq!(counts[..2], [1, 2]);
+        assert_eq!(counts[62..], [63, 0, 1], "the 6-bit count wraps");
     }
 
     #[test]

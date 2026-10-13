@@ -93,9 +93,9 @@ impl Scenario {
     }
 }
 
-/// A received packet's host bytes, and its time, samples and lost packets (libusdr's
-/// `fsymtime`, `totsyms`, `totlost`).
-type Packet = (Vec<u8>, (u64, usize, u64));
+/// A received packet's host bytes, and its time, samples, lost packets and transport
+/// status (libusdr's `fsymtime`, `totsyms`, `totlost`, `extra`).
+type Packet = (Vec<u8>, (u64, usize, u64, u64));
 
 /// What one side did: each step's operations and each packet received.
 struct Run {
@@ -142,12 +142,14 @@ fn on_libusdr(scenario: Scenario, receives: usize) -> Run {
             fsymtime,
             totsyms,
             totlost,
+            extra,
             ..
         } = info;
         let summary = (
             fsymtime,
             usize::try_from(totsyms).expect("fits"),
             u64::from(totlost),
+            extra,
         );
         packets.push((bytes, summary));
     }
@@ -169,12 +171,16 @@ fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize) -> Packet 
         time,
         samples,
         lost_packets,
+        transport_status,
         ..
     } = device
         .receive_into(&mut [&mut buffer], Duration::from_millis(100))
         .expect("a packet");
     let bytes = buffer.iter().flat_map(LeBytes::le_bytes).collect();
-    (bytes, (time.samples(), samples, lost_packets))
+    (
+        bytes,
+        (time.samples(), samples, lost_packets, transport_status),
+    )
 }
 
 /// rsl-usdr: the same calls through `create_streams`, `start_streams`, `receive_into` and
@@ -272,6 +278,12 @@ fn every_format_pair_matches_libusdr_operations_and_bytes() {
         assert_eq!(
             expected.packets, actual.packets,
             "{scenario:?}: received bytes and packet information"
+        );
+        let statuses: Vec<u64> = actual.packets.iter().map(|(_, info)| info.3).collect();
+        assert_eq!(
+            statuses,
+            [1 << 8, 2 << 8],
+            "the sim's DMA status reaches both drivers' packet information"
         );
     }
 }

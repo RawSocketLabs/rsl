@@ -365,6 +365,12 @@ pub struct RxMetadata {
     /// Packets the gateware reported lost since the group started (`totlost`, which
     /// counts packets despite its header's comment).
     pub lost_packets: u64,
+
+    /// The transport's second out-of-band word for the packet, raw (`extra`): over `PCIe`
+    /// the RX DMA engine's status, whose fields the pinned source only logs (buffer
+    /// counters, front-end state, host ready in bit 31); over USB the TX core's statistics
+    /// word the RX trailer carries.
+    pub transport_status: u64,
 }
 
 /// One complex 12-bit sample, packed as on the wire: I in the low 12 bits of the three

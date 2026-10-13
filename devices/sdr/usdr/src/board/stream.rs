@@ -450,7 +450,17 @@ impl Board {
             time,
             samples: needed,
             lost_packets: stream.lost_packets,
+            transport_status: oob[1],
         })
+    }
+
+    /// Tells the RX DMA engine the host is ready (libusdr's `usdr_dms_set_ready`, the
+    /// stream option `"ready"`), as each receive does by itself until the first packet.
+    pub(crate) fn set_rx_ready(&mut self) -> Result<(), Error> {
+        if self.rx_packet_samples().is_none() {
+            return Err(Error::NotStreaming);
+        }
+        fpga::signal_rx_ready(self.bus.as_mut())
     }
 
     /// Stops and destroys the group's streams: libusdr's `USDR_DMS_STOP` for RX, then TX,

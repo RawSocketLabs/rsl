@@ -83,6 +83,7 @@ unsafe extern "C" {
         pstream: *mut Stream,
     ) -> c_int;
     fn usdr_dms_destroy(stream: Stream) -> c_int;
+    fn usdr_dms_set_ready(stream: Stream) -> c_int;
     fn usdr_dms_info(stream: Stream, nfo: *mut StreamInfo) -> c_int;
     fn usdr_dms_recv(
         stream: Stream,
@@ -123,7 +124,7 @@ pub struct RecvInfo {
     pub totlost: c_uint,
     /// Unused by this stream type (`max_parts`).
     pub max_parts: c_uint,
-    /// The DMA status out-of-band word (`extra`).
+    /// The transport's second out-of-band word (`extra`): the DMA status over `PCIe`.
     pub extra: u64,
 }
 
@@ -520,6 +521,21 @@ impl Oracle {
         } else {
             Err(errno)
         }
+    }
+
+    /// Tells the RX DMA engine the host is ready (`usdr_dms_set_ready`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn set_rx_ready(&mut self) -> Result<(), i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `stream` is live.
+        let errno = unsafe { usdr_dms_set_ready(stream.as_ptr()) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
     /// Destroys the RX stream (`usdr_dms_destroy`).

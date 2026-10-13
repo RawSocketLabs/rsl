@@ -63,6 +63,9 @@ enum Call {
 
     /// `set_rx_throttle`: send and skip, or off.
     Throttle(Option<(u8, u8)>),
+
+    /// `set_rx_ready`: libusdr's `usdr_dms_set_ready`.
+    Ready,
 }
 
 impl Call {
@@ -100,6 +103,7 @@ impl Call {
                 });
                 oracle.set_rx_throttle(value).is_ok()
             }
+            Self::Ready => oracle.set_rx_ready().is_ok(),
         }
     }
 
@@ -126,6 +130,7 @@ impl Call {
             Self::Throttle(throttle) => {
                 device.set_rx_throttle(throttle.map(|(send, skip)| RxThrottle { send, skip }))
             }
+            Self::Ready => device.set_rx_ready(),
         }
     }
 }
@@ -504,5 +509,29 @@ fn throttling_a_stream_matches_libusdr() {
         outcomes,
         [false, true, true, true, true, true, true, true],
         "only the throttle before the stream fails"
+    );
+}
+
+/// The explicit host-ready strobe needs a stream (libusdr's oracle has no handle to pass
+/// before one); while one runs it is the DMA control write each receive makes until the
+/// first packet, which the receive then makes again.
+#[test]
+fn an_explicit_host_ready_matches_libusdr() {
+    let outcomes = assert_calls_match(
+        rev3,
+        &[
+            Call::Ready,
+            Call::Rate(20_000_000),
+            Call::Start(1024),
+            Call::Ready,
+            Call::Receive,
+            Call::Ready,
+            Call::Stop,
+        ],
+    );
+    assert_eq!(
+        outcomes,
+        [false, true, true, true, true, true, true],
+        "only the strobe before the stream fails"
     );
 }

@@ -448,6 +448,18 @@ impl Device {
         self.board().set_rx_throttle(throttle)
     }
 
+    /// Tells the RX DMA engine the host is ready for blocks (libusdr's
+    /// `usdr_dms_set_ready`). [`Device::receive_into`] does this itself before every call
+    /// until the first packet arrives; this lets a caller do it earlier, say right after
+    /// [`Device::start_streams`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no RX stream; any bus failure.
+    pub fn set_rx_ready(&mut self) -> Result<(), Error> {
+        self.board().set_rx_ready()
+    }
+
     /// Samples per packet of the RX stream, or `None` with no stream.
     #[must_use]
     pub fn rx_packet_samples(&self) -> Option<u32> {
