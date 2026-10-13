@@ -36,7 +36,8 @@ members = [
     # pure-Rust LSDr (m2_da09_4_ad45_2) driver, first slice, and its board simulator
     "devices/sdr/lsdr",
     "devices/sdr/lsdr/sim",
-    # PE_SYNC clock-distribution board simulator; its driver is not yet ported
+    # pure-Rust PE_SYNC clock-distribution board driver and its board simulator
+    "devices/sync/pe_sync",
     "devices/sync/pe_sync/sim",
     # LMS7002M register values and chip sequences, and its register model, shared by the
     # LMS7002M boards' drivers and simulators
@@ -111,6 +112,7 @@ rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
 rsl-xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 rsl-lsdr-sim = { path = "devices/sdr/lsdr/sim" }
 rsl-limesdr-sim = { path = "devices/sdr/limesdr/sim" }
+rsl-pe-sync-sim = { path = "devices/sync/pe_sync/sim" }
 rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 

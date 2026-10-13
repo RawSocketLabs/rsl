@@ -3340,6 +3340,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-pe-sync"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lmk05318",
+ "rsl-lowlevel",
+ "rsl-pe-sync-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-pe-sync-sim"
 version = "0.0.0"
 dependencies = [
