@@ -11,8 +11,9 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, Calibration, CalibrationReport, NcoChannels, RateChains, RxGain, RxIqCorrection,
-    RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
+    Board, Calibration, CalibrationReport, DebugChip, NcoChannels, RateChains, RxGain,
+    RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection,
+    TxPath,
 };
 use crate::error::Error;
 use crate::fpga::IqImbalance;
@@ -227,6 +228,29 @@ impl Device {
     /// Any bus failure.
     pub fn tx_dma_status(&mut self) -> Result<[u32; 4], Error> {
         self.board().tx_dma_status()
+    }
+
+    /// Reads a chip's register raw, for debugging (libusdr's `/debug/hw/<chip>/0/reg`).
+    /// The driver's cached chip state is neither consulted nor changed.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoSuchRegister`] for an LMS6002D address past 0x7f, before any bus access;
+    /// any bus failure.
+    pub fn chip_register(&mut self, chip: DebugChip, reg: u8) -> Result<u8, Error> {
+        self.board().chip_register(chip, reg)
+    }
+
+    /// Writes a chip's register raw, for debugging (libusdr's `/debug/hw/<chip>/0/reg`).
+    /// The driver's cached chip state is not updated, so a later control may write back
+    /// over the value; on the LMS6002D, a field update rewrites the whole cached register.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoSuchRegister`] for an LMS6002D address past 0x7f, before any bus access;
+    /// any bus failure.
+    pub fn set_chip_register(&mut self, chip: DebugChip, reg: u8, value: u8) -> Result<(), Error> {
+        self.board().set_chip_register(chip, reg, value)
     }
 
     /// The board revision, its gateware's chains and build, read from the gateware now.

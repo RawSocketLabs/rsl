@@ -278,6 +278,18 @@ pub enum Error {
     #[error("{0} did not lock")]
     ClockUnlocked(&'static str),
 
+    /// A register address the chip does not have, such as an LMS6002D address past its
+    /// seven bits.
+    #[error("{chip} has no register {reg:#04x}")]
+    #[non_exhaustive]
+    NoSuchRegister {
+        /// The chip addressed.
+        chip: &'static str,
+
+        /// The address asked for.
+        reg: u8,
+    },
+
     /// The handle already has an operation in flight; nothing was sent for this one.
     #[error("another operation is in flight")]
     Busy,

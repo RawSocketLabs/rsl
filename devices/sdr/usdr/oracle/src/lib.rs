@@ -764,6 +764,27 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/core/atcrbs/reg", value.into())
     }
 
+    /// Runs one of libusdr's raw chip debug accesses: sets `path`, one of
+    /// `/debug/hw/lms6002d/0/reg`, `/debug/hw/si5332/0/reg` and `/debug/hw/tps6381x/0/reg`,
+    /// to `word`, the handler's packed access, then returns what its getter kept (the SPI
+    /// reply, or the byte read).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` for any other path.
+    pub fn debug_chip_register(&mut self, path: &CStr, word: u64) -> Result<u64, i32> {
+        const PATHS: [&CStr; 3] = [
+            c"/debug/hw/lms6002d/0/reg",
+            c"/debug/hw/si5332/0/reg",
+            c"/debug/hw/tps6381x/0/reg",
+        ];
+        if !PATHS.contains(&path) {
+            return Err(-EINVAL);
+        }
+        self.set_value(path, word)?;
+        self.get_uint(path)
+    }
+
     /// Reads libusdr's `/dm/debug/all`: two 64-bit words, though `usdr_dme_get_uint` takes
     /// one, so it is called here with room for both.
     ///

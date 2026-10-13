@@ -16,7 +16,7 @@ use super::rx_fe::{
     MixerInput, PowerDown, TiaFeedback,
 };
 use super::rx_vga2;
-use super::spi::SpiWriter;
+use super::spi::{AnyReg, SpiWriter};
 use super::top::{
     ChipId, ClockEnables, EnableConfig, Loopback, LpfTuning, LpfTuningControl, ReferencePower,
 };
@@ -108,6 +108,23 @@ impl Lms6002d {
             0xff => Err(Error::ChipMissing(Self::NAME)),
             _ => Ok(lms),
         }
+    }
+
+    /// Reads register `reg` raw, for debugging; the driver's cached values are not
+    /// consulted.
+    pub(crate) fn read_register_raw(&self, bus: &mut dyn Bus, reg: u7) -> Result<u8, Error> {
+        self.on(bus).read_raw(AnyReg(reg))
+    }
+
+    /// Writes register `reg` raw, for debugging. The driver's cached values are not
+    /// updated: a later field update writes them back over a register written here.
+    pub(crate) fn write_register_raw(
+        &self,
+        bus: &mut dyn Bus,
+        reg: u7,
+        value: u8,
+    ) -> Result<(), Error> {
+        self.on(bus).write_raw(AnyReg(reg), value)
     }
 
     /// Powers the transmitter and clocks its synthesizer's modulator, or turns both off.

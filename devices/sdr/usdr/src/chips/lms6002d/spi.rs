@@ -15,6 +15,19 @@ use crate::lowlevel::{Bus, SpiAddr};
 /// An LMS6002D block's register-address enum; only these address an [`SpiWord`].
 pub(super) trait BlockReg: Into<u8> {}
 
+/// Any of the 128 register addresses, named by the caller rather than a block: the raw
+/// debug access libusdr's `/debug/hw/lms6002d/0/reg` offers.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AnyReg(pub(super) u7);
+
+impl From<AnyReg> for u8 {
+    fn from(reg: AnyReg) -> Self {
+        reg.0.value()
+    }
+}
+
+impl BlockReg for AnyReg {}
+
 /// One SPI transaction word.
 #[bitfield(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
