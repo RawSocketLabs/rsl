@@ -51,7 +51,7 @@ impl Gpo {
 /// The RX PHY's configuration port (`REG_CFG_PHY_0`, `generic_regs.h`): `xsdr_phy_rx_reg`
 /// writes `write << 31 | bank << 24 | address << 16 | value` here, and a read of it returns
 /// what the last request selected.
-pub(crate) const REG_CFG_PHY_0: u16 = 56;
+pub(crate) const REG_CFG_PHY_0: u32 = 56;
 
 /// An RX PHY bank (`PHY_REG_RXBANK_*`, `xsdr_ctrl.c`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
