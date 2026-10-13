@@ -12,13 +12,13 @@
 
 use std::any::Any;
 use std::env;
-use std::ffi::{CStr, c_char, c_int, c_ulonglong, c_void};
+use std::ffi::{CStr, c_char, c_int, c_uint, c_ulonglong, c_void};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr::{self, NonNull};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_limesdr_sim::{FRAME_LEN, SimBoard};
+use rsl_limesdr_sim::{DATA_LEN, FRAME_LEN, SimBoard};
 
 /// `EINVAL`: an operation on an oracle that is already closed.
 const EINVAL: c_int = 22;
@@ -51,6 +51,86 @@ unsafe extern "C" {
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
     fn rsl_limesdr_shim_fpga_info(out: *mut u16) -> c_int;
     fn rsl_limesdr_shim_create_errno() -> c_int;
+    fn lms64c_fill_packet(
+        cmd: u8,
+        status: u8,
+        id: u8,
+        data: *const u8,
+        length: c_uint,
+        out: *mut LmsFrame,
+        out_cnt: c_uint,
+    ) -> c_int;
+    fn lms64c_parse_packet(
+        cmd: u8,
+        input: *const LmsFrame,
+        in_cnt: c_uint,
+        data: *mut u8,
+        length: c_uint,
+    ) -> c_int;
+}
+
+/// A `proto_lms64c_t`, aligned as the 32- and 16-bit stores and loads libusdr's builder and
+/// parser make into its payload (offset 8) require.
+#[repr(C, align(4))]
+struct LmsFrame([u8; FRAME_LEN]);
+
+/// Most bytes [`lms64c_fill`] takes: two frames' worth, enough to show the one-frame limit.
+const FILL_MAX: usize = 2 * DATA_LEN;
+
+/// Most values [`lms64c_read_values`] parses: the 14 address-then-value records a reply's
+/// payload holds; libusdr's parser reads past the payload for more.
+pub const READ_VALUES_MAX: usize = DATA_LEN / 4;
+
+/// libusdr's `lms64c_fill_packet` building at most one request frame for `cmd` from
+/// `data` (as the C reads it: 32-bit host-order records for register writes, 16-bit
+/// host-order addresses for register reads, bytes otherwise), status and peripheral 0.
+/// `None` where it builds no frame (no data) or fails (data for more than one frame).
+///
+/// # Panics
+///
+/// When `data` is longer than two frames' payload, which no test needs.
+#[must_use]
+pub fn lms64c_fill(cmd: u8, data: &[u8]) -> Option<[u8; FRAME_LEN]> {
+    assert!(data.len() <= FILL_MAX, "at most two frames' payload");
+    let mut words = [0u32; FILL_MAX / 4];
+    for (word, chunk) in words.iter_mut().zip(data.chunks(4)) {
+        let mut bytes = [0; 4];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        *word = u32::from_ne_bytes(bytes);
+    }
+    let mut out = LmsFrame([0; FRAME_LEN]);
+    let length = c_uint::try_from(data.len()).expect("invariant: bounded above");
+    // SAFETY: `words` holds `data.len()` readable bytes, 4-aligned for the builder's 32-bit
+    // loads; `out` is one writable, 4-aligned frame and `out_cnt` is 1.
+    let built =
+        unsafe { lms64c_fill_packet(cmd, 0, 0, words.as_ptr().cast(), length, &raw mut out, 1) };
+    (built == 1).then_some(out.0)
+}
+
+/// libusdr's `lms64c_parse_packet` on one reply frame for register-read command `cmd`
+/// (`CMD_LMS7002_RD`, `CMD_BRDSPI_RD`): the first `count` register values, as its callers
+/// read them (host-order 16-bit words).
+///
+/// # Panics
+///
+/// When `count` exceeds [`READ_VALUES_MAX`], or libusdr reports a parse failure.
+#[must_use]
+pub fn lms64c_read_values(cmd: u8, reply: &[u8; FRAME_LEN], count: usize) -> Vec<u16> {
+    assert!(
+        count <= READ_VALUES_MAX,
+        "the parser reads past the payload beyond"
+    );
+    let input = LmsFrame(*reply);
+    let mut values = vec![0u16; count];
+    let length = c_uint::try_from(2 * count).expect("invariant: bounded above");
+    // SAFETY: `input` is one readable, 4-aligned frame (the parser loads 16-bit words from
+    // its payload, at most 28 of them for 14 values, all inside it); `values` holds
+    // `2 * count` writable bytes.
+    let res = unsafe {
+        lms64c_parse_packet(cmd, &raw const input, 1, values.as_mut_ptr().cast(), length)
+    };
+    assert_eq!(res, 0, "libusdr parsed the reply");
+    values
 }
 
 /// libusdr opened on a simulated board.
