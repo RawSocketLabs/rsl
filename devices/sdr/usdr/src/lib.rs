@@ -12,8 +12,10 @@
 //! core ([`Device::send`]).
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
 //! `mio` adds `transport::usb::NativeUsb`, an unstable USB handle driven by a caller-owned
-//! Mio reactor (a few control operations and the transport's RX and TX streams), and
-//! `transport::usb::ManagedUsb`, which drives one on a reactor of its own. [`flash`] reads,
+//! Mio reactor (power-up, the RF settings, a stream group and the transport's RX and TX
+//! streams, with the blocking device's own sequences), `transport::usb::ManagedUsb`, which
+//! drives one on a reactor of its own, and `transport::usb::AsyncUsb`, which does on a
+//! reactor thread of its own behind futures. [`flash`] reads,
 //! erases and writes the FPGA's boot flash over a bus of its own, with the destructive
 //! operations behind a separate handle.
 //!

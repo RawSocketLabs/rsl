@@ -3,7 +3,9 @@
 This unpublished, detached validation workspace imports the **exact production**
 `../src/portable` module tree. The native driver and this fixture compile the same address
 types, TMP114 register values/temperature machine, Si5332 divider plan, USB wire fields and
-I²C transaction machine. There are no copied algorithms or substitute host errors.
+I²C transaction machine, and the board's RF machines (LMS6002D operations, tuning and
+calibration, power-up, rate, tuning, gain, path and stream composites), which the witness
+drives against a register-file board. There are no copied algorithms or substitute host errors.
 Where the tree re-exports the shared no_std crates (`rsl-lowlevel`'s addresses, register
 traits and sequence seam; `rsl-lp8758`'s LP8758 values), the fixture depends on them by
 path without default features, so it compiles exactly what the driver does minus `std`.

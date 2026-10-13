@@ -12,16 +12,18 @@ the program is not complete. Linux is first. Sans-I/O state machines and an exte
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
 opt-in. The USB I²C and register/SPI machines run in the blocking bus, and feature `mio`
 exposes the unstable `NativeUsb` (`UsbBus::into_native`, or `Device::into_native` from a
-powered, set-up device), whose generic executor runs any
-portable sequence (temperature, gateware identity, reference-clock switch and the stream
-group's engine registers, DSP corrections, TX mute and RX throttle so far) and the RX/TX
-streams at the transport, plus
-`ManagedUsb`, a synchronous runner over it; power and the RF chains' part of stream
-setup remain unimplemented natively. Generic USB offers bounded
+powered device), whose generic executor runs any portable sequence: the board's own
+(temperature, identity, reference switch, power-up behind the thermal policy and
+power-down, sample rate, tuning, bandwidths, gains, paths, and a stream group's create,
+start, mute, throttle and stop, the RF chains' power, tuning and DC calibration
+included), so a board goes from open to streaming with no blocking `Device`; plus the
+RX/TX streams at the transport, `ManagedUsb`, a synchronous runner over it, and
+`AsyncUsb`, a runtime-free asynchronous one. Generic USB offers bounded
 reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
 `mio`), which `transport/usb/native` registers; cancellation remains an owned-worker
-operation because the Linux discard ioctl can block. Native executor/worker supervision is
-still open. The private `src/portable` production tree is shared unchanged with an unpublished
+operation because the Linux discard ioctl can block. The worker is supervised: a panic,
+a lost report or an idle hang-up ends the session with an event, and the worker still
+releases the device. The private `src/portable` production tree is shared unchanged with an unpublished
 no_std + alloc compilation fixture; the public driver remains std-dependent. No hardware
 qualification, release or publication is authorized by this roadmap.
 
@@ -86,10 +88,14 @@ Each layer calls only the ones below it.
   drives libusdr's aggregate over several sim boards (`Oracle::open_multi`).
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
-- `src/board/`: `m2_lm6_1` sequences (power, then rate, tune, the RX and TX controls and RX
-  and TX streaming) and the executors
-  that run migrated ones from `src/portable/` (power rails and Si5332 clocks so far). `board/board.rs` holds
-  the `Board` struct, its chips and supply setpoints as associated consts
+- `src/board/`: the `m2_lm6_1` board over a blocking bus. Its RF sequences (power-up and
+  power-down, rate, tune, gains, paths, the RF chains' part of a stream's create and
+  destroy) are portable machines (`src/portable/radio`), which `Board` runs with
+  `Board::run_radio`/`run_script`, lending its `Radio` state and taking it back; the stream
+  engine's are `portable/stream.rs`'s; the RX and TX controls, corrections, calibration
+  and streaming that remain blocking code run beside them. `board/board.rs` holds
+  the `Board` struct (bus, `Radio`, the DSP corrections, reference, stream group, front
+  end), its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
   file (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay with
   the chip's register values.
@@ -97,7 +103,9 @@ Each layer calls only the ones below it.
   (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) on `cal::search::best_2d`, measuring with the
   gateware's DC estimator (`fpga/dc_estimator.rs`, `ipblks/dc_estim.c`); blocking
   register code, no streaming (`oracle/tests/calibration_parity.rs`).
-- `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths.
+- `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths;
+  the LMS6002D's register values, cache and operations are portable (`portable/lms6002d`),
+  so `chips/lms6002d` keeps its docs.
   Its only board knowledge is where the uSDR wires it: an `at(addr)` constructor plus a
   `usdr()` constructor whose doc cites the address source (datasheet fixed address or
   libusdr's `I2C_DEV_*`). Setpoints and policy stay in `src/board/`; a sequence is in
@@ -186,8 +194,17 @@ Each layer calls only the ones below it.
   32-bit results, and waits, one action at a time), LP8758 values (`lp8758.rs`, re-exporting
   `rsl-lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
   power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
-  (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), and USB
-  framing plus the I²C and register/SPI state machines (`usb/`). FPGA actions name
+  (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), the
+  LMS6002D's register values, cache, straight-line operations as `Script`s, PLL tuning
+  and DC calibrations (`lms6002d/`), the gateware's GPO and DSP-port words and FIR loads
+  (`fpga.rs`, `fir_tables.rs`), `Script` (`script.rs`, a fixed action list), the board's
+  RF state and composite machines (`radio/`: `Radio`; `run.rs`'s `Run` drives a
+  composite's parts with libusdr's stop, carry-on-and-report and ignore failure
+  policies; power, rate, tune, gain, path and stream parts), and USB framing plus the I²C
+  and register/SPI state machines (`usb/`). A sequence that attempts steps after a
+  failure says so (`rsl-lowlevel`'s `Sequence::attempts_after_failure`, added
+  2026-10-13 for "attempt every step" paths, pending owner review); both executors then
+  run them and report the first failure. FPGA actions name
   registers as the `Bus` does (32 bits), so a sequence may name the stream engine's
   configuration space; each executor reaches it through its index window.
   `chips::register::run_sequence` wraps `rsl-lowlevel`'s blocking executor and
@@ -210,29 +227,36 @@ Each layer calls only the ones below it.
   observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
   the adapter keeps the shared Waker open for the worker's final wake. `into_native` runs
-  the identity sequence and checks the TMP114 ID over the blocking bus, then carries the
+  the identity sequence, holds the LMS6002D in reset and checks the TMP114 ID over the
+  blocking bus, as `Board::identify` does, then carries the
   notification sequence, I²C table and operation identities over. `Device::into_native`
   (`UsbHandOver` in `bus.rs`) does the same from a powered device with no stream group,
-  without I/O: the `Board` builds the session's `BoardState` (identity facts, both chains'
-  IQ corrections), the `UsbBus` is reached through `Bus::as_any_mut` and left released
+  without I/O: the `Board` builds the session's `BoardState` (identity facts and chains,
+  both chains' IQ corrections, the `Radio` RF state), the device adds its thermal policy,
+  the `UsbBus` is reached through `Bus::as_any_mut` and left released
   (refused, keeping it, while it still holds a stream's endpoint), and the board stays
   powered under the handle. Notification transfers are sized as in the blocking bus
   and the pinned C (`IN_NTFY_SIZE`). Its streams (`handle/stream.rs`) run the blocking
   bus's `Rx`/`Tx` over `backend::Filed` queues, which take only completions a reap turn
   filed; the worker copies RX blocks out (at most `adapter::RX_BACKLOG` waiting) and
   cancels streams, and a send follows `TxDevice::send`'s order with its status read on the
-  register machine. Its stream group (`handle/group.rs`) creates, starts, readies, mutes,
+  register machine. Its RF operations (`handle/radio.rs`) run the board's `portable::radio`
+  machines on the session's `Radio` (a handed-over device's, or its own from
+  `start_power_up`, which reads the TMP114 first and refuses at the thermal policy's
+  start limit). Its stream group (`handle/group.rs`) creates, starts, readies, mutes,
   throttles and stops the engine with the board's own `EngineSequence`s and
   `Phy::{rx,tx}_create_writes` (the create's DSP-port writes, also `EngineSequence`s), the
-  TX gateware gate and the
+  RF chains' create and stop parts, the TX gateware gate and the
   transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
-  reaches configuration-space registers as `UsbBus` does (index, then data register). It
-  leaves the RF chains' power, tuning and calibration to the blocking device.
+  reaches configuration-space registers as `UsbBus` does (index, then data register).
   One operation command and one reap turn are outstanding at a time
-  (`worker::MAILBOX`). `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the
-  calling thread. Its unit tests use a socket source, not usbfs; only the opt-in
-  `usb_hardware` test reaches real queues. Native power and RF-chain stream setup, an
-  async managed driver, fairness and browser integration remain open.
+  (`worker::MAILBOX`); `poll` advances the operation before handing over an RX block.
+  `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the calling thread;
+  `asynchronous.rs` (`AsyncUsb`) a reactor thread of its own behind futures woken through
+  `core::task::Waker`. Its unit tests use a socket source, not usbfs; only the opt-in
+  `usb_hardware` test reaches real queues. A native power-up probes no front end; the
+  front-end controls, corrections, calibration and the extended TX core stay with the
+  blocking device; browser integration remains open.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -317,9 +341,9 @@ Each layer calls only the ones below it.
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
   `oracle/tests/calibration_parity.rs`), and so is the extended TX core and both
   directions' second channels (`oracle/tests/{tx_stream,stream_formats}_parity.rs`);
-  not ported are the RF-chain
-  part (power, tuning, calibration) of a native (`NativeUsb`) stream group, whose
-  stream-engine and DSP-port parts are ported (for channel 0 on the original TX core), the
+  not ported natively are the front-end probe and controls, the corrections and
+  calibration, and second channels and the extended TX core in a native (`NativeUsb`)
+  stream group (channel 0 on the original TX core); not ported at all are the
   gateware FFT format and lane bifurcation (no gateware evidence), and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
