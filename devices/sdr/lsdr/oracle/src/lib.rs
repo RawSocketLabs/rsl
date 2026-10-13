@@ -142,6 +142,16 @@ impl Oracle {
         self.set_uint(c"/dm/power/en", u64::from(on))
     }
 
+    /// Sets `/dm/sdr/0/rx/gain/pga` (`dev_m2_d09_4_ad45_2_gainpga_set`): libusdr clamps
+    /// `value` to 31, writes `63 - 2 × value` to the PGA gain bank and pulses its latch.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_rx_pga_gain(&mut self, value: u64) -> Result<(), i32> {
+        self.set_uint(c"/dm/sdr/0/rx/gain/pga", value)
+    }
+
     /// Reads a libusdr device-manager value, such as `c"/ll/sdr/max_hw_tx_chans"`.
     ///
     /// # Errors
