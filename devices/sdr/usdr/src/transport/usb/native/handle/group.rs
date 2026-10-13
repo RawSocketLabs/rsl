@@ -1,10 +1,10 @@
 //! The stream group on [`NativeUsb`]: create, start, host-ready, TX mute, RX throttle and
 //! stop, as the blocking device's stream group performs them (`board/stream.rs`,
-//! `board/tx_stream.rs`), minus the RF chains' power, tuning and calibration, which need
-//! the LMS6002D state only the blocking device holds. Each operation is a list of steps
-//! run one at a time: the same portable engine sequences, DSP-port writes and gateware
-//! gate, each stream's transport open or close, and the refusals the blocking device
-//! makes between them.
+//! `board/tx_stream.rs`). Each operation is a list of steps run one at a time: the RF
+//! chains' part (power, the default tuning and DC calibration, from the handle's RF
+//! state), the same portable engine sequences, DSP-port writes and gateware gate, each
+//! stream's transport open or close, and the refusals the blocking device makes between
+//! them.
 
 use std::collections::VecDeque;
 use std::mem;
@@ -18,6 +18,7 @@ use crate::board::RxThrottle;
 use crate::error::Error;
 use crate::fpga::{self, BurstPlan, IdentityRead, Phy};
 use crate::lowlevel::BusError;
+use crate::portable::radio::Chain;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{StreamsConfig, SyncMode, TxMute};
 
@@ -67,6 +68,10 @@ enum GroupKind {
 }
 
 /// One step of a group operation.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a run's few steps, each a fixed-size machine; boxing would allocate per step"
+)]
 enum GroupStep {
     /// Run a portable sequence.
     Sequence(SequenceOperation),
@@ -75,6 +80,9 @@ enum GroupStep {
     /// Fail here, where the blocking device refuses (a packet size its checks reach only
     /// after some I/O).
     Fail(Error),
+    /// The RF chains' part of a stream's create (`true`) or stop, built from the handle's
+    /// RF state when it begins; skipped on a handle without one.
+    Radio(Chain, bool),
 }
 
 /// The step in flight.
@@ -134,8 +142,10 @@ fn engine(sequence: EngineSequence) -> GroupStep {
 
 impl NativeUsb {
     /// Starts creating the stream group `config` describes, as
-    /// [`Device::create_streams`](crate::Device::create_streams) does on the stream engine,
-    /// RX first: per stream, the engine's setup (RX: the DMA's liveness check and reset,
+    /// [`Device::create_streams`](crate::Device::create_streams) does, RX first: per
+    /// stream, the RF chain's part (RX: the receiver powered, tuned to 320 MHz if no
+    /// frequency was set, its DC offsets calibrated and the TX PLL tuned back; TX: the
+    /// transmitter powered), then the engine's setup (RX: the DMA's liveness check and reset,
     /// the front end's and DMA's burst configuration and the sync unit held stopped; TX:
     /// the gateware's minimum build, then the sync unit held stopped), then the stream's
     /// transport opens, the stream joins the group (TX with lane B muted), and the DSP
@@ -146,9 +156,8 @@ impl NativeUsb {
     /// [`NativeEvent::Received`] once the group starts, and TX takes
     /// [`start_send`](Self::start_send).
     ///
-    /// It does not power, tune or calibrate the RF chains, as the blocking create does
-    /// around the same steps: that needs the LMS6002D state only the blocking device
-    /// holds, so the chains stay as it left them.
+    /// On a handle without the board's RF state (from a bare bus, not powered up by it) the
+    /// RF parts are left out, and the chains stay as whatever powered the board left them.
     ///
     /// # Errors
     ///
@@ -168,9 +177,10 @@ impl NativeUsb {
         {
             return Err(Error::AlreadyStreaming);
         }
-        config.check(self.session.board.extended_tx_core)?;
+        config.check(self.session.board.chains.extended_tx_core)?;
         let mut steps = VecDeque::new();
         if let Some(rx) = config.rx {
+            steps.push_back(GroupStep::Radio(Chain::Rx, true));
             // libusdr checks the packet size between the DMA reset and the configuration.
             steps.push_back(engine(EngineSequence::rx_reset()));
             match BurstPlan::for_packet(rx.samples_per_packet, rx.wire) {
@@ -191,6 +201,7 @@ impl NativeUsb {
             )));
         }
         if let Some(tx) = config.tx {
+            steps.push_back(GroupStep::Radio(Chain::Tx, true));
             let gate = SequenceOperation::TxGate(IdentityRead::default());
             steps.push_back(GroupStep::Sequence(gate));
             steps.push_back(engine(EngineSequence::new().sync(SyncTrigger::Stop)));
@@ -315,10 +326,9 @@ impl NativeUsb {
 
     /// Starts stopping and destroying the group, as
     /// [`Device::stop_streams`](crate::Device::stop_streams) does on the stream engine:
-    /// RX halts, then TX stops; then each stream's destroy halts it again and closes its
-    /// transport, the worker cancelling every transfer. Every step is attempted; the group
-    /// is gone at once. [`poll`](Self::poll) reports [`NativeEvent::StreamsStopped`]. It
-    /// powers no chain down, unlike the blocking stop.
+    /// RX halts, then TX stops; then each stream's destroy powers its chain down, halts it
+    /// again and closes its transport, the worker cancelling every transfer. Every step is attempted; the group
+    /// is gone at once. [`poll`](Self::poll) reports [`NativeEvent::StreamsStopped`].
     ///
     /// # Errors
     ///
@@ -337,6 +347,7 @@ impl NativeUsb {
             steps.push_back(engine(EngineSequence::new().stop_tx()));
         }
         if group.rx {
+            steps.push_back(GroupStep::Radio(Chain::Rx, false));
             steps.push_back(engine(EngineSequence::new().run_rx(false)));
             steps.push_back(GroupStep::Stream(
                 StreamOperation::RxClose,
@@ -344,6 +355,7 @@ impl NativeUsb {
             ));
         }
         if group.tx {
+            steps.push_back(GroupStep::Radio(Chain::Tx, false));
             steps.push_back(engine(EngineSequence::new().stop_tx()));
             steps.push_back(GroupStep::Stream(
                 StreamOperation::TxClose,
@@ -395,6 +407,18 @@ impl NativeUsb {
                             }
                         }
                         GroupStep::Fail(error) => Err(error),
+                        GroupStep::Radio(chain, up) => {
+                            let Some(operation) = self.group_radio_step(chain, up) else {
+                                continue;
+                            };
+                            match self.begin_sequence(operation, now) {
+                                Ok((operation, wait)) => {
+                                    run.current = Current::Sequence(operation, wait);
+                                    continue;
+                                }
+                                Err(error) => Err(error),
+                            }
+                        }
                     }
                 }
                 Current::Sequence(operation, wait) => match self.progress(operation, wait, now) {
@@ -402,6 +426,9 @@ impl NativeUsb {
                         run.current = Current::Sequence(operation, wait);
                         self.pending = Some(Pending::Group(run));
                         return None;
+                    }
+                    Progress::Finished(SequenceOperation::Radio(radio), result) => {
+                        self.conclude_radio(radio, result)
                     }
                     Progress::Finished(operation, result) => operation.step_result(result),
                 },

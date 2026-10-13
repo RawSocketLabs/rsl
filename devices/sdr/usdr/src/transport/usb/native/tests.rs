@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 use std::io;
+use std::mem;
 use std::num::NonZeroUsize;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
@@ -14,17 +15,20 @@ use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use num_complex::Complex;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 use super::{BoardUsb, simulated_device};
 use crate::Device;
-use crate::board::RxThrottle;
+use crate::board::{RxGain, RxPath, RxThrottle, TxGain, TxPath};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
 use crate::fpga::IqImbalance;
+use crate::frontend::FrontEndSelection;
 use crate::lowlevel::{Bus, BusError, TxFill};
+use crate::portable::radio::Chains;
 use crate::reference::ReferenceClock;
 use crate::stream::{HostFormat, RxConfig, StreamsConfig, SyncMode, TxConfig, TxMute, WireFormat};
+use crate::thermal::ThermalPolicy;
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
@@ -774,11 +778,17 @@ fn revision_session(rev3: bool) -> Session {
         next_id: 0,
         board: BoardState {
             rev3,
-            extended_tx_core: false,
+            chains: Chains {
+                rx: true,
+                tx: true,
+                extended_tx_core: false,
+            },
+            radio: None,
             rx_iq_imbalance: IqImbalance::default(),
             tx_iq_imbalance: IqImbalance::default(),
         },
         tx_status: TxStatus::default(),
+        thermal: None,
     }
 }
 
@@ -899,11 +909,11 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
     };
     // No router setup: the hand-over's own operations are the bus's only ones.
     let bus = UsbBus::from_io(Box::new(io));
-    // The hand-over reads the build and HWID registers, then checks the sensor with one I²C
-    // read whose notification record sets the baseline.
+    // The hand-over reads the build and HWID registers, holds the RF transceiver in reset,
+    // then checks the sensor with one I²C read whose notification record sets the baseline.
     let carried = bus.hand_over().unwrap().session;
     assert_eq!(
-        carried.next_id, 3,
+        carried.next_id, 4,
         "register and I2C operations draw from one identity sequence"
     );
     assert!(
@@ -1780,9 +1790,8 @@ fn a_failed_status_read_closes_the_handle_and_is_no_full_ring() {
 }
 
 /// The gateware's share of a blocking trace, its register reads and writes: what the
-/// native group performs. It leaves out the RF chains' power, calibration and tuning
-/// (LMS6002D SPI and clock I²C) and their waits, which need the LMS6002D state only the
-/// blocking device holds.
+/// native group performs on a handle without the board's RF state, which leaves out the
+/// RF chains' power, calibration and tuning (LMS6002D SPI and clock I²C).
 fn engine_operations(board: &Mutex<SimBoard>, start: usize) -> Vec<Op> {
     operations(board, start)
         .into_iter()
@@ -2357,13 +2366,13 @@ fn a_handed_over_device_streams_as_the_blocking_device_does() {
     let (mut device, blocking) = set_up_device();
     let start = mark(&blocking);
     device.create_streams(config).unwrap();
-    let created = engine_operations(&blocking, start);
+    let created = operations(&blocking, start);
     let start = mark(&blocking);
     device.start_streams().unwrap();
-    let started = engine_operations(&blocking, start);
+    let started = operations(&blocking, start);
     let start = mark(&blocking);
     device.stop_streams().unwrap();
-    let stopped = engine_operations(&blocking, start);
+    let stopped = operations(&blocking, start);
 
     let (mut device, board) = set_up_device();
     let start = mark(&board);
@@ -2392,8 +2401,9 @@ fn a_handed_over_device_streams_as_the_blocking_device_does() {
     assert_eq!(
         operations(&board, start),
         created,
-        "the create writes the gateware as the blocking create does, the carried \
-         IQ corrections included"
+        "the create performs the blocking create's operations, the RF chains' power, DC \
+         calibration and TX retune from the carried RF state and the carried IQ \
+         corrections included"
     );
     let start = mark(&board);
     native.start_streams(Instant::now()).unwrap();
@@ -2408,7 +2418,11 @@ fn a_handed_over_device_streams_as_the_blocking_device_does() {
         settle(&mut native, &mut reactor),
         NativeEvent::StreamsStopped(Ok(()))
     ));
-    assert_eq!(operations(&board, start), stopped, "the stop");
+    assert_eq!(
+        operations(&board, start),
+        stopped,
+        "the stop, the chains powered down"
+    );
     native.close().unwrap();
     native_cleanup(&mut native, &mut reactor).unwrap();
 }
@@ -2454,4 +2468,426 @@ fn a_device_holding_a_failed_streams_endpoint_is_refused_and_powered_down() {
         Some(0),
         "the refused device still powered the board down (LMS6002D reset)"
     );
+}
+
+/// A fresh board of `revision`, warmed to `millicelsius`, on a USB bus whose router is set
+/// up, as `simulated_device` makes it. Both PLLs fail to lock below 245 MHz, as the
+/// oracle's low-LO fallback scenarios model it.
+fn usb_board(revision: BoardRevision, millicelsius: i32) -> (UsbBus, Arc<Mutex<SimBoard>>) {
+    let lock = PllLock {
+        unlocked_below_hz: 245_000_000,
+        ..PllLock::default()
+    };
+    let mut board = SimBoard::new(revision)
+        .with_temperature(millicelsius)
+        .with_rx_pll_lock(lock)
+        .with_tx_pll_lock(lock);
+    let hwid = board.read_reg(19);
+    board.write_reg(19, hwid | 0x4000_0000);
+    let board = Arc::new(Mutex::new(board));
+    let io = BoardUsb {
+        script: Arc::default(),
+        rx: None,
+        tx: None,
+        board: Arc::clone(&board),
+        registers: VecDeque::new(),
+        notifications: VecDeque::new(),
+        sequence: 0,
+        lut: 0,
+        index: 0,
+    };
+    let mut bus = UsbBus::from_io(Box::new(io));
+    bus.initialize().unwrap();
+    (bus, board)
+}
+
+/// The blocking device on a fresh board, opened without the front-end probe, as a native
+/// power-up runs.
+fn unprobed_device(revision: BoardRevision) -> (Device, Arc<Mutex<SimBoard>>) {
+    let (bus, board) = usb_board(revision, 25_000);
+    let device = Device::builder(bus)
+        .front_end(FrontEndSelection::None)
+        .open()
+        .unwrap();
+    (device, board)
+}
+
+/// A native handle over a fresh board of `revision` at `millicelsius`, identified and
+/// unpowered: `UsbBus::into_native`'s hand-over, attached to the whole-transfer fake.
+fn unpowered_native(
+    revision: BoardRevision,
+    millicelsius: i32,
+    reactor: &Poll,
+    wake: Arc<Waker>,
+) -> (NativeUsb, Arc<Mutex<SimBoard>>) {
+    let (bus, board) = usb_board(revision, millicelsius);
+    let native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
+        .unwrap();
+    (native, board)
+}
+
+/// One RF setting, made on either path.
+#[derive(Clone, Copy, Debug)]
+enum Setting {
+    /// Both chains' sample rate.
+    Rate(u32),
+    /// The RX sample rate alone.
+    RxRate(u32),
+    /// The RX frequency.
+    RxHz(u32),
+    /// The TX frequency.
+    TxHz(u32),
+    /// An RX gain.
+    RxGain(RxGain),
+    /// A TX gain.
+    TxGain(TxGain),
+    /// The RX path.
+    RxPath(RxPath),
+    /// The TX path.
+    TxPath(TxPath),
+    /// The RX bandwidth.
+    RxBandwidth(u32),
+    /// The TX bandwidth.
+    TxBandwidth(u32),
+}
+
+impl Setting {
+    /// Makes the setting on the blocking device.
+    fn on_device(self, device: &mut Device) -> Result<(), Error> {
+        match self {
+            Self::Rate(rate) => device.set_sample_rate(rate),
+            Self::RxRate(rate) => device.set_rx_sample_rate(rate),
+            Self::RxHz(hz) => device.set_rx_frequency(hz),
+            Self::TxHz(hz) => device.set_tx_frequency(hz),
+            Self::RxGain(gain) => device.set_rx_gain(gain),
+            Self::TxGain(gain) => device.set_tx_gain(gain),
+            Self::RxPath(path) => device.set_rx_path(path),
+            Self::TxPath(path) => device.set_tx_path(path),
+            Self::RxBandwidth(hz) => device.set_rx_bandwidth(hz),
+            Self::TxBandwidth(hz) => device.set_tx_bandwidth(hz),
+        }
+    }
+
+    /// Makes the setting on the native handle and drives it to its event's result.
+    fn on_native(self, native: &mut NativeUsb, reactor: &mut Poll) -> Result<(), Error> {
+        let now = Instant::now();
+        match self {
+            Self::Rate(rate) => native.start_sample_rate(rate, now),
+            Self::RxRate(rate) => native.start_rx_sample_rate(rate, now),
+            Self::RxHz(hz) => native.start_rx_frequency(hz, now),
+            Self::TxHz(hz) => native.start_tx_frequency(hz, now),
+            Self::RxGain(gain) => native.start_rx_gain(gain, now),
+            Self::TxGain(gain) => native.start_tx_gain(gain, now),
+            Self::RxPath(path) => native.start_rx_path(path, now),
+            Self::TxPath(path) => native.start_tx_path(path, now),
+            Self::RxBandwidth(hz) => native.start_rx_bandwidth(hz, now),
+            Self::TxBandwidth(hz) => native.start_tx_bandwidth(hz, now),
+        }?;
+        match settle(native, reactor) {
+            NativeEvent::SampleRateSet(result)
+            | NativeEvent::Tuned(result)
+            | NativeEvent::GainSet(result)
+            | NativeEvent::PathSet(result)
+            | NativeEvent::BandwidthSet(result) => result,
+            other => panic!("{self:?}: a setting's event, got {other:?}"),
+        }
+    }
+}
+
+/// Whether two results are the same: both done, or both failed with the same error kind.
+fn same_outcome(blocking: &Result<(), Error>, native: &Result<(), Error>) -> bool {
+    match (blocking, native) {
+        (Ok(()), Ok(())) => true,
+        (Err(blocking), Err(native)) => mem::discriminant(blocking) == mem::discriminant(native),
+        _ => false,
+    }
+}
+
+#[test]
+fn a_native_power_up_setup_and_stream_perform_the_blocking_devices_operations() {
+    let settings = [
+        Setting::Rate(1_000_000),
+        // Below 250 MHz without a lock: the low-LO sweep and its NCO fallback, then the
+        // minimal LO found reused.
+        Setting::RxHz(240_000_000),
+        Setting::RxHz(241_000_000),
+        Setting::TxHz(240_000_000),
+        // At 20 MS/s the NCO offset no longer fits: the fallback fails on both paths.
+        Setting::Rate(20_000_000),
+        Setting::TxHz(242_000_000),
+        // The mixer band: the board mixer on and the Si5332's output 3 gated.
+        Setting::RxHz(100_000_000),
+        Setting::TxHz(1_200_000_000),
+        Setting::RxHz(900_000_000),
+        Setting::RxGain(RxGain::Auto(40)),
+        Setting::RxGain(RxGain::Vga2b(6)),
+        Setting::TxGain(TxGain::Vga1(-12)),
+        Setting::TxGain(TxGain::Vga2(10)),
+        Setting::RxPath(RxPath::WideLoopback),
+        Setting::RxPath(RxPath::Auto),
+        Setting::TxPath(TxPath::High),
+        Setting::TxPath(TxPath::Auto),
+        Setting::RxBandwidth(5_000_000),
+        Setting::TxBandwidth(0),
+        // A rate in the mixer band retunes the receiver; the RX rate alone reloads only its
+        // FIR.
+        Setting::RxHz(150_000_000),
+        Setting::RxRate(5_000_000),
+    ];
+    for revision in [BoardRevision::Rev1, BoardRevision::Rev3] {
+        let (mut device, blocking) = unprobed_device(revision);
+        let (mut reactor, wake) = reactor();
+        let (mut native, board) = unpowered_native(revision, 25_000, &reactor, wake);
+        native
+            .start_power_up(
+                ReferenceClock::Board,
+                ThermalPolicy::WithinSpec,
+                Instant::now(),
+            )
+            .unwrap();
+        assert!(matches!(
+            settle(&mut native, &mut reactor),
+            NativeEvent::PoweredUp(Ok(()))
+        ));
+        assert_eq!(
+            operations(&board, 0),
+            operations(&blocking, 0),
+            "{revision:?}: identification, the thermal reading and power-up, op for op"
+        );
+        for setting in settings {
+            let (blocking_start, native_start) = (mark(&blocking), mark(&board));
+            let expected = setting.on_device(&mut device);
+            let found = setting.on_native(&mut native, &mut reactor);
+            assert!(
+                same_outcome(&expected, &found),
+                "{revision:?} {setting:?}: blocking {expected:?}, native {found:?}"
+            );
+            assert_eq!(
+                found.is_err(),
+                matches!(setting, Setting::TxHz(242_000_000)),
+                "{revision:?} {setting:?}: only the fallback without NCO room fails"
+            );
+            let expected = operations(&blocking, blocking_start);
+            assert!(
+                !expected.is_empty(),
+                "{revision:?} {setting:?} reached the board"
+            );
+            assert_eq!(
+                operations(&board, native_start),
+                expected,
+                "{revision:?} {setting:?}"
+            );
+        }
+        stream_then_power_down(
+            revision,
+            (device, &blocking),
+            (&mut native, &board),
+            &mut reactor,
+        );
+        native.close().unwrap();
+        native_cleanup(&mut native, &mut reactor).unwrap();
+    }
+}
+
+/// Creates, starts and stops an RX and TX stream group, then powers the board down, on
+/// both paths, comparing each step's operations; the native handle also receives a block.
+fn stream_then_power_down(
+    revision: BoardRevision,
+    (mut device, blocking): (Device, &Mutex<SimBoard>),
+    (native, board): (&mut NativeUsb, &Mutex<SimBoard>),
+    reactor: &mut Poll,
+) {
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config())
+        .with_sync(SyncMode::All);
+    let (blocking_start, native_start) = (mark(blocking), mark(board));
+    device.create_streams(config).unwrap();
+    native.start_create_streams(config, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(native, reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    assert_eq!(
+        operations(board, native_start),
+        operations(blocking, blocking_start),
+        "{revision:?}: the create, the RX DC calibration and TX retune included"
+    );
+    native.start_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(native, reactor),
+        NativeEvent::StreamsStarted(Ok(()))
+    ));
+    let NativeEvent::Received(Ok(block)) = finish(native, reactor) else {
+        panic!("{revision:?}: a natively powered and tuned board streams");
+    };
+    assert_eq!(block.payload.len(), 4096);
+    device.start_streams().unwrap();
+    let (blocking_start, native_start) = (mark(blocking), mark(board));
+    device.stop_streams().unwrap();
+    native.start_stop_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(native, reactor),
+        NativeEvent::StreamsStopped(Ok(()))
+    ));
+    assert_eq!(
+        operations(board, native_start),
+        operations(blocking, blocking_start),
+        "{revision:?}: the stop, the chains powered down"
+    );
+    let (blocking_start, native_start) = (mark(blocking), mark(board));
+    device.close().unwrap();
+    native.start_power_down(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(native, reactor),
+        NativeEvent::PoweredDown(Ok(()))
+    ));
+    assert_eq!(
+        operations(board, native_start),
+        operations(blocking, blocking_start),
+        "{revision:?}: the power-down"
+    );
+    assert!(
+        matches!(
+            native.start_rx_frequency(1_000_000_000, Instant::now()),
+            Err(Error::NotPowered)
+        ),
+        "a powered-down handle holds no RF state"
+    );
+}
+
+#[test]
+fn a_native_power_up_refuses_a_board_too_hot_for_its_policy_before_powering_anything() {
+    for (millicelsius, policy) in [
+        (80_000, ThermalPolicy::WithinSpec),
+        (110_000, ThermalPolicy::HardStopOnly),
+    ] {
+        let (mut reactor, wake) = reactor();
+        let (mut native, board) =
+            unpowered_native(BoardRevision::Rev3, millicelsius, &reactor, wake);
+        let start = mark(&board);
+        native
+            .start_power_up(ReferenceClock::Board, policy, Instant::now())
+            .unwrap();
+        let NativeEvent::PoweredUp(Err(Error::Overheated { celsius, limit })) =
+            settle(&mut native, &mut reactor)
+        else {
+            panic!("{policy:?}: a board at its start limit is refused");
+        };
+        assert!(
+            celsius >= limit,
+            "{policy:?}: {celsius} °C against {limit} °C"
+        );
+        let ops = operations(&board, start);
+        assert!(
+            matches!(ops.as_slice(), [Op::I2c { .. }]),
+            "{policy:?}: only the temperature read reached the board: {ops:?}"
+        );
+        assert!(
+            matches!(
+                native.start_sample_rate(20_000_000, Instant::now()),
+                Err(Error::NotPowered)
+            ),
+            "{policy:?}: the handle stays open and unpowered"
+        );
+        native.close().unwrap();
+        native_cleanup(&mut native, &mut reactor).unwrap();
+    }
+    // Once powered, a reading at the policy's stop limit is reported as overheating, and
+    // the handle stays open.
+    let (mut powered_reactor, wake) = reactor();
+    let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, &powered_reactor, wake);
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut powered_reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    board.lock().unwrap().set_temperature(85_000);
+    native.start_temperature(Instant::now()).unwrap();
+    assert!(matches!(
+        reading(&mut native, &mut powered_reactor),
+        Err(Error::Overheated { limit, .. }) if (limit - 85.0).abs() < f32::EPSILON
+    ));
+    board.lock().unwrap().set_temperature(84_000);
+    native.start_temperature(Instant::now()).unwrap();
+    assert!(
+        reading(&mut native, &mut powered_reactor).is_ok(),
+        "below the stop limit"
+    );
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut powered_reactor).unwrap();
+    // Below the hard stop, the hard-stop-only policy powers up.
+    let (mut reactor, wake) = reactor();
+    let (mut native, _) = unpowered_native(BoardRevision::Rev3, 105_000, &reactor, wake);
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::HardStopOnly,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn rf_settings_refuse_before_any_io_without_a_power_up_and_power_up_refuses_twice() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, &reactor, wake);
+    let start = mark(&board);
+    let now = Instant::now();
+    assert!(matches!(
+        native.start_sample_rate(20_000_000, now),
+        Err(Error::NotPowered)
+    ));
+    assert!(matches!(
+        native.start_tx_frequency(1_000_000_000, now),
+        Err(Error::NotPowered)
+    ));
+    assert!(matches!(
+        native.start_rx_gain(RxGain::Lna(6), now),
+        Err(Error::NotPowered)
+    ));
+    assert!(matches!(
+        native.start_tx_path(TxPath::High, now),
+        Err(Error::NotPowered)
+    ));
+    assert!(matches!(
+        native.start_power_down(now),
+        Err(Error::NotPowered)
+    ));
+    assert_eq!(operations(&board, start), [], "refused before any I/O");
+    native
+        .start_power_up(ReferenceClock::Board, ThermalPolicy::default(), now)
+        .unwrap();
+    assert!(matches!(
+        native.start_power_up(ReferenceClock::Board, ThermalPolicy::default(), now),
+        Err(Error::Busy)
+    ));
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    assert!(matches!(
+        native.start_power_up(ReferenceClock::Board, ThermalPolicy::default(), now),
+        Err(Error::AlreadyPowered)
+    ));
+    assert!(matches!(
+        native.start_sample_rate(1, Instant::now()),
+        Err(Error::UnsupportedSampleRate(1))
+    ));
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
 }

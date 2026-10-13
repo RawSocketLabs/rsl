@@ -1,9 +1,11 @@
 //! The public reactor-driven handle over the native adapter: one generic executor runs the
-//! TMP114 read and portable sequences (gateware identity, reference-clock switch), the RX
-//! and TX streams' operations at the transport (`stream`), and the stream group's create,
-//! start and stop, which compose both (`group`).
+//! TMP114 read and portable sequences (gateware identity, reference-clock switch, the
+//! board's RF operations: `radio`), the RX and TX streams' operations at the transport
+//! (`stream`), and the stream group's create, start and stop, which compose them
+//! (`group`).
 
 mod group;
+mod radio;
 mod stream;
 
 use std::fmt;
@@ -15,6 +17,7 @@ use std::time::{Duration, Instant};
 use mio::{Registry, Token, Waker};
 
 use self::group::{GroupRun, NativeGroup};
+use self::radio::RadioRun;
 use self::stream::{Send, StreamOperation};
 use super::super::i2c::I2cTransaction;
 use super::super::machine::{Machine, Output, Step};
@@ -30,12 +33,14 @@ use crate::error::Error;
 use crate::fpga::{self, IdentityRead, IqImbalance};
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
+use crate::portable::radio::{Chains, PowerUpPlan, Radio};
 use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
 use crate::portable::si5332::ClockSequence;
 use crate::portable::si5332::sequence::SWITCH_WRITES;
 use crate::portable::stream::EngineSequence;
 use crate::portable::usb::register::RegisterTransaction;
 use crate::reference::ReferenceClock;
+use crate::thermal::ThermalPolicy;
 
 /// Completions the worker files per turn; the handle keeps one request in flight.
 const BUDGET: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
@@ -54,19 +59,24 @@ pub(in super::super) struct Session {
     pub board: BoardState,
     /// The TX core's throttled status words, per device as in libusdr.
     pub tx_status: TxStatus,
+    /// The thermal policy the handle enforces: the handing-over device's, or the one its
+    /// power-up was given; `None` before either.
+    pub thermal: Option<ThermalPolicy>,
 }
 
 /// What a native handle carries on from the board it takes over: the facts the board's
-/// identity established and the IQ corrections a stream group's create writes again.
-/// Nothing else of the board reaches a native stream group: its engine sequences depend
-/// only on the group's configuration and state.
+/// identity established, the IQ corrections a stream group's create writes again, and the
+/// powered board's RF state, which the handle's RF operations change.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BoardState {
     /// Revision 3: decides which Si5332 input [`ReferenceClock::Board`] selects.
     pub(crate) rev3: bool,
-    /// The gateware's TX core is the extended one: a stream group refuses TX on it before
-    /// any I/O, as the blocking device does.
-    pub(crate) extended_tx_core: bool,
+    /// The gateware's chains; on the extended TX core a stream group refuses TX before any
+    /// I/O, as the blocking device does.
+    pub(crate) chains: Chains,
+    /// The powered board's RF state: a handed-over device's, or the handle's own after its
+    /// power-up; `None` on an unpowered board.
+    pub(crate) radio: Option<Radio>,
     /// The RX chain's IQ correction (libusdr's `rx_corr`), which an RX create writes
     /// again, as the blocking device's does: a handed-over device's, else a fresh board's.
     pub(crate) rx_iq_imbalance: IqImbalance,
@@ -79,7 +89,10 @@ pub(crate) struct BoardState {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum NativeEvent {
-    /// A temperature read finished, in °C. A failure also closes the handle.
+    /// A temperature read finished, in °C. A failure also closes the handle, except
+    /// [`Error::Overheated`]: a powered board with a thermal policy (the handing-over
+    /// device's, or the power-up's) at or above the policy's stop limit; stop streaming and
+    /// power the board down.
     Temperature(Result<f32, Error>),
     /// A gateware identity read finished. A failure also closes the handle.
     Identity(Result<Identity, Error>),
@@ -124,6 +137,21 @@ pub enum NativeEvent {
     TxMuted(Result<(), Error>),
     /// The RX front end's bursts were throttled as asked, or the write failed.
     RxThrottled(Result<(), Error>),
+    /// The board powered up, or failed to (refused as too hot before anything powered, or
+    /// failed partway, with the RF section turned back off as libusdr's `fail:` path does).
+    PoweredUp(Result<(), Error>),
+    /// The board powered down: every write was attempted; the first failure, if any.
+    PoweredDown(Result<(), Error>),
+    /// A sample rate was set, or failed.
+    SampleRateSet(Result<(), Error>),
+    /// A chain was tuned, or failed.
+    Tuned(Result<(), Error>),
+    /// A filter bandwidth was set, or failed.
+    BandwidthSet(Result<(), Error>),
+    /// A gain was set, or failed.
+    GainSet(Result<(), Error>),
+    /// A path was selected, or failed.
+    PathSet(Result<(), Error>),
     /// The stream group stopped: every step was attempted and the group is gone; the first
     /// failure, if any. A stream whose transport failed to close stays held; close it
     /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`]. A register
@@ -159,14 +187,23 @@ enum Pending {
     Send(Send),
     /// A stream-group operation's steps.
     Group(GroupRun),
+    /// A power-up's temperature check, then its plan.
+    Thermal(TemperatureRead, Machine, PowerUpPlan),
 }
 
 /// The sequences the handle runs, and how each reports its end.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per handle; boxing the machine would allocate per operation"
+)]
 enum SequenceOperation {
     /// The gateware build and hardware ID reads.
     Identity(IdentityRead),
-    /// The Si5332 reference switch: state waits, polls and writes.
-    ReferenceClock(ClockSequence<SWITCH_WRITES>),
+    /// The Si5332 reference switch: state waits, polls and writes; and the reference it
+    /// switches to.
+    ReferenceClock(ClockSequence<SWITCH_WRITES>, ReferenceClock),
+    /// A board RF operation.
+    Radio(RadioRun),
     /// A stream group's engine registers, through the index window. A group step.
     /// Also a stream create's DSP-port writes, which need no window.
     Engine(Windowed<EngineSequence>),
@@ -191,8 +228,9 @@ impl SequenceOperation {
     fn next(&self) -> Option<SequenceAction> {
         match self {
             Self::Identity(identity) | Self::TxGate(identity) => identity.next(),
-            Self::ReferenceClock(switch) => switch.next(),
+            Self::ReferenceClock(switch, _) => switch.next(),
             Self::Engine(engine) => engine.next(),
+            Self::Radio(run) => run.next(),
         }
     }
 
@@ -200,8 +238,9 @@ impl SequenceOperation {
     fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), Error> {
         match self {
             Self::Identity(identity) | Self::TxGate(identity) => identity.complete(result),
-            Self::ReferenceClock(switch) => switch.complete(result),
+            Self::ReferenceClock(switch, _) => switch.complete(result),
             Self::Engine(engine) => engine.complete(result),
+            Self::Radio(run) => return run.complete(result),
         }
         .map_err(Error::from)
     }
@@ -244,8 +283,8 @@ impl SequenceOperation {
                     .identity()
                     .expect("invariant: a finished identity sequence read both words")
             })),
-            Self::ReferenceClock(_) => NativeEvent::ReferenceClock(result),
-            Self::Engine(_) | Self::TxGate(_) => {
+            Self::ReferenceClock(..) => NativeEvent::ReferenceClock(result),
+            Self::Engine(_) | Self::TxGate(_) | Self::Radio(_) => {
                 unreachable!("invariant: group steps end through their group's run")
             }
         }
@@ -281,13 +320,17 @@ enum StreamState {
 /// device.
 ///
 /// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
-/// the reference clock, creates, starts and stops a stream group's engine registers and
-/// DSP corrections as [`Device`](crate::Device)'s stream group does (the same sequences),
-/// mutes the TX core's lanes and throttles RX bursts as the device does, and runs
-/// the RX and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed
-/// and throttled as the blocking bus frames them). It powers nothing, so it applies no
-/// thermal policy, and it neither powers, tunes nor calibrates the RF chains: those stay
-/// as the blocking device left them. The reactor thread only
+/// the reference clock, powers the board up behind a thermal policy and down, sets the
+/// sample rate, tunes, sets bandwidths, gains and paths, creates, starts and stops a stream
+/// group (the RF chains' power, tuning and DC calibration, the engine registers and DSP
+/// corrections), mutes the TX core's lanes and throttles RX bursts, all as
+/// [`Device`](crate::Device) does them, with the same portable machines, and runs the RX
+/// and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed and
+/// throttled as the blocking bus frames them). It keeps the board's RF state as the
+/// device does: a handed-over device's, or its own after
+/// [`start_power_up`](Self::start_power_up). Its RF settings and power-down need that
+/// state; a stream group without it configures only the stream engine, leaving the RF
+/// chains as whatever powered the board left them. The reactor thread only
 /// registers, schedules and observes; a worker thread owns the USB queues and performs
 /// every USB call, stream cancellation and cleanup included. Waits inside an operation are
 /// deadlines the caller's reactor honours, never sleeps.
@@ -407,7 +450,7 @@ impl NativeUsb {
         reference.check()?;
         let input = Board::si5332_reference(reference, self.session.board.rev3);
         let switch = ClockSequence::reference_switch(Si5332::usdr().dev(), input);
-        self.start_sequence(SequenceOperation::ReferenceClock(switch), now)
+        self.start_sequence(SequenceOperation::ReferenceClock(switch, reference), now)
     }
 
     /// Starts a sequence operation's first action, refusing it while another is pending.
@@ -531,6 +574,7 @@ impl NativeUsb {
             Pending::Stream(operation) => self.poll_stream(operation),
             Pending::Send(send) => self.poll_send(send, now),
             Pending::Group(run) => self.poll_group(run, now),
+            Pending::Thermal(read, machine, plan) => self.poll_thermal(read, machine, plan, now),
         }
     }
 
@@ -546,7 +590,20 @@ impl NativeUsb {
                 self.pending = Some(Pending::Sequence(operation, wait));
                 None
             }
-            Progress::Finished(operation, result) => Some(operation.finish(result)),
+            Progress::Finished(SequenceOperation::Radio(run), result) => {
+                Some(self.finish_radio(run, result))
+            }
+            Progress::Finished(operation, result) => {
+                if let SequenceOperation::ReferenceClock(_, reference) = operation {
+                    // As the blocking board: a missing input clock is reported after every
+                    // write, so later plans use the new reference's frequency.
+                    let switched = matches!(result, Ok(()) | Err(Error::ClockInputMissing));
+                    if let (true, Some(radio)) = (switched, &mut self.session.board.radio) {
+                        radio.reference_hz = reference.hz();
+                    }
+                }
+                Some(operation.finish(result))
+            }
         }
     }
 
@@ -626,7 +683,20 @@ impl NativeUsb {
         if result.is_err() {
             self.adapter.retire_after_completion();
         }
-        NativeEvent::Temperature(result)
+        NativeEvent::Temperature(result.and_then(|celsius| self.check_stop(celsius)))
+    }
+
+    /// `celsius`, or [`Error::Overheated`] when a powered board with a thermal policy has
+    /// reached the policy's stop limit.
+    fn check_stop(&self, celsius: f32) -> Result<f32, Error> {
+        let (Some(_), Some(policy)) = (self.session.board.radio, self.session.thermal) else {
+            return Ok(celsius);
+        };
+        let limit = policy.limits().stop();
+        if celsius >= limit {
+            return Err(Error::Overheated { celsius, limit });
+        }
+        Ok(celsius)
     }
 
     /// The machines' time for `now`.

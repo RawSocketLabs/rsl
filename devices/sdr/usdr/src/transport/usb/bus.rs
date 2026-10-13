@@ -30,9 +30,13 @@ use crate::chips::register::run_sequence;
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
-use crate::fpga::{IdentityRead, IqImbalance};
+use crate::fpga::{Gpo, IdentityRead, IqImbalance};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill, usb_error};
+#[cfg(feature = "mio")]
+use crate::portable::radio::Chains;
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
+#[cfg(feature = "mio")]
+use crate::thermal::ThermalPolicy;
 use crate::transport::window::{self, RegisterIo, Window};
 /// `IN_NTFY_SIZE`: one notification transfer contains at most 64 bytes.
 pub(super) const MAX_NOTIFICATION_BYTES: usize = 64;
@@ -266,20 +270,27 @@ pub(crate) struct UsbHandOver {
 
 #[cfg(feature = "mio")]
 impl UsbHandOver {
-    /// Takes the session and transport of the USB bus `bus` is, with `board`'s state,
-    /// leaving `bus` released.
+    /// Takes the session and transport of the USB bus `bus` is, with `board`'s state and
+    /// the device's thermal policy, leaving `bus` released.
     ///
     /// # Errors
     ///
     /// [`Error::Open`], leaving `bus` as it was, if it is not a [`UsbBus`], lost
     /// synchronization, or still holds a stream's endpoint (a failed close).
-    pub(crate) fn from_device_bus(bus: &mut dyn Bus, board: BoardState) -> Result<Self, Error> {
-        bus.as_any_mut()
+    pub(crate) fn from_device_bus(
+        bus: &mut dyn Bus,
+        board: BoardState,
+        thermal: ThermalPolicy,
+    ) -> Result<Self, Error> {
+        let mut handed = bus
+            .as_any_mut()
             .and_then(|any| any.downcast_mut::<UsbBus>())
             .ok_or(Error::Open(BusError::Unsupported(
                 "only a USB device hands over to a native handle",
             )))?
-            .release(board)
+            .release(board)?;
+        handed.session.thermal = Some(thermal);
+        Ok(handed)
     }
 
     /// Reopens the transport's device for a native handle and attaches it to `registry`
@@ -445,8 +456,9 @@ impl UsbBus {
     /// `registry` registers it under `token`. `waker` is the reactor's shared [`Waker`], which
     /// the handle's worker uses to report.
     ///
-    /// Reads the board revision and checks the TMP114's ID first, over this blocking bus, as
-    /// [`Device`](crate::Device) identifies a board: a missing or wrong sensor fails here
+    /// Reads the board revision, holds the RF transceiver in reset and checks the TMP114's
+    /// ID first, over this blocking bus, as [`Device`](crate::Device) identifies a board
+    /// (power it up with [`NativeUsb::start_power_up`]): a missing or wrong sensor fails here
     /// rather than as a plausible reading, and the revision decides what
     /// [`ReferenceClock::Board`](crate::ReferenceClock::Board) selects. The notification
     /// sequence, I²C table and operation identities carry over. The device must be exclusive
@@ -486,10 +498,17 @@ impl UsbBus {
         if !(1..=3).contains(&revision) {
             return Err(Error::UnsupportedRevision(revision));
         }
+        // Held in reset until power-up, as `Board::identify` holds it.
+        Gpo::LmsReset.set(&mut self, 0)?;
         Tmp114::usdr().check_id(&mut self)?;
         self.release(BoardState {
             rev3: revision == 3,
-            extended_tx_core: identity.has_extended_tx_core(),
+            chains: Chains {
+                rx: identity.has_rx,
+                tx: identity.has_tx,
+                extended_tx_core: identity.has_extended_tx_core(),
+            },
+            radio: None,
             rx_iq_imbalance: IqImbalance::default(),
             tx_iq_imbalance: IqImbalance::default(),
         })
@@ -514,6 +533,7 @@ impl UsbBus {
             next_id: self.next_id,
             board,
             tx_status: mem::take(&mut self.tx_status),
+            thermal: None,
         };
         Ok(UsbHandOver {
             session,

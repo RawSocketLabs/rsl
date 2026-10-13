@@ -128,6 +128,28 @@ impl Board {
     }
 }
 
+impl Board {
+    /// What power-up needs for a board of revision 3 if `rev3`, with `chains`, taking its
+    /// clocks' reference from `reference`: the board's rail setpoints and clock wiring.
+    pub(crate) fn power_up_plan(
+        rev3: bool,
+        chains: Chains,
+        reference: ReferenceClock,
+    ) -> PowerUpPlan {
+        PowerUpPlan {
+            rails: Self::RAILS,
+            clock: Self::CLOCK.dev(),
+            reference: Self::si5332_reference(reference, rev3),
+            lvpecl: Self::lvpecl(rev3),
+            rev3,
+            // The on-board oscillator stays off only for an external reference.
+            oscillator: !matches!(reference, ReferenceClock::External { .. }),
+            chains,
+            reference_hz: reference.hz(),
+        }
+    }
+}
+
 impl Identified {
     /// The board temperature in °C, before power-up.
     ///
@@ -161,17 +183,7 @@ impl Identified {
             rev3,
             chains,
         } = self;
-        let plan = PowerUpPlan {
-            rails: Board::RAILS,
-            clock: Board::CLOCK.dev(),
-            reference: Board::si5332_reference(reference, rev3),
-            lvpecl: Board::lvpecl(rev3),
-            rev3,
-            // The on-board oscillator stays off only for an external reference.
-            oscillator: !matches!(reference, ReferenceClock::External { .. }),
-            chains,
-            reference_hz: reference.hz(),
-        };
+        let plan = Board::power_up_plan(rev3, chains, reference);
         let mut power_up = Run::new(PowerUp::new(plan));
         run_sequence(bus.as_mut(), &mut power_up)
             .inspect_err(|error| warn!(%error, "power-up failed"))?;

@@ -910,13 +910,13 @@ impl Device {
     /// corrections); the handle then streams on it.
     ///
     /// The handle continues this device's USB session (notification sequence, I²C table,
-    /// operation identities, TX status throttle) and carries on what its stream group
-    /// needs of the board: the identity facts and both chains' IQ corrections, which its
-    /// stream create writes again as [`Device::create_streams`] does. It runs no I/O of its
-    /// own before the handle attaches. The board stays powered under the handle, without
-    /// a thermal policy; closing the handle does not power it down, and the RF chains stay
-    /// as this device left them (the handle's create neither powers, tunes nor calibrates
-    /// them). There is no way back to a `Device`: reopen the board to power it down.
+    /// operation identities, TX status throttle) and carries on the board: its identity
+    /// facts, both chains' IQ corrections, which its stream create writes again as
+    /// [`Device::create_streams`] does, the RF state (the LMS6002D's cache and each chain's
+    /// settings), which its RF settings and stream group change as this device would, and
+    /// this device's thermal policy. It runs no I/O of its own before the handle attaches.
+    /// The board stays powered under the handle; closing the handle does not power it down
+    /// ([`NativeUsb::start_power_down`] does). There is no way back to a `Device`.
     ///
     /// # Errors
     ///
@@ -940,12 +940,13 @@ impl Device {
     /// on, leaving the board powered and this device without it.
     #[cfg(all(feature = "mio", target_os = "linux"))]
     pub(crate) fn hand_over_usb(&mut self) -> Result<UsbHandOver, Error> {
+        let thermal = self.thermal;
         let board = self.board();
         if board.has_streams() {
             return Err(Error::AlreadyStreaming);
         }
         let (state, bus) = board.hand_over();
-        let handed = UsbHandOver::from_device_bus(bus, state)?;
+        let handed = UsbHandOver::from_device_bus(bus, state, thermal)?;
         // The board stays powered under the handle: nothing is left to power it down.
         self.board = None;
         Ok(handed)

@@ -317,6 +317,14 @@ pub enum Error {
     /// The handle already has an operation in flight; nothing was sent for this one.
     #[error("another operation is in flight")]
     Busy,
+
+    /// The board is not powered up: an RF setting needs a power-up first.
+    #[error("the board is not powered up")]
+    NotPowered,
+
+    /// The board is already powered up.
+    #[error("the board is already powered up")]
+    AlreadyPowered,
 }
 
 /// Attaches the register access to a bus failure.

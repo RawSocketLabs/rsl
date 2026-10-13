@@ -134,7 +134,8 @@ impl Board {
     pub(crate) fn hand_over(&mut self) -> (BoardState, &mut dyn Bus) {
         let state = BoardState {
             rev3: self.radio.rev3,
-            extended_tx_core: self.radio.chains.extended_tx_core,
+            chains: self.radio.chains,
+            radio: Some(self.radio),
             rx_iq_imbalance: self.corrections.rx,
             tx_iq_imbalance: self.corrections.tx,
         };
