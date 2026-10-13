@@ -1,6 +1,6 @@
 //! Lime Microsystems LMS7002M two-channel RF transceiver: its register values and the
 //! chip-level register sequences, shared by the drivers whose boards carry one (libusdr's
-//! LMS7 family, XSDR first; its `LimeSDR` later).
+//! LMS7 family, XSDR first, and its `LimeSDR`).
 //!
 //! Sources: libusdr's register map (`hw/lms7002m/lms7002m.yaml`, generated into
 //! `gen/def_lms7002m.h`), which names every field and option but describes none, and its

@@ -18,7 +18,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
-| `../chips/lms7002m/` | `rsl-lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`) and the `hw/lms7002m` operations on its cached state (`Lms7002m`), shared with the future LimeSDR driver |
+| `../chips/lms7002m/` | `rsl-lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`) and the `hw/lms7002m` operations on its cached state (`Lms7002m`), shared with `rsl-limesdr` (`../limesdr`) |
 | `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `rsl-limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
 
 ## Layout decision (2026-10-12)

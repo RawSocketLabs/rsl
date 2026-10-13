@@ -59,6 +59,5 @@ masked to 0; a close without power-up writes to the chip in reset, from the zero
 | sSDR / sSDR Pro (LMS8001 over the SPI mux, AT24; the close's LMS8001 power-down and 0.9 V rail) | `_xsdr_init_revx` sSDR branch, `xsdr_dtor`, `C:hw/lms8001` | Sim has no LMS8001 or AT24 |
 | Real power-good check | `lp8758_check_pg` | Would diverge from libusdr, whose check is vacuous; needs a decision and status semantics from SNVSAC6B |
 | Streams, and closing with streams | `m2_lm7_1.c::usdr_device_m2_lm7_1_destroy` (stream destroy), `lms7002m_streaming_up` | `rsl-lms7002m` has the RFE/TRF/TSP/AFE operations streaming-up also uses |
-| LimeSDR reuse of `rsl-lms7002m` | `C:device/u3_limesdr/limesdr_ctrl.c` | `Create` and `mac_set` serve `limesdr_init`; the 0x3841 mask check stays in that driver |
 | Rate, tuning, gain, paths, calibration, temperature, TDD | `xsdr_ctrl.c`, `lms7002m_ctrl.c`, `m2_lm7_1.c` | Not in the golden session (open, power-up, close); need the LMS7002M reset values and channel banking in `rsl-lms7002m-sim`, and the MMCM behind DRP (`AGENTS.md`, open items) |
 | Hardware qualification | — | Not authorized |
