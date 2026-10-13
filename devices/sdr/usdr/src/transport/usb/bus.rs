@@ -1,7 +1,11 @@
 //! Serialized USB register transactions and the uSDR's SPI/I²C completions.
 
+#[cfg(feature = "mio")]
+use std::any::Any;
 use std::fmt;
 use std::io;
+#[cfg(feature = "mio")]
+use std::mem;
 #[cfg(feature = "mio")]
 use std::sync::Arc;
 use std::thread;
@@ -21,12 +25,14 @@ use super::protocol::I2cCache;
 use super::rx::Rx;
 use super::tx::{self, Tx, TxDevice, TxStatus};
 #[cfg(feature = "mio")]
+use crate::board::BoardHandOver;
+#[cfg(feature = "mio")]
 use crate::chips::register::run_sequence;
 #[cfg(feature = "mio")]
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
-use crate::fpga::IdentityRead;
+use crate::fpga::{IdentityRead, IqImbalance};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill, usb_error};
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
@@ -238,6 +244,70 @@ impl UsbIo for Queues {
     }
 }
 
+/// A USB bus's control-plane session and transport on their way to a native handle, with
+/// the board state it carries on: from [`UsbBus::into_native`], or from a powered
+/// [`Device`](crate::Device) through [`UsbHandOver::from_device_bus`].
+#[cfg(feature = "mio")]
+pub(crate) struct UsbHandOver {
+    /// The session and board state the handle continues.
+    pub(super) session: Session,
+    /// The transport, its queues still open.
+    pub(super) io: Box<dyn UsbIo>,
+}
+
+#[cfg(feature = "mio")]
+impl UsbHandOver {
+    /// Takes the session and transport of the USB bus `bus` is, with `board`'s state,
+    /// leaving `bus` released.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Open`], leaving `bus` as it was, if it is not a [`UsbBus`] or lost
+    /// synchronization.
+    pub(crate) fn from_device_bus(bus: &mut dyn Bus, board: BoardHandOver) -> Result<Self, Error> {
+        bus.as_any_mut()
+            .and_then(|any| any.downcast_mut::<UsbBus>())
+            .ok_or(Error::Open(BusError::Unsupported(
+                "only a USB device hands over to a native handle",
+            )))?
+            .release(board)
+    }
+
+    /// Reopens the transport's device for a native handle and attaches it to `registry`
+    /// under `token`, as [`UsbBus::into_native`] describes.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Open`] if a stream is open or awaiting cleanup, the endpoints cannot be
+    /// reopened, the device already has a reactor, or registration fails.
+    pub(crate) fn attach(
+        self,
+        registry: &Registry,
+        token: Token,
+        waker: Arc<Waker>,
+    ) -> Result<NativeUsb, Error> {
+        let interface = self.io.into_interface().map_err(Error::Open)?;
+        let queues = native::Queues::new(interface).map_err(Error::Open)?;
+        NativeUsb::attach(queues, self.session, registry, token, waker).map_err(Error::Open)
+    }
+}
+
+/// What a [`UsbBus`] holds once its transport went to a native handle: nothing, so every
+/// transfer fails. The released bus refuses before reaching it.
+#[cfg(feature = "mio")]
+struct Released;
+
+#[cfg(feature = "mio")]
+impl UsbIo for Released {
+    fn write(&mut self, _: &[u8], _: Duration) -> Result<(), BusError> {
+        Err(BusError::Disconnected)
+    }
+
+    fn read(&mut self, _: Reply, _: Duration) -> Result<Vec<u8>, BusError> {
+        Err(BusError::Disconnected)
+    }
+}
+
 /// A uSDR reached over USB. Owns interface 0 and its serialized control-plane queues.
 ///
 /// Supports register/SPI/I²C operations and RX and TX streaming. An ambiguous control
@@ -373,16 +443,14 @@ impl UsbBus {
         token: Token,
         waker: Arc<Waker>,
     ) -> Result<NativeUsb, Error> {
-        let (session, io) = self.hand_over()?;
-        let interface = io.into_interface().map_err(Error::Open)?;
-        let queues = native::Queues::new(interface).map_err(Error::Open)?;
-        NativeUsb::attach(queues, session, registry, token, waker).map_err(Error::Open)
+        self.hand_over()?.attach(registry, token, waker)
     }
 
     /// Identifies the gateware and checks the sensor over this bus, as `Board::identify`
-    /// does, then gives up its control-plane session and transport.
+    /// does, then gives up its control-plane session and transport, carrying no board
+    /// state beyond the identity: a stream group's DSP corrections are a fresh board's.
     #[cfg(feature = "mio")]
-    pub(super) fn hand_over(mut self) -> Result<(Session, Box<dyn UsbIo>), Error> {
+    pub(super) fn hand_over(mut self) -> Result<UsbHandOver, Error> {
         self.ready().map_err(Error::Open)?;
         let mut identity = IdentityRead::default();
         run_sequence(&mut self, &mut identity)?;
@@ -394,15 +462,35 @@ impl UsbBus {
             return Err(Error::UnsupportedRevision(revision));
         }
         Tmp114::usdr().check_id(&mut self)?;
-        let session = Session {
-            i2c: self.i2c,
-            next_sequence: self.next_sequence,
-            next_id: self.next_id,
+        self.release(BoardHandOver {
             rev3: revision == 3,
             extended_tx_core: identity.has_extended_tx_core(),
-            tx_status: self.tx_status,
+            rx_iq_imbalance: IqImbalance::default(),
+            tx_iq_imbalance: IqImbalance::default(),
+        })
+    }
+
+    /// Gives up this bus's control-plane session and transport, with `board`'s state, to
+    /// a native handle, leaving the bus released: it refuses every operation. A bus that
+    /// lost synchronization keeps its transport and refuses.
+    #[cfg(feature = "mio")]
+    fn release(&mut self, board: BoardHandOver) -> Result<UsbHandOver, Error> {
+        self.ready().map_err(Error::Open)?;
+        self.healthy = false;
+        let session = Session {
+            i2c: mem::take(&mut self.i2c),
+            next_sequence: self.next_sequence.take(),
+            next_id: self.next_id,
+            rev3: board.rev3,
+            extended_tx_core: board.extended_tx_core,
+            rx_iq_imbalance: board.rx_iq_imbalance,
+            tx_iq_imbalance: board.tx_iq_imbalance,
+            tx_status: mem::take(&mut self.tx_status),
         };
-        Ok((session, self.io))
+        Ok(UsbHandOver {
+            session,
+            io: mem::replace(&mut self.io, Box::new(Released)),
+        })
     }
 
     /// Matches `usb_uram_generic_create_and_init` before the board's power-up sequence.
@@ -585,6 +673,11 @@ impl RegisterIo for UsbBus {
 }
 
 impl Bus for UsbBus {
+    #[cfg(feature = "mio")]
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        Some(self)
+    }
+
     fn read_regs(&mut self, addr: u32, out: &mut [u32]) -> Result<(), BusError> {
         self.ready()?;
         Self::span(addr, out.len())?;

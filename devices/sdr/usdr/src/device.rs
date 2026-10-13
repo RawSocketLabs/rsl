@@ -1,8 +1,12 @@
 //! The radio as a caller sees it.
 
 use std::fmt;
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use mio::{Registry, Token, Waker};
 use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
@@ -20,6 +24,8 @@ use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
 use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, TxMute, TxTelemetry};
 use crate::thermal::{CoolDown, ThermalPolicy};
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use crate::transport::usb::{NativeUsb, UsbHandOver};
 
 /// A powered uSDR.
 ///
@@ -844,6 +850,54 @@ impl Device {
         };
         let limits = self.thermal.limits();
         cool_down.wait(self.board(), limits)
+    }
+
+    /// Hands this USB device, powered and set up, to a [`NativeUsb`] driven by the caller's
+    /// Mio reactor (feature `mio`), as
+    /// [`UsbBus::into_native`](crate::transport::usb::UsbBus::into_native) does a bare
+    /// bus: `registry` registers it under `token`, and the handle's worker reports through
+    /// `waker`. Set the board up first (sample rate, tuning, gains, calibration,
+    /// corrections); the handle then streams on it.
+    ///
+    /// The handle continues this device's USB session (notification sequence, I²C table,
+    /// operation identities, TX status throttle) and carries on what its stream group
+    /// needs of the board: the identity facts and both chains' IQ corrections, which its
+    /// stream create writes again as [`Device::create_streams`] does. It runs no I/O of its
+    /// own before the handle attaches. The board stays powered under the handle, without
+    /// a thermal policy; closing the handle does not power it down, and the RF chains stay
+    /// as this device left them (the handle's create neither powers, tunes nor calibrates
+    /// them). There is no way back to a `Device`: reopen the board to power it down.
+    ///
+    /// # Errors
+    ///
+    /// Before giving the bus up, powering the board down as dropping the device does:
+    /// [`Error::AlreadyStreaming`] while a stream group exists (stop it first);
+    /// [`Error::Open`] if the device is not on a USB bus or its bus lost synchronization.
+    /// Then, with the board left powered: [`Error::Open`] if the endpoints cannot be
+    /// reopened, the device already has a reactor, or registration fails.
+    #[cfg(all(feature = "mio", target_os = "linux"))]
+    pub fn into_native(
+        mut self,
+        registry: &Registry,
+        token: Token,
+        waker: Arc<Waker>,
+    ) -> Result<NativeUsb, Error> {
+        self.hand_over_usb()?.attach(registry, token, waker)
+    }
+
+    /// Gives the board's USB session and transport up, with what a native handle carries
+    /// on, leaving the board powered and this device without it.
+    #[cfg(all(feature = "mio", target_os = "linux"))]
+    pub(crate) fn hand_over_usb(&mut self) -> Result<UsbHandOver, Error> {
+        let board = self.board();
+        if board.has_streams() {
+            return Err(Error::AlreadyStreaming);
+        }
+        let (state, bus) = board.hand_over();
+        let handed = UsbHandOver::from_device_bus(bus, state)?;
+        // The board stays powered under the handle: nothing is left to power it down.
+        self.board = None;
+        Ok(handed)
     }
 
     /// Powers the board down.

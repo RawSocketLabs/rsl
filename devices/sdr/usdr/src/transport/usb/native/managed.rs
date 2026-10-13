@@ -11,6 +11,7 @@ use mio::{Events, Poll, Registry, Token, Waker};
 
 use super::super::UsbBus;
 use super::{NativeEvent, NativeUsb};
+use crate::device::Device;
 use crate::error::Error;
 use crate::lowlevel::BusError;
 
@@ -54,6 +55,17 @@ impl ManagedUsb {
     /// [`UsbBus::into_native`].
     pub fn new(bus: UsbBus) -> Result<Self, Error> {
         Self::start(|registry, token, waker| bus.into_native(registry, token, waker))
+    }
+
+    /// Hands a powered, set-up USB `device` to a [`NativeUsb`] on a new reactor of its
+    /// own, as [`Device::into_native`] does.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Open`] if the reactor cannot be created, the device then powered down as
+    /// dropping it does; otherwise as [`Device::into_native`].
+    pub fn from_device(device: Device) -> Result<Self, Error> {
+        Self::start(|registry, token, waker| device.into_native(registry, token, waker))
     }
 
     /// Creates the reactor and its Waker, then attaches the handle `attach` makes.

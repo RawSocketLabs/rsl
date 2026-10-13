@@ -18,11 +18,13 @@ use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
 use super::{BoardUsb, simulated_device};
 use crate::Device;
+use crate::board::RxThrottle;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
+use crate::fpga::IqImbalance;
 use crate::lowlevel::{Bus, BusError, TxFill};
 use crate::reference::ReferenceClock;
-use crate::stream::{HostFormat, RxConfig, StreamsConfig, SyncMode, TxConfig, WireFormat};
+use crate::stream::{HostFormat, RxConfig, StreamsConfig, SyncMode, TxConfig, TxMute, WireFormat};
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
@@ -99,13 +101,14 @@ struct Record {
 }
 
 /// Whole-transfer stand-in for the native queue owner; genuine production machines run above.
-struct Fake {
+/// `I` is the transfer boundary: a fresh board model, or the one a blocking bus handed over.
+struct Fake<I = BoardUsb> {
     /// Real OS descriptor, registered as the fake's readiness; not a fake Waker source.
     fd: UnixStream,
     /// Retains its peer so readiness is writable rather than peer-closed.
     _peer: UnixStream,
     /// Existing independently modeled board at the whole-transfer boundary.
-    io: BoardUsb,
+    io: I,
     /// One completion, never an unbounded synthetic transfer queue.
     completion: Option<Completion>,
     /// Optional empty/exhausted turns before taking that completion.
@@ -134,10 +137,7 @@ struct Fake {
 impl Fake {
     /// Builds a fresh board and a local kernel readiness source, with no hardware effects.
     fn new() -> (Self, Arc<Mutex<Record>>, mpsc::Receiver<ThreadId>) {
-        let (fd, peer) = UnixStream::pair().unwrap();
-        let record = Arc::new(Mutex::new(Record::default()));
-        let (dropped, observed) = mpsc::sync_channel(1);
-        let io = BoardUsb {
+        Self::over(BoardUsb {
             script: Arc::default(),
             rx: None,
             tx: None,
@@ -147,7 +147,16 @@ impl Fake {
             sequence: 0,
             lut: 0,
             index: 0,
-        };
+        })
+    }
+}
+
+impl<I> Fake<I> {
+    /// A local kernel readiness source over the transfer boundary `io`.
+    fn over(io: I) -> (Self, Arc<Mutex<Record>>, mpsc::Receiver<ThreadId>) {
+        let (fd, peer) = UnixStream::pair().unwrap();
+        let record = Arc::new(Mutex::new(Record::default()));
+        let (dropped, observed) = mpsc::sync_channel(1);
         (
             Self {
                 fd,
@@ -218,7 +227,7 @@ impl Source for FakeSource {
     }
 }
 
-impl Backend for Fake {
+impl<I: UsbIo + 'static> Backend for Fake<I> {
     fn readiness(&self) -> Result<Box<dyn Source + Send>, BusError> {
         Ok(Box::new(FakeSource(
             self.fd.as_raw_fd(),
@@ -347,7 +356,7 @@ fn filing(step: Result<(), BusError>) -> Result<Filing, BusError> {
 }
 
 /// Drop remains on the owning worker even when a reactor/observer disappears.
-impl Drop for Fake {
+impl<I> Drop for Fake<I> {
     fn drop(&mut self) {
         self.record("drop");
         let _ = self.dropped.try_send(thread::current().id());
@@ -759,6 +768,8 @@ fn session() -> Session {
         next_id: 0,
         rev3: true,
         extended_tx_core: false,
+        rx_iq_imbalance: IqImbalance::default(),
+        tx_iq_imbalance: IqImbalance::default(),
         tx_status: TxStatus::default(),
     }
 }
@@ -882,7 +893,7 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
     let bus = UsbBus::from_io(Box::new(io));
     // The hand-over reads the build and HWID registers, then checks the sensor with one I²C
     // read whose notification record sets the baseline.
-    let (carried, _) = bus.hand_over().unwrap();
+    let carried = bus.hand_over().unwrap().session;
     assert_eq!(
         carried.next_id, 3,
         "register and I2C operations draw from one identity sequence"
@@ -1173,7 +1184,7 @@ fn handing_over_refuses_an_unsupported_revision_and_carries_revision_3() {
         board.write_reg(19, hwid | 0x4000_0000 | revision << 8);
         let mut bus = UsbBus::from_io(Box::new(board_usb(board)));
         bus.initialize().unwrap();
-        let (carried, _) = bus.hand_over().unwrap();
+        let carried = bus.hand_over().unwrap().session;
         assert_eq!(carried.rev3, rev3, "revision {revision}");
     }
     let mut board = SimBoard::new(BoardRevision::Rev3);
@@ -1766,18 +1777,14 @@ fn a_failed_status_read_closes_the_handle_and_is_no_full_ring() {
     assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
 }
 
-/// The stream engine's share of a blocking trace: what the native group performs. It
-/// leaves out the RF chains' power, calibration and tuning (SPI and I²C), their waits, and
-/// the DSP chains' configuration ports (registers 56 and 57: IQ correction, the TX
-/// constant generator), which need board state the native handle does not hold.
+/// The gateware's share of a blocking trace, its register reads and writes: what the
+/// native group performs. It leaves out the RF chains' power, calibration and tuning
+/// (LMS6002D SPI and clock I²C) and their waits, which need the LMS6002D state only the
+/// blocking device holds.
 fn engine_operations(board: &Mutex<SimBoard>, start: usize) -> Vec<Op> {
     operations(board, start)
         .into_iter()
-        .filter(|op| match op {
-            Op::RegWrite { addr, .. } => !matches!(addr, 56 | 57),
-            Op::RegRead { .. } => true,
-            Op::Spi { .. } | Op::I2c { .. } | Op::Sleep { .. } => false,
-        })
+        .filter(|op| matches!(op, Op::RegWrite { .. } | Op::RegRead { .. }))
         .collect()
 }
 
@@ -2134,4 +2141,285 @@ fn group_operations_refuse_before_any_io_as_the_blocking_group_does() {
         Some(&Op::RegWrite { addr: 5, value: 4 }),
         "the DMA control register's ready bit, as Device::set_rx_ready writes it"
     );
+}
+
+/// Drives the handle until its pending operation ends, passing over the RX blocks a
+/// started group delivers meanwhile.
+fn settle(native: &mut NativeUsb, reactor: &mut Poll) -> NativeEvent {
+    loop {
+        match finish(native, reactor) {
+            NativeEvent::Received(_) => {}
+            event => return event,
+        }
+    }
+}
+
+/// The board's trace length: where the next operation's ops start.
+fn mark(board: &Mutex<SimBoard>) -> usize {
+    board.lock().unwrap().trace().len()
+}
+
+#[test]
+fn native_mute_and_throttle_write_what_the_blocking_device_writes() {
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config())
+        .with_sync(SyncMode::All);
+    let throttle = Some(RxThrottle { send: 1, skip: 2 });
+    let (mut device, blocking, _) = tuned_device();
+    device.create_streams(config).unwrap();
+    let start = mark(&blocking);
+    device.set_tx_mute(TxMute::Neither).unwrap();
+    let unmuted = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.start_streams().unwrap();
+    let started = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.set_rx_throttle(throttle).unwrap();
+    let throttled = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.set_rx_throttle(None).unwrap();
+    let released = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.set_tx_mute(TxMute::Both).unwrap();
+    let muted = engine_operations(&blocking, start);
+
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    native.start_create_streams(config, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    let start = mark(&board);
+    native
+        .start_tx_mute(TxMute::Neither, Instant::now())
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::TxMuted(Ok(()))
+    ));
+    assert_eq!(
+        operations(&board, start),
+        unmuted,
+        "a mute before the start"
+    );
+    let start = mark(&board);
+    native.start_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsStarted(Ok(()))
+    ));
+    assert_eq!(
+        operations(&board, start),
+        started,
+        "the start applies the mute the group kept, as the blocking start does"
+    );
+    let start = mark(&board);
+    native.start_rx_throttle(throttle, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::RxThrottled(Ok(()))
+    ));
+    assert_eq!(operations(&board, start), throttled, "a throttle");
+    let start = mark(&board);
+    native.start_rx_throttle(None, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::RxThrottled(Ok(()))
+    ));
+    assert_eq!(operations(&board, start), released, "the throttle released");
+    let start = mark(&board);
+    native.start_tx_mute(TxMute::Both, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::TxMuted(Ok(()))
+    ));
+    assert_eq!(operations(&board, start), muted, "a mute while running");
+}
+
+#[test]
+fn mute_and_throttle_refuse_before_any_io_without_their_stream() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, record, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    assert!(matches!(
+        native.start_tx_mute(TxMute::A, Instant::now()),
+        Err(Error::NotStreaming)
+    ));
+    assert!(matches!(
+        native.start_rx_throttle(None, Instant::now()),
+        Err(Error::NotStreaming)
+    ));
+    native
+        .start_create_streams(StreamsConfig::tx(tx_config()), Instant::now())
+        .unwrap();
+    assert!(matches!(
+        native.start_tx_mute(TxMute::A, Instant::now()),
+        Err(Error::Busy)
+    ));
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    let (start, submitted) = (mark(&board), submits(&record));
+    assert!(
+        matches!(
+            native.start_rx_throttle(None, Instant::now()),
+            Err(Error::NotStreaming)
+        ),
+        "a TX-only group has no RX stream to throttle, as on the blocking device"
+    );
+    assert_eq!(operations(&board, start), [], "nothing reached the board");
+    assert_eq!(submits(&record), submitted, "nothing reached the worker");
+}
+
+/// Forwards a handed-over transport, so the native fake drives the very board model the
+/// blocking bus used, its notification counter and I²C table included.
+impl UsbIo for Box<dyn UsbIo> {
+    fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
+        (**self).write(packet, timeout)
+    }
+
+    fn read(&mut self, reply: Endpoint, timeout: Duration) -> Result<Vec<u8>, BusError> {
+        (**self).read(reply, timeout)
+    }
+
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        (**self).rx_open(block_bytes)
+    }
+
+    fn rx_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        (**self).rx_recv(timeout, consume)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        (**self).rx_close()
+    }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        (**self).tx_open(block_bytes, sample_bytes)
+    }
+
+    fn tx_acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        (**self).tx_acquire(timeout)
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        (**self).tx_commit(time, status, fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        (**self).tx_close()
+    }
+}
+
+/// A device set up with the blocking API: both chains' rate, tuning and IQ corrections,
+/// the corrections off their defaults so a stream create's DSP writes show them.
+fn set_up_device() -> (Device, Arc<Mutex<SimBoard>>) {
+    let (mut device, board, _) = simulated_device(BoardRevision::Rev3);
+    device.set_sample_rate(20_000_000).unwrap();
+    device.set_rx_frequency(1_000_000_000).unwrap();
+    device.set_tx_frequency(1_200_000_000).unwrap();
+    device
+        .set_rx_iq_imbalance(IqImbalance {
+            amplitude: 30_000,
+            phase: -2_000,
+        })
+        .unwrap();
+    device
+        .set_tx_iq_imbalance(IqImbalance {
+            amplitude: -12_000,
+            phase: 1_500,
+        })
+        .unwrap();
+    (device, board)
+}
+
+#[test]
+fn a_handed_over_device_streams_as_the_blocking_device_does() {
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config())
+        .with_sync(SyncMode::All);
+    let (mut device, blocking) = set_up_device();
+    let start = mark(&blocking);
+    device.create_streams(config).unwrap();
+    let created = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.start_streams().unwrap();
+    let started = engine_operations(&blocking, start);
+    let start = mark(&blocking);
+    device.stop_streams().unwrap();
+    let stopped = engine_operations(&blocking, start);
+
+    let (mut device, board) = set_up_device();
+    let start = mark(&board);
+    let handed = device.hand_over_usb().unwrap();
+    drop(device);
+    assert_eq!(
+        operations(&board, start),
+        [],
+        "the hand-over performs no I/O, and the device leaves the board powered"
+    );
+    let (mut reactor, wake) = reactor();
+    let (fake, _, _) = Fake::over(handed.io);
+    let mut native =
+        NativeUsb::attach(fake, handed.session, reactor.registry(), DEVICE, wake).unwrap();
+    native.start_temperature(Instant::now()).unwrap();
+    assert!(
+        reading(&mut native, &mut reactor).is_ok(),
+        "the handle continues the device's notification sequence and I2C table"
+    );
+    let start = mark(&board);
+    native.start_create_streams(config, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    assert_eq!(
+        operations(&board, start),
+        created,
+        "the create writes the gateware as the blocking create does, the carried \
+         IQ corrections included"
+    );
+    let start = mark(&board);
+    native.start_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsStarted(Ok(()))
+    ));
+    assert_eq!(operations(&board, start), started, "the start");
+    let start = mark(&board);
+    native.start_stop_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsStopped(Ok(()))
+    ));
+    assert_eq!(operations(&board, start), stopped, "the stop");
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_device_with_a_stream_group_keeps_its_bus() {
+    let (mut device, board, _) = tuned_device();
+    device
+        .create_streams(StreamsConfig::rx(rx_config()))
+        .unwrap();
+    let start = mark(&board);
+    assert!(matches!(
+        device.hand_over_usb(),
+        Err(Error::AlreadyStreaming)
+    ));
+    assert_eq!(operations(&board, start), [], "refused before any I/O");
+    device
+        .stop_streams()
+        .expect("the device still holds its bus and group");
 }

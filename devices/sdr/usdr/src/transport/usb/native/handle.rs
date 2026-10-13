@@ -27,7 +27,7 @@ use crate::board::Board;
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
-use crate::fpga::{self, IdentityRead};
+use crate::fpga::{self, IdentityRead, IqImbalance, StreamPhyWrites};
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
@@ -42,7 +42,8 @@ const BUDGET: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
 
 /// Control-plane state carried over from the blocking bus, so the native session continues
 /// its notification sequence baseline, I²C address table, operation identities and TX
-/// status throttle.
+/// status throttle, and the board state a stream group needs: the identity facts and the
+/// chains' IQ corrections.
 pub(in super::super) struct Session {
     /// The simple I²C core's address table.
     pub i2c: I2cCache,
@@ -56,6 +57,12 @@ pub(in super::super) struct Session {
     /// The gateware's TX core is the extended one, read from the hardware ID at hand-over:
     /// a stream group refuses TX on it before any I/O, as the blocking device does.
     pub extended_tx_core: bool,
+    /// The RX chain's IQ correction, which a stream group's RX create writes again, as
+    /// the blocking device's does: carried on from a handed-over device, else a fresh
+    /// board's.
+    pub rx_iq_imbalance: IqImbalance,
+    /// The TX chain's IQ correction, which a TX create writes again; likewise.
+    pub tx_iq_imbalance: IqImbalance,
     /// The TX core's throttled status words, per device as in libusdr.
     pub tx_status: TxStatus,
 }
@@ -104,6 +111,11 @@ pub enum NativeEvent {
     StreamsStarted(Result<(), Error>),
     /// The RX DMA engine was told the host is ready, or the write failed.
     RxReady(Result<(), Error>),
+    /// The TX core's lanes were muted as asked, or the write failed; the group keeps the
+    /// setting for its start either way.
+    TxMuted(Result<(), Error>),
+    /// The RX front end's bursts were throttled as asked, or the write failed.
+    RxThrottled(Result<(), Error>),
     /// The stream group stopped: every step was attempted and the group is gone; the first
     /// failure, if any. A stream whose transport failed to close stays held; close it
     /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`]. A register
@@ -149,6 +161,9 @@ enum SequenceOperation {
     ReferenceClock(ClockSequence<SWITCH_WRITES>),
     /// A stream group's engine registers, through the index window. A group step.
     Engine(Windowed<EngineSequence>),
+    /// A stream create's DSP-port writes (IQ correction, TX constant generator off). A
+    /// group step.
+    Dsp(StreamPhyWrites),
     /// A TX create's gateware read, then its minimum-build check. A group step.
     TxGate(IdentityRead),
 }
@@ -172,6 +187,7 @@ impl SequenceOperation {
             Self::Identity(identity) | Self::TxGate(identity) => identity.next(),
             Self::ReferenceClock(switch) => switch.next(),
             Self::Engine(engine) => engine.next(),
+            Self::Dsp(dsp) => dsp.next(),
         }
     }
 
@@ -181,6 +197,7 @@ impl SequenceOperation {
             Self::Identity(identity) | Self::TxGate(identity) => identity.complete(result),
             Self::ReferenceClock(switch) => switch.complete(result),
             Self::Engine(engine) => engine.complete(result),
+            Self::Dsp(dsp) => dsp.complete(result),
         }
         .map_err(Error::from)
     }
@@ -224,7 +241,7 @@ impl SequenceOperation {
                     .expect("invariant: a finished identity sequence read both words")
             })),
             Self::ReferenceClock(_) => NativeEvent::ReferenceClock(result),
-            Self::Engine(_) | Self::TxGate(_) => {
+            Self::Engine(_) | Self::Dsp(_) | Self::TxGate(_) => {
                 unreachable!("invariant: group steps end through their group's run")
             }
         }
@@ -255,15 +272,18 @@ enum StreamState {
 }
 
 /// A uSDR's USB control plane and streams driven by a caller-owned Mio reactor (feature
-/// `mio`), made by [`UsbBus::into_native`](super::super::UsbBus::into_native).
+/// `mio`), made by [`UsbBus::into_native`](super::super::UsbBus::into_native) from a bare
+/// bus, or by [`Device::into_native`](crate::Device::into_native) from a powered, set-up
+/// device.
 ///
 /// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
-/// the reference clock, creates, starts and stops a stream group's engine registers as
-/// [`Device`](crate::Device)'s stream group does (the same portable sequences), and runs
+/// the reference clock, creates, starts and stops a stream group's engine registers and
+/// DSP corrections as [`Device`](crate::Device)'s stream group does (the same sequences),
+/// mutes the TX core's lanes and throttles RX bursts as the device does, and runs
 /// the RX and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed
 /// and throttled as the blocking bus frames them). It powers nothing, so it applies no
-/// thermal policy, and it neither powers nor calibrates the RF chains nor writes their DSP
-/// corrections: those stay as the blocking device left them. The reactor thread only
+/// thermal policy, and it neither powers, tunes nor calibrates the RF chains: those stay
+/// as the blocking device left them. The reactor thread only
 /// registers, schedules and observes; a worker thread owns the USB queues and performs
 /// every USB call, stream cancellation and cleanup included. Waits inside an operation are
 /// deadlines the caller's reactor honours, never sleeps.

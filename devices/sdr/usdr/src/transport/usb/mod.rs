@@ -37,11 +37,12 @@
 //! Register, SPI and I²C operations run the same portable machines on every path: the
 //! blocking bus pumps them, and the native handle hands their transfers to its worker.
 //!
-//! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`: an unstable pilot driven by
+//! Feature `mio` adds `NativeUsb` through `UsbBus::into_native`, or `Device::into_native`
+//! from a powered, set-up device: an unstable pilot driven by
 //! a caller-owned Mio reactor, with every USB call on a worker thread. It reads the TMP114
 //! and the gateware identity and switches the reference clock, running portable sequences
-//! one transfer or caller-time wait at a time; creates, starts and stops a stream group's
-//! engine with the blocking device's own sequences; and opens, receives on, sends on and
+//! one transfer or caller-time wait at a time; creates, starts, mutes, throttles and stops
+//! a stream group with the blocking device's own sequences; and opens, receives on, sends on and
 //! closes the RX and TX streams at the transport, through the same `Rx`/`Tx` adapters and
 //! send order as the blocking bus. It takes over the whole device; it powers nothing, and
 //! leaves the RF chains as the blocking device set them. `ManagedUsb` drives one on a
@@ -57,6 +58,8 @@ mod rx;
 mod tx;
 
 pub use bus::UsbBus;
+#[cfg(feature = "mio")]
+pub(crate) use bus::UsbHandOver;
 #[cfg(feature = "mio")]
 pub use native::{ManagedUsb, NativeEvent, NativeUsb, RxBlock};
 
