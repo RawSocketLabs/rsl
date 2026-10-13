@@ -5,18 +5,20 @@
 > ADC/clock/power/RX driver") govern the port programme; this file holds the family's own
 > facts.
 
-Groundwork for a pure-Rust port of libusdr's LSDr: the board simulator and the libusdr
-reference oracle. The driver `rsl-lsdr` is **not started**; the shared seam it waited for
-now exists (`rsl-lowlevel`, `../../lowlevel`). The board is a **receive-only** ADC card:
-ADS42LBx9 dual-channel ADC(s), Si549 oscillator (ADC sample clock), TPS6594 PMIC, and on
-dual-ADC fits an LMK04832 clock generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
+A pure-Rust port of libusdr's LSDr, its board simulator and the libusdr reference oracle.
+The driver is a **first slice**: open up to libusdr's front-end probe, ADC power, the
+receive PGA gain and close; see [PORTING.md](PORTING.md) for done, divergences and
+remaining. The board is a **receive-only** ADC card: ADS42LBx9 dual-channel ADC(s), Si549
+oscillator (ADC sample clock), TPS6594 PMIC, and on dual-ADC fits an LMK04832 clock
+generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 `dac38rf_present` never set); do not invent TX support. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-lsdr` (planned, not in tree) | The driver |
+| `.` | `rsl-lsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `bnb` |
 | `sim/` | `rsl-lsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers/GPO, ADS42LBx9 and LMK04832 over SPI, TPS6594 and Si549 over I2C, virtual clock, op trace |
 | `oracle/` | `rsl-lsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_da09_4_ad45_2` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `nostd-check/` | `rsl-lsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-xsdr`'s; `scripts/ci/portable.py lsdr` holds its dependencies to the driver's |
 
 ## Layout decision (2026-10-12)
 
@@ -26,7 +28,38 @@ relative path. Never copy it here or edit it; a PIN bump there moves this oracle
 must re-bless the goldens below in the same change. The shim and `oracle/src/lib.rs` copy
 the XSDR oracle's (itself the uSDR shim's pattern); a shared harness is extracted later. CI runs the oracle as the `lsdr-oracle`
 profile (`scripts/ci/plan.py` `LSDR_ORACLE`), with an edge to the uSDR oracle so a
-vendored C change selects it.
+vendored C change selects it; a change to `rsl-lsdr` selects it too (its parity tests
+depend on the driver), and the fixture as `lsdr-portable` (host only; its thumbv7em check
+joins the release-only `no-std` profile on an explicit LSDr release, which no product
+enables yet).
+
+## Driver layout
+
+Mirrors `rsl-xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
+
+- `src/device.rs`: `Device`, the public API: `open` (with `OpenOptions`, libusdr's `lmk=1`
+  as `probe_clock_generator`), `fitted`, `set_power`, `set_rx_pga_gain` and `close`. It
+  owns the bus (`Box<dyn Bus>`) and runs the portable sequences with `rsl-lowlevel`'s
+  blocking `run_sequence`.
+- `src/board.rs`: the LSDr's wiring and setpoints (`LSDR_WIRING`, `LSDR_SUPPLIES`), each
+  citing the libusdr enum or call it reproduces.
+- `src/portable/`: hand-written sans-I/O `Sequence` machines (`Supplies`, `Probes`,
+  `AdcPower`, `SetPga`, and `Single` for the liveness read and each close write) and the
+  facts they need: `fpga` (status word, GPO banks and bits) and one module per chip
+  (`tps6594`, `si549`, `ads42lbx9`, `lmk04832` with the LMK04832 presence test
+  `ClockGeneratorProbe`). Only the LSDr uses these chips, so their values stay here until
+  a second driver needs them (`../../AGENTS.md`). Core only, no allocation (`bnb`'s
+  bitfields need `alloc`); imports stay within the tree and the shared `no_std` crates
+  (`nostd-check` compiles it unchanged).
+- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `tests/common/sim_bus.rs`: `Bus` over `rsl-lsdr-sim`; `oracle/tests/session_parity.rs`
+  includes it with `#[path]`.
+
+Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
+libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
+`PORTING.md`. uSDR-only code is not reached into; code the uSDR driver also needs (the
+FIR gearbox, the front-end probe, the RX stream core) is extracted to a shared crate,
+not copied (`PORTING.md`).
 
 ## How libusdr selects the family, and what it probes
 
@@ -132,14 +165,24 @@ Not covered: `/dm/rate/master` (Si549 frequency, FIR gearbox, LMK layout and loc
 ADC normal mode, LVDS PHY), RX gain/PGA and NCO, `/dm/stat` PHY tap sweep, temperature,
 streams, front ends. `oracle/tests/identify.rs` covers family selection (`lsdr`, one RX
 and zero TX channels), the LMK opt-in, an absent LMK, no front end and the dead link;
-`oracle/tests/power.rs` covers supply/reset ordering and the closed state.
+`oracle/tests/power.rs` covers supply/reset ordering and the closed state. The driver is
+compared with live libusdr, not with these files: `oracle/tests/session_parity.rs` covers
+single-ADC golden lines 10–26 (open up to the front-end probe), 57–63 (power-up) and
+65–68 (close), dual-ADC `lmk=1` lines 10–33, 64–70 and 72–75, plus the other
+clock-generator fits, power-down, PGA gains and the dead link, none of which the goldens
+hold.
 
 ## Verify
 
 ```sh
-cargo fmt -p rsl-lsdr-sim --check
-cargo clippy -p rsl-lsdr-sim --all-targets -- -D warnings
-cargo test -p rsl-lsdr-sim
+cargo fmt -p rsl-lsdr -p rsl-lsdr-sim --check
+cargo clippy -p rsl-lsdr -p rsl-lsdr-sim --all-targets -- -D warnings
+cargo test -p rsl-lsdr -p rsl-lsdr-sim
+python3 scripts/ci/portable.py lsdr
+cargo fmt --manifest-path devices/sdr/lsdr/nostd-check/Cargo.toml -- --check
+cargo clippy --manifest-path devices/sdr/lsdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path devices/sdr/lsdr/nostd-check/Cargo.toml --locked
+cargo check --manifest-path devices/sdr/lsdr/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 cargo fmt --manifest-path devices/sdr/lsdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/lsdr/oracle/Cargo.toml --locked --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/lsdr/oracle/Cargo.toml --locked
@@ -152,15 +195,17 @@ by a lock: one is open at a time per process.
 
 ## Open items and blockers
 
-- `rsl-lsdr` can build on `rsl-lowlevel` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must
-  not depend on `rsl-usdr`.
+- `rsl-lsdr` builds on `rsl-lowlevel` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must not
+  depend on `rsl-usdr`. What it still needs from code `rsl-usdr` owns (FIR gearbox, front-end
+  probe, RX stream core) is listed in `PORTING.md`.
 - LMK04832 ID byte order: libusdr's `lmk04832_read16` assembles `R(addr+1) << 8 | R(addr)`,
   so it accepts `PROD_HI` = 0x63. If TI's datasheet (not vendored) gives `PROD_HI` = 0xD1,
   as the register names suggest, libusdr would report a real LMK04832 absent. Resolve with
-  the datasheet or hardware before porting the probe; the sim follows the C. Open only
-  logs the result (`-ENODEV` is tolerated), so whether the C accepts the sim's ID bytes is
-  not yet observed by any test; `/dm/rate/master` coverage (which branches on
-  `lmk04832_present`) will observe it.
+  the datasheet or hardware; the sim and `rsl-lsdr`'s presence test
+  (`src/portable/lmk04832.rs`) follow the C, so the driver inherits the question. Open only
+  logs libusdr's result (`-ENODEV` is tolerated), so whether the C accepts the sim's ID bytes
+  is observed only in its log (`LMK=1`); `rsl-lsdr` reports it in `Device::fitted`, and
+  `/dm/rate/master` coverage (which branches on `lmk04832_present`) will observe the C's.
 - Reset values for the TPS6594, ADS42LBx9 and LMK04832 are not vendored (datasheets or
   register maps with defaults are needed before any sequence reads back unwritten state).
 - `/dm/rate/master` needs: the Si549 `CFG` self-clearing bits, the FIR gearbox GPO

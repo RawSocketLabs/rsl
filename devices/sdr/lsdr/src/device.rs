@@ -65,7 +65,8 @@ impl Device {
     /// # Errors
     ///
     /// [`Error::DeadLink`] when the status register reads all ones, before anything is
-    /// driven; [`Error::Bus`] when an access fails. A missing chip is not an error: see
+    /// driven; [`Error::Bus`] when an access fails, the liveness read included (libusdr
+    /// ignores that read's failure and carries on). A missing chip is not an error: see
     /// [`Self::fitted`].
     pub fn open(bus: impl Bus + 'static, options: OpenOptions) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);

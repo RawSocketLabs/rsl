@@ -25,6 +25,10 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   crate roles sit beside it (`sdr/chips/lms7002m/sim`: `rsl-lms7002m-sim`, the LMS7002M
   model the XSDR and LimeSDR sims share). Board wiring, setpoints and sequences stay in
   the drivers. A driver keeps stable internal paths by re-exporting such a crate.
+- Chip code only one driver uses stays in that driver's `src/portable/<chip>.rs` until a
+  second driver needs it, then moves to its chip crate: the LSDr's TPS6594, Si549,
+  ADS42LBx9 and LMK04832 sit in `rsl-lsdr` (2026-10-12; libusdr uses them on no other
+  board).
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `rsl-lms7002m` ports
   libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose
