@@ -44,9 +44,9 @@ enum Call {
 /// libusdr's path suffix for `channels`.
 fn suffix(channels: NcoChannels) -> &'static str {
     match channels {
-        NcoChannels::Channel0 => "/0",
-        NcoChannels::Channel1 => "/1",
-        _ => "",
+        NcoChannels::Nco0 => "/0",
+        NcoChannels::Nco1 => "/1",
+        NcoChannels::Both => "",
     }
 }
 
@@ -198,7 +198,7 @@ fn assert_calls_match(
 /// sets them back to 0.
 #[test]
 fn rx_baseband_offsets_match_libusdr() {
-    use NcoChannels::{Both, Channel0, Channel1};
+    use NcoChannels::{Both, Nco0, Nco1};
     let outcomes = assert_calls_match(
         rev3,
         Crossing::None,
@@ -206,8 +206,8 @@ fn rx_baseband_offsets_match_libusdr() {
             Call::Rate(20_000_000),
             Call::Frequency(Chain::Rx, Both, 1_000_000_000),
             Call::Baseband(Chain::Rx, Both, 1_000_000),
-            Call::Baseband(Chain::Rx, Channel1, -2_500_000),
-            Call::Baseband(Chain::Rx, Channel0, 0),
+            Call::Baseband(Chain::Rx, Nco1, -2_500_000),
+            Call::Baseband(Chain::Rx, Nco0, 0),
             Call::Rate(10_000_000),
             Call::Frequency(Chain::Rx, Both, 900_000_000),
             Call::Rate(20_000_000),
@@ -230,17 +230,17 @@ fn rx_baseband_offsets_match_libusdr() {
 /// channel's distance until that channel's LO is set again.
 #[test]
 fn rx_channel_frequencies_match_libusdr() {
-    use NcoChannels::{Channel0, Channel1};
+    use NcoChannels::{Nco0, Nco1};
     let outcomes = assert_calls_match(
         rev3,
         Crossing::None,
         &[
             Call::Rate(20_000_000),
-            Call::Frequency(Chain::Rx, Channel0, 1_000_000_000),
-            Call::Frequency(Chain::Rx, Channel1, 1_004_000_001),
-            Call::Baseband(Chain::Rx, Channel0, 500_000),
+            Call::Frequency(Chain::Rx, Nco0, 1_000_000_000),
+            Call::Frequency(Chain::Rx, Nco1, 1_004_000_001),
+            Call::Baseband(Chain::Rx, Nco0, 500_000),
             Call::Rate(10_000_000),
-            Call::Frequency(Chain::Rx, Channel0, 999_000_000),
+            Call::Frequency(Chain::Rx, Nco0, 999_000_000),
         ],
     );
     assert!(outcomes.iter().all(|(ok, _)| *ok), "every call succeeds");
@@ -249,16 +249,16 @@ fn rx_channel_frequencies_match_libusdr() {
 /// The same for TX: offsets, channel LOs and a rate change that restores both NCOs.
 #[test]
 fn tx_baseband_offsets_and_channel_frequencies_match_libusdr() {
-    use NcoChannels::{Both, Channel0, Channel1};
+    use NcoChannels::{Both, Nco0, Nco1};
     let outcomes = assert_calls_match(
         rev3,
         Crossing::None,
         &[
             Call::Rate(20_000_000),
             Call::Frequency(Chain::Tx, Both, 1_000_000_000),
-            Call::Baseband(Chain::Tx, Channel0, 1_000_000),
-            Call::Baseband(Chain::Tx, Channel1, -3_000_000),
-            Call::Frequency(Chain::Tx, Channel1, 1_010_000_000),
+            Call::Baseband(Chain::Tx, Nco0, 1_000_000),
+            Call::Baseband(Chain::Tx, Nco1, -3_000_000),
+            Call::Frequency(Chain::Tx, Nco1, 1_010_000_000),
             Call::Rate(10_000_000),
             Call::Baseband(Chain::Tx, Both, -250_000),
         ],
@@ -271,16 +271,16 @@ fn tx_baseband_offsets_and_channel_frequencies_match_libusdr() {
 /// offset, which 1 MS/s (a 32 MS/s converter) has room for.
 #[test]
 fn baseband_offsets_add_to_the_low_lo_fallback_like_libusdr() {
-    use NcoChannels::{Channel0, Channel1};
+    use NcoChannels::{Nco0, Nco1};
     let outcomes = assert_calls_match(
         rev3_unlocked_below_245m,
         Crossing::None,
         &[
             Call::Rate(1_000_000),
-            Call::Frequency(Chain::Rx, Channel0, 240_000_000),
-            Call::Baseband(Chain::Rx, Channel1, 2_000_000),
-            Call::Frequency(Chain::Tx, Channel1, 240_000_000),
-            Call::Baseband(Chain::Tx, Channel0, -2_000_000),
+            Call::Frequency(Chain::Rx, Nco0, 240_000_000),
+            Call::Baseband(Chain::Rx, Nco1, 2_000_000),
+            Call::Frequency(Chain::Tx, Nco1, 240_000_000),
+            Call::Baseband(Chain::Tx, Nco0, -2_000_000),
         ],
     );
     assert!(outcomes.iter().all(|(ok, _)| *ok), "every call succeeds");
@@ -300,5 +300,39 @@ fn offsets_before_any_tune_match_libusdr() {
             Call::Baseband(Chain::Rx, Both, 1_000_000),
             Call::Baseband(Chain::Tx, Both, 1_000_000),
         ],
+    );
+}
+
+/// The TX chain's configuration port (`REG_CFG_PHY_1`).
+const REG_TX_PHY: u32 = 57;
+
+/// An offset is recorded before its retune, so it outlives a retune that fails: at
+/// 20 MS/s a 240 MHz TX LO that cannot lock has no NCO room, so the tune and the offset's
+/// retune both fail, yet the next rate change (1 MS/s, a 32 MS/s converter, room enough)
+/// restores TX NCO 1 with the 1 MHz offset, as libusdr does.
+#[test]
+fn an_offset_set_by_a_failing_retune_reaches_the_next_rate_change_like_libusdr() {
+    use NcoChannels::{Both, Nco1};
+    let outcomes = assert_calls_match(
+        rev3_unlocked_below_245m,
+        Crossing::None,
+        &[
+            Call::Rate(20_000_000),
+            Call::Frequency(Chain::Tx, Both, 240_000_000),
+            Call::Baseband(Chain::Tx, Nco1, 1_000_000),
+            Call::Rate(1_000_000),
+        ],
+    );
+    let ok: Vec<bool> = outcomes.iter().map(|(ok, _)| *ok).collect();
+    assert_eq!(
+        ok,
+        [true, false, false, true],
+        "both tunes fail, the rates succeed"
+    );
+    // 1 MHz of 32 MS/s is 1/32 of `INT_MAX`, truncated and doubled; NCO 0 has no offset.
+    assert_eq!(
+        nco_words(&outcomes[3].1, REG_TX_PHY),
+        [0, 0x07ff_fffe],
+        "the recorded offset reaches TX NCO 1"
     );
 }

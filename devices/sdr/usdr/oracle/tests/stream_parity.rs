@@ -512,15 +512,15 @@ fn throttling_a_stream_matches_libusdr() {
     );
 }
 
-/// The explicit host-ready strobe needs a stream (libusdr's oracle has no handle to pass
-/// before one); while one runs it is the DMA control write each receive makes until the
-/// first packet, which the receive then makes again.
+/// While a stream runs, the explicit host-ready strobe is the DMA control write each
+/// receive makes until the first packet, which the receive then makes again. (Without a
+/// stream there is no libusdr handle to call it on; rsl-usdr's `Error::NotStreaming` is
+/// in `tests/stream.rs::receiving_or_stopping_without_a_stream_is_refused`.)
 #[test]
 fn an_explicit_host_ready_matches_libusdr() {
     let outcomes = assert_calls_match(
         rev3,
         &[
-            Call::Ready,
             Call::Rate(20_000_000),
             Call::Start(1024),
             Call::Ready,
@@ -529,9 +529,5 @@ fn an_explicit_host_ready_matches_libusdr() {
             Call::Stop,
         ],
     );
-    assert_eq!(
-        outcomes,
-        [false, true, true, true, true, true, true],
-        "only the strobe before the stream fails"
-    );
+    assert!(outcomes.iter().all(|&ok| ok), "every call succeeds");
 }

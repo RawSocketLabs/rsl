@@ -108,6 +108,7 @@ fn receiving_or_stopping_without_a_stream_is_refused() {
         Err(Error::NotStreaming)
     ));
     assert!(matches!(device.stop_rx_stream(), Err(Error::NotStreaming)));
+    assert!(matches!(device.set_rx_ready(), Err(Error::NotStreaming)));
     assert_eq!(device.rx_packet_samples(), None);
 }
 

@@ -235,8 +235,11 @@ impl Device {
     /// with `{rate, 0, 0, 0}`).
     ///
     /// The board has one sample clock, so the TX chain runs at this rate too, but keeps
-    /// its interpolation filter and bandwidth until [`Device::set_tx_sample_rate`] or a TX
-    /// tune, as in libusdr.
+    /// its interpolation filter (and its bandwidth, until a TX tune). As in libusdr, the
+    /// rate factor is recorded for both chains, so a later [`Device::set_tx_sample_rate`]
+    /// of the same factor loads no TX filter either: the TX chain keeps a filter for the
+    /// wrong factor, or none on a fresh board. Use [`Device::set_sample_rate`] whenever
+    /// both chains are in use.
     ///
     /// # Errors
     ///
@@ -253,12 +256,15 @@ impl Device {
     }
 
     /// Sets the TX sample rate, in samples per second (libusdr's `/dm/rate/rxtxadcdac`
-    /// with `{0, rate, 0, 0}`): the TX interpolation filter for it, unless the last rate
-    /// already had the same factor, and the TX bandwidth if it follows the rate.
+    /// with `{0, rate, 0, 0}`): the TX interpolation filter for it, unless the last rate,
+    /// for either chain, had the same factor, and the TX bandwidth if it follows the rate.
     ///
     /// The board has one sample clock, so the RX chain runs at this rate too, keeping its
     /// decimation filter and bandwidth; as in libusdr, the receiver is powered all the
-    /// same.
+    /// same, and the factor is recorded for both chains, so a later
+    /// [`Device::set_rx_sample_rate`] of the same factor loads no RX filter: the receiver
+    /// keeps a filter for the wrong factor, or none on a fresh board. Use
+    /// [`Device::set_sample_rate`] whenever both chains are in use.
     ///
     /// # Errors
     ///
@@ -269,7 +275,9 @@ impl Device {
     }
 
     /// Sets both chains' sample rate, in samples per second (libusdr's `/dm/rate/master`):
-    /// [`Device::set_rx_sample_rate`] and [`Device::set_tx_sample_rate`] in one step.
+    /// [`Device::set_rx_sample_rate`] and [`Device::set_tx_sample_rate`] in one step. Used
+    /// for every rate change, it keeps both chains' filters for the current factor; after
+    /// a single-chain rate of the same factor it loads neither, as libusdr.
     ///
     /// The board has one sample clock, so there is no call for different RX and TX rates:
     /// libusdr, handed two, runs both chains at the RX rate. It also ignores the ADC and
@@ -328,7 +336,7 @@ impl Device {
     /// - [`Error::UnsupportedTxCore`] for a TX stream on gateware with the extended TX
     ///   core, and [`Error::UnsupportedWireFormat`] for a TX wire format other than
     ///   [`WireFormat::Ci16`] (libusdr refuses it once the transmitter is powered).
-    /// - [`Error::UnsupportedFormat`] for a host format with no converter to or from the
+    /// - [`Error::NoConversion`] for a host format with no converter to or from the
     ///   wire format (a real host for a complex wire or the reverse, a real TX host), where
     ///   libusdr copies the bytes unconverted.
     /// - [`Error::UnsupportedRxChannels`] for complex RX channel 1, which would be the
@@ -645,8 +653,8 @@ impl Device {
     /// The channels share one PLL: it tunes the average of the LOs the channels were given,
     /// and each channel's NCO shifts by its distance from that average, replacing any
     /// [`Device::set_rx_baseband_offset`] of a channel with an LO. The filter, if it
-    /// follows the rate, widens by twice the largest distance. Only channel 0 reaches an
-    /// RX stream.
+    /// follows the rate, widens by twice the largest distance. Only NCO 0 reaches an RX
+    /// stream.
     ///
     /// # Errors
     ///

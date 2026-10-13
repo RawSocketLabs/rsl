@@ -188,7 +188,7 @@ pub enum Error {
     /// a real host for TX.
     #[error("no conversion between host format {host:?} and wire format {wire:?}")]
     #[non_exhaustive]
-    UnsupportedFormat {
+    NoConversion {
         /// The host format asked for.
         host: HostFormat,
 

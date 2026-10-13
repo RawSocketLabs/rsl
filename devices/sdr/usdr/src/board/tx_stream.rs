@@ -102,7 +102,7 @@ impl Board {
         )
         .is_err()
         {
-            return Err(Error::UnsupportedFormat {
+            return Err(Error::NoConversion {
                 host: config.host,
                 wire: config.wire,
             });

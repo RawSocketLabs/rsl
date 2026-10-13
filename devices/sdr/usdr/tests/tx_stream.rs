@@ -41,7 +41,7 @@ fn a_real_tx_host_format_is_refused_before_the_bus() {
     let config = TxConfig::new(256, HostFormat::F32, WireFormat::Ci16);
     assert!(matches!(
         untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
-        Err(Error::UnsupportedFormat {
+        Err(Error::NoConversion {
             host: HostFormat::F32,
             wire: WireFormat::Ci16,
             ..

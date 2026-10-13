@@ -18,7 +18,7 @@ use super::Board;
 use super::baseband::NcoChannels;
 use crate::chips::lms6002d::{CapacitorWindow, Lna, PowerAmp};
 use crate::error::Error;
-use crate::fpga::{Gpo, Nco, Phy};
+use crate::fpga::{Decimation, Gpo, Nco, Phy};
 
 /// A signal chain: which synthesizer, NCOs and filter a tune drives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -445,9 +445,11 @@ impl Board {
         if self.rx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
-        let Some(bandwidth) =
-            self.following_bandwidth(self.rx.lo_offset_hz, self.rx.plan.nco_distance_hz())
-        else {
+        let Some(bandwidth) = self.following_bandwidth(
+            self.rx.decimation,
+            self.rx.lo_offset_hz,
+            self.rx.plan.nco_distance_hz(),
+        ) else {
             return Ok(());
         };
         self.lms.set_rx_bandwidth(self.bus.as_mut(), bandwidth)
@@ -459,21 +461,28 @@ impl Board {
         if self.tx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
-        let Some(bandwidth) =
-            self.following_bandwidth(self.tx.lo_offset_hz, self.tx.plan.nco_distance_hz())
-        else {
+        let Some(bandwidth) = self.following_bandwidth(
+            self.tx.interpolation,
+            self.tx.lo_offset_hz,
+            self.tx.plan.nco_distance_hz(),
+        ) else {
             return Ok(());
         };
         self.lms.set_tx_bandwidth(self.bus.as_mut(), bandwidth)
     }
 
-    /// The bandwidth a filter that follows the sample rate gets with LO offset `offset_hz`
-    /// and NCO distance `distance_hz`: the sample rate plus twice each, in libusdr's
-    /// wrapping 32-bit arithmetic. `None` before any rate is set, where libusdr divides by
-    /// zero.
-    fn following_bandwidth(&self, offset_hz: i32, distance_hz: u32) -> Option<u32> {
-        let decimation = self.rx.decimation?;
-        let rate = self.adc_rate_hz / decimation.factor();
+    /// The bandwidth a filter that follows the sample rate gets with the chain's rate
+    /// factor `factor` (RX decimation, TX interpolation), LO offset `offset_hz` and NCO
+    /// distance `distance_hz`: the converter rate over the factor, plus twice each offset,
+    /// in libusdr's wrapping 32-bit arithmetic. `None` before any rate is set, where
+    /// libusdr divides by zero.
+    fn following_bandwidth(
+        &self,
+        factor: Option<Decimation>,
+        offset_hz: i32,
+        distance_hz: u32,
+    ) -> Option<u32> {
+        let rate = self.adc_rate_hz / factor?.factor();
         Some(
             distance_hz
                 .wrapping_mul(2)

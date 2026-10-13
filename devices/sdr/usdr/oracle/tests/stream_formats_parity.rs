@@ -305,11 +305,9 @@ fn every_format_pair_matches_libusdr_operations_and_bytes() {
             expected.packets, actual.packets,
             "{scenario:?}: received bytes and packet information"
         );
-        let statuses: Vec<u64> = actual.packets.iter().map(|(_, info)| info.3).collect();
-        assert_eq!(
-            statuses,
-            [1 << 8, 2 << 8],
-            "the sim's DMA status reaches both drivers' packet information"
+        assert!(
+            actual.packets.iter().all(|(_, info)| info.3 != 0),
+            "{scenario:?}: a nonzero DMA status, so the comparison above covers the word"
         );
     }
 }
@@ -385,7 +383,7 @@ fn a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes() {
     let config = StreamsConfig::rx(RxConfig::new(1024, HostFormat::Ci16, WireFormat::I16));
     assert!(matches!(
         device.create_streams(config),
-        Err(Error::UnsupportedFormat {
+        Err(Error::NoConversion {
             host: HostFormat::Ci16,
             wire: WireFormat::I16,
             ..

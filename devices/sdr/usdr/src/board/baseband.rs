@@ -19,11 +19,13 @@ pub enum NcoChannels {
     #[default]
     Both,
 
-    /// Channel 0 (`/0`: mask 1), the NCO an RX stream's channel 0 sees.
-    Channel0,
+    /// NCO 0 (`/0`: mask 1). On RX it is the one every stream sees: its I and Q are the
+    /// front end's lanes 0 and 1, so it also feeds the real channel-1 (Q lane) stream.
+    Nco0,
 
-    /// Channel 1 (`/1`: mask 2).
-    Channel1,
+    /// NCO 1 (`/1`: mask 2). No RX stream carries it; what it feeds on this gateware is
+    /// not shown by the vendored source.
+    Nco1,
 }
 
 impl NcoChannels {
@@ -31,8 +33,8 @@ impl NcoChannels {
     const fn selects(self) -> [bool; 2] {
         match self {
             Self::Both => [true, true],
-            Self::Channel0 => [true, false],
-            Self::Channel1 => [false, true],
+            Self::Nco0 => [true, false],
+            Self::Nco1 => [false, true],
         }
     }
 }
@@ -184,13 +186,10 @@ mod tests {
     #[test]
     fn two_channel_los_centre_the_pll_and_split_the_gap() {
         let mut plan = FrequencyPlan::default();
-        plan.set_lo(NcoChannels::Channel0, 1_000_000_000);
+        plan.set_lo(NcoChannels::Nco0, 1_000_000_000);
         // 1000 and 1000.000003 MHz: the average's half hertz is truncated, and so is each
         // offset, towards zero.
-        assert_eq!(
-            plan.set_lo(NcoChannels::Channel1, 1_000_000_003),
-            1_000_000_001
-        );
+        assert_eq!(plan.set_lo(NcoChannels::Nco1, 1_000_000_003), 1_000_000_001);
         assert_eq!((plan.baseband_hz(0), plan.baseband_hz(1)), (-1, 1));
         assert_eq!(plan.nco_distance_hz(), 1);
     }
@@ -198,8 +197,8 @@ mod tests {
     #[test]
     fn a_lone_channel_lo_leaves_the_other_offset_unset() {
         let mut plan = FrequencyPlan::default();
-        plan.set_baseband(NcoChannels::Channel0, -5_000);
-        assert_eq!(plan.set_lo(NcoChannels::Channel1, 900_000_000), 900_000_000);
+        plan.set_baseband(NcoChannels::Nco0, -5_000);
+        assert_eq!(plan.set_lo(NcoChannels::Nco1, 900_000_000), 900_000_000);
         assert_eq!(
             (plan.baseband_hz(0), plan.baseband_hz(1)),
             (-5_000, 0),
@@ -212,7 +211,7 @@ mod tests {
     fn the_distance_is_the_largest_offset_magnitude() {
         let mut plan = FrequencyPlan::default();
         plan.set_baseband(NcoChannels::Both, 2_000);
-        plan.set_baseband(NcoChannels::Channel1, i32::MIN);
+        plan.set_baseband(NcoChannels::Nco1, i32::MIN);
         assert_eq!(plan.nco_distance_hz(), 1 << 31);
     }
 }

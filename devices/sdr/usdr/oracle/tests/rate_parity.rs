@@ -11,6 +11,9 @@ use rsl_usdr_oracle::Oracle;
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
 
+/// The RX chain's configuration port (`REG_CFG_PHY_0`).
+const REG_RX_PHY: u32 = 56;
+
 /// The TX chain's configuration port (`REG_CFG_PHY_1`).
 const REG_TX_PHY: u32 = 57;
 
@@ -120,14 +123,17 @@ fn assert_calls_match(calls: &[Call]) -> (Vec<Op>, Vec<Range<usize>>) {
     )
 }
 
-/// How many TX FIR microcode bytes `ops` loads: writes to the TX port's FIR-load
-/// sub-register.
-fn tx_fir_bytes(ops: &[Op]) -> usize {
+/// How many FIR microcode bytes `ops` loads at configuration port `port`: writes to its
+/// FIR-load sub-register.
+fn fir_bytes(ops: &[Op], port: u32) -> usize {
     ops.iter()
-        .filter(
-            |op| matches!(op, Op::RegWrite { addr: REG_TX_PHY, value } if value >> 24 == FIR_LOAD),
-        )
+        .filter(|op| matches!(op, Op::RegWrite { addr, value } if *addr == port && value >> 24 == FIR_LOAD))
         .count()
+}
+
+/// How many TX FIR microcode bytes `ops` loads.
+fn tx_fir_bytes(ops: &[Op]) -> usize {
+    fir_bytes(ops, REG_TX_PHY)
 }
 
 #[test]
@@ -213,6 +219,24 @@ fn a_tx_rate_after_an_rx_rate_of_the_same_factor_loads_no_table_like_libusdr() {
         .map(|w| tx_fir_bytes(&trace[w]))
         .collect();
     assert_eq!(loaded, [0, 0, 1280]);
+}
+
+/// The same the other way round: a TX rate first records its factor for RX too, so an RX
+/// rate of that factor on a fresh board loads no RX decimator table at all (libusdr's
+/// hazard, kept; `Device::set_rx_sample_rate` documents it).
+#[test]
+fn an_rx_rate_after_a_tx_rate_of_the_same_factor_loads_no_table_like_libusdr() {
+    let (trace, windows) = assert_calls_match(&[Call::Tx(20_000_000), Call::Rx(20_000_000)]);
+    let loaded: Vec<(usize, usize)> = windows
+        .into_iter()
+        .map(|w| {
+            (
+                fir_bytes(&trace[w.clone()], REG_RX_PHY),
+                tx_fir_bytes(&trace[w]),
+            )
+        })
+        .collect();
+    assert_eq!(loaded, [(0, 1280), (0, 0)], "(RX, TX) table bytes per call");
 }
 
 /// Both chains at once, as libusdr's `/dm/rate/master`; a TX tune; then a TX rate, which

@@ -126,7 +126,7 @@ pub(crate) struct RxStream {
 #[derive(Clone, Copy, Debug)]
 struct BlockLayout {
     /// Samples per burst; a packet is a whole number of bursts, and a burst a whole number
-    /// of bytes of samples ([`check_rx_stream`]).
+    /// of bytes of samples ([`RxConfig::checked_converter`]).
     samples_per_burst: usize,
 
     /// Bytes per burst, any stub included.
@@ -187,7 +187,7 @@ impl Board {
         }
         let rx = config
             .rx
-            .map(|rx| check_rx_stream(rx).map(|converter| (rx, converter)))
+            .map(|rx| rx.checked_converter().map(|converter| (rx, converter)))
             .transpose()?;
         if let Some((rx, converter)) = rx {
             self.create_rx_stream(rx, converter, mode)?;
@@ -509,31 +509,33 @@ impl Board {
     }
 }
 
-/// Refuses, before any bus access, an RX stream the converters or the receiver's front end
-/// cannot take, and returns its wire-to-host converter.
-///
-/// Intentional divergences: libusdr copies the bytes of a real wire into a complex host
-/// buffer or the reverse (its converter lookup falls back to a copy), takes complex
-/// channel 1 as lanes 2 and 3, and converts a real 12-bit burst that ends mid-byte whole,
-/// stub included; each is refused here.
-fn check_rx_stream(config: RxConfig) -> Result<Converter, Error> {
-    let RxConfig {
-        samples_per_packet,
-        wire,
-        host,
-        channels,
-    } = config;
-    if channels == RxChannels::Channel1 && wire.is_complex() {
-        return Err(Error::UnsupportedRxChannels { channels, wire });
+impl RxConfig {
+    /// The stream's wire-to-host converter, once this configuration is one the converters
+    /// and the receiver's front end can take; checked before any bus access.
+    ///
+    /// Intentional divergences: libusdr copies the bytes of a real wire into a complex host
+    /// buffer or the reverse (its converter lookup falls back to a copy), takes complex
+    /// channel 1 as lanes 2 and 3, and converts a real 12-bit burst that ends mid-byte
+    /// whole, stub included; each is refused here.
+    fn checked_converter(self) -> Result<Converter, Error> {
+        let Self {
+            samples_per_packet,
+            wire,
+            host,
+            channels,
+        } = self;
+        if channels == RxChannels::Channel1 && wire.is_complex() {
+            return Err(Error::UnsupportedRxChannels { channels, wire });
+        }
+        let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, 1)
+            .map_err(|_| Error::NoConversion { host, wire })?;
+        let half_byte = BurstPlan::for_packet(samples_per_packet, wire)
+            .is_some_and(|plan| plan.samples_per_burst() * wire.sample_bits() % 8 != 0);
+        if half_byte {
+            return Err(Error::UnsupportedPacketSize(samples_per_packet));
+        }
+        Ok(converter)
     }
-    let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, 1)
-        .map_err(|_| Error::UnsupportedFormat { host, wire })?;
-    let half_byte = BurstPlan::for_packet(samples_per_packet, wire)
-        .is_some_and(|plan| plan.samples_per_burst() * wire.sample_bits() % 8 != 0);
-    if half_byte {
-        return Err(Error::UnsupportedPacketSize(samples_per_packet));
-    }
-    Ok(converter)
 }
 
 impl BlockLayout {

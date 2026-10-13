@@ -74,7 +74,7 @@ impl BurstPlan {
     /// within 8192 samples and words, leave room for two bursts in the FIFO and split the
     /// words evenly; failing an even split, the one with the least padding. Its FIFO count
     /// comes from the last burst count it tried, as here. Samples pack back to back across
-    /// words: two lanes of 16 or 12 bits each (`bps = chans_raw * ch_bits`).
+    /// words: one or two lanes of 16 or 12 bits each (`bps = chans_raw * ch_bits`).
     pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
         // libusdr's 32-bit product would wrap here; no such packet fits a burst anyway.
         let words = wire
