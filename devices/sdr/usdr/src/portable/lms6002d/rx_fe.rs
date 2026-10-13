@@ -12,8 +12,8 @@
 
 use bnb::{BitEnum, bitfield, u2, u4, u6, u7};
 
+use super::super::register::Register;
 use super::spi::BlockReg;
-use crate::chips::register::Register;
 
 /// RX front-end register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl BlockReg for Reg {}
 /// An LNA input path. On the uSDR, LNA1 is the wideband input.
 ///
 /// The uSDR wiring, from libusdr's `usdr_ctrl.c` band table; the RX switch is
-/// [`Gpo::RxSwitch`](crate::fpga::Gpo::RxSwitch).
+/// the board's `Gpo::RxSwitch`.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u2)]
 pub(crate) enum Lna {
@@ -149,26 +149,23 @@ impl Register for TiaFeedback {
     const ADDR: Reg = Reg::TiaFeedback;
 }
 
+/// RXVGA1's feedback codes by libusdr's formula (`_lms6002d_rxvga1_db_to_int`):
+/// `127.5 − 127 / 10^((dB − 5) / 20)`, truncated, for 5 to 30 dB, then for 30.17 dB, which
+/// it takes for anything above 30. Tabulated, as the portable core has no floating-point
+/// power; the driver's tests check every entry against the formula.
+pub(crate) const RXVGA1_CODES: [u8; 27] = [
+    0, 14, 26, 37, 47, 56, 63, 70, 76, 82, 87, 91, 95, 99, 102, 104, 107, 109, 111, 113, 114, 116,
+    117, 118, 119, 120, 120,
+];
+
 impl TiaFeedback {
-    /// The code for `db` of gain, by libusdr's formula (`_lms6002d_rxvga1_db_to_int`):
-    /// `127.5 − 127 / 10^((dB − 5) / 20)`, truncated, with `db` held to 5 at the bottom and
-    /// anything above 30 taken as 30.17. That puts the YAML's 19 and 30 dB points at their
-    /// codes, 102 and 120; its 5 dB point is code 0 here, not 2.
+    /// The code for `db` of gain, by libusdr's formula ([`RXVGA1_CODES`]), with `db` held
+    /// to 5 at the bottom and anything above 30 taken as 30.17. That puts the YAML's 19
+    /// and 30 dB points at their codes, 102 and 120; its 5 dB point is code 0 here, not 2.
     pub(super) fn for_gain_db(db: i32) -> Self {
-        let db = match db {
-            ..5 => 5.0,
-            31.. => 30.17,
-            _ => f64::from(db),
-        };
-        let code = 127.5 - 127.0 / 10_f64.powf((db - 5.0) / 20.0);
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "libusdr truncates the double to int8_t; over 5..=30.17 dB it is 0..=120"
-        )]
-        let code = code as u8;
+        let index = usize::try_from(db.clamp(5, 31) - 5).expect("invariant: held to 0..=26");
         // libusdr's register macro keeps the low seven bits.
-        Self::new().with_resistance(u7::new(code & 0x7f))
+        Self::new().with_resistance(u7::new(RXVGA1_CODES[index] & 0x7f))
     }
 }
 

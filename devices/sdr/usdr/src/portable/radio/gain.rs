@@ -7,11 +7,9 @@
 //! is set alone. Like libusdr, every figure is clamped to its stage's range, never
 //! rejected.
 
-use rsl_deps::tracing::debug;
-
-use super::Board;
-use crate::chips::lms6002d::LnaGain;
-use crate::error::Error;
+use super::super::lms6002d::LnaGain;
+use super::super::script::Script;
+use super::state::Radio;
 
 /// An RX gain setting in dB, for one stage or the whole chain.
 ///
@@ -51,10 +49,10 @@ pub enum RxGain {
 
 impl RxGain {
     /// RXVGA1's lowest gain in dB (`GAIN_RX_VGA1_MIN`).
-    pub(super) const VGA1_MIN_DB: i32 = 5;
+    pub(crate) const VGA1_MIN_DB: i32 = 5;
 
     /// RXVGA1's highest gain in dB (`GAIN_RX_VGA1_MAX`).
-    pub(super) const VGA1_MAX_DB: i32 = 31;
+    pub(crate) const VGA1_MAX_DB: i32 = 31;
 
     /// RXVGA2's highest gain in dB, either stage or both, from 0 (`GAIN_RX_VGA2_MAX`).
     const VGA2_MAX_DB: i32 = 30;
@@ -214,54 +212,50 @@ impl AutoSplit {
     }
 }
 
-impl Board {
+impl Radio {
     /// Sets an RX gain (`usdr_rfic_set_gain` for the RX stages). The RXVGA2 stage steps are
     /// recorded before they are written, as libusdr does, so a failed write still changes
     /// what the next DC calibration restores.
-    pub(crate) fn set_rx_gain(&mut self, gain: RxGain) -> Result<(), Error> {
-        let bus = self.bus.as_mut();
+    pub(crate) fn set_rx_gain(&mut self, gain: RxGain) -> Script {
+        let (lms, rx) = (&mut self.lms, &mut self.rx);
         match gain {
             RxGain::Auto(db) => {
-                let split = AutoSplit::for_gain(db, self.rx.lo_hz);
-                debug!(db, ?split, "RX automatic gain");
-                self.rx.vga1_db = u8::try_from(split.vga1_db).expect("invariant: 0..=25 dB");
-                self.rx.vga2a = split.vga2a;
-                self.rx.vga2b = 0;
-                self.lms.set_lna_gain(bus, split.lna)?;
-                self.lms
-                    .set_rx_vga1_gain(bus, RxGain::VGA1_MIN_DB + split.vga1_db)?;
-                self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
+                let split = AutoSplit::for_gain(db, rx.lo_hz);
+                rx.vga1_db = u8::try_from(split.vga1_db).expect("invariant: 0..=25 dB");
+                rx.vga2a = split.vga2a;
+                rx.vga2b = 0;
+                lms.set_lna_gain(split.lna)
+                    .extend(&lms.set_rx_vga1_gain(RxGain::VGA1_MIN_DB + split.vga1_db))
+                    .extend(&lms.set_rx_vga2_gain(rx.vga2a, rx.vga2b))
             }
-            RxGain::Lna(db) => self.lms.set_lna_gain(bus, lna_mode(db)),
+            RxGain::Lna(db) => lms.set_lna_gain(lna_mode(db)),
             RxGain::Vga1(db) => {
                 let db = db.clamp(RxGain::VGA1_MIN_DB, RxGain::VGA1_MAX_DB);
-                self.rx.vga1_db =
-                    u8::try_from(db - RxGain::VGA1_MIN_DB).expect("invariant: 0..=26 dB");
-                self.lms.set_rx_vga1_gain(bus, db)
+                rx.vga1_db = u8::try_from(db - RxGain::VGA1_MIN_DB).expect("invariant: 0..=26 dB");
+                lms.set_rx_vga1_gain(db)
             }
             RxGain::Vga2(db) => {
-                self.rx.vga2a = RxGain::vga2_step(db);
-                self.rx.vga2b = 0;
-                self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
+                rx.vga2a = RxGain::vga2_step(db);
+                rx.vga2b = 0;
+                lms.set_rx_vga2_gain(rx.vga2a, rx.vga2b)
             }
             RxGain::Vga2a(db) => {
-                self.rx.vga2a = RxGain::vga2_step(db);
-                self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
+                rx.vga2a = RxGain::vga2_step(db);
+                lms.set_rx_vga2_gain(rx.vga2a, rx.vga2b)
             }
             RxGain::Vga2b(db) => {
-                self.rx.vga2b = RxGain::vga2_step(db);
-                self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
+                rx.vga2b = RxGain::vga2_step(db);
+                lms.set_rx_vga2_gain(rx.vga2a, rx.vga2b)
             }
         }
     }
 
-    /// Sets a TX gain (`usdr_rfic_set_gain` for the TX stages); the LMS6002D driver holds
-    /// each figure to its stage's range.
-    pub(crate) fn set_tx_gain(&mut self, gain: TxGain) -> Result<(), Error> {
-        let bus = self.bus.as_mut();
+    /// Sets a TX gain (`usdr_rfic_set_gain` for the TX stages); the LMS6002D's operations
+    /// hold each figure to its stage's range.
+    pub(crate) fn set_tx_gain(&mut self, gain: TxGain) -> Script {
         match gain {
-            TxGain::Vga1(db) => self.lms.set_tx_vga1_gain(bus, db),
-            TxGain::Vga2(db) => self.lms.set_tx_vga2_gain(bus, db),
+            TxGain::Vga1(db) => self.lms.set_tx_vga1_gain(db),
+            TxGain::Vga2(db) => self.lms.set_tx_vga2_gain(db),
         }
     }
 }

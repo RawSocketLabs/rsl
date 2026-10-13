@@ -44,5 +44,5 @@
 
 mod lp8758;
 
-pub(crate) use crate::portable::lp8758::{Buck, BuckControl, BuckVoltage, Config};
+pub(crate) use crate::portable::lp8758::{BuckControl, BuckVoltage, Config};
 pub(crate) use lp8758::Lp8758;

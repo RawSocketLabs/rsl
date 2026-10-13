@@ -10,9 +10,10 @@
 use bnb::u7;
 
 use super::Board;
-use crate::chips::lms6002d::Lms6002d;
+use crate::chips::register::run_sequence;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::I2cAddr;
+use crate::portable::lms6002d::{self, spi};
 use crate::portable::{si5332, tps6381x};
 
 /// A chip whose registers [`Device::chip_register`](crate::Device::chip_register) and
@@ -34,7 +35,7 @@ impl DebugChip {
     /// The chip's name in errors.
     const fn name(self) -> &'static str {
         match self {
-            Self::Lms6002d => Lms6002d::NAME,
+            Self::Lms6002d => lms6002d::chip::NAME,
             Self::Si5332 => si5332::NAME,
             Self::Tps6381x => tps6381x::NAME,
         }
@@ -66,9 +67,12 @@ impl Board {
     /// one-byte read.
     pub(crate) fn chip_register(&mut self, chip: DebugChip, reg: u8) -> Result<u8, Error> {
         let Some(dev) = chip.i2c() else {
-            return self
-                .lms
-                .read_register_raw(self.bus.as_mut(), chip.lms_reg(reg)?);
+            let mut read = self.radio.lms.read_register_raw(chip.lms_reg(reg)?);
+            run_sequence(self.bus.as_mut(), &mut read)?;
+            return Ok(spi::value(
+                read.read()
+                    .expect("invariant: a finished read has its word"),
+            ));
         };
         let mut byte = [0];
         self.bus
@@ -90,9 +94,8 @@ impl Board {
         value: u8,
     ) -> Result<(), Error> {
         let Some(dev) = chip.i2c() else {
-            return self
-                .lms
-                .write_register_raw(self.bus.as_mut(), chip.lms_reg(reg)?, value);
+            let write = self.radio.lms.write_register_raw(chip.lms_reg(reg)?, value);
+            return self.run_script(write);
         };
         self.bus
             .i2c(dev, &[reg, value], &mut [])

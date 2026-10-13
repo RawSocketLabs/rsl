@@ -33,12 +33,13 @@ use rsl_deps::tracing::debug;
 
 use super::Board;
 use super::correction::TxDcOffset;
-use super::gain::RxGain;
-use super::tune::{Chain, nco_word};
 use crate::cal::search::{Axis, Best2d, Limits, Objective2d, Search, Stage, best_2d};
 use crate::chips::lms6002d::Lna;
+use crate::chips::register::run_sequence;
 use crate::error::Error;
 use crate::fpga::{IqImbalance, Nco, Phy, dc_estimator};
+use crate::portable::radio::state::nco_word;
+use crate::portable::radio::{Chain, RxGain};
 
 /// Which calibrations to run and how (libusdr's `USDR_CAL_*` flags).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -236,7 +237,7 @@ impl Board {
         if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let decimation = self.rx.decimation.ok_or(Error::NoSampleRate)?;
+        let decimation = self.radio.rx.decimation.ok_or(Error::NoSampleRate)?;
         let external = request.feedback == Feedback::External;
         let lowered = |lo: u32, offset: i32| {
             if lo == 0 {
@@ -245,17 +246,17 @@ impl Board {
                 lo.wrapping_sub(u32::from_ne_bytes(offset.to_ne_bytes()))
             }
         };
-        let tx_lo = lowered(self.tx.lo_hz, self.tx.lo_offset_hz);
-        let rx_lo = lowered(self.rx.pll_lo_hz, self.rx.lo_offset_hz);
-        let rx_input = self.lms.active_lna();
-        let rate = self.adc_rate_hz / decimation.factor();
+        let tx_lo = lowered(self.radio.tx.lo_hz, self.radio.tx.lo_offset_hz);
+        let rx_lo = lowered(self.radio.rx.pll_lo_hz, self.radio.rx.lo_offset_hz);
+        let rx_input = self.radio.lms.active_lna();
+        let rate = self.radio.adc_rate_hz / decimation.factor();
         let as_int = |hz: u32| i32::from_ne_bytes(hz.to_ne_bytes());
         let mut plan = Plan {
             rx_rate: as_int(rate),
             rx_hz: as_int(rx_lo),
             tx_hz: as_int(tx_lo),
         };
-        if self.tx.lo_offset_hz != 0 {
+        if self.radio.tx.lo_offset_hz != 0 {
             // Extend the measurement to fit RX: libusdr's `int += double`, with its TX
             // rate (`dac_clk / txbb_intr`), which equals the RX rate on the uSDR.
             #[expect(
@@ -268,28 +269,29 @@ impl Board {
         let mut report = CalibrationReport::default();
 
         if request.rx_iq_imbalance && rx_lo > 0 {
-            if tx_lo == 0 || !self.tx.powered {
+            if tx_lo == 0 || !self.radio.tx.powered {
                 self.set_tx_power(true)?;
                 self.bus.sleep(WAKE);
-                Phy::Tx.set_iq_correction(self.bus.as_mut(), self.tx.iq_imbalance.tx_terms())?;
+                Phy::Tx.set_iq_correction(self.bus.as_mut(), self.corrections.tx.tx_terms())?;
             }
             if !external {
-                self.lms.enable_rf_loopback(self.bus.as_mut())?;
+                run_sequence(self.bus.as_mut(), &mut self.radio.lms.enable_rf_loopback())?;
             }
             report.rx_iq_imbalance = Some(self.calibrate_rx_iq(&plan)?);
             let mut restored = if tx_lo == 0 {
-                self.lms.disable_tx_pll(self.bus.as_mut())
+                run_sequence(self.bus.as_mut(), &mut self.radio.lms.disable_tx_pll())
             } else {
                 match self.tune_tx_pll(tx_lo) {
                     Err(Error::UnsupportedFrequency(_)) => {
-                        self.lms.disable_tx_pll(self.bus.as_mut())
+                        run_sequence(self.bus.as_mut(), &mut self.radio.lms.disable_tx_pll())
                     }
                     Err(Error::PllUnlocked(_)) | Ok(_) => Ok(()),
                     Err(error) => Err(error),
                 }
             };
             if !external && restored.is_ok() {
-                restored = self.lms.disable_rf_loopback(self.bus.as_mut());
+                restored =
+                    run_sequence(self.bus.as_mut(), &mut self.radio.lms.disable_rf_loopback());
             }
             restored?;
         }
@@ -300,11 +302,16 @@ impl Board {
                 report.tx_lo_leakage = Some(self.calibrate_tx_lo(&plan, request.analog_lo_first)?);
             }
             if request.tx_iq_imbalance {
-                let vga1 = self.lms.tx_vga1_code();
-                self.lms
-                    .set_tx_vga1_code(self.bus.as_mut(), u5::new(TX_IQ_VGA1_CODE))?;
+                let vga1 = self.radio.lms.tx_vga1_code();
+                run_sequence(
+                    self.bus.as_mut(),
+                    &mut self.radio.lms.set_tx_vga1_code(u5::new(TX_IQ_VGA1_CODE)),
+                )?;
                 report.tx_iq_imbalance = Some(self.calibrate_tx_iq(&plan)?);
-                self.lms.set_tx_vga1_code(self.bus.as_mut(), vga1)?;
+                run_sequence(
+                    self.bus.as_mut(),
+                    &mut self.radio.lms.set_tx_vga1_code(vga1),
+                )?;
             }
             self.finish_tx_calibration(tx_lo, rx_lo, rx_input, external)?;
         }
@@ -332,24 +339,20 @@ impl Board {
         external: bool,
     ) -> Result<(), Error> {
         let mut retune_tx = true;
-        if rx_lo == 0 || !self.rx.powered {
+        if rx_lo == 0 || !self.radio.rx.powered {
             self.set_rx_power(true)?;
             self.bus.sleep(WAKE);
             self.tune_rx_pll(RX_WAKE_LO_HZ)?;
-            self.lms.calibrate_rx_dc(
-                self.bus.as_mut(),
-                self.reference.hz(),
-                (self.rx.vga2a, self.rx.vga2b),
-            )?;
-            Phy::Rx.set_iq_correction(self.bus.as_mut(), self.rx.iq_imbalance.rx_terms())?;
+            self.calibrate_rx_dc()?;
+            Phy::Rx.set_iq_correction(self.bus.as_mut(), self.corrections.rx.rx_terms())?;
             retune_tx = false;
         }
-        if retune_tx || self.tx.lo_offset_hz != 0 {
+        if retune_tx || self.radio.tx.lo_offset_hz != 0 {
             self.tune_tx_pll(u32::from_ne_bytes(plan.tx_hz.to_ne_bytes()))?;
         }
         if !external {
-            self.lms.select_lna(self.bus.as_mut(), Lna::Lna1)?;
-            self.lms.enable_rf_loopback(self.bus.as_mut())?;
+            run_sequence(self.bus.as_mut(), &mut self.radio.lms.select_lna(Lna::Lna1))?;
+            run_sequence(self.bus.as_mut(), &mut self.radio.lms.enable_rf_loopback())?;
         }
         Ok(())
     }
@@ -368,7 +371,7 @@ impl Board {
         external: bool,
     ) -> Result<(), Error> {
         let mut restored = Ok(());
-        if self.tx.lo_offset_hz != 0 {
+        if self.radio.tx.lo_offset_hz != 0 {
             restored = self.tune_tx_pll(tx_lo).map(drop);
         }
         if rx_lo > 0 {
@@ -376,21 +379,28 @@ impl Board {
                 restored = self.tune_rx_pll(rx_lo).map(drop);
             }
             restored = match restored {
-                Err(Error::UnsupportedFrequency(_)) => self.lms.disable_rx_pll(self.bus.as_mut()),
+                Err(Error::UnsupportedFrequency(_)) => {
+                    run_sequence(self.bus.as_mut(), &mut self.radio.lms.disable_rx_pll())
+                }
                 Err(Error::PllUnlocked(_)) => Ok(()),
                 other => other,
             };
         } else if restored.is_ok() {
-            restored = self.lms.disable_rx_pll(self.bus.as_mut());
+            restored = run_sequence(self.bus.as_mut(), &mut self.radio.lms.disable_rx_pll());
         }
         restored?;
         let bus = self.bus.as_mut();
         if !external {
-            self.lms.select_lna(bus, rx_input)?;
-            self.lms.disable_rf_loopback(bus)?;
+            run_sequence(bus, &mut self.radio.lms.select_lna(rx_input))?;
+            run_sequence(bus, &mut self.radio.lms.disable_rf_loopback())?;
         }
-        self.lms
-            .set_rx_vga1_gain(bus, i32::from(self.rx.vga1_db) + RxGain::VGA1_MIN_DB)
+        run_sequence(
+            bus,
+            &mut self
+                .radio
+                .lms
+                .set_rx_vga1_gain(i32::from(self.radio.rx.vga1_db) + RxGain::VGA1_MIN_DB),
+        )
     }
 
     /// Turns the constant generator off and points the NCOs and filters back where the
@@ -399,12 +409,12 @@ impl Board {
         self.set_tx_constant(None)?;
         self.restore_ncos(Chain::Tx)?;
         self.restore_rx_ncos()?;
-        match self.rx.fixed_bandwidth_hz {
-            Some(hz) => self.lms.set_rx_bandwidth(self.bus.as_mut(), hz)?,
+        match self.radio.rx.fixed_bandwidth_hz {
+            Some(hz) => run_sequence(self.bus.as_mut(), &mut self.radio.lms.set_rx_bandwidth(hz))?,
             None => self.update_rx_bandwidth()?,
         }
-        match self.tx.fixed_bandwidth_hz {
-            Some(hz) => self.lms.set_tx_bandwidth(self.bus.as_mut(), hz),
+        match self.radio.tx.fixed_bandwidth_hz {
+            Some(hz) => run_sequence(self.bus.as_mut(), &mut self.radio.lms.set_tx_bandwidth(hz)),
             None => self.update_tx_bandwidth(),
         }
     }
@@ -510,8 +520,8 @@ impl Board {
         let offset =
             |value| TxDcOffset::new(value).expect("invariant: searched within the 12-bit range");
         let leakage = TxLoLeakage {
-            i: offset(self.tx.lo_dc[0]),
-            q: offset(self.tx.lo_dc[1]),
+            i: offset(self.corrections.tx_lo_dc[0]),
+            q: offset(self.corrections.tx_lo_dc[1]),
         };
         debug!(?best, ?leakage, "TX LO leakage calibrated");
         Ok(leakage)
@@ -592,17 +602,20 @@ impl Board {
         let bus = self.bus.as_mut();
         match chain {
             Chain::Rx => {
-                let db = i32::from(self.rx.vga1_db) + i32::from(step) + RxGain::VGA1_MIN_DB;
+                let db = i32::from(self.radio.rx.vga1_db) + i32::from(step) + RxGain::VGA1_MIN_DB;
                 if db > RxGain::VGA1_MAX_DB {
                     return Ok(false);
                 }
-                self.lms.set_rx_vga1_gain(bus, db)?;
+                run_sequence(bus, &mut self.radio.lms.set_rx_vga1_gain(db))?;
             }
             Chain::Tx => {
                 if step > 21 {
                     return Ok(false);
                 }
-                self.lms.set_tx_vga1_code(bus, u5::new(10 + step))?;
+                run_sequence(
+                    bus,
+                    &mut self.radio.lms.set_tx_vga1_code(u5::new(10 + step)),
+                )?;
             }
         }
         Ok(true)
@@ -613,7 +626,7 @@ impl Board {
     fn set_test_tone(&mut self, offset_hz: i32, power: u32) -> Result<(), Error> {
         let level = i16::try_from(power.min(TONE_MAX)).expect("invariant: at most 30000");
         self.set_tx_constant((power != 0).then_some(Complex::new(level, 0)))?;
-        let word = nco_word(offset_hz, self.adc_rate_hz);
+        let word = nco_word(offset_hz, self.radio.adc_rate_hz);
         let bus = self.bus.as_mut();
         Phy::Tx.set_nco(bus, Nco::Nco0, word)?;
         Phy::Tx.set_nco(bus, Nco::Nco1, word)
@@ -621,7 +634,7 @@ impl Board {
 
     /// Points the RX NCO of the estimator's channel at `offset_hz`.
     fn set_rx_nco_offset(&mut self, offset_hz: i32) -> Result<(), Error> {
-        let word = nco_word(offset_hz, self.adc_rate_hz);
+        let word = nco_word(offset_hz, self.radio.adc_rate_hz);
         Phy::Rx.set_nco(self.bus.as_mut(), Nco::Nco0, word)
     }
 
@@ -643,8 +656,8 @@ impl Board {
         let bandwidth = (hz as f32 * BANDWIDTH_FACTOR) as i32 as u32;
         let bus = self.bus.as_mut();
         match chain {
-            Chain::Rx => self.lms.set_rx_bandwidth(bus, bandwidth),
-            Chain::Tx => self.lms.set_tx_bandwidth(bus, bandwidth),
+            Chain::Rx => run_sequence(bus, &mut self.radio.lms.set_rx_bandwidth(bandwidth)),
+            Chain::Tx => run_sequence(bus, &mut self.radio.lms.set_tx_bandwidth(bandwidth)),
         }
     }
 
@@ -661,10 +674,10 @@ impl Board {
                 )]
                 let value = value as i16;
                 match axis {
-                    Axis::X => self.tx.lo_dc[1] = value,
-                    Axis::Y => self.tx.lo_dc[0] = value,
+                    Axis::X => self.corrections.tx_lo_dc[1] = value,
+                    Axis::Y => self.corrections.tx_lo_dc[0] = value,
                 }
-                let [i, q] = self.tx.lo_dc;
+                let [i, q] = self.corrections.tx_lo_dc;
                 if digital {
                     let bits = |v: i16| u12::new(u16::from_ne_bytes(v.to_ne_bytes()) & 0xfff);
                     Phy::set_tx_dc_offset(bus, bits(i), bits(q))
@@ -676,16 +689,16 @@ impl Board {
                         reason = "libusdr narrows to int8_t and adds 0x80 in eight bits"
                     )]
                     let code = |v: i16| (v as i8 as u8).wrapping_add(0x80);
-                    self.lms.set_tx_vga1_dc(bus, code(i), code(q))
+                    run_sequence(bus, &mut self.radio.lms.set_tx_vga1_dc(code(i), code(q)))
                 }
             }
             (Target::RxIq, axis) => {
-                self.rx.iq_imbalance.set(axis, value);
-                Phy::Rx.set_iq_correction(bus, self.rx.iq_imbalance.rx_terms())
+                self.corrections.rx.set(axis, value);
+                Phy::Rx.set_iq_correction(bus, self.corrections.rx.rx_terms())
             }
             (Target::TxIq, axis) => {
-                self.tx.iq_imbalance.set(axis, value);
-                Phy::Tx.set_iq_correction(bus, self.tx.iq_imbalance.tx_terms())
+                self.corrections.tx.set(axis, value);
+                Phy::Tx.set_iq_correction(bus, self.corrections.tx.tx_terms())
             }
         }
     }

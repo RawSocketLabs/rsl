@@ -9,8 +9,8 @@
 
 use bnb::{BitEnum, bitfield, u3, u6};
 
+use super::super::register::IndexedRegister;
 use super::spi::BlockReg;
-use crate::chips::register::IndexedRegister;
 
 /// Calibration-engine register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

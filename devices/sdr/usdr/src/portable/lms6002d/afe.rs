@@ -8,8 +8,8 @@
 
 use bnb::{BitEnum, bitfield, u2};
 
+use super::super::register::Register;
 use super::spi::BlockReg;
-use crate::chips::register::Register;
 
 /// AFE register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

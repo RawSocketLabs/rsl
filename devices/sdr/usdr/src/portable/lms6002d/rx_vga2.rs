@@ -7,8 +7,8 @@
 
 use bnb::{BitEnum, bitfield, u4};
 
+use super::super::register::Register;
 use super::spi::BlockReg;
-use crate::chips::register::Register;
 
 /// RXVGA2 register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

@@ -18,7 +18,6 @@ use std::time::Duration;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
-use super::board::Chains;
 use super::stream::{CHUNK_SAMPLES, MAX_CHANNELS, MAX_HOST_SAMPLE_BYTES};
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
@@ -27,6 +26,7 @@ use crate::fpga::{
     self, ExtendedTxPush, MAX_EXTENDED_TX_TIMESTAMP, MAX_TX_TIMESTAMP, Phy, TxCoreStatus,
 };
 use crate::lowlevel::{BusError, TxCommit};
+use crate::portable::radio::{Chain, Chains, StreamUp, stream_down};
 use crate::portable::stream::{EngineSequence, SyncTrigger, TxLanes};
 use crate::stream::{
     HostFormat, HostSample, StreamTime, SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry,
@@ -199,15 +199,9 @@ impl Board {
             1,
         )
         .expect("invariant: TxConfig::check refused hosts with no converter to the wire");
-        let extended = self.chains.extended_tx_core;
+        let extended = self.radio.chains.extended_tx_core;
         // `usdr_rfic_streaming_up`: libusdr takes its wake-up wait even when powering fails.
-        let waking = !self.tx_running;
-        self.tx_running = true;
-        let powered = self.set_tx_power(true);
-        if waking {
-            self.bus.sleep(Duration::from_millis(1));
-        }
-        powered?;
+        self.run_radio(StreamUp::new(self.radio, Chain::Tx))?;
         if extended {
             // `usdr_reset_txfex`.
             run_sequence(self.bus.as_mut(), &mut Phy::tx_extended_reset_writes())?;
@@ -240,7 +234,7 @@ impl Board {
             dma_drops: 0,
         });
         // `usdr_tx_gen_set(.., false, ..)`, then `usdr_txupdate_cal`.
-        let mut dsp = Phy::tx_create_writes(self.tx.iq_imbalance);
+        let mut dsp = Phy::tx_create_writes(self.corrections.tx);
         run_sequence(self.bus.as_mut(), &mut dsp)?;
         debug!(
             samples_per_packet,
@@ -261,8 +255,9 @@ impl Board {
     /// RX stream's stop does, since the group is gone either way.
     pub(super) fn destroy_tx_stream(&mut self) -> Result<(), Error> {
         // `usdr_rfic_streaming_down`.
-        self.tx_running = false;
-        let powered_down = self.set_tx_power(false);
+        let mut down = stream_down(self.radio, Chain::Tx);
+        let powered_down = run_sequence(self.bus.as_mut(), &mut down);
+        self.radio = down.radio();
         let halted = run_sequence(self.bus.as_mut(), &mut EngineSequence::new().stop_tx());
         let closed = self.bus.tx_stream_close().map_err(Error::Stream);
         debug!("TX stream stopped");
@@ -354,7 +349,7 @@ impl Board {
     /// stream has channels, so a map of another count still applies; it is refused here,
     /// as is a second channel without the TX chain.
     pub(crate) fn set_tx_channels(&mut self, channels: TxChannels) -> Result<(), Error> {
-        let tx_chain = self.chains.tx;
+        let tx_chain = self.radio.chains.tx;
         let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
             return Err(Error::NotStreaming);
         };

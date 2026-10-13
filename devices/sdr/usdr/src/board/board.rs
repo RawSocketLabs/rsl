@@ -9,18 +9,19 @@
 
 use std::fmt;
 
-use super::baseband::FrequencyPlan;
 use super::stream::StreamGroup;
-use super::tune::RxBand;
-use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::{BuckControl, BuckVoltage, Config, Lp8758};
+use crate::chips::register::run_sequence;
 use crate::chips::si5332::{LvpeclOutput, Reference, Si5332};
 use crate::chips::tmp114::Tmp114;
 use crate::chips::tps6381x::{OutputVoltage, Tps6381x};
-use crate::fpga::{Decimation, IqImbalance};
+use crate::error::Error;
+use crate::fpga::IqImbalance;
 use crate::frontend::FrontEnd;
 use crate::lowlevel::Bus;
 use crate::portable::power::RailPlan;
+use crate::portable::radio::{OwnsRadio, Radio, Run, Steps, wiring};
+use crate::portable::script::Script;
 use crate::reference::ReferenceClock;
 #[cfg(all(feature = "mio", target_os = "linux"))]
 use crate::transport::usb::BoardState;
@@ -33,52 +34,22 @@ use crate::transport::usb::BoardState;
 ///
 /// [`Identified`]: super::power::Identified
 /// [`Identified::power_up`]: super::power::Identified::power_up
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent flags, each one of libusdr's, not states of one machine"
-)]
 pub(crate) struct Board {
     /// The hardware seam; chip drivers borrow it per call.
     pub(super) bus: Box<dyn Bus>,
 
-    /// The RF transceiver. It is the one chip with driver-side state: the
-    /// LMS6002D's registers are not read back, so it caches what it last wrote.
-    pub(super) lms: Lms6002d,
+    /// The RF state: the LMS6002D's cache (its registers are not read back), each chain's
+    /// settings, the rates and the gateware's chains. The board's RF sequences are portable
+    /// machines that take a copy and give it back (`portable::radio`).
+    pub(super) radio: Radio,
 
-    /// Revision 3, where the Si5332's RX sample clock is output 1 rather than 0.
-    pub(super) rev3: bool,
-
-    /// Which DSP chains the gateware has.
-    pub(super) chains: Chains,
+    /// The DSP chains' digital corrections, which only the blocking board's calibration
+    /// and stream creates use.
+    pub(super) corrections: Corrections,
 
     /// The reference every clock derives from; its frequency feeds each sample-clock plan
-    /// and synthesizer tune (libusdr's `fref`).
+    /// and synthesizer tune (libusdr's `fref`), as the radio state's copy.
     pub(super) reference: ReferenceClock,
-
-    /// The LMS6002D I/O rail is at [`Self::LMS_VIO_BOOST`] rather than
-    /// [`Self::LMS_VIO_NORMAL`].
-    pub(super) vio_boosted: bool,
-
-    /// The ADC's sample rate, the requested rate times the decimation (libusdr's
-    /// `adc_clk`); 0 until a rate is set.
-    pub(super) adc_rate_hz: u32,
-
-    /// The mixer LO: the Si5332 VCO over [`Self::MIXER_LO_DIVIDER`] (libusdr's
-    /// `mixer_lo`); 0 until a rate is set.
-    pub(super) mixer_lo_hz: u32,
-
-    /// What the receive chain was last set to.
-    pub(super) rx: RxState,
-
-    /// What the transmit chain was last set to.
-    pub(super) tx: TxState,
-
-    /// libusdr's `rx_run`: set when an RX stream is created, cleared when it is destroyed,
-    /// and left set by a failed create.
-    pub(super) rx_running: bool,
-
-    /// libusdr's `tx_run`, the same for the TX stream.
-    pub(super) tx_running: bool,
 
     /// The stream group, while one exists.
     pub(super) streams: Option<StreamGroup>,
@@ -88,150 +59,25 @@ pub(crate) struct Board {
     pub(super) front_end: Option<FrontEnd>,
 }
 
-/// The receive chain's settings that later calls depend on, as libusdr tracks them.
+/// The DSP chains' digital corrections as libusdr keeps them (its `rx_corr` and `tx_corr`).
 #[derive(Clone, Copy, Debug, Default)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent flags, each one of libusdr's, not states of one machine"
-)]
-pub(super) struct RxState {
-    /// The LMS6002D's receiver and RXVGA2 are powered (libusdr's `rx_pwren`).
-    pub(super) powered: bool,
+pub(super) struct Corrections {
+    /// The RX IQ imbalance correction, which stream creation writes again.
+    pub(super) rx: IqImbalance,
 
-    /// The RX bandwidth the caller fixed, in Hz (libusdr's `rx_bw`), so sample-rate and
-    /// frequency changes leave the filter alone; `None` while it follows the rate.
-    pub(super) fixed_bandwidth_hz: Option<u32>,
-
-    /// The decimation of the last sample rate set (libusdr's `rxbb_decim`); `None` until the
-    /// first. Its FIR is loaded unless the board has no RX chain.
-    pub(super) decimation: Option<Decimation>,
-
-    /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`): the average of the
-    /// NCO channels' LOs.
-    pub(super) lo_hz: u32,
-
-    /// Each NCO channel's LO and baseband offset (libusdr's `rx_raw`).
-    pub(super) plan: FrequencyPlan,
-
-    /// The LO the RX PLL was last asked for by a tune, in Hz: [`Self::lo_hz`] plus the
-    /// mixer LO in the mixer band (libusdr's `rfic_rx_lo`). The calibration restores it.
-    pub(super) pll_lo_hz: u32,
-
-    /// The band in use (libusdr's `rx_cfg_path`): the frequency's, unless the caller fixed
-    /// one; `None` until either happens.
-    pub(super) band: Option<RxBand>,
-
-    /// The caller fixed the band with [`Board::set_rx_path`], so frequency changes leave
-    /// it alone (libusdr's `rx_rfic_path` other than `USDR_RX_AUTO`).
-    pub(super) band_fixed: bool,
-
-    /// The TX mixer's output is looped back into the RX path (libusdr's
-    /// `rf_loopback_active`).
-    pub(super) rf_loopback: bool,
-
-    /// The board mixer is in the RX path (libusdr's `mexir_en`).
-    pub(super) mixer_on: bool,
-
-    /// The lowest LO the RX PLL was found to lock at below 250 MHz, in Hz (libusdr's
-    /// `rx_minimal_lo`); 0 until a lock failure made the driver search for it.
-    pub(super) minimal_lo_hz: u32,
-
-    /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the NCO
-    /// makes up the difference (libusdr's `rx_exten_lo`).
-    pub(super) lo_offset_hz: i32,
-
-    /// RXVGA1's gain above its 5 dB floor, in dB (libusdr's `rx_vga1`), which the TX
-    /// calibrations restore and raise from.
-    pub(super) vga1_db: u8,
-
-    /// RXVGA2's first-stage gain in 3 dB steps (libusdr's `rx_vga2a`), which the DC
-    /// calibration at stream creation restores.
-    pub(super) vga2a: u8,
-
-    /// RXVGA2's second-stage gain in 3 dB steps (libusdr's `rx_vga2b`).
-    pub(super) vga2b: u8,
-
-    /// The IQ imbalance correction (libusdr's `rx_corr`), which stream creation writes
-    /// again.
-    pub(super) iq_imbalance: IqImbalance,
-}
-
-/// The transmit chain's settings that later calls depend on, as libusdr tracks them
-/// (its `tx_*` fields).
-///
-/// The [`Board`] keeps it with the rest of the radio's state. Not `Copy`: lending a copy
-/// would lose the call's updates.
-#[derive(Debug, Default)]
-pub(crate) struct TxState {
-    /// The LMS6002D's transmitter is powered (libusdr's `tx_pwren`).
-    pub(super) powered: bool,
-
-    /// The TX bandwidth the caller fixed, in Hz (libusdr's `tx_bw`), so frequency changes
-    /// leave the filter alone; `None` while it follows the rate.
-    pub(super) fixed_bandwidth_hz: Option<u32>,
-
-    /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`): the average of the
-    /// NCO channels' LOs; 0 until tuned.
-    pub(super) lo_hz: u32,
-
-    /// Each NCO channel's LO and baseband offset (libusdr's `tx_raw`).
-    pub(super) plan: FrequencyPlan,
-
-    /// The interpolation of the last sample rate set (libusdr's `txbb_intr`); `None`
-    /// until the first. Every rate change sets it, TX's or not, but only a TX rate loads
-    /// its FIR, and only when it changes, so after an RX rate a TX rate of the same factor
-    /// loads none, as in libusdr.
-    pub(super) interpolation: Option<Decimation>,
-
-    /// The caller fixed the band with [`Board::set_tx_path`], so frequency changes leave it
-    /// alone (libusdr's `tx_rfic_path` other than `USDR_TX_AUTO`).
-    pub(super) band_fixed: bool,
-
-    /// The lowest LO the TX PLL was found to lock at below 250 MHz, in Hz (libusdr's
-    /// `tx_minimal_lo`); 0 until a lock failure made the driver search for it.
-    pub(super) minimal_lo_hz: u32,
-
-    /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the TX NCOs
-    /// make up the difference (libusdr's `tx_exten_lo`).
-    pub(super) lo_offset_hz: i32,
-
-    /// The IQ imbalance correction (libusdr's `tx_corr`), which TX stream creation writes
-    /// again.
-    pub(super) iq_imbalance: IqImbalance,
+    /// The TX IQ imbalance correction, which TX stream creation writes again.
+    pub(super) tx: IqImbalance,
 
     /// The LO-leakage calibration's DC offsets, I then Q (libusdr's `tx_corr.dc_i` and
     /// `dc_q`): where its searches last moved each, kept from one calibration to the next.
-    /// [`Board::set_tx_dc_offset`] does not change them, as in libusdr.
-    pub(super) lo_dc: [i16; 2],
-}
-
-/// Which DSP chains the gateware has (HWID bits 25 and 24), and its TX stream core.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Chains {
-    /// An RX chain.
-    pub(super) rx: bool,
-
-    /// A TX chain.
-    pub(super) tx: bool,
-
-    /// The TX stream core is the extended one (`CORE_EXFETX_DMA32_R0_2`, HWID bit 26)
-    /// rather than the original (`CORE_SFETX_DMA32_R0`).
-    pub(super) extended_tx_core: bool,
+    pub(super) tx_lo_dc: [i16; 2],
 }
 
 impl fmt::Debug for Board {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Board")
-            .field("lms", &self.lms)
-            .field("rev3", &self.rev3)
-            .field("chains", &self.chains)
-            .field("vio_boosted", &self.vio_boosted)
-            .field("adc_rate_hz", &self.adc_rate_hz)
-            .field("mixer_lo_hz", &self.mixer_lo_hz)
-            .field("rx", &self.rx)
-            .field("tx", &self.tx)
-            .field("rx_running", &self.rx_running)
-            .field("tx_running", &self.tx_running)
+            .field("radio", &self.radio)
+            .field("corrections", &self.corrections)
             .field("streams", &self.streams)
             .field("front_end", &self.front_end)
             .finish_non_exhaustive()
@@ -240,7 +86,7 @@ impl fmt::Debug for Board {
 
 impl Board {
     /// The LP8758 PMIC: four step-down converters, among them the FPGA I/O bank rail
-    /// ([`Self::VGPIO`]) and the LMS6002D's I/O rail ([`Self::LMS_VIO_NORMAL`]).
+    /// ([`Self::VGPIO`]) and the LMS6002D's I/O rail (`wiring::LMS_VIO_NORMAL`).
     pub(super) const PMIC: Lp8758 = Lp8758::usdr();
 
     /// The TMP114 temperature sensor, the only temperature the driver reads. The thermal
@@ -259,17 +105,6 @@ impl Board {
     /// with xSDR", another Wavelet Lab board.
     pub(super) const VGPIO: BuckVoltage = BuckVoltage::from_millivolts(1800);
 
-    /// LMS6002D digital I/O rail (PMIC buck 3) at normal sample rates: 1.8 V
-    /// (`LMS6_VIO_NORM`).
-    pub(super) const LMS_VIO_NORMAL: BuckVoltage = BuckVoltage::from_millivolts(1800);
-
-    /// LMS6002D digital I/O rail at ADC rates of 62 MS/s and above: 1.925 V
-    /// (`LMS6_VIO_BOOST`), "to get stable samplerates over 60Msps" in libusdr's words.
-    pub(super) const LMS_VIO_BOOST: BuckVoltage = BuckVoltage::from_millivolts(1925);
-
-    /// The mixer LO is the Si5332 VCO divided by this (`si_vco_div`, set in `usdr_init`).
-    pub(super) const MIXER_LO_DIVIDER: u8 = 8;
-
     /// Boost converter output, 3.45 V, the same whichever level the TPS63811's VSEL pin
     /// sits at.
     pub(super) const BOOST_VOLTAGE: OutputVoltage = OutputVoltage::from_millivolts(3450);
@@ -282,7 +117,7 @@ impl Board {
         pmic: Self::PMIC.dev(),
         config: Config::new().with_warn_at_105c(true),
         gpio: Self::VGPIO,
-        lms_io: Self::LMS_VIO_NORMAL,
+        lms_io: wiring::LMS_VIO_NORMAL,
         control: BuckControl::new()
             .with_enabled(true)
             .with_discharge_when_off(true)
@@ -298,10 +133,10 @@ impl Board {
     #[cfg(all(feature = "mio", target_os = "linux"))]
     pub(crate) fn hand_over(&mut self) -> (BoardState, &mut dyn Bus) {
         let state = BoardState {
-            rev3: self.rev3,
-            extended_tx_core: self.chains.extended_tx_core,
-            rx_iq_imbalance: self.rx.iq_imbalance,
-            tx_iq_imbalance: self.tx.iq_imbalance,
+            rev3: self.radio.rev3,
+            extended_tx_core: self.radio.chains.extended_tx_core,
+            rx_iq_imbalance: self.corrections.rx,
+            tx_iq_imbalance: self.corrections.tx,
         };
         (state, self.bus.as_mut())
     }
@@ -319,10 +154,20 @@ impl Board {
     /// Which of the Si5332's outputs 0 and 1 carries the LMS6002D's PLL reference (LVPECL);
     /// the other is the RX sample clock. Revision 3 swapped them.
     pub(super) const fn lvpecl(rev3: bool) -> LvpeclOutput {
-        if rev3 {
-            LvpeclOutput::Out0
-        } else {
-            LvpeclOutput::Out1
-        }
+        wiring::lvpecl(rev3)
+    }
+
+    /// Runs `script` over the bus.
+    pub(super) fn run_script(&mut self, mut script: Script) -> Result<(), Error> {
+        run_sequence(self.bus.as_mut(), &mut script)
+    }
+
+    /// Runs a composite RF operation over the bus with the board's RF state, and takes the
+    /// state back, failed or not: its first failure, or the fault that ended it.
+    pub(super) fn run_radio<S: Steps + OwnsRadio>(&mut self, steps: S) -> Result<(), Error> {
+        let mut run = Run::new(steps);
+        let ran = run_sequence(self.bus.as_mut(), &mut run);
+        self.radio = run.radio();
+        run.fault().map_or(ran, |fault| Err(fault.into()))
     }
 }

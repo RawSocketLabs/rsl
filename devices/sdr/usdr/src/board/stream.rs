@@ -16,21 +16,18 @@ use num_complex::Complex;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
-use super::board::Chains;
 use super::tx_stream::TxStream;
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{BurstPlan, Phy};
 use crate::lowlevel::BusError;
+use crate::portable::radio::{Chain, Chains, StreamUp, stream_down};
 use crate::portable::stream::{EngineSequence, StartPart, SyncTrigger, TxLanes};
 use crate::stream::{
     HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig, SyncMode,
     WireFormat,
 };
-
-/// The frequency a stream tunes to if none was set, in Hz.
-const DEFAULT_RX_HZ: u32 = 320_000_000;
 
 /// Samples converted per step inside the transport's loan: bounds the scratch the
 /// converter writes before the samples reach the caller's buffer, or the wire.
@@ -255,7 +252,7 @@ impl Board {
         if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        config.check_on(self.chains).map(|_| ())
+        config.check_on(self.radio.chains).map(|_| ())
     }
 
     /// Creates `config`'s stream in `direction`, if it has one, joining the group: one
@@ -268,7 +265,7 @@ impl Board {
     ) -> Result<(), Error> {
         match direction {
             Direction::Rx => {
-                let converter = config.check_on(self.chains)?;
+                let converter = config.check_on(self.radio.chains)?;
                 match config.rx.zip(converter) {
                     Some((rx, converter)) => self.create_rx_stream(rx, converter, config.sync),
                     None => Ok(()),
@@ -397,28 +394,8 @@ impl Board {
             host,
             channels,
         } = config;
-        // `usdr_rfic_streaming_up`.
-        let waking = !self.rx_running;
-        self.rx_running = true;
-        self.power_rx()?;
-        if waking {
-            self.bus.sleep(Duration::from_millis(1));
-        }
-        if self.rx.lo_hz == 0 {
-            self.set_rx_frequency(DEFAULT_RX_HZ)?;
-            self.rx.lo_hz = 0;
-        }
-        self.lms.calibrate_rx_dc(
-            self.bus.as_mut(),
-            self.reference.hz(),
-            (self.rx.vga2a, self.rx.vga2b),
-        )?;
-        // The calibration tuned the TX PLL to 320 MHz: libusdr tunes it back to the TX LO,
-        // when one is set, discarding the result. It tunes the LO itself, not the lowest
-        // lock a low-LO fallback found.
-        if self.tx.lo_hz != 0 {
-            let _ = self.tune_tx_pll(self.tx.lo_hz);
-        }
+        // `usdr_rfic_streaming_up`, the default tuning and the DC calibration.
+        self.run_radio(StreamUp::new(self.radio, Chain::Rx))?;
 
         let bus = self.bus.as_mut();
         run_sequence(bus, &mut EngineSequence::rx_reset())?;
@@ -445,7 +422,7 @@ impl Board {
             lost_packets: 0,
         });
         // `usdr_rxupdate_cal`.
-        let mut correction = Phy::rx_create_writes(self.rx.iq_imbalance);
+        let mut correction = Phy::rx_create_writes(self.corrections.rx);
         run_sequence(self.bus.as_mut(), &mut correction)?;
         debug!(
             samples_per_packet,
@@ -668,8 +645,9 @@ impl Board {
     /// attempted; the first failure is returned.
     fn destroy_rx_stream(&mut self) -> Result<(), Error> {
         // `usdr_rfic_streaming_down`.
-        self.rx_running = false;
-        let powered_down = self.set_rx_power(false);
+        let mut down = stream_down(self.radio, Chain::Rx);
+        let powered_down = run_sequence(self.bus.as_mut(), &mut down);
+        self.radio = down.radio();
         let halted = run_sequence(self.bus.as_mut(), &mut EngineSequence::new().run_rx(false));
         let closed = self.bus.rx_stream_close().map_err(Error::Stream);
         debug!("RX stream stopped");

@@ -2,7 +2,6 @@
 
 pub(crate) mod dc_estimator;
 mod diag;
-mod fir_tables;
 pub(crate) mod flash;
 mod gpio;
 mod phy;
@@ -12,7 +11,7 @@ mod tx_stream;
 pub(crate) use diag::{read_atcrbs, read_tx_dma_status, write_atcrbs};
 pub(crate) use gpio::{Gpi, Gpo, Hwid, IdentityRead};
 pub use phy::IqImbalance;
-pub(crate) use phy::{Decimation, Nco, Phy};
+pub(crate) use phy::{Nco, Phy};
 pub(crate) use stream::BurstPlan;
 pub(crate) use tx_stream::{
     ExtendedTxPush, MAX_EXTENDED_TX_TIMESTAMP, MAX_TX_TIMESTAMP, TxCoreStatus, check_tx_gateware,

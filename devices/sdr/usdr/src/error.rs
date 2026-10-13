@@ -4,6 +4,7 @@ pub use rsl_lowlevel::Access;
 
 use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
+use crate::portable::lms6002d::TuneFault;
 use crate::portable::sequence::SequenceFailure;
 use crate::portable::stream::RX_DMA;
 use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, TxChannels, WireFormat};
@@ -377,6 +378,17 @@ impl From<SequenceFailure<BusError>> for Error {
             SequenceFailure::ChipMissing { chip } => Self::ChipMissing(chip),
             // Only the Si5332's clock sequences report a missing input.
             SequenceFailure::InputMissing { .. } => Self::ClockInputMissing,
+        }
+    }
+}
+
+/// A synthesizer tuning's fault, as the driver reports it.
+impl From<TuneFault> for Error {
+    fn from(fault: TuneFault) -> Self {
+        match fault {
+            TuneFault::UnsupportedFrequency(hz) => Self::UnsupportedFrequency(hz),
+            TuneFault::Unlocked(hz) => Self::PllUnlocked(hz),
+            TuneFault::Fault => Self::PllFault,
         }
     }
 }

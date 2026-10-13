@@ -9,8 +9,8 @@
 
 use bnb::{BitEnum, bitfield, u2, u4, u5};
 
+use super::super::register::{IndexedRegister, Register};
 use super::spi::BlockReg;
-use crate::chips::register::{IndexedRegister, Register};
 
 /// TX RF register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

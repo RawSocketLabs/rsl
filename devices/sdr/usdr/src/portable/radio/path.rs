@@ -7,9 +7,10 @@
 //! [`RxPath::Auto`] or [`TxPath::Auto`] hands it back. The RX loopback variants also feed
 //! the TX mixer's output into the chosen input, for self-test and calibration.
 
-use super::Board;
-use super::tune::{RxBand, TxBand};
-use crate::error::Error;
+use super::super::script::Script;
+use super::run::{Run, Steps, owns_radio, parts};
+use super::state::{Radio, RxBand, TxBand};
+use super::tune::SelectRxBand;
 
 /// Which RX input the receiver uses (libusdr's `/dm/sdr/0/rx/path`).
 ///
@@ -85,44 +86,89 @@ impl TxPath {
     }
 }
 
-impl Board {
-    /// Selects the TX path (`usdr_rfic_fe_set_txlna`), with `tx` the transmitter's
-    /// settings. [`TxPath::Auto`] applies the band for the current TX frequency at once,
-    /// without powering the transmitter (`_usdr_signal_event(USDR_TX_LNA_CHANGED)`); before
-    /// any frequency is set that is PA1, as in libusdr. Neither retunes.
-    pub(crate) fn set_tx_path(&mut self, path: TxPath) -> Result<(), Error> {
+impl Radio {
+    /// Selects the TX path (`usdr_rfic_fe_set_txlna`). [`TxPath::Auto`] applies the band
+    /// for the current TX frequency at once, without powering the transmitter
+    /// (`_usdr_signal_event(USDR_TX_LNA_CHANGED)`); before any frequency is set that is PA1,
+    /// as in libusdr. Neither retunes.
+    pub(crate) fn set_tx_path(&mut self, path: TxPath) -> Script {
         let fixed = path.fixed();
         self.tx.band_fixed = fixed.is_some();
         self.select_tx_band(fixed.unwrap_or_else(|| TxBand::for_frequency(self.tx.lo_hz)))
     }
+}
 
-    /// Selects the RX path (`usdr_rfic_fe_set_rxlna`), then switches the RF loopback.
-    ///
-    /// [`RxPath::Auto`] applies the band for the current frequency at once, without
-    /// powering the receiver (`_usdr_signal_event(USDR_RX_LNA_CHANGED)`); before any
-    /// frequency is set that is the mixer band, as in libusdr. A failed band selection
-    /// leaves the loopback alone.
-    pub(crate) fn set_rx_path(&mut self, path: RxPath) -> Result<(), Error> {
-        let fixed = path.fixed();
-        self.rx.band_fixed = fixed.is_some();
-        let (band, loopback) = fixed.unwrap_or((RxBand::for_frequency(self.rx.lo_hz), false));
-        self.select_rx_band(band)?;
-        self.set_rf_loopback(loopback)
-    }
-
-    /// Turns the RF loopback on or off, if it is not already (`usdr_rfic_switch_loopback`).
-    /// Like libusdr, the new state is recorded even if a write fails.
-    fn set_rf_loopback(&mut self, on: bool) -> Result<(), Error> {
-        if self.rx.rf_loopback == on {
-            return Ok(());
-        }
-        let bus = self.bus.as_mut();
-        let switched = if on {
-            self.lms.enable_rf_loopback(bus)
-        } else {
-            self.lms.disable_rf_loopback(bus)
-        };
-        self.rx.rf_loopback = on;
-        switched
+parts! {
+    /// An RX path selection's part.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum RxPathPart {
+        /// The band.
+        Band(Run<SelectRxBand>),
+        /// The loopback's writes.
+        Script(Script),
     }
 }
+
+/// Selects the RX path (`usdr_rfic_fe_set_rxlna`), then switches the RF loopback
+/// (`usdr_rfic_switch_loopback`).
+///
+/// [`RxPath::Auto`] applies the band for the current frequency at once, without powering
+/// the receiver (`_usdr_signal_event(USDR_RX_LNA_CHANGED)`); before any frequency is set
+/// that is the mixer band, as in libusdr. A failed band selection leaves the loopback
+/// alone. Like libusdr, the loopback's new state is recorded even if a write fails.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SetRxPath {
+    /// The state.
+    pub(crate) radio: Radio,
+    /// The band, and whether the transmitter loops back into it.
+    band: (RxBand, bool),
+    /// Parts begun.
+    stage: u8,
+}
+
+impl SetRxPath {
+    /// Selects `path`.
+    pub(crate) fn new(mut radio: Radio, path: RxPath) -> Self {
+        let fixed = path.fixed();
+        radio.rx.band_fixed = fixed.is_some();
+        let band = fixed.unwrap_or((RxBand::for_frequency(radio.rx.lo_hz), false));
+        Self {
+            radio,
+            band,
+            stage: 0,
+        }
+    }
+}
+
+impl Steps for SetRxPath {
+    type Part = RxPathPart;
+
+    fn next_part(&mut self, _failed: bool) -> Option<RxPathPart> {
+        self.stage += 1;
+        let (band, loopback) = self.band;
+        match self.stage {
+            1 => Some(RxPathPart::Band(Run::new(SelectRxBand::new(
+                self.radio, band,
+            )))),
+            2 if self.radio.rx.rf_loopback != loopback => {
+                let lms = &self.radio.lms;
+                let switch = if loopback {
+                    lms.enable_rf_loopback()
+                } else {
+                    lms.disable_rf_loopback()
+                };
+                self.radio.rx.rf_loopback = loopback;
+                Some(RxPathPart::Script(switch))
+            }
+            _ => None,
+        }
+    }
+
+    fn absorb(&mut self, part: &RxPathPart) {
+        if let RxPathPart::Band(run) = part {
+            self.radio = run.steps().radio;
+        }
+    }
+}
+
+owns_radio!(SetRxPath);

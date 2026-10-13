@@ -40,21 +40,34 @@
 //! # Register map
 //!
 //! The chip's register map is split into blocks by address, as in the datasheet: one module
-//! per block, each with its own `Reg` enum. Register meanings come from libusdr's
-//! `hw/lms6002d/lms6002d.yaml` (vendored under `oracle/libusdr`), and the values written
-//! come from `hw/lms6002d/lms6002d.c`.
+//! per block, each with its own `Reg` enum, in the portable tree (`portable/lms6002d`),
+//! with the cached state, its operations and the tuning and calibration machines, which
+//! the blocking driver here and the native USB handle both run. Register meanings come
+//! from libusdr's `hw/lms6002d/lms6002d.yaml` (vendored under `oracle/libusdr`), and the
+//! values written come from `hw/lms6002d/lms6002d.c`.
 
-mod afe;
-mod dc_cal;
-mod lms6002d;
-mod lpf;
-mod pll;
-mod rx_fe;
-mod rx_vga2;
-mod spi;
-mod top;
-mod tx_rf;
+pub(crate) use crate::portable::lms6002d::Lna;
 
-pub(crate) use lms6002d::{CapacitorWindow, Lms6002d};
-pub(crate) use rx_fe::{Lna, LnaGain};
-pub(crate) use tx_rf::PowerAmp;
+#[cfg(test)]
+mod tests {
+    use crate::portable::lms6002d::rx_fe::RXVGA1_CODES;
+
+    #[test]
+    fn the_tabulated_rxvga1_codes_are_libusdrs_formula() {
+        // `_lms6002d_rxvga1_db_to_int`, in double precision as libusdr computes it.
+        let formula = |db: f64| {
+            let code = 127.5 - 127.0 / 10_f64.powf((db - 5.0) / 20.0);
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "libusdr truncates the double to int8_t"
+            )]
+            let code = code as u8;
+            code & 0x7f
+        };
+        let gains = (5..=30).map(f64::from).chain([30.17]);
+        for (db, &code) in gains.zip(RXVGA1_CODES.iter()) {
+            assert_eq!(code, formula(db), "the code for {db} dB");
+        }
+    }
+}

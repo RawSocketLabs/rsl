@@ -14,9 +14,9 @@
 
 use bnb::{BitEnum, bitfield, u3, u5, u6, u9, u23};
 
+use super::super::register::IndexedRegister;
 use super::rx_fe::Lna;
 use super::spi::BlockReg;
-use crate::chips::register::IndexedRegister;
 
 /// Synthesizer register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,7 +170,7 @@ impl BlockReg for Reg {}
 
 /// Which synthesizer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Pll {
+pub(crate) enum Pll {
     /// The TX synthesizer.
     Tx,
 

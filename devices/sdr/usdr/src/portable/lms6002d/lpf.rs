@@ -11,8 +11,8 @@
 
 use bnb::{BitEnum, bitfield, u3, u4, u6};
 
+use super::super::register::IndexedRegister;
 use super::spi::BlockReg;
-use crate::chips::register::IndexedRegister;
 
 /// Filter register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -276,10 +276,8 @@ mod tests {
             15, 15, 15, 15, 15, 14, 14, 13, 13, 12, 11, 11, 10, 10, 10, 9, 7, 8, 7, 7, 6, 6, 5,
             5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0,
         ];
-        let codes: Vec<u8> = LUT
-            .iter()
-            .map(|&(_, bandwidth, _)| Bandwidth::new().with_bandwidth(bandwidth).to_raw() >> 2)
-            .collect();
+        let codes =
+            LUT.map(|(_, bandwidth, _)| Bandwidth::new().with_bandwidth(bandwidth).to_raw() >> 2);
         assert_eq!(codes, libusdr_bands);
     }
 

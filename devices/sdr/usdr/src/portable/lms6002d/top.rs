@@ -11,9 +11,9 @@
 
 use bnb::{BitEnum, bitfield, u3, u4};
 
+use super::super::register::Register;
 use super::rx_fe::Lna;
 use super::spi::BlockReg;
-use crate::chips::register::Register;
 
 /// Top-level register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]

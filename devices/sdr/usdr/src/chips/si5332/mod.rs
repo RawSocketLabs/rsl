@@ -52,17 +52,16 @@
 //! `ClockSequence::wait_active` then waits for the chip to run. On revision 3 the reference
 //! oscillator starts only after this, so the chip may report no input clock; the board
 //! sequence tolerates exactly that error. Setting a sample rate then usually moves the sample
-//! clocks onto the PLL with `ClockSequence::layout`, whose divider plan is a [`Layout`].
-//! Tuning into or out of the mixer band switches output 3 with [`Si5332::set_mixer_lo`].
+//! clocks onto the PLL with `ClockSequence::layout`, whose divider plan is a `Layout`.
+//! Tuning into or out of the mixer band switches output 3 alone (the portable
+//! `SelectRxBand`).
 //!
 //! # Register map
 //!
 //! One flat address space; the address map, the value types (split by stage, as above) and
 //! the sequence machines live in the portable core (`crate::portable::si5332`).
 
-mod layout;
 mod si5332;
 
 pub(crate) use crate::portable::si5332::{LvpeclOutput, Reference};
-pub(crate) use layout::Layout;
 pub(crate) use si5332::Si5332;
