@@ -16,8 +16,6 @@ mod tx_stream;
 
 pub use baseband::NcoChannels;
 pub(crate) use board::Board;
-#[cfg(all(feature = "mio", target_os = "linux"))]
-pub(crate) use board::BoardHandOver;
 pub use calibration::{Calibration, CalibrationReport, Feedback, IqCalibration, TxLoLeakage};
 pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use gain::{RxGain, TxGain};

@@ -16,7 +16,7 @@ use super::stream::StreamOperation;
 use super::{NativeEvent, NativeUsb, Pending, Progress, SequenceOperation, StreamState, Wait};
 use crate::board::RxThrottle;
 use crate::error::Error;
-use crate::fpga::{self, BurstPlan, IdentityRead, StreamPhyWrites};
+use crate::fpga::{self, BurstPlan, IdentityRead, Phy};
 use crate::lowlevel::BusError;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{StreamsConfig, SyncMode, TxMute};
@@ -168,7 +168,7 @@ impl NativeUsb {
         {
             return Err(Error::AlreadyStreaming);
         }
-        config.check(self.session.extended_tx_core)?;
+        config.check(self.session.board.extended_tx_core)?;
         let mut steps = VecDeque::new();
         if let Some(rx) = config.rx {
             // libusdr checks the packet size between the DMA reset and the configuration.
@@ -186,8 +186,9 @@ impl NativeUsb {
                     rx.samples_per_packet,
                 ))),
             }
-            let correction = StreamPhyWrites::rx(self.session.rx_iq_imbalance);
-            steps.push_back(GroupStep::Sequence(SequenceOperation::Dsp(correction)));
+            steps.push_back(engine(Phy::rx_create_writes(
+                self.session.board.rx_iq_imbalance,
+            )));
         }
         if let Some(tx) = config.tx {
             let gate = SequenceOperation::TxGate(IdentityRead::default());
@@ -203,8 +204,9 @@ impl NativeUsb {
                 ),
                 Err(error) => GroupStep::Fail(error),
             });
-            let dsp = StreamPhyWrites::tx(self.session.tx_iq_imbalance);
-            steps.push_back(GroupStep::Sequence(SequenceOperation::Dsp(dsp)));
+            steps.push_back(engine(Phy::tx_create_writes(
+                self.session.board.tx_iq_imbalance,
+            )));
         }
         let run = GroupRun::new(GroupKind::Create, config.sync, steps, now);
         self.pending = Some(Pending::Group(run));
@@ -437,11 +439,7 @@ impl NativeUsb {
         };
         match operation {
             StreamOperation::RxOpen => self.group.get_or_insert_with(group).rx = true,
-            StreamOperation::TxOpen => {
-                let group = self.group.get_or_insert_with(group);
-                group.tx = true;
-                group.tx_mute = TxMute::B;
-            }
+            StreamOperation::TxOpen => self.group.get_or_insert_with(group).tx = true,
             StreamOperation::RxClose | StreamOperation::TxClose => {}
         }
     }

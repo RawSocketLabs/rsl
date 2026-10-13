@@ -872,7 +872,8 @@ impl Device {
     ///
     /// Before giving the bus up, powering the board down as dropping the device does:
     /// [`Error::AlreadyStreaming`] while a stream group exists (stop it first);
-    /// [`Error::Open`] if the device is not on a USB bus or its bus lost synchronization.
+    /// [`Error::Open`] if the device is not on a USB bus, its bus lost synchronization, or
+    /// a stream's endpoint is still held after a failed close.
     /// Then, with the board left powered: [`Error::Open`] if the endpoints cannot be
     /// reopened, the device already has a reactor, or registration fails.
     #[cfg(all(feature = "mio", target_os = "linux"))]

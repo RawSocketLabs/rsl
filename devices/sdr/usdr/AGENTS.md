@@ -176,16 +176,18 @@ Each layer calls only the ones below it.
   the identity sequence and checks the TMP114 ID over the blocking bus, then carries the
   notification sequence, I²C table and operation identities over. `Device::into_native`
   (`UsbHandOver` in `bus.rs`) does the same from a powered device with no stream group,
-  without I/O: the board's identity facts and both chains' IQ corrections come from the
-  `Board`, the `UsbBus` is reached through `Bus::as_any_mut` and left released, and the
-  board stays powered under the handle. Notification transfers are sized as in the blocking bus
+  without I/O: the `Board` builds the session's `BoardState` (identity facts, both chains'
+  IQ corrections), the `UsbBus` is reached through `Bus::as_any_mut` and left released
+  (refused, keeping it, while it still holds a stream's endpoint), and the board stays
+  powered under the handle. Notification transfers are sized as in the blocking bus
   and the pinned C (`IN_NTFY_SIZE`). Its streams (`handle/stream.rs`) run the blocking
   bus's `Rx`/`Tx` over `backend::Filed` queues, which take only completions a reap turn
   filed; the worker copies RX blocks out (at most `adapter::RX_BACKLOG` waiting) and
   cancels streams, and a send follows `TxDevice::send`'s order with its status read on the
   register machine. Its stream group (`handle/group.rs`) creates, starts, readies, mutes,
   throttles and stops the engine with the board's own `EngineSequence`s and
-  `fpga::StreamPhyWrites` (the create's DSP-port writes), the TX gateware gate and the
+  `Phy::{rx,tx}_create_writes` (the create's DSP-port writes, also `EngineSequence`s), the
+  TX gateware gate and the
   transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
   reaches configuration-space registers as `UsbBus` does (index, then data register). It
   leaves the RF chains' power, tuning and calibration to the blocking device.

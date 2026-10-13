@@ -27,7 +27,7 @@ use crate::board::Board;
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
-use crate::fpga::{self, IdentityRead, IqImbalance, StreamPhyWrites};
+use crate::fpga::{self, IdentityRead, IqImbalance};
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction};
@@ -42,8 +42,7 @@ const BUDGET: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
 
 /// Control-plane state carried over from the blocking bus, so the native session continues
 /// its notification sequence baseline, I²C address table, operation identities and TX
-/// status throttle, and the board state a stream group needs: the identity facts and the
-/// chains' IQ corrections.
+/// status throttle, and the board state a stream group needs.
 pub(in super::super) struct Session {
     /// The simple I²C core's address table.
     pub i2c: I2cCache,
@@ -51,20 +50,29 @@ pub(in super::super) struct Session {
     pub next_sequence: Option<u16>,
     /// Never-reused identity for the next native operation, I²C or register/SPI.
     pub next_id: u64,
-    /// Revision 3, read from the hardware ID at hand-over: decides which Si5332 input
-    /// [`ReferenceClock::Board`] selects.
-    pub rev3: bool,
-    /// The gateware's TX core is the extended one, read from the hardware ID at hand-over:
-    /// a stream group refuses TX on it before any I/O, as the blocking device does.
-    pub extended_tx_core: bool,
-    /// The RX chain's IQ correction, which a stream group's RX create writes again, as
-    /// the blocking device's does: carried on from a handed-over device, else a fresh
-    /// board's.
-    pub rx_iq_imbalance: IqImbalance,
-    /// The TX chain's IQ correction, which a TX create writes again; likewise.
-    pub tx_iq_imbalance: IqImbalance,
+    /// The board state carried on.
+    pub board: BoardState,
     /// The TX core's throttled status words, per device as in libusdr.
     pub tx_status: TxStatus,
+}
+
+/// What a native handle carries on from the board it takes over: the facts the board's
+/// identity established and the IQ corrections a stream group's create writes again.
+/// Nothing else of the board reaches a native stream group: its engine sequences depend
+/// only on the group's configuration and state.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BoardState {
+    /// Revision 3: decides which Si5332 input [`ReferenceClock::Board`] selects.
+    pub(crate) rev3: bool,
+    /// The gateware's TX core is the extended one: a stream group refuses TX on it before
+    /// any I/O, as the blocking device does.
+    pub(crate) extended_tx_core: bool,
+    /// The RX chain's IQ correction (libusdr's `rx_corr`), which an RX create writes
+    /// again, as the blocking device's does: a handed-over device's, else a fresh board's.
+    pub(crate) rx_iq_imbalance: IqImbalance,
+    /// The TX chain's IQ correction (libusdr's `tx_corr`), which a TX create writes again;
+    /// likewise.
+    pub(crate) tx_iq_imbalance: IqImbalance,
 }
 
 /// Something a [`NativeUsb`] finished or received.
@@ -160,10 +168,8 @@ enum SequenceOperation {
     /// The Si5332 reference switch: state waits, polls and writes.
     ReferenceClock(ClockSequence<SWITCH_WRITES>),
     /// A stream group's engine registers, through the index window. A group step.
+    /// Also a stream create's DSP-port writes, which need no window.
     Engine(Windowed<EngineSequence>),
-    /// A stream create's DSP-port writes (IQ correction, TX constant generator off). A
-    /// group step.
-    Dsp(StreamPhyWrites),
     /// A TX create's gateware read, then its minimum-build check. A group step.
     TxGate(IdentityRead),
 }
@@ -187,7 +193,6 @@ impl SequenceOperation {
             Self::Identity(identity) | Self::TxGate(identity) => identity.next(),
             Self::ReferenceClock(switch) => switch.next(),
             Self::Engine(engine) => engine.next(),
-            Self::Dsp(dsp) => dsp.next(),
         }
     }
 
@@ -197,7 +202,6 @@ impl SequenceOperation {
             Self::Identity(identity) | Self::TxGate(identity) => identity.complete(result),
             Self::ReferenceClock(switch) => switch.complete(result),
             Self::Engine(engine) => engine.complete(result),
-            Self::Dsp(dsp) => dsp.complete(result),
         }
         .map_err(Error::from)
     }
@@ -241,7 +245,7 @@ impl SequenceOperation {
                     .expect("invariant: a finished identity sequence read both words")
             })),
             Self::ReferenceClock(_) => NativeEvent::ReferenceClock(result),
-            Self::Engine(_) | Self::Dsp(_) | Self::TxGate(_) => {
+            Self::Engine(_) | Self::TxGate(_) => {
                 unreachable!("invariant: group steps end through their group's run")
             }
         }
@@ -401,7 +405,7 @@ impl NativeUsb {
         now: Instant,
     ) -> Result<(), Error> {
         reference.check()?;
-        let input = Board::si5332_reference(reference, self.session.rev3);
+        let input = Board::si5332_reference(reference, self.session.board.rev3);
         let switch = ClockSequence::reference_switch(Si5332::usdr().dev(), input);
         self.start_sequence(SequenceOperation::ReferenceClock(switch), now)
     }

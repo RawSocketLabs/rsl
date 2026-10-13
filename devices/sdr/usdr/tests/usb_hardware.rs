@@ -92,3 +92,67 @@ fn a_real_usb_board_reports_its_temperature_through_a_caller_owned_reactor() {
     };
     cleaned.expect("the worker cancels and releases the device");
 }
+
+#[cfg(feature = "mio")]
+#[test]
+#[ignore = "needs RSL_USDR_USB_PORT, a real uSDR and write access to its USB node"]
+fn a_set_up_real_device_streams_rx_after_handing_over_to_the_native_handle() {
+    use rsl_usdr::transport::usb::{ManagedUsb, NativeEvent};
+    use rsl_usdr::{HostFormat, RxConfig, StreamsConfig, WireFormat};
+
+    /// The next event that is not an RX block.
+    fn next_operation(managed: &mut ManagedUsb) -> NativeEvent {
+        loop {
+            match managed.next_event(Duration::from_secs(2)).unwrap() {
+                Some(NativeEvent::Received(_)) => {}
+                Some(event) => return event,
+                None => panic!("the operation finishes within 2 s"),
+            }
+        }
+    }
+
+    let mut device =
+        Device::with_bus(UsbBus::open(&selected()).expect("opens USB")).expect("powers up");
+    device.set_rx_sample_rate(20_000_000).expect("sets RX rate");
+    device.set_rx_frequency(320_000_000).expect("tunes RX");
+    let mut managed = ManagedUsb::from_device(device).expect("hands the device over");
+    let config = StreamsConfig::rx(RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16));
+    let now = std::time::Instant::now;
+    managed
+        .native()
+        .start_create_streams(config, now())
+        .unwrap();
+    let created = next_operation(&mut managed);
+    assert!(
+        matches!(created, NativeEvent::StreamsCreated(Ok(()))),
+        "{created:?}"
+    );
+    managed.native().start_streams(now()).unwrap();
+    let started = next_operation(&mut managed);
+    assert!(
+        matches!(started, NativeEvent::StreamsStarted(Ok(()))),
+        "{started:?}"
+    );
+    managed.native().start_rx_ready(now()).unwrap();
+    let ready = next_operation(&mut managed);
+    assert!(matches!(ready, NativeEvent::RxReady(Ok(()))), "{ready:?}");
+    for _ in 0..3 {
+        match managed.next_event(Duration::from_secs(2)).unwrap() {
+            Some(NativeEvent::Received(Ok(block))) => assert_eq!(block.payload.len(), 4096),
+            other => panic!("a 1024-sample ci16 block, got {other:?}"),
+        }
+    }
+    managed.native().start_stop_streams(now()).unwrap();
+    let stopped = next_operation(&mut managed);
+    assert!(
+        matches!(stopped, NativeEvent::StreamsStopped(Ok(()))),
+        "{stopped:?}"
+    );
+    managed
+        .close(Duration::from_secs(2))
+        .expect("the worker releases the device");
+    // The hand-over left the board powered: reopen it to power it down.
+    let device =
+        Device::with_bus(UsbBus::open(&selected()).expect("reopens USB")).expect("powers up");
+    device.close().expect("powers down");
+}

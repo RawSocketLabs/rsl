@@ -20,7 +20,7 @@ use super::stream::{CHUNK_SAMPLES, MAX_HOST_SAMPLE_BYTES};
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
-use crate::fpga::{self, MAX_TX_TIMESTAMP, StreamPhyWrites, TxCoreStatus};
+use crate::fpga::{self, MAX_TX_TIMESTAMP, Phy, TxCoreStatus};
 use crate::lowlevel::{BusError, TxCommit};
 use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{
@@ -148,7 +148,7 @@ impl Board {
             dma_drops: 0,
         });
         // `usdr_tx_gen_set(.., false, ..)`, then `usdr_txupdate_cal`.
-        let mut dsp = StreamPhyWrites::tx(self.tx.iq_imbalance);
+        let mut dsp = Phy::tx_create_writes(self.tx.iq_imbalance);
         run_sequence(self.bus.as_mut(), &mut dsp)?;
         debug!(samples_per_packet, ?host, block_bytes, "TX stream created");
         Ok(())

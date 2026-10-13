@@ -61,6 +61,8 @@ pub use bus::UsbBus;
 #[cfg(feature = "mio")]
 pub(crate) use bus::UsbHandOver;
 #[cfg(feature = "mio")]
+pub(crate) use native::BoardState;
+#[cfg(feature = "mio")]
 pub use native::{ManagedUsb, NativeEvent, NativeUsb, RxBlock};
 
 #[cfg(test)]

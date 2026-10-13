@@ -21,9 +21,10 @@ mod worker;
 
 #[cfg(test)]
 pub(super) use adapter::{Adapter, RX_BACKLOG, StreamOutcome};
-pub(super) use backend::Queues;
+pub(super) use backend::{Backend, Queues};
 #[cfg(test)]
-pub(super) use backend::{Backend, Completion, Filing, Reply, Request, Turn};
+pub(super) use backend::{Completion, Filing, Reply, Request, Turn};
+pub(crate) use handle::BoardState;
 pub(super) use handle::Session;
 pub use handle::{NativeEvent, NativeUsb, RxBlock};
 pub use managed::ManagedUsb;

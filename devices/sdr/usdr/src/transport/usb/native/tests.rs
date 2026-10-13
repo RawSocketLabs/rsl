@@ -29,8 +29,8 @@ use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
-    Adapter, Backend, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues, RX_BACKLOG,
-    Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work, Worker,
+    Adapter, Backend, BoardState, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues,
+    RX_BACKLOG, Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 use crate::transport::usb::tx::TxStatus;
@@ -762,14 +762,22 @@ fn overlapping_actions_and_reused_operation_ids_are_rejected_before_io() {
 
 /// A fresh blocking-bus session for a revision 3 board: no sequence baseline yet.
 fn session() -> Session {
+    revision_session(true)
+}
+
+/// A fresh blocking-bus session for a board of revision 3 if `rev3`, else 1 or 2, with
+/// a fresh board's IQ corrections.
+fn revision_session(rev3: bool) -> Session {
     Session {
         i2c: I2cCache::default(),
         next_sequence: None,
         next_id: 0,
-        rev3: true,
-        extended_tx_core: false,
-        rx_iq_imbalance: IqImbalance::default(),
-        tx_iq_imbalance: IqImbalance::default(),
+        board: BoardState {
+            rev3,
+            extended_tx_core: false,
+            rx_iq_imbalance: IqImbalance::default(),
+            tx_iq_imbalance: IqImbalance::default(),
+        },
         tx_status: TxStatus::default(),
     }
 }
@@ -943,10 +951,7 @@ fn powered(
     let (device, board, _) = simulated_device(revision);
     let (mut fake, record, _) = Fake::new();
     fake.io.board = Arc::clone(&board);
-    let carried = Session {
-        rev3: revision == BoardRevision::Rev3,
-        ..session()
-    };
+    let carried = revision_session(revision == BoardRevision::Rev3);
     let native = NativeUsb::attach(fake, carried, reactor.registry(), DEVICE, wake).unwrap();
     (native, board, record, device)
 }
@@ -1082,10 +1087,7 @@ fn a_missing_input_clock_is_reported_and_leaves_the_handle_open() {
         SimBoard::new(BoardRevision::Rev2).with_oscillator_off(),
     ));
     let (mut reactor, wake) = reactor();
-    let carried = Session {
-        rev3: false,
-        ..session()
-    };
+    let carried = revision_session(false);
     let mut native = NativeUsb::attach(fake, carried, reactor.registry(), DEVICE, wake).unwrap();
     native
         .start_reference_clock(ReferenceClock::Oscillator, Instant::now())
@@ -1185,7 +1187,7 @@ fn handing_over_refuses_an_unsupported_revision_and_carries_revision_3() {
         let mut bus = UsbBus::from_io(Box::new(board_usb(board)));
         bus.initialize().unwrap();
         let carried = bus.hand_over().unwrap().session;
-        assert_eq!(carried.rev3, rev3, "revision {revision}");
+        assert_eq!(carried.board.rev3, rev3, "revision {revision}");
     }
     let mut board = SimBoard::new(BoardRevision::Rev3);
     let hwid = board.read_reg(19) & !0xff00;
@@ -2319,6 +2321,10 @@ impl UsbIo for Box<dyn UsbIo> {
     fn tx_close(&mut self) -> Result<(), BusError> {
         (**self).tx_close()
     }
+
+    fn holds_stream(&self) -> bool {
+        (**self).holds_stream()
+    }
 }
 
 /// A device set up with the blocking API: both chains' rate, tuning and IQ corrections,
@@ -2369,9 +2375,9 @@ fn a_handed_over_device_streams_as_the_blocking_device_does() {
         "the hand-over performs no I/O, and the device leaves the board powered"
     );
     let (mut reactor, wake) = reactor();
-    let (fake, _, _) = Fake::over(handed.io);
-    let mut native =
-        NativeUsb::attach(fake, handed.session, reactor.registry(), DEVICE, wake).unwrap();
+    let mut native = handed
+        .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
+        .unwrap();
     native.start_temperature(Instant::now()).unwrap();
     assert!(
         reading(&mut native, &mut reactor).is_ok(),
@@ -2422,4 +2428,30 @@ fn a_device_with_a_stream_group_keeps_its_bus() {
     device
         .stop_streams()
         .expect("the device still holds its bus and group");
+}
+
+#[test]
+fn a_device_holding_a_failed_streams_endpoint_is_refused_and_powered_down() {
+    let (mut device, board, script) = simulated_device(BoardRevision::Rev3);
+    device.set_rx_sample_rate(20_000_000).unwrap();
+    device.set_rx_frequency(1_000_000_000).unwrap();
+    device
+        .create_streams(StreamsConfig::rx(rx_config()))
+        .unwrap();
+    script.lock().unwrap().fail_cancel = true;
+    assert!(
+        device.stop_streams().is_err(),
+        "the RX close fails, so the bus keeps the endpoint"
+    );
+    let (reactor, wake) = reactor();
+    let refused = device.into_native(reactor.registry(), DEVICE, wake);
+    assert!(
+        matches!(refused, Err(Error::Open(BusError::Unsupported(_)))),
+        "a held endpoint is refused before the bus is given up: {refused:?}"
+    );
+    assert_eq!(
+        board.lock().unwrap().gpo(0),
+        Some(0),
+        "the refused device still powered the board down (LMS6002D reset)"
+    );
 }

@@ -453,6 +453,15 @@ impl EngineSequence {
         )
     }
 
+    /// Writes `words` to `reg` in order: a register port that takes a run of words, such as
+    /// the DSP chains' configuration ports a stream create writes. At most
+    /// [`MAX_STEPS`] words.
+    pub(crate) fn port_writes(reg: u32, words: &[u32]) -> Self {
+        words
+            .iter()
+            .fold(Self::new(), |sequence, &word| sequence.write(reg, word))
+    }
+
     /// Appends a front-end command.
     fn front_end(self, command: FrontEndCommand, value: u32) -> Self {
         self.write(REG_RX_FRONT_END, FrontEndWrite::word(command, value))

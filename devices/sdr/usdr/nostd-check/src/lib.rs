@@ -366,7 +366,8 @@ pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
 }
 
 /// Runs the real stream controls: a sync write for every trigger, the throttle on and off,
-/// the host-ready signal and a TX mute; returns the register accesses made.
+/// the host-ready signal, a TX mute and a TX create's five DSP-port writes; returns the
+/// register accesses made.
 ///
 /// # Errors
 ///
@@ -392,6 +393,8 @@ pub fn stream_controls() -> Result<usize, &'static str> {
         controls = EngineSequence::new().sync(trigger);
         accesses += engine(controls, 0)?;
     }
+    let ports = EngineSequence::port_writes(57, &[0x0700_0000, 1, 2, 3, 4]);
+    accesses += engine(ports, 0)?;
     Ok(accesses)
 }
 
@@ -468,7 +471,7 @@ mod tests {
         // start: RX run (two), TX start (three), the sync; RX halt (two); TX stop (one).
         assert_eq!(stream_engine(0), Ok(10 + 6 + 2 + 1));
         assert_eq!(stream_engine(0xffff_ffff), Err("RX DMA engine"));
-        assert_eq!(stream_controls(), Ok(4 + 8));
+        assert_eq!(stream_controls(), Ok(4 + 8 + 5));
     }
 
     #[test]

@@ -20,12 +20,10 @@ use rsl_usb::{DeviceInfo, InQueue, Interface, OutQueue};
 use super::i2c::{Event, I2cTransaction};
 use super::machine::{Machine, Output, Step, Submission, Transfer};
 #[cfg(feature = "mio")]
-use super::native::{self, NativeUsb, Session};
+use super::native::{self, Backend, BoardState, NativeUsb, Session};
 use super::protocol::I2cCache;
 use super::rx::Rx;
 use super::tx::{self, Tx, TxDevice, TxStatus};
-#[cfg(feature = "mio")]
-use crate::board::BoardHandOver;
 #[cfg(feature = "mio")]
 use crate::chips::register::run_sequence;
 #[cfg(feature = "mio")]
@@ -128,6 +126,12 @@ pub(super) trait UsbIo: Send {
     fn sleep(&mut self, duration: Duration) {
         thread::sleep(duration);
     }
+    /// Whether an RX or TX endpoint is still held, open or awaiting cleanup after a failed
+    /// close: [`Self::into_interface`] refuses then.
+    #[cfg(feature = "mio")]
+    fn holds_stream(&self) -> bool {
+        false
+    }
     /// Gives up every queue and returns the claimed interface for another control plane.
     #[cfg(feature = "mio")]
     fn into_interface(self: Box<Self>) -> Result<Interface, BusError> {
@@ -155,8 +159,13 @@ struct Queues {
 
 impl UsbIo for Queues {
     #[cfg(feature = "mio")]
+    fn holds_stream(&self) -> bool {
+        self.rx.is_some() || self.tx.is_some()
+    }
+
+    #[cfg(feature = "mio")]
     fn into_interface(self: Box<Self>) -> Result<Interface, BusError> {
-        if self.rx.is_some() || self.tx.is_some() {
+        if self.holds_stream() {
             return Err(BusError::Unsupported(
                 "stop the streams before handing over the USB device",
             ));
@@ -262,9 +271,9 @@ impl UsbHandOver {
     ///
     /// # Errors
     ///
-    /// [`Error::Open`], leaving `bus` as it was, if it is not a [`UsbBus`] or lost
-    /// synchronization.
-    pub(crate) fn from_device_bus(bus: &mut dyn Bus, board: BoardHandOver) -> Result<Self, Error> {
+    /// [`Error::Open`], leaving `bus` as it was, if it is not a [`UsbBus`], lost
+    /// synchronization, or still holds a stream's endpoint (a failed close).
+    pub(crate) fn from_device_bus(bus: &mut dyn Bus, board: BoardState) -> Result<Self, Error> {
         bus.as_any_mut()
             .and_then(|any| any.downcast_mut::<UsbBus>())
             .ok_or(Error::Open(BusError::Unsupported(
@@ -278,17 +287,33 @@ impl UsbHandOver {
     ///
     /// # Errors
     ///
-    /// [`Error::Open`] if a stream is open or awaiting cleanup, the endpoints cannot be
-    /// reopened, the device already has a reactor, or registration fails.
+    /// [`Error::Open`] if the endpoints cannot be reopened, the device already has a
+    /// reactor, or registration fails.
     pub(crate) fn attach(
         self,
         registry: &Registry,
         token: Token,
         waker: Arc<Waker>,
     ) -> Result<NativeUsb, Error> {
-        let interface = self.io.into_interface().map_err(Error::Open)?;
-        let queues = native::Queues::new(interface).map_err(Error::Open)?;
-        NativeUsb::attach(queues, self.session, registry, token, waker).map_err(Error::Open)
+        self.attach_with(
+            |io| native::Queues::new(io.into_interface()?),
+            registry,
+            token,
+            waker,
+        )
+    }
+
+    /// [`Self::attach`] over the backend `backend` makes of the transport: the real
+    /// queues, or a test's whole-transfer fake.
+    pub(super) fn attach_with<B: Backend>(
+        self,
+        backend: impl FnOnce(Box<dyn UsbIo>) -> Result<B, BusError>,
+        registry: &Registry,
+        token: Token,
+        waker: Arc<Waker>,
+    ) -> Result<NativeUsb, Error> {
+        let backend = backend(self.io).map_err(Error::Open)?;
+        NativeUsb::attach(backend, self.session, registry, token, waker).map_err(Error::Open)
     }
 }
 
@@ -462,7 +487,7 @@ impl UsbBus {
             return Err(Error::UnsupportedRevision(revision));
         }
         Tmp114::usdr().check_id(&mut self)?;
-        self.release(BoardHandOver {
+        self.release(BoardState {
             rev3: revision == 3,
             extended_tx_core: identity.has_extended_tx_core(),
             rx_iq_imbalance: IqImbalance::default(),
@@ -472,19 +497,22 @@ impl UsbBus {
 
     /// Gives up this bus's control-plane session and transport, with `board`'s state, to
     /// a native handle, leaving the bus released: it refuses every operation. A bus that
-    /// lost synchronization keeps its transport and refuses.
+    /// lost synchronization, or still holds a stream's endpoint, keeps its transport and
+    /// refuses, so its device can still power the board down.
     #[cfg(feature = "mio")]
-    fn release(&mut self, board: BoardHandOver) -> Result<UsbHandOver, Error> {
+    fn release(&mut self, board: BoardState) -> Result<UsbHandOver, Error> {
         self.ready().map_err(Error::Open)?;
+        if self.io.holds_stream() {
+            return Err(Error::Open(BusError::Unsupported(
+                "stop the streams before handing over the USB device",
+            )));
+        }
         self.healthy = false;
         let session = Session {
             i2c: mem::take(&mut self.i2c),
             next_sequence: self.next_sequence.take(),
             next_id: self.next_id,
-            rev3: board.rev3,
-            extended_tx_core: board.extended_tx_core,
-            rx_iq_imbalance: board.rx_iq_imbalance,
-            tx_iq_imbalance: board.tx_iq_imbalance,
+            board,
             tx_status: mem::take(&mut self.tx_status),
         };
         Ok(UsbHandOver {

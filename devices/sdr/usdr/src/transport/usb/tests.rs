@@ -656,6 +656,11 @@ impl UsbIo for BoardUsb {
         Tx::close_endpoint(&mut self.tx)
     }
 
+    #[cfg(feature = "mio")]
+    fn holds_stream(&self) -> bool {
+        self.rx.is_some() || self.tx.is_some()
+    }
+
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
         let failure = {
             let mut script = self.script.lock().unwrap();

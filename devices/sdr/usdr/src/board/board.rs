@@ -22,6 +22,8 @@ use crate::frontend::FrontEnd;
 use crate::lowlevel::Bus;
 use crate::portable::power::RailPlan;
 use crate::reference::ReferenceClock;
+#[cfg(all(feature = "mio", target_os = "linux"))]
+use crate::transport::usb::BoardState;
 
 /// A powered uSDR board and the bus it is reached through.
 ///
@@ -291,31 +293,11 @@ impl Board {
     };
 }
 
-/// What a native USB handle carries on from a board when its bus is handed over: the
-/// facts the board's identity established and the DSP corrections a stream group's
-/// create writes again. Nothing else of the board's state reaches a native stream group:
-/// its engine sequences depend only on the group's own configuration.
-#[cfg(all(feature = "mio", target_os = "linux"))]
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BoardHandOver {
-    /// Revision 3: decides which Si5332 input the board's reference selects.
-    pub(crate) rev3: bool,
-
-    /// The gateware's TX core is the extended one, which a TX stream refuses.
-    pub(crate) extended_tx_core: bool,
-
-    /// The RX chain's IQ correction (libusdr's `rx_corr`).
-    pub(crate) rx_iq_imbalance: IqImbalance,
-
-    /// The TX chain's IQ correction (libusdr's `tx_corr`).
-    pub(crate) tx_iq_imbalance: IqImbalance,
-}
-
 impl Board {
-    /// What a native handle carries on from this board, and the bus to hand over.
+    /// What a native USB handle carries on from this board, and the bus to hand over.
     #[cfg(all(feature = "mio", target_os = "linux"))]
-    pub(crate) fn hand_over(&mut self) -> (BoardHandOver, &mut dyn Bus) {
-        let state = BoardHandOver {
+    pub(crate) fn hand_over(&mut self) -> (BoardState, &mut dyn Bus) {
+        let state = BoardState {
             rev3: self.rev3,
             extended_tx_core: self.chains.extended_tx_core,
             rx_iq_imbalance: self.rx.iq_imbalance,
