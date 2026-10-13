@@ -9,7 +9,7 @@ use std::sync::PoisonError;
 use rsl_usdr_sim::SimBoard;
 
 use super::{
-    BOARD, DMS_START, DMS_STOP, EBUSY, EINVAL, ETIMEDOUT, Oracle, Stream, resume_callback_panic,
+    BOARDS, DMS_START, DMS_STOP, EBUSY, EINVAL, ETIMEDOUT, Oracle, Stream, resume_callback_panic,
     usdr_dms_create_ex, usdr_dms_destroy, usdr_dms_op, usdr_dms_sync, with_board,
 };
 
@@ -69,6 +69,22 @@ impl Oracle {
         dformat: &CStr,
         samples_per_packet: u32,
     ) -> Result<(), i32> {
+        self.create_tx_stream_on(dformat, 1, samples_per_packet)
+    }
+
+    /// As [`Oracle::create_tx_stream_as`], on the channels in `channels`, libusdr's mask
+    /// of channel numbers (`usdr_dms_create_ex`): 1 for channel 0; for an aggregate, one
+    /// bit per device.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EBUSY` if a TX stream exists.
+    pub fn create_tx_stream_on(
+        &mut self,
+        dformat: &CStr,
+        channels: u64,
+        samples_per_packet: u32,
+    ) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
@@ -83,7 +99,7 @@ impl Oracle {
                 dev.as_ptr(),
                 c"/ll/stx/0".as_ptr(),
                 dformat.as_ptr(),
-                1,
+                channels,
                 samples_per_packet,
                 0,
                 &raw mut stream,
@@ -169,14 +185,34 @@ impl Oracle {
         timestamp: u64,
         timeout_ms: u32,
     ) -> Result<Option<SendStat>, i32> {
+        self.send_tx_channels(&[buffer], samples, timestamp, timeout_ms)
+    }
+
+    /// As [`Oracle::send_tx`], from one buffer per channel of the stream: libusdr's
+    /// aggregate sends buffer `i` on device `i` (one channel each on the uSDR) and reports
+    /// the master's statistics alone.
+    ///
+    /// # Errors
+    ///
+    /// As [`Oracle::send_tx`].
+    pub fn send_tx_channels(
+        &mut self,
+        channels: &[&[u8]],
+        samples: u32,
+        timestamp: u64,
+        timeout_ms: u32,
+    ) -> Result<Option<SendStat>, i32> {
         let Some(stream) = self.tx else {
             return Err(-EINVAL);
         };
-        let mut buffers = [buffer.as_ptr().cast::<c_void>()];
+        let mut buffers: Vec<*const c_void> = channels
+            .iter()
+            .map(|buffer| buffer.as_ptr().cast::<c_void>())
+            .collect();
         let mut stat = SendStat::UNWRITTEN;
-        // SAFETY: `stream` is live, `buffers` holds one channel buffer the caller sized for
-        // `samples` in the stream's host format (libusdr reads no more), and `stat` is a
-        // valid out-pointer.
+        // SAFETY: `stream` is live, `buffers` holds one channel buffer per channel of the
+        // stream, each the caller sized for `samples` in the stream's host format (libusdr
+        // reads no more), and `stat` is a valid out-pointer.
         let errno = unsafe {
             usdr_dms_send_stat(
                 stream.as_ptr(),
@@ -211,16 +247,23 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
-    /// Runs `f` on the board while libusdr has it, such as to set the TX core's status.
+    /// Runs `f` on the board (the master, for an aggregate) while libusdr has it, such as
+    /// to set the TX core's status.
     ///
     /// # Panics
     ///
     /// Only if the oracle's board went missing, which its session lock rules out.
     pub fn board<R>(&mut self, f: impl FnOnce(&mut SimBoard) -> R) -> R {
-        let mut board = BOARD.lock().unwrap_or_else(PoisonError::into_inner);
-        f(board
-            .as_mut()
-            .expect("invariant: a board is installed while an oracle is open"))
+        self.board_at(0, f)
+    }
+
+    /// Runs `f` on board `board` while libusdr has it.
+    ///
+    /// # Panics
+    ///
+    /// If the oracle has no board `board`.
+    pub fn board_at<R>(&mut self, board: usize, f: impl FnOnce(&mut SimBoard) -> R) -> R {
+        f(&mut BOARDS.lock().unwrap_or_else(PoisonError::into_inner)[board])
     }
 
     /// Runs a stream operation on the TX stream.
@@ -235,19 +278,19 @@ impl Oracle {
     }
 }
 
-/// The sim plugin's TX stream setup: the board's buffers, `block` bytes each.
+/// The sim plugin's TX stream setup: board `board`'s buffers, `block` bytes each.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_oracle_tx_open(block: usize) {
-    with_board(|board| {
+extern "C" fn rsl_oracle_tx_open(board: c_uint, block: usize) {
+    with_board(board, |board| {
         board.tx_open(block);
         0
     });
 }
 
-/// The sim plugin's TX stream release.
+/// The sim plugin's TX stream release on board `board`.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_oracle_tx_close() {
-    with_board(|board| {
+extern "C" fn rsl_oracle_tx_close(board: c_uint) {
+    with_board(board, |board| {
         board.tx_close();
         0
     });
@@ -260,10 +303,14 @@ extern "C" fn rsl_oracle_tx_close() {
 ///
 /// `words` must be valid for four writable `c_uint`s and `has_record` for one `c_int`.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_oracle_tx_grant(words: *mut c_uint, has_record: *mut c_int) -> c_int {
+unsafe extern "C" fn rsl_oracle_tx_grant(
+    board: c_uint,
+    words: *mut c_uint,
+    has_record: *mut c_int,
+) -> c_int {
     // SAFETY: the caller guarantees both pointers' extents.
     let (words, has_record) = unsafe { (slice::from_raw_parts_mut(words, 4), &mut *has_record) };
-    with_board(|board| {
+    with_board(board, |board| {
         let Some(record) = board.tx_grant() else {
             return -ETIMEDOUT;
         };
@@ -280,10 +327,10 @@ unsafe extern "C" fn rsl_oracle_tx_grant(words: *mut c_uint, has_record: *mut c_
 ///
 /// `bytes` must be valid for `len` readable bytes.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_oracle_tx_load(bytes: *const c_void, len: usize) {
+unsafe extern "C" fn rsl_oracle_tx_load(board: c_uint, bytes: *const c_void, len: usize) {
     // SAFETY: the caller guarantees the extent.
     let bytes = unsafe { slice::from_raw_parts(bytes.cast::<u8>(), len) };
-    with_board(|board| {
+    with_board(board, |board| {
         board.tx_load(bytes);
         0
     });

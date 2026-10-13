@@ -2,7 +2,12 @@
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the USB entries never match a
-// device, and the PCIe entry returns the simulated uSDR (m2_lm6_1) board.
+// device, and the PCIe entry returns a simulated uSDR (m2_lm6_1) board.
+//
+// Several boards can be open at once, as libusdr's multi-device aggregate (`device/mdev.c`)
+// opens them: its connection string `bus=sim0:sim1:...` makes `mdev_create` call this
+// plugin once per bus name, and `simN` selects the oracle's board N. Without a `bus`
+// parameter the plugin opens board 0. Every callback names its board.
 
 #include <errno.h>
 #include <stddef.h>
@@ -43,21 +48,24 @@ int rsl_oracle_si2c_sequence(const unsigned* requests, size_t count, unsigned* o
     return 0;
 }
 
-// Implemented in src/lib.rs. Returns 0 or a negative errno.
-int rsl_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz, const void* pout);
+// Implemented in src/lib.rs, each on the oracle's board `board`. Returns 0 or a negative
+// errno.
+int rsl_oracle_ls_op(unsigned board, unsigned op, unsigned addr, size_t insz, void* pin,
+                     size_t outsz, const void* pout);
+// Advances the clock of the board libusdr addressed last: `usleep` names no device.
 void rsl_oracle_sleep_us(unsigned long long us);
 // Fills `out` (`len` bytes) with the board's next RX block and `oob` with its two words.
 // Returns 0, or -ETIMEDOUT while the board's stream engine is stopped.
-int rsl_oracle_rx_next(void* out, size_t len, unsigned long long* oob);
+int rsl_oracle_rx_next(unsigned board, void* out, size_t len, unsigned long long* oob);
 // Sets the board's TX buffers up, `block` bytes each.
-void rsl_oracle_tx_open(size_t block);
+void rsl_oracle_tx_open(unsigned board, size_t block);
 // Releases the board's TX buffers.
-void rsl_oracle_tx_close(void);
+void rsl_oracle_tx_close(unsigned board);
 // Takes the board's next free TX buffer: 0 with `*has_record` set and `words` filled when
 // a played packet freed it, or -ETIMEDOUT while every buffer waits to play.
-int rsl_oracle_tx_grant(unsigned* words, int* has_record);
+int rsl_oracle_tx_grant(unsigned board, unsigned* words, int* has_record);
 // Hands the bytes libusdr wrote into the granted buffer to the board.
-void rsl_oracle_tx_load(const void* bytes, size_t len);
+void rsl_oracle_tx_load(unsigned board, const void* bytes, size_t len);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
@@ -69,7 +77,8 @@ int usleep(useconds_t us)
 struct sim_dev {
     lowlevel_dev_t ll;  // must be first: libusdr casts lldev_t to it
     device_id_t id;
-    void* rx_block;     // the RX block lent to libusdr between wait and release
+    unsigned board;     // the oracle's board this device forwards to
+    void* rx_block;    // the RX block lent to libusdr between wait and release
     size_t rx_block_size;
     void* tx_block;     // the TX buffer lent to libusdr between get and commit
     size_t tx_block_size;
@@ -91,9 +100,9 @@ static int sim_generic_get(lldev_t dev, int op, const char** pout)
 static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
                      size_t meminsz, void* pin, size_t memoutsz, const void* pout)
 {
-    (void)dev;
     (void)subdev;
-    return rsl_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
+    return rsl_oracle_ls_op(((struct sim_dev*)dev)->board, op, addr, meminsz, pin, memoutsz,
+                            pout);
 }
 
 static int sim_destroy(lldev_t dev)
@@ -135,9 +144,13 @@ static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_p
         d->tx_block_size = params->block_size;
         d->tx_param = params->param;
         d->tx_commit = params->soft_tx_commit;
-        rsl_oracle_tx_open(params->block_size);
+        rsl_oracle_tx_open(d->board, params->block_size);
     }
-    params->underlying_fd = -1;
+    // The PCIe transport reports its device's descriptor (`d->fd`), and libusdr's
+    // multi-device streams refuse a stream without one (`_mdev_create_stream`: -ENOTSUP).
+    // Nothing at the pinned commit polls it (`mdev.c` only stores it), so the sim reports a
+    // placeholder, descriptor 0, which nothing reads.
+    params->underlying_fd = 0;
     params->out_mtu_size = params->block_size;
     *channel = params->streamno;
     return 0;
@@ -145,10 +158,9 @@ static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_p
 
 static int sim_stream_deinitialize(lldev_t dev, subdev_t subdev, stream_t channel)
 {
-    (void)dev;
     (void)subdev;
     if (channel == 1) {
-        rsl_oracle_tx_close();
+        rsl_oracle_tx_close(((struct sim_dev*)dev)->board);
     }
     return 0;
 }
@@ -165,7 +177,7 @@ static int sim_send_dma_get(lldev_t dev, subdev_t subdev, stream_t channel, void
     struct sim_dev* d = (struct sim_dev*)dev;
     unsigned words[4] = { 0, 0, 0, 0 };
     int has_record = 0;
-    int res = d->tx_block == NULL ? -ETIMEDOUT : rsl_oracle_tx_grant(words, &has_record);
+    int res = d->tx_block == NULL ? -ETIMEDOUT : rsl_oracle_tx_grant(d->board, words, &has_record);
     if (res) {
         return res;
     }
@@ -192,7 +204,7 @@ static int sim_send_dma_commit(lldev_t dev, subdev_t subdev, stream_t channel, v
     if (buffer != d->tx_block || sz > d->tx_block_size || d->tx_commit == NULL) {
         return -EINVAL;
     }
-    rsl_oracle_tx_load(buffer, sz);
+    rsl_oracle_tx_load(d->board, buffer, sz);
     return d->tx_commit(d->tx_param, sz, oob_ptr, oob_size);
 }
 
@@ -215,7 +227,7 @@ static int sim_recv_dma_wait(lldev_t dev, subdev_t subdev, stream_t channel, voi
     unsigned long long oob[2] = { 0, 0 };
     int res = d->rx_block == NULL
         ? -ETIMEDOUT
-        : rsl_oracle_rx_next(d->rx_block, d->rx_block_size, oob);
+        : rsl_oracle_rx_next(d->board, d->rx_block, d->rx_block_size, oob);
     *buffer = res == 0 ? d->rx_block : NULL;
     if (oob_ptr != NULL && oob_size != NULL) {
         unsigned size = *oob_size < sizeof(oob) ? *oob_size : (unsigned)sizeof(oob);
@@ -282,16 +294,43 @@ static lowlevel_ops_t s_sim_tool_ops = {
     .destroy = sim_tool_destroy,
 };
 
+// The board a `bus` parameter names: `simN` is board N (at most 31, libusdr's aggregate
+// holds 32), and no `bus` parameter board 0. Returns -ENODEV for any other bus name.
+static int sim_board_of(unsigned pcount, const char** devparam, const char** devval)
+{
+    for (unsigned i = 0; i < pcount; i++) {
+        if (strcmp(devparam[i], "bus") != 0) {
+            continue;
+        }
+        const char* name = devval[i];
+        if (name == NULL || strncmp(name, "sim", 3) != 0 || name[3] == 0) {
+            return -ENODEV;
+        }
+        char* end = NULL;
+        unsigned long board = strtoul(name + 3, &end, 10);
+        if (*end != 0 || board > 31) {
+            return -ENODEV;
+        }
+        return (int)board;
+    }
+    return 0;
+}
+
 static int sim_create(unsigned pcount, const char** devparam, const char** devval,
                       lldev_t* odev, unsigned vidpid, void* webops, uintptr_t param)
 {
     (void)vidpid; (void)webops; (void)param;
+    int board = sim_board_of(pcount, devparam, devval);
+    if (board < 0) {
+        return board;
+    }
     struct sim_dev* d = calloc(1, sizeof(*d));
     if (d == NULL) {
         return -ENOMEM;
     }
     d->ll.ops = s_tool_mode ? &s_sim_tool_ops : &s_sim_ops;
     d->id = M2_LM6_1_DEVICE_ID_C;
+    d->board = (unsigned)board;
 
     // Same order as pcie_uram_plugin_create; like it, a failed init frees only the handle.
     // The flash tool's device gets its description but no bring-up (see below).
@@ -450,31 +489,32 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
     return -ENODEV;
 }
 
-// libusdr's flash driver against the board directly. It needs only `ls_op`, so the device
+// libusdr's flash driver against board 0 directly. It needs only `ls_op`, so the device
 // is a bare transport handle with no board description and no bring-up: the parity tests
 // compare the flash operations alone. The register bases are the caller's.
-static lowlevel_dev_t s_flash_dev = { .ops = &s_sim_ops, .pdev = NULL };
+static struct sim_dev s_flash_sim = { .ll = { .ops = &s_sim_ops, .pdev = NULL }, .board = 0 };
+static lowlevel_dev_t* const s_flash_dev = &s_flash_sim.ll;
 
 int rsl_oracle_flash_get_id(unsigned base, uint32_t* id, char* out, size_t maxstr)
 {
-    return espi_flash_get_id(&s_flash_dev, 0, base, id, out, maxstr);
+    return espi_flash_get_id(s_flash_dev, 0, base, id, out, maxstr);
 }
 
 int rsl_oracle_flash_read(unsigned base, unsigned mmap_base, uint32_t offset, uint32_t size,
                           uint8_t* out)
 {
-    return espi_flash_read(&s_flash_dev, 0, base, mmap_base, offset, size, out);
+    return espi_flash_read(s_flash_dev, 0, base, mmap_base, offset, size, out);
 }
 
 int rsl_oracle_flash_erase(unsigned base, uint32_t size, uint32_t offset)
 {
-    return espi_flash_erase(&s_flash_dev, 0, base, size, offset);
+    return espi_flash_erase(s_flash_dev, 0, base, size, offset);
 }
 
 int rsl_oracle_flash_write(unsigned base, unsigned mmap_base, const uint8_t* in, uint32_t size,
                            uint32_t offset, unsigned flags)
 {
-    return espi_flash_write(&s_flash_dev, 0, base, mmap_base, in, size, offset, flags);
+    return espi_flash_write(s_flash_dev, 0, base, mmap_base, in, size, offset, flags);
 }
 
 // libusdr's flash tool (tools/usdr_flash.c, its `main` renamed by build.rs) on the board,

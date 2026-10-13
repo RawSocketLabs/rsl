@@ -2,14 +2,17 @@
 //!
 //! libusdr (vendored in `libusdr/`, pinned in `libusdr/PIN`) is compiled with its hardware
 //! transports replaced by `shim/sim_plugin.c`. That plugin forwards every low-level
-//! operation to the board installed by [`Oracle::open`], and libusdr's `usleep` advances the
-//! board's virtual clock. The board's trace is the reference `rsl-usdr` is checked against.
+//! operation to the board installed by [`Oracle::open`] (or, for libusdr's multi-device
+//! aggregate, to each of the boards [`Oracle::open_multi`] installs), and libusdr's `usleep`
+//! advances the virtual clock of the board it addressed last. Each board's trace is the
+//! reference `rsl-usdr` is checked against.
 //!
 //! libusdr keeps process-global state, so one [`Oracle`] exists at a time: [`Oracle::open`]
 //! blocks until any other instance is closed.
 
 use std::any::Any;
-use std::ffi::{CStr, c_char, c_int, c_uint, c_ulonglong, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_ulonglong, c_void};
+use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr::{self, NonNull};
 use std::slice;
@@ -54,8 +57,18 @@ const LSOP_I2C_DEV: c_uint = 2;
 
 /// Serialises oracles: libusdr's device registry and logging are process-global.
 static SESSION: Mutex<()> = Mutex::new(());
-/// The board the C plugin forwards to while an oracle is open.
-static BOARD: Mutex<Option<SimBoard>> = Mutex::new(None);
+/// The boards the C plugin forwards to while an oracle is open, by the plugin's board
+/// number (`simN`); empty while none is.
+static BOARDS: Mutex<Vec<SimBoard>> = Mutex::new(Vec::new());
+/// The board libusdr addressed last.
+static CURRENT: Mutex<usize> = Mutex::new(0);
+/// With several boards, the sleeps libusdr took since it last addressed one, in order.
+/// libusdr's `usleep` names no device; it runs one device's operation at a time, and a
+/// device's operation sleeps between or before that device's own operations, so a sleep
+/// belongs to the next board addressed, or, if libusdr returns first, to the last one
+/// ([`CURRENT`]). An assumption of the harness, checked by the multi-device parity tests'
+/// per-board traces. With one board, sleeps reach it at once.
+static SLEEPS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 /// A panic raised inside a callback, held until control is back in Rust.
 static PANIC: Mutex<Option<Box<dyn Any + Send>>> = Mutex::new(None);
 
@@ -171,6 +184,17 @@ pub struct OpenError {
     pub board: Box<SimBoard>,
 }
 
+/// libusdr refused to open its multi-device aggregate.
+#[derive(Debug, thiserror::Error)]
+#[error("libusdr failed to open the aggregate: errno {errno}")]
+pub struct MultiOpenError {
+    /// The negative errno libusdr returned.
+    pub errno: i32,
+    /// The boards, in device order, with the traces of everything libusdr did before
+    /// failing.
+    pub boards: Vec<SimBoard>,
+}
+
 impl Oracle {
     /// Opens `board` through libusdr's `usdr_dmd_create_string`, which runs the full uSDR
     /// bring-up (power, clocks, RF chip reset).
@@ -189,21 +213,57 @@ impl Oracle {
     ///
     /// [`OpenError`] when libusdr's open fails.
     pub fn open_with(board: SimBoard, parameters: &CStr) -> Result<Self, OpenError> {
+        Self::create(vec![board], parameters).map_err(|(errno, mut boards)| OpenError {
+            errno,
+            board: Box::new(boards.remove(0)),
+        })
+    }
+
+    /// Opens libusdr's multi-device aggregate (`device/mdev.c`) over `boards`, board `i` as
+    /// its device `i` (the first is its master): `usdr_dmd_create_string` with
+    /// `bus=sim0:sim1:...`, then `parameters` (which must not name a `bus`), each device
+    /// opened with them in turn. Device-manager values set on the oracle then go to every
+    /// device, values read come from the master, and streams span the devices.
+    ///
+    /// # Errors
+    ///
+    /// [`MultiOpenError`] when libusdr's open fails, with every board.
+    ///
+    /// # Panics
+    ///
+    /// If `boards` holds fewer than two boards (libusdr opens one without the aggregate)
+    /// or more than 32 (the aggregate's limit), or `parameters` is not UTF-8.
+    pub fn open_multi(boards: Vec<SimBoard>, parameters: &CStr) -> Result<Self, MultiOpenError> {
+        assert!(
+            (2..=32).contains(&boards.len()),
+            "libusdr's aggregate takes 2 to 32 devices"
+        );
+        let buses: Vec<String> = (0..boards.len()).map(|i| format!("sim{i}")).collect();
+        let parameters = parameters.to_str().expect("the parameters are UTF-8");
+        let mut connection = format!("bus={}", buses.join(":"));
+        if !parameters.is_empty() {
+            connection = format!("{connection},{parameters}");
+        }
+        let connection = CString::new(connection).expect("no NUL in the connection string");
+        Self::create(boards, &connection)
+            .map_err(|(errno, boards)| MultiOpenError { errno, boards })
+    }
+
+    /// Installs `boards` and opens libusdr with `connection`; on failure, the negative
+    /// errno and the boards.
+    fn create(boards: Vec<SimBoard>, connection: &CStr) -> Result<Self, (i32, Vec<SimBoard>)> {
         let session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
-        install(Some(board));
+        install(boards);
 
         let mut dev: DmDev = ptr::null_mut();
         // SAFETY: the connection string is NUL-terminated and `dev` is a valid out-pointer.
-        let errno = unsafe { usdr_dmd_create_string(parameters.as_ptr(), &raw mut dev) };
+        let errno = unsafe { usdr_dmd_create_string(connection.as_ptr(), &raw mut dev) };
 
         let Some(dev) = NonNull::new(dev) else {
             resume_callback_panic();
             // A null handle with errno 0 would be a libusdr bug; still report a failure.
             let errno = if errno == 0 { -EIO } else { errno };
-            return Err(OpenError {
-                errno,
-                board: Box::new(take_board()),
-            });
+            return Err((errno, take_boards()));
         };
         // Owned before any callback panic resumes, so unwinding closes the device.
         let mut oracle = Self {
@@ -217,10 +277,7 @@ impl Oracle {
             return Ok(oracle);
         }
         oracle.shutdown();
-        Err(OpenError {
-            errno,
-            board: Box::new(take_board()),
-        })
+        Err((errno, take_boards()))
     }
 
     /// Reads a libusdr device-manager value, such as `c"/dm/sensor/temp"`.
@@ -562,6 +619,71 @@ impl Oracle {
         }
     }
 
+    /// As [`Oracle::receive_rx_packet`], into one buffer per channel of the stream, as
+    /// `usdr_dms_info` reports them: libusdr's aggregate fills buffer `i` from device `i`
+    /// (one channel each on the uSDR) and reports the master's packet information alone.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn receive_rx_channels(
+        &mut self,
+        timeout_ms: u32,
+    ) -> Result<(Vec<Vec<u8>>, RecvInfo), i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        let info = self.rx_stream_info()?;
+        let packet_bytes = usize::try_from(info.packet_bytes).map_err(|_| -EINVAL)?;
+        let channels = usize::try_from(info.channels).map_err(|_| -EINVAL)?;
+        let mut buffers = vec![vec![0_u8; packet_bytes]; channels];
+        let mut pointers: Vec<*mut c_void> = buffers
+            .iter_mut()
+            .map(|buffer| buffer.as_mut_ptr().cast())
+            .collect();
+        let mut recv = RecvInfo::default();
+        // SAFETY: `stream` is live, `pointers` holds one buffer of the packet's host size per
+        // channel the stream reports, the most libusdr's converters write into each, and
+        // `recv` is a valid out-pointer.
+        let errno = unsafe {
+            usdr_dms_recv(
+                stream.as_ptr(),
+                pointers.as_mut_ptr(),
+                timeout_ms,
+                &raw mut recv,
+            )
+        };
+        resume_callback_panic();
+        if errno == 0 {
+            Ok((buffers, recv))
+        } else {
+            Err(errno)
+        }
+    }
+
+    /// The RX stream's direction (`USDR_DMS_TX` 0, `USDR_DMS_RX` 1) and channel count, as
+    /// `usdr_dms_info` reports them.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no stream.
+    pub fn rx_stream_kind_and_channels(&mut self) -> Result<(u32, u32), i32> {
+        let info = self.rx_stream_info()?;
+        Ok((info.kind, info.channels))
+    }
+
+    /// `usdr_dms_info` of the RX stream.
+    fn rx_stream_info(&mut self) -> Result<StreamInfo, i32> {
+        let Some(stream) = self.stream else {
+            return Err(-EINVAL);
+        };
+        let mut info = StreamInfo::default();
+        // SAFETY: `stream` is live and `info` is a valid out-pointer.
+        let errno = unsafe { usdr_dms_info(stream.as_ptr(), &raw mut info) };
+        resume_callback_panic();
+        if errno == 0 { Ok(info) } else { Err(errno) }
+    }
+
     /// Tells the RX DMA engine the host is ready (`usdr_dms_set_ready`).
     ///
     /// # Errors
@@ -768,28 +890,41 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
-    /// How many operations the board has traced so far; slice the trace with it, after
-    /// [`Oracle::close`], to isolate one call's operations.
+    /// How many operations the board (the master, for an aggregate) has traced so far;
+    /// slice the trace with it, after [`Oracle::close`], to isolate one call's operations.
     ///
     /// # Panics
     ///
     /// Only if the oracle's board went missing, which its session lock rules out.
     #[must_use]
     pub fn trace_len(&self) -> usize {
-        BOARD
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .expect("invariant: a board is installed while an oracle is open")
+        self.trace_len_of(0)
+    }
+
+    /// How many operations board `board` has traced so far.
+    ///
+    /// # Panics
+    ///
+    /// If the oracle has no board `board`.
+    #[must_use]
+    pub fn trace_len_of(&self, board: usize) -> usize {
+        BOARDS.lock().unwrap_or_else(PoisonError::into_inner)[board]
             .trace()
             .len()
     }
 
-    /// Closes libusdr's device, which powers the board down, and returns the board.
+    /// Closes libusdr's device, which powers the board down, and returns the board (the
+    /// master, for an aggregate).
     #[must_use]
-    pub fn close(mut self) -> SimBoard {
+    pub fn close(self) -> SimBoard {
+        self.close_all().remove(0)
+    }
+
+    /// Closes libusdr's device, which powers every board down, and returns the boards.
+    #[must_use]
+    pub fn close_all(mut self) -> Vec<SimBoard> {
         self.shutdown();
-        take_board()
+        take_boards()
     }
 
     /// Closes the libusdr device if it is still open, re-raising any callback panic.
@@ -821,39 +956,74 @@ impl Drop for Oracle {
         } else {
             resume_callback_panic();
         }
-        install(None);
+        install(Vec::new());
     }
 }
 
-/// Replaces the board the C plugin forwards to.
-fn install(board: Option<SimBoard>) {
-    *BOARD.lock().unwrap_or_else(PoisonError::into_inner) = board;
-}
-
-/// Removes the installed board.
-fn take_board() -> SimBoard {
-    BOARD
+/// Replaces the boards the C plugin forwards to.
+fn install(boards: Vec<SimBoard>) {
+    *BOARDS.lock().unwrap_or_else(PoisonError::into_inner) = boards;
+    *CURRENT.lock().unwrap_or_else(PoisonError::into_inner) = 0;
+    SLEEPS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .take()
-        .expect("invariant: a board is installed while an oracle is open")
+        .clear();
 }
 
-/// Re-raises a panic caught in a callback, now that no C frames are on the stack.
+/// Removes the installed boards.
+fn take_boards() -> Vec<SimBoard> {
+    let boards = mem::take(&mut *BOARDS.lock().unwrap_or_else(PoisonError::into_inner));
+    assert!(
+        !boards.is_empty(),
+        "invariant: a board is installed while an oracle is open"
+    );
+    boards
+}
+
+/// Removes the installed boards, returning the first.
+fn take_board() -> SimBoard {
+    take_boards().remove(0)
+}
+
+/// Once libusdr has returned: gives the board it addressed last the sleeps still pending
+/// ([`SLEEPS`]), then re-raises a panic caught in a callback, now that no C frames are on
+/// the stack.
 fn resume_callback_panic() {
+    let mut boards = BOARDS.lock().unwrap_or_else(PoisonError::into_inner);
+    let current = *CURRENT.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(board) = boards.get_mut(current) {
+        take_sleeps(board);
+    }
+    drop(boards);
     if let Some(payload) = PANIC.lock().unwrap_or_else(PoisonError::into_inner).take() {
         panic::resume_unwind(payload);
     }
 }
 
-/// Runs `f` on the installed board, converting a panic into `-EIO` so it never unwinds
+/// Gives `board` the sleeps pending, in order.
+fn take_sleeps(board: &mut SimBoard) {
+    for us in SLEEPS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .drain(..)
+    {
+        board.sleep_us(us);
+    }
+}
+
+/// Runs `f` on installed board `index`, which becomes the board libusdr addressed last,
+/// after giving it the sleeps pending, converting a panic into `-EIO` so it never unwinds
 /// through C.
-fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
+fn with_board(index: c_uint, f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let mut board = BOARD.lock().unwrap_or_else(PoisonError::into_inner);
-        f(board
-            .as_mut()
-            .expect("invariant: libusdr calls back only while an oracle is open"))
+        let index = usize::try_from(index).expect("invariant: a board number fits in usize");
+        let mut boards = BOARDS.lock().unwrap_or_else(PoisonError::into_inner);
+        let board = boards
+            .get_mut(index)
+            .expect("invariant: libusdr calls back only for an installed board");
+        *CURRENT.lock().unwrap_or_else(PoisonError::into_inner) = index;
+        take_sleeps(board);
+        f(board)
     }));
     result.unwrap_or_else(|payload| {
         // Keep the first panic: later ones are usually libusdr's error path calling back.
@@ -865,31 +1035,40 @@ fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
     })
 }
 
-/// libusdr's `usleep`, redirected by the shim. The redirect is process-wide, so a call
+/// libusdr's `usleep`, redirected by the shim: on the one board, or with several, pending
+/// for the next board addressed ([`SLEEPS`]). The redirect is process-wide, so a call
 /// while no oracle is open returns at once.
 #[unsafe(no_mangle)]
 extern "C" fn rsl_oracle_sleep_us(us: c_ulonglong) {
-    if BOARD
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .is_none()
-    {
-        return;
+    let boards = BOARDS.lock().unwrap_or_else(PoisonError::into_inner).len();
+    match boards {
+        0 => {}
+        1 => {
+            with_board(0, |board| {
+                board.sleep_us(us);
+                0
+            });
+        }
+        _ => SLEEPS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(us),
     }
-    with_board(|board| {
-        board.sleep_us(us);
-        0
-    });
 }
 
-/// The sim plugin's RX DMA wait: copies the board's next block into `out` and its
+/// The sim plugin's RX DMA wait: copies board `board`'s next block into `out` and its
 /// out-of-band words into `oob`, or returns `-ETIMEDOUT` while its stream engine is stopped.
 ///
 /// # Safety
 ///
 /// `out` must be valid for `len` writable bytes and `oob` for two writable `u64`s.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_oracle_rx_next(out: *mut c_void, len: usize, oob: *mut u64) -> c_int {
+unsafe extern "C" fn rsl_oracle_rx_next(
+    board: c_uint,
+    out: *mut c_void,
+    len: usize,
+    oob: *mut u64,
+) -> c_int {
     // SAFETY: the caller guarantees both pointers' extents.
     let (out, oob) = unsafe {
         (
@@ -897,7 +1076,7 @@ unsafe extern "C" fn rsl_oracle_rx_next(out: *mut c_void, len: usize, oob: *mut 
             slice::from_raw_parts_mut(oob, 2),
         )
     };
-    with_board(|board| {
+    with_board(board, |board| {
         let Some((block, words)) = board.rx_next_block() else {
             return -ETIMEDOUT;
         };
@@ -914,7 +1093,7 @@ unsafe extern "C" fn rsl_oracle_rx_next(out: *mut c_void, len: usize, oob: *mut 
     })
 }
 
-/// The sim plugin's `ls_op`: dispatches one libusdr low-level operation to the board.
+/// The sim plugin's `ls_op`: dispatches one libusdr low-level operation to board `board`.
 ///
 /// # Safety
 ///
@@ -922,6 +1101,7 @@ unsafe extern "C" fn rsl_oracle_rx_next(out: *mut c_void, len: usize, oob: *mut 
 /// (either may be null when its size is zero), as libusdr's `lowlevel_ops.ls_op` requires.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rsl_oracle_ls_op(
+    board: c_uint,
     op: c_uint,
     addr: c_uint,
     insz: usize,
@@ -941,7 +1121,7 @@ unsafe extern "C" fn rsl_oracle_ls_op(
         // SAFETY: the caller guarantees `pout` is valid for `outsz` readable bytes.
         unsafe { slice::from_raw_parts(pout.cast(), outsz) }
     };
-    with_board(|board| match op {
+    with_board(board, |board| match op {
         LSOP_HWREG => hwreg(board, addr, input, output),
         // SPI addresses carry config in [31:16]; the bus is [7:0] (`SPIEXT_LSOP_GET_BUS`).
         LSOP_SPI => spi(board, addr & 0xff, input, output),

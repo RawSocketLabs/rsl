@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 
 use rsl_usdr_sim::SimBoard;
 
-use super::{BOARD, SESSION, install, resume_callback_panic, take_board, with_board};
+use super::{BOARDS, SESSION, install, resume_callback_panic, take_board, with_board};
 
 /// The words the tool's measurement reads load, in order.
 static SCRIPT: Mutex<VecDeque<u32>> = Mutex::new(VecDeque::new());
@@ -184,7 +184,7 @@ pub struct GpsdoRun {
 #[must_use]
 pub fn run_gpsdo(board: SimBoard, options: &[&str], words: &[u32]) -> GpsdoRun {
     let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
-    install(Some(board));
+    install(vec![board]);
     *SCRIPT.lock().unwrap_or_else(PoisonError::into_inner) = words.iter().copied().collect();
 
     let strings: Vec<CString> = ["usdr_dm_gpsdo"]
@@ -235,7 +235,7 @@ extern "C" fn rsl_oracle_gpsdo_next_measurement() -> c_int {
     else {
         return -1;
     };
-    with_board(|board| {
+    with_board(0, |board| {
         board.set_clock_measurement(word);
         0
     })
@@ -244,9 +244,9 @@ extern "C" fn rsl_oracle_gpsdo_next_measurement() -> c_int {
 /// The board's trace length, marking where a measurement read begins.
 #[unsafe(no_mangle)]
 extern "C" fn rsl_oracle_gpsdo_trace_mark() -> usize {
-    BOARD
+    BOARDS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .as_ref()
+        .first()
         .map_or(0, |board| board.trace().len())
 }

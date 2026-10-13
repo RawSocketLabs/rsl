@@ -76,7 +76,7 @@ impl FlashOracle {
     #[must_use]
     pub fn new(board: SimBoard, base: u32, mmap_base: u32) -> Self {
         let session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
-        install(Some(board));
+        install(vec![board]);
         Self {
             base,
             mmap_base,
@@ -187,7 +187,7 @@ impl FlashOracle {
 
 impl Drop for FlashOracle {
     fn drop(&mut self) {
-        install(None);
+        install(Vec::new());
     }
 }
 
@@ -245,7 +245,7 @@ pub fn usdr_flash(board: SimBoard, args: &[&str], reply: &str) -> ToolRun {
     let mut log_len = 0;
 
     let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
-    install(Some(board));
+    install(vec![board]);
     // SAFETY: `pointers` holds `count` NUL-terminated strings that outlive the call, then a
     // null; `reply` is NUL-terminated; `log` and `log_len` are valid out-pointers.
     let status = unsafe {
