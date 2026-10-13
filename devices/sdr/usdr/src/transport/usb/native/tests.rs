@@ -102,6 +102,8 @@ impl Gate {
 struct Record {
     /// Work labels and their actual executing threads.
     calls: Vec<(&'static str, ThreadId)>,
+    /// The next reap turn panics on the worker.
+    panic_turn: bool,
 }
 
 /// Whole-transfer stand-in for the native queue owner; genuine production machines run above.
@@ -127,6 +129,8 @@ struct Fake<I = BoardUsb> {
     panic_submit: bool,
     /// Injects an original OS failure at the submission boundary.
     submit_error: Option<BusError>,
+    /// Injects a failure at the next reap turn, such as the device hanging up.
+    turn_error: Option<BusError>,
     /// Native error from cleanup, observed separately from operation completion.
     cleanup_error: Option<BusError>,
     /// When set, RX blocks the worker may take: as on usbfs, only a reap turn files them,
@@ -173,6 +177,7 @@ impl<I> Fake<I> {
                 cleanup_pause: None,
                 panic_submit: false,
                 submit_error: None,
+                turn_error: None,
                 cleanup_error: None,
                 rx_filed: None,
                 record: Arc::clone(&record),
@@ -275,6 +280,11 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
 
     fn turn(&mut self, _: NonZeroUsize) -> Result<Turn, BusError> {
         self.record("reap");
+        let panic = mem::take(&mut self.record.lock().unwrap().panic_turn);
+        assert!(!panic, "injected worker turn panic");
+        if let Some(error) = self.turn_error.take() {
+            return Err(error);
+        }
         if let Some(pause) = self.turn_pause.take() {
             pause.wait();
         }
@@ -2890,4 +2900,163 @@ fn rf_settings_refuse_before_any_io_without_a_power_up_and_power_up_refuses_twic
     ));
     native.close().unwrap();
     native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+/// A native handle over a fresh board, powered up natively, with an RX and TX stream group
+/// created and started, every event so far drained.
+fn streaming_native(reactor: &mut Poll, wake: Arc<Waker>) -> (NativeUsb, Arc<Mutex<SimBoard>>) {
+    let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, reactor, wake);
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    for setting in [Setting::Rate(20_000_000), Setting::RxHz(1_000_000_000)] {
+        setting.on_native(&mut native, reactor).unwrap();
+    }
+    let config = StreamsConfig::rx(rx_config()).with_tx(tx_config());
+    native.start_create_streams(config, Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    native.start_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, reactor),
+        NativeEvent::StreamsStarted(Ok(()))
+    ));
+    (native, board)
+}
+
+#[test]
+fn control_operations_complete_beside_a_saturated_rx_stream_and_rx_flows_during_them() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, _board) = streaming_native(&mut reactor, wake);
+    // RX blocks are left unread, so the backlog fills and the worker's turns take none:
+    // the control transfers' completions still arrive through those turns.
+    for _ in 0..3 {
+        native.start_temperature(Instant::now()).unwrap();
+        assert!(
+            reading(&mut native, &mut reactor).is_ok(),
+            "a control operation completes while RX holds a full backlog"
+        );
+    }
+    // A long operation (a retune: PLL search, NCOs and filter, dozens of transfers and
+    // waits) runs while RX keeps delivering: each poll advances the operation first,
+    // then hands over an RX block.
+    native
+        .start_rx_frequency(1_100_000_000, Instant::now())
+        .unwrap();
+    let mut blocks = 0;
+    let tuned = loop {
+        match finish(&mut native, &mut reactor) {
+            NativeEvent::Received(Ok(_)) => blocks += 1,
+            event => break event,
+        }
+    };
+    assert!(matches!(tuned, NativeEvent::Tuned(Ok(()))), "{tuned:?}");
+    assert!(
+        blocks > RX_BACKLOG,
+        "RX blocks flowed during the operation, not only the backlog held before it: {blocks}"
+    );
+    native.start_stop_streams(Instant::now()).unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsStopped(Ok(()))
+    ));
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn an_idle_devices_hang_up_ends_the_session_once_and_releases_it_on_the_worker() {
+    for panic in [false, true] {
+        let (mut fake, record, dropped) = Fake::new();
+        if panic {
+            record.lock().unwrap().panic_turn = true;
+        } else {
+            fake.turn_error = Some(BusError::Disconnected);
+        }
+        let (mut reactor, wake) = reactor();
+        let mut native =
+            NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+        // Nothing is in flight: the device's edge (its hang-up) brings a reap turn.
+        native.on_ready(DEVICE);
+        let ended = finish(&mut native, &mut reactor);
+        assert!(
+            matches!(ended, NativeEvent::SessionEnded(BusError::Disconnected)),
+            "panic {panic}: {ended:?}"
+        );
+        assert!(
+            native.poll(Instant::now()).is_none(),
+            "panic {panic}: the end is reported once"
+        );
+        assert!(
+            native.start_temperature(Instant::now()).is_err(),
+            "panic {panic}: the handle is closed"
+        );
+        native_cleanup(&mut native, &mut reactor).unwrap();
+        let worker = dropped.recv_timeout(GUARD).unwrap();
+        assert_ne!(worker, thread::current().id());
+        assert!(
+            calls(&record, "cleanup")
+                .iter()
+                .all(|thread| *thread == worker),
+            "panic {panic}: the worker released the device"
+        );
+    }
+}
+
+#[test]
+fn a_worker_panic_while_streaming_fails_the_stream_once_and_releases_it() {
+    let (mut reactor, wake) = reactor();
+    let (bus, _) = usb_board(BoardRevision::Rev3, 25_000);
+    let mut panicking = None;
+    let mut native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(
+            |io| {
+                let (fake, record, dropped) = Fake::over(io);
+                panicking = Some((record, dropped));
+                Ok(fake)
+            },
+            reactor.registry(),
+            DEVICE,
+            wake,
+        )
+        .unwrap();
+    let (record, dropped) = panicking.unwrap();
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    record.lock().unwrap().panic_turn = true;
+    native.on_ready(DEVICE);
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(
+                event,
+                NativeEvent::Received(Err(Error::Stream(BusError::Disconnected)))
+            )
+        },
+        "the stream reports the worker's failure",
+    );
+    assert!(
+        native.poll(Instant::now()).is_none(),
+        "the stream carried the session's end: nothing more is reported"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
 }

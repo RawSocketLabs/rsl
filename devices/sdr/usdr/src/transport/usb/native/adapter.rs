@@ -82,6 +82,8 @@ pub(in super::super) struct Adapter {
     /// Why the adapter stopped by failure, for the streams; the control request, if one was
     /// pending, carries the original.
     fault: Option<BusError>,
+    /// The failure that stopped the adapter came with no control request to carry it.
+    unclaimed: bool,
     /// Cleanup publication is consumed once, even after a worker disconnect.
     cleanup_observed: bool,
 }
@@ -126,6 +128,7 @@ impl Adapter {
             blocks: VecDeque::new(),
             outcomes: VecDeque::new(),
             fault: None,
+            unclaimed: false,
             cleanup_observed: false,
         })
     }
@@ -223,8 +226,9 @@ impl Adapter {
         }
     }
 
-    /// Schedules exactly one bounded turn while something wants one, preserving dirtiness
-    /// while a turn is outstanding or nothing does.
+    /// Schedules exactly one bounded turn after an edge or an exhausted budget, preserving
+    /// dirtiness while a turn is outstanding. An idle session takes its turn too: an edge
+    /// with nothing in flight is the device's hang-up or error, which only a reap reports.
     fn schedule(&mut self) {
         if self.stopped || !self.dirty || self.turning {
             return;
@@ -234,9 +238,6 @@ impl Adapter {
         } else {
             0
         };
-        if self.pending.is_none() && rx == 0 && !self.tx_wanted {
-            return;
-        }
         let acquire = self.tx_wanted.then_some(self.tx_generation);
         match self.worker.send(Work::Turn { rx, acquire }) {
             Ok(()) => {
@@ -373,6 +374,7 @@ impl Adapter {
             self.completed = Some(self.fail(id, error));
         } else {
             self.fault.get_or_insert(error);
+            self.unclaimed = true;
             self.retire_after_completion();
         }
     }
@@ -394,6 +396,16 @@ impl Adapter {
 
     /// The failure that ended the session when no control request carried it, once.
     pub(in super::super) fn take_fault(&mut self) -> Option<BusError> {
+        self.fault.take()
+    }
+
+    /// The failure that ended the session with no control request to carry it (a worker
+    /// panic or lost report, a failed turn while idle), once, unless a stream took it.
+    pub(in super::super) fn take_unclaimed(&mut self) -> Option<BusError> {
+        self.pump();
+        if !mem::take(&mut self.unclaimed) {
+            return None;
+        }
         self.fault.take()
     }
 

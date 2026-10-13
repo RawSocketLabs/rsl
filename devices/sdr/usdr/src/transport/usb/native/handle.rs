@@ -152,6 +152,11 @@ pub enum NativeEvent {
     GainSet(Result<(), Error>),
     /// A path was selected, or failed.
     PathSet(Result<(), Error>),
+    /// The session ended through a failure no operation or stream reported: the worker
+    /// panicked or stopped answering, or the device hung up or failed while idle. The
+    /// handle is closed; its worker cleans up and reports through
+    /// [`try_cleanup`](NativeUsb::try_cleanup).
+    SessionEnded(BusError),
     /// The stream group stopped: every step was attempted and the group is gone; the first
     /// failure, if any. A stream whose transport failed to close stays held; close it
     /// with [`NativeUsb::start_rx_close`] or [`NativeUsb::start_tx_close`]. A register
@@ -344,7 +349,17 @@ enum StreamState {
 /// control failure closes the handle, except refusing a second operation, a rejected
 /// argument, or a failure a sequence finds in well-formed replies (such as
 /// [`Error::ClockInputMissing`]); open the device again to continue. Stream failures end
-/// only their stream. Unqualified on hardware.
+/// only their stream. A failure no operation or stream reports (the worker panicking or
+/// no longer answering, the device hanging up while idle: an edge with nothing in flight
+/// still brings a reap) ends the session with [`NativeEvent::SessionEnded`], once; the
+/// worker still cleans up and releases the device.
+///
+/// Fairness: [`poll`](Self::poll) advances the operation before it hands over an RX block,
+/// so RX traffic never holds an operation back, and an operation's waits and transfers
+/// leave the polls in between to RX, so a long operation (a sample rate's FIR loads, a
+/// tuning's search) does not stall streaming. The worker serves one operation command
+/// and one reap turn at a time, a turn copying at most eight RX blocks, so a control
+/// transfer waits behind at most one turn's copies. Unqualified on hardware.
 pub struct NativeUsb {
     /// Registration, deadlines and the worker's mailboxes.
     adapter: Adapter,
@@ -557,7 +572,9 @@ impl NativeUsb {
     /// returns `None`; it never waits or performs USB I/O.
     #[must_use]
     pub fn poll(&mut self, now: Instant) -> Option<NativeEvent> {
-        self.poll_operation(now).or_else(|| self.poll_rx())
+        self.poll_operation(now)
+            .or_else(|| self.poll_rx())
+            .or_else(|| self.adapter.take_unclaimed().map(NativeEvent::SessionEnded))
     }
 
     /// Advances the operation in flight; its event once it ends.
