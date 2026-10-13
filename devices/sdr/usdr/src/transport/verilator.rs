@@ -42,7 +42,8 @@
 //!   once.
 //! - SPI and I2C reads return the reply word their notification carries: its second word,
 //!   the data the gateware read from the core's register for the event (libusdr's
-//!   `lowlevel/pcie_uram/pcie_events.rst`: `ADDR_0` data, SPI0 register 2, I2C register 1).
+//!   `lowlevel/pcie_uram/pcie_events.rst`, MIT, vendored beside the oracle's C: `ADDR_0`
+//!   data, SPI0 register 2, I2C register 1).
 //!   libusdr's bridge returns a readback array it never writes.
 //! - RX blocks' out-of-band words are laid out as `pcie_events.rst` gives them and
 //!   libusdr's stream code reads them (the lost-packet word and burst mask, then the DMA
@@ -50,18 +51,23 @@
 //!   argument instead. RX waits honour their timeout (libusdr waits forever), and an RX
 //!   interrupt is never held back (libusdr delays those whose batch starts at entry 132).
 //!   Closing the RX stream succeeds, sending nothing; libusdr's is unsupported.
-//! - Malformed or unexpected packets, notifications for events past 31, a status word out
+//! - Malformed or unexpected packets, interrupt tags past 32 or notifications for events
+//!   past 31, a status word out
 //!   of sequence, a read or an SPI or I2C reply not answered in time, and any partial
 //!   packet leave the bus unusable ([`BusError::Disconnected`] from then on): the stream
 //!   cannot be trusted after them. libusdr's monitor thread stops on most of them, which
 //!   stalls the next wait, aborts on the status check, and writes past its arrays for
-//!   large tags and events. Register reads wait 10 s, where libusdr waits forever.
+//!   large events. Register reads wait 10 s, where libusdr waits forever.
 //! - Accesses libusdr's bridge mishandles are refused before anything is sent: SPI targets
-//!   but 0 and I2C buses but 0 (libusdr indexes past its tables), reads of more than 64
+//!   but 0 (libusdr writes to an unconfigured core entry) and I2C buses or cores but 0
+//!   (libusdr indexes past its tables), reads of more than 64
 //!   words (whose reply its monitor cannot receive) and writes longer than a packet's
 //!   16-bit length.
 //! - Only the uSDR is accepted: libusdr creates whichever registered board the model's
 //!   UUID names.
+//! - Writes use `write(2)`, where libusdr sends with `MSG_NOSIGNAL`: a model that goes away
+//!   raises `SIGPIPE`, which Rust programs ignore by default; a host that restores its
+//!   default action must ignore it to see the error instead.
 //!
 //! Kept as libusdr: I2C commands name the device by the low two bits of its address in the
 //! lookup-table slot field, with no lookup table written (libusdr's USB transport writes
@@ -179,6 +185,12 @@ const PAGE: u32 = 4096;
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long an SPI transaction may take, as libusdr allows.
 const SPI_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long the rest of a packet may take once it has begun, whatever the caller's
+/// deadline: the model sends each packet whole.
+const PACKET_GRACE: Duration = Duration::from_secs(1);
+/// The shortest read timeout: a poll, for a deadline already past (the socket refuses
+/// zero).
+const POLL: Duration = Duration::from_micros(1);
 /// How long an I2C read may take, as libusdr allows.
 const I2C_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -333,8 +345,9 @@ impl VerilatorBus {
     /// Takes the ring's new entries after an interrupt, as the bridge's monitor thread
     /// does (`verilator_process_recv`), and acknowledges every 32nd.
     fn notified(&mut self, packet: &Packet) -> Result<(), BusError> {
-        if usize::from(packet.tag) >= INTERRUPTS {
-            return Err(self.protocol("an interrupt past 31"));
+        // libusdr's check, `hdr.tag > MAX_INTERRUPTS`; the tag is otherwise unused.
+        if usize::from(packet.tag) > INTERRUPTS {
+            return Err(self.protocol("an interrupt tag past 32"));
         }
         let mut ring = [0; NOTIFY_BYTES];
         let read = self.memory.read_exact_at(&mut ring, u64::from(NOTIFY_BASE));
@@ -396,26 +409,39 @@ impl VerilatorBus {
     }
 
     /// Reads exactly `buf` by `deadline`. A timeout before the first byte of a packet
-    /// (`starts_packet`) leaves the stream framed; anything else breaks the bus.
+    /// (`starts_packet`) leaves the stream framed; anything else breaks the bus. Once a
+    /// packet has begun, its rest gets at least [`PACKET_GRACE`].
     fn fill(
         &mut self,
         buf: &mut [u8],
-        deadline: Instant,
+        mut deadline: Instant,
         starts_packet: bool,
     ) -> Result<(), BusError> {
+        if !starts_packet {
+            deadline = deadline.max(Instant::now() + PACKET_GRACE);
+        }
         let mut filled = 0;
+        let mut tried = false;
         while filled < buf.len() {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
+            // A deadline already past still gets one short read, so a caller polling with
+            // no wait sees what has arrived.
+            if remaining.is_zero() && tried {
                 break;
             }
+            tried = true;
             let read = self
                 .socket
-                .set_read_timeout(Some(remaining))
+                .set_read_timeout(Some(remaining.max(POLL)))
                 .and_then(|()| self.socket.read(&mut buf[filled..]));
             match read {
                 Ok(0) => return Err(self.fail(BusError::Disconnected)),
-                Ok(count) => filled += count,
+                Ok(count) => {
+                    if filled == 0 {
+                        deadline = deadline.max(Instant::now() + PACKET_GRACE);
+                    }
+                    filled += count;
+                }
                 Err(error) if error.kind() == ErrorKind::Interrupted => {}
                 Err(error)
                     if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>

@@ -11,16 +11,25 @@
 //! with a notification for event 2 carrying [`spi_reply`], an I2C command with its read bit
 //! written to register 1 with one for event 6 carrying [`i2c_reply`], and RX blocks arrive
 //! when the test delivers them. Each answer is one interrupt packet after its ring entries.
+//!
+//! Assumption, as the transport makes it: a notification's second word is the data the
+//! gateware read for the event (SPI and I2C replies), and an RX block's three later words
+//! are the DMA engine's status, the third holding the block's number in bits 29:24. The
+//! evidence is libusdr's `lowlevel/pcie_uram/pcie_events.rst` (MIT, vendored), whose
+//! `ADDR_0` data follows the metadata word, and the bridge's own sequence check
+//! (`verilatorll_wrap.c`, `recv_dma_wait`).
 
 #![allow(dead_code, reason = "each test binary uses part of the model")]
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::fs::FileExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::process;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -57,6 +66,8 @@ const NOTIFY_ACK: u32 = 9;
 const SPI_EVENT: u32 = 2;
 /// The I2C core's event.
 const I2C_EVENT: u32 = 6;
+/// The bytes a Unix socket's path may take, its terminating NUL included (`sun_path`).
+const SOCKET_PATH_LIMIT: usize = 108;
 /// How long [`Peer::settle`] waits before failing the test.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -197,7 +208,14 @@ impl Peer {
     /// If the directory, socket or file cannot be made.
     #[must_use]
     pub(crate) fn start_with_hello(name: &str, hello: Vec<u8>) -> Self {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("vll-{name}"));
+        // Under the system's temporary directory, not the target directory: a Unix socket's
+        // path must fit `sun_path`, which libusdr's bridge would silently truncate.
+        let dir = env::temp_dir().join(format!("rsl-vll-{}-{name}", process::id()));
+        let socket = dir.join("verilator.sock");
+        assert!(
+            socket.as_os_str().len() < SOCKET_PATH_LIMIT,
+            "the model's socket path fits sun_path"
+        );
         // A previous run's leftovers, if any.
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("model directory");
@@ -209,7 +227,7 @@ impl Peer {
             .expect("shared file");
         // Sparse: only what is written takes space.
         memory.set_len(MEMORY_BYTES).expect("4 GiB sparse file");
-        let listener = UnixListener::bind(dir.join("verilator.sock")).expect("model socket");
+        let listener = UnixListener::bind(socket).expect("model socket");
         let shared: Shared = Arc::default();
         let thread = {
             let shared = Arc::clone(&shared);
@@ -353,13 +371,18 @@ fn serve(listener: &UnixListener, hello: &[u8], memory: &File, shared: &Shared) 
     let Ok((mut stream, _)) = listener.accept() else {
         return;
     };
-    let Ok(writer) = stream.try_clone() else {
+    let Ok(mut writer) = stream.try_clone() else {
         return;
     };
-    if stream.write_all(hello).is_err() {
-        return;
+    {
+        // The writer is in place before the host can see the greeting, so nothing the test
+        // sends after the host connects finds it missing.
+        let mut state = lock(shared);
+        if writer.write_all(hello).is_err() {
+            return;
+        }
+        state.writer = Some(writer);
     }
-    lock(shared).writer = Some(writer);
     loop {
         let mut header = [0; 4];
         if stream.read_exact(&mut header).is_err() {
@@ -399,7 +422,11 @@ fn handle(state: &mut State, memory: &File, kind: u8, tag: u8, words: &[u32]) {
                 (I2C, &[command]) if command >> 31 == 1 => {
                     notify(state, memory, &[(I2C_EVENT, [i2c_reply(command), 0, 0])]);
                 }
-                (NOTIFY_ACK, _) => state.acks_seen += 1,
+                // A position in bucket 0, never 0; the connection's bucket resets (`n << 16`)
+                // acknowledge nothing.
+                (NOTIFY_ACK, &[position]) if position != 0 && position >> 16 == 0 => {
+                    state.acks_seen += 1;
+                }
                 _ => {}
             }
         }

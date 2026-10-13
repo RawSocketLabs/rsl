@@ -191,3 +191,15 @@ fn rx_blocks_arrive_in_their_buffers_with_their_status_words_and_are_confirmed()
         "each buffer confirmed by its number"
     );
 }
+
+#[test]
+fn a_receive_with_no_wait_takes_a_block_already_delivered() {
+    let peer = Peer::start("rx-poll");
+    let mut bus = VerilatorBus::connect(peer.socket()).expect("connects");
+    bus.rx_stream_open(64).expect("stream opens");
+    let _ = peer.deliver_rx(&[&[3; 64]]);
+    let mut received = Vec::new();
+    bus.rx_stream_recv(Duration::ZERO, &mut |data, _| received = data.to_vec())
+        .expect("the delivered block, without waiting");
+    assert_eq!(received, [3; 64]);
+}
