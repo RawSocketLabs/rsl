@@ -53,7 +53,7 @@ intentional addition.
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c` |
+| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c`; libusdr's Verilator host bridge compiled whole by `oracle/shim/verilator.c` against a fake model |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
 
@@ -173,8 +173,13 @@ Each layer calls only the ones below it.
   PPS count on the uSDR is unresolved (PORTING.md), so no `Device` method composes it.
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
   Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
-  `usb`, Linux) over the workspace's `rsl-usb` host queues; `window` is the
-  register-window and pair-write access libusdr's transports share.
+  `usb`, Linux) over the workspace's `rsl-usb` host queues; `verilator` (feature
+  `verilator`, Linux) libusdr's Verilator host bridge to an external gateware model, a
+  Unix socket plus a shared file read with positioned I/O (no mapping, so no `unsafe`),
+  blocking on the calling thread, its divergences in its module docs;
+  `oracle/tests/verilator_parity.rs` compares its bytes with libusdr's bridge against the
+  fake model in `tests/common/verilator_peer.rs`. `window` is the
+  register-window and pair-write access libusdr's PCIe and USB transports share.
 - `src/portable/`: platform-independent addresses, the typed-register traits and the
   sequence seam (`address.rs`, `register.rs`, `sequence.rs`: thin re-exports of
   `rsl-lowlevel`; I²C register reads/writes, FPGA register reads/writes and SPI32 with
@@ -284,6 +289,12 @@ Each layer calls only the ones below it.
   whole with its `main` renamed, the gpsdo shim redirecting the tool's I/O, set-up and
   clock by macro before including it, and build them and `sincos_functions.c` with
   `-fwrapv`, so phases that wrap in signed C arithmetic compare with Rust's.
+  The Verilator host bridge (`libusdr/lib/lowlevel/verilator_ll/`) is vendored verbatim
+  but left out of `sources.txt`: it does not build against the rest of libusdr at the PIN,
+  so `oracle/shim/verilator.c` includes it and adapts the three drifted calls by macro.
+  Port only MIT (or MIT-dual) upstream sources; libusdr's `PCIe` kernel module
+  (`pcie_uram/driver/usdr_pcie_uram.c`) is GPL-2.0 only, so the bridge's notification
+  words rest on the MIT `pcie_uram/pcie_events.rst` instead.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
 - Front ends (`fe=`): the probe (`rsl-sdr-frontend`, shared with the XSDR and LSDr) and
