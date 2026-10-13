@@ -80,15 +80,9 @@ fn packets(samples: u32, mut fill: impl FnMut(usize) -> Vec<u8>) -> Vec<Vec<u8>>
     (0..PACKETS).map(|_| fill(samples)).collect()
 }
 
-/// The tool's producer's packets, checked unflagged.
-fn tool_packets(producer: &Producer<'_>, payload: usize) -> Vec<Vec<u8>> {
+/// The tool's producer's packets.
+fn tool_packets(producer: &Producer, payload: usize) -> Vec<Vec<u8>> {
     generate(producer, payload, PACKETS)
-        .into_iter()
-        .map(|packet| {
-            assert_eq!(packet.flags, 0, "a generator flags nothing");
-            packet.bytes
-        })
-        .collect()
 }
 
 /// Every phase the tool can convert, edges and a random sweep, converts to the same

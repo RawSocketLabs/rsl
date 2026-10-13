@@ -1,39 +1,23 @@
-//! libusdr's `usdr_dm_create` TX sources (`tools/usdr_dm_create.c`, compiled whole by
+//! libusdr's `usdr_dm_create` TX generators (`tools/usdr_dm_create.c`, compiled whole by
 //! `shim/dm_create.c`): its producer threads, run until the oracle has taken the packets it
 //! wants from their ring, and its `do_transmit`, run on a TX stream the oracle created.
 
-use std::ffi::{c_int, c_uint, c_void};
-use std::ptr;
+use std::ffi::{c_int, c_uint};
 use std::sync::{Mutex, PoisonError};
 
 use super::{EINVAL, Oracle, Stream, resume_callback_panic};
 
-/// Serialises the tool's producers: they share the tool's globals (channel 0's ring, input
-/// and file, the stop flag).
+/// Serialises the tool's producers: they share the tool's globals (channel 0's ring and
+/// input, the stop flag).
 static TOOL: Mutex<()> = Mutex::new(());
 
-/// `TXF_READ_FILE_EOF`: the file reader's packet ends its file.
-pub const END_OF_FILE: u32 = 1;
-
-/// Which producer thread the tool starts for a channel, and what it starts it with.
+/// Which producer thread the tool starts for a channel, with what.
 #[derive(Clone, Copy, Debug)]
-pub enum Producer<'a> {
+pub enum Producer {
     /// `freq_gen_thread_ci16`: the `ci16` tone, or the chirp when `chirp_steps` is nonzero.
     Ci16(ThreadInput),
-    /// `freq_gen_thread_ci16_lut` (`-J`): the six-entry table.
-    Table(ThreadInput),
     /// `freq_gen_thread_cf32`: the `cf32` tone, whose amplitude is `gain` as it stands.
     Cf32(ThreadInput),
-    /// `disk_read_thread` (`-I`, `-o` to cycle) over a file holding `bytes`, reading
-    /// `block` bytes a packet.
-    File {
-        /// The file's contents.
-        bytes: &'a [u8],
-        /// Rewind at the end instead of stopping (`tx_file_cycle`).
-        cycle: bool,
-        /// Bytes a packet (`s_tx_blksz`, the TX stream's packet bytes).
-        block: u32,
-    },
 }
 
 /// The fields of the tool's `tx_thread_input_t` its generators read.
@@ -57,15 +41,6 @@ pub struct ThreadInput {
     pub chirp_steps: i32,
 }
 
-/// One packet a producer posted: its payload (the header's `len` bytes) and flags.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Packet {
-    /// The payload.
-    pub bytes: Vec<u8>,
-    /// `TXF_*` flags: [`END_OF_FILE`], or 2 for a read error.
-    pub flags: u32,
-}
-
 /// `struct rsl_gen` in the shim.
 #[repr(C)]
 struct RslGen {
@@ -78,10 +53,6 @@ struct RslGen {
     chirp_freq0: f64,
     chirp_freq1: f64,
     chirp_steps: i32,
-    file: *const c_void,
-    file_len: usize,
-    cycle: bool,
-    block: c_uint,
 }
 
 unsafe extern "C" {
@@ -93,7 +64,6 @@ unsafe extern "C" {
         packets: c_uint,
         out: *mut u8,
         lens: *mut u32,
-        flags: *mut u32,
     ) -> c_int;
     fn rsl_oracle_dm_create_transmit(
         stream: Stream,
@@ -105,23 +75,13 @@ unsafe extern "C" {
     ) -> c_int;
 }
 
-impl Producer<'_> {
-    /// The shim's description; `bytes` must outlive its use.
-    fn raw(&self) -> RslGen {
-        let (kind, input, file) = match *self {
-            Self::Ci16(input) => (0, input, None),
-            Self::Table(input) => (1, input, None),
-            Self::Cf32(input) => (2, input, None),
-            Self::File {
-                bytes,
-                cycle,
-                block,
-            } => (3, ThreadInput::default(), Some((bytes, cycle, block))),
+impl Producer {
+    /// The shim's description.
+    const fn raw(&self) -> RslGen {
+        let (kind, input) = match *self {
+            Self::Ci16(input) => (0, input),
+            Self::Cf32(input) => (1, input),
         };
-        let (file, file_len, cycle, block) = file
-            .map_or((ptr::null(), 0, false, 0), |(bytes, cycle, block)| {
-                (bytes.as_ptr().cast::<c_void>(), bytes.len(), cycle, block)
-            });
         RslGen {
             kind,
             samplerate: input.samplerate,
@@ -132,10 +92,6 @@ impl Producer<'_> {
             chirp_freq0: input.chirp_freq0,
             chirp_freq1: input.chirp_freq1,
             chirp_steps: input.chirp_steps,
-            file,
-            file_len,
-            cycle,
-            block,
         }
     }
 }
@@ -163,44 +119,36 @@ pub unsafe fn gain(dbfs: f32) -> i16 {
     unsafe { rsl_oracle_dm_create_gain(dbfs) }
 }
 
-/// Runs `producer` on channel 0 and takes up to `packets` packets of at most `payload`
-/// bytes from its ring, stopping after one that ends its file.
+/// Runs `producer` on channel 0 and takes `packets` packets of at most `payload` bytes
+/// from its ring, each its header's length.
 ///
 /// # Panics
 ///
 /// If the shim fails (a producer that posts nothing for a second, a packet larger than
-/// `payload`, no temporary file), or the sizes exceed `unsigned`.
+/// `payload` or flagged), or the sizes exceed `unsigned`.
 #[must_use]
-pub fn generate(producer: &Producer<'_>, payload: usize, packets: usize) -> Vec<Packet> {
+pub fn generate(producer: &Producer, payload: usize, packets: usize) -> Vec<Vec<u8>> {
     let raw = producer.raw();
     let mut out = vec![0; payload * packets];
     let mut lens = vec![0; packets];
-    let mut flags = vec![0; packets];
     let payload_c = c_uint::try_from(payload).expect("fits unsigned");
     let packets_c = c_uint::try_from(packets).expect("fits unsigned");
     let _tool = TOOL.lock().unwrap_or_else(PoisonError::into_inner);
-    // SAFETY: `raw` and the file bytes it points to outlive the call; `out` holds
-    // `packets` packets of `payload` bytes, `lens` and `flags` `packets` words each, the
-    // most the shim writes.
-    let taken = unsafe {
+    // SAFETY: `raw` outlives the call; `out` holds `packets` packets of `payload` bytes and
+    // `lens` `packets` words, the most the shim writes.
+    let errno = unsafe {
         rsl_oracle_dm_create_generate(
             &raw const raw,
             payload_c,
             packets_c,
             out.as_mut_ptr(),
             lens.as_mut_ptr(),
-            flags.as_mut_ptr(),
         )
     };
-    let taken =
-        usize::try_from(taken).unwrap_or_else(|_| panic!("the tool's producer failed: {taken}"));
+    assert_eq!(errno, 0, "the tool's producer failed");
     out.chunks(payload)
-        .zip(lens.iter().zip(&flags))
-        .take(taken)
-        .map(|(packet, (&len, &flags))| Packet {
-            bytes: packet[..usize::try_from(len).expect("fits")].to_vec(),
-            flags,
-        })
+        .zip(lens)
+        .map(|(packet, len)| packet[..usize::try_from(len).expect("fits")].to_vec())
         .collect()
 }
 
@@ -209,8 +157,7 @@ pub fn generate(producer: &Producer<'_>, payload: usize, packets: usize) -> Vec<
 pub struct Transmitted {
     /// The samples each iteration sent (`do_transmit`'s `olen`; 0 sends nothing).
     pub samples: Vec<u32>,
-    /// Whether the last iteration's `do_transmit` ended the loop (a file's end, a failed
-    /// send).
+    /// Whether the last iteration's `do_transmit` ended the loop (a failed send).
     pub stopped: bool,
 }
 
@@ -228,7 +175,7 @@ impl Oracle {
     /// If `iterations` exceeds `unsigned`.
     pub fn transmit_generated(
         &mut self,
-        producer: &Producer<'_>,
+        producer: &Producer,
         iterations: usize,
         nots: bool,
     ) -> Result<Transmitted, i32> {
@@ -240,7 +187,7 @@ impl Oracle {
         let mut stopped = false;
         let count = c_uint::try_from(iterations).expect("fits unsigned");
         let _tool = TOOL.lock().unwrap_or_else(PoisonError::into_inner);
-        // SAFETY: `stream` is live, `raw` and its file bytes outlive the call, `samples`
+        // SAFETY: `stream` is live, `raw` outlives the call, `samples`
         // holds `iterations` words, the most the shim writes, and `stopped` is valid.
         let ran = unsafe {
             rsl_oracle_dm_create_transmit(
