@@ -19,6 +19,7 @@ use super::machine::{Machine, Output, Step, Submission, Transfer};
 use super::native::{self, NativeUsb, Session};
 use super::protocol::I2cCache;
 use super::rx::Rx;
+use super::tx::{self, Tx, TxStatus};
 #[cfg(feature = "mio")]
 use crate::chips::register::run_sequence;
 #[cfg(feature = "mio")]
@@ -26,7 +27,7 @@ use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
 use crate::fpga::IdentityRead;
-use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, usb_error};
+use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill, usb_error};
 use crate::portable::usb::register::{MAX_READ_WORDS, MAX_WRITE_WORDS, RegisterTransaction};
 use crate::transport::window::{self, RegisterIo, Window};
 /// `IN_NTFY_SIZE`: one notification transfer contains at most 64 bytes.
@@ -84,6 +85,27 @@ pub(super) trait UsbIo: Send {
     fn rx_close(&mut self) -> Result<(), BusError> {
         Err(BusError::Unsupported("USB RX streaming"))
     }
+    /// Prepares the TX endpoint for blocks of up to `block_bytes`.
+    fn tx_open(&mut self, _: u32, _: u32) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB TX streaming"))
+    }
+    /// Takes a free TX buffer, waiting up to the timeout for one to complete.
+    fn tx_acquire(&mut self, _: Duration) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB TX streaming"))
+    }
+    /// Fills the taken buffer, frames it with its time and queues it.
+    fn tx_commit(
+        &mut self,
+        _: Option<u64>,
+        _: Option<[u32; 4]>,
+        _: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB TX streaming"))
+    }
+    /// Cancels and drains TX even after control-plane failure.
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        Err(BusError::Unsupported("USB TX streaming"))
+    }
     /// Waits between chip operations; the test board advances virtual time.
     fn sleep(&mut self, duration: Duration) {
         thread::sleep(duration);
@@ -103,6 +125,8 @@ struct Queues {
     interface: Interface,
     /// Bulk sample endpoint 0x83, including failed streams awaiting cleanup.
     rx: Option<Rx<InQueue>>,
+    /// Bulk sample endpoint 0x03 (`EP_OUT_DEFSTREAM`), likewise.
+    tx: Option<Tx<OutQueue>>,
     /// Register command endpoint 0x01.
     commands: OutQueue,
     /// Raw register response endpoint 0x81.
@@ -114,9 +138,9 @@ struct Queues {
 impl UsbIo for Queues {
     #[cfg(feature = "mio")]
     fn into_interface(self: Box<Self>) -> Result<Interface, BusError> {
-        if self.rx.is_some() {
+        if self.rx.is_some() || self.tx.is_some() {
             return Err(BusError::Unsupported(
-                "stop the RX stream before handing over the USB device",
+                "stop the streams before handing over the USB device",
             ));
         }
         // The command, register and notification queues close here, before another
@@ -145,6 +169,36 @@ impl UsbIo for Queues {
     fn rx_close(&mut self) -> Result<(), BusError> {
         Rx::close_endpoint(&mut self.rx)
     }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        Tx::open_endpoint(&mut self.tx, block_bytes, sample_bytes, || {
+            self.interface.out_queue(0x03).map_err(usb_error)
+        })
+    }
+
+    fn tx_acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        let Some(tx) = self.tx.as_mut() else {
+            return Err(BusError::Unsupported("USB TX is closed"));
+        };
+        tx.acquire(timeout)
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        let Some(tx) = self.tx.as_mut() else {
+            return Err(BusError::Unsupported("USB TX is closed"));
+        };
+        tx.commit(time, status, fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        Tx::close_endpoint(&mut self.tx)
+    }
+
     fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
         self.commands.write(packet, timeout).map_err(usb_error)
     }
@@ -174,8 +228,9 @@ impl UsbIo for Queues {
 
 /// A uSDR reached over USB. Owns interface 0 and its serialized control-plane queues.
 ///
-/// Supports register/SPI/I²C operations and RX streaming. An ambiguous control transaction
-/// failure permanently disables this handle; reopen it instead of reusing late replies.
+/// Supports register/SPI/I²C operations and RX and TX streaming. An ambiguous control
+/// transaction failure permanently disables this handle; reopen it instead of reusing late
+/// replies.
 pub struct UsbBus {
     /// Real queues, or the hardware-free transfer boundary.
     io: Box<dyn UsbIo>,
@@ -188,6 +243,8 @@ pub struct UsbBus {
     /// Never-reused identity for each I²C, register or SPI operation in this session;
     /// carried over to a native handle.
     next_id: u64,
+    /// The TX core's throttled status words, per device as in libusdr.
+    tx_status: TxStatus,
 }
 
 impl fmt::Debug for UsbBus {
@@ -236,6 +293,7 @@ impl UsbBus {
         let queues = Queues {
             interface: interface.clone(),
             rx: None,
+            tx: None,
             commands: interface
                 .out_queue(0x01)
                 .map_err(|error| Error::Open(usb_error(error)))?,
@@ -272,6 +330,7 @@ impl UsbBus {
             next_sequence: None,
             i2c: I2cCache::default(),
             next_id: 0,
+            tx_status: TxStatus::default(),
         }
     }
 
@@ -597,5 +656,35 @@ impl Bus for UsbBus {
 
     fn rx_stream_close(&mut self) -> Result<(), BusError> {
         self.io.rx_close()
+    }
+
+    fn tx_stream_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        self.ready()?;
+        self.io.tx_open(block_bytes, sample_bytes)
+    }
+
+    /// libusdr's USB `send_dma_get` then `send_dma_commit`: a free buffer, the TX core's
+    /// status words (read over the control plane on every 64th send, else the last
+    /// reading), then the block, framed with its length and time on endpoint 0x03.
+    fn tx_stream_send(
+        &mut self,
+        timeout: Duration,
+        time: Option<u64>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<TxCommit, BusError> {
+        self.ready()?;
+        self.io.tx_acquire(timeout)?;
+        if self.tx_status.count_send() {
+            let mut words = [0; 4];
+            self.read_regs(tx::STATUS_REGISTER, &mut words)?;
+            self.tx_status.record(words);
+        }
+        self.io
+            .tx_commit(time, Some(self.tx_status.words()), fill)?;
+        Ok(TxCommit::Framed)
+    }
+
+    fn tx_stream_close(&mut self) -> Result<(), BusError> {
+        self.io.tx_close()
     }
 }

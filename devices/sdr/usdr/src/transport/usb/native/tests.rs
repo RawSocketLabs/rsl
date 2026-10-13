@@ -133,6 +133,7 @@ impl Fake {
         let io = BoardUsb {
             script: Arc::default(),
             rx: None,
+            tx: None,
             board: Arc::new(Mutex::new(SimBoard::new(BoardRevision::Rev3))),
             registers: VecDeque::new(),
             notifications: VecDeque::new(),
@@ -800,6 +801,7 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
     let io = BoardUsb {
         script: Arc::default(),
         rx: None,
+        tx: None,
         board: Arc::new(Mutex::new(board)),
         registers: VecDeque::new(),
         notifications: VecDeque::new(),
@@ -1126,6 +1128,7 @@ fn board_usb(board: SimBoard) -> BoardUsb {
     BoardUsb {
         script: Arc::default(),
         rx: None,
+        tx: None,
         board: Arc::new(Mutex::new(board)),
         registers: VecDeque::new(),
         notifications: VecDeque::new(),

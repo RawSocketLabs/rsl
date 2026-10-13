@@ -18,11 +18,14 @@
 //! # Ok(()) }
 //! ```
 //!
-//! Register/SPI/I²C access, board power-up and RX streaming are supported. RX uses eight
-//! reusable bulk transfers on endpoint 0x83 and validates the complete sample-block/trailer
-//! length before delivery. Ordinary receive timeouts leave transfers queued; malformed or
-//! failed transfers require stopping the stream before restarting. Stream cleanup remains
-//! available after control-plane failure. No TX or full-speed USB streaming is supported.
+//! Register/SPI/I²C access, board power-up and RX and TX streaming are supported. RX uses
+//! eight reusable bulk transfers on endpoint 0x83 and validates the complete
+//! sample-block/trailer length before delivery. TX keeps up to 32 transfers in flight on
+//! endpoint 0x03, each block behind libusdr's 16-byte header with its length and time, and
+//! reports the TX core's status words read on every 64th send. Ordinary receive and send
+//! timeouts leave transfers queued; malformed or failed transfers require stopping the
+//! stream before restarting. Stream cleanup remains available after control-plane
+//! failure. No full-speed USB streaming is supported.
 //! If stream setup or stop fails to drain cancelled transfers, close/drop the device and
 //! reopen it: the retained endpoint cannot be reused by another start attempt.
 //! Requires a high-speed readback endpoint (packet size over 256 bytes); full-speed USB
@@ -38,7 +41,7 @@
 //! a caller-owned Mio reactor, with every USB call on a worker thread. It reads the TMP114
 //! and the gateware identity and switches the reference clock, running portable sequences
 //! one transfer or caller-time wait at a time. It takes over the whole device; it powers
-//! nothing and streams nothing.
+//! nothing and streams nothing (native RX and TX stream handles are follow-up work).
 
 mod bus;
 mod i2c;
@@ -47,6 +50,7 @@ mod machine;
 mod native;
 mod protocol;
 mod rx;
+mod tx;
 
 pub use bus::UsbBus;
 #[cfg(feature = "mio")]

@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use mio::{Events, Poll, Token, Waker};
 
-use super::{BoardQueue, BoardRevision, BoardUsb, RxScript, SimBoard};
+use super::{BoardQueue, BoardRevision, BoardUsb, SimBoard, StreamScript};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
 use crate::lowlevel::BusError;
@@ -136,6 +136,7 @@ impl Pilot {
                 io: BoardUsb {
                     script: Arc::default(),
                     rx: None,
+                    tx: None,
                     board: Arc::new(Mutex::new(SimBoard::new(BoardRevision::Rev3))),
                     registers: VecDeque::new(),
                     notifications: VecDeque::new(),
@@ -217,7 +218,7 @@ impl Pilot {
     }
 
     /// Opens the real bounded RX adapter without pretending to configure an RF stream.
-    fn open_rx(&mut self) -> Arc<Mutex<RxScript>> {
+    fn open_rx(&mut self) -> Arc<Mutex<StreamScript>> {
         self.io.rx_open(8).unwrap();
         Arc::clone(&self.io.script)
     }

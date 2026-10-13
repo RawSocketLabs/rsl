@@ -1,12 +1,19 @@
 //! USB endpoint faults observed through the public Device API, without hardware.
 
 use std::io::ErrorKind;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use num_complex::Complex;
+use rsl_usdr_sim::{Op, SimBoard};
 
-use super::{BoardRevision, BusError, simulated_device};
+use super::{BoardRevision, BusError, StreamScript, simulated_device};
+use crate::Device;
 use crate::error::Error;
+use crate::stream::{HostFormat, StreamTime, StreamsConfig, TxConfig, WireFormat};
+
+/// A wait the fake endpoints never spend.
+const TIMEOUT: Duration = Duration::ZERO;
 
 #[test]
 fn receive_timeout_preserves_samples_queue_ownership_and_packet_accounting() {
@@ -412,4 +419,130 @@ fn drop_after_post_allocation_start_failure_still_drains_the_endpoint() {
             assert!(script.lock().unwrap().dropped);
         }
     }
+}
+
+/// A powered USB board with a started free-running `ci16` TX stream of 256-sample packets.
+fn usb_transmitting() -> (Device, Arc<Mutex<SimBoard>>, Arc<Mutex<StreamScript>>) {
+    let (mut device, board, script) = simulated_device(BoardRevision::Rev3);
+    device.set_rx_sample_rate(20_000_000).unwrap();
+    let config = TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16);
+    device.create_streams(StreamsConfig::tx(config)).unwrap();
+    device.start_streams().unwrap();
+    (device, board, script)
+}
+
+/// Reads of the TX core's first status word (register 28) since trace entry `start`.
+fn status_reads(board: &Mutex<SimBoard>, start: usize) -> usize {
+    board.lock().unwrap().trace()[start..]
+        .iter()
+        .filter(|op| matches!(op, Op::RegRead { addr: 28, .. }))
+        .count()
+}
+
+/// The little-endian words of a byte slice.
+fn words_of(bytes: &[u8]) -> Vec<u32> {
+    bytes
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+        .collect()
+}
+
+#[test]
+fn usb_tx_frames_each_block_with_its_time_and_announces_nothing_at_the_registers() {
+    let (mut device, board, script) = usb_transmitting();
+    // USB layout (bit 3): 5 front-end drops in word 0, 3 DMA drops in word 1's top half.
+    board
+        .lock()
+        .unwrap()
+        .set_tx_status([0x0508, 0x0003_0000, 0x1234, 0x5678]);
+    let start = board.lock().unwrap().trace().len();
+    let samples: Vec<Complex<i16>> = (0..100).map(|n| Complex::new(n, -n)).collect();
+    let telemetry = device
+        .send_with_stat(&[&samples], Some(StreamTime::from_samples(1000)), TIMEOUT)
+        .unwrap()
+        .expect("USB reports status with every buffer");
+    assert_eq!(
+        (
+            telemetry.hardware_time,
+            telemetry.kernel_time,
+            telemetry.underruns,
+            telemetry.fifo_used
+        ),
+        (0x1234, 0x5678, 8, 0)
+    );
+    device.send(&[&samples[..16]], None, TIMEOUT).unwrap();
+
+    let frames = script.lock().unwrap().tx_frames.clone();
+    // `usb_uram_send_dma_commit`'s header, worked by hand: the time; its bits 47:32,
+    // samples less one in bits 30:16 and now in 31; bytes less one in bits 31:15 over the
+    // time's bits 62:48; zero.
+    assert_eq!(words_of(&frames[0][..16]), [1000, 99 << 16, 399 << 15, 0]);
+    let payload: Vec<u8> = samples
+        .iter()
+        .flat_map(|s| [s.re.to_le_bytes(), s.im.to_le_bytes()].concat())
+        .collect();
+    assert_eq!(frames[0][16..], payload);
+    assert_eq!(
+        words_of(&frames[1][..16]),
+        [u32::MAX, 1 << 31 | 15 << 16 | 0xffff, 63 << 15 | 0x7fff, 0]
+    );
+    assert_eq!(frames[1].len(), 16 + 64);
+    let announced = board.lock().unwrap().trace()[start..]
+        .iter()
+        .any(|op| matches!(op, Op::RegWrite { addr: 12 | 13, .. }));
+    assert!(
+        !announced,
+        "the header announces the block, not registers 12 and 13"
+    );
+    assert_eq!(
+        status_reads(&board, start),
+        1,
+        "the first send reads the status"
+    );
+}
+
+#[test]
+fn usb_tx_reads_the_status_every_64th_send_and_repeats_it_between() {
+    let (mut device, board, script) = usb_transmitting();
+    script.lock().unwrap().tx_finished = usize::MAX;
+    let start = board.lock().unwrap().trace().len();
+    let samples = vec![Complex::new(0_i16, 0); 16];
+    let mut kernel_times = Vec::new();
+    for send in 0_u32..130 {
+        board.lock().unwrap().set_tx_status([8, 0, 0, send]);
+        let telemetry = device
+            .send_with_stat(&[&samples], None, TIMEOUT)
+            .unwrap()
+            .expect("USB reports status with every buffer");
+        kernel_times.push(telemetry.kernel_time);
+    }
+    assert_eq!(status_reads(&board, start), 3);
+    let expected: Vec<u32> = (0..130).map(|send| send / 64 * 64).collect();
+    assert_eq!(kernel_times, expected, "fresh on sends 0, 64 and 128 only");
+}
+
+#[test]
+fn a_full_usb_tx_ring_times_out_keeping_its_transfers_and_stop_cancels_them() {
+    let (mut device, board, script) = usb_transmitting();
+    let samples = vec![Complex::new(0_i16, 0); 16];
+    for _ in 0..32 {
+        device.send(&[&samples], None, TIMEOUT).unwrap();
+    }
+    let start = board.lock().unwrap().trace().len();
+    assert!(matches!(
+        device.send(&[&samples], None, TIMEOUT),
+        Err(Error::Timeout)
+    ));
+    assert_eq!(script.lock().unwrap().tx_frames.len(), 32);
+    assert_eq!(
+        status_reads(&board, start),
+        1,
+        "a timeout reads the status for its report, as libusdr"
+    );
+    script.lock().unwrap().tx_finished = 1;
+    device.send(&[&samples], None, TIMEOUT).unwrap();
+    assert_eq!(script.lock().unwrap().tx_frames.len(), 33);
+    device.stop_streams().unwrap();
+    assert_eq!(script.lock().unwrap().tx_cancellations, 1);
+    device.close().unwrap();
 }

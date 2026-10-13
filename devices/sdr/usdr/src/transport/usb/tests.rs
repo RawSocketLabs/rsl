@@ -10,7 +10,8 @@ use super::UsbBus;
 use super::bus::{Reply, UsbIo};
 use super::protocol::I2cCache;
 use super::rx::{Rx, RxQueue};
-use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use super::tx::{Tx, TxQueue};
+use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxFill};
 
 #[path = "execution_tests.rs"]
 mod execution;
@@ -356,9 +357,11 @@ fn initialization_matches_pinned_router_sequence() {
 /// FPGA endpoint emulator: decodes C wire fields, then drives the existing board model.
 struct BoardUsb {
     /// Faults shared by the control and streaming endpoints.
-    script: Arc<Mutex<RxScript>>,
+    script: Arc<Mutex<StreamScript>>,
     /// The production RX adapter, backed by completed simulator frames.
     rx: Option<Rx<BoardQueue>>,
+    /// The production TX adapter, over an endpoint that records what it sends.
+    tx: Option<Tx<SentQueue>>,
     /// Shared board for final chip-state assertions.
     board: Arc<Mutex<SimBoard>>,
     /// Complete endpoint readbacks.
@@ -380,12 +383,65 @@ struct BoardQueue {
     /// Owned pending transfer buffers.
     pending: VecDeque<Vec<u8>>,
     /// Scripted endpoint faults and observable transfer ownership.
-    script: Arc<Mutex<RxScript>>,
+    script: Arc<Mutex<StreamScript>>,
 }
 
-/// Faults injected below the real RX adapter, never into driver bookkeeping.
+/// What the TX endpoint was sent: whole frames, header included, which the device
+/// finishes only when a test says so.
+struct SentQueue {
+    /// Sent transfers the device has not finished, oldest first.
+    in_flight: VecDeque<Vec<u8>>,
+    /// Shared with the test.
+    script: Arc<Mutex<StreamScript>>,
+}
+
+impl TxQueue for SentQueue {
+    type Buffer = Vec<u8>;
+
+    fn bytes(buffer: &mut Vec<u8>) -> &mut [u8] {
+        buffer
+    }
+
+    fn alloc(&mut self, capacity: usize) -> Result<Vec<u8>, BusError> {
+        Ok(vec![0; capacity])
+    }
+
+    fn submit(&mut self, buffer: Vec<u8>, len: usize) -> Result<(), BusError> {
+        self.script
+            .lock()
+            .unwrap()
+            .tx_frames
+            .push(buffer[..len].to_vec());
+        self.in_flight.push_back(buffer);
+        Ok(())
+    }
+
+    fn wait(&mut self, _: Duration) -> Result<Option<Vec<u8>>, BusError> {
+        let mut script = self.script.lock().unwrap();
+        if script.tx_finished == 0 {
+            return Ok(None);
+        }
+        script.tx_finished -= 1;
+        Ok(self.in_flight.pop_front())
+    }
+
+    fn cancel(&mut self) -> Result<(), BusError> {
+        self.in_flight.clear();
+        self.script.lock().unwrap().tx_finished = 0;
+        self.script.lock().unwrap().tx_cancellations += 1;
+        Ok(())
+    }
+}
+
+/// Faults injected below the real RX and TX adapters, never into driver bookkeeping.
 #[derive(Default)]
-struct RxScript {
+struct StreamScript {
+    /// Every TX frame sent, header included.
+    tx_frames: Vec<Vec<u8>>,
+    /// TX transfers the device may finish before the next wait.
+    tx_finished: usize,
+    /// TX cancellations.
+    tx_cancellations: usize,
     /// Fail this post-allocation control command; true means apply it before timing out.
     fail_control: Option<(usize, bool)>,
     /// Complete attempted control packets while RX buffers are owned by the endpoint.
@@ -567,6 +623,39 @@ impl UsbIo for BoardUsb {
     fn rx_close(&mut self) -> Result<(), BusError> {
         Rx::close_endpoint(&mut self.rx)
     }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        Tx::open_endpoint(&mut self.tx, block_bytes, sample_bytes, || {
+            Ok(SentQueue {
+                in_flight: VecDeque::new(),
+                script: Arc::clone(&self.script),
+            })
+        })
+    }
+
+    fn tx_acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        self.tx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB TX is closed"))?
+            .acquire(timeout)
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.tx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB TX is closed"))?
+            .commit(time, status, fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        Tx::close_endpoint(&mut self.tx)
+    }
+
     fn write(&mut self, packet: &[u8], _: Duration) -> Result<(), BusError> {
         let failure = {
             let mut script = self.script.lock().unwrap();
@@ -675,15 +764,20 @@ fn usb_control_plane_identifies_powers_reads_temperature_and_closes_all_revision
 /// Powers up a simulated USB device; both endpoint boundaries remain observable.
 fn simulated_device(
     revision: BoardRevision,
-) -> (crate::Device, Arc<Mutex<SimBoard>>, Arc<Mutex<RxScript>>) {
+) -> (
+    crate::Device,
+    Arc<Mutex<SimBoard>>,
+    Arc<Mutex<StreamScript>>,
+) {
     let mut board = SimBoard::new(revision);
     let hwid = board.read_reg(19);
     board.write_reg(19, hwid | 0x4000_0000);
     let board = Arc::new(Mutex::new(board));
-    let script = Arc::new(Mutex::new(RxScript::default()));
+    let script = Arc::new(Mutex::new(StreamScript::default()));
     let io = BoardUsb {
         script: Arc::clone(&script),
         rx: None,
+        tx: None,
         board: Arc::clone(&board),
         registers: VecDeque::new(),
         notifications: VecDeque::new(),
