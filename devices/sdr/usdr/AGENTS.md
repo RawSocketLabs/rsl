@@ -43,7 +43,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit channel-0 packing), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit channel-0 packing), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
@@ -83,6 +83,10 @@ Each layer calls only the ones below it.
   then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
+  `board/calibration.rs` runs libusdr's LO-leakage and IQ-imbalance calibration
+  (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) on `search::best_2d`, measuring with the
+  gateware's DC estimator (`fpga/dc_estimator.rs`, `ipblks/dc_estim.c`); blocking
+  register code, no streaming (`oracle/tests/calibration_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
   front end, DMA, sync), the original TX stream core (`tx_stream`), the M.2 connector's GPIO core (`fe_gpio`, register 3), and
@@ -224,9 +228,10 @@ Each layer calls only the ones below it.
   (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`, `set_tx_gain`,
   `set_tx_dc_offset`, `set_tx_iq_correction`, `set_tx_constant`) and TX streaming on the
   original TX core (`Device::send`, `send_with_stat`, `set_tx_mute`; `oracle/tests/
-  tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`); the extended TX core
-  is not, nor are native (`NativeUsb`) stream handles, and the antenna-timing mockup gets
-  no method.
+  tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`), and so is the
+  LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
+  `oracle/tests/calibration_parity.rs`); the extended TX core is not, nor are native
+  (`NativeUsb`) stream handles, and the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is
@@ -265,6 +270,11 @@ Each layer calls only the ones below it.
   (`rx_controls_parity.rs::a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it`).
   The TX controls reject DC offsets libusdr masks to 12 bits (`TxDcOffset`;
   `tx_controls_parity.rs::oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr`).
+  Calibration refuses, before any bus access, a board with no sample rate (libusdr
+  divides by zero) or with a stream group (`tests/calibration.rs`), and reports each IQ
+  search's own result where libusdr's array repeats the LO search's; channel B,
+  `USDR_CAL_RXLO` (a log line on the uSDR) and the coarse flags (zeroed by libusdr's
+  own setup) are not offered.
   Tuning before any sample rate, where libusdr divides by zero, skips the filter and fails
   the low-LO fallback for both chains; the oracle cannot run that, so `tests/tx_tuning.rs`
   covers it on the sim alone.
