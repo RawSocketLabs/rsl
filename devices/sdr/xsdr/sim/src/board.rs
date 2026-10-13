@@ -3,7 +3,7 @@
 //! Register and bus facts below cite the pinned libusdr (`device/m2_lm7_1/xsdr_ctrl.{c,h}`,
 //! `device/generic_usdr/generic_regs.h`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use rsl_lms7002m_sim::Lms7002m;
@@ -20,8 +20,9 @@ const REG_GPI_HWID: u32 = 16 + 12 / 4;
 /// The RX PHY's configuration port (`REG_CFG_PHY_0`, `generic_regs.h`). libusdr writes a
 /// bank and address there (`xsdr_phy_rx_reg`) and reads back what it selected: on the
 /// rate path, the `LimeLight` LFSR checkers' error counters (`xsdr_phy_lfsr_mimo_state`).
-/// A sim choice: the link is error-free, so every read of the port returns 0. The
-/// capture and DC-estimator banks behind it are not modelled.
+/// A sim choice: the link is error-free, so every read of the port returns 0, unless a test
+/// scripts the reads ([`SimBoard::with_rx_phy_reads`]). The capture and DC-estimator banks
+/// behind it are not modelled.
 const REG_CFG_PHY_0: u32 = 56;
 
 /// GPO bank `IGPO_LMS_PWR`: LMS7002M LDO enable, reset and RX/TX enables.
@@ -143,6 +144,10 @@ pub struct SimBoard {
     lms_pmic: Option<Lp8758>,
     /// The XTRX's reference-trim DAC.
     dac: Option<Dac80501>,
+    /// Values the RX PHY port returns, in order, before [`Self::rx_phy_after`].
+    rx_phy_script: VecDeque<u32>,
+    /// What the RX PHY port returns once the script is spent.
+    rx_phy_after: u32,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -167,9 +172,31 @@ impl SimBoard {
             // The C requires 0xe001 here too (`_xsdr_init_revo`).
             lms_pmic: xtrx.then(|| Lp8758::with_revision(0xe001)),
             dac: xtrx.then(Dac80501::new),
+            rx_phy_script: VecDeque::new(),
+            rx_phy_after: 0,
             now_us: 0,
             trace: Vec::new(),
         }
+    }
+
+    /// The same board whose RX PHY port returns `script`, one value per read, then `after`
+    /// on every read: LFSR error counts for the rate path's link calibration (four
+    /// counters per check, a check ending at the first with errors).
+    #[must_use]
+    pub fn with_rx_phy_reads(mut self, script: impl IntoIterator<Item = u32>, after: u32) -> Self {
+        self.rx_phy_script = script.into_iter().collect();
+        self.rx_phy_after = after;
+        self
+    }
+
+    /// The same board with its LMS7002M's VCO comparators reading "fail" at cap code `cap`
+    /// (`rsl-lms7002m-sim`'s fault injection), to drive libusdr's tuning error paths.
+    #[must_use]
+    pub fn with_lms_comparator_failure(mut self, cap: u8) -> Self {
+        self.lms = Lms7002m::new(LMS7_MASK)
+            .with_reference(LMS7_REFERENCE_HZ)
+            .with_comparator_failure(cap);
+        self
     }
 
     /// The same board reporting `hwid` instead, for gateware the model does not name.
@@ -200,7 +227,7 @@ impl SimBoard {
     /// Reads a 32-bit FPGA register.
     pub fn read_reg(&mut self, addr: u32) -> u32 {
         let value = if addr == REG_CFG_PHY_0 {
-            0
+            self.rx_phy_script.pop_front().unwrap_or(self.rx_phy_after)
         } else {
             self.regs.get(&addr).copied().unwrap_or(0)
         };
@@ -344,6 +371,13 @@ mod tests {
         let mut board = SimBoard::new(Variant::Xsdr);
         board.write_reg(REG_CFG_PHY_0, 0x0308_0000);
         assert_eq!(board.read_reg(REG_CFG_PHY_0), 0, "no LFSR errors counted");
+    }
+
+    #[test]
+    fn scripted_rx_phy_reads_come_in_order_then_repeat_the_last_value() {
+        let mut board = SimBoard::new(Variant::Xsdr).with_rx_phy_reads([3, 0], 7);
+        let reads: Vec<u32> = (0..4).map(|_| board.read_reg(REG_CFG_PHY_0)).collect();
+        assert_eq!(reads, [3, 0, 7, 7]);
     }
 
     #[test]
