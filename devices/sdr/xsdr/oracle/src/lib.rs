@@ -333,6 +333,48 @@ impl Oracle {
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
+    /// Sets a libusdr device-manager value, such as `c"/dm/rate/master"` or
+    /// `c"/dm/sdr/0/rx/frequency"`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_uint(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `dev` is open and `path` NUL-terminated; every path this oracle's tests
+        // set takes a number (`/dm/rate/rxtxadcdac` goes through [`Self::set_rates`]).
+        let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), path.as_ptr(), value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets the RX and TX sample rates, with no converter floors
+    /// (`/dm/rate/rxtxadcdac`, whose value is a pointer to four `u32`s).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_rates(&mut self, rx: u32, tx: u32) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let rates: [u32; 4] = [rx, tx, 0, 0];
+        // SAFETY: `dev` is open and the path NUL-terminated; its handler
+        // (`dev_m2_lm7_1_rate_m_set`) reads four `u32`s through the pointer, which outlives
+        // the call.
+        let errno = unsafe {
+            usdr_dme_set_uint(
+                dev.as_ptr(),
+                c"/dm/rate/rxtxadcdac".as_ptr(),
+                rates.as_ptr() as u64,
+            )
+        };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
     /// Reads a libusdr device-manager value, such as `c"/dm/revision"`.
     ///
     /// # Errors

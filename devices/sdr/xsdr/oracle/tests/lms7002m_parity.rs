@@ -49,109 +49,97 @@ fn rsl(calls: &[Call]) -> Run {
     let mut chip = Lms7002m::new(SpiAddr(0));
     let mut results = Vec::new();
     for &call in calls {
-        let result = match call {
-            Call::MacSet(mac) => written(&mut executor, chip.mac_set(mac_of(mac))),
-            Call::RfePath(path, mode) => {
-                banked(&mut executor, chip.rfe_path(rx_path(path), rx_mode(mode)))
-            }
-            Call::TrfPath(path, mode) => {
-                banked(&mut executor, chip.trf_path(tx_path(path), tx_mode(mode)))
-            }
-            Call::AfeEnable([rxa, rxb, txa, txb]) => {
-                written(&mut executor, chip.afe_enable([rxa, rxb], [txa, txb]))
-            }
-            Call::TspEnable(tsp, enable) => {
-                written(&mut executor, chip.tsp_enable(tsp_of(tsp), enable))
-            }
-            Call::Destroy => written(&mut executor, chip.destroy()),
-            Call::LimelightConfigure(flags, bytes) => written(
-                &mut executor,
-                chip.limelight_configure(config(flags, bytes)),
-            ),
-            Call::LimelightReset => written(&mut executor, chip.limelight_reset()),
-            Call::LimelightFifoReset(rx, tx) => {
-                written(&mut executor, chip.limelight_fifo_reset(rx, tx))
-            }
-            Call::LimelightMap(siso, map1, map2) => written(
-                &mut executor,
-                chip.limelight_map([siso & 1 == 1, siso & 2 == 2], [map(map1), map(map2)]),
-            ),
-            Call::LimelightSwitchRxMode(flags, bytes) => written(
-                &mut executor,
-                chip.limelight_switch_rx_mode(config(flags, bytes)),
-            ),
-            Call::TspIntDec(tsp, order) => {
-                banked(&mut executor, chip.tsp_int_dec(tsp_of(tsp), order))
-            }
-            Call::RxtspDcCorr(bypass, window) => banked(
-                &mut executor,
-                chip.rxtsp_dc_corr(bypass, u3::from_raw(u8::try_from(window).unwrap())),
-            ),
-            Call::TspCmix(tsp, freq) => banked(&mut executor, chip.tsp_cmix(tsp_of(tsp), freq)),
-            Call::TspBist(tsp) => written(&mut executor, chip.tsp_bist_start(tsp_of(tsp))),
-            Call::TspReset(tsp) => written(&mut executor, chip.tsp_reset(tsp_of(tsp))),
-            Call::TspBistDone(tsp) => {
-                let mut check = chip.bist_check(tsp_of(tsp));
-                run_sequence(&mut executor, &mut check).expect("the sim answers");
-                (0, [i32::from(check.done().unwrap()), 0, 0])
-            }
-            Call::RbbPath(path, mode) => {
-                written(&mut executor, chip.rbb_path(rbb_path(path), rbb_mode(mode)))
-            }
-            Call::RbbPga(gain) => written(&mut executor, chip.rbb_pga(gain)),
-            Call::RbbLpfRaw(rcc, r, c) => {
-                written(&mut executor, chip.rbb_lpf(LpfParams { rcc, r, c }))
-            }
-            Call::TbbPath(path, mode) => {
-                written(&mut executor, chip.tbb_path(tbb_path(path), tbb_mode(mode)))
-            }
-            Call::TbbLpfRaw(rcc, r, c) => {
-                written(&mut executor, chip.tbb_lpf(LpfParams { rcc, r, c }))
-            }
-            Call::TbbGain(gain) => written(&mut executor, chip.tbb_gain(gain)),
-            Call::RfeGain(3, _) => written(&mut executor, chip.rfe_gains()),
-            Call::RfeGain(stage, gain) => {
-                let (writes, actual) = chip.rfe_gain(rx_gain(stage), gain);
-                let (status, _) = written(&mut executor, writes);
-                (status, [actual, 0, 0])
-            }
-            Call::TrfGain(stage, gain) => match chip.trf_gain(tx_gain(stage), gain) {
-                Ok((writes, actual)) => {
-                    let (status, _) = written(&mut executor, writes);
-                    (status, [actual.unwrap_or(0), 0, 0])
-                }
-                Err(NoChannel) => (-EINVAL, [0; 3]),
-            },
-            Call::CgenTune(fref, out, order) => {
-                let mut tune =
-                    chip.cgen_tune(fref, out, u2::from_raw(u8::try_from(order).unwrap()));
-                run_sequence(&mut executor, &mut tune).expect("the sim answers");
-                (status(tune.outcome().expect("finished")), [0; 3])
-            }
-            Call::CgenDisable => written(&mut executor, chip.cgen_disable()),
-            Call::SxxTune(path, fref, lo, lochen) => {
-                let mut tune = chip.sxx_tune(synthesizer(path), fref, lo, lochen);
-                run_sequence(&mut executor, &mut tune).expect("the sim answers");
-                (status(tune.outcome().expect("finished")), [0; 3])
-            }
-            Call::SxxDisable(path) => written(&mut executor, chip.sxx_disable(synthesizer(path))),
-            Call::RbbLpfDef(bw, low) => (0, params(LpfParams::rbb_default(bw, low))),
-            Call::TbbLpfDef(bw, low) => (0, params(LpfParams::tbb_default(bw, low))),
-            Call::Create(ldo_mask, shared_reference) => {
-                let mut create = Create::new(ResetPlan {
-                    target: SpiAddr(0),
-                    ldo_mask,
-                    shared_reference,
-                });
-                run_sequence(&mut executor, &mut create).expect("the sim's LMS7002M is accepted");
-                chip = create.chip().expect("created");
-                (0, [0; 3])
-            }
-        };
-        results.push(result);
+        results.push(apply(&mut chip, &mut executor, call));
     }
     let trace = bus.board().trace().to_vec();
     (results, trace)
+}
+
+/// Runs one call on rsl-lms7002m's `chip` over `executor`: its result and reported values.
+fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 3]) {
+    match call {
+        Call::MacSet(mac) => written(executor, chip.mac_set(mac_of(mac))),
+        Call::RfePath(path, mode) => banked(executor, chip.rfe_path(rx_path(path), rx_mode(mode))),
+        Call::TrfPath(path, mode) => banked(executor, chip.trf_path(tx_path(path), tx_mode(mode))),
+        Call::AfeEnable([rxa, rxb, txa, txb]) => {
+            written(executor, chip.afe_enable([rxa, rxb], [txa, txb]))
+        }
+        Call::TspEnable(tsp, enable) => written(executor, chip.tsp_enable(tsp_of(tsp), enable)),
+        Call::Destroy => written(executor, chip.destroy()),
+        Call::LimelightConfigure(flags, bytes) => {
+            written(executor, chip.limelight_configure(config(flags, bytes)))
+        }
+        Call::LimelightReset => written(executor, chip.limelight_reset()),
+        Call::LimelightFifoReset(rx, tx) => written(executor, chip.limelight_fifo_reset(rx, tx)),
+        Call::LimelightMap(siso, map1, map2) => written(
+            executor,
+            chip.limelight_map([siso & 1 == 1, siso & 2 == 2], [map(map1), map(map2)]),
+        ),
+        Call::LimelightSwitchRxMode(flags, bytes) => written(
+            executor,
+            chip.limelight_switch_rx_mode(config(flags, bytes)),
+        ),
+        Call::TspIntDec(tsp, order) => banked(executor, chip.tsp_int_dec(tsp_of(tsp), order)),
+        Call::RxtspDcCorr(bypass, window) => banked(
+            executor,
+            chip.rxtsp_dc_corr(bypass, u3::from_raw(u8::try_from(window).unwrap())),
+        ),
+        Call::TspCmix(tsp, freq) => banked(executor, chip.tsp_cmix(tsp_of(tsp), freq)),
+        Call::TspBist(tsp) => written(executor, chip.tsp_bist_start(tsp_of(tsp))),
+        Call::TspReset(tsp) => written(executor, chip.tsp_reset(tsp_of(tsp))),
+        Call::TspBistDone(tsp) => {
+            let mut check = chip.bist_check(tsp_of(tsp));
+            run_sequence(executor, &mut check).expect("the sim answers");
+            (0, [i32::from(check.done().unwrap()), 0, 0])
+        }
+        Call::RbbPath(path, mode) => {
+            written(executor, chip.rbb_path(rbb_path(path), rbb_mode(mode)))
+        }
+        Call::RbbPga(gain) => written(executor, chip.rbb_pga(gain)),
+        Call::RbbLpfRaw(rcc, r, c) => written(executor, chip.rbb_lpf(LpfParams { rcc, r, c })),
+        Call::TbbPath(path, mode) => {
+            written(executor, chip.tbb_path(tbb_path(path), tbb_mode(mode)))
+        }
+        Call::TbbLpfRaw(rcc, r, c) => written(executor, chip.tbb_lpf(LpfParams { rcc, r, c })),
+        Call::TbbGain(gain) => written(executor, chip.tbb_gain(gain)),
+        Call::RfeGain(3, _) => written(executor, chip.rfe_gains()),
+        Call::RfeGain(stage, gain) => {
+            let (writes, actual) = chip.rfe_gain(rx_gain(stage), gain);
+            let (status, _) = written(executor, writes);
+            (status, [actual, 0, 0])
+        }
+        Call::TrfGain(stage, gain) => match chip.trf_gain(tx_gain(stage), gain) {
+            Ok((writes, actual)) => {
+                let (status, _) = written(executor, writes);
+                (status, [actual.unwrap_or(0), 0, 0])
+            }
+            Err(NoChannel) => (-EINVAL, [0; 3]),
+        },
+        Call::CgenTune(fref, out, order) => {
+            let mut tune = chip.cgen_tune(fref, out, u2::from_raw(u8::try_from(order).unwrap()));
+            run_sequence(executor, &mut tune).expect("the sim answers");
+            (status(tune.outcome().expect("finished")), [0; 3])
+        }
+        Call::CgenDisable => written(executor, chip.cgen_disable()),
+        Call::SxxTune(path, fref, lo, lochen) => {
+            let mut tune = chip.sxx_tune(synthesizer(path), fref, lo, lochen);
+            run_sequence(executor, &mut tune).expect("the sim answers");
+            (status(tune.outcome().expect("finished")), [0; 3])
+        }
+        Call::SxxDisable(path) => written(executor, chip.sxx_disable(synthesizer(path))),
+        Call::RbbLpfDef(bw, low) => (0, params(LpfParams::rbb_default(bw, low))),
+        Call::TbbLpfDef(bw, low) => (0, params(LpfParams::tbb_default(bw, low))),
+        Call::Create(ldo_mask, shared_reference) => {
+            let mut create = Create::new(ResetPlan {
+                target: SpiAddr(0),
+                ldo_mask,
+                shared_reference,
+            });
+            run_sequence(executor, &mut create).expect("the sim's LMS7002M is accepted");
+            *chip = create.chip().expect("created");
+            (0, [0; 3])
+        }
+    }
 }
 
 /// Runs `batch` on `bus`: a call that returns 0.
