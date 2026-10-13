@@ -6,16 +6,16 @@
 > facts.
 
 A pure-Rust port of libusdr's LSDr, its board simulator and the libusdr reference oracle.
-The driver is a **first slice**: open up to libusdr's front-end probe, ADC power, the
-receive PGA gain and close; see [PORTING.md](PORTING.md) for done, divergences and
-remaining. The board is a **receive-only** ADC card: ADS42LBx9 dual-channel ADC(s), Si549
+The driver is a **first slice**: open with libusdr's front-end probe (from
+`rsl-sdr-frontend`, shared with the uSDR and XSDR), ADC power, the receive PGA gain and
+close; see [PORTING.md](PORTING.md) for done, divergences and remaining. The board is a **receive-only** ADC card: ADS42LBx9 dual-channel ADC(s), Si549
 oscillator (ADC sample clock), TPS6594 PMIC, and on dual-ADC fits an LMK04832 clock
 generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 `dac38rf_present` never set); do not invent TX support. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-lsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `bnb` |
+| `.` | `rsl-lsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `bnb` and `rsl-sdr-frontend` (`../frontend`, the front-end probe) |
 | `sim/` | `rsl-lsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers/GPO, ADS42LBx9 and LMK04832 over SPI, TPS6594 and Si549 over I2C, virtual clock, op trace |
 | `oracle/` | `rsl-lsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_da09_4_ad45_2` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-lsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-xsdr`'s; `scripts/ci/portable.py lsdr` holds its dependencies to the driver's |
@@ -51,15 +51,19 @@ Mirrors `rsl-xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   a second driver needs them (`../../AGENTS.md`). Core only, no allocation (`bnb`'s
   bitfields need `alloc`); imports stay within the tree and the shared `no_std` crates
   (`nostd-check` compiles it unchanged).
+- `src/frontend.rs`: the front-end probe at the end of open, `rsl-sdr-frontend`'s with
+  compatibility `lsdr` and no hint: fe1005000's register-only XRA1405 check, then
+  fe4ch4007200's sensor and expander reads on I2C core 1. Neither bring-up is ported, so
+  a board that answers fails open with `Error::FrontEndNotPorted`.
 - `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `rsl-lsdr-sim`; `oracle/tests/session_parity.rs`
-  includes it with `#[path]`.
+  includes it with `#[path]`. Like the oracle shim, it passes every I2C core to the board.
 
 Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
 libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
 `PORTING.md`. uSDR-only code is not reached into; code the uSDR driver also needs (the
-FIR gearbox, the front-end probe, the RX stream core) is extracted to a shared crate,
-not copied (`PORTING.md`).
+FIR gearbox, the RX stream core) is extracted to a shared crate, not copied, as the
+front-end probe was (`PORTING.md`).
 
 ## How libusdr selects the family, and what it probes
 
@@ -93,7 +97,8 @@ SPI 3 (DAC) and 4 (front-end connector) are empty on both.
 Open, `/dm/power/en` and close use only `USDR_LSOP_HWREG` (register 0 read and GPO
 writes; the front-end probe's GPIO core at 3 and SPI-ext config at 58),
 `USDR_LSOP_SPI` (buses 0, 1, 2, and 4 for the probe) and `USDR_LSOP_I2C_DEV` (bus 0:
-TPS6594 0x48, Si549 0x67; the probe also reads 0:0x4e, 0:0x22/0x23 and 1:0x22/0x23).
+TPS6594 0x48, Si549 0x67; the probe also reads core 1: 0:0x4e, 0:0x22/0x23 and
+1:0x22/0x23).
 No DRP, URAM, GPI/GPO-class or custom operation occurs; the oracle **panics** on any
 other class (resumed after libusdr returns), because the front-end probe would swallow a
 refusal. The oracle panics if any of `USDR_BARE_DEV` (open returns before touching the
@@ -142,7 +147,9 @@ Each is stated again, with its evidence, where it is encoded.
 - Empty SPI buses and the LMK's unrouted readback read all ones (floating MISO, a sim
   choice). Absent I2C devices read `0xff` per byte, as in `rsl-usdr-sim`; the sim answers
   on I2C bus 1 although the factory declares one I2C core (`DNLL_I2C_COUNT` 1): the
-  front-end probe and the TMP108 (1:0x4b, `/dm/sensor/temp`) address it.
+  front-end probe and the TMP108 (1:0x4b, `/dm/sensor/temp`) address it. It records the
+  I2C core (libusdr's instance) of each transfer and answers on every core, as the shim
+  passes it on: fe4ch4007200's probe addresses core 1 (an open item below).
 - SPI cores 0–4 exist (`DNLL_SPI_COUNT` 5); a higher bus is refused (`-EINVAL`). The
   32-bit word's framing into 16/24-bit chip frames is the sim's assumption: libusdr passes
   only the bus number as the `ls_op` address, and the gateware is not in the source.
@@ -150,6 +157,9 @@ Each is stated again, with its evidence, where it is encoded.
   the uSDR oracle. Sleeps advance virtual time only (the shim replaces `usleep`).
 
 ## Characterization goldens
+
+I2C lines name the core first when it is not 0 (`i2c 1:0:0x4e`); the goldens were
+re-blessed for that display change alone (2026-10-13), their operations unchanged.
 
 `oracle/tests/golden/{single_adc,dual_adc_clock_gen}_session.trace`: open, `/dm/power/en`
 = 1, `usdr_dmd_close`, one op per line in `rsl_lsdr_sim::Op`'s `Display` format, `== open` /
@@ -167,8 +177,8 @@ streams, front ends. `oracle/tests/identify.rs` covers family selection (`lsdr`,
 and zero TX channels), the LMK opt-in, an absent LMK, no front end and the dead link;
 `oracle/tests/power.rs` covers supply/reset ordering and the closed state. The driver is
 compared with live libusdr, not with these files: `oracle/tests/session_parity.rs` covers
-single-ADC golden lines 10–26 (open up to the front-end probe), 57–63 (power-up) and
-65–68 (close), dual-ADC `lmk=1` lines 10–33, 64–70 and 72–75, plus the other
+single-ADC golden lines 10–55 (open, front-end probe included), 57–63 (power-up) and
+65–68 (close), dual-ADC `lmk=1` lines 10–62, 64–70 and 72–75, plus the other
 clock-generator fits, power-down, PGA gains and the dead link, none of which the goldens
 hold.
 
@@ -196,8 +206,15 @@ by a lock: one is open at a time per process.
 ## Open items and blockers
 
 - `rsl-lsdr` builds on `rsl-lowlevel` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must not
-  depend on `rsl-usdr`. What it still needs from code `rsl-usdr` owns (FIR gearbox, front-end
-  probe, RX stream core) is listed in `PORTING.md`.
+  depend on `rsl-usdr`. What it still needs from code `rsl-usdr` owns (FIR gearbox, RX
+  stream core) is listed in `PORTING.md`; the front-end probe is `rsl-sdr-frontend`'s.
+- I2C core 1: the factory declares one I2C core (`DNLL_I2C_COUNT` 1), and the uSDR
+  oracle reads the upstream PCIe driver's `instance >= i2c_count` check (outside the
+  vendored subset) as refusing any other with `-EINVAL`. This oracle's shim passes core 1
+  through instead, so the goldens' fe4ch4007200 reads characterise a transport that
+  accepts them; a real LSDr transport would likely fail them, and libusdr would then log
+  and skip the board. The driver issues the same transfers either way; resolve with the
+  upstream transport source or hardware before writing the LSDr transport.
 - LMK04832 ID byte order: libusdr's `lmk04832_read16` assembles `R(addr+1) << 8 | R(addr)`,
   so it accepts `PROD_HI` = 0x63. If TI's datasheet (not vendored) gives `PROD_HI` = 0xD1,
   as the register names suggest, libusdr would report a real LMK04832 absent. Resolve with

@@ -13,7 +13,12 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   arrives. Crate names stay `rsl-<device>` (`rsl-usdr`), independent of the path.
 - Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
-  lives in `devices/<kind>/` once a second driver needs it, not before.
+  lives in `devices/<kind>/` once a second driver needs it, not before. The first is
+  `sdr/frontend` (`rsl-sdr-frontend`, 2026-10-13): libusdr's front-end probe
+  (`device/device_fe.c`), every board's identification and the bring-ups the probe needs
+  whole (`pciefe`, `exm2pe`), run by the uSDR, XSDR and LSDr drivers. A driver adds the
+  bring-ups it owns through its `BringUp` (the uSDR's XMASS, `SuperSync` and `SimpleSync`)
+  and re-exports the crate's types.
 - Code every kind's drivers share lives in `devices/lowlevel` (`rsl-lowlevel`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind
@@ -29,7 +34,9 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   second driver needs it, then moves to its chip crate: the LSDr's TPS6594, Si549,
   ADS42LBx9 and LMK04832 sit in `rsl-lsdr` (2026-10-12; libusdr uses them on no other
   board), and PE_SYNC's LMX2820, LMX1204, LMX1214 and LMK1D1208I sit in `rsl-pe-sync`
-  (2026-10-13; likewise).
+  (2026-10-13; likewise). The chips only front-end boards carry (TCA6416, TCA9555,
+  `DACx0501`) sit in `rsl-sdr-frontend` until a driver needs one directly (the XTRX's
+  DAC80501 trim would move it to `sdr/chips/dac80501`).
 - A chip drivers of both kinds use stays under the kind that used it first:
   `sdr/chips/lmk05318` (`rsl-lmk05318`) serves the uSDR's front ends and PE_SYNC.
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they

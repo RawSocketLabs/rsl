@@ -4,10 +4,11 @@
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
 //! (`rsl-lsdr-oracle`).
 //!
-//! **First slice; unstable; unpublished.** Ported: open up to libusdr's front-end probe
-//! ([`Device::open`], with what it finds in [`Device::fitted`]), ADC power
-//! ([`Device::set_power`]), the receive PGA gain ([`Device::set_rx_pga_gain`]) and close
-//! ([`Device::close`]). Not yet ported: the front-end probe, the sample rate (Si549
+//! **First slice; unstable; unpublished.** Ported: open with libusdr's front-end probe
+//! ([`Device::open`], with what it finds in [`Device::fitted`]; the probe is
+//! `rsl-sdr-frontend`'s), ADC power ([`Device::set_power`]), the receive PGA gain
+//! ([`Device::set_rx_pga_gain`]) and close ([`Device::close`]). Not yet ported: the
+//! fe1005000 and fe4ch4007200 front-end bring-ups, the sample rate (Si549
 //! frequency, FIR gearbox, LMK04832 layout, ADC normal mode, LVDS PHY), the NCO frequency,
 //! RX streaming and the temperature sensor. See `PORTING.md` beside this crate.
 //!

@@ -6,8 +6,8 @@
 > facts.
 
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
-oracle. The driver covers XSDR identification, supply bring-up at open (up to libusdr's
-front-end probe), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
+oracle. The driver covers XSDR identification, supply bring-up and the front-end probe at
+open (`rsl-sdr-frontend`'s, shared with the uSDR and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
 gains, baseband bandwidths and close; see [PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
@@ -15,7 +15,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `rsl-lp8758` and `rsl-lms7002m` |
+| `.` | `rsl-xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `rsl-lp8758`, `rsl-lms7002m` and `rsl-sdr-frontend` (`../frontend`, the front-end board probe) |
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
@@ -51,6 +51,11 @@ Mirrors `rsl-usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   code are `rsl-lms7002m`'s; how the family composes them (`xsdr_ctrl.c`) is here.
   Core only, no allocation; imports stay within the tree and the shared `no_std` crates
   (`nostd-check` compiles it unchanged).
+- `src/fe_probe.rs`: the front-end board probe at the end of open, `rsl-sdr-frontend`'s
+  with compatibility `m2a+e` and no hint (not the RFIC's own RF front end in
+  `portable/frontend`). The `PCIe` front end and the breakout come up whole there
+  (`Device::front_end`); XMASS, `SuperSync` and `SimpleSync` need `rsl-usdr`'s LMK
+  bring-ups, so one that answers fails open with `Error::FrontEndNotPorted`.
 - `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `rsl-xsdr-sim`; the oracle's parity tests include
   it with `#[path]`.
@@ -138,8 +143,11 @@ Each is stated again, with its evidence, where it is encoded.
 - LMS8001 (sSDR): absent; while selected, SPI reads all ones. AT24: absent.
 - Absent I2C devices read `0xff` per byte, as in `rsl-usdr-sim` (no NACK is reported by
   either transport). The XSDR front-end probe sees the idle bus as GPIO expanders, fails
-  the `pciefe` probe at its DAC with `-EIO` (logged, ignored without a hint) and reports
-  no front end; that characterises libusdr on an empty connector, not hardware.
+  the `pciefe` probe at its DAC with `-EIO` (logged, ignored without a hint), finds no
+  clock board and settles on the M.2-to-`PCIe` breakout without a DAC, which has no ID
+  ("Detected external FE: exm2pe"); that characterises libusdr on an empty connector, not
+  hardware. The sim models no front-end board, so only that path is compared on the
+  XSDR; the boards' bring-ups are compared on the uSDR's sim (`../usdr/oracle`).
 - I2C readback packing (first byte most significant, little-endian copy) and the
   three-out/four-in limits are transport facts copied from the uSDR oracle.
 - Sleeps advance virtual time only (the shim replaces `usleep`).
@@ -163,7 +171,7 @@ sSDR; `oracle/tests/rate_parity.rs` compares the ported ones with live libusdr i
 `oracle/tests/identify.rs` covers every variant's classification and the unknown-ID
 refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state. The driver
 is compared with live libusdr, not with these files: `oracle/tests/open_parity.rs` covers
-XSDR golden lines 10–26 (open up to the front-end probe), 78–97 (power-up) and 99–133
+XSDR golden lines 10–76 (open, front-end probe included), 78–97 (power-up) and 99–133
 (close), plus a close without power-up and one after a refused power-up (libusdr's zeroed
 LMS7002M state). `oracle/tests/lms7002m_parity.rs` calls the compiled
 `hw/lms7002m/lms7002m.c` directly (`rsl_xsdr_oracle::lms7002m_run`, a zeroed chip state on
@@ -180,7 +188,7 @@ the open and the close.
 cargo fmt -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --check
 cargo clippy -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --all-targets -- -D warnings
 cargo test -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim
-cargo check -p rsl-lms7002m --target thumbv7em-none-eabi
+cargo check -p rsl-lms7002m -p rsl-sdr-frontend --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py xsdr
 cargo fmt --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
@@ -210,7 +218,8 @@ by a lock: one is open at a time per process.
   feedback dividers up to 126 at low rates.
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
   `xsdr-portable` (host only); a change to `rsl-xsdr` or to the shared crates it builds on
-  selects both, a change to the uSDR oracle's vendored C only the oracle
-  (`scripts/ci/plan.py`). Their thumbv7em checks (fixture, `rsl-lms7002m`) join the
+  (`rsl-sdr-frontend` included) selects both, a change to the uSDR oracle's vendored C
+  only the oracle (`scripts/ci/plan.py`). Their thumbv7em checks (fixture,
+  `rsl-lms7002m`, `rsl-sdr-frontend`) join the
   release-only `no-std` profile on an explicit XSDR release, which no product enables yet.
   `PORTING.md` here is prose to the selector, like the uSDR ledger.

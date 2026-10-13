@@ -95,7 +95,7 @@ Each layer calls only the ones below it.
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
-  front end, DMA, sync), the original TX stream core (`tx_stream`), the M.2 connector's GPIO core (`fe_gpio`, register 3), and
+  front end, DMA, sync), the original TX stream core (`tx_stream`), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash.rs`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
@@ -103,11 +103,16 @@ Each layer calls only the ones below it.
   separate `Programmer` from `Flash::programmer`. Image headers and the update procedure
   are not ported (`PORTING.md`).
 - `src/frontend/`: public `rsl_usdr::frontend`, the boards libusdr probes on the M.2
-  connector (`device/device_fe.c`, `device/ext_*`), one module per board; their chips are
-  in `src/chips/` (TCA6416, TCA9555, DACx0501, LMK05318, LMK5C33216, TMP114, AT24).
-  `board/frontend.rs` runs the probe at the end of power-up and owns the board that came
-  up. Blocking code: the probes interleave GPIO-core writes with I2C transfers the
-  `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
+  connector (`device/device_fe.c`, `device/ext_*`). The probe itself, every board's
+  identification, the connector's GPIO core, the `PCIe` front end and breakout whole and
+  their chips (TCA6416, TCA9555, DACx0501) are `rsl-sdr-frontend`'s (`../frontend`),
+  shared with the XSDR and LSDr drivers; `frontend/mod.rs` re-exports its public types
+  (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and `Exm2peOptions` options,
+  `XmassCalibrationPath`) and implements its `BringUp` with the bring-ups that stay here,
+  one module per board (`xmass`, `supersync`, `simplesync`; their chips LMK05318,
+  LMK5C33216, TMP114 and AT24 in `src/chips/`). `board/frontend.rs` runs the probe at the
+  end of power-up and owns the board that came up. Blocking code: the probes interleave
+  GPIO-core writes with I2C transfers the `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
   `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
   frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
   the oracle compiles them with the map and value types directly
@@ -236,8 +241,9 @@ Each layer calls only the ones below it.
   in its own change.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Front ends (`fe=`): the probe and the boards the uSDR admits follow libusdr's
-  `device_fe_probe`; every board it admits comes up (pciefe, xmass, supersync,
+- Front ends (`fe=`): the probe (`rsl-sdr-frontend`, shared with the XSDR and LSDr) and
+  the boards the uSDR admits follow libusdr's `device_fe_probe`; every board it admits
+  comes up (pciefe, xmass, supersync,
   simplesync, exm2pe), and a failed probe powers the board down again where libusdr
   leaves it powered. libusdr's lock waits run on its wall clock; rsl-usdr's count their
   100 µs poll sleeps, so they last at least as long on hardware, and the sim reports lock
@@ -355,7 +361,8 @@ cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets --
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
 cargo clippy -p rsl-lowlevel -p rsl-lp8758 --all-targets -- -D warnings && cargo clippy -p rsl-lowlevel --features std --all-targets -- -D warnings
 cargo test -p rsl-lowlevel --features std && cargo test -p rsl-lp8758
-cargo check -p rsl-lowlevel -p rsl-lp8758 --target thumbv7em-none-eabi
+cargo check -p rsl-lowlevel -p rsl-lp8758 -p rsl-sdr-frontend --target thumbv7em-none-eabi
+cargo clippy -p rsl-sdr-frontend --features std --all-targets -- -D warnings && cargo test -p rsl-sdr-frontend --features std
 python3 scripts/ci/portable.py
 cargo fmt --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
