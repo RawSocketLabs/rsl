@@ -10,6 +10,7 @@ mod power;
 mod rate;
 mod stream;
 mod tune;
+mod tx_stream;
 
 pub(crate) use board::Board;
 pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};

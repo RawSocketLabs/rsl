@@ -118,7 +118,51 @@ pub trait Bus: Send {
     fn rx_stream_close(&mut self) -> Result<(), BusError> {
         Err(BusError::Unsupported("RX streaming"))
     }
+
+    /// Sets up transport buffers for TX blocks of up to `block_bytes` (the transport's
+    /// `stream_initialize` for the TX stream). The driver has already configured the
+    /// engine's registers.
+    ///
+    /// The default supports no TX streaming.
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Unsupported`] by default; any transport failure.
+    fn tx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        let _ = block_bytes;
+        Err(BusError::Unsupported("TX streaming"))
+    }
+
+    /// Waits up to `timeout` for a free TX buffer and lends it to `fill` (the transport's
+    /// `send_dma_get`), with the four status words the transport has for this buffer, if
+    /// any; `fill` writes the block from the buffer's start and returns its length in
+    /// bytes, which the transport hands to the DMA engine. Telling the gateware the block
+    /// is there is the driver's, through its registers, unless the transport frames it
+    /// (libusdr's `soft_tx_commit`, which a commit may call).
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Timeout`] if no buffer frees in time; [`BusError::Unsupported`] by
+    /// default; any transport failure.
+    fn tx_stream_send(&mut self, timeout: Duration, fill: &mut TxFill<'_>) -> Result<(), BusError> {
+        let _ = (timeout, fill);
+        Err(BusError::Unsupported("TX streaming"))
+    }
+
+    /// Releases the TX buffers (the transport's `stream_deinitialize`).
+    ///
+    /// # Errors
+    ///
+    /// [`BusError::Unsupported`] by default; any transport failure.
+    fn tx_stream_close(&mut self) -> Result<(), BusError> {
+        Err(BusError::Unsupported("TX streaming"))
+    }
 }
+
+/// What [`Bus::tx_stream_send`] lends a TX buffer to: it takes the buffer and the status
+/// words the transport has for it, if any, writes the block from the buffer's start and
+/// returns its length in bytes.
+pub type TxFill<'a> = dyn FnMut(&mut [u8], Option<[u32; 4]>) -> usize + 'a;
 
 /// Runs a portable register sequence to its end over `bus`, one action at a time: the
 /// blocking executor, so the sequence's operations reach the bus exactly as written.

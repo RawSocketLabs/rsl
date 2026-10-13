@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use rsl_usdr::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
+use rsl_usdr::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxFill};
 use rsl_usdr_sim::{I2cAddress, SimBoard};
 
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the bus.
@@ -97,6 +97,42 @@ impl Bus for SimBus {
     }
 
     fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        Ok(())
+    }
+
+    /// As the oracle's shim: the `PCIe` driver's limit of 1 MiB per buffer, no tracing.
+    fn tx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        if block_bytes > MAX_DMA_BLOCK {
+            return Err(BusError::Unsupported(
+                "TX block over the PCIe driver's 1 MiB",
+            ));
+        }
+        let block_bytes = usize::try_from(block_bytes).expect("at most 1 MiB");
+        self.board().tx_open(block_bytes);
+        Ok(())
+    }
+
+    /// As the oracle's shim: the board's next free buffer, of the stream's block size, or
+    /// a timeout at once while every buffer waits to play; the filled bytes go back to
+    /// the board.
+    fn tx_stream_send(
+        &mut self,
+        _timeout: Duration,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        let mut board = self.board();
+        let Some(record) = board.tx_grant() else {
+            return Err(BusError::Timeout);
+        };
+        let mut buffer = vec![0; board.tx_block_bytes()];
+        drop(board);
+        let written = fill(&mut buffer, record.record());
+        self.board().tx_load(&buffer[..written]);
+        Ok(())
+    }
+
+    fn tx_stream_close(&mut self) -> Result<(), BusError> {
+        self.board().tx_close();
         Ok(())
     }
 }

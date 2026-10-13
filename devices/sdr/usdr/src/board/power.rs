@@ -61,6 +61,7 @@ impl Board {
         let chains = Chains {
             rx: identity.has_rx,
             tx: identity.has_tx,
+            extended_tx_core: identity.has_extended_tx_core(),
         };
         Ok(Identified {
             bus,
@@ -288,7 +289,8 @@ impl Identified {
             rx: RxState::default(),
             tx: TxState::default(),
             rx_running: false,
-            rx_stream: None,
+            tx_running: false,
+            streams: None,
             front_end: None,
         })
     }

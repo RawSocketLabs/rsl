@@ -1,5 +1,7 @@
 //! What the board reports about itself.
 
+use crate::fpga::Hwid;
+
 /// The board's identity as its gateware reports it: libusdr's `/dm/revision`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -8,9 +10,10 @@ pub struct Identity {
     pub revision: u8,
     /// The gateware has an RX chain (hardware ID bit 25).
     pub has_rx: bool,
-    /// The gateware has a TX chain (hardware ID bit 24). This driver does not drive TX yet.
+    /// The gateware has a TX chain (hardware ID bit 24).
     pub has_tx: bool,
-    /// The gateware build identifier (the FPGA's `USR_ACCESS2`), which libusdr only reports.
+    /// The gateware build identifier (the FPGA's `USR_ACCESS2`), which libusdr reports and
+    /// checks before TX streaming.
     pub gateware_build: u32,
     /// The whole hardware ID word (FPGA GPI 12).
     pub hwid: u32,
@@ -22,5 +25,11 @@ impl Identity {
     #[must_use]
     pub const fn to_raw(self) -> u64 {
         (self.hwid as u64) << 32 | self.gateware_build as u64
+    }
+
+    /// The TX chain has the extended stream core (hardware ID bit 26), whose stream setup
+    /// this driver does not port.
+    pub(crate) const fn has_extended_tx_core(self) -> bool {
+        Hwid::from_raw(self.hwid).has_extended_tx_core()
     }
 }

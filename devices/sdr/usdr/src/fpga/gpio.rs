@@ -121,6 +121,11 @@ impl Gpi {
 #[bitfield(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Hwid {
+    /// The TX chain's stream core is the extended one (`CORE_EXFETX_DMA32_R0_2`), which
+    /// libusdr's TX stream create tests as `hwid & (1 << (24 + 2))`.
+    #[bits(26..=26)]
+    has_extended_tx_core: bool,
+
     /// The board has an RX chain.
     #[bits(25..=25)]
     has_rx: bool,

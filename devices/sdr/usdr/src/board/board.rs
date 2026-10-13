@@ -9,7 +9,7 @@
 
 use std::fmt;
 
-use super::stream::RxStream;
+use super::stream::StreamGroup;
 use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
 use crate::chips::lp8758::{BuckControl, BuckVoltage, Config, Lp8758};
@@ -30,6 +30,10 @@ use crate::reference::ReferenceClock;
 ///
 /// [`Identified`]: super::power::Identified
 /// [`Identified::power_up`]: super::power::Identified::power_up
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags, each one of libusdr's, not states of one machine"
+)]
 pub(crate) struct Board {
     /// The hardware seam; chip drivers borrow it per call.
     pub(super) bus: Box<dyn Bus>,
@@ -66,12 +70,15 @@ pub(crate) struct Board {
     /// What the transmit chain was last set to.
     pub(super) tx: TxState,
 
-    /// libusdr's `rx_run`: set when a stream is created, cleared when it is destroyed, and
-    /// left set by a failed create.
+    /// libusdr's `rx_run`: set when an RX stream is created, cleared when it is destroyed,
+    /// and left set by a failed create.
     pub(super) rx_running: bool,
 
-    /// The RX stream, while one exists.
-    pub(super) rx_stream: Option<RxStream>,
+    /// libusdr's `tx_run`, the same for the TX stream.
+    pub(super) tx_running: bool,
+
+    /// The stream group, while one exists.
+    pub(super) streams: Option<StreamGroup>,
 
     /// The front end on the M.2 connector, once the probe brought one up (libusdr's
     /// `fe`).
@@ -137,9 +144,8 @@ pub(super) struct RxState {
 /// The transmit chain's settings that later calls depend on, as libusdr tracks them
 /// (its `tx_*` fields).
 ///
-/// The [`Board`] keeps it with the rest of the radio's state. TX streaming, not yet ported,
-/// will add the IQ imbalance libusdr keeps (`tx_corr`) and rewrites at stream creation. Not `Copy`: lending a copy would lose the
-/// call's updates.
+/// The [`Board`] keeps it with the rest of the radio's state. Not `Copy`: lending a copy
+/// would lose the call's updates.
 #[derive(Debug, Default)]
 pub(crate) struct TxState {
     /// The LMS6002D's transmitter is powered (libusdr's `tx_pwren`).
@@ -163,9 +169,13 @@ pub(crate) struct TxState {
     /// How far the PLL sits from the wanted LO, in Hz, when it cannot reach it; the TX NCOs
     /// make up the difference (libusdr's `tx_exten_lo`).
     pub(super) lo_offset_hz: i32,
+
+    /// The IQ imbalance correction (libusdr's `tx_corr`), which TX stream creation writes
+    /// again.
+    pub(super) iq_imbalance: IqImbalance,
 }
 
-/// Which DSP chains the gateware has (HWID bits 25 and 24).
+/// Which DSP chains the gateware has (HWID bits 25 and 24), and its TX stream core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Chains {
     /// An RX chain.
@@ -173,6 +183,10 @@ pub(super) struct Chains {
 
     /// A TX chain.
     pub(super) tx: bool,
+
+    /// The TX stream core is the extended one (`CORE_EXFETX_DMA32_R0_2`, HWID bit 26)
+    /// rather than the original (`CORE_SFETX_DMA32_R0`).
+    pub(super) extended_tx_core: bool,
 }
 
 impl fmt::Debug for Board {
@@ -185,8 +199,10 @@ impl fmt::Debug for Board {
             .field("adc_rate_hz", &self.adc_rate_hz)
             .field("mixer_lo_hz", &self.mixer_lo_hz)
             .field("rx", &self.rx)
+            .field("tx", &self.tx)
             .field("rx_running", &self.rx_running)
-            .field("rx_stream", &self.rx_stream)
+            .field("tx_running", &self.tx_running)
+            .field("streams", &self.streams)
             .field("front_end", &self.front_end)
             .finish_non_exhaustive()
     }

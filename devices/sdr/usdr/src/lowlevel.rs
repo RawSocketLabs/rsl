@@ -9,10 +9,15 @@
 //!   transfers with additional trailer space.
 //! - Of [`Bus::rx_stream_recv`]'s out-of-band words, the driver uses only the lost packet
 //!   count.
+//! - TX streaming ([`Bus::tx_stream_open`]): `PCIe` uses 32 DMA buffers. The status words
+//!   [`Bus::tx_stream_send`] lends with a buffer are, over `PCIe`, the driver's completion
+//!   record (the TX core's three event words and the kernel's nanosecond time), none for
+//!   the 32 buffers it starts with; libusdr's USB transport reads registers 28 to 31 (not
+//!   ported). The driver announces each block through the TX core's registers 12 and 13.
 
 use std::io;
 
-pub use rsl_lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
+pub use rsl_lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxFill};
 
 use crate::portable::error::Failure;
 

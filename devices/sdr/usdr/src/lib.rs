@@ -144,6 +144,6 @@ pub use identity::Identity;
 pub use reference::ReferenceClock;
 pub use stream::{
     Ci12, HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig,
-    SyncMode, WireFormat,
+    SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry, WireFormat,
 };
 pub use thermal::{HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};

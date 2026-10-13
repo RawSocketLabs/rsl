@@ -51,7 +51,7 @@ impl Board {
     pub(crate) fn set_rx_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
         // The block size and decimation are fixed while a stream runs; libusdr's callers only
         // set the rate before creating one.
-        if self.rx_stream.is_some() {
+        if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
         let decimation =
@@ -172,11 +172,16 @@ mod tests {
     use super::*;
 
     /// Both chains, as every uSDR the oracle models has.
-    const BOTH: Chains = Chains { rx: true, tx: true };
+    const BOTH: Chains = Chains {
+        rx: true,
+        tx: true,
+        extended_tx_core: false,
+    };
     /// An RX-only gateware.
     const RX_ONLY: Chains = Chains {
         rx: true,
         tx: false,
+        extended_tx_core: false,
     };
 
     #[test]

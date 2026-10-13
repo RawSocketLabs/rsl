@@ -15,7 +15,7 @@ use crate::frontend::{FrontEndKind, FrontEndSelection, PciefeSetting};
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
-use crate::stream::{HostSample, RxMetadata, StreamsConfig};
+use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, TxMute, TxTelemetry};
 use crate::thermal::{CoolDown, ThermalPolicy};
 
 /// A powered uSDR.
@@ -226,14 +226,16 @@ impl Device {
     }
 
     /// Creates the stream group `config` describes, stopped: libusdr's `usdr_dms_create`
-    /// for each stream. Frequency and bandwidth can change while it exists; the sample rate
-    /// cannot. Start it with [`Device::start_streams`].
+    /// for each stream, RX first. Frequency and bandwidth can change while it exists; the
+    /// sample rate cannot. Start it with [`Device::start_streams`].
     ///
     /// Creating the RX stream calibrates the receiver's DC offsets. If no frequency was set,
     /// the receiver tunes to 320 MHz first, as libusdr does. The calibration borrows the
     /// TX PLL; with a TX frequency set, it is tuned back to it, with any failure ignored
-    /// as libusdr ignores it. The streams' wire formats are converted to their host formats
-    /// inside each receive.
+    /// as libusdr ignores it. Creating the TX stream powers the transmitter, checks the
+    /// gateware's build, turns the constant generator off and writes the TX IQ correction
+    /// again. Wire formats are converted to and from host formats inside each receive and
+    /// send.
     ///
     /// # Errors
     ///
@@ -243,27 +245,39 @@ impl Device {
     /// - [`Error::UnsupportedSync`] for [`SyncMode::ExternalAll`]: libusdr's
     ///   `sfetrx4_stream_sync` has no `extall` case (it creates the stream, then fails
     ///   `usdr_dms_sync` with `-EINVAL`).
+    /// - [`Error::UnsupportedTxCore`] for a TX stream on gateware with the extended TX
+    ///   core, and [`Error::UnsupportedWireFormat`] for a TX wire format other than
+    ///   [`WireFormat::Ci16`] (libusdr refuses it once the transmitter is powered).
     ///
     /// Then:
-    /// - [`Error::UnsupportedPacketSize`] for a packet the stream engine cannot split into
-    ///   bursts in the wire format.
+    /// - [`Error::UnsupportedPacketSize`] for an RX packet the stream engine cannot split
+    ///   into bursts in the wire format, or a TX packet empty or past the core's
+    ///   126976-byte FIFO.
+    /// - [`Error::OutdatedGateware`] for a TX stream on gateware older than libusdr's TX
+    ///   streaming requires.
     /// - [`Error::Stream`] if the transport cannot set up its buffers, or does not stream.
     /// - [`Error::DmaEngineFault`] if the FPGA's DMA engine does not respond.
     /// - Tuning and calibration errors, as [`Device::set_rx_frequency`]; any bus failure.
     ///
-    /// As in libusdr, a failure after the transport set up its buffers leaves the group in
-    /// place: call [`Device::stop_streams`] before creating again. For USB, an ambiguous
-    /// control transaction permanently invalidates the bus. Stopping still attempts to
-    /// drain its RX buffers, but close/drop and reopen the device rather than retrying on
-    /// that handle. Power-down writes may fail on the invalid bus.
+    /// As in libusdr, a failure after a stream's transport set up its buffers leaves the
+    /// group in place with the streams created so far, and a transmitter or receiver
+    /// powered for a stream that failed stays powered: call [`Device::stop_streams`]
+    /// before creating again. For USB, an ambiguous control transaction permanently
+    /// invalidates the bus. Stopping still attempts to drain its RX buffers, but close/drop
+    /// and reopen the device rather than retrying on that handle. Power-down writes may
+    /// fail on the invalid bus.
     ///
     /// [`SyncMode::ExternalAll`]: crate::SyncMode::ExternalAll
+    /// [`WireFormat::Ci16`]: crate::WireFormat::Ci16
     pub fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
         self.board().create_streams(config)
     }
 
-    /// Synchronises and starts the stream group: libusdr's `usdr_dms_sync` with the
-    /// group's [`SyncMode`](crate::SyncMode), then `USDR_DMS_START` for each stream.
+    /// Synchronises and starts the stream group. An RX-only group runs libusdr's
+    /// `usdr_dms_sync` with the group's [`SyncMode`](crate::SyncMode), then
+    /// `USDR_DMS_START`, as `dm_stream.h` prescribes; a group with TX starts RX, then TX
+    /// (resetting its buffers and applying its [`TxMute`]), then syncs, as libusdr's own
+    /// clients do, because the TX core's start writes the sync unit's register.
     ///
     /// # Errors
     ///
@@ -303,7 +317,59 @@ impl Device {
         self.board().receive_into(channels, timeout)
     }
 
-    /// Stops and destroys the stream group, powering the receiver down. The frequency,
+    /// Sends one packet: each channel's whole buffer (one buffer per channel of the TX
+    /// stream, 1 to its packet size samples, in its [`HostFormat`](crate::HostFormat)),
+    /// waiting up to `timeout` for a free transport buffer. `time` is the TX core's
+    /// timestamp for the first sample; `None` plays the packet as soon as it reaches the
+    /// core (libusdr's all-ones time).
+    ///
+    /// As in libusdr, the core reports late or dropped bursts only through its counters
+    /// ([`Device::send_with_stat`]); a send never fails for an underrun.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::NotStreaming`] with no TX stream.
+    /// - [`Error::HostFormatMismatch`], [`Error::ChannelBuffers`], [`Error::SendSize`] or
+    ///   [`Error::UnsupportedTimestamp`] (past 47 bits), before any bus access.
+    /// - [`Error::Timeout`] if no transport buffer frees in time: a stream not yet started
+    ///   (or held by its sync) fills them all and stops taking packets.
+    /// - [`Error::Stream`] if the transport fails; any bus failure.
+    pub fn send<S: HostSample>(
+        &mut self,
+        channels: &[&[S]],
+        time: Option<StreamTime>,
+        timeout: Duration,
+    ) -> Result<(), Error> {
+        self.board().send(channels, time, timeout).map(|_| ())
+    }
+
+    /// [`Device::send`], returning what the TX core reported with the buffer (libusdr's
+    /// `usdr_dms_send_stat`), or `None` when the transport had no report for it: over
+    /// `PCIe`, the first 32 buffers, which the driver hands out before any completes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::send`].
+    pub fn send_with_stat<S: HostSample>(
+        &mut self,
+        channels: &[&[S]],
+        time: Option<StreamTime>,
+        timeout: Duration,
+    ) -> Result<Option<TxTelemetry>, Error> {
+        self.board().send(channels, time, timeout)
+    }
+
+    /// Mutes the TX core's lanes as `mute` says (libusdr's stream option `"mute"`). The
+    /// stream keeps the setting and applies it again when it starts.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no TX stream; any bus failure.
+    pub fn set_tx_mute(&mut self, mute: TxMute) -> Result<(), Error> {
+        self.board().set_tx_mute(mute)
+    }
+
+    /// Stops and destroys the stream group, powering its chains down. The frequency,
     /// bandwidth and sample rate stay set for the next group.
     ///
     /// # Errors
@@ -577,7 +643,7 @@ impl Device {
         let Some(mut board) = self.board.take() else {
             return Ok(());
         };
-        let stopped = if board.rx_packet_samples().is_some() {
+        let stopped = if board.has_streams() {
             board.stop_streams()
         } else {
             Ok(())

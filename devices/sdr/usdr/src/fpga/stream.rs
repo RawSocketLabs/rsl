@@ -309,15 +309,28 @@ struct DmaControl {
     enabled: bool,
 }
 
-/// The sync unit's modes (`ST_*`), those the RX streams use.
+/// The sync unit's modes (`ST_*`), those the stream group uses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncTrigger {
     /// Streams held stopped (`ST_STOP`, libusdr's `"off"`).
     Stop = 0,
 
+    /// Streams start on a 1PPS pulse (`ST_ONEPPS`: `"1pps"` or `"sysref"`).
+    OnePps = 1,
+
     /// Streams start on the RX front end's activity (`ST_ADCACT`: `"all"` with RX alone,
     /// or `"rx"`).
     RxActivity = 2,
+
+    /// Streams start on the TX front end's activity (`ST_DACACT`: `"all"` with TX alone,
+    /// or `"tx"`).
+    TxActivity = 3,
+
+    /// Streams start on either front end's activity (`ST_ADCORDACACT`, `"any"`).
+    EitherActivity = 5,
+
+    /// RX and TX start together (`ST_DELAYADCDAC`: `"all"` with both).
+    Duplex = 6,
 
     /// Streams run as soon as started (`ST_FREERUN`, `"none"`).
     FreeRun = 7,

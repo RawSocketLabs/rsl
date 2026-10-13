@@ -1,13 +1,13 @@
-//! RX streaming: libusdr's `/ll/srx/0` stream on channel 0, created, synchronised,
-//! started, read and stopped as `usdr_device_m2_lm6_1_create_stream`, `usdr_dms_sync`,
-//! `usdr_dms_op`, `usdr_dms_recv` and `unregister_stream` do it (`device/m2_lm6_1/m2_lm6_1.c`;
-//! the stream engine in `ipblks/streams/stream_sfetrx4_dma32.c`).
+//! The stream group and its RX stream: libusdr's `/ll/srx/0` stream on channel 0, created,
+//! synchronised, started, read and stopped as `usdr_device_m2_lm6_1_create_stream`,
+//! `usdr_dms_sync`, `usdr_dms_op`, `usdr_dms_recv` and `unregister_stream` do it
+//! (`device/m2_lm6_1/m2_lm6_1.c`; the stream engine in
+//! `ipblks/streams/stream_sfetrx4_dma32.c`). The TX stream is in `tx_stream.rs`.
 //!
-//! Creating a stream powers the receiver, calibrates its DC offsets, configures the FPGA's
-//! front end and DMA, holds the sync unit stopped and asks the transport for its buffers;
-//! synchronising sets the sync unit's trigger; starting runs the DMA and front end. Blocks
-//! flow once both have happened. The RX stream is the whole group for now: TX streaming is
-//! not ported.
+//! Creating the RX stream powers the receiver, calibrates its DC offsets, configures the
+//! FPGA's front end and DMA, holds the sync unit stopped and asks the transport for its
+//! buffers; synchronising sets the sync unit's trigger; starting runs the DMA and front
+//! end. Blocks flow once both have happened.
 
 use std::time::Duration;
 
@@ -15,6 +15,7 @@ use num_complex::Complex;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
+use super::tx_stream::TxStream;
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{self, BurstPlan, Phy, SyncTrigger};
@@ -28,11 +29,11 @@ use crate::stream::{
 const DEFAULT_RX_HZ: u32 = 320_000_000;
 
 /// Samples converted per step inside the transport's loan: bounds the scratch the
-/// converter writes before the samples reach the caller's buffer.
-const CHUNK_SAMPLES: usize = 512;
+/// converter writes before the samples reach the caller's buffer, or the wire.
+pub(super) const CHUNK_SAMPLES: usize = 512;
 
 /// The largest host sample, in bytes (`cf32`).
-const MAX_HOST_SAMPLE_BYTES: usize = 8;
+pub(super) const MAX_HOST_SAMPLE_BYTES: usize = 8;
 
 /// RX burst throttling: of every `send + skip + 2` bursts the front end delivers the first
 /// `send + 1` and drops the rest, so a host that cannot keep up sees whole bursts missing
@@ -59,8 +60,36 @@ pub struct RxPacket {
     pub lost_packets: u64,
 }
 
-/// A created RX stream's bookkeeping (libusdr's `stream_sfetrx_dma32_t`), and the group's
-/// synchronisation while RX is its only stream.
+/// The stream group: the streams created so far and how they start. It exists from the
+/// first stream whose transport buffers are set up until the group stops.
+#[derive(Debug)]
+pub(crate) struct StreamGroup {
+    /// The RX stream, if created.
+    pub(super) rx: Option<RxStream>,
+
+    /// The TX stream, if created.
+    pub(super) tx: Option<TxStream>,
+
+    /// The sync unit's trigger, set when the group starts.
+    sync: SyncTrigger,
+
+    /// The group has started.
+    started: bool,
+}
+
+impl StreamGroup {
+    /// A group with no stream yet, to start with `sync`.
+    const fn new(sync: SyncTrigger) -> Self {
+        Self {
+            rx: None,
+            tx: None,
+            sync,
+            started: false,
+        }
+    }
+}
+
+/// A created RX stream's bookkeeping (libusdr's `stream_sfetrx_dma32_t`).
 #[derive(Debug)]
 pub(crate) struct RxStream {
     /// Samples per packet.
@@ -80,12 +109,6 @@ pub(crate) struct RxStream {
 
     /// Wire to host conversion (libusdr's `tf_data`).
     converter: Converter,
-
-    /// The group's sync trigger, set when it starts.
-    sync: SyncTrigger,
-
-    /// The group has started.
-    started: bool,
 
     /// Packets received (`rcnt`); the DMA engine is told the host is ready until the first.
     packets: u64,
@@ -112,52 +135,91 @@ struct BlockLayout {
 }
 
 impl SyncMode {
-    /// The sync unit's trigger for a group of RX streams alone (`sfetrx4_stream_sync`).
+    /// The sync unit's trigger for a group with an RX stream if `rx` and a TX stream if
+    /// `tx` (`sfetrx4_stream_sync`).
     ///
     /// # Errors
     ///
     /// [`Error::UnsupportedSync`] for a mode `sfetrx4_stream_sync` has no case for.
-    fn rx_trigger(self) -> Result<SyncTrigger, Error> {
+    fn trigger(self, rx: bool, tx: bool) -> Result<SyncTrigger, Error> {
         match self {
             Self::None => Ok(SyncTrigger::FreeRun),
-            Self::All => Ok(SyncTrigger::RxActivity),
+            Self::All => Ok(match (rx, tx) {
+                (true, true) => SyncTrigger::Duplex,
+                (true, false) => SyncTrigger::RxActivity,
+                (false, true) => SyncTrigger::TxActivity,
+                (false, false) => SyncTrigger::FreeRun,
+            }),
+            Self::Any => Ok(SyncTrigger::EitherActivity),
+            Self::OnePps => Ok(SyncTrigger::OnePps),
             Self::ExternalAll => Err(Error::UnsupportedSync(self)),
         }
     }
 }
 
 impl Board {
-    /// Creates the group's streams (libusdr's `usdr_dms_create` for each), leaving them
-    /// stopped until [`Board::start_streams`]. An existing group, a configuration with no
-    /// stream and an unsupported sync mode are refused before any bus access; the packet
-    /// size is checked where libusdr checks it, after calibration. `tx` is the
-    /// transmitter's settings: the calibration's TX PLL tune is undone for its frequency.
+    /// Creates the group's streams (libusdr's `usdr_dms_create` for each), RX first,
+    /// leaving them stopped until [`Board::start_streams`]. An existing group, a
+    /// configuration with no stream, an unsupported sync mode and a TX stream the gateware
+    /// cannot take are refused before any bus access; packet sizes are checked where
+    /// libusdr checks them.
+    ///
+    /// As in libusdr, a stream whose transport buffers are set up stays when a later step
+    /// fails, and so does the group holding it, until [`Board::stop_streams`].
     pub(crate) fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
-        if self.rx_stream.is_some() {
+        if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let Some(rx) = config.rx else {
+        if config.rx.is_none() && config.tx.is_none() {
             return Err(Error::NoStreams);
-        };
-        let sync = config.sync.rx_trigger()?;
-        let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
-            .expect("invariant: libusdr converts every RX wire format to every host format");
-        self.create_rx_stream(rx, converter, sync)
+        }
+        let sync = config
+            .sync
+            .trigger(config.rx.is_some(), config.tx.is_some())?;
+        if let Some(tx) = config.tx {
+            self.check_tx_stream(tx)?;
+        }
+        if let Some(rx) = config.rx {
+            let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
+                .expect("invariant: libusdr converts every RX wire format to every host format");
+            self.create_rx_stream(rx, converter, sync)?;
+        }
+        if let Some(tx) = config.tx {
+            self.create_tx_stream(tx, sync)?;
+        }
+        Ok(())
     }
 
-    /// Synchronises and starts the group: `usdr_dms_sync` with the configured mode, then
-    /// `USDR_DMS_START` for each stream, in the order libusdr's API prescribes.
+    /// Synchronises and starts the group.
+    ///
+    /// RX alone: `usdr_dms_sync` with the configured mode, then `USDR_DMS_START`, the
+    /// order `dm_stream.h` prescribes. With TX: `USDR_DMS_START` for RX, then TX, then the
+    /// sync, the order every libusdr client uses (`usdr_dm_create`, the JSON controller,
+    /// Soapy), because the TX core's start writes the sync unit's register.
     pub(crate) fn start_streams(&mut self) -> Result<(), Error> {
-        let Some(stream) = self.rx_stream.as_mut() else {
+        let Some(group) = self.streams.as_mut() else {
             return Err(Error::NotStreaming);
         };
-        if stream.started {
+        if group.started {
             return Err(Error::AlreadyStreaming);
         }
         let bus = self.bus.as_mut();
-        fpga::sync(bus, stream.sync)?;
-        fpga::run_rx(bus, true)?;
-        stream.started = true;
+        match &group.tx {
+            None => {
+                fpga::sync(bus, group.sync)?;
+                if group.rx.is_some() {
+                    fpga::run_rx(bus, true)?;
+                }
+            }
+            Some(tx) => {
+                if group.rx.is_some() {
+                    fpga::run_rx(bus, true)?;
+                }
+                tx.start(bus)?;
+                fpga::sync(bus, group.sync)?;
+            }
+        }
+        group.started = true;
         Ok(())
     }
 
@@ -170,14 +232,20 @@ impl Board {
         let bus = self.bus.as_mut();
         fpga::run_rx(bus, true)?;
         fpga::sync(bus, SyncTrigger::FreeRun)?;
-        self.rx_stream
+        self.streams
             .as_mut()
-            .expect("invariant: create_streams just created the stream")
+            .expect("invariant: create_streams just created the group")
             .started = true;
         Ok(())
     }
 
-    /// libusdr's stream create for RX, with `tx` the transmitter's settings.
+    /// The group, created for `sync` if it does not exist yet: a stream joins it once its
+    /// transport buffers are set up.
+    pub(super) fn group(&mut self, sync: SyncTrigger) -> &mut StreamGroup {
+        self.streams.get_or_insert(StreamGroup::new(sync))
+    }
+
+    /// libusdr's stream create for RX.
     ///
     /// Intentional divergence: libusdr's create then reapplies each channel's LO as a
     /// baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX, .., rx_raw.lo[i])`), which
@@ -228,7 +296,7 @@ impl Board {
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
         let size = |bytes: u32| usize::try_from(bytes).expect("invariant: a block fits in usize");
-        self.rx_stream = Some(RxStream {
+        self.group(sync).rx = Some(RxStream {
             samples_per_packet,
             layout: BlockLayout {
                 samples_per_burst: size(plan.samples_per_burst()),
@@ -239,8 +307,6 @@ impl Board {
             host,
             channels,
             converter,
-            sync,
-            started: false,
             packets: 0,
             next_sample: 0,
             lost_packets: 0,
@@ -261,18 +327,22 @@ impl Board {
     /// Throttles the stream's bursts, or stops throttling (`_sfetrx4_option_set`'s
     /// "throttle").
     pub(crate) fn set_rx_throttle(&mut self, throttle: Option<RxThrottle>) -> Result<(), Error> {
-        if self.rx_stream.is_none() {
+        if self.rx_packet_samples().is_none() {
             return Err(Error::NotStreaming);
         }
         let throttle = throttle.map(|RxThrottle { send, skip }| (send, skip));
         fpga::throttle_rx(self.bus.as_mut(), throttle)
     }
 
-    /// Samples per packet of the stream.
+    /// Samples per packet of the RX stream.
     pub(crate) fn rx_packet_samples(&self) -> Option<u32> {
-        self.rx_stream
-            .as_ref()
-            .map(|stream| stream.samples_per_packet)
+        let rx = self.streams.as_ref()?.rx.as_ref()?;
+        Some(rx.samples_per_packet)
+    }
+
+    /// Whether a stream group exists.
+    pub(crate) const fn has_streams(&self) -> bool {
+        self.streams.is_some()
     }
 
     /// Receives one `ci16` packet into the front of `samples`: [`Board::receive_into`] for
@@ -301,7 +371,7 @@ impl Board {
         channels: &mut [&mut [S]],
         timeout: Duration,
     ) -> Result<RxMetadata, Error> {
-        let Some(stream) = self.rx_stream.as_mut() else {
+        let Some(stream) = self.streams.as_mut().and_then(|group| group.rx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
         if S::FORMAT != stream.host {
@@ -374,22 +444,46 @@ impl Board {
         })
     }
 
-    /// Stops and destroys the group's streams: libusdr's `USDR_DMS_STOP`, then the stream
-    /// destroy, which powers the receiver down and releases the transport's buffers. Every
-    /// step is attempted; the first failure is returned.
+    /// Stops and destroys the group's streams: libusdr's `USDR_DMS_STOP` for RX, then TX,
+    /// then each stream's destroy, which powers its chain down and releases the
+    /// transport's buffers. Every step is attempted; the first failure is returned.
     pub(crate) fn stop_streams(&mut self) -> Result<(), Error> {
-        if self.rx_stream.take().is_none() {
+        let Some(group) = self.streams.take() else {
             return Err(Error::NotStreaming);
-        }
-        let stopped = fpga::run_rx(self.bus.as_mut(), false);
+        };
+        let rx_stopped = match group.rx {
+            Some(_) => fpga::run_rx(self.bus.as_mut(), false),
+            None => Ok(()),
+        };
+        let tx_stopped = match group.tx {
+            Some(_) => fpga::stop_tx(self.bus.as_mut()),
+            None => Ok(()),
+        };
+        let rx_destroyed = match group.rx {
+            Some(_) => self.destroy_rx_stream(),
+            None => Ok(()),
+        };
+        let tx_destroyed = match group.tx {
+            Some(_) => self.destroy_tx_stream(),
+            None => Ok(()),
+        };
+        rx_stopped
+            .and(tx_stopped)
+            .and(rx_destroyed)
+            .and(tx_destroyed)
+    }
+
+    /// Destroys the RX stream (`unregister_stream`): powers the receiver down, then
+    /// `_sfetrx4_destroy`'s graceful stop and the transport's release. Every step is
+    /// attempted; the first failure is returned.
+    fn destroy_rx_stream(&mut self) -> Result<(), Error> {
         // `usdr_rfic_streaming_down`.
         self.rx_running = false;
         let powered_down = self.set_rx_power(false);
-        // `_sfetrx4_destroy`: a graceful stop, then the transport.
         let halted = fpga::run_rx(self.bus.as_mut(), false);
         let closed = self.bus.rx_stream_close().map_err(Error::Stream);
         debug!("RX stream stopped");
-        stopped.and(powered_down).and(halted).and(closed)
+        powered_down.and(halted).and(closed)
     }
 }
 

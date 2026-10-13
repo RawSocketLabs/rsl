@@ -4,7 +4,7 @@ pub use rsl_lowlevel::Access;
 
 use crate::lowlevel::BusError;
 use crate::portable::sequence::SequenceFailure;
-use crate::stream::{HostFormat, SyncMode};
+use crate::stream::{HostFormat, StreamTime, SyncMode, WireFormat};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -98,11 +98,11 @@ pub enum Error {
 
     /// A stream operation failed in the transport (opening, waiting for or releasing a
     /// DMA block, closing).
-    #[error("RX stream transport failed")]
+    #[error("stream transport failed")]
     Stream(#[source] BusError),
 
-    /// No RX block arrived within the timeout.
-    #[error("timed out waiting for RX samples")]
+    /// No RX block arrived, or no TX buffer freed, within the timeout.
+    #[error("timed out waiting for the stream")]
     Timeout,
 
     /// The receive buffer is smaller than one packet.
@@ -128,8 +128,9 @@ pub enum Error {
         got: usize,
     },
 
-    /// The call needs a stream: none was created, or it was stopped.
-    #[error("no stream group exists")]
+    /// The call needs a stream group, or the group's stream it acts on (RX to receive,
+    /// TX to send or mute): none was created, or it was stopped.
+    #[error("no such stream exists")]
     NotStreaming,
 
     /// The call needs the stream group stopped first, or (starting it) not yet started.
@@ -144,8 +145,8 @@ pub enum Error {
     #[error("unsupported stream synchronisation {0:?}")]
     UnsupportedSync(SyncMode),
 
-    /// The receive buffers' element type is not the stream's host format.
-    #[error("receive buffers hold {buffer:?} samples, the stream delivers {stream:?}")]
+    /// The buffers' element type is not the stream's host format.
+    #[error("buffers hold {buffer:?} samples, the stream's are {stream:?}")]
     #[non_exhaustive]
     HostFormatMismatch {
         /// The stream's host format.
@@ -155,7 +156,7 @@ pub enum Error {
         buffer: HostFormat,
     },
 
-    /// The receive call passed a different number of channel buffers than the stream has
+    /// A receive or send passed a different number of channel buffers than the stream has
     /// channels.
     #[error("{got} channel buffers for a stream of {expected} channels")]
     #[non_exhaustive]
@@ -167,9 +168,39 @@ pub enum Error {
         got: usize,
     },
 
-    /// A packet size the stream engine cannot split into bursts, in samples.
+    /// A packet size the stream engine cannot take, in samples: RX packets it cannot split
+    /// into bursts, TX packets empty or larger than its FIFO.
     #[error("unsupported packet size {0} samples")]
     UnsupportedPacketSize(u32),
+
+    /// A wire format the TX front end does not take; the uSDR's takes `ci16` only.
+    #[error("unsupported TX wire format {0:?}")]
+    UnsupportedWireFormat(WireFormat),
+
+    /// The gateware has the extended TX core (hardware ID bit 26), whose stream setup this
+    /// driver does not port.
+    #[error("the gateware's extended TX core is not supported")]
+    UnsupportedTxCore,
+
+    /// The gateware predates the TX stream engine libusdr requires (its
+    /// `MINIM_FWID_COMPAT`, build 0xd2b10c09); the build ID as read.
+    #[error("gateware build {0:#010x} is too old for TX streaming")]
+    OutdatedGateware(u32),
+
+    /// A send of no samples, or more than one packet holds.
+    #[error("send of {got} samples; a TX packet holds 1 to {max}")]
+    #[non_exhaustive]
+    SendSize {
+        /// Samples per packet.
+        max: usize,
+
+        /// Samples the buffers hold.
+        got: usize,
+    },
+
+    /// A TX time past the core's 47-bit timestamp.
+    #[error("TX time {0:?} exceeds the core's 47-bit timestamp")]
+    UnsupportedTimestamp(StreamTime),
 
     /// The FPGA's RX DMA engine reads as dead (all status bits set).
     #[error("FPGA RX DMA engine is not responding")]

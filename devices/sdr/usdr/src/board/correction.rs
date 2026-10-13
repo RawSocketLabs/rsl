@@ -178,10 +178,11 @@ impl Board {
     }
 
     /// Writes the TX IQ imbalance correction (`usdr_tx_iqimb_set`, then
-    /// `usdr_txupdate_cal`), at the TX chain's headroom scale.
+    /// `usdr_txupdate_cal`), at the TX chain's headroom scale, and keeps it for TX stream
+    /// creation, which writes it again.
     pub(crate) fn set_tx_iq_correction(&mut self, correction: TxIqCorrection) -> Result<(), Error> {
-        let terms = correction.imbalance().tx_terms();
-        Phy::Tx.set_iq_correction(self.bus.as_mut(), terms)
+        self.tx.iq_imbalance = correction.imbalance();
+        Phy::Tx.set_iq_correction(self.bus.as_mut(), self.tx.iq_imbalance.tx_terms())
     }
 }
 

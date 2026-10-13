@@ -302,18 +302,23 @@ impl Board {
         Gpo::TxSwitch.set(bus, band.tx_switch())
     }
 
-    /// Powers the LMS6002D's transmitter if it is off (`_usdr_pwr_state` for TX). Unlike
-    /// the receiver's, libusdr records the new state and takes the 25 ms settling wait even
-    /// when the write fails, and so does this.
+    /// Powers the LMS6002D's transmitter if it is off.
     fn power_tx(&mut self) -> Result<(), Error> {
-        if self.tx.powered {
+        self.set_tx_power(true)
+    }
+
+    /// Powers the LMS6002D's transmitter on or off, if it is not already
+    /// (`_usdr_pwr_state` for TX). Unlike the receiver's, libusdr records the new state and
+    /// takes the 25 ms settling wait even when the write fails, and so does this.
+    pub(super) fn set_tx_power(&mut self, on: bool) -> Result<(), Error> {
+        if self.tx.powered == on {
             return Ok(());
         }
         let bus = self.bus.as_mut();
-        let powered = self.lms.set_tx_enabled(bus, true);
-        self.tx.powered = true;
+        let switched = self.lms.set_tx_enabled(bus, on);
+        self.tx.powered = on;
         bus.sleep(Duration::from_millis(25));
-        powered
+        switched
     }
 
     /// Tunes the RX PLL to `lo` (`lms6002d_tune_pll`).
