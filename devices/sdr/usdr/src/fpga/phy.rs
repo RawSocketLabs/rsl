@@ -134,17 +134,17 @@ pub(crate) enum Nco {
     Nco1,
 }
 
-/// An IQ imbalance as libusdr keeps it for a chain (`struct imb_data`); the default is
-/// none.
+/// An IQ imbalance correction as libusdr keeps it for a chain (`struct imb_data`), the
+/// terms its calibration searches; the default is none.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct IqImbalance {
-    /// Amplitude imbalance, ±262144 full scale (`ampl`, `IMB_AMPL_MAX`): positive scales
+pub struct IqImbalance {
+    /// Amplitude correction, ±262144 full scale (`ampl`, `IMB_AMPL_MAX`): positive scales
     /// I down by that fraction, negative scales Q down.
-    pub(crate) amplitude: i32,
+    pub amplitude: i32,
 
-    /// Phase imbalance, 45000 being a π/4 rotation of each channel (`pahse`,
-    /// `IMB_PHASE_MAX`). libusdr does not clamp either field.
-    pub(crate) phase: i32,
+    /// Phase correction, 45000 turning each channel by π/4 (`pahse`, `IMB_PHASE_MAX`).
+    /// libusdr does not clamp either field.
+    pub phase: i32,
 }
 
 impl IqImbalance {

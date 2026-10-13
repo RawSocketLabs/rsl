@@ -10,7 +10,7 @@
 use bnb::{BitEnum, bitfield, u2, u4, u5};
 
 use super::spi::BlockReg;
-use crate::chips::register::Register;
+use crate::chips::register::{IndexedRegister, Register};
 
 /// TX RF register addresses.
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,6 +19,12 @@ use crate::chips::register::Register;
 pub(super) enum Reg {
     /// Datasheet `VGA1GAIN`; see [`Vga1Gain`].
     Vga1Gain = 0x41,
+
+    /// Datasheet `VGA1DC_I`; see [`Vga1DcShift`].
+    Vga1DcI = 0x42,
+
+    /// Datasheet `VGA1DC_Q`; see [`Vga1DcShift`].
+    Vga1DcQ = 0x43,
 
     /// Datasheet `PA_CTRL`; see [`PaSelect`].
     PaSelect = 0x44,
@@ -129,6 +135,38 @@ impl Vga1Gain {
         let code = u8::try_from(code).expect("invariant: held to 0..=31");
         Self::new().with_code(u5::new(code))
     }
+}
+
+/// One channel of TXVGA1's DC shift, which cancels LO leakage in the analog path. Datasheet
+/// `VGA1DC_I` and `VGA1DC_Q`, registers 0x42 and 0x43.
+#[bitfield(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Vga1DcShift {
+    /// The shift, offset binary: 0x80 is none, one step 0.0625 mV, from -16 mV (0x00) to
+    /// 15.9375 mV (0xFF). `VGA1DC_I` or `VGA1DC_Q`, bits 7:0.
+    #[bits(0..=7)]
+    code: u8,
+}
+impl IndexedRegister for Vga1DcShift {
+    type Map = Reg;
+    type Index = IqChannel;
+
+    fn addr(channel: IqChannel) -> Reg {
+        match channel {
+            IqChannel::I => Reg::Vga1DcI,
+            IqChannel::Q => Reg::Vga1DcQ,
+        }
+    }
+}
+
+/// Which baseband channel of a repeated register.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum IqChannel {
+    /// In phase.
+    I,
+
+    /// Quadrature.
+    Q,
 }
 
 /// TXVGA2's gain, the RF level after the TX mixer, and the power detectors' multiplexer.

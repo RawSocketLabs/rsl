@@ -4,7 +4,7 @@ use super::afe::{self, ConverterEnables, Interface};
 use super::dc_cal::{DcBlock, DcControl, DcStatus, DcValue};
 use std::time::Duration;
 
-use bnb::{u3, u4, u6, u7};
+use bnb::{u3, u4, u5, u6, u7};
 
 use super::lpf::{self, Lpf};
 use super::pll::{
@@ -20,7 +20,7 @@ use super::spi::SpiWriter;
 use super::top::{
     ChipId, ClockEnables, EnableConfig, Loopback, LpfTuning, LpfTuningControl, ReferencePower,
 };
-use super::tx_rf::{Bias, PaSelect, PowerAmp, Vga1Gain, Vga2Gain};
+use super::tx_rf::{Bias, IqChannel, PaSelect, PowerAmp, Vga1DcShift, Vga1Gain, Vga2Gain};
 
 use crate::error::Error;
 use crate::lowlevel::{Bus, SpiAddr};
@@ -46,6 +46,10 @@ pub(crate) struct Lms6002d {
 
     /// Last [`PaSelect`] written.
     pa_select: PaSelect,
+
+    /// Last TXVGA1 gain written, which libusdr's TX IQ calibration restores
+    /// (`trf_vga1_gain`). Code 21 from power-up, as libusdr assumes without writing it.
+    tx_vga1: Vga1Gain,
 }
 
 impl Lms6002d {
@@ -77,6 +81,7 @@ impl Lms6002d {
             rx_vco: VcoSelect::new().with_lo_buffer(Lna::Lna1),
             lna_control: LnaControl::new().with_gain(LnaGain::Max),
             pa_select: PaSelect::new(),
+            tx_vga1: Vga1Gain::new().with_code(u5::new(21)),
         };
 
         let mut regs = lms.on(bus);
@@ -338,8 +343,56 @@ impl Lms6002d {
 
     /// Sets TXVGA1's gain to `db`, held to -35..=-4 dB (`lms6002d_set_txvga1_gain`, after
     /// libusdr's clamp).
-    pub(crate) fn set_tx_vga1_gain(&self, bus: &mut dyn Bus, db: i32) -> Result<(), Error> {
-        self.on(bus).write(Vga1Gain::for_db(db))
+    pub(crate) fn set_tx_vga1_gain(&mut self, bus: &mut dyn Bus, db: i32) -> Result<(), Error> {
+        self.set_tx_vga1_code(bus, Vga1Gain::for_db(db).code())
+    }
+
+    /// Sets TXVGA1's gain code, -35 dB at 0 to -4 dB at 31, and keeps it, even if the write
+    /// fails, as libusdr does (`lms6002d_set_txvga1_gain`).
+    pub(crate) fn set_tx_vga1_code(&mut self, bus: &mut dyn Bus, code: u5) -> Result<(), Error> {
+        self.tx_vga1 = Vga1Gain::new().with_code(code);
+        self.on(bus).write(self.tx_vga1)
+    }
+
+    /// The TXVGA1 gain code last written.
+    pub(crate) fn tx_vga1_code(&self) -> u5 {
+        self.tx_vga1.code()
+    }
+
+    /// Shifts TXVGA1's I and Q DC by offset-binary codes, 0x80 none
+    /// (`lms6002d_set_txvga1_dc`).
+    pub(crate) fn set_tx_vga1_dc(&self, bus: &mut dyn Bus, i: u8, q: u8) -> Result<(), Error> {
+        let mut regs = self.on(bus);
+        regs.write_to(IqChannel::I, Vga1DcShift::new().with_code(i))?;
+        regs.write_to(IqChannel::Q, Vga1DcShift::new().with_code(q))
+    }
+
+    /// The RX input selected (`LNASEL`), as last written.
+    pub(crate) fn active_lna(&self) -> Lna {
+        self.lna_control.active()
+    }
+
+    /// Stops the RX synthesizer's modulator clock and turns its loop off
+    /// (`lms6002d_disable_pll` for RX).
+    pub(crate) fn disable_rx_pll(&mut self, bus: &mut dyn Bus) -> Result<(), Error> {
+        self.disable_pll(bus, Pll::Rx)
+    }
+
+    /// Stops the TX synthesizer's modulator clock and turns its loop off
+    /// (`lms6002d_disable_pll` for TX).
+    pub(crate) fn disable_tx_pll(&mut self, bus: &mut dyn Bus) -> Result<(), Error> {
+        self.disable_pll(bus, Pll::Tx)
+    }
+
+    /// Writes the clock enables without `pll`'s modulator clock, then a zero loop setup.
+    fn disable_pll(&mut self, bus: &mut dyn Bus, pll: Pll) -> Result<(), Error> {
+        match pll {
+            Pll::Tx => self.clock_enables.set_tx_pll_modulator_clock(false),
+            Pll::Rx => self.clock_enables.set_rx_pll_modulator_clock(false),
+        }
+        let mut regs = self.on(bus);
+        regs.write(self.clock_enables)?;
+        regs.write_to(pll, PllConfig::new())
     }
 
     /// Sets TXVGA2's gain to `db`, held to 0..=25 dB, with the detector multiplexer at 0

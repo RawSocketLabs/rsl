@@ -224,6 +224,7 @@ impl Board {
             RxGain::Auto(db) => {
                 let split = AutoSplit::for_gain(db, self.rx.lo_hz);
                 debug!(db, ?split, "RX automatic gain");
+                self.rx.vga1_db = u8::try_from(split.vga1_db).expect("invariant: 0..=25 dB");
                 self.rx.vga2a = split.vga2a;
                 self.rx.vga2b = 0;
                 self.lms.set_lna_gain(bus, split.lna)?;
@@ -232,9 +233,12 @@ impl Board {
                 self.lms.set_rx_vga2_gain(bus, self.rx.vga2a, self.rx.vga2b)
             }
             RxGain::Lna(db) => self.lms.set_lna_gain(bus, lna_mode(db)),
-            RxGain::Vga1(db) => self
-                .lms
-                .set_rx_vga1_gain(bus, db.clamp(RxGain::VGA1_MIN_DB, RxGain::VGA1_MAX_DB)),
+            RxGain::Vga1(db) => {
+                let db = db.clamp(RxGain::VGA1_MIN_DB, RxGain::VGA1_MAX_DB);
+                self.rx.vga1_db =
+                    u8::try_from(db - RxGain::VGA1_MIN_DB).expect("invariant: 0..=26 dB");
+                self.lms.set_rx_vga1_gain(bus, db)
+            }
             RxGain::Vga2(db) => {
                 self.rx.vga2a = RxGain::vga2_step(db);
                 self.rx.vga2b = 0;

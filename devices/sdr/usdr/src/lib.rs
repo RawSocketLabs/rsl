@@ -134,11 +134,12 @@ mod thermal;
 pub mod transport;
 
 pub use board::{
-    RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain,
-    TxIqCorrection, TxPath,
+    Calibration, CalibrationReport, Feedback, IqCalibration, RxGain, RxIqCorrection, RxPacket,
+    RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxLoLeakage, TxPath,
 };
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};
+pub use fpga::IqImbalance;
 pub use frontend::{FrontEndKind, FrontEndSelection};
 pub use identity::Identity;
 pub use reference::ReferenceClock;

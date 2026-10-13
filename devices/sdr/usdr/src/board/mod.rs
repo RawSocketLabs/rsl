@@ -1,6 +1,7 @@
 //! The `m2_lm6_1` board: how its chips are wired and the sequences that drive them.
 
 mod board;
+mod calibration;
 mod correction;
 mod frontend;
 mod gain;
@@ -13,6 +14,7 @@ mod tune;
 mod tx_stream;
 
 pub(crate) use board::Board;
+pub use calibration::{Calibration, CalibrationReport, Feedback, IqCalibration, TxLoLeakage};
 pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use gain::{RxGain, TxGain};
 pub use path::{RxPath, TxPath};

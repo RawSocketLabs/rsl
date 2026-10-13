@@ -7,8 +7,8 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain,
-    TxIqCorrection, TxPath,
+    Board, Calibration, CalibrationReport, RxGain, RxIqCorrection, RxPacket, RxPath, RxThrottle,
+    RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
 };
 use crate::error::Error;
 use crate::frontend::{
@@ -579,6 +579,29 @@ impl Device {
     /// - Any bus failure.
     pub fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.board().set_tx_frequency(hz)
+    }
+
+    /// Runs libusdr's LO-leakage and IQ-imbalance calibrations (`/dm/sdr/0/calibrate`):
+    /// with the transmitter looped into the receiver, it searches the RX IQ correction,
+    /// the TX DC offset and the TX IQ correction, as `calibration` asks, and leaves what it
+    /// found applied, for later streams too. A calibration needs its chain tuned: RX IQ an
+    /// RX frequency, the TX ones a TX frequency; one without is skipped (`None` in the
+    /// report). A chain the calibration had to power goes down again; the tuning, RX input,
+    /// gains, NCOs and filters return to the caller's settings. Set a sample rate first.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AlreadyStreaming`] while a stream group exists, before any bus access:
+    ///   the calibration takes over the generator, NCOs and both PLLs.
+    /// - [`Error::NoSampleRate`] before any sample rate, before any bus access (libusdr
+    ///   divides by zero).
+    /// - [`Error::PllUnlocked`], [`Error::UnsupportedFrequency`], [`Error::PllFault`] if a
+    ///   PLL cannot reach a measuring frequency.
+    /// - [`Error::Timeout`] if the gateware's DC estimator never finishes a measurement.
+    /// - Any bus failure. A failure stops the calibration where it is, without restoring,
+    ///   as in libusdr.
+    pub fn calibrate(&mut self, calibration: Calibration) -> Result<CalibrationReport, Error> {
+        self.board().calibrate(calibration)
     }
 
     /// Fixes the TX output, or with [`TxPath::Auto`] hands the choice back to the

@@ -95,9 +95,9 @@ pub(super) struct RxState {
     /// The LMS6002D's receiver and RXVGA2 are powered (libusdr's `rx_pwren`).
     pub(super) powered: bool,
 
-    /// The caller fixed the RX bandwidth (libusdr's `rx_bw.set`), so sample-rate and
-    /// frequency changes leave the filter alone.
-    pub(super) bandwidth_fixed: bool,
+    /// The RX bandwidth the caller fixed, in Hz (libusdr's `rx_bw`), so sample-rate and
+    /// frequency changes leave the filter alone; `None` while it follows the rate.
+    pub(super) fixed_bandwidth_hz: Option<u32>,
 
     /// The decimation of the last sample rate set (libusdr's `rxbb_decim`); `None` until the
     /// first. Its FIR is loaded unless the board has no RX chain.
@@ -105,6 +105,10 @@ pub(super) struct RxState {
 
     /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`).
     pub(super) lo_hz: u32,
+
+    /// The LO the RX PLL was last asked for by a tune, in Hz: [`Self::lo_hz`] plus the
+    /// mixer LO in the mixer band (libusdr's `rfic_rx_lo`). The calibration restores it.
+    pub(super) pll_lo_hz: u32,
 
     /// The band in use (libusdr's `rx_cfg_path`): the frequency's, unless the caller fixed
     /// one; `None` until either happens.
@@ -129,6 +133,10 @@ pub(super) struct RxState {
     /// makes up the difference (libusdr's `rx_exten_lo`).
     pub(super) lo_offset_hz: i32,
 
+    /// RXVGA1's gain above its 5 dB floor, in dB (libusdr's `rx_vga1`), which the TX
+    /// calibrations restore and raise from.
+    pub(super) vga1_db: u8,
+
     /// RXVGA2's first-stage gain in 3 dB steps (libusdr's `rx_vga2a`), which the DC
     /// calibration at stream creation restores.
     pub(super) vga2a: u8,
@@ -151,9 +159,9 @@ pub(crate) struct TxState {
     /// The LMS6002D's transmitter is powered (libusdr's `tx_pwren`).
     pub(super) powered: bool,
 
-    /// The caller fixed the TX bandwidth (libusdr's `tx_bw.set`), so frequency changes leave
-    /// the filter alone.
-    pub(super) bandwidth_fixed: bool,
+    /// The TX bandwidth the caller fixed, in Hz (libusdr's `tx_bw`), so frequency changes
+    /// leave the filter alone; `None` while it follows the rate.
+    pub(super) fixed_bandwidth_hz: Option<u32>,
 
     /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`); 0 until tuned.
     pub(super) lo_hz: u32,
@@ -173,6 +181,11 @@ pub(crate) struct TxState {
     /// The IQ imbalance correction (libusdr's `tx_corr`), which TX stream creation writes
     /// again.
     pub(super) iq_imbalance: IqImbalance,
+
+    /// The LO-leakage calibration's DC offsets, I then Q (libusdr's `tx_corr.dc_i` and
+    /// `dc_q`): where its searches last moved each, kept from one calibration to the next.
+    /// [`Board::set_tx_dc_offset`] does not change them, as in libusdr.
+    pub(super) lo_dc: [i16; 2],
 }
 
 /// Which DSP chains the gateware has (HWID bits 25 and 24), and its TX stream core.

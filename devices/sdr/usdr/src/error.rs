@@ -102,9 +102,14 @@ pub enum Error {
     #[error("stream transport failed")]
     Stream(#[source] BusError),
 
-    /// No RX block arrived, or no TX buffer freed, within the timeout.
-    #[error("timed out waiting for the stream")]
+    /// No RX block arrived, or no TX buffer freed, within the timeout; or the RX DC
+    /// estimator finished no measurement within libusdr's 8000 polls.
+    #[error("timed out waiting for the gateware")]
     Timeout,
+
+    /// The operation needs a sample rate, and none is set.
+    #[error("no sample rate is set")]
+    NoSampleRate,
 
     /// The receive buffer is smaller than one packet.
     #[error("receive buffer holds {got} samples, a packet has {needed}")]

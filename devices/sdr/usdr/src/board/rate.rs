@@ -107,7 +107,8 @@ impl Board {
 
         // `USDR_SAMPLERATE_CHANGED`: the mixer LO moved with the clocks, so retune.
         if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {
-            self.tune_rx_pll(self.mixer_lo_hz.wrapping_add(self.rx.lo_hz))?;
+            self.rx.pll_lo_hz = self.mixer_lo_hz.wrapping_add(self.rx.lo_hz);
+            self.tune_rx_pll(self.rx.pll_lo_hz)?;
         }
         self.update_rx_bandwidth()?;
         debug!(
@@ -126,7 +127,7 @@ impl Board {
     /// like libusdr, that is its narrowest setting, until the next rate or frequency
     /// change.
     pub(crate) fn set_rx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
-        self.rx.bandwidth_fixed = hz != 0;
+        self.rx.fixed_bandwidth_hz = (hz != 0).then_some(hz);
         self.lms.set_rx_bandwidth(self.bus.as_mut(), hz)
     }
 
@@ -135,7 +136,7 @@ impl Board {
     /// TX). The rate follows only on a TX tune: libusdr's RX-only rate change leaves the TX
     /// filter alone.
     pub(crate) fn set_tx_bandwidth(&mut self, hz: u32) -> Result<(), Error> {
-        self.tx.bandwidth_fixed = hz != 0;
+        self.tx.fixed_bandwidth_hz = (hz != 0).then_some(hz);
         self.lms.set_tx_bandwidth(self.bus.as_mut(), hz)
     }
 

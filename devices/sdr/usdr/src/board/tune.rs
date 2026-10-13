@@ -170,6 +170,7 @@ impl Board {
         } else {
             hz
         };
+        self.rx.pll_lo_hz = lo;
         let mut tuned = self.tune_rx_pll(lo);
         if matches!(tuned, Err(Error::PllUnlocked(_))) {
             debug!(
@@ -420,7 +421,7 @@ impl Board {
     /// Sets the RX filter to the sample rate plus twice the LO offset, unless the caller
     /// fixed it or no rate is set yet (`_usdr_update_bandwidth` for RX).
     pub(super) fn update_rx_bandwidth(&mut self) -> Result<(), Error> {
-        if self.rx.bandwidth_fixed {
+        if self.rx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
         let Some(bandwidth) = self.following_bandwidth(self.rx.lo_offset_hz) else {
@@ -431,8 +432,8 @@ impl Board {
 
     /// Sets the TX filter as [`Self::update_rx_bandwidth`] sets the RX one, from the TX LO
     /// offset (`_usdr_update_bandwidth` for TX).
-    fn update_tx_bandwidth(&mut self) -> Result<(), Error> {
-        if self.tx.bandwidth_fixed {
+    pub(super) fn update_tx_bandwidth(&mut self) -> Result<(), Error> {
+        if self.tx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
         let Some(bandwidth) = self.following_bandwidth(self.tx.lo_offset_hz) else {
@@ -457,7 +458,7 @@ impl Board {
 /// outside ±1 whatever its sign, scaled by `INT_MAX` with truncation, then shifted left one
 /// bit with wraparound. With no rate set the fraction is NaN, which libusdr converts with
 /// undefined behaviour; on x86 that, shifted, gives 0, as Rust's conversion does.
-fn nco_word(offset_hz: i32, adc_hz: u32) -> i32 {
+pub(super) fn nco_word(offset_hz: i32, adc_hz: u32) -> i32 {
     let mut fraction = f64::from(offset_hz) / f64::from(adc_hz);
     if !(-1.0..=1.0).contains(&fraction) && !fraction.is_nan() {
         fraction = -1.0;

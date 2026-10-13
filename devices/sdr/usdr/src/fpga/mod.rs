@@ -1,5 +1,6 @@
 //! The uSDR FPGA gateware's host-visible registers.
 
+pub(crate) mod dc_estimator;
 mod diag;
 mod fe_gpio;
 mod fir_tables;
@@ -12,7 +13,8 @@ mod tx_stream;
 pub(crate) use diag::{read_atcrbs, read_tx_dma_status, write_atcrbs};
 pub(crate) use fe_gpio::{FrontEndGpio, PinMode};
 pub(crate) use gpio::{Gpi, Gpo, Hwid, IdentityRead};
-pub(crate) use phy::{Decimation, IqImbalance, Nco, Phy};
+pub use phy::IqImbalance;
+pub(crate) use phy::{Decimation, Nco, Phy};
 pub(crate) use stream::{
     BurstPlan, SyncTrigger, configure_rx, reset_rx_dma, run_rx, signal_rx_ready, sync, throttle_rx,
 };
