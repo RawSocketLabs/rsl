@@ -34,6 +34,7 @@ mod map;
 mod output;
 pub(crate) mod plan;
 mod reg;
+mod staging;
 mod xo;
 
 pub(crate) use self::lmk05318::Lmk05318;

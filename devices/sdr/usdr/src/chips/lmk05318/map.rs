@@ -13,14 +13,14 @@ const LEN: usize = Reg::LAST_STAGED as usize + 1;
 
 /// Registers staged for writing, by address.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct RegisterMap {
+pub(crate) struct RegisterMap {
     /// The staged byte per address, if any.
     staged: [Option<u8>; LEN],
 }
 
 impl RegisterMap {
     /// An empty map.
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             staged: [None; LEN],
         }
@@ -42,7 +42,7 @@ impl RegisterMap {
     }
 
     /// The staged registers in address order.
-    pub(super) fn staged(&self) -> impl Iterator<Item = (u16, u8)> + '_ {
+    pub(crate) fn staged(&self) -> impl Iterator<Item = (u16, u8)> + '_ {
         (0..)
             .zip(self.staged)
             .filter_map(|(addr, value)| Some((addr, value?)))

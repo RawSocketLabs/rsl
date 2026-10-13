@@ -4,27 +4,15 @@
 
 use std::time::Duration;
 
-use bnb::{u2, u3};
 use rsl_deps::tracing::{debug, info};
 
-use super::apll::{
-    Apll, Apll1DenominatorMode, Apll2DenominatorMode, BawLock, Dither, Pll1Calibration,
-    Pll1Control, Pll1Mode, Pll1Modulator, Pll2Control, Pll2Modulator, Pll2PostDividers, PllClocks,
-    VcoStatus,
-};
-use super::control::{DeviceControl, DpllControl, DpllFlags, InterruptControl, LossFlags};
+use super::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
+use super::control::{DeviceControl, DpllFlags, LossFlags};
 use super::map::RegisterMap;
-use super::output::{
-    DividedOutput, FormatCode, LockMute, MuteGroup, MuteLevel, MuteLevels, MuxCode, OutputControl,
-    OutputControlReg, OutputDivider, OutputFormatOnly, OutputMute, OutputSync, PostDividerSync,
-    without_format,
-};
-use super::plan::{
-    Apll1Plan, Apll2, Apll2Setting, OutputPlan, OutputRequest, PlanError, Xo, XoPath, divider_fits,
-    out7_stages,
-};
+use super::output::{OutputControlReg, without_format};
+use super::plan::{Apll2, ClockPlanError, OutputRequest, Xo};
 use super::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
-use super::xo::{XoControl, XoDivider, XoInputType, baw_detection_for};
+use super::staging::{stage_apll1, stage_common, stage_plan, stage_xo};
 use crate::error::{BusContext, Error};
 use crate::lowlevel::{Bus, I2cAddr};
 
@@ -102,11 +90,10 @@ impl Lmk05318 {
                 found: u32::from_be_bytes(id),
             });
         }
-        let path = self.stage_xo(xo)?;
-        let apll1 = xo.apll1(path).map_err(plan_error)?;
-        self.stage_apll1(apll1);
+        let path = stage_xo(&mut self.map, xo)?;
+        stage_apll1(&mut self.map, xo.apll1(path)?);
         self.plan(outputs)?;
-        self.stage_common();
+        stage_common(&mut self.map);
         self.write_staged(bus)?;
         bus.sleep(Self::SETTLE);
         self.soft_reset(bus)?;
@@ -122,12 +109,8 @@ impl Lmk05318 {
     /// [`Error::ClockPlan`] when no plan exists; nothing is staged then, but APLL2's state
     /// may have moved on, as libusdr's does.
     pub(crate) fn plan(&mut self, outputs: &[OutputRequest]) -> Result<(), Error> {
-        let plan = self.apll2.plan(outputs).map_err(plan_error)?;
-        self.stage_apll2(plan.apll2);
-        for output in &plan.outputs {
-            self.stage_output(output)?;
-        }
-        Ok(())
+        let plan = self.apll2.plan(outputs)?;
+        Ok(stage_plan(&mut self.map, &self.apll2, &plan)?)
     }
 
     /// Writes the staged registers in address order, then empties the map
@@ -218,7 +201,7 @@ impl Lmk05318 {
     /// [`Error::ClockPlan`] for an output past 7, before any bus access; any bus failure.
     pub(crate) fn disable_output(&self, bus: &mut dyn Bus, port: u8) -> Result<(), Error> {
         let reg = OutputControlReg::of(port)
-            .ok_or(plan_error(PlanError::BadRequest))?
+            .ok_or(ClockPlanError::BadRequest)?
             .addr();
         let control = self.read(bus, reg.into())?;
         self.write(bus, reg.into(), without_format(control))
@@ -242,177 +225,6 @@ impl Lmk05318 {
         bus.i2c(self.dev, &reg.to_be_bytes(), &mut raw)
             .reading(Self::NAME, reg)?;
         Ok(raw)
-    }
-
-    /// Stages the XO path and its BAW detection constants (`lmk05318_set_xo_fref`).
-    fn stage_xo(&mut self, xo: Xo) -> Result<XoPath, Error> {
-        let path = xo.path().map_err(plan_error)?;
-        self.map.stage(XoControl::for_path(xo, path));
-        self.map.stage(XoInputType::for_input(xo.input));
-        self.map.stage(XoDivider::for_path(path));
-        // libusdr stages the XO path before finding the XO unsupported.
-        let table = baw_detection_for(xo.hz).ok_or(plan_error(PlanError::UnsupportedXo))?;
-        for &(reg, value) in table {
-            self.map.stage_raw(reg, value);
-        }
-        Ok(path)
-    }
-
-    /// Stages APLL1 running free with a programmed 24-bit fraction
-    /// (`lmk05318_tune_apll1` without a DPLL).
-    fn stage_apll1(&mut self, plan: Apll1Plan) {
-        self.map.stage(
-            Pll1Modulator::new()
-                .with_dither(Dither::Weak)
-                .with_order(plan.order.into()),
-        );
-        self.map.stage(Pll1Mode::new());
-        let [_, _, n_high, n_low] = plan.n.to_be_bytes();
-        self.map.stage_raw(Reg::Pll1IntegerHigh, n_high);
-        self.map.stage_raw(Reg::Pll1IntegerLow, n_low);
-        let [.., den_high, den_middle, den_low] = plan.den.to_be_bytes();
-        self.map.stage_raw(Reg::Pll1DenominatorLow, den_low);
-        self.map.stage_raw(Reg::Pll1DenominatorMiddle, den_middle);
-        self.map.stage_raw(Reg::Pll1DenominatorHigh, den_high);
-        let [.., num_high, num_middle, num_low] = plan.num.to_be_bytes();
-        self.map.stage_raw(Reg::Pll1NumeratorLow, num_low);
-        self.map.stage_raw(Reg::Pll1NumeratorMiddle, num_middle);
-        self.map.stage_raw(Reg::Pll1NumeratorHigh, num_high);
-        self.map.stage(Pll1Control::new());
-    }
-
-    /// Stages APLL2's settings (`lmk05318_tune_apll2`).
-    fn stage_apll2(&mut self, setting: Apll2Setting) {
-        let (primary, secondary) = (self.apll2.primary_divider, self.apll2.secondary_divider);
-        let Apll2Setting::On {
-            n,
-            num,
-            den,
-            pd1,
-            pd2,
-            order,
-        } = setting
-        else {
-            self.map
-                .stage(Pll2Control::with_dividers(primary, secondary, true));
-            return;
-        };
-        self.map.stage(
-            Pll2Modulator::new()
-                .with_dither(Dither::Weak)
-                .with_order(order.into()),
-        );
-        self.map.stage(Pll2PostDividers::with_dividers(pd1, pd2));
-        let [_, _, n_high, n_low] = n.to_be_bytes();
-        self.map.stage_raw(Reg::Pll2IntegerHigh, n_high);
-        self.map.stage_raw(Reg::Pll2IntegerLow, n_low);
-        let [_, num_high, num_middle, num_low] = num.to_be_bytes();
-        self.map.stage_raw(Reg::Pll2NumeratorLow, num_low);
-        self.map.stage_raw(Reg::Pll2NumeratorMiddle, num_middle);
-        self.map.stage_raw(Reg::Pll2NumeratorHigh, num_high);
-        let [_, den_high, den_middle, den_low] = den.to_be_bytes();
-        self.map.stage_raw(Reg::Pll2DenominatorHigh, den_high);
-        self.map.stage_raw(Reg::Pll2DenominatorMiddle, den_middle);
-        self.map.stage_raw(Reg::Pll2DenominatorLow, den_low);
-        self.map
-            .stage(Pll2Control::with_dividers(primary, secondary, false));
-    }
-
-    /// Stages one output's source, format and divider (`lmk05318_set_out_mux`, then
-    /// `lmk05318_set_out_div`); an output turned off gets source 0 and no format.
-    fn stage_output(&mut self, output: &OutputPlan) -> Result<(), Error> {
-        let port = output.request.port;
-        let (mux, format) = output
-            .route
-            .map_or((MuxCode::Apll1, FormatCode::Disabled), |route| {
-                (route.mux.into(), output.request.format.into())
-            });
-        match OutputControlReg::of(port).ok_or(plan_error(PlanError::BadRequest))? {
-            OutputControlReg::Muxed(index) => self.map.stage_at(
-                index,
-                OutputControl::new().with_mux(mux).with_format(format),
-            ),
-            OutputControlReg::Paired(index) => self
-                .map
-                .stage_at(index, OutputFormatOnly::new().with_format(format)),
-        }
-        let Some(route) = output.route else {
-            return Ok(());
-        };
-        if !divider_fits(port, route.divider) {
-            return Err(plan_error(PlanError::BadDivider));
-        }
-        let divided = DividedOutput::of(port).ok_or(plan_error(PlanError::BadRequest))?;
-        if divided != DividedOutput::Out7 {
-            self.map
-                .stage_at(divided, OutputDivider::ratio(route.divider));
-            return Ok(());
-        }
-        let (first, second) = out7_stages(route.divider);
-        self.map
-            .stage_at(divided, OutputDivider::ratio(u64::from(first)));
-        let [.., high, middle, low] = second.wrapping_sub(1).to_be_bytes();
-        self.map.stage_raw(Reg::Output7Stage2High, high);
-        self.map.stage_raw(Reg::Output7Stage2Middle, middle);
-        self.map.stage_raw(Reg::Output7Stage2Low, low);
-        Ok(())
-    }
-
-    /// Stages the settings every bring-up shares, without a DPLL
-    /// (`lmk05318_set_common_registers`): APLL1 running free with programmed denominators,
-    /// BAW lock detection, cascaded APLLs, every output synchronized and unmuted, muted
-    /// outputs driven low, and the loss flags and interrupt cleared.
-    fn stage_common(&mut self) {
-        self.map.stage(
-            DeviceControl::new()
-                .with_sync_after_apll_lock(true)
-                .with_mute_during_sync(true)
-                .with_cascaded_startup(true)
-                .with_autostart(true),
-        );
-        self.map
-            .stage(Apll1DenominatorMode::new().with_programmed(true));
-        self.map
-            .stage(Apll2DenominatorMode::new().with_programmed(true));
-        self.map.stage(DpllControl::new());
-        self.map.stage(
-            Pll1Calibration::new()
-                .with_baw_lock_detect(true)
-                .with_vco_wait(u2::new(1)),
-        );
-        self.map.stage(BawLock::new().with_locked(true));
-
-        self.map
-            .stage(PllClocks::new().with_vco1_outputs(u3::new(0b111)));
-        self.map.stage(
-            PostDividerSync::new()
-                .with_apll2_post2(true)
-                .with_apll2_post1(true)
-                .with_apll1(true),
-        );
-        self.map.stage(
-            OutputSync::new()
-                .with_output7(true)
-                .with_output6(true)
-                .with_output5(true)
-                .with_output4(true)
-                .with_outputs23(true)
-                .with_outputs01(true),
-        );
-        self.map.stage(
-            LockMute::new()
-                .with_apll2(true)
-                .with_dpll_phase(true)
-                .with_dpll_frequency(true)
-                .with_apll1(true),
-        );
-        self.map.stage(OutputMute::new());
-        let low = MuteLevels::all(MuteLevel::DifferentialLow);
-        self.map.stage_at(MuteGroup::Low, low);
-        self.map.stage_at(MuteGroup::High, low);
-        self.map.stage(LossFlags::new());
-        self.map.stage(DpllFlags::new());
-        self.map.stage(InterruptControl::new());
     }
 
     /// Soft-resets the chip: `RESET_SW` set, then cleared (`lmk05318_softreset`).
@@ -508,9 +320,4 @@ impl Lmk05318 {
         bus.i2c(self.dev, &[high, low, value], &mut [])
             .writing(Self::NAME, reg)
     }
-}
-
-/// A plan failure as the driver's error.
-fn plan_error(error: PlanError) -> Error {
-    Error::ClockPlan(error.reason())
 }

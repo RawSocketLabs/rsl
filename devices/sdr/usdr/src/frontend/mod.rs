@@ -47,6 +47,7 @@ pub use self::pciefe::{
 pub(crate) use self::simplesync::SimpleSync;
 pub(crate) use self::xmass::Xmass;
 pub use self::xmass::XmassCalibrationPath;
+pub use crate::chips::lmk05318::plan::ClockPlanError;
 use crate::error::Error;
 use crate::lowlevel::Bus;
 

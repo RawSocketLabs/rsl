@@ -2,6 +2,7 @@
 
 pub use rsl_lowlevel::Access;
 
+use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::SequenceFailure;
 use crate::stream::{HostFormat, StreamTime, SyncMode, WireFormat};
@@ -231,9 +232,9 @@ pub enum Error {
     FrontEndMissing(&'static str),
 
     /// A front end's clock synthesizer has no configuration for the requested frequencies
-    /// (libusdr's `-EINVAL`); what failed.
-    #[error("{0}")]
-    ClockPlan(&'static str),
+    /// (libusdr's `-EINVAL`).
+    #[error("no clock plan for the requested frequencies")]
+    ClockPlan(#[from] ClockPlanError),
 
     /// A front end's clock synthesizer did not report lock in time (libusdr's
     /// `-ETIMEDOUT`); which PLL, such as `"LMK05318 APLL1"`.

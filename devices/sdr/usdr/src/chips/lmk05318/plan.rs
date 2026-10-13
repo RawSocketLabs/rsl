@@ -22,6 +22,11 @@
 //! Everything else in those functions compiles as written. Code outside them (XO, APLL1,
 //! APLL2 settling, output 7) is plain C.
 //!
+//! The reference is therefore libusdr as GCC builds it for x86-64 (SSE2 `double`, no fused
+//! multiply-add: the oracle passes `-ffp-contract=off`, and Rust never fuses); the oracle
+//! refuses to build with another C compiler. Another compiler or target can change the
+//! C's last bits, not this port's.
+//!
 //! The module is self-contained but for [`gcd`], so the oracle's parity tests compile it
 //! directly and compare its plans with libusdr's.
 //!
@@ -73,54 +78,48 @@ const FREQ_DELTA_HZ: u32 = 2;
 /// (`LMK05318_MAX_REAL_PORTS`).
 const SLOTS: usize = 6;
 
-/// Why no plan exists; libusdr returns `-EINVAL` for each.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PlanError {
+/// Why the LMK05318 clock synthesizer of a front end has no configuration for a request
+/// (libusdr's `-EINVAL` for each).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ClockPlanError {
     /// The XO frequency is outside 10–100 MHz, or its phase-detector frequency outside
     /// APLL1's 1–80 MHz.
+    #[error("LMK05318 XO frequency out of range")]
     XoOutOfRange,
     /// No BAW lock-detection settings exist for this XO (12.8, 25, 26 or 52 MHz only).
+    #[error("LMK05318 has no BAW lock settings for this XO")]
     UnsupportedXo,
     /// APLL1's fraction does not fit 24 bits or misses the VCO by more than 0.1 mHz.
+    #[error("LMK05318 APLL1 cannot reach its VCO exactly")]
     Apll1Inexact,
     /// No requests, more than eight, or an output number past 7.
+    #[error("LMK05318 output request malformed")]
     BadRequest,
     /// An LVCMOS format on outputs 0 to 3, which only drive differential formats.
+    #[error("LMK05318 outputs 0 to 3 cannot drive LVCMOS")]
     LvcmosOnLowOutput,
     /// Two requests for one divider (the same output, or 0 and 1, or 2 and 3) differ.
+    #[error("LMK05318 output requests sharing a divider differ")]
     ConflictingRequests,
     /// An inverted output that APLL1 cannot reach; only APLL1 inverts.
+    #[error("LMK05318 can invert only outputs APLL1 drives")]
     InversionNeedsApll1,
     /// A frequency no APLL2 post-divider and output divider can reach.
+    #[error("LMK05318 output frequency out of range")]
     OutOfRange,
     /// No APLL2 VCO frequency serves every output the solver routed to it.
+    #[error("no LMK05318 APLL2 plan serves every output")]
     NoSolution,
     /// A solved output misses its frequency by more than its tolerance.
+    #[error("LMK05318 output frequency missed")]
     Inexact,
     /// APLL2's phase-detector frequency is outside 10–150 MHz.
+    #[error("LMK05318 APLL2 phase detector out of range")]
     Apll2PhaseDetector,
     /// An output divider beyond its output's range.
+    #[error("LMK05318 output divider out of range")]
     BadDivider,
-}
-
-impl PlanError {
-    /// What went wrong, for errors and logs.
-    pub(crate) const fn reason(self) -> &'static str {
-        match self {
-            Self::XoOutOfRange => "LMK05318 XO frequency out of range",
-            Self::UnsupportedXo => "LMK05318 has no BAW lock settings for this XO",
-            Self::Apll1Inexact => "LMK05318 APLL1 cannot reach its VCO exactly",
-            Self::BadRequest => "LMK05318 output request malformed",
-            Self::LvcmosOnLowOutput => "LMK05318 outputs 0 to 3 cannot drive LVCMOS",
-            Self::ConflictingRequests => "LMK05318 output requests sharing a divider differ",
-            Self::InversionNeedsApll1 => "LMK05318 can invert only outputs APLL1 drives",
-            Self::OutOfRange => "LMK05318 output frequency out of range",
-            Self::NoSolution => "no LMK05318 APLL2 plan serves every output",
-            Self::Inexact => "LMK05318 output frequency missed",
-            Self::Apll2PhaseDetector => "LMK05318 APLL2 phase detector out of range",
-            Self::BadDivider => "LMK05318 output divider out of range",
-        }
-    }
 }
 
 /// The XO input buffer's type (`enum xo_input_type`, the YAML's `x-in-opts`).
@@ -198,9 +197,9 @@ pub(crate) struct Apll1Plan {
 impl Xo {
     /// The XO path (`lmk05318_set_xo_fref`): the doubler when twice the XO stays within
     /// APLL1's phase detector, otherwise the smallest divider that does.
-    pub(crate) fn path(self) -> Result<XoPath, PlanError> {
+    pub(crate) fn path(self) -> Result<XoPath, ClockPlanError> {
         if self.hz < XO_MIN_HZ || self.hz > XO_MAX_HZ {
-            return Err(PlanError::XoOutOfRange);
+            return Err(ClockPlanError::XoOutOfRange);
         }
         let path = if self.hz.wrapping_mul(2) <= APLL1_PD_MAX_HZ {
             XoPath {
@@ -216,7 +215,7 @@ impl Xo {
             }
         };
         if path.divider > APLL1_DIVIDER_MAX {
-            return Err(PlanError::XoOutOfRange);
+            return Err(ClockPlanError::XoOutOfRange);
         }
         Ok(path)
     }
@@ -224,17 +223,17 @@ impl Xo {
     /// APLL1's divider for this XO without the DPLL (`lmk05318_tune_apll1`): the fraction
     /// over the phase-detector frequency, reduced, which must land on the VCO within
     /// 0.1 mHz.
-    pub(crate) fn apll1(self, path: XoPath) -> Result<Apll1Plan, PlanError> {
+    pub(crate) fn apll1(self, path: XoPath) -> Result<Apll1Plan, ClockPlanError> {
         let doubling = if path.doubler { 2.0_f32 } else { 1.0_f32 };
         let fpd1 = (f64::from(self.hz) / f64::from(path.divider)) * f64::from(doubling);
         if fpd1 < f64::from(APLL1_PD_MIN_HZ) || fpd1 > f64::from(APLL1_PD_MAX_HZ) {
-            return Err(PlanError::XoOutOfRange);
+            return Err(ClockPlanError::XoOutOfRange);
         }
         let r = VCO1_F64 / fpd1;
         let n = c_unsigned(r);
         let fraction = r - f64::from(n);
         if n > u32::from(u16::MAX) {
-            return Err(PlanError::Apll1Inexact);
+            return Err(ClockPlanError::Apll1Inexact);
         }
         let mut den = u64::from(self.hz.wrapping_mul(if path.doubler { 2 } else { 1 }));
         let mut num = c_u64(fraction * c_f64(den) + 0.5);
@@ -244,11 +243,11 @@ impl Xo {
             den /= divisor;
         }
         if den > (1 << 24) - 1 {
-            return Err(PlanError::Apll1Inexact);
+            return Err(ClockPlanError::Apll1Inexact);
         }
         let vco = fpd1 * (f64::from(n) + c_f64(num) / c_f64(den));
         if (vco - VCO1_F64).abs() > 1e-4 {
-            return Err(PlanError::Apll1Inexact);
+            return Err(ClockPlanError::Apll1Inexact);
         }
         Ok(Apll1Plan {
             n,
@@ -520,10 +519,10 @@ impl Apll2 {
     /// APLL2's settings for the current plan (`lmk05318_tune_apll2`): off when its VCO is
     /// out of range or neither post-divider is valid, otherwise on, with an unused
     /// post-divider set to the other's value (which the state keeps).
-    pub(crate) fn settle(&mut self) -> Result<Apll2Setting, PlanError> {
+    pub(crate) fn settle(&mut self) -> Result<Apll2Setting, ClockPlanError> {
         let fpd2 = VCO1_F64 / f64::from(self.primary_divider) / f64::from(self.secondary_divider);
         if fpd2 < f64::from(APLL2_PD_MIN_HZ) || fpd2 > f64::from(APLL2_PD_MAX_HZ) {
-            return Err(PlanError::Apll2PhaseDetector);
+            return Err(ClockPlanError::Apll2PhaseDetector);
         }
         let pd1_valid = APLL2_POST_DIVIDERS.contains(&self.pd1);
         let pd2_valid = APLL2_POST_DIVIDERS.contains(&self.pd2);
@@ -551,17 +550,17 @@ impl Apll2 {
     ///
     /// On failure the state may have moved on, as libusdr's does: APLL2's numbers change
     /// once its routing succeeds, even if the final checks then fail.
-    pub(crate) fn plan(&mut self, requests: &[OutputRequest]) -> Result<Plan, PlanError> {
+    pub(crate) fn plan(&mut self, requests: &[OutputRequest]) -> Result<Plan, ClockPlanError> {
         if requests.is_empty() || requests.len() > 8 {
-            return Err(PlanError::BadRequest);
+            return Err(ClockPlanError::BadRequest);
         }
         let mut slots = [Slot::default(); SLOTS];
         for request in requests {
             if request.port > 7 {
-                return Err(PlanError::BadRequest);
+                return Err(ClockPlanError::BadRequest);
             }
             if request.format.is_lvcmos() && request.port < 4 && request.hz != 0 {
-                return Err(PlanError::LvcmosOnLowOutput);
+                return Err(ClockPlanError::LvcmosOnLowOutput);
             }
             let slot = &mut slots[slot_of(request.port)];
             let held = &slot.request;
@@ -572,7 +571,7 @@ impl Apll2 {
                     || held.inverted != request.inverted
                     || held.affinity != request.affinity)
             {
-                return Err(PlanError::ConflictingRequests);
+                return Err(ClockPlanError::ConflictingRequests);
             }
             *slot = Slot::for_request(*request);
         }
@@ -610,7 +609,7 @@ impl Apll2 {
             })
             .collect();
         if !complete {
-            return Err(PlanError::Inexact);
+            return Err(ClockPlanError::Inexact);
         }
         let apll2 = self.settle()?;
         Ok(Plan { apll2, outputs })
@@ -625,21 +624,21 @@ impl Apll2 {
         slots: &mut [Slot; SLOTS],
         to_solve: usize,
         centre: u64,
-    ) -> Result<(), PlanError> {
+    ) -> Result<(), ClockPlanError> {
         let bands = bands(slots, centre);
         if bands.is_empty() {
-            return Err(PlanError::OutOfRange);
+            return Err(ClockPlanError::OutOfRange);
         }
         let intersections = intersections(slots, &bands, to_solve);
         if intersections.is_empty() {
-            return Err(PlanError::NoSolution);
+            return Err(ClockPlanError::NoSolution);
         }
         let solutions: Vec<Solution> = intersections
             .iter()
             .map(|intersection| Solution::gather(intersection, &bands, to_solve))
             .collect();
         if !solutions.iter().any(|solution| solution.valid) {
-            return Err(PlanError::NoSolution);
+            return Err(ClockPlanError::NoSolution);
         }
         for solution in solutions.iter().filter(|solution| solution.valid) {
             let Some(binding) = solution.bind(to_solve) else {
@@ -667,7 +666,7 @@ impl Apll2 {
                 }
             }
         }
-        Err(PlanError::NoSolution)
+        Err(ClockPlanError::NoSolution)
     }
 }
 
@@ -754,7 +753,7 @@ const fn max_divider(port: u8) -> u64 {
 
 /// Routes every unsolved slot APLL1 may drive and reaches exactly; an inverted slot it
 /// cannot reach fails the plan.
-fn route_apll1(slots: &mut [Slot; SLOTS]) -> Result<(), PlanError> {
+fn route_apll1(slots: &mut [Slot; SLOTS]) -> Result<(), ClockPlanError> {
     for slot in slots.iter_mut().filter(|slot| !slot.solved) {
         if matches!(slot.request.affinity, Affinity::Any | Affinity::Apll1) {
             let (divider, reached) = slot.divider_for(VCO1_F64);
@@ -772,7 +771,7 @@ fn route_apll1(slots: &mut [Slot; SLOTS]) -> Result<(), PlanError> {
             }
         }
         if !slot.solved && slot.request.inverted {
-            return Err(PlanError::InversionNeedsApll1);
+            return Err(ClockPlanError::InversionNeedsApll1);
         }
     }
     Ok(())
@@ -780,7 +779,7 @@ fn route_apll1(slots: &mut [Slot; SLOTS]) -> Result<(), PlanError> {
 
 /// Sets each unsolved slot's post-divider range from the frequencies its output divider
 /// can take in.
-fn limit_post_dividers(slots: &mut [Slot; SLOTS]) -> Result<(), PlanError> {
+fn limit_post_dividers(slots: &mut [Slot; SLOTS]) -> Result<(), ClockPlanError> {
     const LOWEST_INPUT_HZ: u64 = VCO2_MIN_HZ / 7;
     const HIGHEST_INPUT_HZ: u64 = VCO2_MAX_HZ / 2;
     for slot in slots.iter_mut().filter(|slot| !slot.solved) {
@@ -788,7 +787,7 @@ fn limit_post_dividers(slots: &mut [Slot; SLOTS]) -> Result<(), PlanError> {
         let lowest = u64::from(low).max(LOWEST_INPUT_HZ);
         let highest = (u64::from(high) * max_divider(slot.request.port)).min(HIGHEST_INPUT_HZ);
         if lowest > highest {
-            return Err(PlanError::OutOfRange);
+            return Err(ClockPlanError::OutOfRange);
         }
         // The C keeps these as `int`, then 32-bit fields; both are 2 to 7 here.
         slot.pd_min = c_u32(VCO2_MAX_HZ / highest);
@@ -1157,7 +1156,7 @@ mod tests {
         let request = OutputRequest::new(1, 25_000_000, OutputFormat::LvcmosPN);
         assert_eq!(
             Apll2::cascaded().plan(&[request]),
-            Err(PlanError::LvcmosOnLowOutput)
+            Err(ClockPlanError::LvcmosOnLowOutput)
         );
     }
 }
