@@ -109,7 +109,10 @@ Each is stated again, with its evidence, where it is encoded.
 
 - RX PHY port (`REG_CFG_PHY_0`, 56): reads return 0, an error-free `LimeLight` link, so
   libusdr's LFSR checkers count nothing (a sim choice; capture and DC estimator not
-  modelled). The TX PHY port (57) is plain storage: no MMCM or DRP behind it.
+  modelled); `SimBoard::with_rx_phy_reads` scripts the counts for the calibration's
+  error paths. The TX PHY port (57) is plain storage: no MMCM or DRP behind it.
+  `SimBoard::with_lms_comparator_failure` forces the VCO comparators to "fail" at one cap
+  code (fault injection, not a model).
 - HWID PHY bits: 0 by default, which libusdr's rate path treats as gateware without a TX
   MMCM (its calibration then fails); the rate tests use `with_hwid(0x0030_0020)`.
 - FPGA registers: plain storage, unwritten reads 0. GPO writes latch `data & 0xff` per
