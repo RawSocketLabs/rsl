@@ -17,7 +17,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/usdr/` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `usdr-nostd-check` | the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, the libusdr parity oracle (own workspace: compiles the vendored C) and its `no_std` portable-tree witness |
 | `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR open with its front-end probe, RFIC power-up, sample rate, LO tuning, gains, bandwidths and close; oracle and witness as above |
 | `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe, ADC power, PGA gain and close |
-| `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up and close; no FT601 transport yet |
+| `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up, sample rate, LO tuning, gains, bandwidths, stream preparation and close; no FT601 transport yet |
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
 | `sdr/frontend/` | `sdr-frontend` | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and the `pciefe` and `exm2pe` bring-ups, shared by the uSDR, XSDR and LSDr drivers (`no_std` core, blocking probe behind `std`) |
