@@ -41,6 +41,8 @@ struct Probe {
     log: SyncLog,
     /// Register writes fail.
     broken: Arc<AtomicBool>,
+    /// The write that starts the SYSREF generator fails.
+    sysref_broken: Arc<AtomicBool>,
 }
 
 impl Bus for Probe {
@@ -53,6 +55,10 @@ impl Bus for Probe {
             return Err(BusError::Unsupported(
                 "the probe's register writes are broken",
             ));
+        }
+        let generator = addr == REG_SYNC && values.contains(&(1 << 31 | 9 << 16));
+        if generator && self.sysref_broken.load(Ordering::Relaxed) {
+            return Err(BusError::Unsupported("the probe's SYSREF write is broken"));
         }
         if addr == REG_SYNC {
             let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
@@ -115,6 +121,8 @@ struct Rig {
     sims: Vec<SimBus>,
     /// Each board's switch.
     broken: Vec<Arc<AtomicBool>>,
+    /// Each board's switch for the SYSREF generator's write.
+    sysref_broken: Vec<Arc<AtomicBool>>,
     /// The shared sync log.
     log: SyncLog,
 }
@@ -127,6 +135,7 @@ impl Rig {
                 .map(|index| SimBus::new(adjust(index, SimBoard::new(BoardRevision::Rev3))))
                 .collect(),
             broken: (0..3).map(|_| Arc::default()).collect(),
+            sysref_broken: (0..3).map(|_| Arc::default()).collect(),
             log: SyncLog::default(),
         }
     }
@@ -139,6 +148,7 @@ impl Rig {
                 index,
                 log: Arc::clone(&self.log),
                 broken: Arc::clone(&self.broken[index]),
+                sysref_broken: Arc::clone(&self.sysref_broken[index]),
             })
         };
         MultiDevice::open(builder(0), (1..3).map(builder))
@@ -441,4 +451,193 @@ fn a_devices_own_setting_reaches_it_alone() {
     );
     assert_eq!(multi.device_count(), 3);
     assert!(multi.device(3).is_none());
+}
+
+/// RX and TX streams of [`SAMPLES`] `ci16` samples.
+fn duplex() -> StreamsConfig {
+    rx().with_tx(TxConfig::new(SAMPLES, HostFormat::Ci16, WireFormat::Ci16))
+}
+
+/// A started group starts no second time: every device refuses before any bus access.
+#[test]
+fn a_started_group_is_refused_a_second_start_on_every_device() {
+    for config in [rx(), duplex()] {
+        let rig = Rig::new(plain);
+        let mut multi = rig.tuned();
+        multi.create_streams(config).expect("creates");
+        multi.start_streams().expect("starts");
+        let started = rig.lens();
+        let result = multi.start_streams();
+        assert!(
+            matches!(
+                result,
+                Err(MultiError::Devices { step: MultiStep::Check, ref outcomes })
+                    if outcomes.iter().all(|o| matches!(o, Outcome::Failed(Error::AlreadyStreaming)))
+            ),
+            "{config:?}: {result:?}"
+        );
+        assert_eq!(rig.lens(), started, "{config:?}: no board touched");
+    }
+}
+
+/// After a TX create failed on device 1, devices 1 and 2 hold RX alone while the master
+/// holds both: the aggregate will not start them together.
+#[test]
+fn devices_left_with_other_streams_than_the_master_are_not_started() {
+    let rig = Rig::new(|index, board| {
+        if index == 1 {
+            board.with_gateware_build(0xd2b1_0c08)
+        } else {
+            board
+        }
+    });
+    let mut multi = rig.tuned();
+    assert!(
+        multi.create_streams(duplex()).is_err(),
+        "device 1's TX fails"
+    );
+    let before = rig.lens();
+    let result = multi.start_streams();
+    assert!(
+        matches!(
+            result,
+            Err(MultiError::Devices { step: MultiStep::Check, ref outcomes })
+                if matches!(
+                    outcomes[..],
+                    [
+                        Outcome::NotReached,
+                        Outcome::Failed(Error::UnmatchedStreams),
+                        Outcome::Failed(Error::UnmatchedStreams)
+                    ]
+                )
+        ),
+        "{result:?}"
+    );
+    assert_eq!(rig.lens(), before, "no board touched");
+    multi.stop_streams().expect("stops what the create left");
+}
+
+/// The master failing its SYSREF write is reported at that step, after every device's
+/// sync; the members are not part of it.
+#[test]
+fn a_master_that_fails_to_generate_sysref_is_reported_at_that_step() {
+    let rig = Rig::new(plain);
+    let mut multi = rig.tuned();
+    multi
+        .create_streams(rx().with_sync(SyncMode::GeneratedSysref))
+        .expect("creates");
+    rig.sysref_broken[0].store(true, Ordering::Relaxed);
+    rig.log
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+    let result = multi.start_streams();
+    assert!(
+        matches!(
+            result,
+            Err(MultiError::Devices { step: MultiStep::MasterSysref, ref outcomes })
+                if matches!(
+                    outcomes[..],
+                    [Outcome::Failed(_), Outcome::NotReached, Outcome::NotReached]
+                )
+        ),
+        "{result:?}"
+    );
+    assert_eq!(
+        *rig.log.lock().unwrap_or_else(PoisonError::into_inner),
+        [(0, 1), (1, 1), (2, 1)],
+        "every device waits for 1PPS; the generator never started"
+    );
+}
+
+/// A member whose group was recreated on its own in another mode no longer waits for
+/// 1PPS, so the master generates no SYSREF for it.
+#[test]
+fn the_master_generates_no_sysref_once_a_member_left_the_1pps_wait() {
+    let rig = Rig::new(plain);
+    let mut multi = rig.tuned();
+    multi
+        .create_streams(rx().with_sync(SyncMode::GeneratedSysref))
+        .expect("creates");
+    let member = multi.device_mut(2).expect("has device 2");
+    member.stop_streams().expect("stops device 2's group");
+    member
+        .create_streams(rx())
+        .expect("creates it free-running");
+    rig.log
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clear();
+    multi.start_streams().expect("starts");
+    assert_eq!(
+        *rig.log.lock().unwrap_or_else(PoisonError::into_inner),
+        [(0, 1), (1, 1), (2, 7)],
+        "no generator write"
+    );
+}
+
+/// Buffers any device's stream cannot take, and sends of different lengths per device,
+/// are refused before any bus access.
+#[test]
+fn buffers_a_device_cannot_take_are_refused_before_any_bus_access() {
+    let rig = Rig::new(plain);
+    let mut multi = rig.tuned();
+    multi.create_streams(duplex()).expect("creates");
+    multi.start_streams().expect("starts");
+    let before = rig.lens();
+
+    let lengths = [SAMPLES as usize, SAMPLES as usize, 10];
+    let mut buffers: Vec<Vec<Complex<i16>>> = lengths
+        .iter()
+        .map(|&length| vec![Complex::new(0, 0); length])
+        .collect();
+    let mut channels: Vec<&mut [Complex<i16>]> =
+        buffers.iter_mut().map(Vec::as_mut_slice).collect();
+    let result = multi.receive_into(&mut channels, Duration::ZERO);
+    assert!(
+        matches!(
+            result,
+            Err(MultiError::Devices { step: MultiStep::Check, ref outcomes })
+                if matches!(
+                    outcomes[..],
+                    [
+                        Outcome::NotReached,
+                        Outcome::NotReached,
+                        Outcome::Failed(Error::BufferTooSmall { .. })
+                    ]
+                )
+        ),
+        "device 2's buffer is short: {result:?}"
+    );
+
+    let packets: Vec<Vec<Complex<i16>>> = [16, 16, 8]
+        .iter()
+        .map(|&length| vec![Complex::new(1, 1); length])
+        .collect();
+    let channels: Vec<&[Complex<i16>]> = packets.iter().map(Vec::as_slice).collect();
+    let result = multi.send(&channels, None, Duration::ZERO);
+    assert!(
+        matches!(
+            result,
+            Err(MultiError::Refused(Error::SendSize {
+                max: 16,
+                got: 8,
+                ..
+            }))
+        ),
+        "one sample count for every device: {result:?}"
+    );
+
+    let floats = vec![vec![Complex::new(0.0_f32, 0.0); 16]; 3];
+    let channels: Vec<&[Complex<f32>]> = floats.iter().map(Vec::as_slice).collect();
+    let result = multi.send(&channels, None, Duration::ZERO);
+    assert!(
+        matches!(
+            result,
+            Err(MultiError::Devices { step: MultiStep::Check, ref outcomes })
+                if outcomes.iter().all(|o| matches!(o, Outcome::Failed(Error::HostFormatMismatch { .. })))
+        ),
+        "the streams take ci16: {result:?}"
+    );
+    assert_eq!(rig.lens(), before, "no board touched");
 }

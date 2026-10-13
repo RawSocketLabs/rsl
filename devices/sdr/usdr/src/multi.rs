@@ -17,11 +17,11 @@ use std::time::Duration;
 
 use rsl_deps::tracing::debug;
 
-use crate::board::Direction;
+use crate::board::{Board, Direction};
 use crate::device::{Device, DeviceBuilder};
 use crate::error::Error;
 use crate::frontend::FrontEndKind;
-use crate::portable::stream::StartPart;
+use crate::portable::stream::{StartPart, SyncTrigger};
 use crate::reference::ReferenceClock;
 use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, SyncMode, TxTelemetry};
 
@@ -29,6 +29,9 @@ use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, SyncMode,
 /// libusdr's `_debug_ll_mdev_set` (`device/device_fe.c`) sets `/dm/sdr/refclk/path` to
 /// `"external"`, then `/dm/sdr/refclk/frequency` to 50 MHz, on the aggregate.
 const SIMPLESYNC_REFERENCE_HZ: u32 = 50_000_000;
+
+/// One step of a device's stop, which [`MultiDevice::stop_streams`] runs on every device.
+type StopStep = fn(&mut Board) -> Result<(), Error>;
 
 /// Several powered uSDRs driven as one (libusdr's multi-device aggregate): settings go to
 /// every device in turn ([`MultiDevice::broadcast`]), and one stream group spans them,
@@ -41,8 +44,9 @@ const SIMPLESYNC_REFERENCE_HZ: u32 = 50_000_000;
 /// revision, as libusdr allows.
 ///
 /// A device's own methods stay available through [`MultiDevice::device_mut`], for settings
-/// that differ between devices. Its stream group is the aggregate's: stopping or creating
-/// one there leaves the aggregate's stream calls failing on that device, as reported.
+/// that differ between devices. Each device's stream group is its share of the
+/// aggregate's, held by the device itself: one stopped, started or created there makes
+/// the aggregate's stream calls refuse or fail on that device, and the outcomes say so.
 #[derive(Debug)]
 pub struct MultiDevice {
     /// The devices, the master first; never empty.
@@ -84,8 +88,9 @@ pub enum MultiStep {
     /// ([`MultiDevice::open`]). A failure closes every device.
     SharedReference,
 
-    /// The refusals each device makes before any bus access. All devices are checked;
-    /// none was touched.
+    /// The refusals each device makes before any bus access. Every device is checked:
+    /// those that refused are `Failed`, those that passed `NotReached`, since the call
+    /// itself ran on none of them.
     Check,
 
     /// The call itself on each device: a [`MultiDevice::broadcast`],
@@ -111,7 +116,7 @@ pub enum MultiStep {
     MasterSysref,
 
     /// Stopping and destroying the stream groups ([`MultiDevice::stop_streams`]); every
-    /// device is attempted.
+    /// device and step is attempted, and each device's first failure reported.
     Stop,
 
     /// Closing the devices ([`MultiDevice::close`]); every device is attempted.
@@ -162,7 +167,7 @@ impl MultiDevice {
                     drop(devices);
                     return Err(MultiError::Devices {
                         step: MultiStep::Open,
-                        outcomes: outcomes(opened, error, count),
+                        outcomes: outcomes(vec![(); opened], error, count),
                     });
                 }
             }
@@ -288,12 +293,20 @@ impl MultiDevice {
     /// - [`MultiError::Devices`] at [`MultiStep::StartRx`], [`MultiStep::StartTx`],
     ///   [`MultiStep::Sync`] or [`MultiStep::MasterSysref`]: the devices before the failure
     ///   ran the step. Stop the group and create it again.
+    ///
+    /// The master generates SYSREF only while every device's group still waits for 1PPS,
+    /// as the aggregate created them: a group a device recreated on its own, in another
+    /// mode, leaves the generator off.
     pub fn start_streams(&mut self) -> Result<(), MultiError<()>> {
         let mut parts = Vec::with_capacity(self.devices.len());
         self.check(|device| {
             parts.push(device.board().start_parts()?);
             Ok(())
         })?;
+        let waits_for_pps = |parts: &[Option<StartPart>; 3]| {
+            parts.contains(&Some(StartPart::Sync(SyncTrigger::OnePps)))
+        };
+        let generate_sysref = self.master_generates_sysref && parts.iter().all(waits_for_pps);
         // Each device's parts as the aggregate's steps; the devices must agree.
         let steps = |parts: &[Option<StartPart>; 3]| parts.map(|part| part.map(MultiStep::of));
         let master_steps = steps(&parts[0]);
@@ -314,13 +327,14 @@ impl MultiDevice {
                 };
                 device.board().start_part(part, Some(position) == last)
             })?;
-            if step == MultiStep::Sync && self.master_generates_sysref {
+            if step == MultiStep::Sync && generate_sysref {
+                let count = self.devices.len();
                 self.master_mut()
                     .board()
                     .generate_sysref()
                     .map_err(|error| MultiError::Devices {
                         step: MultiStep::MasterSysref,
-                        outcomes: outcomes(0, error, self.devices.len()),
+                        outcomes: outcomes(Vec::new(), error, count),
                     })?;
             }
         }
@@ -341,7 +355,9 @@ impl MultiDevice {
     ///
     /// - [`MultiError::Refused`] with [`Error::ChannelBuffers`] for buffers that do not
     ///   match the aggregate's channels.
-    /// - [`MultiError::Devices`] at [`MultiStep::Check`] for a device with no RX stream.
+    /// - [`MultiError::Devices`] at [`MultiStep::Check`] for the refusals of
+    ///   [`Device::receive_into`] before any bus access, on any device (no RX stream, the
+    ///   wrong host format, a buffer shorter than a packet); no device is touched.
     /// - [`MultiError::Devices`] at [`MultiStep::Call`] with each device's result: as
     ///   [`Device::receive_into`] for the device that failed; the devices before it
     ///   delivered their packets into their buffers.
@@ -352,6 +368,12 @@ impl MultiDevice {
     ) -> Result<Vec<RxMetadata>, MultiError<RxMetadata>> {
         let counts = self.channel_counts(|device| device.board().rx_channel_count())?;
         check_buffers(&counts, channels.len())?;
+        let mut offset = 0;
+        self.check_each(|index, device| {
+            let mine = &channels[offset..offset + counts[index]];
+            offset += counts[index];
+            device.board().check_receive(mine)
+        })?;
         let mut rest = channels;
         self.each(MultiStep::Call, |index, device| {
             let (mine, after) = mem::take(&mut rest).split_at_mut(counts[index]);
@@ -385,8 +407,12 @@ impl MultiDevice {
     /// # Errors
     ///
     /// - [`MultiError::Refused`] with [`Error::ChannelBuffers`] for buffers that do not
-    ///   match the aggregate's channels.
-    /// - [`MultiError::Devices`] at [`MultiStep::Check`] for a device with no TX stream.
+    ///   match the aggregate's channels, and with [`Error::SendSize`] (the first buffer's
+    ///   length as `max`) for buffers of different lengths: libusdr's aggregate sends one
+    ///   sample count on every device.
+    /// - [`MultiError::Devices`] at [`MultiStep::Check`] for the refusals of
+    ///   [`Device::send`] before any bus access, on any device (no TX stream, the wrong
+    ///   host format, a size or time the stream cannot take); no device is touched.
     /// - [`MultiError::Devices`] at [`MultiStep::Call`] with each device's result: as
     ///   [`Device::send`] for the device that failed; the devices before it took the
     ///   packet, those after it did not.
@@ -398,6 +424,20 @@ impl MultiDevice {
     ) -> Result<Vec<Option<TxTelemetry>>, MultiError<Option<TxTelemetry>>> {
         let counts = self.channel_counts(|device| device.board().tx_channel_count())?;
         check_buffers(&counts, channels.len())?;
+        // libusdr's `usdr_dms_send` takes one sample count for every channel.
+        let first = channels.first().map_or(0, |first| first.len());
+        if let Some(other) = channels.iter().find(|other| other.len() != first) {
+            return Err(MultiError::Refused(Error::SendSize {
+                max: first,
+                got: other.len(),
+            }));
+        }
+        let mut offset = 0;
+        self.check_each(|index, device| {
+            let mine = &channels[offset..offset + counts[index]];
+            offset += counts[index];
+            device.board().check_send(mine, time)
+        })?;
         let mut rest = channels;
         self.each(MultiStep::Call, |index, device| {
             let (mine, after) = rest.split_at(counts[index]);
@@ -406,14 +446,17 @@ impl MultiDevice {
         })
     }
 
-    /// Stops and destroys the stream group on every device that has one
-    /// ([`Device::stop_streams`]), attempting every device, where libusdr's aggregate
-    /// stops its streams up to the first failure (then destroys them all).
+    /// Stops and destroys the stream group on every device that has one, in libusdr's
+    /// aggregate order: the RX stream stopped on each device (`USDR_DMS_STOP`), then the
+    /// TX stream on each, then each device's RX stream destroyed (powering its receiver
+    /// down), then its TX stream; each device's part as [`Device::stop_streams`] does it.
+    /// Every step is attempted on every device, where libusdr stops its streams only up
+    /// to the first failure (then destroys them all).
     ///
     /// # Errors
     ///
     /// [`MultiError::Refused`] with [`Error::NotStreaming`] when no device has a group;
-    /// [`MultiError::Devices`] at [`MultiStep::Stop`] with each device's result.
+    /// [`MultiError::Devices`] at [`MultiStep::Stop`] with each device's first failure.
     pub fn stop_streams(&mut self) -> Result<(), MultiError<()>> {
         if !self
             .devices
@@ -423,13 +466,23 @@ impl MultiDevice {
             return Err(MultiError::Refused(Error::NotStreaming));
         }
         self.master_generates_sysref = false;
-        self.every(MultiStep::Stop, |device| {
-            if device.board().has_streams() {
-                device.stop_streams()
-            } else {
-                Ok(())
+        let steps: [StopStep; 4] = [
+            |board| board.halt_stream(Direction::Rx),
+            |board| board.halt_stream(Direction::Tx),
+            |board| board.destroy_stream(Direction::Rx),
+            |board| board.destroy_stream(Direction::Tx),
+        ];
+        let mut results: Vec<Result<(), Error>> = self.devices.iter().map(|_| Ok(())).collect();
+        for step in steps {
+            for (device, result) in self.devices.iter_mut().zip(&mut results) {
+                let stepped = step(device.board());
+                if result.is_ok() {
+                    *result = stepped;
+                }
             }
-        })
+        }
+        let outcomes = results.into_iter().map(Outcome::from).collect();
+        MultiError::from_outcomes(MultiStep::Stop, outcomes).map(|_| ())
     }
 
     /// Closes every device ([`Device::close`]: any stream group stopped, the board powered
@@ -459,30 +512,13 @@ impl MultiDevice {
             match run(index, device) {
                 Ok(result) => done.push(result),
                 Err(error) => {
-                    debug!(?step, device = index, %error, "aggregate step failed");
-                    let mut outcomes: Vec<Outcome<T>> =
-                        done.into_iter().map(Outcome::Done).collect();
-                    outcomes.push(Outcome::Failed(error));
-                    outcomes.resize_with(count, || Outcome::NotReached);
+                    debug!(%step, device = index, %error, "aggregate step failed");
+                    let outcomes = outcomes(done, error, count);
                     return Err(MultiError::Devices { step, outcomes });
                 }
             }
         }
         Ok(done)
-    }
-
-    /// Runs `step` on every device, attempting each whatever the others did.
-    fn every(
-        &mut self,
-        step: MultiStep,
-        mut run: impl FnMut(&mut Device) -> Result<(), Error>,
-    ) -> Result<(), MultiError<()>> {
-        let outcomes = self
-            .devices
-            .iter_mut()
-            .map(|device| Outcome::from(run(device)))
-            .collect();
-        MultiError::from_outcomes(step, outcomes).map(|_| ())
     }
 
     /// Runs the pre-I/O `check` on every device ([`MultiStep::Check`]).
@@ -498,29 +534,25 @@ impl MultiDevice {
         &mut self,
         mut check: impl FnMut(usize, &mut Device) -> Result<(), Error>,
     ) -> Result<(), MultiError<T>> {
-        let outcomes: Vec<Outcome<()>> = self
+        let outcomes: Vec<Outcome<T>> = self
             .devices
             .iter_mut()
             .enumerate()
-            .map(|(index, device)| Outcome::from(check(index, device)))
+            .map(|(index, device)| match check(index, device) {
+                Ok(()) => Outcome::NotReached,
+                Err(error) => Outcome::Failed(error),
+            })
             .collect();
         if outcomes
             .iter()
-            .all(|outcome| matches!(outcome, Outcome::Done(())))
+            .any(|outcome| matches!(outcome, Outcome::Failed(_)))
         {
-            return Ok(());
+            return Err(MultiError::Devices {
+                step: MultiStep::Check,
+                outcomes,
+            });
         }
-        let outcomes = outcomes
-            .into_iter()
-            .map(|outcome| match outcome {
-                Outcome::Failed(error) => Outcome::Failed(error),
-                Outcome::Done(()) | Outcome::NotReached => Outcome::NotReached,
-            })
-            .collect();
-        Err(MultiError::Devices {
-            step: MultiStep::Check,
-            outcomes,
-        })
+        Ok(())
     }
 
     /// Each device's channel count for a stream, by `count`; a device without the stream
@@ -551,13 +583,32 @@ fn check_buffers<T>(counts: &[usize], buffers: usize) -> Result<(), MultiError<T
     }
 }
 
-/// The outcomes of a step that completed on the first `done` of `count` devices and
-/// failed on the next with `error`.
-fn outcomes(done: usize, error: Error, count: usize) -> Vec<Outcome<()>> {
-    let mut outcomes: Vec<Outcome<()>> = (0..done).map(|_| Outcome::Done(())).collect();
+/// The outcomes of a step that completed on the first devices, with the results `done`,
+/// failed on the next with `error`, and never reached the rest of `count`.
+fn outcomes<T>(done: Vec<T>, error: Error, count: usize) -> Vec<Outcome<T>> {
+    let mut outcomes: Vec<Outcome<T>> = done.into_iter().map(Outcome::Done).collect();
     outcomes.push(Outcome::Failed(error));
     outcomes.resize_with(count, || Outcome::NotReached);
     outcomes
+}
+
+impl fmt::Display for MultiStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Open => "open",
+            Self::SharedReference => "shared reference",
+            Self::Check => "check",
+            Self::Call => "call",
+            Self::CreateRx => "RX create",
+            Self::CreateTx => "TX create",
+            Self::StartRx => "RX start",
+            Self::StartTx => "TX start",
+            Self::Sync => "sync",
+            Self::MasterSysref => "master SYSREF",
+            Self::Stop => "stop",
+            Self::Close => "close",
+        })
+    }
 }
 
 impl MultiStep {
@@ -650,7 +701,7 @@ impl<T> fmt::Display for MultiError<T> {
                     .collect();
                 write!(
                     f,
-                    "the aggregate's {step:?} step failed on {}",
+                    "the aggregate's {step} step failed on {}",
                     failures.join(", ")
                 )
             }

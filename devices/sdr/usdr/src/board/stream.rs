@@ -478,33 +478,15 @@ impl Board {
         channels: &mut [&mut [S]],
         timeout: Duration,
     ) -> Result<RxMetadata, Error> {
+        self.check_receive(channels)?;
         let Some(stream) = self.streams.as_mut().and_then(|group| group.rx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
-        if S::FORMAT != stream.host {
-            return Err(Error::HostFormatMismatch {
-                stream: stream.host,
-                buffer: S::FORMAT,
-            });
-        }
-        let expected = stream.channels.count();
-        if channels.len() != expected {
-            return Err(Error::ChannelBuffers {
-                expected,
-                got: channels.len(),
-            });
-        }
         let [samples] = channels else {
             unreachable!("invariant: RX streams have one channel until channel maps grow");
         };
         let needed = usize::try_from(stream.samples_per_packet)
             .expect("invariant: a packet size fits in usize");
-        if samples.len() < needed {
-            return Err(Error::BufferTooSmall {
-                needed,
-                got: samples.len(),
-            });
-        }
         let bus = self.bus.as_mut();
         if stream.packets == 0 {
             run_sequence(bus, &mut EngineSequence::new().signal_rx_ready())?;
@@ -552,6 +534,37 @@ impl Board {
         })
     }
 
+    /// The refusals [`Board::receive_into`] makes before any bus access: no RX stream,
+    /// buffers not of the stream's host format, not one per channel, or shorter than a
+    /// packet.
+    pub(crate) fn check_receive<S: HostSample>(&self, channels: &[&mut [S]]) -> Result<(), Error> {
+        let Some(stream) = self.streams.as_ref().and_then(|group| group.rx.as_ref()) else {
+            return Err(Error::NotStreaming);
+        };
+        if S::FORMAT != stream.host {
+            return Err(Error::HostFormatMismatch {
+                stream: stream.host,
+                buffer: S::FORMAT,
+            });
+        }
+        let expected = stream.channels.count();
+        if channels.len() != expected {
+            return Err(Error::ChannelBuffers {
+                expected,
+                got: channels.len(),
+            });
+        }
+        let needed = usize::try_from(stream.samples_per_packet)
+            .expect("invariant: a packet size fits in usize");
+        match channels.iter().find(|samples| samples.len() < needed) {
+            Some(samples) => Err(Error::BufferTooSmall {
+                needed,
+                got: samples.len(),
+            }),
+            None => Ok(()),
+        }
+    }
+
     /// Tells the RX DMA engine the host is ready (libusdr's `usdr_dms_set_ready`, the
     /// stream option `"ready"`), as each receive does by itself until the first packet.
     pub(crate) fn set_rx_ready(&mut self) -> Result<(), Error> {
@@ -568,29 +581,53 @@ impl Board {
     /// then each stream's destroy, which powers its chain down and releases the
     /// transport's buffers. Every step is attempted; the first failure is returned.
     pub(crate) fn stop_streams(&mut self) -> Result<(), Error> {
-        let Some(group) = self.streams.take() else {
+        if self.streams.is_none() {
             return Err(Error::NotStreaming);
-        };
-        let rx_stopped = match group.rx {
-            Some(_) => run_sequence(self.bus.as_mut(), &mut EngineSequence::new().run_rx(false)),
-            None => Ok(()),
-        };
-        let tx_stopped = match group.tx {
-            Some(_) => run_sequence(self.bus.as_mut(), &mut EngineSequence::new().stop_tx()),
-            None => Ok(()),
-        };
-        let rx_destroyed = match group.rx {
-            Some(_) => self.destroy_rx_stream(),
-            None => Ok(()),
-        };
-        let tx_destroyed = match group.tx {
-            Some(_) => self.destroy_tx_stream(),
-            None => Ok(()),
-        };
+        }
+        let rx_stopped = self.halt_stream(Direction::Rx);
+        let tx_stopped = self.halt_stream(Direction::Tx);
+        let rx_destroyed = self.destroy_stream(Direction::Rx);
+        let tx_destroyed = self.destroy_stream(Direction::Tx);
         rx_stopped
             .and(tx_stopped)
             .and(rx_destroyed)
             .and(tx_destroyed)
+    }
+
+    /// Stops the group's stream in `direction`, if it has one (`USDR_DMS_STOP`): one step
+    /// of [`Board::stop_streams`], which a multi-device aggregate runs on every device in
+    /// turn.
+    pub(crate) fn halt_stream(&mut self, direction: Direction) -> Result<(), Error> {
+        let Some(group) = self.streams.as_ref() else {
+            return Ok(());
+        };
+        let mut halt = match direction {
+            Direction::Rx if group.rx.is_some() => EngineSequence::new().run_rx(false),
+            Direction::Tx if group.tx.is_some() => EngineSequence::new().stop_tx(),
+            Direction::Rx | Direction::Tx => return Ok(()),
+        };
+        run_sequence(self.bus.as_mut(), &mut halt)
+    }
+
+    /// Destroys the group's stream in `direction`, if it has one (`unregister_stream`),
+    /// and the group with its last stream: one step of [`Board::stop_streams`], which a
+    /// multi-device aggregate runs on every device in turn.
+    pub(crate) fn destroy_stream(&mut self, direction: Direction) -> Result<(), Error> {
+        let Some(group) = self.streams.as_mut() else {
+            return Ok(());
+        };
+        let had = match direction {
+            Direction::Rx => group.rx.take().is_some(),
+            Direction::Tx => group.tx.take().is_some(),
+        };
+        if group.rx.is_none() && group.tx.is_none() {
+            self.streams = None;
+        }
+        match direction {
+            Direction::Rx if had => self.destroy_rx_stream(),
+            Direction::Tx if had => self.destroy_tx_stream(),
+            Direction::Rx | Direction::Tx => Ok(()),
+        }
     }
 
     /// Destroys the RX stream (`unregister_stream`): powers the receiver down, then

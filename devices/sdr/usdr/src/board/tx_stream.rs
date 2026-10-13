@@ -169,6 +169,49 @@ impl Board {
         powered_down.and(halted).and(closed)
     }
 
+    /// The refusals [`Board::send`] makes before any bus access: no TX stream, buffers
+    /// not of the stream's host format, not one per channel, or holding no samples or
+    /// more than a packet, and a time past 47 bits.
+    pub(crate) fn check_send<S: HostSample>(
+        &self,
+        channels: &[&[S]],
+        time: Option<StreamTime>,
+    ) -> Result<(), Error> {
+        let Some(stream) = self.streams.as_ref().and_then(|group| group.tx.as_ref()) else {
+            return Err(Error::NotStreaming);
+        };
+        if S::FORMAT != stream.host {
+            return Err(Error::HostFormatMismatch {
+                stream: stream.host,
+                buffer: S::FORMAT,
+            });
+        }
+        let expected = stream.channels.count();
+        if channels.len() != expected {
+            return Err(Error::ChannelBuffers {
+                expected,
+                got: channels.len(),
+            });
+        }
+        let max = usize::try_from(stream.samples_per_packet)
+            .expect("invariant: a packet size fits in usize");
+        if let Some(samples) = channels
+            .iter()
+            .find(|samples| samples.is_empty() || samples.len() > max)
+        {
+            return Err(Error::SendSize {
+                max,
+                got: samples.len(),
+            });
+        }
+        match time {
+            Some(time) if time.samples() > MAX_TX_TIMESTAMP => {
+                Err(Error::UnsupportedTimestamp(time))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Host buffers one send takes, with a TX stream.
     pub(crate) fn tx_channel_count(&self) -> Option<usize> {
         let tx = self.streams.as_ref()?.tx.as_ref()?;
@@ -200,39 +243,14 @@ impl Board {
         time: Option<StreamTime>,
         timeout: Duration,
     ) -> Result<Option<TxTelemetry>, Error> {
+        self.check_send(channels, time)?;
         let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
-        if S::FORMAT != stream.host {
-            return Err(Error::HostFormatMismatch {
-                stream: stream.host,
-                buffer: S::FORMAT,
-            });
-        }
-        let expected = stream.channels.count();
-        if channels.len() != expected {
-            return Err(Error::ChannelBuffers {
-                expected,
-                got: channels.len(),
-            });
-        }
         let [samples] = channels else {
             unreachable!("invariant: TX streams have one channel until channel maps grow");
         };
-        let max = usize::try_from(stream.samples_per_packet)
-            .expect("invariant: a packet size fits in usize");
-        if samples.is_empty() || samples.len() > max {
-            return Err(Error::SendSize {
-                max,
-                got: samples.len(),
-            });
-        }
-        let stamp = time
-            .map(|time| match time.samples() {
-                samples if samples <= MAX_TX_TIMESTAMP => Ok(samples),
-                _ => Err(Error::UnsupportedTimestamp(time)),
-            })
-            .transpose()?;
+        let stamp = time.map(StreamTime::samples);
 
         let wire_bytes = samples.len() * usize::try_from(fpga::TX_SAMPLE_BYTES).expect("4");
         let converter = &stream.converter;
