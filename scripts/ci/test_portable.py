@@ -8,13 +8,17 @@ import unittest
 
 from portable import DEPENDENCIES, FIXTURE, USDR, validate
 
+# The registered dependencies' own manifests, which the contract also reads.
+OWNED = ("bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
+         "devices/sdr/chips/lp8758/Cargo.toml")
+
 
 class PortableContractTests(unittest.TestCase):
     def fixture(self, directory):
         source = Path(__file__).resolve().parents[2]
         root = Path(directory)
         for relative in ("Cargo.toml", f"{USDR}/Cargo.toml", f"{FIXTURE}/Cargo.toml",
-                         f"{FIXTURE}/src/lib.rs", f"{USDR}/src/portable/mod.rs"):
+                         f"{FIXTURE}/src/lib.rs", f"{USDR}/src/portable/mod.rs", *OWNED):
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / relative, destination)
@@ -25,11 +29,7 @@ class PortableContractTests(unittest.TestCase):
 
     def test_std_features_version_drift_and_copied_sources_fail_closed(self):
         source = Path(__file__).resolve().parents[2]
-        declared = tomllib.loads((source / FIXTURE / "Cargo.toml").read_text())["dependencies"]
-        version = declared["bnb"]["version"]
         cases = [
-            (f"{FIXTURE}/Cargo.toml", "default-features = false", "default-features = true"),
-            (f"{FIXTURE}/Cargo.toml", f'version = "{version}"', 'version = "0.0.1"'),
             (f"{FIXTURE}/Cargo.toml", 'usb = []', 'usb = ["bnb/std"]'),
             (f"{FIXTURE}/Cargo.toml", 'build = false', ''),
             (f"{FIXTURE}/src/lib.rs", '../../src/portable/mod.rs', 'copied.rs'),
@@ -45,14 +45,17 @@ class PortableContractTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate(root)
 
-    def test_every_shared_device_crate_dependency_is_held_to_the_same_contract(self):
+    def test_every_portable_dependency_is_held_to_the_same_contract(self):
         self.assertEqual(DEPENDENCIES["rsl-lowlevel"], {"std"})
-        for name in DEPENDENCIES.keys() - {"bnb"}:
-            declaration = f'{name} = {{ path = '
+        source = Path(__file__).resolve().parents[2]
+        declared = tomllib.loads((source / FIXTURE / "Cargo.toml").read_text())["dependencies"]
+        for name in DEPENDENCIES:
+            declaration = f"{name} = {{ "
+            version = declared[name]["version"]
             cases = [
                 ("default-features = false }", 'default-features = false, features = ["std"] }'),
                 ("default-features = false }", "default-features = true }"),
-                ('version = "0.0.0"', 'version = "0.0.1"'),
+                (f'version = "{version}"', 'version = "0.0.1"'),
                 ('path = "../', 'path = "../../'),
             ]
             for before, after in cases:
@@ -67,6 +70,20 @@ class PortableContractTests(unittest.TestCase):
                     path.write_text("".join(lines))
                     with self.assertRaises(ValueError):
                         validate(root)
+
+    def test_a_shared_crate_cannot_enable_std_on_another_behind_the_fixture(self):
+        for after in ('rsl-lowlevel = { workspace = true, features = ["std"] }',
+                      "rsl-lowlevel = { workspace = true, default-features = true }",
+                      'rsl-lowlevel = { path = "../../../lowlevel" }'):
+            with (self.subTest(change=after),
+                  tempfile.TemporaryDirectory(prefix="rsl-portable-contract-") as directory):
+                root = self.fixture(directory)
+                path = root / "devices/sdr/chips/lp8758/Cargo.toml"
+                text = path.read_text()
+                self.assertIn("rsl-lowlevel.workspace = true\n", text)
+                path.write_text(text.replace("rsl-lowlevel.workspace = true\n", after + "\n"))
+                with self.assertRaisesRegex(ValueError, "rsl-lp8758"):
+                    validate(root)
 
     def test_an_unregistered_portable_dependency_fails_closed(self):
         with tempfile.TemporaryDirectory(prefix="rsl-portable-contract-") as directory:

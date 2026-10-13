@@ -185,7 +185,7 @@ curl() {
                        "--locked", "--target", "thumbv7em-none-eabi"],
                       commands("no-std", plan, BNB_CONFIG))
 
-    def test_shared_device_crates_get_a_bare_metal_check_only_from_a_device_release(self):
+    def test_shared_device_crates_get_a_bare_metal_check_only_from_a_usdr_release(self):
         bare = ["cargo", "check", "-p", "rsl-lowlevel", "-p", "rsl-lp8758",
                 "--target", "thumbv7em-none-eabi"]
         codec = planned(release=True)

@@ -182,7 +182,7 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue({"usdr-portable", "usdr-oracle"} <= set(plan["profiles"]))
                 self.assertNotIn("no-std", plan["profiles"])
 
-    def test_only_an_explicit_device_release_qualifies_shared_bare_metal_crates(self):
+    def test_only_an_explicit_usdr_release_qualifies_shared_bare_metal_crates(self):
         codec = planned(release=True)
         self.assertIn(LP8758, codec["release_roots"])
         self.assertEqual(bare_metal_devices(codec["release_roots"], codec["release_members"]),

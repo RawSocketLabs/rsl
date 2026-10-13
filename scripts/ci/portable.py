@@ -37,6 +37,22 @@ def check_dependency(root, name, host_only, shared, member, candidate):
         raise ValueError(f"portable {name} must retain the production core-only feature set")
 
 
+def check_owned_edges(root, name, shared):
+    """An owned dependency's own edges to registered dependencies stay core-only as well, so
+    `rsl-lp8758` cannot enable `rsl-lowlevel/std` (or defaults) behind the fixture's back."""
+    manifest = tomllib.loads((root / shared["path"] / "Cargo.toml").read_text())
+    tables = [manifest.get("dependencies", {}),
+              *(target.get("dependencies", {}) for target in manifest.get("target", {}).values())]
+    for table in tables:
+        for dependency, spec in table.items():
+            if dependency not in DEPENDENCIES:
+                continue
+            if not isinstance(spec, dict) or spec.get("workspace") is not True:
+                raise ValueError(f"{name}'s {dependency} must use the shared workspace declaration")
+            if spec.get("default-features", False) is not False or spec.get("features"):
+                raise ValueError(f"{name} must not enable default/std features of {dependency}")
+
+
 def validate(root):
     """Keep the detached proof's source, dependency features and versions in sync."""
     root = Path(root).resolve()
@@ -59,6 +75,7 @@ def validate(root):
     for name, host_only in DEPENDENCIES.items():
         check_dependency(root, name, host_only, workspace["dependencies"].get(name),
                          driver["dependencies"].get(name), dependencies[name])
+        check_owned_edges(root, name, workspace["dependencies"][name])
     source = root / FIXTURE / "src/lib.rs"
     text = source.read_text()
     imports = re.findall(r'#\[path\s*=\s*"([^"]+)"\]\s*mod\s+portable\s*;', text)

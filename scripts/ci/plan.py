@@ -39,8 +39,8 @@ USDR_ORACLE = "devices/sdr/usdr/oracle"
 USDR = "devices/sdr/usdr"
 USDR_PORTABLE = f"{USDR}/nostd-check"
 # Shared no_std device crates (the bus seam, per-chip register values) by root. Like every
-# cross-target check, their bare-metal gate is release-only: an explicit release of one of
-# them or of the uSDR driver selects it; a codec release reaching them does not.
+# cross-target check, their bare-metal gate is release-only: an explicit release of the uSDR
+# driver selects it; a codec release reaching them does not. They are not release-enabled.
 LOWLEVEL = "devices/lowlevel"
 LP8758 = "devices/sdr/chips/lp8758"
 BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758"}
@@ -237,9 +237,8 @@ def affected_packages(seeds, old, new):
 
 
 def bare_metal_devices(release_roots, release_members):
-    """Shared no_std device crates whose bare-metal gate an explicit device release selects."""
-    released = {member["root"] for member in release_members}
-    if not released & (BARE_METAL_DEVICES.keys() | {USDR}):
+    """Shared no_std device crates whose bare-metal gate an explicit uSDR release selects."""
+    if not any(member["root"] == USDR for member in release_members):
         return set()
     return set(release_roots) & BARE_METAL_DEVICES.keys()
 
