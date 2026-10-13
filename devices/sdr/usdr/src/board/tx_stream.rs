@@ -1,28 +1,33 @@
-//! TX streaming: libusdr's `/ll/stx/0` stream on channel 0, created, started, fed, muted
-//! and destroyed as `usdr_device_m2_lm6_1_create_stream`'s TX branch, `usdr_dms_op`,
-//! `usdr_dms_send_stat`, the stream option `"mute"` and `unregister_stream` do it
-//! (`device/m2_lm6_1/m2_lm6_1.c`; the stream engine in
-//! `ipblks/streams/stream_sfetrx4_dma32.c` and `sfe_tx_4.c`). The group around it is in
-//! `stream.rs`.
+//! TX streaming: libusdr's `/ll/stx/0` stream, created, started, fed, muted, remapped and
+//! destroyed as `usdr_device_m2_lm6_1_create_stream`'s TX branch, `usdr_dms_op`,
+//! `usdr_dms_send_stat`, the stream options `"mute"` and `"chmap"` and `unregister_stream`
+//! do it (`device/m2_lm6_1/m2_lm6_1.c`; the stream engine in
+//! `ipblks/streams/stream_sfetrx4_dma32.c`, `sfe_tx_4.c` and, for the extended core,
+//! `sfe_rx_4.c`'s `exfe_*`). The group around it is in `stream.rs`.
 //!
 //! Creating the stream powers the transmitter, checks the gateware is new enough, holds
 //! the sync unit stopped, asks the transport for its buffers, turns the constant generator
-//! off and writes the IQ correction again. Each send converts the host's samples into a
-//! transport buffer and announces it to the TX core with its time. Only the original TX
-//! core is ported; the gateware's extended core is refused.
+//! off and writes the IQ correction again. On gateware with the extended TX core (hardware
+//! ID bit 26) it first pulses the TX chain's extended front-end reset and, after the
+//! gateware check, sets that front end up for the stream's lanes and sample width. Each
+//! send converts the host's samples into a transport buffer and announces it to the TX core
+//! with its time.
 
 use std::time::Duration;
 
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
-use super::stream::{CHUNK_SAMPLES, MAX_HOST_SAMPLE_BYTES};
+use super::board::Chains;
+use super::stream::{CHUNK_SAMPLES, MAX_CHANNELS, MAX_HOST_SAMPLE_BYTES};
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
-use crate::fpga::{self, MAX_TX_TIMESTAMP, Phy, TxCoreStatus};
+use crate::fpga::{
+    self, ExtendedTxPush, MAX_EXTENDED_TX_TIMESTAMP, MAX_TX_TIMESTAMP, Phy, TxCoreStatus,
+};
 use crate::lowlevel::{BusError, TxCommit};
-use crate::portable::stream::{EngineSequence, SyncTrigger};
+use crate::portable::stream::{EngineSequence, SyncTrigger, TxLanes};
 use crate::stream::{
     HostFormat, HostSample, StreamTime, SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry,
     WireFormat,
@@ -31,7 +36,7 @@ use crate::stream::{
 /// A created TX stream's bookkeeping (libusdr's `stream_sfetrx_dma32_t` for TX).
 #[derive(Debug)]
 pub(crate) struct TxStream {
-    /// Samples per packet: the most one send takes.
+    /// Samples per packet, per channel: the most one send takes.
     samples_per_packet: u32,
 
     /// The host buffers' format.
@@ -43,8 +48,19 @@ pub(crate) struct TxStream {
     /// Host to wire conversion (libusdr's `tf_data`).
     converter: Converter,
 
-    /// The lanes muted (`fe_old_tx_mute`), which starting the core applies.
+    /// Wire bytes of one sample of every channel.
+    sample_bytes: usize,
+
+    /// The lanes muted (`fe_old_tx_mute`), which starting the core applies. Always
+    /// [`TxMute::Neither`] on the extended core, whose own mute libusdr writes to its front
+    /// end instead.
     mute: TxMute,
+
+    /// The original core's lanes swapped, a channel-1 stream (`fe_old_tx_swap`).
+    swap: bool,
+
+    /// The extended core's announcing registers, `None` on the original core.
+    extended: Option<ExtendedTxPush>,
 
     /// Bursts the front end dropped so far, extended past its 8-bit counter (`fe_drop`).
     front_end_drops: u64,
@@ -54,9 +70,17 @@ pub(crate) struct TxStream {
 }
 
 impl TxStream {
-    /// The lanes muted, which starting the core applies (`_sfetrx4_op` starting TX).
-    pub(super) const fn mute(&self) -> TxMute {
-        self.mute
+    /// How starting the core sets its lanes (`_sfetrx4_op` starting TX): the stream's mute
+    /// and swap, and its channel count (`fe_chans`).
+    pub(super) const fn lanes(&self) -> TxLanes {
+        TxLanes {
+            mute: self.mute.bits(),
+            swap: self.swap,
+            channels_log2: match self.channels {
+                TxChannels::Channel0 | TxChannels::Channel1 => 0,
+                TxChannels::Both => 1,
+            },
+        }
     }
 
     /// Takes a buffer's status words into the drop counts and reports them, as
@@ -73,26 +97,60 @@ impl TxStream {
             fifo_used: status.fifo_used,
         }
     }
+
+    /// The original core's mute and swap for `channels` at creation, or after a remap with
+    /// the stream's `mute` (`initialize_stream_tx_32`, `_sfetrx4_option_set`'s `"chmap"`):
+    /// one channel mutes the lane it does not use, unless remapped while muting neither;
+    /// two channels mute neither.
+    const fn lane_use(channels: TxChannels, mute: Option<TxMute>) -> (TxMute, bool) {
+        let swap = matches!(channels, TxChannels::Channel1);
+        let mute = match (channels, mute) {
+            (TxChannels::Both, None) => TxMute::Neither,
+            (TxChannels::Both, Some(mute)) | (_, Some(mute @ TxMute::Neither)) => mute,
+            (TxChannels::Channel1, _) => TxMute::A,
+            (TxChannels::Channel0, _) => TxMute::B,
+        };
+        (mute, swap)
+    }
 }
 
 impl TxConfig {
-    /// Refuses, before any bus access, a TX stream the ported core cannot take: the
-    /// gateware's extended TX core (`extended_tx_core`), whose setup is not ported; any
-    /// wire format but `ci16`, which libusdr refuses only after powering the transmitter; a
-    /// real host format; and a packet size of 0.
+    /// Refuses, before any bus access, a TX stream the gateware's TX core, given its
+    /// `chains`, cannot take: a second channel without the TX chain; a wire format other
+    /// than `ci16` on the original core, or than `ci16` and `ci12` on the extended one; a
+    /// host format with no converter to the wire for the stream's channels; a packet size
+    /// of 0; and on the extended core, a packet over one burst.
     ///
     /// Intentional divergences: libusdr takes a size of 0 to mean the transport's largest
     /// buffer (its `PCIe` driver's, capped at the core's FIFO); a `TxConfig` names its size.
     /// libusdr copies a real host buffer's bytes onto the complex wire unconverted (its
-    /// converter lookup falls back to a copy).
-    pub(crate) fn check(self, extended_tx_core: bool) -> Result<(), Error> {
-        if extended_tx_core {
-            return Err(Error::UnsupportedTxCore);
+    /// converter lookup falls back to a copy); it refuses the original core's other wires
+    /// only after powering the transmitter. It takes a second channel on gateware without
+    /// the TX chain, which it reports as one channel. On the extended core it splits a
+    /// packet over the core's FIFO into two to eight bursts, which its USB transport does
+    /// not frame (it sends the first).
+    pub(super) fn check(self, chains: Chains) -> Result<(), Error> {
+        let second_channel = matches!(self.channels, TxChannels::Channel1 | TxChannels::Both);
+        if second_channel && !chains.tx {
+            return Err(Error::UnsupportedTxChannels(self.channels));
         }
-        if self.wire != WireFormat::Ci16 {
+        let wire_ok = match self.wire {
+            WireFormat::Ci16 => true,
+            WireFormat::Ci12 => chains.extended_tx_core,
+            WireFormat::I16 | WireFormat::I12 => false,
+        };
+        if !wire_ok {
             return Err(Error::UnsupportedWireFormat(self.wire));
         }
-        if Converter::new(self.host.sample_format(), self.wire.sample_format(), 1, 1).is_err() {
+        let inputs = self.channels.count();
+        if Converter::new(
+            self.host.sample_format(),
+            self.wire.sample_format(),
+            inputs,
+            1,
+        )
+        .is_err()
+        {
             return Err(Error::NoConversion {
                 host: self.host,
                 wire: self.wire,
@@ -101,13 +159,22 @@ impl TxConfig {
         if self.samples_per_packet == 0 {
             return Err(Error::UnsupportedPacketSize(0));
         }
+        if chains.extended_tx_core {
+            fpga::stream_block_bytes(self.samples_per_packet, self.sample_bytes())?;
+        }
         Ok(())
+    }
+
+    /// Wire bytes of one sample of every channel.
+    fn sample_bytes(self) -> u32 {
+        let per_channel = self.wire.sample_bits() / 8;
+        per_channel * u32::try_from(self.channels.count()).expect("1 or 2")
     }
 }
 
 impl Board {
-    /// libusdr's stream create for TX on the original core (`initialize_stream_tx_32`),
-    /// joining the group made to start with `mode`. Call [`TxConfig::check`] first.
+    /// libusdr's stream create for TX (`initialize_stream_tx_32`), on the gateware's TX
+    /// core, joining the group made to start with `mode`. Call [`TxConfig::check`] first.
     ///
     /// Divergence on a failed read only: libusdr logs a failed gateware read and compares
     /// whatever it holds; this returns the failure.
@@ -122,8 +189,14 @@ impl Board {
             host,
             channels,
         } = config;
-        let converter = Converter::new(host.sample_format(), wire.sample_format(), 1, 1)
-            .expect("invariant: TxConfig::check refused hosts with no converter to ci16");
+        let converter = Converter::new(
+            host.sample_format(),
+            wire.sample_format(),
+            channels.count(),
+            1,
+        )
+        .expect("invariant: TxConfig::check refused hosts with no converter to the wire");
+        let extended = self.chains.extended_tx_core;
         // `usdr_rfic_streaming_up`: libusdr takes its wake-up wait even when powering fails.
         let waking = !self.tx_running;
         self.tx_running = true;
@@ -132,25 +205,49 @@ impl Board {
             self.bus.sleep(Duration::from_millis(1));
         }
         powered?;
+        if extended {
+            // `usdr_reset_txfex`.
+            run_sequence(self.bus.as_mut(), &mut Phy::tx_extended_reset_writes())?;
+        }
         fpga::check_tx_gateware(self.identity()?.gateware_build)?;
         let bus = self.bus.as_mut();
+        if extended {
+            fpga::configure_extended_tx(bus, channels, wire)?;
+        }
         run_sequence(bus, &mut EngineSequence::new().sync(SyncTrigger::Stop))?;
-        let block_bytes = fpga::tx_block_bytes(samples_per_packet)?;
-        bus.tx_stream_open(block_bytes, fpga::TX_SAMPLE_BYTES)
+        let sample_bytes = config.sample_bytes();
+        let block_bytes = fpga::stream_block_bytes(samples_per_packet, sample_bytes)?;
+        bus.tx_stream_open(block_bytes, sample_bytes)
             .map_err(Error::Stream)?;
+        let (mute, swap) = if extended {
+            (TxMute::Neither, false)
+        } else {
+            TxStream::lane_use(channels, None)
+        };
         self.group(mode).tx = Some(TxStream {
             samples_per_packet,
             host,
             channels,
             converter,
-            mute: TxMute::B,
+            sample_bytes: usize::try_from(sample_bytes).expect("a few bytes"),
+            mute,
+            swap,
+            extended: extended.then(ExtendedTxPush::new),
             front_end_drops: 0,
             dma_drops: 0,
         });
         // `usdr_tx_gen_set(.., false, ..)`, then `usdr_txupdate_cal`.
         let mut dsp = Phy::tx_create_writes(self.tx.iq_imbalance);
         run_sequence(self.bus.as_mut(), &mut dsp)?;
-        debug!(samples_per_packet, ?host, block_bytes, "TX stream created");
+        debug!(
+            samples_per_packet,
+            ?host,
+            ?wire,
+            ?channels,
+            block_bytes,
+            extended,
+            "TX stream created"
+        );
         Ok(())
     }
 
@@ -170,8 +267,9 @@ impl Board {
     }
 
     /// The refusals [`Board::send`] makes before any bus access: no TX stream, buffers
-    /// not of the stream's host format, not one per channel, or holding no samples or
-    /// more than a packet, and a time past 47 bits.
+    /// not of the stream's host format, not one per channel, of unequal lengths, or holding
+    /// no samples or more than a packet, and a time past what the TX core takes (47 bits
+    /// on the original core, 63 on the extended).
     pub(crate) fn check_send<S: HostSample>(
         &self,
         channels: &[&[S]],
@@ -193,6 +291,10 @@ impl Board {
                 got: channels.len(),
             });
         }
+        let samples = channels.first().map_or(0, |channel| channel.len());
+        if channels.iter().any(|channel| channel.len() != samples) {
+            return Err(Error::UnequalChannelBuffers);
+        }
         let max = usize::try_from(stream.samples_per_packet)
             .expect("invariant: a packet size fits in usize");
         if let Some(samples) = channels
@@ -204,10 +306,12 @@ impl Board {
                 got: samples.len(),
             });
         }
+        let max_time = match stream.extended {
+            Some(_) => MAX_EXTENDED_TX_TIMESTAMP,
+            None => MAX_TX_TIMESTAMP,
+        };
         match time {
-            Some(time) if time.samples() > MAX_TX_TIMESTAMP => {
-                Err(Error::UnsupportedTimestamp(time))
-            }
+            Some(time) if time.samples() > max_time => Err(Error::UnsupportedTimestamp(time)),
             _ => Ok(()),
         }
     }
@@ -218,14 +322,46 @@ impl Board {
         Some(tx.channels.count())
     }
 
-    /// Mutes the core's lanes as `mute` says (`_sfetrx4_option_set`'s `"mute"` on the
-    /// original core); starting the stream applies it too.
+    /// Mutes the core's lanes as `mute` says (`_sfetrx4_option_set`'s `"mute"`). On the
+    /// original core the stream keeps it, and starting the stream applies it too; on the
+    /// extended core it goes to the front end's mute register, raw, and the start mutes
+    /// nothing, as in libusdr.
     pub(crate) fn set_tx_mute(&mut self, mute: TxMute) -> Result<(), Error> {
         let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
+        if stream.extended.is_some() {
+            return fpga::mute_extended_tx(self.bus.as_mut(), mute.bits().into());
+        }
         stream.mute = mute;
-        let mut update = EngineSequence::new().update_tx_flags(mute.bits());
+        let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
+        run_sequence(self.bus.as_mut(), &mut update)
+    }
+
+    /// Moves the stream to `channels`, of the same count (`_sfetrx4_option_set`'s
+    /// `"chmap"`): on the original core, the lanes swap as a new stream's would and a
+    /// one-channel stream muting a lane mutes the other instead (`fe_tx4_swap_ab_get`,
+    /// `sfe_tx4_upd`); on the extended core, its lane map is rewritten
+    /// (`exfe_trx4_update_chmap`).
+    ///
+    /// Intentional divergence: libusdr reads only as many entries of a new map as the
+    /// stream has channels, so a map of another count still applies; it is refused here,
+    /// as is a second channel without the TX chain.
+    pub(crate) fn set_tx_channels(&mut self, channels: TxChannels) -> Result<(), Error> {
+        let tx_chain = self.chains.tx;
+        let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
+            return Err(Error::NotStreaming);
+        };
+        let second_channel = matches!(channels, TxChannels::Channel1 | TxChannels::Both);
+        if channels.count() != stream.channels.count() || (second_channel && !tx_chain) {
+            return Err(Error::UnsupportedTxChannels(channels));
+        }
+        stream.channels = channels;
+        if stream.extended.is_some() {
+            return fpga::map_extended_tx(self.bus.as_mut(), channels);
+        }
+        (stream.mute, stream.swap) = TxStream::lane_use(channels, Some(stream.mute));
+        let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
         run_sequence(self.bus.as_mut(), &mut update)
     }
 
@@ -247,12 +383,10 @@ impl Board {
         let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
-        let [samples] = channels else {
-            unreachable!("invariant: TX streams have one channel until channel maps grow");
-        };
+        let samples = channels.first().map_or(0, |channel| channel.len());
         let stamp = time.map(StreamTime::samples);
 
-        let wire_bytes = samples.len() * usize::try_from(fpga::TX_SAMPLE_BYTES).expect("4");
+        let wire_bytes = samples * stream.sample_bytes;
         let converter = &stream.converter;
         let mut status = None;
         let mut written = 0;
@@ -262,7 +396,7 @@ impl Board {
             let Some(wire) = buffer.get_mut(..wire_bytes) else {
                 return 0;
             };
-            convert(converter, samples, wire);
+            convert(converter, channels, wire);
             written = wire_bytes;
             wire_bytes
         });
@@ -282,32 +416,43 @@ impl Board {
         }
         let telemetry = status.map(|words| stream.account(words));
         if commit == TxCommit::Registers {
-            let count = u32::try_from(samples.len()).expect("invariant: at most one packet");
-            fpga::push_tx(bus, count, stamp)?;
+            let count = u32::try_from(samples).expect("invariant: at most one packet");
+            match stream.extended.as_mut() {
+                Some(push) => {
+                    let bytes = u32::try_from(wire_bytes).expect("invariant: one burst");
+                    push.push(bus, bytes, count, stamp)?;
+                }
+                None => fpga::push_tx(bus, count, stamp)?,
+            }
         }
         Ok(telemetry)
     }
 }
 
-/// Converts `samples` into `wire`, exactly their wire size, at most [`CHUNK_SAMPLES`] at a
-/// time through a stack scratch: chunked, libusdr's one-call conversion of the packet.
-fn convert<S: HostSample>(converter: &Converter, samples: &[S], wire: &mut [u8]) {
+/// Converts `channels`' samples into `wire`, exactly their wire size, at most
+/// [`CHUNK_SAMPLES`] at a time through a stack scratch per channel: chunked, libusdr's
+/// one-call conversion of the packet.
+fn convert<S: HostSample>(converter: &Converter, channels: &[&[S]], wire: &mut [u8]) {
     const { assert!(S::BYTES <= MAX_HOST_SAMPLE_BYTES) };
-    let mut scratch = [0; CHUNK_SAMPLES * MAX_HOST_SAMPLE_BYTES];
-    let wire_sample_bytes = wire.len() / samples.len();
-    let chunks = samples
-        .chunks(CHUNK_SAMPLES)
-        .zip(wire.chunks_mut(CHUNK_SAMPLES * wire_sample_bytes));
-    for (chunk, out) in chunks {
-        let host = &mut scratch[..chunk.len() * S::BYTES];
-        for (sample, raw) in chunk.iter().zip(host.chunks_exact_mut(S::BYTES)) {
-            sample.to_le(raw);
+    let mut scratch = [[0; CHUNK_SAMPLES * MAX_HOST_SAMPLE_BYTES]; MAX_CHANNELS];
+    let samples = channels.first().map_or(0, |channel| channel.len());
+    let wire_sample_bytes = wire.len() / samples;
+    let outs = wire.chunks_mut(CHUNK_SAMPLES * wire_sample_bytes);
+    for (start, out) in (0..samples).step_by(CHUNK_SAMPLES).zip(outs) {
+        let len = CHUNK_SAMPLES.min(samples - start);
+        for (channel, host) in channels.iter().zip(&mut scratch) {
+            let chunk = &channel[start..start + len];
+            for (sample, raw) in chunk.iter().zip(host.chunks_exact_mut(S::BYTES)) {
+                sample.to_le(raw);
+            }
         }
+        let hosts = scratch.each_ref().map(|host| &host[..len * S::BYTES]);
         converter
-            .convert(&[&*host], &mut [out])
-            .expect("invariant: the converter takes one buffer each side");
+            .convert(&hosts[..channels.len()], &mut [out])
+            .expect("invariant: the converter takes one buffer per channel in, one out");
     }
 }
+
 #[cfg(test)]
 mod tests {
     use num_complex::Complex;
@@ -334,10 +479,71 @@ mod tests {
             .convert(&[&host], &mut [&mut whole])
             .expect("one buffer each side");
         let mut chunked = vec![0; samples.len() * 4];
-        convert(&converter, &samples, &mut chunked);
+        convert(&converter, &[&samples], &mut chunked);
         assert_eq!(
             chunked, whole,
             "chunk boundaries do not change the wire bytes"
+        );
+    }
+
+    #[test]
+    fn chunked_two_channel_conversion_equals_one_call() {
+        let channel = |sign: i16| -> Vec<Complex<i16>> {
+            (0..CHUNK_SAMPLES * 2 + 3)
+                .map(|n| {
+                    let n = i16::try_from(n).expect("small");
+                    Complex::new(sign * n, -sign * n)
+                })
+                .collect()
+        };
+        let (zero, one) = (channel(1), channel(-1));
+        let bytes = |samples: &[Complex<i16>]| -> Vec<u8> {
+            samples
+                .iter()
+                .flat_map(|s| [s.re.to_le_bytes(), s.im.to_le_bytes()].concat())
+                .collect()
+        };
+        let converter =
+            Converter::new(SampleFormat::Ci16, SampleFormat::Ci16, 2, 1).expect("libusdr has it");
+        let mut whole = vec![0; zero.len() * 8];
+        converter
+            .convert(&[&bytes(&zero), &bytes(&one)], &mut [&mut whole])
+            .expect("two buffers in, one out");
+        let mut chunked = vec![0; zero.len() * 8];
+        convert(&converter, &[&zero, &one], &mut chunked);
+        assert_eq!(
+            chunked, whole,
+            "chunk boundaries do not change the interleaved wire bytes"
+        );
+    }
+
+    #[test]
+    fn one_channel_mutes_the_lane_it_does_not_use_and_two_mute_neither() {
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Channel0, None),
+            (TxMute::B, false)
+        );
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Channel1, None),
+            (TxMute::A, true)
+        );
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Both, None),
+            (TxMute::Neither, false)
+        );
+        // A remap keeps "neither", and moves any other one-channel mute to the idle lane
+        // (`fe_old_tx_mute = swap ? 1 : 2`); two channels keep theirs.
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Channel1, Some(TxMute::Neither)),
+            (TxMute::Neither, true)
+        );
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Channel1, Some(TxMute::Both)),
+            (TxMute::A, true)
+        );
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Both, Some(TxMute::Both)),
+            (TxMute::Both, false)
         );
     }
 }

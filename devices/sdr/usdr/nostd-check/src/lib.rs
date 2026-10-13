@@ -19,7 +19,7 @@ use portable::lp8758::{BuckControl, BuckVoltage, Config};
 use portable::power::{PowerRails, RailPlan};
 use portable::sequence::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use portable::si5332::{ClockSequence, LvpeclOutput, Reference};
-use portable::stream::{EngineSequence, RxFormat, SyncTrigger};
+use portable::stream::{EngineSequence, RxFormat, SyncTrigger, TxLanes};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
 use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
@@ -366,8 +366,8 @@ pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
 }
 
 /// Runs the real stream controls: a sync write for every trigger, the throttle on and off,
-/// the host-ready signal, a TX mute and a TX create's five DSP-port writes; returns the
-/// register accesses made.
+/// the host-ready signal, a TX mute, a channel-1 lane update and a TX create's five DSP-port
+/// writes; returns the register accesses made.
 ///
 /// # Errors
 ///
@@ -387,7 +387,12 @@ pub fn stream_controls() -> Result<usize, &'static str> {
         .throttle_rx(Some((1, 2)))
         .throttle_rx(None)
         .signal_rx_ready()
-        .update_tx_flags(3);
+        .update_tx_flags(3)
+        .update_tx_lanes(TxLanes {
+            mute: 1,
+            swap: true,
+            channels_log2: 0,
+        });
     let mut accesses = engine(controls, 0)?;
     for trigger in triggers {
         controls = EngineSequence::new().sync(trigger);
@@ -471,7 +476,7 @@ mod tests {
         // start: RX run (two), TX start (three), the sync; RX halt (two); TX stop (one).
         assert_eq!(stream_engine(0), Ok(10 + 6 + 2 + 1));
         assert_eq!(stream_engine(0xffff_ffff), Err("RX DMA engine"));
-        assert_eq!(stream_controls(), Ok(4 + 8 + 5));
+        assert_eq!(stream_controls(), Ok(5 + 8 + 5));
     }
 
     #[test]

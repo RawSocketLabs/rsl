@@ -1,6 +1,7 @@
-//! The stream group and its RX stream: libusdr's `/ll/srx/0` stream on channel 0, created,
-//! synchronised, started, read and stopped as `usdr_device_m2_lm6_1_create_stream`,
-//! `usdr_dms_sync`, `usdr_dms_op`, `usdr_dms_recv` and `unregister_stream` do it
+//! The stream group and its RX stream: libusdr's `/ll/srx/0` stream on one channel or
+//! both, created, synchronised, started, read and stopped as
+//! `usdr_device_m2_lm6_1_create_stream`, `usdr_dms_sync`, `usdr_dms_op`, `usdr_dms_recv`
+//! and `unregister_stream` do it
 //! (`device/m2_lm6_1/m2_lm6_1.c`; the stream engine in
 //! `ipblks/streams/stream_sfetrx4_dma32.c`). The TX stream is in `tx_stream.rs`.
 //!
@@ -15,13 +16,14 @@ use num_complex::Complex;
 use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
+use super::board::Chains;
 use super::tx_stream::TxStream;
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{BurstPlan, Phy};
 use crate::lowlevel::BusError;
-use crate::portable::stream::{EngineSequence, StartPart, SyncTrigger};
+use crate::portable::stream::{EngineSequence, StartPart, SyncTrigger, TxLanes};
 use crate::stream::{
     HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig, SyncMode,
     WireFormat,
@@ -36,6 +38,9 @@ pub(super) const CHUNK_SAMPLES: usize = 512;
 
 /// The largest host sample, in bytes (`cf32`).
 pub(super) const MAX_HOST_SAMPLE_BYTES: usize = 8;
+
+/// The most channels a stream carries, each with its own host buffer and scratch.
+pub(super) const MAX_CHANNELS: usize = 2;
 
 /// RX burst throttling: of every `send + skip + 2` bursts the front end delivers the first
 /// `send + 1` and drops the rest, so a host that cannot keep up sees whole bursts missing
@@ -175,16 +180,45 @@ impl SyncMode {
 }
 
 impl StreamsConfig {
-    /// The checks every executor makes before any bus access: a configuration with no
-    /// stream, a sync mode with no trigger, a TX stream the ported core cannot take (the
-    /// extended core if `extended_tx_core`) and an RX stream the converters or front end
-    /// cannot take. Returns the RX stream's wire-to-host converter, if it has one.
+    /// The checks `NativeUsb`'s stream group makes before any I/O: those of
+    /// [`StreamsConfig::check_on`] for gateware without the DSP chains' second channels,
+    /// then the extended TX core, whose setup the native group does not run. So it takes
+    /// what it did before channel maps: channel 0, or RX's real channel 1, on the original
+    /// TX core. Returns the RX stream's wire-to-host converter, if it has one.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`StreamsConfig::check_on`], then [`Error::UnsupportedTxCore`].
+    #[cfg_attr(
+        not(all(feature = "mio", target_os = "linux")),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) uses it"
+        )
+    )]
+    pub(crate) fn check(self, extended_tx_core: bool) -> Result<Option<Converter>, Error> {
+        let single_channels = Chains {
+            rx: false,
+            tx: false,
+            extended_tx_core,
+        };
+        let converter = self.check_on(single_channels)?;
+        if extended_tx_core && self.tx.is_some() {
+            return Err(Error::UnsupportedTxCore);
+        }
+        Ok(converter)
+    }
+
+    /// The checks the board makes before any bus access, for gateware with `chains`: a
+    /// configuration with no stream, a sync mode with no trigger, and a TX or RX stream the
+    /// gateware's cores, the converters or the front ends cannot take. Returns the RX
+    /// stream's wire-to-host converter, if it has one.
     ///
     /// # Errors
     ///
     /// [`Error::NoStreams`], [`Error::UnsupportedSync`], and those of
     /// [`TxConfig::check`] and [`RxConfig::checked_converter`], in that order.
-    pub(crate) fn check(self, extended_tx_core: bool) -> Result<Option<Converter>, Error> {
+    pub(super) fn check_on(self, chains: Chains) -> Result<Option<Converter>, Error> {
         if self.rx.is_none() && self.tx.is_none() {
             return Err(Error::NoStreams);
         }
@@ -192,9 +226,11 @@ impl StreamsConfig {
         // the streams the group then holds.
         self.sync.trigger(self.rx.is_some(), self.tx.is_some())?;
         if let Some(tx) = self.tx {
-            tx.check(extended_tx_core)?;
+            tx.check(chains)?;
         }
-        self.rx.map(RxConfig::checked_converter).transpose()
+        self.rx
+            .map(|rx| rx.checked_converter(chains.rx))
+            .transpose()
     }
 }
 
@@ -214,12 +250,12 @@ impl Board {
     }
 
     /// The refusals [`Board::create_streams`] makes before any bus access: an existing
-    /// group, then [`StreamsConfig::check`] for this board's gateware.
+    /// group, then [`StreamsConfig::check_on`] for this board's gateware.
     pub(crate) fn check_streams(&self, config: StreamsConfig) -> Result<(), Error> {
         if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        config.check(self.chains.extended_tx_core).map(|_| ())
+        config.check_on(self.chains).map(|_| ())
     }
 
     /// Creates `config`'s stream in `direction`, if it has one, joining the group: one
@@ -232,7 +268,7 @@ impl Board {
     ) -> Result<(), Error> {
         match direction {
             Direction::Rx => {
-                let converter = config.check(self.chains.extended_tx_core)?;
+                let converter = config.check_on(self.chains)?;
                 match config.rx.zip(converter) {
                     Some((rx, converter)) => self.create_rx_stream(rx, converter, config.sync),
                     None => Ok(()),
@@ -246,14 +282,14 @@ impl Board {
     }
 
     /// Synchronises and starts the group: its [`Board::start_parts`] in one sequence
-    /// ([`EngineSequence::start`]: RX alone syncs, then runs; with TX, RX runs, then TX
-    /// starts, then the group syncs).
+    /// ([`EngineSequence::start_lanes`]: RX alone syncs, then runs; with TX, RX runs, then
+    /// TX starts, then the group syncs).
     ///
     /// The trigger is for the streams the group holds: after a failed create left only
     /// RX, `SyncMode::All` waits for RX alone, as libusdr's sync of the handles it has.
     pub(crate) fn start_streams(&mut self) -> Result<(), Error> {
-        let (rx, tx_mute, trigger) = self.start_plan()?;
-        let mut start = EngineSequence::start(rx, tx_mute, trigger);
+        let (rx, tx_lanes, trigger) = self.start_plan()?;
+        let mut start = EngineSequence::start_lanes(rx, tx_lanes, trigger);
         run_sequence(self.bus.as_mut(), &mut start)?;
         self.mark_started(true);
         Ok(())
@@ -266,17 +302,17 @@ impl Board {
     ///
     /// As [`Board::start_plan`].
     pub(crate) fn start_parts(&self) -> Result<[Option<StartPart>; 3], Error> {
-        let (rx, tx_mute, trigger) = self.start_plan()?;
-        Ok(StartPart::order(rx, tx_mute, trigger))
+        let (rx, tx_lanes, trigger) = self.start_plan()?;
+        Ok(StartPart::order(rx, tx_lanes, trigger))
     }
 
-    /// What the group's start needs: whether it has an RX stream, its TX stream's mute,
+    /// What the group's start needs: whether it has an RX stream, its TX stream's lanes,
     /// if it has one, and the trigger for those streams in its sync mode.
     ///
     /// # Errors
     ///
     /// [`Error::NotStreaming`] with no group, [`Error::AlreadyStreaming`] once started.
-    fn start_plan(&self) -> Result<(bool, Option<u8>, SyncTrigger), Error> {
+    fn start_plan(&self) -> Result<(bool, Option<TxLanes>, SyncTrigger), Error> {
         let Some(group) = self.streams.as_ref() else {
             return Err(Error::NotStreaming);
         };
@@ -284,8 +320,8 @@ impl Board {
             return Err(Error::AlreadyStreaming);
         }
         let trigger = group.mode.trigger(group.rx.is_some(), group.tx.is_some())?;
-        let tx_mute = group.tx.as_ref().map(|tx| tx.mute().bits());
-        Ok((group.rx.is_some(), tx_mute, trigger))
+        let tx_lanes = group.tx.as_ref().map(TxStream::lanes);
+        Ok((group.rx.is_some(), tx_lanes, trigger))
     }
 
     /// Runs one of [`Board::start_parts`]; the group counts as started once `last` has
@@ -386,7 +422,7 @@ impl Board {
 
         let bus = self.bus.as_mut();
         run_sequence(bus, &mut EngineSequence::rx_reset())?;
-        let plan = BurstPlan::for_packet(samples_per_packet, wire)
+        let plan = BurstPlan::for_stream(samples_per_packet, wire, channels)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
         let format = plan.rx_format(channels);
         run_sequence(bus, &mut EngineSequence::rx_configure(&format))?;
@@ -398,7 +434,7 @@ impl Board {
             layout: BlockLayout {
                 samples_per_burst: size(plan.samples_per_burst()),
                 bytes_per_burst: size(plan.bytes_per_burst()),
-                sample_bits: size(wire.sample_bits()),
+                sample_bits: size(channels.sample_bits(wire)),
             },
             block_bytes: size(plan.block_bytes()),
             host,
@@ -482,9 +518,6 @@ impl Board {
         let Some(stream) = self.streams.as_mut().and_then(|group| group.rx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
-        let [samples] = channels else {
-            unreachable!("invariant: RX streams have one channel until channel maps grow");
-        };
         let needed = usize::try_from(stream.samples_per_packet)
             .expect("invariant: a packet size fits in usize");
         let bus = self.bus.as_mut();
@@ -498,7 +531,7 @@ impl Board {
         bus.rx_stream_recv(timeout, &mut |block, words| {
             delivered = block.len();
             if block.len() >= block_bytes {
-                layout.convert(converter, block, &mut samples[..needed]);
+                layout.convert(converter, block, channels, needed);
             }
             oob = words;
         })
@@ -646,26 +679,30 @@ impl Board {
 
 impl RxConfig {
     /// The stream's wire-to-host converter, once this configuration is one the converters
-    /// and the receiver's front end can take; checked before any bus access.
+    /// and the receiver's front end can take, with the RX chain's second channel if
+    /// `rx_chain`; checked before any bus access.
     ///
     /// Intentional divergences: libusdr copies the bytes of a real wire into a complex host
     /// buffer or the reverse (its converter lookup falls back to a copy), takes complex
-    /// channel 1 as lanes 2 and 3, and converts a real 12-bit burst that ends mid-byte
-    /// whole, stub included; each is refused here.
-    fn checked_converter(self) -> Result<Converter, Error> {
+    /// channel 1 (lanes 2 and 3) on gateware without the RX chain, which it reports as one
+    /// channel, and converts a real 12-bit burst that ends mid-byte whole, stub included;
+    /// each is refused here.
+    fn checked_converter(self, rx_chain: bool) -> Result<Converter, Error> {
         let Self {
             samples_per_packet,
             wire,
             host,
             channels,
         } = self;
-        if channels == RxChannels::Channel1 && wire.is_complex() {
+        let second_channel = matches!(channels, RxChannels::Channel1 | RxChannels::Both);
+        if second_channel && wire.is_complex() && !rx_chain {
             return Err(Error::UnsupportedRxChannels { channels, wire });
         }
-        let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, 1)
+        let outputs = channels.count();
+        let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, outputs)
             .map_err(|_| Error::NoConversion { host, wire })?;
-        let half_byte = BurstPlan::for_packet(samples_per_packet, wire)
-            .is_some_and(|plan| plan.samples_per_burst() * wire.sample_bits() % 8 != 0);
+        let half_byte = BurstPlan::for_stream(samples_per_packet, wire, channels)
+            .is_some_and(|plan| plan.samples_per_burst() * channels.sample_bits(wire) % 8 != 0);
         if half_byte {
             return Err(Error::UnsupportedPacketSize(samples_per_packet));
         }
@@ -674,28 +711,40 @@ impl RxConfig {
 }
 
 impl BlockLayout {
-    /// Converts a block's samples into `samples`, burst by burst, skipping each burst's
-    /// stub, at most [`CHUNK_SAMPLES`] at a time through a stack scratch.
+    /// Converts a block's samples into the first `samples` of each of `channels`, burst by
+    /// burst, skipping each burst's stub, at most [`CHUNK_SAMPLES`] at a time through a
+    /// stack scratch per channel.
     ///
     /// Divergence from libusdr, invisible on the bus: it converts the block whole, stubs
     /// included, so a padded packet's samples land in the wrong places.
-    fn convert<S: HostSample>(self, converter: &Converter, block: &[u8], samples: &mut [S]) {
+    fn convert<S: HostSample>(
+        self,
+        converter: &Converter,
+        block: &[u8],
+        channels: &mut [&mut [S]],
+        samples: usize,
+    ) {
         const { assert!(S::BYTES <= MAX_HOST_SAMPLE_BYTES) };
-        let mut scratch = [0; CHUNK_SAMPLES * MAX_HOST_SAMPLE_BYTES];
+        let mut scratch = [[0; CHUNK_SAMPLES * MAX_HOST_SAMPLE_BYTES]; MAX_CHANNELS];
         let wire_bytes = |samples: usize| samples * self.sample_bits / 8;
-        let bursts = samples
-            .chunks_mut(self.samples_per_burst)
+        let bursts = (0..samples)
+            .step_by(self.samples_per_burst)
             .zip(block.chunks(self.bytes_per_burst));
-        for (burst, bytes) in bursts {
-            let wire_chunks = bytes.chunks(wire_bytes(CHUNK_SAMPLES));
-            for (chunk, wire) in burst.chunks_mut(CHUNK_SAMPLES).zip(wire_chunks) {
-                let wire = &wire[..wire_bytes(chunk.len())];
-                let host = &mut scratch[..chunk.len() * S::BYTES];
+        for (burst_start, bytes) in bursts {
+            let burst_end = samples.min(burst_start + self.samples_per_burst);
+            let chunks = (burst_start..burst_end).step_by(CHUNK_SAMPLES);
+            for (start, wire) in chunks.zip(bytes.chunks(wire_bytes(CHUNK_SAMPLES))) {
+                let len = CHUNK_SAMPLES.min(burst_end - start);
+                let wire = &wire[..wire_bytes(len)];
+                let mut hosts = scratch.each_mut().map(|host| &mut host[..len * S::BYTES]);
                 converter
-                    .convert(&[wire], &mut [&mut *host])
-                    .expect("invariant: the converter takes one buffer each side");
-                for (sample, raw) in chunk.iter_mut().zip(host.chunks_exact(S::BYTES)) {
-                    *sample = S::from_le(raw);
+                    .convert(&[wire], &mut hosts[..channels.len()])
+                    .expect("invariant: the converter takes one buffer in, one per channel out");
+                for (channel, host) in channels.iter_mut().zip(&hosts) {
+                    let out = &mut channel[start..start + len];
+                    for (sample, raw) in out.iter_mut().zip(host.chunks_exact(S::BYTES)) {
+                        *sample = S::from_le(raw);
+                    }
                 }
             }
         }
@@ -734,7 +783,7 @@ mod tests {
         let block = [0x01, 0x00, 0xff, 0xff, 0x00, 0x80, 0xff, 0x7f];
         let mut samples = [Complex::new(0, 0); 2];
         let ci16 = converter(SampleFormat::Ci16, SampleFormat::Ci16);
-        layout(2, 8, 4).convert(&ci16, &block, &mut samples);
+        layout(2, 8, 4).convert(&ci16, &block, &mut [&mut samples], 2);
         assert_eq!(
             samples,
             [Complex::new(1, -1), Complex::new(i16::MIN, i16::MAX)]
@@ -749,7 +798,7 @@ mod tests {
         ];
         let mut samples = [Complex::new(0, 0); 2];
         let ci16 = converter(SampleFormat::Ci16, SampleFormat::Ci16);
-        layout(1, 8, 4).convert(&ci16, &block, &mut samples);
+        layout(1, 8, 4).convert(&ci16, &block, &mut [&mut samples], 2);
         assert_eq!(samples, [Complex::new(1, 2), Complex::new(3, 4)]);
     }
 
@@ -763,12 +812,12 @@ mod tests {
         ];
         let mut packed = [Ci12::default(); 2];
         let copy = converter(SampleFormat::Ci12, SampleFormat::Ci12);
-        layout(1, 8, 3).convert(&copy, &block, &mut packed);
+        layout(1, 8, 3).convert(&copy, &block, &mut [&mut packed], 2);
         assert_eq!(packed, [Ci12([0x01, 0x20, 0x00]), Ci12([0xff, 0xff, 0x7f])]);
 
         let mut wide = [Complex::new(0, 0); 2];
         let unpack = converter(SampleFormat::Ci12, SampleFormat::Ci16);
-        layout(1, 8, 3).convert(&unpack, &block, &mut wide);
+        layout(1, 8, 3).convert(&unpack, &block, &mut [&mut wide], 2);
         // Each value shifted to the top of 16 bits.
         assert_eq!(wide, [Complex::new(0x10, 0x20), Complex::new(-16, 0x7ff0)]);
     }
@@ -788,10 +837,54 @@ mod tests {
         let expected: Vec<Complex<f32>> = whole.chunks_exact(8).map(Complex::from_le).collect();
 
         let mut actual = vec![Complex::new(0.0, 0.0); samples];
-        layout(samples, block.len(), 3).convert(&to_float, &block, &mut actual);
+        layout(samples, block.len(), 3).convert(&to_float, &block, &mut [&mut actual], samples);
         assert_eq!(
             actual, expected,
             "chunked conversion equals whole conversion"
+        );
+    }
+
+    #[test]
+    fn two_channels_split_as_one_call_splits_them_across_chunks_and_bursts() {
+        // Two bursts, each longer than a chunk and padded with an 8-byte stub, of two
+        // channels' ci16 samples interleaved: 8 bytes per sample.
+        let per_burst = CHUNK_SAMPLES + 5;
+        let burst_bytes = per_burst * 8 + 8;
+        let block: Vec<u8> = (0..2 * burst_bytes)
+            .map(|n| u8::try_from(n * 11 % 253).expect("below 253"))
+            .collect();
+        let split =
+            Converter::new(SampleFormat::Ci16, SampleFormat::Ci16, 1, 2).expect("libusdr has it");
+        let mut expected = [vec![0; 2 * per_burst * 4], vec![0; 2 * per_burst * 4]];
+        for (burst, wire) in block.chunks(burst_bytes).enumerate() {
+            let range = burst * per_burst * 4..(burst + 1) * per_burst * 4;
+            let [zero, one] = &mut expected;
+            split
+                .convert(
+                    &[&wire[..per_burst * 8]],
+                    &mut [&mut zero[range.clone()], &mut one[range]],
+                )
+                .expect("one buffer in, two out");
+        }
+        let expected = expected.map(|bytes| {
+            bytes
+                .chunks_exact(4)
+                .map(Complex::<i16>::from_le)
+                .collect::<Vec<_>>()
+        });
+
+        let mut zero = vec![Complex::new(0, 0); 2 * per_burst];
+        let mut one = zero.clone();
+        let layout = BlockLayout {
+            samples_per_burst: per_burst,
+            bytes_per_burst: burst_bytes,
+            sample_bits: 64,
+        };
+        layout.convert(&split, &block, &mut [&mut zero, &mut one], 2 * per_burst);
+        assert_eq!(
+            [zero, one],
+            expected,
+            "each channel as libusdr's splitter fills it, stubs skipped"
         );
     }
 }

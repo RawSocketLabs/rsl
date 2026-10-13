@@ -6,7 +6,7 @@ use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::SequenceFailure;
 use crate::portable::stream::RX_DMA;
-use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, WireFormat};
+use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, TxChannels, WireFormat};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -204,7 +204,7 @@ pub enum Error {
     },
 
     /// RX channels the receiver's front end does not carry in the wire format asked for:
-    /// channel 1 complex (lanes 2 and 3).
+    /// complex channel 1 (lanes 2 and 3) or both channels without the RX chain.
     #[error("RX channels {channels:?} are not carried in wire format {wire:?}")]
     #[non_exhaustive]
     UnsupportedRxChannels {
@@ -215,10 +215,19 @@ pub enum Error {
         wire: WireFormat,
     },
 
-    /// The gateware has the extended TX core (hardware ID bit 26), whose stream setup this
-    /// driver does not port.
+    /// The gateware has the extended TX core (hardware ID bit 26), whose stream setup the
+    /// native USB handle's stream group does not run; the blocking device does.
     #[error("the gateware's extended TX core is not supported")]
     UnsupportedTxCore,
+
+    /// TX channels the gateware or stream cannot carry: a second channel without the TX
+    /// chain, or a remap to another channel count.
+    #[error("TX channels {0:?} are not supported here")]
+    UnsupportedTxChannels(TxChannels),
+
+    /// A send's channel buffers differ in length; each channel sends the same samples.
+    #[error("TX channel buffers of different lengths")]
+    UnequalChannelBuffers,
 
     /// The gateware predates the TX stream engine libusdr requires (its
     /// `MINIM_FWID_COMPAT`, build 0xd2b10c09); the build ID as read.
@@ -236,8 +245,9 @@ pub enum Error {
         got: usize,
     },
 
-    /// A TX time past the core's 47-bit timestamp.
-    #[error("TX time {0:?} exceeds the core's 47-bit timestamp")]
+    /// A TX time past what the TX core takes: 47 bits on the original core, 63 on the
+    /// extended one.
+    #[error("TX time {0:?} exceeds the TX core's timestamp")]
     UnsupportedTimestamp(StreamTime),
 
     /// The FPGA's RX DMA engine reads as dead (all status bits set).

@@ -117,7 +117,8 @@ pub struct TxConfig {
     /// [`Device::send`]: crate::Device::send
     pub samples_per_packet: u32,
 
-    /// The format on the wire. The uSDR's TX front end takes [`WireFormat::Ci16`] only.
+    /// The format on the wire: [`WireFormat::Ci16`] on the original TX core, or
+    /// [`WireFormat::Ci12`] too on the extended one.
     pub wire: WireFormat,
 
     /// The format in the host's buffers.
@@ -139,11 +140,19 @@ impl TxConfig {
             channels: TxChannels::Channel0,
         }
     }
+
+    /// This configuration, carrying `channels` instead.
+    #[must_use]
+    pub const fn with_channels(mut self, channels: TxChannels) -> Self {
+        self.channels = channels;
+        self
+    }
 }
 
 /// A sample format the uSDR's front ends pack on the wire, little-endian: complex (one
-/// channel's I then Q) or real (one lane of it). The RX front end (`sfe_rx_4`) packs all
-/// four; the TX front end (`sfe_tx_4`) takes `Ci16` only.
+/// channel's I then Q, channels in order) or real (one lane of it). The RX front end
+/// (`sfe_rx_4`) packs all four; the original TX core (`sfe_tx_4`) takes `Ci16` only, the
+/// extended one `Ci16` or `Ci12`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum WireFormat {
@@ -227,20 +236,32 @@ impl HostFormat {
 }
 
 /// The channels an RX stream carries, by libusdr's uSDR channel numbers
-/// (`s_usdr_chmap`). The uSDR has one receiver, its I and Q on the front end's lanes 0
-/// and 1.
+/// (`s_usdr_chmap`, or a mask of numbers). The uSDR has one receiver; with an RX chain
+/// (hardware ID bit 25), each of the chain's two NCOs feeds a complex channel of the front
+/// end's four lanes, channel 0 on lanes 0 and 1 and channel 1 on lanes 2 and 3, and
+/// libusdr reports two channels (`/ll/sdr/max_sw_rx_chans`,
+/// [`Identity::max_rx_channels`](crate::Identity::max_rx_channels)).
+///
+/// The lanes are libusdr's (`sfe_rx4_configure`); that channel 1 is the second NCO's
+/// output is inferred from that count, the per-channel NCO controls
+/// ([`NcoChannels`](crate::NcoChannels)) and the Soapy client asking for both, not stated
+/// by gateware source.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RxChannels {
-    /// Channel 0 (libusdr's `a`, `ai` or `i`): complex, the receiver's I and Q on lanes 0
-    /// and 1 (`IFMT_CH_xx10`); real, I alone on lane 0 (`IFMT_CH_xxx0`).
+    /// Channel 0 (libusdr's `a`, `ai`, `i` or 0): complex, I and Q on lanes 0 and 1
+    /// (`IFMT_CH_xx10`); real, I alone on lane 0 (`IFMT_CH_xxx0`).
     #[default]
     Channel0,
 
-    /// Channel 1 (libusdr's `aq` or `q`), real formats only: the receiver's Q alone on
-    /// lane 1 (`IFMT_CH_xx1x`). A complex channel 1 would be lanes 2 and 3, which nothing
-    /// vendored shows the uSDR drives, so it is refused.
+    /// Channel 1 (libusdr's `aq`, `q` or 1): complex, the second NCO's I and Q on lanes 2
+    /// and 3 (`IFMT_CH_32xx`), which needs the RX chain; real, channel 0's Q alone on
+    /// lane 1 (`IFMT_CH_xx1x`).
     Channel1,
+
+    /// Channels 0 and 1, complex formats only, one host buffer each (libusdr's channels 0
+    /// and 1: all four lanes, `IFMT_CH_3210`); needs the RX chain.
+    Both,
 }
 
 impl RxChannels {
@@ -248,40 +269,69 @@ impl RxChannels {
     pub(crate) const fn count(self) -> usize {
         match self {
             Self::Channel0 | Self::Channel1 => 1,
+            Self::Both => 2,
+        }
+    }
+
+    /// Bits one sample of every channel takes on the wire in `wire` format.
+    pub(crate) const fn sample_bits(self, wire: WireFormat) -> u32 {
+        match self {
+            Self::Channel0 | Self::Channel1 => wire.sample_bits(),
+            Self::Both => 2 * wire.sample_bits(),
         }
     }
 }
 
-/// The channels a TX stream carries. The uSDR has one transmitter.
+/// The channels a TX stream carries, by libusdr's uSDR channel numbers. The uSDR has one
+/// transmitter; with a TX chain (hardware ID bit 24), each of the chain's two NCOs takes a
+/// complex channel, channel 0 on the TX front end's lane A and channel 1 on lane B, and
+/// libusdr reports two channels (`/ll/sdr/max_sw_tx_chans`,
+/// [`Identity::max_tx_channels`](crate::Identity::max_tx_channels)).
+///
+/// As for [`RxChannels`], the lanes are libusdr's (`fe_tx4_swap_ab_get`, `sfe_tx4_ctl`'s
+/// format; the extended core's lane map) and their NCOs inferred.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TxChannels {
-    /// Channel 0 (libusdr's `a`): the TX front end's lane A, with lane B muted.
+    /// Channel 0 (libusdr's `a` or 0): lane A, with lane B muted at creation.
     #[default]
     Channel0,
+
+    /// Channel 1 (libusdr's 1): lane B, the original core's lanes swapped, with lane A
+    /// muted at creation; needs the TX chain. On the extended core libusdr's lane map
+    /// masks the channel number to the stream's one channel, so channel 1 alone maps as
+    /// channel 0 there; kept as libusdr.
+    Channel1,
+
+    /// Channels 0 and 1, one host buffer each, on lanes A and B, neither muted; needs the
+    /// TX chain.
+    Both,
 }
 
 impl TxChannels {
     /// How many host buffers a send takes.
     pub(crate) const fn count(self) -> usize {
         match self {
-            Self::Channel0 => 1,
+            Self::Channel0 | Self::Channel1 => 1,
+            Self::Both => 2,
         }
     }
 }
 
 /// Which of the TX front end's two lanes are muted: libusdr's stream option `"mute"`, a
 /// two-bit mask (bit 0 lane A, bit 1 lane B). A channel-0 stream sends on lane A and is
-/// created with [`TxMute::B`].
+/// created with [`TxMute::B`], a channel-1 stream on lane B with [`TxMute::A`], a
+/// two-channel stream with [`TxMute::Neither`]. The extended TX core takes the mask as
+/// libusdr writes it (`EXFE_CMD_MUTE`), and starts unmuted.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TxMute {
     /// Neither lane (0).
     Neither,
 
-    /// Lane A, which carries channel 0 (1).
+    /// Lane A, which carries channel 0 (1): a channel-1 stream's state at creation.
     A,
 
-    /// Lane B (2): a channel-0 stream's state at creation.
+    /// Lane B, which carries channel 1 (2): a channel-0 stream's state at creation.
     #[default]
     B,
 

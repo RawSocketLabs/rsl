@@ -355,12 +355,13 @@ fn a_created_group_waits_for_its_start() {
 }
 
 /// Stream configurations rsl-usdr refuses before any bus access where libusdr would go
-/// on (whitelisted divergences, `PORTING.md`'s formats row): complex channel 1, which
-/// would be lanes 2 and 3, and a real 12-bit packet whose burst ends mid-byte (1023
-/// samples of 12 bits), which libusdr converts whole, stub included.
+/// on (whitelisted divergences, `PORTING.md`'s formats row): complex channel 1 on
+/// gateware without the RX chain, which would be lanes 2 and 3 with no second NCO behind
+/// them, and a real 12-bit packet whose burst ends mid-byte (1023 samples of 12 bits),
+/// which libusdr converts whole, stub included.
 #[test]
 fn rx_streams_the_front_end_cannot_carry_are_refused_before_the_bus() {
-    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3).with_tx_only());
     let mut device = Device::with_bus(sim.clone()).expect("powers up");
     device
         .set_rx_sample_rate(20_000_000)

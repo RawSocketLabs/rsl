@@ -11,8 +11,8 @@ use std::time::Duration;
 use common::sim_bus::SimBus;
 use num_complex::Complex;
 use rsl_usdr::{
-    Device, Error, HostFormat, RxConfig, StreamTime, StreamsConfig, SyncMode, TxConfig, TxMute,
-    WireFormat,
+    Device, Error, HostFormat, RxConfig, StreamTime, StreamsConfig, SyncMode, TxChannels, TxConfig,
+    TxMute, WireFormat,
 };
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
@@ -203,15 +203,103 @@ fn sending_or_muting_without_a_tx_stream_is_refused() {
     ));
 }
 
-/// Gateware with the extended TX core is refused before the bus: its setup is not ported.
+/// On the extended TX core, a packet over one burst (the core's 126976-byte FIFO) is
+/// refused before the bus. Intentional divergence: libusdr splits it into two to eight
+/// bursts, which its USB transport does not frame.
 #[test]
-fn the_extended_tx_core_is_refused_before_the_bus() {
+fn an_extended_tx_packet_over_one_burst_is_refused_before_the_bus() {
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3).with_extended_tx_core());
     let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    // 31745 `ci16` samples are 126980 bytes; 42332 `ci12` ones 126996.
+    for (samples, wire) in [(31_745, WireFormat::Ci16), (42_332, WireFormat::Ci12)] {
+        let config = TxConfig::new(samples, HostFormat::Ci16, wire);
+        assert!(matches!(
+            untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
+            Err(Error::UnsupportedPacketSize(n)) if n == samples
+        ));
+    }
+}
+
+/// A second TX channel needs the TX chain, which gateware reports as two channels; without
+/// it the stream is refused before the bus. Intentional divergence: libusdr creates it.
+#[test]
+fn a_second_tx_channel_without_the_tx_chain_is_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3).with_rx_only());
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    for channels in [TxChannels::Channel1, TxChannels::Both] {
+        let config = TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16).with_channels(channels);
+        assert!(matches!(
+            untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
+            Err(Error::UnsupportedTxChannels(c)) if c == channels
+        ));
+    }
+}
+
+/// A remap keeps the stream's channel count: one channel cannot become two. Intentional
+/// divergence: libusdr reads as many entries of the new map as the stream has channels.
+#[test]
+fn a_tx_remap_to_another_channel_count_is_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
     let config = TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16);
+    device
+        .create_streams(StreamsConfig::tx(config))
+        .expect("creates");
     assert!(matches!(
-        untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
-        Err(Error::UnsupportedTxCore)
+        untouched(&sim, || device.set_tx_channels(TxChannels::Both)),
+        Err(Error::UnsupportedTxChannels(TxChannels::Both))
+    ));
+}
+
+/// A two-channel send takes equal buffers: one per channel, the same samples each.
+#[test]
+fn unequal_tx_channel_buffers_are_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    let config =
+        TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16).with_channels(TxChannels::Both);
+    device
+        .create_streams(StreamsConfig::tx(config))
+        .expect("creates");
+    let (zero, one) = ([Complex::new(0_i16, 0); 8], [Complex::new(0_i16, 0); 7]);
+    assert!(matches!(
+        untouched(&sim, || device.send(&[&zero, &one], None, TIMEOUT)),
+        Err(Error::UnequalChannelBuffers)
+    ));
+    assert!(matches!(
+        untouched(&sim, || device.send(&[&zero], None, TIMEOUT)),
+        Err(Error::ChannelBuffers {
+            expected: 2,
+            got: 1,
+            ..
+        })
+    ));
+}
+
+/// Times the extended core takes run to 63 bits, past the original core's 47.
+#[test]
+fn the_extended_tx_core_takes_times_past_47_bits() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3).with_extended_tx_core());
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    let config = TxConfig::new(4, HostFormat::Ci16, WireFormat::Ci16);
+    device
+        .create_streams(StreamsConfig::tx(config))
+        .expect("creates");
+    device.start_streams().expect("starts");
+    let packet = [Complex::new(1_i16, -1); 4];
+    let late = StreamTime::from_samples(1 << 50);
+    device
+        .send(&[&packet], Some(late), TIMEOUT)
+        .expect("a 51-bit time is sent");
+    assert_eq!(
+        sim.board().tx_packets().last().map(|packet| packet.time),
+        Some(Some(1 << 50)),
+        "the core receives the whole time"
+    );
+    let too_late = StreamTime::from_samples(1 << 63);
+    assert!(matches!(
+        untouched(&sim, || device.send(&[&packet], Some(too_late), TIMEOUT)),
+        Err(Error::UnsupportedTimestamp(_))
     ));
 }
 

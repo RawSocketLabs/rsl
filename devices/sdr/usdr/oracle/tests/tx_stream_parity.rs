@@ -23,7 +23,7 @@ use baseband::without_baseband_loop;
 use num_complex::Complex;
 use rsl_usdr::{
     Ci12, Device, Error, HostFormat, HostSample, RxConfig, StreamTime, StreamsConfig, SyncMode,
-    TxConfig, TxMute, TxTelemetry, WireFormat,
+    TxChannels, TxConfig, TxMute, TxTelemetry, WireFormat,
 };
 use rsl_usdr_oracle::{Oracle, SendStat};
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard, TxPacket};
@@ -112,6 +112,10 @@ struct Run {
 
 /// A TX scenario made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent scenario switches, not states of one machine"
+)]
 struct Scenario {
     /// libusdr's data format.
     dformat: &'static CStr,
@@ -127,6 +131,15 @@ struct Scenario {
     tune_tx: bool,
     /// Mute both lanes between create and start, which the start then applies.
     mute_before_start: bool,
+    /// The wire format, rsl-usdr's side of `dformat`.
+    wire: WireFormat,
+    /// libusdr's channel mask and rsl-usdr's channels.
+    channels: (u64, TxChannels),
+    /// The board's gateware has the extended TX core.
+    extended: bool,
+    /// After the start, remap the stream: libusdr's `"chmap"` entries and rsl-usdr's
+    /// channels.
+    remap: Option<(&'static [u8], TxChannels)>,
 }
 
 impl Scenario {
@@ -140,12 +153,52 @@ impl Scenario {
             with_rx: false,
             tune_tx: true,
             mute_before_start: false,
+            wire: WireFormat::Ci16,
+            channels: (1, TxChannels::Channel0),
+            extended: false,
+            remap: None,
+        }
+    }
+
+    /// This scenario on libusdr's channel `mask`, rsl-usdr's `channels`.
+    const fn on(mut self, mask: u64, channels: TxChannels) -> Self {
+        self.channels = (mask, channels);
+        self
+    }
+
+    /// This scenario on gateware with the extended TX core, `wire` on the wire.
+    const fn extended(mut self, wire: WireFormat) -> Self {
+        self.extended = true;
+        self.wire = wire;
+        self
+    }
+
+    /// This scenario, remapped after the start to libusdr's `map`, rsl-usdr's `channels`.
+    const fn remapped(mut self, map: &'static [u8], channels: TxChannels) -> Self {
+        self.remap = Some((map, channels));
+        self
+    }
+
+    /// Channels the stream carries.
+    const fn channel_count(&self) -> usize {
+        match self.channels.1 {
+            TxChannels::Both => 2,
+            _ => 1,
+        }
+    }
+
+    /// The board the scenario runs on.
+    fn board(&self) -> SimBoard {
+        if self.extended {
+            board().with_extended_tx_core()
+        } else {
+            board()
         }
     }
 
     /// rsl-usdr's configuration for the scenario.
     fn config(&self) -> StreamsConfig {
-        let tx = TxConfig::new(self.samples, self.host, WireFormat::Ci16);
+        let tx = TxConfig::new(self.samples, self.host, self.wire).with_channels(self.channels.1);
         let config = if self.with_rx {
             StreamsConfig::rx(RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16)).with_tx(tx)
         } else {
@@ -182,7 +235,7 @@ fn window(trace_len: impl Fn() -> usize, step: impl FnOnce()) -> Range<usize> {
 /// libusdr: rate, RX and TX tunes, create, start and sync, the sends (setting the core's
 /// status before each), a mute, then stop and destroy.
 fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
-    let mut oracle = Oracle::open(board()).expect("libusdr opens");
+    let mut oracle = Oracle::open(scenario.board()).expect("libusdr opens");
     oracle.set_rx_rate(20_000_000).expect("sets the rate");
     oracle.set_rx_frequency(1_000_000_000).expect("tunes RX");
     if scenario.tune_tx {
@@ -196,7 +249,7 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
             .expect("libusdr creates RX");
     }
     oracle
-        .create_tx_stream_as(scenario.dformat, scenario.samples)
+        .create_tx_stream_on(scenario.dformat, scenario.channels.0, scenario.samples)
         .expect("libusdr creates TX");
     windows.push(("create", start..oracle.trace_len()));
     let start = oracle.trace_len();
@@ -211,14 +264,27 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
     oracle.start_tx_stream().expect("libusdr starts TX");
     oracle.sync_streams(scenario.sync.0).expect("libusdr syncs");
     windows.push(("start", start..oracle.trace_len()));
+    if let Some((map, _)) = scenario.remap {
+        let start = oracle.trace_len();
+        oracle.set_tx_chmap(map).expect("libusdr remaps");
+        windows.push(("remap", start..oracle.trace_len()));
+    }
     let mut stats = Vec::new();
     for (k, &(time, count)) in sends.iter().enumerate() {
         oracle.board(|board| board.set_tx_status(status(k)));
         let samples = usize::try_from(count).expect("fits");
-        let bytes: Vec<u8> = S::packet(k, samples).iter().flat_map(S::le_bytes).collect();
+        let channels: Vec<Vec<u8>> = (0..scenario.channel_count())
+            .map(|c| {
+                S::packet(2 * k + c, samples)
+                    .iter()
+                    .flat_map(S::le_bytes)
+                    .collect()
+            })
+            .collect();
+        let buffers: Vec<&[u8]> = channels.iter().map(Vec::as_slice).collect();
         let start = oracle.trace_len();
         let report = oracle
-            .send_tx(&bytes, count, time.unwrap_or(u64::MAX), 100)
+            .send_tx_channels(&buffers, count, time.unwrap_or(u64::MAX), 100)
             .expect("libusdr sends");
         windows.push(("send", start..oracle.trace_len()));
         stats.push(report.map(
@@ -256,7 +322,7 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
 /// rsl-usdr: the same through `create_streams`, `start_streams`, `send_with_stat`,
 /// `set_tx_mute` and `stop_streams`.
 fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
-    let sim = SimBus::new(board());
+    let sim = SimBus::new(scenario.board());
     let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
@@ -287,15 +353,27 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
             }),
         ),
     ];
+    if let Some((_, channels)) = scenario.remap {
+        windows.push((
+            "remap",
+            window(trace_len, || {
+                device.set_tx_channels(channels).expect("rsl-usdr remaps");
+            }),
+        ));
+    }
     let mut stats = Vec::new();
     for (k, &(time, count)) in sends.iter().enumerate() {
         sim.board().set_tx_status(status(k));
-        let packet = S::packet(k, usize::try_from(count).expect("fits"));
+        let samples = usize::try_from(count).expect("fits");
+        let packets: Vec<Vec<S>> = (0..scenario.channel_count())
+            .map(|c| S::packet(2 * k + c, samples))
+            .collect();
+        let buffers: Vec<&[S]> = packets.iter().map(Vec::as_slice).collect();
         let mut report = None;
         let range = window(trace_len, || {
             report = device
                 .send_with_stat(
-                    &[&packet],
+                    &buffers,
                     time.map(StreamTime::from_samples),
                     Duration::from_millis(100),
                 )
@@ -618,4 +696,121 @@ fn refused_creates_match_libusdr_up_to_the_refusal() {
             "build {build:#x}, {samples} samples: the operations before the refusal"
         );
     }
+}
+
+/// The second TX channel alone (lane B: the original core's lanes swapped, lane A muted)
+/// and both channels (the core started for two, neither muted, libusdr's two-to-one
+/// converters interleaving them), for every host format: the same operations and the same
+/// bytes at the core.
+#[test]
+fn tx_channel_1_and_both_channels_match_libusdr() {
+    for scenario in [
+        Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 1024).on(2, TxChannels::Channel1),
+        Scenario::tx(c"cf32@ci16", HostFormat::Cf32, 1024).on(2, TxChannels::Channel1),
+        Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 1024).on(3, TxChannels::Both),
+        Scenario::tx(c"cf32@ci16", HostFormat::Cf32, 1024).on(3, TxChannels::Both),
+    ] {
+        let (expected, actual) = match scenario.host {
+            HostFormat::Ci16 => assert_windows_match::<Complex<i16>>(scenario, &SENDS),
+            _ => assert_windows_match::<Complex<f32>>(scenario, &SENDS),
+        };
+        assert_eq!(
+            expected.played.len(),
+            SENDS.len(),
+            "{scenario:?}: all played"
+        );
+        assert_eq!(
+            expected.played, actual.played,
+            "{scenario:?}: the bytes and times the TX core received"
+        );
+    }
+}
+
+/// Remapping a running stream (libusdr's `"chmap"`): one channel between lanes A and B,
+/// the mute following to the idle lane, and two channels in order.
+#[test]
+fn tx_remaps_match_libusdr() {
+    for scenario in [
+        Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256).remapped(&[1], TxChannels::Channel1),
+        Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256)
+            .on(2, TxChannels::Channel1)
+            .remapped(&[0], TxChannels::Channel0),
+        Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256)
+            .on(3, TxChannels::Both)
+            .remapped(&[0, 1], TxChannels::Both),
+    ] {
+        let (expected, actual) =
+            assert_windows_match::<Complex<i16>>(scenario, &[(None, 256), (Some(77), 3)]);
+        assert_eq!(
+            expected.played, actual.played,
+            "{scenario:?}: the bytes and times the TX core received"
+        );
+    }
+}
+
+/// The extended TX core (hardware ID bit 26): the TX chain's front-end reset, the core's
+/// front end set up for the stream's lanes and sample width and mapped, the four-register
+/// announcement with its cache, its raw mute; `ci16` and `ci12` wires, every host format
+/// libusdr converts, either channel and both.
+#[test]
+fn the_extended_tx_core_matches_libusdr() {
+    use HostFormat as H;
+    use WireFormat as W;
+    let formats: [(&CStr, H, W); 6] = [
+        (c"ci16@ci16", H::Ci16, W::Ci16),
+        (c"cf32@ci16", H::Cf32, W::Ci16),
+        (c"ci12@ci16", H::Ci12, W::Ci16),
+        (c"ci16@ci12", H::Ci16, W::Ci12),
+        (c"cf32@ci12", H::Cf32, W::Ci12),
+        (c"ci12@ci12", H::Ci12, W::Ci12),
+    ];
+    for (dformat, host, wire) in formats {
+        let one = Scenario::tx(dformat, host, 1024).extended(wire);
+        let mut scenarios = vec![one, one.on(2, TxChannels::Channel1)];
+        if host != H::Ci12 {
+            scenarios.push(one.on(3, TxChannels::Both));
+        }
+        for scenario in scenarios {
+            let (expected, actual) = match host {
+                H::Ci16 => assert_windows_match::<Complex<i16>>(scenario, &SENDS),
+                H::Cf32 => assert_windows_match::<Complex<f32>>(scenario, &SENDS),
+                _ => assert_windows_match::<Ci12>(scenario, &SENDS),
+            };
+            assert_eq!(
+                expected.played.len(),
+                SENDS.len(),
+                "{scenario:?}: all played"
+            );
+            assert_eq!(
+                expected.played, actual.played,
+                "{scenario:?}: the bytes and times the TX core received"
+            );
+            let writes = |step: usize, reg: u32| {
+                expected.trace[expected.windows[step].1.clone()]
+                    .iter()
+                    .any(|op| matches!(op, Op::RegWrite { addr, .. } if *addr == reg))
+            };
+            assert!(
+                writes(0, 0x1_0300),
+                "{scenario:?}: the create sets the extended front end up"
+            );
+            assert!(
+                writes(2, 31),
+                "{scenario:?}: a send announces at the extended core's registers"
+            );
+        }
+    }
+}
+
+/// An extended-core remap rewrites its lane map as libusdr's does.
+#[test]
+fn an_extended_tx_remap_matches_libusdr() {
+    let scenario = Scenario::tx(c"ci16@ci16", HostFormat::Ci16, 256)
+        .extended(WireFormat::Ci16)
+        .remapped(&[1], TxChannels::Channel1);
+    let (expected, actual) = assert_windows_match::<Complex<i16>>(scenario, &[(None, 256)]);
+    assert_eq!(
+        expected.played, actual.played,
+        "the bytes the TX core received"
+    );
 }

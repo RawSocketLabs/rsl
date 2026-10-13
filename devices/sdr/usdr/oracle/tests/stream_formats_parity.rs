@@ -76,7 +76,7 @@ struct Scenario {
     /// libusdr's sync type.
     synctype: &'static CStr,
 
-    /// libusdr's channel mask: 1 for channel 0, 2 for channel 1.
+    /// libusdr's channel mask: 1 for channel 0, 2 for channel 1, 3 for both.
     channel_mask: u64,
 
     /// rsl-usdr's configuration for the same stream.
@@ -95,12 +95,26 @@ impl Scenario {
         }
     }
 
-    /// This scenario on channel 1 (libusdr's `aq`).
-    fn on_channel1(mut self) -> Self {
-        self.channel_mask = 2;
+    /// This scenario on channel 1 (libusdr's `aq` for a real wire, lanes 2 and 3 for a
+    /// complex one).
+    fn on_channel1(self) -> Self {
+        self.on(2, RxChannels::Channel1)
+    }
+
+    /// This scenario on libusdr's channel `mask`, rsl-usdr's `channels`.
+    fn on(mut self, mask: u64, channels: RxChannels) -> Self {
+        self.channel_mask = mask;
         let rx = self.config.rx.expect("an RX stream");
-        self.config = StreamsConfig::rx(rx.with_channels(RxChannels::Channel1));
+        self.config = StreamsConfig::rx(rx.with_channels(channels));
         self
+    }
+
+    /// Channels the stream carries.
+    fn channels(&self) -> usize {
+        match self.config.rx.expect("an RX stream").channels {
+            RxChannels::Both => 2,
+            _ => 1,
+        }
     }
 
     /// This scenario, started with libusdr's `synctype`, rsl-usdr's `sync`.
@@ -117,9 +131,9 @@ impl Scenario {
     }
 }
 
-/// A received packet's host bytes, and its time, samples, lost packets and transport
-/// status (libusdr's `fsymtime`, `totsyms`, `totlost`, `extra`).
-type Packet = (Vec<u8>, (u64, usize, u64, u64));
+/// A received packet's host bytes, one buffer per channel, and its time, samples, lost
+/// packets and transport status (libusdr's `fsymtime`, `totsyms`, `totlost`, `extra`).
+type Packet = (Vec<Vec<u8>>, (u64, usize, u64, u64));
 
 /// What one side did: each step's operations and each packet received.
 struct Run {
@@ -160,7 +174,7 @@ fn on_libusdr(scenario: Scenario, receives: usize) -> Run {
     let mut packets = Vec::new();
     for _ in 0..receives {
         let start = oracle.trace_len();
-        let (bytes, info) = oracle.receive_rx_packet(100).expect("a packet");
+        let (bytes, info) = oracle.receive_rx_channels(100).expect("a packet");
         windows.push(("receive", start..oracle.trace_len()));
         let RecvInfo {
             fsymtime,
@@ -188,9 +202,11 @@ fn on_libusdr(scenario: Scenario, receives: usize) -> Run {
     }
 }
 
-/// Receives one packet into a buffer of `S`, returning its bytes and information.
-fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize) -> Packet {
-    let mut buffer = vec![S::default(); samples];
+/// Receives one packet into `channels` buffers of `S`, returning their bytes and the
+/// packet's information.
+fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize, channels: usize) -> Packet {
+    let mut buffers = vec![vec![S::default(); samples]; channels];
+    let mut slices: Vec<&mut [S]> = buffers.iter_mut().map(Vec::as_mut_slice).collect();
     let RxMetadata {
         time,
         samples,
@@ -198,9 +214,12 @@ fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize) -> Packet 
         transport_status,
         ..
     } = device
-        .receive_into(&mut [&mut buffer], Duration::from_millis(100))
+        .receive_into(&mut slices, Duration::from_millis(100))
         .expect("a packet");
-    let bytes = buffer.iter().flat_map(LeBytes::le_bytes).collect();
+    let bytes = buffers
+        .iter()
+        .map(|buffer| buffer.iter().flat_map(LeBytes::le_bytes).collect())
+        .collect();
     (
         bytes,
         (time.samples(), samples, lost_packets, transport_status),
@@ -238,12 +257,13 @@ fn on_rsl(scenario: Scenario, receives: usize) -> Run {
     for _ in 0..receives {
         let mut packet = None;
         let range = window(trace_len, || {
+            let (samples, channels) = (scenario.samples(), scenario.channels());
             packet = Some(match host {
-                HostFormat::Ci16 => receive::<Complex<i16>>(&mut device, scenario.samples()),
-                HostFormat::Cf32 => receive::<Complex<f32>>(&mut device, scenario.samples()),
-                HostFormat::Ci12 => receive::<Ci12>(&mut device, scenario.samples()),
-                HostFormat::I16 => receive::<i16>(&mut device, scenario.samples()),
-                HostFormat::F32 => receive::<f32>(&mut device, scenario.samples()),
+                HostFormat::Ci16 => receive::<Complex<i16>>(&mut device, samples, channels),
+                HostFormat::Cf32 => receive::<Complex<f32>>(&mut device, samples, channels),
+                HostFormat::Ci12 => receive::<Ci12>(&mut device, samples, channels),
+                HostFormat::I16 => receive::<i16>(&mut device, samples, channels),
+                HostFormat::F32 => receive::<f32>(&mut device, samples, channels),
                 other => panic!("{other:?} has no buffer type here"),
             });
         });
@@ -349,6 +369,7 @@ fn a_padded_real_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
     let (expected, actual) = assert_windows_match(scenario, 1);
     let (expected_bytes, expected_info) = &expected.packets[0];
     let (actual_bytes, actual_info) = &actual.packets[0];
+    let (expected_bytes, actual_bytes) = (&expected_bytes[0], &actual_bytes[0]);
     assert_eq!(expected_info, actual_info, "packet information");
     assert_eq!(
         expected_bytes.len(),
@@ -474,6 +495,7 @@ fn a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
     let (expected, actual) = assert_windows_match(scenario, 1);
     let (expected_bytes, expected_info) = &expected.packets[0];
     let (actual_bytes, actual_info) = &actual.packets[0];
+    let (expected_bytes, actual_bytes) = (&expected_bytes[0], &actual_bytes[0]);
     assert_eq!(expected_info, actual_info, "packet information");
     assert_eq!(
         expected_bytes.len(),
@@ -522,6 +544,130 @@ fn external_sync_is_refused_by_both_before_any_sync_operation() {
         ),
         "rsl-usdr refuses external sync"
     );
+    assert_eq!(
+        sim.board().trace().len(),
+        start,
+        "nothing reached the board"
+    );
+}
+
+/// The second complex channel, alone (lanes 2 and 3, `IFMT_CH_32xx`) and with the first
+/// (all four lanes, `IFMT_CH_3210`, split by libusdr's one-to-two converters), for every
+/// host@wire pair libusdr converts for it: the same operations, burst format and host
+/// bytes. 1024 samples of both channels fill whole words in either wire format.
+#[test]
+fn complex_channel_1_and_both_channels_match_libusdr() {
+    use HostFormat as H;
+    use WireFormat as W;
+    let pairs: [(&CStr, H, W, bool); 6] = [
+        (c"ci16", H::Ci16, W::Ci16, true),
+        (c"cf32", H::Cf32, W::Ci16, true),
+        (c"ci12", H::Ci12, W::Ci12, false),
+        (c"ci16@ci12", H::Ci16, W::Ci12, true),
+        (c"cf32@ci12", H::Cf32, W::Ci12, true),
+        (c"ci12@ci16", H::Ci12, W::Ci16, false),
+    ];
+    for (dformat, host, wire, splits) in pairs {
+        let alone = Scenario::new(dformat, 1024, host, wire).on_channel1();
+        let both = Scenario::new(dformat, 1024, host, wire).on(3, RxChannels::Both);
+        let scenarios = if splits {
+            vec![alone, both]
+        } else {
+            vec![alone]
+        };
+        for scenario in scenarios {
+            let (expected, actual) = assert_windows_match(scenario, 2);
+            assert_eq!(
+                expected.packets, actual.packets,
+                "{scenario:?}: received bytes and packet information"
+            );
+        }
+    }
+}
+
+/// The lanes reach the front end: channel 1 alone is `IFMT_CH_32xx` (5), both channels
+/// `IFMT_CH_3210` (0) with a burst of twice the words.
+#[test]
+fn the_second_channels_burst_formats_are_libusdrs() {
+    let burst_format = |scenario: Scenario| {
+        let (expected, _) = assert_windows_match(scenario, 0);
+        expected.trace[expected.windows[0].1.clone()]
+            .iter()
+            .find_map(|op| match op {
+                Op::RegWrite {
+                    addr: REG_RX_FRONT_END,
+                    value,
+                } if value >> 28 == 1 => Some(*value),
+                _ => None,
+            })
+            .expect("create writes the burst format")
+    };
+    let alone = Scenario::new(c"ci16", 1024, HostFormat::Ci16, WireFormat::Ci16).on_channel1();
+    // 16 bursts in the FIFO, 512 words less one, lanes 3 and 2, `IFMT_16BIT`.
+    assert_eq!(
+        burst_format(alone),
+        0x1000_0000 | 16 << 18 | 511 << 5 | 5 << 2 | 3
+    );
+    let both =
+        Scenario::new(c"ci16", 1024, HostFormat::Ci16, WireFormat::Ci16).on(3, RxChannels::Both);
+    // 8 bursts in the FIFO, 1024 words less one, all four lanes.
+    assert_eq!(burst_format(both), 0x1000_0000 | 8 << 18 | 1023 << 5 | 3);
+}
+
+/// Two real channels (`ai` and `aq`): libusdr has no one-to-two real converter and fails
+/// the create after resetting the DMA; rsl-usdr refuses it before any operation
+/// (whitelisted divergence).
+#[test]
+fn two_real_channels_are_refused_by_both() {
+    let mut oracle = Oracle::open(SimBoard::new(BoardRevision::Rev3)).expect("libusdr opens");
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    assert_eq!(oracle.create_rx_stream_on(c"i16", 3, 1024), Err(-22));
+    drop(oracle.close());
+
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let start = sim.board().trace().len();
+    let config =
+        RxConfig::new(1024, HostFormat::I16, WireFormat::I16).with_channels(RxChannels::Both);
+    assert!(matches!(
+        device.create_streams(StreamsConfig::rx(config)),
+        Err(Error::NoConversion { .. })
+    ));
+    assert_eq!(
+        sim.board().trace().len(),
+        start,
+        "nothing reached the board"
+    );
+}
+
+/// Gateware without the RX chain reports one RX channel; libusdr still creates a complex
+/// channel-1 stream there, and rsl-usdr refuses it before any operation (whitelisted
+/// divergence: nothing shows what lanes 2 and 3 carry without the chain's second NCO).
+#[test]
+fn a_second_complex_channel_without_the_rx_chain_is_refused_where_libusdr_creates_it() {
+    let board = || SimBoard::new(BoardRevision::Rev3).with_tx_only();
+    let mut oracle = Oracle::open(board()).expect("libusdr opens");
+    // libusdr divides by the sample rate when a stream tunes its default frequency.
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    oracle
+        .create_rx_stream_on(c"ci16", 2, 1024)
+        .expect("libusdr creates the stream");
+    drop(oracle.close());
+
+    let sim = SimBus::new(board());
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let start = sim.board().trace().len();
+    for channels in [RxChannels::Channel1, RxChannels::Both] {
+        let config =
+            RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16).with_channels(channels);
+        assert!(matches!(
+            device.create_streams(StreamsConfig::rx(config)),
+            Err(Error::UnsupportedRxChannels { .. })
+        ));
+    }
     assert_eq!(
         sim.board().trace().len(),
         start,

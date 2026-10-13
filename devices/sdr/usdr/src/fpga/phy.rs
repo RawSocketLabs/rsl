@@ -426,6 +426,14 @@ impl Phy {
         EngineSequence::port_writes(Self::Rx as u32, &words)
     }
 
+    /// Pulses the TX chain's reset sub-register bit 3, which libusdr's TX stream create
+    /// sends before setting up the extended TX core (`usdr_reset_txfex`: the port words 8,
+    /// then 0). libusdr names it only by that use.
+    pub(crate) fn tx_extended_reset_writes() -> EngineSequence {
+        let pulse = [8, 0].map(|data| Self::word(SubReg::Reset, data));
+        EngineSequence::port_writes(Self::Tx as u32, &pulse)
+    }
+
     /// A TX stream create's DSP-port writes, likewise: the constant generator off
     /// (`usdr_tx_gen_set(.., false, ..)`), then the TX chain's IQ correction for
     /// `imbalance`, again (`usdr_txupdate_cal`).

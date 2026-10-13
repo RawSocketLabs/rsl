@@ -42,18 +42,32 @@ pub(crate) struct BurstPlan {
 }
 
 impl BurstPlan {
-    /// The plan for packets of `samples` in `wire` format, or `None` where libusdr returns
-    /// `-EINVAL` (or would divide by zero, for packets too small to fill a word per burst).
+    /// The plan for packets of `samples` of one channel in `wire` format; see
+    /// [`BurstPlan::for_stream`].
+    #[cfg_attr(
+        not(all(feature = "mio", target_os = "linux")),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) uses it"
+        )
+    )]
+    pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
+        Self::for_stream(samples, wire, RxChannels::Channel0)
+    }
+
+    /// The plan for packets of `samples` per channel of `channels` in `wire` format, or
+    /// `None` where libusdr returns `-EINVAL` (or would divide by zero, for packets too
+    /// small to fill a word per burst).
     ///
     /// libusdr's search: the fewest bursts that divide the packet evenly, keep each burst
     /// within 8192 samples and words, leave room for two bursts in the FIFO and split the
     /// words evenly; failing an even split, the one with the least padding. Its FIFO count
     /// comes from the last burst count it tried, as here. Samples pack back to back across
-    /// words: one or two lanes of 16 or 12 bits each (`bps = chans_raw * ch_bits`).
-    pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
+    /// words: one, two or four lanes of 16 or 12 bits each (`bps = chans_raw * ch_bits`).
+    pub(crate) fn for_stream(samples: u32, wire: WireFormat, channels: RxChannels) -> Option<Self> {
         // libusdr's 32-bit product would wrap here; no such packet fits a burst anyway.
-        let words = wire
-            .sample_bits()
+        let words = channels
+            .sample_bits(wire)
             .checked_mul(samples)?
             .div_ceil(WORD_BYTES * 8);
         if words == 0 {
@@ -123,7 +137,7 @@ impl BurstPlan {
             .with_words(u13::new(
                 u16::try_from(words - 1).expect("invariant: at most 8191"),
             ))
-            .with_lanes(Lanes::for_channel(self.wire, channels))
+            .with_lanes(Lanes::for_channels(self.wire, channels))
             .with_format(self.wire.into());
         RxFormat::new(self.samples_per_burst, words, self.bursts, format.to_raw())
             .expect("invariant: a plan has at least one sample, word and burst per block")
@@ -187,12 +201,15 @@ enum Lanes {
 }
 
 impl Lanes {
-    /// The lanes `sfe_rx4_configure` selects for one channel of `wire`: complex channel 0
-    /// is lanes 1 and 0; real channel 0 lane 0, real channel 1 lane 1. Complex channel 1
-    /// is refused before any bus access.
-    fn for_channel(wire: WireFormat, channels: RxChannels) -> Self {
+    /// The lanes `sfe_rx4_configure` selects for `channels` of `wire`: complex channel 0
+    /// is lanes 1 and 0, channel 1 lanes 3 and 2, both all four; real channel 0 lane 0,
+    /// real channel 1 lane 1, and both (refused before any bus access: libusdr has no
+    /// converter for them) lanes 1 and 0.
+    fn for_channels(wire: WireFormat, channels: RxChannels) -> Self {
         match (wire.is_complex(), channels) {
-            (true, _) => Self::Lanes10,
+            (true, RxChannels::Channel0) | (false, RxChannels::Both) => Self::Lanes10,
+            (true, RxChannels::Channel1) => Self::Lanes32,
+            (true, RxChannels::Both) => Self::Lanes3210,
             (false, RxChannels::Channel0) => Self::Lane0,
             (false, RxChannels::Channel1) => Self::Lane1,
         }

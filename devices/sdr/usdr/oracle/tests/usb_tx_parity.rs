@@ -382,12 +382,19 @@ fn frames_match_the_pinned_c_for_full_and_partial_blocks_at_every_time() {
         Some((1 << 47) - 1),
         Some(0x7fff_1234_5678_9abc),
     ];
-    for (bits, sample_bytes) in [(32, 4), (64, 8)] {
+    // `ci16` on one and two channels, then the extended core's `ci12` on one and two.
+    let shapes: [(u32, u32, &[u32]); 4] = [
+        (32, 4, &[4, 8, 400, 2048, 4088, 4096]),
+        (64, 8, &[8, 400, 2048, 4088, 4096]),
+        (24, 3, &[3, 402, 2046, 4092]),
+        (48, 6, &[6, 402, 2046, 4092]),
+    ];
+    for (bits, sample_bytes, lens) in shapes {
         let mut reference = Reference::new();
         reference.open(4096, bits).expect("opens");
         let mut rsl = Rsl::new();
         rsl.open(4096, sample_bytes).expect("opens");
-        for len in [sample_bytes, 8, 400, 2048, 4088, 4096] {
+        for &len in lens {
             for (index, time) in times.into_iter().enumerate() {
                 let len = usize::try_from(len).unwrap();
                 let payload = pattern(len, index);

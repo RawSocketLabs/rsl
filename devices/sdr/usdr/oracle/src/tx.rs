@@ -73,8 +73,8 @@ impl Oracle {
     }
 
     /// As [`Oracle::create_tx_stream_as`], on the channels in `channels`, libusdr's mask
-    /// of channel numbers (`usdr_dms_create_ex`): 1 for channel 0; for an aggregate, one
-    /// bit per device.
+    /// of channel numbers (`usdr_dms_create_ex`): 1 for channel 0, 2 for channel 1, 3 for
+    /// both; for an aggregate, one bit per device.
     ///
     /// # Errors
     ///
@@ -188,9 +188,9 @@ impl Oracle {
         self.send_tx_channels(&[buffer], samples, timestamp, timeout_ms)
     }
 
-    /// As [`Oracle::send_tx`], from one buffer per channel of the stream: libusdr's
-    /// aggregate sends buffer `i` on device `i` (one channel each on the uSDR) and reports
-    /// the master's statistics alone.
+    /// As [`Oracle::send_tx`], from one buffer per channel of the stream: a uSDR stream of
+    /// both channels takes two; libusdr's aggregate sends buffer `i` on device `i` (one
+    /// channel each on the uSDR) and reports the master's statistics alone.
     ///
     /// # Errors
     ///
@@ -243,6 +243,32 @@ impl Oracle {
         // SAFETY: `stream` is a live stream handle and the name is NUL-terminated.
         let errno =
             unsafe { rsl_oracle_stream_option_set(stream.as_ptr(), c"mute".as_ptr(), mute.into()) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets the TX stream's `"chmap"` option (`_sfetrx4_option_set`): `map` gives each
+    /// channel of the stream its physical channel number; the rest of libusdr's 64-entry
+    /// `channel_info_t` is unmapped (255), as `usdr_channel_info_map_default` leaves it.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no TX stream or more than 64
+    /// entries.
+    pub fn set_tx_chmap(&mut self, map: &[u8]) -> Result<(), i32> {
+        let Some(stream) = self.tx else {
+            return Err(-EINVAL);
+        };
+        let mut info = [u8::MAX; 64];
+        info.get_mut(..map.len())
+            .ok_or(-EINVAL)?
+            .copy_from_slice(map);
+        let pointer = info.as_ptr() as i64;
+        // SAFETY: `stream` is a live stream handle, the name is NUL-terminated, and the
+        // option reads `pointer` as a `const channel_info_t *` (64 bytes) during the call,
+        // while `info` lives.
+        let errno =
+            unsafe { rsl_oracle_stream_option_set(stream.as_ptr(), c"chmap".as_ptr(), pointer) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
     }

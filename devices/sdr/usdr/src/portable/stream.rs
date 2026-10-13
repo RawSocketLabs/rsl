@@ -157,10 +157,10 @@ pub(crate) enum StartPart {
     /// Run the RX DMA and front end.
     RunRx,
 
-    /// Start the TX core with its lanes muted as `mute` says (bit 0 lane A, bit 1 lane B).
+    /// Start the TX core on `lanes`: their mute, swap and the stream's channel count.
     StartTx {
-        /// The mute mask.
-        mute: u8,
+        /// How the stream uses the core's lanes.
+        lanes: TxLanes,
     },
 
     /// Set the sync unit's trigger.
@@ -168,22 +168,22 @@ pub(crate) enum StartPart {
 }
 
 impl StartPart {
-    /// The parts that start a group with an RX stream if `rx` and a TX stream muted as
-    /// `tx_mute` says, if any, on `trigger`, in order: RX alone syncs, then runs
-    /// (`usdr_dms_sync`, then `USDR_DMS_START`, the order `dm_stream.h` prescribes); with
-    /// TX, RX runs, then TX starts, then the group syncs, the order every libusdr client
-    /// uses, because the TX core's start writes the sync unit's register.
+    /// The parts that start a group with an RX stream if `rx` and a TX stream on `tx`
+    /// lanes, if any, on `trigger`, in order: RX alone syncs, then runs (`usdr_dms_sync`,
+    /// then `USDR_DMS_START`, the order `dm_stream.h` prescribes); with TX, RX runs, then
+    /// TX starts, then the group syncs, the order every libusdr client uses, because the
+    /// TX core's start writes the sync unit's register.
     pub(crate) const fn order(
         rx: bool,
-        tx_mute: Option<u8>,
+        tx: Option<TxLanes>,
         trigger: SyncTrigger,
     ) -> [Option<Self>; 3] {
         let run_rx = if rx { Some(Self::RunRx) } else { None };
-        match tx_mute {
+        match tx {
             None => [Some(Self::Sync(trigger)), run_rx, None],
-            Some(mute) => [
+            Some(lanes) => [
                 run_rx,
-                Some(Self::StartTx { mute }),
+                Some(Self::StartTx { lanes }),
                 Some(Self::Sync(trigger)),
             ],
         }
@@ -275,12 +275,61 @@ struct TxControl {
 impl TxControl {
     /// The control word sending `command` with `mute` (bit 0 lane A, bit 1 lane B), for one
     /// unswapped channel.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
+                      the lane-aware forms"
+        )
+    )]
     fn word(command: TxCommand, mute: u8) -> u32 {
+        Self::lanes_word(command, TxLanes::one_channel(mute))
+    }
+
+    /// The control word sending `command` with `lanes`' mute, swap and channel count.
+    fn lanes_word(command: TxCommand, lanes: TxLanes) -> u32 {
         Self::new()
-            .with_mute_a(mute & 1 != 0)
-            .with_mute_b(mute & 2 != 0)
+            .with_swap_lanes(lanes.swap)
+            .with_mute_a(lanes.mute & 1 != 0)
+            .with_mute_b(lanes.mute & 2 != 0)
+            .with_channels_log2(u2::new(lanes.channels_log2 & 0b11))
             .with_command(command)
             .to_raw()
+    }
+}
+
+/// How a TX stream uses the TX front end's two lanes: what `sfe_tx4_ctl` and `sfe_tx4_upd`
+/// write besides their command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TxLanes {
+    /// The lanes muted: bit 0 lane A, bit 1 lane B.
+    pub(crate) mute: u8,
+
+    /// Lanes A and B swapped, so a stream's first channel plays on lane B.
+    pub(crate) swap: bool,
+
+    /// The stream's channel count as a power of two (`MODE_FMT`): 0 for one, 1 for two;
+    /// only starting the core writes it.
+    pub(crate) channels_log2: u8,
+}
+
+impl TxLanes {
+    /// One unswapped channel with `mute`.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
+                      the lane-aware forms"
+        )
+    )]
+    pub(crate) const fn one_channel(mute: u8) -> Self {
+        Self {
+            mute,
+            swap: false,
+            channels_log2: 0,
+        }
     }
 }
 
@@ -397,8 +446,21 @@ impl EngineSequence {
 
     /// Starts a group with an RX stream if `rx` and a TX stream muted as `tx_mute` says,
     /// if any, on `trigger`: its [`StartPart::order`] in one sequence.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
+                      the lane-aware forms"
+        )
+    )]
     pub(crate) fn start(rx: bool, tx_mute: Option<u8>, trigger: SyncTrigger) -> Self {
-        StartPart::order(rx, tx_mute, trigger)
+        Self::start_lanes(rx, tx_mute.map(TxLanes::one_channel), trigger)
+    }
+
+    /// As [`EngineSequence::start`], with a TX stream on `tx` lanes, if any.
+    pub(crate) fn start_lanes(rx: bool, tx: Option<TxLanes>, trigger: SyncTrigger) -> Self {
+        StartPart::order(rx, tx, trigger)
             .into_iter()
             .flatten()
             .fold(Self::new(), Self::start_part)
@@ -408,7 +470,7 @@ impl EngineSequence {
     pub(crate) fn start_part(self, part: StartPart) -> Self {
         match part {
             StartPart::RunRx => self.run_rx(true),
-            StartPart::StartTx { mute } => self.start_tx(mute),
+            StartPart::StartTx { lanes } => self.start_tx(lanes),
             StartPart::Sync(trigger) => self.sync(trigger),
         }
     }
@@ -461,14 +523,14 @@ impl EngineSequence {
         self.write(REG_SYNC, 1 << 31 | (trigger as u32) << 16)
     }
 
-    /// Starts the TX core for one channel of 16-bit samples with `mute` (bit 0 lane A,
-    /// bit 1 lane B): stop, reset its buffer pointers, then start (`sfe_tx4_ctl`,
-    /// unswapped, no replay).
-    fn start_tx(self, mute: u8) -> Self {
+    /// Starts the TX core on `lanes`: stop, reset its buffer pointers, then start
+    /// (`sfe_tx4_ctl`, no replay). libusdr sends the 16-bit start whatever the stream's
+    /// format, the extended core's 12-bit streams included.
+    fn start_tx(self, lanes: TxLanes) -> Self {
         let reset = TxControl::new().with_reset_buffers(true).to_raw();
         self.stop_tx()
             .write(REG_SYNC, reset)
-            .write(REG_SYNC, TxControl::word(TxCommand::Start16, mute))
+            .write(REG_SYNC, TxControl::lanes_word(TxCommand::Start16, lanes))
     }
 
     /// Stops the TX core (`sfe_tx4_ctl` stopping, and the TX stream's destroy).
@@ -477,8 +539,29 @@ impl EngineSequence {
     }
 
     /// Sets the TX core's mute flags, unswapped (`sfe_tx4_upd`).
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
+                      the lane-aware forms"
+        )
+    )]
     pub(crate) fn update_tx_flags(self, mute: u8) -> Self {
         self.write(REG_SYNC, TxControl::word(TxCommand::UpdateFlags, mute))
+    }
+
+    /// Sets the TX core's mute and swap flags from `lanes` (`sfe_tx4_upd`); the update
+    /// command carries no channel count.
+    pub(crate) fn update_tx_lanes(self, lanes: TxLanes) -> Self {
+        let flags = TxLanes {
+            channels_log2: 0,
+            ..lanes
+        };
+        self.write(
+            REG_SYNC,
+            TxControl::lanes_word(TxCommand::UpdateFlags, flags),
+        )
     }
 
     /// Throttles the front end's bursts (`sfe_rx4_throttle`): with `Some((send, skip))`
@@ -734,6 +817,48 @@ mod tests {
     fn the_largest_composition_fits() {
         let format = RxFormat::new(1, 1, 1, 0).expect("valid");
         assert_eq!(EngineSequence::rx_configure(&format).len, MAX_STEPS);
+    }
+
+    #[test]
+    fn lane_words_carry_swap_and_channel_count_and_updates_drop_the_count() {
+        let two_swapped = TxLanes {
+            mute: 1,
+            swap: true,
+            channels_log2: 1,
+        };
+        let start = run(
+            EngineSequence::start_lanes(false, Some(two_swapped), SyncTrigger::FreeRun),
+            0,
+        );
+        // `TX_CMD_START_16BIT` with `MODE_FMT` 1 (bit 3), `MODE_MUTEA` (bit 9) and
+        // `MODE_SWAP_AB` (bit 10).
+        assert_eq!(start.accesses()[2], write(14, 0x60b));
+        let update = run(EngineSequence::new().update_tx_lanes(two_swapped), 0);
+        assert_eq!(
+            update.accesses(),
+            [write(14, 0x601)],
+            "sfe_tx4_upd has no FMT"
+        );
+        // The one-channel forms the native group runs are the lane-aware ones.
+        for mute in 0..4 {
+            let lanes = TxLanes::one_channel(mute);
+            assert_eq!(
+                run(EngineSequence::new().update_tx_flags(mute), 0).accesses(),
+                run(EngineSequence::new().update_tx_lanes(lanes), 0).accesses()
+            );
+            assert_eq!(
+                run(
+                    EngineSequence::start(true, Some(mute), SyncTrigger::Duplex),
+                    0
+                )
+                .accesses(),
+                run(
+                    EngineSequence::start_lanes(true, Some(lanes), SyncTrigger::Duplex),
+                    0
+                )
+                .accesses()
+            );
+        }
     }
 
     #[test]

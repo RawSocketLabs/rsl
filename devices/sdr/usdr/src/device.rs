@@ -23,7 +23,9 @@ use crate::frontend::{
 use crate::identity::Identity;
 use crate::lowlevel::Bus;
 use crate::reference::ReferenceClock;
-use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, TxMute, TxTelemetry};
+use crate::stream::{
+    HostSample, RxMetadata, StreamTime, StreamsConfig, TxChannels, TxMute, TxTelemetry,
+};
 use crate::thermal::{CoolDown, ThermalPolicy};
 #[cfg(all(feature = "mio", target_os = "linux"))]
 use crate::transport::usb::{NativeUsb, UsbHandOver};
@@ -456,8 +458,10 @@ impl Device {
     /// # Errors
     ///
     /// - [`Error::NotStreaming`] with no TX stream.
-    /// - [`Error::HostFormatMismatch`], [`Error::ChannelBuffers`], [`Error::SendSize`] or
-    ///   [`Error::UnsupportedTimestamp`] (past 47 bits), before any bus access.
+    /// - [`Error::HostFormatMismatch`], [`Error::ChannelBuffers`],
+    ///   [`Error::UnequalChannelBuffers`], [`Error::SendSize`] or
+    ///   [`Error::UnsupportedTimestamp`] (past 47 bits on the original TX core, 63 on the
+    ///   extended one), before any bus access.
     /// - [`Error::Timeout`] if no transport buffer frees in time: a stream not yet started
     ///   (or held by its sync) fills them all and stops taking packets.
     /// - [`Error::Stream`] if the transport fails; any bus failure. A transport failure
@@ -488,14 +492,33 @@ impl Device {
         self.board().send(channels, time, timeout)
     }
 
-    /// Mutes the TX core's lanes as `mute` says (libusdr's stream option `"mute"`). The
-    /// stream keeps the setting and applies it again when it starts.
+    /// Mutes the TX core's lanes as `mute` says (libusdr's stream option `"mute"`). On the
+    /// original TX core the stream keeps the setting and applies it again when it starts;
+    /// the extended core takes the mask raw into its front end and starts unmuted, as in
+    /// libusdr.
     ///
     /// # Errors
     ///
     /// [`Error::NotStreaming`] with no TX stream; any bus failure.
     pub fn set_tx_mute(&mut self, mute: TxMute) -> Result<(), Error> {
         self.board().set_tx_mute(mute)
+    }
+
+    /// Moves the TX stream to `channels`, as many as it carries (libusdr's stream option
+    /// `"chmap"`): a one-channel stream between channels 0 and 1, which on the original
+    /// core swaps its lanes and moves a lane mute to the lane left idle, as creating it on
+    /// that channel would. Effective at once; buffers already sent play as they were.
+    ///
+    /// Unstable, pending owner review: no libusdr client of the uSDR remaps a running
+    /// stream; the typed counterpart of its option is offered for parity.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no TX stream; [`Error::UnsupportedTxChannels`] for
+    /// another channel count or, without the TX chain, channel 1, before any bus access;
+    /// any bus failure.
+    pub fn set_tx_channels(&mut self, channels: TxChannels) -> Result<(), Error> {
+        self.board().set_tx_channels(channels)
     }
 
     /// Stops and destroys the stream group, powering its chains down. The frequency,
