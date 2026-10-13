@@ -79,11 +79,20 @@ name = "rsl-lowlevel"
 version = "0.0.0"
 
 [[package]]
+name = "rsl-lp8758"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "rsl-usdr-nostd-check"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "rsl-lowlevel",
+ "rsl-lp8758",
 ]
 
 [[package]]

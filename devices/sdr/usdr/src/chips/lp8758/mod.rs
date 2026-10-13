@@ -17,7 +17,7 @@
 //! | 0 | 1.0 V (reset value 0x4D) | no |
 //! | 1 | FPGA GPIO bank | 1.8 V |
 //! | 2 | 1.2 V, per a libusdr comment | no |
-//! | 3 | LMS6002D digital I/O | 1.8 V, 1.925 V at high sample rates |
+//! | 3 | LMS6002D digital I/O | 1.8 V, 1.925 V above 62 MS/s (libusdr) |
 //!
 //! libusdr's comment calls channel 1 "2v5", but its code sets 1.8 V; this follows the
 //! code.
@@ -39,8 +39,8 @@
 //!
 //! # Register map
 //!
-//! One flat address space; the address map and value types live in the portable core
-//! (`crate::portable::lp8758`), shared with the power-rail machine.
+//! One flat address space; the address map, value types and revision live in the shared
+//! `rsl-lp8758` crate (through `crate::portable::lp8758`), used by the power-rail machine.
 
 mod lp8758;
 

@@ -1,0 +1,16 @@
+[package]
+name = "rsl-lp8758"
+version = "0.0.0"
+description = "TI LP8758 PMIC register values and identity, shared by the pure-Rust SDR drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+rsl-lowlevel.workspace = true
+
+[lints]
+workspace = true

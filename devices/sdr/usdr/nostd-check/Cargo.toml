@@ -21,6 +21,7 @@ usb = []
 # scripts/ci/portable.py checks this declaration against the actual driver/workspace.
 bnb = { package = "bitsandbytes", path = "../../../../bitsandbytes/bnb", version = "0.8.0", default-features = false }
 rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
+rsl-lp8758 = { path = "../../chips/lp8758", version = "0.0.0", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

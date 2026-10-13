@@ -11,7 +11,7 @@ FIXTURE = f"{USDR}/nostd-check"
 # Every dependency of the portable core, with the features only the std driver may add to it.
 # The fixture declares each with the workspace's path and version, without default features,
 # and enables exactly the driver's remaining features (none today); never `std`.
-DEPENDENCIES = {"bnb": set(), "rsl-lowlevel": {"std"}}
+DEPENDENCIES = {"bnb": set(), "rsl-lowlevel": {"std"}, "rsl-lp8758": set()}
 
 
 def check_dependency(root, name, host_only, shared, member, candidate):

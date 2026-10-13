@@ -6,7 +6,7 @@ use bnb::BitEnum;
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[bit_enum(u8, closed)]
 #[repr(u8)]
-pub(crate) enum Reg {
+pub enum Reg {
     /// Device revision. libusdr reads it as `DEV_REV`; SNVSAC6B's map does not list 0x00.
     DeviceRevision = 0x00,
 

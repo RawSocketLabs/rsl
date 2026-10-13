@@ -1,15 +1,15 @@
 //! The chip-wide configuration register.
 
 use bnb::bitfield;
+use rsl_lowlevel::Register;
 
-use super::super::register::Register;
 use super::reg::Reg;
 
 /// Die-temperature warning level, EN-pin pull-downs, and spread spectrum. `CONFIG`,
 /// §7.6.1.23.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Config {
+pub struct Config {
     /// Raise the die-temperature warning at 105 °C instead of 125 °C. `TDIE_WARN_LEVEL`,
     /// bit 3; reset 0.
     #[bits(3..=3)]

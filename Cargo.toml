@@ -21,6 +21,8 @@ members = [
     "rfus",
     # the register/SPI/I2C seam and sequence types the device drivers share
     "devices/lowlevel",
+    # LP8758 PMIC register values shared by the SDR drivers
+    "devices/sdr/chips/lp8758",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -91,6 +93,7 @@ rsl-pki = { path = "pki/validation", version = "0.1.0", default-features = false
 rsl-compression = { path = "compression", version = "0.1.0", default-features = false }
 # unpublished device crates shared by the drivers
 rsl-lowlevel = { path = "devices/lowlevel", version = "0.0.0", default-features = false }
+rsl-lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }

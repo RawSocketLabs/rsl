@@ -53,7 +53,7 @@ class PortableContractTests(unittest.TestCase):
                 ("default-features = false }", 'default-features = false, features = ["std"] }'),
                 ("default-features = false }", "default-features = true }"),
                 ('version = "0.0.0"', 'version = "0.0.1"'),
-                ("path = \"../../../", "path = \"../../../../"),
+                ('path = "../', 'path = "../../'),
             ]
             for before, after in cases:
                 with (self.subTest(dependency=name, change=after),

@@ -1,30 +1,30 @@
 //! The four converter channels: each one's control and output-voltage registers.
 
 use bnb::bitfield;
+use rsl_lowlevel::IndexedRegister;
 
-use super::super::register::IndexedRegister;
 use super::reg::Reg;
 
-/// One converter channel.
+/// One converter channel. What each rail feeds is the board's: see its driver.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Buck {
-    /// Channel 0: the 1.0 V rail (its OTP default is 1.0 V; libusdr leaves it there).
+pub enum Buck {
+    /// Channel 0 (`BUCK0`); the LP8758-E0's OTP output default is 1.0 V.
     B0,
 
-    /// Channel 1: the GPIO bank rail, set to 1.8 V.
+    /// Channel 1 (`BUCK1`).
     B1,
 
-    /// Channel 2: libusdr's comment calls it the 1.2 V rail; it never sets its voltage.
+    /// Channel 2 (`BUCK2`).
     B2,
 
-    /// Channel 3: the LMS6002D I/O rail, 1.8 V at normal sample rates (libusdr raises it
-    /// to 1.925 V above 62 MS/s).
+    /// Channel 3 (`BUCK3`).
     B3,
 }
 
 impl Buck {
     /// The channel after this one in register order, if any.
-    pub(crate) const fn next(self) -> Option<Self> {
+    #[must_use]
+    pub const fn next(self) -> Option<Self> {
         match self {
             Self::B0 => Some(Self::B1),
             Self::B1 => Some(Self::B2),
@@ -41,7 +41,7 @@ impl Buck {
 /// EN-pin control.
 #[bitfield(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct BuckControl {
+pub struct BuckControl {
     /// Run the channel. `EN_BUCKn`, bit 7; reset 1 (OTP).
     #[bits(7..=7)]
     enabled: bool,
@@ -87,7 +87,7 @@ impl IndexedRegister for BuckControl {
 /// A channel's output voltage. `BUCKn_VOUT` (`BUCKn_VSET`), §7.6.1.10; channel 0 resets
 /// to 0x4D (1.0 V).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct BuckVoltage(u8);
+pub struct BuckVoltage(u8);
 
 impl BuckVoltage {
     /// The code for `millivolts`, rounded down to the step: 10 mV from 0.5 V (code 0x00)
@@ -101,7 +101,8 @@ impl BuckVoltage {
     /// # Panics
     ///
     /// Outside 500..=3360 mV (at compile time when used in a `const`).
-    pub(crate) const fn from_millivolts(millivolts: u32) -> Self {
+    #[must_use]
+    pub const fn from_millivolts(millivolts: u32) -> Self {
         assert!(
             millivolts >= 500 && millivolts <= 3360,
             "LP8758 output out of range"
