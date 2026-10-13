@@ -132,7 +132,7 @@ Each layer calls only the ones below it.
   `XmassCalibrationPath`) and implements its `BringUp` with the bring-ups that stay here,
   one module per board (`xmass`, `supersync`, `simplesync`; their chips LMK05318,
   LMK5C33216, TMP114 and AT24 in `src/chips/`). `xmass_firmware.rs` (public) ports libusdr's
-  `tools/xmass_fwupd.c`, the XMASS switch's firmware update, over `BridgeFlash`, the
+  `tools/xmass_fwupd.c`, the XMASS switch's firmware update, over `SwitchFlash`, the
   driver's four XMASS requests as a trait (implemented for `XmassDevice` in
   `transport/pcie.rs`); `oracle/tests/xmass_firmware_parity.rs` runs both against one fake
   device. `board/frontend.rs` runs the probe at the
@@ -358,7 +358,10 @@ Each layer calls only the ones below it.
   the tool on a device that is not brought up or powered down, as `Flash` powers nothing.
   The XMASS switch firmware update refuses an image file longer than 64 KiB, which
   libusdr's `xmass_fwupd` cuts to its first 64 KiB and flashes
-  (`xmass_firmware_parity.rs::a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr`).
+  (`xmass_firmware_parity.rs::a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr`), and
+  accepts a request only at its exact success value (0, or 1 for the read), where the tool
+  takes any non-negative return as success
+  (`xmass_firmware_parity.rs::a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr`).
   The RX controls reject trim codes libusdr masks to seven bits (`RxTrim`;
   `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr`)
   and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes
@@ -422,7 +425,10 @@ Each layer calls only the ones below it.
   hardware (`tests/pcie_hardware.rs` is `#[ignore]`d). Its `unsafe` is in `device.rs`
   (ioctls, mappings); the XMASS requests pair each opcode with the buffer the driver
   copies there (`device::xmass_requests`), and `xmass.rs` forbids `unsafe`. The driver
-  module itself (`usdr_pcie_uram.c`) is GPL-2.0: describe its behaviour, never copy it.
+  module itself (`usdr_pcie_uram.c`) is GPL-2.0: copy nothing from it. Cite interface facts
+  from the uAPI header (`pcie_uram_driver_if.h`, taken under MIT) or MIT userspace sources;
+  a behavioural claim only the driver supports is phrased as observed interface behaviour
+  and listed in PORTING.md's provenance note.
 
 ## Verify
 
