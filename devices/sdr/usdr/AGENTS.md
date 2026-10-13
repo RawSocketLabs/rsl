@@ -53,9 +53,9 @@ intentional addition.
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and three of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`) |
+| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
-| `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
+| `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
 
 ## Driver layout
 
@@ -131,7 +131,11 @@ Each layer calls only the ones below it.
   (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and `Exm2peOptions` options,
   `XmassCalibrationPath`) and implements its `BringUp` with the bring-ups that stay here,
   one module per board (`xmass`, `supersync`, `simplesync`; their chips LMK05318,
-  LMK5C33216, TMP114 and AT24 in `src/chips/`). `board/frontend.rs` runs the probe at the
+  LMK5C33216, TMP114 and AT24 in `src/chips/`). `xmass_firmware.rs` (public) ports libusdr's
+  `tools/xmass_fwupd.c`, the XMASS switch's firmware update, over `BridgeFlash`, the
+  driver's four XMASS requests as a trait (implemented for `XmassDevice` in
+  `transport/pcie.rs`); `oracle/tests/xmass_firmware_parity.rs` runs both against one fake
+  device. `board/frontend.rs` runs the probe at the
   end of power-up and owns the board that came up. Blocking code: the probes interleave
   GPIO-core writes with I2C transfers the `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
   `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
@@ -352,6 +356,9 @@ Each layer calls only the ones below it.
   reports a failed read-back as an error, where the tool exits 0; and refuses files past
   16 MiB, which the tool reads past its buffer (`tests/flash_update.rs`). The oracle runs
   the tool on a device that is not brought up or powered down, as `Flash` powers nothing.
+  The XMASS switch firmware update refuses an image file longer than 64 KiB, which
+  libusdr's `xmass_fwupd` cuts to its first 64 KiB and flashes
+  (`xmass_firmware_parity.rs::a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr`).
   The RX controls reject trim codes libusdr masks to seven bits (`RxTrim`;
   `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr`)
   and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes
@@ -412,7 +419,10 @@ Each layer calls only the ones below it.
   crate knows the driver's protocol and nothing of the board: layouts and register meanings
   stay in `rsl-usdr`. Its ABI and the uSDR layout are checked against the vendored header and
   libusdr's own layout by `oracle/tests/pcie_abi.rs`; nothing else of it can run without
-  hardware (`tests/pcie_hardware.rs` is `#[ignore]`d).
+  hardware (`tests/pcie_hardware.rs` is `#[ignore]`d). Its `unsafe` is in `device.rs`
+  (ioctls, mappings); the XMASS requests pair each opcode with the buffer the driver
+  copies there (`device::xmass_requests`), and `xmass.rs` forbids `unsafe`. The driver
+  module itself (`usdr_pcie_uram.c`) is GPL-2.0: describe its behaviour, never copy it.
 
 ## Verify
 
