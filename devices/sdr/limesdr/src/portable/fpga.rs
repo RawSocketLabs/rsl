@@ -35,3 +35,19 @@ pub(crate) const RX_ENABLE: u16 = 1 << 0;
 
 /// [`STREAM_CONTROL`] bit 1, "used for wfm playback from fpga" (`TX_EN`).
 pub(crate) const TX_ENABLE: u16 = 1 << 1;
+
+/// Direct clocking (`LIMESDR_REG_0005`): bit `n` makes `LimeLight` clock `n` direct, the
+/// PLL not in the path (`limesdr_set_direct_clocking`; the source names the bits no
+/// further). The sample rate sets bits 0 and 1 ("TODO set direct mode or do PLL with phase
+/// search").
+pub(crate) const DIRECT_CLOCKING: u16 = 0x0005;
+
+/// The RF switches (`LIMESDR_REG_0017`): the receive antenna path in bits 9:8 and the
+/// transmit path in bits 13:12, each a band's switch position (`_limesdr_antenna_port_switch`).
+pub(crate) const RF_SWITCHES: u16 = 0x0017;
+
+/// Where [`RF_SWITCHES`] holds the receive path's position.
+pub(crate) const RX_SWITCH_SHIFT: u16 = 8;
+
+/// Where [`RF_SWITCHES`] holds the transmit path's position.
+pub(crate) const TX_SWITCH_SHIFT: u16 = 12;

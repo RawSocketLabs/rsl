@@ -6,15 +6,18 @@
 //! (`limesdr_stop_streaming`). `lms7002m_init`, between the reset and the version read,
 //! only fills libusdr's state.
 
+use core::num::NonZeroU32;
 use core::time::Duration;
 
 use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use lms7002m::ctrl::Control;
 use lms7002m::{self, Create, Reg, ResetPlan, Version, spi_read};
 
 use super::fpga::{
     self, DETECTOR_0063, DETECTOR_CONTROL, DETECTOR_COUNT, DETECTOR_DONE, DETECTOR_START,
     DETECTOR_STATUS, RX_ENABLE, STREAM_CONTROL, TX_ENABLE,
 };
+use super::frontend::{RX_BANDS, TX_BANDS};
 use super::lsop::LsOp;
 use super::reference::{measured_hz, nominal_hz};
 
@@ -141,6 +144,21 @@ impl Open {
     /// The nominal reference frequency in hertz, once measured and recognised.
     pub(crate) const fn reference_hz(&self) -> Option<u32> {
         self.reference_hz
+    }
+
+    /// The control code's state `limesdr_init` leaves, once the open finished: the created
+    /// chip, the reference as its clock (`lms7002m_init`) and the board's bands.
+    pub(crate) fn control(&self) -> Option<Control> {
+        if self.step != Step::Done {
+            return None;
+        }
+        let reference = NonZeroU32::new(self.reference_hz?)?;
+        Some(Control::new(
+            self.create.chip()?,
+            reference,
+            RX_BANDS,
+            TX_BANDS,
+        ))
     }
 
     /// The action to perform next; `None` once the open finished or failed.

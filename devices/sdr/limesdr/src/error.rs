@@ -2,6 +2,8 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
+use lms7002m::TuneError;
+use lms7002m::ctrl::ControlError;
 
 use crate::control::BusError;
 use crate::portable::open::Failure;
@@ -92,6 +94,54 @@ pub enum Error {
         /// The measurement, in hertz.
         measured_hz: u64,
     },
+
+    /// A sample rate outside libusdr's 90 kS/s to 122.88 MS/s (`-ERANGE`), or 0 for both
+    /// directions (`-EINVAL`), refused before any exchange.
+    #[error("sample rate {0} is out of range")]
+    InvalidRate(u32),
+
+    /// The LMS7002M's processors cannot divide down to the rate: libusdr's `-EINVAL`
+    /// ("can't deliver decimation").
+    #[error("the LMS7002M cannot deliver this sample rate")]
+    UndeliverableRate,
+
+    /// The LMS7002M's clock generator locked on no candidate: libusdr's `-ERANGE`.
+    #[error("the LMS7002M clock generator did not lock")]
+    ClockUnlocked,
+
+    /// No VCO reaches the LO, or none locks: libusdr's `-ERANGE`.
+    #[error("LO {0} Hz cannot be tuned")]
+    TuneOutOfRange(u32),
+
+    /// A VCO comparator read "fail" while tuning: libusdr's `-EIO`.
+    #[error("a VCO comparator failed")]
+    VcoComparatorFailed,
+
+    /// A chip operation found no channel selected: libusdr's `-EINVAL`. Not produced by
+    /// this board's operations, which always select one; it keeps the control code's
+    /// refusals mapped one to one.
+    #[error("no LMS7002M channel selected")]
+    NoChannel,
+
+    /// Streaming was prepared with no sample rate: the default one did not lock.
+    #[error("no sample rate is set")]
+    NoSampleRate,
+}
+
+/// A refusal of the LMS7002M control code. A tuning's frequency is filled in by the
+/// operation that failed.
+impl From<ControlError> for Error {
+    fn from(refusal: ControlError) -> Self {
+        match refusal {
+            ControlError::NoChannel => Self::NoChannel,
+            ControlError::Decimation => Self::UndeliverableRate,
+            ControlError::Clock => Self::ClockUnlocked,
+            ControlError::Tune(TuneError::ComparatorFailed) => Self::VcoComparatorFailed,
+            ControlError::Tune(TuneError::OutOfRange) => Self::TuneOutOfRange(0),
+            ControlError::NoRate => Self::NoSampleRate,
+            ControlError::InvalidRate => Self::InvalidRate(0),
+        }
+    }
 }
 
 /// A failed open, with the register or chip it names.

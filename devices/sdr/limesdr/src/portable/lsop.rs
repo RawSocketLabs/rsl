@@ -68,6 +68,27 @@ pub(crate) enum BadReply {
 }
 
 impl LsOp {
+    /// The operation a portable sequence's access is: a 16-bit gateware register read or
+    /// write, or an LMS7002M SPI exchange.
+    ///
+    /// # Panics
+    ///
+    /// For a gateware register or value wider than 16 bits, which no sequence of this
+    /// board names.
+    pub(crate) fn from_access(access: FpgaAccess) -> Self {
+        let narrow = |wide: u32| {
+            u16::try_from(wide).expect("invariant: gateware registers and values are 16-bit")
+        };
+        match access {
+            FpgaAccess::Read { reg } => Self::Read { reg: narrow(reg) },
+            FpgaAccess::Write { reg, value } => Self::Write {
+                reg: narrow(reg),
+                value: narrow(value),
+            },
+            FpgaAccess::Spi { word, .. } => Self::Spi { word },
+        }
+    }
+
     /// The request frame that carries this operation.
     pub(crate) fn request(self) -> Frame {
         match self {
