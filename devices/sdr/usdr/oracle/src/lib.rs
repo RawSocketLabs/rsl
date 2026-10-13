@@ -607,6 +607,29 @@ impl Oracle {
         self.set_value(c"/dm/sdr/0/rfe/throttle", value.into())
     }
 
+    /// Runs libusdr's calibration (`/dm/sdr/0/calibrate`) on channel A with `flags`, its
+    /// numeric `USDR_CAL_*` bits, then returns its result array (`cal_data`): the TX LO
+    /// search's two values at 2 and 3, the RX and TX IQ searches' at 4 to 7. libusdr fills
+    /// the IQ entries from a stale or uninitialised record, so only 2 and 3 carry results.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` for flags the handler would read
+    /// as a string (above `2 * 65536`).
+    pub fn calibrate(&mut self, flags: u32) -> Result<[i32; 8], i32> {
+        if flags > 2 * 65_536 {
+            return Err(-EINVAL);
+        }
+        // Flags up to 2 * 65536 with channel 0 in the high word are read as a number.
+        self.set_value(c"/dm/sdr/0/calibrate", flags.into())?;
+        let address = self.get_uint(c"/dm/sdr/0/calibrate")?;
+        let results = address as usize as *const [i32; 8];
+        // SAFETY: the getter returns the address of the open device's `int cal_data[8]`,
+        // which lives as long as the device; it is read once, unaligned-safe, while the
+        // device is open and no libusdr call runs.
+        Ok(unsafe { results.read_unaligned() })
+    }
+
     /// Writes libusdr's clock-measurement control, `/dm/sdr/0/clkmeas`.
     ///
     /// # Errors
