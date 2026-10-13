@@ -25,6 +25,11 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   crate roles sit beside it (`sdr/chips/lms7002m/sim`: `rsl-lms7002m-sim`, the LMS7002M
   model the XSDR and LimeSDR sims share). Board wiring, setpoints and sequences stay in
   the drivers. A driver keeps stable internal paths by re-exporting such a crate.
+- A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
+  are the vendor library's chip-driver code and know no board: `rsl-lms7002m` ports
+  libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose
+  operations return write `Batch`es). How a family composes them (libusdr's
+  `device/<family>/` code, such as `lms7002m_streaming_down`) stays in the driver.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
   workspace root (`rawsock/`, …), and drivers depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).

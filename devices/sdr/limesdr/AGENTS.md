@@ -15,6 +15,7 @@ LMS7002M RFIC. Nothing here is hardware-qualified.
 | `.` | `rsl-limesdr` (planned, not in tree) | The driver |
 | `sim/` | `rsl-limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M, virtual clock, trace of frames and decoded register operations |
 | `oracle/` | `rsl-limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `../chips/lms7002m/` | `rsl-lms7002m` (shared with `rsl-xsdr`, `no_std`) | The LMS7002M register values and `hw/lms7002m` operations the driver will use: `Create` is `limesdr_init`'s `lms7002m_create` (the 0x3841 mask check is this board's and stays in its driver), `Lms7002m::mac_set` and the RFE/TRF/TSP/AFE operations serve `lms7002m_streaming_up` once ported |
 | `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (shared with `rsl-xsdr-sim`) | The LMS7002M register file; its assumptions are in `../xsdr/AGENTS.md` and the crate docs |
 
 ## Layout decision (2026-10-12)

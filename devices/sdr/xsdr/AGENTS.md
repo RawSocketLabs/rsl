@@ -6,17 +6,19 @@
 > facts.
 
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
-oracle. The driver is a **first slice**: XSDR identification, supply bring-up at open (up
-to libusdr's front-end probe) and RFIC power-up; see [PORTING.md](PORTING.md) for done,
+oracle. The driver covers XSDR identification, supply bring-up at open (up to libusdr's
+front-end probe), RFIC power-up and close; see [PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `rsl-lp8758` |
+| `.` | `rsl-xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `rsl-lp8758` and `rsl-lms7002m` |
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `nostd-check/` | `rsl-xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
+| `../chips/lms7002m/` | `rsl-lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`) and the `hw/lms7002m` operations on its cached state (`Lms7002m`), shared with the future LimeSDR driver |
 | `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `rsl-limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
 
 ## Layout decision (2026-10-12)
@@ -32,21 +34,25 @@ pattern instead of sharing it; a shared harness is extracted later, once both ar
 Mirrors `rsl-usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
 
 - `src/device.rs`: `Device`, the public API: `open` (identification, then the XSDR's
-  supplies) and `power_up`. It owns the bus (`Box<dyn Bus>`) and runs the portable
-  sequences with `rsl-lowlevel`'s blocking `run_sequence`.
+  supplies), `power_up` and `close`. It owns the bus (`Box<dyn Bus>`) and the LMS7002M's
+  cached state (`rsl_lms7002m::Lms7002m`, zeroed until a power-up creates it), and runs the
+  portable sequences with `rsl-lowlevel`'s blocking `run_sequence`.
 - `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`), each
   citing the libusdr call it reproduces.
 - `src/portable/`: hand-written sans-I/O `Sequence` machines (`IdentityRead`, `Supplies`,
-  `PowerUp`, `Lms7002mCreate`) and the facts they need (`fpga`: GPO banks and bits, the HWID
-  register; `lms7002m`: registers, reset programme, version check). Core only, no
-  allocation; imports stay within the tree and the shared `no_std` crates.
+  `PowerUp`, `Close`) and the facts they need (`fpga`: GPO banks and bits, the HWID
+  register, the TX MMCM power-down). The LMS7002M's own operations are `rsl-lms7002m`'s;
+  how the family composes them (`lms7002m_ctrl.c`'s streaming-down in `Close`) is here.
+  Core only, no allocation; imports stay within the tree and the shared `no_std` crates
+  (`nostd-check` compiles it unchanged).
 - `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `rsl-xsdr-sim`; `oracle/tests/open_parity.rs`
   includes it with `#[path]`.
 
 Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
 libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
-`PORTING.md`. LP8758 values come from `rsl-lp8758`; uSDR-only code is not reached into.
+`PORTING.md`. LP8758 values come from `rsl-lp8758`, LMS7002M values and chip operations
+from `rsl-lms7002m`; uSDR-only code is not reached into.
 Something the uSDR driver also needs is extracted to a shared crate, not copied, unless it is
 small, and then `PORTING.md` says so.
 
@@ -139,14 +145,22 @@ Not covered: sample rate, tuning, gain, streams, calibration, temperature, sSDR.
 `oracle/tests/identify.rs` covers every variant's classification and the unknown-ID
 refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state. The driver
 is compared with live libusdr, not with these files: `oracle/tests/open_parity.rs` covers
-XSDR golden lines 10–26 (open up to the front-end probe) and 78–97 (power-up).
+XSDR golden lines 10–26 (open up to the front-end probe), 78–97 (power-up) and 99–133
+(close), plus a close without power-up and one after a refused power-up (libusdr's zeroed
+LMS7002M state).
 
 ## Verify
 
 ```sh
-cargo fmt -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim --check
-cargo clippy -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim --all-targets -- -D warnings
-cargo test -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim
+cargo fmt -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --check
+cargo clippy -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --all-targets -- -D warnings
+cargo test -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim
+cargo check -p rsl-lms7002m --target thumbv7em-none-eabi
+python3 scripts/ci/portable.py xsdr
+cargo fmt --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml -- --check
+cargo clippy --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked
+cargo check --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 cargo fmt --manifest-path devices/sdr/xsdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/xsdr/oracle/Cargo.toml
@@ -166,6 +180,9 @@ by a lock: one is open at a time per process.
 - XTRX revision 4 (MCP4725 at 0x62) is not modelled.
 - The MMCM behind DRP (TX via `REG_CFG_PHY_1`, RX via the DRP class) must be modelled
   before sample-rate or LML calibration work.
-- CI runs the detached oracle as the `xsdr-oracle` profile; a change to the uSDR oracle's
-  vendored C, to `rsl-xsdr` or to the shared crates it builds on selects it too
-  (`scripts/ci/plan.py`). `PORTING.md` here is prose to the selector, like the uSDR ledger.
+- CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
+  `xsdr-portable` (host only); a change to the uSDR oracle's vendored C, to `rsl-xsdr` or
+  to the shared crates it builds on selects them too (`scripts/ci/plan.py`). Their
+  thumbv7em checks (fixture, `rsl-lms7002m`) join the release-only `no-std` profile on an
+  explicit XSDR release, which no product enables yet. `PORTING.md` here is prose to the
+  selector, like the uSDR ledger.
