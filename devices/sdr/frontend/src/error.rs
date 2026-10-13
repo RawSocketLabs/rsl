@@ -59,8 +59,10 @@ impl Error {
     }
 }
 
-/// A failed register-only sequence of this crate. Its machines only access registers and
-/// SPI, so only transport failures arise; the other faults keep the chip they name.
+/// A failed register-only sequence of this crate. Its machines (`GpioSetup`,
+/// `Fe1005000Probe`) only access registers and SPI, so only transport failures arise; the
+/// chip faults no machine of this crate reports are kept as a front-end failure, without
+/// naming the chip as a board.
 impl From<SequenceFailure<BusError>> for Error {
     fn from(failure: SequenceFailure<BusError>) -> Self {
         match failure {
@@ -80,16 +82,16 @@ impl From<SequenceFailure<BusError>> for Error {
                 let (access, reg) = access.context();
                 Self::bus(chip, access, reg, source)
             }
-            SequenceFailure::ChipId { chip, .. } => Self::Board {
-                board: chip,
+            SequenceFailure::ChipId { .. } => Self::Board {
+                board: "front end",
                 reason: "a chip reported an unexpected ID",
             },
-            SequenceFailure::ChipMissing { chip } => Self::Board {
-                board: chip,
+            SequenceFailure::ChipMissing { .. } => Self::Board {
+                board: "front end",
                 reason: "a chip did not answer",
             },
-            SequenceFailure::InputMissing { chip } => Self::Board {
-                board: chip,
+            SequenceFailure::InputMissing { .. } => Self::Board {
+                board: "front end",
                 reason: "a chip has no input signal",
             },
         }

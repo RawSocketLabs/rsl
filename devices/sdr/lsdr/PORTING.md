@@ -48,6 +48,10 @@ libusdr does (`PROD_LOW << 8 | PROD_HI`, an open question in `AGENTS.md`).
 
 ## Remaining
 
+A board the automatic probe skips (libusdr logs `Unable to initialize ...` at ERROR) is
+skipped silently here: the driver has no logging dependency yet (`BringUp::skipped` keeps
+its default).
+
 | Capability | Pinned C | Blocker or note |
 |---|---|---|
 | Front-end bring-ups and controls: fe1005000 (`tune_rf_path`: band switches, MAX2871 LOs, attenuator; `/dm/sdr/0/fe/*`, gain/VGA/LNA with a front end, frequency with fe1005000), fe4ch4007200 (expander test vectors and set-up); `fe=` hints | `C:device/ext_fe_100_5000`, `C:device/ext_fe_ch4_400_7200`; `C:device/device_fe.c` | Their identification is `rsl-sdr-frontend`'s; the bring-ups go there too (fe1005000 is LSDr-only, fe4ch4007200 shared with sSDR/dSDR). A hint that finds nothing must fail the open (libusdr's `-ENODEV`). Needs front-end models in `rsl-lsdr-sim`, and an answer to the I2C core 1 question (`AGENTS.md`) |

@@ -79,6 +79,10 @@ nothing.
 
 ## Remaining
 
+A board the automatic probe skips (libusdr logs `Unable to initialize ...` at ERROR) is
+skipped silently here: the driver has no logging dependency yet (`BringUp::skipped` keeps
+its default).
+
 | Capability | Pinned C | Blocker or note |
 |---|---|---|
 | XMASS, SuperSync and SimpleSync bring-ups; `fe=` hints; front-end controls (pciefe commands, oscillator DAC, `/dm/sync/cal/*`) | `C:device/ext_xmass`, `ext_supersync`, `ext_simplesync`; `device_fe.c` | Next extraction: move the bring-ups (with the LMK05318 and LMK5C33216 drivers) from `rsl-usdr` into `rsl-sdr-frontend`. A hint that finds nothing must fail the open (libusdr's `-ENODEV`, which the XSDR does not ignore). The sim needs front-end models (`rsl-usdr-sim`'s) for parity |
