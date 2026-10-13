@@ -49,7 +49,7 @@ intentional addition.
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, or of lane 0 or 1 alone), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
+| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and its flash tool, `libusdr/tools/usdr_flash.c`) driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
 
@@ -102,8 +102,12 @@ Each layer calls only the ones below it.
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash/`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
   `Device`, nothing powered) and reads the ID and contents; erase and write sit on the
-  separate `Programmer` from `Flash::programmer`. Image headers and the update procedure
-  are not ported (`PORTING.md`).
+  separate `Programmer` from `Flash::programmer` (`flash.rs`). `image.rs` ports libusdr's
+  gateware image header parser and slot check (`ipblks/xlnx_bitstream.c`: `ImageHeader`,
+  `Image`, `Slot`), bus-free; `update.rs` its flash tool's update procedure
+  (`tools/usdr_flash.c`: `Flash::boot_images`, `Programmer::{update_master,
+  update_golden, erase_master}`), step for step. The module docs hold the recovery story.
+  `oracle/tests/{image,flash_update}_parity.rs` check both against the compiled C.
 - `src/frontend/`: public `rsl_usdr::frontend`, the boards libusdr probes on the M.2
   connector (`device/device_fe.c`, `device/ext_*`). The probe itself, every board's
   identification, the connector's GPIO core, the `PCIe` front end and breakout whole and
@@ -307,6 +311,12 @@ Each layer calls only the ones below it.
   (past 16 MiB, partial erases, page-crossing chunks) and reports large capacities whole;
   `oracle/tests/flash_parity.rs` whitelists each. Two more cannot run in libusdr safely
   (its header-length underflow, its staging `assert`), so `tests/flash.rs` covers them.
+  The gateware update refuses a corrupt image file when the `Image` is made, before any
+  bus access, where libusdr's flash tool reads the board first
+  (`flash_update_parity.rs::a_corrupted_image_is_refused_before_rsl_usdr_reads_the_flash`);
+  reports a failed read-back as an error, where the tool exits 0; and refuses files past
+  16 MiB, which the tool reads past its buffer (`tests/flash_update.rs`). The oracle runs
+  the tool on a device that is not brought up or powered down, as `Flash` powers nothing.
   The RX controls reject trim codes libusdr masks to seven bits (`RxTrim`;
   `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr`)
   and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes

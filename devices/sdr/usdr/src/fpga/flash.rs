@@ -354,8 +354,8 @@ impl WriteOptions {
     }
 
     /// Leave the first [`HEADER_BYTES`] of the data unwritten, to write them last
-    /// (`ESPI_FLASH_DONT_WRITE_HEADER`). An erase still covers them. What the header holds
-    /// is not ported.
+    /// (`ESPI_FLASH_DONT_WRITE_HEADER`). An erase still covers them. The header is an
+    /// image's sync word and first packets; see [`ImageHeader`](crate::flash::ImageHeader).
     #[must_use]
     pub const fn skip_header(self) -> Self {
         Self {
@@ -437,8 +437,9 @@ pub enum FlashError {
     #[error("flash stayed busy")]
     FlashTimeout,
 
-    /// A controller register access failed on the bus.
-    #[error("flash controller register {reg:#x} {access} failed")]
+    /// A register access failed on the bus: the flash controller's, or the running
+    /// gateware's build word an update reads first.
+    #[error("register {reg:#x} {access} for the flash failed")]
     #[non_exhaustive]
     Bus {
         /// Whether it was a read or a write.
