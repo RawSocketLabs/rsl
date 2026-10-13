@@ -12,9 +12,10 @@ the program is not complete. Linux is first. Sans-I/O state machines and an exte
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
 opt-in. The USB I²C and register/SPI machines run in the blocking bus, and feature `mio`
 exposes the unstable `NativeUsb` (`UsbBus::into_native`), whose generic executor runs any
-portable sequence (temperature, gateware identity and reference-clock switch so far) and
-the RX/TX streams at the transport, plus `ManagedUsb`, a synchronous runner over it; power
-and native stream-engine configuration remain unimplemented. Generic USB offers bounded
+portable sequence (temperature, gateware identity, reference-clock switch and the stream
+group's engine registers so far) and the RX/TX streams at the transport, plus
+`ManagedUsb`, a synchronous runner over it; power and the RF chains' part of stream
+setup remain unimplemented natively. Generic USB offers bounded
 reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
 `mio`), which `transport/usb/native` registers; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. Native executor/worker supervision is
@@ -62,9 +63,12 @@ Each layer calls only the ones below it.
   `RxConfig`, `TxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`,
   `RxMetadata`, `TxTelemetry`, `TxMute`, the sealed `HostSample` buffer elements). One
   device-owned group per PORTING.md's stream-handle decision; `board/stream.rs` runs the
-  group and RX, `board/tx_stream.rs` TX; `fpga/stream.rs` holds the RX registers, burst
-  maths and sync triggers, `fpga/tx_stream.rs` the TX core's commands, packet
-  announcement and status decoding.
+  group and RX, `board/tx_stream.rs` TX; `portable/stream.rs` holds the stream engine's
+  registers (RX DMA, front end, sync unit, TX core control) as `EngineSequence`, which
+  the board and `NativeUsb` run; `fpga/stream.rs` the burst maths and burst-format word,
+  `fpga/tx_stream.rs` packet announcement, status decoding and the TX create's gateware
+  and block-size checks; `StreamsConfig::check` (`board/stream.rs`) the refusals every
+  executor makes before any I/O.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune, the RX and TX controls and RX
@@ -138,8 +142,11 @@ Each layer calls only the ones below it.
   32-bit results, and waits, one action at a time), LP8758 values (`lp8758.rs`, re-exporting
   `rsl-lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
   power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
-  (`si5332/sequence.rs`), and USB framing plus the I²C and register/SPI state machines
-  (`usb/`). `chips::register::run_sequence` wraps `rsl-lowlevel`'s blocking executor and
+  (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), and USB
+  framing plus the I²C and register/SPI state machines (`usb/`). FPGA actions name
+  registers as the `Bus` does (32 bits), so a sequence may name the stream engine's
+  configuration space; each executor reaches it through its index window.
+  `chips::register::run_sequence` wraps `rsl-lowlevel`'s blocking executor and
   turns its `SequenceFailure` into `Error` through the accesses' shared `context()`
   decoding. Uses core
   types and generic executor errors; no OS/runtime ownership. Keep imports within the
@@ -165,11 +172,16 @@ Each layer calls only the ones below it.
   bus's `Rx`/`Tx` over `backend::Filed` queues, which take only completions a reap turn
   filed; the worker copies RX blocks out (at most `adapter::RX_BACKLOG` waiting) and
   cancels streams, and a send follows `TxDevice::send`'s order with its status read on the
-  register machine. One operation command and one reap turn are outstanding at a time
+  register machine. Its stream group (`handle/group.rs`) creates, starts, readies and
+  stops the engine with the board's own `EngineSequence`s, the TX gateware gate and the
+  transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
+  reaches configuration-space registers as `UsbBus` does (index, then data register). It
+  leaves the RF chains' power, calibration and DSP corrections to the blocking device.
+  One operation command and one reap turn are outstanding at a time
   (`worker::MAILBOX`). `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the
   calling thread. Its unit tests use a socket source, not usbfs; only the opt-in
-  `usb_hardware` test reaches real queues. Native stream-engine configuration, an async
-  managed driver, fairness and browser integration remain open.
+  `usb_hardware` test reaches real queues. Native power and RF-chain stream setup, an
+  async managed driver, fairness and browser integration remain open.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -241,8 +253,9 @@ Each layer calls only the ones below it.
   original TX core (`Device::send`, `send_with_stat`, `set_tx_mute`; `oracle/tests/
   tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`), and so is the
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
-  `oracle/tests/calibration_parity.rs`); the extended TX core is not, nor is native
-  (`NativeUsb`) stream-engine configuration (its streams run at the transport only), and
+  `oracle/tests/calibration_parity.rs`); the extended TX core is not, nor is the RF-chain
+  part (power, calibration, DSP corrections) of a native (`NativeUsb`) stream group, whose
+  stream-engine part is ported, and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
