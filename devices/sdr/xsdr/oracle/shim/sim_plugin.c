@@ -10,11 +10,13 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "usdr_lowlevel.h"
 #include "device/device.h"
 #include "device/device_ids.h"
+#include "hw/lms7002m/lms7002m.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int rsl_xsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
@@ -110,6 +112,38 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
 {
     (void)pcount; (void)devparam; (void)devval; (void)odev; (void)vidpid; (void)webops; (void)param;
     return -ENODEV;
+}
+
+// One call into libusdr's LMS7002M chip driver (hw/lms7002m/lms7002m.c), for
+// rsl_xsdr_oracle_lms7002m_run. Kinds: 0 mac_set(a), 1 rfe_path(a, b), 2 trf_path(a, b),
+// 3 afe_enable(a, b, c, d), 4 xxtsp_enable(a, b), 5 destroy.
+struct rsl_lms7002m_op {
+    unsigned kind, a, b, c, d;
+};
+
+// Runs ops in order on a zeroed lms7002m_state_t (as xsdr_ctor leaves it) whose SPI
+// reaches the installed board through this plugin's ls_op, storing each call's result.
+int rsl_xsdr_oracle_lms7002m_run(const struct rsl_lms7002m_op* ops, unsigned count, int* results)
+{
+    struct sim_dev d;
+    memset(&d, 0, sizeof(d));
+    d.ll.ops = &s_sim_ops;
+    lms7002m_state_t m;
+    memset(&m, 0, sizeof(m));
+    m.dev = &d.ll;
+    for (unsigned i = 0; i < count; i++) {
+        const struct rsl_lms7002m_op* op = &ops[i];
+        switch (op->kind) {
+        case 0: results[i] = lms7002m_mac_set(&m, op->a); break;
+        case 1: results[i] = lms7002m_rfe_path(&m, (lms7002m_rfe_path_t)op->a, (lms7002m_rfe_mode_t)op->b); break;
+        case 2: results[i] = lms7002m_trf_path(&m, (lms7002m_trf_path_t)op->a, (lms7002m_trf_mode_t)op->b); break;
+        case 3: results[i] = lms7002m_afe_enable(&m, op->a, op->b, op->c, op->d); break;
+        case 4: results[i] = lms7002m_xxtsp_enable(&m, (lms7002m_xxtsp_t)op->a, op->b); break;
+        case 5: results[i] = lms7002m_destroy(&m); break;
+        default: return -EINVAL;
+        }
+    }
+    return 0;
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

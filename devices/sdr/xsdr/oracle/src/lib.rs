@@ -63,7 +63,75 @@ static PANIC: Mutex<Option<Box<dyn Any + Send>>> = Mutex::new(None);
 /// Opaque libusdr device-manager handle (`pdm_dev_t`).
 type DmDev = *mut c_void;
 
+/// One call into libusdr's LMS7002M chip driver (`hw/lms7002m/lms7002m.c`), as
+/// [`lms7002m_run`] makes it. Enum arguments take libusdr's codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Lms7002mCall {
+    /// `lms7002m_mac_set(mac)`: `LMS7_CH_*`, 0 to 3.
+    MacSet(u32),
+    /// `lms7002m_rfe_path(path, mode)`: `RFE_NONE`.. `RFE_LNAW`, `RFE_MODE_*`.
+    RfePath(u32, u32),
+    /// `lms7002m_trf_path(path, mode)`: `TRF_MUTE`.. `TRF_B2`, `TRF_MODE_*`.
+    TrfPath(u32, u32),
+    /// `lms7002m_afe_enable(rxa, rxb, txa, txb)`.
+    AfeEnable([bool; 4]),
+    /// `lms7002m_xxtsp_enable(tsp, enable)`: `LMS_TXTSP` 0, `LMS_RXTSP` 1.
+    TspEnable(u32, bool),
+    /// `lms7002m_destroy`.
+    Destroy,
+}
+
+/// The shim's `struct rsl_lms7002m_op`.
+#[repr(C)]
+struct LmsOp {
+    kind: c_uint,
+    a: c_uint,
+    b: c_uint,
+    c: c_uint,
+    d: c_uint,
+}
+
+impl From<Lms7002mCall> for LmsOp {
+    fn from(call: Lms7002mCall) -> Self {
+        let op = |kind, a, b, c, d| Self { kind, a, b, c, d };
+        match call {
+            Lms7002mCall::MacSet(mac) => op(0, mac, 0, 0, 0),
+            Lms7002mCall::RfePath(path, mode) => op(1, path, mode, 0, 0),
+            Lms7002mCall::TrfPath(path, mode) => op(2, path, mode, 0, 0),
+            Lms7002mCall::AfeEnable([a, b, c, d]) => op(3, a.into(), b.into(), c.into(), d.into()),
+            Lms7002mCall::TspEnable(tsp, enable) => op(4, tsp, enable.into(), 0, 0),
+            Lms7002mCall::Destroy => op(5, 0, 0, 0, 0),
+        }
+    }
+}
+
+/// Runs `calls` in order through libusdr's LMS7002M driver on a zeroed chip state (as
+/// `xsdr_ctor` leaves it, SPI target 0), its SPI reaching `board`. Returns each call's
+/// result (0 or a negative errno) and the board with their trace. Serialised with
+/// [`Oracle`]s, which share the board slot.
+///
+/// # Panics
+///
+/// If a callback panicked (resumed here).
+#[must_use]
+pub fn lms7002m_run(board: SimBoard, calls: &[Lms7002mCall]) -> (Vec<i32>, SimBoard) {
+    let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
+    install(Some(board));
+    let ops: Vec<LmsOp> = calls.iter().copied().map(LmsOp::from).collect();
+    let mut results = vec![0; ops.len()];
+    let count = c_uint::try_from(ops.len()).expect("invariant: a short call list");
+    // SAFETY: `ops` and `results` are valid for `count` elements each; the shim reads the
+    // former and writes the latter, and keeps neither.
+    let status = unsafe { rsl_xsdr_oracle_lms7002m_run(ops.as_ptr(), count, results.as_mut_ptr()) };
+    let board = take_board();
+    resume_callback_panic();
+    assert_eq!(status, 0, "the shim knows every call kind");
+    (results, board)
+}
+
 unsafe extern "C" {
+    fn rsl_xsdr_oracle_lms7002m_run(ops: *const LmsOp, count: c_uint, results: *mut c_int)
+    -> c_int;
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
