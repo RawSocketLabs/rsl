@@ -13,9 +13,9 @@ pub(crate) enum Exchange {
     /// A wait, in microseconds.
     Sleep(u128),
     /// A gateware register read.
-    Read(u16),
+    Read(u32),
     /// A gateware register write.
-    Write(u16, u32),
+    Write(u32, u32),
     /// An I²C register read: the device's 7-bit address and the register.
     I2cRead(u8, u8),
     /// An I²C register write: the device, the register and the byte.

@@ -9,7 +9,7 @@ pub(crate) const NAME: &str = "FPGA";
 
 /// The register every GPO write goes through (`REG_WR_GPO`): `dev_gpo_set` writes
 /// `(bank & 0x7f) << 24 | data` to register 0.
-const REG_GPO: u16 = 0;
+const REG_GPO: u32 = 0;
 
 /// The status word: general-purpose input `IGPI_STAT` (16), read at register
 /// `16 + 16 / 4` by `dev_gpi_get32`. libusdr only logs it; its meaning is not in the source.
