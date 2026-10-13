@@ -11,9 +11,11 @@ C runtime, C ABI compatibility, Python/Soapy or legacy JSON/RPC adapters. See
 the program is not complete. Linux is first. Sans-I/O state machines and an externally owned
 Mio reactor are the primary execution model; managed synchronous/asynchronous drivers are
 opt-in. The USB I²C and register/SPI machines run in the blocking bus, and feature `mio`
-exposes the unstable `NativeUsb` (`UsbBus::into_native`), whose generic executor runs any
+exposes the unstable `NativeUsb` (`UsbBus::into_native`, or `Device::into_native` from a
+powered, set-up device), whose generic executor runs any
 portable sequence (temperature, gateware identity, reference-clock switch and the stream
-group's engine registers so far) and the RX/TX streams at the transport, plus
+group's engine registers, DSP corrections, TX mute and RX throttle so far) and the RX/TX
+streams at the transport, plus
 `ManagedUsb`, a synchronous runner over it; power and the RF chains' part of stream
 setup remain unimplemented natively. Generic USB offers bounded
 reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
@@ -172,16 +174,21 @@ Each layer calls only the ones below it.
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
   the adapter keeps the shared Waker open for the worker's final wake. `into_native` runs
   the identity sequence and checks the TMP114 ID over the blocking bus, then carries the
-  notification sequence, I²C table and operation identities over. Notification transfers are sized as in the blocking bus
+  notification sequence, I²C table and operation identities over. `Device::into_native`
+  (`UsbHandOver` in `bus.rs`) does the same from a powered device with no stream group,
+  without I/O: the board's identity facts and both chains' IQ corrections come from the
+  `Board`, the `UsbBus` is reached through `Bus::as_any_mut` and left released, and the
+  board stays powered under the handle. Notification transfers are sized as in the blocking bus
   and the pinned C (`IN_NTFY_SIZE`). Its streams (`handle/stream.rs`) run the blocking
   bus's `Rx`/`Tx` over `backend::Filed` queues, which take only completions a reap turn
   filed; the worker copies RX blocks out (at most `adapter::RX_BACKLOG` waiting) and
   cancels streams, and a send follows `TxDevice::send`'s order with its status read on the
-  register machine. Its stream group (`handle/group.rs`) creates, starts, readies and
-  stops the engine with the board's own `EngineSequence`s, the TX gateware gate and the
+  register machine. Its stream group (`handle/group.rs`) creates, starts, readies, mutes,
+  throttles and stops the engine with the board's own `EngineSequence`s and
+  `fpga::StreamPhyWrites` (the create's DSP-port writes), the TX gateware gate and the
   transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
   reaches configuration-space registers as `UsbBus` does (index, then data register). It
-  leaves the RF chains' power, calibration and DSP corrections to the blocking device.
+  leaves the RF chains' power, tuning and calibration to the blocking device.
   One operation command and one reap turn are outstanding at a time
   (`worker::MAILBOX`). `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the
   calling thread. Its unit tests use a socket source, not usbfs; only the opt-in
@@ -260,8 +267,8 @@ Each layer calls only the ones below it.
   tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`), and so is the
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
   `oracle/tests/calibration_parity.rs`); the extended TX core is not, nor is the RF-chain
-  part (power, calibration, DSP corrections) of a native (`NativeUsb`) stream group, whose
-  stream-engine part is ported, and
+  part (power, tuning, calibration) of a native (`NativeUsb`) stream group, whose
+  stream-engine and DSP-port parts are ported, and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
