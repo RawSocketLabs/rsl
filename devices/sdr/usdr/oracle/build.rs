@@ -1,7 +1,7 @@
 //! Compiles the vendored libusdr subset plus the sim transport plugin into one static library.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let libusdr = Path::new("libusdr");
@@ -83,6 +83,15 @@ fn main() {
         .warnings(false)
         .compile("usdr_oracle_usdr_flash");
 
+    // usdr_dm_create's TX sources and usdr_dm_gpsdo's discipline loop, each tool compiled
+    // whole from libusdr/tools with its `main` renamed.
+    compile_wrapping(
+        Path::new("shim/dm_create.c"),
+        "usdr_oracle_dm_create",
+        &includes,
+    );
+    compile_wrapping(Path::new("shim/gpsdo.c"), "usdr_oracle_gpsdo", &includes);
+
     // nco.c has no generic path: without SSSE3 it compiles a stub that writes nothing. On
     // x86 it is built alone with SSSE3 so the NCO port can be compared; elsewhere it stays
     // in the main build as libusdr ships it.
@@ -91,6 +100,7 @@ fn main() {
         Ok("x86" | "x86_64")
     );
     let nco = "xdsp/nco.c";
+    let sincos = "xdsp/sincos_functions.c";
     if x86 {
         cc::Build::new()
             .file(lib.join(nco))
@@ -107,7 +117,7 @@ fn main() {
         .files(
             sources
                 .lines()
-                .filter(|source| !(x86 && *source == nco))
+                .filter(|source| !(x86 && *source == nco) && *source != sincos)
                 .map(|source| lib.join(source)),
         )
         .includes(&includes)
@@ -122,7 +132,28 @@ fn main() {
         .define("USDR_DEFAULT_AFECAPI", "\"/nonexistent.so\"")
         .compile("usdr_oracle");
 
+    // The tone and chirp kernels those generators call, built alone to wrap likewise; their
+    // arithmetic is otherwise unchanged. Linked after the main archive, whose NCO calls
+    // them on other targets.
+    compile_wrapping(&lib.join(sincos), "usdr_oracle_sincos", &includes);
+
     for system in ["m", "pthread", "dl"] {
         println!("cargo:rustc-link-lib={system}");
     }
+}
+
+/// Compiles `file` alone into `archive` with `-fwrapv`, which defines the signed overflow
+/// the tools' carried phases and chirp steps reach within a few samples (GCC's unoptimised
+/// code wraps there anyway), so they compare with rsl-usdr's wrapping sums. No fused
+/// multiply-adds, as in the main build.
+fn compile_wrapping(file: &Path, archive: &str, includes: &[PathBuf]) {
+    cc::Build::new()
+        .file(file)
+        .includes(includes)
+        .include(Path::new("libusdr").join("gen"))
+        .flag("-std=gnu11")
+        .flag("-ffp-contract=off")
+        .flag("-fwrapv")
+        .warnings(false)
+        .compile(archive);
 }
