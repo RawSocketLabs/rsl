@@ -3,6 +3,7 @@
 #
 # Usage: vendor.sh [--usb-only] <path-to-usdr-lib-checkout>
 # --usb-only refreshes only the exported USB RX/TX reference functions (libusdr/reference).
+# A full refresh also copies the flash tool, tools/usdr_flash.c (libusdr/tools).
 # Needs git, python3 and PyYAML (upstream's register-header generator).
 set -euo pipefail
 
@@ -93,8 +94,10 @@ if $usb_only; then
     echo "exported USB RX/TX reference at $pin"
     exit 0
 fi
-rm -rf "$dest/lib" "$dest/gen"
-mkdir -p "$dest/lib" "$dest/gen"
+# The flash tool is evidence too: the oracle runs its update procedure against the sim.
+git -C "$upstream" diff --quiet "$pin" -- src/tools/usdr_flash.c
+rm -rf "$dest/lib" "$dest/gen" "$dest/tools"
+mkdir -p "$dest/lib" "$dest/gen" "$dest/tools"
 
 # The hardware transports (USB, PCIe, FT601, WebUSB, Verilator) are replaced by the sim plugin
 # in shim/; everything else in src/lib is kept so libusdr's device registry links unmodified.
@@ -122,6 +125,10 @@ for d in m2_dsdr ext_xmass ext_pciefe ext_fe_ch4_400_7200 ext_fe_100_5000; do
         gen "$y" "$(basename "$y" .yaml)"
     done
 done
+
+# libusdr's flash update tool (MIT), compiled by build.rs with its `main` renamed; not
+# listed in sources.txt, which holds the library.
+cp "$src/tools/usdr_flash.c" "$dest/tools/usdr_flash.c"
 
 cp "$upstream/LICENSE" "$dest/LICENSE"
 (cd "$dest/lib" && find . -name '*.c' -not -path '*/templates/*' | sed 's|^\./||' | LC_ALL=C sort) > "$dest/sources.txt"
