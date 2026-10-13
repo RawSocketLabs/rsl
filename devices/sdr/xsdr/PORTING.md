@@ -30,9 +30,10 @@ held by review, not yet by a `no_std` compile witness (remaining, below).
 
 Kept as libusdr, not divergences: the HWID is read twice (the second read is used); a wrong
 PMIC revision does not fail the open; the power-good wait reads both status registers once
-and accepts any status (`lp8758_check_pg(.., 0xf, ..)` cannot report not-good); channel 2 is
-written libusdr's code 0x86 for its 1280 mV request, which SNVSAC6B makes 1.285 V, so the
-board constant says 1285 mV (`rsl-lp8758`'s datasheet table would give 0x85 for 1280).
+and accepts any status (`lp8758_check_pg(.., 0xf, ..)` cannot report not-good); the rails
+get libusdr's codes, and the board constants name the voltage SNVSAC6B gives each code:
+channel 2's 1280 mV request is code 0x86, 1.285 V (`rsl-lp8758` would give 0x85 for 1280),
+and channel 3's 1850 mV request is code 0xB3, 1.84 V (20 mV steps, rounded down).
 
 ## Remaining
 
@@ -43,7 +44,7 @@ board constant says 1285 mV (`rsl-lp8758`'s datasheet table would give 0x85 for 
 | XTRX (`_xsdr_init_revo`, DAC80501/MCP4725 trim, `_xsdr_pwren_revo`, LDO mask 0x01B10D15) | `xsdr_ctrl.c::_xsdr_init_revo` | `ResetPlan` already takes the mask; sim models revision 5 only (golden `xtrx_session.trace`) |
 | sSDR / sSDR Pro (LMS8001 over the SPI mux, AT24) | `_xsdr_init_revx` sSDR branch, `C:hw/lms8001` | Sim has no LMS8001 or AT24 |
 | Real power-good check | `lp8758_check_pg` | Would diverge from libusdr, whose check is vacuous; needs a decision and status semantics from SNVSAC6B |
-| Shared LMS7002M chip crate | `C:hw/lms7002m` | Move `P:lms7002m.rs` to `devices/sdr/chips/lms7002m` (`rsl-lms7002m`) when the LimeSDR driver needs it; type the reset-programme registers' fields then |
+| Shared LMS7002M chip crate | `C:hw/lms7002m` | Move `P:lms7002m.rs` to `devices/sdr/chips/lms7002m` (`rsl-lms7002m`) when the LimeSDR driver needs it. The version register has a value type; the reset programme's writes are documented `(Reg, u16)` pairs: type their fields then |
 | `no_std` compile witness for `src/portable` | — | As `rsl-usdr`'s `nostd-check`, once the tree grows |
 | Rate, tuning, gain, paths, streams, calibration, temperature, TDD | `xsdr_ctrl.c`, `lms7002m_ctrl.c`, `m2_lm7_1.c` | Need the LMS7002M reset values and channel banking in `rsl-lms7002m-sim`, and the MMCM behind DRP (`AGENTS.md`, open items) |
 | Hardware qualification | — | Not authorized |

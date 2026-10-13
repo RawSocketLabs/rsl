@@ -105,8 +105,9 @@ Each is stated again, with its evidence, where it is encoded.
   soft-reset side effects. Reads return 0 in bits 31:16. SPI answers regardless of the
   board's power GPOs, which do not reset the chip model.
 - LP8758: byte registers with an auto-incrementing pointer; revision bytes per variant
-  (`SimBoard::with_fpga_pmic_revision` overrides the FPGA-side one), all else 0. Power-good status 0 is harmless: `lp8758_check_pg(.., 0xf, ..)` accepts any
-  status (the derived mask is always a subset of 0xf), so the C's wait ends at once.
+  (`SimBoard::with_fpga_pmic_revision` overrides the FPGA-side one), all else 0.
+  Power-good status 0 is harmless: `lp8758_check_pg(.., 0xf, ..)` accepts any status (the
+  derived mask is always a subset of 0xf), so the C's wait ends at once.
 - XTRX bus 1 PMIC answers only while GPO 0 bit 4 hands bus 1 to the FPGA (evidence: the
   "Take control of second I2C bus" / "Switch second I2C to gpio control" writes).
 - DAC80501 (XTRX revision 5): 16-bit registers, MSB first; `DEVID` 0x0195 (assumed; the
