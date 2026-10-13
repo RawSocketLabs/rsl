@@ -6,6 +6,7 @@ use std::fmt;
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::flash::{FlashController, SimFlash};
 use crate::frontend::{FrontEnd, Model};
+use crate::loopback::{Chains, Loopback};
 use crate::stream::RxEngine;
 use crate::sync::SyncUnit;
 use crate::trace::Op;
@@ -135,6 +136,8 @@ pub struct SimBoard {
     flash: Option<FlashController>,
     /// The front end on the M.2 connector, if any; see [`SimBoard::with_front_end`].
     front_end: Option<Model>,
+    /// The DSP chains' configuration ports, the RX DC estimator and the loopback.
+    chains: Chains,
 }
 
 impl SimBoard {
@@ -163,6 +166,7 @@ impl SimBoard {
             sync: SyncUnit::default(),
             flash: None,
             front_end: None,
+            chains: Chains::default(),
         }
     }
 
@@ -185,6 +189,15 @@ impl SimBoard {
             .as_mut()
             .expect("fit a flash with `with_flash` first")
             .stuck = true;
+        self
+    }
+
+    /// A board whose transmitter reaches its receiver as `loopback` describes, for the RX
+    /// DC estimator to measure; see [`Loopback`] for the model. Without one, the estimator
+    /// measures nothing (zero).
+    #[must_use]
+    pub fn with_loopback(mut self, loopback: Loopback) -> Self {
+        self.chains.loopback = Some(loopback);
         self
     }
 
@@ -290,6 +303,7 @@ impl SimBoard {
         self.rx.on_write(addr, value);
         self.tx.on_write(addr, value);
         self.sync.on_write(addr, value);
+        self.chains.on_write(addr, value, self.now_us);
         self.play_tx();
         if let Some(flash) = self.flash.as_mut().filter(|_| FlashController::owns(addr)) {
             flash.write(addr, value, self.now_us);
@@ -309,6 +323,7 @@ impl SimBoard {
             _ => self
                 .tx
                 .status_word(addr)
+                .or_else(|| self.chains.read(addr, self.now_us, &self.lms))
                 .or_else(|| self.regs.get(&addr).copied())
                 .unwrap_or(0),
         };

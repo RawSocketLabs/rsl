@@ -42,6 +42,9 @@ const CLBR_DONE: u8 = 0x02;
 /// `DC_START_CLBR`.
 const START_CLBR: u8 = 0x20;
 
+/// The transmitter's baseband and RF loopbacks (`LOOPBACK`).
+const LOOPBACK: usize = 0x08;
+
 /// The PLL reference: the board's 26 MHz clock. The sim models no external reference.
 const REFERENCE_HZ: u64 = 26_000_000;
 
@@ -126,10 +129,14 @@ pub(crate) struct Lms6002d {
 }
 
 impl Lms6002d {
-    /// A chip whose version register (0x04) reads 0x22, the `LMS6002Dr2` datasheet value.
+    /// A chip whose version register (0x04) reads 0x22, the `LMS6002Dr2` datasheet value,
+    /// and whose TXVGA1 DC shifts (0x42, 0x43) start at 0x80, no shift. Lime does not give
+    /// those registers' reset value; 0x80 is the code libusdr centres its search on.
     pub(crate) fn new() -> Self {
         let mut regs = [0; 128];
         regs[0x04] = 0x22;
+        regs[0x42] = 0x80;
+        regs[0x43] = 0x80;
         Self {
             regs,
             rx_lock: PllLock::default(),
@@ -185,6 +192,27 @@ impl Lms6002d {
             }
         }
         self.regs[addr]
+    }
+
+    /// The TX synthesizer's programmed LO, in Hz.
+    pub(crate) fn tx_lo_hz(&self) -> u64 {
+        self.lo_hz(TX_PLL)
+    }
+
+    /// The RX synthesizer's programmed LO, in Hz.
+    pub(crate) fn rx_lo_hz(&self) -> u64 {
+        self.lo_hz(RX_PLL)
+    }
+
+    /// The RF loopback switch connects the TX mixer to an LNA path (`LBRFEN`, register
+    /// 0x08 bits 3:0, not 0).
+    pub(crate) fn rf_loopback_on(&self) -> bool {
+        self.regs[LOOPBACK] & 0x0f != 0
+    }
+
+    /// A register as last written.
+    pub(crate) fn reg(&self, addr: u8) -> u8 {
+        self.regs[usize::from(addr & 0x7f)]
     }
 
     /// The comparator bits of the synthesizer at `base` for its programmed capacitor and LO.
