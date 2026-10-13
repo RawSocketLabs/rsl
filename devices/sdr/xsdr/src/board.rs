@@ -35,6 +35,10 @@ pub(crate) const XSDR_SUPPLIES: SupplyPlan = SupplyPlan {
         .with_forced_pwm(true),
 };
 
+/// The LMS7002M's reference: the internal 26 MHz clock `_xsdr_init_revx` selects
+/// (`XSDR_INT_REFCLK`, `lms7002m_init`'s `fref`).
+pub(crate) const REFERENCE_HZ: u32 = 26_000_000;
+
 /// The XSDR's LMS7002M: `SPI_LMS7` (bus 0); `xsdr_pwren` passes `new_rev` boards an LDO
 /// mask of 0 and `txrx_clk` = 1 to `lms7002m_create`.
 pub(crate) const XSDR_LMS: ResetPlan = ResetPlan {

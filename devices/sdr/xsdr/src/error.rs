@@ -61,6 +61,46 @@ pub enum Error {
     /// A family member this driver identifies but does not bring up yet.
     #[error("{0:?} is not supported yet")]
     UnsupportedVariant(Variant),
+
+    /// A sample rate outside libusdr's 90 kS/s to 195 MS/s (`-ERANGE`), or 0 for both
+    /// directions (`-EINVAL`), refused before any bus access.
+    #[error("sample rate {0} is out of range")]
+    InvalidRate(u32),
+
+    /// Gateware whose sample-rate path is not ported (HWID PHY bits, here): an RX or
+    /// shared MMCM, or an FPGA DUC/DDC. Refused before any bus access.
+    #[error("gateware PHY features {0:#04x} are not supported yet")]
+    UnsupportedGateware(u8),
+
+    /// The LMS7002M's processors cannot divide down to the rate: libusdr's `-EINVAL`
+    /// ("can't deliver decimation").
+    #[error("the LMS7002M cannot deliver this sample rate")]
+    UndeliverableRate,
+
+    /// The LMS7002M's clock generator locked on no candidate: libusdr's `-ERANGE`.
+    #[error("the LMS7002M clock generator did not lock")]
+    ClockUnlocked,
+
+    /// The `LimeLight` link calibration found no clean clock phase, or (without a TX
+    /// MMCM) measured none: libusdr's `-ERANGE`.
+    #[error("the LimeLight link did not calibrate")]
+    LinkCalibration,
+
+    /// No VCO reaches the LO, or none locks: libusdr's `-ERANGE`.
+    #[error("LO {0} Hz cannot be tuned")]
+    TuneOutOfRange(u32),
+
+    /// A VCO comparator read "fail" while tuning: libusdr's `-EIO`.
+    #[error("a VCO comparator failed")]
+    VcoComparatorFailed,
+
+    /// A chip operation found no channel selected: libusdr's `-EINVAL`.
+    #[error("no LMS7002M channel selected")]
+    NoChannel,
+
+    /// An operation needing a sample rate ran before one was set.
+    #[error("no sample rate is set")]
+    NoSampleRate,
 }
 
 /// A failed portable register sequence, with the register or chip it names.

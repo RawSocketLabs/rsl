@@ -8,10 +8,13 @@
 mod portable;
 
 use portable::close::Close;
+use portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
 use portable::hwid::{IdentityRead, Variant};
 use portable::power::PowerUp;
+use portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use portable::supplies::{Supplies, SupplyPlan};
-use rsl_lms7002m::{Lms7002m, ResetPlan};
+use rsl_lms7002m::ctrl::{Control, ControlError};
+use rsl_lms7002m::{Lms7002m, ResetPlan, Synthesizer};
 use rsl_lowlevel::{I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use rsl_lp8758::{Buck, BuckControl, BuckVoltage};
 
@@ -83,6 +86,46 @@ pub fn close(powered: bool, failing: Option<usize>) -> Result<usize, &'static st
     })
 }
 
+/// A created chip's control state on the XSDR's 26 MHz reference and bands.
+fn control() -> Result<Control, &'static str> {
+    let chip = power_up_chip(0x3840)?.1.ok_or("not created")?;
+    Ok(Control::new(chip, 26_000_000, RX_BANDS, TX_BANDS))
+}
+
+/// Sets a sample rate on chips whose VCO comparators always read low, with or without a
+/// TX MMCM: the actions issued and the outcome.
+pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static str> {
+    let mut rate = SetSampleRate::new(
+        control()?,
+        RateState::default(),
+        Gateware {
+            tx_mmcm,
+            rx_port1: true,
+        },
+        I2cAddr::new(0, 0x60),
+        (1_000_000, 1_000_000),
+    );
+    let actions = drive(&mut rate, |_, _| Ok(0))?;
+    // The AFE came on; no CGEN frequency was taken.
+    if !rate.state().afe_active || rate.control().clocks().cgen != 0 {
+        return Err("inconsistent state");
+    }
+    let outcome = match rate.outcome() {
+        Some(Ok(())) => "set",
+        Some(Err(RateError::Control(ControlError::Clock))) => "clock",
+        Some(Err(_)) => "other",
+        None => "unfinished",
+    };
+    Ok((actions, outcome))
+}
+
+/// Tunes the RX LO on the same chips: whether it tuned.
+pub fn tune_unlocked() -> Result<bool, &'static str> {
+    let mut tune = control()?.tune(XsdrFrontend, Synthesizer::Rx, 1_000_000_000);
+    drive(&mut tune, |_, _| Ok(0))?;
+    Ok(tune.outcome() == Some(Ok(())))
+}
+
 /// Runs `sequence` to its end, answering action `n` with `answer(n, action)`: the actions
 /// issued, or the chip the failure names.
 fn drive(
@@ -133,6 +176,18 @@ mod tests {
         // writes. A never-created chip also selects both banks first.
         assert_eq!(close(true, None), Ok(35));
         assert_eq!(close(false, None), Ok(36));
+    }
+
+    #[test]
+    fn the_exact_source_witness_runs_the_rate_and_tuning_machines() {
+        // CGEN never locks: four tunings at each of two ceilings, then the refusal.
+        let (actions, outcome) = rate_unlocked(true).expect("no bus failure");
+        assert_eq!(outcome, "clock");
+        assert_eq!(
+            rate_unlocked(false).expect("no bus failure"),
+            (actions, "clock")
+        );
+        assert_eq!(tune_unlocked(), Ok(false));
     }
 
     #[test]

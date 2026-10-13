@@ -35,3 +35,4 @@ mod portable;
 pub use device::Device;
 pub use error::{Access, Error};
 pub use portable::hwid::Variant;
+pub use rsl_lms7002m::ctrl::{Direction, Gain};

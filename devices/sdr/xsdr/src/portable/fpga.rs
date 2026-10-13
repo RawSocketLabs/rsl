@@ -25,6 +25,12 @@ pub(crate) enum Gpo {
     /// Reference clock configuration (`IGPO_CLK_CFG`); see [`CLOCK_INTERNAL`].
     ClockConfig = 1,
 
+    /// The TX antenna switch (`IGPO_TXSW`): the TX band's switch position.
+    TxSwitch = 2,
+
+    /// The RX antenna switch (`IGPO_RXSW`): the RX band's switch position.
+    RxSwitch = 3,
+
     /// The LMS7002M's external LDOs (`IGPO_LDOLMS_EN`): 1 enables them.
     LmsLdo = 17,
 
@@ -41,6 +47,53 @@ impl Gpo {
         }
     }
 }
+
+/// The RX PHY's configuration port (`REG_CFG_PHY_0`, `generic_regs.h`): `xsdr_phy_rx_reg`
+/// writes `write << 31 | bank << 24 | address << 16 | value` here, and a read of it returns
+/// what the last request selected.
+pub(crate) const REG_CFG_PHY_0: u16 = 56;
+
+/// An RX PHY bank (`PHY_REG_RXBANK_*`, `xsdr_ctrl.c`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RxPhyBank {
+    /// Control (`PHY_REG_RXBANK_CTRL`): address 0 is the deserializer.
+    Control = 0,
+
+    /// The LFSR checkers (`PHY_REG_RXBANK_LFSRCHK`).
+    LfsrCheck = 3,
+
+    /// The A/B and I/Q alignment checker (`PHY_REG_RXBANK_IQABCHK`).
+    IqAbCheck = 4,
+}
+
+impl RxPhyBank {
+    /// `xsdr_phy_rx_reg(d, write, bank, address, value)`'s register write.
+    pub(crate) const fn access(self, write: bool, address: u8, value: u16) -> FpgaAccess {
+        FpgaAccess::Write {
+            reg: REG_CFG_PHY_0,
+            value: if write { 1 << 31 } else { 0 }
+                | (self as u32) << 24
+                | (address as u32) << 16
+                | value as u32,
+        }
+    }
+}
+
+/// The TX PHY register holding the TX clock delay used without a TX MMCM
+/// (`PHY_REG_DLY_VALUE`).
+const PHY_DELAY: u8 = 4;
+
+/// The delay `_xsdr_calibrate_lml` writes without a TX MMCM and no override: 3.
+pub(crate) const TX_DEFAULT_DELAY: FpgaAccess = FpgaAccess::Write {
+    reg: REG_CFG_PHY_1,
+    value: (PHY_DELAY as u32) << 24 | 3,
+};
+
+/// [`Gpo::LmsPower`] bit 1: the LMS7002M's RX enable pin (`IGPO_LMS_PWR_RXEN`).
+pub(crate) const LMS_RX_ENABLE: u8 = 1 << 1;
+
+/// [`Gpo::LmsPower`] bit 2: the LMS7002M's TX enable pin (`IGPO_LMS_PWR_TXEN`).
+pub(crate) const LMS_TX_ENABLE: u8 = 1 << 2;
 
 /// The TX PHY's configuration port (`REG_CFG_PHY_1`, `generic_regs.h`): `xsdr_phy_tx_reg`
 /// writes `register << 24 | value & 0xFFFFFF` here.
