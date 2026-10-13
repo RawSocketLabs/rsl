@@ -5,14 +5,16 @@
 > board/RX/TX/rate controls") govern the port programme; this file holds the family's own
 > facts.
 
-Groundwork for a pure-Rust port of libusdr's LMS7 family: the board simulator and the
-libusdr reference oracle. The driver is **not started**. Boards: LMS7002M RFIC, LP8758
-PMIC(s), and per variant an XTRX reference-trim DAC (DAC80501 or MCP4725) or, on sSDR,
-an LMS8001 up/down-converter and AT24 secure EEPROM. Nothing here is hardware-qualified.
+A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
+oracle. The driver is a **first slice**: XSDR identification, supply bring-up at open (up
+to libusdr's front-end probe) and RFIC power-up; see [PORTING.md](PORTING.md) for done,
+divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
+reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
+secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-xsdr` (planned, not in tree) | The driver |
+| `.` | `rsl-xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `rsl-lp8758` |
 | `sim/` | `rsl-xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `rsl-xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `rsl-limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
@@ -24,6 +26,29 @@ vendored libusdr tree and one PIN**: `oracle/build.rs` compiles `../../usdr/orac
 by relative path. Never copy it here or edit it; a PIN bump there moves this oracle too and
 must re-bless the goldens below in the same change. The shim copies the uSDR shim's
 pattern instead of sharing it; a shared harness is extracted later, once both are stable.
+
+## Driver layout
+
+Mirrors `rsl-usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
+
+- `src/device.rs`: `Device`, the public API: `open` (identification, then the XSDR's
+  supplies) and `power_up`. It owns the bus (`Box<dyn Bus>`) and runs the portable
+  sequences with `rsl-lowlevel`'s blocking `run_sequence`.
+- `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`), each
+  citing the libusdr call it reproduces.
+- `src/portable/`: hand-written sans-I/O `Sequence` machines (`IdentityRead`, `Supplies`,
+  `PowerUp`, `Lms7002mCreate`) and the facts they need (`fpga`: GPO banks and bits, the HWID
+  register; `lms7002m`: registers, reset programme, version check). Core only, no
+  allocation; imports stay within the tree and the shared `no_std` crates.
+- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `tests/common/sim_bus.rs`: `Bus` over `rsl-xsdr-sim`; `oracle/tests/open_parity.rs`
+  includes it with `#[path]`.
+
+Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
+libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
+`PORTING.md`. LP8758 values come from `rsl-lp8758`; uSDR-only code is not reached into.
+Something the uSDR driver also needs is extracted to a shared crate, not copied, unless it is
+small, and then `PORTING.md` says so.
 
 ## How libusdr selects the family and the variant
 
@@ -79,8 +104,8 @@ Each is stated again, with its evidence, where it is encoded.
   0 is this board's choice, `LMS7_MASK` in `sim/src/board.rs`). No MAC channel banking, no
   soft-reset side effects. Reads return 0 in bits 31:16. SPI answers regardless of the
   board's power GPOs, which do not reset the chip model.
-- LP8758: byte registers with an auto-incrementing pointer; revision bytes per variant,
-  all else 0. Power-good status 0 is harmless: `lp8758_check_pg(.., 0xf, ..)` accepts any
+- LP8758: byte registers with an auto-incrementing pointer; revision bytes per variant
+  (`SimBoard::with_fpga_pmic_revision` overrides the FPGA-side one), all else 0. Power-good status 0 is harmless: `lp8758_check_pg(.., 0xf, ..)` accepts any
   status (the derived mask is always a subset of 0xf), so the C's wait ends at once.
 - XTRX bus 1 PMIC answers only while GPO 0 bit 4 hands bus 1 to the FPGA (evidence: the
   "Take control of second I2C bus" / "Switch second I2C to gpio control" writes).
@@ -111,14 +136,16 @@ format, `== open` / `== power-up` / `== close` phase markers, and a provenance h
 
 Not covered: sample rate, tuning, gain, streams, calibration, temperature, sSDR.
 `oracle/tests/identify.rs` covers every variant's classification and the unknown-ID
-refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state.
+refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state. The driver
+is compared with live libusdr, not with these files: `oracle/tests/open_parity.rs` covers
+XSDR golden lines 10–26 (open up to the front-end probe) and 78–97 (power-up).
 
 ## Verify
 
 ```sh
-cargo fmt -p rsl-xsdr-sim -p rsl-lms7002m-sim --check
-cargo clippy -p rsl-xsdr-sim -p rsl-lms7002m-sim --all-targets -- -D warnings
-cargo test -p rsl-xsdr-sim -p rsl-lms7002m-sim
+cargo fmt -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim --check
+cargo clippy -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim --all-targets -- -D warnings
+cargo test -p rsl-xsdr -p rsl-xsdr-sim -p rsl-lms7002m-sim
 cargo fmt --manifest-path devices/sdr/xsdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/xsdr/oracle/Cargo.toml
@@ -139,4 +166,5 @@ by a lock: one is open at a time per process.
 - The MMCM behind DRP (TX via `REG_CFG_PHY_1`, RX via the DRP class) must be modelled
   before sample-rate or LML calibration work.
 - CI runs the detached oracle as the `xsdr-oracle` profile; a change to the uSDR oracle's
-  vendored C selects it too (`scripts/ci/plan.py`).
+  vendored C, to `rsl-xsdr` or to the shared crates it builds on selects it too
+  (`scripts/ci/plan.py`). `PORTING.md` here is prose to the selector, like the uSDR ledger.
