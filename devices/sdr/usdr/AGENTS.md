@@ -93,10 +93,15 @@ Each layer calls only the ones below it.
   are not ported (`PORTING.md`).
 - `src/frontend/`: public `rsl_usdr::frontend`, the boards libusdr probes on the M.2
   connector (`device/device_fe.c`, `device/ext_*`), one module per board; their chips are
-  in `src/chips/` (TCA6416, TCA9555, DACx0501, LMK05318, LMK5C33216). `board/frontend.rs`
-  runs the probe at the end of power-up and owns the board that came up. Blocking code:
-  the probes interleave GPIO-core writes with I2C transfers the `Sequence` seam cannot
-  express.
+  in `src/chips/` (TCA6416, TCA9555, DACx0501, LMK05318, LMK5C33216, TMP114, AT24).
+  `board/frontend.rs` runs the probe at the end of power-up and owns the board that came
+  up. Blocking code: the probes interleave GPIO-core writes with I2C transfers the
+  `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
+  `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map) and its
+  frequency plan in `plan.rs`, a register-free module the oracle compiles directly
+  (`oracle/tests/lmk05318_parity.rs`, against the C through `oracle/shim/lmk05318.c`). Its
+  16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
+  place of the 8-bit shared ones. It stays in rsl-usdr until PE_SYNC's driver needs it.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
   `rsl-lowlevel` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
   rsl-usdr's own conversions into `BusError` (`usb_error` for `rsl_usb::Error`: `From`
@@ -192,9 +197,11 @@ Each layer calls only the ones below it.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
 - Front ends (`fe=`): the probe and the boards the uSDR admits follow libusdr's
-  `device_fe_probe`; boards whose bring-up is not ported fail the open when they answer
-  (`Error::UnsupportedFrontEnd`) instead of running half configured, and a failed probe
-  powers the board down again where libusdr leaves it powered. The default `SimBoard`
+  `device_fe_probe`; every board it admits comes up (pciefe, xmass, supersync,
+  simplesync, exm2pe), and a failed probe powers the board down again where libusdr
+  leaves it powered. libusdr's lock waits run on its wall clock; rsl-usdr's count their
+  100 µs poll sleeps, so they last at least as long on hardware, and the sim reports lock
+  at once, which keeps both traces deterministic. The default `SimBoard`
   has nothing on its connector, so both drivers end the probe at the M.2-to-PCIe breakout
   without a DAC. See the front-end row of [PORTING.md](PORTING.md).
 - Currently not ported: the remaining controls/TX/shared-library domains in
