@@ -35,6 +35,7 @@ pub mod lmk05318;
 pub mod nco;
 pub mod rtsa;
 mod tx;
+pub mod xmass;
 
 pub use tx::SendStat;
 

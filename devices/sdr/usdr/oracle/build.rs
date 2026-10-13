@@ -92,6 +92,16 @@ fn main() {
     );
     compile_wrapping(Path::new("shim/gpsdo.c"), "usdr_oracle_gpsdo", &includes);
 
+    // libusdr's XMASS switch firmware tool, included by the shim that redirects its device
+    // calls to a fake `/dev/xmassN` (`rsl_oracle_xmass_fwupd`). Upstream's warnings are not
+    // ours to fix.
+    cc::Build::new()
+        .file("shim/xmass_fwupd.c")
+        .include(libusdr)
+        .flag("-std=gnu11")
+        .warnings(false)
+        .compile("usdr_oracle_xmass_fwupd");
+
     // nco.c has no generic path: without SSSE3 it compiles a stub that writes nothing. On
     // x86 it is built alone with SSSE3 so the NCO port can be compared; elsewhere it stays
     // in the main build as libusdr ships it.

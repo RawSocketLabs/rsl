@@ -475,6 +475,10 @@ static const struct rsl_abi_fact s_pcie_abi[] = {
     ABI_CODE(PCIE_DRIVER_DMA_ALLOC_OOB),
     ABI_CODE(PCIE_DRIVER_CLAIM_VERSION),
     ABI_CODE(PCIE_DRIVER_DMA_RELEASE),
+    ABI_CODE(PCIE_FLASH_READ),
+    ABI_CODE(PCIE_FLASH_ERASE),
+    ABI_CODE(PCIE_FLASH_WRITE),
+    ABI_CODE(PCIE_GETIDS),
 };
 
 const struct rsl_abi_fact* rsl_oracle_pcie_abi(size_t* count)
