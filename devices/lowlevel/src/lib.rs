@@ -10,8 +10,8 @@
 //!   [`RegisterAccess::context`] and [`FpgaAccess::context`] decode a failed access into the
 //!   [`Access`] direction and register a driver's error reports.
 //!
-//! Feature `std` adds the blocking [`Bus`] trait, its [`BusError`] and the
-//! [`run_sequence`] executor that drives a sequence over a bus.
+//! Feature `std` adds the blocking `Bus` trait, its `BusError` and the
+//! `run_sequence` executor that drives a sequence over a bus.
 #![no_std]
 #![forbid(unsafe_code)]
 
