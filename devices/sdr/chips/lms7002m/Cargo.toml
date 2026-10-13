@@ -1,0 +1,16 @@
+[package]
+name = "rsl-lms7002m"
+version = "0.0.0"
+description = "LMS7002M RF transceiver register values and sans-I/O register sequences, shared by the pure-Rust LMS7002M board drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+rsl-lowlevel.workspace = true
+
+[lints]
+workspace = true
