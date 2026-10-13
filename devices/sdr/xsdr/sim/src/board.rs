@@ -17,6 +17,12 @@ const REG_GPO: u32 = 0;
 /// General-purpose input word 3, the hardware ID: `dev_gpi_get32` reads `16 + bank / 4`
 /// with `IGPI_HWID` = 12.
 const REG_GPI_HWID: u32 = 16 + 12 / 4;
+/// The RX PHY's configuration port (`REG_CFG_PHY_0`, `generic_regs.h`). libusdr writes a
+/// bank and address there (`xsdr_phy_rx_reg`) and reads back what it selected: on the
+/// rate path, the `LimeLight` LFSR checkers' error counters (`xsdr_phy_lfsr_mimo_state`).
+/// A sim choice: the link is error-free, so every read of the port returns 0. The
+/// capture and DC-estimator banks behind it are not modelled.
+const REG_CFG_PHY_0: u32 = 56;
 
 /// GPO bank `IGPO_LMS_PWR`: LMS7002M LDO enable, reset and RX/TX enables.
 const GPO_LMS_PWR: u8 = 0;
@@ -193,7 +199,11 @@ impl SimBoard {
 
     /// Reads a 32-bit FPGA register.
     pub fn read_reg(&mut self, addr: u32) -> u32 {
-        let value = self.regs.get(&addr).copied().unwrap_or(0);
+        let value = if addr == REG_CFG_PHY_0 {
+            0
+        } else {
+            self.regs.get(&addr).copied().unwrap_or(0)
+        };
         self.trace.push(Op::RegRead { addr, value });
         value
     }
@@ -327,6 +337,13 @@ mod tests {
         assert_eq!(board.spi(SPI_LMS, 0x002f_0000), Ok(u32::MAX));
         board.write_reg(REG_GPO, u32::from(GPO_LMS8_CTRL) << 24 | 0x80);
         assert_ne!(board.spi(SPI_LMS, 0x002f_0000), Ok(u32::MAX));
+    }
+
+    #[test]
+    fn the_rx_phy_port_reads_an_error_free_link() {
+        let mut board = SimBoard::new(Variant::Xsdr);
+        board.write_reg(REG_CFG_PHY_0, 0x0308_0000);
+        assert_eq!(board.read_reg(REG_CFG_PHY_0), 0, "no LFSR errors counted");
     }
 
     #[test]
