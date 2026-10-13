@@ -7,7 +7,9 @@
 //!   exactly as from a 40 MHz count.
 //! - A detector that never finishes: after the same ten polls and waits libusdr reads
 //!   whatever count the registers hold, here a stale 40 MHz one it then opens with;
-//!   rsl-limesdr stops before that read.
+//!   rsl-limesdr stops before that read. The stale count is seeded on purpose: a zero
+//!   count makes libusdr's walk stop at its first entry and log `clkTbl[i - 1]` with
+//!   unsigned `i` = 0, an out-of-bounds read that may crash the oracle.
 
 #[path = "../../tests/common/sim_port.rs"]
 mod sim_port;
@@ -29,8 +31,10 @@ const STALE_40_MHZ: [(u16, u16); 2] = [(0x0072, 0x6664), (0x0073, 0x0066)];
 struct Session {
     /// The open's operations.
     open: Vec<Op>,
-    /// The open's outcome: `Ok`, or the device's own errno (libusdr) or 0 (rsl-limesdr).
-    outcome: Result<(), i32>,
+    /// The open's outcome: the nominal reference recognised (rsl-limesdr; libusdr does
+    /// not expose its own, so `None`), or the device's own errno (libusdr) or 0
+    /// (rsl-limesdr).
+    outcome: Result<Option<u32>, i32>,
     /// The power-up's operations.
     power_up: Vec<Op>,
     /// The close's operations.
@@ -57,7 +61,7 @@ fn libusdr(board: SimBoard) -> Session {
     let trace = board.trace();
     Session {
         open: trace[..opened].to_vec(),
-        outcome: Ok(()),
+        outcome: Ok(None),
         power_up: trace[opened..powered].to_vec(),
         close: trace[powered..].to_vec(),
     }
@@ -78,6 +82,7 @@ fn rsl_limesdr(board: SimBoard) -> (Session, Option<Error>) {
             return (session, Some(error));
         }
     };
+    let reference_hz = device.reference_hz();
     let opened = sim.board().trace().len();
     device
         .power_up()
@@ -88,7 +93,7 @@ fn rsl_limesdr(board: SimBoard) -> (Session, Option<Error>) {
     let trace = board.trace();
     let session = Session {
         open: trace[..opened].to_vec(),
-        outcome: Ok(()),
+        outcome: Ok(Some(reference_hz)),
         power_up: trace[opened..powered].to_vec(),
         close: trace[powered..].to_vec(),
     };
@@ -108,8 +113,9 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
     }
 }
 
-/// Both drivers' whole sessions on boards from `board`, which must agree.
-fn assert_same_session(board: impl Fn() -> SimBoard, scenario: &str) -> Option<Error> {
+/// Both drivers' whole sessions on boards from `board`, which must agree: rsl-limesdr's
+/// reference, or its open's error.
+fn assert_same_session(board: impl Fn() -> SimBoard, scenario: &str) -> Result<u32, Error> {
     let reference = libusdr(board());
     let (ours, error) = rsl_limesdr(board());
     assert_same_ops(&reference.open, &ours.open, &format!("{scenario}: open"));
@@ -124,12 +130,20 @@ fn assert_same_session(board: impl Fn() -> SimBoard, scenario: &str) -> Option<E
         ours.outcome.is_ok(),
         "{scenario}: both open or both refuse"
     );
-    error
+    match (ours.outcome, error) {
+        (_, Some(error)) => Err(error),
+        (outcome, None) => Ok(outcome
+            .expect("an open without an error succeeded")
+            .expect("rsl-limesdr reports its reference")),
+    }
 }
 
 #[test]
 fn a_fresh_session_matches_libusdr() {
-    assert!(assert_same_session(SimBoard::new, "fresh board").is_none());
+    assert_eq!(
+        assert_same_session(SimBoard::new, "fresh board").ok(),
+        Some(40_000_000)
+    );
 }
 
 #[test]
@@ -143,29 +157,41 @@ fn a_detector_taking_its_gate_time_is_polled_and_waited_for_like_libusdr() {
             .any(|op| matches!(op, Op::Sleep { us: 50_000 })),
         "libusdr waits between polls"
     );
-    assert!(assert_same_session(board, "timed detector").is_none());
+    assert!(assert_same_session(board, "timed detector").is_ok());
 }
 
 #[test]
 fn an_lms7002m_other_than_mask_1_is_refused_like_libusdr() {
     let board = || SimBoard::new().with_lms7_mask(0);
     assert_eq!(libusdr(board()).outcome, Err(-EIO));
-    let error = assert_same_session(board, "LMS7002M mask 0");
+    let outcome = assert_same_session(board, "LMS7002M mask 0");
     assert!(
-        matches!(error, Some(Error::ChipId { found: 0x3840, .. })),
-        "{error:?}"
+        matches!(outcome, Err(Error::ChipId { found: 0x3840, .. })),
+        "{outcome:?}"
     );
 }
 
 #[test]
 fn references_libusdr_decides_reliably_are_decided_alike() {
-    for (hz, opens) in [(40_000_000, true), (40_900_000, true), (41_100_000, false)] {
+    // Measured from 30.72 to 31.72 MHz libusdr opens as 30.72 MHz, from 40 to 41 MHz as
+    // 40 MHz, and refuses from 31.72 to 38.4 MHz and from 41 to 52 MHz.
+    for (hz, nominal) in [
+        (31_000_000, Some(30_720_000)),
+        (35_000_000, None),
+        (40_000_000, Some(40_000_000)),
+        (40_900_000, Some(40_000_000)),
+        (41_100_000, None),
+    ] {
         let board = || SimBoard::new().with_reference_hz(hz);
-        let error = assert_same_session(board, &format!("{hz} Hz reference"));
-        assert_eq!(error.is_none(), opens, "{hz} Hz: {error:?}");
-        if !opens {
+        let outcome = assert_same_session(board, &format!("{hz} Hz reference"));
+        assert_eq!(
+            outcome.as_ref().ok(),
+            nominal.as_ref(),
+            "{hz} Hz: {outcome:?}"
+        );
+        if nominal.is_none() {
             assert_eq!(libusdr(board()).outcome, Err(-EFAULT));
-            assert!(matches!(error, Some(Error::UnknownReference { .. })));
+            assert!(matches!(outcome, Err(Error::UnknownReference { .. })));
         }
     }
 }
@@ -185,6 +211,7 @@ fn references_libusdrs_walk_misses_are_recognised_and_opened_as_from_40_mhz() {
         assert_eq!(reference.outcome, Err(-EFAULT), "{hz} Hz: libusdr refuses");
         let (ours, error) = rsl_limesdr(SimBoard::new().with_reference_hz(hz));
         assert!(error.is_none(), "{hz} Hz: rsl-limesdr opens: {error:?}");
+        assert_eq!(ours.outcome, Ok(Some(hz)), "{hz} Hz: recognised as itself");
 
         let (measured, rest) = ours.open.split_at(reference.open.len());
         assert_same_ops(&reference.open, measured, &format!("{hz} Hz: measurement"));
@@ -209,7 +236,7 @@ fn a_stalled_detector_is_refused_where_libusdr_opens_on_a_stale_count() {
     let reference = libusdr(board());
     assert_eq!(
         reference.outcome,
-        Ok(()),
+        Ok(None),
         "libusdr takes the stale count for a measurement"
     );
     let (ours, error) = rsl_limesdr(board());
