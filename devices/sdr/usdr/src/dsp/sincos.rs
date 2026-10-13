@@ -347,7 +347,7 @@ impl ToneF32 {
     }
 
     /// Fills `out`, one sample per phase step.
-    pub fn fill(&mut self, out: &mut [Complex<f32>]) {
+    pub fn fill_complex(&mut self, out: &mut [Complex<f32>]) {
         for sample in out {
             let (sin, cos) = radians(2.0 * PI, self.phase).sin_cos();
             *sample = Complex::new(self.amplitude * cos, self.amplitude * sin);
@@ -573,7 +573,7 @@ mod tests {
     fn a_float_tone_turns_by_its_step_and_wraps_past_a_turn() {
         let mut tone = ToneF32::new(0.0, 0.25, 2.0);
         let mut out = [Complex::new(0.0, 0.0); 4];
-        tone.fill(&mut out);
+        tone.fill_complex(&mut out);
         let expected = [(2.0, 0.0), (0.0, 2.0), (-2.0, 0.0), (0.0, -2.0)];
         for (sample, (i, q)) in out.iter().zip(expected) {
             assert!(
@@ -583,7 +583,7 @@ mod tests {
         }
         // Four quarter turns reach 1.0, not past it; the fifth wraps.
         assert!((tone.phase() - 1.0).abs() < 1e-12);
-        tone.fill(&mut out[..1]);
+        tone.fill_complex(&mut out[..1]);
         assert!((tone.phase() - 0.25).abs() < 1e-12);
     }
 }

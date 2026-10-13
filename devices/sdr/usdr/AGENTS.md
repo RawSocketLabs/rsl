@@ -351,7 +351,7 @@ Each layer calls only the ones below it.
   DAC codes at 0 where the tool wraps them to full scale
   (`gpsdo_parity.rs::the_dac_holds_at_zero_where_the_tool_wraps_it_to_full_scale`), and
   steps from the last confirmed code after a failed write, where the tool steps from the
-  errno.
+  errno (`gpsdo_parity.rs::a_failed_dac_write_steps_from_the_last_code_where_the_tool_steps_from_the_errno`).
 - Registers are typed (`rsl-lowlevel`'s traits, through `src/portable/register.rs`;
   `src/chips/register.rs` adds blocking I2C access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.

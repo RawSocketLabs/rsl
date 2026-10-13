@@ -69,10 +69,10 @@ const HOLDOVER: Duration = Duration::from_secs(2);
 /// (`get_pps_count`, `get_measured_freq`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PpsMeasurement {
-    /// Pulses seen, modulo 16: a change means a new count (bits 31:28).
-    pub pulses: u8,
+    /// Pulses seen, modulo 16 (bits 31:28).
+    pulses: u8,
     /// Clock cycles counted over the last second (bits 27:0).
-    pub count: u32,
+    count: u32,
 }
 
 impl PpsMeasurement {
@@ -84,6 +84,18 @@ impl PpsMeasurement {
             pulses: (word >> 28) as u8,
             count: word & 0x0fff_ffff,
         }
+    }
+
+    /// Pulses seen, modulo 16: a change means a new count.
+    #[must_use]
+    pub const fn pulses(self) -> u8 {
+        self.pulses
+    }
+
+    /// Clock cycles counted over the last second, below 2²⁸.
+    #[must_use]
+    pub const fn count(self) -> u32 {
+        self.count
     }
 }
 
@@ -182,8 +194,10 @@ pub struct Correction {
     pub correction_hz: f64,
     /// DAC codes the correction asks for, before the ±2000 limit.
     pub steps: f64,
-    /// The new DAC code: the code stepped from plus the limited steps, rounded half away
-    /// from zero, within 0 to 65535.
+    /// `steps` within ±2000: the step taken.
+    pub step: f64,
+    /// The new DAC code: the code stepped from plus `step`, rounded half away from zero,
+    /// within 0 to 65535.
     pub dac: u16,
     /// Whether the code differs from the last one written, so needs writing.
     pub write: bool,
@@ -270,8 +284,8 @@ impl OscillatorDiscipline {
         let output = self.pid.update(error);
         let correction_hz = -output * self.expected;
         let steps = correction_hz / self.hz_per_code;
-        let limited = steps.clamp(-MAX_STEP, MAX_STEP);
-        let dac = (f64::from(self.code) + limited)
+        let step = steps.clamp(-MAX_STEP, MAX_STEP);
+        let dac = (f64::from(self.code) + step)
             .round()
             .clamp(0.0, f64::from(DAC_MAX)) as u16;
         let write = self.written != Some(dac);
@@ -283,6 +297,7 @@ impl OscillatorDiscipline {
             output,
             correction_hz,
             steps,
+            step,
             dac,
             write,
         }
@@ -321,7 +336,7 @@ mod tests {
 
     /// A measurement of `count` with pulse counter `pulses`.
     fn measurement(pulses: u8, count: u32) -> PpsMeasurement {
-        PpsMeasurement { pulses, count }
+        PpsMeasurement::from_word((u32::from(pulses) << 28) | count)
     }
 
     /// Milliseconds as a time.
@@ -331,8 +346,9 @@ mod tests {
 
     #[test]
     fn words_split_into_the_pulse_counter_and_the_count() {
-        let word = 0xa000_0000 + 4_000_123;
-        assert_eq!(PpsMeasurement::from_word(word), measurement(0xa, 4_000_123));
+        let measurement = PpsMeasurement::from_word(0xa000_0000 + 4_000_123);
+        assert_eq!(measurement.pulses(), 0xa);
+        assert_eq!(measurement.count(), 4_000_123);
     }
 
     #[test]
@@ -414,6 +430,19 @@ mod tests {
         }
         assert_eq!(low.dac_code(), 0, "a persistently fast count rails at 0");
         assert_eq!(high.dac_code(), u16::MAX, "a slow one at full scale");
+    }
+
+    #[test]
+    fn rejections_leave_holdover_unchecked() {
+        let mut loop_ = discipline();
+        for poll in 1..=40 {
+            let step = loop_.measure(measurement(1, 0), ms(100 * poll));
+            assert_eq!(step.holdover, None, "poll {poll}");
+        }
+        assert!(
+            !loop_.in_holdover(),
+            "four seconds of rejections report no holdover"
+        );
     }
 
     #[test]
