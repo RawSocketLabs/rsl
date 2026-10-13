@@ -37,6 +37,9 @@ const FDC_COUNT_HI: u16 = 0x0073;
 const FDC_GATE_CYCLES: u64 = 16_777_210;
 /// The bridge clock the detector's gate runs on, in hertz.
 const FDC_GATE_HZ: u64 = 100_000_000;
+/// How long the detector's gate lasts, in microseconds, rounded up: [`FDC_GATE_CYCLES`] of
+/// [`FDC_GATE_HZ`], about 168 ms.
+pub const DETECTOR_GATE_US: u64 = (FDC_GATE_CYCLES * 1_000_000).div_ceil(FDC_GATE_HZ);
 
 /// The LMS7002M's metal-mask revision on this board. `limesdr_init` rejects any version
 /// word but 0x3841 (`-EIO`), so a board libusdr opens has mask 1.
@@ -56,6 +59,10 @@ pub struct SimBoard {
     lms: Lms7002m,
     /// The reference oscillator's frequency, in hertz.
     reference_hz: u32,
+    /// How long a frequency measurement takes, in virtual microseconds.
+    detector_delay_us: u64,
+    /// When the measurement in progress completes, if one is.
+    detector_due_us: Option<u64>,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -81,6 +88,8 @@ impl SimBoard {
             fpga: BTreeMap::new(),
             lms: Lms7002m::new(LMS7_MASK),
             reference_hz: REFERENCE_HZ,
+            detector_delay_us: 0,
+            detector_due_us: None,
             now_us: 0,
             trace: Vec::new(),
         }
@@ -104,10 +113,25 @@ impl SimBoard {
     /// measurement at once: the count of reference cycles in the detector's gate appears
     /// in registers 0x0072/0x0073 and the done bit in 0x0065. Assumption: real gateware
     /// takes the gate time (about 168 ms); completing at once keeps the trace free of
-    /// polls, and libusdr's poll loop proceeds after ten polls regardless.
+    /// polls, and libusdr's poll loop proceeds after ten polls regardless. See
+    /// [`SimBoard::with_detector_delay_us`] for a detector that takes time.
     #[must_use]
     pub fn with_reference_hz(mut self, hz: u32) -> Self {
         self.reference_hz = hz;
+        self
+    }
+
+    /// The same board with a frequency detector that completes `us` virtual microseconds
+    /// after it is started, instead of at once: until then the done bit stays clear and the
+    /// count registers keep what they held. A delay no driver waits out (`u64::MAX`, or one
+    /// past libusdr's ten 50 ms polls) models a detector that never finishes.
+    ///
+    /// Assumption: the real gate is [`DETECTOR_GATE_US`]; the count appearing all at once
+    /// on completion, rather than counting up, is the sim's choice (a driver reads it only
+    /// after the done bit).
+    #[must_use]
+    pub fn with_detector_delay_us(mut self, us: u64) -> Self {
+        self.detector_delay_us = us;
         self
     }
 
@@ -201,19 +225,32 @@ impl SimBoard {
     fn write_fpga(&mut self, addr: u16, value: u16) {
         self.trace.push(Op::FpgaWrite { addr, value });
         if addr == FDC_CONTROL {
-            // Measuring completes at once, so rewriting the start bit measures again with
-            // the same result: an edge and a level trigger are indistinguishable here.
-            let status = self.fpga_reg(FDC_STATUS);
+            // Rewriting the start bit restarts the measurement, whose result is the same: an
+            // edge and a level trigger are indistinguishable here.
             if value & FDC_START != 0 {
-                let [hi, lo] = self.reference_count();
-                self.fpga.insert(FDC_COUNT_LO, lo);
-                self.fpga.insert(FDC_COUNT_HI, hi);
-                self.fpga.insert(FDC_STATUS, status | FDC_DONE);
+                self.detector_due_us = Some(self.now_us.saturating_add(self.detector_delay_us));
+                self.settle_detector();
             } else {
+                self.detector_due_us = None;
+                let status = self.fpga_reg(FDC_STATUS);
                 self.fpga.insert(FDC_STATUS, status & !FDC_DONE);
             }
         }
         self.fpga.insert(addr, value);
+    }
+
+    /// Completes the frequency measurement in progress once its time has come: the count
+    /// in 0x0072/0x0073 and the done bit in 0x0065.
+    fn settle_detector(&mut self) {
+        if self.detector_due_us.is_none_or(|due| self.now_us < due) {
+            return;
+        }
+        self.detector_due_us = None;
+        let [hi, lo] = self.reference_count();
+        self.fpga.insert(FDC_COUNT_LO, lo);
+        self.fpga.insert(FDC_COUNT_HI, hi);
+        let status = self.fpga_reg(FDC_STATUS);
+        self.fpga.insert(FDC_STATUS, status | FDC_DONE);
     }
 
     /// Reads a gateware register.
@@ -239,6 +276,7 @@ impl SimBoard {
     pub fn sleep_us(&mut self, us: u64) {
         self.now_us += us;
         self.trace.push(Op::Sleep { us });
+        self.settle_detector();
     }
 
     /// Virtual microseconds elapsed since the board was created.
@@ -338,6 +376,39 @@ mod tests {
             read_fpga(&mut board, FDC_STATUS) & FDC_DONE,
             0,
             "stopping clears done"
+        );
+    }
+
+    #[test]
+    fn a_timed_detector_completes_only_once_its_delay_has_passed() {
+        let mut board = SimBoard::new()
+            .with_detector_delay_us(DETECTOR_GATE_US)
+            .with_fpga_reg(FDC_COUNT_LO, 0x1234);
+        write_fpga(&mut board, FDC_CONTROL, FDC_START);
+        assert_eq!(read_fpga(&mut board, FDC_STATUS) & FDC_DONE, 0);
+        assert_eq!(
+            read_fpga(&mut board, FDC_COUNT_LO),
+            0x1234,
+            "the count is stale until the measurement completes"
+        );
+        board.sleep_us(DETECTOR_GATE_US - 1);
+        assert_eq!(read_fpga(&mut board, FDC_STATUS) & FDC_DONE, 0);
+        board.sleep_us(1);
+        assert_ne!(read_fpga(&mut board, FDC_STATUS) & FDC_DONE, 0);
+        assert_eq!(
+            read_fpga(&mut board, FDC_COUNT_LO),
+            0x6664,
+            "40 MHz, low half"
+        );
+
+        let mut stopped = SimBoard::new().with_detector_delay_us(10);
+        write_fpga(&mut stopped, FDC_CONTROL, FDC_START);
+        write_fpga(&mut stopped, FDC_CONTROL, 0);
+        stopped.sleep_us(10);
+        assert_eq!(
+            read_fpga(&mut stopped, FDC_STATUS) & FDC_DONE,
+            0,
+            "stopping abandons the measurement"
         );
     }
 

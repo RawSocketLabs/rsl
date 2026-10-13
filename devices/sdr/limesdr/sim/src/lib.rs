@@ -17,6 +17,6 @@ mod board;
 mod lms64c;
 mod trace;
 
-pub use board::SimBoard;
+pub use board::{DETECTOR_GATE_US, SimBoard};
 pub use lms64c::{DATA_LEN, FRAME_LEN, Frame};
 pub use trace::Op;
