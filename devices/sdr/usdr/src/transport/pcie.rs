@@ -120,7 +120,7 @@ impl PcieBus {
 /// (`bus.as_fd().try_clone_to_owned()`); it polls the same driver state. As in libusdr,
 /// the driver counts completions since the last wait asked it, and one wait may take
 /// several buffers, so the readiness is edge-like: drain with zero-timeout receives (or
-/// sends) until [`Error::Timeout`](crate::Error::Timeout) before polling again.
+/// sends) until [`Error::Timeout`] before polling again.
 impl AsFd for PcieBus {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.device.as_fd()

@@ -293,7 +293,9 @@ impl RxChannels {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TxChannels {
-    /// Channel 0 (libusdr's `a` or 0): lane A, with lane B muted at creation.
+    /// Channel 0 (libusdr's `a` or 0): on the original core lane A, with lane B muted at
+    /// creation; on the extended core lanes 0 and 1, which its one-channel lane map also
+    /// copies onto lanes 2 and 3, nothing muted.
     #[default]
     Channel0,
 

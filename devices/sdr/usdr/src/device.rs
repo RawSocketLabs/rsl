@@ -507,7 +507,9 @@ impl Device {
     /// Moves the TX stream to `channels`, as many as it carries (libusdr's stream option
     /// `"chmap"`): a one-channel stream between channels 0 and 1, which on the original
     /// core swaps its lanes and moves a lane mute to the lane left idle, as creating it on
-    /// that channel would. Effective at once; buffers already sent play as they were.
+    /// that channel would. On the extended core a one-channel remap rewrites the same lane
+    /// map (libusdr masks the channel number away), so it changes nothing there. Whether
+    /// buffers already queued play with the old lanes or the new is not shown by libusdr.
     ///
     /// Unstable, pending owner review: no libusdr client of the uSDR remaps a running
     /// stream; the typed counterpart of its option is offered for parity.

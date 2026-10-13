@@ -346,13 +346,18 @@ impl ExtendedTxPush {
             [stamp >> 32, stamp & 0xffff_ffff].map(|half| u32::try_from(half).expect("32 bits"));
         // One burst: `(1 << 0) - 1` in bits 31:24.
         let words = [(bytes - 1) & 0x00ff_ffff, (samples - 1) & 0x00ff_ffff, high];
+        // As libusdr: after a failed write the later changed registers are cached without
+        // being written, and the announcing write is skipped; the first failure is returned.
+        let mut failed = Ok(());
         for ((reg, word), written) in (REG_EXTENDED_PUSH..).zip(words).zip(&mut self.written) {
             if *written != word {
-                // Cached before the write's result, as libusdr does.
+                if failed.is_ok() {
+                    failed = bus.write_regs(reg, &[word]).writing(FPGA, reg);
+                }
                 *written = word;
-                bus.write_regs(reg, &[word]).writing(FPGA, reg)?;
             }
         }
+        failed?;
         let last = REG_EXTENDED_PUSH + 3;
         bus.write_regs(last, &[low]).writing(FPGA, last)
     }

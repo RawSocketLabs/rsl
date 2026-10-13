@@ -230,7 +230,7 @@ fn a_second_tx_channel_without_the_tx_chain_is_refused_before_the_bus() {
         let config = TxConfig::new(256, HostFormat::Ci16, WireFormat::Ci16).with_channels(channels);
         assert!(matches!(
             untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
-            Err(Error::UnsupportedTxChannels(c)) if c == channels
+            Err(Error::UnsupportedTxChannels { channels: c, .. }) if c == channels
         ));
     }
 }
@@ -247,7 +247,10 @@ fn a_tx_remap_to_another_channel_count_is_refused_before_the_bus() {
         .expect("creates");
     assert!(matches!(
         untouched(&sim, || device.set_tx_channels(TxChannels::Both)),
-        Err(Error::UnsupportedTxChannels(TxChannels::Both))
+        Err(Error::UnsupportedTxChannels {
+            channels: TxChannels::Both,
+            ..
+        })
     ));
 }
 
@@ -264,7 +267,11 @@ fn unequal_tx_channel_buffers_are_refused_before_the_bus() {
     let (zero, one) = ([Complex::new(0_i16, 0); 8], [Complex::new(0_i16, 0); 7]);
     assert!(matches!(
         untouched(&sim, || device.send(&[&zero, &one], None, TIMEOUT)),
-        Err(Error::UnequalChannelBuffers)
+        Err(Error::UnequalChannelBuffers {
+            first: 8,
+            other: 7,
+            ..
+        })
     ));
     assert!(matches!(
         untouched(&sim, || device.send(&[&zero], None, TIMEOUT)),

@@ -132,7 +132,9 @@ impl TxConfig {
     pub(super) fn check(self, chains: Chains) -> Result<(), Error> {
         let second_channel = matches!(self.channels, TxChannels::Channel1 | TxChannels::Both);
         if second_channel && !chains.tx {
-            return Err(Error::UnsupportedTxChannels(self.channels));
+            return Err(Error::UnsupportedTxChannels {
+                channels: self.channels,
+            });
         }
         let wire_ok = match self.wire {
             WireFormat::Ci16 => true,
@@ -165,7 +167,8 @@ impl TxConfig {
         Ok(())
     }
 
-    /// Wire bytes of one sample of every channel.
+    /// Wire bytes of one sample of every channel, for the complex wires a TX stream takes
+    /// (a real 12-bit sample is not a whole byte).
     fn sample_bytes(self) -> u32 {
         let per_channel = self.wire.sample_bits() / 8;
         per_channel * u32::try_from(self.channels.count()).expect("1 or 2")
@@ -292,8 +295,11 @@ impl Board {
             });
         }
         let samples = channels.first().map_or(0, |channel| channel.len());
-        if channels.iter().any(|channel| channel.len() != samples) {
-            return Err(Error::UnequalChannelBuffers);
+        if let Some(other) = channels.iter().find(|channel| channel.len() != samples) {
+            return Err(Error::UnequalChannelBuffers {
+                first: samples,
+                other: other.len(),
+            });
         }
         let max = usize::try_from(stream.samples_per_packet)
             .expect("invariant: a packet size fits in usize");
@@ -354,12 +360,16 @@ impl Board {
         };
         let second_channel = matches!(channels, TxChannels::Channel1 | TxChannels::Both);
         if channels.count() != stream.channels.count() || (second_channel && !tx_chain) {
-            return Err(Error::UnsupportedTxChannels(channels));
+            return Err(Error::UnsupportedTxChannels { channels });
         }
-        stream.channels = channels;
         if stream.extended.is_some() {
-            return fpga::map_extended_tx(self.bus.as_mut(), channels);
+            fpga::map_extended_tx(self.bus.as_mut(), channels)?;
+            stream.channels = channels;
+            return Ok(());
         }
+        // libusdr keeps the new swap and mute before writing them, so a failed write
+        // leaves the stream's state ahead of the core's; kept.
+        stream.channels = channels;
         (stream.mute, stream.swap) = TxStream::lane_use(channels, Some(stream.mute));
         let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
         run_sequence(self.bus.as_mut(), &mut update)
@@ -540,6 +550,10 @@ mod tests {
         assert_eq!(
             TxStream::lane_use(TxChannels::Channel1, Some(TxMute::Both)),
             (TxMute::A, true)
+        );
+        assert_eq!(
+            TxStream::lane_use(TxChannels::Channel0, Some(TxMute::A)),
+            (TxMute::B, false)
         );
         assert_eq!(
             TxStream::lane_use(TxChannels::Both, Some(TxMute::Both)),

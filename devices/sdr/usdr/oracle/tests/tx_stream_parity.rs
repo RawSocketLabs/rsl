@@ -770,15 +770,35 @@ fn the_extended_tx_core_matches_libusdr() {
         if host != H::Ci12 {
             scenarios.push(one.on(3, TxChannels::Both));
         }
+        // Two more "now" packets of a whole packet each: the last changes none of the first
+        // three announcing registers, so libusdr's cache skips them.
+        let mut sends = SENDS.to_vec();
+        sends.extend([(None, 1024), (None, 1024)]);
         for scenario in scenarios {
             let (expected, actual) = match host {
-                H::Ci16 => assert_windows_match::<Complex<i16>>(scenario, &SENDS),
-                H::Cf32 => assert_windows_match::<Complex<f32>>(scenario, &SENDS),
-                _ => assert_windows_match::<Ci12>(scenario, &SENDS),
+                H::Ci16 => assert_windows_match::<Complex<i16>>(scenario, &sends),
+                H::Cf32 => assert_windows_match::<Complex<f32>>(scenario, &sends),
+                _ => assert_windows_match::<Ci12>(scenario, &sends),
             };
+            let last_send = expected.windows[sends.len() + 1].1.clone();
+            let announced: Vec<u32> = expected.trace[last_send]
+                .iter()
+                .filter_map(|op| match op {
+                    Op::RegWrite {
+                        addr: addr @ 28..=31,
+                        ..
+                    } => Some(*addr),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                announced,
+                [31],
+                "{scenario:?}: the cached registers are skipped"
+            );
             assert_eq!(
                 expected.played.len(),
-                SENDS.len(),
+                sends.len(),
                 "{scenario:?}: all played"
             );
             assert_eq!(

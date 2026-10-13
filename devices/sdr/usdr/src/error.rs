@@ -204,7 +204,8 @@ pub enum Error {
     },
 
     /// RX channels the receiver's front end does not carry in the wire format asked for:
-    /// complex channel 1 (lanes 2 and 3) or both channels without the RX chain.
+    /// complex channel 1 (lanes 2 and 3) or both channels without the RX chain, or on
+    /// `NativeUsb`'s stream group, which carries channel 0 or the real channel 1 only.
     #[error("RX channels {channels:?} are not carried in wire format {wire:?}")]
     #[non_exhaustive]
     UnsupportedRxChannels {
@@ -221,13 +222,25 @@ pub enum Error {
     UnsupportedTxCore,
 
     /// TX channels the gateware or stream cannot carry: a second channel without the TX
-    /// chain, or a remap to another channel count.
-    #[error("TX channels {0:?} are not supported here")]
-    UnsupportedTxChannels(TxChannels),
+    /// chain or on `NativeUsb`'s stream group (channel 0 only), or a remap to another
+    /// channel count.
+    #[error("TX channels {channels:?} are not supported here")]
+    #[non_exhaustive]
+    UnsupportedTxChannels {
+        /// The channels asked for.
+        channels: TxChannels,
+    },
 
     /// A send's channel buffers differ in length; each channel sends the same samples.
-    #[error("TX channel buffers of different lengths")]
-    UnequalChannelBuffers,
+    #[error("TX channel buffers of {first} and {other} samples")]
+    #[non_exhaustive]
+    UnequalChannelBuffers {
+        /// The first buffer's length.
+        first: usize,
+
+        /// The first length that differs from it.
+        other: usize,
+    },
 
     /// The gateware predates the TX stream engine libusdr requires (its
     /// `MINIM_FWID_COMPAT`, build 0xd2b10c09); the build ID as read.
