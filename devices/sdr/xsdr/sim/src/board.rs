@@ -35,6 +35,11 @@ const SPI_LMS: u32 = 0;
 /// The LMS7002M's metal-mask revision. `lms7002m_create`, the only version check on this
 /// family's path, ignores it; 0 is a sim choice.
 const LMS7_MASK: u8 = 0;
+/// The LMS7002M's reference clock, which its VCO comparator model needs: the internal
+/// 26 MHz reference `_xsdr_init_revx` selects (`XSDR_INT_REFCLK` in `xsdr_ctrl.c`, the
+/// `fref` libusdr tunes with). The model does not follow a later switch to an external
+/// reference.
+const LMS7_REFERENCE_HZ: u32 = 26_000_000;
 
 /// The LP8758 every variant has (`I2C_BUS_LP8758_FPGA`: bus 0, `I2C_DEV_PMIC_FPGA` 0x60).
 const I2C_FPGA_PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
@@ -151,7 +156,7 @@ impl SimBoard {
         Self {
             regs: BTreeMap::from([(REG_GPI_HWID, u32::from(variant.device_id()) << 16)]),
             gpo: BTreeMap::new(),
-            lms: Lms7002m::new(LMS7_MASK),
+            lms: Lms7002m::new(LMS7_MASK).with_reference(LMS7_REFERENCE_HZ),
             fpga_pmic: Lp8758::with_revision(variant.fpga_pmic_revision()),
             // The C requires 0xe001 here too (`_xsdr_init_revo`).
             lms_pmic: xtrx.then(|| Lp8758::with_revision(0xe001)),
