@@ -41,6 +41,18 @@ pub(super) fn transfer_length(limit: usize, packet_size: usize) -> Result<usize,
     }
     Ok(limit.div_ceil(packet_size) * packet_size)
 }
+
+/// A failed TX status read, as a send reports it on either path. A control-plane timeout
+/// is not a full TX ring: it becomes an I/O error, the control plane already poisoned.
+pub(super) fn tx_status_failure(error: BusError) -> BusError {
+    match error {
+        BusError::Timeout => BusError::Io(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "USB TX status read timed out",
+        )),
+        other => other,
+    }
+}
 /// The uSDR's index/data window, `s_params_m2_lm6_1_rev000`.
 const WINDOW: Window = Window {
     index: 6,
@@ -387,6 +399,7 @@ impl UsbBus {
             next_sequence: self.next_sequence,
             next_id: self.next_id,
             rev3: revision == 3,
+            tx_status: self.tx_status,
         };
         Ok((session, self.io))
     }
@@ -685,18 +698,10 @@ impl TxDevice for UsbBus {
         self.io.tx_acquire(timeout)
     }
 
-    /// A control-plane timeout here is not a full TX ring: it reaches the driver as an
-    /// I/O error, the bus already poisoned.
     fn read_status(&mut self) -> Result<[u32; 4], BusError> {
         let mut words = [0; 4];
         self.read_regs(tx::STATUS_REGISTER, &mut words)
-            .map_err(|error| match error {
-                BusError::Timeout => BusError::Io(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "USB TX status read timed out",
-                )),
-                other => other,
-            })?;
+            .map_err(tx_status_failure)?;
         Ok(words)
     }
 

@@ -18,16 +18,17 @@ use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use super::{BoardUsb, simulated_device};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
-use crate::lowlevel::BusError;
+use crate::lowlevel::{Bus, BusError, TxFill};
 use crate::reference::ReferenceClock;
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
-    Adapter, Backend, Completion, NativeEvent, NativeUsb, Queues, Reply, Report, Request, Session,
-    Turn, Work, Worker,
+    Adapter, Backend, Completion, Filing, NativeEvent, NativeUsb, Queues, Reply, Report, Request,
+    Session, Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
+use crate::transport::usb::tx::TxStatus;
 
 /// Caller-owned tokens; the completion Waker is shared with other reactor producers.
 const DEVICE: Token = Token(41);
@@ -275,7 +276,58 @@ impl Backend for Fake {
             pause.wait();
         }
         self.completion = None;
-        self.cleanup_error.take().map_or(Ok(()), Err)
+        let streams = self.io.rx_close().and(self.io.tx_close());
+        self.cleanup_error.take().map_or(streams, Err)
+    }
+
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.record("rx open");
+        self.io.rx_open(block_bytes)
+    }
+
+    fn rx_receive(&mut self, consume: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<Filing, BusError> {
+        self.record("rx receive");
+        filing(self.io.rx_recv(Duration::ZERO, consume))
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        self.record("rx close");
+        self.io.rx_close()
+    }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        self.record("tx open");
+        self.io.tx_open(block_bytes, sample_bytes)
+    }
+
+    fn tx_acquire(&mut self) -> Result<Filing, BusError> {
+        self.record("tx acquire");
+        filing(self.io.tx_acquire(Duration::ZERO))
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: [u32; 4],
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.record("tx commit");
+        self.io.tx_commit(time, Some(status), fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        self.record("tx close");
+        self.io.tx_close()
+    }
+}
+
+/// A blocking-bus stream step at zero timeout, as the native backend reports it: the
+/// board's queues never wait, so a timeout means nothing has completed.
+fn filing(step: Result<(), BusError>) -> Result<Filing, BusError> {
+    match step {
+        Ok(()) => Ok(Filing::Taken),
+        Err(BusError::Timeout) => Ok(Filing::Empty),
+        Err(error) => Err(error),
     }
 }
 
@@ -328,7 +380,7 @@ fn poll(adapter: &mut Adapter, reactor: &mut Poll) -> bool {
     );
     let notified = events.iter().any(|event| event.token() == WAKE);
     for event in &events {
-        adapter.on_ready(event.token()).unwrap();
+        adapter.on_ready(event.token());
     }
     notified
 }
@@ -337,7 +389,7 @@ fn poll(adapter: &mut Adapter, reactor: &mut Poll) -> bool {
 fn completion(adapter: &mut Adapter, reactor: &mut Poll) -> Completion {
     let until = Instant::now() + GUARD;
     loop {
-        if let Some(event) = adapter.try_event(Instant::now()).unwrap() {
+        if let Some(event) = adapter.try_event(Instant::now()) {
             return event;
         }
         assert!(Instant::now() < until, "native completion deadline");
@@ -440,9 +492,9 @@ fn readiness_during_a_worker_turn_survives_its_drained_report() {
     adapter.submit(&operation(1).2, Instant::now()).unwrap();
     // Consume the submit acknowledgement to schedule the first worker reap.
     while !poll(&mut adapter, &mut reactor) {}
-    adapter.try_event(Instant::now()).unwrap();
+    adapter.try_event(Instant::now());
     gate.entered();
-    adapter.on_ready(DEVICE).unwrap();
+    adapter.on_ready(DEVICE);
     gate.release();
     assert!(matches!(
         completion(&mut adapter, &mut reactor).result,
@@ -472,9 +524,9 @@ fn a_stuck_submit_cannot_block_deadlines_or_release_worker_ownership() {
     adapter.submit(&operation(1).2, Instant::now()).unwrap();
     gate.entered();
     let deadline = adapter.deadline().unwrap();
-    let event = adapter.try_event(deadline).unwrap().unwrap();
+    let event = adapter.try_event(deadline).unwrap();
     assert!(matches!(event.result, Err(BusError::Timeout)));
-    assert!(adapter.try_event(deadline).unwrap().is_none());
+    assert!(adapter.try_event(deadline).is_none());
     assert!(adapter.try_cleanup().is_none());
     assert!(
         matches!(dropped.try_recv(), Err(mpsc::TryRecvError::Empty)),
@@ -540,7 +592,7 @@ fn a_worker_panic_resolves_once_and_still_cleans_up_on_the_worker() {
         completion(&mut adapter, &mut reactor).result,
         Err(BusError::Disconnected)
     ));
-    assert!(adapter.try_event(Instant::now()).unwrap().is_none());
+    assert!(adapter.try_event(Instant::now()).is_none());
     assert!(matches!(
         adapter.submit(&operation(2).2, Instant::now()),
         Err(BusError::Disconnected)
@@ -566,7 +618,7 @@ fn original_terminal_error_survives_a_lost_registration() {
         io::ErrorKind::NotFound
     );
     assert!(adapter.take_retirement_error().is_none());
-    assert!(adapter.try_event(Instant::now()).unwrap().is_none());
+    assert!(adapter.try_event(Instant::now()).is_none());
     assert!(matches!(
         adapter.submit(&operation(2).2, Instant::now()),
         Err(BusError::Disconnected)
@@ -680,7 +732,7 @@ fn overlapping_actions_and_reused_operation_ids_are_rejected_before_io() {
     );
     adapter.close().unwrap();
     // A stale edge delivered after close is ignored.
-    adapter.on_ready(DEVICE).unwrap();
+    adapter.on_ready(DEVICE);
     cleanup(&mut adapter, &mut reactor).unwrap();
 }
 
@@ -691,6 +743,7 @@ fn session() -> Session {
         next_sequence: None,
         next_id: 0,
         rev3: true,
+        tx_status: TxStatus::default(),
     }
 }
 
@@ -1136,4 +1189,431 @@ fn board_usb(board: SimBoard) -> BoardUsb {
         lut: 0,
         index: 0,
     }
+}
+
+/// The threads the fake backend recorded `name` calls on.
+fn calls(record: &Mutex<Record>, name: &str) -> Vec<ThreadId> {
+    record
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|(call, _)| *call == name)
+        .map(|(_, thread)| *thread)
+        .collect()
+}
+
+/// The TX core's status-word reads among the board's operations.
+fn status_reads(board: &Mutex<SimBoard>) -> usize {
+    operations(board, 0)
+        .iter()
+        .filter(|op| matches!(op, Op::RegRead { addr: 28, .. }))
+        .count()
+}
+
+/// One 1024-sample `ci16` block: four bytes a sample.
+const RX_BLOCK: u32 = 4096;
+
+/// A tuned board whose RX stream engine runs 1024-sample `ci16` packets, dropping
+/// `losses` packets before successive blocks; started by the blocking driver.
+fn rx_streaming(losses: &[u32]) -> (crate::Device, Arc<Mutex<SimBoard>>) {
+    let (mut device, board, script) = simulated_device(BoardRevision::Rev3);
+    script.lock().unwrap().losses.extend(losses);
+    device.set_rx_sample_rate(20_000_000).unwrap();
+    device.set_rx_frequency(1_000_000_000).unwrap();
+    device.start_rx_stream(1024).unwrap();
+    (device, board)
+}
+
+/// Waits through the reactor for the handle's next event and checks it is `expected`.
+fn expect_event(
+    native: &mut NativeUsb,
+    reactor: &mut Poll,
+    expected: fn(&NativeEvent) -> bool,
+    what: &str,
+) {
+    let event = finish(native, reactor);
+    assert!(expected(&event), "{what}: got {event:?}");
+}
+
+#[test]
+fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
+    // Two boards run the same stream and drop the same packets: the blocking driver reads
+    // one, the native handle the other, its worker copying each block off its transfer.
+    let losses = [0, 2, 0, 1];
+    let (mut blocking, _) = rx_streaming(&losses);
+    let mut samples = vec![num_complex::Complex::new(0, 0); 1024];
+    let expected: Vec<_> = losses
+        .iter()
+        .map(|_| {
+            let packet = blocking.receive(&mut samples, Duration::ZERO).unwrap();
+            (samples.clone(), packet.lost_packets)
+        })
+        .collect();
+
+    let (_device, board) = rx_streaming(&[]);
+    let (mut fake, record, _) = Fake::new();
+    fake.io.board = board;
+    fake.io.script.lock().unwrap().losses.extend(losses);
+    let script = Arc::clone(&fake.io.script);
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    let mut lost = 0;
+    for (index, (samples, lost_packets)) in expected.into_iter().enumerate() {
+        let NativeEvent::Received(Ok(block)) = finish(&mut native, &mut reactor) else {
+            panic!("block {index} arrives");
+        };
+        let decoded: Vec<_> = block
+            .payload
+            .chunks_exact(4)
+            .map(|sample| {
+                num_complex::Complex::new(
+                    i16::from_le_bytes([sample[0], sample[1]]),
+                    i16::from_le_bytes([sample[2], sample[3]]),
+                )
+            })
+            .collect();
+        assert!(decoded == samples, "block {index} carries the same samples");
+        lost += block.oob[0] & 0xff_ffff;
+        assert_eq!(lost, lost_packets, "block {index} reports the same losses");
+    }
+    let taken = script.lock().unwrap().submitted - 8;
+    assert!(
+        (4..=4 + 8).contains(&taken),
+        "the worker copies at most a ring's worth ahead of the caller ({taken} taken)"
+    );
+    native.start_rx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxClosed(Ok(()))),
+        "RX closes",
+    );
+    let state = script.lock().unwrap();
+    assert_eq!(state.cancellations, 1, "closing cancels the ring once");
+    assert_eq!(state.pending, 0, "every transfer came back");
+    drop(state);
+    let test = thread::current().id();
+    for call in ["rx open", "rx receive", "rx close"] {
+        let threads = calls(&record, call);
+        assert!(!threads.is_empty(), "{call} ran");
+        assert!(
+            threads.iter().all(|thread| *thread != test),
+            "{call} runs on the worker, never the reactor"
+        );
+    }
+}
+
+#[test]
+fn an_rx_failure_ends_only_the_stream_until_it_is_closed() {
+    let (fake, _, _) = Fake::new();
+    // A transfer that ends short of a whole block and its trailer.
+    fake.io
+        .script
+        .lock()
+        .unwrap()
+        .waits
+        .push_back(Ok(Some(vec![0; 10])));
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(event, NativeEvent::Received(Err(Error::Stream(BusError::Io(error))))
+                if error.kind() == io::ErrorKind::InvalidData)
+        },
+        "a malformed block fails the stream",
+    );
+    native.start_temperature(Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::Temperature(Ok(_))),
+        "the control plane is unaffected",
+    );
+    assert!(matches!(
+        native.start_rx_open(RX_BLOCK),
+        Err(Error::AlreadyStreaming)
+    ));
+    native.start_rx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxClosed(Ok(()))),
+        "the failed stream closes",
+    );
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "a closed stream opens again",
+    );
+}
+
+#[test]
+fn a_failed_rx_cancellation_keeps_the_endpoint_until_a_retry_succeeds() {
+    let (fake, _, _) = Fake::new();
+    let script = Arc::clone(&fake.io.script);
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    script.lock().unwrap().fail_cancel = true;
+    native.start_rx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| {
+            matches!(
+                event,
+                NativeEvent::RxClosed(Err(Error::Stream(BusError::Timeout)))
+            )
+        },
+        "the cancellation fails",
+    );
+    assert_eq!(
+        script.lock().unwrap().pending,
+        8,
+        "the worker still owns every transfer"
+    );
+    assert!(matches!(
+        native.start_rx_open(RX_BLOCK),
+        Err(Error::AlreadyStreaming)
+    ));
+    script.lock().unwrap().fail_cancel = false;
+    native.start_rx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxClosed(Ok(()))),
+        "a retried close succeeds",
+    );
+    assert_eq!(script.lock().unwrap().pending, 0);
+}
+
+/// 130 sends, across two status-read intervals: lengths and times vary, and a three-sample
+/// block ends the run. Each is (time, bytes).
+fn sends() -> Vec<(Option<u64>, Vec<u8>)> {
+    (0..130_u32)
+        .map(|index| {
+            let time = (index % 3 != 0).then(|| u64::from(index) * 4096);
+            let samples = if index == 129 { 3 } else { 1 + index % 1024 };
+            let bytes = (0..samples * 4)
+                .map(|byte| u8::try_from((byte + index) % 251).unwrap())
+                .collect();
+            (time, bytes)
+        })
+        .collect()
+}
+
+#[test]
+fn native_tx_frames_and_reads_status_as_the_blocking_bus_does() {
+    // The blocking bus over one fresh board...
+    let reference = board_usb(SimBoard::new(BoardRevision::Rev3));
+    let (blocking_board, blocking_script) =
+        (Arc::clone(&reference.board), Arc::clone(&reference.script));
+    blocking_script.lock().unwrap().tx_finished = usize::MAX;
+    let mut bus = UsbBus::from_io(Box::new(reference));
+    bus.tx_stream_open(4096, 4).unwrap();
+    let mut expected = Vec::new();
+    for (time, bytes) in sends() {
+        let mut status = None;
+        let _ = bus
+            .tx_stream_send(Duration::ZERO, time, &mut |buffer, words| {
+                status = words;
+                buffer[..bytes.len()].copy_from_slice(&bytes);
+                bytes.len()
+            })
+            .unwrap();
+        expected.push(status.unwrap());
+    }
+    bus.tx_stream_close().unwrap();
+
+    // ...and the native handle over another.
+    let (fake, record, _) = Fake::new();
+    let (board, script) = (Arc::clone(&fake.io.board), Arc::clone(&fake.io.script));
+    script.lock().unwrap().tx_finished = usize::MAX;
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_tx_open(4096, 4).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxOpened(Ok(()))),
+        "TX opens",
+    );
+    for (index, (time, bytes)) in sends().into_iter().enumerate() {
+        native
+            .start_send(time, &bytes, GUARD, Instant::now())
+            .unwrap();
+        let NativeEvent::Sent(Ok(words)) = finish(&mut native, &mut reactor) else {
+            panic!("send {index} is queued");
+        };
+        assert_eq!(
+            words, expected[index],
+            "send {index} reports the same status"
+        );
+    }
+    native.start_tx_close().unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxClosed(Ok(()))),
+        "TX closes",
+    );
+
+    assert!(
+        script.lock().unwrap().tx_frames == blocking_script.lock().unwrap().tx_frames,
+        "the same frames, headers included, in the same order"
+    );
+    assert_eq!(
+        operations(&board, 0),
+        operations(&blocking_board, 0),
+        "the same status reads at the same sends"
+    );
+    assert_eq!(
+        status_reads(&board),
+        3,
+        "libusdr's tx_stat_rate: the first send's, the 65th's and the 129th's"
+    );
+    assert_eq!(script.lock().unwrap().tx_cancellations, 1);
+    let test = thread::current().id();
+    for call in ["tx open", "tx acquire", "tx commit", "tx close"] {
+        let threads = calls(&record, call);
+        assert!(!threads.is_empty(), "{call} ran");
+        assert!(
+            threads.iter().all(|thread| *thread != test),
+            "{call} runs on the worker"
+        );
+    }
+}
+
+#[test]
+fn a_full_tx_ring_times_out_uncounted_until_a_transfer_finishes() {
+    let (fake, _, _) = Fake::new();
+    let (board, script) = (Arc::clone(&fake.io.board), Arc::clone(&fake.io.script));
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_tx_open(4096, 4).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxOpened(Ok(()))),
+        "TX opens",
+    );
+    // libusdr's 32 transfers, none of which the device finishes.
+    for _ in 0..32 {
+        native
+            .start_send(None, &[1; 64], GUARD, Instant::now())
+            .unwrap();
+        expect_event(
+            &mut native,
+            &mut reactor,
+            |event| matches!(event, NativeEvent::Sent(Ok(_))),
+            "a free transfer takes the send",
+        );
+    }
+    let now = Instant::now();
+    native
+        .start_send(None, &[2; 64], Duration::from_millis(5), now)
+        .unwrap();
+    assert!(matches!(native.start_temperature(now), Err(Error::Busy)));
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::Sent(Err(Error::Timeout))),
+        "a full ring times out",
+    );
+    assert_eq!(script.lock().unwrap().tx_frames.len(), 32);
+    script.lock().unwrap().tx_finished = 1;
+    native
+        .start_send(None, &[3; 64], GUARD, Instant::now())
+        .unwrap();
+    // The device's completion edge.
+    native.on_ready(DEVICE);
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::Sent(Ok(_))),
+        "a finished transfer takes the next send",
+    );
+    let frames = script.lock().unwrap().tx_frames.clone();
+    assert_eq!(frames.len(), 33);
+    assert_eq!(frames[32][16..], [3; 64], "the later send's own block");
+    assert_eq!(
+        status_reads(&board),
+        1,
+        "only the first send read the status: the timed-out send was not counted"
+    );
+}
+
+#[test]
+fn closing_the_handle_cancels_its_open_streams_on_the_worker() {
+    let (fake, record, dropped) = Fake::new();
+    let script = Arc::clone(&fake.io.script);
+    let (mut reactor, wake) = reactor();
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native.start_rx_open(RX_BLOCK).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    native.start_tx_open(4096, 4).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxOpened(Ok(()))),
+        "TX opens",
+    );
+    native
+        .start_send(Some(7), &[9; 128], GUARD, Instant::now())
+        .unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::Sent(Ok(_))),
+        "the send is queued",
+    );
+    native.close().unwrap();
+    assert!(
+        native.poll(Instant::now()).is_none(),
+        "a closed handle reports nothing more"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    let worker = dropped.recv_timeout(GUARD).unwrap();
+    assert_ne!(worker, thread::current().id());
+    let state = script.lock().unwrap();
+    assert_eq!(state.cancellations, 1, "RX was cancelled");
+    assert_eq!(state.pending, 0);
+    assert_eq!(state.tx_cancellations, 1, "TX was cancelled");
+    drop(state);
+    assert!(
+        calls(&record, "cleanup")
+            .iter()
+            .all(|thread| *thread == worker),
+        "cancellation ran on the worker"
+    );
 }

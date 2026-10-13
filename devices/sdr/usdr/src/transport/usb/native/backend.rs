@@ -1,15 +1,19 @@
 //! Queue ownership and completed-transfer copying, exclusively on the native worker.
 
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use mio::event::Source;
-use rsl_usb::{InQueue, Interface, OutQueue, ReapProgress};
+use rsl_usb::{Buffer, InQueue, Interface, OutQueue, ReapProgress};
 
 use super::super::bus::{MAX_NOTIFICATION_BYTES, transfer_length};
 use super::super::i2c::Event;
 use super::super::machine::{Machine, Step, Transfer};
-use crate::lowlevel::{BusError, usb_error};
+use super::super::rx::{Rx, RxQueue};
+use super::super::tx::{Tx, TxQueue};
+use crate::lowlevel::{BusError, TxFill, usb_error};
 use crate::portable::usb::register::MAX_READ_WORDS;
 
 /// One bounded endpoint action with an absolute, non-renewable submission deadline.
@@ -91,8 +95,20 @@ impl Turn {
     };
 }
 
+/// What a nonblocking stream step found among the filed completions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) enum Filing {
+    /// It took what it was after: an RX block, or a free TX transfer.
+    Taken,
+    /// Nothing is filed for it; the next readiness edge may bring something.
+    Empty,
+    /// The dispatcher was busy; take another turn rather than wait for an edge.
+    Again,
+}
+
 /// Exclusive worker boundary, implemented by real queues and the whole-transfer test fake.
-/// Serving errors and panics must not release or replace its owner.
+/// Serving errors and panics must not release or replace its owner. The stream methods run
+/// the shared `Rx`/`Tx` adapters over completions already filed, never waiting.
 pub(in super::super) trait Backend: Send + 'static {
     /// The device's readiness, taken once during blocking setup. The adapter drops it before
     /// retiring the worker, so it may refer to a descriptor this backend keeps open, and the
@@ -103,11 +119,123 @@ pub(in super::super) trait Backend: Send + 'static {
     fn submit(&mut self, request: Request) -> Result<(), BusError>;
     /// Reaps within the supplied budget and takes only already-filed completions.
     fn turn(&mut self, budget: NonZeroUsize) -> Result<Turn, BusError>;
-    /// Cancels/drains owned transfers; this and subsequent Drop may block.
+    /// Cancels/drains owned transfers, streams included; this and subsequent Drop may block.
     fn cleanup(&mut self) -> Result<(), BusError>;
+    /// Opens RX endpoint 0x83 and primes its ring for blocks of `block_bytes`
+    /// (`Rx::open_endpoint`).
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError>;
+    /// Lends one filed RX block to `consume`, then requeues its transfer (`Rx::receive`).
+    fn rx_receive(&mut self, consume: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<Filing, BusError>;
+    /// Cancels RX and releases the endpoint once every transfer is back; may block.
+    fn rx_close(&mut self) -> Result<(), BusError>;
+    /// Opens TX endpoint 0x03 for blocks of up to `block_bytes` (`Tx::open_endpoint`).
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError>;
+    /// Takes a free TX transfer: a new one below the ring's bound, else the oldest once
+    /// filed (`Tx::acquire`).
+    fn tx_acquire(&mut self) -> Result<Filing, BusError>;
+    /// Frames and queues the block `fill` writes into the acquired transfer (`Tx::commit`).
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: [u32; 4],
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError>;
+    /// Cancels TX and releases the endpoint once every transfer is back; may block.
+    fn tx_close(&mut self) -> Result<(), BusError>;
 }
 
-/// Real command, readback and notification queues with one in-flight request.
+/// A stream queue whose waits only take completions a reap turn has already filed: the
+/// shared `Rx`/`Tx` adapters' timeout then means "nothing filed", and nothing blocks.
+pub(in super::super) struct Filed<Q> {
+    /// The endpoint's queue, owned by the worker.
+    queue: Q,
+    /// Set when the dispatcher was busy at a take, so the worker turns again; shared with
+    /// the owning [`Queues`], which cannot reach the queue inside the adapter.
+    contended: Arc<AtomicBool>,
+}
+
+impl<Q> Filed<Q> {
+    /// Takes a filed completion through `take`, recording contention as "turn again".
+    fn take(
+        &mut self,
+        take: impl FnOnce(&mut Q) -> Result<Option<rsl_usb::Completion>, rsl_usb::Error>,
+    ) -> Result<Option<Buffer>, BusError> {
+        let done = match take(&mut self.queue) {
+            Err(rsl_usb::Error::Busy) => {
+                self.contended.store(true, Ordering::Relaxed);
+                return Ok(None);
+            }
+            done => done.map_err(usb_error)?,
+        };
+        let Some(done) = done else {
+            return Ok(None);
+        };
+        done.status
+            .map_err(rsl_usb::Error::from)
+            .map_err(usb_error)?;
+        Ok(Some(done.buffer))
+    }
+}
+
+impl RxQueue for Filed<InQueue> {
+    type Buffer = Buffer;
+
+    fn data(buffer: &Buffer) -> &[u8] {
+        buffer
+    }
+
+    fn packet_size(&self) -> usize {
+        self.queue.max_packet_size()
+    }
+
+    fn alloc(&mut self, capacity: usize) -> Result<Buffer, BusError> {
+        self.queue.alloc(capacity).map_err(usb_error)
+    }
+
+    fn submit(&mut self, buffer: Buffer) -> Result<(), BusError> {
+        self.queue
+            .submit(buffer)
+            .map_err(|rejected| usb_error(rejected.error))
+    }
+
+    fn wait(&mut self, _: Duration) -> Result<Option<Buffer>, BusError> {
+        self.take(InQueue::try_complete)
+    }
+
+    fn cancel(&mut self) -> Result<(), BusError> {
+        self.queue.cancel_all().map(|_| ()).map_err(usb_error)
+    }
+}
+
+impl TxQueue for Filed<OutQueue> {
+    type Buffer = Buffer;
+
+    fn bytes(buffer: &mut Buffer) -> &mut [u8] {
+        buffer.as_mut_slice()
+    }
+
+    fn alloc(&mut self, capacity: usize) -> Result<Buffer, BusError> {
+        Ok(self.queue.alloc(capacity))
+    }
+
+    fn submit(&mut self, mut buffer: Buffer, len: usize) -> Result<(), BusError> {
+        buffer.set_len(len);
+        self.queue
+            .submit(buffer)
+            .map_err(|rejected| usb_error(rejected.error))
+    }
+
+    fn wait(&mut self, _: Duration) -> Result<Option<Buffer>, BusError> {
+        self.take(OutQueue::try_complete)
+    }
+
+    fn cancel(&mut self) -> Result<(), BusError> {
+        self.queue.cancel_all().map(|_| ()).map_err(usb_error)
+    }
+}
+
+/// Real command, readback and notification queues with one in-flight request, and the
+/// stream endpoints once opened.
 pub(in super::super) struct Queues {
     /// Drives bounded reaping; outlives the reactor's readiness, so the claim is released here.
     interface: Interface,
@@ -123,6 +251,12 @@ pub(in super::super) struct Queues {
     notification_capacity: usize,
     /// Correlation and endpoint selection for the single submitted request.
     pending: Option<(u64, Endpoint)>,
+    /// RX endpoint 0x83, including a failed stream awaiting cleanup.
+    rx: Option<Rx<Filed<InQueue>>>,
+    /// TX endpoint 0x03, likewise.
+    tx: Option<Tx<Filed<OutQueue>>>,
+    /// A stream queue found the dispatcher busy since the last stream step.
+    contended: Arc<AtomicBool>,
 }
 
 impl Queues {
@@ -143,6 +277,9 @@ impl Queues {
             readback_capacity,
             notification_capacity,
             pending: None,
+            rx: None,
+            tx: None,
+            contended: Arc::default(),
         })
     }
 
@@ -263,10 +400,81 @@ impl Backend for Queues {
     }
 
     fn cleanup(&mut self) -> Result<(), BusError> {
+        let rx = Rx::close_endpoint(&mut self.rx);
+        let tx = Tx::close_endpoint(&mut self.tx);
         let commands = self.commands.cancel_all().map_err(usb_error);
         let registers = self.registers.cancel_all().map_err(usb_error);
         let notifications = self.notifications.cancel_all().map_err(usb_error);
         // Attempt every queue even when one failed. Drop retains any remaining URBs.
-        commands.and(registers).and(notifications).map(|_| ())
+        rx.and(tx)
+            .and(commands.and(registers).and(notifications).map(|_| ()))
+    }
+
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        let contended = Arc::clone(&self.contended);
+        Rx::open_endpoint(&mut self.rx, block_bytes, || {
+            let queue = self.interface.in_queue(0x83).map_err(usb_error)?;
+            Ok(Filed { queue, contended })
+        })
+    }
+
+    fn rx_receive(&mut self, consume: &mut dyn FnMut(&[u8], [u64; 2])) -> Result<Filing, BusError> {
+        let rx = self
+            .rx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB RX is closed"))?;
+        let received = rx.receive(Duration::ZERO, consume);
+        self.filing(received)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        Rx::close_endpoint(&mut self.rx)
+    }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        let contended = Arc::clone(&self.contended);
+        Tx::open_endpoint(&mut self.tx, block_bytes, sample_bytes, || {
+            let queue = self.interface.out_queue(0x03).map_err(usb_error)?;
+            Ok(Filed { queue, contended })
+        })
+    }
+
+    fn tx_acquire(&mut self) -> Result<Filing, BusError> {
+        let tx = self
+            .tx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB TX is closed"))?;
+        let acquired = tx.acquire(Duration::ZERO);
+        self.filing(acquired)
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: [u32; 4],
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.tx
+            .as_mut()
+            .ok_or(BusError::Unsupported("USB TX is closed"))?
+            .commit(time, Some(status), fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        Tx::close_endpoint(&mut self.tx)
+    }
+}
+
+impl Queues {
+    /// A stream step's outcome: its adapter's timeout means nothing was filed, or, if the
+    /// dispatcher was busy meanwhile, that the worker must turn again.
+    fn filing(&self, step: Result<(), BusError>) -> Result<Filing, BusError> {
+        let contended = self.contended.swap(false, Ordering::Relaxed);
+        match step {
+            Ok(()) => Ok(Filing::Taken),
+            Err(BusError::Timeout) if contended => Ok(Filing::Again),
+            Err(BusError::Timeout) => Ok(Filing::Empty),
+            Err(error) => Err(error),
+        }
     }
 }

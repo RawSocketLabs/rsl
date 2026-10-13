@@ -1,4 +1,6 @@
-//! A bounded, parked queue owner; reactor shutdown never joins this thread.
+//! A bounded, parked queue owner; reactor shutdown never joins this thread. It runs every
+//! USB call: control transfers, reap turns, and the RX/TX streams' opening, block copies,
+//! sends and cancellation.
 
 use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -10,10 +12,15 @@ use std::time::Instant;
 use mio::Waker;
 use mio::event::Source;
 
-use super::backend::{Backend, Request, Turn};
+use super::backend::{Backend, Completion, Filing, Request, Turn};
+use super::handle::RxBlock;
 use crate::lowlevel::BusError;
 
-/// The single admitted worker command; shutdown has a separate, unsaturable path.
+/// Worker commands the adapter may have outstanding: one operation's command (a control
+/// submission or a stream command) and one reap turn. Each is answered by one report.
+pub(in super::super) const MAILBOX: usize = 2;
+
+/// An admitted worker command; shutdown has a separate, unsaturable path.
 #[expect(
     clippy::large_enum_variant,
     reason = "one command in flight; its inline frame spares an allocation per transfer"
@@ -21,30 +28,53 @@ use crate::lowlevel::BusError;
 pub(in super::super) enum Work {
     /// Submit without waiting for its USB completion.
     Submit(Request),
-    /// Drive bounded reaping after an edge or an exhausted budget.
-    Reap { id: u64 },
+    /// Drive bounded reaping after an edge or an exhausted budget, then take up to `rx`
+    /// filed RX blocks and, if `acquire`, try for a free TX transfer.
+    Turn { rx: usize, acquire: bool },
+    /// Open, close or send on a stream; may block (cancellation) on the worker.
+    Stream(StreamCommand),
 }
 
-/// The single admitted worker response; no blocking publication on the reactor.
+/// A stream command, answered by [`Report::Stream`].
+pub(in super::super) enum StreamCommand {
+    /// Opens RX for blocks of this many bytes and primes its ring.
+    RxOpen(u32),
+    /// Cancels RX and releases its endpoint.
+    RxClose,
+    /// Opens TX for blocks of up to `block_bytes`, samples of `sample_bytes`.
+    TxOpen { block_bytes: u32, sample_bytes: u32 },
+    /// Frames `block` with `time` into the acquired transfer and queues it.
+    TxCommit {
+        time: Option<u64>,
+        status: [u32; 4],
+        block: Vec<u8>,
+    },
+    /// Cancels TX and releases its endpoint.
+    TxClose,
+}
+
+/// What one worker turn collected: no kernel-owned memory, and RX blocks already copied.
+pub(in super::super) struct Harvest {
+    /// The control request's completion, if it finished.
+    pub completion: Option<Completion>,
+    /// RX blocks taken, oldest first; an error ends the list and the stream.
+    pub rx: Vec<Result<RxBlock, BusError>>,
+    /// The TX acquisition attempt, if asked for: whether a free transfer is now held.
+    pub acquired: Option<Result<bool, BusError>>,
+    /// Another turn is due without a new readiness edge.
+    pub exhausted: bool,
+}
+
+/// An admitted worker response; no blocking publication on the reactor.
 pub(in super::super) enum Report {
     /// Submission succeeded; always request an initial reap to cover an earlier edge.
     Submitted { id: u64 },
     /// Bounded completion work or its original native error.
-    Turn {
-        id: u64,
-        result: Result<Turn, BusError>,
-    },
+    Turn(Result<Harvest, BusError>),
     /// Submission failed before or at the kernel boundary.
     Failed { id: u64, error: BusError },
-}
-
-impl Report {
-    /// Correlates every acknowledgement/turn/failure with its admitted request.
-    pub(in super::super) fn id(&self) -> u64 {
-        match self {
-            Self::Submitted { id } | Self::Turn { id, .. } | Self::Failed { id, .. } => *id,
-        }
-    }
+    /// A stream command's result.
+    Stream(Result<(), BusError>),
 }
 
 /// Separate failure and registration-retirement signals cannot be queued out by traffic.
@@ -60,9 +90,9 @@ struct Signals {
 
 /// Reactor-side mailbox endpoints, never owning a queue or a claim.
 pub(in super::super) struct Worker {
-    /// At most one command in addition to the single worker turn executing it.
+    /// At most [`MAILBOX`] admitted commands, in order.
     commands: mpsc::SyncSender<Work>,
-    /// At most one completed worker turn awaits the reactor.
+    /// At most [`MAILBOX`] reports await the reactor, one per command.
     reports: mpsc::Receiver<Report>,
     /// Cleanup outcome is not competing with ordinary reports for capacity.
     cleanup: mpsc::Receiver<Result<(), BusError>>,
@@ -80,8 +110,8 @@ impl Worker {
         wake: Arc<Waker>,
         budget: NonZeroUsize,
     ) -> Result<Self, BusError> {
-        let (commands, incoming) = mpsc::sync_channel(1);
-        let (outgoing, reports) = mpsc::sync_channel(1);
+        let (commands, incoming) = mpsc::sync_channel(MAILBOX);
+        let (outgoing, reports) = mpsc::sync_channel(MAILBOX);
         let (finished, cleanup) = mpsc::sync_channel(1);
         let signals = Arc::new(Signals::default());
         let worker_signals = Arc::clone(&signals);
@@ -177,10 +207,10 @@ impl Worker {
                         }
                     }
                 }
-                Work::Reap { id } => Report::Turn {
-                    id,
-                    result: backend.turn(budget),
-                },
+                Work::Turn { rx, acquire } => {
+                    Report::Turn(Self::harvest(backend, budget, rx, acquire))
+                }
+                Work::Stream(command) => Report::Stream(Self::stream(backend, command)),
             };
             if reports.try_send(report).is_err() {
                 signals.failed.store(true, Ordering::Release);
@@ -188,6 +218,85 @@ impl Worker {
                 break;
             }
             let _ = wake.wake();
+        }
+    }
+
+    /// One bounded turn: reaps and takes the control completion, then copies up to `rx`
+    /// filed RX blocks (each transfer requeued as it is copied) and, if `acquire`, tries
+    /// for a free TX transfer. Stream work stops at the first failure; a reap failure
+    /// skips it.
+    fn harvest<B: Backend>(
+        backend: &mut B,
+        budget: NonZeroUsize,
+        rx: usize,
+        acquire: bool,
+    ) -> Result<Harvest, BusError> {
+        let Turn {
+            completion,
+            mut exhausted,
+        } = backend.turn(budget)?;
+        let mut blocks = Vec::new();
+        while blocks.len() < rx {
+            let mut block = None;
+            let taken = backend.rx_receive(&mut |payload, oob| {
+                block = Some(RxBlock {
+                    payload: payload.to_vec(),
+                    oob,
+                });
+            });
+            match taken {
+                Ok(Filing::Taken) => blocks.push(Ok(
+                    block.expect("invariant: a taken RX block was lent before its requeue")
+                )),
+                Ok(filing) => {
+                    exhausted |= filing == Filing::Again;
+                    break;
+                }
+                Err(error) => {
+                    blocks.push(Err(error));
+                    break;
+                }
+            }
+        }
+        // Blocks may still be filed beyond the room the reactor gave this turn.
+        exhausted |= rx > 0 && blocks.len() == rx && blocks.last().is_some_and(Result::is_ok);
+        let acquired = acquire.then(|| match backend.tx_acquire() {
+            Ok(filing) => {
+                exhausted |= filing == Filing::Again;
+                Ok(filing == Filing::Taken)
+            }
+            Err(error) => Err(error),
+        });
+        Ok(Harvest {
+            completion,
+            rx: blocks,
+            acquired,
+            exhausted,
+        })
+    }
+
+    /// Runs one stream command.
+    fn stream<B: Backend>(backend: &mut B, command: StreamCommand) -> Result<(), BusError> {
+        match command {
+            StreamCommand::RxOpen(block_bytes) => backend.rx_open(block_bytes),
+            StreamCommand::RxClose => backend.rx_close(),
+            StreamCommand::TxOpen {
+                block_bytes,
+                sample_bytes,
+            } => backend.tx_open(block_bytes, sample_bytes),
+            StreamCommand::TxCommit {
+                time,
+                status,
+                block,
+            } => backend.tx_commit(time, status, &mut |buffer, _| {
+                // A block longer than the transfer is reported back whole, so the shared
+                // `Tx::commit` refuses it rather than this copy truncating it.
+                if let Some(target) = buffer.get_mut(..block.len()) {
+                    target.copy_from_slice(&block);
+                }
+                block.len()
+            }),
+            StreamCommand::TxClose => backend.tx_close(),
         }
     }
 

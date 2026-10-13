@@ -1,5 +1,8 @@
 //! The public reactor-driven handle over the native adapter: one generic executor runs the
-//! TMP114 read and portable sequences (gateware identity, reference-clock switch).
+//! TMP114 read and portable sequences (gateware identity, reference-clock switch), and the
+//! RX and TX streams' operations (`stream`).
+
+mod stream;
 
 use std::fmt;
 use std::io;
@@ -9,9 +12,11 @@ use std::time::{Duration, Instant};
 
 use mio::{Registry, Token, Waker};
 
+use self::stream::{Send, StreamOperation};
 use super::super::i2c::I2cTransaction;
 use super::super::machine::{Machine, Output, Step};
 use super::super::protocol::I2cCache;
+use super::super::tx::TxStatus;
 use super::adapter::Adapter;
 use super::backend::Backend;
 use crate::board::Board;
@@ -31,7 +36,8 @@ use crate::reference::ReferenceClock;
 const BUDGET: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
 
 /// Control-plane state carried over from the blocking bus, so the native session continues
-/// its notification sequence baseline, I²C address table and operation identities.
+/// its notification sequence baseline, I²C address table, operation identities and TX
+/// status throttle.
 pub(in super::super) struct Session {
     /// The simple I²C core's address table.
     pub i2c: I2cCache,
@@ -42,9 +48,11 @@ pub(in super::super) struct Session {
     /// Revision 3, read from the hardware ID at hand-over: decides which Si5332 input
     /// [`ReferenceClock::Board`] selects.
     pub rev3: bool,
+    /// The TX core's throttled status words, per device as in libusdr.
+    pub tx_status: TxStatus,
 }
 
-/// Something a [`NativeUsb`] finished.
+/// Something a [`NativeUsb`] finished or received.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum NativeEvent {
@@ -55,14 +63,52 @@ pub enum NativeEvent {
     /// A reference-clock switch finished. A transport or protocol failure also closes the
     /// handle; [`Error::ClockInputMissing`] does not.
     ReferenceClock(Result<(), Error>),
+    /// RX opened and primed its transfers, or failed to; after a failure, close RX before
+    /// opening it again.
+    RxOpened(Result<(), Error>),
+    /// One RX block arrived, or RX failed ([`Error::Stream`]). A failed stream delivers
+    /// nothing more until it is closed and opened again; the handle stays open.
+    Received(Result<RxBlock, Error>),
+    /// RX closed: every transfer was cancelled and came back, and the endpoint is free. On
+    /// failure the endpoint stays held; close again.
+    RxClosed(Result<(), Error>),
+    /// TX opened, or failed to; after a failure, close TX before opening it again.
+    TxOpened(Result<(), Error>),
+    /// A send queued its block, reporting the TX core's four status words as libusdr
+    /// reports them with it: read afresh on the device's first counted send and every 64th
+    /// after, else the last reading. [`Error::Timeout`] if no transfer freed in time (the
+    /// send is then not counted); [`Error::Stream`] if the stream refused or failed it. A
+    /// failed status read closes the handle.
+    Sent(Result<[u32; 4], Error>),
+    /// TX closed: every transfer, sent or not, was cancelled and came back. On failure the
+    /// endpoint stays held; close again.
+    TxClosed(Result<(), Error>),
 }
 
-/// The operation in flight: what consumes the executor's results.
-enum Operation {
+/// One RX block a [`NativeUsb`] received, copied off its transfer, which was then
+/// requeued.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RxBlock {
+    /// The block's sample bytes in the stream's wire format, without the transport's
+    /// 16-byte trailer.
+    pub payload: Vec<u8>,
+    /// The trailer's first two words, as libusdr's `usb_uram_recv_dma_wait` passes them on
+    /// as its out-of-band data: in the first, bits 23:0 count the packets the gateware
+    /// dropped before this one and the high 32 bits are the burst mask.
+    pub oob: [u64; 2],
+}
+
+/// The operation in flight, with what it waits for.
+enum Pending {
     /// A TMP114 read: one two-byte I²C transaction, then decoding.
-    Temperature(TemperatureRead),
+    Temperature(TemperatureRead, Machine),
     /// A portable sequence, one action at a time.
-    Sequence(SequenceOperation),
+    Sequence(SequenceOperation, Wait),
+    /// A stream command, awaiting the worker's answer.
+    Stream(StreamOperation),
+    /// A TX send.
+    Send(Send),
 }
 
 /// The sequences the handle runs, and how each reports its end.
@@ -120,7 +166,7 @@ impl SequenceOperation {
     }
 }
 
-/// What the pending operation waits for.
+/// What a sequence's current action waits for.
 #[expect(
     clippy::large_enum_variant,
     reason = "one per handle; boxing the machine would allocate per action"
@@ -132,31 +178,39 @@ enum Wait {
     Sleep(Instant),
 }
 
-/// The one operation in flight and its current wait.
-struct Pending {
-    /// Consumes results and names the next action.
-    operation: Operation,
-    /// The current action.
-    wait: Wait,
+/// Where a stream is, as the handle sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamState {
+    /// Not open; it may open.
+    Closed,
+    /// Open: RX delivers blocks, TX takes sends.
+    Open,
+    /// An open or close failed, or RX failed: it must close before it opens again.
+    Failed,
 }
 
-/// A uSDR's USB control plane driven by a caller-owned Mio reactor (feature `mio`), made by
-/// [`UsbBus::into_native`](super::super::UsbBus::into_native).
+/// A uSDR's USB control plane and streams driven by a caller-owned Mio reactor (feature
+/// `mio`), made by [`UsbBus::into_native`](super::super::UsbBus::into_native).
 ///
-/// Unstable pilot: it reads the TMP114 temperature and the gateware identity, and switches
-/// the reference clock. It powers nothing, so it applies no thermal policy. The reactor
-/// thread only registers, schedules and observes; a worker thread owns the USB queues and
-/// performs every USB call, including cleanup. Waits inside an operation are deadlines the
-/// caller's reactor honours, never sleeps.
+/// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
+/// the reference clock, and runs the RX and TX streams at the transport (the blocks on
+/// endpoints 0x83 and 0x03, framed and throttled as the blocking bus frames them). It
+/// powers nothing and configures no stream engine, so it applies no thermal policy and
+/// streams only what the gateware was already set to stream. The reactor thread only
+/// registers, schedules and observes; a worker thread owns the USB queues and performs
+/// every USB call, stream cancellation and cleanup included. Waits inside an operation are
+/// deadlines the caller's reactor honours, never sleeps.
 ///
 /// Drive it from your event loop: pass every event for its token to
-/// [`on_ready`](Self::on_ready), then call [`poll`](Self::poll) after any event for its
-/// token or the shared [`Waker`], and once [`deadline`](Self::deadline) passes. Pass a
-/// `now` that never decreases across calls; a step backwards fails the operation. One
-/// operation is in flight at a time. Any failure closes the handle, except refusing a
-/// second operation, a rejected argument, or a failure a sequence finds in well-formed
-/// replies (such as [`Error::ClockInputMissing`]); open the device again to continue.
-/// Unqualified on hardware.
+/// [`on_ready`](Self::on_ready), then call [`poll`](Self::poll) until it returns `None`
+/// after any event for its token or the shared [`Waker`], and once
+/// [`deadline`](Self::deadline) passes. Pass a `now` that never decreases across calls; a
+/// step backwards fails the operation. One operation (a control operation, a stream's open
+/// or close, or a send) is in flight at a time; RX blocks arrive alongside it. Any
+/// control failure closes the handle, except refusing a second operation, a rejected
+/// argument, or a failure a sequence finds in well-formed replies (such as
+/// [`Error::ClockInputMissing`]); open the device again to continue. Stream failures end
+/// only their stream. Unqualified on hardware.
 pub struct NativeUsb {
     /// Registration, deadlines and the worker's mailboxes.
     adapter: Adapter,
@@ -166,14 +220,18 @@ pub struct NativeUsb {
     epoch: Instant,
     /// The operation in flight.
     pending: Option<Pending>,
-    /// A worker handoff failure noticed outside `poll`, reported by the next `poll`.
-    broken: Option<BusError>,
+    /// The RX stream.
+    rx: StreamState,
+    /// The TX stream.
+    tx: StreamState,
 }
 
 impl fmt::Debug for NativeUsb {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NativeUsb")
             .field("pending", &self.pending.is_some())
+            .field("rx", &self.rx)
+            .field("tx", &self.tx)
             .finish_non_exhaustive()
     }
 }
@@ -192,7 +250,8 @@ impl NativeUsb {
             session,
             epoch: Instant::now(),
             pending: None,
-            broken: None,
+            rx: StreamState::Closed,
+            tx: StreamState::Closed,
         })
     }
 
@@ -212,11 +271,8 @@ impl NativeUsb {
             reg: request.register[0],
         };
         match self.i2c(access, 2, now) {
-            Ok(wait) => {
-                self.pending = Some(Pending {
-                    operation: Operation::Temperature(read),
-                    wait,
-                });
+            Ok(machine) => {
+                self.pending = Some(Pending::Temperature(read, machine));
                 Ok(())
             }
             Err(error) => {
@@ -278,10 +334,7 @@ impl NativeUsb {
                 return Err(operation.fail_at_access(error));
             }
         };
-        self.pending = Some(Pending {
-            operation: Operation::Sequence(operation),
-            wait,
-        });
+        self.pending = Some(Pending::Sequence(operation, wait));
         Ok(())
     }
 
@@ -297,18 +350,24 @@ impl NativeUsb {
                     RegisterAccess::Read { .. } => 1,
                     RegisterAccess::Write { .. } => 0,
                 };
-                self.i2c(access, read, now)
+                self.i2c(access, read, now).map(Wait::Transfer)
             }
             SequenceAction::Fpga(access) => {
                 let id = self.take_id()?;
                 let transaction = RegisterTransaction::access(id, access, self.elapsed(now))?;
                 self.launch(Machine::Register(transaction), now)
+                    .map(Wait::Transfer)
             }
         }
     }
 
     /// Starts an I²C register access reading `read` bytes back.
-    fn i2c(&mut self, access: RegisterAccess, read: usize, now: Instant) -> Result<Wait, BusError> {
+    fn i2c(
+        &mut self,
+        access: RegisterAccess,
+        read: usize,
+        now: Instant,
+    ) -> Result<Machine, BusError> {
         let id = self.take_id()?;
         let (dev, bytes) = match access {
             RegisterAccess::Read { dev, reg } => (dev, [reg, 0]),
@@ -325,14 +384,14 @@ impl NativeUsb {
     }
 
     /// Starts `machine` and hands its command to the worker.
-    fn launch(&mut self, mut machine: Machine, now: Instant) -> Result<Wait, BusError> {
+    fn launch(&mut self, mut machine: Machine, now: Instant) -> Result<Machine, BusError> {
         let Step::Submit(submission) = machine.start(self.elapsed(now))? else {
             return Err(BusError::Unsupported(
                 "native USB machine finished without a transfer",
             ));
         };
         self.adapter.submit(&submission, now)?;
-        Ok(Wait::Transfer(machine))
+        Ok(machine)
     }
 
     /// The next never-reused operation identity.
@@ -346,30 +405,51 @@ impl NativeUsb {
 
     /// Forwards one Mio event's token; events for other tokens are ignored.
     pub fn on_ready(&mut self, token: Token) {
-        if let Err(error) = self.adapter.on_ready(token) {
-            self.broken.get_or_insert(error);
+        self.adapter.on_ready(token);
+    }
+
+    /// Observes the worker and deadlines once, starts the operation's next action, and
+    /// returns one event: the operation's end, else an RX block. Call it again until it
+    /// returns `None`; it never waits or performs USB I/O.
+    #[must_use]
+    pub fn poll(&mut self, now: Instant) -> Option<NativeEvent> {
+        self.poll_operation(now).or_else(|| self.poll_rx())
+    }
+
+    /// Advances the operation in flight; its event once it ends.
+    fn poll_operation(&mut self, now: Instant) -> Option<NativeEvent> {
+        match self.pending.take()? {
+            Pending::Temperature(read, mut machine) => {
+                let Some(outcome) = self.observe(&mut machine, now) else {
+                    self.pending = Some(Pending::Temperature(read, machine));
+                    return None;
+                };
+                Some(self.conclude(read, outcome))
+            }
+            Pending::Sequence(operation, wait) => self.poll_sequence(operation, wait, now),
+            Pending::Stream(operation) => self.poll_stream(operation),
+            Pending::Send(send) => self.poll_send(send, now),
         }
     }
 
-    /// Observes the worker and deadlines once and starts the operation's next action; never
-    /// waits or performs USB I/O.
-    #[must_use]
-    pub fn poll(&mut self, now: Instant) -> Option<NativeEvent> {
-        let mut pending = self.pending.take()?;
-        let Some(outcome) = self.observe(&mut pending.wait, now) else {
-            self.pending = Some(pending);
-            return None;
+    /// Advances a sequence past its current action, once that has an outcome.
+    fn poll_sequence(
+        &mut self,
+        mut operation: SequenceOperation,
+        mut wait: Wait,
+        now: Instant,
+    ) -> Option<NativeEvent> {
+        let outcome = match &mut wait {
+            Wait::Sleep(until) => (now >= *until).then_some(Ok(None)),
+            Wait::Transfer(machine) => self.observe(machine, now),
         };
-        let mut operation = match pending.operation {
-            Operation::Temperature(read) => return Some(self.conclude(read, outcome)),
-            Operation::Sequence(operation) => operation,
+        let Some(outcome) = outcome else {
+            self.pending = Some(Pending::Sequence(operation, wait));
+            return None;
         };
         match self.advance(&mut operation, outcome, now) {
             Ok(Some(wait)) => {
-                self.pending = Some(Pending {
-                    operation: Operation::Sequence(operation),
-                    wait,
-                });
+                self.pending = Some(Pending::Sequence(operation, wait));
                 None
             }
             Ok(None) => Some(operation.finish(Ok(()))),
@@ -377,25 +457,13 @@ impl NativeUsb {
         }
     }
 
-    /// The current action's outcome, once there is one: the machine's output, or `None` for
-    /// a wait that has passed. A worker handoff failure is the outcome of the next transfer.
+    /// A machine's outcome, once there is one: its output, or the failure of its transfer.
     fn observe(
         &mut self,
-        wait: &mut Wait,
+        machine: &mut Machine,
         now: Instant,
     ) -> Option<Result<Option<Output>, BusError>> {
-        let machine = match wait {
-            Wait::Sleep(until) => return (now >= *until).then_some(Ok(None)),
-            Wait::Transfer(machine) => machine,
-        };
-        if let Some(error) = self.broken.take() {
-            return Some(Err(error));
-        }
-        let completion = match self.adapter.try_event(now) {
-            Ok(Some(completion)) => completion,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let completion = self.adapter.try_event(now)?;
         let elapsed = self.elapsed(now);
         let step = completion.apply(machine, elapsed, &mut self.session.next_sequence);
         match step {
@@ -454,17 +522,15 @@ impl NativeUsb {
     /// When [`poll`](Self::poll) must run even without an event.
     #[must_use]
     pub fn deadline(&self) -> Option<Instant> {
-        match self.pending {
-            Some(Pending {
-                wait: Wait::Sleep(until),
-                ..
-            }) => Some(until),
+        match &self.pending {
+            Some(Pending::Sequence(_, Wait::Sleep(until))) => Some(*until),
+            Some(Pending::Send(send)) => send.deadline().or_else(|| self.adapter.deadline()),
             _ => self.adapter.deadline(),
         }
     }
 
-    /// Deregisters and lets the worker cancel, release the device and report through
-    /// [`try_cleanup`](Self::try_cleanup); never waits.
+    /// Deregisters and lets the worker cancel every transfer, streams included, release the
+    /// device and report through [`try_cleanup`](Self::try_cleanup); never waits.
     ///
     /// # Errors
     ///
@@ -472,6 +538,8 @@ impl NativeUsb {
     /// error the token stays registered and `close` may be retried.
     pub fn close(&mut self) -> io::Result<()> {
         self.pending = None;
+        self.rx = StreamState::Closed;
+        self.tx = StreamState::Closed;
         self.adapter.close()
     }
 

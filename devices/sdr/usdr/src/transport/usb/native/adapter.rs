@@ -1,5 +1,6 @@
 //! Registration, deadlines and coalesced worker scheduling; no USB syscalls here.
 
+use std::collections::VecDeque;
 use std::io;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -10,13 +11,28 @@ use mio::{Interest, Registry, Token, Waker};
 
 use super::super::machine::{Submission, Transfer};
 use super::backend::{Backend, Completion, Request};
-use super::worker::{Report, Work, Worker};
+use super::handle::RxBlock;
+use super::worker::{Harvest, Report, StreamCommand, Work, Worker};
 use crate::lowlevel::BusError;
 
-/// Single-request native executor registered in an externally owned Poll.
+/// RX blocks copied off the device and not yet taken by the handle: one ring's worth.
+/// Turns take no more, so a caller that stops polling stops the copying, and the device's
+/// ring then runs dry and the gateware counts what it drops.
+pub(in super::super) const RX_BACKLOG: usize = 8;
+
+/// The answer to an operation's stream work.
+pub(in super::super) enum StreamOutcome {
+    /// A TX acquisition attempt: whether a free transfer is now held for the next commit.
+    Acquired(Result<bool, BusError>),
+    /// A stream command's result.
+    Command(Result<(), BusError>),
+}
+
+/// Native executor registered in an externally owned Poll: one control request, one stream
+/// command and one reap turn at a time.
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "independent admission, mailbox, edge and cleanup-publication facts"
+    reason = "independent admission, mailbox, edge, interest and cleanup-publication facts"
 )]
 pub(in super::super) struct Adapter {
     /// Cloned registration control, not an internally owned event loop.
@@ -35,14 +51,29 @@ pub(in super::super) struct Adapter {
     /// The shared Waker, kept open for the worker's final publication: closing its last
     /// descriptor would discard a wake the reactor has not yet polled.
     _wake: Arc<Waker>,
-    /// The one active transfer and absolute deadline; no observer owns transport memory.
+    /// The one active control transfer and absolute deadline; no observer owns transport
+    /// memory.
     pending: Option<(u64, Instant)>,
     /// Previous operation identity; write IDs are never reused in this session.
     last_id: Option<u64>,
-    /// One worker command or report is outstanding.
-    busy: bool,
-    /// Coalesces edges received while a worker turn is in flight.
+    /// An operation's command (a control submission or a stream command) awaits its report.
+    commanding: bool,
+    /// A reap turn awaits its report.
+    turning: bool,
+    /// Coalesces edges received while a worker turn is in flight or nothing wanted a turn.
     dirty: bool,
+    /// Turns take RX blocks, up to the room left in `blocks`.
+    rx_wanted: bool,
+    /// Turns try for a free TX transfer.
+    tx_wanted: bool,
+    /// A control completion drained from the worker, for the next `try_event`.
+    completed: Option<Completion>,
+    /// RX blocks drained from the worker, oldest first; at most [`RX_BACKLOG`].
+    blocks: VecDeque<Result<RxBlock, BusError>>,
+    /// Acquisitions and stream-command results drained from the worker, oldest first.
+    outcomes: VecDeque<StreamOutcome>,
+    /// Why the adapter stopped, when no control completion carried it.
+    fault: Option<BusError>,
     /// Cleanup publication is consumed once, even after a worker disconnect.
     cleanup_observed: bool,
 }
@@ -76,8 +107,15 @@ impl Adapter {
             _wake: wake,
             pending: None,
             last_id: None,
-            busy: false,
+            commanding: false,
+            turning: false,
             dirty: false,
+            rx_wanted: false,
+            tx_wanted: false,
+            completed: None,
+            blocks: VecDeque::new(),
+            outcomes: VecDeque::new(),
+            fault: None,
             cleanup_observed: false,
         })
     }
@@ -89,12 +127,7 @@ impl Adapter {
         submission: &Submission,
         now: Instant,
     ) -> Result<(), BusError> {
-        if self.stopped {
-            return Err(BusError::Disconnected);
-        }
-        if self.pending.is_some() || self.busy {
-            return Err(BusError::Unsupported("native USB action already pending"));
-        }
+        self.admissible()?;
         let Submission {
             id,
             transfer,
@@ -124,80 +157,200 @@ impl Adapter {
         }))?;
         self.last_id = Some(id);
         self.pending = Some((id, expires));
-        self.busy = true;
+        self.commanding = true;
         Ok(())
+    }
+
+    /// Hands one stream command to the worker; its result arrives as
+    /// [`StreamOutcome::Command`]. It has no deadline: cancellation can take seconds.
+    pub(in super::super) fn command(&mut self, command: StreamCommand) -> Result<(), BusError> {
+        self.admissible()?;
+        self.worker.send(Work::Stream(command))?;
+        self.commanding = true;
+        Ok(())
+    }
+
+    /// Refuses a new operation command while stopped or while another is outstanding.
+    fn admissible(&self) -> Result<(), BusError> {
+        if self.stopped {
+            return Err(BusError::Disconnected);
+        }
+        if self.pending.is_some() || self.commanding {
+            return Err(BusError::Unsupported("native USB action already pending"));
+        }
+        Ok(())
+    }
+
+    /// Starts or stops taking RX blocks. Starting covers an edge that came before it;
+    /// stopping drops the blocks not yet taken.
+    pub(in super::super) fn want_rx(&mut self, wanted: bool) {
+        self.rx_wanted = wanted;
+        if wanted {
+            self.dirty = true;
+            self.schedule();
+        } else {
+            self.blocks.clear();
+        }
+    }
+
+    /// Starts or stops trying for a free TX transfer on each turn. Starting covers an edge
+    /// that came before it.
+    pub(in super::super) fn want_tx(&mut self, wanted: bool) {
+        self.tx_wanted = wanted;
+        if wanted {
+            self.dirty = true;
+            self.schedule();
+        }
     }
 
     /// Coalesces a matching device readiness hint; stale/unrelated tokens do no work.
-    pub(in super::super) fn on_ready(&mut self, token: Token) -> Result<(), BusError> {
-        if !self.stopped && token == self.token && self.pending.is_some() {
+    pub(in super::super) fn on_ready(&mut self, token: Token) {
+        if !self.stopped && token == self.token {
             self.dirty = true;
-            self.schedule()?;
+            self.schedule();
         }
-        Ok(())
     }
 
-    /// Schedules exactly one bounded turn, preserving dirtiness while it is outstanding.
-    fn schedule(&mut self) -> Result<(), BusError> {
-        let Some((id, _)) = self.pending else {
-            return Ok(());
-        };
-        if !self.stopped && self.dirty && !self.busy {
-            self.worker.send(Work::Reap { id })?;
-            self.busy = true;
-            self.dirty = false;
+    /// Schedules exactly one bounded turn while something wants one, preserving dirtiness
+    /// while a turn is outstanding or nothing does.
+    fn schedule(&mut self) {
+        if self.stopped || !self.dirty || self.turning {
+            return;
         }
-        Ok(())
-    }
-
-    /// Observes at most one worker report or deadline; never reaps, waits or cancels USB.
-    pub(in super::super) fn try_event(
-        &mut self,
-        now: Instant,
-    ) -> Result<Option<Completion>, BusError> {
-        let Some((id, expires)) = self.pending else {
-            return Ok(None);
+        let rx = if self.rx_wanted {
+            RX_BACKLOG - self.blocks.len()
+        } else {
+            0
         };
-        // A report published before the deadline wins over a timer observed with it.
-        let report = match self.worker.report() {
-            Ok(Some(report)) => report,
-            Ok(None) if now >= expires => return Ok(Some(self.fail(id, BusError::Timeout))),
-            Ok(None) => return Ok(None),
-            Err(error) => return Ok(Some(self.fail(id, error))),
-        };
-        if report.id() != id {
-            return Ok(Some(self.fail(id, BusError::Disconnected)));
+        if self.pending.is_none() && rx == 0 && !self.tx_wanted {
+            return;
         }
-        self.busy = false;
-        match report {
-            Report::Submitted { .. } => {
-                self.dirty = true;
+        let acquire = self.tx_wanted;
+        match self.worker.send(Work::Turn { rx, acquire }) {
+            Ok(()) => {
+                self.turning = true;
+                self.dirty = false;
             }
-            Report::Failed { error, .. }
-            | Report::Turn {
-                result: Err(error), ..
-            } => return Ok(Some(self.fail(id, error))),
-            Report::Turn {
-                result: Ok(turn), ..
-            } => {
-                self.dirty |= turn.exhausted;
-                if let Some(completion) = turn.completion {
-                    if completion.id != id {
-                        return Ok(Some(self.fail(id, BusError::Disconnected)));
-                    }
-                    if completion.result.is_err() {
-                        self.retire_after_completion();
-                    }
-                    self.pending = None;
-                    return Ok(Some(completion));
+            Err(error) => self.collapse(error),
+        }
+    }
+
+    /// Observes the worker's reports and the control deadline; returns the control
+    /// request's completion once. Never reaps, waits or cancels USB.
+    pub(in super::super) fn try_event(&mut self, now: Instant) -> Option<Completion> {
+        self.pump();
+        // A report published before the deadline wins over a timer observed with it.
+        if self.completed.is_none() {
+            if let Some((id, expires)) = self.pending {
+                if now >= expires {
+                    self.completed = Some(self.fail(id, BusError::Timeout));
                 }
             }
         }
-        if now >= expires {
-            return Ok(Some(self.fail(id, BusError::Timeout)));
+        self.schedule();
+        self.completed.take()
+    }
+
+    /// The oldest RX block or RX failure the worker copied, freeing room for another.
+    pub(in super::super) fn try_block(&mut self) -> Option<Result<RxBlock, BusError>> {
+        self.pump();
+        let block = self.blocks.pop_front();
+        self.schedule();
+        block
+    }
+
+    /// The oldest acquisition or stream-command result.
+    pub(in super::super) fn try_outcome(&mut self) -> Option<StreamOutcome> {
+        self.pump();
+        let outcome = self.outcomes.pop_front();
+        self.schedule();
+        outcome
+    }
+
+    /// Drains every report the worker has published, routing each.
+    fn pump(&mut self) {
+        while !self.stopped {
+            match self.worker.report() {
+                Ok(Some(report)) => self.route(report),
+                Ok(None) => return,
+                Err(error) => self.collapse(error),
+            }
         }
-        self.schedule()?;
-        Ok(None)
+    }
+
+    /// Files one report under what it answers.
+    fn route(&mut self, report: Report) {
+        match report {
+            Report::Submitted { id } => {
+                self.commanding = false;
+                if self.pending.is_some_and(|(pending, _)| pending == id) {
+                    self.dirty = true;
+                } else {
+                    self.collapse(BusError::Disconnected);
+                }
+            }
+            Report::Failed { id, error } => {
+                self.commanding = false;
+                let error = match self.pending {
+                    Some((pending, _)) if pending == id => error,
+                    _ => BusError::Disconnected,
+                };
+                self.collapse(error);
+            }
+            Report::Stream(result) => {
+                self.commanding = false;
+                self.outcomes.push_back(StreamOutcome::Command(result));
+            }
+            Report::Turn(Err(error)) => {
+                self.turning = false;
+                self.collapse(error);
+            }
+            Report::Turn(Ok(harvest)) => {
+                self.turning = false;
+                self.harvest(harvest);
+            }
+        }
+    }
+
+    /// Files a turn's stream work and control completion.
+    fn harvest(&mut self, harvest: Harvest) {
+        let Harvest {
+            completion,
+            rx,
+            acquired,
+            exhausted,
+        } = harvest;
+        self.dirty |= exhausted;
+        // A turn taken before RX stopped being wanted can still bring blocks: drop them.
+        if self.rx_wanted {
+            self.blocks.extend(rx);
+        }
+        if let Some(acquired) = acquired {
+            self.outcomes.push_back(StreamOutcome::Acquired(acquired));
+        }
+        let Some(completion) = completion else {
+            return;
+        };
+        if self.pending.is_none_or(|(id, _)| id != completion.id) {
+            self.collapse(BusError::Disconnected);
+            return;
+        }
+        if completion.result.is_err() {
+            self.retire_after_completion();
+        }
+        self.pending = None;
+        self.completed = Some(completion);
+    }
+
+    /// Ends the session on a failure no single operation owns: the control request gets
+    /// `error`, or, if none is pending, it is kept for [`take_fault`](Self::take_fault).
+    fn collapse(&mut self, error: BusError) {
+        if let Some((id, _)) = self.pending {
+            self.completed = Some(self.fail(id, error));
+        } else {
+            self.fault.get_or_insert(error);
+            self.retire_after_completion();
+        }
     }
 
     /// Publishes one terminal failure, retires registration and leaves all buffers owned.
@@ -208,6 +361,16 @@ impl Adapter {
             id,
             result: Err(error),
         }
+    }
+
+    /// Whether the session has ended, by failure or [`close`](Self::close).
+    pub(in super::super) fn is_stopped(&self) -> bool {
+        self.stopped
+    }
+
+    /// The failure that ended the session when no control request carried it, once.
+    pub(in super::super) fn take_fault(&mut self) -> Option<BusError> {
+        self.fault.take()
     }
 
     /// Keeps terminal delivery independent of deregistration errors and cleanup.
@@ -228,14 +391,18 @@ impl Adapter {
         self.pending.map(|(_, expires)| expires)
     }
 
-    /// Deregisters, then retires the worker, which drops the source before cleaning up;
-    /// requests cleanup but does not await it. `NotFound` means the entry is already gone, so
-    /// it retires too and is reported. Any other deregistration error keeps the source
-    /// registered for a retry, and the token must not be reused until one succeeds.
+    /// Deregisters, then retires the worker, which drops the source before cleaning up
+    /// (streams included); requests cleanup but does not await it. `NotFound` means the
+    /// entry is already gone, so it retires too and is reported. Any other deregistration
+    /// error keeps the source registered for a retry, and the token must not be reused
+    /// until one succeeds.
     pub(in super::super) fn close(&mut self) -> io::Result<()> {
         self.stopped = true;
         self.pending = None;
         self.dirty = false;
+        self.rx_wanted = false;
+        self.tx_wanted = false;
+        self.blocks.clear();
         let Some(source) = self.source.as_mut() else {
             return Ok(());
         };
