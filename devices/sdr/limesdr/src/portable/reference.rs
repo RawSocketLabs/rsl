@@ -4,12 +4,24 @@
 //! The detector counts reference cycles over 16 777 210 cycles of a 100 MHz clock (the C's
 //! `fx3Cnt` and `fx3Clk`); libusdr turns the count back into hertz and looks for the
 //! nominal reference it is. Its walk along the table is broken: the `ABS` macro evaluates
-//! `clkTbl[i++]` twice and subtracts unsigned, so it skips entries, wraps, and for counts
-//! just below 40 MHz, 30.72 MHz or 52 MHz reads past the table (undefined behaviour). Only
-//! references measuring 40 to 41 MHz open reliably, and a real 40 MHz oscillator a few ppm
-//! slow lands in the undefined case. This port runs the walk as written but with `ABS`
-//! evaluated once and signed: the nominal reference nearest the measurement (the higher of
-//! two equally near), refused when more than 1 MHz away.
+//! `clkTbl[i++]` twice and subtracts unsigned, so it skips entries and wraps. By measured
+//! frequency, libusdr:
+//!
+//! | Measured | libusdr |
+//! |---|---|
+//! | below 10 MHz, or above 110 MHz | stops at the first entry, then logs `clkTbl[i - 1]` with unsigned `i` = 0 (out of bounds); `-EFAULT` |
+//! | exactly 10 MHz | takes it for 30.72 MHz; `-EFAULT` |
+//! | (10, 30.72) MHz | reads `clkTbl[5]` (out of bounds) |
+//! | [30.72, 31.72] MHz | opens as 30.72 MHz |
+//! | (31.72, 38.4] MHz | `-EFAULT` |
+//! | (38.4, 40) MHz | reads `clkTbl[5]` |
+//! | [40, 41] MHz | opens as 40 MHz |
+//! | (41, 52) MHz | `-EFAULT` |
+//! | [52, 110] MHz | reads `clkTbl[5]` |
+//!
+//! A real 40 MHz oscillator a few ppm slow lands in an undefined case. This port runs the
+//! walk as written but with `ABS` evaluated once and signed: the nominal reference nearest
+//! the measurement (the higher of two equally near), refused when more than 1 MHz away.
 
 /// The nominal references libusdr knows, in hertz (`clkTbl`).
 pub(crate) const REFERENCES_HZ: [u32; 5] =

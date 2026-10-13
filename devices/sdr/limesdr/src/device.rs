@@ -5,7 +5,7 @@ use std::fmt;
 use crate::control::ControlPort;
 use crate::error::{Error, ExchangeError};
 use crate::lms64c::Frame;
-use crate::portable::lsop::{LsOp, Refused};
+use crate::portable::lsop::{BadReply, LsOp};
 use crate::portable::open::{Action, Open};
 
 /// What libusdr reports at `/dm/revision` for this family: an emulated constant, the same
@@ -105,5 +105,8 @@ impl fmt::Debug for Device {
 fn exchange(port: &mut dyn ControlPort, op: LsOp) -> Result<u32, ExchangeError> {
     let reply = port.exchange(&op.request().to_bytes())?;
     op.reply(&Frame::from_bytes(reply))
-        .map_err(|Refused(status)| ExchangeError::Refused(status))
+        .map_err(|bad| match bad {
+            BadReply::Refused(status) => ExchangeError::Refused(status),
+            BadReply::Mismatched(command) => ExchangeError::Mismatched(command),
+        })
 }

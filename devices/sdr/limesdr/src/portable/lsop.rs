@@ -8,7 +8,7 @@
 //! `req`/`rep` lines encode. `rsl-limesdr-oracle` proves the driver and the shim agree, not
 //! that the board's firmware does.
 
-use rsl_lowlevel::FpgaAccess;
+use rsl_lowlevel::{FpgaAccess, SpiAddr};
 
 use super::lms64c::{Frame, STATUS_COMPLETED, Space};
 
@@ -55,10 +55,17 @@ pub(crate) enum LsOp {
     Lms7Reset,
 }
 
-/// The firmware did not complete a command: the reply's status, which is not
-/// [`STATUS_COMPLETED`]. libusdr's shim reports it as `-EIO`.
+/// A reply that does not carry the operation's result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Refused(pub(crate) u8);
+pub(crate) enum BadReply {
+    /// The firmware did not complete the command: the reply's status, which is not
+    /// [`STATUS_COMPLETED`]. libusdr's shim reports it as `-EIO`.
+    Refused(u8),
+
+    /// The reply answers another command: the one it names. libusdr's shim does not check
+    /// this (a deliberate addition: a reply out of step with its request is not its result).
+    Mismatched(u8),
+}
 
 impl LsOp {
     /// The request frame that carries this operation.
@@ -84,13 +91,23 @@ impl LsOp {
     ///
     /// # Errors
     ///
-    /// [`Refused`] when the reply's status is not [`STATUS_COMPLETED`]; nothing else of the
-    /// reply is checked, as libusdr's shim checks nothing else.
-    pub(crate) fn reply(self, reply: &Frame) -> Result<u32, Refused> {
-        if reply.status() != STATUS_COMPLETED {
-            return Err(Refused(reply.status()));
+    /// [`BadReply::Mismatched`] when the reply names another command than the request,
+    /// [`BadReply::Refused`] when its status is not [`STATUS_COMPLETED`]. The rest of the
+    /// header is not checked, as libusdr's shim checks none of it.
+    pub(crate) fn reply(self, reply: &Frame) -> Result<u32, BadReply> {
+        if reply.command() != self.request().command() {
+            return Err(BadReply::Mismatched(reply.command()));
         }
-        let value = |index| u32::from(reply.read_value(index).unwrap_or(0));
+        if reply.status() != STATUS_COMPLETED {
+            return Err(BadReply::Refused(reply.status()));
+        }
+        let value = |index| {
+            u32::from(
+                reply
+                    .read_value(index)
+                    .expect("invariant: a payload holds records 0 and 1"),
+            )
+        };
         Ok(match self {
             Self::Read { .. } => value(0),
             Self::Spi { word } if word & SPI_WRITE == 0 => value(0),
@@ -99,8 +116,8 @@ impl LsOp {
         })
     }
 
-    /// The gateware access this operation is, for a failure report; `None` for the SPI
-    /// exchange, whose chip operation reports its own, and the reset.
+    /// The access this operation is, for a failure report: a gateware register, or the
+    /// LMS7002M register its SPI word addresses (bits 30:16) on bus 0; `None` for the reset.
     pub(crate) const fn fpga_access(self) -> Option<FpgaAccess> {
         match self {
             Self::Write { reg, value } => Some(FpgaAccess::Write {
@@ -108,7 +125,13 @@ impl LsOp {
                 value: value as u32,
             }),
             Self::Read { reg } | Self::ReadWide { reg } => Some(FpgaAccess::Read { reg }),
-            Self::Spi { .. } | Self::Lms7Reset => None,
+            Self::Spi { word } => Some(FpgaAccess::Spi {
+                target: SpiAddr(0),
+                word,
+                reg: word >> 16 & 0x7fff,
+                write: word & SPI_WRITE != 0,
+            }),
+            Self::Lms7Reset => None,
         }
     }
 }
@@ -118,9 +141,10 @@ mod tests {
     use super::super::lms64c::FRAME_LEN;
     use super::*;
 
-    /// A completed reply carrying `records` from the payload's start.
-    fn completed(records: &[u32]) -> Frame {
+    /// A completed reply to `command` carrying `records` from the payload's start.
+    fn completed(command: u8, records: &[u32]) -> Frame {
         let mut bytes = [0; FRAME_LEN];
+        bytes[0] = command;
         bytes[1] = STATUS_COMPLETED;
         for (slot, record) in bytes[8..].chunks_exact_mut(4).zip(records) {
             slot.copy_from_slice(&record.to_be_bytes());
@@ -143,26 +167,36 @@ mod tests {
         let op = LsOp::ReadWide { reg: 0x0072 };
         assert_eq!(op.request().block_count(), 2);
         assert_eq!(
-            op.reply(&completed(&[0x0072_6664, 0x0073_0066])),
+            op.reply(&completed(0x56, &[0x0072_6664, 0x0073_0066])),
             Ok(0x0066_6664)
         );
     }
 
     #[test]
     fn reads_are_zero_extended_and_writes_return_nothing() {
-        let reply = completed(&[0x002f_3841]);
-        assert_eq!(LsOp::Spi { word: 0x002f_0000 }.reply(&reply), Ok(0x3841));
-        assert_eq!(LsOp::Spi { word: 0x802f_0000 }.reply(&reply), Ok(0));
-        assert_eq!(LsOp::Lms7Reset.reply(&reply), Ok(0));
+        let read = completed(0x22, &[0x002f_3841]);
+        assert_eq!(LsOp::Spi { word: 0x002f_0000 }.reply(&read), Ok(0x3841));
+        let write = completed(0x21, &[0x002f_3841]);
+        assert_eq!(LsOp::Spi { word: 0x802f_0000 }.reply(&write), Ok(0));
+        assert_eq!(LsOp::Lms7Reset.reply(&completed(0x20, &[])), Ok(0));
+    }
+
+    #[test]
+    fn a_reply_to_another_command_is_not_this_operations_result() {
+        let write_reply = completed(0x21, &[0x002f_3841]);
+        assert_eq!(
+            LsOp::Spi { word: 0x002f_0000 }.reply(&write_reply),
+            Err(BadReply::Mismatched(0x21))
+        );
     }
 
     #[test]
     fn any_status_but_completed_is_refused() {
-        let mut bytes = completed(&[]).to_bytes();
+        let mut bytes = completed(0x56, &[]).to_bytes();
         bytes[1] = 5;
         assert_eq!(
             LsOp::Read { reg: 0x000a }.reply(&Frame::from_bytes(bytes)),
-            Err(Refused(5))
+            Err(BadReply::Refused(5))
         );
     }
 }

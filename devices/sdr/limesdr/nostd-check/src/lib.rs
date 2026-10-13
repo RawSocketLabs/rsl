@@ -8,7 +8,7 @@
 mod portable;
 
 use portable::lms64c::{FRAME_LEN, Frame, STATUS_COMPLETED};
-use portable::lsop::LsOp;
+use portable::lsop::{BadReply, LsOp};
 use portable::open::{Action, Failure, Open};
 use rsl_lowlevel::SequenceFailure;
 
@@ -63,7 +63,9 @@ pub fn open(version: u16) -> Result<(usize, u32), &'static str> {
 /// What `op` returns from the healthy board.
 fn answer(op: LsOp, version: u16) -> Result<u32, u8> {
     op.reply(&reply(op.request(), version))
-        .map_err(|refused| refused.0)
+        .map_err(|bad| match bad {
+            BadReply::Refused(status) | BadReply::Mismatched(status) => status,
+        })
 }
 
 /// What a failure names.

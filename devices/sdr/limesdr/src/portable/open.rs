@@ -148,7 +148,7 @@ impl Open {
         match self.step {
             Step::PollWait(_) => Some(Action::Sleep(POLL_INTERVAL)),
             Step::Create => self.create.next().map(chip_action),
-            step => op(step).map(Action::Op),
+            step => step.op().map(Action::Op),
         }
     }
 
@@ -165,7 +165,7 @@ impl Open {
             Step::PollWait(poll) if poll + 1 < POLLS => Ok(Step::Poll(poll + 1)),
             Step::PollWait(_) => Err(Failure::DetectorStalled),
             _ => {
-                let Some(op) = op(step) else {
+                let Some(op) = step.op() else {
                     return Ok(());
                 };
                 result
@@ -210,7 +210,10 @@ impl Open {
                     found: value,
                 }));
             }
-            Step::StreamRead => Step::StreamWrite(low_half(value) & !(RX_ENABLE | TX_ENABLE)),
+            Step::StreamRead => {
+                let [lo, hi, ..] = value.to_le_bytes();
+                Step::StreamWrite(u16::from_le_bytes([lo, hi]) & !(RX_ENABLE | TX_ENABLE))
+            }
             Step::StreamWrite(_) => Step::Done,
             // Steps without an operation of their own.
             Step::PollWait(_) | Step::Create | Step::Done | Step::Failed => step,
@@ -218,27 +221,29 @@ impl Open {
     }
 }
 
-/// The operation `step` performs, for the steps that perform one of their own.
-fn op(step: Step) -> Option<LsOp> {
-    Some(match step {
-        Step::Start(index) => START[index],
-        Step::Poll(_) => LsOp::Read {
-            reg: DETECTOR_STATUS,
-        },
-        Step::Count => LsOp::ReadWide {
-            reg: DETECTOR_COUNT,
-        },
-        Step::Reset => LsOp::Lms7Reset,
-        Step::Version => spi(version_read()),
-        Step::StreamRead => LsOp::Read {
-            reg: STREAM_CONTROL,
-        },
-        Step::StreamWrite(value) => LsOp::Write {
-            reg: STREAM_CONTROL,
-            value,
-        },
-        Step::PollWait(_) | Step::Create | Step::Done | Step::Failed => return None,
-    })
+impl Step {
+    /// The operation this step performs, for the steps that perform one of their own.
+    fn op(self) -> Option<LsOp> {
+        Some(match self {
+            Step::Start(index) => START[index],
+            Step::Poll(_) => LsOp::Read {
+                reg: DETECTOR_STATUS,
+            },
+            Step::Count => LsOp::ReadWide {
+                reg: DETECTOR_COUNT,
+            },
+            Step::Reset => LsOp::Lms7Reset,
+            Step::Version => spi(version_read()),
+            Step::StreamRead => LsOp::Read {
+                reg: STREAM_CONTROL,
+            },
+            Step::StreamWrite(value) => LsOp::Write {
+                reg: STREAM_CONTROL,
+                value,
+            },
+            Step::PollWait(_) | Step::Create | Step::Done | Step::Failed => return None,
+        })
+    }
 }
 
 /// The SPI exchange that reads the LMS7002M's version.
@@ -269,29 +274,21 @@ fn chip_action(action: SequenceAction) -> Action {
 fn op_failure<E>(op: LsOp, source: E) -> Failure<E> {
     match op {
         LsOp::Lms7Reset => Failure::Reset(source),
-        LsOp::Spi { .. } => SequenceFailure::FpgaTransport {
-            chip: lms7002m::NAME,
-            access: version_read(),
-            source,
-        }
-        .into(),
-        LsOp::Write { .. } | LsOp::Read { .. } | LsOp::ReadWide { .. } => {
+        LsOp::Spi { .. } | LsOp::Write { .. } | LsOp::Read { .. } | LsOp::ReadWide { .. } => {
             SequenceFailure::FpgaTransport {
-                chip: fpga::NAME,
+                chip: if matches!(op, LsOp::Spi { .. }) {
+                    lms7002m::NAME
+                } else {
+                    fpga::NAME
+                },
                 access: op
                     .fpga_access()
-                    .expect("invariant: gateware operations are gateware accesses"),
+                    .expect("invariant: every operation but the reset is an access"),
                 source,
             }
             .into()
         }
     }
-}
-
-/// Bits 15:0 of a register word.
-const fn low_half(word: u32) -> u16 {
-    let [lo, hi, ..] = word.to_le_bytes();
-    u16::from_le_bytes([lo, hi])
 }
 
 #[cfg(test)]

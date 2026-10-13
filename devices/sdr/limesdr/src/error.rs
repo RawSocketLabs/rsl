@@ -18,6 +18,10 @@ pub enum ExchangeError {
     /// `lms64c_cmds.h`'s `STATUS_*` other than `STATUS_COMPLETED_CMD` (1).
     #[error("the board firmware refused the command: status {0}")]
     Refused(u8),
+
+    /// The reply answers another command than the request: the command it names.
+    #[error("the board replied to command {0:#04x}, not the one sent")]
+    Mismatched(u8),
 }
 
 /// A failed driver operation.
