@@ -9,7 +9,7 @@ dependency builds are expected, but unrelated dependency test suites are not.
 import argparse
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shlex
 import subprocess
 import sys
@@ -17,8 +17,8 @@ import tomllib
 
 from gate import validate_plan
 from plan import (BARE_METAL_DEVICES, BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE, NOSTD,
-                  PE_SYNC_ORACLE, PKI, PORTABLE_FIXTURES, PROFILES, USDR_ORACLE, USDR_PORTABLE,
-                  XSDR_ORACLE, XSDR_PORTABLE, bare_metal_devices, released_portable_drivers)
+                  PE_SYNC_ORACLE, PKI, PORTABLE_FIXTURES, PROFILES, USDR_ORACLE, XSDR_ORACLE,
+                  bare_metal_devices, released_portable_drivers)
 
 
 def packages(names):
@@ -130,10 +130,11 @@ def commands(profile, plan, bnb):
         return [["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "test", *manifest, "--locked"]]
-    if profile in {"usdr-portable", "xsdr-portable"}:
+    portable = {f"{PurePosixPath(driver).name}-portable": fixture
+                for driver, fixture in PORTABLE_FIXTURES.items()}
+    if profile in portable:
         name = profile.removesuffix("-portable")
-        fixture = {"usdr": USDR_PORTABLE, "xsdr": XSDR_PORTABLE}[name]
-        manifest = ["--manifest-path", f"{fixture}/Cargo.toml"]
+        manifest = ["--manifest-path", f"{portable[profile]}/Cargo.toml"]
         return [[sys.executable, "scripts/ci/portable.py", name],
                 ["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],

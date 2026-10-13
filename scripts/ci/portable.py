@@ -36,9 +36,10 @@ FIXTURES = {
     "xsdr": Fixture(XSDR, {"rsl-lms7002m": set(), "rsl-lowlevel": {"std"}, "rsl-lp8758": set()},
                     None),
 }
-# Every crate some fixture compiles without std: an owned dependency may enable none of
-# their default or std features behind a fixture's back.
-CORE_ONLY = {name for fixture in FIXTURES.values() for name in fixture.dependencies}
+# Every crate a fixture compiles without std, directly or through an owned dependency (the
+# chip crates' `bnb`, listed explicitly: the XSDR fixture reaches it only through them): an
+# owned dependency may enable none of their default or std features behind a fixture's back.
+CORE_ONLY = {"bnb"} | {name for fixture in FIXTURES.values() for name in fixture.dependencies}
 
 
 def check_dependency(root, fixture, name, host_only, shared, member, candidate):
