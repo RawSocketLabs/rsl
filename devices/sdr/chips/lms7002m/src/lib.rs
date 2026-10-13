@@ -9,7 +9,8 @@
 //! where the source gives nothing more, and nothing here states reset values.
 //!
 //! - Addresses: [`Reg`]; value types implement this crate's 16-bit [`Register`] trait.
-//! - SPI: one 32-bit word per access, bit 31 = write, bits 30:16 the address, 15:0 the data.
+//! - SPI: one 32-bit word per access, bit 31 = write, bits 30:16 the address, 15:0 the data;
+//!   [`spi_read`] is the exchange that reads one register.
 //! - Banked registers: the chip keeps per-channel copies of some registers;
 //!   [`LmlControl`]'s `MAC` selects the copies a write reaches.
 //! - Sequences: [`Create`] (`lms7002m_create`) and [`Batch`]es of writes that the
@@ -36,6 +37,7 @@ pub use create::{Create, ResetPlan};
 pub use reg::Reg;
 pub use register::Register;
 pub use regs::*;
+pub use spi::read as spi_read;
 
 /// The chip's name in errors.
 pub const NAME: &str = "LMS7002M";

@@ -31,8 +31,11 @@ pub(crate) fn write(target: SpiAddr, (reg, value): (Reg, u16)) -> FpgaAccess {
     access(target, reg, true, value)
 }
 
-/// The exchange that reads `reg` on the chip at `target`.
-pub(crate) fn read(target: SpiAddr, reg: Reg) -> FpgaAccess {
+/// The exchange that reads `reg` on the chip at `target`. Public as `spi_read`, for board
+/// code that reads a register outside this crate's operations, such as a board's own
+/// version gate before [`Create`](crate::Create).
+#[must_use]
+pub fn read(target: SpiAddr, reg: Reg) -> FpgaAccess {
     access(target, reg, false, 0)
 }
 
