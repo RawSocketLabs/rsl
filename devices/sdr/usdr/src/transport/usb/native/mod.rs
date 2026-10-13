@@ -13,6 +13,7 @@
 //! configuring the interface is blocking setup on `UsbBus`.
 
 mod adapter;
+mod asynchronous;
 mod backend;
 mod handle;
 mod managed;
@@ -21,6 +22,7 @@ mod worker;
 
 #[cfg(test)]
 pub(super) use adapter::{Adapter, RX_BACKLOG, StreamOutcome};
+pub use asynchronous::{AsyncUsb, Closing, NextBlock, Operation};
 pub(super) use backend::{Backend, Queues};
 #[cfg(test)]
 pub(super) use backend::{Completion, Filing, Reply, Request, Turn};

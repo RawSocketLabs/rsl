@@ -2,12 +2,16 @@
 //! No usbfs node, device reset, kernel install, or hardware claim is performed.
 
 use std::collections::VecDeque;
+use std::future::Future;
 use std::io;
 use std::mem;
 use std::num::NonZeroUsize;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
+use std::pin::pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
+use std::task::{self, Context, Wake, Waker as TaskWaker};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
@@ -33,8 +37,9 @@ use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
-    Adapter, Backend, BoardState, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb, Queues,
-    RX_BACKLOG, Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work, Worker,
+    Adapter, AsyncUsb, Backend, BoardState, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb,
+    Queues, RX_BACKLOG, Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work,
+    Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 use crate::transport::usb::tx::TxStatus;
@@ -3059,4 +3064,113 @@ fn a_worker_panic_while_streaming_fails_the_stream_once_and_releases_it() {
     );
     native_cleanup(&mut native, &mut reactor).unwrap();
     assert_ne!(dropped.recv_timeout(GUARD).unwrap(), thread::current().id());
+}
+
+/// Unparks the test thread and counts the wakes: a bare executor, no runtime.
+struct ThreadWake {
+    /// The thread polling the future.
+    thread: thread::Thread,
+    /// Wakes so far.
+    wakes: AtomicUsize,
+}
+
+impl Wake for ThreadWake {
+    fn wake(self: Arc<Self>) {
+        self.wakes.fetch_add(1, Ordering::SeqCst);
+        self.thread.unpark();
+    }
+}
+
+/// Polls `future` on this thread until it resolves, parking between wakes; its output,
+/// whether its first poll was pending, and the wakes it took.
+fn block_on<F: Future>(future: F) -> (F::Output, bool, usize) {
+    let wake = Arc::new(ThreadWake {
+        thread: thread::current(),
+        wakes: AtomicUsize::new(0),
+    });
+    let waker = TaskWaker::from(Arc::clone(&wake));
+    let mut cx = Context::from_waker(&waker);
+    let mut future = pin!(future);
+    let until = Instant::now() + GUARD;
+    let mut pending = false;
+    loop {
+        if let task::Poll::Ready(output) = future.as_mut().poll(&mut cx) {
+            return (output, pending, wake.wakes.load(Ordering::SeqCst));
+        }
+        pending = true;
+        assert!(Instant::now() < until, "the future resolves");
+        thread::park_timeout(GUARD);
+    }
+}
+
+#[test]
+fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
+    let (_device, board) = rx_streaming(&[]);
+    let (mut fake, _, dropped) = Fake::new();
+    fake.io.board = board;
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    let (read, pending, wakes) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(
+        matches!(read, Ok(NativeEvent::Temperature(Ok(celsius))) if (celsius - 25.0).abs() < f32::EPSILON),
+        "{read:?}"
+    );
+    assert!(
+        pending && wakes > 0,
+        "the read waited for the worker and woke its task"
+    );
+    let open = adapter.operation(|native, _| native.start_rx_open(RX_BLOCK));
+    let (second, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(
+        matches!(second, Err(Error::Busy)),
+        "one operation at a time: {second:?}"
+    );
+    let (opened, ..) = block_on(open);
+    assert!(
+        matches!(opened, Ok(NativeEvent::RxOpened(Ok(())))),
+        "{opened:?}"
+    );
+    for _ in 0..3 {
+        let (block, ..) = block_on(adapter.next_block());
+        assert!(
+            matches!(&block, Some(Ok(block)) if block.payload.len() == 4096),
+            "{block:?}"
+        );
+    }
+    let (refused, ..) =
+        block_on(adapter.operation(|native, now| native.start_sample_rate(20_000_000, now)));
+    assert!(
+        matches!(refused, Err(Error::NotPowered)),
+        "a start's refusal resolves its future: {refused:?}"
+    );
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+    assert_ne!(
+        dropped.recv_timeout(GUARD).unwrap(),
+        thread::current().id(),
+        "the worker released the device"
+    );
+}
+
+#[test]
+fn an_async_session_end_fails_the_running_operation_and_ends_the_blocks() {
+    let (fake, record, _) = Fake::new();
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    record.lock().unwrap().panic_turn = true;
+    let (read, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(
+        matches!(read, Ok(NativeEvent::Temperature(Err(_)))),
+        "the operation's event carries the worker's failure: {read:?}"
+    );
+    let (block, ..) = block_on(adapter.next_block());
+    assert!(block.is_none(), "no block follows the session's end");
+    let (after, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(after.is_err(), "the ended session refuses: {after:?}");
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
 }

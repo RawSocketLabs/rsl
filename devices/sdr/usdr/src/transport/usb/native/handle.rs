@@ -747,6 +747,12 @@ impl NativeUsb {
         self.adapter.close()
     }
 
+    /// Whether the session has ended, by failure or [`close`](Self::close): every start
+    /// is then refused.
+    pub(super) fn is_closed(&self) -> bool {
+        self.adapter.is_stopped()
+    }
+
     /// The worker's cleanup result, once, after [`close`](Self::close) or a failure.
     pub fn try_cleanup(&mut self) -> Option<Result<(), BusError>> {
         self.adapter.try_cleanup()
