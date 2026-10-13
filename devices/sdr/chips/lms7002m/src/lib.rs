@@ -30,9 +30,15 @@ mod reg;
 mod register;
 mod regs;
 mod spi;
+mod step;
+mod vco;
 
 pub use batch::{BATCH_CAPACITY, Batch};
-pub use chip::{Lms7002m, NoChannel, RxMode, Tsp, TxMode, TxPath};
+pub use chip::{
+    BistCheck, CgenTune, LmlConfig, LmlMap, Lms7002m, LpfParams, NoChannel, RbbMode, RbbPath,
+    RxGainStage, RxMode, SxxTune, Synthesizer, TbbMode, TbbPath, Tsp, TuneError, TxGainStage,
+    TxMode, TxPath,
+};
 pub use create::{Create, ResetPlan};
 pub use reg::Reg;
 pub use register::Register;

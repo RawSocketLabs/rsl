@@ -72,4 +72,142 @@ pub enum Reg {
 
     /// See [`RxTspBypass`](crate::RxTspBypass). `RXTSP_0x040C`.
     RxTspBypass = 0x040c,
+
+    /// See [`LmlPads`](crate::LmlPads). `LML_0x0022`.
+    LmlPads = 0x0022,
+
+    /// See [`LmlModes`](crate::LmlModes). `LML_0x0023`.
+    LmlModes = 0x0023,
+
+    /// Port 1's [`LmlPortMap`](crate::LmlPortMap). `LML_0x0024`.
+    Lml1Map = 0x0024,
+
+    /// Port 2's [`LmlPortMap`](crate::LmlPortMap). `LML_0x0027`.
+    Lml2Map = 0x0027,
+
+    /// See [`LmlClockMux`](crate::LmlClockMux). `LML_0x002A`.
+    LmlClockMux = 0x002a,
+
+    /// See [`LmlClockSource`](crate::LmlClockSource). `LML_0x002B`.
+    LmlClockSource = 0x002b,
+
+    /// See [`LmlClockDivider`](crate::LmlClockDivider). `LML_0x002C`.
+    LmlClockDivider = 0x002c,
+
+    /// See [`CgenEnable`](crate::CgenEnable). `CGEN_ENABLE`.
+    CgenEnable = 0x0086,
+
+    /// See [`CgenFracLow`](crate::CgenFracLow). `CGEN_0x0087`.
+    CgenFracLow = 0x0087,
+
+    /// See [`CgenIntFrac`](crate::CgenIntFrac). `CGEN_0x0088`.
+    CgenIntFrac = 0x0088,
+
+    /// See [`CgenDivider`](crate::CgenDivider). `CGEN_0x0089`.
+    CgenDivider = 0x0089,
+
+    /// See [`CgenVco`](crate::CgenVco). `CGEN_0x008B`.
+    CgenVco = 0x008b,
+
+    /// The CGEN [`VcoComparators`](crate::VcoComparators), read only. `CGEN_0x008C`.
+    CgenComparators = 0x008c,
+
+    /// See [`CdsInvert`](crate::CdsInvert). `CDS_0x00AD`.
+    CdsInvert = 0x00ad,
+
+    /// See [`CdsDelay`](crate::CdsDelay). `CDS_0x00AE`.
+    CdsDelay = 0x00ae,
+
+    /// See [`TbbControl`](crate::TbbControl). `TBB_0x0105`, per channel.
+    TbbControl = 0x0105,
+
+    /// See [`TbbAmplifier`](crate::TbbAmplifier). `TBB_0x0108`, per channel.
+    TbbAmplifier = 0x0108,
+
+    /// See [`TbbFilterCal`](crate::TbbFilterCal). `TBB_0x0109`, per channel.
+    TbbFilterCal = 0x0109,
+
+    /// See [`TbbTest`](crate::TbbTest). `TBB_0x010A`, per channel.
+    TbbTest = 0x010a,
+
+    /// See [`TbbS5`](crate::TbbS5). `TBB_LPFS5`, per channel.
+    TbbS5 = 0x010b,
+
+    /// See [`RxGains`](crate::RxGains). `RFE_0x0113`, per channel.
+    RxGains = 0x0113,
+
+    /// See [`RbbControl`](crate::RbbControl). `RBB_0x0115`, per channel.
+    RbbControl = 0x0115,
+
+    /// See [`RbbHighFilter`](crate::RbbHighFilter). `RBB_0x0116`, per channel.
+    RbbHighFilter = 0x0116,
+
+    /// See [`RbbLowFilter`](crate::RbbLowFilter). `RBB_0x0117`, per channel.
+    RbbLowFilter = 0x0117,
+
+    /// See [`RbbInput`](crate::RbbInput). `RBB_0x0118`, per channel.
+    RbbInput = 0x0118,
+
+    /// See [`RbbPga`](crate::RbbPga). `RBB_0x0119`, per channel.
+    RbbPga = 0x0119,
+
+    /// See [`RbbPgaFeedback`](crate::RbbPgaFeedback). `RBB_0x011A`, per channel.
+    RbbPgaFeedback = 0x011a,
+
+    /// See [`SxxControl`](crate::SxxControl). `SXX_0x011C`, per synthesizer.
+    SxxControl = 0x011c,
+
+    /// See [`SxxFracLow`](crate::SxxFracLow). `SXX_0x011D`, per synthesizer.
+    SxxFracLow = 0x011d,
+
+    /// See [`SxxIntFrac`](crate::SxxIntFrac). `SXX_0x011E`, per synthesizer.
+    SxxIntFrac = 0x011e,
+
+    /// See [`SxxLoDivider`](crate::SxxLoDivider). `SXX_0x011F`, per synthesizer.
+    SxxLoDivider = 0x011f,
+
+    /// See [`SxxVcoBias`](crate::SxxVcoBias). `SXX_0x0120`, per synthesizer.
+    SxxVcoBias = 0x0120,
+
+    /// See [`SxxVco`](crate::SxxVco). `SXX_0x0121`, per synthesizer.
+    SxxVco = 0x0121,
+
+    /// See [`SxxChargePump`](crate::SxxChargePump). `SXX_0x0122`, per synthesizer.
+    SxxChargePump = 0x0122,
+
+    /// The synthesizer's [`VcoComparators`](crate::VcoComparators), read only. `SXX_0x0123`.
+    SxxComparators = 0x0123,
+
+    /// See [`TxTspInterpolation`](crate::TxTspInterpolation). `TXTSP_0x0203`.
+    TxTspInterpolation = 0x0203,
+
+    /// The TX processor's [`BistStatus`](crate::BistStatus), read only. `TXTSP_0x0209`.
+    TxTspBistStatus = 0x0209,
+
+    /// The TX NCO's [`NcoMode`](crate::NcoMode). `TXNCO_0x0240`.
+    TxNcoMode = 0x0240,
+
+    /// The TX NCO's frequency word, bits 31:16. `TXNCO_0x0242`.
+    TxNcoFcwHigh = 0x0242,
+
+    /// The TX NCO's frequency word, bits 15:0. `TXNCO_0x0243`.
+    TxNcoFcwLow = 0x0243,
+
+    /// See [`RxTspDecimation`](crate::RxTspDecimation). `RXTSP_0x0403`.
+    RxTspDecimation = 0x0403,
+
+    /// See [`RxTspDc`](crate::RxTspDc). `RXTSP_0x0404`.
+    RxTspDc = 0x0404,
+
+    /// The RX processor's [`BistStatus`](crate::BistStatus), read only. `RXTSP_0x040E`.
+    RxTspBistStatus = 0x040e,
+
+    /// The RX NCO's [`NcoMode`](crate::NcoMode). `RXNCO_0x0440`.
+    RxNcoMode = 0x0440,
+
+    /// The RX NCO's frequency word, bits 31:16. `RXNCO_0x0442`.
+    RxNcoFcwHigh = 0x0442,
+
+    /// The RX NCO's frequency word, bits 15:0. `RXNCO_0x0443`.
+    RxNcoFcwLow = 0x0443,
 }

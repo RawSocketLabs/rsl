@@ -4,6 +4,22 @@
 //! Each operation updates the cache, then returns the [`Batch`] of writes libusdr posts.
 //! libusdr updates its cache before posting and keeps the update when a write fails; so
 //! does this: the cache describes what was asked for, not what the chip acknowledged.
+//!
+//! The operations live beside the block they drive: the front ends and AFE here, the
+//! `LimeLight` interface in `lml`, the processors in `dsp`, the basebands in `baseband`,
+//! the gains in `gain` and the synthesizers' disables in `synth`.
+
+mod baseband;
+mod dsp;
+mod gain;
+mod lml;
+mod synth;
+
+pub use baseband::{LpfParams, RbbMode, RbbPath, TbbMode, TbbPath};
+pub use dsp::BistCheck;
+pub use gain::{RxGainStage, TxGainStage};
+pub use lml::{LmlConfig, LmlMap};
+pub use synth::{CgenTune, SxxTune, Synthesizer, TuneError};
 
 use bnb::{u2, u3, u4, u5};
 use rsl_lowlevel::SpiAddr;
@@ -141,6 +157,21 @@ pub struct Lms7002m {
 
     /// Each channel's transmit front end (`trf`).
     tx: [TxChannel; 2],
+
+    /// Each channel's receive front-end gain codes (`rfe[i].lna`, `.tia`, `.lbg`).
+    rx_gains: [gain::RxGainCodes; 2],
+
+    /// Each channel's receive processor words (`reg_rxtsp_dscpcfg`, `reg_rxtsp_hbdo_iq`).
+    rx_dsp: [dsp::TspWords; 2],
+
+    /// Each channel's transmit processor words (`reg_txtsp_dscpcfg`, `reg_txtsp_hbdo_iq`).
+    tx_dsp: [dsp::TspWords; 2],
+
+    /// The TX amplifier's filter-derived gain code (`reg_tbb_gc`).
+    tbb_gain: [u8; 2],
+
+    /// The TX amplifier's gain correction (`reg_tbb_gc_corr`).
+    tbb_gain_correction: [i8; 2],
 }
 
 impl Lms7002m {
@@ -157,15 +188,23 @@ impl Lms7002m {
             en_dir: [EnDir::new(); 2],
             rx: [RX_OFF; 2],
             tx: [TX_OFF; 2],
+            rx_gains: [gain::RxGainCodes::ZERO; 2],
+            rx_dsp: [dsp::TspWords::ZERO; 2],
+            tx_dsp: [dsp::TspWords::ZERO; 2],
+            tbb_gain: [0; 2],
+            tbb_gain_correction: [0; 2],
         }
     }
 
     /// The state `lms7002m_create` leaves: every LML bit set with both banks selected, the
-    /// front ends and `EN_DIR` caches cleared.
+    /// front ends, `EN_DIR` and processor caches cleared, the TIA and LNA gain codes at 1
+    /// and 12 and the TX amplifier's at 12.
     #[must_use]
     pub(crate) const fn created(target: SpiAddr) -> Self {
         Self {
             mac: LmlControl::running(Mac::Both),
+            rx_gains: [gain::RxGainCodes::CREATED; 2],
+            tbb_gain: [baseband::TBB_GAIN_CREATED; 2],
             ..Self::new(target)
         }
     }
@@ -191,9 +230,9 @@ impl Lms7002m {
     /// (`lms7002m_xxtsp_enable`): its correction stages bypassed, the test-signal generator
     /// configured but unused, input from `LimeLight`. The write reaches the selected banks.
     ///
-    /// libusdr also caches the two words per selected channel for later processor writes;
-    /// no ported operation reads them, so they are not cached here.
-    pub fn tsp_enable(&self, tsp: Tsp, enable: bool) -> Batch {
+    /// libusdr also caches the bypass word per selected channel, which its later
+    /// processor writes (mixer, DC corrector) modify; so does this.
+    pub fn tsp_enable(&mut self, tsp: Tsp, enable: bool) -> Batch {
         let mut batch = Batch::new(self.target);
         match tsp {
             Tsp::Rx => {
@@ -235,6 +274,13 @@ impl Lms7002m {
                         .with_enabled(enable)
                         .entry(),
                 );
+            }
+        }
+        let (_, bypass) = batch.writes()[0];
+        let selected = self.banks();
+        for (words, on) in self.dsp_mut(tsp).iter_mut().zip(selected) {
+            if on {
+                words.config = bypass;
             }
         }
         batch
@@ -415,6 +461,17 @@ impl Lms7002m {
                 .entry(),
         );
         batch
+    }
+
+    /// Which channels the selected banks cover, A then B; none when no bank is selected
+    /// (libusdr's `_lms7002m_check_chan`).
+    const fn banks(&self) -> [bool; 2] {
+        match self.mac.mac() {
+            Mac::None => [false, false],
+            Mac::A => [true, false],
+            Mac::B => [false, true],
+            Mac::Both => [true, true],
+        }
     }
 
     /// Which channels the selected banks cover, A then B.

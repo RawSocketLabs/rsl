@@ -144,3 +144,28 @@ pub struct RxBias {
 impl Register for RxBias {
     const ADDR: Reg = Reg::RxBias;
 }
+
+/// The receive front end's gains, as codes. `RFE_0x0113`.
+///
+/// libusdr's `lms7002m_rfe_gain` keeps each as an index into its attenuation tables: LNA
+/// codes 1–15 for 30 dB down to 0 dB of attenuation, TIA 1–3 for 12, 3 and 0 dB, loopback
+/// 0–15 for 40 dB down to 0 dB.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RxGains {
+    /// `G_LNA_RFE`, bits 9:6.
+    #[bits(6..=9)]
+    lna: u4,
+
+    /// `G_RXLOOPB_RFE`, bits 5:2.
+    #[bits(2..=5)]
+    loopback: u4,
+
+    /// `G_TIA_RFE`, bits 1:0.
+    #[bits(0..=1)]
+    tia: u2,
+}
+
+impl Register for RxGains {
+    const ADDR: Reg = Reg::RxGains;
+}
