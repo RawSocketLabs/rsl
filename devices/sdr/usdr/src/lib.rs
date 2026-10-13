@@ -10,9 +10,11 @@
 //! host) over any [`lowlevel::Bus`] that streams, and the TX controls (frequency, path,
 //! bandwidth, gains, corrections, constant generator); TX streaming is not yet ported.
 //! USB and `PCIe` transports are available behind their respective features (Linux). Feature
-//! `mio` adds `transport::usb::NativeUsb`, an unstable temperature-only USB handle driven by
-//! a caller-owned Mio reactor. [`flash`] reads, erases and writes the FPGA's boot flash over
-//! a bus of its own, with the destructive operations behind a separate handle.
+//! `mio` adds `transport::usb::NativeUsb`, an unstable USB handle driven by a caller-owned
+//! Mio reactor (a few control operations and the transport's RX and TX streams), and
+//! `transport::usb::ManagedUsb`, which drives one on a reactor of its own. [`flash`] reads,
+//! erases and writes the FPGA's boot flash over a bus of its own, with the destructive
+//! operations behind a separate handle.
 //!
 //! # The uSDR board
 //!
