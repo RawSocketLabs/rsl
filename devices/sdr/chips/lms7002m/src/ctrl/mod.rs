@@ -9,12 +9,12 @@
 //! its [`Frontend`].
 //!
 //! Ported: the sample rate (`lms7002m_samplerate`), gains (`lms7002m_set_gain`),
-//! baseband bandwidths (`lms7002m_bb_set_badwidth`), the RX half of
-//! `lms7002m_streaming_up`, the `LimeLight` RX mode (`lms7002m_set_lmlrx_mode`) and LO
-//! tuning (`lms7002m_fe_set_freq`, FDD). The RX and TX paths stay in libusdr's automatic
-//! band selection (`XSDR_RX_AUTO`, `XSDR_TX_AUTO`), whose band tables the board gives;
-//! explicit paths, loopbacks, TDD, the baseband NCOs and the TX half of streaming up are
-//! not ported.
+//! baseband bandwidths (`lms7002m_bb_set_badwidth`), `lms7002m_streaming_up` for RX and
+//! for RX with TX, the `LimeLight` RX mode (`lms7002m_set_lmlrx_mode`) and LO tuning
+//! (`lms7002m_fe_set_freq`, FDD). The RX and TX paths stay in libusdr's automatic band
+//! selection (`XSDR_RX_AUTO`, `XSDR_TX_AUTO`), whose band tables the board gives;
+//! explicit paths, loopbacks, TDD, the baseband NCOs and streaming up TX alone are not
+//! ported.
 
 mod calls;
 mod op;

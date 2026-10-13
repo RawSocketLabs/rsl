@@ -12,7 +12,10 @@ use super::rate::{Candidate, RateRequest};
 use super::{
     Control, Direction, Frontend, NoFrontend, StreamFlags, band_for, order, push_bandwidth,
 };
-use crate::chip::{LmlConfig, RbbMode, RbbPath, RxMode, Synthesizer, Tsp, TuneError, TxMode};
+use crate::chip::{
+    LmlConfig, RbbMode, RbbPath, RxMode, Synthesizer, TbbMode, TbbPath, Tsp, TuneError, TxMode,
+    TxPath,
+};
 use crate::regs::Mac;
 
 /// The RX DC corrector's window `lms7002m_streaming_up` sets.
@@ -73,32 +76,50 @@ enum Stage {
         candidate: Candidate,
     },
 
-    /// Streaming up RX: the map, AFE, processor and baseband writes on `channels`.
+    /// Streaming up: the map, AFE, and RX processor and baseband writes.
     UpPrepare {
-        /// The channels that will run.
-        running: [bool; 2],
-        /// The banks streamed.
-        channels: Mac,
-        /// Each streamed channel's bandwidth.
-        bandwidths: [Option<NonZeroU32>; 2],
+        /// The receive direction.
+        rx: Up,
+        /// The transmit direction, when it streams up too.
+        tx: Option<Up>,
     },
 
     /// Streaming up RX: the band's LNA selected; its switch follows.
     UpBand {
-        /// The banks streamed.
-        channels: Mac,
-        /// Each streamed channel's bandwidth.
-        bandwidths: [Option<NonZeroU32>; 2],
+        /// The receive direction.
+        rx: Up,
+        /// The transmit direction, when it streams up too.
+        tx: Option<Up>,
         /// The switch position.
         switch: u8,
     },
 
     /// Streaming up RX: the antenna switch.
     UpSwitch {
-        /// The banks streamed.
-        channels: Mac,
-        /// Each streamed channel's bandwidth, checked non-zero before any write.
-        bandwidths: [Option<NonZeroU32>; 2],
+        /// The receive direction.
+        rx: Up,
+        /// The transmit direction, when it streams up too.
+        tx: Option<Up>,
+    },
+
+    /// Streaming up RX: each channel's bandwidth and mixer restored; TX follows.
+    UpRestore {
+        /// The transmit direction.
+        tx: Up,
+    },
+
+    /// Streaming up TX: the processor, baseband and front-end writes, and each channel's
+    /// bandwidth and mixer restored.
+    UpTxPrepare {
+        /// The transmit direction.
+        tx: Up,
+    },
+
+    /// Streaming up TX: the banks reselected and the band's output set; its switch
+    /// follows.
+    UpTxBand {
+        /// The switch position.
+        switch: u8,
     },
 
     /// Stopping a synthesizer, whose write failures libusdr ignores.
@@ -123,6 +144,17 @@ enum Stage {
 
     /// Finished.
     Done(Result<(), ControlError>),
+}
+
+/// One direction of a streaming up, decided before any write.
+#[derive(Clone, Copy, Debug)]
+struct Up {
+    /// The banks streamed (`rx_chs`, `tx_chs`), SISO's correction applied.
+    channels: Mac,
+    /// The channels that will run (`rxafen_*`, `txafen_*`).
+    running: [bool; 2],
+    /// Each streamed channel's bandwidth: the one set, or the sample rate's.
+    bandwidths: [Option<NonZeroU32>; 2],
 }
 
 /// A running control operation. It owns the [`Control`] state until it finishes; take it
@@ -213,12 +245,9 @@ impl<F: Frontend> Operation<F> {
                 attempt,
                 candidate,
             } => self.after_cgen(request, pass, attempt, candidate),
-            Stage::UpPrepare {
-                running,
-                channels,
-                bandwidths,
-            } => {
-                self.control.rx_running = running;
+            Stage::UpPrepare { rx, tx } => {
+                // libusdr sets the run flags before selecting the band.
+                self.control.rx_running = rx.running;
                 let band = band_for(
                     self.control.rx_lo,
                     self.control.rx_bands.iter().map(|band| band.below_hz),
@@ -228,28 +257,56 @@ impl<F: Frontend> Operation<F> {
                 calls.push(ChipCall::RfePath(antenna.path, RxMode::Normal));
                 self.part = Part::calls(calls, &mut self.control.chip);
                 Stage::UpBand {
-                    channels,
-                    bandwidths,
+                    rx,
+                    tx,
                     switch: antenna.switch,
                 }
             }
-            Stage::UpBand {
-                channels,
-                bandwidths,
-                switch,
-            } => {
+            Stage::UpBand { rx, tx, switch } => {
                 self.part = Part::Board(self.frontend.antenna_switch(Direction::Rx, switch));
-                Stage::UpSwitch {
-                    channels,
-                    bandwidths,
+                Stage::UpSwitch { rx, tx }
+            }
+            Stage::UpSwitch { rx, tx } => {
+                let mut calls = Calls::new();
+                push_restore(&mut calls, Direction::Rx, rx);
+                self.part = Part::calls(calls, &mut self.control.chip);
+                tx.map_or(Stage::Last, |tx| Stage::UpRestore { tx })
+            }
+            Stage::UpRestore { tx } => {
+                let mut calls = Calls::new();
+                calls
+                    .push(ChipCall::MacSet(tx.channels))
+                    .push(ChipCall::TspIntDec(
+                        Tsp::Tx,
+                        order(self.control.clocks.tx_tsp_div),
+                    ))
+                    .push(ChipCall::TspEnable(Tsp::Tx, true))
+                    .push(ChipCall::TbbPath(TbbPath::Ladder, TbbMode::Normal))
+                    // The band follows below.
+                    .push(ChipCall::TrfPath(TxPath::Mute, TxMode::Normal));
+                push_restore(&mut calls, Direction::Tx, tx);
+                self.part = Part::calls(calls, &mut self.control.chip);
+                Stage::UpTxPrepare { tx }
+            }
+            Stage::UpTxPrepare { tx } => {
+                // libusdr sets the run flags before reselecting the banks.
+                self.control.tx_running = tx.running;
+                let band = band_for(
+                    self.control.tx_lo,
+                    self.control.tx_bands.iter().map(|band| band.below_hz),
+                );
+                let antenna = self.control.tx_bands[band];
+                let mut calls = Calls::new();
+                calls
+                    .push(ChipCall::MacSet(tx.channels))
+                    .push(ChipCall::TrfPath(antenna.path, TxMode::Normal));
+                self.part = Part::calls(calls, &mut self.control.chip);
+                Stage::UpTxBand {
+                    switch: antenna.switch,
                 }
             }
-            Stage::UpSwitch {
-                channels,
-                bandwidths,
-            } => {
-                let calls = restore_rx(channels, bandwidths);
-                self.part = Part::calls(calls, &mut self.control.chip);
+            Stage::UpTxBand { switch } => {
+                self.part = Part::Board(self.frontend.antenna_switch(Direction::Tx, switch));
                 Stage::Last
             }
             Stage::TuneLock { synthesizer, hertz } => self.after_lock(synthesizer, hertz),
@@ -355,24 +412,23 @@ impl<F: Frontend> Operation<F> {
     }
 }
 
-/// `lms7002m_streaming_up`'s restore loop for RX: per streamed channel, its bank, its
-/// bandwidth (set, or the sample rate's) and the mixer bypassed (no NCO offset is ported).
-fn restore_rx(channels: Mac, bandwidths: [Option<NonZeroU32>; 2]) -> Calls {
-    let mut calls = Calls::new();
-    for (bank, bandwidth) in [Mac::A, Mac::B].into_iter().zip(bandwidths) {
+/// `lms7002m_streaming_up`'s restore loop for one direction: per streamed channel, its
+/// bank, its bandwidth (set, or the sample rate's) and the mixer bypassed (no NCO offset is
+/// ported).
+fn push_restore(calls: &mut Calls, direction: Direction, up: Up) {
+    let tsp = match direction {
+        Direction::Rx => Tsp::Rx,
+        Direction::Tx => Tsp::Tx,
+    };
+    for (bank, bandwidth) in [Mac::A, Mac::B].into_iter().zip(up.bandwidths) {
+        // Only streamed channels have one.
         let Some(bandwidth) = bandwidth else {
             continue;
         };
-        if matches!(
-            (channels, bank),
-            (Mac::Both, _) | (Mac::A, Mac::A) | (Mac::B, Mac::B)
-        ) {
-            calls.push(ChipCall::MacSet(bank));
-            push_bandwidth(&mut calls, Direction::Rx, bandwidth);
-            calls.push(ChipCall::TspCmix(Tsp::Rx, 0));
-        }
+        calls.push(ChipCall::MacSet(bank));
+        push_bandwidth(calls, direction, bandwidth);
+        calls.push(ChipCall::TspCmix(tsp, 0));
     }
-    calls
 }
 
 impl Control {
@@ -406,71 +462,144 @@ impl Control {
     /// switch, and each channel's bandwidth and mixer are restored.
     #[must_use]
     pub fn streaming_up_rx<F: Frontend>(
-        mut self,
+        self,
         frontend: F,
         channels: Mac,
         flags: StreamFlags,
     ) -> Operation<F> {
-        if channels == Mac::None {
-            return Operation::finished(self, frontend, Err(ControlError::NoChannel));
-        }
-        let clocks = self.clocks;
-        let rate_bandwidth = clocks
-            .cgen
-            .checked_div(clocks.rx_converter_div)
-            .and_then(|hz| hz.checked_div(clocks.rx_tsp_div))
-            .and_then(|hz| hz.checked_div(clocks.rx_decimation))
-            .and_then(NonZeroU32::new);
-        let channels = match channels {
-            Mac::Both if self.rx_siso && flags.swap_ab => Mac::B,
-            Mac::Both if self.rx_siso => Mac::A,
-            other => other,
+        self.streaming_up(frontend, (channels, flags), None)
+    }
+
+    /// Streams the receive direction up on `rx`'s channels with its stream flags, and
+    /// with `tx` the transmit direction too (`lms7002m_streaming_up` with
+    /// `RFIC_LMS7_RX`, plus `RFIC_LMS7_TX` for `tx`).
+    ///
+    /// RX as [`Self::streaming_up_rx`]. Then TX: its processor's interpolation and
+    /// enable, the ladder filter path, the front end on with no band, each channel's
+    /// bandwidth and mixer restored; then the channels run and the band follows the TX LO
+    /// with the board's switch. The `LimeLight` maps and the AFE cover both directions.
+    ///
+    /// No channel in a direction is [`ControlError::NoChannel`], and a streamed channel
+    /// with neither a set bandwidth nor a sample rate [`ControlError::NoRate`], both
+    /// before any write or state change.
+    #[must_use]
+    pub fn streaming_up<F: Frontend>(
+        mut self,
+        frontend: F,
+        rx: (Mac, StreamFlags),
+        tx: Option<(Mac, StreamFlags)>,
+    ) -> Operation<F> {
+        let (rx_channels, rx_flags) = rx;
+        let planned = self
+            .up(Direction::Rx, rx_channels, rx_flags)
+            .and_then(|rx_up| {
+                let tx_up = tx
+                    .map(|(channels, flags)| self.up(Direction::Tx, channels, flags))
+                    .transpose()?;
+                Ok((rx_up, tx_up))
+            });
+        let (rx_up, tx_up) = match planned {
+            Ok(planned) => planned,
+            Err(error) => return Operation::finished(self, frontend, Err(error)),
         };
-        let running = [channels != Mac::B, channels != Mac::A];
-        let mut bandwidths = [None; 2];
-        for ((bandwidth, set), streamed) in
-            bandwidths.iter_mut().zip(self.rx_bandwidth).zip(running)
-        {
-            if !streamed {
-                continue;
-            }
-            let Some(hertz) = set.and_then(NonZeroU32::new).or(rate_bandwidth) else {
-                return Operation::finished(self, frontend, Err(ControlError::NoRate));
-            };
-            *bandwidth = Some(hertz);
+        self.rx_map = frontend.lml_map(true, rx_up.channels, rx_flags);
+        if let (Some(up), Some((_, flags))) = (tx_up, tx) {
+            self.tx_map = frontend.lml_map(false, up.channels, flags);
         }
-        self.rx_map = frontend.lml_map(true, channels, flags);
-        let [tx_a, tx_b] = self.tx_running;
+        let tx_running = tx_up.map_or(self.tx_running, |up| up.running);
         let (siso, maps) = if self.lml.rx_port1 {
             ([self.rx_siso, self.tx_siso], [self.rx_map, self.tx_map])
         } else {
             ([self.tx_siso, self.rx_siso], [self.tx_map, self.rx_map])
         };
+        let ([rx_a, rx_b], [tx_a, tx_b]) = (rx_up.running, tx_running);
         let mut calls = Calls::new();
         calls
             .push(ChipCall::LimelightMap(siso, maps))
             .push(ChipCall::AfeEnable(
-                [running[0] || running[1], running[1]],
+                [rx_a || rx_b, rx_b],
                 [tx_a || tx_b, tx_b],
             ))
-            .push(ChipCall::MacSet(channels))
-            .push(ChipCall::TspIntDec(Tsp::Rx, order(clocks.rx_tsp_div)))
+            .push(ChipCall::MacSet(rx_up.channels))
+            .push(ChipCall::TspIntDec(Tsp::Rx, order(self.clocks.rx_tsp_div)))
             .push(ChipCall::TspEnable(Tsp::Rx, true))
             .push(ChipCall::RbbPath(RbbPath::LowBand, RbbMode::Normal))
             .push(ChipCall::RxtspDcCorr(
-                flags.no_dc_correction,
+                rx_flags.no_dc_correction,
                 u3::new(DC_WINDOW),
             ));
         Operation::start(
             self,
             frontend,
             Stage::UpPrepare {
-                running,
-                channels,
-                bandwidths,
+                rx: rx_up,
+                tx: tx_up,
             },
             &calls,
         )
+    }
+
+    /// One direction of a streaming up (`lms7002m_streaming_up`'s checks and
+    /// `_corr_ch`): the banks streamed, the channels that will run and each streamed
+    /// channel's bandwidth, its own or, unset, the sample rate's.
+    fn up(
+        &self,
+        direction: Direction,
+        channels: Mac,
+        flags: StreamFlags,
+    ) -> Result<Up, ControlError> {
+        if channels == Mac::None {
+            return Err(ControlError::NoChannel);
+        }
+        let clocks = self.clocks;
+        let (siso, set, converter_div, tsp_div, board_div) = match direction {
+            Direction::Rx => (
+                self.rx_siso,
+                self.rx_bandwidth,
+                clocks.rx_converter_div,
+                clocks.rx_tsp_div,
+                clocks.rx_decimation,
+            ),
+            Direction::Tx => (
+                self.tx_siso,
+                self.tx_bandwidth,
+                clocks.tx_converter_div,
+                clocks.tx_tsp_div,
+                clocks.tx_interpolation,
+            ),
+        };
+        let rate_bandwidth = clocks
+            .cgen
+            .checked_div(converter_div)
+            .and_then(|hz| hz.checked_div(tsp_div))
+            .and_then(|hz| hz.checked_div(board_div))
+            .and_then(NonZeroU32::new);
+        let channels = match channels {
+            Mac::Both if siso && flags.swap_ab => Mac::B,
+            Mac::Both if siso => Mac::A,
+            other => other,
+        };
+        let running = [channels != Mac::B, channels != Mac::A];
+        let mut bandwidths = [None; 2];
+        for ((bandwidth, set), streamed) in bandwidths.iter_mut().zip(set).zip(running) {
+            if streamed {
+                let hertz = set.and_then(NonZeroU32::new).or(rate_bandwidth);
+                *bandwidth = Some(hertz.ok_or(ControlError::NoRate)?);
+            }
+        }
+        Ok(Up {
+            channels,
+            running,
+            bandwidths,
+        })
+    }
+
+    /// Sets which channels run (`rx_run`, `tx_run`), as board code does directly before
+    /// streaming up (`limesdr_prepare_streaming`); the run flags decide what later sample
+    /// rates and tunings write.
+    pub const fn set_running(&mut self, rx: [bool; 2], tx: [bool; 2]) {
+        self.rx_running = rx;
+        self.tx_running = tx;
     }
 
     /// Tunes an LO synthesizer to `hertz` (`lms7002m_fe_set_freq`, FDD): 0 stops it,
@@ -536,7 +665,7 @@ mod tests {
     use super::*;
     use crate::TxPath;
     use crate::chip::Lms7002m;
-    use crate::ctrl::{RateFlags, RxAntenna, TxAntenna};
+    use crate::ctrl::{Clocks, RateFlags, RxAntenna, TxAntenna};
     use crate::regs::RxPath;
 
     /// A created chip's control state on a 26 MHz reference.
@@ -591,5 +720,27 @@ mod tests {
         let op = control().streaming_up_rx(NoFrontend(()), Mac::Both, StreamFlags::default());
         assert_eq!(op.next(), None);
         assert_eq!(op.outcome(), Some(Err(ControlError::NoRate)));
+    }
+
+    #[test]
+    fn a_transmit_direction_without_a_channel_or_rate_refuses_the_whole_streaming_up() {
+        let flags = StreamFlags::default();
+        let mut rated = control();
+        rated.clocks = Clocks {
+            cgen: 32_000_000,
+            rx_converter_div: 4,
+            rx_tsp_div: 8,
+            rx_decimation: 1,
+            ..Clocks::default()
+        };
+        for (tx, refusal) in [
+            (Mac::None, ControlError::NoChannel),
+            (Mac::A, ControlError::NoRate),
+        ] {
+            let op = rated.streaming_up(NoFrontend(()), (Mac::A, flags), Some((tx, flags)));
+            assert_eq!(op.next(), None, "TX on {tx:?}: no write, RX's included");
+            assert_eq!(op.outcome(), Some(Err(refusal)));
+            assert_eq!(op.control().rx_running(), [false; 2], "nothing runs");
+        }
     }
 }
