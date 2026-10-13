@@ -450,7 +450,7 @@ fn a_full_unstarted_stream_times_out_like_libusdr() {
 }
 
 /// RX and TX in one group, started together with libusdr's "all" (`ST_DELAYADCDAC`):
-/// creating TX holds the sync unit off again, both start, and samples flow both ways.
+/// creating TX holds the sync unit off again, both start, and TX plays (the sim releases it only with RX running).
 #[test]
 fn a_duplex_group_matches_libusdr() {
     let scenario = Scenario {

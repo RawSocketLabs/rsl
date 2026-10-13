@@ -23,12 +23,14 @@ qualification, release or publication is authorized by this roadmap.
 
 The implemented baseline remains RX parity with the wrapper over USB and PCIe. Retained:
 board power-up and power-down, temperature reading, the RX sample rate, bandwidth,
-frequency, gains, path and corrections, the RX stream group
-(`create_streams`, `start_streams` with sync `None`/`All`, `receive_into` from `ci16`/`ci12`
-wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `stop_streams`; plus the
-`start_rx_stream`/`receive`/`stop_rx_stream` ci16 shim) over any streaming `Bus`, the TX
-controls (frequency, path, bandwidth, gains, corrections, constant generator; not TX
-streaming), and the PCIe transport (feature `pcie`; untested on hardware). USB
+frequency, gains, path and corrections, the stream group
+(`create_streams`, `start_streams` with sync `None`/`All`/`Any`/`OnePps`, `receive_into` from
+`ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `send`/`send_with_stat`
+from those host formats to `ci16` wire on TX channel 0 with timestamps and telemetry,
+`set_tx_mute`, `stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16
+shim) over any streaming `Bus` (TX over the sim and PCIe; USB TX not ported), the TX
+controls (frequency, path, bandwidth, gains, corrections, constant generator), and the
+PCIe transport (feature `pcie`; untested on hardware). USB
 register/SPI/I²C control-plane access is available
 (feature `usb`, Linux, high-speed readback endpoint required; untested on hardware).
 USB RX streaming uses eight reusable transfers on endpoint 0x83 with the pinned C
@@ -40,7 +42,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit channel-0 packing), the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit channel-0 packing), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the QSPI flash controller with a fake flash (opt-in, `with_flash`), and optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default) |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
@@ -51,19 +53,19 @@ Each layer calls only the ones below it.
 
 - `src/device.rs`: `Device`, the public API. It owns the `Board`, and the `Board` owns the bus
   (before power-up, `Identified` does). Board methods use `self.bus`; chip drivers stay
-  stateless and borrow `&mut dyn Bus` per call. One exception, temporary: `Device` also holds
-  the transmit chain's `TxState` and lends it to the board's TX, sample-rate and stream calls,
-  because adding it to `Board` means editing its construction in `board/power.rs`, which is
-  migrating; move it onto `Board` once that settles.
+  stateless and borrow `&mut dyn Bus` per call. The transmit chain's `TxState` is on
+  `Board` beside `RxState`.
 - `src/stream.rs`: the stream group's public configuration and results (`StreamsConfig`,
-  `RxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`, `RxMetadata`, the
-  sealed `HostSample` buffer elements). One device-owned group per PORTING.md's
-  stream-handle decision; `board/stream.rs` runs it, `fpga/stream.rs` holds the
-  registers and burst maths.
+  `RxConfig`, `TxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`,
+  `RxMetadata`, `TxTelemetry`, `TxMute`, the sealed `HostSample` buffer elements). One
+  device-owned group per PORTING.md's stream-handle decision; `board/stream.rs` runs the
+  group and RX, `board/tx_stream.rs` TX; `fpga/stream.rs` holds the RX registers, burst
+  maths and sync triggers, `fpga/tx_stream.rs` the TX core's commands, packet
+  announcement and status decoding.
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune, the RX and TX controls and RX
-  streaming) and the executors
+  and TX streaming) and the executors
   that run migrated ones from `src/portable/` (power rails and Si5332 clocks so far). `board/board.rs` holds
   the `Board` struct, its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
@@ -82,7 +84,7 @@ Each layer calls only the ones below it.
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
-  front end, DMA, sync), the M.2 connector's GPIO core (`fe_gpio`, register 3), and
+  front end, DMA, sync), the original TX stream core (`tx_stream`), the M.2 connector's GPIO core (`fe_gpio`, register 3), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash.rs`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
@@ -200,8 +202,10 @@ Each layer calls only the ones below it.
   (`Device::set_rx_gain`, `set_rx_path`, `set_rx_dc_trim`, `set_rx_auto_dc_correction`,
   `set_rx_ip2_trim`, `set_rx_iq_correction`) are ported, and so are the TX controls
   (`Device::set_tx_frequency`, `set_tx_path`, `set_tx_bandwidth`, `set_tx_gain`,
-  `set_tx_dc_offset`, `set_tx_iq_correction`, `set_tx_constant`); TX streaming waits for the
-  stream-group API, and the antenna-timing mockup gets no method.
+  `set_tx_dc_offset`, `set_tx_iq_correction`, `set_tx_constant`) and TX streaming on the
+  original TX core (`Device::send`, `send_with_stat`, `set_tx_mute`; `oracle/tests/
+  tx_stream_parity.rs`); USB TX and the extended TX core are not, and the antenna-timing
+  mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
   `USDR_BARE_DEV`, `USDR_IGNORE_TMP` and `USDR_FE_TYPE` are unset. AFE79xx-based DSDR is
@@ -222,6 +226,13 @@ Each layer calls only the ones below it.
   and `SyncMode::ExternalAll` fails at create, before any bus access, where libusdr
   creates and then fails the sync
   (`stream_formats_parity.rs::external_sync_is_refused_by_both_before_any_sync_operation`).
+  TX streams refuse, before any bus access, a `ci12` wire, which libusdr refuses only
+  after powering the transmitter
+  (`tx_stream_parity.rs::a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up`),
+  the extended TX core, sends of no samples or more than a packet (libusdr splits them and
+  times the later bursts of a "now" send) and times past 47 bits (`tests/tx_stream.rs`).
+  A group with TX starts RX, then TX, then syncs, as libusdr's clients do, where an
+  RX-only group syncs first, as before.
   The flash maintenance refuses, before any bus access, ranges libusdr would mishandle
   (past 16 MiB, partial erases, page-crossing chunks) and reports large capacities whole;
   `oracle/tests/flash_parity.rs` whitelists each. Two more cannot run in libusdr safely

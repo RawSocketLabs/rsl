@@ -53,9 +53,10 @@ impl Si5332 {
     /// stay powered but disabled, where libusdr powers them down. As in libusdr, output 3
     /// runs from the first sample rate until the first band crossing, because power-up
     /// enables every output, and is silent before any rate. Output 2, the TX clock, keeps
-    /// its power-up enable, where libusdr turns it off whenever TX is not streaming
-    /// (`tx_run`). The TX controls do not change `tx_run`, so this holds with them;
-    /// revisit [`OutputEnables0to3::ALL`] here when TX streaming is ported.
+    /// its power-up enable ([`OutputEnables0to3::ALL`]). libusdr rewrites it only here, at a
+    /// band crossing: on while a TX stream exists (`tx_run`), as this leaves it, and off
+    /// otherwise, which this does not copy: a crossing with no TX stream keeps the TX clock
+    /// running.
     pub(crate) fn set_mixer_lo(self, bus: &mut dyn Bus, on: bool) -> Result<(), Error> {
         self.on(bus).write(OutputEnables0to3::ALL.with_output3(on))
     }
