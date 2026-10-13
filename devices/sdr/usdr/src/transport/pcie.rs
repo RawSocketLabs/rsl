@@ -8,7 +8,7 @@
 //!
 //! The same driver's XMASS device (`/dev/xmassN`), the firmware flash of the XMASS board's
 //! `PCIe` switch, is [`XmassDevice`], a
-//! [`SwitchFlash`](crate::frontend::xmass_firmware::SwitchFlash) for
+//! [`SwitchFlash`] for
 //! [`xmass_firmware::update`](crate::frontend::xmass_firmware::update).
 
 use std::io;
