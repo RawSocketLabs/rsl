@@ -26,6 +26,7 @@
 mod batch;
 mod chip;
 mod create;
+pub mod ctrl;
 mod reg;
 mod register;
 mod regs;

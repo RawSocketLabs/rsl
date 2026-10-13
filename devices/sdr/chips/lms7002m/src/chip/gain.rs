@@ -123,6 +123,29 @@ fn attenuation(code: u8, table: &[Option<i32>]) -> i32 {
     table[usize::from(code)].unwrap_or_default()
 }
 
+impl RxGainStage {
+    /// The stage's attenuation table.
+    const fn table(self) -> &'static [Option<i32>] {
+        match self {
+            Self::Lna => &LNA,
+            Self::Tia => &TIA,
+            Self::Loopback => &LOOPBACK,
+        }
+    }
+
+    /// The code libusdr picks for `gain_x10` tenths of a dB.
+    fn code(self, gain_x10: i32) -> u8 {
+        code(gain_x10.wrapping_neg(), self.table())
+    }
+
+    /// The gain, in tenths of a dB, the code for `gain_x10` gives: what
+    /// `lms7002m_rfe_gain` reports in `goutx10`.
+    #[must_use]
+    pub fn reached(self, gain_x10: i32) -> i32 {
+        -attenuation(self.code(gain_x10), self.table())
+    }
+}
+
 impl Lms7002m {
     /// Sets `stage` on the selected channels to the code nearest `gain_x10` tenths of a dB
     /// (a gain, so 0 or below: −30 dB is 30 dB of attenuation), then writes both channels'
@@ -131,13 +154,7 @@ impl Lms7002m {
     /// libusdr's search takes the first code *below* the attenuation asked for, so an
     /// exact table entry selects the next code; that is reproduced.
     pub fn rfe_gain(&mut self, stage: RxGainStage, gain_x10: i32) -> (Batch, i32) {
-        let wanted = gain_x10.wrapping_neg();
-        let table: &[Option<i32>] = match stage {
-            RxGainStage::Lna => &LNA,
-            RxGainStage::Tia => &TIA,
-            RxGainStage::Loopback => &LOOPBACK,
-        };
-        let code = code(wanted, table);
+        let code = stage.code(gain_x10);
         let selected = self.banks();
         for (gains, _) in self.rx_gains.iter_mut().zip(selected).filter(|(_, on)| *on) {
             match stage {
@@ -146,7 +163,7 @@ impl Lms7002m {
                 RxGainStage::Loopback => gains.loopback = u4::from_raw(code),
             }
         }
-        (self.rfe_gains(), -attenuation(code, table))
+        (self.rfe_gains(), stage.reached(gain_x10))
     }
 
     /// Writes both channels' receive gains from the cache, bank by bank, and restores the
