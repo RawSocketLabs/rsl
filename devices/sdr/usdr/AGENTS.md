@@ -29,11 +29,15 @@ The implemented baseline remains RX parity with the wrapper over USB and PCIe. R
 board power-up and power-down, temperature reading, the RX, TX and both-chain sample rates, RX bandwidth,
 frequency, gains, path and corrections, the stream group
 (`create_streams`, `start_streams` with every sync type libusdr offers the uSDR but `ExternalAll`, `receive_into` from
-`ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, or from one real
-lane (`i16`/`i12`, I or Q) into `i16`/`f32` buffers, `send`/`send_with_stat`
-from those host formats to `ci16` wire on TX channel 0 with timestamps and telemetry,
-`set_tx_mute`, `stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16
-shim) over any streaming `Bus` (TX over the sim, PCIe and USB), the TX
+`ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on either complex channel or both
+(the second needs the RX chain), or from one real lane (`i16`/`i12`, I or Q) into
+`i16`/`f32` buffers, `send`/`send_with_stat` from those host formats to `ci16` wire on
+either TX channel or both, on the original TX core or the extended one (HWID bit 26, also
+`ci12` wire), with timestamps and telemetry, `set_tx_mute`, `set_tx_channels`,
+`stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16
+shim) over any streaming `Bus` (TX over the sim, PCIe and USB; `PcieBus: AsFd` is the
+pollable stream descriptor), the identity's channel capabilities, raw chip debug
+registers (`chip_register`), the TX
 controls (frequency, path, bandwidth, gains, corrections, constant generator), and the
 PCIe transport (feature `pcie`; untested on hardware). USB
 register/SPI/I²C control-plane access is available
@@ -48,7 +52,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, or of lane 0 or 1 alone), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
+| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
 | `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and three of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`) |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
@@ -69,8 +73,9 @@ Each layer calls only the ones below it.
   registers (RX DMA, front end, sync unit, TX core control) as `EngineSequence`, which
   the board and `NativeUsb` run; `fpga/stream.rs` the burst maths and burst-format word,
   `fpga/tx_stream.rs` packet announcement, status decoding and the TX create's gateware
-  and block-size checks; `StreamsConfig::check` (`board/stream.rs`) the refusals every
-  executor makes before any I/O.
+  and block-size checks; `StreamsConfig::check_on` (`board/stream.rs`) the board's
+  refusals before any I/O, and `StreamsConfig::check` those narrowed to what `NativeUsb`'s
+  group runs (channel 0 on the original TX core).
 - `src/multi.rs`: `MultiDevice`, libusdr's multi-device aggregate (`device/mdev.c`): a
   master and members, each a `Device`; settings broadcast through any `Device` method,
   one stream group across the devices (created stream by stream, started part by part
@@ -105,7 +110,9 @@ Each layer calls only the ones below it.
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
   with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
-  front end, DMA, sync), the original TX stream core (`tx_stream`), and
+  front end, DMA, sync), the TX stream cores (`tx_stream`: the original core's
+  announcement and status, the extended core's front end, lane map and cached
+  announcement), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash/`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
@@ -293,9 +300,12 @@ Each layer calls only the ones below it.
   original TX core (`Device::send`, `send_with_stat`, `set_tx_mute`; `oracle/tests/
   tx_stream_parity.rs`, over USB `oracle/tests/usb_tx_parity.rs`), and so is the
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
-  `oracle/tests/calibration_parity.rs`); the extended TX core is not, nor is the RF-chain
+  `oracle/tests/calibration_parity.rs`), and so is the extended TX core and both
+  directions' second channels (`oracle/tests/{tx_stream,stream_formats}_parity.rs`);
+  not ported are the RF-chain
   part (power, tuning, calibration) of a native (`NativeUsb`) stream group, whose
-  stream-engine and DSP-port parts are ported, and
+  stream-engine and DSP-port parts are ported (for channel 0 on the original TX core), the
+  gateware FFT format and lane bifurcation (no gateware evidence), and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment
   variable spelling is not a compatibility requirement. The present oracle assumes
@@ -318,14 +328,18 @@ Each layer calls only the ones below it.
   creates and then fails the sync
   (`stream_formats_parity.rs::external_sync_is_refused_by_both_before_any_sync_operation`).
   Streams also refuse, before any bus access, a host format with no converter for the
-  wire (libusdr byte-copies it), complex RX channel 1 and a real 12-bit burst ending
-  mid-byte (`stream_formats_parity.rs::a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes`,
+  wire (libusdr byte-copies it), a second complex channel on gateware without the
+  matching DSP chain (libusdr creates it while reporting one channel), a TX remap to
+  another channel count, and a real 12-bit burst ending mid-byte (`stream_formats_parity.rs::a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes`,
   `tests/stream.rs`, `tests/tx_stream.rs`).
   TX streams refuse, before any bus access, a packet size of 0 (libusdr's "largest
-  buffer"), a `ci12` wire, which libusdr refuses only after powering the transmitter
+  buffer"), a `ci12` wire on the original core, which libusdr refuses only after powering
+  the transmitter
   (`tx_stream_parity.rs::a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up`),
-  the extended TX core, sends of no samples or more than a packet (libusdr splits them and
-  times the later bursts of a "now" send) and times past 47 bits (`tests/tx_stream.rs`).
+  a packet over one burst on the extended core (libusdr splits it, unframed over USB),
+  sends of no samples, more than a packet (libusdr splits them and times the later bursts
+  of a "now" send) or unequal channel buffers, and times past 47 bits on the original core
+  (63 on the extended) (`tests/tx_stream.rs`).
   A group with TX starts RX, then TX, then syncs, as libusdr's clients do, where an
   RX-only group syncs first, as before.
   The flash maintenance refuses, before any bus access, ranges libusdr would mishandle
@@ -345,6 +359,9 @@ Each layer calls only the ones below it.
   (`rx_controls_parity.rs::a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it`).
   The TX controls reject DC offsets libusdr masks to 12 bits (`TxDcOffset`;
   `tx_controls_parity.rs::oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr`).
+  The raw chip debug write names the `TPS6381x` register asked for, where libusdr leaves
+  its write flag in the address byte and writes `reg | 0x80`
+  (`diagnostics_parity.rs::a_tps6381x_debug_write_reaches_the_register_libusdr_misaddresses`).
   Calibration refuses, before any bus access, a board with no sample rate (libusdr
   divides by zero) or with a stream group (`tests/calibration.rs`), and reports each IQ
   search's own result where libusdr's array repeats the LO search's; channel B,
