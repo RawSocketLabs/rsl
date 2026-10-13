@@ -27,7 +27,8 @@ members = [
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
     "devices/sdr/usdr/pcie",
-    # LMS7 family (XSDR/XTRX) board simulator; its driver is not yet ported
+    # pure-Rust LMS7 family (XSDR/XTRX) driver, first slice, and its board simulator
+    "devices/sdr/xsdr",
     "devices/sdr/xsdr/sim",
     # LSDr (m2_da09_4_ad45_2) board simulator; its driver is not yet ported
     "devices/sdr/lsdr/sim",
@@ -98,6 +99,7 @@ rsl-lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-fea
 rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
 rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
+rsl-xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 

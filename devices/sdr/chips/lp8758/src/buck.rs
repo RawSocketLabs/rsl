@@ -95,8 +95,9 @@ impl BuckVoltage {
     /// 3.36 V (0xFF).
     ///
     /// Divergence: libusdr's `s_get_vout` sits one code high between 0.735 V and 1.4 V and
-    /// returns 0xFF above 3.33 V; this follows SNVSAC6B. The board uses only 1.8 V, where both
-    /// agree.
+    /// returns 0xFF above 3.33 V; this follows SNVSAC6B. The uSDR uses only 1.8 V, where both
+    /// agree; where a board's libusdr request falls in the band (the XSDR's 1.28 V), its
+    /// driver names the voltage libusdr's code actually selects.
     ///
     /// # Panics
     ///

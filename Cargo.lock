@@ -3369,6 +3369,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsl-xsdr"
+version = "0.0.0"
+dependencies = [
+ "rsl-lowlevel",
+ "rsl-lp8758",
+ "rsl-xsdr-sim",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-xsdr-sim"
 version = "0.0.0"
 dependencies = [

@@ -168,6 +168,14 @@ impl SimBoard {
         self
     }
 
+    /// The same board with an FPGA-side PMIC reporting `revision` (`OTP_REV << 8 |
+    /// DEV_REV`) instead of the one libusdr expects, to exercise its refusal.
+    #[must_use]
+    pub fn with_fpga_pmic_revision(mut self, revision: u16) -> Self {
+        self.fpga_pmic = Lp8758::with_revision(revision);
+        self
+    }
+
     /// Writes a 32-bit FPGA register.
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });

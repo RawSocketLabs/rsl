@@ -39,4 +39,12 @@ pub enum Reg {
 
     /// See [`Config`](super::config::Config). `CONFIG`, §7.6.1.23.
     Config = 0x17,
+
+    /// Channels 0 and 1 status; libusdr's `lp8758_check_pg` takes power-good from bits 2
+    /// (channel 0) and 6 (channel 1). `BUCK_0_1_STAT` in libusdr's map.
+    Buck01Status = 0x1c,
+
+    /// Channels 2 and 3 status, power-good in bits 2 and 6 as for
+    /// [`Self::Buck01Status`]. `BUCK_2_3_STAT` in libusdr's map.
+    Buck23Status = 0x1d,
 }
