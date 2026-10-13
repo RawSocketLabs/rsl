@@ -38,16 +38,21 @@ FUZZ = {
 USDR_ORACLE = "devices/sdr/usdr/oracle"
 USDR = "devices/sdr/usdr"
 USDR_PORTABLE = f"{USDR}/nostd-check"
-# Shared no_std device crates (the bus seam, per-chip register values) by root. Like every
-# cross-target check, their bare-metal gate is release-only: an explicit release of the uSDR
-# driver selects it; a codec release reaching them does not. They are not release-enabled.
+# Shared no_std device crates (the bus seam, per-chip register values and sequences) by
+# root. Like every cross-target check, their bare-metal gate is release-only: an explicit
+# release of a driver with a portable fixture selects it; a codec release reaching them does
+# not. They are not release-enabled.
 LOWLEVEL = "devices/lowlevel"
 LP8758 = "devices/sdr/chips/lp8758"
-BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758"}
+LMS7002M = "devices/sdr/chips/lms7002m"
+BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: "rsl-lms7002m"}
 # The LMS7 family driver; its oracle runs libusdr's LMS7 family against rsl-xsdr-sim,
 # compiling the uSDR oracle's vendored C.
 XSDR = "devices/sdr/xsdr"
 XSDR_ORACLE = f"{XSDR}/oracle"
+XSDR_PORTABLE = f"{XSDR}/nostd-check"
+# Each driver with a detached exact-source no_std fixture, and the fixture.
+PORTABLE_FIXTURES = {USDR: USDR_PORTABLE, XSDR: XSDR_PORTABLE}
 # Runs libusdr's LSDr family against rsl-lsdr-sim, compiling the uSDR oracle's vendored C.
 LSDR_ORACLE = "devices/sdr/lsdr/oracle"
 # Runs libusdr's PE_SYNC clock board against rsl-pe-sync-sim, compiling the same vendored C.
@@ -56,7 +61,8 @@ PE_SYNC_ORACLE = "devices/sync/pe_sync/oracle"
 LIMESDR_ORACLE = "devices/sdr/limesdr/oracle"
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
 DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
-            "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, LSDR_ORACLE,
+            "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, XSDR_PORTABLE,
+            LSDR_ORACLE,
             PE_SYNC_ORACLE, LIMESDR_ORACLE, "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
@@ -74,7 +80,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
     "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
-    "package", "bladerf", "usdr-portable", "xsdr-oracle", "lsdr-oracle",
+    "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-oracle",
     "pe-sync-oracle", "limesdr-oracle",
 }
 RELEASE_PROFILES = {"msrv", "bnb", "socks", "no-std", "public-api", "semver", "package"}
@@ -137,10 +143,11 @@ def metadata_graph(root, *, historical=False, toolchain=None):
                                   tuple(sorted(t["name"] for t in package["targets"]
                                                if "bin" in t["kind"])), package["version"],
                                   locked.snapshot(package, root, lockfile))
-    if USDR_PORTABLE in graph:
-        # #[path] imports are production-source dependencies invisible to Cargo metadata.
-        # Never depend on the full std driver merely to make this edge visible to Cargo.
-        graph[USDR_PORTABLE].dependencies.add(USDR)
+    for driver, fixture in PORTABLE_FIXTURES.items():
+        if fixture in graph:
+            # #[path] imports are production-source dependencies invisible to Cargo metadata.
+            # Never depend on the full std driver merely to make this edge visible to Cargo.
+            graph[fixture].dependencies.add(driver)
     for oracle in (XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE):
         if oracle in graph and USDR_ORACLE in graph:
             # These oracles compile the uSDR oracle's vendored libusdr by path, so changes
@@ -238,17 +245,24 @@ def affected_packages(seeds, old, new):
     return reasons
 
 
+def released_portable_drivers(release_members):
+    """The explicitly released drivers that have a portable fixture."""
+    return {member["root"] for member in release_members} & PORTABLE_FIXTURES.keys()
+
+
 def bare_metal_devices(release_roots, release_members):
-    """Shared no_std device crates whose bare-metal gate an explicit uSDR release selects."""
-    if not any(member["root"] == USDR for member in release_members):
+    """Shared no_std device crates whose bare-metal gate an explicit release of a driver with
+    a portable fixture (uSDR, XSDR) selects."""
+    if not released_portable_drivers(release_members):
         return set()
     return set(release_roots) & BARE_METAL_DEVICES.keys()
 
 
 def select(paths, old, new, *, full=False, release_members=(), full_reason="explicit full run",
            dependency_changes=None):
-    if any(member["root"] == USDR for member in release_members) and USDR_PORTABLE not in new:
-        raise ValueError("USDR release qualification requires its registered portable fixture")
+    for driver in sorted(released_portable_drivers(release_members)):
+        if PORTABLE_FIXTURES[driver] not in new:
+            raise ValueError(f"{driver} release qualification requires its registered portable fixture")
     seeds = defaultdict(set)
     global_reasons = {full_reason} if full else set()
     docs = []
@@ -316,7 +330,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("facades")
     if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
-    if USDR_PORTABLE in release_roots and any(member["root"] == USDR for member in release_members):
+    if any(PORTABLE_FIXTURES[driver] in release_roots
+           for driver in released_portable_drivers(release_members)):
         profiles.add("no-std")
     if bare_metal_devices(release_roots, release_members):
         profiles.add("no-std")
@@ -330,6 +345,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("usdr-oracle")
     if USDR_PORTABLE in roots:
         profiles.add("usdr-portable")
+    if XSDR_PORTABLE in roots:
+        profiles.add("xsdr-portable")
     if XSDR_ORACLE in roots:
         profiles.add("xsdr-oracle")
     if LSDR_ORACLE in roots:

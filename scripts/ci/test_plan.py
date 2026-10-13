@@ -8,7 +8,8 @@ import unittest
 
 from gate import check_plan, check_release, check_results
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR, XSDR_ORACLE,
-                  LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE, LOWLEVEL, LP8758,
+                  XSDR_PORTABLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE, LOWLEVEL, LP8758,
+                  LMS7002M,
                   RELEASE_PROFILES, Package,
                   affected_packages, bare_metal_devices, changed_paths, released_members,
                   select)
@@ -41,8 +42,10 @@ def fixture():
         "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
         USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR, LOWLEVEL, LP8758}, False),
+        LMS7002M: Package("rsl-lms7002m", {BNB, LOWLEVEL}),
         "devices/sdr/chips/lms7002m/sim": Package("rsl-lms7002m-sim", set()),
-        XSDR: Package("rsl-xsdr", {LOWLEVEL, LP8758, "devices/sdr/xsdr/sim"}),
+        XSDR: Package("rsl-xsdr", {LMS7002M, LOWLEVEL, LP8758, "devices/sdr/xsdr/sim"}),
+        XSDR_PORTABLE: Package("rsl-xsdr-nostd-check", {XSDR, LMS7002M, LOWLEVEL, LP8758}, False),
         "devices/sdr/xsdr/sim": Package("rsl-xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
         XSDR_ORACLE: Package("rsl-xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
                              False),
@@ -173,7 +176,8 @@ class SelectionTests(unittest.TestCase):
 
     def test_shared_device_crates_rerun_their_consumers_and_the_portable_host_gate(self):
         cases = [
-            (f"{LOWLEVEL}/src/bus.rs", {"rsl-lowlevel", "rsl-lp8758", "rsl-usdr", "rsl-xsdr"}),
+            (f"{LOWLEVEL}/src/bus.rs",
+             {"rsl-lowlevel", "rsl-lp8758", "rsl-lms7002m", "rsl-usdr", "rsl-xsdr"}),
             (f"{LP8758}/src/buck.rs", {"rsl-lp8758", "rsl-usdr", "rsl-xsdr"}),
         ]
         for path, packages in cases:
@@ -181,9 +185,35 @@ class SelectionTests(unittest.TestCase):
                 plan = planned([path])
                 self.assertFalse(plan["full"])
                 self.assertEqual(set(plan["packages"]), packages)
-                self.assertTrue({"usdr-portable", "usdr-oracle", "xsdr-oracle"}
+                self.assertTrue({"usdr-portable", "usdr-oracle", "xsdr-portable", "xsdr-oracle"}
                                 <= set(plan["profiles"]))
                 self.assertNotIn("no-std", plan["profiles"])
+
+    def test_the_lms7002m_chip_crate_reruns_the_lms7_family_not_the_usdr(self):
+        plan = planned([f"{LMS7002M}/src/chip.rs"])
+        self.assertFalse(plan["full"])
+        self.assertEqual(plan["packages"], ["rsl-lms7002m", "rsl-xsdr"])
+        self.assertTrue({"xsdr-portable", "xsdr-oracle"} <= set(plan["profiles"]))
+        self.assertNotIn("usdr-portable", plan["profiles"])
+        self.assertNotIn("usdr-oracle", plan["profiles"])
+        self.assertNotIn("no-std", plan["profiles"])
+
+    def test_xsdr_portable_fixture_changes_select_only_its_routine_host_gate(self):
+        plan = planned([f"{XSDR_PORTABLE}/src/lib.rs"])
+        self.assertEqual(plan["packages"], [])
+        self.assertEqual(set(plan["profiles"]), {"deny", "xsdr-portable"})
+        self.assertFalse(plan["release"])
+
+    def test_an_explicit_xsdr_release_qualifies_its_core_and_the_lms7002m_bare_metal(self):
+        member = {"product": "rsl-xsdr", "root": XSDR, "name": "rsl-xsdr", "version": "0.0.0"}
+        release = select([], fixture(), fixture(), release_members=[member])
+        self.assertTrue({"no-std", "xsdr-portable"} <= set(release["profiles"]))
+        self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
+                         {LOWLEVEL, LP8758, LMS7002M})
+        graph = fixture()
+        del graph[XSDR_PORTABLE]
+        with self.assertRaisesRegex(ValueError, "registered portable fixture"):
+            select([], graph, graph, release_members=[member])
 
     def test_only_an_explicit_usdr_release_qualifies_shared_bare_metal_crates(self):
         codec = planned(release=True)
@@ -262,6 +292,7 @@ class SelectionTests(unittest.TestCase):
         plan = planned([f"{XSDR}/src/portable/power.rs"])
         self.assertEqual(plan["packages"], ["rsl-xsdr"])
         self.assertIn("xsdr-oracle", plan["profiles"])
+        self.assertIn("xsdr-portable", plan["profiles"], "its exact-source fixture imports it")
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-portable", plan["profiles"])
 

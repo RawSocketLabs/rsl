@@ -17,8 +17,8 @@ import tomllib
 
 from gate import validate_plan
 from plan import (BARE_METAL_DEVICES, BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE, NOSTD,
-                  PE_SYNC_ORACLE, PKI, PROFILES, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE,
-                  bare_metal_devices)
+                  PE_SYNC_ORACLE, PKI, PORTABLE_FIXTURES, PROFILES, USDR_ORACLE, USDR_PORTABLE,
+                  XSDR_ORACLE, XSDR_PORTABLE, bare_metal_devices, released_portable_drivers)
 
 
 def packages(names):
@@ -89,10 +89,11 @@ def commands(profile, plan, bnb):
         if NOSTD in release_roots:
             result.append(["cargo", "build", "--manifest-path", f"{NOSTD}/Cargo.toml",
                            "--target", "thumbv7em-none-eabi"])
-        if (USDR_PORTABLE in release_roots
-                and any(member["root"] == USDR for member in plan["release_members"])):
-            result.append(["cargo", "check", "--manifest-path", f"{USDR_PORTABLE}/Cargo.toml",
-                           "--locked", "--target", "thumbv7em-none-eabi"])
+        for driver in sorted(released_portable_drivers(plan["release_members"])):
+            fixture = PORTABLE_FIXTURES[driver]
+            if fixture in release_roots:
+                result.append(["cargo", "check", "--manifest-path", f"{fixture}/Cargo.toml",
+                               "--locked", "--target", "thumbv7em-none-eabi"])
         devices = bare_metal_devices(release_roots, plan["release_members"])
         if devices:
             # Default features only: `std` (rsl-lowlevel's Bus) is the host driver's.
@@ -129,9 +130,11 @@ def commands(profile, plan, bnb):
         return [["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "test", *manifest, "--locked"]]
-    if profile == "usdr-portable":
-        manifest = ["--manifest-path", f"{USDR_PORTABLE}/Cargo.toml"]
-        return [[sys.executable, "scripts/ci/portable.py"],
+    if profile in {"usdr-portable", "xsdr-portable"}:
+        name = profile.removesuffix("-portable")
+        fixture = {"usdr": USDR_PORTABLE, "xsdr": XSDR_PORTABLE}[name]
+        manifest = ["--manifest-path", f"{fixture}/Cargo.toml"]
+        return [[sys.executable, "scripts/ci/portable.py", name],
                 ["cargo", "fmt", *manifest, "--", "--check"],
                 ["cargo", "clippy", *manifest, "--locked", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "check", *manifest, "--locked"],

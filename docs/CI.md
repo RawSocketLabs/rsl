@@ -70,8 +70,15 @@ The fixture also depends, without default features, on the shared no_std device 
 `rsl-lowlevel` and `rsl-lp8758`; `scripts/ci/portable.py` holds each portable-core dependency
 to the production declaration minus host-only features (`rsl-lowlevel`'s `std`). Those crates
 declare `#![no_std]` themselves, and their own thumbv7em-none-eabi `cargo check` (default
-features) joins the same release-only `no-std` profile when the uSDR driver is explicitly
-released (`plan.BARE_METAL_DEVICES`); a codec release does not select it.
+features) joins the same release-only `no-std` profile when a driver with a portable fixture
+is explicitly released (`plan.BARE_METAL_DEVICES`, `plan.PORTABLE_FIXTURES`); a codec release
+does not select it.
+
+The LMS7 family driver's fixture (`devices/sdr/xsdr/nostd-check`, profile `xsdr-portable`)
+follows the same contract for `rsl-xsdr`'s `src/portable` tree, on `rsl-lowlevel`,
+`rsl-lp8758` and `rsl-lms7002m` (`portable.py xsdr`); `rsl-lms7002m` is a registered
+bare-metal device crate. No XSDR product is release-enabled, so its cross-target checks are
+registered but not selected today.
 
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
