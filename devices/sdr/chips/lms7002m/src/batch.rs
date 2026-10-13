@@ -11,7 +11,11 @@ pub const BATCH_CAPACITY: usize = 11;
 
 /// Register writes to one chip, issued in order; the first failure abandons the rest, as
 /// `lms7002m_spi_post` returns at its first failed exchange. Fixed capacity, no allocation.
+///
+/// Building one changes the [`Lms7002m`](crate::Lms7002m) cache already, so a batch that is
+/// never run leaves the cache describing writes the chip did not get.
 #[derive(Clone, Copy, Debug)]
+#[must_use = "the chip cache already describes these writes: run the batch"]
 pub struct Batch {
     /// The SPI target the chip answers on.
     target: SpiAddr,

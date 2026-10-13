@@ -193,7 +193,6 @@ impl Lms7002m {
     ///
     /// libusdr also caches the two words per selected channel for later processor writes;
     /// no ported operation reads them, so they are not cached here.
-    #[must_use]
     pub fn tsp_enable(&self, tsp: Tsp, enable: bool) -> Batch {
         let mut batch = Batch::new(self.target);
         match tsp {
@@ -382,7 +381,6 @@ impl Lms7002m {
     /// Powers the converters up or down per direction and channel, A then B
     /// (`lms7002m_afe_enable`, which libusdr calls with its `rx_run` and `tx_run` flags);
     /// the AFE's global enable follows any of them.
-    #[must_use]
     pub fn afe_enable(&self, rx: [bool; 2], tx: [bool; 2]) -> Batch {
         let ([rx_a, rx_b], [tx_a, tx_b]) = (rx, tx);
         let mut batch = Batch::new(self.target);
