@@ -3261,6 +3261,16 @@ name = "rsl-error-correction"
 version = "0.1.0"
 
 [[package]]
+name = "rsl-limesdr"
+version = "0.0.0"
+dependencies = [
+ "rsl-limesdr-sim",
+ "rsl-lms7002m",
+ "rsl-lowlevel",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "rsl-limesdr-sim"
 version = "0.0.0"
 dependencies = [

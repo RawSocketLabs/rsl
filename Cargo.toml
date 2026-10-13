@@ -39,7 +39,8 @@ members = [
     # LMS7002M boards' drivers and simulators
     "devices/sdr/chips/lms7002m",
     "devices/sdr/chips/lms7002m/sim",
-    # LimeSDR-mini (u3_limesdr) board simulator; its driver is not yet ported
+    # pure-Rust LimeSDR-mini (u3_limesdr) driver, first slice, and its board simulator
+    "devices/sdr/limesdr",
     "devices/sdr/limesdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
@@ -105,6 +106,7 @@ rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
 rsl-xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 rsl-lsdr-sim = { path = "devices/sdr/lsdr/sim" }
+rsl-limesdr-sim = { path = "devices/sdr/limesdr/sim" }
 rsl-usb = { path = "usb", version = "0.0.0" }
 rsl-error-correction = { path = "error-correction", version = "0.1.0", default-features = false }
 
