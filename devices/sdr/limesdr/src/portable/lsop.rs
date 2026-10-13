@@ -121,10 +121,12 @@ impl LsOp {
     pub(crate) const fn fpga_access(self) -> Option<FpgaAccess> {
         match self {
             Self::Write { reg, value } => Some(FpgaAccess::Write {
-                reg,
+                reg: reg as u32,
                 value: value as u32,
             }),
-            Self::Read { reg } | Self::ReadWide { reg } => Some(FpgaAccess::Read { reg }),
+            Self::Read { reg } | Self::ReadWide { reg } => {
+                Some(FpgaAccess::Read { reg: reg as u32 })
+            }
             Self::Spi { word } => Some(FpgaAccess::Spi {
                 target: SpiAddr(0),
                 word,

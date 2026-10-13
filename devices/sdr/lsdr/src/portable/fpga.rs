@@ -10,7 +10,7 @@ pub(crate) const NAME: &str = "FPGA";
 /// Register 0 (`M2PCI_REG_STAT_CTRL`, the 8-bit GPO core's base): every GPO write goes
 /// through it (`dev_gpo_set` writes `(bank & 0x7f) << 24 | data`), and open reads it once
 /// to tell a live board from a dead link.
-const REG_STATUS: u16 = 0;
+const REG_STATUS: u32 = 0;
 
 /// Open's liveness read of [`REG_STATUS`]; libusdr reports "Device is dead!" when it reads
 /// [`DEAD`].

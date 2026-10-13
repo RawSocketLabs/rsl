@@ -145,8 +145,10 @@ impl<E> RegisterTransaction<E> {
         Self::new(id, SPI_REGISTER, 1, &[word], reply, now)
     }
 
-    /// The transaction performing one sequence action: a single-register read or write, or
-    /// an SPI exchange.
+    /// The transaction performing one sequence action: a single physical-register read or
+    /// write, or an SPI exchange. A register past the 16-bit command address (the stream
+    /// engine's configuration space) is refused: its executor reaches it through the index
+    /// window, one physical access at a time.
     #[cfg_attr(
         not(test),
         allow(
@@ -155,9 +157,14 @@ impl<E> RegisterTransaction<E> {
         )
     )]
     pub(crate) fn access(id: u64, access: FpgaAccess, now: Duration) -> Result<Self, Failure<E>> {
+        let physical = |reg: u32| {
+            u16::try_from(reg).map_err(|_| {
+                Failure::Unsupported("USB register commands address 16-bit physical registers")
+            })
+        };
         match access {
-            FpgaAccess::Read { reg } => Self::read(id, reg, 1, now),
-            FpgaAccess::Write { reg, value } => Self::write(id, reg, &[value], now),
+            FpgaAccess::Read { reg } => Self::read(id, physical(reg)?, 1, now),
+            FpgaAccess::Write { reg, value } => Self::write(id, physical(reg)?, &[value], now),
             FpgaAccess::Spi { target, word, .. } => Self::spi32(id, target, word, now),
         }
     }

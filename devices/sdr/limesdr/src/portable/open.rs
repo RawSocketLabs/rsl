@@ -426,7 +426,7 @@ mod tests {
             Failure::Sequence(SequenceFailure::FpgaTransport {
                 chip: "FPGA",
                 access: FpgaAccess::Write {
-                    reg: DETECTOR_CONTROL,
+                    reg: u32::from(DETECTOR_CONTROL),
                     value: 0
                 },
                 source: (),

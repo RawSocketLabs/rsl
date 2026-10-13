@@ -147,7 +147,7 @@ pub fn transport_error_is_preserved(error: u8) -> bool {
 /// # Errors
 ///
 /// As [`fpga_action`].
-pub fn fpga_read(reg: u16, readback: &[u8]) -> Result<u32, &'static str> {
+pub fn fpga_read(reg: u32, readback: &[u8]) -> Result<u32, &'static str> {
     fpga_action(
         SequenceAction::Fpga(FpgaAccess::Read { reg }),
         readback,
@@ -160,7 +160,7 @@ pub fn fpga_read(reg: u16, readback: &[u8]) -> Result<u32, &'static str> {
 /// # Errors
 ///
 /// As [`fpga_action`].
-pub fn fpga_write(reg: u16, value: u32) -> Result<u32, &'static str> {
+pub fn fpga_write(reg: u32, value: u32) -> Result<u32, &'static str> {
     fpga_action(
         SequenceAction::Fpga(FpgaAccess::Write { reg, value }),
         &[],

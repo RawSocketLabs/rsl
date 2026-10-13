@@ -212,10 +212,10 @@ pub fn run_sequence(
             }
             SequenceAction::Fpga(FpgaAccess::Read { reg }) => {
                 let mut word = [0];
-                bus.read_regs(reg.into(), &mut word).map(|()| word[0])
+                bus.read_regs(reg, &mut word).map(|()| word[0])
             }
             SequenceAction::Fpga(FpgaAccess::Write { reg, value }) => {
-                bus.write_regs(reg.into(), &[value]).map(|()| value)
+                bus.write_regs(reg, &[value]).map(|()| value)
             }
             SequenceAction::Fpga(FpgaAccess::Spi { target, word, .. }) => bus.spi32(target, word),
             SequenceAction::Sleep(duration) => {

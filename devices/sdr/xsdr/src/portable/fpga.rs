@@ -9,11 +9,11 @@ pub(crate) const NAME: &str = "FPGA";
 
 /// The register every GPO write goes through: `dev_gpo_set` writes
 /// `(bank & 0x7f) << 24 | data` to register 0.
-const REG_GPO: u16 = 0;
+const REG_GPO: u32 = 0;
 
 /// General-purpose input word 3, the hardware ID (`IGPI_HWID` = 12, read at
 /// `16 + bank / 4` by `dev_gpi_get32`).
-pub(crate) const REG_HWID: u16 = 16 + 12 / 4;
+pub(crate) const REG_HWID: u32 = 16 + 12 / 4;
 
 /// A GPO bank (`enum IGPO_*` in `xsdr_ctrl.h`); each holds 8 bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl Gpo {
 
 /// The TX PHY's configuration port (`REG_CFG_PHY_1`, `generic_regs.h`): `xsdr_phy_tx_reg`
 /// writes `register << 24 | value & 0xFFFFFF` here.
-const REG_CFG_PHY_1: u16 = 57;
+const REG_CFG_PHY_1: u32 = 57;
 
 /// The TX PHY register controlling its MMCM (`PHY_REG_MMCM_CTRL`, `xsdr_ctrl.c`).
 const PHY_MMCM_CTRL: u8 = 2;

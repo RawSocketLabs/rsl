@@ -21,7 +21,7 @@ pub(super) const FPGA: &str = "FPGA";
 /// FPGA register latching one GPO bank per write.
 const REG_GPO: u32 = 0;
 /// First FPGA register of the general-purpose inputs.
-const REG_GPI_BASE: u16 = 16;
+const REG_GPI_BASE: u32 = 16;
 
 /// A write to [`REG_GPO`]. Bit 31 set would load the I2C address LUT instead.
 #[bitfield(u32)]
@@ -104,13 +104,13 @@ pub(crate) enum Gpi {
 
 impl Gpi {
     /// The FPGA register holding this input's 32-bit word.
-    pub(crate) const fn register(self) -> u16 {
-        REG_GPI_BASE + self as u16 / 4
+    pub(crate) const fn register(self) -> u32 {
+        REG_GPI_BASE + self as u32 / 4
     }
 
     /// Reads the 32-bit input word holding this input.
     pub(crate) fn read(self, bus: &mut dyn Bus) -> Result<u32, Error> {
-        let reg = u32::from(self.register());
+        let reg = self.register();
         let mut word = [0];
         bus.read_regs(reg, &mut word).reading(FPGA, reg)?;
         Ok(word[0])

@@ -78,19 +78,24 @@ impl RegisterAccess {
     }
 }
 
-/// One 32-bit access through the FPGA: a physical gateware register below the stream
-/// engine's index window (`0..=0xFFFF`), or a word shifted through an SPI target.
+/// One 32-bit access through the FPGA: a gateware register, numbered as the blocking `Bus`
+/// numbers them (libusdr's `ls_op` register address), or a word shifted through an SPI
+/// target.
+///
+/// A register past a transport's physical space, such as the uSDR stream engine's
+/// configuration space from 0x10000, is reached the way that transport reaches it (through
+/// an index window): the access names the register, not the transport's steps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FpgaAccess {
     /// Read one gateware register.
     Read {
-        /// The physical register.
-        reg: u16,
+        /// The register.
+        reg: u32,
     },
     /// Write one gateware register.
     Write {
-        /// The physical register.
-        reg: u16,
+        /// The register.
+        reg: u32,
         /// The word written.
         value: u32,
     },
@@ -114,8 +119,8 @@ impl FpgaAccess {
     #[must_use]
     pub fn context(&self) -> (Access, u32) {
         match *self {
-            Self::Read { reg } => (Access::Read, reg.into()),
-            Self::Write { reg, .. } => (Access::Write, reg.into()),
+            Self::Read { reg } => (Access::Read, reg),
+            Self::Write { reg, .. } => (Access::Write, reg),
             Self::Spi { reg, write, .. } => (if write { Access::Write } else { Access::Read }, reg),
         }
     }

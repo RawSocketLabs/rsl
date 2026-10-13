@@ -308,3 +308,21 @@ fn a_sequence_action_becomes_the_matching_single_word_transaction() {
     let mut exchange = Tx::access(3, spi, Duration::ZERO).unwrap();
     assert_eq!(command(&mut exchange).as_bytes(), [2, 0, 0, 0, 7, 0, 0, 0]);
 }
+
+#[test]
+fn a_configuration_space_register_is_no_single_command() {
+    // The stream engine's front end (0x10100) sits behind the index window: one command
+    // would address register 0x0100 instead.
+    for access in [
+        FpgaAccess::Read { reg: 0x1_0100 },
+        FpgaAccess::Write {
+            reg: 0x1_0100,
+            value: 1,
+        },
+    ] {
+        assert!(matches!(
+            Tx::access(1, access, Duration::ZERO),
+            Err(Failure::Unsupported(_))
+        ));
+    }
+}
