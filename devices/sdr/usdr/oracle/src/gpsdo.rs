@@ -14,10 +14,6 @@ use super::{BOARD, SESSION, install, resume_callback_panic, take_board, with_boa
 
 /// The words the tool's measurement reads load, in order.
 static SCRIPT: Mutex<VecDeque<u32>> = Mutex::new(VecDeque::new());
-/// The code the tool's DAC write last succeeded with in this process. `set_dac_value`
-/// keeps it in a function `static`, which nothing resets between runs, and skips a write
-/// equal to it; 0 before any.
-static LAST_DAC: Mutex<u64> = Mutex::new(0);
 
 /// `struct rsl_gpsdo_event` in the shim.
 #[repr(C)]
@@ -40,6 +36,7 @@ unsafe extern "C" {
         events: *mut RawEvent,
         capacity: usize,
         count: *mut usize,
+        dac_before: *mut u64,
     ) -> c_int;
 }
 
@@ -172,8 +169,9 @@ pub struct GpsdoRun {
     pub events: Vec<Event>,
     /// The board after the tool closed it, with its trace.
     pub board: SimBoard,
-    /// The code `set_dac_value`'s `static` held when the run began (see [`LAST_DAC`]): a
-    /// first write of it is skipped.
+    /// The code `set_dac_value`'s function `static` held when the run began: the code the
+    /// tool last wrote in this process (nothing resets it), or 0. A first write of it is
+    /// skipped.
     pub dac_before: u64,
 }
 
@@ -188,7 +186,6 @@ pub fn run_gpsdo(board: SimBoard, options: &[&str], words: &[u32]) -> GpsdoRun {
     let _session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
     install(Some(board));
     *SCRIPT.lock().unwrap_or_else(PoisonError::into_inner) = words.iter().copied().collect();
-    let dac_before = *LAST_DAC.lock().unwrap_or_else(PoisonError::into_inner);
 
     let strings: Vec<CString> = ["usdr_dm_gpsdo"]
         .iter()
@@ -202,9 +199,10 @@ pub fn run_gpsdo(board: SimBoard, options: &[&str], words: &[u32]) -> GpsdoRun {
     let capacity = 16 * words.len() + 64;
     let mut raw = vec![RawEvent::default(); capacity];
     let mut count = 0;
+    let mut dac_before = 0;
     // SAFETY: `argv` holds `count_c` NUL-terminated strings that outlive the call, then a
     // null (getopt permutes the pointers, not the strings); `raw` has room for `capacity`
-    // records and `count` is a valid out-pointer.
+    // records and `count` and `dac_before` are valid out-pointers.
     let status = unsafe {
         rsl_oracle_gpsdo_run(
             count_c,
@@ -212,17 +210,12 @@ pub fn run_gpsdo(board: SimBoard, options: &[&str], words: &[u32]) -> GpsdoRun {
             raw.as_mut_ptr(),
             capacity,
             &raw mut count,
+            &raw mut dac_before,
         )
     };
     resume_callback_panic();
     assert!(count <= capacity, "the shim ran out of event records");
     let events: Vec<Event> = raw[..count].iter().map(Event::decode).collect();
-    if let Some(code) = events.iter().rev().find_map(|event| match *event {
-        Event::DacWrite { code, result: 0 } => Some(code),
-        _ => None,
-    }) {
-        *LAST_DAC.lock().unwrap_or_else(PoisonError::into_inner) = code;
-    }
     GpsdoRun {
         status,
         events,

@@ -69,6 +69,10 @@ static int rsl_start(const struct rsl_gen* g, unsigned payload, pthread_t* threa
     case RSL_GEN_CF32: thread_func = freq_gen_thread_cf32; break;
     default: return -EINVAL;
     }
+    // The producers write a whole packet before posting its length: refuse a ring too small.
+    uint64_t bytes = (uint64_t)g->samples_count * (g->kind == RSL_GEN_CF32 ? 8 : 4);
+    if (bytes > payload)
+        return -EINVAL;
 
     tbuff[0] = ring_buffer_create(RSL_RING_ITEMS, sizeof(tx_header_t) + payload);
     if (!tbuff[0])

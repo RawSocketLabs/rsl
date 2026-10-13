@@ -90,6 +90,9 @@ static size_t s_count;
 static struct timespec s_now;
 // Stands in for the RX stream the tool creates.
 static int s_fake_stream;
+// The code the tool's DAC write last succeeded with in this process: what `set_dac_value`'s
+// function `static`, which nothing resets between runs, holds (0 before any write).
+static uint64_t s_last_dac;
 
 #define RSL_FAKE_TIMER_FD 0x7fff
 
@@ -129,6 +132,8 @@ static int rsl_gpsdo_set_uint(pdm_dev_t dev, const char* path, uint64_t val)
 {
     if (strcmp(path, "/dm/sdr/0/dac_vctcxo") == 0) {
         int res = usdr_dme_set_uint(dev, path, val);
+        if (res == 0)
+            s_last_dac = val;
         struct rsl_gpsdo_event* e = rsl_push(RSL_GPSDO_DAC_WRITE);
         e->word = val;
         e->i0 = res;
@@ -310,11 +315,13 @@ static int rsl_gpsdo_fprintf(FILE* stream, const char* format, ...)
 #undef main
 
 // Runs the tool with `argc`/`argv` (its options), recording into `events` (room for
-// `capacity`; `*count` may exceed it, meaning events were lost). The virtual clock starts
-// at 1000 s. Returns the tool's exit status.
+// `capacity`; `*count` may exceed it, meaning events were lost). `*dac_before` gets the
+// code `set_dac_value` will skip writing first. The virtual clock starts at 1000 s.
+// Returns the tool's exit status.
 int rsl_oracle_gpsdo_run(int argc, char** argv, struct rsl_gpsdo_event* events,
-                         size_t capacity, size_t* count)
+                         size_t capacity, size_t* count, uint64_t* dac_before)
 {
+    *dac_before = s_last_dac;
     s_events = events;
     s_capacity = capacity;
     s_count = 0;

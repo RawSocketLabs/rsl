@@ -262,7 +262,7 @@ fn float_tones_match_the_tools_generator() {
             let mut tone = ToneF32::new(start, step, amplitude);
             let actual = packets(samples, |n| {
                 let mut out = vec![Complex::new(0.0, 0.0); n];
-                tone.fill(&mut out);
+                tone.fill_complex(&mut out);
                 cf32_bytes(&out)
             });
             assert!(

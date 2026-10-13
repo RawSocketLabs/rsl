@@ -124,8 +124,9 @@ pub unsafe fn gain(dbfs: f32) -> i16 {
 ///
 /// # Panics
 ///
-/// If the shim fails (a producer that posts nothing for a second, a packet larger than
-/// `payload` or flagged), or the sizes exceed `unsigned`.
+/// If the shim fails: `payload` smaller than the producer's packet (`samples` times 4
+/// bytes for `ci16`, 8 for `cf32`), a producer that posts nothing for a second or a
+/// flagged packet; or if the sizes exceed `unsigned`.
 #[must_use]
 pub fn generate(producer: &Producer, payload: usize, packets: usize) -> Vec<Vec<u8>> {
     let raw = producer.raw();
@@ -168,7 +169,8 @@ impl Oracle {
     ///
     /// # Errors
     ///
-    /// The negative errno the shim returned; `-EINVAL` with no TX stream.
+    /// The negative errno the shim returned (`-EINVAL` when the producer's packets exceed
+    /// the stream's); `-EINVAL` with no TX stream.
     ///
     /// # Panics
     ///

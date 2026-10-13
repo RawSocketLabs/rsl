@@ -20,8 +20,8 @@ mod sim_bus;
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use rsl_usdr::Device;
 use rsl_usdr::discipline::{Holdover, OscillatorDiscipline, Outcome, PpsMeasurement};
+use rsl_usdr::{Device, Error};
 use rsl_usdr_oracle::gpsdo::{Event, Setup, run_gpsdo};
 use rsl_usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
 use sim_bus::SimBus;
@@ -41,10 +41,19 @@ struct Side {
     events: Vec<Event>,
 }
 
-/// The board both sides use.
+/// The board both sides use: one with a DAC to discipline.
 fn board() -> SimBoard {
     SimBoard::new(BoardRevision::Rev3).with_front_end(FrontEnd::Pciefe)
 }
+
+/// A board whose front end has no DAC: both drivers refuse the write, before any bus
+/// access (libusdr with `-EACCES`).
+fn dacless() -> SimBoard {
+    SimBoard::new(BoardRevision::Rev3)
+}
+
+/// libusdr's `-EACCES`, its refusal where rsl-usdr reports `Error::NoOscillatorDac`.
+const EACCES: i32 = -13;
 
 /// A measurement word: pulse counter `pulses` (mod 16) and `count`.
 fn word(pulses: usize, count: u32) -> u32 {
@@ -63,7 +72,12 @@ fn pulses(counts: &[u32]) -> Vec<u32> {
 
 /// The tool on libusdr: its set-up calls, then its loop.
 fn tool(words: &[u32]) -> (Vec<Setup>, Side, u64) {
-    let run = run_gpsdo(board(), &["-r", &EXPECTED.to_string()], words);
+    tool_on(board(), words)
+}
+
+/// The tool on libusdr on `board`.
+fn tool_on(board: SimBoard, words: &[u32]) -> (Vec<Setup>, Side, u64) {
+    let run = run_gpsdo(board, &["-r", &EXPECTED.to_string()], words);
     assert_eq!(run.status, 0, "the tool ends at the end of the script");
     let trace = run.board.trace();
     let mut setup = Vec::new();
@@ -99,11 +113,17 @@ fn tool(words: &[u32]) -> (Vec<Setup>, Side, u64) {
 }
 
 /// rsl-usdr: the same reads through the device, steps through the discipline machine and
-/// writes to the DAC, recording the events the tool prints for them. A first write of
+/// writes to the DAC, recording the events the tool prints for them (a refused write as
+/// libusdr's `-EACCES` and the tool's error line, unconfirmed). A first write of
 /// `already_written` is confirmed without writing, as the tool's leftover `static` skips
 /// it.
 fn rsl(words: &[u32], already_written: u64) -> Side {
-    let sim = SimBus::new(board());
+    rsl_on(board(), words, already_written)
+}
+
+/// rsl-usdr on `board`.
+fn rsl_on(board: SimBoard, words: &[u32], already_written: u64) -> Side {
+    let sim = SimBus::new(board);
     let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
     let expected = NonZeroU32::new(EXPECTED).expect("nonzero");
     let mut windows = Vec::new();
@@ -126,8 +146,8 @@ fn rsl(words: &[u32], already_written: u64) -> Side {
         let step = discipline.measure(measurement, now);
         let pps = |error: f64| Event::Pps {
             word: u64::from(read),
-            count: i32::from(measurement.pulses),
-            measured: f64::from(measurement.count),
+            count: i32::from(measurement.pulses()),
+            measured: f64::from(measurement.count()),
             error_ppm: error * 1e6,
         };
         match step.outcome {
@@ -144,20 +164,33 @@ fn rsl(words: &[u32], already_written: u64) -> Side {
                     let code = correction.dac;
                     let skipped = first_write && u64::from(code) == already_written;
                     first_write = false;
-                    if !skipped {
+                    if skipped {
+                        discipline.dac_written(code);
+                    } else {
                         events.push(Event::Dac {
                             code: code.into(),
                             bits: 16,
                             offset: offset.into(),
-                            step: correction.steps.clamp(-2000.0, 2000.0),
+                            step: correction.step,
                         });
-                        device.set_oscillator_dac(code).expect("writes the DAC");
-                        events.push(Event::DacWrite {
-                            code: code.into(),
-                            result: 0,
-                        });
+                        match device.set_oscillator_dac(code) {
+                            Ok(()) => {
+                                events.push(Event::DacWrite {
+                                    code: code.into(),
+                                    result: 0,
+                                });
+                                discipline.dac_written(code);
+                            }
+                            Err(Error::NoOscillatorDac) => events.extend([
+                                Event::DacWrite {
+                                    code: code.into(),
+                                    result: EACCES,
+                                },
+                                Event::Stderr,
+                            ]),
+                            Err(error) => panic!("the DAC write failed: {error}"),
+                        }
                     }
-                    discipline.dac_written(code);
                 }
             }
         }
@@ -313,14 +346,76 @@ fn the_dac_holds_at_zero_where_the_tool_wraps_it_to_full_scale() {
     let (_, tool_run, dac_before) = tool(&words);
     let rsl_run = rsl(&words, dac_before);
 
-    // Sixteen steps of 2000 from 32767 reach 767; the seventeenth pulse goes below 0.
-    let agreed = 1 + 16 * POLLS_PER_PULSE;
-    assert_eq!(tool_run.windows[..agreed], rsl_run.windows[..agreed]);
     let tool_writes = dac_writes(&tool_run.events);
     let rsl_writes = dac_writes(&rsl_run.events);
-    assert_eq!(tool_writes[..16], rsl_writes[..16]);
-    assert_eq!(rsl_writes[15], 767);
-    assert_eq!(tool_writes[16], 65_535, "the tool wraps to full scale");
-    assert_eq!(rsl_writes[16], 0, "rsl-usdr stops at 0");
-    assert_eq!(rsl_writes.len(), 17, "and stays there");
+    let split = tool_writes
+        .iter()
+        .zip(&rsl_writes)
+        .position(|(tool, rsl)| tool != rsl)
+        .expect("the writes diverge");
+    // Up to the pulse whose write diverges, both did the same.
+    let agreed = 1 + split * POLLS_PER_PULSE;
+    assert_eq!(tool_run.windows[..agreed], rsl_run.windows[..agreed]);
+    assert!(
+        rsl_writes[split - 1] < 2000,
+        "the DAC is within a step of 0 first"
+    );
+    assert_eq!(tool_writes[split], 65_535, "the tool wraps to full scale");
+    assert_eq!(rsl_writes[split], 0, "rsl-usdr stops at 0");
+    assert_eq!(rsl_writes.len(), split + 1, "and stays there");
+}
+
+/// A rejected count leaves holdover unchecked in both: three seconds of polls of a count
+/// more than 2% high, after a correction, report no holdover.
+#[test]
+fn rejections_leave_holdover_unchecked_as_in_the_tools_loop() {
+    let mut words = pulses(&[EXPECTED + 1]);
+    words.extend([word(2, EXPECTED + EXPECTED / 25)].repeat(3 * POLLS_PER_PULSE));
+    let (expected, _) = assert_same(&words);
+    assert!(
+        !expected
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Holdover(_))),
+        "no holdover after rejections"
+    );
+}
+
+/// Divergence, scoped to this scenario: a DAC write that fails (here on a front end with
+/// no DAC, which both drivers refuse before any bus access). The tool takes the errno it
+/// returned as its DAC's code and steps the next correction from it; rsl-usdr's machine,
+/// unconfirmed, steps from the code it last knew written, mid-scale.
+#[test]
+fn a_failed_dac_write_steps_from_the_last_code_where_the_tool_steps_from_the_errno() {
+    let words = pulses(&[EXPECTED + 2, EXPECTED + 2]);
+    let (_, tool_run, dac_before) = tool_on(dacless(), &words);
+    let rsl_run = rsl_on(dacless(), &words, dac_before);
+
+    assert_eq!(tool_run.windows, rsl_run.windows, "reads alone, on both");
+    let lines = |side: &Side| -> Vec<(u32, u32)> {
+        side.events
+            .iter()
+            .filter_map(|event| match *event {
+                Event::Dac { code, offset, .. } => Some((code, offset)),
+                _ => None,
+            })
+            .collect()
+    };
+    let (tool_lines, rsl_lines) = (lines(&tool_run), lines(&rsl_run));
+    assert_eq!(tool_lines.len(), 2, "the tool tries both corrections");
+    assert_eq!(tool_lines[0], rsl_lines[0], "the first attempt agrees");
+    assert_eq!(
+        tool_lines[1].1,
+        u32::from_ne_bytes(EACCES.to_ne_bytes()),
+        "the tool steps from its errno"
+    );
+    assert_eq!(rsl_lines[1].1, 32_767, "rsl-usdr steps from mid-scale");
+    let failures = |side: &Side| {
+        side.events
+            .iter()
+            .filter(|event| matches!(event, Event::DacWrite { result: EACCES, .. }))
+            .count()
+    };
+    assert_eq!(failures(&tool_run), 2);
+    assert_eq!(failures(&rsl_run), 2);
 }
