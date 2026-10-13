@@ -7,7 +7,9 @@ use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, 
 use crate::flash::{FlashController, SimFlash};
 use crate::frontend::{FrontEnd, Model};
 use crate::stream::RxEngine;
+use crate::sync::SyncUnit;
 use crate::trace::Op;
+use crate::tx_stream::{TxEngine, TxGrant, TxPacket};
 
 /// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
 /// bit 31 set load the I2C address LUT instead and leave the outputs alone.
@@ -19,12 +21,19 @@ const AMBIENT_MC: i32 = 25_000;
 
 /// General-purpose output bank enabling the revision-3 on-board oscillator.
 const GPO_ENABLE_OSC: u8 = 17;
+/// General-purpose input bank 0: the gateware build (`USR_ACCESS2`).
+const REG_GPI_BUILD: u32 = 16;
+/// The gateware build a board reports by default: the oldest libusdr streams TX from
+/// (`MINIM_FWID_COMPAT`). Real builds stamp a date; this one is a valid date.
+const DEFAULT_BUILD: u32 = 0xd2b1_0c09;
 /// General-purpose input bank 3: the hardware ID.
 const REG_GPI_HWID: u32 = 16 + 3;
 /// HWID bits 25:24: the board has RX and TX chains.
 const HWID_RX_TX: u32 = 0b11 << 24;
 /// HWID bit 24: the board has a TX chain.
 const HWID_TX: u32 = 1 << 24;
+/// HWID bit 26: the TX chain has the extended stream core.
+const HWID_EXTENDED_TX: u32 = 1 << 26;
 
 /// SPI bus carrying the LMS6002D.
 const SPI_LMS6: u32 = 0;
@@ -117,6 +126,10 @@ pub struct SimBoard {
     trace: Vec<Op>,
     /// The FPGA's RX stream engine.
     rx: RxEngine,
+    /// The FPGA's TX stream core and its DMA buffers.
+    tx: TxEngine,
+    /// The FPGA's stream sync unit.
+    sync: SyncUnit,
     /// The FPGA's QSPI flash controller and its flash, when the test fits one; without it,
     /// the controller's registers are plain storage as before.
     flash: Option<FlashController>,
@@ -130,7 +143,7 @@ impl SimBoard {
     pub fn new(revision: BoardRevision) -> Self {
         let hwid = HWID_RX_TX | (revision as u32) << 8;
         Self {
-            regs: BTreeMap::from([(REG_GPI_HWID, hwid)]),
+            regs: BTreeMap::from([(REG_GPI_BUILD, DEFAULT_BUILD), (REG_GPI_HWID, hwid)]),
             gpo: BTreeMap::new(),
             lms: Lms6002d::new(),
             // DEV_REV 0x01 and OTP_REV 0xe0: libusdr requires revision 0xe001.
@@ -146,6 +159,8 @@ impl SimBoard {
             now_us: 0,
             trace: Vec::new(),
             rx: RxEngine::default(),
+            tx: TxEngine::default(),
+            sync: SyncUnit::default(),
             flash: None,
             front_end: None,
         }
@@ -197,6 +212,23 @@ impl SimBoard {
     pub fn with_rx_only(mut self) -> Self {
         if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
             *hwid &= !HWID_TX;
+        }
+        self
+    }
+
+    /// A board whose gateware reports build `build` (`USR_ACCESS2`, GPI word 0) instead of
+    /// the oldest libusdr streams TX from.
+    #[must_use]
+    pub fn with_gateware_build(mut self, build: u32) -> Self {
+        self.regs.insert(REG_GPI_BUILD, build);
+        self
+    }
+
+    /// A board whose gateware has the extended TX stream core (HWID bit 26).
+    #[must_use]
+    pub fn with_extended_tx_core(mut self) -> Self {
+        if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
+            *hwid |= HWID_EXTENDED_TX;
         }
         self
     }
@@ -256,6 +288,9 @@ impl SimBoard {
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });
         self.rx.on_write(addr, value);
+        self.tx.on_write(addr, value);
+        self.sync.on_write(addr, value);
+        self.play_tx();
         if let Some(flash) = self.flash.as_mut().filter(|_| FlashController::owns(addr)) {
             flash.write(addr, value, self.now_us);
             return;
@@ -271,7 +306,11 @@ impl SimBoard {
     pub fn read_reg(&mut self, addr: u32) -> u32 {
         let value = match &self.flash {
             Some(flash) if FlashController::owns(addr) => flash.read(addr),
-            _ => self.regs.get(&addr).copied().unwrap_or(0),
+            _ => self
+                .tx
+                .status_word(addr)
+                .or_else(|| self.regs.get(&addr).copied())
+                .unwrap_or(0),
         };
         self.trace.push(Op::RegRead { addr, value });
         value
@@ -326,7 +365,60 @@ impl SimBoard {
     /// `None` while the engine is stopped. Below the register seam both drivers share, so
     /// not traced; see the stream module for what the engine does and does not model.
     pub fn rx_next_block(&mut self) -> Option<(Vec<u8>, [u64; 2])> {
-        self.rx.next_block()
+        let released = self.sync.releases(self.rx.running(), self.tx.running());
+        self.rx.next_block(released)
+    }
+
+    /// Sets the TX buffers up as the `PCIe` driver does: 32 of `block_bytes`, free, none
+    /// with a completion record. Below the register seam, so not traced; see the TX
+    /// stream module.
+    pub fn tx_open(&mut self, block_bytes: usize) {
+        self.tx.open(block_bytes);
+    }
+
+    /// Bytes in each TX buffer.
+    #[must_use]
+    pub fn tx_block_bytes(&self) -> usize {
+        self.tx.block_bytes()
+    }
+
+    /// Hands out the next free TX buffer, with its completion record (the TX core's first
+    /// three status words and the kernel time) if a played packet freed it; `None` while
+    /// every buffer holds a packet not yet played. Not traced.
+    pub fn tx_grant(&mut self) -> Option<TxGrant> {
+        self.tx.grant()
+    }
+
+    /// The host's bytes for the buffer it was last granted, which the next announcement
+    /// at registers 12 and 13 hands to the core. Not traced.
+    pub fn tx_load(&mut self, bytes: &[u8]) {
+        self.tx.load(bytes);
+    }
+
+    /// Releases the TX buffers. Not traced.
+    pub fn tx_close(&mut self) {
+        self.tx.close();
+    }
+
+    /// The packets the TX core has played, in order.
+    #[must_use]
+    pub fn tx_packets(&self) -> &[TxPacket] {
+        self.tx.played()
+    }
+
+    /// Sets the TX core's four status words (registers 28 to 31), which later completion
+    /// records also carry.
+    pub fn set_tx_status(&mut self, words: [u32; 4]) {
+        self.tx.status = words;
+    }
+
+    /// Plays the TX core's announced packets if it runs and the sync unit lets it.
+    fn play_tx(&mut self) {
+        let released = self.sync.releases(self.rx.running(), self.tx.running());
+        // The kernel's nanosecond clock, low 32 bits, as the driver records it.
+        let kernel_time =
+            u32::try_from(self.now_us.wrapping_mul(1000) & 0xffff_ffff).expect("32 bits");
+        self.tx.play(released, kernel_time);
     }
 
     /// Advances virtual time.

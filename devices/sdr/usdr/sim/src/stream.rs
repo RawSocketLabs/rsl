@@ -3,7 +3,7 @@
 //!
 //! The engine runs once the DMA is enabled (register 5, value 1), the front end is started
 //! (command register 0x10100, reset command with run state 2) and the sync unit releases
-//! the streams (register 14: free-run, mode 7, or RX activity, mode 2). Each block it then
+//! the streams (see `sync.rs`; the board asks it). Each block it then
 //! delivers holds the configured number of bursts; each burst the configured samples,
 //! packed in the configured format, then zeros up to the burst's whole 8-byte words.
 //! Register meanings: libusdr's `ipblks/streams/sfe_rx_4.c`, `dma_rx_32.c` and
@@ -25,9 +25,6 @@
 //!   virtual time, and none is ever lost.
 //! - The signal. The samples are a counting test pattern in the lanes' own width: sample
 //!   `n` reads `I = n`, `Q = -n`, wrapping at 16 or 12 bits.
-//! - The sync triggers. Free-run and RX activity both release the stream; with RX the only
-//!   stream, the RX front end's start is the activity the gateware would wait for
-//!   (libusdr's `"all"` maps an RX-only group to `ST_ADCACT`). Other modes hold it.
 //! - The DMA's own words-per-burst register (0x10020). Block sizes come from the front
 //!   end's burst format instead; both drivers write the two consistently.
 //! - The host-ready strobe (register 5, value 4). Blocks flow without it; libusdr writes
@@ -36,8 +33,6 @@
 /// RX DMA control: 1 runs the DMA; 0 and 2 (stop and front-end reset) halt it; 4 (the host
 /// is ready) leaves it as it is.
 pub(crate) const REG_RX_DMA_CONTROL: u32 = 5;
-/// The stream sync unit: bit 31 set and the mode in bits 19:16.
-pub(crate) const REG_SYNC: u32 = 14;
 /// RX DMA configuration: bursts per block, less one.
 pub(crate) const REG_RX_DMA_BURSTS: u32 = 0x1_0040;
 /// The RX front end's command register: command in bits 31:28, value below.
@@ -55,9 +50,6 @@ const CMD_CONTROL: u32 = 3;
 const RESET_BITS: u32 = 1 << 8 | 1 << 13 | 1 << 14 | 1 << 15;
 /// Most bursts in a block (`MAX_BURSTS_RX_IN_BUFF`).
 const MAX_BURSTS: usize = 32;
-/// Sync values that release the streams: free-run (`ST_FREERUN`) and RX activity
-/// (`ST_ADCACT`).
-const SYNC_RELEASES: [u32; 2] = [1 << 31 | 7 << 16, 1 << 31 | 2 << 16];
 /// Bytes per front-end word.
 const WORD_BYTES: usize = 8;
 /// Burst-format lanes: channel 0's I and Q on lanes 0 and 1 (`IFMT_CH_xx10`).
@@ -118,9 +110,6 @@ pub(crate) struct RxEngine {
     /// The front end runs.
     front_end_running: bool,
 
-    /// The sync unit releases the streams.
-    released: bool,
-
     /// Samples per burst.
     samples_per_burst: usize,
 
@@ -146,7 +135,6 @@ impl RxEngine {
                 0 | 2 => self.dma_running = false,
                 _ => {}
             },
-            REG_SYNC => self.released = SYNC_RELEASES.contains(&value),
             REG_RX_DMA_BURSTS => {
                 let bursts = count(value) + 1;
                 assert!(
@@ -176,10 +164,16 @@ impl RxEngine {
         }
     }
 
+    /// Whether the DMA and front end both run: the RX activity the sync unit can wait for.
+    pub(crate) const fn running(&self) -> bool {
+        self.dma_running && self.front_end_running
+    }
+
     /// The next block and its out-of-band words (no packets lost; the completed-burst
-    /// mask; a zero status), or `None` while the engine is stopped.
-    pub(crate) fn next_block(&mut self) -> Option<(Vec<u8>, [u64; 2])> {
-        if !(self.dma_running && self.front_end_running && self.released) {
+    /// mask; a zero status), or `None` while the engine is stopped or the sync unit holds
+    /// it (`released` false).
+    pub(crate) fn next_block(&mut self, released: bool) -> Option<(Vec<u8>, [u64; 2])> {
+        if !(self.running() && released) {
             return None;
         }
         let burst_bytes = self.words_per_burst * WORD_BYTES;
@@ -218,7 +212,7 @@ mod tests {
     const FORMAT_12: u32 = 1 << 2 | 2;
 
     /// An engine configured as libusdr does for `samples` per burst, `words` per burst,
-    /// `format` bits and `bursts` per block, then started, its sync unit stopped.
+    /// `format` bits and `bursts` per block, then started.
     fn running(samples: u32, words: u32, format: u32, bursts: u32) -> RxEngine {
         let mut engine = RxEngine::default();
         engine.on_write(REG_RX_FRONT_END, 0x3000_e100);
@@ -226,24 +220,16 @@ mod tests {
         engine.on_write(REG_RX_FRONT_END, 0x3000_0000);
         engine.on_write(REG_RX_FRONT_END, 0x1000_0000 | (words - 1) << 5 | format);
         engine.on_write(REG_RX_DMA_BURSTS, bursts - 1);
-        engine.on_write(REG_SYNC, 0x8000_0000);
         engine.on_write(REG_RX_DMA_CONTROL, 1);
         engine.on_write(REG_RX_FRONT_END, 0x3000_0002);
         engine
     }
 
     #[test]
-    fn nothing_flows_until_the_sync_unit_releases_the_stream() {
-        for release in SYNC_RELEASES {
-            let mut engine = running(2, 1, FORMAT_16, 1);
-            assert_eq!(engine.next_block(), None);
-            engine.on_write(REG_SYNC, release);
-            assert!(engine.next_block().is_some(), "{release:#x} releases");
-        }
+    fn nothing_flows_while_the_sync_unit_holds_the_stream() {
         let mut engine = running(2, 1, FORMAT_16, 1);
-        // `ST_ONEPPS` waits for an external event the sim never raises.
-        engine.on_write(REG_SYNC, 1 << 31 | 1 << 16);
-        assert_eq!(engine.next_block(), None, "1PPS holds the stream");
+        assert_eq!(engine.next_block(false), None);
+        assert!(engine.next_block(true).is_some());
     }
 
     #[test]
@@ -253,29 +239,25 @@ mod tests {
             (REG_RX_DMA_CONTROL, 2),
             (REG_RX_FRONT_END, 0x3000_0004),
             (REG_RX_FRONT_END, 0x3000_e100),
-            (REG_SYNC, 0x8000_0000),
         ] {
             let mut engine = running(2, 1, FORMAT_16, 1);
-            engine.on_write(REG_SYNC, SYNC_RELEASES[0]);
             engine.on_write(addr, value);
-            assert_eq!(engine.next_block(), None, "{addr:#x} <- {value:#x}");
+            assert_eq!(engine.next_block(true), None, "{addr:#x} <- {value:#x}");
         }
     }
 
     #[test]
     fn the_host_ready_write_does_not_stop_the_dma() {
         let mut engine = running(2, 1, FORMAT_16, 1);
-        engine.on_write(REG_SYNC, SYNC_RELEASES[0]);
         engine.on_write(REG_RX_DMA_CONTROL, 4);
-        assert!(engine.next_block().is_some());
+        assert!(engine.next_block(true).is_some());
     }
 
     #[test]
     fn blocks_hold_padded_bursts_of_the_counting_pattern() {
         // Two bursts of one sample, each padded to one 8-byte word.
         let mut engine = running(1, 1, FORMAT_16, 2);
-        engine.on_write(REG_SYNC, SYNC_RELEASES[0]);
-        let (block, oob) = engine.next_block().expect("running");
+        let (block, oob) = engine.next_block(true).expect("running");
         assert_eq!(
             block,
             [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0xff, 0xff, 0, 0, 0, 0]
@@ -287,8 +269,7 @@ mod tests {
     fn twelve_bit_samples_pack_back_to_back_across_words() {
         // Three samples are 9 bytes, so two words: samples 0, 1 and 2, then a 7-byte stub.
         let mut engine = running(3, 2, FORMAT_12, 1);
-        engine.on_write(REG_SYNC, SYNC_RELEASES[0]);
-        let (block, _) = engine.next_block().expect("running");
+        let (block, _) = engine.next_block(true).expect("running");
         assert_eq!(
             block,
             [
