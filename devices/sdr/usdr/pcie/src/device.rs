@@ -450,6 +450,20 @@ impl PcieDevice {
     }
 }
 
+/// The device node, for `poll`: the driver reports it readable (`POLLIN`) while the
+/// interrupt event the layout names first (`poll_events.0`) has fired since the last wait
+/// for it, and writable (`POLLOUT`) likewise for the second (`usdrfd_poll` in
+/// `usdr_pcie_uram.c`). For the streams, the events are completed RX blocks and freed TX
+/// buffers, counted since the last [`PcieDevice::dma_recv`] or
+/// [`PcieDevice::tx_dma_send`] that asked the driver (`PCIE_DRIVER_DMA_WAIT_OOB` and
+/// `_ALLOC_OOB` clear the count); buffers an earlier call already took from the driver are
+/// not signalled.
+impl AsFd for PcieDevice {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
+}
+
 /// A stream's mapped buffers.
 #[derive(Debug)]
 struct Dma {

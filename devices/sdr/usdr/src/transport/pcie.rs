@@ -6,6 +6,7 @@
 //! the stream engine's configuration space reached through the index/data window; SPI, I2C
 //! and DMA through the driver.
 
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -107,6 +108,22 @@ impl PcieBus {
     #[must_use]
     pub fn discover() -> Vec<PathBuf> {
         rsl_usdr_pcie::discover()
+    }
+}
+
+/// The stream group's pollable descriptor, libusdr's stream option `"fd"` over `PCIe`
+/// (`usdr_dms_get_fd`, the device node for both streams): readable once RX blocks have
+/// arrived, writable once TX buffers are free (`POLLIN` and `POLLOUT` on
+/// [`USDR_LAYOUT`]'s `poll_events`, `M2PCI_INT_RX` and `M2PCI_INT_TX`).
+///
+/// The bus moves into the [`Device`](crate::Device), so take a duplicate first
+/// (`bus.as_fd().try_clone_to_owned()`); it polls the same driver state. As in libusdr,
+/// the driver counts completions since the last wait asked it, and one wait may take
+/// several buffers, so the readiness is edge-like: drain with zero-timeout receives (or
+/// sends) until [`Error::Timeout`](crate::Error::Timeout) before polling again.
+impl AsFd for PcieBus {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.device.as_fd()
     }
 }
 
