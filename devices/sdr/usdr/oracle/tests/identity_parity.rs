@@ -44,9 +44,12 @@ fn rev3_identity_matches_libusdr() {
     assert_identity_matches(BoardRevision::Rev3);
 }
 
+/// Makes a fresh board of one kind.
+type NewBoard = fn() -> SimBoard;
+
 #[test]
 fn channel_capabilities_match_libusdr_for_each_chain() {
-    let boards: [(&str, fn() -> SimBoard); 4] = [
+    let boards: [(&str, NewBoard); 4] = [
         ("both chains", || SimBoard::new(BoardRevision::Rev3)),
         ("RX only", || {
             SimBoard::new(BoardRevision::Rev3).with_rx_only()
