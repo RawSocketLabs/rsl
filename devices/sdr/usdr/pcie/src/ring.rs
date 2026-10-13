@@ -1,8 +1,8 @@
-//! Which DMA buffer comes next, and its out-of-band record (`recv_dma_wait` in libusdr's
-//! `pcie_uram_main.c`).
+//! Which DMA buffer comes next, and its out-of-band record (`pcie_uram_dma_wait_or_alloc`
+//! in libusdr's `pcie_uram_main.c`, for RX's filled buffers and TX's free ones).
 //!
-//! One wait can report several filled buffers: the driver returns their count and one
-//! 16-byte record per buffer, and the gateware fills the 32 buffers in order. The ring
+//! One wait can report several buffers: the driver returns their count and one
+//! 16-byte record per buffer, and the gateware uses the 32 buffers in order. The ring
 //! hands them out one at a time, without another wait, until they run out.
 
 use std::collections::VecDeque;
@@ -42,16 +42,16 @@ impl Ring {
         self.pending.extend(records.iter().take(count));
     }
 
-    /// The next buffer's index and record. A buffer the driver gave no record for gets
-    /// zeros, as libusdr gives it.
-    pub(crate) fn take(&mut self) -> Option<(usize, [u64; 2])> {
+    /// The next buffer's index and record, `None` for a buffer the driver gave no record
+    /// for (RX callers read zeros there, as libusdr does; TX ones read no statistics).
+    pub(crate) fn take(&mut self) -> Option<(usize, Option<[u64; 2]>)> {
         if self.ready == 0 {
             return None;
         }
         let index = self.next;
         self.next = (self.next + 1) % BUFFERS;
         self.ready -= 1;
-        Some((index, self.pending.pop_front().unwrap_or([0, 0])))
+        Some((index, self.pending.pop_front()))
     }
 }
 
@@ -64,7 +64,10 @@ mod tests {
         let mut ring = Ring::default();
         ring.filled(3, &[[1, 0], [2, 0], [3, 0]]);
         let taken: Vec<_> = std::iter::from_fn(|| ring.take()).collect();
-        assert_eq!(taken, [(0, [1, 0]), (1, [2, 0]), (2, [3, 0])]);
+        assert_eq!(
+            taken,
+            [(0, Some([1, 0])), (1, Some([2, 0])), (2, Some([3, 0]))]
+        );
         assert!(ring.is_empty(), "a wait is needed for the fourth");
     }
 
@@ -76,14 +79,14 @@ mod tests {
             ring.take();
         }
         ring.filled(1, &[[7, 0]]);
-        assert_eq!(ring.take(), Some((0, [7, 0])));
+        assert_eq!(ring.take(), Some((0, Some([7, 0]))));
     }
 
     #[test]
-    fn a_buffer_without_a_record_gets_zeros() {
+    fn a_buffer_without_a_record_is_reported_as_such() {
         let mut ring = Ring::default();
         ring.filled(2, &[[5, 0]]);
-        assert_eq!(ring.take(), Some((0, [5, 0])));
-        assert_eq!(ring.take(), Some((1, [0, 0])));
+        assert_eq!(ring.take(), Some((0, Some([5, 0]))));
+        assert_eq!(ring.take(), Some((1, None)));
     }
 }

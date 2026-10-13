@@ -41,6 +41,8 @@ const MAX_WAIT_MS: u128 = 4_294_967;
 const MIN_WAIT_MS: u128 = 10;
 /// The RX stream's number.
 const RX_STREAM: u32 = 0;
+/// The TX stream's number.
+const TX_STREAM: u32 = 1;
 
 /// The device could not be opened.
 #[derive(Debug, thiserror::Error)]
@@ -133,12 +135,16 @@ pub fn discover() -> Vec<PathBuf> {
 /// An open uSDR.
 ///
 /// Dropping it unmaps any DMA buffers without releasing them to the driver, which frees
-/// them only from [`PcieDevice::dma_close`]: freeing them while the gateware may still
-/// write would hand it freed pages. The next stream setup reuses them.
+/// them only from [`PcieDevice::dma_close`] and [`PcieDevice::tx_dma_close`]: freeing them
+/// while the gateware may still use them would hand it freed pages. The next stream setup
+/// reuses them.
 #[derive(Debug)]
 pub struct PcieDevice {
     /// The RX DMA buffers, while a stream is set up.
     dma: Option<Dma>,
+
+    /// The TX DMA buffers, while a stream is set up.
+    tx_dma: Option<Dma>,
 
     /// The mapped register page.
     bar: Bar,
@@ -194,6 +200,7 @@ impl PcieDevice {
         let bar = Bar::map(fd.as_fd()).map_err(io)?;
         Ok(Self {
             dma: None,
+            tx_dma: None,
             bar,
             fd,
             poisoned: false,
@@ -299,39 +306,7 @@ impl PcieDevice {
         if self.dma.is_some() {
             return Err(PcieError::Unsupported("the RX stream is already set up"));
         }
-        let mut conf = SdmaConf {
-            kind: uapi::STREAM_MMAPED,
-            sno: RX_STREAM,
-            dma_bufs: BUFFER_COUNT,
-            dma_buf_sz: block_bytes,
-            ..SdmaConf::default()
-        };
-        request_with(self.fd.as_fd(), uapi::DMA_CONF, &mut conf)?;
-        let too_large = || PcieError::Unsupported("DMA buffers larger than the address space");
-        let buffer_len = usize::try_from(conf.out_vma_length).map_err(|_| too_large())? / BUFFERS;
-        let block_bytes = usize::try_from(conf.dma_buf_sz).map_err(|_| too_large())?;
-        let mut buffers = Vec::with_capacity(BUFFERS);
-        for i in 0..BUFFERS {
-            let mapped = i64::try_from(i * buffer_len)
-                .ok()
-                .and_then(|start| conf.out_vma_off.checked_add(start))
-                .ok_or(Errno::INVAL)
-                .and_then(|offset| Mapping::map(self.fd.as_fd(), buffer_len, offset));
-            match mapped {
-                Ok(mapping) => buffers.push(mapping),
-                Err(errno) => {
-                    drop(buffers);
-                    let _ = request_value(self.fd.as_fd(), uapi::DMA_UNCONF, RX_STREAM);
-                    return Err(errno.into());
-                }
-            }
-        }
-        self.dma = Some(Dma {
-            buffers,
-            // The driver rounds buffers up to whole pages; only the block is data.
-            block_bytes,
-            ring: Ring::default(),
-        });
+        self.dma = Some(Dma::configure(self.fd.as_fd(), RX_STREAM, block_bytes)?);
         Ok(())
     }
 
@@ -353,7 +328,7 @@ impl PcieDevice {
             return Err(PcieError::Unsupported("no RX stream is set up"));
         };
         if dma.ring.is_empty() {
-            wait_for_blocks(fd, &mut dma.ring, timeout)?;
+            wait_for_buffers(fd, uapi::DMA_WAIT_OOB, RX_STREAM, &mut dma.ring, timeout)?;
         }
         let Some((index, record)) = dma.ring.take() else {
             return Err(PcieError::Timeout);
@@ -362,6 +337,8 @@ impl PcieDevice {
             fd,
             released: false,
         };
+        // A buffer without a record gets zeros, as libusdr gives it.
+        let record = record.unwrap_or([0, 0]);
         consume(&dma.buffers[index].bytes()[..dma.block_bytes], record);
         release.now()
     }
@@ -379,6 +356,76 @@ impl PcieDevice {
         // Unmap first: the driver frees the pages.
         drop(dma);
         request_value(self.fd.as_fd(), uapi::DMA_UNCONF, RX_STREAM)?;
+        Ok(())
+    }
+
+    /// Sets up the TX stream's 32 DMA buffers of `block_bytes` each and maps them
+    /// (`PCIE_DRIVER_DMA_CONF` for stream 1).
+    ///
+    /// # Errors
+    ///
+    /// [`PcieError::Unsupported`] if the TX stream is set up; any driver failure, after
+    /// which no buffer stays mapped.
+    pub fn tx_dma_open(&mut self, block_bytes: u32) -> Result<(), PcieError> {
+        if self.tx_dma.is_some() {
+            return Err(PcieError::Unsupported("the TX stream is already set up"));
+        }
+        self.tx_dma = Some(Dma::configure(self.fd.as_fd(), TX_STREAM, block_bytes)?);
+        Ok(())
+    }
+
+    /// Waits up to `timeout` for a free TX buffer (`PCIE_DRIVER_DMA_ALLOC_OOB`) and lends
+    /// it to `fill` with its completion record as four status words, if the driver gave
+    /// one (none for the 32 buffers it starts with). `fill` writes the block and returns
+    /// its length. As in libusdr's `PCIe` transport, the gateware learns of the block only
+    /// from the caller's own register writes (its `soft_tx_commit`); this hands nothing
+    /// back to the driver.
+    ///
+    /// # Errors
+    ///
+    /// [`PcieError::Timeout`] if no buffer frees in time; [`PcieError::Unsupported`] with
+    /// no TX stream set up, or if `fill` reports more than the block; any driver failure.
+    pub fn tx_dma_send(
+        &mut self,
+        timeout: Duration,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), PcieError> {
+        let fd = self.fd.as_fd();
+        let Some(dma) = self.tx_dma.as_mut() else {
+            return Err(PcieError::Unsupported("no TX stream is set up"));
+        };
+        if dma.ring.is_empty() {
+            wait_for_buffers(fd, uapi::DMA_ALLOC_OOB, TX_STREAM, &mut dma.ring, timeout)?;
+        }
+        let Some((index, record)) = dma.ring.take() else {
+            return Err(PcieError::Timeout);
+        };
+        // The record's two words as libusdr reads them into `uint32_t[4]`: little-endian
+        // halves, low first.
+        let words = record.map(|[low, high]| {
+            let ([w0, w1], [w2, w3]) = (halves(low), halves(high));
+            [w0, w1, w2, w3]
+        });
+        let block_bytes = dma.block_bytes;
+        let written = fill(&mut dma.buffers[index].bytes_mut()[..block_bytes], words);
+        if written > block_bytes {
+            return Err(PcieError::Unsupported("a TX block larger than its buffer"));
+        }
+        Ok(())
+    }
+
+    /// Unmaps the TX buffers and releases them to the driver (`PCIE_DRIVER_DMA_UNCONF`).
+    /// Call only once the stream is stopped.
+    ///
+    /// # Errors
+    ///
+    /// Any driver failure.
+    pub fn tx_dma_close(&mut self) -> Result<(), PcieError> {
+        let Some(dma) = self.tx_dma.take() else {
+            return Ok(());
+        };
+        drop(dma);
+        request_value(self.fd.as_fd(), uapi::DMA_UNCONF, TX_STREAM)?;
         Ok(())
     }
 
@@ -403,10 +450,10 @@ impl PcieDevice {
     }
 }
 
-/// The RX stream's mapped buffers.
+/// A stream's mapped buffers.
 #[derive(Debug)]
 struct Dma {
-    /// The 32 buffers, in the gateware's fill order.
+    /// The 32 buffers, in the gateware's order.
     buffers: Vec<Mapping>,
 
     /// Bytes of each buffer that hold the block.
@@ -416,10 +463,67 @@ struct Dma {
     ring: Ring,
 }
 
-/// Waits for at least one filled buffer and records the result in `ring`. A signal restarts
-/// the wait with the time left: nothing was sent to the device.
-fn wait_for_blocks(
+impl Dma {
+    /// Sets up stream `stream`'s 32 buffers of `block_bytes` each and maps them
+    /// (`PCIE_DRIVER_DMA_CONF`); on a failure, releases what was set up.
+    fn configure(fd: BorrowedFd<'_>, stream: u32, block_bytes: u32) -> Result<Self, PcieError> {
+        let mut conf = SdmaConf {
+            kind: uapi::STREAM_MMAPED,
+            sno: stream,
+            dma_bufs: BUFFER_COUNT,
+            dma_buf_sz: block_bytes,
+            ..SdmaConf::default()
+        };
+        request_with(fd, uapi::DMA_CONF, &mut conf)?;
+        let too_large = || PcieError::Unsupported("DMA buffers larger than the address space");
+        let buffer_len = usize::try_from(conf.out_vma_length).map_err(|_| too_large())? / BUFFERS;
+        let block_bytes = usize::try_from(conf.dma_buf_sz).map_err(|_| too_large())?;
+        let mut buffers = Vec::with_capacity(BUFFERS);
+        for i in 0..BUFFERS {
+            let mapped = i64::try_from(i * buffer_len)
+                .ok()
+                .and_then(|start| conf.out_vma_off.checked_add(start))
+                .ok_or(Errno::INVAL)
+                .and_then(|offset| Mapping::map(fd, buffer_len, offset));
+            match mapped {
+                Ok(mapping) => buffers.push(mapping),
+                Err(errno) => {
+                    drop(buffers);
+                    let _ = request_value(fd, uapi::DMA_UNCONF, stream);
+                    return Err(errno.into());
+                }
+            }
+        }
+        Ok(Self {
+            buffers,
+            // The driver rounds buffers up to whole pages; only the block is data.
+            block_bytes,
+            ring: Ring::default(),
+        })
+    }
+}
+
+/// What [`PcieDevice::tx_dma_send`] lends a TX buffer to: it takes the buffer and the
+/// completion record's four words, if any, and returns the block's length in bytes.
+pub type TxFill<'a> = dyn FnMut(&mut [u8], Option<[u32; 4]>) -> usize + 'a;
+
+/// A 64-bit record word's low and high 32 bits.
+const fn halves(word: u64) -> [u32; 2] {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = word.to_le_bytes();
+    [
+        u32::from_le_bytes([b0, b1, b2, b3]),
+        u32::from_le_bytes([b4, b5, b6, b7]),
+    ]
+}
+
+/// Waits with `opcode` (`PCIE_DRIVER_DMA_WAIT_OOB` for RX's filled buffers,
+/// `PCIE_DRIVER_DMA_ALLOC_OOB` for TX's free ones) for at least one buffer of `stream` and
+/// records the result in `ring`. A signal restarts the wait with the time left: nothing
+/// was sent to the device.
+fn wait_for_buffers(
     fd: BorrowedFd<'_>,
+    opcode: Opcode,
+    stream: u32,
     ring: &mut Ring,
     timeout: Duration,
 ) -> Result<(), PcieError> {
@@ -433,11 +537,11 @@ fn wait_for_blocks(
         let ms = u32::try_from(ms).expect("invariant: at most 24 bits");
         let mut records = [[0_u64; 2]; MAX_RECORDS];
         let mut wait = WaitOob {
-            streamnoto: ms << 8 | RX_STREAM,
+            streamnoto: ms << 8 | stream,
             ooblength: u32::try_from(size_of_val(&records)).expect("512"),
             oobdata: records.as_mut_ptr().cast(),
         };
-        match request_with(fd, uapi::DMA_WAIT_OOB, &mut wait) {
+        match request_with(fd, opcode, &mut wait) {
             Ok(count) => {
                 let count = usize::try_from(count).unwrap_or(0);
                 let returned = (wait.ooblength as usize / 16).min(MAX_RECORDS);
@@ -578,6 +682,16 @@ impl Mapping {
         // the gateware's contract, as libusdr relies on it too.
         unsafe { slice::from_raw_parts(self.base.as_ptr().cast(), self.len) }
     }
+
+    /// The mapping as writable bytes, for a TX buffer.
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: `len` mapped, writable bytes (`PROT_WRITE`) that live as long as `self`,
+        // borrowed exclusively. The gateware reads a TX buffer only once the host has
+        // announced it through the TX core's registers, and the driver hands a buffer out
+        // again only after the core reports it played (`usdr_stream_wait_or_alloc`), so
+        // nothing else touches it meanwhile: the gateware's contract, as libusdr relies on.
+        unsafe { slice::from_raw_parts_mut(self.base.as_ptr().cast(), self.len) }
+    }
 }
 
 impl Drop for Mapping {
@@ -644,5 +758,16 @@ unsafe impl Ioctl for Request {
         _extract_output: *mut c_void,
     ) -> rustix::io::Result<Self::Output> {
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_word_splits_low_half_first_as_libusdr_reads_it() {
+        // The driver packs `nreg[1] << 32 | nreg[0]`; libusdr reads `stat[0] = nreg[0]`.
+        assert_eq!(halves(0x2222_2222_1111_1111), [0x1111_1111, 0x2222_2222]);
     }
 }

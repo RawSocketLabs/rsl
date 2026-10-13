@@ -18,7 +18,7 @@ mod ring;
 mod uapi;
 
 #[cfg(target_os = "linux")]
-pub use device::{OpenError, PcieDevice, PcieError, discover};
+pub use device::{OpenError, PcieDevice, PcieError, TxFill, discover};
 #[cfg(target_os = "linux")]
 pub use layout::{BoardLayout, Core, IndexedSpace, LayoutTooLarge, Stream};
 
@@ -85,6 +85,7 @@ pub fn abi() -> Vec<(&'static str, u64)> {
         ("PCIE_DRIVER_DMA_CONF", u64::from(uapi::DMA_CONF)),
         ("PCIE_DRIVER_DMA_UNCONF", u64::from(uapi::DMA_UNCONF)),
         ("PCIE_DRIVER_DMA_WAIT_OOB", u64::from(uapi::DMA_WAIT_OOB)),
+        ("PCIE_DRIVER_DMA_ALLOC_OOB", u64::from(uapi::DMA_ALLOC_OOB)),
         ("PCIE_DRIVER_CLAIM_VERSION", u64::from(uapi::CLAIM_VERSION)),
         ("PCIE_DRIVER_DMA_RELEASE", u64::from(uapi::DMA_RELEASE)),
     ]

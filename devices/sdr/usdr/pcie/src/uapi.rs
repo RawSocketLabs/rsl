@@ -138,6 +138,8 @@ pub(crate) const DMA_CONF: Opcode = opcode::read_write::<SdmaConf>(MAGIC, 16);
 pub(crate) const DMA_UNCONF: Opcode = opcode::write::<u32>(MAGIC, 16);
 /// `PCIE_DRIVER_DMA_WAIT_OOB`: returns how many buffers are ready.
 pub(crate) const DMA_WAIT_OOB: Opcode = opcode::read_write::<WaitOob>(MAGIC, 17);
+/// `PCIE_DRIVER_DMA_ALLOC_OOB`: returns how many TX buffers are free.
+pub(crate) const DMA_ALLOC_OOB: Opcode = opcode::read_write::<WaitOob>(MAGIC, 19);
 /// `PCIE_DRIVER_CLAIM_VERSION`: the version is the argument itself.
 pub(crate) const CLAIM_VERSION: Opcode = opcode::write::<u32>(MAGIC, 23);
 /// `PCIE_DRIVER_DMA_RELEASE`: the stream number is the argument itself; the driver writes

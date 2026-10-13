@@ -15,7 +15,7 @@ use rsl_usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stre
 
 use super::window::{self, RegisterIo, Window};
 use crate::error::Error;
-use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxFill};
 
 /// The uSDR's cores as the driver needs them: libusdr's `s_params_m2_lm6_1_rev000` in
 /// `device/m2_lm6_1/m2_lm6_1.c`, as its `PCIe` transport encodes them. The oracle checks the
@@ -174,6 +174,18 @@ impl Bus for PcieBus {
 
     fn rx_stream_close(&mut self) -> Result<(), BusError> {
         self.device.dma_close().map_err(bus_error)
+    }
+
+    fn tx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.device.tx_dma_open(block_bytes).map_err(bus_error)
+    }
+
+    fn tx_stream_send(&mut self, timeout: Duration, fill: &mut TxFill<'_>) -> Result<(), BusError> {
+        self.device.tx_dma_send(timeout, fill).map_err(bus_error)
+    }
+
+    fn tx_stream_close(&mut self) -> Result<(), BusError> {
+        self.device.tx_dma_close().map_err(bus_error)
     }
 }
 
