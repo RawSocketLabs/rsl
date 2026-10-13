@@ -35,12 +35,14 @@ unsafe extern "C" {
     ) -> i32;
     /// Sets what the TX core's four status registers read next.
     fn rsl_oracle_usb_tx_set_status(handle: *mut c_void, words: *const u32);
-    /// One get, payload write and commit; copies the posted frame out.
+    /// One get, waiting up to `timeout_ms`, payload write and commit; copies the posted
+    /// frame out.
     fn rsl_oracle_usb_tx_send(
         handle: *mut c_void,
         payload: *const u8,
         size: u32,
         timestamp: u64,
+        timeout_ms: u32,
         status: *mut u32,
         status_size: *mut u32,
         frame: *mut u8,
@@ -56,6 +58,10 @@ unsafe extern "C" {
 
 /// Linux `ETIMEDOUT`, negated as libusdr returns it.
 const TIMED_OUT: i32 = -110;
+/// Linux `EAGAIN`, likewise: `sem_trywait` finding no free buffer.
+const AGAIN: i32 = -11;
+/// The wait both sides pass, but for the zero-timeout case.
+const WAIT: Duration = Duration::from_millis(1);
 /// The largest frame: `MAX_TX_BUFFER_SZ` and the header.
 const MAX_FRAME: usize = 126_976 + 16;
 
@@ -109,8 +115,18 @@ impl Reference {
         unsafe { rsl_oracle_usb_tx_set_status(self.handle, words.as_ptr()) };
     }
 
-    /// Sends `payload` to play at `time` (`None`: libusdr's -1).
+    /// Sends `payload` to play at `time` (`None`: libusdr's -1), waiting up to [`WAIT`].
     fn send(&mut self, payload: &[u8], time: Option<u64>) -> Result<Sent, i32> {
+        self.send_waiting(payload, time, WAIT)
+    }
+
+    /// Sends `payload` to play at `time`, waiting up to `timeout` for a buffer.
+    fn send_waiting(
+        &mut self,
+        payload: &[u8],
+        time: Option<u64>,
+        timeout: Duration,
+    ) -> Result<Sent, i32> {
         let mut frame = vec![0; MAX_FRAME];
         let (mut status, mut status_size, mut frame_size) = ([0; 4], 0, 0);
         // SAFETY: the handle is live; the payload is read for its length, at most one
@@ -122,6 +138,7 @@ impl Reference {
                 payload.as_ptr(),
                 u32::try_from(payload.len()).expect("a block fits u32"),
                 time.unwrap_or(u64::MAX),
+                u32::try_from(timeout.as_millis()).expect("a short wait"),
                 status.as_mut_ptr(),
                 &raw mut status_size,
                 frame.as_mut_ptr(),
@@ -248,21 +265,16 @@ impl Rsl {
         tx::Tx::open_endpoint(&mut self.slot, block, sample_bytes, || Ok(Endpoint(state)))
     }
 
-    /// Sends in `UsbBus::tx_stream_send`'s order: a buffer, the status, then the block,
-    /// which `write` puts in the lent buffer and measures.
+    /// Sends through `UsbBus::tx_stream_send`'s own sequence, [`tx::TxDevice::send`]: the
+    /// block is what `write` puts in the lent buffer.
     fn send(
         &mut self,
         time: Option<u64>,
+        timeout: Duration,
         write: &mut dyn FnMut(&mut [u8]) -> usize,
     ) -> Result<Sent, BusError> {
-        let tx = self.slot.as_mut().expect("TX is open");
-        tx.acquire(Duration::ZERO)?;
-        if self.status.count_send() {
-            self.reads += 1;
-            self.status.record(self.register);
-        }
         let mut reported = None;
-        tx.commit(time, Some(self.status.words()), &mut |buffer, status| {
+        tx::TxDevice::send(self, timeout, time, &mut |buffer, status| {
             reported = status;
             write(buffer)
         })?;
@@ -280,9 +292,14 @@ impl Rsl {
         })
     }
 
-    /// Sends `payload` unchanged.
-    fn send_bytes(&mut self, payload: &[u8], time: Option<u64>) -> Result<Sent, BusError> {
-        self.send(time, &mut |buffer| {
+    /// Sends `payload` unchanged, waiting up to `timeout` for a buffer.
+    fn send_bytes(
+        &mut self,
+        payload: &[u8],
+        time: Option<u64>,
+        timeout: Duration,
+    ) -> Result<Sent, BusError> {
+        self.send(time, timeout, &mut |buffer| {
             buffer[..payload.len()].copy_from_slice(payload);
             payload.len()
         })
@@ -291,6 +308,35 @@ impl Rsl {
     /// The device finishes the oldest transfer.
     fn finish(&mut self) {
         self.state.lock().unwrap().finished += 1;
+    }
+
+    /// The open endpoint.
+    fn tx(&mut self) -> &mut tx::Tx<Endpoint> {
+        self.slot.as_mut().expect("TX is open")
+    }
+}
+
+impl tx::TxDevice for Rsl {
+    fn acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        self.tx().acquire(timeout)
+    }
+
+    fn read_status(&mut self) -> Result<[u32; 4], BusError> {
+        self.reads += 1;
+        Ok(self.register)
+    }
+
+    fn status(&mut self) -> &mut tx::TxStatus {
+        &mut self.status
+    }
+
+    fn commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut lowlevel::TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.tx().commit(time, status, fill)
     }
 }
 
@@ -346,7 +392,9 @@ fn frames_match_the_pinned_c_for_full_and_partial_blocks_at_every_time() {
                 let len = usize::try_from(len).unwrap();
                 let payload = pattern(len, index);
                 let expected = reference.send(&payload, time).expect("C sends");
-                let sent = rsl.send_bytes(&payload, time).expect("rsl-usdr sends");
+                let sent = rsl
+                    .send_bytes(&payload, time, WAIT)
+                    .expect("rsl-usdr sends");
                 assert_eq!(
                     sent.frame, expected.frame,
                     "{len} bytes of {sample_bytes}-byte samples at {time:?}"
@@ -388,7 +436,7 @@ fn every_host_format_reaches_the_wire_framed_as_libusdr_frames_it() {
             let time = Some(u64::try_from(samples).unwrap() * 1000);
             let expected = reference.send(&wire.outputs[0], time).expect("C sends");
             let sent = rsl
-                .send(time, &mut |buffer| {
+                .send(time, WAIT, &mut |buffer| {
                     let out = &mut buffer[..samples * 4];
                     converter.convert(&[&host], &mut [out]).expect("converts");
                     samples * 4
@@ -407,13 +455,13 @@ fn status_is_read_and_repeated_as_the_pinned_c_throttles_it_across_streams() {
     let mut rsl = Rsl::new();
     let payload = pattern(64, 0);
     let mut sends = 0_u32;
-    let mut send_both = |reference: &mut Reference, rsl: &mut Rsl, finish: bool| {
+    let mut send_both = |reference: &mut Reference, rsl: &mut Rsl, finish: bool, wait| {
         let words = [8 | sends << 8, sends, !sends, sends << 16];
         sends += 1;
         reference.set_status(words);
         rsl.register = words;
-        let expected = reference.send(&payload, None);
-        let sent = rsl.send_bytes(&payload, None);
+        let expected = reference.send_waiting(&payload, None, wait);
+        let sent = rsl.send_bytes(&payload, None, wait);
         if finish {
             reference.finish();
             rsl.finish();
@@ -425,18 +473,25 @@ fn status_is_read_and_repeated_as_the_pinned_c_throttles_it_across_streams() {
         rsl.open(4096, 4).expect("opens");
         // A full ring: 32 unfinished sends, then one that times out on both, uncounted.
         for _ in 0..32 {
-            let (expected, sent) = send_both(&mut reference, &mut rsl, false);
+            let (expected, sent) = send_both(&mut reference, &mut rsl, false, WAIT);
             assert_eq!(sent.expect("sends").status, expected.expect("sends").status);
         }
-        let (expected, sent) = send_both(&mut reference, &mut rsl, false);
+        let (expected, sent) = send_both(&mut reference, &mut rsl, false, WAIT);
         assert_eq!(expected, Err(TIMED_OUT));
+        assert!(matches!(sent, Err(BusError::Timeout)), "{sent:?}");
+        // Without a wait, libusdr's `sem_trywait` gives EAGAIN, which its stream engine
+        // returns without the status read it makes for ETIMEDOUT. The transport here
+        // reports a timeout, so `Board::send` reads the status for its warning: a
+        // divergence `Device::send` shows (`UT:device_tests`). Neither counts the send.
+        let (expected, sent) = send_both(&mut reference, &mut rsl, false, Duration::ZERO);
+        assert_eq!(expected, Err(AGAIN));
         assert!(matches!(sent, Err(BusError::Timeout)), "{sent:?}");
         for _ in 0..32 {
             reference.finish();
             rsl.finish();
         }
         for _ in 0..100 {
-            let (expected, sent) = send_both(&mut reference, &mut rsl, true);
+            let (expected, sent) = send_both(&mut reference, &mut rsl, true, WAIT);
             assert_eq!(
                 sent.expect("sends").status,
                 expected.expect("sends").status,

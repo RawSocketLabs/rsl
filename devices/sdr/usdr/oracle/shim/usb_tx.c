@@ -19,6 +19,8 @@
 
 // The fake owns plain memory instead of USB transfers. `ready` is the free-buffer count
 // libusdr's OUT semaphore holds: every buffer at first, one more per finished transfer.
+// Waiting on it fails as `usdr_sem_wait_ex` does: `sem_trywait`'s EAGAIN for a zero
+// timeout, ETIMEDOUT for any other.
 struct buffers {
     unsigned buf_max;
     unsigned allocsz;
@@ -96,9 +98,8 @@ static int buffers_usb_init(unsigned* gdev, struct buffers* buffers, unsigned re
 
 static int buffers_ready_wait(struct buffers* buffers, int64_t timeout_us)
 {
-    (void)timeout_us;
     if (buffers->ready == 0)
-        return -ETIMEDOUT;
+        return timeout_us == 0 ? -EAGAIN : -ETIMEDOUT;
     buffers->ready--;
     return 0;
 }
@@ -184,17 +185,18 @@ void rsl_oracle_usb_tx_set_status(void* handle, const uint32_t* words)
     memcpy(dev->status, words, sizeof(dev->status));
 }
 
-// One send as `_sfetrx4_stream_send` makes it: get (16 status bytes asked), the payload
-// written where the buffer was lent, commit with its time. Copies the posted frame out.
+// One send as `_sfetrx4_stream_send` makes it: get (16 status bytes asked, waiting up to
+// `timeout_ms`), the payload written where the buffer was lent, commit with its time.
+// Copies the posted frame out.
 int rsl_oracle_usb_tx_send(void* handle, const unsigned char* payload, unsigned size,
-                           uint64_t timestamp, uint32_t* status, unsigned* status_size,
-                           unsigned char* frame, unsigned* frame_size)
+                           uint64_t timestamp, unsigned timeout_ms, uint32_t* status,
+                           unsigned* status_size, unsigned char* frame, unsigned* frame_size)
 {
     usb_dev_t* dev = handle;
     void* buffer = NULL;
     unsigned oob_size = 16;
     int res = usb_uram_send_dma_get((lldev_t)dev, 0, DEV_TX_STREAM_NO, &buffer, status,
-                                    &oob_size, 1);
+                                    &oob_size, timeout_ms);
     if (res)
         return res;
     *status_size = oob_size;
