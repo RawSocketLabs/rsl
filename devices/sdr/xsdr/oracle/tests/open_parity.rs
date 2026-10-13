@@ -1,10 +1,10 @@
 //! rsl-xsdr's open, RFIC power-up and close against libusdr's, operation for operation, on
 //! fresh simulated boards.
 //!
+//! Each open includes its front-end probe on I2C bus 1 (`device_fe_probe`, through
+//! `rsl-sdr-frontend`), compared whole.
+//!
 //! Whitelisted divergences, each confined to the scenario that shows it:
-//! - libusdr ends an XSDR open with its front-end probe on I2C bus 1 (`device_fe_probe`),
-//!   which rsl-xsdr does not port yet. The cut starts at libusdr's first write to the
-//!   front-end GPIO core (FPGA register 3) and must hold nothing but probe traffic.
 //! - Variants rsl-xsdr identifies but does not bring up are refused after the HWID reads
 //!   libusdr makes too; libusdr carries on.
 //! - A PMIC revision libusdr rejects: libusdr fails the power-up after holding the LMS7002M
@@ -14,7 +14,7 @@
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
-use rsl_xsdr::{Device, Error};
+use rsl_xsdr::{Device, Error, FrontEndKind};
 use rsl_xsdr_oracle::Oracle;
 use rsl_xsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
@@ -25,13 +25,11 @@ const EINVAL: i32 = 22;
 const EIO: i32 = 5;
 /// The front-end GPIO core's register, the first thing `device_fe_probe` writes.
 const REG_FRONT_END_GPIO: u32 = 3;
-/// The front-end connector's I2C bus.
-const FRONT_END_BUS: u8 = 1;
 
-/// libusdr's session on `board`: the open's operations before its front-end probe
-/// (checked to hold only probe traffic), the power-up's (or its errno) and the close's.
+/// libusdr's session on `board`: the open's operations (front-end probe included), the
+/// power-up's (or its errno) and the close's.
 struct Reference {
-    /// The open up to the probe.
+    /// The open.
     open: Vec<Op>,
     /// The power-up's operations and outcome; empty and `Ok` when not powered up.
     power_up: (Vec<Op>, Result<(), i32>),
@@ -47,29 +45,16 @@ fn reference(board: SimBoard, power_up: bool) -> Reference {
     let powered = oracle.trace_len();
     let board = oracle.close();
     let trace = board.trace();
-
-    let (open, probe) = trace[..opened].split_at(
-        trace[..opened]
-            .iter()
-            .position(|op| {
-                matches!(
-                    op,
-                    Op::RegWrite {
-                        addr: REG_FRONT_END_GPIO,
-                        ..
-                    }
-                )
-            })
-            .expect("libusdr probes the XSDR's front-end connector"),
-    );
+    let open = &trace[..opened];
     assert!(
-        probe.iter().all(|op| match op {
-            Op::RegWrite { addr, .. } => *addr == REG_FRONT_END_GPIO,
-            Op::I2c { addr, .. } => addr.bus == FRONT_END_BUS,
-            Op::Sleep { .. } => true,
-            Op::RegRead { .. } | Op::Spi { .. } => false,
-        }),
-        "the cut holds only front-end probe traffic: {probe:?}"
+        open.iter().any(|op| matches!(
+            op,
+            Op::RegWrite {
+                addr: REG_FRONT_END_GPIO,
+                ..
+            }
+        )),
+        "libusdr probes the XSDR's front-end connector"
     );
     Reference {
         open: open.to_vec(),
@@ -92,12 +77,17 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
 }
 
 #[test]
-fn an_xsdr_session_matches_libusdr_except_its_front_end_probe() {
+fn an_xsdr_session_matches_libusdr_front_end_probe_included() {
     let libusdr = reference(SimBoard::new(Variant::Xsdr), true);
     assert_eq!(libusdr.power_up.1, Ok(()), "libusdr powers the RFIC up");
 
     let sim = SimBus::new(SimBoard::new(Variant::Xsdr));
     let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
+    assert_eq!(
+        device.front_end(),
+        Some(FrontEndKind::Exm2pe { dac: false }),
+        "libusdr's probe ends at the breakout without a DAC (`Detected external FE: exm2pe`)"
+    );
     let opened = sim.board().trace().len();
     device.power_up().expect("rsl-xsdr powers the RFIC up");
     let powered = sim.board().trace().len();

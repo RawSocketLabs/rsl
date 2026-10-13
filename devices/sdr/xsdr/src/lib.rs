@@ -31,6 +31,7 @@
 mod board;
 mod device;
 mod error;
+mod fe_probe;
 pub mod lowlevel;
 mod portable;
 
@@ -38,3 +39,4 @@ pub use device::Device;
 pub use error::{Access, Error};
 pub use portable::hwid::Variant;
 pub use rsl_lms7002m::ctrl::{Direction, Gain};
+pub use rsl_sdr_frontend::{Board as FrontEndBoard, FrontEndKind};

@@ -5,7 +5,7 @@
 mod common;
 
 use common::sim_bus::SimBus;
-use rsl_xsdr::{Device, Error, Variant};
+use rsl_xsdr::{Device, Error, FrontEndKind, Variant};
 use rsl_xsdr_sim::{Op, SimBoard, Variant as SimVariant};
 
 /// GPO bank `IGPO_LMS_PWR`.
@@ -184,4 +184,41 @@ fn a_pmic_revision_libusdr_rejects_opens_but_refuses_power_up_untouched() {
         })
     ));
     assert_eq!(sim.board().trace().len(), opened, "power-up drove nothing");
+}
+
+#[test]
+fn open_probes_the_empty_connector_and_reports_a_breakout_without_a_dac() {
+    let (device, sim) = open_xsdr(SimBoard::new(SimVariant::Xsdr));
+    let device = device.expect("an XSDR opens");
+    assert_eq!(
+        device.front_end(),
+        Some(FrontEndKind::Exm2pe { dac: false }),
+        "libusdr cannot tell a DAC-less breakout from an empty connector"
+    );
+
+    let board = sim.board();
+    let trace = board.trace();
+    let probe_start = trace
+        .iter()
+        .position(|op| matches!(op, Op::RegWrite { addr: 3, .. }))
+        .expect("open writes the connector's GPIO core");
+    assert!(
+        trace[probe_start..].iter().all(|op| match op {
+            Op::RegWrite { addr, .. } => *addr == 3,
+            Op::I2c { addr, .. } => addr.bus == 1,
+            Op::Sleep { .. } => true,
+            Op::RegRead { .. } | Op::Spi { .. } => false,
+        }),
+        "the probe stays on the connector: its GPIO core and I2C bus 1"
+    );
+    assert!(
+        matches!(
+            trace.last(),
+            Some(Op::RegWrite {
+                addr: 3,
+                value: 0x0030_0000
+            })
+        ),
+        "the breakout's oscillator and GPS are left off"
+    );
 }

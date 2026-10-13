@@ -7,9 +7,11 @@ use rsl_lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Opera
 use rsl_lms7002m::{Lms7002m, Synthesizer, TuneError};
 use rsl_lowlevel::{Sequence, run_sequence};
 use rsl_lp8758::{self as lp8758, Revision};
+use rsl_sdr_frontend::FrontEndKind;
 
 use crate::board::{REFERENCE_HZ, XSDR_LMS, XSDR_SUPPLIES};
 use crate::error::Error;
+use crate::fe_probe;
 use crate::lowlevel::Bus;
 use crate::portable::close::Close;
 use crate::portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
@@ -60,21 +62,24 @@ pub struct Device {
     /// The RX and TX LOs last tuned, or 0 after a failure (`lms7_rxlo_last`,
     /// `lms7_txlo_last`).
     lo_last: [u32; 2],
+
+    /// The front end the open's probe brought up, if any.
+    front_end: Option<FrontEndKind>,
 }
 
 impl Device {
-    /// Opens the board on `bus`, as libusdr's open does up to its front-end probe: reads the
+    /// Opens the board on `bus`, as libusdr's open does without an `fe=` hint: reads the
     /// hardware ID, pulses the LMS7002M power control, checks the LP8758's revision, sets
-    /// the rails, turns on all four converters and selects the internal reference clock.
-    /// The RFIC stays unpowered ([`Self::power_up`]).
-    ///
-    /// Not yet ported: the front-end probe libusdr runs next on I2C bus 1, so no front end
-    /// is detected or brought up.
+    /// the rails, turns on all four converters and selects the internal reference clock,
+    /// then probes the front-end connector ([`Self::front_end`]). The RFIC stays unpowered
+    /// ([`Self::power_up`]).
     ///
     /// # Errors
     ///
     /// [`Error::UnknownDevice`] or [`Error::UnsupportedVariant`] after the identification
-    /// reads, before anything is driven; [`Error::Bus`] when an access fails.
+    /// reads, before anything is driven; [`Error::Bus`] when an access fails;
+    /// [`Error::FrontEndNotPorted`] when a front end answers whose bring-up is not ported.
+    /// A front end that fails to come up is skipped, as libusdr does.
     pub fn open(bus: impl Bus + 'static) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);
         let mut identity = IdentityRead::new();
@@ -87,6 +92,7 @@ impl Device {
 
         let mut supplies = Supplies::new(XSDR_SUPPLIES);
         run(&mut *bus, &mut supplies)?;
+        let front_end = fe_probe::probe(&mut *bus)?;
         Ok(Self {
             bus,
             hwid,
@@ -100,7 +106,15 @@ impl Device {
             powered: false,
             rate: RateState::default(),
             lo_last: [0; 2],
+            front_end,
         })
+    }
+
+    /// The front end the open's probe brought up: on an empty connector, the M.2-to-`PCIe`
+    /// breakout without a DAC, which libusdr cannot tell from no board.
+    #[must_use]
+    pub fn front_end(&self) -> Option<FrontEndKind> {
+        self.front_end
     }
 
     /// Powers the LMS7002M up (libusdr's `/dm/power/en` = 1): its LDOs on, its reset
@@ -288,6 +302,7 @@ impl fmt::Debug for Device {
             .field("hwid", &format_args!("{:#010x}", self.hwid))
             .field("pmic", &self.pmic)
             .field("powered", &self.powered)
+            .field("front_end", &self.front_end)
             .finish_non_exhaustive()
     }
 }

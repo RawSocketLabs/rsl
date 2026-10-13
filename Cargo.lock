@@ -3432,6 +3432,7 @@ dependencies = [
  "rsl-lms7002m",
  "rsl-lowlevel",
  "rsl-lp8758",
+ "rsl-sdr-frontend",
  "rsl-xsdr-sim",
  "thiserror 2.0.21",
 ]
