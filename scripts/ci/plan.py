@@ -44,8 +44,10 @@ USDR_PORTABLE = f"{USDR}/nostd-check"
 LOWLEVEL = "devices/lowlevel"
 LP8758 = "devices/sdr/chips/lp8758"
 BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758"}
-# Runs libusdr's LMS7 family against rsl-xsdr-sim, compiling the uSDR oracle's vendored C.
-XSDR_ORACLE = "devices/sdr/xsdr/oracle"
+# The LMS7 family driver; its oracle runs libusdr's LMS7 family against rsl-xsdr-sim,
+# compiling the uSDR oracle's vendored C.
+XSDR = "devices/sdr/xsdr"
+XSDR_ORACLE = f"{XSDR}/oracle"
 # Runs libusdr's LSDr family against rsl-lsdr-sim, compiling the uSDR oracle's vendored C.
 LSDR_ORACLE = "devices/sdr/lsdr/oracle"
 # Runs libusdr's PE_SYNC clock board against rsl-pe-sync-sim, compiling the same vendored C.
@@ -186,7 +188,7 @@ def is_prose(path):
     if path.startswith("tools/rust-skills/"):
         return False
     return (PurePosixPath(path).name in PROSE_NAMES
-            or path == f"{USDR}/PORTING.md"
+            or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md"}
             or (path.endswith(".md") and (path.startswith("docs/")
                 or path.startswith("bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))
