@@ -49,7 +49,7 @@ intentional addition.
 |------|-------|------|
 | `.` | `rsl-usdr` (unpublished until parity) | The driver |
 | `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, or of lane 0 or 1 alone), the TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and three of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`) driving `sim` through `oracle/shim/sim_plugin.c` |
+| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and three of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`) |
 | `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers. The stack's only `unsafe` |
 
@@ -71,6 +71,14 @@ Each layer calls only the ones below it.
   `fpga/tx_stream.rs` packet announcement, status decoding and the TX create's gateware
   and block-size checks; `StreamsConfig::check` (`board/stream.rs`) the refusals every
   executor makes before any I/O.
+- `src/multi.rs`: `MultiDevice`, libusdr's multi-device aggregate (`device/mdev.c`): a
+  master and members, each a `Device`; settings broadcast through any `Device` method,
+  one stream group across the devices (created stream by stream, started part by part
+  with `Board::{check_streams, create_stream, start_parts, start_part, generate_sysref}`),
+  and every call reporting each device's `Outcome` (`MultiError`), never claiming
+  atomicity. It stays here until a second SDR driver needs an aggregate (then the
+  device-independent part moves to `devices/sdr/`). `oracle/tests/multi_parity.rs`
+  drives libusdr's aggregate over several sim boards (`Oracle::open_multi`).
 - `src/thermal.rs`: the public thermal policy. `Device` applies it between
   `Board::identify` and power-up; it reads the sensor only through `Board`.
 - `src/board/`: `m2_lm6_1` sequences (power, then rate, tune, the RX and TX controls and RX
