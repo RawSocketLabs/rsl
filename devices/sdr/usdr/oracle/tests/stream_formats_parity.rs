@@ -21,8 +21,8 @@ use std::time::Duration;
 use baseband::without_baseband_loop;
 use num_complex::Complex;
 use rsl_usdr::{
-    Ci12, Device, Error, HostFormat, HostSample, RxConfig, RxMetadata, StreamsConfig, SyncMode,
-    WireFormat,
+    Ci12, Device, Error, HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamsConfig,
+    SyncMode, WireFormat,
 };
 use rsl_usdr_oracle::{Oracle, RecvInfo};
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
@@ -55,6 +55,18 @@ impl LeBytes for Ci12 {
     }
 }
 
+impl LeBytes for i16 {
+    fn le_bytes(&self) -> Vec<u8> {
+        self.to_le_bytes().to_vec()
+    }
+}
+
+impl LeBytes for f32 {
+    fn le_bytes(&self) -> Vec<u8> {
+        self.to_le_bytes().to_vec()
+    }
+}
+
 /// One stream scenario, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
 struct Scenario {
@@ -63,6 +75,9 @@ struct Scenario {
 
     /// libusdr's sync type.
     synctype: &'static CStr,
+
+    /// libusdr's channel mask: 1 for channel 0, 2 for channel 1.
+    channel_mask: u64,
 
     /// rsl-usdr's configuration for the same stream.
     config: StreamsConfig,
@@ -75,8 +90,17 @@ impl Scenario {
         Self {
             dformat,
             synctype: c"none",
+            channel_mask: 1,
             config: StreamsConfig::rx(RxConfig::new(samples, host, wire)),
         }
+    }
+
+    /// This scenario on channel 1 (libusdr's `aq`).
+    fn on_channel1(mut self) -> Self {
+        self.channel_mask = 2;
+        let rx = self.config.rx.expect("an RX stream");
+        self.config = StreamsConfig::rx(rx.with_channels(RxChannels::Channel1));
+        self
     }
 
     /// This scenario, started with libusdr's `synctype`, rsl-usdr's `sync`.
@@ -124,7 +148,7 @@ fn on_libusdr(scenario: Scenario, receives: usize) -> Run {
     let mut windows = Vec::new();
     let start = oracle.trace_len();
     oracle
-        .create_rx_stream_as(scenario.dformat, samples)
+        .create_rx_stream_on(scenario.dformat, scenario.channel_mask, samples)
         .expect("libusdr creates the stream");
     windows.push(("create", start..oracle.trace_len()));
     let start = oracle.trace_len();
@@ -218,6 +242,8 @@ fn on_rsl(scenario: Scenario, receives: usize) -> Run {
                 HostFormat::Ci16 => receive::<Complex<i16>>(&mut device, scenario.samples()),
                 HostFormat::Cf32 => receive::<Complex<f32>>(&mut device, scenario.samples()),
                 HostFormat::Ci12 => receive::<Ci12>(&mut device, scenario.samples()),
+                HostFormat::I16 => receive::<i16>(&mut device, scenario.samples()),
+                HostFormat::F32 => receive::<f32>(&mut device, scenario.samples()),
                 other => panic!("{other:?} has no buffer type here"),
             });
         });
@@ -286,6 +312,90 @@ fn every_format_pair_matches_libusdr_operations_and_bytes() {
             "the sim's DMA status reaches both drivers' packet information"
         );
     }
+}
+
+/// Every real host@wire pair libusdr converts, on channel 0 (lane 0, I) and channel 1
+/// (lane 1, Q): the burst format's lanes, the same operations, the same host bytes and
+/// packet information. 1024 real samples fill whole words in either wire format.
+#[test]
+fn every_real_format_pair_on_either_lane_matches_libusdr() {
+    use HostFormat as H;
+    use WireFormat as W;
+    let pairs: [(&CStr, H, W); 4] = [
+        (c"i16", H::I16, W::I16),
+        (c"f32@i16", H::F32, W::I16),
+        (c"i16@i12", H::I16, W::I12),
+        (c"f32@i12", H::F32, W::I12),
+    ];
+    for (dformat, host, wire) in pairs {
+        for scenario in [
+            Scenario::new(dformat, 1024, host, wire),
+            Scenario::new(dformat, 1024, host, wire).on_channel1(),
+        ] {
+            let (expected, actual) = assert_windows_match(scenario, 2);
+            assert_eq!(
+                expected.packets, actual.packets,
+                "{scenario:?}: received bytes and packet information"
+            );
+        }
+    }
+}
+
+/// A real 12-bit packet whose burst ends in a stub: 1022 samples are 1533 bytes in a
+/// 1536-byte burst. The operations and the packet's samples match; whitelisted
+/// divergence, as for `ci12`: libusdr converts the 3-byte stub into two more samples,
+/// where rsl-usdr's packet ends at its own.
+#[test]
+fn a_padded_real_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
+    let scenario = Scenario::new(c"i16@i12", 1022, HostFormat::I16, WireFormat::I12);
+    let (expected, actual) = assert_windows_match(scenario, 1);
+    let (expected_bytes, expected_info) = &expected.packets[0];
+    let (actual_bytes, actual_info) = &actual.packets[0];
+    assert_eq!(expected_info, actual_info, "packet information");
+    assert_eq!(
+        expected_bytes.len(),
+        actual_bytes.len() + 4,
+        "libusdr's buffer holds the stub's two samples too"
+    );
+    assert_eq!(
+        &expected_bytes[..actual_bytes.len()],
+        &actual_bytes[..],
+        "the packet's samples"
+    );
+}
+
+/// libusdr's converter lookup falls back to a byte copy for a real wire into a complex
+/// host buffer, so it creates such a stream; rsl-usdr refuses it before any operation
+/// (whitelisted divergence).
+#[test]
+fn a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes() {
+    let mut oracle = Oracle::open(SimBoard::new(BoardRevision::Rev3)).expect("libusdr opens");
+    oracle.set_rx_rate(20_000_000).expect("sets the rate");
+    oracle
+        .create_rx_stream_as(c"ci16@i16", 1024)
+        .expect("libusdr creates a byte-copying stream");
+    drop(oracle.close());
+
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let start = sim.board().trace().len();
+    let config = StreamsConfig::rx(RxConfig::new(1024, HostFormat::Ci16, WireFormat::I16));
+    assert!(matches!(
+        device.create_streams(config),
+        Err(Error::UnsupportedFormat {
+            host: HostFormat::Ci16,
+            wire: WireFormat::I16,
+            ..
+        })
+    ));
+    assert_eq!(
+        sim.board().trace().len(),
+        start,
+        "nothing reached the board"
+    );
 }
 
 /// The 12-bit wire format splits a 16384-sample packet into two bursts by its own word

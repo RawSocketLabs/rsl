@@ -15,7 +15,7 @@ use bnb::{BitEnum, bitfield, u2, u3, u4, u10, u13, u28};
 use super::gpio::FPGA;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
-use crate::stream::WireFormat;
+use crate::stream::{RxChannels, WireFormat};
 
 /// RX DMA control: enable, reset, host ready (`M2PCI_REG_WR_RXDMA_CONFIRM + 1`).
 const REG_RX_DMA_CONTROL: u32 = 5;
@@ -236,8 +236,8 @@ impl From<WireFormat> for SampleFormat {
     /// `sfe_rx4_configure`'s `fe_format` for the wire format's bits.
     fn from(wire: WireFormat) -> Self {
         match wire {
-            WireFormat::Ci16 => Self::Bits16,
-            WireFormat::Ci12 => Self::Bits12,
+            WireFormat::Ci16 | WireFormat::I16 => Self::Bits16,
+            WireFormat::Ci12 | WireFormat::I12 => Self::Bits12,
         }
     }
 }
@@ -269,6 +269,19 @@ enum Lanes {
 
     /// Lane 3.
     Lane3,
+}
+
+impl Lanes {
+    /// The lanes `sfe_rx4_configure` selects for one channel of `wire`: complex channel 0
+    /// is lanes 1 and 0; real channel 0 lane 0, real channel 1 lane 1. Complex channel 1
+    /// is refused before any bus access.
+    fn for_channel(wire: WireFormat, channels: RxChannels) -> Self {
+        match (wire.is_complex(), channels) {
+            (true, _) => Self::Lanes10,
+            (false, RxChannels::Channel0) => Self::Lane0,
+            (false, RxChannels::Channel1) => Self::Lane1,
+        }
+    }
 }
 
 /// The burst format (`FE_CMD_BURST_FORMAT`).
@@ -358,10 +371,14 @@ pub(crate) fn reset_rx_dma(bus: &mut dyn Bus) -> Result<(), Error> {
     write_dma_control(bus, DmaControl::new())
 }
 
-/// Puts the front end in reset, sets the burst size and format for `plan`, and releases it
-/// (`_configure_simple_fe_generic` for one complex channel, `IFMT_CH_xx10`), then sizes the
-/// DMA blocks (`dma_rx32_configure`).
-pub(crate) fn configure_rx(bus: &mut dyn Bus, plan: &BurstPlan) -> Result<(), Error> {
+/// Puts the front end in reset, sets the burst size and format for `plan` on the lanes of
+/// `channels`, and releases it (`_configure_simple_fe_generic` for one channel), then sizes
+/// the DMA blocks (`dma_rx32_configure`).
+pub(crate) fn configure_rx(
+    bus: &mut dyn Bus,
+    plan: &BurstPlan,
+    channels: RxChannels,
+) -> Result<(), Error> {
     let all_reset = FrontEndControl::new()
         .with_reset_burster(true)
         .with_reset_assembler(true)
@@ -378,7 +395,7 @@ pub(crate) fn configure_rx(bus: &mut dyn Bus, plan: &BurstPlan) -> Result<(), Er
         .with_words(u13::new(
             u16::try_from(words - 1).expect("invariant: at most 8191"),
         ))
-        .with_lanes(Lanes::Lanes10)
+        .with_lanes(Lanes::for_channel(plan.wire, channels))
         .with_format(plan.wire.into());
     front_end(bus, Command::BurstFormat, format.to_raw())?;
     write(bus, REG_RX_DMA_BURST_WORDS, words - 1)?;

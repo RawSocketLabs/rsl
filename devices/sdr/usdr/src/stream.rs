@@ -97,6 +97,13 @@ impl RxConfig {
             channels: RxChannels::Channel0,
         }
     }
+
+    /// This configuration, carrying `channels` instead.
+    #[must_use]
+    pub const fn with_channels(mut self, channels: RxChannels) -> Self {
+        self.channels = channels;
+        self
+    }
 }
 
 /// A TX stream: its packet size, the format the host sends and the format the gateware
@@ -134,9 +141,9 @@ impl TxConfig {
     }
 }
 
-/// A sample format the uSDR's front ends pack on the wire: complex, one channel's I then
-/// Q, little-endian. The RX front end (`sfe_rx_4`) packs both; the TX front end
-/// (`sfe_tx_4`) takes `Ci16` only.
+/// A sample format the uSDR's front ends pack on the wire, little-endian: complex (one
+/// channel's I then Q) or real (one lane of it). The RX front end (`sfe_rx_4`) packs all
+/// four; the TX front end (`sfe_tx_4`) takes `Ci16` only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum WireFormat {
@@ -147,15 +154,29 @@ pub enum WireFormat {
     /// 12 bits per value, packed back to back, 3 bytes per sample (`ci12`, `IFMT_12BIT`).
     /// libusdr's 12-bit unpacking reads each value as the top 12 bits of a 16-bit one.
     Ci12,
+
+    /// Real: one lane's 16-bit values, 2 bytes per sample (`i16`, `IFMT_16BIT`).
+    I16,
+
+    /// Real: one lane's 12-bit values, packed back to back as [`WireFormat::Ci12`]'s, two
+    /// samples per 3 bytes (`i12`, `IFMT_12BIT`).
+    I12,
 }
 
 impl WireFormat {
-    /// Bits one sample (I and Q) takes on the wire.
+    /// Bits one sample (I and Q, or one lane) takes on the wire.
     pub(crate) const fn sample_bits(self) -> u32 {
         match self {
             Self::Ci16 => 32,
             Self::Ci12 => 24,
+            Self::I16 => 16,
+            Self::I12 => 12,
         }
+    }
+
+    /// Whether a sample is complex, I and Q, rather than one real lane.
+    pub(crate) const fn is_complex(self) -> bool {
+        matches!(self, Self::Ci16 | Self::Ci12)
     }
 
     /// The same format as libusdr's converters name it.
@@ -163,6 +184,8 @@ impl WireFormat {
         match self {
             Self::Ci16 => SampleFormat::Ci16,
             Self::Ci12 => SampleFormat::Ci12,
+            Self::I16 => SampleFormat::I16,
+            Self::I12 => SampleFormat::I12,
         }
     }
 }
@@ -182,6 +205,12 @@ pub enum HostFormat {
 
     /// [`Ci12`]: packed 12-bit pairs, as on the wire (`ci12`).
     Ci12,
+
+    /// `i16`, real: full scale ±32767 (`i16`).
+    I16,
+
+    /// `f32`, real: full scale ±1.0 (`f32`).
+    F32,
 }
 
 impl HostFormat {
@@ -191,24 +220,34 @@ impl HostFormat {
             Self::Ci16 => SampleFormat::Ci16,
             Self::Cf32 => SampleFormat::Cf32,
             Self::Ci12 => SampleFormat::Ci12,
+            Self::I16 => SampleFormat::I16,
+            Self::F32 => SampleFormat::F32,
         }
     }
 }
 
-/// The channels an RX stream carries. The uSDR has one receiver.
+/// The channels an RX stream carries, by libusdr's uSDR channel numbers
+/// (`s_usdr_chmap`). The uSDR has one receiver, its I and Q on the front end's lanes 0
+/// and 1.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RxChannels {
-    /// Channel 0 (libusdr's `a`): the receiver's I and Q on the front end's lanes 0 and 1.
+    /// Channel 0 (libusdr's `a`, `ai` or `i`): complex, the receiver's I and Q on lanes 0
+    /// and 1 (`IFMT_CH_xx10`); real, I alone on lane 0 (`IFMT_CH_xxx0`).
     #[default]
     Channel0,
+
+    /// Channel 1 (libusdr's `aq` or `q`), real formats only: the receiver's Q alone on
+    /// lane 1 (`IFMT_CH_xx1x`). A complex channel 1 would be lanes 2 and 3, which nothing
+    /// vendored shows the uSDR drives, so it is refused.
+    Channel1,
 }
 
 impl RxChannels {
     /// How many host buffers a receive fills.
     pub(crate) const fn count(self) -> usize {
         match self {
-            Self::Channel0 => 1,
+            Self::Channel0 | Self::Channel1 => 1,
         }
     }
 }
@@ -378,8 +417,9 @@ pub struct RxMetadata {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Ci12(pub [u8; 3]);
 
-/// A host buffer element: one complex sample in a [`HostFormat`]. Implemented for
-/// [`Complex<i16>`], [`Complex<f32>`] and [`Ci12`] only.
+/// A host buffer element: one sample in a [`HostFormat`]. Implemented for
+/// [`Complex<i16>`], [`Complex<f32>`] and [`Ci12`] (complex), and `i16` and `f32` (real)
+/// only.
 pub trait HostSample: Copy + sealed::Sealed {
     /// The format this element holds.
     const FORMAT: HostFormat;
@@ -395,6 +435,14 @@ impl HostSample for Complex<f32> {
 
 impl HostSample for Ci12 {
     const FORMAT: HostFormat = HostFormat::Ci12;
+}
+
+impl HostSample for i16 {
+    const FORMAT: HostFormat = HostFormat::I16;
+}
+
+impl HostSample for f32 {
+    const FORMAT: HostFormat = HostFormat::F32;
 }
 
 /// Keeps [`HostSample`] to the formats the converters produce, and holds how each element
@@ -457,6 +505,30 @@ pub(crate) mod sealed {
 
         fn to_le(&self, bytes: &mut [u8]) {
             bytes[..3].copy_from_slice(&self.0);
+        }
+    }
+
+    impl Sealed for i16 {
+        const BYTES: usize = 2;
+
+        fn from_le(bytes: &[u8]) -> Self {
+            Self::from_le_bytes([bytes[0], bytes[1]])
+        }
+
+        fn to_le(&self, bytes: &mut [u8]) {
+            bytes[..2].copy_from_slice(&self.to_le_bytes());
+        }
+    }
+
+    impl Sealed for f32 {
+        const BYTES: usize = 4;
+
+        fn from_le(bytes: &[u8]) -> Self {
+            Self::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+        }
+
+        fn to_le(&self, bytes: &mut [u8]) {
+            bytes[..4].copy_from_slice(&self.to_le_bytes());
         }
     }
 }

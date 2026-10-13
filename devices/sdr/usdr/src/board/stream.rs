@@ -125,14 +125,15 @@ pub(crate) struct RxStream {
 /// to back, then any stub padding it to `bytes_per_burst`.
 #[derive(Clone, Copy, Debug)]
 struct BlockLayout {
-    /// Samples per burst; a packet is a whole number of bursts.
+    /// Samples per burst; a packet is a whole number of bursts, and a burst a whole number
+    /// of bytes of samples ([`check_rx_stream`]).
     samples_per_burst: usize,
 
     /// Bytes per burst, any stub included.
     bytes_per_burst: usize,
 
-    /// Wire bytes per sample: 4 for `ci16`, 3 for `ci12`.
-    sample_bytes: usize,
+    /// Wire bits per sample: 32 for `ci16`, 24 for `ci12`, 16 for `i16`, 12 for `i12`.
+    sample_bits: usize,
 }
 
 impl SyncMode {
@@ -164,9 +165,9 @@ impl SyncMode {
 impl Board {
     /// Creates the group's streams (libusdr's `usdr_dms_create` for each), RX first,
     /// leaving them stopped until [`Board::start_streams`]. An existing group, a
-    /// configuration with no stream, an unsupported sync mode and a TX stream the gateware
-    /// cannot take are refused before any bus access; packet sizes are checked where
-    /// libusdr checks them.
+    /// configuration with no stream, an unsupported sync mode and a stream the gateware
+    /// or converters cannot take are refused before any bus access; packet sizes are
+    /// checked where libusdr checks them.
     ///
     /// As in libusdr, a stream whose transport buffers are set up stays when a later step
     /// fails, and so does the group holding it, until [`Board::stop_streams`].
@@ -184,9 +185,11 @@ impl Board {
         if let Some(tx) = config.tx {
             self.check_tx_stream(tx)?;
         }
-        if let Some(rx) = config.rx {
-            let converter = Converter::new(rx.wire.sample_format(), rx.host.sample_format(), 1, 1)
-                .expect("invariant: libusdr converts every RX wire format to every host format");
+        let rx = config
+            .rx
+            .map(|rx| check_rx_stream(rx).map(|converter| (rx, converter)))
+            .transpose()?;
+        if let Some((rx, converter)) = rx {
             self.create_rx_stream(rx, converter, mode)?;
         }
         if let Some(tx) = config.tx {
@@ -300,7 +303,7 @@ impl Board {
         fpga::reset_rx_dma(bus)?;
         let plan = BurstPlan::for_packet(samples_per_packet, wire)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
-        fpga::configure_rx(bus, &plan)?;
+        fpga::configure_rx(bus, &plan, channels)?;
         fpga::sync(bus, SyncTrigger::Stop)?;
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
@@ -310,7 +313,7 @@ impl Board {
             layout: BlockLayout {
                 samples_per_burst: size(plan.samples_per_burst()),
                 bytes_per_burst: size(plan.bytes_per_burst()),
-                sample_bytes: size(wire.sample_bits() / 8),
+                sample_bits: size(wire.sample_bits()),
             },
             block_bytes: size(plan.block_bytes()),
             host,
@@ -506,6 +509,33 @@ impl Board {
     }
 }
 
+/// Refuses, before any bus access, an RX stream the converters or the receiver's front end
+/// cannot take, and returns its wire-to-host converter.
+///
+/// Intentional divergences: libusdr copies the bytes of a real wire into a complex host
+/// buffer or the reverse (its converter lookup falls back to a copy), takes complex
+/// channel 1 as lanes 2 and 3, and converts a real 12-bit burst that ends mid-byte whole,
+/// stub included; each is refused here.
+fn check_rx_stream(config: RxConfig) -> Result<Converter, Error> {
+    let RxConfig {
+        samples_per_packet,
+        wire,
+        host,
+        channels,
+    } = config;
+    if channels == RxChannels::Channel1 && wire.is_complex() {
+        return Err(Error::UnsupportedRxChannels { channels, wire });
+    }
+    let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, 1)
+        .map_err(|_| Error::UnsupportedFormat { host, wire })?;
+    let half_byte = BurstPlan::for_packet(samples_per_packet, wire)
+        .is_some_and(|plan| plan.samples_per_burst() * wire.sample_bits() % 8 != 0);
+    if half_byte {
+        return Err(Error::UnsupportedPacketSize(samples_per_packet));
+    }
+    Ok(converter)
+}
+
 impl BlockLayout {
     /// Converts a block's samples into `samples`, burst by burst, skipping each burst's
     /// stub, at most [`CHUNK_SAMPLES`] at a time through a stack scratch.
@@ -515,13 +545,14 @@ impl BlockLayout {
     fn convert<S: HostSample>(self, converter: &Converter, block: &[u8], samples: &mut [S]) {
         const { assert!(S::BYTES <= MAX_HOST_SAMPLE_BYTES) };
         let mut scratch = [0; CHUNK_SAMPLES * MAX_HOST_SAMPLE_BYTES];
+        let wire_bytes = |samples: usize| samples * self.sample_bits / 8;
         let bursts = samples
             .chunks_mut(self.samples_per_burst)
             .zip(block.chunks(self.bytes_per_burst));
         for (burst, bytes) in bursts {
-            let wire_chunks = bytes.chunks(CHUNK_SAMPLES * self.sample_bytes);
+            let wire_chunks = bytes.chunks(wire_bytes(CHUNK_SAMPLES));
             for (chunk, wire) in burst.chunks_mut(CHUNK_SAMPLES).zip(wire_chunks) {
-                let wire = &wire[..chunk.len() * self.sample_bytes];
+                let wire = &wire[..wire_bytes(chunk.len())];
                 let host = &mut scratch[..chunk.len() * S::BYTES];
                 converter
                     .convert(&[wire], &mut [&mut *host])
@@ -552,7 +583,7 @@ mod tests {
         BlockLayout {
             samples_per_burst,
             bytes_per_burst,
-            sample_bytes,
+            sample_bits: sample_bytes * 8,
         }
     }
 

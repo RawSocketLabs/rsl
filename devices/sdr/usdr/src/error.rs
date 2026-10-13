@@ -5,7 +5,7 @@ pub use rsl_lowlevel::Access;
 use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::SequenceFailure;
-use crate::stream::{HostFormat, StreamTime, SyncMode, WireFormat};
+use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, WireFormat};
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -182,6 +182,31 @@ pub enum Error {
     /// A wire format the TX front end does not take; the uSDR's takes `ci16` only.
     #[error("unsupported TX wire format {0:?}")]
     UnsupportedWireFormat(WireFormat),
+
+    /// A host format with no converter to or from the stream's wire format: a real host
+    /// for a complex wire, or the reverse (where libusdr copies the bytes unconverted), or
+    /// a real host for TX.
+    #[error("no conversion between host format {host:?} and wire format {wire:?}")]
+    #[non_exhaustive]
+    UnsupportedFormat {
+        /// The host format asked for.
+        host: HostFormat,
+
+        /// The wire format asked for.
+        wire: WireFormat,
+    },
+
+    /// RX channels the receiver's front end does not carry in the wire format asked for:
+    /// channel 1 complex (lanes 2 and 3).
+    #[error("RX channels {channels:?} are not carried in wire format {wire:?}")]
+    #[non_exhaustive]
+    UnsupportedRxChannels {
+        /// The channels asked for.
+        channels: RxChannels,
+
+        /// The wire format asked for.
+        wire: WireFormat,
+    },
 
     /// The gateware has the extended TX core (hardware ID bit 26), whose stream setup this
     /// driver does not port.

@@ -32,6 +32,23 @@ fn an_empty_tx_packet_size_is_refused_before_the_bus() {
     ));
 }
 
+/// A real host format for TX is refused before the bus. Intentional divergence: libusdr's
+/// converter lookup falls back to a byte copy onto the complex wire.
+#[test]
+fn a_real_tx_host_format_is_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    let config = TxConfig::new(256, HostFormat::F32, WireFormat::Ci16);
+    assert!(matches!(
+        untouched(&sim, || device.create_streams(StreamsConfig::tx(config))),
+        Err(Error::UnsupportedFormat {
+            host: HostFormat::F32,
+            wire: WireFormat::Ci16,
+            ..
+        })
+    ));
+}
+
 /// When TX fails to join an RX+TX group created with `SyncMode::All`, the group starts as
 /// what it holds, RX alone: the sync unit waits for RX activity (`ST_ADCACT`), not for
 /// both (`ST_DELAYADCDAC`), and RX flows.

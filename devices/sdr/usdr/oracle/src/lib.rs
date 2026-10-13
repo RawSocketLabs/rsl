@@ -397,6 +397,22 @@ impl Oracle {
         dformat: &CStr,
         samples_per_packet: u32,
     ) -> Result<(), i32> {
+        self.create_rx_stream_on(dformat, 1, samples_per_packet)
+    }
+
+    /// As [`Oracle::create_rx_stream_as`], on the channels in `channels`, libusdr's mask of
+    /// channel numbers (`usdr_dms_create_ex`): 1 for channel 0 (`a`/`ai`), 2 for channel 1
+    /// (`aq`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EBUSY` if a stream exists.
+    pub fn create_rx_stream_on(
+        &mut self,
+        dformat: &CStr,
+        channels: u64,
+        samples_per_packet: u32,
+    ) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
@@ -411,7 +427,7 @@ impl Oracle {
                 dev.as_ptr(),
                 c"/ll/srx/0".as_ptr(),
                 dformat.as_ptr(),
-                1,
+                channels,
                 samples_per_packet,
                 0,
                 &raw mut stream,

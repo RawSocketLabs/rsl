@@ -10,7 +10,7 @@ use std::time::Duration;
 use common::sim_bus::SimBus;
 use num_complex::Complex;
 use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr::{Device, Error, HostFormat, RxConfig, StreamsConfig, WireFormat};
+use rsl_usdr::{Device, Error, HostFormat, RxChannels, RxConfig, StreamsConfig, WireFormat};
 use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The RX DMA control register.
@@ -350,5 +350,65 @@ fn a_created_group_waits_for_its_start() {
         samples[1],
         Complex::new(16.0 * scale, -16.0 * scale),
         "sample 1 of the 12-bit counting pattern"
+    );
+}
+
+/// Stream configurations rsl-usdr refuses before any bus access where libusdr would go
+/// on (whitelisted divergences, `PORTING.md`'s formats row): complex channel 1, which
+/// would be lanes 2 and 3, and a real 12-bit packet whose burst ends mid-byte (1023
+/// samples of 12 bits), which libusdr converts whole, stub included.
+#[test]
+fn rx_streams_the_front_end_cannot_carry_are_refused_before_the_bus() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim.clone()).expect("powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let start = sim.board().trace().len();
+    let complex_channel_1 =
+        RxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci16).with_channels(RxChannels::Channel1);
+    assert!(matches!(
+        device.create_streams(StreamsConfig::rx(complex_channel_1)),
+        Err(Error::UnsupportedRxChannels {
+            channels: RxChannels::Channel1,
+            wire: WireFormat::Ci16,
+            ..
+        })
+    ));
+    let half_byte = RxConfig::new(1023, HostFormat::I16, WireFormat::I12);
+    assert!(matches!(
+        device.create_streams(StreamsConfig::rx(half_byte)),
+        Err(Error::UnsupportedPacketSize(1023))
+    ));
+    assert_eq!(
+        sim.board().trace().len(),
+        start,
+        "nothing reached the board"
+    );
+}
+
+/// A real stream on channel 1 delivers the receiver's Q lane alone: the sim's counting
+/// pattern's Q is minus the sample number.
+#[test]
+fn a_real_channel_1_stream_delivers_the_q_lane() {
+    let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
+    let mut device = Device::with_bus(sim).expect("powers up");
+    device
+        .set_rx_sample_rate(20_000_000)
+        .expect("sets the rate");
+    let config =
+        RxConfig::new(1024, HostFormat::I16, WireFormat::I16).with_channels(RxChannels::Channel1);
+    device
+        .create_streams(StreamsConfig::rx(config))
+        .expect("creates");
+    device.start_streams().expect("starts");
+    let mut samples = vec![0_i16; 1024];
+    device
+        .receive_into(&mut [&mut samples], Duration::from_millis(10))
+        .expect("a packet");
+    assert_eq!(
+        samples[..3],
+        [0, -1, -2],
+        "the Q lane of the counting pattern"
     );
 }

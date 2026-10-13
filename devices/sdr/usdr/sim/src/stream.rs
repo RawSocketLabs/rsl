@@ -10,21 +10,28 @@
 //! `stream_sfetrx4_dma32.c`.
 //!
 //! Formats: the burst format's sample format (bits 1:0) selects 16-bit (3) or 12-bit (2)
-//! lanes; its lanes (bits 4:2) must be 1, channel 0's I and Q on lanes 0 and 1, the only
-//! ones the uSDR's single receiver drives. Others are not modelled and panic.
-//! - 16-bit: each sample is I then Q, little-endian `i16`s, 4 bytes.
+//! lanes; its lanes (bits 4:2) are 1, channel 0's I and Q on lanes 0 and 1, 2, lane 0
+//! (I) alone, or 3, lane 1 (Q) alone: the lanes the uSDR's single receiver drives. Others
+//! are not modelled and panic.
+//! - 16-bit: each lane value is a little-endian `i16`; a complex sample is I then Q, 4
+//!   bytes, a real one 2 bytes.
 //! - 12-bit: assumed, from the C that reads it rather than gateware source (none is
-//!   vendored), that each sample is 24 bits, I in bits 11:0 and Q in bits 23:12, stored as
-//!   three little-endian bytes, samples back to back across words. Evidence:
-//!   `sfe_rx4_configure` sizes a burst as `2 lanes × 12 bits` per sample over 64-bit words
-//!   (`burst_fe_calculate`), with no per-sample alignment, and libusdr's `ci12` host
-//!   formats unpack exactly that layout (`xdsp/conv.c`'s 12-bit kernels, `rsl_usdr::dsp`).
+//!   vendored), that lane values are 12 bits each, packed back to back two per three
+//!   little-endian bytes (the first in bits 11:0, the second in 23:12), across samples and
+//!   words; a complex sample is I then Q, 3 bytes, two real samples 3 bytes, an odd last
+//!   one half a byte short. Evidence: `sfe_rx4_configure` sizes a burst as `lanes × 12
+//!   bits` per sample over 64-bit words (`burst_fe_calculate`), with no per-sample
+//!   alignment, and libusdr's `ci12` and `i12` host formats unpack exactly that layout
+//!   (`xdsp/conv.c`'s 12-bit kernels, `rsl_usdr::dsp`).
+//! - Real lanes: assumed that a one-lane format carries that lane's values alone, in
+//!   order, as `IFMT_CH_xxx0` and `IFMT_CH_xx1x` name them.
 //!
 //! Assumed, not modelled:
 //! - Timing and overruns. A block is ready whenever the engine runs, without advancing
 //!   virtual time, and none is ever lost.
 //! - The signal. The samples are a counting test pattern in the lanes' own width: sample
-//!   `n` reads `I = n`, `Q = -n`, wrapping at 16 or 12 bits.
+//!   `n` reads `I = n`, `Q = -n`, wrapping at 16 or 12 bits, whichever lanes a burst
+//!   carries.
 //! - The DMA's own words-per-burst register (0x10020). Block sizes come from the front
 //!   end's burst format instead; both drivers write the two consistently.
 //! - The host-ready strobe (register 5, value 4). Blocks flow without it; libusdr writes
@@ -55,18 +62,29 @@ const RESET_BITS: u32 = 1 << 8 | 1 << 13 | 1 << 14 | 1 << 15;
 const MAX_BURSTS: usize = 32;
 /// Bytes per front-end word.
 const WORD_BYTES: usize = 8;
-/// Burst-format lanes: channel 0's I and Q on lanes 0 and 1 (`IFMT_CH_xx10`).
-const LANES_CHANNEL_0: u32 = 1;
 
-/// How the front end packs a sample (`IFMT_*`).
+/// Which of the receiver's lanes a burst carries (`IFMT_CH_*`, burst-format bits 4:2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Packing {
-    /// Two 16-bit lanes, 4 bytes (`IFMT_16BIT`, 3).
+enum Lanes {
+    /// Lanes 0 and 1, I then Q (`IFMT_CH_xx10`, 1).
     #[default]
-    Bits16,
+    IAndQ,
 
-    /// Two 12-bit lanes, 3 bytes (`IFMT_12BIT`, 2).
-    Bits12,
+    /// Lane 0, I alone (`IFMT_CH_xxx0`, 2).
+    I,
+
+    /// Lane 1, Q alone (`IFMT_CH_xx1x`, 3).
+    Q,
+}
+
+/// How the front end packs a burst (`IFMT_*` and `IFMT_CH_*`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Packing {
+    /// 12-bit lane values (`IFMT_12BIT`, 2) rather than 16-bit (`IFMT_16BIT`, 3).
+    twelve_bit: bool,
+
+    /// The lanes carried.
+    lanes: Lanes,
 }
 
 impl Packing {
@@ -76,30 +94,42 @@ impl Packing {
     ///
     /// For formats or lanes the sim does not model.
     fn from_burst_format(value: u32) -> Self {
-        let lanes = (value >> 2) & 0b111;
-        assert_eq!(
-            lanes, LANES_CHANNEL_0,
-            "RX lanes {lanes} are not modelled; only channel 0's I and Q (1) are"
-        );
-        match value & 0b11 {
-            3 => Self::Bits16,
-            2 => Self::Bits12,
+        let lanes = match (value >> 2) & 0b111 {
+            1 => Lanes::IAndQ,
+            2 => Lanes::I,
+            3 => Lanes::Q,
+            lanes => panic!("RX lanes {lanes} are not modelled; only lanes 0 and 1 (1, 2, 3) are"),
+        };
+        let twelve_bit = match value & 0b11 {
+            3 => false,
+            2 => true,
             format => panic!("RX sample format {format} is not modelled; only 12 and 16 bits"),
+        };
+        Self { twelve_bit, lanes }
+    }
+
+    /// Appends sample `n`'s lane values of the counting pattern to `values`.
+    fn push_values(self, values: &mut Vec<u16>, n: u16) {
+        let q = n.wrapping_neg();
+        match self.lanes {
+            Lanes::IAndQ => values.extend([n, q]),
+            Lanes::I => values.push(n),
+            Lanes::Q => values.push(q),
         }
     }
 
-    /// Appends sample `n` of the counting pattern.
-    fn push(self, block: &mut Vec<u8>, n: u16) {
-        let q = n.wrapping_neg();
-        match self {
-            Self::Bits16 => {
-                block.extend_from_slice(&n.to_le_bytes());
-                block.extend_from_slice(&q.to_le_bytes());
-            }
-            Self::Bits12 => {
-                let packed = u32::from(n & 0xfff) | u32::from(q & 0xfff) << 12;
-                block.extend_from_slice(&packed.to_le_bytes()[..3]);
-            }
+    /// Appends a burst's lane values, packed.
+    fn pack(self, values: &[u16], block: &mut Vec<u8>) {
+        if !self.twelve_bit {
+            block.extend(values.iter().flat_map(|value| value.to_le_bytes()));
+            return;
+        }
+        for pair in values.chunks(2) {
+            let second = pair.get(1).map_or(0, |value| u32::from(value & 0xfff));
+            let packed = u32::from(pair[0] & 0xfff) | second << 12;
+            // A lone last value takes 12 of the 16 bits written.
+            let bytes = if pair.len() == 2 { 3 } else { 2 };
+            block.extend_from_slice(&packed.to_le_bytes()[..bytes]);
         }
     }
 }
@@ -184,12 +214,15 @@ impl RxEngine {
         }
         let burst_bytes = self.words_per_burst * WORD_BYTES;
         let mut block = Vec::with_capacity(burst_bytes * self.bursts);
+        let mut values = Vec::new();
         for _ in 0..self.bursts {
             let start = block.len();
+            values.clear();
             for _ in 0..self.samples_per_burst {
-                self.packing.push(&mut block, self.next_sample);
+                self.packing.push_values(&mut values, self.next_sample);
                 self.next_sample = self.next_sample.wrapping_add(1);
             }
+            self.packing.pack(&values, &mut block);
             assert!(
                 block.len() - start <= burst_bytes,
                 "{} samples overflow a {burst_bytes}-byte burst",
@@ -297,6 +330,25 @@ mod tests {
                 0, 0, 0, 0, 0, 0, 0
             ]
         );
+    }
+
+    #[test]
+    fn real_lanes_carry_i_or_q_alone() {
+        // Three 16-bit I samples, then three Q samples: 6 bytes in one word each.
+        let mut engine = running(3, 1, 2 << 2 | 3, 1);
+        let (block, _) = engine.next_block(true).expect("running");
+        assert_eq!(block, [0, 0, 1, 0, 2, 0, 0, 0]);
+        let mut engine = running(3, 1, 3 << 2 | 3, 1);
+        let (block, _) = engine.next_block(true).expect("running");
+        assert_eq!(block, [0, 0, 0xff, 0xff, 0xfe, 0xff, 0, 0]);
+    }
+
+    #[test]
+    fn real_twelve_bit_values_pack_two_per_three_bytes() {
+        // Three Q values, 0, -1 and -2: a pair in 3 bytes, the lone last in 12 bits.
+        let mut engine = running(3, 1, 3 << 2 | 2, 1);
+        let (block, _) = engine.next_block(true).expect("running");
+        assert_eq!(block, [0x00, 0xf0, 0xff, 0xfe, 0x0f, 0, 0, 0]);
     }
 
     #[test]

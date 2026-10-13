@@ -80,16 +80,32 @@ impl TxStream {
 impl Board {
     /// Refuses, before any bus access, a TX stream the ported core cannot take: the
     /// gateware's extended TX core, whose setup is not ported; any wire format but `ci16`,
-    /// which libusdr refuses only after powering the transmitter; and a packet size of 0.
+    /// which libusdr refuses only after powering the transmitter; a real host format; and
+    /// a packet size of 0.
     ///
-    /// Intentional divergence: libusdr takes a size of 0 to mean the transport's largest
+    /// Intentional divergences: libusdr takes a size of 0 to mean the transport's largest
     /// buffer (its `PCIe` driver's, capped at the core's FIFO); a `TxConfig` names its size.
+    /// libusdr copies a real host buffer's bytes onto the complex wire unconverted (its
+    /// converter lookup falls back to a copy).
     pub(super) fn check_tx_stream(&self, config: TxConfig) -> Result<(), Error> {
         if self.chains.extended_tx_core {
             return Err(Error::UnsupportedTxCore);
         }
         if config.wire != WireFormat::Ci16 {
             return Err(Error::UnsupportedWireFormat(config.wire));
+        }
+        if Converter::new(
+            config.host.sample_format(),
+            config.wire.sample_format(),
+            1,
+            1,
+        )
+        .is_err()
+        {
+            return Err(Error::UnsupportedFormat {
+                host: config.host,
+                wire: config.wire,
+            });
         }
         if config.samples_per_packet == 0 {
             return Err(Error::UnsupportedPacketSize(0));
@@ -114,7 +130,7 @@ impl Board {
             channels,
         } = config;
         let converter = Converter::new(host.sample_format(), wire.sample_format(), 1, 1)
-            .expect("invariant: libusdr converts every host format to ci16");
+            .expect("invariant: check_tx_stream refused hosts with no converter to ci16");
         // `usdr_rfic_streaming_up`: libusdr takes its wake-up wait even when powering fails.
         let waking = !self.tx_running;
         self.tx_running = true;

@@ -25,7 +25,8 @@ The implemented baseline remains RX parity with the wrapper over USB and PCIe. R
 board power-up and power-down, temperature reading, the RX, TX and both-chain sample rates, RX bandwidth,
 frequency, gains, path and corrections, the stream group
 (`create_streams`, `start_streams` with every sync type libusdr offers the uSDR but `ExternalAll`, `receive_into` from
-`ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, `send`/`send_with_stat`
+`ci16`/`ci12` wire into `ci16`/`cf32`/`ci12` host buffers on channel 0, or from one real
+lane (`i16`/`i12`, I or Q) into `i16`/`f32` buffers, `send`/`send_with_stat`
 from those host formats to `ci16` wire on TX channel 0 with timestamps and telemetry,
 `set_tx_mute`, `stop_streams`; plus the `start_rx_stream`/`receive`/`stop_rx_stream` ci16
 shim) over any streaming `Bus` (TX over the sim, PCIe and USB), the TX
@@ -252,6 +253,10 @@ Each layer calls only the ones below it.
   and `SyncMode::ExternalAll` fails at create, before any bus access, where libusdr
   creates and then fails the sync
   (`stream_formats_parity.rs::external_sync_is_refused_by_both_before_any_sync_operation`).
+  Streams also refuse, before any bus access, a host format with no converter for the
+  wire (libusdr byte-copies it), complex RX channel 1 and a real 12-bit burst ending
+  mid-byte (`stream_formats_parity.rs::a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes`,
+  `tests/stream.rs`, `tests/tx_stream.rs`).
   TX streams refuse, before any bus access, a packet size of 0 (libusdr's "largest
   buffer"), a `ci12` wire, which libusdr refuses only after powering the transmitter
   (`tx_stream_parity.rs::a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up`),

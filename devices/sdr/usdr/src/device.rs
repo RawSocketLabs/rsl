@@ -328,8 +328,14 @@ impl Device {
     /// - [`Error::UnsupportedTxCore`] for a TX stream on gateware with the extended TX
     ///   core, and [`Error::UnsupportedWireFormat`] for a TX wire format other than
     ///   [`WireFormat::Ci16`] (libusdr refuses it once the transmitter is powered).
+    /// - [`Error::UnsupportedFormat`] for a host format with no converter to or from the
+    ///   wire format (a real host for a complex wire or the reverse, a real TX host), where
+    ///   libusdr copies the bytes unconverted.
+    /// - [`Error::UnsupportedRxChannels`] for complex RX channel 1, which would be the
+    ///   front end's lanes 2 and 3.
     /// - [`Error::UnsupportedPacketSize`] for a TX packet of 0 samples, which libusdr takes
-    ///   to mean the transport's largest buffer.
+    ///   to mean the transport's largest buffer, and for a real 12-bit RX packet whose
+    ///   bursts end mid-byte.
     ///
     /// Then:
     /// - [`Error::UnsupportedPacketSize`] for an RX packet the stream engine cannot split
