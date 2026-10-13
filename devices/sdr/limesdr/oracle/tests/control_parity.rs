@@ -7,9 +7,11 @@
 //! stream; the shim then refuses the transport's stream (the FT601 pipes are not vendored),
 //! so libusdr's stream preparation succeeds as `-EOPNOTSUPP`.
 //!
-//! No divergence is whitelisted here. The one limesdr has on these paths, refusing to
-//! stream up when the default rate did not lock where libusdr divides by zero, cannot run
-//! in libusdr; `tests/control.rs` covers it on the sim alone.
+//! No divergence is whitelisted here: neither of limesdr's on these paths can be shown
+//! against libusdr. Refusing to stream up when the default rate did not lock, where
+//! libusdr divides by zero, cannot run in libusdr (`tests/control.rs` covers it on the sim
+//! alone); stopping at a bus failure, where libusdr carries on, needs a failing bus, which
+//! the sim does not model.
 
 #[path = "../../tests/common/sim_port.rs"]
 mod sim_port;
@@ -52,7 +54,7 @@ enum Call {
     Stream,
 }
 
-/// libusdr's device-manager path for a gain. `TxPga` has none on this family.
+/// libusdr's device-manager path for a gain.
 fn gain_path(gain: Gain) -> &'static CStr {
     match gain {
         Gain::RxLna => c"/dm/sdr/0/rx/gain/lna",
@@ -61,7 +63,6 @@ fn gain_path(gain: Gain) -> &'static CStr {
         Gain::RxLoopback => c"/dm/sdr/0/rx/gain/lb",
         Gain::TxPad => c"/dm/sdr/0/tx/gain",
         Gain::TxLoopback => c"/dm/sdr/0/tx/gain/lb",
-        Gain::TxPga => panic!("libusdr's LimeSDR has no TX PGA path"),
     }
 }
 
@@ -139,7 +140,7 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
 fn errno(result: Result<(), Error>) -> i32 {
     match result {
         Ok(()) => 0,
-        Err(Error::InvalidRate(0) | Error::UndeliverableRate | Error::NoChannel) => -EINVAL,
+        Err(Error::InvalidRate(0) | Error::UndeliverableRate) => -EINVAL,
         Err(Error::InvalidRate(_) | Error::ClockUnlocked | Error::TuneOutOfRange(_)) => -ERANGE,
         Err(Error::VcoComparatorFailed) => -EIO,
         Err(other) => panic!("no libusdr counterpart: {other}"),
