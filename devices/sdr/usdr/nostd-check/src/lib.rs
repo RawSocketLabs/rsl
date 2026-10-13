@@ -19,6 +19,7 @@ use portable::lp8758::{BuckControl, BuckVoltage, Config};
 use portable::power::{PowerRails, RailPlan};
 use portable::sequence::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use portable::si5332::{ClockSequence, LvpeclOutput, Reference};
+use portable::stream::{EngineSequence, RxFormat, SyncTrigger};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
 use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
@@ -342,6 +343,85 @@ pub fn clock_reference_switch(external: bool, state: u8) -> Result<usize, &'stat
     )
 }
 
+/// Runs the real stream-engine setup for one 1024-sample `ci16` burst, then a duplex start
+/// and the RX and TX stops, answering the DMA status read with `status`; returns the
+/// register accesses made.
+///
+/// # Errors
+///
+/// The failing engine's name, or `"unexpected access"`.
+pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
+    let format = RxFormat {
+        samples_per_burst: 1024,
+        words_per_burst: 512,
+        bursts: 1,
+        burst_format: 0x0040_3fe7,
+    };
+    let mut accesses = 0;
+    for sequence in [
+        EngineSequence::rx_setup(Some(&format)),
+        EngineSequence::start(true, Some(2), SyncTrigger::Duplex),
+        EngineSequence::new().run_rx(false),
+        EngineSequence::new().stop_tx(),
+    ] {
+        accesses += engine(sequence, status)?;
+    }
+    Ok(accesses)
+}
+
+/// Runs the real stream controls: a sync write for every trigger, the throttle on and off,
+/// the host-ready signal and a TX mute; returns the register accesses made.
+///
+/// # Errors
+///
+/// As [`stream_engine`].
+pub fn stream_controls() -> Result<usize, &'static str> {
+    let triggers = [
+        SyncTrigger::Stop,
+        SyncTrigger::OnePps,
+        SyncTrigger::RxActivity,
+        SyncTrigger::TxActivity,
+        SyncTrigger::EitherActivity,
+        SyncTrigger::Duplex,
+        SyncTrigger::FreeRun,
+        SyncTrigger::GeneratedSysref,
+    ];
+    let mut controls = EngineSequence::new()
+        .throttle_rx(Some((1, 2)))
+        .throttle_rx(None)
+        .signal_rx_ready()
+        .update_tx_flags(3);
+    let mut accesses = engine(controls, 0)?;
+    for trigger in triggers {
+        controls = EngineSequence::new().sync(trigger);
+        accesses += engine(controls, 0)?;
+    }
+    Ok(accesses)
+}
+
+/// Drives one engine sequence to its end, answering reads with `status`.
+fn engine(mut sequence: EngineSequence, status: u32) -> Result<usize, &'static str> {
+    let mut accesses = 0;
+    while let Some(action) = sequence.next() {
+        let word = match action {
+            SequenceAction::Fpga(FpgaAccess::Read { .. }) => status,
+            SequenceAction::Fpga(FpgaAccess::Write { value, .. }) => value,
+            _ => return Err("unexpected access"),
+        };
+        sequence
+            .complete::<Infallible>(Ok(word))
+            .map_err(|failure| match failure {
+                SequenceFailure::ChipMissing { chip }
+                | SequenceFailure::ChipId { chip, .. }
+                | SequenceFailure::Transport { chip, .. }
+                | SequenceFailure::FpgaTransport { chip, .. }
+                | SequenceFailure::InputMissing { chip } => chip,
+            })?;
+        accesses += 1;
+    }
+    Ok(accesses)
+}
+
 /// Drives one sequence to its end with scripted reads; waits pass at once.
 fn drive(sequence: &mut impl Sequence, id: u8, state: u8) -> Result<usize, &'static str> {
     let mut actions = 0;
@@ -387,6 +467,15 @@ mod tests {
     }
 
     #[test]
+    fn the_exact_source_witness_runs_the_stream_engine_sequences() {
+        // Setup: status, two DMA writes, four front-end commands, two DMA sizes, the sync;
+        // start: RX run (two), TX start (three), the sync; RX halt (two); TX stop (one).
+        assert_eq!(stream_engine(0), Ok(10 + 6 + 2 + 1));
+        assert_eq!(stream_engine(0xffff_ffff), Err("RX DMA engine"));
+        assert_eq!(stream_controls(), Ok(4 + 8));
+    }
+
+    #[test]
     fn the_exact_source_witness_runs_every_fpga_action_through_the_register_machine() {
         // HWID readback: raw little-endian words with no length header (PIN 3670f15).
         let hwid = [0x00, 0x03, 0x00, 0x42];
@@ -396,6 +485,11 @@ mod tests {
             Err("USB register readback length differs from request")
         );
         assert_eq!(fpga_write(0, 1), Ok(0));
+        assert_eq!(
+            fpga_write(0x1_0100, 1),
+            Err("USB register commands address 16-bit physical registers"),
+            "the stream engine's configuration space is reached through the index window"
+        );
         // Scalar IRQ 2, sequence 0, SPI reply 0xabcd.
         let reply = [2, 0, 0, 0, 0xcd, 0xab, 0, 0];
         assert_eq!(spi_exchange(0, 0x8000_0001, &reply), Ok(0xabcd));

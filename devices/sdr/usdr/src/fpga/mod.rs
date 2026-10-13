@@ -15,10 +15,8 @@ pub(crate) use fe_gpio::{FrontEndGpio, PinMode};
 pub(crate) use gpio::{Gpi, Gpo, Hwid, IdentityRead};
 pub use phy::IqImbalance;
 pub(crate) use phy::{Decimation, Nco, Phy};
-pub(crate) use stream::{
-    BurstPlan, SyncTrigger, configure_rx, reset_rx_dma, run_rx, signal_rx_ready, sync, throttle_rx,
-};
+pub(crate) use stream::BurstPlan;
 pub(crate) use tx_stream::{
-    MAX_TX_PACKET_BYTES, MAX_TX_TIMESTAMP, TX_SAMPLE_BYTES, TxCoreStatus, extend_drop_count,
-    push_tx, read_tx_status, start_tx, stop_tx, update_tx_flags,
+    MAX_TX_TIMESTAMP, TX_SAMPLE_BYTES, TxCoreStatus, check_tx_gateware, extend_drop_count, push_tx,
+    read_tx_status, tx_block_bytes,
 };

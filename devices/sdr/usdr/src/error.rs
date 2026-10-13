@@ -5,6 +5,7 @@ pub use rsl_lowlevel::Access;
 use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
 use crate::portable::sequence::SequenceFailure;
+use crate::portable::stream::RX_DMA;
 use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, WireFormat};
 
 /// A failed driver operation.
@@ -330,6 +331,8 @@ impl From<SequenceFailure<BusError>> for Error {
                 expected,
                 found,
             },
+            // The stream engine's RX DMA reads dead as a missing chip reads absent.
+            SequenceFailure::ChipMissing { chip: RX_DMA } => Self::DmaEngineFault,
             SequenceFailure::ChipMissing { chip } => Self::ChipMissing(chip),
             // Only the Si5332's clock sequences report a missing input.
             SequenceFailure::InputMissing { .. } => Self::ClockInputMissing,

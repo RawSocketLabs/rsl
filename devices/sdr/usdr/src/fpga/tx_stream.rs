@@ -1,27 +1,29 @@
 //! The uSDR's TX stream engine: the original TX core (`CORE_SFETX_DMA32_R0`, libusdr's
 //! "Simple TX FE"), which takes `ci16` packets from the host's DMA buffers.
 //!
-//! The core takes three things: control commands, two words announcing each packet the
-//! host has written, and reads of its four status words. Its control register is the sync
-//! unit's: libusdr passes register 14 to the TX stream as its "sync base" and writes the
-//! core's commands there with bit 31 clear, where every sync-unit write sets it.
+//! The core takes three things: control commands (the portable machines in
+//! `portable/stream.rs` write them), two words announcing each packet the host has written,
+//! and reads of its four status words. This module holds the announcements, the status
+//! decoding and the checks a TX stream create makes.
 //!
-//! Source: `ipblks/streams/sfe_tx_4.c` (`sfe_tx4_ctl`, `sfe_tx4_upd`,
-//! `sfe_tx4_push_ring_buffer`, `MAX_TX_FIFO_SZ`) and `stream_sfetrx4_dma32.c`
-//! (`parse_txcore_stat`); addresses from `device/m2_lm6_1/m2_lm6_1.c`'s TX stream create
-//! (`M2PCI_REG_WR_TXDMA_CNF_L`, `M2PCI_REG_WR_SYNC_CTRL`, `M2PCI_REG_RD_TXDMA_STAT`).
+//! Source: `ipblks/streams/sfe_tx_4.c` (`sfe_tx4_push_ring_buffer`, `MAX_TX_FIFO_SZ`),
+//! `stream_sfetrx4_dma32.c` (`parse_txcore_stat`, `MINIM_FWID_COMPAT`); addresses from
+//! `device/m2_lm6_1/m2_lm6_1.c`'s TX stream create (`M2PCI_REG_WR_TXDMA_CNF_L`,
+//! `M2PCI_REG_RD_TXDMA_STAT`).
 
-use bnb::{BitEnum, bitfield, u2, u15};
+use bnb::{bitfield, u15};
 
 use super::gpio::FPGA;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
 
+/// The oldest gateware build libusdr streams TX from (`MINIM_FWID_COMPAT`), as the FPGA's
+/// `USR_ACCESS2` stamps it.
+const MIN_TX_GATEWARE: u32 = 0xd2b1_0c09;
+
 /// The first of the two words announcing a packet (`M2PCI_REG_WR_TXDMA_CNF_L`, then
 /// `_CNF_T`).
 const REG_TX_PUSH: u32 = 12;
-/// The core's control register, shared with the sync unit (`M2PCI_REG_WR_SYNC_CTRL`).
-const REG_TX_CONTROL: u32 = 14;
 /// The first of the core's four status words (`M2PCI_REG_RD_TXDMA_STAT`).
 const REG_TX_STATUS: u32 = 28;
 
@@ -35,55 +37,39 @@ pub(crate) const TX_SAMPLE_BYTES: u32 = 4;
 /// The largest timestamp the core takes: 47 bits.
 pub(crate) const MAX_TX_TIMESTAMP: u64 = (1 << 47) - 1;
 
-/// What a control write tells the core (`TX_CMD_*`).
-#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u2, closed)]
-#[repr(u8)]
-enum Command {
-    /// Stop.
-    Stop = 0,
-
-    /// Take the mute and swap flags, nothing else.
-    UpdateFlags = 1,
-
-    /// Start, 12-bit samples; libusdr never sends it to this core.
-    Start12 = 2,
-
-    /// Start, 16-bit samples.
-    Start16 = 3,
+/// Refuses TX on gateware built before libusdr's minimum, as its TX stream create does.
+///
+/// # Errors
+///
+/// [`Error::OutdatedGateware`] for a `build` stamped earlier than `MINIM_FWID_COMPAT`.
+pub(crate) fn check_tx_gateware(build: u32) -> Result<(), Error> {
+    if build_time(build) < build_time(MIN_TX_GATEWARE) {
+        return Err(Error::OutdatedGateware(build));
+    }
+    Ok(())
 }
 
-/// One write to the core's control register (`GP_PORT_TXDMA_CTRL_*`).
-#[bitfield(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Control {
-    /// Swap the lanes. `MODE_SWAP_AB`, bit 10.
-    #[bits(10..=10)]
-    swap_lanes: bool,
+/// The transport block for `samples_per_packet` `ci16` samples; libusdr fails a packet over
+/// the core's FIFO at create (`sfe_tx4_mtu_get`).
+///
+/// # Errors
+///
+/// [`Error::UnsupportedPacketSize`] for a packet over [`MAX_TX_PACKET_BYTES`].
+pub(crate) fn tx_block_bytes(samples_per_packet: u32) -> Result<u32, Error> {
+    samples_per_packet
+        .checked_mul(TX_SAMPLE_BYTES)
+        .filter(|&bytes| bytes <= MAX_TX_PACKET_BYTES)
+        .ok_or(Error::UnsupportedPacketSize(samples_per_packet))
+}
 
-    /// Mute lane A. `MODE_MUTEA`, bit 9.
-    #[bits(9..=9)]
-    mute_a: bool,
-
-    /// Mute lane B. `MODE_MUTEB`, bit 8.
-    #[bits(8..=8)]
-    mute_b: bool,
-
-    /// Reset the core's buffer pointers. `RESET_BUFS`, bit 7.
-    #[bits(7..=7)]
-    reset_buffers: bool,
-
-    /// The front end's channel count, as a power of two. `MODE_FMT`, bits 4:3.
-    #[bits(3..=4)]
-    channels_log2: u2,
-
-    /// Replay the buffers. `MODE_REP`, bit 2.
-    #[bits(2..=2)]
-    repeat: bool,
-
-    /// The command. Bits 1:0.
-    #[bits(0..=1)]
-    command: Command,
+/// libusdr's `get_xilinx_rev_h`: a Xilinx `USR_ACCESS` build stamp (day, month, year
+/// from 2000, hour, minute, second in bits 31:27, 26:23, 22:17, 16:12, 11:6, 5:0) as a
+/// number that sorts by build time.
+fn build_time(stamp: u32) -> u64 {
+    let field = |shift: u32, bits: u32| u64::from(stamp >> shift & ((1 << bits) - 1));
+    let (day, month, year) = (field(27, 5), field(23, 4), field(17, 6));
+    let (hour, minute, second) = (field(12, 5), field(6, 6), field(0, 6));
+    second + (minute + (hour + (day + (month + (2000 + year) * 100) * 100) * 100) * 100) * 100
 }
 
 /// The first word announcing a packet; the second is the timestamp's low 32 bits.
@@ -161,25 +147,6 @@ pub(crate) fn extend_drop_count(total: &mut u64, reading: u32) {
     *total = (*total & !0xff) | u64::from(reading);
 }
 
-/// Stops the core (`sfe_tx4_ctl` stopping, and the TX stream's destroy).
-pub(crate) fn stop_tx(bus: &mut dyn Bus) -> Result<(), Error> {
-    write_control(bus, Control::new())
-}
-
-/// Starts the core for one channel of 16-bit samples with `mute` (bit 0 lane A, bit 1
-/// lane B): stop, reset its buffer pointers, then start (`sfe_tx4_ctl`, unswapped, no
-/// replay).
-pub(crate) fn start_tx(bus: &mut dyn Bus, mute: u8) -> Result<(), Error> {
-    stop_tx(bus)?;
-    write_control(bus, Control::new().with_reset_buffers(true))?;
-    write_control(bus, flags(mute).with_command(Command::Start16))
-}
-
-/// Sets the core's mute flags, unswapped (`sfe_tx4_upd`).
-pub(crate) fn update_tx_flags(bus: &mut dyn Bus, mute: u8) -> Result<(), Error> {
-    write_control(bus, flags(mute).with_command(Command::UpdateFlags))
-}
-
 /// Announces a packet of `samples` the host has written to the next buffer, to play at
 /// `time`, or as soon as it arrives with `None` (`sfe_tx4_push_ring_buffer`, which
 /// libusdr's commit calls with a timestamp of -1 for "now").
@@ -208,19 +175,6 @@ pub(crate) fn read_tx_status(bus: &mut dyn Bus) -> Result<[u32; 4], Error> {
     Ok(words)
 }
 
-/// The mute flags of a control write, for one unswapped channel.
-fn flags(mute: u8) -> Control {
-    Control::new()
-        .with_mute_a(mute & 1 != 0)
-        .with_mute_b(mute & 2 != 0)
-}
-
-/// Writes the control register.
-fn write_control(bus: &mut dyn Bus, control: Control) -> Result<(), Error> {
-    bus.write_regs(REG_TX_CONTROL, &[control.to_raw()])
-        .writing(FPGA, REG_TX_CONTROL)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,13 +182,34 @@ mod tests {
     // Expected values: libusdr's `sfe_tx_4.c` shifts worked by hand.
 
     #[test]
-    fn a_one_channel_start_mutes_lane_b_in_libusdrs_word() {
-        // `TX_CMD_START_16BIT` (3) with `MODE_MUTEB` (bit 8): 0x103.
-        assert_eq!(flags(2).with_command(Command::Start16).to_raw(), 0x103);
-        // `RESET_BUFS` alone: bit 7.
-        assert_eq!(Control::new().with_reset_buffers(true).to_raw(), 0x80);
-        // `TX_CMD_UPD_FLAGS` muting both lanes: bits 9, 8 and command 1.
-        assert_eq!(flags(3).with_command(Command::UpdateFlags).to_raw(), 0x301);
+    fn builds_sort_by_date_not_by_their_raw_bits() {
+        let minimum = build_time(MIN_TX_GATEWARE);
+        assert!(
+            build_time(MIN_TX_GATEWARE - 1) < minimum,
+            "a second earlier"
+        );
+        // Day 1 of a later year: a smaller word, a later build.
+        let next_year_day_one = 1 << 27 | ((MIN_TX_GATEWARE >> 17 & 0x3f) + 1) << 17;
+        assert!(next_year_day_one < MIN_TX_GATEWARE);
+        assert!(build_time(next_year_day_one) > minimum);
+        assert!(check_tx_gateware(next_year_day_one).is_ok());
+        assert!(matches!(
+            check_tx_gateware(MIN_TX_GATEWARE - 1),
+            Err(Error::OutdatedGateware(_))
+        ));
+    }
+
+    #[test]
+    fn a_tx_block_holds_at_most_the_cores_fifo() {
+        assert_eq!(tx_block_bytes(31_744).ok(), Some(MAX_TX_PACKET_BYTES));
+        assert!(matches!(
+            tx_block_bytes(31_745),
+            Err(Error::UnsupportedPacketSize(31_745))
+        ));
+        assert!(matches!(
+            tx_block_bytes(u32::MAX),
+            Err(Error::UnsupportedPacketSize(_))
+        ));
     }
 
     #[test]

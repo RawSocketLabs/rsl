@@ -8,6 +8,7 @@ pub(crate) mod power;
 pub(crate) mod register;
 pub(crate) mod sequence;
 pub(crate) mod si5332;
+pub(crate) mod stream;
 pub(crate) mod temperature;
 pub(crate) mod tps6381x;
 #[cfg(feature = "usb")]

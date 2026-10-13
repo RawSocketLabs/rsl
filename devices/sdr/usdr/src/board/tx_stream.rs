@@ -17,18 +17,16 @@ use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
 use super::stream::{CHUNK_SAMPLES, MAX_HOST_SAMPLE_BYTES};
+use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
-use crate::fpga::{self, MAX_TX_PACKET_BYTES, MAX_TX_TIMESTAMP, Phy, SyncTrigger, TxCoreStatus};
-use crate::lowlevel::{Bus, BusError, TxCommit};
+use crate::fpga::{self, MAX_TX_TIMESTAMP, Phy, TxCoreStatus};
+use crate::lowlevel::{BusError, TxCommit};
+use crate::portable::stream::{EngineSequence, SyncTrigger};
 use crate::stream::{
     HostFormat, HostSample, StreamTime, SyncMode, TxChannels, TxConfig, TxMute, TxTelemetry,
     WireFormat,
 };
-
-/// The oldest gateware build libusdr streams TX from (`MINIM_FWID_COMPAT`), as the FPGA's
-/// `USR_ACCESS2` stamps it.
-const MIN_TX_GATEWARE: u32 = 0xd2b1_0c09;
 
 /// A created TX stream's bookkeeping (libusdr's `stream_sfetrx_dma32_t` for TX).
 #[derive(Debug)]
@@ -56,9 +54,9 @@ pub(crate) struct TxStream {
 }
 
 impl TxStream {
-    /// Starts the TX core with the stream's mute flags (`_sfetrx4_op` starting TX).
-    pub(super) fn start(&self, bus: &mut dyn Bus) -> Result<(), Error> {
-        fpga::start_tx(bus, self.mute.bits())
+    /// The lanes muted, which starting the core applies (`_sfetrx4_op` starting TX).
+    pub(super) const fn mute(&self) -> TxMute {
+        self.mute
     }
 
     /// Takes a buffer's status words into the drop counts and reports them, as
@@ -77,44 +75,39 @@ impl TxStream {
     }
 }
 
-impl Board {
+impl TxConfig {
     /// Refuses, before any bus access, a TX stream the ported core cannot take: the
-    /// gateware's extended TX core, whose setup is not ported; any wire format but `ci16`,
-    /// which libusdr refuses only after powering the transmitter; a real host format; and
-    /// a packet size of 0.
+    /// gateware's extended TX core (`extended_tx_core`), whose setup is not ported; any
+    /// wire format but `ci16`, which libusdr refuses only after powering the transmitter; a
+    /// real host format; and a packet size of 0.
     ///
     /// Intentional divergences: libusdr takes a size of 0 to mean the transport's largest
     /// buffer (its `PCIe` driver's, capped at the core's FIFO); a `TxConfig` names its size.
     /// libusdr copies a real host buffer's bytes onto the complex wire unconverted (its
     /// converter lookup falls back to a copy).
-    pub(super) fn check_tx_stream(&self, config: TxConfig) -> Result<(), Error> {
-        if self.chains.extended_tx_core {
+    pub(crate) fn check(self, extended_tx_core: bool) -> Result<(), Error> {
+        if extended_tx_core {
             return Err(Error::UnsupportedTxCore);
         }
-        if config.wire != WireFormat::Ci16 {
-            return Err(Error::UnsupportedWireFormat(config.wire));
+        if self.wire != WireFormat::Ci16 {
+            return Err(Error::UnsupportedWireFormat(self.wire));
         }
-        if Converter::new(
-            config.host.sample_format(),
-            config.wire.sample_format(),
-            1,
-            1,
-        )
-        .is_err()
-        {
+        if Converter::new(self.host.sample_format(), self.wire.sample_format(), 1, 1).is_err() {
             return Err(Error::NoConversion {
-                host: config.host,
-                wire: config.wire,
+                host: self.host,
+                wire: self.wire,
             });
         }
-        if config.samples_per_packet == 0 {
+        if self.samples_per_packet == 0 {
             return Err(Error::UnsupportedPacketSize(0));
         }
         Ok(())
     }
+}
 
+impl Board {
     /// libusdr's stream create for TX on the original core (`initialize_stream_tx_32`),
-    /// joining the group made to start with `mode`. Call [`Board::check_tx_stream`] first.
+    /// joining the group made to start with `mode`. Call [`TxConfig::check`] first.
     ///
     /// Divergence on a failed read only: libusdr logs a failed gateware read and compares
     /// whatever it holds; this returns the failure.
@@ -130,7 +123,7 @@ impl Board {
             channels,
         } = config;
         let converter = Converter::new(host.sample_format(), wire.sample_format(), 1, 1)
-            .expect("invariant: check_tx_stream refused hosts with no converter to ci16");
+            .expect("invariant: TxConfig::check refused hosts with no converter to ci16");
         // `usdr_rfic_streaming_up`: libusdr takes its wake-up wait even when powering fails.
         let waking = !self.tx_running;
         self.tx_running = true;
@@ -139,17 +132,10 @@ impl Board {
             self.bus.sleep(Duration::from_millis(1));
         }
         powered?;
-        let build = self.identity()?.gateware_build;
-        if build_time(build) < build_time(MIN_TX_GATEWARE) {
-            return Err(Error::OutdatedGateware(build));
-        }
+        fpga::check_tx_gateware(self.identity()?.gateware_build)?;
         let bus = self.bus.as_mut();
-        fpga::sync(bus, SyncTrigger::Stop)?;
-        // libusdr fails a packet over the core's FIFO here (`sfe_tx4_mtu_get`).
-        let block_bytes = samples_per_packet
-            .checked_mul(fpga::TX_SAMPLE_BYTES)
-            .filter(|&bytes| bytes <= MAX_TX_PACKET_BYTES)
-            .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
+        run_sequence(bus, &mut EngineSequence::new().sync(SyncTrigger::Stop))?;
+        let block_bytes = fpga::tx_block_bytes(samples_per_packet)?;
         bus.tx_stream_open(block_bytes, fpga::TX_SAMPLE_BYTES)
             .map_err(Error::Stream)?;
         self.group(mode).tx = Some(TxStream {
@@ -177,7 +163,7 @@ impl Board {
         // `usdr_rfic_streaming_down`.
         self.tx_running = false;
         let powered_down = self.set_tx_power(false);
-        let halted = fpga::stop_tx(self.bus.as_mut());
+        let halted = run_sequence(self.bus.as_mut(), &mut EngineSequence::new().stop_tx());
         let closed = self.bus.tx_stream_close().map_err(Error::Stream);
         debug!("TX stream stopped");
         powered_down.and(halted).and(closed)
@@ -190,7 +176,8 @@ impl Board {
             return Err(Error::NotStreaming);
         };
         stream.mute = mute;
-        fpga::update_tx_flags(self.bus.as_mut(), mute.bits())
+        let mut update = EngineSequence::new().update_tx_flags(mute.bits());
+        run_sequence(self.bus.as_mut(), &mut update)
     }
 
     /// Sends one packet: the front of each channel's buffer, all of it, waiting up to
@@ -297,36 +284,12 @@ fn convert<S: HostSample>(converter: &Converter, samples: &[S], wire: &mut [u8])
             .expect("invariant: the converter takes one buffer each side");
     }
 }
-
-/// libusdr's `get_xilinx_rev_h`: a Xilinx `USR_ACCESS` build stamp (day, month, year
-/// from 2000, hour, minute, second in bits 31:27, 26:23, 22:17, 16:12, 11:6, 5:0) as a
-/// number that sorts by build time.
-fn build_time(stamp: u32) -> u64 {
-    let field = |shift: u32, bits: u32| u64::from(stamp >> shift & ((1 << bits) - 1));
-    let (day, month, year) = (field(27, 5), field(23, 4), field(17, 6));
-    let (hour, minute, second) = (field(12, 5), field(6, 6), field(0, 6));
-    second + (minute + (hour + (day + (month + (2000 + year) * 100) * 100) * 100) * 100) * 100
-}
-
 #[cfg(test)]
 mod tests {
     use num_complex::Complex;
 
     use super::*;
     use crate::dsp::SampleFormat;
-
-    #[test]
-    fn builds_sort_by_date_not_by_their_raw_bits() {
-        let minimum = build_time(MIN_TX_GATEWARE);
-        assert!(
-            build_time(MIN_TX_GATEWARE - 1) < minimum,
-            "a second earlier"
-        );
-        // Day 1 of a later year: a smaller word, a later build.
-        let next_year_day_one = 1 << 27 | ((MIN_TX_GATEWARE >> 17 & 0x3f) + 1) << 17;
-        assert!(next_year_day_one < MIN_TX_GATEWARE);
-        assert!(build_time(next_year_day_one) > minimum);
-    }
 
     #[test]
     fn chunked_conversion_equals_one_call() {
