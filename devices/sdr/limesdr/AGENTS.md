@@ -10,9 +10,9 @@ oracle. The driver covers the open (`limesdr_init`), power-up, sample rate, RX/T
 tuning, gains, baseband bandwidths, the automatic antenna switching and the LMS7002M's
 stream preparation (`limesdr_prepare_streaming`), and the close, over an LMS64C control
 channel; no hardware transport exists yet, so no stream runs. See [PORTING.md](PORTING.md)
-for done, divergences and remaining. Board: an FT601 USB 3 bridge, gateware with a 16-bit register
-file, firmware answering LMS64C control frames, and an LMS7002M RFIC. Nothing here is
-hardware-qualified.
+for done, divergences and remaining. Board: an FT601 USB 3 bridge, gateware with a 16-bit
+register file, firmware answering LMS64C control frames, and an LMS7002M RFIC. Nothing here
+is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
@@ -60,7 +60,9 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   `rate.rs`: `SetSampleRate` (`limesdr_set_samplerate`). `stream.rs`: `PrepareStreaming`
   (`limesdr_prepare_streaming`).
 - `src/error.rs`: `Error` and `ExchangeError` (transport failure, a reply status other
-  than completed, or a reply to another command).
+  than completed, or a reply to another command). `src/gain.rs`: `Gain`, libusdr's gain
+  paths on this family. The control code's refusals are mapped per operation in
+  `device.rs`; those this board cannot meet (no channel, an unsound rate) are invariants.
 - `tests/common/sim_port.rs`: `ControlPort` over `limesdr-sim`; the oracle's parity
   tests include it with `#[path]`.
 
@@ -94,9 +96,9 @@ vendored**: `vendor.sh` excludes it) turns them into LMS64C frames. Open uses:
 
 The rate, tuning, gain, bandwidth and stream-preparation paths use HWREG (16-bit
 read-modify-writes of 0x0005 and 0x0017) and SPI only. No DRP, URAM, I2C or GPI/GPO
-operation occurs. `/dm/power/en` is a no-op
-(`dev_limesdr_pwren_set`) and close issues nothing (`limesdr_dtor` is a TODO): libusdr
-leaves streaming, the LMS7002M and its reset pin as init left them.
+operation occurs. `/dm/power/en` is a no-op (`dev_limesdr_pwren_set`) and close issues
+nothing (`limesdr_dtor` is a TODO): libusdr leaves streaming, the LMS7002M and its reset
+pin as init and later operations left them.
 
 LMS64C (`ipblks/lms64c_proto.{c,h}`, `lms64c_cmds.h`): 64-byte frames, header `cmd`,
 `status`, `blockCount`, `periphID`, 4 reserved, then 56 data bytes. `lms64c_fill_packet`
@@ -186,13 +188,14 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
   (`cgen_clk` stays 0), `lms7002m_streaming_up` computes a bandwidth of 0 and
   `lms7002m_rbb_lpf_def` divides by it. `limesdr` refuses with
   `Error::NoSampleRate` before streaming up writes anything (`lms7002m`'s
-  `ControlError::NoRate`).
+  `ControlError::NoRate`), leaving the run flags as they were, so later tunings move no
+  antenna switch.
 - The device-manager handlers take their `u64` as an `int` gain or an `unsigned`
   frequency or bandwidth (truncated; a frequency through `double`); `limesdr` takes
   `i32` and `u32`. `/dm/sdr/0/{rx,tx}/path` and `/dm/sdr/refclk/path` do nothing: the
   paths stay automatic, the antenna switches following the LOs once streaming is
-  prepared. The TX PGA gain has no path on this family. `/dm/rate/rxtxadcdac`'s
-  converter floors are not offered.
+  prepared. The TX PGA gain has no path on this family, so `limesdr`'s `Gain` has
+  none either. `/dm/rate/rxtxadcdac`'s converter floors are not offered.
 - `lms64c_parse_packet` consumes 56 output bytes per reply frame while
   `lms64c_fill_packet` puts 14 addresses (28 output bytes) in each read request, and reads
   past the 56-byte payload for more than 14: reads over 14 registers misparse.
@@ -214,8 +217,8 @@ by `oracle/tests/control_parity.rs`), streams, `stream_limesdr.c`.
 The driver is compared with live libusdr, not with this file: `oracle/tests/open_parity.rs`
 runs both drivers' whole sessions (every golden line, frames included) and the variants
 above; `oracle/tests/control_parity.rs` everything the rate, tuning, gain, bandwidth and
-stream-preparation paths do between the open and the close; `oracle/tests/lms64c_parity.rs` compares the codec with `lms64c_fill_packet` and
-`lms64c_parse_packet` byte for byte.
+stream-preparation paths do between the open and the close; `oracle/tests/lms64c_parity.rs`
+compares the codec with `lms64c_fill_packet` and `lms64c_parse_packet` byte for byte.
 
 ## Verify
 
