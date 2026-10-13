@@ -481,7 +481,9 @@ impl Control {
     ///
     /// No channel in a direction is [`ControlError::NoChannel`], and a streamed channel
     /// with neither a set bandwidth nor a sample rate [`ControlError::NoRate`], both
-    /// before any write or state change.
+    /// before any write or state change. libusdr has already recorded the RX channels and
+    /// map when it refuses a TX direction without channels (`lml_rx_chs`, `map_rx`); this
+    /// leaves them as they were.
     #[must_use]
     pub fn streaming_up<F: Frontend>(
         mut self,
@@ -660,13 +662,17 @@ impl<F: Frontend> Sequence for Operation<F> {
 
 #[cfg(test)]
 mod tests {
-    use hal::SpiAddr;
+    use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
     use crate::TxPath;
+    use crate::chip::LmlMap;
     use crate::chip::Lms7002m;
     use crate::ctrl::{Clocks, RateFlags, RxAntenna, TxAntenna};
-    use crate::regs::RxPath;
+    use crate::reg::Reg;
+    extern crate std;
+    use crate::regs::{LmlControl, LmlSample, RxPath};
+    use std::vec::Vec;
 
     /// A created chip's control state on a 26 MHz reference.
     fn control() -> Control {
@@ -741,6 +747,140 @@ mod tests {
             assert_eq!(op.next(), None, "TX on {tx:?}: no write, RX's included");
             assert_eq!(op.outcome(), Some(Err(refusal)));
             assert_eq!(op.control().rx_running(), [false; 2], "nothing runs");
+        }
+    }
+
+    /// A board whose antenna switch is one gateware write: register 0 for RX, 1 for TX,
+    /// of the position.
+    #[derive(Clone, Copy, Debug)]
+    struct Switches;
+
+    /// [`Switches`]' switch.
+    #[derive(Clone, Copy, Debug)]
+    struct Switch(Option<FpgaAccess>);
+
+    impl Sequence for Switch {
+        fn next(&self) -> Option<SequenceAction> {
+            self.0.map(SequenceAction::Fpga)
+        }
+
+        fn complete<E>(&mut self, _result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+            self.0 = None;
+            Ok(())
+        }
+    }
+
+    impl Frontend for Switches {
+        type Switch = Switch;
+
+        fn antenna_switch(&self, direction: Direction, position: u8) -> Switch {
+            Switch(Some(FpgaAccess::Write {
+                reg: u32::from(direction == Direction::Tx),
+                value: position.into(),
+            }))
+        }
+
+        fn lml_map(&self, _rx: bool, _channels: Mac, _flags: StreamFlags) -> LmlMap {
+            [LmlSample::AI, LmlSample::AQ, LmlSample::BI, LmlSample::BQ]
+        }
+    }
+
+    /// What an operation did: each LMS7002M write (address, value) and each switch
+    /// (`u16::MAX - register`, position), in order.
+    fn run<F: Frontend>(mut op: Operation<F>) -> (Vec<(u16, u16)>, Operation<F>) {
+        let mut done = Vec::new();
+        while let Some(action) = op.next() {
+            match action {
+                SequenceAction::Fpga(FpgaAccess::Spi { word, .. }) if word >> 31 == 1 => {
+                    let [high, low] = [word >> 16 & 0x7fff, word & 0xffff]
+                        .map(|half| u16::try_from(half).expect("16 bits"));
+                    done.push((high, low));
+                }
+                SequenceAction::Fpga(FpgaAccess::Write { reg, value }) => done.push((
+                    u16::MAX - u16::try_from(reg).expect("0 or 1"),
+                    u16::try_from(value).expect("a position"),
+                )),
+                _ => {}
+            }
+            op.complete::<()>(Ok(0)).expect("no failure");
+        }
+        (done, op)
+    }
+
+    /// The bank selection the last `LML_0x0020` write before `at` made.
+    fn mac_before(done: &[(u16, u16)], at: usize) -> Mac {
+        let &(_, value) = done[..at]
+            .iter()
+            .rev()
+            .find(|(addr, _)| *addr == Reg::LmlControl as u16)
+            .expect("a bank selection");
+        LmlControl::from_raw(value).mac()
+    }
+
+    /// A created chip with RX and TX at 1 MS/s, its TX streamed SISO when `tx_siso`.
+    fn rated(tx_siso: bool) -> Control {
+        let mut rated = control();
+        rated.clocks = Clocks {
+            cgen: 32_000_000,
+            rx_converter_div: 4,
+            tx_converter_div: 4,
+            rx_tsp_div: 8,
+            tx_tsp_div: 8,
+            rx_decimation: 1,
+            tx_interpolation: 1,
+        };
+        rated.tx_siso = tx_siso;
+        rated
+    }
+
+    #[test]
+    fn the_transmit_half_selects_its_own_banks_before_its_processor_and_its_band() {
+        let swapped = StreamFlags {
+            swap_ab: true,
+            ..StreamFlags::default()
+        };
+        for (tx_siso, banks, running) in [
+            (false, Mac::Both, [true, true]),
+            (true, Mac::B, [false, true]),
+        ] {
+            let op = rated(tx_siso).streaming_up(
+                Switches,
+                (Mac::A, StreamFlags::default()),
+                Some((Mac::Both, swapped)),
+            );
+            let (done, op) = run(op);
+            assert_eq!(op.outcome(), Some(Ok(())), "SISO {tx_siso}");
+            let tx_processor = done
+                .iter()
+                .position(|(addr, _)| *addr == Reg::TxTspBypass as u16)
+                .expect("TX processor writes");
+            assert_eq!(
+                mac_before(&done, tx_processor),
+                banks,
+                "SISO {tx_siso}: TX's banks (A after RX), not RX's"
+            );
+            assert!(
+                done[..tx_processor]
+                    .iter()
+                    .any(|&(addr, _)| addr == u16::MAX),
+                "RX's switch first"
+            );
+            let band = done
+                .iter()
+                .rposition(|(addr, _)| *addr == Reg::TxBand as u16)
+                .expect("the band write");
+            assert_eq!(
+                mac_before(&done, band),
+                banks,
+                "SISO {tx_siso}: the band on TX's banks again, after the restore loop"
+            );
+            assert_eq!(
+                done.last(),
+                Some(&(u16::MAX - 1, 0)),
+                "TX's switch last, the only band's"
+            );
+            assert_eq!(op.control().tx_running(), running, "SISO {tx_siso}");
+            assert_eq!(op.control().rx_running(), [true, false]);
         }
     }
 }
