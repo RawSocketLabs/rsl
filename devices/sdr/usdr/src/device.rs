@@ -912,7 +912,7 @@ impl Device {
     }
 
     /// The powered board.
-    fn board(&mut self) -> &mut Board {
+    pub(crate) fn board(&mut self) -> &mut Board {
         self.board
             .as_mut()
             .expect("invariant: a Device owns its board until close or drop")

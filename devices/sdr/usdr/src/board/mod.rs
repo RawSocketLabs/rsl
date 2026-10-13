@@ -21,4 +21,5 @@ pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use gain::{RxGain, TxGain};
 pub use path::{RxPath, TxPath};
 pub(crate) use rate::RateChains;
+pub(crate) use stream::Direction;
 pub use stream::{RxPacket, RxThrottle};

@@ -21,7 +21,7 @@ use crate::dsp::Converter;
 use crate::error::Error;
 use crate::fpga::{BurstPlan, Phy};
 use crate::lowlevel::BusError;
-use crate::portable::stream::{EngineSequence, SyncTrigger};
+use crate::portable::stream::{EngineSequence, StartPart, SyncTrigger};
 use crate::stream::{
     HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig, SyncMode,
     WireFormat,
@@ -60,6 +60,16 @@ pub struct RxPacket {
 
     /// Packets lost since the stream started, as the gateware reports them.
     pub lost_packets: u64,
+}
+
+/// The direction of one of a group's streams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Direction {
+    /// The RX stream (`/ll/srx/0`).
+    Rx,
+
+    /// The TX stream (`/ll/stx/0`).
+    Tx,
 }
 
 /// The stream group: the streams created so far and how they start. It exists from the
@@ -198,26 +208,76 @@ impl Board {
     /// As in libusdr, a stream whose transport buffers are set up stays when a later step
     /// fails, and so does the group holding it, until [`Board::stop_streams`].
     pub(crate) fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
+        self.check_streams(config)?;
+        self.create_stream(config, Direction::Rx)?;
+        self.create_stream(config, Direction::Tx)
+    }
+
+    /// The refusals [`Board::create_streams`] makes before any bus access: an existing
+    /// group, then [`StreamsConfig::check`] for this board's gateware.
+    pub(crate) fn check_streams(&self, config: StreamsConfig) -> Result<(), Error> {
         if self.streams.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let converter = config.check(self.chains.extended_tx_core)?;
-        if let Some((rx, converter)) = config.rx.zip(converter) {
-            self.create_rx_stream(rx, converter, config.sync)?;
-        }
-        if let Some(tx) = config.tx {
-            self.create_tx_stream(tx, config.sync)?;
-        }
-        Ok(())
+        config.check(self.chains.extended_tx_core).map(|_| ())
     }
 
-    /// Synchronises and starts the group ([`EngineSequence::start`]: RX alone syncs, then
-    /// runs; with TX, RX runs, then TX starts, then the group syncs).
+    /// Creates `config`'s stream in `direction`, if it has one, joining the group: one
+    /// `usdr_dms_create` of [`Board::create_streams`]. Call [`Board::check_streams`]
+    /// first; a multi-device aggregate creates each direction on every device in turn.
+    pub(crate) fn create_stream(
+        &mut self,
+        config: StreamsConfig,
+        direction: Direction,
+    ) -> Result<(), Error> {
+        match direction {
+            Direction::Rx => {
+                let converter = config.check(self.chains.extended_tx_core)?;
+                match config.rx.zip(converter) {
+                    Some((rx, converter)) => self.create_rx_stream(rx, converter, config.sync),
+                    None => Ok(()),
+                }
+            }
+            Direction::Tx => match config.tx {
+                Some(tx) => self.create_tx_stream(tx, config.sync),
+                None => Ok(()),
+            },
+        }
+    }
+
+    /// Synchronises and starts the group: its [`Board::start_parts`] in one sequence
+    /// ([`EngineSequence::start`]: RX alone syncs, then runs; with TX, RX runs, then TX
+    /// starts, then the group syncs).
     ///
     /// The trigger is for the streams the group holds: after a failed create left only
     /// RX, `SyncMode::All` waits for RX alone, as libusdr's sync of the handles it has.
     pub(crate) fn start_streams(&mut self) -> Result<(), Error> {
-        let Some(group) = self.streams.as_mut() else {
+        let (rx, tx_mute, trigger) = self.start_plan()?;
+        let mut start = EngineSequence::start(rx, tx_mute, trigger);
+        run_sequence(self.bus.as_mut(), &mut start)?;
+        self.mark_started(true);
+        Ok(())
+    }
+
+    /// The parts that start the group, in order ([`StartPart::order`]): those
+    /// [`Board::start_streams`] runs as one sequence.
+    ///
+    /// # Errors
+    ///
+    /// As [`Board::start_plan`].
+    pub(crate) fn start_parts(&self) -> Result<[Option<StartPart>; 3], Error> {
+        let (rx, tx_mute, trigger) = self.start_plan()?;
+        Ok(StartPart::order(rx, tx_mute, trigger))
+    }
+
+    /// What the group's start needs: whether it has an RX stream, its TX stream's mute,
+    /// if it has one, and the trigger for those streams in its sync mode.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotStreaming`] with no group, [`Error::AlreadyStreaming`] once started.
+    fn start_plan(&self) -> Result<(bool, Option<u8>, SyncTrigger), Error> {
+        let Some(group) = self.streams.as_ref() else {
             return Err(Error::NotStreaming);
         };
         if group.started {
@@ -225,10 +285,38 @@ impl Board {
         }
         let trigger = group.mode.trigger(group.rx.is_some(), group.tx.is_some())?;
         let tx_mute = group.tx.as_ref().map(|tx| tx.mute().bits());
-        let mut start = EngineSequence::start(group.rx.is_some(), tx_mute, trigger);
-        run_sequence(self.bus.as_mut(), &mut start)?;
-        group.started = true;
+        Ok((group.rx.is_some(), tx_mute, trigger))
+    }
+
+    /// Runs one of [`Board::start_parts`]; the group counts as started once `last` has
+    /// run. A multi-device aggregate runs each part on every device in turn.
+    pub(crate) fn start_part(&mut self, part: StartPart, last: bool) -> Result<(), Error> {
+        match self.streams.as_ref() {
+            None => return Err(Error::NotStreaming),
+            Some(group) if group.started => return Err(Error::AlreadyStreaming),
+            Some(_) => {}
+        }
+        let mut sequence = EngineSequence::new().start_part(part);
+        run_sequence(self.bus.as_mut(), &mut sequence)?;
+        self.mark_started(last);
         Ok(())
+    }
+
+    /// Has the sync unit generate SYSREF (`usdr_dms_sync(.., "sysref+gen", ..)` with no
+    /// streams): libusdr's multi-device aggregate does so on its master once every
+    /// device waits for 1PPS.
+    pub(crate) fn generate_sysref(&mut self) -> Result<(), Error> {
+        run_sequence(
+            self.bus.as_mut(),
+            &mut EngineSequence::new().sync(SyncTrigger::GeneratedSysref),
+        )
+    }
+
+    /// Records whether the group, if any, has started.
+    fn mark_started(&mut self, started: bool) {
+        if let Some(group) = self.streams.as_mut() {
+            group.started = started;
+        }
     }
 
     /// Creates, starts and free-runs a `ci16` channel-0 RX stream with `samples_per_packet`
@@ -351,6 +439,12 @@ impl Board {
     pub(crate) fn rx_packet_samples(&self) -> Option<u32> {
         let rx = self.streams.as_ref()?.rx.as_ref()?;
         Some(rx.samples_per_packet)
+    }
+
+    /// Host buffers one receive fills, with an RX stream.
+    pub(crate) fn rx_channel_count(&self) -> Option<usize> {
+        let rx = self.streams.as_ref()?.rx.as_ref()?;
+        Some(rx.channels.count())
     }
 
     /// Whether a stream group exists.

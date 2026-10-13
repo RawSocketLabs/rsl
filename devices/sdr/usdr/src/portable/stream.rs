@@ -149,6 +149,47 @@ struct DmaControl {
     enabled: bool,
 }
 
+/// One part of a stream group's start: `USDR_DMS_START` of one stream, or `usdr_dms_sync`.
+/// A device runs a group's parts as one sequence ([`EngineSequence::start`]); libusdr's
+/// multi-device aggregate runs each part on every device before the next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StartPart {
+    /// Run the RX DMA and front end.
+    RunRx,
+
+    /// Start the TX core with its lanes muted as `mute` says (bit 0 lane A, bit 1 lane B).
+    StartTx {
+        /// The mute mask.
+        mute: u8,
+    },
+
+    /// Set the sync unit's trigger.
+    Sync(SyncTrigger),
+}
+
+impl StartPart {
+    /// The parts that start a group with an RX stream if `rx` and a TX stream muted as
+    /// `tx_mute` says, if any, on `trigger`, in order: RX alone syncs, then runs
+    /// (`usdr_dms_sync`, then `USDR_DMS_START`, the order `dm_stream.h` prescribes); with
+    /// TX, RX runs, then TX starts, then the group syncs, the order every libusdr client
+    /// uses, because the TX core's start writes the sync unit's register.
+    pub(crate) const fn order(
+        rx: bool,
+        tx_mute: Option<u8>,
+        trigger: SyncTrigger,
+    ) -> [Option<Self>; 3] {
+        let run_rx = if rx { Some(Self::RunRx) } else { None };
+        match tx_mute {
+            None => [Some(Self::Sync(trigger)), run_rx, None],
+            Some(mute) => [
+                run_rx,
+                Some(Self::StartTx { mute }),
+                Some(Self::Sync(trigger)),
+            ],
+        }
+    }
+}
+
 /// The sync unit's modes (`ST_*`), those the stream group uses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncTrigger {
@@ -355,15 +396,20 @@ impl EngineSequence {
     }
 
     /// Starts a group with an RX stream if `rx` and a TX stream muted as `tx_mute` says,
-    /// if any, on `trigger`: RX alone syncs, then runs (`usdr_dms_sync`, then
-    /// `USDR_DMS_START`, the order `dm_stream.h` prescribes); with TX, RX runs, then TX
-    /// starts, then the group syncs, the order every libusdr client uses, because the TX
-    /// core's start writes the sync unit's register.
+    /// if any, on `trigger`: its [`StartPart::order`] in one sequence.
     pub(crate) fn start(rx: bool, tx_mute: Option<u8>, trigger: SyncTrigger) -> Self {
-        let rx_run = |sequence: Self| if rx { sequence.run_rx(true) } else { sequence };
-        match tx_mute {
-            None => rx_run(Self::new().sync(trigger)),
-            Some(mute) => rx_run(Self::new()).start_tx(mute).sync(trigger),
+        StartPart::order(rx, tx_mute, trigger)
+            .into_iter()
+            .flatten()
+            .fold(Self::new(), Self::start_part)
+    }
+
+    /// One part of a group's start.
+    pub(crate) fn start_part(self, part: StartPart) -> Self {
+        match part {
+            StartPart::RunRx => self.run_rx(true),
+            StartPart::StartTx { mute } => self.start_tx(mute),
+            StartPart::Sync(trigger) => self.sync(trigger),
         }
     }
 

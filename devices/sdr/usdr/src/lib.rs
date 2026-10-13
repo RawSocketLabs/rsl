@@ -132,6 +132,7 @@ mod fpga;
 pub mod frontend;
 mod identity;
 pub mod lowlevel;
+mod multi;
 mod portable;
 mod reference;
 mod stream;
@@ -147,6 +148,7 @@ pub use error::{Access, Error};
 pub use fpga::IqImbalance;
 pub use frontend::{FrontEndKind, FrontEndSelection};
 pub use identity::Identity;
+pub use multi::{MultiDevice, MultiError, MultiStep, Outcome};
 pub use reference::ReferenceClock;
 pub use stream::{
     Ci12, HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig,

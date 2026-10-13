@@ -148,6 +148,12 @@ pub enum Error {
     #[error("no stream to create")]
     NoStreams,
 
+    /// A device of a [`MultiDevice`](crate::MultiDevice) holds other streams than its
+    /// master, as a failed create leaves them, so the aggregate cannot start them
+    /// together.
+    #[error("the device's streams differ from its aggregate master's")]
+    UnmatchedStreams,
+
     /// A synchronisation mode libusdr's uSDR stream sync (`sfetrx4_stream_sync`) refuses.
     #[error("unsupported stream synchronisation {0:?}")]
     UnsupportedSync(SyncMode),

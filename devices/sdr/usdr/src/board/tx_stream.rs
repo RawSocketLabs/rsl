@@ -169,6 +169,12 @@ impl Board {
         powered_down.and(halted).and(closed)
     }
 
+    /// Host buffers one send takes, with a TX stream.
+    pub(crate) fn tx_channel_count(&self) -> Option<usize> {
+        let tx = self.streams.as_ref()?.tx.as_ref()?;
+        Some(tx.channels.count())
+    }
+
     /// Mutes the core's lanes as `mute` says (`_sfetrx4_option_set`'s `"mute"` on the
     /// original core); starting the stream applies it too.
     pub(crate) fn set_tx_mute(&mut self, mute: TxMute) -> Result<(), Error> {
