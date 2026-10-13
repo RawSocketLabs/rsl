@@ -26,7 +26,8 @@ fn run<C, R>(
     rust: impl FnOnce(&mut VerilatorBus, &Peer) -> R,
 ) -> ((Trace, C), (Trace, R)) {
     let peer = Peer::start(&format!("{name}-c"));
-    let mut bridge = Bridge::open(peer.dir()).expect("libusdr's bridge connects");
+    // SAFETY: the model announces the uSDR's UUID and made its 4 GiB shared file.
+    let mut bridge = unsafe { Bridge::open(peer.dir()) }.expect("libusdr's bridge connects");
     let from_c = c(&mut bridge, &peer);
     peer.settle();
     drop(bridge);
@@ -203,6 +204,43 @@ fn spi_and_i2c_match_libusdrs_bridge_on_the_wire_and_return_the_models_replies()
     for (read, command) in reads.zip(commands) {
         assert_eq!(read[..], i2c_reply(command).to_le_bytes()[..read.len()]);
     }
+}
+
+/// 600 notifications take the ring through its phase flip at entry 256 and its wrap at 512,
+/// acknowledging every 32nd entry on the way.
+#[test]
+fn the_notification_ring_wraps_and_is_acknowledged_like_libusdrs_bridge() {
+    let words: Vec<u32> = (0..600).map(|n| 0x00c0_0000 | n).collect();
+    let ((c, ()), (rust, replies)) = run(
+        "ring",
+        |bridge, peer| {
+            for &word in &words {
+                bridge.spi32(0, word).expect("SPI");
+                peer.settle();
+            }
+        },
+        |bus, _| {
+            words
+                .iter()
+                .map(|&word| bus.spi32(SpiAddr(0), word).expect("SPI"))
+                .collect::<Vec<_>>()
+        },
+    );
+    assert_same_wire(&c, &rust);
+    let acks = rust
+        .ops
+        .iter()
+        .filter(
+            |op| matches!(op, Op::Write { reg: 9, words } if words[0] >> 16 == 0 && words[0] != 0),
+        )
+        .count();
+    assert_eq!(
+        acks,
+        600 / 32,
+        "every 32nd entry acknowledged, across the wrap"
+    );
+    let expected: Vec<u32> = words.iter().map(|&word| spi_reply(word)).collect();
+    assert_eq!(replies, expected, "every entry read in its pass's phase");
 }
 
 /// Whitelisted: libusdr's bridge writes a block's first two status words through its size

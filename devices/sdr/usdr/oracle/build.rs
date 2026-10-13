@@ -3,6 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one step per archive, in the order the linker needs them"
+)]
 fn main() {
     let libusdr = Path::new("libusdr");
     let lib = libusdr.join("lib");
@@ -62,9 +66,7 @@ fn main() {
         .flag("-std=gnu11")
         .warnings(false)
         .compile("usdr_oracle_usb_tx");
-
-    // libusdr's Verilator host bridge; it calls into the main archive, so it precedes it.
-    compile_verilator_bridge(libusdr, &includes);
+    compile_verilator_bridge(libusdr, &includes); // precedes the main archive it calls into
 
     // Header-only RTSA depth helper, exported for parity under the generic capability set.
     cc::Build::new()
