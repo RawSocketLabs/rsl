@@ -9,6 +9,8 @@
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
+use core::num::NonZeroU32;
+
 use bnb::{u2, u3};
 use rsl_lms7002m::{
     Batch, Create, LmlConfig, LmlMap, LmlSample, Lms7002m, LpfParams, Mac, NoChannel, RbbMode,
@@ -116,18 +118,22 @@ fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 
             Err(NoChannel) => (-EINVAL, [0; 3]),
         },
         Call::CgenTune(fref, out, order) => {
-            let mut tune = chip.cgen_tune(fref, out, u2::from_raw(u8::try_from(order).unwrap()));
+            let mut tune = chip.cgen_tune(
+                nonzero(fref),
+                out,
+                u2::from_raw(u8::try_from(order).unwrap()),
+            );
             run_sequence(executor, &mut tune).expect("the sim answers");
             (status(tune.outcome().expect("finished")), [0; 3])
         }
         Call::CgenDisable => written(executor, chip.cgen_disable()),
         Call::SxxTune(path, fref, lo, lochen) => {
-            let mut tune = chip.sxx_tune(synthesizer(path), fref, lo, lochen);
+            let mut tune = chip.sxx_tune(synthesizer(path), nonzero(fref), lo, lochen);
             run_sequence(executor, &mut tune).expect("the sim answers");
             (status(tune.outcome().expect("finished")), [0; 3])
         }
         Call::SxxDisable(path) => written(executor, chip.sxx_disable(synthesizer(path))),
-        Call::RbbLpfDef(bw, low) => (0, params(LpfParams::rbb_default(bw, low))),
+        Call::RbbLpfDef(bw, low) => (0, params(LpfParams::rbb_default(nonzero(bw), low))),
         Call::TbbLpfDef(bw, low) => (0, params(LpfParams::tbb_default(bw, low))),
         Call::Create(ldo_mask, shared_reference) => {
             let mut create = Create::new(ResetPlan {
@@ -151,6 +157,11 @@ fn written(bus: &mut SimBus, mut batch: Batch) -> (i32, [i32; 3]) {
 /// Runs a banked call's batch, or reports libusdr's `-EINVAL` for no bank.
 fn banked(bus: &mut SimBus, batch: Result<Batch, NoChannel>) -> (i32, [i32; 3]) {
     batch.map_or((-EINVAL, [0; 3]), |batch| written(bus, batch))
+}
+
+/// A reference or bandwidth the scenarios keep non-zero.
+fn nonzero(value: u32) -> NonZeroU32 {
+    NonZeroU32::new(value).expect("the scenarios pass non-zero values")
 }
 
 /// A tuning's outcome as libusdr's result.

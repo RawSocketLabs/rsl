@@ -339,12 +339,18 @@ impl Oracle {
     /// # Errors
     ///
     /// The negative errno libusdr returned.
-    pub fn set_uint(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
+    ///
+    /// # Safety
+    ///
+    /// `path`'s handler must take `value` as a number: some (`/dm/rate/rxtxadcdac`, string
+    /// paths) read it as a pointer, which this value is not. [`Self::set_rates`] covers
+    /// `/dm/rate/rxtxadcdac`.
+    pub unsafe fn set_uint(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
-        // SAFETY: `dev` is open and `path` NUL-terminated; every path this oracle's tests
-        // set takes a number (`/dm/rate/rxtxadcdac` goes through [`Self::set_rates`]).
+        // SAFETY: `dev` is open and `path` NUL-terminated; the caller guarantees the
+        // handler reads `value` as a number.
         let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), path.as_ptr(), value) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }

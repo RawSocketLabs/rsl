@@ -59,31 +59,40 @@ fn gain_path(gain: Gain) -> &'static core::ffi::CStr {
     }
 }
 
+/// Sets a numeric device-manager path.
+fn set_uint(oracle: &mut Oracle, path: &core::ffi::CStr, value: u64) -> Result<(), i32> {
+    // SAFETY: every path these tests set (rate master, frequencies, gains, bandwidths)
+    // takes its value as a number, not a pointer.
+    unsafe { oracle.set_uint(path, value) }
+}
+
 /// libusdr's results and the operations between its open and close.
-fn libusdr(hwid: u32, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
-    let mut oracle = Oracle::open(SimBoard::new(Variant::Xsdr).with_hwid(hwid))
-        .expect("libusdr opens the board");
+fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
+    let mut oracle = Oracle::open(board).expect("libusdr opens the board");
     let opened = oracle.trace_len();
     let results = calls
         .iter()
         .map(|&call| {
             let result = match call {
                 Call::PowerUp => oracle.power_up(),
-                Call::Rate(rate) => oracle.set_uint(c"/dm/rate/master", rate.into()),
+                Call::Rate(rate) => set_uint(&mut oracle, c"/dm/rate/master", rate.into()),
                 Call::Rates(rx, tx) => oracle.set_rates(rx, tx),
-                Call::Rx(hz) => oracle.set_uint(c"/dm/sdr/0/rx/frequency", hz.into()),
-                Call::Tx(hz) => oracle.set_uint(c"/dm/sdr/0/tx/frequency", hz.into()),
+                Call::Rx(hz) => set_uint(&mut oracle, c"/dm/sdr/0/rx/frequency", hz.into()),
+                Call::Tx(hz) => set_uint(&mut oracle, c"/dm/sdr/0/tx/frequency", hz.into()),
                 Call::Gain(gain, value) => {
                     // The handlers take the u64 as an `int`: two's complement.
-                    oracle.set_uint(
+                    set_uint(
+                        &mut oracle,
                         gain_path(gain),
                         u64::from_ne_bytes(i64::from(value).to_ne_bytes()),
                     )
                 }
                 Call::Bandwidth(Direction::Rx, hz) => {
-                    oracle.set_uint(c"/dm/sdr/0/rx/bandwidth", hz.into())
+                    set_uint(&mut oracle, c"/dm/sdr/0/rx/bandwidth", hz.into())
                 }
-                Call::Bandwidth(_, hz) => oracle.set_uint(c"/dm/sdr/0/tx/bandwidth", hz.into()),
+                Call::Bandwidth(_, hz) => {
+                    set_uint(&mut oracle, c"/dm/sdr/0/tx/bandwidth", hz.into())
+                }
             };
             result.err().unwrap_or(0)
         })
@@ -94,8 +103,8 @@ fn libusdr(hwid: u32, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
 }
 
 /// rsl-xsdr's results, as libusdr's errnos, and its operations after the open.
-fn rsl(hwid: u32, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
-    let sim = SimBus::new(SimBoard::new(Variant::Xsdr).with_hwid(hwid));
+fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
+    let sim = SimBus::new(board);
     let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
     let opened = sim.board().trace().len();
     let results = calls
@@ -135,7 +144,16 @@ fn errno(result: Result<(), Error>) -> i32 {
 
 /// Panics, naming `scenario`, where rsl-xsdr leaves libusdr.
 fn assert_same(hwid: u32, calls: &[Call], scenario: &str) -> Vec<i32> {
-    let (expected, actual) = (libusdr(hwid, calls), rsl(hwid, calls));
+    assert_same_on(
+        &|| SimBoard::new(Variant::Xsdr).with_hwid(hwid),
+        calls,
+        scenario,
+    )
+}
+
+/// [`assert_same`] on boards `board` builds.
+fn assert_same_on(board: &dyn Fn() -> SimBoard, calls: &[Call], scenario: &str) -> Vec<i32> {
+    let (expected, actual) = (libusdr(board(), calls), rsl(board(), calls));
     assert_eq!(actual.0, expected.0, "{scenario}: results");
     if let Some(at) =
         (0..expected.1.len().max(actual.1.len())).find(|&i| expected.1.get(i) != actual.1.get(i))
@@ -301,4 +319,60 @@ fn gateware_rsl_xsdr_does_not_port_is_refused_before_any_access() {
             "PHY {phy:#04x}: nothing driven"
         );
     }
+}
+
+#[test]
+fn a_link_dirty_for_three_phases_is_swept_past_like_libusdr() {
+    // Phases 1 to 3 read one error on their first counter; the rest read clean.
+    let dirty = [1, 0, 0, 0].repeat(3);
+    let results = assert_same_on(
+        &|| {
+            SimBoard::new(Variant::Xsdr)
+                .with_hwid(TX_MMCM)
+                .with_rx_phy_reads(dirty.clone(), 0)
+        },
+        &[Call::PowerUp, Call::Rate(1_000_000)],
+        "three dirty phases",
+    );
+    assert_eq!(results[1], 0, "a clean band follows");
+}
+
+#[test]
+fn a_link_dirty_at_every_phase_retries_five_times_like_libusdr() {
+    // One error per counter scores 4 per check, rescaled to 40: a warning, not a failure.
+    // Eleven per counter scores 4840: the rate fails.
+    for (errors, expected) in [(1, 0), (11, -ERANGE)] {
+        let results = assert_same_on(
+            &|| {
+                SimBoard::new(Variant::Xsdr)
+                    .with_hwid(TX_MMCM)
+                    .with_rx_phy_reads([], errors)
+            },
+            &[Call::PowerUp, Call::Rate(1_000_000)],
+            &format!("{errors} errors per counter"),
+        );
+        assert_eq!(results[1], expected, "{errors} errors per counter");
+    }
+}
+
+#[test]
+fn a_failing_vco_comparator_fails_tuning_and_the_rate_like_libusdr() {
+    let results = assert_same_on(
+        &|| {
+            SimBoard::new(Variant::Xsdr)
+                .with_hwid(TX_MMCM)
+                .with_lms_comparator_failure(128)
+        },
+        &[
+            Call::PowerUp,
+            Call::Rx(1_000_000_000),
+            Call::Rate(1_000_000),
+        ],
+        "comparator failure",
+    );
+    assert_eq!(
+        results[1..],
+        [-EIO, -ERANGE],
+        "SXX fails with -EIO; every CGEN attempt fails, so the rate -ERANGE"
+    );
 }
