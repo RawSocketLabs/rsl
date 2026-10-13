@@ -2,8 +2,6 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
-use lms7002m::TuneError;
-use lms7002m::ctrl::ControlError;
 
 use crate::control::BusError;
 use crate::portable::open::Failure;
@@ -117,31 +115,9 @@ pub enum Error {
     #[error("a VCO comparator failed")]
     VcoComparatorFailed,
 
-    /// A chip operation found no channel selected: libusdr's `-EINVAL`. Not produced by
-    /// this board's operations, which always select one; it keeps the control code's
-    /// refusals mapped one to one.
-    #[error("no LMS7002M channel selected")]
-    NoChannel,
-
     /// Streaming was prepared with no sample rate: the default one did not lock.
     #[error("no sample rate is set")]
     NoSampleRate,
-}
-
-/// A refusal of the LMS7002M control code. A tuning's frequency is filled in by the
-/// operation that failed.
-impl From<ControlError> for Error {
-    fn from(refusal: ControlError) -> Self {
-        match refusal {
-            ControlError::NoChannel => Self::NoChannel,
-            ControlError::Decimation => Self::UndeliverableRate,
-            ControlError::Clock => Self::ClockUnlocked,
-            ControlError::Tune(TuneError::ComparatorFailed) => Self::VcoComparatorFailed,
-            ControlError::Tune(TuneError::OutOfRange) => Self::TuneOutOfRange(0),
-            ControlError::NoRate => Self::NoSampleRate,
-            ControlError::InvalidRate => Self::InvalidRate(0),
-        }
-    }
 }
 
 /// A failed open, with the register or chip it names.

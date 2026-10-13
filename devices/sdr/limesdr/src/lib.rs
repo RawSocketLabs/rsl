@@ -28,9 +28,11 @@
 pub mod control;
 mod device;
 mod error;
+mod gain;
 mod portable;
 
 pub use device::Device;
 pub use error::{Access, Error, ExchangeError};
-pub use lms7002m::ctrl::{Direction, Gain};
+pub use gain::Gain;
+pub use lms7002m::ctrl::Direction;
 pub use portable::lms64c;

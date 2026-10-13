@@ -4,11 +4,12 @@
 use std::fmt;
 
 use hal::{Sequence, SequenceAction};
-use lms7002m::Synthesizer;
-use lms7002m::ctrl::{Control, Direction, Frontend, Gain, Operation};
+use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Operation};
+use lms7002m::{Synthesizer, TuneError};
 
 use crate::control::ControlPort;
 use crate::error::{Error, ExchangeError};
+use crate::gain::Gain;
 use crate::lms64c::Frame;
 use crate::portable::frontend::LimeFrontend;
 use crate::portable::lsop::{BadReply, LsOp};
@@ -116,7 +117,8 @@ impl Device {
         let ran = self.run(&mut rate);
         self.control = *rate.control();
         ran?;
-        rate.refusal().map_or(Ok(()), |refusal| Err(refusal.into()))
+        rate.refusal()
+            .map_or(Ok(()), |refusal| Err(rate_refusal(refusal)))
     }
 
     /// Tunes the RX LO to `hertz` (libusdr's `/dm/sdr/0/rx/frequency`); 0 stops the
@@ -147,24 +149,24 @@ impl Device {
     /// check against the LO last tuned.
     fn tune(&mut self, synthesizer: Synthesizer, hertz: u32) -> Result<(), Error> {
         let op = self.control.tune(LimeFrontend, synthesizer, hertz);
-        self.run_control(op).map_err(|error| match error {
-            Error::TuneOutOfRange(_) => Error::TuneOutOfRange(hertz),
-            other => other,
+        self.run_control(op, |refusal| match refusal {
+            ControlError::Tune(TuneError::OutOfRange) => Error::TuneOutOfRange(hertz),
+            ControlError::Tune(TuneError::ComparatorFailed) => Error::VcoComparatorFailed,
+            other => unrefused(other),
         })
     }
 
     /// Sets a gain on both channels (libusdr's `/dm/sdr/0/{rx,tx}/gain*`), returning the
     /// gain reached in dB as libusdr reports it. libusdr's `/dm/sdr/0/rx/gain` is
     /// [`Gain::RxLna`], `.../rx/gain/vga` [`Gain::RxTia`] and `/dm/sdr/0/tx/gain`
-    /// [`Gain::TxPad`]. [`Gain::TxPga`] has no path on this family in libusdr; it is
-    /// offered as on the XSDR.
+    /// [`Gain::TxPad`].
     ///
     /// # Errors
     ///
     /// [`Error::Bus`].
     pub fn set_gain(&mut self, gain: Gain, value: i32) -> Result<i32, Error> {
-        let (op, actual) = self.control.set_gain(gain, value);
-        self.run_control(op)?;
+        let (op, actual) = self.control.set_gain(gain.control(), value);
+        self.run_control(op, unrefused)?;
         Ok(actual)
     }
 
@@ -176,7 +178,7 @@ impl Device {
     /// [`Error::Bus`].
     pub fn set_bandwidth(&mut self, direction: Direction, hertz: u32) -> Result<(), Error> {
         let op = self.control.set_bandwidth(direction, hertz);
-        self.run_control(op)
+        self.run_control(op, unrefused)
     }
 
     /// Prepares the LMS7002M to stream, as libusdr does when it creates an RX or TX stream
@@ -197,7 +199,7 @@ impl Device {
         ran?;
         prepare
             .refusal()
-            .map_or(Ok(()), |refusal| Err(refusal.into()))
+            .map_or(Ok(()), |refusal| Err(rate_refusal(refusal)))
     }
 
     /// Closes the board as libusdr's `usdr_dmd_close` does on this family: without a bus
@@ -226,13 +228,18 @@ impl Device {
         REVISION
     }
 
-    /// Runs a control operation, keeping the state it leaves even when it fails.
-    fn run_control<F: Frontend>(&mut self, mut op: Operation<F>) -> Result<(), Error> {
+    /// Runs a control operation, keeping the state it leaves even when it fails; a
+    /// refusal is reported as `refused` names it.
+    fn run_control<F: Frontend>(
+        &mut self,
+        mut op: Operation<F>,
+        refused: impl FnOnce(ControlError) -> Error,
+    ) -> Result<(), Error> {
         let ran = self.run(&mut op);
         self.control = *op.control();
         ran?;
         match op.outcome() {
-            Some(Err(refusal)) => Err(refusal.into()),
+            Some(Err(refusal)) => Err(refused(refusal)),
             Some(Ok(())) | None => Ok(()),
         }
     }
@@ -264,6 +271,23 @@ impl fmt::Debug for Device {
             .field("reference_hz", &self.reference_hz)
             .finish_non_exhaustive()
     }
+}
+
+/// A sample rate's refusal, or a stream preparation's (its default rate unset).
+fn rate_refusal(refusal: ControlError) -> Error {
+    match refusal {
+        ControlError::Decimation => Error::UndeliverableRate,
+        ControlError::Clock => Error::ClockUnlocked,
+        ControlError::NoRate => Error::NoSampleRate,
+        other => unrefused(other),
+    }
+}
+
+/// A refusal this board's operations cannot meet: they always select a channel (the open
+/// leaves both selected, and the board streams channel A), and `Device` passes the
+/// control code only rates within libusdr's range.
+fn unrefused(refusal: ControlError) -> Error {
+    unreachable!("invariant: this board's operations are never refused with {refusal:?}")
 }
 
 /// Performs `op` as one LMS64C exchange on `port`: what it returned.

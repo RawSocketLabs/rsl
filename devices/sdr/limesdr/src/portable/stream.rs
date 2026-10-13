@@ -78,11 +78,19 @@ impl PrepareStreaming {
 }
 
 /// Channel A streamed up in both directions with no stream flags, after both directions'
-/// run flags are set as `limesdr_prepare_streaming` sets them.
-fn stream_up(mut control: Control) -> Operation<LimeFrontend> {
-    control.set_running([true, false], [true, false]);
+/// run flags are set as `limesdr_prepare_streaming` sets them. A streaming up refused
+/// before any write (no rate, where libusdr divides by zero) keeps the run flags as they
+/// were, so later rates and tunings do not treat the paths as running.
+fn stream_up(control: Control) -> Operation<LimeFrontend> {
     let channel_a = (Mac::A, StreamFlags::default());
-    control.streaming_up(LimeFrontend, channel_a, Some(channel_a))
+    let mut running = control;
+    running.set_running([true, false], [true, false]);
+    let up = running.streaming_up(LimeFrontend, channel_a, Some(channel_a));
+    match up.outcome() {
+        // The same refusal, which the run flags do not decide, from the state before.
+        Some(Err(_)) => control.streaming_up(LimeFrontend, channel_a, Some(channel_a)),
+        _ => up,
+    }
 }
 
 impl Sequence for PrepareStreaming {

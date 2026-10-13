@@ -38,8 +38,9 @@ fn rates_out_of_range_are_refused_before_any_exchange() {
 #[test]
 fn streaming_is_not_prepared_when_the_default_rate_does_not_lock() {
     // libusdr ignores the default rate's failure and then divides by zero for the
-    // bandwidth; limesdr stops after the same rate attempt.
-    let board = || SimBoard::new().with_lms7_comparator_failure(128);
+    // bandwidth; limesdr stops after the same rate attempt, the paths not running.
+    // Comparators failing at cap code 150 fail every 1 MS/s CGEN tuning, not a 1 GHz LO.
+    let board = || SimBoard::new().with_lms7_comparator_failure(150);
     let (mut rate_only, rate_sim) = lime(board());
     let opened = rate_sim.board().trace().len();
     assert!(matches!(
@@ -58,6 +59,14 @@ fn streaming_is_not_prepared_when_the_default_rate_does_not_lock() {
         since(&sim, opened),
         rate_attempt,
         "the default rate's attempt, then nothing streamed up"
+    );
+    device.set_rx_frequency(1_000_000_000).expect("RX tuned");
+    device.set_tx_frequency(1_000_000_000).expect("TX tuned");
+    assert!(
+        !since(&sim, opened)
+            .iter()
+            .any(|op| matches!(op, Op::FpgaWrite { addr, .. } if *addr == RF_SWITCHES)),
+        "no path runs, so no tuning moves an antenna switch"
     );
 }
 
