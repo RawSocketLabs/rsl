@@ -6,6 +6,8 @@
 //! operation into LMS64C frames with libusdr's own `lms64c_proto.c`, and hands every frame
 //! to the board installed by [`Oracle::open`]; libusdr's `usleep` advances the board's
 //! virtual clock. The board's trace is the reference the `u3_limesdr` port is checked against.
+//! The plugin refuses the transport's streams (`-EOPNOTSUPP`; the FT601 stream pipes are not
+//! vendored), after libusdr's own stream initialisation has prepared the LMS7002M.
 //!
 //! libusdr keeps process-global state, so one [`Oracle`] exists at a time: [`Oracle::open`]
 //! blocks until any other instance is closed.
@@ -28,11 +30,15 @@ const EIO: c_int = 5;
 /// Environment variables the pinned libusdr reads on the paths the oracle drives. Each
 /// changes the operation sequence, so none may be set while an oracle runs:
 /// `USDR_DEBUG` (`_usdr_dmd_create` starts a debug socket service) and `USDR_BARE_DEV`
-/// (`u3_limesdr`'s stream initialisation refuses; off the open/close path today, but
-/// forbidden so a later stream scenario cannot silently change). `USDR_LOGLEVEL` only
+/// (`u3_limesdr`'s stream initialisation refuses before preparing streaming, which
+/// [`Oracle::create_rx_stream`] drives). `USDR_LOGLEVEL` only
 /// changes logging and is allowed. The FT601 transport's own variables, if any, are not in
 /// the pinned source.
 pub const FORBIDDEN_ENV: [&str; 2] = ["USDR_BARE_DEV", "USDR_DEBUG"];
+
+/// Samples per packet of [`Oracle::create_rx_stream`]'s stream: one 4 KiB burst of
+/// `ci16` after its 16-byte header (`create_limesdr_stream`'s `burst_smpl`).
+const RX_STREAM_SAMPLES: c_uint = (4096 - 16) / 4;
 
 /// Serialises oracles: libusdr's device registry and logging are process-global.
 static SESSION: Mutex<()> = Mutex::new(());
@@ -49,6 +55,14 @@ unsafe extern "C" {
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
+    fn usdr_dms_create(
+        device: DmDev,
+        sobj: *const c_char,
+        dformat: *const c_char,
+        channels: u64,
+        pktsyms: c_uint,
+        outu: *mut *mut c_void,
+    ) -> c_int;
     fn limesdr_shim_fpga_info(out: *mut u16) -> c_int;
     fn limesdr_shim_create_errno() -> c_int;
     fn lms64c_fill_packet(
@@ -226,6 +240,91 @@ impl Oracle {
         // as a number.
         let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), c"/dm/power/en".as_ptr(), 1) };
         resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets a libusdr device-manager value, such as `c"/dm/rate/master"` or
+    /// `c"/dm/sdr/0/rx/frequency"`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    ///
+    /// # Safety
+    ///
+    /// `path`'s handler must take `value` as a number: `/dm/rate/rxtxadcdac` reads it as a
+    /// pointer, which this value is not. [`Self::set_rates`] covers that path.
+    pub unsafe fn set_uint(&mut self, path: &CStr, value: u64) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        // SAFETY: `dev` is open and `path` NUL-terminated; the caller guarantees the
+        // handler reads `value` as a number.
+        let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), path.as_ptr(), value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Sets the RX and TX sample rates with no converter floors (`/dm/rate/rxtxadcdac`,
+    /// whose value is a pointer to four `u32`s).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_rates(&mut self, rx: u32, tx: u32) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let rates: [u32; 4] = [rx, tx, 0, 0];
+        // SAFETY: `dev` is open and the path NUL-terminated; its handler
+        // (`dev_limesdr_rate_m_set`) reads four `u32`s through the pointer, which outlives
+        // the call.
+        let errno = unsafe {
+            usdr_dme_set_uint(
+                dev.as_ptr(),
+                c"/dm/rate/rxtxadcdac".as_ptr(),
+                rates.as_ptr() as u64,
+            )
+        };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Creates a `ci16` RX stream (`usdr_dms_create` on `/ll/srx/0`, channel 0): libusdr's
+    /// stream initialisation runs `limesdr_prepare_streaming` (a default 1 MS/s rate if
+    /// none is set, then the LMS7002M streamed up in both directions), then the
+    /// transport's, which the shim refuses: the FT601 stream pipes are not vendored. So a
+    /// stream is never created, and libusdr's success is `-EOPNOTSUPP`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    ///
+    /// # Panics
+    ///
+    /// If libusdr created a stream, which the shim rules out.
+    pub fn create_rx_stream(&mut self) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let mut stream: *mut c_void = ptr::null_mut();
+        // SAFETY: `dev` is open, the strings NUL-terminated and `stream` a valid
+        // out-pointer, written only when a stream is created.
+        let errno = unsafe {
+            usdr_dms_create(
+                dev.as_ptr(),
+                c"/ll/srx/0".as_ptr(),
+                c"ci16".as_ptr(),
+                1,
+                RX_STREAM_SAMPLES,
+                &raw mut stream,
+            )
+        };
+        resume_callback_panic();
+        assert!(
+            stream.is_null(),
+            "invariant: the shim refuses every transport stream"
+        );
         if errno == 0 { Ok(()) } else { Err(errno) }
     }
 

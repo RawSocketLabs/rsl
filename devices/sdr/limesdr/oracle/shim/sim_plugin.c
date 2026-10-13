@@ -186,6 +186,16 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
     return -EOPNOTSUPP;
 }
 
+// The transport's stream setup, which u3_limesdr's own stream_initialize calls after
+// limesdr_prepare_streaming. The FT601 stream pipes are not vendored, so a stream ends
+// here: the LMS7002M's streaming-up is traced, the stream itself is refused.
+static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
+                                 stream_t* channel)
+{
+    (void)dev; (void)subdev; (void)params; (void)channel;
+    return -EOPNOTSUPP;
+}
+
 static int sim_destroy(lldev_t dev)
 {
     if (dev->pdev) {
@@ -198,6 +208,7 @@ static int sim_destroy(lldev_t dev)
 static lowlevel_ops_t s_sim_ops = {
     .generic_get = sim_generic_get,
     .ls_op = sim_ls_op,
+    .stream_initialize = sim_stream_initialize,
     .destroy = sim_destroy,
 };
 
