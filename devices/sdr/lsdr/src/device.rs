@@ -8,7 +8,6 @@ use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
 use crate::error::Error;
 use crate::lowlevel::Bus;
 use crate::portable::adc_power::AdcPower;
-use crate::portable::close::close;
 use crate::portable::fpga::{self, DEAD, LIVENESS};
 use crate::portable::pga::{PgaGain, SetPga};
 use crate::portable::probes::{Fitted, Probes};
@@ -117,12 +116,16 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// The first write's failure, [`Error::Bus`], after all four were attempted.
+    /// The first failure among the four writes, [`Error::Bus`], after all four were
+    /// attempted.
     pub fn close(mut self) -> Result<(), Error> {
-        close(LSDR_WIRING)
-            .into_iter()
-            .map(|mut write| run(&mut *self.bus, &mut write))
-            .fold(Ok(()), Result::and)
+        let mut first_failure = None;
+        for mut write in LSDR_WIRING.close() {
+            if let Err(error) = run(&mut *self.bus, &mut write) {
+                first_failure.get_or_insert(error);
+            }
+        }
+        first_failure.map_or(Ok(()), Err)
     }
 }
 

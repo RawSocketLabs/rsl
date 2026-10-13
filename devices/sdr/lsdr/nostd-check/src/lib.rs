@@ -8,7 +8,7 @@
 mod portable;
 
 use portable::adc_power::AdcPower;
-use portable::close::close;
+
 use portable::fpga::{self, DEAD, LIVENESS};
 use portable::pga::{PgaGain, SetPga};
 use portable::probes::Probes;
@@ -91,7 +91,8 @@ pub fn pga(steps: u8, failing: Option<usize>) -> Option<(u8, Result<usize, &'sta
 /// Runs the close's writes, failing those at the positions `failing` marks: how many
 /// succeeded. Each is attempted whatever the others did.
 pub fn close_writes(failing: [bool; 4]) -> usize {
-    close(WIRING)
+    WIRING
+        .close()
         .into_iter()
         .zip(failing)
         .filter_map(|(mut write, fails)| {

@@ -52,10 +52,12 @@ pub enum Error {
     /// No chip answered where one must be. Not produced yet, as [`Self::ChipId`]: an
     /// absent ADC or clock generator is reported by [`Device::fitted`](crate::Device::fitted).
     #[error("{0} not found")]
+    #[non_exhaustive]
     ChipMissing(&'static str),
 
     /// A chip reported no input signal it needs. Not produced yet, as [`Self::ChipId`].
     #[error("{0} has no input signal")]
+    #[non_exhaustive]
     InputMissing(&'static str),
 }
 

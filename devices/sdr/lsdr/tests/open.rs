@@ -4,9 +4,13 @@
 
 mod common;
 
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
 use common::sim_bus::SimBus;
-use rsl_lsdr::{Device, Error, Fitted, OpenOptions, PgaGain};
-use rsl_lsdr_sim::{Op, SimBoard, Variant};
+use rsl_lsdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use rsl_lsdr::{Access, Device, Error, Fitted, OpenOptions, PgaGain};
+use rsl_lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
 
 /// GPO bank `IGPO_BANK_CFG_ADC`: bits 1:0 hold the ADCs in reset.
 const GPO_CFG_ADC: u8 = 2;
@@ -18,6 +22,82 @@ const GPO_PGA_GAIN: u8 = 4;
 const BUCK_VOUT: [u8; 4] = [0x0e, 0x10, 0x12, 0x14];
 /// `ADS42LBx9` `REG_PWR_CONTROL`.
 const ADC_PWR_CONTROL: u8 = 0x08;
+
+/// The bus accesses (register, SPI and I2C calls, counted from 0) a [`Faulty`] bus fails.
+#[derive(Debug, Default)]
+struct Faults {
+    /// Accesses made so far.
+    calls: usize,
+
+    /// The accesses to fail, by count.
+    failing: Vec<usize>,
+}
+
+/// A [`SimBus`] whose chosen accesses fail with a timeout before reaching the board, so the
+/// board's trace holds only the accesses that succeeded.
+#[derive(Clone)]
+struct Faulty {
+    /// The board.
+    sim: SimBus,
+
+    /// Which accesses fail; shared, so a test can choose them after open.
+    faults: Arc<Mutex<Faults>>,
+}
+
+impl Faulty {
+    /// A fresh `variant` board on which nothing fails yet.
+    fn new(variant: Variant) -> Self {
+        Self {
+            sim: SimBus::new(SimBoard::new(variant)),
+            faults: Arc::default(),
+        }
+    }
+
+    /// Fails the accesses `offsets` after the ones made so far.
+    fn fail_next(&self, offsets: &[usize]) {
+        let mut faults = self.faults.lock().unwrap_or_else(PoisonError::into_inner);
+        let calls = faults.calls;
+        faults.failing = offsets.iter().map(|offset| calls + offset).collect();
+    }
+
+    /// Counts one access, and whether it fails.
+    fn access(&self) -> Result<(), BusError> {
+        let mut faults = self.faults.lock().unwrap_or_else(PoisonError::into_inner);
+        let call = faults.calls;
+        faults.calls += 1;
+        if faults.failing.contains(&call) {
+            Err(BusError::Timeout)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Bus for Faulty {
+    fn read_regs(&mut self, addr: u32, out: &mut [u32]) -> Result<(), BusError> {
+        self.access()?;
+        self.sim.read_regs(addr, out)
+    }
+
+    fn write_regs(&mut self, addr: u32, values: &[u32]) -> Result<(), BusError> {
+        self.access()?;
+        self.sim.write_regs(addr, values)
+    }
+
+    fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
+        self.access()?;
+        self.sim.spi32(target, word)
+    }
+
+    fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
+        self.access()?;
+        self.sim.i2c(dev, write, read)
+    }
+
+    fn sleep(&mut self, duration: Duration) {
+        self.sim.sleep(duration);
+    }
+}
 
 /// A board of `variant`, opened with `options`, and the bus to inspect it through.
 fn open(variant: Variant, options: OpenOptions) -> (Device, SimBus) {
@@ -138,4 +218,68 @@ fn close_gates_the_clock_cuts_the_supply_and_powers_both_sockets_down() {
             "ADC {adc}: both channels and the chip powered down"
         );
     }
+}
+
+#[test]
+fn a_failed_liveness_read_fails_open_before_anything_else() {
+    let bus = Faulty::new(Variant::SingleAdc);
+    bus.fail_next(&[0]);
+    let refusal = Device::open(bus.clone(), OpenOptions::new());
+    assert!(
+        matches!(
+            refusal,
+            Err(Error::Bus {
+                chip: "FPGA",
+                access: Access::Read,
+                reg: 0,
+                source: BusError::Timeout,
+                ..
+            })
+        ),
+        "libusdr would carry on; rsl-lsdr reports the read: {refusal:?}"
+    );
+    assert!(
+        bus.sim.board().trace().is_empty(),
+        "nothing follows the read"
+    );
+}
+
+#[test]
+fn close_attempts_every_write_and_reports_the_first_failure() {
+    let bus = Faulty::new(Variant::DualAdcClockGen);
+    let device = Device::open(bus.clone(), OpenOptions::new()).expect("an LSDr opens");
+    let opened = bus.sim.board().trace().len();
+    // The Si549 gate and the first ADC's power-down fail.
+    bus.fail_next(&[0, 2]);
+    let outcome = device.close();
+    assert!(
+        matches!(
+            outcome,
+            Err(Error::Bus {
+                chip: "Si549",
+                access: Access::Write,
+                reg: 17,
+                ..
+            })
+        ),
+        "the first failure is reported: {outcome:?}"
+    );
+    let board = bus.sim.board();
+    let pmic = I2cAddress { bus: 0, addr: 0x48 };
+    assert_eq!(
+        board.trace()[opened..],
+        [
+            Op::I2c {
+                addr: pmic,
+                write: vec![0x20, 0x20],
+                read: vec![],
+            },
+            Op::Spi {
+                bus: 1,
+                out: 0x08e0,
+                read: 0,
+            },
+        ],
+        "the writes after each failure still run: LDO4 off, then the second ADC"
+    );
 }

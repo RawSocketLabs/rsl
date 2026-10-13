@@ -15,31 +15,33 @@ use super::single::Single;
 use super::tps6594::{self, Ldo4Control};
 use super::wiring::Wiring;
 
-/// The close's writes, in libusdr's order, each its own sequence.
-pub(crate) fn close(wiring: Wiring) -> [Single; 4] {
-    let [adc0, adc1] = wiring.adcs;
-    [
-        Single::new(
-            SequenceAction::Access(RegisterAccess::write(
-                wiring.oscillator,
-                OutputControl::new().with_enabled(false).entry(),
-            )),
-            si549::NAME,
-        ),
-        Single::new(
-            SequenceAction::Access(RegisterAccess::write(
-                wiring.pmic,
-                Ldo4Control::switched(false).entry(),
-            )),
-            tps6594::NAME,
-        ),
-        Single::new(
-            SequenceAction::Fpga(ads42lbx9::write(adc0, PowerControl::OFF)),
-            ads42lbx9::NAME,
-        ),
-        Single::new(
-            SequenceAction::Fpga(ads42lbx9::write(adc1, PowerControl::OFF)),
-            ads42lbx9::NAME,
-        ),
-    ]
+impl Wiring {
+    /// The close's writes on this board, in libusdr's order, each its own sequence.
+    pub(crate) fn close(self) -> [Single; 4] {
+        let [adc0, adc1] = self.adcs;
+        [
+            Single::new(
+                SequenceAction::Access(RegisterAccess::write(
+                    self.oscillator,
+                    OutputControl::new().with_enabled(false).entry(),
+                )),
+                si549::NAME,
+            ),
+            Single::new(
+                SequenceAction::Access(RegisterAccess::write(
+                    self.pmic,
+                    Ldo4Control::switched(false).entry(),
+                )),
+                tps6594::NAME,
+            ),
+            Single::new(
+                SequenceAction::Fpga(ads42lbx9::write(adc0, PowerControl::OFF)),
+                ads42lbx9::NAME,
+            ),
+            Single::new(
+                SequenceAction::Fpga(ads42lbx9::write(adc1, PowerControl::OFF)),
+                ads42lbx9::NAME,
+            ),
+        ]
+    }
 }
