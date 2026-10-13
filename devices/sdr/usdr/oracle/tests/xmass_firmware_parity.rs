@@ -5,16 +5,17 @@
 //!
 //! The request codes themselves are checked against the driver header by `pcie_abi.rs`;
 //! the fake decodes the tool's with the header's, so a code the tool got wrong shows here
-//! as a request the driver does not know. One divergence is whitelisted:
-//! `a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr`.
+//! as a request the driver does not know. Two divergences are whitelisted:
+//! `a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr` and
+//! `a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr`.
 
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 use rsl_usdr::frontend::xmass_firmware::{
-    self, BridgeFlash, BridgeIds, FIRMWARE_BYTES, Firmware, FirmwareSizeError, IDS_BYTES,
-    UpdateError,
+    self, FIRMWARE_BYTES, Firmware, FirmwareSizeError, IDS_BYTES, READ_SUCCESS, SwitchFlash,
+    SwitchIds, UnexpectedReturn, UpdateError,
 };
 use rsl_usdr_oracle::xmass::{FLASH_BYTES, FakeXmass, Request, XmassRun, xmass_fwupd};
 
@@ -54,31 +55,24 @@ fn file(name: &str, bytes: &[u8]) -> String {
     path.to_str().expect("UTF-8 path").to_owned()
 }
 
-/// rsl-usdr's view of the fake: the four requests, with the driver's errno.
-struct Bridge<'a>(&'a mut FakeXmass);
+/// rsl-usdr's view of the fake: the four requests, with the driver's errno or return value.
+struct Switch<'a>(&'a mut FakeXmass);
 
-impl BridgeFlash for Bridge<'_> {
-    fn ids(&mut self) -> io::Result<[u8; IDS_BYTES]> {
-        let mut out = [0; IDS_BYTES];
-        self.0
-            .read_ids(&mut out)
-            .map_err(io::Error::from_raw_os_error)?;
-        Ok(out)
+impl SwitchFlash for Switch<'_> {
+    fn ids(&mut self, out: &mut [u8; IDS_BYTES]) -> io::Result<i32> {
+        self.0.read_ids(out).map_err(io::Error::from_raw_os_error)
     }
 
-    fn erase(&mut self) -> io::Result<()> {
+    fn erase(&mut self) -> io::Result<i32> {
         self.0.erase().map_err(io::Error::from_raw_os_error)
     }
 
-    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<()> {
+    fn write(&mut self, image: &[u8; FIRMWARE_BYTES]) -> io::Result<i32> {
         self.0.write(image).map_err(io::Error::from_raw_os_error)
     }
 
-    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<()> {
-        self.0
-            .read(out)
-            .map(drop)
-            .map_err(io::Error::from_raw_os_error)
+    fn read(&mut self, out: &mut [u8; FIRMWARE_BYTES]) -> io::Result<i32> {
+        self.0.read(out).map_err(io::Error::from_raw_os_error)
     }
 }
 
@@ -87,11 +81,11 @@ fn both(
     name: &str,
     device: &FakeXmass,
     image: &[u8],
-) -> (XmassRun, Result<BridgeIds, UpdateError>, FakeXmass) {
+) -> (XmassRun, Result<SwitchIds, UpdateError>, FakeXmass) {
     let tool = xmass_fwupd(device.clone(), NODE, &[&file(name, image), NODE]);
     let mut ours = device.clone();
     let firmware = Firmware::new(image).expect("a 64 KiB image");
-    let result = xmass_firmware::update(&mut Bridge(&mut ours), &firmware);
+    let result = xmass_firmware::update(&mut Switch(&mut ours), &firmware);
     (tool, result, ours)
 }
 
@@ -125,7 +119,11 @@ fn an_update_makes_libusdrs_requests_in_its_order() {
     let (tool, result, ours) = both("update", &device(), &image[..]);
     assert_eq!(tool.status, 0, "the tool succeeds:\n{}", tool.log);
     let ids = result.expect("rsl-usdr succeeds");
-    assert_eq!(ids, BridgeIds::from(IDS), "the IDs read before the update");
+    assert_eq!(
+        (ids.firmware.as_slice(), ids.flash_id.as_slice()),
+        IDS.split_at(6),
+        "the IDs read before the update"
+    );
     assert_same_device(&tool, &ours, false);
     assert_eq!(
         ours.requests(),
@@ -145,7 +143,7 @@ fn an_update_makes_libusdrs_requests_in_its_order() {
     assert_eq!(
         outside(ours.flash()),
         outside(&image),
-        "the flash holds the image outside the driver's signature"
+        "the flash holds the image outside the range the tool does not compare"
     );
 }
 
@@ -154,7 +152,7 @@ fn info_prints_the_ids_rsl_usdr_reads() {
     let tool = xmass_fwupd(device(), NODE, &["info", NODE]);
     assert_eq!(tool.status, 0, "the tool succeeds:\n{}", tool.log);
     let mut ours = device();
-    let ids = xmass_firmware::read_ids(&mut Bridge(&mut ours)).expect("rsl-usdr reads them");
+    let ids = xmass_firmware::read_ids(&mut Switch(&mut ours)).expect("rsl-usdr reads them");
     assert_same_device(&tool, &ours, false);
     assert_eq!(ours.requests(), [Request::Ids], "the IDs alone");
     let [f0, f1, f2, f3, f4, f5] = ids.firmware;
@@ -261,5 +259,34 @@ fn a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr() {
             len: FLASH_BYTES + 1
         }),
         "rsl-usdr refuses it before any device exists"
+    );
+}
+
+/// Whitelisted divergence: the tool takes any return value that is not an error as success,
+/// and the driver is observed to pass positive failure codes through. A read-back that
+/// returns one hands back the image just written (here, as from a stale staging buffer),
+/// so the tool verifies the image against itself; rsl-usdr accepts only the read's
+/// success value.
+#[test]
+fn a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr() {
+    const PCI_CONFIG_FAILURE: i32 = 0x87;
+    let image = pattern(9);
+    let device = device().returning(3, PCI_CONFIG_FAILURE);
+    let (tool, result, ours) = both("read_returns_code", &device, &image[..]);
+    assert_eq!(tool.status, 0, "the tool reports success:\n{}", tool.log);
+    assert_same_device(&tool, &ours, false);
+    let error = result.expect_err("rsl-usdr refuses the read-back");
+    let UpdateError::ReadBack(source) = &error else {
+        panic!("the read-back failed, not {error:?}");
+    };
+    assert_eq!(
+        source
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<UnexpectedReturn>()),
+        Some(&UnexpectedReturn {
+            returned: PCI_CONFIG_FAILURE,
+            success: READ_SUCCESS
+        }),
+        "rsl-usdr names the value the driver returned"
     );
 }

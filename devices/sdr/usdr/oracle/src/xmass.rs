@@ -3,15 +3,18 @@
 //!
 //! The tool reaches the device only through `open`, `ioctl` and `close`, which
 //! `shim/xmass_fwupd.c` redirects here; rsl-usdr's port reaches the same [`FakeXmass`]
-//! through its `BridgeFlash` trait. Both drivers' requests land in one list, so they compare
+//! through its `SwitchFlash` trait. Both drivers' requests land in one list, so they compare
 //! request for request.
 //!
-//! What the fake does with each request follows the driver (`usdr_pcie_uram.c` at the
-//! pinned commit, GPL-2.0, not vendored; only its behaviour is modelled here): the IDs are
-//! ten bytes, the flash 64 KiB, an erase blanks it, a write programs it (bits only cleared,
-//! as NOR flash does) after changing bytes in `0xe00..0xf00`, and a read returns 1. The
-//! driver's signature there is stood in for by inverting the image's bytes: the tool skips
-//! that range, so its content does not matter, only that it differs.
+//! The fake models the driver's interface as the tool (MIT) and the interface header use
+//! it, plus behaviour observed of the driver (GPL-2.0, nothing taken from it; see
+//! PORTING.md's provenance note): the IDs are ten bytes, the flash 64 KiB, an erase blanks
+//! it, a write programs it (bits only cleared, as NOR flash does) and may change bytes in
+//! `0xe00..0xf00`, a read returns 1, the others 0. A request can be made to fail with an
+//! errno, or to return a positive failure code without acting; a read that does so hands
+//! back the last image written, as a stale staging buffer would. The fake stands in for
+//! the changed bytes by inverting the image's: the tool skips that range, so their content
+//! does not matter, only that they differ.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_ulong, c_void};
 use std::fmt;
@@ -27,7 +30,7 @@ use crate::{PANIC, SESSION, pcie_abi, resume_callback_panic};
 pub const FLASH_BYTES: usize = 65_536;
 /// The bytes the IDs request writes (`info[10]` in the tool).
 pub const IDS_BYTES: usize = 10;
-/// Where the driver writes its signature, which the tool does not compare.
+/// Bytes the driver may change when it programs the flash, which the tool does not compare.
 const SIGNATURE: std::ops::Range<usize> = 0xe00..0xf00;
 
 /// `EINVAL`: the driver's answer to a request code it does not know.
@@ -85,8 +88,10 @@ pub struct FakeXmass {
     ids: [u8; IDS_BYTES],
     /// The flash's first 64 KiB.
     flash: Box<[u8; FLASH_BYTES]>,
-    /// The request, counted from 0, that fails with this errno instead of acting.
-    failure: Option<(usize, c_int)>,
+    /// The request, counted from 0, that fails instead of acting, and how.
+    failure: Option<(usize, Failure)>,
+    /// The last image written: what a read that fails without an errno hands back.
+    staged: Option<Box<[u8; FLASH_BYTES]>>,
     /// A byte that reads back with its low bit flipped.
     misread: Option<usize>,
     /// Every request so far, the failed one included.
@@ -101,6 +106,7 @@ impl FakeXmass {
             ids,
             flash: Box::new(*flash),
             failure: None,
+            staged: None,
             misread: None,
             requests: Vec::new(),
         }
@@ -110,7 +116,17 @@ impl FakeXmass {
     #[must_use]
     pub fn failing(self, index: usize, errno: i32) -> Self {
         Self {
-            failure: Some((index, errno)),
+            failure: Some((index, Failure::Errno(errno))),
+            ..self
+        }
+    }
+
+    /// Makes request `index` (from 0) return the positive failure code `code` without
+    /// acting.
+    #[must_use]
+    pub fn returning(self, index: usize, code: i32) -> Self {
+        Self {
+            failure: Some((index, Failure::Returns(code))),
             ..self
         }
     }
@@ -136,65 +152,88 @@ impl FakeXmass {
         &self.flash
     }
 
-    /// Records `request`, then fails it if told to.
-    fn receive(&mut self, request: Request) -> Result<(), c_int> {
+    /// Records `request`: `Ok(None)` to act on it, `Ok(Some(code))` to return a failure
+    /// code without acting, `Err(errno)` to fail.
+    fn receive(&mut self, request: Request) -> Result<Option<i32>, c_int> {
         let index = self.requests.len();
         self.requests.push(request);
         match self.failure {
-            Some((at, errno)) if at == index => Err(errno),
-            _ => Ok(()),
+            Some((at, Failure::Errno(errno))) if at == index => Err(errno),
+            Some((at, Failure::Returns(code))) if at == index => Ok(Some(code)),
+            _ => Ok(None),
         }
     }
 
-    /// `PCIE_GETIDS`.
+    /// `PCIE_GETIDS`: returns 0.
     ///
     /// # Errors
     ///
     /// The errno it was told to fail with.
-    pub fn read_ids(&mut self, out: &mut [u8; IDS_BYTES]) -> Result<(), i32> {
-        self.receive(Request::Ids)?;
+    pub fn read_ids(&mut self, out: &mut [u8; IDS_BYTES]) -> Result<i32, i32> {
+        if let Some(code) = self.receive(Request::Ids)? {
+            return Ok(code);
+        }
         *out = self.ids;
-        Ok(())
+        Ok(0)
     }
 
-    /// `PCIE_FLASH_ERASE`.
+    /// `PCIE_FLASH_ERASE`: returns 0.
     ///
     /// # Errors
     ///
     /// As [`Self::read_ids`].
-    pub fn erase(&mut self) -> Result<(), i32> {
-        self.receive(Request::Erase)?;
+    pub fn erase(&mut self) -> Result<i32, i32> {
+        if let Some(code) = self.receive(Request::Erase)? {
+            return Ok(code);
+        }
         self.flash.fill(0xff);
-        Ok(())
+        Ok(0)
     }
 
-    /// `PCIE_FLASH_WRITE`.
+    /// `PCIE_FLASH_WRITE`: returns 0.
     ///
     /// # Errors
     ///
     /// As [`Self::read_ids`].
-    pub fn write(&mut self, image: &[u8; FLASH_BYTES]) -> Result<(), i32> {
-        self.receive(Request::Write(Box::new(*image)))?;
+    pub fn write(&mut self, image: &[u8; FLASH_BYTES]) -> Result<i32, i32> {
+        self.staged = Some(Box::new(*image));
+        if let Some(code) = self.receive(Request::Write(Box::new(*image)))? {
+            return Ok(code);
+        }
         for (at, (cell, &byte)) in self.flash.iter_mut().zip(image.iter()).enumerate() {
             let byte = if SIGNATURE.contains(&at) { !byte } else { byte };
             *cell &= byte;
         }
-        Ok(())
+        Ok(0)
     }
 
-    /// `PCIE_FLASH_READ`. Returns 1, as the driver does.
+    /// `PCIE_FLASH_READ`: returns 1.
     ///
     /// # Errors
     ///
     /// As [`Self::read_ids`].
     pub fn read(&mut self, out: &mut [u8; FLASH_BYTES]) -> Result<i32, i32> {
-        self.receive(Request::Read)?;
+        if let Some(code) = self.receive(Request::Read)? {
+            if let Some(staged) = &self.staged {
+                *out = **staged;
+            }
+            return Ok(code);
+        }
         *out = *self.flash;
         if let Some(at) = self.misread {
             out[at] ^= 1;
         }
         Ok(1)
     }
+}
+
+/// How a request the fake was told to fail fails.
+#[derive(Clone, Copy, Debug)]
+enum Failure {
+    /// With this errno.
+    Errno(c_int),
+    /// By returning this positive code without acting.
+    Returns(c_int),
 }
 
 /// The installed device, with the node it answers at and whether it is open.
@@ -301,13 +340,13 @@ unsafe extern "C" fn rsl_oracle_xmass_ioctl(
         let result = if request == code("PCIE_GETIDS") {
             // SAFETY: the caller guarantees `IDS_BYTES` writable bytes.
             let out = unsafe { &mut *arg.cast::<[u8; IDS_BYTES]>() };
-            device.read_ids(out).map(|()| 0)
+            device.read_ids(out)
         } else if request == code("PCIE_FLASH_ERASE") {
-            device.erase().map(|()| 0)
+            device.erase()
         } else if request == code("PCIE_FLASH_WRITE") {
             // SAFETY: the caller guarantees `FLASH_BYTES` readable bytes.
             let image = unsafe { &*arg.cast::<[u8; FLASH_BYTES]>() };
-            device.write(image).map(|()| 0)
+            device.write(image)
         } else if request == code("PCIE_FLASH_READ") {
             // SAFETY: the caller guarantees `FLASH_BYTES` writable bytes.
             let out = unsafe { &mut *arg.cast::<[u8; FLASH_BYTES]>() };
