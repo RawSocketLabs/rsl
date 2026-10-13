@@ -29,14 +29,16 @@ pub(crate) const fn c_u64(value: f64) -> u64 {
     value as u64
 }
 
-/// C's `(unsigned)` conversion of a non-negative double below 2^32: truncation.
+/// C's `(unsigned)` conversion of a non-negative double as GCC emits it on x86-64: a 64-bit
+/// truncation, then the low 32 bits. A value of 2^32 or more wraps (the LMX1204's SYSREF
+/// divider can reach one), where Rust's `as u32` alone would saturate.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "C's double-to-unsigned truncation, on values the C keeps in range"
+    reason = "GCC's double-to-unsigned conversion on x86-64"
 )]
 pub(crate) const fn c_unsigned(value: f64) -> u32 {
-    value as u32
+    value as i64 as u32
 }
 
 /// C's `fabs`: the sign bit cleared, nothing else changed.

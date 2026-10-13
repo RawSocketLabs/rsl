@@ -14,7 +14,6 @@ use crate::portable::board::{
     LMX1204, LMX1204_SETUP, LMX1214, LMX1214_SETUP, LMX2820_0, LMX2820_0_TUNE, LMX2820_1,
     LMX2820_1_TUNE,
 };
-use crate::portable::chain::Lenient;
 use crate::portable::lmk1d1208i;
 use crate::portable::lmx1204::{self, sequence::WaitLock};
 use crate::portable::lmx1214;
@@ -55,7 +54,7 @@ impl Device {
         if let Err(error) = bring_up(&mut *bus) {
             // libusdr powers the board off after a failed open and returns the open's error,
             // whatever the power-off's outcome.
-            run(&mut *bus, &mut Lenient(Power::off()))?;
+            let _ignored = run(&mut *bus, &mut Power::off());
             return Err(error);
         }
         Ok(Self { bus })
@@ -126,7 +125,7 @@ fn synthesizer(bus: &mut dyn Bus, target: SpiAddr, request: &Request) -> Result<
         run(bus, &mut tune)?;
         tune.locked().then_some(()).ok_or(Error::Unlocked(name))
     });
-    run(bus, &mut Lenient(lmx2820::sequence::status(target)))?;
+    let _logged = run(bus, &mut lmx2820::sequence::status(target));
     tuned
 }
 
@@ -141,7 +140,7 @@ fn lo_distribution(bus: &mut dyn Bus) -> Result<(), Error> {
             })?;
         run(bus, &mut lmx1214::sequence::configure(LMX1214, &plan))
     });
-    run(bus, &mut Lenient(lmx1214::sequence::temperature(LMX1214)))?;
+    let _logged = run(bus, &mut lmx1214::sequence::temperature(LMX1214));
     configured
 }
 
@@ -155,11 +154,11 @@ fn clock_distribution(bus: &mut dyn Bus) -> Result<(), Error> {
         reason: error.reason(),
     })?;
     run(bus, &mut lmx1204::sequence::configure(LMX1204, &plan))?;
-    run(bus, &mut Lenient(lmx1204::sequence::status(LMX1204)))?;
+    let _logged = run(bus, &mut lmx1204::sequence::status(LMX1204));
     let mut wait = WaitLock::new(LMX1204, &plan);
     let locked =
         run(bus, &mut wait).and_then(|()| wait.locked().then_some(()).ok_or(Error::Unlocked(name)));
-    run(bus, &mut Lenient(lmx1204::sequence::status(LMX1204)))?;
+    let _logged = run(bus, &mut lmx1204::sequence::status(LMX1204));
     locked
 }
 

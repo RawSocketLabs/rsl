@@ -54,4 +54,5 @@ input is LMX2820 #0's planned 25 MHz though that synthesizer's SYSREF stays off.
 | LMX2820 SYSREF and instant calibration; LMX1204/LMX1214 precision mode, per-output SYSREF delays, SYSREF windowing; LMX2820 `sync` | `lmx2820_calculate_systef_chain`, `lmx2820_instant_calibration_init`, `*_sysref_windowing_*`, `lmx1204_init_sysrefout_ch_delay` | Not called by `pe_sync.c`; no control in libusdr reaches them |
 | AD5662 DACs, external SPI | `pe_sync.c` (SPI buses 0, 1, 6, 7) | Not driven at open; not modelled |
 | Unlocked and retry paths against libusdr | — | Sim reports lock at once; libusdr's waits need a fake wall clock (`AGENTS.md`, open items) |
+| One home for C's numeric helpers | — | `gcd`, `abs` and the C conversions (`c_f64`, `c_u64`, `c_unsigned`) exist three times: `P:float.rs`, `rsl-lmk05318`'s `plan.rs` and `rsl-usdr`'s `cal::search::gcd`. Consolidate once a shared `no_std` home is agreed |
 | Hardware qualification | — | Not authorized |
