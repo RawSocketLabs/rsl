@@ -147,7 +147,10 @@ refusal; `oracle/tests/power.rs` asserts reset-before-SPI and the closed state. 
 is compared with live libusdr, not with these files: `oracle/tests/open_parity.rs` covers
 XSDR golden lines 10–26 (open up to the front-end probe), 78–97 (power-up) and 99–133
 (close), plus a close without power-up and one after a refused power-up (libusdr's zeroed
-LMS7002M state).
+LMS7002M state). `oracle/tests/lms7002m_parity.rs` calls the compiled
+`hw/lms7002m/lms7002m.c` directly (`rsl_xsdr_oracle::lms7002m_run`, a zeroed chip state on
+the sim's SPI) and compares `rsl-lms7002m`'s words for every bank selection, RFE/TRF path
+and mode, MIMO hand-over, AFE combination and processor enable, which no session reaches.
 
 ## Verify
 
@@ -181,8 +184,8 @@ by a lock: one is open at a time per process.
 - The MMCM behind DRP (TX via `REG_CFG_PHY_1`, RX via the DRP class) must be modelled
   before sample-rate or LML calibration work.
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
-  `xsdr-portable` (host only); a change to the uSDR oracle's vendored C, to `rsl-xsdr` or
-  to the shared crates it builds on selects them too (`scripts/ci/plan.py`). Their
-  thumbv7em checks (fixture, `rsl-lms7002m`) join the release-only `no-std` profile on an
-  explicit XSDR release, which no product enables yet. `PORTING.md` here is prose to the
-  selector, like the uSDR ledger.
+  `xsdr-portable` (host only); a change to `rsl-xsdr` or to the shared crates it builds on
+  selects both, a change to the uSDR oracle's vendored C only the oracle
+  (`scripts/ci/plan.py`). Their thumbv7em checks (fixture, `rsl-lms7002m`) join the
+  release-only `no-std` profile on an explicit XSDR release, which no product enables yet.
+  `PORTING.md` here is prose to the selector, like the uSDR ledger.

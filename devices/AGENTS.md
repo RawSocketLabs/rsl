@@ -28,8 +28,11 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `rsl-lms7002m` ports
   libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose
-  operations return write `Batch`es). How a family composes them (libusdr's
-  `device/<family>/` code, such as `lms7002m_streaming_down`) stays in the driver.
+  operations return write `Batch`es). libusdr's `device/m2_lm7_1/lms7002m_ctrl.c` is
+  LMS7002M control code too, despite its directory (the LimeSDR's `limesdr_ctrl.c` calls
+  its `lms7002m_streaming_up`): its functions belong in `rsl-lms7002m` once a second
+  driver needs them; until then a port of one may sit in its first driver
+  (`lms7002m_streaming_down` in `rsl-xsdr`'s `Close`). Board composition stays in drivers.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
   workspace root (`rawsock/`, …), and drivers depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).
