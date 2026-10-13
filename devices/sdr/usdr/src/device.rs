@@ -7,8 +7,8 @@ use num_complex::Complex;
 use rsl_deps::tracing::warn;
 
 use crate::board::{
-    Board, Calibration, CalibrationReport, RateChains, RxGain, RxIqCorrection, RxPacket, RxPath,
-    RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
+    Board, Calibration, CalibrationReport, NcoChannels, RateChains, RxGain, RxIqCorrection,
+    RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
 };
 use crate::error::Error;
 use crate::fpga::IqImbalance;
@@ -630,6 +630,67 @@ impl Device {
     /// - Any bus failure.
     pub fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
         self.board().set_tx_frequency(hz)
+    }
+
+    /// Tunes `channels` of the receiver's two NCO channels to `hz` (libusdr's
+    /// `/dm/sdr/0/rx/frequency/0` and `/1`; [`NcoChannels::Both`] is
+    /// [`Device::set_rx_frequency`]).
+    ///
+    /// The channels share one PLL: it tunes the average of the LOs the channels were given,
+    /// and each channel's NCO shifts by its distance from that average, replacing any
+    /// [`Device::set_rx_baseband_offset`] of a channel with an LO. The filter, if it
+    /// follows the rate, widens by twice the largest distance. Only channel 0 reaches an
+    /// RX stream.
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_rx_frequency`], for the average LO.
+    pub fn set_rx_channel_frequency(
+        &mut self,
+        channels: NcoChannels,
+        hz: u32,
+    ) -> Result<(), Error> {
+        self.board().set_rx_channel_frequency(channels, hz)
+    }
+
+    /// Tunes `channels` of the transmitter's two NCO channels to `hz`, as
+    /// [`Device::set_rx_channel_frequency`] does the receiver's (libusdr's
+    /// `/dm/sdr/0/tx/frequency/0` and `/1`).
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_tx_frequency`], for the average LO.
+    pub fn set_tx_channel_frequency(
+        &mut self,
+        channels: NcoChannels,
+        hz: u32,
+    ) -> Result<(), Error> {
+        self.board().set_tx_channel_frequency(channels, hz)
+    }
+
+    /// Shifts `channels` of the receiver's NCOs by `hz` from the RX frequency (libusdr's
+    /// `/dm/sdr/0/rx/frequency/bb`, `/0` and `/1`), then tunes the receiver again to its
+    /// frequency, as libusdr does, so the band, PLL, NCOs and a following filter (wider by
+    /// twice the largest offset) are all set anew. A later tune of a channel's LO replaces
+    /// its offset; a whole-receiver tune sets both back to 0.
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_rx_frequency`] for the current frequency: tune the receiver first,
+    /// or the PLL refuses an LO of 0.
+    pub fn set_rx_baseband_offset(&mut self, channels: NcoChannels, hz: i32) -> Result<(), Error> {
+        self.board().set_rx_baseband_offset(channels, hz)
+    }
+
+    /// Shifts `channels` of the transmitter's NCOs by `hz` from the TX frequency, then
+    /// tunes the transmitter again, as [`Device::set_rx_baseband_offset`] does the
+    /// receiver (libusdr's `/dm/sdr/0/tx/frequency/bb`, `/0` and `/1`).
+    ///
+    /// # Errors
+    ///
+    /// As [`Device::set_tx_frequency`] for the current frequency.
+    pub fn set_tx_baseband_offset(&mut self, channels: NcoChannels, hz: i32) -> Result<(), Error> {
+        self.board().set_tx_baseband_offset(channels, hz)
     }
 
     /// Runs libusdr's LO-leakage and IQ-imbalance calibrations (`/dm/sdr/0/calibrate`):

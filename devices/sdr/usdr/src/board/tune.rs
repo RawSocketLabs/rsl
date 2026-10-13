@@ -15,6 +15,7 @@ use std::time::Duration;
 use rsl_deps::tracing::debug;
 
 use super::Board;
+use super::baseband::NcoChannels;
 use crate::chips::lms6002d::{CapacitorWindow, Lna, PowerAmp};
 use crate::error::Error;
 use crate::fpga::{Gpo, Nco, Phy};
@@ -142,7 +143,13 @@ impl Board {
     /// The share of the ADC rate an NCO offset plus the signal may occupy.
     const NCO_HEADROOM: f64 = 0.45;
 
-    /// Tunes the receiver to `hz`.
+    /// Tunes the receiver to `hz`, both NCO channels.
+    pub(crate) fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        self.set_rx_channel_frequency(NcoChannels::Both, hz)
+    }
+
+    /// Tunes the receiver's PLL to `hz` with the chain's frequency plan: the rest of
+    /// `usdr_rfic_fe_set_freq` for RX once the channels' LOs and offsets are recorded.
     ///
     /// The band follows the frequency unless [`Self::set_rx_path`] fixed it.
     ///
@@ -154,7 +161,7 @@ impl Board {
     /// [`Error::UnsupportedFrequency`] before tuning. On failure, state is left as libusdr
     /// leaves it: the band change as [`Self::select_rx_band`] says, and the LO offset and
     /// minimal LO recorded at the same points.
-    pub(crate) fn set_rx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+    pub(super) fn tune_rx(&mut self, hz: u32) -> Result<(), Error> {
         self.rx.lo_hz = hz;
         // `_usdr_signal_event(USDR_RX_LO_CHANGED)`: power the receiver, ignoring a failure,
         // then the band for the frequency, if it is not fixed. libusdr discards the result.
@@ -247,8 +254,14 @@ impl Board {
         Ok(())
     }
 
-    /// Tunes the TX chain to `hz` (`usdr_rfic_fe_set_freq` for the TX LO), with `tx` the
-    /// transmitter's settings.
+    /// Tunes the transmitter to `hz`, both NCO channels.
+    pub(crate) fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+        self.set_tx_channel_frequency(NcoChannels::Both, hz)
+    }
+
+    /// Tunes the TX chain's PLL to `hz` with the chain's frequency plan
+    /// (`usdr_rfic_fe_set_freq` for the TX LO once the channels' LOs and offsets are
+    /// recorded).
     ///
     /// The band follows the frequency unless [`Self::set_tx_path`] fixed it. As in libusdr,
     /// the first TX tune that cannot lock, with no RX frequency set, tunes the RX PLL to
@@ -259,7 +272,7 @@ impl Board {
     /// NCO lock fallback fails with [`Error::PllUnlocked`], and the filter is left alone
     /// (`tests/tx_tuning.rs`). On failure, state is left as libusdr leaves it: the power and
     /// band changes, LO offset and minimal LO recorded at the same points.
-    pub(crate) fn set_tx_frequency(&mut self, hz: u32) -> Result<(), Error> {
+    pub(super) fn tune_tx(&mut self, hz: u32) -> Result<(), Error> {
         let first = self.tx.lo_hz == 0;
         self.tx.lo_hz = hz;
         // `_usdr_signal_event(USDR_TX_LO_CHANGED)`: power the transmitter, then the band for
@@ -289,7 +302,7 @@ impl Board {
             tuned?;
         }
 
-        self.restore_ncos(Chain::Tx, self.tx.lo_offset_hz)?;
+        self.restore_ncos(Chain::Tx)?;
         self.update_tx_bandwidth()?;
         debug!(hz, nco_offset_hz = self.tx.lo_offset_hz, "TX tuned");
         Ok(())
@@ -402,53 +415,71 @@ impl Board {
         Ok(offset)
     }
 
-    /// Points both RX NCOs at the RX LO offset (`usdr_restore_nco` for RX).
+    /// Points both RX NCOs at the RX LO offset plus each channel's baseband offset
+    /// (`usdr_restore_nco` for RX).
     pub(super) fn restore_rx_ncos(&mut self) -> Result<(), Error> {
-        self.restore_ncos(Chain::Rx, self.rx.lo_offset_hz)
+        self.restore_ncos(Chain::Rx)
     }
 
-    /// Points both of `chain`'s NCOs at `offset_hz` (`usdr_restore_nco`). libusdr adds each
-    /// channel's baseband offset, which a whole-device tune leaves at 0.
-    pub(super) fn restore_ncos(&mut self, chain: Chain, offset_hz: i32) -> Result<(), Error> {
-        let word = nco_word(offset_hz, self.adc_rate_hz);
+    /// Points each of `chain`'s NCOs at the chain's LO offset plus that channel's baseband
+    /// offset (`usdr_restore_nco`), in libusdr's wrapping `int` sum.
+    pub(super) fn restore_ncos(&mut self, chain: Chain) -> Result<(), Error> {
+        let (plan, offset_hz) = match chain {
+            Chain::Rx => (self.rx.plan, self.rx.lo_offset_hz),
+            Chain::Tx => (self.tx.plan, self.tx.lo_offset_hz),
+        };
         let bus = self.bus.as_mut();
-        for nco in [Nco::Nco0, Nco::Nco1] {
-            chain.phy().set_nco(bus, nco, word)?;
+        for (channel, nco) in [Nco::Nco0, Nco::Nco1].into_iter().enumerate() {
+            let hz = plan.baseband_hz(channel).wrapping_add(offset_hz);
+            chain
+                .phy()
+                .set_nco(bus, nco, nco_word(hz, self.adc_rate_hz))?;
         }
         Ok(())
     }
 
-    /// Sets the RX filter to the sample rate plus twice the LO offset, unless the caller
-    /// fixed it or no rate is set yet (`_usdr_update_bandwidth` for RX).
+    /// Sets the RX filter to the sample rate plus twice the LO offset and twice the
+    /// largest baseband offset, unless the caller fixed it or no rate is set yet
+    /// (`_usdr_update_bandwidth` for RX).
     pub(super) fn update_rx_bandwidth(&mut self) -> Result<(), Error> {
         if self.rx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
-        let Some(bandwidth) = self.following_bandwidth(self.rx.lo_offset_hz) else {
+        let Some(bandwidth) =
+            self.following_bandwidth(self.rx.lo_offset_hz, self.rx.plan.nco_distance_hz())
+        else {
             return Ok(());
         };
         self.lms.set_rx_bandwidth(self.bus.as_mut(), bandwidth)
     }
 
     /// Sets the TX filter as [`Self::update_rx_bandwidth`] sets the RX one, from the TX LO
-    /// offset (`_usdr_update_bandwidth` for TX).
+    /// and baseband offsets (`_usdr_update_bandwidth` for TX).
     pub(super) fn update_tx_bandwidth(&mut self) -> Result<(), Error> {
         if self.tx.fixed_bandwidth_hz.is_some() {
             return Ok(());
         }
-        let Some(bandwidth) = self.following_bandwidth(self.tx.lo_offset_hz) else {
+        let Some(bandwidth) =
+            self.following_bandwidth(self.tx.lo_offset_hz, self.tx.plan.nco_distance_hz())
+        else {
             return Ok(());
         };
         self.lms.set_tx_bandwidth(self.bus.as_mut(), bandwidth)
     }
 
-    /// The bandwidth a filter that follows the sample rate gets with LO offset `offset_hz`:
-    /// the sample rate plus twice the offset, in libusdr's wrapping 32-bit arithmetic.
-    /// `None` before any rate is set, where libusdr divides by zero.
-    fn following_bandwidth(&self, offset_hz: i32) -> Option<u32> {
+    /// The bandwidth a filter that follows the sample rate gets with LO offset `offset_hz`
+    /// and NCO distance `distance_hz`: the sample rate plus twice each, in libusdr's
+    /// wrapping 32-bit arithmetic. `None` before any rate is set, where libusdr divides by
+    /// zero.
+    fn following_bandwidth(&self, offset_hz: i32, distance_hz: u32) -> Option<u32> {
         let decimation = self.rx.decimation?;
         let rate = self.adc_rate_hz / decimation.factor();
-        Some(rate.wrapping_add(offset_hz.wrapping_mul(2).unsigned_abs()))
+        Some(
+            distance_hz
+                .wrapping_mul(2)
+                .wrapping_add(rate)
+                .wrapping_add(offset_hz.wrapping_mul(2).unsigned_abs()),
+        )
     }
 }
 

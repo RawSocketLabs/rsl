@@ -135,8 +135,8 @@ mod thermal;
 pub mod transport;
 
 pub use board::{
-    Calibration, CalibrationReport, Feedback, IqCalibration, RxGain, RxIqCorrection, RxPacket,
-    RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxLoLeakage, TxPath,
+    Calibration, CalibrationReport, Feedback, IqCalibration, NcoChannels, RxGain, RxIqCorrection,
+    RxPacket, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxLoLeakage, TxPath,
 };
 pub use device::{Device, DeviceBuilder};
 pub use error::{Access, Error};

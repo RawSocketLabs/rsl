@@ -9,6 +9,7 @@
 
 use std::fmt;
 
+use super::baseband::FrequencyPlan;
 use super::stream::StreamGroup;
 use super::tune::RxBand;
 use crate::chips::lms6002d::Lms6002d;
@@ -103,8 +104,12 @@ pub(super) struct RxState {
     /// first. Its FIR is loaded unless the board has no RX chain.
     pub(super) decimation: Option<Decimation>,
 
-    /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`).
+    /// The frequency the caller tuned to, in Hz (libusdr's `rx_lo`): the average of the
+    /// NCO channels' LOs.
     pub(super) lo_hz: u32,
+
+    /// Each NCO channel's LO and baseband offset (libusdr's `rx_raw`).
+    pub(super) plan: FrequencyPlan,
 
     /// The LO the RX PLL was last asked for by a tune, in Hz: [`Self::lo_hz`] plus the
     /// mixer LO in the mixer band (libusdr's `rfic_rx_lo`). The calibration restores it.
@@ -163,8 +168,12 @@ pub(crate) struct TxState {
     /// leave the filter alone; `None` while it follows the rate.
     pub(super) fixed_bandwidth_hz: Option<u32>,
 
-    /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`); 0 until tuned.
+    /// The frequency the caller tuned to, in Hz (libusdr's `tx_lo`): the average of the
+    /// NCO channels' LOs; 0 until tuned.
     pub(super) lo_hz: u32,
+
+    /// Each NCO channel's LO and baseband offset (libusdr's `tx_raw`).
+    pub(super) plan: FrequencyPlan,
 
     /// The interpolation of the last sample rate set (libusdr's `txbb_intr`); `None`
     /// until the first. Every rate change sets it, TX's or not, but only a TX rate loads

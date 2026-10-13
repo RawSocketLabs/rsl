@@ -141,7 +141,7 @@ impl Board {
 
         // `usdr_restore_nco`, RX then TX.
         self.restore_rx_ncos()?;
-        self.restore_ncos(Chain::Tx, self.tx.lo_offset_hz)?;
+        self.restore_ncos(Chain::Tx)?;
 
         // `USDR_SAMPLERATE_CHANGED`: the mixer LO moved with the clocks, so retune.
         if self.rx.mixer_on && self.rx.band == Some(RxBand::Mixer) {

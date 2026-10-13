@@ -397,7 +397,7 @@ impl Board {
     /// caller's settings put them.
     fn restore_after_calibration(&mut self) -> Result<(), Error> {
         self.set_tx_constant(None)?;
-        self.restore_ncos(Chain::Tx, self.tx.lo_offset_hz)?;
+        self.restore_ncos(Chain::Tx)?;
         self.restore_rx_ncos()?;
         match self.rx.fixed_bandwidth_hz {
             Some(hz) => self.lms.set_rx_bandwidth(self.bus.as_mut(), hz)?,
