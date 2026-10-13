@@ -57,6 +57,10 @@ pub struct SimBoard {
     fpga: BTreeMap<u16, u16>,
     /// The RF transceiver.
     lms: Lms7002m,
+    /// Its metal-mask revision.
+    lms7_mask: u8,
+    /// A cap code at which its VCO comparators are forced to read "fail".
+    lms7_failing_cap: Option<u8>,
     /// The reference oscillator's frequency, in hertz.
     reference_hz: u32,
     /// How long a frequency measurement takes, in virtual microseconds.
@@ -76,7 +80,11 @@ impl Default for SimBoard {
 }
 
 impl SimBoard {
-    /// A LimeSDR-mini: LMS7002M metal mask 1 and a 40 MHz reference.
+    /// A LimeSDR-mini: LMS7002M metal mask 1 and a 40 MHz reference, which also clocks
+    /// the LMS7002M, so its VCO comparators answer the tunings libusdr makes
+    /// (`lms7002m-sim`'s model). Assumption: the board feeds its one reference
+    /// oscillator to the LMS7002M (`limesdr_init` hands the measured frequency to
+    /// `lms7002m_init` as the chip's `fref`).
     ///
     /// Gateware registers are plain storage reading 0 until written, except the frequency
     /// detector's (see [`SimBoard::with_reference_hz`]). Assumption: the values a real
@@ -86,7 +94,9 @@ impl SimBoard {
     pub fn new() -> Self {
         Self {
             fpga: BTreeMap::new(),
-            lms: Lms7002m::new(LMS7_MASK),
+            lms: lms7(LMS7_MASK, REFERENCE_HZ, None),
+            lms7_mask: LMS7_MASK,
+            lms7_failing_cap: None,
             reference_hz: REFERENCE_HZ,
             detector_delay_us: 0,
             detector_due_us: None,
@@ -103,11 +113,28 @@ impl SimBoard {
     /// When `mask` does not fit the 6-bit field.
     #[must_use]
     pub fn with_lms7_mask(mut self, mask: u8) -> Self {
-        self.lms = Lms7002m::new(mask);
+        self.lms7_mask = mask;
+        self.rebuild_lms7();
         self
     }
 
-    /// The same board with a `hz` reference oscillator.
+    /// The same board with the LMS7002M's VCO comparators reading "fail" whenever the cap
+    /// code last written is `cap` (`lms7002m-sim`'s fault injection, for the tuning
+    /// searches' error paths; not a modelled behaviour).
+    #[must_use]
+    pub fn with_lms7_comparator_failure(mut self, cap: u8) -> Self {
+        self.lms7_failing_cap = Some(cap);
+        self.rebuild_lms7();
+        self
+    }
+
+    /// Replaces the LMS7002M, before any driver touched it, with one built from the
+    /// board's choices.
+    fn rebuild_lms7(&mut self) {
+        self.lms = lms7(self.lms7_mask, self.reference_hz, self.lms7_failing_cap);
+    }
+
+    /// The same board with a `hz` reference oscillator, which clocks the LMS7002M too.
     ///
     /// Starting the frequency detector (writing the [`FDC_START`] bit) completes the
     /// measurement at once: the count of reference cycles in the detector's gate appears
@@ -118,6 +145,7 @@ impl SimBoard {
     #[must_use]
     pub fn with_reference_hz(mut self, hz: u32) -> Self {
         self.reference_hz = hz;
+        self.rebuild_lms7();
         self
     }
 
@@ -304,6 +332,16 @@ impl SimBoard {
     }
 }
 
+/// An LMS7002M of metal mask `mask`, clocked from `reference_hz`, its comparators failing
+/// at `failing_cap` if given.
+fn lms7(mask: u8, reference_hz: u32, failing_cap: Option<u8>) -> Lms7002m {
+    let chip = Lms7002m::new(mask).with_reference(reference_hz);
+    match failing_cap {
+        Some(cap) => chip.with_comparator_failure(cap),
+        None => chip,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,6 +468,47 @@ mod tests {
             &[0x00, 0x2f, 0x38, 0x41],
             "the version libusdr wants"
         );
+    }
+
+    /// Writes LMS7002M register `addr` through LMS64C.
+    fn write_lms7(board: &mut SimBoard, addr: u16, value: u16) {
+        let [a0, a1] = (addr | 0x8000).to_be_bytes();
+        let [v0, v1] = value.to_be_bytes();
+        let reply = board.lms64c(&request(CMD_LMS7002_WR, 0, &[&[a0, a1, v0, v1]]));
+        assert_eq!(status(&reply), Status::Completed as u8);
+    }
+
+    /// The CGEN comparators (`CGEN_0x008C` bits 13:12) at cap code `cap`, the PLL aiming
+    /// at 60 times the reference (2.4 GHz at 40 MHz, inside the model's VCO span).
+    fn cgen_comparators(board: &mut SimBoard, cap: u16) -> u16 {
+        write_lms7(board, 0x0088, 59 << 4);
+        write_lms7(board, 0x008b, cap << 1);
+        let reply = board.lms64c(&request(CMD_LMS7002_RD, 0, &[&[0x00, 0x8c]]));
+        u16::from_be_bytes([reply[10], reply[11]]) >> 12
+    }
+
+    #[test]
+    fn the_lms7002m_vco_comparators_answer_from_the_boards_reference() {
+        let mut board = SimBoard::new();
+        assert_eq!(
+            cgen_comparators(&mut board, 0),
+            0b00,
+            "the fastest code reads low"
+        );
+        assert_eq!(
+            cgen_comparators(&mut board, 255),
+            0b11,
+            "the slowest reads high"
+        );
+        let mut faster = SimBoard::new().with_reference_hz(52_000_000);
+        assert_eq!(
+            cgen_comparators(&mut faster, 0),
+            0b11,
+            "60 times 52 MHz is above the span: the board's reference clocks the chip"
+        );
+        let mut failing = SimBoard::new().with_lms7_comparator_failure(255);
+        assert_eq!(cgen_comparators(&mut failing, 255), 0b01, "forced to fail");
+        assert_eq!(cgen_comparators(&mut failing, 0), 0b00, "only at that code");
     }
 
     #[test]
