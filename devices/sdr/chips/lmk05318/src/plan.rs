@@ -457,21 +457,21 @@ pub struct Plan {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Apll2 {
     /// Primary reference divider, 3 to 6 (`fref_pll2_div_rp`).
-    pub primary_divider: u32,
+    pub(crate) primary_divider: u32,
     /// Secondary reference divider, 1 to 32 (`fref_pll2_div_rs`).
-    pub secondary_divider: u32,
+    pub(crate) secondary_divider: u32,
     /// The VCO frequency, in Hz; 0 until a plan uses APLL2 (`vco2_freq`).
-    pub vco_hz: u64,
+    pub(crate) vco_hz: u64,
     /// Feedback divider integer part (`vco2_n`).
-    pub n: u32,
+    pub(crate) n: u32,
     /// Feedback fraction numerator (`vco2_num`).
-    pub num: u32,
+    pub(crate) num: u32,
     /// Feedback fraction denominator (`vco2_den`).
-    pub den: u32,
+    pub(crate) den: u32,
     /// Post-divider 1; 0 when unused (`pd1`).
-    pub pd1: u32,
+    pub(crate) pd1: u32,
     /// Post-divider 2; 0 when unused (`pd2`).
-    pub pd2: u32,
+    pub(crate) pd2: u32,
 }
 
 /// An APLL2 feedback fraction `n + num / den`.
@@ -486,6 +486,54 @@ struct Fraction {
 }
 
 impl Apll2 {
+    /// The primary reference divider, 3 to 6 (`fref_pll2_div_rp`).
+    #[must_use]
+    pub const fn primary_divider(&self) -> u32 {
+        self.primary_divider
+    }
+
+    /// The secondary reference divider, 1 to 32 (`fref_pll2_div_rs`).
+    #[must_use]
+    pub const fn secondary_divider(&self) -> u32 {
+        self.secondary_divider
+    }
+
+    /// The VCO frequency, in Hz; 0 until a plan uses APLL2 (`vco2_freq`).
+    #[must_use]
+    pub const fn vco_hz(&self) -> u64 {
+        self.vco_hz
+    }
+
+    /// The feedback divider's integer part (`vco2_n`).
+    #[must_use]
+    pub const fn n(&self) -> u32 {
+        self.n
+    }
+
+    /// The feedback fraction's numerator (`vco2_num`).
+    #[must_use]
+    pub const fn num(&self) -> u32 {
+        self.num
+    }
+
+    /// The feedback fraction's denominator (`vco2_den`).
+    #[must_use]
+    pub const fn den(&self) -> u32 {
+        self.den
+    }
+
+    /// Post-divider 1; 0 when unused (`pd1`).
+    #[must_use]
+    pub const fn pd1(&self) -> u32 {
+        self.pd1
+    }
+
+    /// Post-divider 2; 0 when unused (`pd2`).
+    #[must_use]
+    pub const fn pd2(&self) -> u32 {
+        self.pd2
+    }
+
     /// APLL2 as `lmk05318_create` sets it up: reference dividers 3 and the smallest
     /// secondary that keeps the phase detector at or below 150 MHz, nothing planned.
     #[must_use]

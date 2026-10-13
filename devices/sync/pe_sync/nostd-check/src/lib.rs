@@ -64,7 +64,7 @@ pub fn lmk05318_plan() -> Option<(u8, bool)> {
     LMK05318_XO.apll1(path).ok()?;
     let mut apll2 = Apll2::cascaded();
     apll2.plan(&LMK05318_OUTPUTS).ok()?;
-    Some((LMK05318.addr(), apll2.vco_hz != 0))
+    Some((LMK05318.addr(), apll2.vco_hz() != 0))
 }
 
 /// Both LMX2820 plans, then #0's create and tune, every read answering `status`: their action counts and

@@ -166,11 +166,11 @@ impl Lmk05318 {
         bus: &mut dyn Bus,
         timeout: Duration,
     ) -> Result<(), Error> {
-        if self.apll2.vco_hz == 0 {
+        if self.apll2.vco_hz() == 0 {
             debug!("LMK05318 APLL2 unused; lock not checked");
             return Ok(());
         }
-        let (primary, secondary) = (self.apll2.primary_divider, self.apll2.secondary_divider);
+        let (primary, secondary) = (self.apll2.primary_divider(), self.apll2.secondary_divider());
         self.toggle(
             bus,
             Pll2Control::with_dividers(primary, secondary, true),

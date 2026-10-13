@@ -73,14 +73,14 @@ fn number(regs: &Staged, addrs: &[usize]) -> u64 {
 /// APLL2's state as the C's.
 fn to_c(apll2: &Apll2) -> Apll2State {
     Apll2State {
-        rp: apll2.primary_divider,
-        rs: apll2.secondary_divider,
-        vco2_freq: apll2.vco_hz,
-        n: apll2.n,
-        num: apll2.num,
-        den: apll2.den,
-        pd1: apll2.pd1,
-        pd2: apll2.pd2,
+        rp: apll2.primary_divider(),
+        rs: apll2.secondary_divider(),
+        vco2_freq: apll2.vco_hz(),
+        n: apll2.n(),
+        num: apll2.num(),
+        den: apll2.den(),
+        pd1: apll2.pd1(),
+        pd2: apll2.pd2(),
     }
 }
 
