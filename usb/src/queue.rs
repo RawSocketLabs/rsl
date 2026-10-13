@@ -355,7 +355,8 @@ impl Pipe {
         if self.pending.is_empty() {
             return Ok(None);
         }
-        let deadline = Instant::now() + timeout;
+        // A timeout past what `Instant` can represent waits without limit.
+        let deadline = Instant::now().checked_add(timeout);
         let Some(transfer) = self.dispatcher.wait(self.endpoint, deadline)? else {
             return Ok(None);
         };
@@ -413,7 +414,7 @@ impl Pipe {
             // are not proof of cancellation: only the reap below permits freeing a buffer.
             let _ = unsafe { self.dispatcher.backend().discard(transfer) };
         }
-        let deadline = Instant::now() + grace;
+        let deadline = Instant::now().checked_add(grace);
         let mut buffers = Vec::with_capacity(self.pending.len());
         while !self.pending.is_empty() {
             match self.dispatcher.wait(self.endpoint, deadline) {
@@ -556,6 +557,20 @@ mod tests {
             "the RX waiter was woken"
         );
         assert!(sender.join().unwrap().is_some(), "the TX waiter was woken");
+    }
+
+    #[test]
+    fn a_timeout_too_long_for_a_deadline_waits_without_limit() {
+        let (fake, dispatcher) = device();
+        let mut rx = in_queue(&dispatcher, RX);
+        let buffer = rx.alloc(512).unwrap();
+        rx.submit(buffer).unwrap();
+        let receiver = thread::spawn(move || rx.wait(Duration::MAX).unwrap());
+        fake.complete(RX, 0, 512);
+        assert!(
+            receiver.join().unwrap().is_some(),
+            "an unbounded wait returns the completion instead of overflowing"
+        );
     }
 
     #[test]

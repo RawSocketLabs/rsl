@@ -280,8 +280,8 @@ impl Dispatcher {
         Ok(None)
     }
 
-    /// The next completed transfer on `endpoint`, waiting until `deadline`; `None` if none
-    /// completed in time.
+    /// The next completed transfer on `endpoint`, waiting until `deadline` (without limit
+    /// if `None`); `None` if none completed in time.
     ///
     /// # Errors
     ///
@@ -290,7 +290,7 @@ impl Dispatcher {
     pub(crate) fn wait(
         &self,
         endpoint: u8,
-        deadline: Instant,
+        deadline: Option<Instant>,
     ) -> Result<Option<NonNull<Transfer>>, Error> {
         let mut state = self.lock();
         // Even a wait that is already due collects what has completed, once.
@@ -306,7 +306,9 @@ impl Dispatcher {
             if state.disconnected {
                 return Err(Error::Disconnected);
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
+            let remaining = deadline.map_or(Duration::MAX, |deadline| {
+                deadline.saturating_duration_since(Instant::now())
+            });
             if remaining.is_zero() && (collected || state.reaping) {
                 return Ok(None);
             }
