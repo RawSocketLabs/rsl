@@ -107,10 +107,13 @@ Each layer calls only the ones below it.
   `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
   frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
   the oracle compiles them with the map and value types directly
-  (`oracle/tests/common/lmk05318.rs`; `lmk05318_parity.rs` compares plans and staged
+  (`lmk05318_parity.rs` compares plans and staged
   registers with the C through `oracle/shim/lmk05318.c`, which needs GCC). Its
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
-  place of the 8-bit shared ones. It stays in rsl-usdr until PE_SYNC's driver needs it.
+  place of the 8-bit shared ones. Since PE_SYNC needs it too, the bus-free modules (plan,
+  staging, map, `reg` and the value types) are the shared `rsl-lmk05318`
+  (`devices/sdr/chips/lmk05318`), re-exported under `chips::lmk05318`; the bus code in
+  `lmk05318.rs` stays here (`rsl-pe-sync` has its own, `../../sync/pe_sync/PORTING.md`).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
   `rsl-lowlevel` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
   rsl-usdr's own conversions into `BusError` (`usb_error` for `rsl_usb::Error`: `From`

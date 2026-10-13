@@ -5,19 +5,54 @@
 > "PE_SYNC clock tree / distribution / synchronization") governs the port programme; this
 > file holds the board's own facts.
 
-Groundwork for a pure-Rust port of libusdr's PE_SYNC device (`device/pe_sync/pe_sync.c`): a
+A pure-Rust port of libusdr's PE_SYNC device (`device/pe_sync/pe_sync.c`): a
 clock-distribution and synchronization board, **not an SDR sample source** (no channels,
 no streams; a sample-rate set is refused with `-EINVAL`). Chips: LMK05318B network
 synchronizer, two LMX2820 synthesizers, LMX1204 clock buffer/multiplier, LMX1214 LO
 buffer, two LMK1D1208I LVDS fan-out buffers, LP87524 PMIC, and AD5662 DACs libusdr does
-not drive at open. The driver `rsl-pe-sync` is **not started**. Nothing here is
+not drive at open. The driver `rsl-pe-sync` ports libusdr's whole open and close, operation
+for operation (see [PORTING.md](PORTING.md)); it has no transport yet. Nothing here is
 hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-pe-sync` (planned, not in tree) | The driver |
+| `.` | `rsl-pe-sync` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `rsl-lmk05318` |
 | `sim/` | `rsl-pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
-| `oracle/` | `rsl-pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `oracle/` | `rsl-pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
+| `nostd-check/` | `rsl-pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
+| `../../sdr/chips/lmk05318` | `rsl-lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `rsl-usdr` (extracted from it 2026-10-13) |
+
+## Driver layout
+
+Mirrors `rsl-xsdr` (`../../sdr/xsdr/AGENTS.md`):
+
+- `src/device.rs`: `Device`, the public API: `open` (power-on, status check, clock tree;
+  power-off on failure) and `close`. It owns the bus (`Box<dyn Bus>`) and runs the portable
+  sequences with `rsl-lowlevel`'s blocking `run_sequence`, in `pe_sync_configure`'s order and
+  with its failure rules (which reads libusdr only logs, which failures it ignores).
+- `src/lmk05318.rs`: the LMK05318's bus traffic (identity, register load, soft reset, APLL
+  lock waits, sync) as blocking code on `rsl-lmk05318`: its 16-bit register pointer and
+  four-byte identity read do not fit the `Sequence` seam. `rsl-usdr`'s
+  `chips/lmk05318/lmk05318.rs` does the same for its front ends with its own error type;
+  `PORTING.md` records the duplication.
+- `src/portable/`: core only, no allocation. `board.rs` holds the wiring and every setpoint
+  (`pe_sync_configure`'s frequencies and configurations); `fpga.rs` the GPO banks and bits;
+  `power.rs` the power-on/off with libusdr's `float` LED fades; `status.rs` the status
+  check; one module per PE_SYNC-only chip (`lmx2820/`, `lmx1214/`, `lmx1204/`:
+  `reg.rs` typed registers, `plan.rs` the vendor solver, `sequence.rs` the chip
+  operations; `lmk1d1208i.rs`), on shared helpers (`ti_spi.rs` the TI 24-bit SPI word and
+  read-modify-write, `script.rs` fixed action lists, `chain.rs` sequencing, `poll.rs` lock
+  waits, `float.rs` C's conversions and exact integer forms of `ceil`/`floor`/`log2`).
+  Those chips are only PE_SYNC's in libusdr, so they stay here until a second driver
+  needs them (`../../AGENTS.md`).
+- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `tests/common/sim_bus.rs`: `Bus` over `rsl-pe-sync-sim` (both I2C cores);
+  `oracle/tests/open_parity.rs` includes it with `#[path]`, and
+  `oracle/tests/chip_parity.rs` includes `src/portable` itself.
+
+Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
+libusdr on fresh boards; divergences are whitelisted per scenario there and listed in
+`PORTING.md`. Lock waits count their poll sleeps where libusdr reads its wall clock.
 
 ## Layout decision (2026-10-12)
 
@@ -116,16 +151,24 @@ These counts are as captured; the fixture is authoritative, so recount them on a
 
 `oracle/tests/identify.rs` covers selection without channels or rate, and the refusal
 (`-ENODEV`) and power-off when the LMK05318B does not answer; `oracle/tests/power.rs`
-asserts supplies-before-chips and the closed state. Not covered: any control after open
-(there is none in libusdr besides the refused rate), sysref windowing, DAC trims, the
-external SPI.
+asserts supplies-before-chips and the closed state. The driver is compared with live
+libusdr, not with this file: `oracle/tests/open_parity.rs` covers every golden line (open
+and close) and the refusals; `oracle/tests/chip_parity.rs` sweeps the LMX solvers beyond
+the board's setpoints. Not covered: any control after open (there is none in libusdr
+besides the refused rate), sysref windowing, DAC trims, the external SPI.
 
 ## Verify
 
 ```sh
-cargo fmt -p rsl-pe-sync-sim --check
-cargo clippy -p rsl-pe-sync-sim --all-targets -- -D warnings
-cargo test -p rsl-pe-sync-sim
+cargo fmt -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318 --check
+cargo clippy -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318 --all-targets -- -D warnings
+cargo test -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318
+cargo check -p rsl-lmk05318 --target thumbv7em-none-eabi
+python3 scripts/ci/portable.py pe-sync
+cargo fmt --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml -- --check
+cargo clippy --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml --locked
+cargo check --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 cargo fmt --manifest-path devices/sync/pe_sync/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sync/pe_sync/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sync/pe_sync/oracle/Cargo.toml
@@ -135,7 +178,8 @@ RSL_PE_SYNC_BLESS=1 cargo test --manifest-path devices/sync/pe_sync/oracle/Cargo
 
 The oracle needs a C compiler only. libusdr is process-global, so oracles are serialised
 by a lock: one is open at a time per process. CI runs it as the `pe-sync-oracle` profile;
-a vendored libusdr change selects it too.
+a vendored libusdr change, `rsl-pe-sync` or `rsl-lmk05318` selects it too. The fixture runs
+as `pe-sync-portable`.
 
 ## Open items and blockers
 

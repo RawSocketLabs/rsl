@@ -91,6 +91,13 @@ The LimeSDR-mini driver's fixture (`devices/sdr/limesdr/nostd-check`, profile
 and `rsl-lms7002m` (`portable.py limesdr`); no LimeSDR product is release-enabled. Its oracle
 runs as `limesdr-oracle`, which a change to `rsl-limesdr` or `rsl-lms7002m` selects too.
 
+The PE_SYNC driver's fixture (`devices/sync/pe_sync/nostd-check`, profile `pe-sync-portable`)
+does the same for `rsl-pe-sync`'s `src/portable` tree, on `bnb`, `rsl-lowlevel` and
+`rsl-lmk05318` (`portable.py pe-sync`; portable profiles take the driver directory's name with
+dashes); `rsl-lmk05318` is a registered bare-metal device crate. No PE_SYNC product is
+release-enabled. Its oracle runs as `pe-sync-oracle`, which a change to `rsl-pe-sync` or
+`rsl-lmk05318` selects too.
+
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
 | Ordinary allowlisted prose | No Rust setup, builds, or fuzzing |

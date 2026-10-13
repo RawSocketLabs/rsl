@@ -28,7 +28,10 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
 - Chip code only one driver uses stays in that driver's `src/portable/<chip>.rs` until a
   second driver needs it, then moves to its chip crate: the LSDr's TPS6594, Si549,
   ADS42LBx9 and LMK04832 sit in `rsl-lsdr` (2026-10-12; libusdr uses them on no other
-  board).
+  board), and PE_SYNC's LMX2820, LMX1204, LMX1214 and LMK1D1208I sit in `rsl-pe-sync`
+  (2026-10-13; likewise).
+- A chip drivers of both kinds use stays under the kind that used it first:
+  `sdr/chips/lmk05318` (`rsl-lmk05318`) serves the uSDR's front ends and PE_SYNC.
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `rsl-lms7002m` ports
   libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose
