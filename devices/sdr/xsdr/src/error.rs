@@ -11,7 +11,7 @@ use crate::portable::hwid::Variant;
 #[non_exhaustive]
 pub enum Error {
     /// A register access failed on the bus.
-    #[error("{chip} register {reg:#04x} {access} failed")]
+    #[error("{chip} register {reg:#06x} {access} failed")]
     #[non_exhaustive]
     Bus {
         /// The chip accessed: `"FPGA"` (gateware registers), `"LMS7002M"` or `"LP8758"`.
@@ -44,11 +44,12 @@ pub enum Error {
         found: u32,
     },
 
-    /// No chip answered where one must be.
+    /// No chip answered where one must be. Not produced yet: no ported sequence reports
+    /// it; it keeps `rsl-lowlevel`'s sequence failures mapped one to one.
     #[error("{0} not found")]
     ChipMissing(&'static str),
 
-    /// A chip reported no input signal it needs.
+    /// A chip reported no input signal it needs. Not produced yet, as [`Self::ChipMissing`].
     #[error("{0} has no input signal")]
     InputMissing(&'static str),
 

@@ -64,9 +64,43 @@ enum Reg {
 /// [`Reg::LmlControl`]'s `MAC` value selecting both channels (`LMS7_CH_AB`).
 const MAC_BOTH: u16 = 0b11;
 
-/// What [`Reg::Version`] must report in its `VER:REV` bits (15:6): `VER` 7, `REV` 1, the
-/// only chip `lms7002m_create` accepts (`-ENODEV` otherwise). `MASK` is not checked.
-const VER_REV: u16 = 7 << 5 | 1;
+/// What [`Reg::Version`] reports: chip version `VER` (bits 15:11), revision `REV` (10:6) and
+/// metal mask `MASK` (5:0). The reset programme's writes stay `(Reg, u16)` for now
+/// (`PORTING.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Version(u16);
+
+/// `VER` 7, `REV` 1: the only chip `lms7002m_create` accepts (`-ENODEV` otherwise), any
+/// `MASK`.
+const SUPPORTED: Version = Version(7 << 11 | 1 << 6);
+
+impl Version {
+    /// The register from an SPI read's word; `lms7002m_spi_rd` keeps bits 15:0.
+    const fn from_word(word: u32) -> Self {
+        let [lo, hi, ..] = word.to_le_bytes();
+        Self(u16::from_le_bytes([lo, hi]))
+    }
+
+    /// `VER` (bits 15:11).
+    const fn chip(self) -> u16 {
+        self.0 >> 11
+    }
+
+    /// `REV` (bits 10:6).
+    const fn revision(self) -> u16 {
+        self.0 >> 6 & 0x1f
+    }
+
+    /// `VER:REV` (bits 15:6), the identity errors report.
+    const fn id(self) -> u16 {
+        self.0 >> 6
+    }
+
+    /// Whether `lms7002m_create` accepts this chip.
+    const fn is_supported(self) -> bool {
+        self.chip() == SUPPORTED.chip() && self.revision() == SUPPORTED.revision()
+    }
+}
 
 /// The board's choices for the chip's power-on state (`lms7002m_create`'s arguments).
 #[derive(Clone, Copy, Debug)]
@@ -171,15 +205,13 @@ impl Sequence for Lms7002mCreate {
             .inspect_err(|_| self.failed = true)?;
         self.done += 1;
         if matches!(access, FpgaAccess::Spi { write: false, .. }) {
-            // `lms7002m_spi_rd` keeps bits 15:0.
-            let [lo, hi, ..] = word.to_le_bytes();
-            let found = u16::from_le_bytes([lo, hi]) >> 6;
-            if found != VER_REV {
+            let version = Version::from_word(word);
+            if !version.is_supported() {
                 self.failed = true;
                 return Err(SequenceFailure::ChipId {
                     chip: NAME,
-                    expected: VER_REV.into(),
-                    found: found.into(),
+                    expected: SUPPORTED.id().into(),
+                    found: version.id().into(),
                 });
             }
         }

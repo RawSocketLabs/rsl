@@ -61,8 +61,8 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// [`Error::ChipId`] for an LP8758 whose revision libusdr does not accept (0xE001),
-    /// before any bus access; [`Error::ChipId`] for an LMS7002M other than version 7,
+    /// [`Error::ChipId`] for an LP8758 whose revision is not 0xE001, the one libusdr
+    /// accepts, before any bus access; [`Error::ChipId`] for an LMS7002M other than version 7,
     /// revision 1; [`Error::Bus`] when an access fails.
     pub fn power_up(&mut self) -> Result<(), Error> {
         if self.pmic != lp8758::REVISION {
