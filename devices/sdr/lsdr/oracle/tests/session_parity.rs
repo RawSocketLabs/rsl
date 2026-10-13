@@ -1,12 +1,10 @@
 //! rsl-lsdr's sessions against libusdr's, operation for operation, on fresh simulated
 //! boards: open, ADC power, the receive PGA gain and close.
 //!
-//! Whitelisted divergences, each confined to the scenario that shows it:
-//! - libusdr ends every open with its front-end probe (`device_fe_probe`), which rsl-lsdr
-//!   does not port yet. The cut starts at libusdr's first write to the front-end GPIO core
-//!   (FPGA register 3) and must hold nothing but probe traffic: GPIO-core and SPI-extension
-//!   configuration writes, the front-end connector's SPI bus, reads of the I2C devices the
-//!   probe looks for, and waits. Every later phase is compared whole.
+//! Every open ends with its front-end probe (`device_fe_probe`, through
+//! `rsl-sdr-frontend`), compared whole with the I2C core each transfer addresses.
+//!
+//! Whitelisted divergence, confined to the scenario that shows it:
 //! - A PGA setting above 31: libusdr clamps it to 31; rsl-lsdr's `PgaGain` cannot hold it.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -16,27 +14,13 @@ use std::ffi::CStr;
 
 use rsl_lsdr::{Device, Error, Fitted, OpenOptions, PgaGain};
 use rsl_lsdr_oracle::Oracle;
-use rsl_lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
+use rsl_lsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
 
 /// `EIO`: open's "Device is dead!".
 const EIO: i32 = 5;
 /// The front-end GPIO core's register, the first thing `device_fe_probe` writes.
 const REG_FRONT_END_GPIO: u32 = 3;
-/// The SPI-extension configuration register (`spiext_cfg`), written before each exchange
-/// on the front-end connector.
-const REG_SPI_EXT_CONFIG: u32 = 58;
-/// The front-end connector's SPI bus (`SPI_EXTERNAL`).
-const SPI_EXTERNAL: u32 = 4;
-/// The I2C devices the probe reads (fe4ch4007200's TMP114 and four TCA6424s,
-/// `ext_fe_ch4_400_7200_init`); the sim drops their I2C instance.
-const PROBE_I2C: [I2cAddress; 5] = [
-    I2cAddress { bus: 0, addr: 0x4e },
-    I2cAddress { bus: 0, addr: 0x22 },
-    I2cAddress { bus: 0, addr: 0x23 },
-    I2cAddress { bus: 1, addr: 0x22 },
-    I2cAddress { bus: 1, addr: 0x23 },
-];
 
 /// One step of a session after open.
 #[derive(Clone, Copy, Debug)]
@@ -70,35 +54,6 @@ fn phases(trace: &[Op], ends: &[usize]) -> Vec<Vec<Op>> {
     phases
 }
 
-/// Removes libusdr's front-end probe from the end of its open, checking that the cut holds
-/// nothing else.
-fn without_front_end_probe(mut open: Vec<Op>) -> Vec<Op> {
-    let cut = open
-        .iter()
-        .position(|op| {
-            matches!(
-                op,
-                Op::RegWrite {
-                    addr: REG_FRONT_END_GPIO,
-                    ..
-                }
-            )
-        })
-        .expect("libusdr probes the LSDr's front-end connector");
-    let probe = open.split_off(cut);
-    assert!(
-        probe.iter().all(|op| match op {
-            Op::RegWrite { addr, .. } => [REG_FRONT_END_GPIO, REG_SPI_EXT_CONFIG].contains(addr),
-            Op::Spi { bus, .. } => *bus == SPI_EXTERNAL,
-            Op::I2c { addr, .. } => PROBE_I2C.contains(addr),
-            Op::Sleep { .. } => true,
-            Op::RegRead { .. } => false,
-        }),
-        "the cut holds only front-end probe traffic: {probe:?}"
-    );
-    open
-}
-
 /// libusdr's session on `variant`, opened with `connection`.
 fn libusdr(variant: Variant, connection: &CStr, steps: &[Step]) -> Session {
     let mut oracle =
@@ -115,7 +70,17 @@ fn libusdr(variant: Variant, connection: &CStr, steps: &[Step]) -> Session {
     let board = oracle.close();
     let mut phases = phases(board.trace(), &ends);
     let close = phases.pop().expect("a close phase");
-    let open = without_front_end_probe(phases.remove(0));
+    let open = phases.remove(0);
+    assert!(
+        open.iter().any(|op| matches!(
+            op,
+            Op::RegWrite {
+                addr: REG_FRONT_END_GPIO,
+                ..
+            }
+        )),
+        "libusdr probes the LSDr's front-end connector"
+    );
     Session {
         open,
         steps: phases,
@@ -182,7 +147,7 @@ fn assert_same_session(libusdr: &Session, rsl_lsdr: &Session, scenario: &str) {
 }
 
 #[test]
-fn the_golden_sessions_match_libusdr_except_its_front_end_probe() {
+fn the_golden_sessions_match_libusdr_front_end_probe_included() {
     // The characterization goldens' scenarios: open, /dm/power/en = 1, close.
     let steps = [Step::Power(true)];
     let single = libusdr(Variant::SingleAdc, c"", &steps);

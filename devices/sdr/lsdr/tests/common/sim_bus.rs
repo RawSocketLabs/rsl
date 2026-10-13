@@ -56,10 +56,10 @@ impl Bus for SimBus {
                 "I2C transfer over the FPGA core limits",
             ));
         }
-        if dev.core() != 0 {
-            return Err(BusError::Unsupported("the board has one I2C core"));
-        }
+        // Every core reaches the board, as the oracle shim passes libusdr's instance on: the
+        // front-end probe's fe4ch4007200 addresses core 1.
         let addr = I2cAddress {
+            core: dev.core(),
             bus: dev.bus(),
             addr: dev.addr().into(),
         };

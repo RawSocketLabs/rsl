@@ -6,6 +6,7 @@ use rsl_lowlevel::{Sequence, SequenceAction, run_sequence};
 
 use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
 use crate::error::Error;
+use crate::frontend;
 use crate::lowlevel::Bus;
 use crate::portable::adc_power::AdcPower;
 use crate::portable::fpga::{self, DEAD, LIVENESS};
@@ -52,21 +53,20 @@ pub struct Device {
 }
 
 impl Device {
-    /// Opens the board on `bus`, as libusdr's open does up to its front-end probe: checks
-    /// that the link is alive, reads the PMIC's identification, sets four rails, gates the
+    /// Opens the board on `bus`, as libusdr's open does without an `fe=` hint: checks that
+    /// the link is alive, reads the PMIC's identification, sets four rails, gates the
     /// Si549 sample clock, supplies the ADCs while it probes for them (and, when asked, for
-    /// an LMK04832), then cuts their supply again. The ADCs stay unpowered
-    /// ([`Self::set_power`]).
-    ///
-    /// Not yet ported: the front-end probe libusdr runs next, so no front end is detected
-    /// or brought up.
+    /// an LMK04832), cuts their supply again, then probes the front-end connector for
+    /// fe1005000 and fe4ch4007200. The ADCs stay unpowered ([`Self::set_power`]).
     ///
     /// # Errors
     ///
     /// [`Error::DeadLink`] when the status register reads all ones, before anything is
     /// driven; [`Error::Bus`] when an access fails, the liveness read included (libusdr
-    /// ignores that read's failure and carries on). A missing chip is not an error: see
-    /// [`Self::fitted`].
+    /// ignores that read's failure and carries on); [`Error::FrontEndNotPorted`] when a
+    /// front end answers, since no `LSDr` front-end bring-up is ported. A missing chip is
+    /// not an error: see [`Self::fitted`]; a front end that fails to come up is skipped,
+    /// as libusdr does.
     pub fn open(bus: impl Bus + 'static, options: OpenOptions) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);
         let mut liveness = Single::new(SequenceAction::Fpga(LIVENESS), fpga::NAME);
@@ -77,6 +77,7 @@ impl Device {
         run(&mut *bus, &mut Supplies::new(LSDR_SUPPLIES))?;
         let mut probes = Probes::new(LSDR_WIRING, options.probe_clock_generator);
         run(&mut *bus, &mut probes)?;
+        frontend::probe(&mut *bus)?;
         Ok(Self {
             bus,
             fitted: probes.fitted(),

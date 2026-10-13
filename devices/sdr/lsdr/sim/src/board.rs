@@ -25,9 +25,9 @@ const SPI_ADC1: u32 = 1;
 const SPI_LMK04832: u32 = 2;
 
 /// `I2C_BUS_TPS6594`: bus 0, 0x48.
-const I2C_TPS6594: I2cAddress = I2cAddress { bus: 0, addr: 0x48 };
+const I2C_TPS6594: I2cAddress = I2cAddress::new(0, 0x48);
 /// `I2C_BUS_SI549`: bus 0, 0x67.
-const I2C_SI549: I2cAddress = I2cAddress { bus: 0, addr: 0x67 };
+const I2C_SI549: I2cAddress = I2cAddress::new(0, 0x67);
 
 /// `LDO4_CTRL`, the TPS6594 register switching the ADC supply (`_lsdr_adc_activate`).
 const TPS6594_LDO4_CTRL: u8 = 0x20;
@@ -51,9 +51,14 @@ pub enum Variant {
     DualAdcClockGen,
 }
 
-/// An I2C device address: FPGA I2C bus number and 7-bit device address.
+/// An I2C device address: FPGA I2C core (libusdr's instance), bus number and 7-bit device
+/// address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct I2cAddress {
+    /// The FPGA I2C core (controller instance). The factory declares one
+    /// (`DNLL_I2C_COUNT` 1), but the front-end probe's fe4ch4007200 addresses core 1, and the
+    /// oracle shim passes that through to the board, so the trace keeps it.
+    pub core: u8,
     /// The FPGA I2C bus the device sits on.
     pub bus: u8,
     /// The 7-bit device address.
@@ -61,21 +66,31 @@ pub struct I2cAddress {
 }
 
 impl I2cAddress {
+    /// The device at `addr` on bus `bus` of core 0, where every chip of the board sits.
+    #[must_use]
+    pub const fn new(bus: u8, addr: u16) -> Self {
+        Self { core: 0, bus, addr }
+    }
+
     /// Decodes libusdr's `ls_op` I2C address (`MAKE_LSOP_I2C_ADDR`):
-    /// `[31:24] instance, [23:16] bus, [15:0] device`. The board has one I2C core, so the
-    /// instance is ignored.
+    /// `[31:24] instance, [23:16] bus, [15:0] device`.
     #[must_use]
     pub fn from_lsop(lsop: u32) -> Self {
-        let [_instance, bus, hi, lo] = lsop.to_be_bytes();
+        let [core, bus, hi, lo] = lsop.to_be_bytes();
         Self {
+            core,
             bus,
             addr: u16::from_be_bytes([hi, lo]),
         }
     }
 }
 
+/// `BUS:ADDR` on core 0, `CORE:BUS:ADDR` on any other core.
 impl fmt::Display for I2cAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.core != 0 {
+            write!(f, "{}:", self.core)?;
+        }
         write!(f, "{}:{:#04x}", self.bus, self.addr)
     }
 }

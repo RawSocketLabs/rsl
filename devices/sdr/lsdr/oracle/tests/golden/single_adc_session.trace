@@ -48,11 +48,11 @@ spi 4 0x00008eff 0xffffffff
 reg-wr 0x0003 0xd8000003
 reg-wr 0x0003 0xc4000003
 reg-wr 0x0003 0xd4000003
-i2c 0:0x4e w=0b r=ffff
-i2c 0:0x22 w=8c r=ffff
-i2c 0:0x23 w=8c r=ffff
-i2c 1:0x22 w=8c r=ffff
-i2c 1:0x23 w=8c r=ffff
+i2c 1:0:0x4e w=0b r=ffff
+i2c 1:0:0x22 w=8c r=ffff
+i2c 1:0:0x23 w=8c r=ffff
+i2c 1:1:0x22 w=8c r=ffff
+i2c 1:1:0x23 w=8c r=ffff
 == power-up
 i2c 0:0x48 w=2033 r=-
 sleep 10000

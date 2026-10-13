@@ -6,11 +6,11 @@ use rsl_lsdr_oracle::Oracle;
 use rsl_lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
 
 /// The TPS6594.
-const PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x48 };
+const PMIC: I2cAddress = I2cAddress::new(0, 0x48);
 /// `LDO4_CTRL`.
 const LDO4_CTRL: u8 = 0x20;
 /// The Si549.
-const SI549: I2cAddress = I2cAddress { bus: 0, addr: 0x67 };
+const SI549: I2cAddress = I2cAddress::new(0, 0x67);
 /// Si549 `ODC`: bit 0 enables the output clock.
 const SI549_ODC: u8 = 17;
 /// GPO bank `IGPO_BANK_CFG_ADC`: bits 1:0 hold the ADCs in reset.

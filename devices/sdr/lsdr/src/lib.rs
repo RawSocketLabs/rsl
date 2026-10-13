@@ -23,6 +23,7 @@
 mod board;
 mod device;
 mod error;
+mod frontend;
 pub mod lowlevel;
 mod portable;
 
@@ -30,3 +31,4 @@ pub use device::{Device, OpenOptions};
 pub use error::{Access, Error};
 pub use portable::pga::PgaGain;
 pub use portable::probes::Fitted;
+pub use rsl_sdr_frontend::Board as FrontEndBoard;

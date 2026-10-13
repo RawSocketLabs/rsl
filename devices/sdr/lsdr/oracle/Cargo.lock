@@ -103,6 +103,7 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "rsl-lowlevel",
+ "rsl-sdr-frontend",
  "thiserror",
 ]
 
@@ -120,6 +121,15 @@ dependencies = [
 name = "rsl-lsdr-sim"
 version = "0.0.0"
 dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "rsl-sdr-frontend"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
  "thiserror",
 ]
 

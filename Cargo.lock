@@ -3318,6 +3318,7 @@ dependencies = [
  "bitsandbytes",
  "rsl-lowlevel",
  "rsl-lsdr-sim",
+ "rsl-sdr-frontend",
  "thiserror 2.0.21",
 ]
 

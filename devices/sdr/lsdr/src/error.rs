@@ -2,6 +2,7 @@
 
 pub use rsl_lowlevel::Access;
 use rsl_lowlevel::SequenceFailure;
+use rsl_sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
 
@@ -59,6 +60,16 @@ pub enum Error {
     #[error("{0} has no input signal")]
     #[non_exhaustive]
     InputMissing(&'static str),
+
+    /// The front-end probe failed. Probing automatically, as open does, a board that fails
+    /// is skipped as libusdr skips it, so open reports none of these yet.
+    #[error("front-end probe failed")]
+    FrontEnd(#[from] rsl_sdr_frontend::Error),
+
+    /// A front-end board answered whose bring-up this driver does not port; libusdr would
+    /// bring it up. Open stops there.
+    #[error("the {} front end answered; its bring-up is not ported", .0.name())]
+    FrontEndNotPorted(Board),
 }
 
 /// A failed portable register sequence, with the register or chip it names.

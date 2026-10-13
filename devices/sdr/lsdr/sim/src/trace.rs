@@ -48,7 +48,8 @@ pub enum Op {
 
 /// One line per operation, the line format of the characterization golden traces:
 /// `reg-wr ADDR VALUE`, `reg-rd ADDR VALUE`, `spi BUS OUT READ`,
-/// `i2c BUS:ADDR w=HEX r=HEX` and `sleep US`. Numbers are fixed-width hex except the sleep.
+/// `i2c [CORE:]BUS:ADDR w=HEX r=HEX` (the core only when not 0) and `sleep US`. Numbers
+/// are fixed-width hex except the sleep.
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -81,10 +82,20 @@ mod tests {
     #[test]
     fn empty_i2c_directions_render_as_a_dash_so_lines_stay_parseable() {
         let op = Op::I2c {
-            addr: I2cAddress { bus: 0, addr: 0x48 },
+            addr: I2cAddress::new(0, 0x48),
             write: vec![0x20, 0x20],
             read: vec![],
         };
         assert_eq!(op.to_string(), "i2c 0:0x48 w=2020 r=-");
+    }
+
+    #[test]
+    fn a_device_on_another_i2c_core_names_the_core_first() {
+        let op = Op::I2c {
+            addr: I2cAddress::from_lsop(0x0100_004e),
+            write: vec![0x0b],
+            read: vec![0xff, 0xff],
+        };
+        assert_eq!(op.to_string(), "i2c 1:0:0x4e w=0b r=ffff");
     }
 }

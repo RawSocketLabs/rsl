@@ -131,6 +131,39 @@ fn open_sets_the_rails_finds_the_adc_and_leaves_it_unsupplied_and_unclocked() {
 }
 
 #[test]
+fn open_ends_with_the_front_end_probe_on_an_empty_connector() {
+    let (_, sim) = open(Variant::SingleAdc, OpenOptions::new());
+    let board = sim.board();
+    let trace = board.trace();
+    let probe_start = trace
+        .iter()
+        .position(|op| matches!(op, Op::RegWrite { addr: 3, .. }))
+        .expect("open writes the connector's GPIO core");
+    let probe = &trace[probe_start..];
+    assert!(
+        probe.iter().all(|op| match op {
+            Op::RegWrite { addr, .. } => [3, 58].contains(addr),
+            Op::Spi { bus, .. } => *bus == 4,
+            Op::I2c { addr, .. } => addr.core == 1,
+            Op::Sleep { .. } | Op::RegRead { .. } => false,
+        }),
+        "the probe stays on the connector: GPIO core, SPI extension, SPI 4, I2C core 1"
+    );
+    let devices: Vec<String> = probe
+        .iter()
+        .filter_map(|op| match op {
+            Op::I2c { addr, .. } => Some(addr.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        devices,
+        ["1:0:0x4e", "1:0:0x22", "1:0:0x23", "1:1:0x22", "1:1:0x23"],
+        "fe4ch4007200's sensor, then its four expanders"
+    );
+}
+
+#[test]
 fn the_clock_generator_is_tested_only_when_asked_for() {
     let (device, sim) = open(Variant::DualAdcClockGen, OpenOptions::new());
     assert_eq!(device.fitted().adcs, [true, true]);
@@ -265,7 +298,7 @@ fn close_attempts_every_write_and_reports_the_first_failure() {
         "the first failure is reported: {outcome:?}"
     );
     let board = bus.sim.board();
-    let pmic = I2cAddress { bus: 0, addr: 0x48 };
+    let pmic = I2cAddress::new(0, 0x48);
     assert_eq!(
         board.trace()[opened..],
         [

@@ -352,6 +352,11 @@ unsafe extern "C" fn rsl_lsdr_oracle_ls_op(
         LSOP_HWREG => hwreg(board, addr, input, output),
         // SPI addresses carry config in [31:16]; the bus is [7:0] (`SPIEXT_LSOP_GET_BUS`).
         LSOP_SPI => spi(board, addr & 0xff, input, output),
+        // The instance (bits 31:24) reaches the board and its trace. The `LSDr` declares one
+        // I2C core (`DNLL_I2C_COUNT` 1), and the uSDR oracle reads the upstream PCIe driver's
+        // `instance >= i2c_count` check as refusing any other; this shim passes core 1 on, so
+        // the goldens characterise a transport that accepts fe4ch4007200's transfers (an open
+        // item in `AGENTS.md`).
         LSOP_I2C_DEV => i2c(board, I2cAddress::from_lsop(addr), input, output),
         _ => panic!(
             "libusdr used ls_op class {op} (address {addr:#x}), which the sim does not model"
@@ -422,7 +427,7 @@ mod tests {
     use super::*;
 
     /// The TPS6594.
-    const PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x48 };
+    const PMIC: I2cAddress = I2cAddress::new(0, 0x48);
 
     #[test]
     fn i2c_rejects_what_the_fpga_core_cannot_encode() {
