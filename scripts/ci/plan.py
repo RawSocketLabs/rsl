@@ -235,7 +235,8 @@ def owners(path, graph):
         return {BNB, MACROS} & graph.keys()
     if path.startswith(VENDOR_LIBUSDR + "/"):
         # The vendored C belongs to every oracle that compiles it.
-        return {USDR_ORACLE, XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE} & graph.keys()
+        oracles = {USDR_ORACLE, XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE}
+        return oracles & graph.keys()
     if path in {"tools/gen-blessed.py", "tools/check-drift.py", ".github/actions/blessed-drift/action.yml"}:
         return {root for root, package in graph.items() if package.name == "deps"}
     matches = [root for root in graph if path.startswith(root + "/")]

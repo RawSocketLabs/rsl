@@ -11,7 +11,8 @@ from unittest import mock
 
 from gate import check_plan, check_release, check_results, coverage_report
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR, XSDR_ORACLE,
-                  VENDOR_LIBUSDR, XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC, PE_SYNC_ORACLE,
+                  VENDOR_LIBUSDR, XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC,
+                  PE_SYNC_ORACLE,
                   PE_SYNC_PORTABLE, LMK05318, LIMESDR,
                   LIMESDR_ORACLE, LIMESDR_PORTABLE, HAL, LP8758, LMS7002M, FRONTEND,
                   RELEASE_PROFILES, DETAIL, Package,
@@ -214,7 +215,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(plan["packages"], ["lsdr", "sdr-frontend", "usdr", "xsdr"])
         self.assertTrue({"usdr-oracle", "xsdr-oracle", "lsdr-oracle", "usdr-portable",
                          "xsdr-portable", "lsdr-portable"} <= set(plan["profiles"]))
-        # The LimeSDR oracle compiles the uSDR oracle's C, which a uSDR change reaches.
+        # The LimeSDR oracle depends on the uSDR oracle, which a uSDR change reaches.
         self.assertFalse({"limesdr-portable", "pe-sync-portable", "no-std"}
                          & set(plan["profiles"]))
 
