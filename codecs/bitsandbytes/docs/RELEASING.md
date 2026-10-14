@@ -272,7 +272,7 @@ The approved IP/ARP consumer fix explicitly requests `bnb/std` in each manifest:
 their address fields always use bnb's std-only codecs, independently of injection.
 The previously failing injection CI command (`cargo test --features inject -p ip
 -p icmp -p tcp -p udp -p ethernet -p arp`) and `cargo build -p rsl --features full`
-now pass, as do each package's tests and `cargo build -p demos --examples`.
+now pass, as do each package's tests and `cargo build -p protocol-examples --examples`.
 No protocol API, wire behavior, dependency version, or bnb default is changed.
 
 Remaining gates:

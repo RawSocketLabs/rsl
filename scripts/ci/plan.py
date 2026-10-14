@@ -353,7 +353,7 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("socks")
     if set(packages) & {"rawsock", "dns", "ip", "icmp", "tcp", "udp", "ethernet", "arp"}:
         profiles.add("network")
-    if set(packages) & {"rsl", "deps", "demos"}:
+    if set(packages) & {"rsl", "deps", "protocol-examples"}:
         profiles.add("facades")
     if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
