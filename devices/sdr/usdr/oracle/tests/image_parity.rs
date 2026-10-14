@@ -1,4 +1,4 @@
-//! rsl-usdr's gateware image header parser and update check match libusdr's
+//! usdr's gateware image header parser and update check match libusdr's
 //! (`ipblks/xlnx_bitstream.c`): the same verdict and the same fields, those left by a
 //! refused header included, for hand-made images and for thousands of generated and
 //! corrupted ones, under every combination of libusdr's parse flags.
@@ -14,8 +14,8 @@ use bitstream::{
     AXSS, BUS_WIDTH, BYTE_ORDER, Bitstream, CMD, CRC, CRC_SKIPPED, DUMMY, Facts, IDCODE, IPROG,
     NOOP, RCRC, SYNC, WBSTAR, WRITE, XC7A35T, XC7A50T, type1, type2,
 };
-use rsl_usdr::flash::{HeaderFault, ImageHeader, MASTER_IMAGE_OFFSET, ParseOptions, Slot};
-use rsl_usdr_oracle::bitstream::{ALLOW_CROP, CRC_CHECK, ImageParams, iprgcheck, parse_header};
+use usdr::flash::{HeaderFault, ImageHeader, MASTER_IMAGE_OFFSET, ParseOptions, Slot};
+use usdr_oracle::bitstream::{ALLOW_CROP, CRC_CHECK, ImageParams, iprgcheck, parse_header};
 
 /// `-EINVAL`.
 const EINVAL: i32 = -22;
@@ -27,7 +27,7 @@ const EBADMSG: i32 = -74;
 /// Every combination of libusdr's parse flags.
 const FLAGS: [u32; 4] = [0, CRC_CHECK, ALLOW_CROP, CRC_CHECK | ALLOW_CROP];
 
-/// rsl-usdr's options for libusdr's `flags`.
+/// usdr's options for libusdr's `flags`.
 fn options(flags: u32) -> ParseOptions {
     let options = ParseOptions::new();
     let options = if flags & CRC_CHECK == 0 {
@@ -42,8 +42,8 @@ fn options(flags: u32) -> ParseOptions {
     }
 }
 
-/// rsl-usdr's verdict as libusdr reports one: its return value and the fields it left.
-fn rsl_usdr(bytes: &[u8], flags: u32) -> (i32, ImageParams) {
+/// usdr's verdict as libusdr reports one: its return value and the fields it left.
+fn usdr(bytes: &[u8], flags: u32) -> (i32, ImageParams) {
     let (errno, header) = match ImageHeader::parse(bytes, options(flags)) {
         Ok(header) => (0, header),
         Err(error) => (errno(error.fault()), error.partial()),
@@ -76,7 +76,7 @@ fn assert_parsed_alike(bytes: &[u8], case: &str) -> [(i32, ImageParams); 4] {
     FLAGS.map(|flags| {
         let c = parse_header(bytes, flags);
         assert_eq!(
-            rsl_usdr(bytes, flags),
+            usdr(bytes, flags),
             c,
             "{case}, flags {flags}: verdicts differ"
         );

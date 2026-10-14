@@ -1,6 +1,6 @@
 //! Public evidence for the readable SHA-512 implementation.
 
-use rsl_crypto::digest::sha2::sha512::Sha512;
+use crypto::digest::sha2::sha512::Sha512;
 use sha2::{Digest as _, Sha512 as ReferenceSha512};
 
 /// Published FIPS 180-4 one-block and two-block examples.

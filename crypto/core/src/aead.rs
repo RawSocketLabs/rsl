@@ -13,14 +13,14 @@
 //! # Generic use
 //!
 //! ```
-//! use rsl_crypto::{Result, aead::{Aead, gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}}};
+//! use crypto::{Result, aead::{Aead, gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}}};
 //!
 //! fn protect<A: Aead>(
 //!     algorithm: &A,
 //!     nonce: &A::Nonce,
 //!     header: &[u8],
 //!     payload: &[u8],
-//! ) -> Result<rsl_crypto::aead::Sealed<A::Tag>> {
+//! ) -> Result<crypto::aead::Sealed<A::Tag>> {
 //!     algorithm.seal(nonce, header, payload)
 //! }
 //!
@@ -28,7 +28,7 @@
 //! let nonce = Aes128GcmNonce::new([0x24; 12]);
 //! let sealed = protect(&algorithm, &nonce, b"visible header", b"secret body")?;
 //! assert_ne!(sealed.ciphertext(), b"secret body");
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 pub mod chacha20poly1305;
@@ -56,7 +56,7 @@ use crate::Result;
 /// The container can be inspected by reference or consumed when a wire encoder needs ownership:
 ///
 /// ```
-/// use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
+/// use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
 ///
 /// let algorithm = Aes128Gcm::new(Aes128GcmKey::new([0x42; 16]));
 /// let nonce = Aes128GcmNonce::new([0x24; 12]);
@@ -68,7 +68,7 @@ use crate::Result;
 /// let (ciphertext, tag) = sealed.into_parts();
 /// assert_eq!(ciphertext.len(), b"private body".len());
 /// assert_eq!(tag.as_bytes().len(), 16);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sealed<Tag> {

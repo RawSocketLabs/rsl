@@ -52,7 +52,7 @@
 //! Project Wycheproof's `rsa_pss_2048_sha256_mgf1_32_test.json` test 1 signs the empty message:
 //!
 //! ```
-//! use rsl_crypto::signature::rsa_pss::{RsaPssSha256VerifyingKey, RsaPssSignature};
+//! use crypto::signature::rsa_pss::{RsaPssSha256VerifyingKey, RsaPssSignature};
 //!
 //! fn decode(hex: &str) -> Vec<u8> {
 //!     (0..hex.len() / 2)
@@ -80,7 +80,7 @@
 //! let key = RsaPssSha256VerifyingKey::from_components(&modulus, decode("010001"))?;
 //! assert_eq!(key.modulus_bits(), 2048);
 //! key.verify_sha256(b"", &signature)?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

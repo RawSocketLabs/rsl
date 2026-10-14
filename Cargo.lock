@@ -173,6 +173,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "asn1"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "async-nats"
 version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -681,6 +688,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "compression"
+version = "0.1.0"
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,6 +870,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "chacha20poly1305",
+ "ed25519-dalek 3.0.0",
+ "ghash",
+ "hkdf",
+ "hmac",
+ "num-bigint-dig",
+ "p256",
+ "p384",
+ "sha2 0.11.0",
+ "sha3",
+ "shake",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
 name = "crypto-bigint"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -891,6 +923,18 @@ checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
 dependencies = [
  "hybrid-array",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "crypto-legacy"
+version = "0.1.0"
+dependencies = [
+ "crypto",
+ "des",
+ "md-5",
+ "rc4",
+ "sha1",
+ "zeroize",
 ]
 
 [[package]]
@@ -1084,6 +1128,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "deps"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "axum",
+ "bytemuck",
+ "bytes",
+ "chrono",
+ "clap",
+ "color-eyre",
+ "crc32fast",
+ "futures-util",
+ "hound",
+ "macaddr",
+ "num-complex",
+ "prost",
+ "rand 0.10.3",
+ "ratatui",
+ "rayon",
+ "reqwest",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "socket2",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "utoipa",
+ "utoipa-swagger-ui",
+ "winnow",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1182,7 +1265,7 @@ name = "dns"
 version = "0.1.0"
 dependencies = [
  "bitsandbytes",
- "rsl-deps",
+ "deps",
  "thiserror 2.0.21",
 ]
 
@@ -1294,6 +1377,10 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "error-correction"
+version = "0.1.0"
 
 [[package]]
 name = "ethernet"
@@ -2027,6 +2114,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "limesdr"
+version = "0.0.0"
+dependencies = [
+ "limesdr-sim",
+ "lms7002m",
+ "rsl-lowlevel",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "limesdr-sim"
+version = "0.0.0"
+dependencies = [
+ "lms7002m-sim",
+]
+
+[[package]]
 name = "line-clipping"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2063,6 +2167,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
+name = "lms7002m"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
+name = "lms7002m-sim"
+version = "0.0.0"
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2078,12 +2201,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "lp8758"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "lru"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a860605968fce16869fd239cf4237a82f3ac470723415db603b0e8b6c8d4fb9"
 dependencies = [
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "lsdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lsdr-sim",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lsdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2211,6 +2360,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "netlink"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
+ "libc",
+ "rustix",
+ "thiserror 2.0.21",
+ "zeroize",
 ]
 
 [[package]]
@@ -2482,6 +2642,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-sync"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lmk05318",
+ "pe-sync-sim",
+ "rsl-lowlevel",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pe-sync-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2624,6 +2802,15 @@ checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der 0.7.10",
  "spki",
+]
+
+[[package]]
+name = "pki"
+version = "0.1.0"
+dependencies = [
+ "asn1",
+ "crypto",
+ "x509",
 ]
 
 [[package]]
@@ -3155,295 +3342,28 @@ dependencies = [
 name = "rsl"
 version = "0.2.0"
 dependencies = [
+ "asn1",
  "bitsandbytes",
+ "compression",
+ "crypto",
+ "crypto-legacy",
  "dns",
+ "error-correction",
  "ethertype",
+ "pki",
  "rawsock",
  "rfus",
- "rsl-asn1",
- "rsl-compression",
- "rsl-crypto",
- "rsl-crypto-legacy",
- "rsl-error-correction",
- "rsl-pki",
- "rsl-x509",
  "rust-dsdcc",
  "tcp",
  "udp",
- "usdr",
+ "usdr-ffi",
+ "x509",
 ]
-
-[[package]]
-name = "rsl-asn1"
-version = "0.1.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
-name = "rsl-compression"
-version = "0.1.0"
-
-[[package]]
-name = "rsl-crypto"
-version = "0.1.0"
-dependencies = [
- "aes",
- "aes-gcm",
- "chacha20poly1305",
- "ed25519-dalek 3.0.0",
- "ghash",
- "hkdf",
- "hmac",
- "num-bigint-dig",
- "p256",
- "p384",
- "sha2 0.11.0",
- "sha3",
- "shake",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "rsl-crypto-legacy"
-version = "0.1.0"
-dependencies = [
- "des",
- "md-5",
- "rc4",
- "rsl-crypto",
- "sha1",
- "zeroize",
-]
-
-[[package]]
-name = "rsl-deps"
-version = "0.1.0"
-dependencies = [
- "async-nats",
- "axum",
- "bytemuck",
- "bytes",
- "chrono",
- "clap",
- "color-eyre",
- "crc32fast",
- "futures-util",
- "hound",
- "macaddr",
- "num-complex",
- "prost",
- "rand 0.10.3",
- "ratatui",
- "rayon",
- "reqwest",
- "rustfft",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "socket2",
- "thiserror 2.0.21",
- "time",
- "tokio",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "utoipa",
- "utoipa-swagger-ui",
- "winnow",
-]
-
-[[package]]
-name = "rsl-error-correction"
-version = "0.1.0"
-
-[[package]]
-name = "rsl-limesdr"
-version = "0.0.0"
-dependencies = [
- "rsl-limesdr-sim",
- "rsl-lms7002m",
- "rsl-lowlevel",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-limesdr-sim"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m-sim",
-]
-
-[[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
-name = "rsl-lms7002m"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-lms7002m-sim"
-version = "0.0.0"
 
 [[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
 dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-lp8758"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-lsdr"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
- "rsl-lsdr-sim",
- "rsl-sdr-frontend",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-lsdr-sim"
-version = "0.0.0"
-dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-netlink"
-version = "0.1.0"
-dependencies = [
- "bitsandbytes",
- "libc",
- "rustix",
- "thiserror 2.0.21",
- "zeroize",
-]
-
-[[package]]
-name = "rsl-pe-sync"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "rsl-pe-sync-sim",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-pe-sync-sim"
-version = "0.0.0"
-dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-pki"
-version = "0.1.0"
-dependencies = [
- "rsl-asn1",
- "rsl-crypto",
- "rsl-x509",
-]
-
-[[package]]
-name = "rsl-sdr-frontend"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-usb"
-version = "0.0.0"
-dependencies = [
- "mio",
- "rustix",
- "tempfile",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-usdr"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "mio",
- "num-complex",
- "rsl-deps",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "rsl-lp8758",
- "rsl-sdr-frontend",
- "rsl-usb",
- "rsl-usdr-pcie",
- "rsl-usdr-sim",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-usdr-pcie"
-version = "0.0.0"
-dependencies = [
- "rustix",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-usdr-sim"
-version = "0.0.0"
-dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-x509"
-version = "0.1.0"
-dependencies = [
- "rsl-asn1",
-]
-
-[[package]]
-name = "rsl-xsdr"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m",
- "rsl-lowlevel",
- "rsl-lp8758",
- "rsl-sdr-frontend",
- "rsl-xsdr-sim",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rsl-xsdr-sim"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m-sim",
  "thiserror 2.0.21",
 ]
 
@@ -3596,6 +3516,16 @@ name = "scratch"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68f2ec51b097e4c1a75b681a8bec621909b5e91f15bb7b840c4f2f7b01148b2"
+
+[[package]]
+name = "sdr-frontend"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lmk05318",
+ "rsl-lowlevel",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "sec1"
@@ -4685,12 +4615,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "usb"
+version = "0.0.0"
+dependencies = [
+ "mio",
+ "rustix",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "usdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "deps",
+ "lmk05318",
+ "lp8758",
+ "mio",
+ "num-complex",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror 2.0.21",
+ "usb",
+ "usdr-pcie",
+ "usdr-sim",
+]
+
+[[package]]
+name = "usdr-ffi"
 version = "0.1.0"
 dependencies = [
  "cxx",
  "cxx-build",
  "num-complex",
+]
+
+[[package]]
+name = "usdr-pcie"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "usdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5197,6 +5170,33 @@ checksum = "e7e8131a03190127fb2263afc72b322ecadae46b6ff8c6f399ff5d02f5559af6"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "x509"
+version = "0.1.0"
+dependencies = [
+ "asn1",
+]
+
+[[package]]
+name = "xsdr"
+version = "0.0.0"
+dependencies = [
+ "lms7002m",
+ "lp8758",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror 2.0.21",
+ "xsdr-sim",
+]
+
+[[package]]
+name = "xsdr-sim"
+version = "0.0.0"
+dependencies = [
+ "lms7002m-sim",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

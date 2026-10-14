@@ -7,7 +7,7 @@ I²C transaction machine, and the board's RF machines (LMS6002D operations, tuni
 calibration, power-up, rate, tuning, gain, path and stream composites), which the witness
 drives against a register-file board. There are no copied algorithms or substitute host errors.
 Where the tree re-exports the shared no_std crates (`rsl-lowlevel`'s addresses, register
-traits and sequence seam; `rsl-lp8758`'s LP8758 values), the fixture depends on them by
+traits and sequence seam; `lp8758`'s LP8758 values), the fixture depends on them by
 path without default features, so it compiles exactly what the driver does minus `std`.
 
 ```sh
@@ -26,7 +26,7 @@ the CI selector explicitly records that production-source edge.
 The bare-metal gate proves **no_std + alloc compilation**, including real macro-expanded
 register paths. It does not prove embedded linking, an allocator-free dependency stack,
 kernel suitability, firmware deployment or physical operation. `bnb` requires alloc;
-the fixed-size operation machines themselves do not allocate. The public `rsl-usdr` crate
+the fixed-size operation machines themselves do not allocate. The public `usdr` crate
 still requires std and does not advertise no_std support.
 
 Ordinary CI runs only this fixture's host format/lint/check/tests and dependency contract.

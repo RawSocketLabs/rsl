@@ -1,7 +1,7 @@
 [package]
-name = "rsl-lms7002m-sim"
+name = "lms7002m-sim"
 version = "0.0.0"
-description = "Register-level LMS7002M model shared by the simulated LMS7002M boards (rsl-xsdr-sim, rsl-limesdr-sim)."
+description = "Register-level LMS7002M model shared by the simulated LMS7002M boards (xsdr-sim, limesdr-sim)."
 publish = false
 edition.workspace = true
 license.workspace = true

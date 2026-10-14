@@ -1,6 +1,6 @@
 //! Public boundary and reversible-composition evidence.
 
-use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 
 /// Standard-derived evidence over deterministic key and block variation.
 #[test]
@@ -44,7 +44,7 @@ fn varied_blocks_round_trip_under_varied_keys() {
 /// API-regression evidence that the generic block-cipher contract uses the same public path.
 #[test]
 fn generic_block_cipher_contract_dispatches_both_directions() {
-    use rsl_crypto::cipher::BlockCipher;
+    use crypto::cipher::BlockCipher;
 
     fn round_trip<C: BlockCipher>(cipher: &C, block: &mut C::Block) {
         cipher.encrypt_block(block);

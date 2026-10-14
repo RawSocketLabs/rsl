@@ -1,7 +1,7 @@
 //! RFIC power-up and close ordering, from `xsdr_pwren` and `xsdr_dtor`.
 
-use rsl_xsdr_oracle::Oracle;
-use rsl_xsdr_sim::{Op, SimBoard, Variant};
+use xsdr_oracle::Oracle;
+use xsdr_sim::{Op, SimBoard, Variant};
 
 /// GPO bank `IGPO_LMS_PWR`.
 const GPO_LMS_PWR: u8 = 0;

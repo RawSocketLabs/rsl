@@ -65,7 +65,7 @@
 //! `"sample"`. Signing reproduces it exactly, and verification accepts it:
 //!
 //! ```
-//! use rsl_crypto::signature::ecdsa_p384::EcdsaP384SigningKey;
+//! use crypto::signature::ecdsa_p384::EcdsaP384SigningKey;
 //!
 //! fn decode<const N: usize>(hex: &str) -> [u8; N] {
 //!     core::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
@@ -89,7 +89,7 @@
 //! assert_eq!(signature.as_bytes(), &expected);
 //!
 //! key.verifying_key().verify_sha384(b"sample", &signature)?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

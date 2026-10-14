@@ -7,12 +7,11 @@
 
 use core::convert::Infallible;
 
-use libfuzzer_sys::fuzz_target;
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     aead::{
-        Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordSink,
-        RecordOpenError, RecordPlaintextSink, RecordWriteError,
+        Aead, CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordOpenError,
+        RecordPlaintextSink, RecordSink, RecordWriteError,
         chacha20poly1305::{
             ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
         },
@@ -22,6 +21,7 @@ use rsl_crypto::{
         },
     },
 };
+use libfuzzer_sys::fuzz_target;
 
 #[derive(Default)]
 struct CollectingSink {
@@ -141,9 +141,19 @@ fuzz_target!(|data: &[u8]| {
     // Arbitrary tag over arbitrary ciphertext: must be rejected or, vanishingly rarely, accepted
     // — never a panic.
     let gcm128 = Aes128Gcm::new(Aes128GcmKey::new(key[..16].try_into().unwrap()));
-    let _ = gcm128.open(&Aes128GcmNonce::new(nonce), aad, payload, &Aes128GcmTag::new(tag));
+    let _ = gcm128.open(
+        &Aes128GcmNonce::new(nonce),
+        aad,
+        payload,
+        &Aes128GcmTag::new(tag),
+    );
     let gcm256 = Aes256Gcm::new(Aes256GcmKey::new(key));
-    let _ = gcm256.open(&Aes256GcmNonce::new(nonce), aad, payload, &Aes256GcmTag::new(tag));
+    let _ = gcm256.open(
+        &Aes256GcmNonce::new(nonce),
+        aad,
+        payload,
+        &Aes256GcmTag::new(tag),
+    );
     let chacha = ChaCha20Poly1305::new(ChaCha20Poly1305Key::new(key));
     let _ = chacha.open(
         &ChaCha20Poly1305Nonce::new(nonce),
@@ -153,10 +163,17 @@ fuzz_target!(|data: &[u8]| {
     );
 
     // Genuine round trips must succeed, and a flipped tag bit must fail.
-    let sealed = gcm256.seal(&Aes256GcmNonce::new(nonce), aad, payload).unwrap();
+    let sealed = gcm256
+        .seal(&Aes256GcmNonce::new(nonce), aad, payload)
+        .unwrap();
     assert_eq!(
         gcm256
-            .open(&Aes256GcmNonce::new(nonce), aad, sealed.ciphertext(), sealed.tag())
+            .open(
+                &Aes256GcmNonce::new(nonce),
+                aad,
+                sealed.ciphertext(),
+                sealed.tag()
+            )
             .unwrap(),
         payload
     );
@@ -164,12 +181,24 @@ fuzz_target!(|data: &[u8]| {
     wrong[0] ^= 1;
     assert!(
         gcm256
-            .open(&Aes256GcmNonce::new(nonce), aad, sealed.ciphertext(), &Aes256GcmTag::new(wrong))
+            .open(
+                &Aes256GcmNonce::new(nonce),
+                aad,
+                sealed.ciphertext(),
+                &Aes256GcmTag::new(wrong)
+            )
             .is_err()
     );
     let sealed = Aead::seal(&chacha, &ChaCha20Poly1305Nonce::new(nonce), aad, payload).unwrap();
     assert_eq!(
-        Aead::open(&chacha, &ChaCha20Poly1305Nonce::new(nonce), aad, sealed.ciphertext(), sealed.tag()).unwrap(),
+        Aead::open(
+            &chacha,
+            &ChaCha20Poly1305Nonce::new(nonce),
+            aad,
+            sealed.ciphertext(),
+            sealed.tag()
+        )
+        .unwrap(),
         payload
     );
 
@@ -198,9 +227,7 @@ fuzz_target!(|data: &[u8]| {
         .unwrap();
     let mut plaintext_sink = CollectingPlaintextSink::default();
     for record in &sink.data {
-        opener
-            .open_data_to(record, &mut plaintext_sink)
-            .unwrap();
+        opener.open_data_to(record, &mut plaintext_sink).unwrap();
     }
     opener
         .open_final_to(final_record, &mut plaintext_sink)
@@ -210,13 +237,12 @@ fuzz_target!(|data: &[u8]| {
 
     let completed_records = payload.len() / record_size;
     if completed_records != 0 {
-        let mut failing_sealer =
-            RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
-                .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
-                .record_size(record_size)
-                .context(aad)
-                .build_sealer()
-                .unwrap();
+        let mut failing_sealer = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+            .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+            .record_size(record_size)
+            .context(aad)
+            .build_sealer()
+            .unwrap();
         let mut failing_sink = RejectingSink {
             calls: 0,
             reject_on: usize::from(tag[0]) % completed_records,
@@ -230,13 +256,12 @@ fuzz_target!(|data: &[u8]| {
             Err(RecordWriteError::Crypto(CryptoError::StateInvalidated))
         ));
 
-        let mut failing_opener =
-            RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
-                .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
-                .record_size(record_size)
-                .context(aad)
-                .build_opener()
-                .unwrap();
+        let mut failing_opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
+            .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
+            .record_size(record_size)
+            .context(aad)
+            .build_opener()
+            .unwrap();
         let mut failing_plaintext_sink = RejectingPlaintextSink {
             calls: 0,
             reject_on: usize::from(tag[1]) % completed_records,
@@ -255,12 +280,8 @@ fuzz_target!(|data: &[u8]| {
         ));
     }
 
-    let arbitrary_data = DataRecord::from_parts(
-        0,
-        record_size,
-        payload.to_vec(),
-        Aes256GcmTag::new(tag),
-    );
+    let arbitrary_data =
+        DataRecord::from_parts(0, record_size, payload.to_vec(), Aes256GcmTag::new(tag));
     let mut arbitrary_opener = RecordBuilder::new(Aes256Gcm::new(Aes256GcmKey::new(key)))
         .nonce_sequence(CounterNonceSequence::<Aes256GcmNonce>::new(fixed))
         .record_size(record_size)

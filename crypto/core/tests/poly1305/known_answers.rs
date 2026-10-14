@@ -1,6 +1,6 @@
 //! Published Poly1305 evidence from RFC 8439 §2.5.2 and Appendix A.3.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     mac::{
         Mac,

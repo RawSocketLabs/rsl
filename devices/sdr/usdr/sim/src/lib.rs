@@ -4,7 +4,7 @@
 //! reads and writes, 32-bit SPI transactions to the LMS6002D, and I2C transfers to the
 //! board's support chips, plus the FPGA's QSPI flash controller with a fake flash behind it
 //! ([`SimBoard::with_flash`]) its RX and TX stream engines below that seam, and the RX chain's DC estimator with an
-//! optional RF loopback for it to measure ([`SimBoard::with_loopback`]). Both libusdr (through `rsl-usdr-oracle`) and `rsl-usdr` drive
+//! optional RF loopback for it to measure ([`SimBoard::with_loopback`]). Both libusdr (through `usdr-oracle`) and `usdr` drive
 //! the same model, so their recorded [`Op`] traces and final chip state can be compared
 //! without hardware.
 //!

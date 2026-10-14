@@ -1,6 +1,6 @@
 //! Published ECDSA P-256/SHA-256 evidence from RFC 6979 A.2.5 and NIST CAVP SigVer/SigGen.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     signature::{Verifier, ecdsa_p256::EcdsaP256SigningKey},
 };
@@ -77,7 +77,7 @@ fn generic_and_prehashed_paths_match_the_message_path() {
     let key = support::verifying_key(RFC_6979_UX, RFC_6979_UY);
     let signature = support::signature(SAMPLE_R, SAMPLE_S);
     Verifier::verify(&key, b"sample", &signature).expect("generic dispatch verifies");
-    let digest = rsl_crypto::digest::sha2::sha256::Sha256::digest(b"sample").unwrap();
+    let digest = crypto::digest::sha2::sha256::Sha256::digest(b"sample").unwrap();
     key.verify_sha256_digest(&digest, &signature)
         .expect("caller-computed digest verifies");
 }

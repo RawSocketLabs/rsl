@@ -1,4 +1,4 @@
-//! rsl-usdr's reference-clock choice against libusdr's: the runtime switch, and the
+//! usdr's reference-clock choice against libusdr's: the runtime switch, and the
 //! reference frequency feeding the next sample-clock plan.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -9,10 +9,10 @@ use std::time::Duration;
 
 use num_complex::Complex;
 
-use rsl_usdr::{Device, ReferenceClock};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, ReferenceClock};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// One step applied to both drivers.
 #[derive(Clone, Copy, Debug)]
@@ -25,7 +25,7 @@ enum Step {
     Stream,
 }
 
-/// Runs `steps` on fresh boards through libusdr and rsl-usdr and compares each step's
+/// Runs `steps` on fresh boards through libusdr and usdr and compares each step's
 /// operations.
 fn assert_steps_match(revision: BoardRevision, steps: &[Step]) {
     let mut oracle = Oracle::open(SimBoard::new(revision)).expect("libusdr opens the board");
@@ -51,7 +51,7 @@ fn assert_steps_match(revision: BoardRevision, steps: &[Step]) {
     let reference = oracle.close();
 
     let sim = SimBus::new(SimBoard::new(revision));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual_windows: Vec<Range<usize>> = Vec::new();
     for step in steps {
         let start = sim.board().trace().len();
@@ -70,7 +70,7 @@ fn assert_steps_match(revision: BoardRevision, steps: &[Step]) {
                     .and_then(|_| device.stop_rx_stream())
             }
         }
-        .expect("rsl-usdr accepts the step");
+        .expect("usdr accepts the step");
         actual_windows.push(start..sim.board().trace().len());
     }
     let board = sim.board();

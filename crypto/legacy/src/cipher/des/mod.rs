@@ -15,7 +15,7 @@
 //! # One DES block
 //!
 //! ```
-//! use rsl_crypto_legacy::cipher::des::{Des, DesBlock, DesKey};
+//! use crypto_legacy::cipher::des::{Des, DesBlock, DesKey};
 //!
 //! let cipher = Des::new(DesKey::new([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]));
 //! let plaintext = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96];

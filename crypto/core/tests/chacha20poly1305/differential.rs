@@ -4,7 +4,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305 as Reference, KeyInit,
     aead::{Aead as _, Payload},
 };
-use rsl_crypto::aead::chacha20poly1305::{
+use crypto::aead::chacha20poly1305::{
     ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce, ChaCha20Poly1305Tag,
 };
 

@@ -106,13 +106,13 @@ fn serialize_digest(hash_words: [u32; 8]) -> [u8; DIGEST_LEN] {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::digest::sha2::sha256::{Sha256, Sha256Digest};
+/// use crypto::digest::sha2::sha256::{Sha256, Sha256Digest};
 ///
 /// let digest: Sha256Digest = Sha256::digest(b"typed output")?;
 /// assert_eq!(digest.as_bytes().len(), Sha256Digest::LEN);
 /// let bytes: [u8; 32] = digest.into_bytes();
 /// assert_eq!(bytes.len(), 32);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Eq, Hash, PartialEq)]
 #[must_use = "a SHA-256 digest should be compared, stored, or otherwise consumed"]
@@ -162,13 +162,13 @@ impl fmt::Debug for Sha256Digest {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::digest::sha2::sha256::Sha256;
+/// use crypto::digest::sha2::sha256::Sha256;
 ///
 /// let mut state = Sha256::new();
 /// state.update(b"first fragment")?;
 /// state.update(b" and second")?;
 /// assert_eq!(state.finalize(), Sha256::digest(b"first fragment and second")?);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone)]
 pub struct Sha256 {
@@ -232,12 +232,12 @@ impl Sha256 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::digest::sha2::sha256::Sha256;
+    /// use crypto::digest::sha2::sha256::Sha256;
     ///
     /// let from_str = Sha256::digest("same bytes")?;
     /// let from_slice = Sha256::digest(b"same bytes")?;
     /// assert_eq!(from_str, from_slice);
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     ///
     /// # Errors

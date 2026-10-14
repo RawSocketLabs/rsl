@@ -1,6 +1,6 @@
 //! Published RSASSA-PSS 2048/SHA-256 evidence from NIST CAVP and Project Wycheproof.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     signature::{Verifier, rsa_pss::RsaPssSha256VerifyingKey},
 };
@@ -128,7 +128,7 @@ fn prehashed_verification_matches_the_message_path() {
         .find(|case| case.result == "valid" && !case.message.is_empty())
         .unwrap();
     let message = support::decode(case.message);
-    let digest = rsl_crypto::digest::sha2::sha256::Sha256::digest(&message).unwrap();
+    let digest = crypto::digest::sha2::sha256::Sha256::digest(&message).unwrap();
     key.verify_sha256_digest(&digest, &support::signature(case.signature))
         .unwrap();
     assert_eq!(key.signature_len(), 256);

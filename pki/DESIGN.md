@@ -2,7 +2,7 @@
 
 ## Boundaries
 
-`rsl-asn1` owns strict DER transport, `rsl-x509` owns untrusted certificate syntax, and `rsl-pki`
+`asn1` owns strict DER transport, `x509` owns untrusted certificate syntax, and `pki`
 owns an explicitly configured trust decision. Protocol crates own certificate negotiation,
 transcript binding, clocks, root stores, and revocation transport.
 
@@ -16,11 +16,11 @@ Experimentation stays possible through lower layers:
 
 | Need | Explicit lower-level surface | What it does not claim |
 |---|---|---|
-| Inspect exact or unfamiliar ASN.1 | `rsl_asn1::Decoder`, `Element::contents`, and `Element::encoded` | BER acceptance, schema meaning, or trust |
+| Inspect exact or unfamiliar ASN.1 | `asn1::Decoder`, `Element::contents`, and `Element::encoded` | BER acceptance, schema meaning, or trust |
 | Inspect unsupported certificate fields | `Certificate`, raw `AlgorithmIdentifier` parameters, `Extension::value`, and exact `TBSCertificate` bytes | Algorithm support or certificate validity |
-| Test one signature relationship | `rsl_pki::verify_certificate_signature` | A path, purpose, identity, time, or revocation decision |
+| Test one signature relationship | `pki::verify_certificate_signature` | A path, purpose, identity, time, or revocation decision |
 | Explore unusual path graphs | `intermediates`, `max_depth`, and `max_candidate_checks` | Permission to silently exceed the caller-selected work budget |
-| Construct an ordinary certificate | `CertificateBuilder::end_entity` / `certificate_authority` plus a built-in `rsl_pki::issuance` signer | CA authorization, serial allocation, key custody, or trust |
+| Construct an ordinary certificate | `CertificateBuilder::end_entity` / `certificate_authority` plus a built-in `pki::issuance` signer | CA authorization, serial allocation, key custody, or trust |
 | Construct or externally sign an unusual certificate | `custom`, raw DER names/SPKIs/algorithms/extensions, `CertificateSigner`, and staged `build_tbs` / `finish` | Validation support, profile compliance, or permission to bypass critical-extension handling |
 
 Unlike a general protocol codec, signed-certificate parsing cannot preserve and accept arbitrary

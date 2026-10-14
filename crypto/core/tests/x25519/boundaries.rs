@@ -1,6 +1,6 @@
 //! Encoding, rejection, ownership, and generic-contract evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     agreement::{
         KeyAgreement,
@@ -94,7 +94,7 @@ fn generic_key_agreement_contract_derives_the_same_secret() {
     fn agree<A: KeyAgreement>(
         private_key: &A::PrivateKey,
         peer_public_key: &A::PublicKey,
-    ) -> rsl_crypto::Result<A::SharedSecret> {
+    ) -> crypto::Result<A::SharedSecret> {
         A::agree(private_key, peer_public_key)
     }
 

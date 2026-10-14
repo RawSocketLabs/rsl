@@ -10,29 +10,29 @@ clock-distribution and synchronization board, **not an SDR sample source** (no c
 no streams; a sample-rate set is refused with `-EINVAL`). Chips: LMK05318B network
 synchronizer, two LMX2820 synthesizers, LMX1204 clock buffer/multiplier, LMX1214 LO
 buffer, two LMK1D1208I LVDS fan-out buffers, LP87524 PMIC, and AD5662 DACs libusdr does
-not drive at open. The driver `rsl-pe-sync` ports libusdr's whole open and close, operation
+not drive at open. The driver `pe-sync` ports libusdr's whole open and close, operation
 for operation (see [PORTING.md](PORTING.md)); it has no transport yet. Nothing here is
 hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-pe-sync` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `rsl-lmk05318` |
-| `sim/` | `rsl-pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
-| `oracle/` | `rsl-pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
-| `nostd-check/` | `rsl-pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
-| `../../sdr/chips/lmk05318` | `rsl-lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `rsl-usdr` (extracted from it 2026-10-13) |
+| `.` | `pe-sync` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `lmk05318` |
+| `sim/` | `pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
+| `oracle/` | `pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
+| `nostd-check/` | `pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
+| `../../sdr/chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13) |
 
 ## Driver layout
 
-Mirrors `rsl-xsdr` (`../../sdr/xsdr/AGENTS.md`):
+Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
 
 - `src/device.rs`: `Device`, the public API: `open` (power-on, status check, clock tree;
   power-off on failure) and `close`. It owns the bus (`Box<dyn Bus>`) and runs the portable
   sequences with `rsl-lowlevel`'s blocking `run_sequence`, in `pe_sync_configure`'s order and
   with its failure rules (which reads libusdr only logs, which failures it ignores).
 - `src/lmk05318.rs`: the LMK05318's bus traffic (identity, register load, soft reset, APLL
-  lock waits, sync) as blocking code on `rsl-lmk05318`: its 16-bit register pointer and
-  four-byte identity read do not fit the `Sequence` seam. `rsl-usdr`'s
+  lock waits, sync) as blocking code on `lmk05318`: its 16-bit register pointer and
+  four-byte identity read do not fit the `Sequence` seam. `usdr`'s
   `chips/lmk05318/lmk05318.rs` does the same for its front ends with its own error type;
   `PORTING.md` records the duplication.
 - `src/portable/`: core only, no allocation. `board.rs` holds the wiring and every setpoint
@@ -46,7 +46,7 @@ Mirrors `rsl-xsdr` (`../../sdr/xsdr/AGENTS.md`):
   Those chips are only PE_SYNC's in libusdr, so they stay here until a second driver
   needs them (`../../AGENTS.md`).
 - `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
-- `tests/common/sim_bus.rs`: `Bus` over `rsl-pe-sync-sim` (both I2C cores);
+- `tests/common/sim_bus.rs`: `Bus` over `pe-sync-sim` (both I2C cores);
   `oracle/tests/open_parity.rs` includes it with `#[path]`, and
   `oracle/tests/chip_parity.rs` includes `src/portable` itself.
 
@@ -94,7 +94,7 @@ panic resumes in Rust), because libusdr ignores the result of several status rea
 quiet refusal would leave no sign in the trace.
 
 The oracle panics if `USDR_BARE_DEV` (skips power-on and configuration) or `USDR_DEBUG`
-(debug socket service) is set (`rsl_pe_sync_oracle::FORBIDDEN_ENV`). `USDR_LOGLEVEL` only
+(debug socket service) is set (`pe_sync_oracle::FORBIDDEN_ENV`). `USDR_LOGLEVEL` only
 changes logging. No other variable is read on these paths.
 
 ## How far init gets
@@ -128,7 +128,7 @@ Each is stated again, with its evidence, where it is encoded.
   effects.
 - LMK1D1208I: 8-bit pointer; YAML defaults (`R5` = 0x20: `REV_ID` 2, `DEV_ID` 0, accepted).
 - LP87524: 8-bit pointer; only `BUCK1_CTRL1` is documented; OTP byte 0x01 reads 0.
-- Absent I2C devices read `0xff` per byte (`SimBoard::without`), as in `rsl-usdr-sim`.
+- Absent I2C devices read `0xff` per byte (`SimBoard::without`), as in `usdr-sim`.
 - I2C readback packing (first byte most significant, little-endian copy) and the
   three-out/four-in limits are transport facts from the uSDR oracle; here the LMK05318B
   identity burst confirms the packing.
@@ -138,7 +138,7 @@ Each is stated again, with its evidence, where it is encoded.
 ## Characterization golden
 
 `oracle/tests/golden/session.trace`: `usdr_dmd_create_string("")` then `usdr_dmd_close`,
-one op per line in `rsl_pe_sync_sim::Op`'s `Display` format, `== open` / `== close` phase
+one op per line in `pe_sync_sim::Op`'s `Display` format, `== open` / `== close` phase
 markers, and a provenance header (PIN, date). It is **characterization**, not
 specification. 1894 ops:
 
@@ -160,10 +160,10 @@ besides the refused rate), sysref windowing, DAC trims, the external SPI.
 ## Verify
 
 ```sh
-cargo fmt -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318 --check
-cargo clippy -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318 --all-targets -- -D warnings
-cargo test -p rsl-pe-sync -p rsl-pe-sync-sim -p rsl-lmk05318
-cargo check -p rsl-lmk05318 --target thumbv7em-none-eabi
+cargo fmt -p pe-sync -p pe-sync-sim -p lmk05318 --check
+cargo clippy -p pe-sync -p pe-sync-sim -p lmk05318 --all-targets -- -D warnings
+cargo test -p pe-sync -p pe-sync-sim -p lmk05318
+cargo check -p lmk05318 --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py pe-sync
 cargo fmt --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
@@ -178,7 +178,7 @@ RSL_PE_SYNC_BLESS=1 cargo test --manifest-path devices/sync/pe_sync/oracle/Cargo
 
 The oracle needs a C compiler only. libusdr is process-global, so oracles are serialised
 by a lock: one is open at a time per process. CI runs it as the `pe-sync-oracle` profile;
-a vendored libusdr change, `rsl-pe-sync` or `rsl-lmk05318` selects it too. The fixture runs
+a vendored libusdr change, `pe-sync` or `lmk05318` selects it too. The fixture runs
 as `pe-sync-portable`.
 
 ## Open items and blockers

@@ -44,7 +44,7 @@
 //!
 //! ```
 //! use core::convert::Infallible;
-//! use rsl_crypto::aead::{
+//! use crypto::aead::{
 //!     CounterNonceSequence, DataRecord, FinalRecord, RecordBuilder, RecordPlaintextSink,
 //!     RecordSink, gcm::{Aes256Gcm, Aes256GcmKey, Aes256GcmNonce, Aes256GcmTag},
 //! };
@@ -116,7 +116,7 @@
 //!     .open_final_to(records.final_record.as_ref().unwrap(), &mut recovered)
 //!     .unwrap();
 //! assert_eq!(recovered.0, b"a very large piece of text");
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! [`RecordSealer::write_to`] owns at most one completed record at a time; the sink chooses the

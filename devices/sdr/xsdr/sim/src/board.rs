@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
-use rsl_lms7002m_sim::Lms7002m;
+use lms7002m_sim::Lms7002m;
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
@@ -190,7 +190,7 @@ impl SimBoard {
     }
 
     /// The same board with its LMS7002M's VCO comparators reading "fail" at cap code `cap`
-    /// (`rsl-lms7002m-sim`'s fault injection), to drive libusdr's tuning error paths.
+    /// (`lms7002m-sim`'s fault injection), to drive libusdr's tuning error paths.
     #[must_use]
     pub fn with_lms_comparator_failure(mut self, cap: u8) -> Self {
         self.lms = Lms7002m::new(LMS7_MASK)
@@ -261,7 +261,7 @@ impl SimBoard {
     /// Writes `write` to the device at `addr`, then reads `read_len` bytes in wire order.
     ///
     /// Neither libusdr transport reports a missing acknowledge, so an absent device is not
-    /// an error: as a sim choice (the same as `rsl-usdr-sim`'s), its reads return the
+    /// an error: as a sim choice (the same as `usdr-sim`'s), its reads return the
     /// idle-high bus, `0xff` per byte. libusdr's front-end probe relies on that to find no
     /// front end on XSDR's bus 1.
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {

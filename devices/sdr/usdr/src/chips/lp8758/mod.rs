@@ -40,7 +40,7 @@
 //! # Register map
 //!
 //! One flat address space; the address map, value types and revision live in the shared
-//! `rsl-lp8758` crate (through `crate::portable::lp8758`), used by the power-rail machine.
+//! `lp8758` crate (through `crate::portable::lp8758`), used by the power-rail machine.
 
 mod lp8758;
 

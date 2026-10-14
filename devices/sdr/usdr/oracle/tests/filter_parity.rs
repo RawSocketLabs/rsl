@@ -1,4 +1,4 @@
-//! `rsl_usdr::dsp::filter` against libusdr's compiled `xdsp/filter.c` and generic
+//! `usdr::dsp::filter` against libusdr's compiled `xdsp/filter.c` and generic
 //! `conv_filter.c` kernels: every layout and rate, edge tap and block lengths, several
 //! blocks per filter so history carries, and full-scale samples.
 //!
@@ -6,12 +6,12 @@
 //! sums cannot overflow (undefined in C; Rust wraps). Blocks are at least as long as the
 //! history, so libusdr's history `memcpy` does not overlap. Interpolating shapes keep
 //! within the tap buffer libusdr's `assert` guards. Beyond these, no C reference exists;
-//! `rsl_usdr::dsp::filter`'s unit tests cover the defined Rust behaviour.
+//! `usdr::dsp::filter`'s unit tests cover the defined Rust behaviour.
 
 use std::num::NonZeroU32;
 
-use rsl_usdr::dsp::filter::{Fir, Layout, Rate};
-use rsl_usdr_oracle::filter::{self, Filter};
+use usdr::dsp::filter::{Fir, Layout, Rate};
+use usdr_oracle::filter::{self, Filter};
 
 /// Extreme 16-bit values.
 const EXTREME_I16: [i16; 5] = [i16::MIN, i16::MAX, 0, -1, 1];
@@ -132,6 +132,6 @@ fn every_shape_filters_like_libusdr() {
 fn libusdr_has_no_separated_layout() {
     assert!(
         Filter::new(&[1, 2, 3], 8, 0, filter::SEPARATED).is_none(),
-        "libusdr rejects FDAF_SEPARATED, which rsl_usdr::dsp::filter::Layout omits"
+        "libusdr rejects FDAF_SEPARATED, which usdr::dsp::filter::Layout omits"
     );
 }

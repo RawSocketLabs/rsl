@@ -1,7 +1,7 @@
 //! libusdr's open sequence against a healthy simulated board.
 
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
 
 /// GPO bank driving the LMS6002D reset line (active low).
 const GPO_LMS_RST: u8 = 0;

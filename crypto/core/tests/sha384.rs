@@ -2,7 +2,7 @@
 //!
 //! Provenance: `tests/vectors/sha384/README.md`.
 
-use rsl_crypto::digest::sha2::sha384::Sha384;
+use crypto::digest::sha2::sha384::Sha384;
 use sha2::{Digest as _, Sha384 as ReferenceSha384};
 
 /// Published NIST one-block and two-block SHA-384 examples.

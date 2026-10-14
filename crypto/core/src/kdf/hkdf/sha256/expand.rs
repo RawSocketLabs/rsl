@@ -39,7 +39,7 @@ impl HkdfSha256Prk {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::kdf::hkdf::sha256::extract;
+    /// use crypto::kdf::hkdf::sha256::extract;
     ///
     /// let prk = extract(Some(b"salt"), b"input keying material")?;
     /// let mut client_key = [0_u8; 16];
@@ -47,7 +47,7 @@ impl HkdfSha256Prk {
     /// prk.expand(b"client encryption key", &mut client_key)?;
     /// prk.expand(b"server encryption key", &mut server_key)?;
     /// assert_ne!(client_key, server_key);
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn expand(&self, info: &[u8], output: &mut [u8]) -> Result<()> {
         if output.len() > MAX_OUTPUT_LEN {

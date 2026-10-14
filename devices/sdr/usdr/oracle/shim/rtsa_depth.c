@@ -1,5 +1,5 @@
 // Exports libusdr's header-only rtsa_calc_depth so the oracle can call the real C body.
-// The CPU capability query is pinned to the generic (scalar) build, the one rsl-usdr ports;
+// The CPU capability query is pinned to the generic (scalar) build, the one usdr ports;
 // cpu_vcap_align itself is libusdr's.
 #include "vbase.h"
 #define cpu_vcap_get() OPT_GENERIC

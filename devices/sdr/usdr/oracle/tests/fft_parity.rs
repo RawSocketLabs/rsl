@@ -1,4 +1,4 @@
-//! `rsl_usdr::dsp::{window, fftad}` against libusdr's compiled generic kernels
+//! `usdr::dsp::{window, fftad}` against libusdr's compiled generic kernels
 //! (`xdsp/fft_window_functions.c`, `xdsp/fftad_functions.c`), bit for bit.
 //!
 //! NaN appears in at most one operand of any C operation: with two, which payload x86
@@ -8,9 +8,9 @@
 //! oracle's baseline x86-64 build, not of FMA-capable targets (aarch64, `-march=native`).
 
 use num_complex::{Complex, Complex32};
-use rsl_usdr::dsp::fftad::{HwLogPowerAccumulator, LogPowerAccumulator};
-use rsl_usdr::dsp::window;
-use rsl_usdr_oracle::fft::{self as c, Accumulator};
+use usdr::dsp::fftad::{HwLogPowerAccumulator, LogPowerAccumulator};
+use usdr::dsp::window;
+use usdr_oracle::fft::{self as c, Accumulator};
 
 /// Deterministic xorshift64.
 struct Rng(u64);

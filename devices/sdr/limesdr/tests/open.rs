@@ -7,10 +7,10 @@ mod common;
 use std::time::Duration;
 
 use common::sim_port::SimPort;
-use rsl_limesdr::control::{BusError, ControlPort};
-use rsl_limesdr::lms64c::FRAME_LEN;
-use rsl_limesdr::{Access, Device, Error, ExchangeError};
-use rsl_limesdr_sim::{Op, SimBoard};
+use limesdr::control::{BusError, ControlPort};
+use limesdr::lms64c::FRAME_LEN;
+use limesdr::{Access, Device, Error, ExchangeError};
+use limesdr_sim::{Op, SimBoard};
 
 /// Stream control, gateware register 0x000A.
 const STREAM_CONTROL: u16 = 0x000a;
@@ -28,7 +28,7 @@ fn is_lms7(op: &Op) -> bool {
 #[test]
 fn opening_programmes_the_lms7002m_and_leaves_streaming_stopped() {
     let sim = SimPort::new(SimBoard::new().with_fpga_reg(STREAM_CONTROL, 0xffff));
-    let device = Device::open(sim.clone()).expect("rsl-limesdr opens the LimeSDR-mini");
+    let device = Device::open(sim.clone()).expect("limesdr opens the LimeSDR-mini");
     assert_eq!(device.reference_hz(), 40_000_000);
 
     let board = sim.board();
@@ -49,7 +49,7 @@ fn opening_programmes_the_lms7002m_and_leaves_streaming_stopped() {
 #[test]
 fn power_up_and_close_touch_nothing() {
     let sim = SimPort::new(SimBoard::new());
-    let mut device = Device::open(sim.clone()).expect("rsl-limesdr opens the LimeSDR-mini");
+    let mut device = Device::open(sim.clone()).expect("limesdr opens the LimeSDR-mini");
     let opened = sim.board().trace().len();
     device
         .power_up()
@@ -83,8 +83,7 @@ fn a_detector_that_never_finishes_is_refused_after_ten_polls_50_ms_apart() {
 
 #[test]
 fn a_detector_taking_its_real_gate_time_is_waited_for() {
-    let sim =
-        SimPort::new(SimBoard::new().with_detector_delay_us(rsl_limesdr_sim::DETECTOR_GATE_US));
+    let sim = SimPort::new(SimBoard::new().with_detector_delay_us(limesdr_sim::DETECTOR_GATE_US));
     let device = Device::open(sim.clone()).expect("the measurement completes within the polls");
     assert_eq!(device.reference_hz(), 40_000_000);
     assert_eq!(sim.board().now_us(), 4 * 50_000, "four waits cover 168 ms");

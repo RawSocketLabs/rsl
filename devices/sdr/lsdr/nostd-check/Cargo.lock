@@ -42,6 +42,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsdr-nostd-check"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -77,14 +85,6 @@ dependencies = [
 [[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
-
-[[package]]
-name = "rsl-lsdr-nostd-check"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
 
 [[package]]
 name = "serde_core"

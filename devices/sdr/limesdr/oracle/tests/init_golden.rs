@@ -2,7 +2,7 @@
 //! close) on a fresh simulated board, operation for operation.
 //!
 //! This records what the pinned C does against the sim's modelled board; it is not a
-//! specification. It exists so the future `rsl-limesdr` can be compared op-for-op against a
+//! specification. It exists so the future `limesdr` can be compared op-for-op against a
 //! fixed reference: render its sim trace with `Op`'s `Display` and compare with the body.
 //! `req`/`rep` lines are frames libusdr's `lms64c_proto.c` built and parsed, but which
 //! command each low-level operation became is the oracle shim's assumption (the FT601
@@ -16,8 +16,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
-use rsl_limesdr_oracle::Oracle;
-use rsl_limesdr_sim::SimBoard;
+use limesdr_oracle::Oracle;
+use limesdr_sim::SimBoard;
 
 /// When the fixture was last captured; written into a re-blessed header.
 const CAPTURED: &str = "2026-10-12";
@@ -67,15 +67,15 @@ fn session() -> String {
 /// The fixture's provenance header.
 fn header() -> String {
     format!(
-        "# rsl-limesdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
-         # libusdr does on rsl-limesdr-sim's modelled board (see devices/sdr/limesdr/AGENTS.md).\n\
+        "# limesdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
+         # libusdr does on limesdr-sim's modelled board (see devices/sdr/limesdr/AGENTS.md).\n\
          # pin: {pin}\n\
          # board: LimeSDR-mini (U3_LIMESDR device ID), LMS7002M 0x3841, 40 MHz reference\n\
          # captured: {CAPTURED}\n\
          # scenario: usdr_dmd_create_string(\"\"), /dm/power/en = 1, usdr_dmd_close.\n\
          # req/rep frame encoding is the oracle shim's assumption (FT601 transport not vendored).\n\
          # Re-bless (RSL_LIMESDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.\n\
-         # Lines: rsl_limesdr_sim::Op's Display; `== <phase>` opens each phase.\n",
+         # Lines: limesdr_sim::Op's Display; `== <phase>` opens each phase.\n",
         pin = pin(),
     )
 }

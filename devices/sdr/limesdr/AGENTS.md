@@ -14,12 +14,12 @@ hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-limesdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `rsl-lms7002m` |
-| `sim/` | `rsl-limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M, virtual clock, trace of frames and decoded register operations |
-| `oracle/` | `rsl-limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c`, and its `lms64c_proto.c` builder and parser called directly |
-| `nostd-check/` | `rsl-limesdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `rsl-xsdr`'s; `scripts/ci/portable.py limesdr` holds its dependencies to the driver's |
-| `../chips/lms7002m/` | `rsl-lms7002m` (shared with `rsl-xsdr`, `no_std`) | The LMS7002M register values and `hw/lms7002m` operations: `Create` is the open's `lms7002m_create` (the 0x3841 mask check is this board's, in `rsl-limesdr`), `spi_read` its version read; `Lms7002m::mac_set` and the RFE/TRF/TSP/AFE operations serve `lms7002m_streaming_up` once ported |
-| `../chips/lms7002m/sim/` | `rsl-lms7002m-sim` (shared with `rsl-xsdr-sim`) | The LMS7002M register file; its assumptions are in `../xsdr/AGENTS.md` and the crate docs |
+| `.` | `limesdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `lms7002m` |
+| `sim/` | `limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M, virtual clock, trace of frames and decoded register operations |
+| `oracle/` | `limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c`, and its `lms64c_proto.c` builder and parser called directly |
+| `nostd-check/` | `limesdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py limesdr` holds its dependencies to the driver's |
+| `../chips/lms7002m/` | `lms7002m` (shared with `xsdr`, `no_std`) | The LMS7002M register values and `hw/lms7002m` operations: `Create` is the open's `lms7002m_create` (the 0x3841 mask check is this board's, in `limesdr`), `spi_read` its version read; `Lms7002m::mac_set` and the RFE/TRF/TSP/AFE operations serve `lms7002m_streaming_up` once ported |
+| `../chips/lms7002m/sim/` | `lms7002m-sim` (shared with `xsdr-sim`) | The LMS7002M register file; its assumptions are in `../xsdr/AGENTS.md` and the crate docs |
 
 ## Layout decision (2026-10-12)
 
@@ -33,31 +33,31 @@ goldens did not change.
 
 ## Driver layout
 
-Mirrors `rsl-xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
+Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
 
 - `src/device.rs`: `Device`, the public API: `open`, `power_up` and `close` (both no bus
   operation, as in libusdr), `reference_hz` and the emulated `revision`. It owns the
   control channel (`Box<dyn ControlPort>`) and runs the portable open, one LMS64C exchange
   per operation.
 - `src/control.rs`: `ControlPort`, the transport seam: one 64-byte request and its reply at
-  a time, plus sleep; `rsl-lowlevel`'s `BusError`, re-exported. Unlike `rsl-xsdr`'s `Bus`,
+  a time, plus sleep; `rsl-lowlevel`'s `BusError`, re-exported. Unlike `xsdr`'s `Bus`,
   it is not libusdr's `ls_op`: on this board the firmware's LMS64C frames are the wire, and
   which frame carries which operation is the driver's (`portable/lsop.rs`).
 - `src/portable/`: core only, no allocation, imports within the tree and the shared
   `no_std` crates (`nostd-check` compiles it unchanged). `lms64c.rs`: the codec, public as
-  `rsl_limesdr::lms64c` (single-frame register writes and reads, the reset pulse, reply
+  `limesdr::lms64c` (single-frame register writes and reads, the reset pulse, reply
   values). `lsop.rs`: the board code's `ls_op` classes and the shim's mapping of each onto
   one frame. `fpga.rs`: gateware registers. `reference.rs`: the reference-clock rule.
-  `open.rs`: `Open`, the hand-written sans-I/O `limesdr_init`, which runs `rsl-lms7002m`'s
+  `open.rs`: `Open`, the hand-written sans-I/O `limesdr_init`, which runs `lms7002m`'s
   `Create` for `lms7002m_create`.
 - `src/error.rs`: `Error` and `ExchangeError` (transport failure, a reply status other
   than completed, or a reply to another command).
-- `tests/common/sim_port.rs`: `ControlPort` over `rsl-limesdr-sim`; the oracle's parity
+- `tests/common/sim_port.rs`: `ControlPort` over `limesdr-sim`; the oracle's parity
   tests include it with `#[path]`.
 
 Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
 libusdr on fresh boards, frames included; divergences are whitelisted per scenario there and
-listed in `PORTING.md`. LMS7002M values and chip operations come from `rsl-lms7002m`.
+listed in `PORTING.md`. LMS7002M values and chip operations come from `lms7002m`.
 
 ## How libusdr selects the family
 
@@ -98,14 +98,14 @@ half of 32-bit address-then-value reply records (`MOD_INT32_16`). Reset levels
 vendored calls any of these: the FT601 transport does.
 
 The oracle panics if `USDR_DEBUG` (debug socket service in `_usdr_dmd_create`) or
-`USDR_BARE_DEV` (stream initialisation refuses) is set (`rsl_limesdr_oracle::FORBIDDEN_ENV`).
+`USDR_BARE_DEV` (stream initialisation refuses) is set (`limesdr_oracle::FORBIDDEN_ENV`).
 `USDR_LOGLEVEL` only changes logging. The FT601 transport's own variables are unknown.
 
 ## The shim's transport assumptions
 
 The oracle shim stands in for the FT601 transport, so these are **assumptions**, not
 libusdr facts; each `req`/`rep` golden line encodes them. Frames are built and parsed by
-the vendored `lms64c_proto.c`. `rsl-limesdr` adopts the same mapping
+the vendored `lms64c_proto.c`. `limesdr` adopts the same mapping
 (`src/portable/lsop.rs`), so its parity proves agreement with the shim, not the firmware.
 
 - `HWREG` → one `CMD_BRDSPI_WR` of `(address << 16 | value)` records, then one
@@ -115,7 +115,7 @@ the vendored `lms64c_proto.c`. `rsl-limesdr` adopts the same mapping
   compares the whole word). Peripheral 0.
 - `CUSTOM_CMD` 0 → `CMD_LMS7002_RST` with `LMS_RST_PULSE`.
 - A reply status other than `STATUS_COMPLETED_CMD` is `-EIO`; no USB framing, endpoints or
-  FT601 configuration is modelled. `rsl-limesdr` also refuses a reply naming another
+  FT601 configuration is modelled. `limesdr` also refuses a reply naming another
   command than its request (`ExchangeError::Mismatched`), which the shim does not check.
 
 ## What the sim models, and its assumptions
@@ -136,7 +136,7 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
   `with_detector_delay_us` instead completes after that much virtual time
   (`DETECTOR_GATE_US`, the real gate of about 168 ms; `u64::MAX` never), the count
   registers keeping their old value until then.
-- LMS7002M: `rsl-lms7002m-sim` with metal mask 1; the reset pulse returns it to power-on
+- LMS7002M: `lms7002m-sim` with metal mask 1; the reset pulse returns it to power-on
   (nothing written). Bit 15 of an address is the write flag.
 - Sleeps advance virtual time only (the shim replaces `usleep`).
 
@@ -153,7 +153,7 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
   deterministic: 52 MHz measures 51 999 998 Hz, 38.4 MHz 38 399 996 Hz, 10 MHz exactly.
   Its poll loop tests `j == 100` after at most 10 iterations, so a detector that never
   finishes is not caught.
-  `rsl-limesdr` fixes both deliberately (`src/portable/reference.rs`, `open.rs`): the
+  `limesdr` fixes both deliberately (`src/portable/reference.rs`, `open.rs`): the
   nominal reference nearest the measurement within 1 MHz (the walk with `ABS` evaluated
   once and signed), and `Error::DetectorStalled` after the same ten polls and waits.
 - `lowlevel_create` returns the last transport plugin's result, so a failed LimeSDR init
@@ -167,7 +167,7 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
 
 `oracle/tests/golden/limesdr_mini_session.trace`: `usdr_dmd_create_string("")`,
 `/dm/power/en` = 1, `usdr_dmd_close` on a fresh board, one op per line in
-`rsl_limesdr_sim::Op`'s `Display` format (`req`/`rep` frames around the register operations
+`limesdr_sim::Op`'s `Display` format (`req`/`rep` frames around the register operations
 each decoded to), `== open` / `== power-up` / `== close` markers and a provenance header.
 **Characterization, not specification.** Open: 20 exchanges, 61 ops (detector start, one poll,
 count read; LMS7 reset; version read; `lms7002m_create`'s 10 writes and version read;
@@ -184,9 +184,9 @@ above; `oracle/tests/lms64c_parity.rs` compares the codec with `lms64c_fill_pack
 ## Verify
 
 ```sh
-cargo fmt -p rsl-limesdr -p rsl-limesdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --check
-cargo clippy -p rsl-limesdr -p rsl-limesdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim --all-targets -- -D warnings
-cargo test -p rsl-limesdr -p rsl-limesdr-sim -p rsl-lms7002m -p rsl-lms7002m-sim
+cargo fmt -p limesdr -p limesdr-sim -p lms7002m -p lms7002m-sim --check
+cargo clippy -p limesdr -p limesdr-sim -p lms7002m -p lms7002m-sim --all-targets -- -D warnings
+cargo test -p limesdr -p limesdr-sim -p lms7002m -p lms7002m-sim
 python3 scripts/ci/portable.py limesdr
 cargo fmt --manifest-path devices/sdr/limesdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/limesdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
@@ -199,9 +199,9 @@ cargo test --manifest-path devices/sdr/limesdr/oracle/Cargo.toml
 RSL_LIMESDR_BLESS=1 cargo test --manifest-path devices/sdr/limesdr/oracle/Cargo.toml --test init_golden
 ```
 
-A change to `rsl-lms7002m-sim` or `rsl-lms7002m` must also pass the XSDR oracle unchanged.
+A change to `lms7002m-sim` or `lms7002m` must also pass the XSDR oracle unchanged.
 CI runs the oracle as the `limesdr-oracle` profile and the fixture as `limesdr-portable`
-(host only); a change to `rsl-limesdr` or the shared crates it builds on selects both, a
+(host only); a change to `limesdr` or the shared crates it builds on selects both, a
 change to the vendored C only the oracle. The fixture's thumbv7em check is release-only, and
 no product enables it yet. One oracle is open at a time per process (a lock), since libusdr
 is process-global.
@@ -210,9 +210,9 @@ is process-global.
 
 - The FT601 transport C (`lowlevel/usb_ft601/usb_ft601_{generic,libusb}.c`) is not
   vendored, so the `ls_op` → LMS64C mapping, transport-level open traffic (board info,
-  FIFO reset) and FT601 framing are unverified, and `rsl-limesdr` has no hardware
+  FIFO reset) and FT601 framing are unverified, and `limesdr` has no hardware
   `ControlPort`. Vendoring it (a PIN-subset change in `../usdr/oracle/vendor.sh`) turns the
-  shim assumptions above into evidence and lets an FT601 port over `rsl-usb` be framed
+  shim assumptions above into evidence and lets an FT601 port over `usb` be framed
   against the C.
 - Firmware semantics (reply layout, write-flag handling, reset levels) and gateware
   identity values need LimeSuite or firmware source, neither vendored.

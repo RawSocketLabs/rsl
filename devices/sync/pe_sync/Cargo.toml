@@ -1,5 +1,5 @@
 [package]
-name = "rsl-pe-sync"
+name = "pe-sync"
 version = "0.0.0"
 description = "Pure-Rust driver for libusdr's PE_SYNC clock-distribution and synchronization board."
 publish = false
@@ -10,12 +10,12 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
-rsl-lmk05318.workspace = true
+lmk05318.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-rsl-pe-sync-sim.workspace = true
+pe-sync-sim.workspace = true
 
 [lints]
 workspace = true

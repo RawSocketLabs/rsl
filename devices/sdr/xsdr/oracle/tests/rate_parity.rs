@@ -1,22 +1,22 @@
-//! rsl-xsdr's sample rate, LO tuning, gains and bandwidths against libusdr's, operation for
+//! xsdr's sample rate, LO tuning, gains and bandwidths against libusdr's, operation for
 //! operation, on fresh simulated XSDRs: everything between the open and the close.
 //!
 //! The boards report gateware with a TX MMCM (HWID PHY bit 0x20) unless a scenario says
 //! otherwise: libusdr's rate path calibrates the `LimeLight` link only then. The sim's RX
 //! PHY reads an error-free link and its LMS7002M answers the VCO comparators from the
-//! 26 MHz reference (`rsl-xsdr-sim`, `rsl-lms7002m-sim`).
+//! 26 MHz reference (`xsdr-sim`, `lms7002m-sim`).
 //!
 //! Whitelisted divergence: gateware with an RX or shared MMCM or a DUC/DDC is refused by
-//! rsl-xsdr before any bus access, where libusdr configures it
+//! xsdr before any bus access, where libusdr configures it
 //! (`gateware_rsl_xsdr_does_not_port_is_refused_before_any_access`).
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
-use rsl_xsdr::{Device, Direction, Error, Gain};
-use rsl_xsdr_oracle::Oracle;
-use rsl_xsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
+use xsdr::{Device, Direction, Error, Gain};
+use xsdr_oracle::Oracle;
+use xsdr_sim::{Op, SimBoard, Variant};
 
 /// `EINVAL`.
 const EINVAL: i32 = 22;
@@ -27,7 +27,7 @@ const EIO: i32 = 5;
 /// An XSDR with a TX MMCM.
 const TX_MMCM: u32 = 0x0030_0020;
 
-/// One device-manager call, as libusdr's path and rsl-xsdr's method.
+/// One device-manager call, as libusdr's path and xsdr's method.
 #[derive(Clone, Copy, Debug)]
 enum Call {
     /// `/dm/power/en` = 1.
@@ -102,10 +102,10 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
     (results, board.trace()[opened..used].to_vec())
 }
 
-/// rsl-xsdr's results, as libusdr's errnos, and its operations after the open.
+/// xsdr's results, as libusdr's errnos, and its operations after the open.
 fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
     let sim = SimBus::new(board);
-    let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
+    let mut device = Device::open(sim.clone()).expect("xsdr opens the XSDR");
     let opened = sim.board().trace().len();
     let results = calls
         .iter()
@@ -126,7 +126,7 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
     (results, trace)
 }
 
-/// The errno libusdr returns where rsl-xsdr returns `result`.
+/// The errno libusdr returns where xsdr returns `result`.
 fn errno(result: Result<(), Error>) -> i32 {
     match result {
         Ok(()) => 0,
@@ -142,7 +142,7 @@ fn errno(result: Result<(), Error>) -> i32 {
     }
 }
 
-/// Panics, naming `scenario`, where rsl-xsdr leaves libusdr.
+/// Panics, naming `scenario`, where xsdr leaves libusdr.
 fn assert_same(hwid: u32, calls: &[Call], scenario: &str) -> Vec<i32> {
     assert_same_on(
         &|| SimBoard::new(Variant::Xsdr).with_hwid(hwid),
@@ -159,7 +159,7 @@ fn assert_same_on(board: &dyn Fn() -> SimBoard, calls: &[Call], scenario: &str) 
         (0..expected.1.len().max(actual.1.len())).find(|&i| expected.1.get(i) != actual.1.get(i))
     {
         panic!(
-            "{scenario}: rsl-xsdr diverges at op {at} of {}: libusdr {}, rsl-xsdr {}",
+            "{scenario}: xsdr diverges at op {at} of {}: libusdr {}, xsdr {}",
             expected.1.len(),
             expected.1.get(at).map_or("(end)".into(), Op::to_string),
             actual.1.get(at).map_or("(end)".into(), Op::to_string),

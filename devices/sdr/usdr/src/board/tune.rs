@@ -3,7 +3,7 @@
 //! `/dm/sdr/0/rx/freqency`, `/dm/sdr/0/tx/frequency`, their per-channel and baseband
 //! forms, the gain and the path controls reach `usdr_ctrl.c`.
 
-use rsl_deps::tracing::debug;
+use deps::tracing::debug;
 
 use super::Board;
 use crate::chips::register::run_sequence;

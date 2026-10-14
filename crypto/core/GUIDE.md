@@ -4,7 +4,7 @@ This guide maps a protocol task to an implemented primitive. It does not teach t
 follow each module link for mechanics and `STANDARDS.md` for controlling publications and test
 evidence.
 
-> `rsl-crypto` is not independently audited production cryptography. `Recommended` is a project
+> `crypto` is not independently audited production cryptography. `Recommended` is a project
 > lifecycle label, not a deployment approval or constant-time claim. See
 > [`SIDE-CHANNELS.md`](SIDE-CHANNELS.md).
 
@@ -145,8 +145,8 @@ retain RSA-PSS here for existing certificate-verification paths only. See the
 | Transcript construction, canonical wire encoding, identity binding, certificate parsing, and signature algorithm identifiers | Protocol and certificate codecs | [`agreement`](src/agreement.rs) and [`signature`](src/signature.rs) consume exact bytes/keys; [protocol ledger](STANDARDS.md#protocol-selection-source-baselines) |
 | Replay detection, receive windows, packet/record ordering, and encryption activation state | Protocol connection state | [`aead`](src/aead.rs) authenticates one invocation only; [GCM ledger](STANDARDS.md#aes-128-gcm-coverage) |
 
-Certificate parsing and path validation live in sibling [`rsl-x509`](../../pki/x509/README.md) and
-[`rsl-pki`](../../pki/validation/README.md) crates. Negotiation, transcript binding, replay, and
+Certificate parsing and path validation live in sibling [`x509`](../../pki/x509/README.md) and
+[`pki`](../../pki/validation/README.md) crates. Negotiation, transcript binding, replay, and
 record state belong in the sibling [`protocols`](../../protocols/README.md) crates. A future TLS
 or SSH crate should carry its own standards ledger for the complete construction and link back to
 the primitive modules selected here.

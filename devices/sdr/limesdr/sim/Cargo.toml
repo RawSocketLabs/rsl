@@ -1,7 +1,7 @@
 [package]
-name = "rsl-limesdr-sim"
+name = "limesdr-sim"
 version = "0.0.0"
-description = "Simulated LimeSDR-mini (libusdr's u3_limesdr) at its LMS64C control seam, for testing libusdr and the future rsl-limesdr without hardware."
+description = "Simulated LimeSDR-mini (libusdr's u3_limesdr) at its LMS64C control seam, for testing libusdr and the future limesdr without hardware."
 publish = false
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rsl-lms7002m-sim.workspace = true
+lms7002m-sim.workspace = true
 
 [lints]
 workspace = true

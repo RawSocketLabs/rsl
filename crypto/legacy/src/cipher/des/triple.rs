@@ -4,7 +4,7 @@ use core::fmt;
 
 use super::api::{BLOCK_LEN, Des, DesBlock};
 use crate::SecretBytes;
-use rsl_crypto::cipher::BlockCipher;
+use crypto::cipher::BlockCipher;
 
 const EDE2_KEY_LEN: usize = 16;
 const EDE3_KEY_LEN: usize = 24;

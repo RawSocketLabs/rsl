@@ -35,14 +35,14 @@
 //! `00:00:00:00:00:00:00:4a:00:00:00:00`, and counter 1:
 //!
 //! ```
-//! use rsl_crypto::cipher::chacha20::{ChaCha20, ChaCha20Key, ChaCha20Nonce};
+//! use crypto::cipher::chacha20::{ChaCha20, ChaCha20Key, ChaCha20Nonce};
 //!
 //! let key = ChaCha20Key::new(core::array::from_fn(|i| i as u8));
 //! let nonce = ChaCha20Nonce::new([0, 0, 0, 0, 0, 0, 0, 0x4a, 0, 0, 0, 0]);
 //! let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 //! let ciphertext = ChaCha20::new(key).encrypt(1, &nonce, plaintext)?;
 //! assert_eq!(&ciphertext[..8], &[0x6e, 0x2e, 0x35, 0x9a, 0x25, 0x68, 0xf9, 0x80]);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

@@ -3,9 +3,9 @@
 
 use core::num::NonZeroU32;
 
-use rsl_lms7002m::ResetPlan;
+use lms7002m::ResetPlan;
+use lp8758::{Buck, BuckControl, BuckVoltage};
 use rsl_lowlevel::{I2cAddr, SpiAddr};
-use rsl_lp8758::{Buck, BuckControl, BuckVoltage};
 
 use crate::portable::supplies::SupplyPlan;
 

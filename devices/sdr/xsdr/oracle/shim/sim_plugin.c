@@ -1,4 +1,4 @@
-// libusdr low-level transport that forwards every operation to rsl-xsdr-sim (Rust).
+// libusdr low-level transport that forwards every operation to xsdr-sim (Rust).
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the USB entries never match a
@@ -19,14 +19,14 @@
 #include "hw/lms7002m/lms7002m.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
-int rsl_xsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
+int xsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
                           const void* pout);
-void rsl_xsdr_oracle_sleep_us(unsigned long long us);
+void xsdr_oracle_sleep_us(unsigned long long us);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
 {
-    rsl_xsdr_oracle_sleep_us(us);
+    xsdr_oracle_sleep_us(us);
     return 0;
 }
 
@@ -51,7 +51,7 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
 {
     (void)dev;
     (void)subdev;
-    return rsl_xsdr_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
+    return xsdr_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
 }
 
 static int sim_destroy(lldev_t dev)
@@ -115,9 +115,9 @@ static int no_device_create(unsigned pcount, const char** devparam, const char**
 }
 
 // One call into libusdr's LMS7002M chip driver (hw/lms7002m/lms7002m.c), for
-// rsl_xsdr_oracle_lms7002m_run. Kinds and arguments are rsl_xsdr_oracle::Lms7002mCall's
+// xsdr_oracle_lms7002m_run. Kinds and arguments are xsdr_oracle::Lms7002mCall's
 // (src/lib.rs); a call that reports values beside its result writes them to out.
-struct rsl_lms7002m_op {
+struct lms7002m_op {
     unsigned kind, a, b, c, d;
     int out[3];
 };
@@ -155,7 +155,7 @@ static lms7002m_lml_map_t unpack_map(unsigned x)
 
 // Runs ops in order on a zeroed lms7002m_state_t (as xsdr_ctor leaves it) whose SPI
 // reaches the installed board through this plugin's ls_op, storing each call's result.
-int rsl_xsdr_oracle_lms7002m_run(struct rsl_lms7002m_op* ops, unsigned count, int* results)
+int xsdr_oracle_lms7002m_run(struct lms7002m_op* ops, unsigned count, int* results)
 {
     struct sim_dev d;
     memset(&d, 0, sizeof(d));
@@ -164,7 +164,7 @@ int rsl_xsdr_oracle_lms7002m_run(struct rsl_lms7002m_op* ops, unsigned count, in
     memset(&m, 0, sizeof(m));
     m.dev = &d.ll;
     for (unsigned i = 0; i < count; i++) {
-        struct rsl_lms7002m_op* op = &ops[i];
+        struct lms7002m_op* op = &ops[i];
         lms7002m_lpf_params_t p = { .rcc = op->a, .r = op->b, .c = op->c };
         bool done = false;
         int gain = 0;

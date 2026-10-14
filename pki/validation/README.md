@@ -1,14 +1,14 @@
-# rsl-pki
+# pki
 
 Trust-anchor, path-construction, constraint, and certificate-signature validation for RSL.
 
-`rsl-pki::issuance` also supplies the narrow adapter between `rsl-x509`'s syntax builder and the
-Ed25519, Ed448, ECDSA P-256, and ECDSA P-384 signing keys in `rsl-crypto`:
+`pki::issuance` also supplies the narrow adapter between `x509`'s syntax builder and the
+Ed25519, Ed448, ECDSA P-256, and ECDSA P-384 signing keys in `crypto`:
 
 ```rust,ignore
-use rsl_crypto::signature::ed25519::Ed25519SigningKey;
-use rsl_pki::issuance::Ed25519CertificateSigner;
-use rsl_x509::{Time, builder::{CertificateBuilder, NameDer}};
+use crypto::signature::ed25519::Ed25519SigningKey;
+use pki::issuance::Ed25519CertificateSigner;
+use x509::{Time, builder::{CertificateBuilder, NameDer}};
 
 let key = Ed25519SigningKey::from_seed(seed);
 let signer = Ed25519CertificateSigner::new(&key);
@@ -30,8 +30,8 @@ caller-owned policy. Generic and staged signer contracts remain available for ha
 test, and experimental signers.
 
 ```rust,ignore
-use rsl_pki::{PathValidator, Purpose, RequiredKeyUsage};
-use rsl_x509::{Certificate, Time};
+use pki::{PathValidator, Purpose, RequiredKeyUsage};
+use x509::{Certificate, Time};
 
 let leaf = Certificate::from_der(leaf_der)?;
 let intermediates = [Certificate::from_der(intermediate_der)?];

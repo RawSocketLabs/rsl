@@ -1,4 +1,4 @@
-//! The clock chips' solvers and register sequences in rsl-pe-sync against libusdr's
+//! The clock chips' solvers and register sequences in pe-sync against libusdr's
 //! compiled `hw/lmx2820`, `hw/lmx1214` and `hw/lmx1204` drivers, word for word, over sweeps
 //! of requests well beyond `PE_SYNC`'s one operating point: every reference path, VCO core,
 //! output divider and mux of the LMX2820; buffer and divider modes and every auxiliary path
@@ -20,6 +20,12 @@ mod sim_bus;
 
 use std::fmt::Debug;
 
+use pe_sync::lowlevel::SpiAddr;
+use pe_sync_oracle::{
+    Lmx1204Request as CLmx1204, Lmx1214Request as CLmx1214, Lmx2820Tune, lmx1204_solver,
+    lmx1214_solver, lmx2820_tune,
+};
+use pe_sync_sim::{Op, SimBoard};
 use portable::lmx1204::plan::{Channel, Plan as Lmx1204Plan, Request as Lmx1204Request};
 use portable::lmx1204::reg::{Format, SysrefModeCode};
 use portable::lmx1204::sequence::{WaitLock, configure as lmx1204_configure};
@@ -30,12 +36,6 @@ use portable::lmx2820::plan::{Plan as Lmx2820Plan, Request as Lmx2820Request};
 use portable::lmx2820::reg::MashOrder;
 use portable::lmx2820::sequence::Tune;
 use rsl_lowlevel::{Sequence, run_sequence};
-use rsl_pe_sync::lowlevel::SpiAddr;
-use rsl_pe_sync_oracle::{
-    Lmx1204Request as CLmx1204, Lmx1214Request as CLmx1214, Lmx2820Tune, lmx1204_solver,
-    lmx1214_solver, lmx2820_tune,
-};
-use rsl_pe_sync_sim::{Op, SimBoard};
 use sim_bus::SimBus;
 
 /// `EINVAL`: every solver's refusal.
@@ -60,7 +60,7 @@ fn run_fresh(sequence: &mut impl Sequence) -> (bool, Vec<Op>) {
     (succeeded, trace)
 }
 
-/// Panics, naming `request`, where libusdr and rsl-pe-sync differ in outcome or traffic.
+/// Panics, naming `request`, where libusdr and pe-sync differ in outcome or traffic.
 fn assert_same(
     request: &dyn Debug,
     (libusdr_result, libusdr): (i32, &[Op]),
@@ -72,7 +72,7 @@ fn assert_same(
     );
     if let Some(at) = (0..libusdr.len().max(ours.len())).find(|&i| libusdr.get(i) != ours.get(i)) {
         panic!(
-            "{request:?}: diverges at op {at}: libusdr {:?}, rsl-pe-sync {:?}",
+            "{request:?}: diverges at op {at}: libusdr {:?}, pe-sync {:?}",
             libusdr.get(at),
             ours.get(at)
         );
@@ -387,7 +387,7 @@ fn lmx1204_solutions_and_lock_waits_match_libusdr_across_modes() {
 }
 
 /// Compares one LMX1204 request, whose channel switches are also given as libusdr's masks;
-/// 1 when rsl-pe-sync solved it.
+/// 1 when pe-sync solved it.
 fn compare_lmx1204(request: &Lmx1204Request, ch_en: u32, clkout_en: u32, sysrefout_en: u32) -> u32 {
     let c_request = CLmx1204 {
         clkin: request.clkin_hz,

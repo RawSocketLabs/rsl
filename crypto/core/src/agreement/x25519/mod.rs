@@ -50,7 +50,7 @@
 //! RFC 7748 §6.1 publishes Alice's private bytes and resulting public coordinate:
 //!
 //! ```
-//! use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey};
+//! use crypto::agreement::x25519::{X25519, X25519PrivateKey};
 //!
 //! let alice_private = X25519PrivateKey::new([
 //!     0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d,
@@ -71,7 +71,7 @@
 //! # Complete two-party exchange
 //!
 //! ```
-//! use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey};
+//! use crypto::agreement::x25519::{X25519, X25519PrivateKey};
 //!
 //! // These fixed bytes make the example reproducible. Real ephemeral keys require an approved
 //! // cryptographic random source owned by the protocol integration.
@@ -83,7 +83,7 @@
 //! let alice_shared = X25519::agree(&alice_private, &bob_public)?;
 //! let bob_shared = X25519::agree(&bob_private, &alice_public)?;
 //! assert_eq!(alice_shared.expose_secret(), bob_shared.expose_secret());
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

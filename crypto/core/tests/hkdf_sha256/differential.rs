@@ -1,7 +1,7 @@
 //! Differential comparison with the independent `RustCrypto` HKDF-SHA-256 implementation.
 
+use crypto::kdf::hkdf::sha256::derive;
 use hkdf::Hkdf;
-use rsl_crypto::kdf::hkdf::sha256::derive;
 use sha2::Sha256 as ReferenceSha256;
 
 /// Differential evidence over absent/present salts, varied context, and output boundaries.

@@ -18,7 +18,7 @@ use std::slice;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_lsdr_sim::{I2cAddress, SimBoard};
+use lsdr_sim::{I2cAddress, SimBoard};
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
@@ -303,7 +303,7 @@ fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
 /// libusdr's `usleep`, redirected by the shim. The redirect is process-wide, so a call
 /// while no oracle is open returns at once.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_lsdr_oracle_sleep_us(us: c_ulonglong) {
+extern "C" fn lsdr_oracle_sleep_us(us: c_ulonglong) {
     if BOARD
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -328,7 +328,7 @@ extern "C" fn rsl_lsdr_oracle_sleep_us(us: c_ulonglong) {
 /// `pin` must be valid for `insz` writable bytes and `pout` for `outsz` readable bytes
 /// (either may be null when its size is zero), as libusdr's `lowlevel_ops.ls_op` requires.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_lsdr_oracle_ls_op(
+unsafe extern "C" fn lsdr_oracle_ls_op(
     op: c_uint,
     addr: c_uint,
     insz: usize,
@@ -422,7 +422,7 @@ fn i2c(board: &mut SimBoard, addr: I2cAddress, input: &mut [u8], output: &[u8]) 
 
 #[cfg(test)]
 mod tests {
-    use rsl_lsdr_sim::Variant;
+    use lsdr_sim::Variant;
 
     use super::*;
 

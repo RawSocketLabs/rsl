@@ -1,11 +1,11 @@
-//! rsl-usdr's TX controls (frequency, path, bandwidth, gains, corrections, constant
+//! usdr's TX controls (frequency, path, bandwidth, gains, corrections, constant
 //! generator) against libusdr's, operation for operation, one window per call, on fresh
 //! boards.
 //!
-//! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
+//! Each call names libusdr's control path and raw value next to usdr's typed value, so
 //! the pairing is the mapping under test. libusdr clamps every gain rather than rejecting it,
 //! so out-of-range figures must succeed alike; tuning failures must fail alike, after the
-//! same operations. libusdr keeps the low 12 bits of a TX DC offset where rsl-usdr's
+//! same operations. libusdr keeps the low 12 bits of a TX DC offset where usdr's
 //! [`TxDcOffset`] rejects one that does not fit; that divergence has its own scenario.
 //!
 //! Every scenario that tunes the transmitter sets a sample rate first: before one, libusdr
@@ -18,10 +18,10 @@ use std::ffi::CStr;
 use std::ops::Range;
 
 use num_complex::Complex;
-use rsl_usdr::{Device, Error, TxDcOffset, TxGain, TxIqCorrection, TxPath};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error, TxDcOffset, TxGain, TxIqCorrection, TxPath};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 /// TXVGA2, as libusdr's plain TX gain.
 const GAIN: &CStr = c"/dm/sdr/0/tx/gain";
@@ -55,14 +55,14 @@ enum Call {
     /// `set_tx_bandwidth`.
     Bandwidth(u32),
 
-    /// libusdr's `tx/path` set to a string; rsl-usdr's `set_tx_path`.
+    /// libusdr's `tx/path` set to a string; usdr's `set_tx_path`.
     Path(&'static CStr, TxPath),
 
-    /// libusdr's numeric control `path` set to `value`; rsl-usdr's matching call.
+    /// libusdr's numeric control `path` set to `value`; usdr's matching call.
     Set(&'static CStr, u64, Typed),
 }
 
-/// rsl-usdr's side of a [`Call::Set`].
+/// usdr's side of a [`Call::Set`].
 #[derive(Clone, Copy, Debug)]
 enum Typed {
     /// `set_tx_gain`.
@@ -96,7 +96,7 @@ impl Call {
         .is_ok()
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -117,7 +117,7 @@ fn bits(value: i16) -> u64 {
     u64::from(u16::from_ne_bytes(value.to_ne_bytes()))
 }
 
-/// A gain call setting libusdr's `path` and rsl-usdr's `gain` to the same `db`; a negative
+/// A gain call setting libusdr's `path` and usdr's `gain` to the same `db`; a negative
 /// figure travels as its 64-bit two's complement, which the handler truncates to `int`.
 fn gain(path: &'static CStr, db: i32, gain: fn(i32) -> TxGain) -> Call {
     let value = u64::from_ne_bytes(i64::from(db).to_ne_bytes());
@@ -158,7 +158,7 @@ fn rev3() -> SimBoard {
     SimBoard::new(BoardRevision::Rev3)
 }
 
-/// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr,
+/// Makes `calls` in turn on fresh boards from `board` through libusdr and usdr,
 /// compares each call's outcome and operations, and returns whether each succeeded.
 fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool> {
     let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
@@ -171,7 +171,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual: Vec<(Result<(), Error>, Range<usize>)> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
@@ -187,13 +187,13 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
         assert_eq!(
             result.is_ok(),
             expected_ok,
-            "{call:?}: libusdr ok={expected_ok}, rsl-usdr {result:?}"
+            "{call:?}: libusdr ok={expected_ok}, usdr {result:?}"
         );
         let expected: &[Op] = &reference.trace()[expected];
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }
@@ -417,7 +417,7 @@ fn tx_dc_offsets_match_libusdr() {
 }
 
 /// Intentional divergence: libusdr keeps the low 12 bits of each 16-bit offset, so an
-/// oversized one silently writes another. rsl-usdr's [`TxDcOffset`] rejects it before any
+/// oversized one silently writes another. usdr's [`TxDcOffset`] rejects it before any
 /// operation; what libusdr writes for one is the masked offset's write.
 #[test]
 fn oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {

@@ -8,7 +8,7 @@ use std::ffi::{CString, c_char, c_int};
 use std::ptr;
 use std::sync::{Mutex, PoisonError};
 
-use rsl_usdr_sim::SimBoard;
+use usdr_sim::SimBoard;
 
 use super::{BOARDS, SESSION, install, resume_callback_panic, take_board, with_board};
 

@@ -1,4 +1,4 @@
-// libusdr low-level transport that forwards every operation to rsl-lsdr-sim (Rust).
+// libusdr low-level transport that forwards every operation to lsdr-sim (Rust).
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the USB entries never match a
@@ -16,9 +16,9 @@
 #include "device/device.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
-int rsl_lsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
+int lsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
                           const void* pout);
-void rsl_lsdr_oracle_sleep_us(unsigned long long us);
+void lsdr_oracle_sleep_us(unsigned long long us);
 
 // The LSDr factory's device ID: `s_uuid_000` in device/m2_lsdr/m2_da09_4_ad45_2.c, which
 // registers it with usdr_device_register. Unlike the other families' IDs it is not in
@@ -31,7 +31,7 @@ static const device_id_t LSDR_DEVICE_ID = { { 0x63, 0x51, 0x02, 0x06, 0x7f, 0x31
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
 {
-    rsl_lsdr_oracle_sleep_us(us);
+    lsdr_oracle_sleep_us(us);
     return 0;
 }
 
@@ -56,7 +56,7 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
 {
     (void)dev;
     (void)subdev;
-    return rsl_lsdr_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
+    return lsdr_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
 }
 
 static int sim_destroy(lldev_t dev)

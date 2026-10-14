@@ -1,27 +1,27 @@
 //! The band-crossing divergence, shared by the parity tests whose calls move the RX path
 //! into or out of the mixer band.
 
-use rsl_usdr_sim::{I2cAddress, Op};
+use usdr_sim::{I2cAddress, Op};
 
 /// The Si5332.
 pub(crate) const CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
 
-/// Whether a scenario expects rsl-usdr's band-crossing fix.
+/// Whether a scenario expects usdr's band-crossing fix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Crossing {
     /// The scenario never enters or leaves the mixer band.
     None,
 
     /// The scenario crosses into or out of the mixer band, so libusdr's
-    /// `si5332_set_port3_en` block is expected to be replaced by rsl-usdr's one write.
+    /// `si5332_set_port3_en` block is expected to be replaced by usdr's one write.
     Fixed,
 }
 
 /// libusdr's window with its `si5332_set_port3_en` block replaced by the single `OUT3_OE`
-/// write rsl-usdr makes instead, and whether the window had one.
+/// write usdr makes instead, and whether the window had one.
 ///
 /// Intentional divergence, scoped to the scenarios that ask for it: libusdr requests READY
-/// to rewrite the power-down registers, which stops every Si5332 output; rsl-usdr flips
+/// to rewrite the power-down registers, which stops every Si5332 output; usdr flips
 /// `OUT3_OE` (0xB6 bit 6) while ACTIVE. The block must be exactly libusdr's six writes for
 /// an RX-only device, so nothing else can hide in the cut.
 pub(crate) fn with_band_crossing_fix(window: &[Op]) -> (Vec<Op>, bool) {

@@ -1,6 +1,6 @@
 //! Tuning before any sample rate, on the simulated board: where libusdr divides by zero
 //! (`_usdr_update_bandwidth`, and the low-LO fallback's room check), so the oracle cannot
-//! run it, rsl-usdr leaves the filter alone and fails the fallback. Both chains share the
+//! run it, usdr leaves the filter alone and fails the fallback. Both chains share the
 //! code; the TX chain is checked here.
 
 mod common {
@@ -8,8 +8,8 @@ mod common {
 }
 
 use common::sim_bus::SimBus;
-use rsl_usdr::{Device, Error};
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
+use usdr::{Device, Error};
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 /// The TX filter's bandwidth, bypass and control registers (`TxLPF` 0x34 to 0x36).
 const TX_FILTER: [u32; 3] = [0x34, 0x35, 0x36];

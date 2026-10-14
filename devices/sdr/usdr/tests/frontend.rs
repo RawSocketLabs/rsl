@@ -8,8 +8,8 @@ mod common {
 use std::mem;
 
 use common::sim_bus::SimBus;
-use rsl_usdr::{Device, Error, FrontEndKind, FrontEndSelection};
-use rsl_usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
+use usdr::{Device, Error, FrontEndKind, FrontEndSelection};
+use usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
 
 /// With no front end, the oscillator DAC is refused before any bus access. libusdr reads an
 /// uninitialised pointer here (its probe returns early for an `fe=` that finds nothing).
@@ -39,7 +39,7 @@ fn lock_polls(trace: &[Op]) -> usize {
 
 /// An XMASS whose LMK05318 never locks fails a hinted open once APLL1's 100 ms are spent in
 /// 100 µs polls. libusdr spends them in wall-clock time, so its poll count depends on the
-/// host; only rsl-usdr's is checked.
+/// host; only usdr's is checked.
 #[test]
 fn an_xmass_clock_that_never_locks_fails_the_hint_after_its_timeout() {
     let board = SimBoard::new(BoardRevision::Rev3)

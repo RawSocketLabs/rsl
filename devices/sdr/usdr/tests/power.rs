@@ -5,8 +5,8 @@ mod common {
 }
 
 use common::sim_bus::SimBus;
-use rsl_usdr::{Device, Error};
-use rsl_usdr_sim::{BoardRevision, SimBoard};
+use usdr::{Device, Error};
+use usdr_sim::{BoardRevision, SimBoard};
 
 /// GPO bank driving the LMS6002D reset line (active low).
 const GPO_LMS_RST: u8 = 0;

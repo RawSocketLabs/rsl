@@ -1,11 +1,11 @@
-# rsl-xsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned
-# libusdr does on rsl-xsdr-sim's modelled board (see devices/sdr/xsdr/AGENTS.md).
+# xsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned
+# libusdr does on xsdr-sim's modelled board (see devices/sdr/xsdr/AGENTS.md).
 # pin: 3670f15de8e49691db455da03166c17f6dd5770a
 # variant: XTRX revision 5 (HWID 0x002e0000)
 # captured: 2026-10-12
 # scenario: usdr_dmd_create_string(""), /dm/power/en = 1, usdr_dmd_close.
 # Re-bless (RSL_XSDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.
-# Lines: rsl_xsdr_sim::Op's Display; `== <phase>` opens each phase.
+# Lines: xsdr_sim::Op's Display; `== <phase>` opens each phase.
 == open
 reg-rd 0x0013 0x002e0000
 reg-rd 0x0013 0x002e0000

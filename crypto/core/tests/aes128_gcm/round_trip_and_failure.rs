@@ -1,6 +1,6 @@
 //! Public round-trip, cleartext-AAD, and authentication-failure evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError, Result,
     aead::{
         Aead,

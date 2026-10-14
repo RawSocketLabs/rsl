@@ -1,4 +1,4 @@
-//! The TX stream's guards on the simulated board: what rsl-usdr refuses before the bus,
+//! The TX stream's guards on the simulated board: what usdr refuses before the bus,
 //! and what a stopped stream leaves behind. Operations and bytes against libusdr are in
 //! `oracle/tests/tx_stream_parity.rs`.
 
@@ -10,11 +10,11 @@ use std::time::Duration;
 
 use common::sim_bus::SimBus;
 use num_complex::Complex;
-use rsl_usdr::{
+use usdr::{
     Device, Error, HostFormat, RxConfig, StreamTime, StreamsConfig, SyncMode, TxChannels, TxConfig,
     TxMute, WireFormat,
 };
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The sync unit's register.
 const REG_SYNC: u32 = 14;

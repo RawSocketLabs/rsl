@@ -1,4 +1,4 @@
-//! Compile witness for the exact private rsl-xsdr portable sequences, not another driver.
+//! Compile witness for the exact private xsdr portable sequences, not another driver.
 //! A bare-metal check proves core (+ `bnb`'s alloc) compilation, not linking or hardware
 //! operation.
 #![no_std]
@@ -9,16 +9,16 @@ use core::num::NonZeroU32;
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
+use lms7002m::ctrl::{Control, ControlError};
+use lms7002m::{Lms7002m, ResetPlan, Synthesizer};
+use lp8758::{Buck, BuckControl, BuckVoltage};
 use portable::close::Close;
 use portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
 use portable::hwid::{IdentityRead, Variant};
 use portable::power::PowerUp;
 use portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use portable::supplies::{Supplies, SupplyPlan};
-use rsl_lms7002m::ctrl::{Control, ControlError};
-use rsl_lms7002m::{Lms7002m, ResetPlan, Synthesizer};
 use rsl_lowlevel::{I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
-use rsl_lp8758::{Buck, BuckControl, BuckVoltage};
 
 /// An LMS7002M on SPI bus 0 with libusdr's XSDR arguments (`xsdr_pwren`).
 const LMS: ResetPlan = ResetPlan {

@@ -6,7 +6,7 @@
 //! 1 GHz feeds the LMX1204 (clock distribution, multiplied to 4 GHz), LMX2820 #1's 550 MHz
 //! the LMX1214 (LO distribution). The two LMK1D1208I fan out the lower clocks.
 
-use rsl_lmk05318::plan::{OutputFormat, OutputRequest, Xo, XoInput};
+use lmk05318::plan::{OutputFormat, OutputRequest, Xo, XoInput};
 use rsl_lowlevel::{I2cAddr, SpiAddr};
 
 use super::lmk1d1208i::{Bank, Config};

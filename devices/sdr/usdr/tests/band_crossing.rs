@@ -6,8 +6,8 @@ mod common {
 }
 
 use common::sim_bus::SimBus;
-use rsl_usdr::Device;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr::Device;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The Si5332's 7-bit I2C address.
 const CLOCK_ADDR: u16 = 0x6a;

@@ -38,11 +38,11 @@ const TAG_LEN: usize = 32;
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::mac::hmac::sha256::{HmacSha256, HmacSha256Tag};
+/// use crypto::mac::hmac::sha256::{HmacSha256, HmacSha256Tag};
 ///
 /// let tag: HmacSha256Tag = HmacSha256::authenticate(b"key", b"message")?;
 /// assert_eq!(tag.as_bytes().len(), HmacSha256Tag::LEN);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Eq, Hash, PartialEq)]
 #[must_use = "an authentication tag should be transmitted, verified, or otherwise consumed"]
@@ -92,7 +92,7 @@ impl fmt::Debug for HmacSha256Tag {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::mac::hmac::sha256::HmacSha256;
+/// use crypto::mac::hmac::sha256::HmacSha256;
 ///
 /// let mut state = HmacSha256::new(b"shared secret")?;
 /// state.update(b"one ")?;
@@ -102,7 +102,7 @@ impl fmt::Debug for HmacSha256Tag {
 /// let mut verifier = HmacSha256::new(b"shared secret")?;
 /// verifier.update(b"one message")?;
 /// verifier.verify(tag.as_bytes())?;
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct HmacSha256 {
     /// SHA-256 state after `K0 XOR ipad`, followed by message bytes accepted so far.
@@ -176,11 +176,11 @@ impl HmacSha256 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::mac::hmac::sha256::HmacSha256;
+    /// use crypto::mac::hmac::sha256::HmacSha256;
     ///
     /// let tag = HmacSha256::authenticate(b"shared secret", "UTF-8 message")?;
     /// assert_eq!(tag.as_bytes().len(), 32);
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     ///
     /// # Errors
@@ -207,7 +207,7 @@ impl HmacSha256 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::{CryptoError, mac::hmac::sha256::HmacSha256};
+    /// use crypto::{CryptoError, mac::hmac::sha256::HmacSha256};
     ///
     /// let mut verifier = HmacSha256::new(b"right key")?;
     /// verifier.update(b"message")?;
@@ -215,7 +215,7 @@ impl HmacSha256 {
     ///     verifier.verify([0_u8; 32]),
     ///     Err(CryptoError::AuthenticationFailed),
     /// );
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn verify(self, expected: impl AsRef<[u8]>) -> Result<()> {
         let computed = self.finalize();

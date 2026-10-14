@@ -4,7 +4,7 @@ Historical interoperability is built only after the contemporary SHA-256/HMAC/HK
 X25519, SHA-512, and Ed25519 reference paths establish the API and evidence pattern.
 
 1. Define the shared `SecurityStatus` taxonomy and the no-implicit-fallback rule. **Complete.**
-2. Scaffold `rsl-crypto-legacy` as a separate package in this repository. **Complete.**
+2. Scaffold `crypto-legacy` as a separate package in this repository. **Complete.**
 3. Implement SHA-1 and MD5 with historical standards, published vectors, collision/security
    notices, boundary tests, and independent differential evidence. **Complete.**
 4. Implement RC4, then DES and Triple-DES, with exact key/profile types and deprecation evidence.

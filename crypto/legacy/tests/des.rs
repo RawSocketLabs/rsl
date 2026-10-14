@@ -1,16 +1,16 @@
 //! NIST-published, boundary, intermediate, round-trip, and differential DES-family evidence.
 
-use des::{
-    Des as ReferenceDes, TdesEde2 as ReferenceTdesEde2, TdesEde3 as ReferenceTdesEde3,
-    cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeyInit, consts::U8},
-};
-use rsl_crypto::cipher::BlockCipher as BlockCipherContract;
-use rsl_crypto_legacy::{
+use crypto::cipher::BlockCipher as BlockCipherContract;
+use crypto_legacy::{
     SecurityStatus,
     cipher::des::{
         DES_SECURITY_STATUS, Des, DesBlock, DesKey, TRIPLE_DES_SECURITY_STATUS, TripleDesEde2,
         TripleDesEde2Key, TripleDesEde3, TripleDesEde3Key,
     },
+};
+use des::{
+    Des as ReferenceDes, TdesEde2 as ReferenceTdesEde2, TdesEde3 as ReferenceTdesEde3,
+    cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeyInit, consts::U8},
 };
 
 const K1: [u8; 8] = hex("0123456789abcdef");

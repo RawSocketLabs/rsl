@@ -85,7 +85,7 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rsl_deps::tracing::{debug, trace};
+use deps::tracing::{debug, trace};
 
 use crate::error::Error;
 use crate::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
@@ -626,7 +626,7 @@ impl Bus for VerilatorBus {
 }
 
 /// The `tracing` target of every bus operation, at TRACE level.
-const BUS_TARGET: &str = "rsl_usdr::bus";
+const BUS_TARGET: &str = "usdr::bus";
 
 /// The I2C core's command word, as the bridge makes it: `si2c_make_ctrl_reg` with the
 /// device's address as the lookup-table slot, of which `MAKE_I2C_CMD` (`ipblks/si2c.h`)

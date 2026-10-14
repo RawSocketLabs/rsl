@@ -1,21 +1,21 @@
-//! rsl-usdr-pcie's view of the `usdr_pcie_uram` driver interface against the C header, and
-//! rsl-usdr's uSDR layout against the one libusdr's `PCIe` transport builds.
+//! usdr-pcie's view of the `usdr_pcie_uram` driver interface against the C header, and
+//! usdr's uSDR layout against the one libusdr's `PCIe` transport builds.
 //!
 //! The driver accepts a layout only once per module load and cannot report it back, so a
 //! wrong byte would persist unnoticed on hardware; this is the check.
 
 use std::collections::BTreeMap;
 
-use rsl_usdr::transport::pcie::USDR_LAYOUT;
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, SimBoard};
+use usdr::transport::pcie::USDR_LAYOUT;
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, SimBoard};
 
 /// Every fact, matched by its C expression: the same names on both sides, and the same
 /// value for each.
 #[test]
 fn sizes_offsets_and_request_codes_match_the_header() {
-    let header: BTreeMap<String, u64> = rsl_usdr_oracle::pcie_abi().into_iter().collect();
-    let ours: BTreeMap<String, u64> = rsl_usdr_pcie::abi()
+    let header: BTreeMap<String, u64> = usdr_oracle::pcie_abi().into_iter().collect();
+    let ours: BTreeMap<String, u64> = usdr_pcie::abi()
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value))
         .collect();
@@ -44,7 +44,7 @@ fn the_usdr_layout_matches_libusdrs() {
     let (expected, ours) = (words(&expected), words(&ours));
     if let Some(i) = expected.iter().zip(&ours).position(|(e, o)| e != o) {
         panic!(
-            "first difference at byte {}: libusdr {:#x}, rsl-usdr {:#x}",
+            "first difference at byte {}: libusdr {:#x}, usdr {:#x}",
             i * 4,
             expected[i],
             ours[i]

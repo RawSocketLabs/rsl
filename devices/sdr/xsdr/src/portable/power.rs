@@ -2,12 +2,12 @@
 //! `_xsdr_pwren_revx` in `device/m2_lm7_1/xsdr_ctrl.c`, then `lms7002m_create`.
 //!
 //! The LMS7002M is held in reset while its external LDOs come on, then its own LDOs, then
-//! the reset is released and the chip programmed (`rsl-lms7002m`'s [`Create`]). The waits
+//! the reset is released and the chip programmed (`lms7002m`'s [`Create`]). The waits
 //! are libusdr's.
 
 use core::time::Duration;
 
-use rsl_lms7002m::{Create, Lms7002m, ResetPlan};
+use lms7002m::{Create, Lms7002m, ResetPlan};
 use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE};

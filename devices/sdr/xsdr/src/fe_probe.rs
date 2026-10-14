@@ -1,13 +1,13 @@
 //! The XSDR's front-end board probe (`usdr_device_m2_lm7_1_initialize`'s `device_fe_probe`
-//! with compatibility `m2a+e` on I2C bus 1), run by `rsl-sdr-frontend` as on the uSDR. Not
+//! with compatibility `m2a+e` on I2C bus 1), run by `sdr-frontend` as on the uSDR. Not
 //! the RFIC's own RF front end (`portable::frontend`).
 //!
 //! The `PCIe` front end and the M.2-to-`PCIe` breakout come up whole in the shared crate.
 //! XMASS, `SuperSync` and `SimpleSync` need the LMK05318 and LMK5C33216 bring-ups, which
-//! `rsl-usdr` owns until they move to the shared crate: a board of theirs that answers
+//! `usdr` owns until they move to the shared crate: a board of theirs that answers
 //! stops the open with [`Error::FrontEndNotPorted`] where libusdr would bring it up.
 
-use rsl_sdr_frontend::{BringUp, Connector, Detected, Failure, FrontEndKind, FrontEndSelection};
+use sdr_frontend::{BringUp, Connector, Detected, Failure, FrontEndKind, FrontEndSelection};
 
 use crate::error::Error;
 use crate::lowlevel::Bus;

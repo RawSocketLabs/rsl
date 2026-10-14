@@ -66,7 +66,7 @@ const TAG_BYTES: usize = 16;
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey};
+/// use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey};
 ///
 /// let key = Aes128GcmKey::new([0x42; 16]);
 /// let algorithm = Aes128Gcm::new(key); // consumes and expands the dedicated key
@@ -123,12 +123,12 @@ impl fmt::Debug for Aes128GcmKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::aead::gcm::Aes128GcmNonce;
+/// use crypto::aead::gcm::Aes128GcmNonce;
 ///
 /// let wire_bytes = [0x24; 12];
 /// let nonce = Aes128GcmNonce::try_from(wire_bytes.as_slice())?;
 /// assert_eq!(nonce.as_bytes(), &wire_bytes);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Aes128GcmNonce([u8; NONCE_BYTES]);
@@ -208,12 +208,12 @@ impl TryFrom<&[u8]> for Aes128GcmNonce {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::aead::gcm::Aes128GcmTag;
+/// use crypto::aead::gcm::Aes128GcmTag;
 ///
 /// let wire_bytes = [0xa5; 16];
 /// let tag = Aes128GcmTag::try_from(wire_bytes.as_slice())?;
 /// assert_eq!(tag.into_bytes(), wire_bytes);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Aes128GcmTag([u8; TAG_BYTES]);
@@ -276,7 +276,7 @@ impl TryFrom<&[u8]> for Aes128GcmTag {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
+/// use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
 ///
 /// let algorithm = Aes128Gcm::new(Aes128GcmKey::new([0x42; 16]));
 /// let nonce = Aes128GcmNonce::new([0x24; 12]);
@@ -288,7 +288,7 @@ impl TryFrom<&[u8]> for Aes128GcmTag {
 ///     sealed.tag(),
 /// )?;
 /// assert_eq!(opened, b"secret body");
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct Aes128Gcm {
     cipher: Aes128,
@@ -318,7 +318,7 @@ impl Aes128Gcm {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
+    /// use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce};
     ///
     /// let algorithm = Aes128Gcm::new(Aes128GcmKey::new([0x42; 16]));
     /// let nonce = Aes128GcmNonce::new([0x24; 12]);
@@ -326,7 +326,7 @@ impl Aes128Gcm {
     /// let sealed = algorithm.seal(&nonce, header, b"encrypted")?;
     /// assert_eq!(sealed.ciphertext().len(), b"encrypted".len());
     /// assert_eq!(header, b"sent in clear");
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn seal(
         &self,
@@ -355,7 +355,7 @@ impl Aes128Gcm {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::{CryptoError, aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}};
+    /// use crypto::{CryptoError, aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}};
     ///
     /// let algorithm = Aes128Gcm::new(Aes128GcmKey::new([0x42; 16]));
     /// let nonce = Aes128GcmNonce::new([0x24; 12]);
@@ -366,7 +366,7 @@ impl Aes128Gcm {
     ///     algorithm.open(&nonce, b"header", &changed, sealed.tag()),
     ///     Err(CryptoError::AuthenticationFailed),
     /// );
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn open(
         &self,

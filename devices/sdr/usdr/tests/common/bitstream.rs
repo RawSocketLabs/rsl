@@ -1,6 +1,6 @@
 //! Synthetic gateware images for the flash update tests: Xilinx 7-series configuration
 //! bitstreams with the preamble, packets and CRC words libusdr's header parser reads
-//! (`ipblks/xlnx_bitstream.c`). Shared by `rsl-usdr`'s tests and the oracle's parity tests
+//! (`ipblks/xlnx_bitstream.c`). Shared by `usdr`'s tests and the oracle's parity tests
 //! (`#[path]`-included).
 //!
 //! They are shaped like a Vivado bitstream, but only what libusdr reads matters: the

@@ -12,9 +12,9 @@ use std::io::ErrorKind;
 use std::time::Duration;
 
 use common::verilator_peer::{Peer, i2c_reply, spi_reply, unwritten};
-use rsl_usdr::Error;
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr::transport::verilator::VerilatorBus;
+use usdr::Error;
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use usdr::transport::verilator::VerilatorBus;
 
 /// A model greeting with `uuid`.
 fn hello(uuid: [u8; 16]) -> Vec<u8> {

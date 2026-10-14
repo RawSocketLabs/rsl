@@ -2,7 +2,7 @@
 //! (`lowlevel/verilator_ll`) on a Unix socket and a shared file, as the external harness
 //! would. It records every byte the host sends and the operations they decode to.
 //!
-//! Shared by `rsl-usdr`'s tests and the oracle's parity tests (`#[path]`-included), so the
+//! Shared by `usdr`'s tests and the oracle's parity tests (`#[path]`-included), so the
 //! Rust transport and libusdr's compiled bridge talk to the same model.
 //!
 //! The model is a register file, not gateware: registers hold what was written (those never

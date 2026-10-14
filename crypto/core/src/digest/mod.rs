@@ -13,7 +13,7 @@
 //! # Generic incremental use
 //!
 //! ```
-//! use rsl_crypto::{Result, digest::{Digest, sha2::sha256::Sha256}};
+//! use crypto::{Result, digest::{Digest, sha2::sha256::Sha256}};
 //!
 //! fn digest_fragments<D: Digest>(fragments: &[&[u8]]) -> Result<D::Output> {
 //!     let mut state = D::new();
@@ -25,7 +25,7 @@
 //!
 //! let digest = digest_fragments::<Sha256>(&[b"readable ", b"fragments"])?;
 //! assert_eq!(digest, Sha256::digest(b"readable fragments")?);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 use crate::Result;

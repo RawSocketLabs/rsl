@@ -1,4 +1,4 @@
-# rsl-crypto — side-channel review record
+# crypto — side-channel review record
 
 **Scope and limits.** This is a *source-level* review of every place the crate branches, indexes
 memory, or returns early, classified by whether the controlling value is secret. It was made by
@@ -64,7 +64,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
    out-of-range private key at construction is required by the standards and reveals only a
    condition that a correctly generated key never triggers.
 3. **RSA private operations** are variable-time by design of this readable engine and are not
-   exposed by `rsl-crypto` for that reason; `rsl-crypto-legacy` exposes them as educational.
+   exposed by `crypto` for that reason; `crypto-legacy` exposes them as educational.
 4. **Nothing here is measured.** A `dudect`-style statistical harness or a compiler-output
    inspection would be the next step; both belong to the independent audit, not to this
    record.

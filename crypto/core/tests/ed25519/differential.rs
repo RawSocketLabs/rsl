@@ -1,9 +1,9 @@
 //! Differential signing and strict-verification evidence against ed25519-dalek 3.0.0.
 
+use crypto::signature::ed25519::{Ed25519Signature, Ed25519SigningKey, Ed25519VerifyingKey};
 use ed25519_dalek::{
     Signature as ReferenceSignature, Signer as _, SigningKey as ReferenceSigningKey,
 };
-use rsl_crypto::signature::ed25519::{Ed25519Signature, Ed25519SigningKey, Ed25519VerifyingKey};
 
 #[test]
 fn deterministic_keys_messages_and_signatures_match_dalek() {
@@ -52,8 +52,8 @@ fn deterministic_keys_messages_and_signatures_match_dalek() {
 /// context.
 #[test]
 fn prehashed_signatures_match_dalek_in_both_directions() {
+    use crypto::{digest::sha2::sha512::Sha512, signature::ed25519::Ed25519Context};
     use ed25519_dalek::Sha512 as ReferenceSha512;
-    use rsl_crypto::{digest::sha2::sha512::Sha512, signature::ed25519::Ed25519Context};
     use sha2::Digest as _;
 
     for case in 0_u8..16 {

@@ -1,6 +1,6 @@
 # Cryptographic standards and implementation coverage
 
-This file is the traceability ledger for `rsl-crypto`. It answers four questions for every
+This file is the traceability ledger for `crypto`. It answers four questions for every
 standards-based implementation:
 
 1. Which exact publication and revision controls the implementation?
@@ -652,7 +652,7 @@ byte-identical to this implementation's over 32 cases, and each side accepts the
 ## RSA source baseline
 
 The RSA integer primitive is implemented once in `src/rsa/` and consumed by RSASSA-PSS
-verification here and by the opt-in PKCS #1 v1.5 encodings in `rsl-crypto-legacy`.
+verification here and by the opt-in PKCS #1 v1.5 encodings in `crypto-legacy`.
 
 - **Publication:** RFC 8017, *PKCS #1: RSA Cryptography Specifications Version 2.2*,
   November 2016, Informational. [RFC Editor record](https://www.rfc-editor.org/info/rfc8017/);
@@ -944,4 +944,4 @@ stable retrieval location, and access date here. As code is added:
 
 For TLS, SSH, compression formats, and error-correction schemes, protocol-specific standards
 belong in their owning repositories. This ledger covers only cryptographic primitives implemented
-by `rsl-crypto`; protocol repositories should link back to the primitive API they consume.
+by `crypto`; protocol repositories should link back to the primitive API they consume.

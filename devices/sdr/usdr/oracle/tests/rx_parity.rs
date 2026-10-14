@@ -1,4 +1,4 @@
-//! rsl-usdr's RX controls (sample rate, bandwidth, frequency) against libusdr's, operation
+//! usdr's RX controls (sample rate, bandwidth, frequency) against libusdr's, operation
 //! for operation, over sequences of calls.
 
 #[path = "common/crossing.rs"]
@@ -9,10 +9,10 @@ mod sim_bus;
 use std::ops::Range;
 
 use crossing::{Crossing, with_band_crossing_fix};
-use rsl_usdr::{Device, Error};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 /// One RX call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -38,7 +38,7 @@ impl Call {
         .is_ok()
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -48,7 +48,7 @@ impl Call {
     }
 }
 
-/// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr,
+/// Makes `calls` in turn on fresh boards from `board` through libusdr and usdr,
 /// compares each call's outcome and operations, and returns whether each succeeded.
 /// [`assert_calls_succeed`] is the usual form.
 fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool> {
@@ -71,7 +71,7 @@ fn assert_calls_match_crossing(
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual: Vec<(Result<(), Error>, Range<usize>)> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
@@ -88,7 +88,7 @@ fn assert_calls_match_crossing(
         assert_eq!(
             result.is_ok(),
             expected_ok,
-            "{call:?}: libusdr ok={expected_ok}, rsl-usdr {result:?}"
+            "{call:?}: libusdr ok={expected_ok}, usdr {result:?}"
         );
         let expected = &reference.trace()[expected];
         let expected: &[Op] = &match crossing {
@@ -102,7 +102,7 @@ fn assert_calls_match_crossing(
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }

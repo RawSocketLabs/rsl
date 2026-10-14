@@ -7,7 +7,7 @@ use aes::{
     Aes256 as ReferenceAes256,
     cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, KeyInit},
 };
-use rsl_crypto::cipher::{
+use crypto::cipher::{
     BlockCipher,
     aes::aes256::{Aes256, Aes256Block, Aes256Key},
 };

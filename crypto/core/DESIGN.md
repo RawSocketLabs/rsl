@@ -1,4 +1,4 @@
-# rsl-crypto — design
+# crypto — design
 
 ## 1. Purpose
 
@@ -18,7 +18,7 @@ enters a protection context and decoded only after authenticated opening succeed
 
 SHA-256's compression function is an internal step of a cryptographic digest and belongs in this
 crate. Despite the shared word “compression,” it is not a data-compression algorithm and has no
-dependency on the separate `rsl-compression` crate.
+dependency on the separate `compression` crate.
 
 ## 3. Reference implementation policy
 
@@ -64,7 +64,7 @@ SHA-512
       -> ECDH P-256 validated agreement
       -> ECDSA P-256 verification (+ SHA-256)
 
-RFC 8017 integer engine (shared with rsl-crypto-legacy)
+RFC 8017 integer engine (shared with crypto-legacy)
   -> RSA public/private primitives
       -> RSASSA-PSS verification (+ SHA-256, MGF1)
 ```
@@ -76,7 +76,7 @@ this crate.
 
 `SecurityStatus` distinguishes recommended, legacy, broken, and educational-only algorithms.
 The status describes lifecycle, not audit readiness. Historical primitives live in the separate
-`rsl-crypto-legacy` package, are never included in a default protocol allowlist, and cannot be
+`crypto-legacy` package, are never included in a default protocol allowlist, and cannot be
 selected by an implicit fallback. Protocol crates own the explicit act of enabling a historical
 cipher suite; primitive crates only perform the named transformation.
 

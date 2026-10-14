@@ -1,5 +1,5 @@
 [package]
-name = "rsl-xsdr"
+name = "xsdr"
 version = "0.0.0"
 description = "Pure-Rust driver for libusdr's LMS7 family (m2_lm7_1): XSDR, with XTRX and sSDR to follow."
 publish = false
@@ -9,14 +9,14 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rsl-lms7002m.workspace = true
+lms7002m.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
-rsl-lp8758.workspace = true
-rsl-sdr-frontend = { workspace = true, features = ["std"] }
+lp8758.workspace = true
+sdr-frontend = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-rsl-xsdr-sim.workspace = true
+xsdr-sim.workspace = true
 
 [lints]
 workspace = true

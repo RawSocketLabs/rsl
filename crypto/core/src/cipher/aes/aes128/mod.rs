@@ -52,7 +52,7 @@
 //! FIPS 197 Appendix B publishes this complete AES-128 transformation:
 //!
 //! ```
-//! use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+//! use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 //!
 //! let cipher = Aes128::new(Aes128Key::new([
 //!     0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,

@@ -9,4 +9,4 @@
 The public known-answer test copies the `abc` and 112-byte SHA-512 messages and their complete
 64-byte digests. Whitespace in the printed hexadecimal is removed without changing byte order.
 The differential test uses RustCrypto `sha2` only as a development dependency; it is independent
-evidence and is not part of the `rsl-crypto` implementation.
+evidence and is not part of the `crypto` implementation.

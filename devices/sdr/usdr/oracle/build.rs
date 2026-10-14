@@ -19,7 +19,7 @@ fn main() {
     let includes = ["", "port", "lowlevel", "common", "models", "xdsp"].map(|dir| lib.join(dir));
 
     // libusdr marks hot maths `optimize("-Ofast")`, a GCC attribute other compilers ignore,
-    // and rsl-usdr's ports (the LMK05318 solver) reproduce what GCC makes of it. Another
+    // and usdr's ports (the LMK05318 solver) reproduce what GCC makes of it. Another
     // compiler would build a different reference.
     let compiler = cc::Build::new().get_compiler();
     assert!(
@@ -153,7 +153,7 @@ fn main() {
 
 /// Compiles `file` alone into `archive` with `-fwrapv`, which defines the signed overflow
 /// the tools' carried phases and chirp steps reach within a few samples (GCC's unoptimised
-/// code wraps there anyway), so they compare with rsl-usdr's wrapping sums. No fused
+/// code wraps there anyway), so they compare with usdr's wrapping sums. No fused
 /// multiply-adds, as in the main build.
 fn compile_wrapping(file: &Path, archive: &str, includes: &[PathBuf]) {
     cc::Build::new()

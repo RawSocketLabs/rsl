@@ -1,6 +1,6 @@
 //! Published RFC 8032 §7.4/§7.5 vectors, Wycheproof cases, and boundary evidence for Ed448.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     digest::sha3::Shake256,
     signature::{
@@ -25,8 +25,8 @@ fn decode<const N: usize>(hex: &str) -> [u8; N] {
 
 struct NoEntropy;
 
-impl rsl_crypto::RandomSource for NoEntropy {
-    fn fill_bytes(&mut self, _: &mut [u8]) -> rsl_crypto::Result<()> {
+impl crypto::RandomSource for NoEntropy {
+    fn fill_bytes(&mut self, _: &mut [u8]) -> crypto::Result<()> {
         Err(CryptoError::EntropyUnavailable)
     }
 }

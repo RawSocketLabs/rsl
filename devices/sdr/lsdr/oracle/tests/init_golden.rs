@@ -2,7 +2,7 @@
 //! fresh simulated board, operation for operation.
 //!
 //! These record what the pinned C does against the sim's modelled chips; they are not a
-//! specification. They exist so the future `rsl-lsdr` can be compared op-for-op against a
+//! specification. They exist so the future `lsdr` can be compared op-for-op against a
 //! fixed reference: render its sim trace with `Op`'s `Display` and compare with the body.
 //! A mismatch means libusdr, the sim or this harness changed. Re-bless only for a PIN bump
 //! or a deliberate sim-model change, with `RSL_LSDR_BLESS=1`, then review the fixture diff
@@ -14,8 +14,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
-use rsl_lsdr_oracle::Oracle;
-use rsl_lsdr_sim::{SimBoard, Variant};
+use lsdr_oracle::Oracle;
+use lsdr_sim::{SimBoard, Variant};
 
 /// When the fixtures were last captured; written into a re-blessed header.
 const CAPTURED: &str = "2026-10-12";
@@ -76,14 +76,14 @@ fn session(scenario: &Scenario) -> String {
 /// The provenance header of a scenario's fixture.
 fn header(scenario: &Scenario) -> String {
     format!(
-        "# rsl-lsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
-         # libusdr does on rsl-lsdr-sim's modelled board (see devices/sdr/lsdr/AGENTS.md).\n\
+        "# lsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
+         # libusdr does on lsdr-sim's modelled board (see devices/sdr/lsdr/AGENTS.md).\n\
          # pin: {pin}\n\
          # variant: {label}\n\
          # captured: {CAPTURED}\n\
          # scenario: usdr_dmd_create_string({connection:?}), /dm/power/en = 1, usdr_dmd_close.\n\
          # Re-bless (RSL_LSDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.\n\
-         # Lines: rsl_lsdr_sim::Op's Display; `== <phase>` opens each phase.\n",
+         # Lines: lsdr_sim::Op's Display; `== <phase>` opens each phase.\n",
         pin = pin(),
         label = scenario.label,
         connection = scenario.connection.to_string_lossy(),

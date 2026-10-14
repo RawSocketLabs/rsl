@@ -2,8 +2,8 @@
 //! LMK05318 clock tree, a calibration source (the LMK05318's output 4, or a noise
 //! generator) with its switches, and power amplifiers, behind a GPIO expander.
 //!
-//! `rsl-sdr-frontend` identifies the board by its expander and drives the expander
-//! (`rsl_sdr_frontend::xmass`). Once it has, libusdr powers the LMK05318 and GPS, brings
+//! `sdr-frontend` identifies the board by its expander and drives the expander
+//! (`sdr_frontend::xmass`). Once it has, libusdr powers the LMK05318 and GPS, brings
 //! the LMK05318 up with a 25 MHz reference on output 6 and the calibration LO on output 4
 //! (444 MHz), waits for its APLLs, pulses its `SYNC_N`, then reads the revision-1a sensors
 //! and serial number for its log; that bring-up is here.
@@ -13,9 +13,9 @@
 
 use std::time::Duration;
 
-use rsl_deps::tracing::{info, warn};
+use deps::tracing::{info, warn};
 
-use rsl_sdr_frontend::xmass;
+use sdr_frontend::xmass;
 
 use super::{FRONT_END_BUS, FrontEnd};
 use crate::chips::at24::At24Security;
@@ -66,7 +66,7 @@ pub(crate) struct Xmass {
 }
 
 impl Xmass {
-    /// Brings up a board `rsl-sdr-frontend` found (`board_xmass_init` after its expander
+    /// Brings up a board `sdr-frontend` found (`board_xmass_init` after its expander
     /// check): powers the LMK05318 to check it, brings it up and waits for its APLLs,
     /// pulses `SYNC_N` and logs the revision-1a sensors and serial number.
     ///

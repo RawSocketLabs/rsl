@@ -1,12 +1,12 @@
-//! rsl-limesdr's LMS64C codec against libusdr's own builder and parser
+//! limesdr's LMS64C codec against libusdr's own builder and parser
 //! (`ipblks/lms64c_proto.c`), byte for byte: every record count a frame holds, one past it,
 //! and none, for both register files, plus the reset pulse and the reply values.
 //!
 //! The command codes are `lms64c_cmds.h`'s, restated here so the codec's own constants are
 //! not the oracle for themselves.
 
-use rsl_limesdr::lms64c::{FRAME_LEN, Frame, MAX_RECORDS, Space};
-use rsl_limesdr_oracle::{READ_VALUES_MAX, lms64c_fill, lms64c_read_values};
+use limesdr::lms64c::{FRAME_LEN, Frame, MAX_RECORDS, Space};
+use limesdr_oracle::{READ_VALUES_MAX, lms64c_fill, lms64c_read_values};
 
 /// `CMD_LMS7002_RST`.
 const CMD_LMS7002_RST: u8 = 0x20;

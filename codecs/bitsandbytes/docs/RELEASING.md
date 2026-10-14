@@ -278,7 +278,7 @@ No protocol API, wire behavior, dependency version, or bnb default is changed.
 Remaining gates:
 
 - Workspace Clippy passes its configured CI policy, but workspace-wide `-D warnings`
-  still fails on unrelated rawsock/rsl-deps diagnostics (and the normal run reports
+  still fails on unrelated rawsock/deps diagnostics (and the normal run reports
   other protocol lint debt). The strict IP/ARP all-target/all-feature check also
   stops at the existing `ethertype` documentation lint. The documented bnb/macros warnings are resolved, not
   waived. A workspace-wide cleanup is a separate change.

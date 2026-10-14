@@ -1,6 +1,6 @@
 //! Mechanical conversion helpers for published hexadecimal fixtures.
 
-use rsl_crypto::signature::ecdsa_p256::{EcdsaP256Signature, EcdsaP256VerifyingKey};
+use crypto::signature::ecdsa_p256::{EcdsaP256Signature, EcdsaP256VerifyingKey};
 
 /// Decode exactly `2 * N` hexadecimal digits into their printed big-endian byte order.
 pub(crate) fn decode<const N: usize>(encoded: &str) -> [u8; N] {

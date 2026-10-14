@@ -7,20 +7,20 @@
 //! unified, pinned versions.
 //!
 //! This is the **owned** half of the stack. The **rented** third-party half lives in the
-//! separate [`rsl-deps`] crate (`rsl_deps::tokio`, `rsl_deps::serde`, …). The two are
+//! separate [`deps`] crate (`deps::tokio`, `deps::serde`, …). The two are
 //! orthogonal: a crate needing both blessed externals *and* RSL libraries depends on both.
 //! The private owned crates (libsdr, rust-dsdcc) live in the private `rsl-private` overlay.
 //!
-//! When a rented crate in `rsl-deps` is superseded by an owned RSL crate, the pin moves
-//! *out* of `rsl-deps` and the owned crate is added *here* — that cross-crate move is the
+//! When a rented crate in `deps` is superseded by an owned RSL crate, the pin moves
+//! *out* of `deps` and the owned crate is added *here* — that cross-crate move is the
 //! "graduation" from rented to owned.
 //!
 //! ```toml
-//! # In an application crate (add rsl-deps too if you want blessed externals):
+//! # In an application crate (add deps too if you want blessed externals):
 //! rsl = { git = "https://github.com/RawSocketLabs/rsl", features = ["net"] }
 //! ```
 //!
-//! [`rsl-deps`]: https://github.com/RawSocketLabs/rsl-deps
+//! [`deps`]: https://github.com/RawSocketLabs/rsl-deps
 
 // Re-exports don't carry docs of their own, so we don't `deny(missing_docs)` here.
 
@@ -37,7 +37,7 @@ pub use bnb as codec;
 /// Accuracy-first cryptographic primitives and protection contracts.
 #[cfg(feature = "crypto")]
 #[doc(inline)]
-pub use rsl_crypto as crypto;
+pub use crypto;
 
 /// Explicitly opt-in historical and broken cryptographic primitives.
 ///
@@ -45,32 +45,32 @@ pub use rsl_crypto as crypto;
 /// implicit protocol fallback.
 #[cfg(feature = "legacy-crypto")]
 #[doc(inline)]
-pub use rsl_crypto_legacy as crypto_legacy;
+pub use crypto_legacy;
 
 /// Strict ASN.1 DER transport.
 #[cfg(feature = "pki")]
 #[doc(inline)]
-pub use rsl_asn1 as asn1;
+pub use asn1;
 
 /// Borrowed X.509 certificate syntax with exact signed-byte preservation.
 #[cfg(feature = "pki")]
 #[doc(inline)]
-pub use rsl_x509 as x509;
+pub use x509;
 
 /// Trust-anchor, certificate-path, and service-identity validation.
 #[cfg(feature = "pki")]
 #[doc(inline)]
-pub use rsl_pki as pki;
+pub use pki;
 
 /// Stateful compression and decompression contracts.
 #[cfg(feature = "compression")]
 #[doc(inline)]
-pub use rsl_compression as compression;
+pub use compression;
 
 /// Error-correction encoding, decoding, and correction reports.
 #[cfg(feature = "error-correction")]
 #[doc(inline)]
-pub use rsl_error_correction as error_correction;
+pub use error_correction;
 
 /// Layered raw-packet I/O: transmit arbitrary bytes at L2/L3/L4.
 #[cfg(feature = "rawsock")]
@@ -85,7 +85,7 @@ pub use rfus as rf;
 /// USDR software-defined-radio bindings (FFI; requires a C++ toolchain to build).
 #[cfg(feature = "usdr")]
 #[doc(inline)]
-pub use usdr;
+pub use usdr_ffi as usdr;
 
 /// DSDcc digital-voice decoder bindings (FFI; requires a C++ toolchain to build).
 #[cfg(feature = "dsdcc")]
@@ -125,7 +125,7 @@ pub mod proto {
 
 /// Common imports from the owned libraries. Glob this in to pull the everyday items of
 /// whatever features are enabled — `use rsl::prelude::*;`. Blessed externals have their own
-/// prelude in `rsl_deps::prelude`.
+/// prelude in `deps::prelude`.
 pub mod prelude {
     #[cfg(feature = "codec")]
     #[doc(no_inline)]

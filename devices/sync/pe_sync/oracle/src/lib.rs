@@ -18,7 +18,7 @@ use std::slice;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_pe_sync_sim::{I2cAddress, SimBoard};
+use pe_sync_sim::{I2cAddress, SimBoard};
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
@@ -136,7 +136,7 @@ pub fn lmx2820_tune(board: SimBoard, tune: Lmx2820Tune) -> (i32, SimBoard) {
     } = tune;
     // SAFETY: the shim takes plain values and keeps nothing.
     run_on(board, || unsafe {
-        rsl_pe_sync_oracle_lmx2820_tune(bus, osc_in, mash_order, force_mult, rfouta, rfoutb)
+        pe_sync_oracle_lmx2820_tune(bus, osc_in, mash_order, force_mult, rfouta, rfoutb)
     })
 }
 
@@ -149,9 +149,7 @@ pub fn lmx2820_tune(board: SimBoard, tune: Lmx2820Tune) -> (i32, SimBoard) {
 #[must_use]
 pub fn lmx1214_solver(board: SimBoard, request: &Lmx1214Request) -> (i32, SimBoard) {
     // SAFETY: `request` is valid for the call; the shim only reads it.
-    run_on(board, || unsafe {
-        rsl_pe_sync_oracle_lmx1214_solver(request)
-    })
+    run_on(board, || unsafe { pe_sync_oracle_lmx1214_solver(request) })
 }
 
 /// Runs libusdr's `lmx1204_solver` (registers written, no precision mode) on SPI bus 4 of
@@ -164,9 +162,7 @@ pub fn lmx1214_solver(board: SimBoard, request: &Lmx1214Request) -> (i32, SimBoa
 #[must_use]
 pub fn lmx1204_solver(board: SimBoard, request: &Lmx1204Request) -> (i32, SimBoard) {
     // SAFETY: `request` is valid for the call; the shim only reads it.
-    run_on(board, || unsafe {
-        rsl_pe_sync_oracle_lmx1204_solver(request)
-    })
+    run_on(board, || unsafe { pe_sync_oracle_lmx1204_solver(request) })
 }
 
 /// Installs `board` for the duration of `call` (one shim entry), then returns its result
@@ -181,7 +177,7 @@ fn run_on(board: SimBoard, call: impl FnOnce() -> c_int) -> (i32, SimBoard) {
 }
 
 unsafe extern "C" {
-    fn rsl_pe_sync_oracle_lmx2820_tune(
+    fn pe_sync_oracle_lmx2820_tune(
         bus: c_uint,
         osc_in: u64,
         mash_order: c_uint,
@@ -189,8 +185,8 @@ unsafe extern "C" {
         rfouta: u64,
         rfoutb: u64,
     ) -> c_int;
-    fn rsl_pe_sync_oracle_lmx1214_solver(request: *const Lmx1214Request) -> c_int;
-    fn rsl_pe_sync_oracle_lmx1204_solver(request: *const Lmx1204Request) -> c_int;
+    fn pe_sync_oracle_lmx1214_solver(request: *const Lmx1214Request) -> c_int;
+    fn pe_sync_oracle_lmx1204_solver(request: *const Lmx1204Request) -> c_int;
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
@@ -394,7 +390,7 @@ fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
 /// libusdr's `usleep`, redirected by the shim. The redirect is process-wide, so a call
 /// while no oracle is open returns at once.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_pe_sync_oracle_sleep_us(us: c_ulonglong) {
+extern "C" fn pe_sync_oracle_sleep_us(us: c_ulonglong) {
     if BOARD
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -422,7 +418,7 @@ extern "C" fn rsl_pe_sync_oracle_sleep_us(us: c_ulonglong) {
 /// (either may be null when its size is zero), as libusdr's `lowlevel_ops.ls_op` requires,
 /// and the two buffers must not overlap.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_pe_sync_oracle_ls_op(
+unsafe extern "C" fn pe_sync_oracle_ls_op(
     op: c_uint,
     addr: c_uint,
     insz: usize,

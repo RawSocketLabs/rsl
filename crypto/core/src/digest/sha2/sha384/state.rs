@@ -70,13 +70,13 @@ impl fmt::Debug for Sha384Digest {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::digest::sha2::sha384::Sha384;
+/// use crypto::digest::sha2::sha384::Sha384;
 ///
 /// let mut state = Sha384::new();
 /// state.update("ab")?;
 /// state.update("c")?;
 /// assert_eq!(state.finalize(), Sha384::digest("abc")?);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct Sha384 {
     chaining_value: [u64; 8],

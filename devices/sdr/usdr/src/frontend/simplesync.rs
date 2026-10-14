@@ -6,14 +6,14 @@
 //! outputs 0 to 3 (`RF D`, `A`, `B`, `C`) carry an optional measurement LO from APLL2, off
 //! until one is requested.
 //!
-//! `rsl-sdr-frontend` finds the board (pins, power, the LMK05318's ID); the LMK05318
+//! `sdr-frontend` finds the board (pins, power, the LMK05318's ID); the LMK05318
 //! bring-up and the LO controls are here.
 
 use std::time::Duration;
 
-use rsl_deps::tracing::info;
+use deps::tracing::info;
 
-use rsl_sdr_frontend::simplesync::LMK05318;
+use sdr_frontend::simplesync::LMK05318;
 
 use super::FrontEnd;
 use crate::chips::lmk05318::Lmk05318;
@@ -50,7 +50,7 @@ pub(crate) struct SimpleSync {
 }
 
 impl SimpleSync {
-    /// Brings up a board `rsl-sdr-frontend` found (`board_ext_simplesync_init` after
+    /// Brings up a board `sdr-frontend` found (`board_ext_simplesync_init` after
     /// `lmk05318_create`'s ID check): the LMK05318 with the references on outputs 4 to 7,
     /// the LO outputs off, both APLLs locked and the outputs synchronized.
     ///

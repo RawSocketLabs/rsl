@@ -51,24 +51,24 @@ LP8758 = "devices/sdr/chips/lp8758"
 LMS7002M = "devices/sdr/chips/lms7002m"
 LMK05318 = "devices/sdr/chips/lmk05318"
 FRONTEND = "devices/sdr/frontend"
-BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "rsl-lp8758", LMS7002M: "rsl-lms7002m",
-                      LMK05318: "rsl-lmk05318", FRONTEND: "rsl-sdr-frontend"}
-# The LMS7 family driver; its oracle runs libusdr's LMS7 family against rsl-xsdr-sim,
+BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "lp8758", LMS7002M: "lms7002m",
+                      LMK05318: "lmk05318", FRONTEND: "sdr-frontend"}
+# The LMS7 family driver; its oracle runs libusdr's LMS7 family against xsdr-sim,
 # compiling the uSDR oracle's vendored C.
 XSDR = "devices/sdr/xsdr"
 XSDR_ORACLE = f"{XSDR}/oracle"
 XSDR_PORTABLE = f"{XSDR}/nostd-check"
-# The LSDr driver; its oracle runs libusdr's LSDr family against rsl-lsdr-sim, compiling the
+# The LSDr driver; its oracle runs libusdr's LSDr family against lsdr-sim, compiling the
 # uSDR oracle's vendored C.
 LSDR = "devices/sdr/lsdr"
 LSDR_ORACLE = f"{LSDR}/oracle"
 LSDR_PORTABLE = f"{LSDR}/nostd-check"
-# The LimeSDR-mini driver; its oracle runs libusdr's LimeSDR-mini against rsl-limesdr-sim,
+# The LimeSDR-mini driver; its oracle runs libusdr's LimeSDR-mini against limesdr-sim,
 # compiling the same vendored C.
 LIMESDR = "devices/sdr/limesdr"
 LIMESDR_ORACLE = f"{LIMESDR}/oracle"
 LIMESDR_PORTABLE = f"{LIMESDR}/nostd-check"
-# The PE_SYNC clock-board driver; its oracle runs libusdr's PE_SYNC against rsl-pe-sync-sim,
+# The PE_SYNC clock-board driver; its oracle runs libusdr's PE_SYNC against pe-sync-sim,
 # compiling the same vendored C.
 PE_SYNC = "devices/sync/pe_sync"
 PE_SYNC_ORACLE = f"{PE_SYNC}/oracle"
@@ -98,7 +98,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
                "LICENSE-MIT", "LICENSE-APACHE"}
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
-    "public-api", "semver", "deny", "blessed", "usdr", "rust-dsdcc", "usdr-oracle", "rust-skills",
+    "public-api", "semver", "deny", "blessed", "usdr-ffi", "rust-dsdcc", "usdr-oracle", "rust-skills",
     "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-portable", "lsdr-oracle",
     "pe-sync-oracle", "pe-sync-portable", "limesdr-oracle", "limesdr-portable",
 }
@@ -231,7 +231,7 @@ def owners(path, graph):
     if path == ".github/ci/bnb.toml":
         return {BNB, MACROS} & graph.keys()
     if path in {"tools/gen-blessed.py", "tools/check-drift.py", ".github/actions/blessed-drift/action.yml"}:
-        return {root for root, package in graph.items() if package.name == "rsl-deps"}
+        return {root for root, package in graph.items() if package.name == "deps"}
     matches = [root for root in graph if path.startswith(root + "/")]
     if matches:
         return {max(matches, key=len)}
@@ -346,7 +346,7 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("socks")
     if set(packages) & {"rawsock", "dns", "ip", "icmp", "tcp", "udp", "ethernet", "arp"}:
         profiles.add("network")
-    if set(packages) & {"rsl", "rsl-deps", "demos"}:
+    if set(packages) & {"rsl", "deps", "demos"}:
         profiles.add("facades")
     if release_roots & (PKI | {BNB, NOSTD}):
         profiles.add("no-std")
@@ -355,7 +355,7 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
         profiles.add("no-std")
     if bare_metal_devices(release_roots, release_members):
         profiles.add("no-std")
-    if "rsl-deps" in packages or full:
+    if "deps" in packages or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
                     if root in {"bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})

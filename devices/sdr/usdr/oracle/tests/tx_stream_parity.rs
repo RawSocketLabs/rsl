@@ -1,4 +1,4 @@
-//! rsl-usdr's TX stream (create, start and sync, send with statistics, mute, stop) against
+//! usdr's TX stream (create, start and sync, send with statistics, mute, stop) against
 //! libusdr's `usdr_dms_*` calls and stream option: each call's operations, the bytes the
 //! sim's TX core receives (libusdr converting with its own converters), and the
 //! statistics both report. Also RX and TX in one group, libusdr's sync modes for it, and
@@ -21,13 +21,13 @@ use std::time::Duration;
 
 use baseband::without_baseband_loop;
 use num_complex::Complex;
-use rsl_usdr::{
+use sim_bus::SimBus;
+use usdr::{
     Ci12, Device, Error, HostFormat, HostSample, RxConfig, StreamTime, StreamsConfig, SyncMode,
     TxChannels, TxConfig, TxMute, TxTelemetry, WireFormat,
 };
-use rsl_usdr_oracle::{Oracle, SendStat};
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard, TxPacket};
-use sim_bus::SimBus;
+use usdr_oracle::{Oracle, SendStat};
+use usdr_sim::{BoardRevision, Op, SimBoard, TxPacket};
 
 /// The sync unit's register, which the TX core's commands share.
 const REG_SYNC: u32 = 14;
@@ -119,11 +119,11 @@ struct Run {
 struct Scenario {
     /// libusdr's data format.
     dformat: &'static CStr,
-    /// The host format, rsl-usdr's side of `dformat`.
+    /// The host format, usdr's side of `dformat`.
     host: HostFormat,
     /// Samples per packet.
     samples: u32,
-    /// libusdr's sync type and rsl-usdr's mode.
+    /// libusdr's sync type and usdr's mode.
     sync: (&'static CStr, SyncMode),
     /// With an RX stream in the group too.
     with_rx: bool,
@@ -131,13 +131,13 @@ struct Scenario {
     tune_tx: bool,
     /// Mute both lanes between create and start, which the start then applies.
     mute_before_start: bool,
-    /// The wire format, rsl-usdr's side of `dformat`.
+    /// The wire format, usdr's side of `dformat`.
     wire: WireFormat,
-    /// libusdr's channel mask and rsl-usdr's channels.
+    /// libusdr's channel mask and usdr's channels.
     channels: (u64, TxChannels),
     /// The board's gateware has the extended TX core.
     extended: bool,
-    /// After the start, remap the stream: libusdr's `"chmap"` entries and rsl-usdr's
+    /// After the start, remap the stream: libusdr's `"chmap"` entries and usdr's
     /// channels.
     remap: Option<(&'static [u8], TxChannels)>,
 }
@@ -160,7 +160,7 @@ impl Scenario {
         }
     }
 
-    /// This scenario on libusdr's channel `mask`, rsl-usdr's `channels`.
+    /// This scenario on libusdr's channel `mask`, usdr's `channels`.
     const fn on(mut self, mask: u64, channels: TxChannels) -> Self {
         self.channels = (mask, channels);
         self
@@ -173,7 +173,7 @@ impl Scenario {
         self
     }
 
-    /// This scenario, remapped after the start to libusdr's `map`, rsl-usdr's `channels`.
+    /// This scenario, remapped after the start to libusdr's `map`, usdr's `channels`.
     const fn remapped(mut self, map: &'static [u8], channels: TxChannels) -> Self {
         self.remap = Some((map, channels));
         self
@@ -196,7 +196,7 @@ impl Scenario {
         }
     }
 
-    /// rsl-usdr's configuration for the scenario.
+    /// usdr's configuration for the scenario.
     fn config(&self) -> StreamsConfig {
         let tx = TxConfig::new(self.samples, self.host, self.wire).with_channels(self.channels.1);
         let config = if self.with_rx {
@@ -319,11 +319,11 @@ fn on_libusdr<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
     }
 }
 
-/// rsl-usdr: the same through `create_streams`, `start_streams`, `send_with_stat`,
+/// usdr: the same through `create_streams`, `start_streams`, `send_with_stat`,
 /// `set_tx_mute` and `stop_streams`.
 fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
     let sim = SimBus::new(scenario.board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -338,7 +338,7 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
             window(trace_len, || {
                 device
                     .create_streams(scenario.config())
-                    .expect("rsl-usdr creates");
+                    .expect("usdr creates");
             }),
         ),
         (
@@ -347,9 +347,9 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
                 if scenario.mute_before_start {
                     device
                         .set_tx_mute(TxMute::Both)
-                        .expect("rsl-usdr mutes before starting");
+                        .expect("usdr mutes before starting");
                 }
-                device.start_streams().expect("rsl-usdr starts");
+                device.start_streams().expect("usdr starts");
             }),
         ),
     ];
@@ -357,7 +357,7 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
         windows.push((
             "remap",
             window(trace_len, || {
-                device.set_tx_channels(channels).expect("rsl-usdr remaps");
+                device.set_tx_channels(channels).expect("usdr remaps");
             }),
         ));
     }
@@ -377,7 +377,7 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
                     time.map(StreamTime::from_samples),
                     Duration::from_millis(100),
                 )
-                .expect("rsl-usdr sends");
+                .expect("usdr sends");
         });
         windows.push(("send", range));
         stats.push(report.map(
@@ -393,12 +393,12 @@ fn on_rsl<S: Pattern>(scenario: Scenario, sends: &[Send]) -> Run {
     windows.push((
         "mute",
         window(trace_len, || {
-            device.set_tx_mute(TxMute::Both).expect("rsl-usdr mutes");
+            device.set_tx_mute(TxMute::Both).expect("usdr mutes");
         }),
     ));
     windows.push((
         "stop",
-        window(trace_len, || device.stop_streams().expect("rsl-usdr stops")),
+        window(trace_len, || device.stop_streams().expect("usdr stops")),
     ));
     let board = sim.board();
     Run {
@@ -436,7 +436,7 @@ fn assert_windows_match<S: Pattern>(scenario: Scenario, sends: &[Send]) -> (Run,
 }
 
 /// The sends of the format tests: timed packets and "now" ones, whole 1024-sample packets
-/// and partial ones of 1 sample and of one more than rsl-usdr's 512-sample conversion
+/// and partial ones of 1 sample and of one more than usdr's 512-sample conversion
 /// chunk.
 const SENDS: [Send; 4] = [
     (Some(0x10_0000), 1024),
@@ -527,7 +527,7 @@ fn send_statistics_match_libusdr_across_counter_wraps() {
 }
 
 /// A stream not started takes 32 packets, then times out; libusdr reads the TX core's
-/// status for its log on the way, and so does rsl-usdr.
+/// status for its log on the way, and so does usdr.
 #[test]
 fn a_full_unstarted_stream_times_out_like_libusdr() {
     let mut oracle = Oracle::open(board()).expect("libusdr opens");
@@ -547,7 +547,7 @@ fn a_full_unstarted_stream_times_out_like_libusdr() {
     let expected = oracle.close().trace()[start..end].to_vec();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -634,7 +634,7 @@ fn sync_modes_match_libusdr_for_every_group() {
 }
 
 /// libusdr's TX core takes `ci16` only, but libusdr refuses `ci12` on the wire only
-/// after powering the transmitter and reading the gateware's build; rsl-usdr refuses it
+/// after powering the transmitter and reading the gateware's build; usdr refuses it
 /// before any operation (whitelisted divergence).
 #[test]
 fn a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up() {
@@ -646,7 +646,7 @@ fn a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up() {
     drop(oracle.close());
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -665,7 +665,7 @@ fn a_twelve_bit_tx_wire_is_refused_before_libusdr_would_power_up() {
 
 /// Refusals both drivers make at the same point, with the same operations before it: a
 /// gateware build older than libusdr's minimum, and a packet over the core's FIFO. A size
-/// of 0, which libusdr takes as the transport's largest buffer, rsl-usdr refuses before
+/// of 0, which libusdr takes as the transport's largest buffer, usdr refuses before
 /// the bus (`tests/tx_stream.rs`, a whitelisted divergence).
 #[test]
 fn refused_creates_match_libusdr_up_to_the_refusal() {
@@ -679,7 +679,7 @@ fn refused_creates_match_libusdr_up_to_the_refusal() {
         let expected = oracle.close().trace()[start..end].to_vec();
 
         let sim = SimBus::new(board().with_gateware_build(build));
-        let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+        let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
         device
             .set_rx_sample_rate(20_000_000)
             .expect("sets the rate");

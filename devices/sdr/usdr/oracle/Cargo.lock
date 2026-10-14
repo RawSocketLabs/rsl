@@ -43,6 +43,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "deps"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -91,6 +98,21 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
+name = "lp8758"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
 
 [[package]]
 name = "memchr"
@@ -156,93 +178,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-deps"
-version = "0.1.0"
-dependencies = [
- "tracing",
-]
-
-[[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
 name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "rsl-lp8758"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-sdr-frontend"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-usb"
-version = "0.0.0"
-dependencies = [
- "rustix",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-usdr"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "num-complex",
- "rsl-deps",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "rsl-lp8758",
- "rsl-sdr-frontend",
- "rsl-usb",
- "rsl-usdr-pcie",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-usdr-oracle"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "cc",
- "num-complex",
- "rsl-lmk05318",
- "rsl-usb",
- "rsl-usdr",
- "rsl-usdr-pcie",
- "rsl-usdr-sim",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-usdr-pcie"
-version = "0.0.0"
-dependencies = [
- "rustix",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-usdr-sim"
 version = "0.0.0"
 dependencies = [
  "thiserror",
@@ -259,6 +195,16 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys",
+]
+
+[[package]]
+name = "sdr-frontend"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lmk05318",
+ "rsl-lowlevel",
+ "thiserror",
 ]
 
 [[package]]
@@ -395,6 +341,60 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "usb"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "thiserror",
+]
+
+[[package]]
+name = "usdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "deps",
+ "lmk05318",
+ "lp8758",
+ "num-complex",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror",
+ "usb",
+ "usdr-pcie",
+]
+
+[[package]]
+name = "usdr-oracle"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "cc",
+ "lmk05318",
+ "num-complex",
+ "thiserror",
+ "usb",
+ "usdr",
+ "usdr-pcie",
+ "usdr-sim",
+]
+
+[[package]]
+name = "usdr-pcie"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "thiserror",
+]
+
+[[package]]
+name = "usdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "windows-link"

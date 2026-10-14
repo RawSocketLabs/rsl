@@ -1,11 +1,11 @@
-# rsl-crypto repository structure
+# crypto repository structure
 
 The crate is organized by cryptographic primitive, then by specification layer. Public modules
 identify algorithm families. Private modules hold the small operations needed to explain and
 validate one algorithm.
 
 ```text
-rsl-crypto/
+crypto/
 ├── src/
 │   ├── digest/
 │   │   ├── mod.rs                 digest contract
@@ -190,7 +190,7 @@ teaching sequence:
 9. links into the private source layers that own each step.
 
 Public traits and value types either contain a runnable example, link to their module's generic or
-concrete example, or state honestly that no implementation exists yet. `cargo test -p rsl-crypto
+concrete example, or state honestly that no implementation exists yet. `cargo test -p crypto
 --doc` is therefore part of the test contract. Strict documentation builds include private items
 so broken source-map links fail validation instead of quietly degrading the rendered reference.
 
@@ -241,6 +241,6 @@ status; it does not claim production readiness.
 ## Domain boundary
 
 The SHA-256 *compression function* is an internal cryptographic operation, so `compression.rs`
-lives here in `rsl-crypto`. It is unrelated to reversible data-compression formats and must not
-move into the top-level `rsl-compression` crate. TLS and SSH transcript hashing call the public
+lives here in `crypto`. It is unrelated to reversible data-compression formats and must not
+move into the top-level `compression` crate. TLS and SSH transcript hashing call the public
 digest API from their protocol crates; protocol-specific state does not move here.

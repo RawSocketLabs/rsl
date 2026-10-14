@@ -1,6 +1,6 @@
 //! Public full-tag verification behavior.
 
-use rsl_crypto::{CryptoError, mac::hmac::sha384::HmacSha384};
+use crypto::{CryptoError, mac::hmac::sha384::HmacSha384};
 
 /// Public-contract evidence that the exact full tag verifies.
 #[test]

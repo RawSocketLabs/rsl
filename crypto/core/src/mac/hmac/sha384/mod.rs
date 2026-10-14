@@ -37,7 +37,7 @@
 //! RFC 4231 Test Case 1 uses twenty `0x0b` key bytes and the message `Hi There`:
 //!
 //! ```
-//! use rsl_crypto::mac::hmac::sha384::HmacSha384;
+//! use crypto::mac::hmac::sha384::HmacSha384;
 //!
 //! let tag = HmacSha384::authenticate(&[0x0b; 20], b"Hi There")?;
 //! assert_eq!(
@@ -51,13 +51,13 @@
 //!         0x4a, 0xf1, 0x52, 0xe8, 0xb2, 0xfa, 0x9c, 0xb6,
 //!     ]
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Incremental verification
 //!
 //! ```
-//! use rsl_crypto::mac::hmac::sha384::HmacSha384;
+//! use crypto::mac::hmac::sha384::HmacSha384;
 //!
 //! let key = b"example shared secret";
 //! let expected = HmacSha384::authenticate(key, b"header || body")?;
@@ -65,7 +65,7 @@
 //! verifier.update("header")?;
 //! verifier.update(String::from(" || body"))?;
 //! verifier.verify(expected.as_bytes())?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes

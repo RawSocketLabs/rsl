@@ -4,8 +4,7 @@
 //! Run: `cargo +nightly fuzz run public_key_parse --fuzz-dir crypto/fuzz`.
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
-use rsl_crypto::{
+use crypto::{
     agreement::{
         ecdh_p256::{EcdhP256, EcdhP256PrivateKey, EcdhP256PublicKey},
         ecdh_p384::{EcdhP384, EcdhP384PrivateKey, EcdhP384PublicKey},
@@ -14,6 +13,7 @@ use rsl_crypto::{
     },
     signature::{ed448::Ed448VerifyingKey, ed25519::Ed25519VerifyingKey},
 };
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let _ = Ed25519VerifyingKey::try_from(data);

@@ -1,7 +1,7 @@
 [package]
-name = "rsl-pe-sync-oracle"
+name = "pe-sync-oracle"
 version = "0.0.0"
-description = "Runs wavelet-lab libusdr's PE_SYNC driver against rsl-pe-sync-sim, as the reference for the PE_SYNC port."
+description = "Runs wavelet-lab libusdr's PE_SYNC driver against pe-sync-sim, as the reference for the PE_SYNC port."
 publish = false
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -13,14 +13,14 @@ links = "pe_sync_oracle"
 [workspace]
 
 [dependencies]
-rsl-pe-sync-sim = { path = "../sim" }
+pe-sync-sim = { path = "../sim" }
 thiserror = "2.0"
 
 [dev-dependencies]
-rsl-pe-sync = { path = ".." }
-# chip_parity.rs compiles rsl-pe-sync's private src/portable tree, which needs its crates.
+pe-sync = { path = ".." }
+# chip_parity.rs compiles pe-sync's private src/portable tree, which needs its crates.
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb" }
-rsl-lmk05318 = { path = "../../../sdr/chips/lmk05318" }
+lmk05318 = { path = "../../../sdr/chips/lmk05318" }
 rsl-lowlevel = { path = "../../../lowlevel", features = ["std"] }
 
 [build-dependencies]

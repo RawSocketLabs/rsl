@@ -28,8 +28,8 @@
 use std::time::Duration;
 
 use bnb::{u5, u12};
+use deps::tracing::debug;
 use num_complex::Complex;
-use rsl_deps::tracing::debug;
 
 use super::Board;
 use super::correction::TxDcOffset;

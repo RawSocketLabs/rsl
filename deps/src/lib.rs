@@ -1,19 +1,19 @@
-//! # `rsl-deps` — the RSL blessed external-dependency stack
+//! # `deps` — the RSL blessed external-dependency stack
 //!
 //! One feature-gated crate that pins and re-exports the third-party crates RSL
-//! libraries and applications build on. Depend on `rsl-deps` instead of pinning `thiserror`,
+//! libraries and applications build on. Depend on `deps` instead of pinning `thiserror`,
 //! `tokio`, `serde`, … by hand in every crate; versions are unified here, in one place.
 //!
-//! Each blessed crate is re-exported under its canonical name (`rsl_deps::tokio`,
-//! `rsl_deps::serde`, …) behind a feature. Nothing compiles until you enable a feature.
+//! Each blessed crate is re-exported under its canonical name (`deps::tokio`,
+//! `deps::serde`, …) behind a feature. Nothing compiles until you enable a feature.
 //!
 //! ```toml
-//! rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
+//! deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
 //! ```
 //!
 //! ```ignore
-//! use rsl_deps::prelude::*;   // ThisError, tracing macros, serde derives (feature "std-ext"); EyreResult with "report"
-//! use rsl_deps::tokio;        // blessed async runtime (feature "async")
+//! use deps::prelude::*;   // ThisError, tracing macros, serde derives (feature "std-ext"); EyreResult with "report"
+//! use deps::tokio;        // blessed async runtime (feature "async")
 //! ```
 //!
 //! ## Rented, not owned
@@ -183,7 +183,7 @@ pub use time;
 pub use prost;
 
 /// Common imports. Glob this in to pull the everyday items of whatever features are
-/// enabled — `use rsl_deps::prelude::*;`.
+/// enabled — `use deps::prelude::*;`.
 pub mod prelude {
     #[cfg(feature = "report")]
     #[doc(no_inline)]

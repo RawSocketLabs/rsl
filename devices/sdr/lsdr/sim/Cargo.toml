@@ -1,7 +1,7 @@
 [package]
-name = "rsl-lsdr-sim"
+name = "lsdr-sim"
 version = "0.0.0"
-description = "Simulated LSDr (m2_da09_4_ad45_2) board for testing libusdr and the future rsl-lsdr without hardware."
+description = "Simulated LSDr (m2_da09_4_ad45_2) board for testing libusdr and the future lsdr without hardware."
 publish = false
 edition.workspace = true
 license.workspace = true

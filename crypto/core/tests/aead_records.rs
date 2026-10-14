@@ -2,7 +2,7 @@
 
 use core::convert::Infallible;
 
-use rsl_crypto::{
+use crypto::{
     CryptoError, Result,
     aead::{
         CounterNonceSequence, DataRecord, FinalRecord, NonceSequence, RecordBuilder,
@@ -19,8 +19,7 @@ fn algorithm() -> Aes256Gcm {
     Aes256Gcm::new(Aes256GcmKey::new(KEY))
 }
 
-fn builder() -> rsl_crypto::aead::ReadyRecordBuilder<Aes256Gcm, CounterNonceSequence<Aes256GcmNonce>>
-{
+fn builder() -> crypto::aead::ReadyRecordBuilder<Aes256Gcm, CounterNonceSequence<Aes256GcmNonce>> {
     RecordBuilder::new(algorithm())
         .nonce_sequence(CounterNonceSequence::new(FIXED))
         .record_size(7)

@@ -2,7 +2,7 @@
 
 pub use rsl_lowlevel::Access;
 use rsl_lowlevel::SequenceFailure;
-use rsl_sdr_frontend::Board;
+use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
 use crate::portable::hwid::Variant;
@@ -106,7 +106,7 @@ pub enum Error {
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
     /// is skipped as libusdr skips it, so open reports none of these yet.
     #[error("front-end probe failed")]
-    FrontEnd(#[from] rsl_sdr_frontend::Error),
+    FrontEnd(#[from] sdr_frontend::Error),
 
     /// A front-end board answered whose bring-up this driver does not port; libusdr would
     /// bring it up. Open stops there.

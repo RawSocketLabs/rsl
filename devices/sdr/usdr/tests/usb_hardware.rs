@@ -1,5 +1,5 @@
 //! Opt-in USB RX smoke: resets and claims the uSDR at `RSL_USDR_USB_PORT` (sysfs port path).
-//! Run `RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb --test usb_hardware -- --ignored`;
+//! Run `RSL_USDR_USB_PORT=1-2 cargo test -p usdr --features usb --test usb_hardware -- --ignored`;
 //! add `--features mio` for the reactor-driven temperature read.
 #![cfg(all(feature = "usb", target_os = "linux"))]
 
@@ -7,11 +7,11 @@ use std::env;
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr::Device;
-use rsl_usdr::transport::usb::UsbBus;
+use usdr::Device;
+use usdr::transport::usb::UsbBus;
 
 /// The uSDR at `RSL_USDR_USB_PORT`.
-fn selected() -> rsl_usb::DeviceInfo {
+fn selected() -> usb::DeviceInfo {
     let port = env::var("RSL_USDR_USB_PORT").expect("select the uSDR's sysfs USB port path");
     UsbBus::discover()
         .expect("enumerates USB")
@@ -51,7 +51,7 @@ fn a_real_usb_board_reports_its_temperature_through_a_caller_owned_reactor() {
     use std::time::Instant;
 
     use mio::{Events, Poll, Token, Waker};
-    use rsl_usdr::transport::usb::NativeEvent;
+    use usdr::transport::usb::NativeEvent;
 
     const DEVICE: Token = Token(0);
     const WAKE: Token = Token(1);
@@ -97,8 +97,8 @@ fn a_real_usb_board_reports_its_temperature_through_a_caller_owned_reactor() {
 #[test]
 #[ignore = "needs RSL_USDR_USB_PORT, a real uSDR and write access to its USB node"]
 fn a_set_up_real_device_streams_rx_after_handing_over_to_the_native_handle() {
-    use rsl_usdr::transport::usb::{ManagedUsb, NativeEvent};
-    use rsl_usdr::{HostFormat, RxConfig, StreamsConfig, WireFormat};
+    use usdr::transport::usb::{ManagedUsb, NativeEvent};
+    use usdr::{HostFormat, RxConfig, StreamsConfig, WireFormat};
 
     /// The next event that is not an RX block.
     fn next_operation(managed: &mut ManagedUsb) -> NativeEvent {

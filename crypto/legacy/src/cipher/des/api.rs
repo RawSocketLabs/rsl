@@ -5,7 +5,7 @@ use zeroize::Zeroize;
 
 use super::{round::transform, schedule::expand};
 use crate::SecretBytes;
-use rsl_crypto::cipher::BlockCipher;
+use crypto::cipher::BlockCipher;
 
 pub(super) const BLOCK_LEN: usize = 8;
 

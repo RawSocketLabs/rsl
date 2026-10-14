@@ -1,6 +1,6 @@
 //! Published AES-256-GCM evidence from NIST `AES_GCM.pdf` and Project Wycheproof.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     aead::{
         Aead,

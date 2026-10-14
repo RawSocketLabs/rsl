@@ -4,7 +4,7 @@
 # Usage: vendor.sh [--usb-only] <path-to-usdr-lib-checkout>
 # --usb-only refreshes only the exported USB RX/TX reference functions (libusdr/reference).
 # A full refresh also copies four tools (libusdr/tools): the flash tool, usdr_dm_create and
-# usdr_dm_gpsdo, whose generators and discipline loop rsl-usdr ports, and xmass_fwupd, the
+# usdr_dm_gpsdo, whose generators and discipline loop usdr ports, and xmass_fwupd, the
 # XMASS switch's firmware tool; and the Verilator
 # host bridge (libusdr/lib/lowlevel/verilator_ll), outside sources.txt.
 # Needs git, python3 and PyYAML (upstream's register-header generator).
@@ -121,7 +121,7 @@ mkdir -p "$dest/lib" "$dest/gen" "$dest/tools"
 # usdr_lowlevel.c includes this USB header for its declarations only.
 (cd "$src/lib" && cp --parents lowlevel/usb_uram/usb_uram_generic.h "$dest/lib")
 # The PCIe driver's userspace interface ((GPL-2.0 WITH Linux-syscall-note) OR MIT): the oracle
-# checks rsl-usdr-pcie's ioctl numbers, struct layouts and uSDR device layout against it.
+# checks usdr-pcie's ioctl numbers, struct layouts and uSDR device layout against it.
 (cd "$src/lib" && cp --parents lowlevel/pcie_uram/pcie_uram_driver_if.h "$dest/lib")
 # The gateware's notification format (MIT, the repository's licence): the Verilator bridge's
 # port reads SPI/I2C replies and RX status from the words it describes.

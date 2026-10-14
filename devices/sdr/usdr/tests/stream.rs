@@ -1,4 +1,4 @@
-//! The RX stream's guards on the simulated board: what rsl-usdr refuses, and how it shuts
+//! The RX stream's guards on the simulated board: what usdr refuses, and how it shuts
 //! a running stream down.
 
 mod common {
@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use common::sim_bus::SimBus;
 use num_complex::Complex;
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr::{Device, Error, HostFormat, RxChannels, RxConfig, StreamsConfig, WireFormat};
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use usdr::{Device, Error, HostFormat, RxChannels, RxConfig, StreamsConfig, WireFormat};
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The RX DMA control register.
 const REG_RX_DMA_CONTROL: u32 = 5;
@@ -354,7 +354,7 @@ fn a_created_group_waits_for_its_start() {
     );
 }
 
-/// Stream configurations rsl-usdr refuses before any bus access where libusdr would go
+/// Stream configurations usdr refuses before any bus access where libusdr would go
 /// on (whitelisted divergences, `PORTING.md`'s formats row): complex channel 1 on
 /// gateware without the RX chain, which would be lanes 2 and 3 with no second NCO behind
 /// them, and a real 12-bit packet whose burst ends mid-byte (1023 samples of 12 bits),

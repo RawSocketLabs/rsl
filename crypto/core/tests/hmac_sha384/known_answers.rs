@@ -3,7 +3,7 @@
 //! The exact publication metadata and fixture-conversion policy are recorded in
 //! `tests/vectors/hmac-sha384/README.md`.
 
-use rsl_crypto::mac::hmac::sha384::HmacSha384;
+use crypto::mac::hmac::sha384::HmacSha384;
 
 use super::support::{assert_hmac_sha384, decode_hex};
 

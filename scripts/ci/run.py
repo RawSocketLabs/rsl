@@ -37,7 +37,7 @@ def commands(profile, plan, bnb):
                 ["cargo", "test", *workspace]]
         # One representative configuration keeps optional adapters/transport code in
         # the routine gate; independent feature ladders and docs stay release-only.
-        for name in sorted(selected & {"bitsandbytes", "socks", "rsl-usdr"}):
+        for name in sorted(selected & {"bitsandbytes", "socks", "usdr"}):
             result.extend([
                 ["cargo", "clippy", "-p", name, "--all-targets", "--all-features", "--", "-D", "warnings"],
                 ["cargo", "test", "-p", name, "--all-features"],
@@ -71,14 +71,14 @@ def commands(profile, plan, bnb):
         return result
     if profile == "facades":
         result = [["cargo", "build", "-p", name, "--features", "full"]
-                  for name in sorted(selected & {"rsl", "rsl-deps"})]
+                  for name in sorted(selected & {"rsl", "deps"})]
         if "demos" in selected:
             result.append(["cargo", "build", "-p", "demos", "--examples"])
         return result
     if profile == "msrv":
         result = [["cargo", "check", *packages(qualified)]] if qualified else []
         result.extend(["cargo", "check", "-p", name, "--all-features"]
-                      for name in sorted(qualified & {"bitsandbytes", "socks", "rsl-usdr"}))
+                      for name in sorted(qualified & {"bitsandbytes", "socks", "usdr"}))
         if NOSTD in release_roots:
             result.append(["cargo", "check", "--manifest-path", f"{NOSTD}/Cargo.toml"])
         return result
@@ -100,7 +100,7 @@ def commands(profile, plan, bnb):
             result.append(["cargo", "check",
                            *packages(BARE_METAL_DEVICES[root] for root in devices),
                            "--target", "thumbv7em-none-eabi"])
-        pki = qualified & {"rsl-asn1", "rsl-x509", "rsl-pki"}
+        pki = qualified & {"asn1", "x509", "pki"}
         if release_roots & PKI:
             result.append(["cargo", "build", *packages(pki), "--target", "thumbv7em-none-eabi"])
         return result
@@ -118,8 +118,8 @@ def commands(profile, plan, bnb):
                 ["cargo", "clippy", *manifest, "--workspace", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "check", *manifest, "--workspace", "--all-targets"],
                 ["cargo", "test", *manifest, "-p", "bladerf", "--lib", "configure_module_"]]
-    if profile in {"usdr", "rust-dsdcc"}:
-        directory = {"usdr": "usdr", "rust-dsdcc": "dsdcc"}[profile]
+    if profile in {"usdr-ffi", "rust-dsdcc"}:
+        directory = {"usdr-ffi": "usdr", "rust-dsdcc": "dsdcc"}[profile]
         return [["cargo", "check", "--manifest-path", f"bindings/{directory}/Cargo.toml"]]
     if profile in {"usdr-oracle", "xsdr-oracle", "lsdr-oracle", "pe-sync-oracle",
                    "limesdr-oracle"}:

@@ -1,12 +1,12 @@
-//! rsl-usdr's identity query against libusdr's `/dm/revision`, value and operations.
+//! usdr's identity query against libusdr's `/dm/revision`, value and operations.
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
-use rsl_usdr::Device;
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
+use usdr::Device;
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 fn assert_identity_matches(revision: BoardRevision) {
     let mut oracle = Oracle::open(SimBoard::new(revision)).expect("libusdr opens the board");
@@ -18,9 +18,9 @@ fn assert_identity_matches(revision: BoardRevision) {
     let reference = oracle.close();
 
     let sim = SimBus::new(SimBoard::new(revision));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let actual_start = sim.board().trace().len();
-    let identity = device.identity().expect("rsl-usdr reads its identity");
+    let identity = device.identity().expect("usdr reads its identity");
     let board = sim.board();
 
     assert_eq!(identity.to_raw(), expected_value, "{revision:?}: value");
@@ -74,8 +74,8 @@ fn channel_capabilities_match_libusdr_for_each_chain() {
         let _ = oracle.close();
 
         let sim = SimBus::new(board());
-        let mut device = Device::with_bus(sim).expect("rsl-usdr powers up the board");
-        let identity = device.identity().expect("rsl-usdr reads its identity");
+        let mut device = Device::with_bus(sim).expect("usdr powers up the board");
+        let identity = device.identity().expect("usdr reads its identity");
         let actual = [
             identity.max_rx_channels().into(),
             identity.max_tx_channels().into(),

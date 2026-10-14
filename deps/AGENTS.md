@@ -1,4 +1,4 @@
-# rsl-deps — agent & contributor guide
+# deps — agent & contributor guide
 
 > `CLAUDE.md` is a symlink to this file. See [`README.md`](README.md) for the overview.
 
@@ -14,7 +14,7 @@ facade.
 - **Every dependency is `optional`.** `default = []`; nothing compiles until a feature is enabled.
 - **`Cargo.toml` is the single source of truth for versions.** Bump in one place; the ecosystem
   moves together. Keep versions aligned with what the owned crates and apps already resolve to.
-- **Re-export under canonical names** at the crate root (`rsl_deps::tokio`), gated on the feature.
+- **Re-export under canonical names** at the crate root (`deps::tokio`), gated on the feature.
 - **`publish = false` for now**, but keep it publishable (no git deps) for the eventual registry move.
 
 ## Adding a blessed crate

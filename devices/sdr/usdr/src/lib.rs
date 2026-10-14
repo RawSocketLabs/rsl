@@ -2,7 +2,7 @@
 //!
 //! [`Device`] is the radio. It talks to the board through a [`lowlevel::Bus`]: the same
 //! register/SPI/I2C seam libusdr's `ls_op` provides, so the board logic here is checked
-//! against libusdr's on a simulated board (`rsl-usdr-oracle`).
+//! against libusdr's on a simulated board (`usdr-oracle`).
 //!
 //! Status: board power-up and power-down, temperature, the thermal policy, the RX sample
 //! rate, bandwidth, frequency, gains, path and corrections, the RX stream group

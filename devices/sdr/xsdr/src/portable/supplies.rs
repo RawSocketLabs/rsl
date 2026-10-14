@@ -7,10 +7,10 @@
 
 use core::time::Duration;
 
+use lp8758::{self, Buck, BuckControl, BuckVoltage, Revision};
 use rsl_lowlevel::{
     I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
 };
-use rsl_lp8758::{self as lp8758, Buck, BuckControl, BuckVoltage, Revision};
 
 use super::fpga::{CLOCK_INTERNAL, Gpo, LMS_PULSE};
 use super::outcome::outcome;

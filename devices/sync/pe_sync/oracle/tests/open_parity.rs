@@ -1,4 +1,4 @@
-//! rsl-pe-sync's open and close against libusdr's, operation for operation, on fresh
+//! pe-sync's open and close against libusdr's, operation for operation, on fresh
 //! simulated boards: the whole session the characterization golden records, and the
 //! refusals that power the board off again.
 //!
@@ -7,9 +7,9 @@
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
-use rsl_pe_sync::{Device, Error};
-use rsl_pe_sync_oracle::Oracle;
-use rsl_pe_sync_sim::{I2cAddress, Op, SimBoard};
+use pe_sync::{Device, Error};
+use pe_sync_oracle::Oracle;
+use pe_sync_sim::{I2cAddress, Op, SimBoard};
 use sim_bus::SimBus;
 
 /// `ENODEV`: `lmk05318_create`'s refusal of a wrong identity.
@@ -48,8 +48,8 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
         (0..expected.len().max(actual.len())).find(|&i| expected.get(i) != actual.get(i))
     {
         panic!(
-            "{scenario}: rsl-pe-sync diverges from libusdr at op {at} of {}: libusdr {}, \
-             rsl-pe-sync {}",
+            "{scenario}: pe-sync diverges from libusdr at op {at} of {}: libusdr {}, \
+             pe-sync {}",
             expected.len(),
             expected.get(at).map_or("(end)".into(), Op::to_string),
             actual.get(at).map_or("(end)".into(), Op::to_string),
@@ -66,12 +66,12 @@ fn libusdr_session(board: SimBoard) -> (Vec<Op>, Vec<Op>) {
     (open.to_vec(), close.to_vec())
 }
 
-/// rsl-pe-sync's open and close of `board`, split at the end of the open.
+/// pe-sync's open and close of `board`, split at the end of the open.
 fn rsl_session(board: SimBoard) -> (Vec<Op>, Vec<Op>) {
     let sim = SimBus::new(board);
-    let device = Device::open(sim.clone()).expect("rsl-pe-sync opens the board");
+    let device = Device::open(sim.clone()).expect("pe-sync opens the board");
     let opened = sim.board().trace().len();
-    device.close().expect("rsl-pe-sync closes the board");
+    device.close().expect("pe-sync closes the board");
     let board = sim.board();
     let (open, close) = board.trace().split_at(opened);
     (open.to_vec(), close.to_vec())
@@ -98,7 +98,7 @@ fn a_silent_pmic_changes_nothing_but_the_byte_both_log() {
 }
 
 /// Runs both drivers on `board`, which libusdr refuses with `errno`, and compares
-/// everything each did, the power-off after the refusal included; returns rsl-pe-sync's
+/// everything each did, the power-off after the refusal included; returns pe-sync's
 /// error.
 fn refused_like_libusdr(board: impl Fn() -> SimBoard, errno: i32, scenario: &str) -> Error {
     let libusdr = Oracle::open(board())
@@ -108,7 +108,7 @@ fn refused_like_libusdr(board: impl Fn() -> SimBoard, errno: i32, scenario: &str
     let sim = SimBus::new(board());
     let refused = Device::open(sim.clone())
         .err()
-        .unwrap_or_else(|| panic!("{scenario}: rsl-pe-sync refuses the board"));
+        .unwrap_or_else(|| panic!("{scenario}: pe-sync refuses the board"));
     assert_same_ops(libusdr.board.trace(), sim.board().trace(), scenario);
     refused
 }

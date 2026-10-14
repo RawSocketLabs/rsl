@@ -1,10 +1,10 @@
 //! Differential HMAC-SHA-256 comparison with the independent `RustCrypto` implementation.
 //!
-//! The `hmac` and `sha2` crates are development-only dependencies. Production `rsl-crypto` code
+//! The `hmac` and `sha2` crates are development-only dependencies. Production `crypto` code
 //! calls neither implementation.
 
+use crypto::mac::hmac::sha256::HmacSha256;
 use hmac::{Hmac, KeyInit as _, Mac as ReferenceMac};
-use rsl_crypto::mac::hmac::sha256::HmacSha256;
 use sha2::Sha256 as ReferenceSha256;
 
 /// Differential evidence across short, exact-block, and hashed-key paths and message boundaries.

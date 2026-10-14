@@ -1,9 +1,9 @@
-//! rsl-usdr's calibration mathematics against libusdr's, bit for bit and call for call.
+//! usdr's calibration mathematics against libusdr's, bit for bit and call for call.
 
 use num_complex::Complex32;
-use rsl_usdr::cal::fit;
-use rsl_usdr::cal::search::{self, Axis, Limits, Objective2d, Search, Stage};
-use rsl_usdr_oracle::cal::{self as c, CFloat};
+use usdr::cal::fit;
+use usdr::cal::search::{self, Axis, Limits, Objective2d, Search, Stage};
+use usdr_oracle::cal::{self as c, CFloat};
 
 /// A seeded xorshift generator: reproducible inputs without a dependency.
 struct Rng(u64);
@@ -40,7 +40,7 @@ fn assert_samples_eq(rust: &[Complex32], c: &[CFloat], what: &str) {
     for (n, (r, c)) in rust.iter().zip(c).enumerate() {
         assert!(
             same(r.re, c.i) && same(r.im, c.q),
-            "{what}: sample {n}: rsl-usdr {r:?}, libusdr {c:?}"
+            "{what}: sample {n}: usdr {r:?}, libusdr {c:?}"
         );
     }
 }
@@ -117,23 +117,20 @@ fn fits_and_errors_match() {
         let (mse, ph) = c::best_fit(&c_samples, amp, period);
         assert!(
             same(rust.error, mse) && same(rust.phase, ph),
-            "best fit {amp} {period} {phase}: rsl-usdr {rust:?}, libusdr ({mse}, {ph})"
+            "best fit {amp} {period} {phase}: usdr {rust:?}, libusdr ({mse}, {ph})"
         );
 
         let rust = fit::best_phase_and_period(&samples, amp);
         let (mse, ph, per) = c::best_fit_phase_period(&c_samples, amp);
         assert!(
             same(rust.error, mse) && same(rust.phase, ph) && same(rust.period, per),
-            "phase/period fit {amp}: rsl-usdr {rust:?}, libusdr ({mse}, {ph}, {per})"
+            "phase/period fit {amp}: usdr {rust:?}, libusdr ({mse}, {ph}, {per})"
         );
 
         for trial in [phase, phase + 0.5, 0.0] {
             let rust = fit::fit_error(&samples, amp, period, trial);
             let c = c::fit_error(&c_samples, amp, period, trial);
-            assert!(
-                same(rust, c),
-                "fit error {trial}: rsl-usdr {rust}, libusdr {c}"
-            );
+            assert!(same(rust, c), "fit error {trial}: usdr {rust}, libusdr {c}");
         }
 
         let rust = fit::max_component_error(&samples, amp, period, phase);

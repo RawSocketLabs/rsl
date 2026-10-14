@@ -3,8 +3,8 @@
 //! The board is modelled at its control seam: 64-byte LMS64C command frames
 //! ([`SimBoard::lms64c`]), the protocol the board firmware speaks over the FT601 USB bridge.
 //! Behind it sit the gateware's 16-bit register file (with the reference-clock frequency
-//! detector libusdr's `limesdr_init` uses) and the LMS7002M (`rsl-lms7002m-sim`). libusdr
-//! (through `rsl-limesdr-oracle`) and, later, `rsl-limesdr` drive the same model, so their
+//! detector libusdr's `limesdr_init` uses) and the LMS7002M (`lms7002m-sim`). libusdr
+//! (through `limesdr-oracle`) and, later, `limesdr` drive the same model, so their
 //! recorded [`Op`] traces, frames and decoded register operations alike, can be compared
 //! without hardware.
 //!

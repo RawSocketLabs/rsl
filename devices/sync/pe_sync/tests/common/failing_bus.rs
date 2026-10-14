@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use rsl_pe_sync::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use pe_sync::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
 
 use super::sim_bus::SimBus;
 

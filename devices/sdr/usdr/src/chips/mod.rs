@@ -13,7 +13,7 @@
 //!
 //! The front-end boards (`crate::frontend`) carry their own chips on I2C bus 1, the M.2
 //! connector's bus. Those the shared probe and the `PCIe` front end and breakout need (the
-//! TCA6416 and TCA9555 expanders, the `DACx0501`) are `rsl-sdr-frontend`'s; the ones the
+//! TCA6416 and TCA9555 expanders, the `DACx0501`) are `sdr-frontend`'s; the ones the
 //! uSDR's bring-ups need are here:
 //!
 //! | Module | Chip | Front end |

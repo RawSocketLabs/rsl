@@ -1,6 +1,6 @@
 // usdr_dm_create's TX generators over a buffer boundary: the vendored tool compiled whole,
 // its `main` renamed, so its own producer threads (the `ci16` tone and chirp and the `cf32`
-// tone; rsl-usdr ports neither its table generator nor its file reader) fill its own ring
+// tone; usdr ports neither its table generator nor its file reader) fill its own ring
 // buffer, and its own `do_transmit` sends from it. The oracle takes the packets out of the
 // ring, or hands `do_transmit` a TX stream it created on the simulated board.
 #define main rsl_dm_create_main

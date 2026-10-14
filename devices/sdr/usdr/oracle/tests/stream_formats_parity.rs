@@ -1,4 +1,4 @@
-//! rsl-usdr's stream group (create, sync and start, receive, stop) against libusdr's
+//! usdr's stream group (create, sync and start, receive, stop) against libusdr's
 //! `usdr_dms_*` calls, for every host@wire format pair the uSDR's RX front end offers:
 //! each call's operations, and the host buffers libusdr's own converters fill, byte for
 //! byte.
@@ -20,13 +20,13 @@ use std::time::Duration;
 
 use baseband::without_baseband_loop;
 use num_complex::Complex;
-use rsl_usdr::{
+use sim_bus::SimBus;
+use usdr::{
     Ci12, Device, Error, HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamsConfig,
     SyncMode, WireFormat,
 };
-use rsl_usdr_oracle::{Oracle, RecvInfo};
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
-use sim_bus::SimBus;
+use usdr_oracle::{Oracle, RecvInfo};
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The RX front end's command register.
 const REG_RX_FRONT_END: u32 = 0x1_0100;
@@ -79,7 +79,7 @@ struct Scenario {
     /// libusdr's channel mask: 1 for channel 0, 2 for channel 1, 3 for both.
     channel_mask: u64,
 
-    /// rsl-usdr's configuration for the same stream.
+    /// usdr's configuration for the same stream.
     config: StreamsConfig,
 }
 
@@ -101,7 +101,7 @@ impl Scenario {
         self.on(2, RxChannels::Channel1)
     }
 
-    /// This scenario on libusdr's channel `mask`, rsl-usdr's `channels`.
+    /// This scenario on libusdr's channel `mask`, usdr's `channels`.
     fn on(mut self, mask: u64, channels: RxChannels) -> Self {
         self.channel_mask = mask;
         let rx = self.config.rx.expect("an RX stream");
@@ -117,7 +117,7 @@ impl Scenario {
         }
     }
 
-    /// This scenario, started with libusdr's `synctype`, rsl-usdr's `sync`.
+    /// This scenario, started with libusdr's `synctype`, usdr's `sync`.
     fn synced(mut self, synctype: &'static CStr, sync: SyncMode) -> Self {
         self.synctype = synctype;
         self.config = self.config.with_sync(sync);
@@ -226,11 +226,11 @@ fn receive<S: LeBytes + Default>(device: &mut Device, samples: usize, channels: 
     )
 }
 
-/// rsl-usdr: the same calls through `create_streams`, `start_streams`, `receive_into` and
+/// usdr: the same calls through `create_streams`, `start_streams`, `receive_into` and
 /// `stop_streams`.
 fn on_rsl(scenario: Scenario, receives: usize) -> Run {
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -242,13 +242,13 @@ fn on_rsl(scenario: Scenario, receives: usize) -> Run {
             window(trace_len, || {
                 device
                     .create_streams(scenario.config)
-                    .expect("rsl-usdr creates the stream");
+                    .expect("usdr creates the stream");
             }),
         ),
         (
             "start",
             window(trace_len, || {
-                device.start_streams().expect("rsl-usdr starts");
+                device.start_streams().expect("usdr starts");
             }),
         ),
     ];
@@ -271,7 +271,7 @@ fn on_rsl(scenario: Scenario, receives: usize) -> Run {
         packets.push(packet.expect("received"));
     }
     let stopped = window(trace_len, || {
-        device.stop_streams().expect("rsl-usdr stops");
+        device.stop_streams().expect("usdr stops");
     });
     windows.push(("stop", stopped));
     let trace = sim.board().trace().to_vec();
@@ -362,7 +362,7 @@ fn every_real_format_pair_on_either_lane_matches_libusdr() {
 /// A real 12-bit packet whose burst ends in a stub: 1022 samples are 1533 bytes in a
 /// 1536-byte burst. The operations and the packet's samples match; whitelisted
 /// divergence, as for `ci12`: libusdr converts the 3-byte stub into two more samples,
-/// where rsl-usdr's packet ends at its own.
+/// where usdr's packet ends at its own.
 #[test]
 fn a_padded_real_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
     let scenario = Scenario::new(c"i16@i12", 1022, HostFormat::I16, WireFormat::I12);
@@ -384,7 +384,7 @@ fn a_padded_real_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
 }
 
 /// libusdr's converter lookup falls back to a byte copy for a real wire into a complex
-/// host buffer, so it creates such a stream; rsl-usdr refuses it before any operation
+/// host buffer, so it creates such a stream; usdr refuses it before any operation
 /// (whitelisted divergence).
 #[test]
 fn a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes() {
@@ -396,7 +396,7 @@ fn a_complex_host_on_a_real_wire_is_refused_where_libusdr_copies_bytes() {
     drop(oracle.close());
 
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -427,7 +427,7 @@ fn a_two_burst_twelve_bit_stream_matches_libusdr() {
 }
 
 /// The 12-bit format bits reach the front end: libusdr's burst-format word for `ci12`
-/// differs from `ci16`'s in its sample format, and rsl-usdr writes the same.
+/// differs from `ci16`'s in its sample format, and usdr writes the same.
 #[test]
 fn the_twelve_bit_burst_format_is_libusdrs() {
     let scenario = Scenario::new(c"ci16@ci12", 1024, HostFormat::Ci16, WireFormat::Ci12);
@@ -446,7 +446,7 @@ fn the_twelve_bit_burst_format_is_libusdrs() {
     assert_eq!(burst_format, 0x1000_0000 | 21 << 18 | 383 << 5 | 1 << 2 | 2);
 }
 
-/// libusdr's "all" sync with RX alone waits on the RX front end's activity; rsl-usdr's
+/// libusdr's "all" sync with RX alone waits on the RX front end's activity; usdr's
 /// `SyncMode::All` writes the same, and the stream flows.
 #[test]
 fn an_all_synchronised_stream_matches_libusdr() {
@@ -458,7 +458,7 @@ fn an_all_synchronised_stream_matches_libusdr() {
 
 /// libusdr's single-direction "rx" trigger releases an RX-only stream on its own
 /// activity, as "all" does; "tx" and the generated SYSREF hold it in the sim (no TX stream
-/// runs, no pulse is raised), and rsl-usdr's modes write the same triggers.
+/// runs, no pulse is raised), and usdr's modes write the same triggers.
 #[test]
 fn single_direction_and_generated_triggers_match_libusdr_for_rx() {
     let scenario = Scenario::new(c"ci16", 1024, HostFormat::Ci16, WireFormat::Ci16)
@@ -485,9 +485,9 @@ fn single_direction_and_generated_triggers_match_libusdr_for_rx() {
 }
 
 /// A packet whose 12-bit burst ends in a stub: the operations match, and so do the
-/// packet's samples. Whitelisted divergence (rsl-usdr's documented stub skipping):
+/// packet's samples. Whitelisted divergence (usdr's documented stub skipping):
 /// libusdr converts the whole block, so its buffer holds one more sample, converted from
-/// the zero stub; rsl-usdr's ends at the packet.
+/// the zero stub; usdr's ends at the packet.
 #[test]
 fn a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
     // 1023 samples are 3069 bytes in a 3072-byte burst: a 3-byte stub, one ci12 sample.
@@ -515,7 +515,7 @@ fn a_padded_twelve_bit_packet_matches_libusdr_up_to_its_stub() {
 }
 
 /// libusdr's uSDR sync core has no "extall": it creates the stream, then refuses the
-/// sync without an operation. rsl-usdr refuses `SyncMode::ExternalAll` at create, before
+/// sync without an operation. usdr refuses `SyncMode::ExternalAll` at create, before
 /// any operation.
 #[test]
 fn external_sync_is_refused_by_both_before_any_sync_operation() {
@@ -530,7 +530,7 @@ fn external_sync_is_refused_by_both_before_any_sync_operation() {
     drop(oracle.close());
 
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -542,7 +542,7 @@ fn external_sync_is_refused_by_both_before_any_sync_operation() {
             device.create_streams(config),
             Err(Error::UnsupportedSync(SyncMode::ExternalAll))
         ),
-        "rsl-usdr refuses external sync"
+        "usdr refuses external sync"
     );
     assert_eq!(
         sim.board().trace().len(),
@@ -615,7 +615,7 @@ fn the_second_channels_burst_formats_are_libusdrs() {
 }
 
 /// Two real channels (`ai` and `aq`): libusdr has no one-to-two real converter and fails
-/// the create after resetting the DMA; rsl-usdr refuses it before any operation
+/// the create after resetting the DMA; usdr refuses it before any operation
 /// (whitelisted divergence).
 #[test]
 fn two_real_channels_are_refused_by_both() {
@@ -625,7 +625,7 @@ fn two_real_channels_are_refused_by_both() {
     drop(oracle.close());
 
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -644,7 +644,7 @@ fn two_real_channels_are_refused_by_both() {
 }
 
 /// Gateware without the RX chain reports one RX channel; libusdr still creates a complex
-/// channel-1 stream there, and rsl-usdr refuses it before any operation (whitelisted
+/// channel-1 stream there, and usdr refuses it before any operation (whitelisted
 /// divergence: nothing shows what lanes 2 and 3 carry without the chain's second NCO).
 #[test]
 fn a_second_complex_channel_without_the_rx_chain_is_refused_where_libusdr_creates_it() {
@@ -658,7 +658,7 @@ fn a_second_complex_channel_without_the_rx_chain_is_refused_where_libusdr_create
     drop(oracle.close());
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     let start = sim.board().trace().len();
     for channels in [RxChannels::Channel1, RxChannels::Both] {
         let config =

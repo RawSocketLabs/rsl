@@ -1,6 +1,6 @@
 //! Published RFC 7748 X448 vectors, Wycheproof cases, and boundary evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     agreement::{
         KeyAgreement,

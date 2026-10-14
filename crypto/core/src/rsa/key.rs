@@ -94,7 +94,7 @@ impl fmt::Debug for RsaPublicKey {
 /// This intentionally minimal owner stores no prime factors and performs the unoptimized RFC 8017
 /// RSADP/RSASP1 exponentiation directly. The exponent is zeroized on drop by the internal integer
 /// owner, but this implementation is variable-time and unblinded. See the [`rsa`](super) module's
-/// side-channel warning; this crate exposes no private-key RSA scheme, and `rsl-crypto-legacy`
+/// side-channel warning; this crate exposes no private-key RSA scheme, and `crypto-legacy`
 /// consumes this owner only for explicitly opt-in historical PKCS #1 v1.5 operations.
 pub struct RsaPrivateKey {
     modulus: BigUint,

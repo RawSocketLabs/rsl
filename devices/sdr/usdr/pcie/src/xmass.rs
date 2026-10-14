@@ -30,7 +30,7 @@ static DRIVER_BUFFER: Mutex<()> = Mutex::new(());
 /// Each request returns the driver's return value unjudged. `xmass_fwupd.c` takes any
 /// value that is not an error as success; the driver is observed to return 0, or 1 for
 /// [`Self::read`], on success, and to pass other positive values through on some failures,
-/// so callers should accept only those (`rsl-usdr`'s firmware update does).
+/// so callers should accept only those (`usdr`'s firmware update does).
 ///
 /// The driver lets one open file hold the device at a time. When the switch loads the
 /// firmware its flash holds, and what it does with an erased or partial flash, the sources

@@ -5,7 +5,7 @@
 //! reads and writes (GPO/GPI), 24-bit SPI words to the LMX2820 synthesizers and the
 //! LMX1204/LMX1214 distribution buffers, and I2C transfers to the LMK05318 network
 //! synchronizer, the two LMK1D1208I fan-out buffers and the LP87524 PMIC. libusdr (through
-//! `rsl-pe-sync-oracle`) and, later, `rsl-pe-sync` drive the same model, so their recorded
+//! `pe-sync-oracle`) and, later, `pe-sync` drive the same model, so their recorded
 //! [`Op`] traces can be compared without hardware.
 //!
 //! The model covers identification and libusdr's whole open (power-on, status read, clock

@@ -1,10 +1,10 @@
-//! rsl-usdr's RX gain, path and correction controls against libusdr's, operation for
+//! usdr's RX gain, path and correction controls against libusdr's, operation for
 //! operation, one window per call, on fresh boards.
 //!
-//! Each call names libusdr's control path and raw value next to rsl-usdr's typed value, so
+//! Each call names libusdr's control path and raw value next to usdr's typed value, so
 //! the pairing is the mapping under test (`rx/gain/pga` doubling its value, say). libusdr
 //! clamps every gain rather than rejecting it, so out-of-range values must succeed alike.
-//! libusdr masks trim codes to seven bits where rsl-usdr's [`RxTrim`] rejects them; that
+//! libusdr masks trim codes to seven bits where usdr's [`RxTrim`] rejects them; that
 //! divergence has its own scenario.
 
 #[path = "common/crossing.rs"]
@@ -16,10 +16,10 @@ use std::ffi::CStr;
 use std::ops::Range;
 
 use crossing::{Crossing, with_band_crossing_fix};
-use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxTrim};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxTrim};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// libusdr's RX gain controls.
 const GAIN: &CStr = c"/dm/sdr/0/rx/gain";
@@ -55,18 +55,18 @@ enum Call {
     /// `set_rx_frequency`.
     Frequency(u32),
 
-    /// libusdr's numeric gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
+    /// libusdr's numeric gain control `path` set to `value`; usdr's `set_rx_gain`.
     Gain(&'static CStr, u64, RxGain),
 
-    /// libusdr's `rx/path` set to a string; rsl-usdr's `set_rx_path`.
+    /// libusdr's `rx/path` set to a string; usdr's `set_rx_path`.
     Path(&'static CStr, RxPath),
 
-    /// libusdr's numeric correction control `path` set to `value`; rsl-usdr's matching
+    /// libusdr's numeric correction control `path` set to `value`; usdr's matching
     /// call.
     Correct(&'static CStr, u64, Correction),
 }
 
-/// rsl-usdr's side of a [`Call::Correct`].
+/// usdr's side of a [`Call::Correct`].
 #[derive(Clone, Copy, Debug)]
 enum Correction {
     /// `set_rx_dc_trim`.
@@ -99,7 +99,7 @@ impl Call {
         .is_ok()
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -128,7 +128,7 @@ fn trim(code: u8) -> RxTrim {
 }
 
 /// A trim call on libusdr's `path` (`DCCORR` or `IP2CORR`) with codes `i` and `q`, and
-/// rsl-usdr's `call` with the same codes.
+/// usdr's `call` with the same codes.
 fn trims(path: &'static CStr, i: u8, q: u8, call: fn(RxTrim, RxTrim) -> Correction) -> Call {
     let value = u64::from(i) << 16 | u64::from(q);
     Call::Correct(path, value, call(trim(i), trim(q)))
@@ -147,12 +147,12 @@ fn iq(i_gain: u16, q_gain: u16, phase: i16) -> Call {
     Call::Correct(PHGAINCORR, value, Correction::Iq(correction))
 }
 
-/// A gain call setting libusdr's `path` and rsl-usdr's `gain` to the same `db`.
+/// A gain call setting libusdr's `path` and usdr's `gain` to the same `db`.
 fn gain(path: &'static CStr, db: i32, gain: fn(i32) -> RxGain) -> Call {
     Call::Gain(path, raw(db), gain(db))
 }
 
-/// Makes `calls` in turn on fresh revision-3 boards through libusdr and rsl-usdr and
+/// Makes `calls` in turn on fresh revision-3 boards through libusdr and usdr and
 /// compares each call's outcome and operations. Every call must succeed: a regression
 /// that failed both sides alike would otherwise pass.
 fn assert_calls_succeed(calls: &[Call]) {
@@ -173,7 +173,7 @@ fn assert_calls_succeed_crossing(calls: &[Call], crossing: Crossing) {
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual: Vec<(Result<(), Error>, Range<usize>)> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
@@ -187,7 +187,7 @@ fn assert_calls_succeed_crossing(calls: &[Call], crossing: Crossing) {
         calls.iter().zip(expected).zip(actual)
     {
         assert!(expected_ok, "{call:?}: libusdr succeeds");
-        assert!(result.is_ok(), "{call:?}: rsl-usdr {result:?}");
+        assert!(result.is_ok(), "{call:?}: usdr {result:?}");
         let expected = &reference.trace()[expected];
         let expected: &[Op] = &match crossing {
             Crossing::None => expected.to_vec(),
@@ -200,7 +200,7 @@ fn assert_calls_succeed_crossing(calls: &[Call], crossing: Crossing) {
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }
@@ -229,7 +229,7 @@ fn rx_vga1_gain_matches_libusdr_across_its_range() {
     assert_calls_succeed(&calls);
 }
 
-/// libusdr's `rx/gain/pga` doubles its value before clamping to 0 to 30 dB, so rsl-usdr's
+/// libusdr's `rx/gain/pga` doubles its value before clamping to 0 to 30 dB, so usdr's
 /// [`RxGain::Vga2`] gets twice the figure; the combined setting also zeroes stage B.
 #[test]
 fn rx_vga2_combined_gain_matches_libusdr_with_its_doubling() {
@@ -378,7 +378,7 @@ fn auto_rx_path_before_tuning_selects_the_low_band_like_libusdr() {
 }
 
 /// Characterization of libusdr alone: it rejects a path given as a number (4096 or less)
-/// with `-EINVAL` before any operation. rsl-usdr's [`RxPath`] cannot express one, so
+/// with `-EINVAL` before any operation. usdr's [`RxPath`] cannot express one, so
 /// there is no call to compare.
 #[test]
 fn a_numeric_rx_path_is_rejected_by_libusdr_before_any_operation() {
@@ -422,7 +422,7 @@ fn rx_dc_and_ip2_trims_match_libusdr() {
 /// Intentional divergence: libusdr narrows each 16-bit trim to `int8_t` and shifts it into
 /// its register macro's mask, implementation-defined and, for a negative value, undefined
 /// in C; this compiler keeps the low seven bits, so an oversized code silently writes
-/// another. rsl-usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
+/// another. usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
 /// for one is the masked code's write.
 #[test]
 fn oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
@@ -485,7 +485,7 @@ fn rx_iq_correction_matches_libusdr() {
 
 /// Intentional divergence: with the low band fixed, 4.2 GHz plus the mixer LO passes
 /// `u32::MAX`. libusdr adds in double and converts back to `unsigned`, undefined in C
-/// (here it wraps, to about 200 MHz), and tunes that; rsl-usdr refuses with
+/// (here it wraps, to about 200 MHz), and tunes that; usdr refuses with
 /// `UnsupportedFrequency` where libusdr starts tuning, after the same operations.
 #[test]
 fn a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it() {
@@ -507,7 +507,7 @@ fn a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it() {
     let expected = &reference.trace()[window];
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     for call in setup {
         call.on_rsl(&mut device).expect("the setup succeeds");
     }
@@ -515,14 +515,14 @@ fn a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it() {
     let result = device.set_rx_frequency(HZ);
     assert!(
         matches!(result, Err(Error::UnsupportedFrequency(HZ))),
-        "rsl-usdr refuses the overflowing LO: {result:?}"
+        "usdr refuses the overflowing LO: {result:?}"
     );
     let board = sim.board();
     let actual = &board.trace()[start..];
     assert_eq!(
         actual,
         &expected[..actual.len()],
-        "rsl-usdr's operations are libusdr's up to the tune"
+        "usdr's operations are libusdr's up to the tune"
     );
     assert!(
         expected[actual.len()..]

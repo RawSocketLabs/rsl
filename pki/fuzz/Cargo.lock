@@ -9,6 +9,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "asn1"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "asn1-rs"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -87,6 +94,13 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "data-encoding"
@@ -262,6 +276,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pki"
+version = "0.1.0"
+dependencies = [
+ "crypto",
+ "x509",
+]
+
+[[package]]
+name = "pki-fuzz"
+version = "0.0.0"
+dependencies = [
+ "asn1",
+ "crypto",
+ "libfuzzer-sys",
+ "pki",
+ "x509",
+ "x509-parser",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -299,47 +333,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "rsl-asn1"
-version = "0.1.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
-name = "rsl-crypto"
-version = "0.1.0"
-dependencies = [
- "zeroize",
-]
-
-[[package]]
-name = "rsl-pki"
-version = "0.1.0"
-dependencies = [
- "rsl-crypto",
- "rsl-x509",
-]
-
-[[package]]
-name = "rsl-pki-fuzz"
-version = "0.0.0"
-dependencies = [
- "libfuzzer-sys",
- "rsl-asn1",
- "rsl-crypto",
- "rsl-pki",
- "rsl-x509",
- "x509-parser",
-]
-
-[[package]]
-name = "rsl-x509"
-version = "0.1.0"
-dependencies = [
- "rsl-asn1",
-]
 
 [[package]]
 name = "rusticata-macros"
@@ -502,6 +495,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "x509"
+version = "0.1.0"
+dependencies = [
+ "asn1",
 ]
 
 [[package]]

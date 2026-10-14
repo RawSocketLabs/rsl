@@ -1,4 +1,4 @@
-# rsl-netlink — design
+# netlink — design
 
 ## Placement
 
@@ -11,7 +11,7 @@ Netlink does not traverse an OSI network stack. Placing it under `link`, `networ
 or `application` would imply a false layering relationship, so `protocols/system` is the explicit
 category for local kernel/userspace protocols.
 
-The package remains independently versioned and published as `rsl-netlink`. Relocation within the
+The package remains independently versioned and published as `netlink`. Relocation within the
 monorepo does not rename its Cargo package or Rust crate and therefore does not force an API
 migration on downstream crates.
 

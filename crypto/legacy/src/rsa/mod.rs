@@ -10,7 +10,7 @@
 //! # The visible layers
 //!
 //! 1. [`RsaPublicKey`] and [`RsaPrivateKey`] import unsigned big-endian `n`, `e`, and `d`
-//!    components. They are re-exported from [`rsl_crypto::rsa`], which owns the integer engine
+//!    components. They are re-exported from [`crypto::rsa`], which owns the integer engine
 //!    and the RFC 8017 primitives so that contemporary RSASSA-PSS verification and this
 //!    historical package share one exponentiation. Nothing hides key generation, primality
 //!    testing, CRT parameters, or ASN.1 behind a convenient constructor.
@@ -41,4 +41,4 @@
 
 pub mod pkcs1v15;
 
-pub use rsl_crypto::rsa::{RSA_PRIMITIVE_SECURITY_STATUS, RsaPrivateKey, RsaPublicKey};
+pub use crypto::rsa::{RSA_PRIMITIVE_SECURITY_STATUS, RsaPrivateKey, RsaPublicKey};

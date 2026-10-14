@@ -3,11 +3,11 @@
 
 use std::fmt;
 
-use rsl_lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
-use rsl_lms7002m::{Lms7002m, Synthesizer, TuneError};
+use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
+use lms7002m::{Lms7002m, Synthesizer, TuneError};
+use lp8758::{self, Revision};
 use rsl_lowlevel::{Sequence, run_sequence};
-use rsl_lp8758::{self as lp8758, Revision};
-use rsl_sdr_frontend::FrontEndKind;
+use sdr_frontend::FrontEndKind;
 
 use crate::board::{REFERENCE_HZ, XSDR_LMS, XSDR_SUPPLIES};
 use crate::error::Error;

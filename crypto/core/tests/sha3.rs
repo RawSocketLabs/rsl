@@ -6,7 +6,7 @@
 //! Provenance: `tests/vectors/sha3/README.md`. The NIST per-step intermediate states are
 //! white-box tests beside the implementation.
 
-use rsl_crypto::digest::{
+use crypto::digest::{
     Digest,
     sha3::{Sha3_256, Shake256},
 };

@@ -5,7 +5,7 @@
 //! switch keeps its firmware in a flash of its own, which the `usdr_pcie_uram` Linux
 //! driver erases, programs and reads on request through its XMASS device, `/dev/xmassN`.
 //! The tool makes four such requests; [`SwitchFlash`] is them, implemented over the device
-//! by `transport::pcie` (feature `pcie`, Linux) for `rsl_usdr_pcie::XmassDevice`.
+//! by `transport::pcie` (feature `pcie`, Linux) for `usdr_pcie::XmassDevice`.
 //!
 //! [`update`] is the tool's update: read the IDs, erase, write the image, read it all back
 //! and compare it, except bytes `0xe00..0xf00` ([`SIGNATURE`]), which the tool does not

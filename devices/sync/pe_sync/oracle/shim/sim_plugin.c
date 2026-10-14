@@ -1,4 +1,4 @@
-// libusdr low-level transport that forwards every operation to rsl-pe-sync-sim (Rust).
+// libusdr low-level transport that forwards every operation to pe-sync-sim (Rust).
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the USB entries never match a
@@ -20,14 +20,14 @@
 #include "hw/lmx2820/lmx2820.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
-int rsl_pe_sync_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
+int pe_sync_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
                              const void* pout);
-void rsl_pe_sync_oracle_sleep_us(unsigned long long us);
+void pe_sync_oracle_sleep_us(unsigned long long us);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
 {
-    rsl_pe_sync_oracle_sleep_us(us);
+    pe_sync_oracle_sleep_us(us);
     return 0;
 }
 
@@ -53,7 +53,7 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
 {
     (void)dev;
     (void)subdev;
-    return rsl_pe_sync_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
+    return pe_sync_oracle_ls_op(op, addr, meminsz, pin, memoutsz, pout);
 }
 
 static int sim_destroy(lldev_t dev)
@@ -129,7 +129,7 @@ static void sim_attach(struct sim_dev* d)
 }
 
 // lmx2820_tune on SPI bus `bus`, SYSREF off (zeroed): solver, registers, lock wait.
-int rsl_pe_sync_oracle_lmx2820_tune(unsigned bus, uint64_t osc_in, unsigned mash_order,
+int pe_sync_oracle_lmx2820_tune(unsigned bus, uint64_t osc_in, unsigned mash_order,
                                     unsigned force_mult, uint64_t rfouta, uint64_t rfoutb)
 {
     struct sim_dev d;
@@ -149,7 +149,7 @@ struct rsl_lmx1214_request {
 };
 
 // lmx1214_solver on SPI bus 5, writing its registers, without precision mode.
-int rsl_pe_sync_oracle_lmx1214_solver(const struct rsl_lmx1214_request* r)
+int pe_sync_oracle_lmx1214_solver(const struct rsl_lmx1214_request* r)
 {
     struct sim_dev d;
     sim_attach(&d);
@@ -180,7 +180,7 @@ struct rsl_lmx1204_request {
 // succeeded, lmx1204_wait_pll_lock(.., 1000000) as pe_sync waits. The state starts as
 // lmx1204_create leaves it: zeroed but for every output's SYSREF delay (phase QCLK0 = 1,
 // I = 7, Q = 0x7f - 7).
-int rsl_pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
+int pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
 {
     struct sim_dev d;
     sim_attach(&d);

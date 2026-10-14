@@ -1,4 +1,4 @@
-//! Signing adapters joining canonical `rsl-x509` construction to `rsl-crypto` keys.
+//! Signing adapters joining canonical `x509` construction to `crypto` keys.
 //!
 //! These adapters select only the modern certificate signature identifiers supported by the
 //! normal validator. They do not allocate serials, authorize names, choose lifetimes, or turn a
@@ -7,14 +7,14 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     signature::{
         ecdsa_p256::EcdsaP256SigningKey, ecdsa_p384::EcdsaP384SigningKey, ed448::Ed448SigningKey,
         ed25519::Ed25519SigningKey,
     },
 };
-use rsl_x509::builder::{
+use x509::builder::{
     CertificateSigner, SignatureAlgorithmDer, SubjectPublicKeyInfoDer, ecdsa_signature_value,
 };
 
@@ -24,7 +24,7 @@ pub enum IssuanceError {
     /// The cryptographic signing operation failed.
     Crypto(CryptoError),
     /// The algorithm-specific signature could not be framed as canonical X.509 syntax.
-    Encoding(rsl_x509::Error),
+    Encoding(x509::Error),
 }
 
 impl fmt::Display for IssuanceError {
@@ -46,8 +46,8 @@ impl From<CryptoError> for IssuanceError {
     }
 }
 
-impl From<rsl_x509::Error> for IssuanceError {
-    fn from(error: rsl_x509::Error) -> Self {
+impl From<x509::Error> for IssuanceError {
+    fn from(error: x509::Error) -> Self {
         Self::Encoding(error)
     }
 }
@@ -70,7 +70,7 @@ impl<'a> Ed25519CertificateSigner<'a> {
     /// # Errors
     ///
     /// Canonical DER construction fails.
-    pub fn subject_public_key_info(&self) -> rsl_x509::Result<SubjectPublicKeyInfoDer> {
+    pub fn subject_public_key_info(&self) -> x509::Result<SubjectPublicKeyInfoDer> {
         SubjectPublicKeyInfoDer::ed25519(self.key.verifying_key().as_bytes())
     }
 }
@@ -78,7 +78,7 @@ impl<'a> Ed25519CertificateSigner<'a> {
 impl CertificateSigner for Ed25519CertificateSigner<'_> {
     type Error = IssuanceError;
 
-    fn signature_algorithm(&self) -> rsl_x509::Result<SignatureAlgorithmDer> {
+    fn signature_algorithm(&self) -> x509::Result<SignatureAlgorithmDer> {
         SignatureAlgorithmDer::ed25519()
     }
 
@@ -105,7 +105,7 @@ impl<'a> Ed448CertificateSigner<'a> {
     /// # Errors
     ///
     /// Canonical DER construction fails.
-    pub fn subject_public_key_info(&self) -> rsl_x509::Result<SubjectPublicKeyInfoDer> {
+    pub fn subject_public_key_info(&self) -> x509::Result<SubjectPublicKeyInfoDer> {
         SubjectPublicKeyInfoDer::ed448(self.key.verifying_key().as_bytes())
     }
 }
@@ -113,7 +113,7 @@ impl<'a> Ed448CertificateSigner<'a> {
 impl CertificateSigner for Ed448CertificateSigner<'_> {
     type Error = IssuanceError;
 
-    fn signature_algorithm(&self) -> rsl_x509::Result<SignatureAlgorithmDer> {
+    fn signature_algorithm(&self) -> x509::Result<SignatureAlgorithmDer> {
         SignatureAlgorithmDer::ed448()
     }
 
@@ -140,7 +140,7 @@ impl<'a> EcdsaP256CertificateSigner<'a> {
     /// # Errors
     ///
     /// Canonical DER construction fails.
-    pub fn subject_public_key_info(&self) -> rsl_x509::Result<SubjectPublicKeyInfoDer> {
+    pub fn subject_public_key_info(&self) -> x509::Result<SubjectPublicKeyInfoDer> {
         SubjectPublicKeyInfoDer::ecdsa_p256(self.key.verifying_key().as_bytes())
     }
 }
@@ -148,7 +148,7 @@ impl<'a> EcdsaP256CertificateSigner<'a> {
 impl CertificateSigner for EcdsaP256CertificateSigner<'_> {
     type Error = IssuanceError;
 
-    fn signature_algorithm(&self) -> rsl_x509::Result<SignatureAlgorithmDer> {
+    fn signature_algorithm(&self) -> x509::Result<SignatureAlgorithmDer> {
         SignatureAlgorithmDer::ecdsa_p256_sha256()
     }
 
@@ -176,7 +176,7 @@ impl<'a> EcdsaP384CertificateSigner<'a> {
     /// # Errors
     ///
     /// Canonical DER construction fails.
-    pub fn subject_public_key_info(&self) -> rsl_x509::Result<SubjectPublicKeyInfoDer> {
+    pub fn subject_public_key_info(&self) -> x509::Result<SubjectPublicKeyInfoDer> {
         SubjectPublicKeyInfoDer::ecdsa_p384(self.key.verifying_key().as_bytes())
     }
 }
@@ -184,7 +184,7 @@ impl<'a> EcdsaP384CertificateSigner<'a> {
 impl CertificateSigner for EcdsaP384CertificateSigner<'_> {
     type Error = IssuanceError;
 
-    fn signature_algorithm(&self) -> rsl_x509::Result<SignatureAlgorithmDer> {
+    fn signature_algorithm(&self) -> x509::Result<SignatureAlgorithmDer> {
         SignatureAlgorithmDer::ecdsa_p384_sha384()
     }
 

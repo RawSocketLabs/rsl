@@ -1,4 +1,4 @@
-# rsl-crypto-legacy
+# crypto-legacy
 
 Explicitly opt-in historical and broken cryptographic primitives for interoperability, capture
 decoding, test fixtures, and education.
@@ -15,12 +15,12 @@ has published, boundary, intermediate or state, malformed-input, and independent
 evidence. Exact source coverage is recorded in `STANDARDS.md`.
 
 ```rust
-use rsl_crypto_legacy::{SecurityStatus, digest::sha1};
+use crypto_legacy::{SecurityStatus, digest::sha1};
 
 assert_eq!(sha1::SECURITY_STATUS, SecurityStatus::Broken);
 let digest = sha1::Sha1::digest("historical bytes")?;
 assert_eq!(digest.as_bytes().len(), 20);
-# Ok::<(), rsl_crypto_legacy::CryptoError>(())
+# Ok::<(), crypto_legacy::CryptoError>(())
 ```
 
 RC4 is likewise named directly and stateful; no protocol can acquire it through a generic
@@ -31,7 +31,7 @@ DES and Triple-DES expose only typed block permutations. CBC is a separate state
 over that block-cipher contract. It accepts complete blocks and intentionally has no padding, MAC,
 record, or negotiation behavior.
 
-RSA imports raw unsigned `n`, `e`, and `d` components through the shared `rsl_crypto::rsa`
+RSA imports raw unsigned `n`, `e`, and `d` components through the shared `crypto::rsa`
 primitive so the integer engine and PKCS #1 encoding remain visible. It intentionally has no key generation, CRT, ASN.1, certificate, TLS, or
 SSH behavior. Its private operation is variable-time and unblinded; a uniform decryption error is
 not a claim of padding-oracle resistance.

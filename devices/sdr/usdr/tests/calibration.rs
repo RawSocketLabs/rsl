@@ -1,5 +1,5 @@
 //! The calibration's refusals, on the simulated board: where libusdr divides by zero
-//! (no sample rate) or would send its test tone in place of a stream's samples, rsl-usdr
+//! (no sample rate) or would send its test tone in place of a stream's samples, usdr
 //! refuses before any bus access, so the oracle has nothing to compare. Also the setters
 //! that reapply a saved result, which libusdr has no control for.
 
@@ -8,17 +8,17 @@ mod common {
 }
 
 use common::sim_bus::SimBus;
-use rsl_usdr::{
+use usdr::{
     Calibration, Device, Error, HostFormat, IqCalibration, RxConfig, StreamsConfig, WireFormat,
 };
-use rsl_usdr_sim::{BoardRevision, Imbalance, Loopback, Op, SimBoard};
+use usdr_sim::{BoardRevision, Imbalance, Loopback, Op, SimBoard};
 
 /// Every calibration.
 const ALL: Calibration = Calibration {
     tx_lo_leakage: true,
     tx_iq_imbalance: true,
     rx_iq_imbalance: true,
-    feedback: rsl_usdr::Feedback::Internal,
+    feedback: usdr::Feedback::Internal,
     analog_lo_first: false,
 };
 

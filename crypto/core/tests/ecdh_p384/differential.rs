@@ -1,7 +1,7 @@
 //! Differential ECDH P-384 evidence against the `p256` crate 0.14.0.
 
+use crypto::agreement::ecdh_p384::{EcdhP384, EcdhP384PrivateKey, EcdhP384PublicKey};
 use p384::{PublicKey, SecretKey, ecdh::diffie_hellman, elliptic_curve::sec1::ToSec1Point};
-use rsl_crypto::agreement::ecdh_p384::{EcdhP384, EcdhP384PrivateKey, EcdhP384PublicKey};
 
 fn deterministic_scalar(case: u8, multiplier: u8, offset: u8) -> [u8; 48] {
     core::array::from_fn(|index| {

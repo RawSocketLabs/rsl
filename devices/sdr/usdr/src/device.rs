@@ -5,10 +5,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use deps::tracing::warn;
 #[cfg(all(feature = "mio", target_os = "linux"))]
 use mio::{Registry, Token, Waker};
 use num_complex::Complex;
-use rsl_deps::tracing::warn;
 
 use crate::board::{
     Board, Calibration, CalibrationReport, DebugChip, NcoChannels, RateChains, RxGain,

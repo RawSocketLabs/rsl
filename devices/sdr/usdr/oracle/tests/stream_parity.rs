@@ -1,4 +1,4 @@
-//! rsl-usdr's RX stream (start, receive, stop) against libusdr's, operation for operation.
+//! usdr's RX stream (start, receive, stop) against libusdr's, operation for operation.
 
 // Only the Si5332 block and its address are used here; the fix itself is not.
 #[path = "common/baseband.rs"]
@@ -19,10 +19,10 @@ use std::time::Duration;
 use baseband::without_baseband_loop;
 use crossing::mixer_lo_block;
 use num_complex::Complex;
-use rsl_usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
@@ -36,13 +36,13 @@ enum Call {
     /// `set_tx_frequency`.
     TxFrequency(u32),
 
-    /// libusdr's numeric RX gain control `path` set to `value`; rsl-usdr's `set_rx_gain`.
+    /// libusdr's numeric RX gain control `path` set to `value`; usdr's `set_rx_gain`.
     Gain(&'static CStr, u64, RxGain),
 
-    /// libusdr's `rx/phgaincorr` set to `value`; rsl-usdr's `set_rx_iq_correction`.
+    /// libusdr's `rx/phgaincorr` set to `value`; usdr's `set_rx_iq_correction`.
     IqCorrection(u64, RxIqCorrection),
 
-    /// libusdr's `rx/path` set to a string; rsl-usdr's `set_rx_path`.
+    /// libusdr's `rx/path` set to a string; usdr's `set_rx_path`.
     Path(&'static CStr, RxPath),
 
     /// `start_rx_stream`: libusdr's create, START and sync "none", as one window.
@@ -52,7 +52,7 @@ enum Call {
     /// [`without_baseband_loop`]).
     StartWithIdleLoop(u32),
 
-    /// libusdr's `rx/dccorr` set to `value`; rsl-usdr's `set_rx_dc_trim`.
+    /// libusdr's `rx/dccorr` set to `value`; usdr's `set_rx_dc_trim`.
     DcTrim(u64, RxTrim, RxTrim),
 
     /// `receive`, with a 100 ms timeout.
@@ -107,7 +107,7 @@ impl Call {
         }
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -136,7 +136,7 @@ impl Call {
 }
 
 /// The window without libusdr's mixer-off block, which the baseband loop's mixer-on left
-/// it owing: rsl-usdr never turned the mixer on, so has nothing to turn off. The block must
+/// it owing: usdr never turned the mixer on, so has nothing to turn off. The block must
 /// be exactly libusdr's six writes.
 fn without_owed_mixer_exit(window: &[Op]) -> Vec<Op> {
     let block = mixer_lo_block(false);
@@ -147,7 +147,7 @@ fn without_owed_mixer_exit(window: &[Op]) -> Vec<Op> {
     [&window[..start], &window[start + block.len()..]].concat()
 }
 
-/// Makes `calls` in turn on fresh boards through libusdr and rsl-usdr and compares each
+/// Makes `calls` in turn on fresh boards through libusdr and usdr and compares each
 /// call's outcome and operations; returns whether each succeeded.
 fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool> {
     let mut oracle = Oracle::open(board()).expect("libusdr opens the board");
@@ -160,7 +160,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual: Vec<(Result<(), Error>, Range<usize>)> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
@@ -177,7 +177,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
         assert_eq!(
             result.is_ok(),
             expected_ok,
-            "{call:?}: libusdr ok={expected_ok}, rsl-usdr {result:?}"
+            "{call:?}: libusdr ok={expected_ok}, usdr {result:?}"
         );
         let expected = &reference.trace()[expected];
         let mut expected = expected.to_vec();
@@ -195,7 +195,7 @@ fn assert_calls_match(board: impl Fn() -> SimBoard, calls: &[Call]) -> Vec<bool>
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }
@@ -514,7 +514,7 @@ fn throttling_a_stream_matches_libusdr() {
 
 /// While a stream runs, the explicit host-ready strobe is the DMA control write each
 /// receive makes until the first packet, which the receive then makes again. (Without a
-/// stream there is no libusdr handle to call it on; rsl-usdr's `Error::NotStreaming` is
+/// stream there is no libusdr handle to call it on; usdr's `Error::NotStreaming` is
 /// in `tests/stream.rs::receiving_or_stopping_without_a_stream_is_refused`.)
 #[test]
 fn an_explicit_host_ready_matches_libusdr() {

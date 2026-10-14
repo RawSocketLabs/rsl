@@ -1,6 +1,6 @@
 //! Published ECDSA P-384/SHA-384 evidence from RFC 6979 A.2.6 and NIST CAVP SigVer/SigGen.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     signature::{Verifier, ecdsa_p384::EcdsaP384SigningKey},
 };
@@ -77,7 +77,7 @@ fn generic_and_prehashed_paths_match_the_message_path() {
     let key = support::verifying_key(RFC_6979_UX, RFC_6979_UY);
     let signature = support::signature(SAMPLE_R, SAMPLE_S);
     Verifier::verify(&key, b"sample", &signature).expect("generic dispatch verifies");
-    let digest = rsl_crypto::digest::sha2::sha384::Sha384::digest(b"sample").unwrap();
+    let digest = crypto::digest::sha2::sha384::Sha384::digest(b"sample").unwrap();
     key.verify_sha384_digest(&digest, &signature)
         .expect("caller-computed digest verifies");
 }

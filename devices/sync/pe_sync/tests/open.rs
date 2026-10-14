@@ -7,8 +7,8 @@ mod common;
 
 use common::failing_bus::{Access, FailingBus};
 use common::sim_bus::SimBus;
-use rsl_pe_sync::{Access as Direction, Device, Error};
-use rsl_pe_sync_sim::{I2cAddress, Op, SimBoard};
+use pe_sync::{Access as Direction, Device, Error};
+use pe_sync_sim::{I2cAddress, Op, SimBoard};
 
 /// The first power-off write: LEDs off (`IGPO_LED_CTRL` = 0).
 const LEDS_OFF: Op = Op::RegWrite {

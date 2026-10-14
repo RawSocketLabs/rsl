@@ -91,7 +91,7 @@ impl fmt::Debug for EcdhP384PrivateKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::{CryptoError, agreement::ecdh_p384::EcdhP384PublicKey};
+/// use crypto::{CryptoError, agreement::ecdh_p384::EcdhP384PublicKey};
 ///
 /// assert_eq!(
 ///     EcdhP384PublicKey::try_from([0_u8; 96].as_slice()),

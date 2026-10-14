@@ -401,12 +401,12 @@ impl From<TuneFault> for Error {
     }
 }
 
-/// A failed front-end probe or board access in `rsl-sdr-frontend`, as this driver reports
+/// A failed front-end probe or board access in `sdr-frontend`, as this driver reports
 /// it.
-impl From<rsl_sdr_frontend::Error> for Error {
-    fn from(error: rsl_sdr_frontend::Error) -> Self {
+impl From<sdr_frontend::Error> for Error {
+    fn from(error: sdr_frontend::Error) -> Self {
         match error {
-            rsl_sdr_frontend::Error::Bus {
+            sdr_frontend::Error::Bus {
                 chip,
                 access,
                 reg,
@@ -418,10 +418,8 @@ impl From<rsl_sdr_frontend::Error> for Error {
                 reg,
                 source,
             },
-            rsl_sdr_frontend::Error::Board { board, reason, .. } => {
-                Self::FrontEnd { board, reason }
-            }
-            rsl_sdr_frontend::Error::NoOscillatorDac => Self::NoOscillatorDac,
+            sdr_frontend::Error::Board { board, reason, .. } => Self::FrontEnd { board, reason },
+            sdr_frontend::Error::NoOscillatorDac => Self::NoOscillatorDac,
         }
     }
 }

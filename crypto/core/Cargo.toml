@@ -1,5 +1,5 @@
 [package]
-name = "rsl-crypto"
+name = "crypto"
 version = "0.1.0"
 description = "Accuracy-first, readable cryptographic primitives and protection contracts for the RSL stack."
 edition.workspace = true

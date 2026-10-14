@@ -1,10 +1,10 @@
-//! `rsl_usdr::dsp::sincos`'s test-signal conversions, tones and chirps against libusdr's
+//! `usdr::dsp::sincos`'s test-signal conversions, tones and chirps against libusdr's
 //! `usdr_dm_create` tool, compiled whole: its phase and gain conversions, its producer
 //! threads' packets (the tool's own threads filling its own ring), and its TX loop sending
 //! them to the simulated board's TX core.
 //!
 //! The tool's option handling is not compared: its `-g` clamp, its chirp-step rewrite and
-//! its option defaults are command-line policy rsl-usdr does not port (PORTING.md), so
+//! its option defaults are command-line policy usdr does not port (PORTING.md), so
 //! these tests hand both sides the same thread inputs. Phases and chirp steps wrap within a
 //! few samples here, which is signed overflow in C; the oracle builds the tool and its
 //! kernels with `-fwrapv`, so both wrap.
@@ -16,12 +16,12 @@ use std::num::{NonZeroI32, NonZeroU32};
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr::dsp::sincos::{Amplitude, Chirp, Tone, ToneF32, gain_from_dbfs, phase_from_turns};
-use rsl_usdr::{Device, HostFormat, StreamTime, StreamsConfig, SyncMode, TxConfig, WireFormat};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_oracle::dm_create::{self, Producer, ThreadInput, generate};
-use rsl_usdr_sim::{BoardRevision, SimBoard};
 use sim_bus::SimBus;
+use usdr::dsp::sincos::{Amplitude, Chirp, Tone, ToneF32, gain_from_dbfs, phase_from_turns};
+use usdr::{Device, HostFormat, StreamTime, StreamsConfig, SyncMode, TxConfig, WireFormat};
+use usdr_oracle::Oracle;
+use usdr_oracle::dm_create::{self, Producer, ThreadInput, generate};
+use usdr_sim::{BoardRevision, SimBoard};
 
 /// The tool's `ci16` full scale (`MAX_TXGEN_CI16_AMPL`).
 const FULL_SCALE: i16 = 32760;
@@ -292,7 +292,7 @@ fn tx_input(chirp: bool) -> ThreadInput {
     }
 }
 
-/// rsl-usdr's version of `tx_input(chirp)`'s generator.
+/// usdr's version of `tx_input(chirp)`'s generator.
 enum Signal {
     /// A tone.
     Tone(Tone),
@@ -340,7 +340,7 @@ fn board() -> SimBoard {
 
 /// The tool's TX loop on libusdr: the stream set up as `tx_stream_parity` sets it up, then
 /// the loop's operations and what the TX core played.
-fn tool_transmits(chirp: bool, nots: bool) -> (Vec<rsl_usdr_sim::Op>, Vec<rsl_usdr_sim::TxPacket>) {
+fn tool_transmits(chirp: bool, nots: bool) -> (Vec<usdr_sim::Op>, Vec<usdr_sim::TxPacket>) {
     let mut oracle = Oracle::open(board()).expect("libusdr opens");
     oracle.set_rx_rate(20_000_000).expect("sets the rate");
     oracle.set_tx_frequency(1_500_000_000).expect("tunes TX");
@@ -363,11 +363,11 @@ fn tool_transmits(chirp: bool, nots: bool) -> (Vec<rsl_usdr_sim::Op>, Vec<rsl_us
     )
 }
 
-/// rsl-usdr generating the same packets and sending them as the tool times them: the first
+/// usdr generating the same packets and sending them as the tool times them: the first
 /// one packet into the stream, each next right after, or all "now".
-fn rsl_transmits(chirp: bool, nots: bool) -> (Vec<rsl_usdr_sim::Op>, Vec<rsl_usdr_sim::TxPacket>) {
+fn rsl_transmits(chirp: bool, nots: bool) -> (Vec<usdr_sim::Op>, Vec<usdr_sim::TxPacket>) {
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     device
         .set_rx_sample_rate(20_000_000)
         .expect("sets the rate");
@@ -378,8 +378,8 @@ fn rsl_transmits(chirp: bool, nots: bool) -> (Vec<rsl_usdr_sim::Op>, Vec<rsl_usd
         WireFormat::Ci16,
     ))
     .with_sync(SyncMode::None);
-    device.create_streams(config).expect("rsl-usdr creates");
-    device.start_streams().expect("rsl-usdr starts");
+    device.create_streams(config).expect("usdr creates");
+    device.start_streams().expect("usdr starts");
     let start = sim.board().trace().len();
     let mut signal = Signal::new(tx_input(chirp));
     let mut packet = vec![Complex::new(0, 0); usize::try_from(TX_SAMPLES).expect("fits")];
@@ -389,14 +389,14 @@ fn rsl_transmits(chirp: bool, nots: bool) -> (Vec<rsl_usdr_sim::Op>, Vec<rsl_usd
         let at = (!nots).then_some(StreamTime::from_samples(time));
         device
             .send_with_stat(&[&packet], at, Duration::from_millis(100))
-            .expect("rsl-usdr sends");
+            .expect("usdr sends");
         time += u64::from(TX_SAMPLES);
     }
     let board = sim.board();
     (board.trace()[start..].to_vec(), board.tx_packets().to_vec())
 }
 
-/// The tool's TX loop and rsl-usdr's sends of the same signal, timed as the tool times
+/// The tool's TX loop and usdr's sends of the same signal, timed as the tool times
 /// them or "now": the same operations, and the TX core plays the same packets at the same
 /// times.
 #[test]

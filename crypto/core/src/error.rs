@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```
-//! use rsl_crypto::{CryptoError, aead::gcm::Aes128GcmTag};
+//! use crypto::{CryptoError, aead::gcm::Aes128GcmTag};
 //!
 //! let short_wire_tag = [0_u8; 15];
 //! assert_eq!(
@@ -24,7 +24,7 @@
 //! details:
 //!
 //! ```
-//! use rsl_crypto::CryptoError;
+//! use crypto::CryptoError;
 //!
 //! assert_eq!(
 //!     CryptoError::AuthenticationFailed.to_string(),

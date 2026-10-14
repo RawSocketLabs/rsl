@@ -1,4 +1,4 @@
-//! Against a real device, opt-in: `RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p rsl-usb --
+//! Against a real device, opt-in: `RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p usb --
 //! --ignored`. It claims interface `RSL_USB_TEST_INTERFACE` (default 0), detaching any kernel
 //! driver from it until the device is replugged, so point it at a device you can spare.
 #![cfg(target_os = "linux")]
@@ -6,7 +6,7 @@
 use std::env;
 use std::time::Duration;
 
-use rsl_usb::{DeviceInfo, Setup, devices};
+use usb::{DeviceInfo, Setup, devices};
 
 /// `GET_DESCRIPTOR` for the device descriptor (USB 2.0 §9.4.3, §9.6.1).
 const GET_DEVICE_DESCRIPTOR: Setup = Setup {
@@ -73,7 +73,7 @@ fn readiness_is_exclusive_deregisters_on_drop_and_holds_off_reset() {
     use std::io::ErrorKind;
 
     use mio::{Interest, Poll, Token};
-    use rsl_usb::Error;
+    use usb::Error;
 
     let (info, interface) = test_device();
     let device = info.open().unwrap();

@@ -41,7 +41,7 @@ const EXPANDERS: [I2cAddr; 4] = [
 const SENSOR_ID_REG: u8 = 0x0b;
 
 /// The ID libusdr requires (`TMP114_DEVICE_ID`): device 0x114, revision 1. A copy of the
-/// value `rsl-usdr`'s TMP114 driver checks, kept here because the board's probe needs only
+/// value `usdr`'s TMP114 driver checks, kept here because the board's probe needs only
 /// it.
 const SENSOR_ID: u16 = 0x1114;
 

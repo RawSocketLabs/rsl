@@ -1,14 +1,14 @@
-//! `rsl_usdr::dsp` against libusdr's compiled `xdsp/conv.c`: the same converters are
+//! `usdr::dsp` against libusdr's compiled `xdsp/conv.c`: the same converters are
 //! selected, their size rules agree, and every converter writes the same bytes.
 //!
 //! Float inputs stay where the C conversion to `int16_t` is defined: the scaled value lies
 //! in (-32769, 32768). Beyond it, and for NaN and infinities, C's behaviour is undefined, so
-//! no reference exists; Rust saturates there (`rsl_usdr::dsp` unit tests).
+//! no reference exists; Rust saturates there (`usdr::dsp` unit tests).
 
 use std::ops::RangeInclusive;
 
-use rsl_usdr::dsp::{Converter, SampleFormat};
-use rsl_usdr_oracle::conv::{self, Transform};
+use usdr::dsp::{Converter, SampleFormat};
+use usdr_oracle::conv::{self, Transform};
 
 use SampleFormat::{Cf32, Ci12, Ci16, F32, I12, I16};
 

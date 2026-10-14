@@ -19,11 +19,11 @@
 //! # Example
 //!
 //! ```
-//! use rsl_crypto_legacy::digest::sha1::Sha1;
+//! use crypto_legacy::digest::sha1::Sha1;
 //!
 //! let digest = Sha1::digest("abc")?;
 //! assert_eq!(&digest.as_bytes()[..4], &[0xa9, 0x99, 0x3e, 0x36]);
-//! # Ok::<(), rsl_crypto_legacy::CryptoError>(())
+//! # Ok::<(), crypto_legacy::CryptoError>(())
 //! ```
 //!
 //! # Boundaries and non-goals

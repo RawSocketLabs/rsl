@@ -58,6 +58,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
+name = "lms7002m"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
+name = "lms7002m-sim"
+version = "0.0.0"
+
+[[package]]
+name = "lp8758"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -91,25 +118,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
-name = "rsl-lms7002m"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-lms7002m-sim"
-version = "0.0.0"
-
-[[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
 dependencies = [
@@ -117,52 +125,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lp8758"
+name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "lmk05318",
  "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-sdr-frontend"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-xsdr"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m",
- "rsl-lowlevel",
- "rsl-lp8758",
- "rsl-sdr-frontend",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-xsdr-oracle"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "cc",
- "rsl-lms7002m",
- "rsl-lowlevel",
- "rsl-xsdr",
- "rsl-xsdr-sim",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-xsdr-sim"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m-sim",
  "thiserror",
 ]
 
@@ -266,4 +234,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "xsdr"
+version = "0.0.0"
+dependencies = [
+ "lms7002m",
+ "lp8758",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror",
+]
+
+[[package]]
+name = "xsdr-oracle"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "cc",
+ "lms7002m",
+ "rsl-lowlevel",
+ "thiserror",
+ "xsdr",
+ "xsdr-sim",
+]
+
+[[package]]
+name = "xsdr-sim"
+version = "0.0.0"
+dependencies = [
+ "lms7002m-sim",
+ "thiserror",
 ]

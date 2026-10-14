@@ -1,7 +1,7 @@
 //! How libusdr tells the LMS7 family members apart: HWID bits 23:16 (`xsdr_init`).
 
-use rsl_xsdr_oracle::Oracle;
-use rsl_xsdr_sim::{I2cAddress, Op, SimBoard, Variant};
+use xsdr_oracle::Oracle;
+use xsdr_sim::{I2cAddress, Op, SimBoard, Variant};
 
 /// `EFAULT`: `_xsdr_init_revx`'s "LMS8001 not detected".
 const EFAULT: i32 = 14;

@@ -3,7 +3,7 @@
 //! The board is modelled at libusdr's low-level operation seam (`ls_op`): FPGA register
 //! reads and writes (GPO/GPI), 32-bit SPI transactions to the LMS7002M, and I2C transfers
 //! to the board's support chips (LP8758 PMICs, the XTRX DAC80501). libusdr (through
-//! `rsl-xsdr-oracle`) and, later, `rsl-xsdr` drive the same model, so their recorded [`Op`]
+//! `xsdr-oracle`) and, later, `xsdr` drive the same model, so their recorded [`Op`]
 //! traces can be compared without hardware.
 //!
 //! The model covers identification, `xsdr_init` and RFIC power-up/close for XSDR and XTRX.

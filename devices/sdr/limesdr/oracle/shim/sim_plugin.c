@@ -1,5 +1,5 @@
 // libusdr low-level transport that stands in for the FT601 USB transport and forwards
-// every control operation, as LMS64C frames, to rsl-limesdr-sim (Rust).
+// every control operation, as LMS64C frames, to limesdr-sim (Rust).
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the URAM USB and PCIe entries never
@@ -30,13 +30,13 @@ _Static_assert(sizeof(proto_lms64c_t) == LMS64C_PKT_LENGTH, "an LMS64C frame is 
 _Static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "the oracle assumes a little-endian host");
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
-int rsl_limesdr_oracle_lms64c(const uint8_t* request, uint8_t* reply);
-void rsl_limesdr_oracle_sleep_us(unsigned long long us);
+int limesdr_oracle_lms64c(const uint8_t* request, uint8_t* reply);
+void limesdr_oracle_sleep_us(unsigned long long us);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
 {
-    rsl_limesdr_oracle_sleep_us(us);
+    limesdr_oracle_sleep_us(us);
     return 0;
 }
 
@@ -55,7 +55,7 @@ static int sim_exchange(uint8_t cmd, const void* data, unsigned len, void* reply
     if (lms64c_fill_packet(cmd, 0, 0, data, len, &req, 1) != 1) {
         return -EINVAL;
     }
-    int res = rsl_limesdr_oracle_lms64c((const uint8_t*)&req, (uint8_t*)&rep);
+    int res = limesdr_oracle_lms64c((const uint8_t*)&req, (uint8_t*)&rep);
     if (res) {
         return res;
     }
@@ -136,15 +136,15 @@ static int sim_custom(unsigned addr)
 }
 
 // Gateware identity through libusdr's own builder (lms64c_fill_get_fpga_info: registers
-// 0x0000-0x0003), for rsl-limesdr-oracle's tests. Nothing vendored calls the builder; the
+// 0x0000-0x0003), for limesdr-oracle's tests. Nothing vendored calls the builder; the
 // real transport presumably does at open.
-int rsl_limesdr_shim_fpga_info(uint16_t out[4])
+int limesdr_shim_fpga_info(uint16_t out[4])
 {
     _Alignas(4) proto_lms64c_t req, rep;
     if (lms64c_fill_get_fpga_info(&req) != 1) {
         return -EINVAL;
     }
-    int res = rsl_limesdr_oracle_lms64c((const uint8_t*)&req, (uint8_t*)&rep);
+    int res = limesdr_oracle_lms64c((const uint8_t*)&req, (uint8_t*)&rep);
     if (res) {
         return res;
     }
@@ -219,7 +219,7 @@ static int sim_discovery(unsigned pcount, const char** filterparams, const char*
 // usdr_dmd_create_string reports; the oracle reads the device's own errno here.
 static int s_create_errno;
 
-int rsl_limesdr_shim_create_errno(void)
+int limesdr_shim_create_errno(void)
 {
     return s_create_errno;
 }

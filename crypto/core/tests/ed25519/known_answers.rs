@@ -1,6 +1,6 @@
 //! Published pure-Ed25519 vectors from RFC 8032 §7.1.
 
-use rsl_crypto::signature::ed25519::{Ed25519Signature, Ed25519SigningKey, Ed25519VerifyingKey};
+use crypto::signature::ed25519::{Ed25519Signature, Ed25519SigningKey, Ed25519VerifyingKey};
 
 use super::support::hex;
 
@@ -57,7 +57,7 @@ fn assert_vector(seed: &str, public: &str, message: &[u8], signature: &str) {
 /// RFC 8032 §7.2 Ed25519ctx vectors `foo`, `bar`, `foo2`, and `foo3`.
 #[test]
 fn rfc_8032_ed25519ctx_vectors() {
-    use rsl_crypto::signature::ed25519::Ed25519Context;
+    use crypto::signature::ed25519::Ed25519Context;
 
     let cases = [
         (
@@ -122,7 +122,7 @@ fn rfc_8032_ed25519ctx_vectors() {
 /// RFC 8032 §7.3 Ed25519ph vector `abc` with the default empty context.
 #[test]
 fn rfc_8032_ed25519ph_vector_abc() {
-    use rsl_crypto::digest::sha2::sha512::Sha512;
+    use crypto::digest::sha2::sha512::Sha512;
 
     let signing = Ed25519SigningKey::from_seed(hex(
         "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42",

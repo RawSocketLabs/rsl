@@ -1,5 +1,5 @@
 name: "RSL blessed-version drift check"
-description: "Warn (or fail) when a repo's DIRECT deps drift off rsl-deps' blessed major line."
+description: "Warn (or fail) when a repo's DIRECT deps drift off deps' blessed major line."
 inputs:
   ref:
     description: "rsl monorepo ref to read blessed versions + checker from"

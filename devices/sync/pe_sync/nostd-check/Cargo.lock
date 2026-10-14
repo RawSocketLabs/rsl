@@ -42,10 +42,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "pe-sync-nostd-check"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lmk05318",
+ "rsl-lowlevel",
+]
 
 [[package]]
 name = "proc-macro-crate"
@@ -75,24 +91,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
-
-[[package]]
-name = "rsl-pe-sync-nostd-check"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
-]
 
 [[package]]
 name = "serde_core"

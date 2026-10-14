@@ -1,6 +1,6 @@
 //! Published ECDH P-256 evidence from RFC 5903 §8.1 and NIST CAVP ECC CDH primitive cases.
 
-use rsl_crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
+use crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
 
 use crate::{cavp_cdh_fixtures::CASES, support};
 

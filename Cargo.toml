@@ -94,33 +94,33 @@ rust-version = "1.85"
 bnb = { package = "bitsandbytes", path = "codecs/bitsandbytes/bnb", version = "0.8.0", default-features = false }
 bnb-macros = { package = "bitsandbytes-macros", path = "codecs/bitsandbytes/bnb-macros", version = "=0.8.0" }
 rawsock = { path = "transports/rawsock", version = "0.1.2", default-features = false }
-rsl-deps = { path = "deps", version = "0.1.0", default-features = false }
-rsl-netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
-rsl-crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
-rsl-crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
-rsl-asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
-rsl-x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
-rsl-pki = { path = "pki/validation", version = "0.1.0", default-features = false }
-rsl-compression = { path = "codecs/compression", version = "0.1.0", default-features = false }
+deps = { path = "deps", version = "0.1.0", default-features = false }
+netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
+crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
+crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
+asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
+x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
+pki = { path = "pki/validation", version = "0.1.0", default-features = false }
+compression = { path = "codecs/compression", version = "0.1.0", default-features = false }
 # unpublished device crates shared by the drivers
 rsl-lowlevel = { path = "devices/lowlevel", version = "0.0.0", default-features = false }
-rsl-lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
-rsl-lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-features = false }
-rsl-lmk05318 = { path = "devices/sdr/chips/lmk05318", version = "0.0.0", default-features = false }
-rsl-sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
+lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
+lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-features = false }
+lmk05318 = { path = "devices/sdr/chips/lmk05318", version = "0.0.0", default-features = false }
+sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
-rsl-usdr-sim = { path = "devices/sdr/usdr/sim" }
-rsl-usdr-pcie = { path = "devices/sdr/usdr/pcie" }
-rsl-lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
-rsl-xsdr-sim = { path = "devices/sdr/xsdr/sim" }
-rsl-lsdr-sim = { path = "devices/sdr/lsdr/sim" }
-rsl-limesdr-sim = { path = "devices/sdr/limesdr/sim" }
-rsl-pe-sync-sim = { path = "devices/sync/pe_sync/sim" }
-rsl-usb = { path = "transports/usb", version = "0.0.0" }
-rsl-error-correction = { path = "codecs/error-correction", version = "0.1.0", default-features = false }
+usdr-sim = { path = "devices/sdr/usdr/sim" }
+usdr-pcie = { path = "devices/sdr/usdr/pcie" }
+lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
+xsdr-sim = { path = "devices/sdr/xsdr/sim" }
+lsdr-sim = { path = "devices/sdr/lsdr/sim" }
+limesdr-sim = { path = "devices/sdr/limesdr/sim" }
+pe-sync-sim = { path = "devices/sync/pe_sync/sim" }
+usb = { path = "transports/usb", version = "0.0.0" }
+error-correction = { path = "codecs/error-correction", version = "0.1.0", default-features = false }
 
 # --- blessed externals used directly by owned crates ---
-# thiserror can't be routed through rsl-deps (its derive hardcodes the `thiserror` crate name).
+# thiserror can't be routed through deps (its derive hardcodes the `thiserror` crate name).
 thiserror = "2.0"
 # bnb's optional runtime deps.
 tracing = "0.1"
@@ -130,7 +130,7 @@ libc = "0.2"
 zeroize = "1"
 # rfus's parser combinators.
 winnow = "1.0"
-# rsl-usdr's sample type, matching the FFI usdr crate's `receive`.
+# usdr's sample type, matching the FFI usdr-ffi crate's `receive`.
 num-complex = { version = "0.4.6", default-features = false }
 
 # --- bnb proc-macro deps ---
@@ -154,38 +154,38 @@ mio = { version = "1.2.1", default-features = false, features = ["os-poll", "net
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Independent SHA-256 oracle used only by rsl-crypto's differential tests.
+# Independent SHA-256 oracle used only by crypto's differential tests.
 sha2 = { version = "0.11.0", default-features = false }
-# Independent SHA-3/SHAKE oracle used only by rsl-crypto's differential tests.
+# Independent SHA-3/SHAKE oracle used only by crypto's differential tests.
 sha3 = { version = "0.12.0", default-features = false }
 shake = { version = "0.1.0", default-features = false }
-# Independent HMAC oracle used only by rsl-crypto's differential tests.
+# Independent HMAC oracle used only by crypto's differential tests.
 hmac = { version = "0.13.0", default-features = false }
-# Independent HKDF oracle used only by rsl-crypto's differential tests.
+# Independent HKDF oracle used only by crypto's differential tests.
 hkdf = { version = "0.13.0", default-features = false }
-# Independent AES oracle used only by rsl-crypto's differential tests.
+# Independent AES oracle used only by crypto's differential tests.
 aes = { version = "0.9.2", default-features = false }
-# Independent GHASH oracle used only by rsl-crypto's differential tests.
+# Independent GHASH oracle used only by crypto's differential tests.
 ghash = { version = "0.6.0", default-features = false }
-# Independent AES-128-GCM oracle used only by rsl-crypto's differential tests.
+# Independent AES-128-GCM oracle used only by crypto's differential tests.
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
-# Independent X25519 oracle used only by rsl-crypto's differential tests.
+# Independent X25519 oracle used only by crypto's differential tests.
 x25519-dalek = { version = "3.0.0", default-features = false }
-# Independent Ed25519 oracle used only by rsl-crypto's differential tests.
+# Independent Ed25519 oracle used only by crypto's differential tests.
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["signature", "digest"] }
-# Independent ChaCha20-Poly1305 oracle used only by rsl-crypto's differential tests.
+# Independent ChaCha20-Poly1305 oracle used only by crypto's differential tests.
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc"] }
-# Independent P-256 and P-384 ECDH/ECDSA oracles used only by rsl-crypto's differential tests.
+# Independent P-256 and P-384 ECDH/ECDSA oracles used only by crypto's differential tests.
 p256 = { version = "0.14.0", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
 p384 = { version = "0.14.0", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
-# Independent historical-digest oracles used only by rsl-crypto-legacy tests.
+# Independent historical-digest oracles used only by crypto-legacy tests.
 sha1 = { version = "0.11.0", default-features = false }
 md5 = { package = "md-5", version = "0.11.0", default-features = false }
-# Independent RC4 oracle used only by rsl-crypto-legacy tests.
+# Independent RC4 oracle used only by crypto-legacy tests.
 rc4 = { version = "0.2.0", default-features = false }
-# Independent DES/Triple-DES oracle used only by rsl-crypto-legacy tests.
+# Independent DES/Triple-DES oracle used only by crypto-legacy tests.
 des = { version = "0.9.0", default-features = false }
-# Independent arbitrary-precision oracle used only by rsl-crypto's RSA integer tests. The library's
+# Independent arbitrary-precision oracle used only by crypto's RSA integer tests. The library's
 # RSA implementation does not depend on this package.
 num-bigint-dig = { version = "0.9.1", default-features = false, features = ["std"] }
 

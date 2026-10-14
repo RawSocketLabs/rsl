@@ -1,7 +1,7 @@
 //! Pinned C USB TX framing, status throttling and lifecycle, over the same hardware-free
 //! buffer boundary: `shim/usb_tx.c` runs libusdr's own `_usb_uram_init_txstream`,
 //! `usb_uram_send_dma_get`, `usb_uram_send_dma_commit` and `usb_uram_stream_deinitialize`,
-//! exported verbatim by `vendor.sh`; rsl-usdr's `transport/usb/tx.rs` runs unchanged.
+//! exported verbatim by `vendor.sh`; usdr's `transport/usb/tx.rs` runs unchanged.
 #![cfg(target_os = "linux")]
 
 use std::collections::VecDeque;
@@ -9,13 +9,13 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use rsl_usdr::dsp::{Converter, SampleFormat};
-use rsl_usdr::lowlevel::BusError;
-use rsl_usdr_oracle::conv;
+use usdr::dsp::{Converter, SampleFormat};
+use usdr::lowlevel::BusError;
+use usdr_oracle::conv;
 
 /// Satisfies the production TX module's normal imports without copying that module.
 mod lowlevel {
-    pub(crate) use rsl_usdr::lowlevel::{BusError, TxFill, usb_error};
+    pub(crate) use usdr::lowlevel::{BusError, TxFill, usb_error};
 }
 
 #[path = "../../src/transport/usb/tx.rs"]
@@ -181,7 +181,7 @@ impl Drop for Reference {
     }
 }
 
-/// What rsl-usdr's endpoint saw, shared with the test.
+/// What usdr's endpoint saw, shared with the test.
 #[derive(Default)]
 struct State {
     /// Sent transfers the device has not finished, oldest first.
@@ -233,7 +233,7 @@ impl tx::TxQueue for Endpoint {
     }
 }
 
-/// rsl-usdr's side: the endpoint, its device's status throttle and register file.
+/// usdr's side: the endpoint, its device's status throttle and register file.
 struct Rsl {
     /// The endpoint slot, as `UsbBus` keeps it.
     slot: Option<tx::Tx<Endpoint>>,
@@ -399,9 +399,7 @@ fn frames_match_the_pinned_c_for_full_and_partial_blocks_at_every_time() {
                 let len = usize::try_from(len).unwrap();
                 let payload = pattern(len, index);
                 let expected = reference.send(&payload, time).expect("C sends");
-                let sent = rsl
-                    .send_bytes(&payload, time, WAIT)
-                    .expect("rsl-usdr sends");
+                let sent = rsl.send_bytes(&payload, time, WAIT).expect("usdr sends");
                 assert_eq!(
                     sent.frame, expected.frame,
                     "{len} bytes of {sample_bytes}-byte samples at {time:?}"
@@ -448,7 +446,7 @@ fn every_host_format_reaches_the_wire_framed_as_libusdr_frames_it() {
                     converter.convert(&[&host], &mut [out]).expect("converts");
                     samples * 4
                 })
-                .expect("rsl-usdr sends");
+                .expect("usdr sends");
             assert_eq!(sent.frame, expected.frame, "{name}, {samples} samples");
             reference.finish();
             rsl.finish();

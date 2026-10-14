@@ -1,38 +1,38 @@
-# `rsl-deps` — the RSL blessed external-dependency stack
+# `deps` — the RSL blessed external-dependency stack
 
 One feature-gated crate that pins and re-exports the third-party crates RawSocket Labs
-libraries and applications build on. Depend on `rsl-deps` instead of pinning `thiserror`,
+libraries and applications build on. Depend on `deps` instead of pinning `thiserror`,
 `tokio`, `serde`, … by hand in every crate — versions are unified here, in one place.
 
 ```toml
 [dependencies]
-rsl-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
+deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
 ```
 
 ```rust
-use rsl_deps::prelude::*;   // ThisError, tracing macros, serde derives; EyreResult with "report"
-use rsl_deps::tokio;        // blessed async runtime, canonical name
-use rsl_deps::serde_json;
+use deps::prelude::*;   // ThisError, tracing macros, serde derives; EyreResult with "report"
+use deps::tokio;        // blessed async runtime, canonical name
+use deps::serde_json;
 ```
 
 ## Deps vs. libraries
 
 RSL's stack is split by concern:
 
-- **`rsl-deps`** (this crate) — the third-party crates we *rent*. A single source of truth for
+- **`deps`** (this crate) — the third-party crates we *rent*. A single source of truth for
   their versions, and a standing shortlist of replacement candidates.
 - **[`rsl`](https://github.com/RawSocketLabs/rsl)** — the libraries we *own* (`codec`, `proto`,
   `rawsock`, `rf`, `usdr`). Consumers wanting RSL's own products depend on that.
 - **`rsl-private`** — the private owned libraries, layered on `rsl`.
 
 The two are orthogonal: a crate that needs both blessed externals and RSL libraries depends on
-both `rsl-deps` and `rsl`. When an owned crate supersedes a rented one, the pin moves out of
-`rsl-deps` into `rsl`.
+both `deps` and `rsl`. When an owned crate supersedes a rented one, the pin moves out of
+`deps` into `rsl`.
 
 ## Features
 
 Nothing compiles until you enable a feature. Each capability re-exports one or more crates under
-their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
+their canonical names (`deps::<crate>`), plus a `prelude` of everyday items.
 
 | Feature | Re-exports |
 |---------|-----------|
@@ -59,7 +59,7 @@ their canonical names (`rsl_deps::<crate>`), plus a `prelude` of everyday items.
 | `http` | `reqwest` |
 | `tui` | `ratatui`, `color_eyre` |
 | `time` | `chrono` (crates that already depend on `tokio`) |
-| `time-core` | `time` with `formatting`, `parsing`, `macros` (sync `std` crates without `tokio`; enable `features = ["time-core"]`, then `use rsl_deps::time`) |
+| `time-core` | `time` with `formatting`, `parsing`, `macros` (sync `std` crates without `tokio`; enable `features = ["time-core"]`, then `use deps::time`) |
 | `protobuf` | `prost` |
 
 Bundles: `std-ext` (`error`+`log`+`serde`), `service` (`async`+`nats`+`parallel`+`std-ext`+`bytes`),
@@ -69,8 +69,8 @@ Bytemuck derives support the facade explicitly:
 
 ```rust
 #[repr(C)]
-#[derive(Clone, Copy, rsl_deps::bytemuck::Pod, rsl_deps::bytemuck::Zeroable)]
-#[bytemuck(crate = "rsl_deps::bytemuck")]
+#[derive(Clone, Copy, deps::bytemuck::Pod, deps::bytemuck::Zeroable)]
+#[bytemuck(crate = "deps::bytemuck")]
 struct Pair {
     first: i16,
     second: i16,

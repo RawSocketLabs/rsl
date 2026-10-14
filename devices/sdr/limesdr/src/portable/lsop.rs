@@ -5,7 +5,7 @@
 //! In libusdr the FT601 transport does that carrying (`lowlevel/usb_ft601/`), and it is not
 //! in the pinned source. The mapping here is the oracle shim's
 //! (`oracle/shim/sim_plugin.c`): an assumption, stated per operation, which the golden's
-//! `req`/`rep` lines encode. `rsl-limesdr-oracle` proves the driver and the shim agree, not
+//! `req`/`rep` lines encode. `limesdr-oracle` proves the driver and the shim agree, not
 //! that the board's firmware does.
 
 use rsl_lowlevel::{FpgaAccess, SpiAddr};

@@ -1,4 +1,4 @@
-# rsl-netlink — agent & contributor guide
+# netlink — agent & contributor guide
 
 > Inherits the workspace-root `../../../AGENTS.md` and protocol-wide `../../AGENTS.md`.
 
@@ -20,7 +20,7 @@ the Linux kernel Netlink documentation; its future refcheck corpus name is `netl
 
 ## Rules
 
-- Preserve the public package/import names `rsl-netlink` / `rsl_netlink`; the filesystem category
+- Preserve the public package/import names `netlink` / `netlink`; the filesystem category
   is not part of the consumer API.
 - Treat native endianness, four-byte alignment, stored lengths, nested attribute flags, sequence
   numbers, port IDs, multipart termination, and signed kernel errno conversion as wire semantics.
@@ -43,7 +43,7 @@ the Linux kernel Netlink documentation; its future refcheck corpus name is `netl
 - Add negative tests for malformed lengths/alignment and mismatched response state.
 - Linux integration tests may query live route and Generic Netlink state but must not mutate host
   networking unless explicitly privileged and isolated.
-- Run `cargo test -p rsl-netlink` and `cargo clippy -p rsl-netlink --all-targets` after changes.
+- Run `cargo test -p netlink` and `cargo clippy -p netlink --all-targets` after changes.
 
 ## Scope
 

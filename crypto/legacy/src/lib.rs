@@ -2,9 +2,9 @@
 //!
 //! > **Do not use this package to design new protection.**
 //!
-//! `rsl-crypto-legacy` exists for decoding historical traffic, controlled interoperability labs,
+//! `crypto-legacy` exists for decoding historical traffic, controlled interoperability labs,
 //! test fixtures, and teaching why obsolete constructions failed. It is a separate package so
-//! enabling contemporary `rsl-crypto` never makes these algorithms available accidentally.
+//! enabling contemporary `crypto` never makes these algorithms available accidentally.
 //!
 //! # Non-negotiation rule
 //!
@@ -35,8 +35,8 @@ pub mod cipher;
 pub mod digest;
 pub mod rsa;
 
-pub use rsl_crypto::security::{SecurityClassification, SecurityStatus};
-pub use rsl_crypto::{CryptoError, Result, Secret, SecretBytes, SecretVec, random::RandomSource};
+pub use crypto::security::{SecurityClassification, SecurityStatus};
+pub use crypto::{CryptoError, Result, Secret, SecretBytes, SecretVec, random::RandomSource};
 
 /// The strongest lifecycle class permitted anywhere in this package.
 ///

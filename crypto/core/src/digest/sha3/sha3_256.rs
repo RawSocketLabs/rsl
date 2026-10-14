@@ -53,11 +53,11 @@ impl fmt::Debug for Sha3_256Digest {
 /// An incremental SHA3-256 computation.
 ///
 /// ```
-/// use rsl_crypto::digest::sha3::Sha3_256;
+/// use crypto::digest::sha3::Sha3_256;
 ///
 /// let digest = Sha3_256::digest("")?;
 /// assert_eq!(&digest.as_bytes()[..4], &[0xa7, 0xff, 0xc6, 0xf8]);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct Sha3_256 {
     sponge: Sponge<RATE>,

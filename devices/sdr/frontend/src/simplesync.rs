@@ -48,5 +48,5 @@ const POWER_UP: Duration = Duration::from_millis(50);
 pub(crate) fn detect(bus: &mut dyn Bus) -> Result<bool, Error> {
     FrontEndGpio::run(bus, &SETUP)?;
     bus.sleep(POWER_UP);
-    Ok(clock_id::read(bus, LMK05318, rsl_lmk05318::NAME)? == rsl_lmk05318::ID)
+    Ok(clock_id::read(bus, LMK05318, lmk05318::NAME)? == lmk05318::ID)
 }

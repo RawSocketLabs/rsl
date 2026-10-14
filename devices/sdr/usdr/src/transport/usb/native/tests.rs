@@ -19,7 +19,7 @@ use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use num_complex::Complex;
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 use super::{BoardUsb, simulated_device};
 use crate::Device;

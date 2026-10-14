@@ -4,7 +4,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use rsl_deps::tracing::{debug, warn};
+use deps::tracing::{debug, warn};
 
 use super::Board;
 use super::board::Corrections;

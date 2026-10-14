@@ -1,5 +1,5 @@
 [package]
-name = "rsl-sdr-frontend"
+name = "sdr-frontend"
 version = "0.0.0"
 description = "libusdr's front-end board probe and the boards it brings up, shared by the pure-Rust SDR drivers."
 publish = false
@@ -10,7 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
-rsl-lmk05318.workspace = true
+lmk05318.workspace = true
 rsl-lowlevel.workspace = true
 thiserror = { workspace = true, optional = true }
 

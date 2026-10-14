@@ -5,7 +5,7 @@
 //! operation to the board installed by [`Oracle::open`] (or, for libusdr's multi-device
 //! aggregate, to each of the boards [`Oracle::open_multi`] installs), and libusdr's `usleep`
 //! advances the virtual clock of the board it addressed last. Each board's trace is the
-//! reference `rsl-usdr` is checked against.
+//! reference `usdr` is checked against.
 //!
 //! libusdr keeps process-global state, so one [`Oracle`] exists at a time: [`Oracle::open`]
 //! blocks until any other instance is closed.
@@ -20,7 +20,7 @@ use std::slice;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_usdr_sim::{I2cAddress, SimBoard};
+use usdr_sim::{I2cAddress, SimBoard};
 
 pub mod bitstream;
 pub mod cal;
@@ -321,7 +321,7 @@ impl Oracle {
         if errno == 0 { Ok(out) } else { Err(errno) }
     }
 
-    /// Sets the RX sample rate in samples per second, leaving TX unset, as the FFI `usdr`
+    /// Sets the RX sample rate in samples per second, leaving TX unset, as the FFI `usdr-ffi`
     /// crate does: `/dm/rate/rxtxadcdac` with `{rate, 0, 0, 0}`.
     ///
     /// # Errors
@@ -446,7 +446,7 @@ impl Oracle {
         unsafe { self.set_uint(path, pointer) }
     }
 
-    /// Creates the RX stream the FFI `usdr` crate uses: `/ll/srx/0`, `ci16`, channel 0, with
+    /// Creates the RX stream the FFI `usdr-ffi` crate uses: `/ll/srx/0`, `ci16`, channel 0, with
     /// `samples_per_packet` samples per packet.
     ///
     /// # Errors
@@ -531,7 +531,7 @@ impl Oracle {
     }
 
     /// Lets the RX stream run without synchronisation (`usdr_dms_sync(dev, "none", ..)`), as
-    /// the FFI `usdr` crate does after starting it.
+    /// the FFI `usdr-ffi` crate does after starting it.
     ///
     /// # Errors
     ///
@@ -1242,7 +1242,7 @@ pub fn pcie_abi() -> Vec<(String, u64)> {
 
 #[cfg(test)]
 mod tests {
-    use rsl_usdr_sim::BoardRevision;
+    use usdr_sim::BoardRevision;
 
     use super::*;
 

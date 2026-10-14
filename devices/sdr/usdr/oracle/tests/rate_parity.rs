@@ -1,4 +1,4 @@
-//! rsl-usdr's sample-rate changes, for RX, TX or both chains, against libusdr's, operation
+//! usdr's sample-rate changes, for RX, TX or both chains, against libusdr's, operation
 //! for operation.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -6,10 +6,10 @@ mod sim_bus;
 
 use std::ops::Range;
 
-use rsl_usdr::{Device, Error};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The RX chain's configuration port (`REG_CFG_PHY_0`).
 const REG_RX_PHY: u32 = 56;
@@ -23,13 +23,13 @@ const FIR_LOAD: u32 = 64;
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
 enum Call {
-    /// libusdr's `/dm/rate/rxtxadcdac` with `{rate, 0}`; rsl-usdr's `set_rx_sample_rate`.
+    /// libusdr's `/dm/rate/rxtxadcdac` with `{rate, 0}`; usdr's `set_rx_sample_rate`.
     Rx(u32),
 
-    /// libusdr's `/dm/rate/rxtxadcdac` with `{0, rate}`; rsl-usdr's `set_tx_sample_rate`.
+    /// libusdr's `/dm/rate/rxtxadcdac` with `{0, rate}`; usdr's `set_tx_sample_rate`.
     Tx(u32),
 
-    /// libusdr's `/dm/rate/master`; rsl-usdr's `set_sample_rate`.
+    /// libusdr's `/dm/rate/master`; usdr's `set_sample_rate`.
     Both(u32),
 
     /// `set_tx_frequency`, every channel.
@@ -47,7 +47,7 @@ impl Call {
         }
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rx(rate) => device.set_rx_sample_rate(rate),
@@ -58,14 +58,14 @@ impl Call {
     }
 }
 
-/// Sets each of `rates`, RX rates, in turn on fresh boards through libusdr and rsl-usdr,
+/// Sets each of `rates`, RX rates, in turn on fresh boards through libusdr and usdr,
 /// and compares the operations of every call.
 fn assert_rate_changes_match(revision: BoardRevision, rates: &[u32]) {
     let calls: Vec<Call> = rates.iter().copied().map(Call::Rx).collect();
     assert_calls_match_on(revision, || SimBoard::new(revision), &calls);
 }
 
-/// Makes `calls` in turn on fresh boards made by `board`, through libusdr and rsl-usdr,
+/// Makes `calls` in turn on fresh boards made by `board`, through libusdr and usdr,
 /// and compares the operations of every call. Returns libusdr's trace and each call's
 /// window in it.
 fn assert_calls_match_on(
@@ -85,12 +85,12 @@ fn assert_calls_match_on(
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual_windows: Vec<Range<usize>> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
         if let Err(error) = call.on_rsl(&mut device) {
-            panic!("rsl-usdr refuses {call:?}: {error}");
+            panic!("usdr refuses {call:?}: {error}");
         }
         actual_windows.push(start..sim.board().trace().len());
     }
@@ -101,7 +101,7 @@ fn assert_calls_match_on(
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{revision:?} {call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{revision:?} {call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }
@@ -253,7 +253,7 @@ fn both_chains_and_tx_bandwidth_following_match_libusdr() {
 }
 
 /// libusdr's `{rx, tx}` with two different rates runs both chains at the RX rate: the
-/// same operations as both chains at that rate (characterization of why rsl-usdr offers
+/// same operations as both chains at that rate (characterization of why usdr offers
 /// no separate rates).
 #[test]
 fn different_rx_and_tx_rates_are_libusdrs_rx_rate_for_both() {
@@ -275,7 +275,7 @@ fn different_rx_and_tx_rates_are_libusdrs_rx_rate_for_both() {
     assert_eq!(mixed, both, "the TX rate changes nothing");
 }
 
-/// libusdr refuses two zero rates and out-of-range ones before any operation; rsl-usdr
+/// libusdr refuses two zero rates and out-of-range ones before any operation; usdr
 /// cannot express the first, and refuses the others as libusdr does, untouched.
 #[test]
 fn out_of_range_rates_are_refused_by_both_before_any_operation() {
@@ -288,7 +288,7 @@ fn out_of_range_rates_are_refused_by_both_before_any_operation() {
     drop(oracle.close());
 
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     let start = sim.board().trace().len();
     for result in [
         device.set_tx_sample_rate(80_000_001),

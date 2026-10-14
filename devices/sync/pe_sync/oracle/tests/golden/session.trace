@@ -1,10 +1,10 @@
-# rsl-pe-sync-oracle CHARACTERIZATION golden, not a specification: what the pinned
-# libusdr does on rsl-pe-sync-sim's modelled board (see devices/sync/pe_sync/AGENTS.md).
+# pe-sync-oracle CHARACTERIZATION golden, not a specification: what the pinned
+# libusdr does on pe-sync-sim's modelled board (see devices/sync/pe_sync/AGENTS.md).
 # pin: 3670f15de8e49691db455da03166c17f6dd5770a
 # captured: 2026-10-12
 # scenario: usdr_dmd_create_string("") (power-on, status, clock tree), usdr_dmd_close.
 # Re-bless (RSL_PE_SYNC_BLESS=1) only for a PIN bump or a deliberate sim-model change.
-# Lines: rsl_pe_sync_sim::Op's Display; `== <phase>` opens each phase.
+# Lines: pe_sync_sim::Op's Display; `== <phase>` opens each phase.
 == open
 reg-wr 0x0000 0x0000000d
 reg-wr 0x0000 0x01000003

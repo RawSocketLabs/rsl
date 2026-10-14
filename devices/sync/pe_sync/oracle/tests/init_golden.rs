@@ -2,7 +2,7 @@
 //! configuration, then close) on a fresh simulated board, operation for operation.
 //!
 //! This records what the pinned C does against the sim's modelled chips; it is not a
-//! specification. It exists so the future `rsl-pe-sync` can be compared op-for-op against a
+//! specification. It exists so the future `pe-sync` can be compared op-for-op against a
 //! fixed reference: render its sim trace with `Op`'s `Display` and compare with the body.
 //! A mismatch means libusdr, the sim or this harness changed. Re-bless only for a PIN bump
 //! or a deliberate sim-model change, with `RSL_PE_SYNC_BLESS=1`, then review the fixture
@@ -13,8 +13,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
-use rsl_pe_sync_oracle::Oracle;
-use rsl_pe_sync_sim::SimBoard;
+use pe_sync_oracle::Oracle;
+use pe_sync_sim::SimBoard;
 
 /// When the fixture was last captured; written into a re-blessed header.
 const CAPTURED: &str = "2026-10-12";
@@ -59,13 +59,13 @@ fn session() -> String {
 /// The fixture's provenance header.
 fn header() -> String {
     format!(
-        "# rsl-pe-sync-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
-         # libusdr does on rsl-pe-sync-sim's modelled board (see devices/sync/pe_sync/AGENTS.md).\n\
+        "# pe-sync-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
+         # libusdr does on pe-sync-sim's modelled board (see devices/sync/pe_sync/AGENTS.md).\n\
          # pin: {pin}\n\
          # captured: {CAPTURED}\n\
          # scenario: usdr_dmd_create_string(\"\") (power-on, status, clock tree), usdr_dmd_close.\n\
          # Re-bless (RSL_PE_SYNC_BLESS=1) only for a PIN bump or a deliberate sim-model change.\n\
-         # Lines: rsl_pe_sync_sim::Op's Display; `== <phase>` opens each phase.\n",
+         # Lines: pe_sync_sim::Op's Display; `== <phase>` opens each phase.\n",
         pin = pin(),
     )
 }

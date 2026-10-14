@@ -59,6 +59,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -69,6 +76,36 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "pe-sync"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "lmk05318",
+ "rsl-lowlevel",
+ "thiserror",
+]
+
+[[package]]
+name = "pe-sync-oracle"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "cc",
+ "lmk05318",
+ "pe-sync",
+ "pe-sync-sim",
+ "rsl-lowlevel",
+ "thiserror",
+]
+
+[[package]]
+name = "pe-sync-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "pin-project-lite"
@@ -104,44 +141,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
 name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "rsl-pe-sync"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-pe-sync-oracle"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "cc",
- "rsl-lmk05318",
- "rsl-lowlevel",
- "rsl-pe-sync",
- "rsl-pe-sync-sim",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-pe-sync-sim"
 version = "0.0.0"
 dependencies = [
  "thiserror",

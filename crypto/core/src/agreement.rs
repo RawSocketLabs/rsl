@@ -13,7 +13,7 @@
 //! # Generic use
 //!
 //! ```
-//! use rsl_crypto::{Result, agreement::{KeyAgreement, x25519::X25519}};
+//! use crypto::{Result, agreement::{KeyAgreement, x25519::X25519}};
 //!
 //! fn agree<A: KeyAgreement>(
 //!     private_key: &A::PrivateKey,
@@ -22,13 +22,13 @@
 //!     A::agree(private_key, peer_public_key)
 //! }
 //!
-//! # use rsl_crypto::agreement::x25519::{X25519PrivateKey, X25519PublicKey};
+//! # use crypto::agreement::x25519::{X25519PrivateKey, X25519PublicKey};
 //! # let private_key = X25519PrivateKey::new([0x42; 32]);
 //! # let peer_private_key = X25519PrivateKey::new([0x24; 32]);
 //! # let peer_public_key: X25519PublicKey = X25519::public_key(&peer_private_key);
 //! let shared_secret = agree::<X25519>(&private_key, &peer_public_key)?;
 //! assert_eq!(shared_secret.expose_secret().len(), 32);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 use crate::Result;

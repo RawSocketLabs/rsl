@@ -11,7 +11,7 @@
 //!
 //! ```
 //! use num_complex::Complex;
-//! use rsl_usdr::dsp::sincos::{Amplitude, Tone, gain_from_dbfs, phase_from_turns};
+//! use usdr::dsp::sincos::{Amplitude, Tone, gain_from_dbfs, phase_from_turns};
 //!
 //! let amplitude = Amplitude {
 //!     gain: gain_from_dbfs(-6.0, 32760).expect("within int16_t"),

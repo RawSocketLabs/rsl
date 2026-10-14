@@ -2,7 +2,7 @@
 //! close) on a fresh simulated board, operation for operation.
 //!
 //! These record what the pinned C does against the sim's modelled chips; they are not a
-//! specification. They exist so the future `rsl-xsdr` can be compared op-for-op against a
+//! specification. They exist so the future `xsdr` can be compared op-for-op against a
 //! fixed reference: render its sim trace with `Op`'s `Display` and compare with the body.
 //! A mismatch means libusdr, the sim or this harness changed. Re-bless only for a PIN bump
 //! or a deliberate sim-model change, with `RSL_XSDR_BLESS=1`, then review the fixture diff
@@ -13,8 +13,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
-use rsl_xsdr_oracle::Oracle;
-use rsl_xsdr_sim::{SimBoard, Variant};
+use xsdr_oracle::Oracle;
+use xsdr_sim::{SimBoard, Variant};
 
 /// When the fixtures were last captured; written into a re-blessed header.
 const CAPTURED: &str = "2026-10-12";
@@ -62,14 +62,14 @@ fn session(variant: Variant) -> String {
 /// The provenance header of `variant`'s fixture.
 fn header(variant: Variant, label: &str) -> String {
     format!(
-        "# rsl-xsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
-         # libusdr does on rsl-xsdr-sim's modelled board (see devices/sdr/xsdr/AGENTS.md).\n\
+        "# xsdr-oracle CHARACTERIZATION golden, not a specification: what the pinned\n\
+         # libusdr does on xsdr-sim's modelled board (see devices/sdr/xsdr/AGENTS.md).\n\
          # pin: {pin}\n\
          # variant: {label} (HWID {hwid:#010x})\n\
          # captured: {CAPTURED}\n\
          # scenario: usdr_dmd_create_string(\"\"), /dm/power/en = 1, usdr_dmd_close.\n\
          # Re-bless (RSL_XSDR_BLESS=1) only for a PIN bump or a deliberate sim-model change.\n\
-         # Lines: rsl_xsdr_sim::Op's Display; `== <phase>` opens each phase.\n",
+         # Lines: xsdr_sim::Op's Display; `== <phase>` opens each phase.\n",
         pin = pin(),
         hwid = u32::from(variant.device_id()) << 16,
     )

@@ -1,14 +1,14 @@
 //! The harness for stream parity: libusdr runs a whole RX stream lifecycle on the sim, and
 //! each call's operations can be isolated.
 //!
-//! rsl-usdr has no stream API yet; these checks pin where libusdr's calls end, from
+//! usdr has no stream API yet; these checks pin where libusdr's calls end, from
 //! `stream_sfetrx4_dma32.c` and `m2_lm6_1.c`, so the parity test that follows the port
 //! compares exactly those windows.
 
 use std::ops::Range;
 
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The RX DSP chain's configuration port (`REG_CFG_PHY_0`).
 const PHY_RX: u32 = 56;

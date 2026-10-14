@@ -10,24 +10,24 @@ no cross-repo version pinning to keep in sync.
 - **`bitsandbytes`** (`codecs/bitsandbytes/bnb`) + **`bitsandbytes-macros`** — the owned, bit-aware
   binary codec (imported as `bnb`). `no_std`, zero `unsafe`.
 - **`rawsock`** — dual-use, layered raw-packet I/O (L2/L3/L4).
-- **`rsl-crypto`** (`crypto/core/`) — accuracy-first cryptographic primitives and protection
+- **`crypto`** (`crypto/core/`) — accuracy-first cryptographic primitives and protection
   contracts, including a readable AES-128-GCM path designed to make every byte transformation
   inspectable and independently testable.
-- **`rsl-crypto-legacy`** (`crypto/legacy/`) — separately opted-in historical and broken
+- **`crypto-legacy`** (`crypto/legacy/`) — separately opted-in historical and broken
   primitives for controlled interoperability, capture decoding, fixtures, and teaching; it is
   never included by the facade's bundles.
-- **`rsl-asn1`**, **`rsl-x509`**, **`rsl-pki`** (`pki/*`) — strict DER transport, borrowed
+- **`asn1`**, **`x509`**, **`pki`** (`pki/*`) — strict DER transport, borrowed
   certificate syntax with exact signed-byte preservation, and fail-closed path validation.
-- **`rsl-compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.
-- **`rsl-error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
+- **`compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.
+- **`error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
 - **`rfus`** — RF frequency / sample-rate / scan-target parsing.
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
   crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, and `dns`, plus
-  **`rsl-netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
+  **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
-- **`rsl-deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
+- **`deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
 - **`usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys`** (`bindings/*`) — FFI/SDR bindings
   (excluded from the default build; need native toolchains/libraries).
 
@@ -39,7 +39,7 @@ no cross-repo version pinning to keep in sync.
 
 ## Consuming
 
-Depend on an individual crate, or on the `rsl` facade for the owned libraries and `rsl-deps`
+Depend on an individual crate, or on the `rsl` facade for the owned libraries and `deps`
 for blessed externals. See each crate's README and `rsl/README.md`.
 
 ## Developing

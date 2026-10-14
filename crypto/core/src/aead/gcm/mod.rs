@@ -77,7 +77,7 @@
 //! NIST's `AES_GCM.pdf` Example 1 publishes this key, nonce, empty ciphertext, and tag:
 //!
 //! ```
-//! use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
+//! use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
 //!
 //! let algorithm = Aes128Gcm::new(Aes128GcmKey::new([
 //!     0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c,
@@ -96,7 +96,7 @@
 //!         0x4d, 0xbc, 0xd2, 0x28, 0x87, 0xbb, 0xb4, 0x18,
 //!     ]),
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Cleartext AAD on the wire
@@ -105,7 +105,7 @@
 //! receiver supplies the parsed header bytes as AAD when opening.
 //!
 //! ```
-//! use rsl_crypto::{CryptoError, aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}};
+//! use crypto::{CryptoError, aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce}};
 //!
 //! let algorithm = Aes128Gcm::new(Aes128GcmKey::new([0x42; 16]));
 //! // Fixed only for this isolated example. A protocol must never reuse a key/nonce pair.
@@ -123,7 +123,7 @@
 //!     algorithm.open(&nonce, &changed_header, sealed.ciphertext(), sealed.tag()),
 //!     Err(CryptoError::AuthenticationFailed),
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Parsing detached wire values
@@ -132,7 +132,7 @@
 //! work:
 //!
 //! ```
-//! use rsl_crypto::{CryptoError, aead::gcm::{Aes128GcmNonce, Aes128GcmTag}};
+//! use crypto::{CryptoError, aead::gcm::{Aes128GcmNonce, Aes128GcmTag}};
 //!
 //! let nonce_bytes = [0x11; 12];
 //! let tag_bytes = [0x22; 16];
@@ -144,7 +144,7 @@
 //!     Aes128GcmTag::try_from(&tag_bytes[..15]),
 //!     Err(CryptoError::InvalidLength { .. }),
 //! ));
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and unsupported profiles

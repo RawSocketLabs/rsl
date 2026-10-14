@@ -1,11 +1,11 @@
 # Blessed external versions & drift governance
 
-`rsl-deps` is the single source of truth for the versions of the blessed third-party crates.
-Most consume through the facade (`use rsl_deps::tokio`), which unifies their versions automatically.
+`deps` is the single source of truth for the versions of the blessed third-party crates.
+Most consume through the facade (`use deps::tokio`), which unifies their versions automatically.
 But derive-macro crates that hardcode their own crate name (serde/thiserror/utoipa) can't route
 through a re-export, so consumers keep those as **direct deps** — and this is how we still govern
 them. Bytemuck is the exception: its derives accept
-`#[bytemuck(crate = "rsl_deps::bytemuck")]`, so the `pod` capability remains facade-only.
+`#[bytemuck(crate = "deps::bytemuck")]`, so the `pod` capability remains facade-only.
 
 ## How it works
 

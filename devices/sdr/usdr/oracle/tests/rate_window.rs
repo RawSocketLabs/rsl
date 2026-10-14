@@ -1,10 +1,10 @@
 //! The harness for sample-rate parity: libusdr's trace of one RX rate change, isolated.
 //!
-//! rsl-usdr has no sample-rate API yet; these checks pin where libusdr's rate call starts
+//! usdr has no sample-rate API yet; these checks pin where libusdr's rate call starts
 //! and ends, so the parity test that follows the port compares exactly that window.
 
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, I2cAddress, Op, SimBoard};
 
 /// The LP8758 PMIC.
 const PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };

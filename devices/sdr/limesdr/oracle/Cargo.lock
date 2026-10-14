@@ -58,6 +58,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "limesdr"
+version = "0.0.0"
+dependencies = [
+ "lms7002m",
+ "rsl-lowlevel",
+ "thiserror",
+]
+
+[[package]]
+name = "limesdr-oracle"
+version = "0.0.0"
+dependencies = [
+ "cc",
+ "limesdr",
+ "limesdr-sim",
+ "thiserror",
+]
+
+[[package]]
+name = "limesdr-sim"
+version = "0.0.0"
+dependencies = [
+ "lms7002m-sim",
+]
+
+[[package]]
+name = "lms7002m"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+]
+
+[[package]]
+name = "lms7002m-sim"
+version = "0.0.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -89,44 +127,6 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "rsl-limesdr"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m",
- "rsl-lowlevel",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-limesdr-oracle"
-version = "0.0.0"
-dependencies = [
- "cc",
- "rsl-limesdr",
- "rsl-limesdr-sim",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-limesdr-sim"
-version = "0.0.0"
-dependencies = [
- "rsl-lms7002m-sim",
-]
-
-[[package]]
-name = "rsl-lms7002m"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lowlevel",
-]
-
-[[package]]
-name = "rsl-lms7002m-sim"
-version = "0.0.0"
 
 [[package]]
 name = "rsl-lowlevel"

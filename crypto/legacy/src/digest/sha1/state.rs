@@ -4,7 +4,7 @@ use core::fmt;
 use zeroize::Zeroize;
 
 use super::compression::{BLOCK_LEN, INITIAL_STATE, compress};
-use rsl_crypto::{CryptoError, Result, digest::Digest};
+use crypto::{CryptoError, Result, digest::Digest};
 
 const OUTPUT_LEN: usize = 20;
 const LENGTH_START: usize = 56;

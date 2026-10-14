@@ -1,6 +1,6 @@
 //! Authentication-failure, empty-input, and generic-contract evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError, RandomSource, Result,
     aead::{
         Aead,

@@ -4,7 +4,7 @@ use aes::{
     Aes128 as ReferenceAes128,
     cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, KeyInit},
 };
-use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 
 /// Differential evidence across deterministic key and block variation.
 #[test]

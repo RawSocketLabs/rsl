@@ -1,6 +1,6 @@
 //! Malformed-input, strictness, trait, and deterministic-signing evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError, Result,
     random::RandomSource,
     signature::{Signer, Verifier, ed25519::*},
@@ -109,7 +109,7 @@ fn caller_entropy_source_generates_the_seed() {
 /// RFC 8032 §5.1-derived evidence: context length limits and variant separation.
 #[test]
 fn context_length_limits_and_variant_separation_are_enforced() {
-    use rsl_crypto::digest::sha2::sha512::Sha512;
+    use crypto::digest::sha2::sha512::Sha512;
 
     assert_eq!(
         Ed25519Context::new(b"").err(),

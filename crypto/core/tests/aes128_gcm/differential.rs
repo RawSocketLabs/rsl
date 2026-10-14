@@ -1,7 +1,7 @@
 //! Differential comparison with development-only `RustCrypto` `aes-gcm` 0.11.1.
 
 use aes_gcm::{AeadInOut, Aes128Gcm as OracleAes128Gcm, KeyInit};
-use rsl_crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
+use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
 
 const LENGTHS: [usize; 14] = [0, 1, 7, 15, 16, 17, 31, 32, 33, 47, 63, 64, 65, 129];
 
