@@ -52,7 +52,7 @@ dns       = { path = "../protocols/application/dns", version = "0.1.0", optional
 rawsock = { workspace = true, optional = true }
 
 # RF frequency / sample-rate / scan-target parsing.
-rfus = { path = "../rf/rfus", version = "0.1.0", optional = true }
+rfus = { path = "../types/rfus", version = "0.1.0", optional = true }
 
 # FFI bindings (need a C++ toolchain + system libs to build; opt-in only, off by default).
 usdr-ffi = { path = "../bindings/usdr", version = "0.1.0", optional = true }

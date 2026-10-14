@@ -22,7 +22,7 @@ no cross-repo version pinning to keep in sync.
 - **`compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.
 - **`error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
-- **`rfus`** (`rf/rfus`) — RF frequency / sample-rate / scan-target parsing.
+- **`rfus`** (`types/rfus`) — RF frequency / sample-rate / scan-target parsing.
 - **`devices/*`** — pure-Rust device drivers with their simulators, parity oracles and shared
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer

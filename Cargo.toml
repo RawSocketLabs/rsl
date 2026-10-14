@@ -18,7 +18,7 @@ members = [
     "codecs/compression",
     "codecs/error-correction",
     # RF parsing
-    "rf/rfus",
+    "types/rfus",
     # the register/SPI/I2C seam and sequence types the device drivers share
     "devices/hal",
     # LP8758 PMIC register values shared by the SDR drivers
