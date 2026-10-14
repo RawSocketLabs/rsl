@@ -1,4 +1,4 @@
-//! **demos** — runnable dual-use demonstrations for the RSL protocol stack.
+//! **protocol-examples** — runnable dual-use demonstrations for the RSL protocol stack.
 //!
 //! This crate has no public API; it exists as a home for `examples/` that **compose forged
 //! packets** with the protocol crates and **inject** them via `rawsock`'s privileged backends:
@@ -12,8 +12,8 @@
 //! printing the composed bytes when unprivileged). Run one with, e.g.:
 //!
 //! ```text
-//! cargo run -p demos --example spoof_udp
-//! sudo -E cargo run -p demos --example forge_arp -- eth0
+//! cargo run -p protocol-examples --example spoof_udp
+//! sudo -E cargo run -p protocol-examples --example forge_arp -- eth0
 //! ```
 //!
 //! These are for **authorized testing only** — spoofing and ARP poisoning on a network you do

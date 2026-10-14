@@ -1,7 +1,7 @@
 //! **spoof_udp** — compose a UDP datagram with a **forged source IP** and inject it at L3.
 //!
 //! The dual-use payoff: the `ip` layer stores whatever source address you give it, so we can
-//! impersonate another host. Run with `cargo run -p demos --example spoof_udp` (composing works
+//! impersonate another host. Run with `cargo run -p protocol-examples --example spoof_udp` (composing works
 //! unprivileged; the raw send needs `CAP_NET_RAW`). **Authorized testing only.**
 #![allow(clippy::print_stdout)]
 

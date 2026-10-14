@@ -72,8 +72,8 @@ def commands(profile, plan, bnb):
     if profile == "facades":
         result = [["cargo", "build", "-p", name, "--features", "full"]
                   for name in sorted(selected & {"rsl", "deps"})]
-        if "demos" in selected:
-            result.append(["cargo", "build", "-p", "demos", "--examples"])
+        if "protocol-examples" in selected:
+            result.append(["cargo", "build", "-p", "protocol-examples", "--examples"])
         return result
     if profile == "msrv":
         result = [["cargo", "check", *packages(qualified)]] if qualified else []

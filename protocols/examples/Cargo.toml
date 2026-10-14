@@ -1,5 +1,5 @@
 [package]
-name = "demos"
+name = "protocol-examples"
 version = "0.1.0"
 description = "Runnable dual-use demos: compose forged packets with the RSL protocol stack and inject them via rawsock."
 edition.workspace = true
@@ -10,11 +10,11 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-ip = { path = "../protocols/network/ip", version = "0.2.2", features = ["inject"] }
-udp = { path = "../protocols/transport/udp", version = "0.1.4", features = ["inject"] }
-arp = { path = "../protocols/link/arp", version = "0.1.1", features = ["inject"] }
-ethernet = { path = "../protocols/link/ethernet", version = "0.1.4", features = ["inject"] }
-ethertype = { path = "../protocols/link/ethertype", version = "0.2.2" }
+ip = { path = "../network/ip", version = "0.2.2", features = ["inject"] }
+udp = { path = "../transport/udp", version = "0.1.4", features = ["inject"] }
+arp = { path = "../link/arp", version = "0.1.1", features = ["inject"] }
+ethernet = { path = "../link/ethernet", version = "0.1.4", features = ["inject"] }
+ethertype = { path = "../link/ethertype", version = "0.2.2" }
 # The privileged socket backends (L3 NetworkSocket, L2 LinkSocket).
 rawsock = { workspace = true, features = ["network", "link"] }
 

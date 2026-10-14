@@ -9,7 +9,9 @@
 typed, compiled, dual-use alternative to Scapy / Impacket. Each protocol is its own
 independently-versioned crate. Network protocols are organized by OSI layer (`link/` →
 `network/` → `transport/` → `session/` → `application/`); local kernel/userspace protocols
-live under `system/` rather than being forced into a fictitious OSI layer. The wire codec
+live under `system/` rather than being forced into a fictitious OSI layer. `examples/` is not a
+layer: it is `protocol-examples`, the unpublished crate of runnable dual-use examples that
+compose packets across the stack and inject them through `rawsock`. The wire codec
 throughout is
 [`bnb`](https://github.com/RawSocketLabs/bitsandbytes) (published as `bitsandbytes`) — its
 `#[bin]` whole-message macro plus integer-backed bitfields / arbitrary-width ints / enums /

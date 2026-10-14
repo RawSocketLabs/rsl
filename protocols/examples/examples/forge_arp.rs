@@ -1,7 +1,7 @@
 //! **forge_arp** — compose a gratuitous **ARP reply** (cache poisoning) and inject it at L2.
 //!
 //! Claims a victim IP is at the attacker's MAC, framed in Ethernet and sent on a chosen
-//! interface. Run with `sudo -E cargo run -p demos --example forge_arp -- <iface>` (composing
+//! interface. Run with `sudo -E cargo run -p protocol-examples --example forge_arp -- <iface>` (composing
 //! works unprivileged; the raw send needs `CAP_NET_RAW` + an interface). **Authorized testing
 //! only** — ARP poisoning a network you don't own is illegal.
 #![allow(clippy::print_stdout)]

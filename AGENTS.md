@@ -23,7 +23,7 @@ One directory per domain group; each crate's own `AGENTS.md` holds its detail.
 | `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (`#![deny(unsafe_code)]`, one confined `unsafe` fn); owned USB host access over Linux usbfs (unpublished) |
 | `types/` | `rfus` | plain domain value types, each with its units, parsing and validation; no I/O, hardware or protocol logic, `no_std` where possible. `rfus`: RF frequencies, sample rates and scan targets |
 | `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
-| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
+| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `deps` | blessed external-dependency stack |
 | `bindings/` | `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | **excluded** FFI workspaces (need native toolchains/libraries) |
