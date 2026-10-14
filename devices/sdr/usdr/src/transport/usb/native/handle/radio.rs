@@ -10,15 +10,21 @@ use super::super::super::machine::{Machine, Output};
 use super::{NativeEvent, NativeUsb, Pending, SequenceOperation};
 use crate::board::{Board, RxGain, RxPath, TxGain, TxPath};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
+use crate::chips::tps6381x::Tps6381x;
 use crate::error::Error;
 use crate::lowlevel::BusError;
+use crate::portable::fpga::FPGA;
 use crate::portable::radio::run::OwnsRadio;
+use crate::portable::radio::wiring;
 use crate::portable::radio::{
     Chain, ChainPower, NcoChannels, PowerUp, PowerUpPlan, Radio, RateChains, Run, SampleRate,
     SetRxPath, StreamUp, Tune, power_down, stream_down,
 };
 use crate::portable::script::Script;
-use crate::portable::sequence::{RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use crate::portable::sequence::{
+    FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
+};
+use crate::portable::{lms6002d, lp8758, si5332, tps6381x};
 use crate::reference::ReferenceClock;
 use crate::thermal::ThermalPolicy;
 
@@ -142,8 +148,16 @@ impl RadioRun {
 
     /// Reports an action's outcome. A failure the machine goes on past is kept and the run
     /// continues, unless it is a transfer failure, which ends the session: the handle
-    /// cannot attempt more.
+    /// cannot attempt more, so the run ends with it at once, even where the machine would
+    /// ignore it.
     pub(super) fn complete(&mut self, result: Result<u32, BusError>) -> Result<(), Error> {
+        let result = match (result, self.op.next()) {
+            (Err(source), Some(action)) => {
+                let failure = transfer_failure(action, source);
+                return Err(self.first.take().unwrap_or(failure));
+            }
+            (result, _) => result,
+        };
         let Err(failure) = self.op.complete(result) else {
             return Ok(());
         };
@@ -158,6 +172,39 @@ impl RadioRun {
         self.first.get_or_insert(error);
         Ok(())
     }
+}
+
+/// The failure of `action`'s transfer: the access and the chip the uSDR wires there.
+fn transfer_failure(action: SequenceAction, source: BusError) -> Error {
+    let failure = match action {
+        SequenceAction::Fpga(access @ FpgaAccess::Spi { .. }) => SequenceFailure::FpgaTransport {
+            chip: lms6002d::chip::NAME,
+            access,
+            source,
+        },
+        SequenceAction::Fpga(access) => SequenceFailure::FpgaTransport {
+            chip: FPGA,
+            access,
+            source,
+        },
+        SequenceAction::Access(access) => {
+            let (RegisterAccess::Read { dev, .. } | RegisterAccess::Write { dev, .. }) = access;
+            let chip = match dev {
+                wiring::PMIC => lp8758::NAME,
+                wiring::CLOCK => si5332::NAME,
+                dev if dev == Tps6381x::usdr().dev() => tps6381x::NAME,
+                _ => "TMP114",
+            };
+            SequenceFailure::Transport {
+                chip,
+                access,
+                source,
+            }
+        }
+        // A wait has no transfer.
+        SequenceAction::Sleep(_) => return Error::Stream(source),
+    };
+    Error::from(failure)
 }
 
 impl NativeUsb {
@@ -239,6 +286,9 @@ impl NativeUsb {
         }
         if self.session.board.radio.is_some() {
             return Err(Error::AlreadyPowered);
+        }
+        if self.group.is_some() {
+            return Err(Error::AlreadyStreaming);
         }
         let board = self.session.board;
         let plan = Board::power_up_plan(board.rev3, board.chains, reference);

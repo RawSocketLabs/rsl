@@ -137,10 +137,12 @@ pub enum NativeEvent {
     TxMuted(Result<(), Error>),
     /// The RX front end's bursts were throttled as asked, or the write failed.
     RxThrottled(Result<(), Error>),
-    /// The board powered up, or failed to (refused as too hot before anything powered, or
-    /// failed partway, with the RF section turned back off as libusdr's `fail:` path does).
+    /// The board powered up, or failed to: refused as too hot before anything powered, or
+    /// failed partway, with the RF section turned back off as libusdr's `fail:` path does
+    /// unless a transfer failure ended the session first, which leaves the rest undone.
     PoweredUp(Result<(), Error>),
-    /// The board powered down: every write was attempted; the first failure, if any.
+    /// The board powered down: every write was attempted, unless a transfer failure ended
+    /// the session first; the first failure, if any.
     PoweredDown(Result<(), Error>),
     /// A sample rate was set, or failed.
     SampleRateSet(Result<(), Error>),
@@ -745,6 +747,17 @@ impl NativeUsb {
         self.tx = StreamState::Closed;
         self.group = None;
         self.adapter.close()
+    }
+
+    /// Whether an operation is in flight.
+    pub(super) const fn is_busy(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Advances the operation in flight only, leaving RX blocks with the handle; its event
+    /// once it ends.
+    pub(super) fn poll_operation_only(&mut self, now: Instant) -> Option<NativeEvent> {
+        self.poll_operation(now)
     }
 
     /// Whether the session has ended, by failure or [`close`](Self::close): every start

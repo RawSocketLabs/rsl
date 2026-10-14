@@ -109,6 +109,8 @@ struct Record {
     calls: Vec<(&'static str, ThreadId)>,
     /// The next reap turn panics on the worker.
     panic_turn: bool,
+    /// The next submission fails at the kernel boundary.
+    fail_submit: bool,
 }
 
 /// Whole-transfer stand-in for the native queue owner; genuine production machines run above.
@@ -251,6 +253,9 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
 
     fn submit(&mut self, request: Request) -> Result<(), BusError> {
         self.record("submit");
+        if mem::take(&mut self.record.lock().unwrap().fail_submit) {
+            return Err(BusError::Disconnected);
+        }
         if let Some(pause) = self.submit_pause.take() {
             pause.wait();
         }
@@ -3173,4 +3178,174 @@ fn an_async_session_end_fails_the_running_operation_and_ends_the_blocks() {
     assert!(after.is_err(), "the ended session refuses: {after:?}");
     let (closed, ..) = block_on(adapter.close());
     closed.unwrap();
+}
+
+#[test]
+fn closing_the_async_adapter_resolves_an_operation_still_in_flight() {
+    let (mut fake, _, _) = Fake::new();
+    let (pause, gate) = Pause::new();
+    fake.submit_pause = Some(pause);
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    let read = adapter.operation(NativeUsb::start_temperature);
+    // The worker holds the read's first transfer.
+    gate.entered();
+    let closing = adapter.close();
+    let (read, ..) = block_on(read);
+    assert!(
+        matches!(read, Err(Error::Stream(BusError::Disconnected))),
+        "the close fails the operation in flight: {read:?}"
+    );
+    gate.release();
+    let (closed, ..) = block_on(closing);
+    assert!(closed.is_ok(), "the worker still cleans up: {closed:?}");
+}
+
+#[test]
+fn an_async_start_that_begins_nothing_resolves_and_frees_the_slot() {
+    let (fake, _, _) = Fake::new();
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    let (nothing, ..) = block_on(adapter.operation(|_, _| Ok(())));
+    assert!(
+        matches!(nothing, Err(Error::Stream(BusError::Unsupported(_)))),
+        "{nothing:?}"
+    );
+    let (read, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(
+        matches!(read, Ok(NativeEvent::Temperature(Ok(_)))),
+        "{read:?}"
+    );
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+}
+
+#[test]
+fn several_async_block_waiters_each_get_a_block() {
+    let (_device, board) = rx_streaming(&[]);
+    let (mut fake, _, _) = Fake::new();
+    fake.io.board = board;
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    let (opened, ..) = block_on(adapter.operation(|native, _| native.start_rx_open(RX_BLOCK)));
+    assert!(
+        matches!(opened, Ok(NativeEvent::RxOpened(Ok(())))),
+        "{opened:?}"
+    );
+    let (first, second) = block_on(async {
+        let (first, second) = (adapter.next_block(), adapter.next_block());
+        let mut first = pin!(first);
+        let mut second = pin!(second);
+        let (mut a, mut b) = (None, None);
+        std::future::poll_fn(|cx| {
+            if a.is_none() {
+                if let task::Poll::Ready(block) = first.as_mut().poll(cx) {
+                    a = Some(block);
+                }
+            }
+            if b.is_none() {
+                if let task::Poll::Ready(block) = second.as_mut().poll(cx) {
+                    b = Some(block);
+                }
+            }
+            if a.is_some() && b.is_some() {
+                task::Poll::Ready((a.take().unwrap(), b.take().unwrap()))
+            } else {
+                task::Poll::Pending
+            }
+        })
+        .await
+    })
+    .0;
+    assert!(matches!(first, Some(Ok(_))) && matches!(second, Some(Ok(_))));
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+}
+
+#[test]
+fn a_native_power_up_is_refused_while_a_stream_group_exists() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, &reactor, wake);
+    native
+        .start_create_streams(StreamsConfig::tx(tx_config()), Instant::now())
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    let start = mark(&board);
+    assert!(matches!(
+        native.start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::default(),
+            Instant::now()
+        ),
+        Err(Error::AlreadyStreaming)
+    ));
+    assert_eq!(operations(&board, start), [], "refused before any I/O");
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_transfer_failure_a_machine_would_ignore_still_ends_the_operation_with_its_access() {
+    let (mut reactor, wake) = reactor();
+    let (bus, _) = usb_board(BoardRevision::Rev3, 25_000);
+    let mut records = None;
+    let mut native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(
+            |io| {
+                let (fake, record, _) = Fake::over(io);
+                records = Some(record);
+                Ok(fake)
+            },
+            reactor.registry(),
+            DEVICE,
+            wake,
+        )
+        .unwrap();
+    let record = records.unwrap();
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    // A tuning first powers the receiver, whose failures the machine ignores; on the native
+    // path the failed transfer ends the session, so the tuning ends with it.
+    record.lock().unwrap().fail_submit = true;
+    native
+        .start_rx_frequency(1_000_000_000, Instant::now())
+        .unwrap();
+    let tuned = settle(&mut native, &mut reactor);
+    assert!(
+        matches!(
+            tuned,
+            NativeEvent::Tuned(Err(Error::Bus {
+                chip: "LMS6002D",
+                access: Access::Write,
+                reg: 0x09,
+                ..
+            }))
+        ),
+        "the receiver's clock-enable write, the first access: {tuned:?}"
+    );
+    assert!(
+        native.start_temperature(Instant::now()).is_err(),
+        "the session ended"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
 }

@@ -137,7 +137,9 @@ impl<S: Steps> Run<S> {
     /// Moves past ended parts until one has an action or the operation has finished.
     fn settle(&mut self) {
         while let Some(part) = &self.part {
-            if part.next().is_some() {
+            // A part that failed is consulted again only if it attempts steps after one.
+            let ended = self.failed && !part.attempts_after_failure();
+            if !ended && part.next().is_some() {
                 return;
             }
             self.steps.absorb(part);

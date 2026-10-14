@@ -26,8 +26,8 @@ use crate::lowlevel::BusError;
 const DEVICE: Token = Token(0);
 /// The shared Waker's token: the worker's reports and this adapter's commands.
 const WAKE: Token = Token(1);
-/// RX blocks held for the caller while no operation is in flight; beyond them the reactor
-/// stops taking blocks, so the handle's own backlog fills and the gateware drops.
+/// RX blocks held for the caller; beyond them the reactor takes no more, so the handle's
+/// own backlog fills and the gateware drops, while an operation still advances.
 const BLOCKS: usize = 8;
 /// How long the reactor thread waits for the worker's cleanup after closing.
 const CLEANUP: Duration = Duration::from_secs(5);
@@ -37,13 +37,13 @@ type Start = Box<dyn FnOnce(&mut NativeUsb, Instant) -> Result<(), Error> + Send
 
 /// Where the one operation is.
 enum Slot {
-    /// None in flight.
+    /// None in flight, or the last one's end was taken or abandoned.
     Idle,
     /// Its start awaits the reactor thread.
     Queued(Start),
     /// Started; its event is awaited.
     Running,
-    /// Ended: its event, or the refusal of its start; not yet taken by its future.
+    /// Ended: its event, or the refusal of its start; its live future has not taken it.
     Done(Result<NativeEvent, Error>),
 }
 
@@ -53,12 +53,14 @@ struct State {
     slot: Slot,
     /// Counts the operations started, so a future takes only its own operation's end.
     generation: u64,
+    /// The current operation's future was dropped: its end is discarded.
+    abandoned: bool,
     /// The operation's future, to wake once it ends.
     operation: Option<TaskWaker>,
-    /// RX blocks received, oldest first.
+    /// RX blocks received, oldest first; at most [`BLOCKS`].
     blocks: VecDeque<Result<RxBlock, Error>>,
-    /// The block future, to wake once one arrives or the session ends.
-    block: Option<TaskWaker>,
+    /// The block futures waiting, to wake once a block arrives or the session ends.
+    block: Vec<TaskWaker>,
     /// Closing was asked for.
     closing: bool,
     /// The session ended: by failure, or once closed.
@@ -67,6 +69,30 @@ struct State {
     cleanup: Option<Result<(), BusError>>,
     /// The close future, to wake once cleanup is known.
     close: Option<TaskWaker>,
+}
+
+impl State {
+    /// Ends the operation in flight with `result`, unless its future was dropped; the
+    /// future to wake.
+    fn finish(&mut self, result: Result<NativeEvent, Error>) -> Option<TaskWaker> {
+        self.slot = if mem::take(&mut self.abandoned) {
+            Slot::Idle
+        } else {
+            Slot::Done(result)
+        };
+        self.operation.take()
+    }
+
+    /// Marks the session ended: an operation queued or in flight fails as disconnected,
+    /// and the block futures see the end; the futures to wake.
+    fn end(&mut self) -> Vec<TaskWaker> {
+        self.ended = true;
+        let mut woken = mem::take(&mut self.block);
+        if matches!(self.slot, Slot::Queued(_) | Slot::Running) {
+            woken.extend(self.finish(Err(Error::Stream(BusError::Disconnected))));
+        }
+        woken
+    }
 }
 
 /// The shared state and the reactor thread's Waker.
@@ -96,8 +122,9 @@ impl Shared {
 /// Start an operation with [`operation`](Self::operation), whose future resolves with its
 /// event, and await RX blocks with [`next_block`](Self::next_block). One operation is in
 /// flight at a time, as on the handle. The reactor thread owns the handle and its reactor;
-/// [`close`](Self::close) ends it after the worker's cleanup. Dropping the adapter closes
-/// it without waiting. Unstable and unqualified on hardware, like [`NativeUsb`].
+/// [`close`](Self::close) ends it after the worker's cleanup, failing any operation still
+/// in flight. Dropping the adapter closes it without waiting. Unstable and unqualified on
+/// hardware, like [`NativeUsb`].
 pub struct AsyncUsb {
     /// What the futures and the reactor thread share.
     shared: Arc<Shared>,
@@ -149,9 +176,10 @@ impl AsyncUsb {
             state: Mutex::new(State {
                 slot: Slot::Idle,
                 generation: 0,
+                abandoned: false,
                 operation: None,
                 blocks: VecDeque::new(),
-                block: None,
+                block: Vec::new(),
                 closing: false,
                 ended: false,
                 cleanup: None,
@@ -175,11 +203,13 @@ impl AsyncUsb {
 
     /// Starts an operation on the reactor thread: `start` calls one of the handle's
     /// `start_*` methods with the thread's `now`. The future resolves with the operation's
-    /// event (the first besides RX blocks), or with `start`'s refusal; [`Error::Busy`] at
-    /// once while another operation is in flight, [`Error::Stream`] once the session ended.
+    /// event (the first besides RX blocks), with `start`'s refusal, or with
+    /// [`Error::Stream`] if `start` began no operation or the session ended first;
+    /// [`Error::Busy`] at once while another operation's future has not yet taken its end.
     ///
     /// The operation starts when this is called, not when the future is first polled;
-    /// dropping the future does not cancel it, and the next operation waits for it.
+    /// dropping the future does not cancel the operation, but discards its end, after
+    /// which the next operation can start.
     pub fn operation(
         &self,
         start: impl FnOnce(&mut NativeUsb, Instant) -> Result<(), Error> + Send + 'static,
@@ -187,15 +217,15 @@ impl AsyncUsb {
         let mut state = self.shared.lock();
         let refused = if state.ended || state.closing {
             Some(Error::Stream(BusError::Disconnected))
-        } else if matches!(state.slot, Slot::Queued(_) | Slot::Running) {
-            Some(Error::Busy)
-        } else {
+        } else if matches!(state.slot, Slot::Idle) {
             None
+        } else {
+            Some(Error::Busy)
         };
         if refused.is_none() {
-            // An earlier operation's end its dropped future never took is discarded.
             state.slot = Slot::Queued(Box::new(start));
             state.generation += 1;
+            state.abandoned = false;
             state.operation = None;
         }
         let generation = state.generation;
@@ -207,11 +237,12 @@ impl AsyncUsb {
             shared: Arc::clone(&self.shared),
             generation,
             refused: refused.map(Err),
+            settled: false,
         }
     }
 
     /// The next RX block, in arrival order; `None` once the session has ended and every
-    /// block was taken.
+    /// block was taken. Several may wait; each block goes to one.
     pub fn next_block(&self) -> NextBlock {
         NextBlock {
             shared: Arc::clone(&self.shared),
@@ -246,11 +277,15 @@ pub struct Operation {
     generation: u64,
     /// The refusal before the operation started, taken once.
     refused: Option<Result<NativeEvent, Error>>,
+    /// The future has resolved.
+    settled: bool,
 }
 
 impl fmt::Debug for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Operation").finish_non_exhaustive()
+        f.debug_struct("Operation")
+            .field("settled", &self.settled)
+            .finish_non_exhaustive()
     }
 }
 
@@ -260,21 +295,41 @@ impl Future for Operation {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Ready<Self::Output> {
         let this = self.get_mut();
         if let Some(refused) = this.refused.take() {
+            this.settled = true;
             return Ready::Ready(refused);
         }
         let mut state = this.shared.lock();
-        if state.generation != this.generation {
-            // A later operation started: this one's end was discarded with its future's
-            // interest, which only a dropped future gives up.
+        if this.settled || state.generation != this.generation {
             return Ready::Ready(Err(Error::Busy));
         }
         match mem::replace(&mut state.slot, Slot::Idle) {
-            Slot::Done(result) => Ready::Ready(result),
+            Slot::Done(result) => {
+                this.settled = true;
+                Ready::Ready(result)
+            }
             slot => {
                 state.slot = slot;
                 state.operation = Some(cx.waker().clone());
                 Ready::Pending
             }
+        }
+    }
+}
+
+impl Drop for Operation {
+    fn drop(&mut self) {
+        if self.settled || self.refused.is_some() {
+            return;
+        }
+        let mut state = self.shared.lock();
+        if state.generation != self.generation {
+            return;
+        }
+        state.operation = None;
+        match state.slot {
+            Slot::Done(_) => state.slot = Slot::Idle,
+            Slot::Queued(_) | Slot::Running => state.abandoned = true,
+            Slot::Idle => {}
         }
     }
 }
@@ -306,7 +361,9 @@ impl Future for NextBlock {
         if state.ended {
             return Ready::Ready(None);
         }
-        state.block = Some(cx.waker().clone());
+        if !state.block.iter().any(|waker| waker.will_wake(cx.waker())) {
+            state.block.push(cx.waker().clone());
+        }
         Ready::Pending
     }
 }
@@ -337,6 +394,22 @@ impl Future for Closing {
     }
 }
 
+/// Ends the session for the futures when the reactor thread exits, by return or panic:
+/// an operation still in flight fails, the block futures see the end, and the close
+/// future gets the cleanup, or a disconnection if none was recorded.
+struct Ending(Arc<Shared>);
+
+impl Drop for Ending {
+    fn drop(&mut self) {
+        let mut state = self.0.lock();
+        let mut woken = state.end();
+        state.cleanup.get_or_insert(Err(BusError::Disconnected));
+        woken.extend(state.close.take());
+        drop(state);
+        woken.into_iter().for_each(TaskWaker::wake);
+    }
+}
+
 /// The reactor thread's half: the handle, its reactor and the shared state.
 struct Reactor {
     /// The handle; declared first, so it deregisters before its reactor is dropped.
@@ -352,9 +425,14 @@ struct Reactor {
 impl Reactor {
     /// Serves the shared state until closed, then awaits the worker's cleanup.
     fn run(mut self) {
+        let _ending = Ending(Arc::clone(&self.shared));
         loop {
             let now = Instant::now();
-            if self.serve(now) {
+            let mut woken = Vec::new();
+            let closing = self.route(now, &mut woken);
+            // Woken once the state is unlocked: an executor may poll inline on a wake.
+            woken.into_iter().for_each(TaskWaker::wake);
+            if closing {
                 break;
             }
             let wait = self
@@ -362,37 +440,21 @@ impl Reactor {
                 .deadline()
                 .map(|deadline| deadline.saturating_duration_since(now));
             if self.wait(wait).is_err() {
-                self.end(Some(Error::Stream(BusError::Disconnected)));
                 break;
             }
             for event in &self.events {
                 self.native.on_ready(event.token());
             }
         }
-        let cleanup = self.cleanup();
-        let mut state = self.shared.lock();
-        state.ended = true;
-        state.cleanup = Some(cleanup);
-        let wakers = [
-            state.close.take(),
-            state.block.take(),
-            state.operation.take(),
-        ];
-        drop(state);
-        wakers.into_iter().flatten().for_each(TaskWaker::wake);
-    }
-
-    /// Starts a queued operation and routes the handle's events, waking the futures they
-    /// finish once the state is unlocked (an executor may poll inline on a wake); `true`
-    /// once closing.
-    fn serve(&mut self, now: Instant) -> bool {
-        let mut woken = Vec::new();
-        let closing = self.route(now, &mut woken);
+        // An operation still in flight fails now, not after the cleanup's wait.
+        let woken = self.shared.lock().end();
         woken.into_iter().for_each(TaskWaker::wake);
-        closing
+        let cleanup = self.cleanup();
+        self.shared.lock().cleanup = Some(cleanup);
     }
 
-    /// [`Self::serve`]'s work, collecting the futures to wake in `woken`.
+    /// Starts a queued operation and routes the handle's events, collecting the futures to
+    /// wake in `woken`; `true` once closing.
     fn route(&mut self, now: Instant, woken: &mut Vec<TaskWaker>) -> bool {
         let mut state = self.shared.lock();
         if state.closing {
@@ -404,16 +466,29 @@ impl Reactor {
             };
             drop(state);
             let started = start(&mut self.native, now);
+            let busy = self.native.is_busy();
             state = self.shared.lock();
-            if let Err(error) = started {
-                state.slot = Slot::Done(Err(error));
-                woken.extend(state.operation.take());
+            match started {
+                Err(error) => woken.extend(state.finish(Err(error))),
+                Ok(()) if !busy => woken.extend(state.finish(Err(Error::Stream(
+                    BusError::Unsupported("the operation's start began no operation"),
+                )))),
+                Ok(()) => {}
             }
         }
-        // While no operation runs, a full block queue leaves blocks with the handle.
-        while matches!(state.slot, Slot::Running) || state.blocks.len() < BLOCKS {
+        loop {
+            let running = matches!(state.slot, Slot::Running);
+            let full = state.blocks.len() >= BLOCKS;
+            if full && !running {
+                break;
+            }
             drop(state);
-            let event = self.native.poll(Instant::now());
+            // With the block queue full, only the operation advances.
+            let event = if full {
+                self.native.poll_operation_only(Instant::now())
+            } else {
+                self.native.poll(Instant::now())
+            };
             state = self.shared.lock();
             let Some(event) = event else {
                 break;
@@ -421,46 +496,20 @@ impl Reactor {
             match event {
                 NativeEvent::Received(block) => {
                     state.blocks.push_back(block);
-                    woken.extend(state.block.take());
+                    woken.append(&mut state.block);
                 }
-                NativeEvent::SessionEnded(error) => {
-                    drop(state);
-                    self.end(Some(Error::Stream(error)));
-                    state = self.shared.lock();
+                NativeEvent::SessionEnded(_) => woken.extend(state.end()),
+                event if matches!(state.slot, Slot::Running) => {
+                    woken.extend(state.finish(Ok(event)));
                 }
-                event => {
-                    if matches!(state.slot, Slot::Running) {
-                        state.slot = Slot::Done(Ok(event));
-                        woken.extend(state.operation.take());
-                    }
-                }
+                _ => {}
             }
         }
         // A failure an operation's event carried also ended the session.
-        let ended = !state.ended && self.native.is_closed();
-        drop(state);
-        if ended {
-            self.end(Some(Error::Stream(BusError::Disconnected)));
+        if !state.ended && self.native.is_closed() {
+            woken.extend(state.end());
         }
         false
-    }
-
-    /// Marks the session ended: a running operation fails with `error`, and the block
-    /// future sees the end.
-    fn end(&self, error: Option<Error>) {
-        let mut state = self.shared.lock();
-        state.ended = true;
-        let mut operation = None;
-        if let (Slot::Running, Some(error)) = (&state.slot, error) {
-            state.slot = Slot::Done(Err(error));
-            operation = state.operation.take();
-        }
-        let block = state.block.take();
-        drop(state);
-        [operation, block]
-            .into_iter()
-            .flatten()
-            .for_each(TaskWaker::wake);
     }
 
     /// Closes the handle and waits, in the reactor, for the worker's cleanup.

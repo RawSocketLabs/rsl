@@ -380,6 +380,10 @@ impl Sequence for Create {
     }
 
     fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        // An outcome after the last access is a duplicate; the check has been made.
+        if self.0.next().is_none() {
+            return Ok(());
+        }
         self.0.complete(result)?;
         let absent = self.0.read().map(spi::value) == Some(0xff);
         if self.0.succeeded() && absent {
