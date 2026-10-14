@@ -251,7 +251,7 @@ All checks were local/offline; no service or third-party system was contacted.
   production checks, bare-metal no_std, and the updated pinned public-API snapshot pass.
 - Strict aggregate Clippy and cargo-deny retain the previously documented blockers. Additional
   existing bnb verification debt (runtime warnings, test-dependency MSRVs, unavailable semver
-  tooling, rustdoc warnings) is recorded in `bitsandbytes/bnb/DESIGN.md`.
+  tooling, rustdoc warnings) is recorded in `codecs/bitsandbytes/bnb/DESIGN.md`.
 
 This adds `bnb::NormalizeEnumAliases` and builder behavior, not a SOCKS API or dependency.
 Custom-codec/logical-only boundaries are intentionally opaque; arbitrary callbacks referencing

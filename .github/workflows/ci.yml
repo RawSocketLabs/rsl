@@ -126,7 +126,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             . -> target
-            bitsandbytes/bnb/nostd-check -> target
+            codecs/bitsandbytes/bnb/nostd-check -> target
             tools/rust-skills -> target
             bindings/usdr -> target
             bindings/dsdcc -> target

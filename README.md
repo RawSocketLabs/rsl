@@ -7,19 +7,19 @@ no cross-repo version pinning to keep in sync.
 
 ## Crates
 
-- **`bitsandbytes`** (`bitsandbytes/bnb`) + **`bitsandbytes-macros`** — the owned, bit-aware
+- **`bitsandbytes`** (`codecs/bitsandbytes/bnb`) + **`bitsandbytes-macros`** — the owned, bit-aware
   binary codec (imported as `bnb`). `no_std`, zero `unsafe`.
 - **`rawsock`** — dual-use, layered raw-packet I/O (L2/L3/L4).
-- **`rsl-crypto`** (`crypto/`) — accuracy-first cryptographic primitives and protection
+- **`rsl-crypto`** (`crypto/core/`) — accuracy-first cryptographic primitives and protection
   contracts, including a readable AES-128-GCM path designed to make every byte transformation
   inspectable and independently testable.
-- **`rsl-crypto-legacy`** (`crypto-legacy/`) — separately opted-in historical and broken
+- **`rsl-crypto-legacy`** (`crypto/legacy/`) — separately opted-in historical and broken
   primitives for controlled interoperability, capture decoding, fixtures, and teaching; it is
   never included by the facade's bundles.
 - **`rsl-asn1`**, **`rsl-x509`**, **`rsl-pki`** (`pki/*`) — strict DER transport, borrowed
   certificate syntax with exact signed-byte preservation, and fail-closed path validation.
-- **`rsl-compression`** (`compression/`) — explicit stateful compression/decompression contracts.
-- **`rsl-error-correction`** (`error-correction/`) — error-correction encoding/decoding contracts
+- **`rsl-compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.
+- **`rsl-error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
 - **`rfus`** — RF frequency / sample-rate / scan-target parsing.
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer

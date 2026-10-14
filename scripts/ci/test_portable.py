@@ -9,7 +9,7 @@ import unittest
 from portable import FIXTURES, validate
 
 # The registered dependencies' own manifests, which the contract also reads.
-OWNED = ("bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
+OWNED = ("codecs/bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
          "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml",
          "devices/sdr/chips/lmk05318/Cargo.toml")
 USDR = FIXTURES["usdr"]

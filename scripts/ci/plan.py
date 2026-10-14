@@ -25,14 +25,14 @@ SCHEMA = 2
 # the plan as one environment variable, which Linux caps at 128 KiB (MAX_ARG_STRLEN), so it
 # stays in the plan step's log and the coverage report, out of the plan jobs pass on.
 DETAIL = frozenset({"full_reasons", "paths", "prose", "reasons"})
-BNB = "bitsandbytes/bnb"
-MACROS = "bitsandbytes/bnb-macros"
+BNB = "codecs/bitsandbytes/bnb"
+MACROS = "codecs/bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"
 NOSTD = f"{BNB}/nostd-check"
 BLADERF = "bindings/bladerf"
 PKI = {"pki/asn1", "pki/x509", "pki/validation"}
 FUZZ = {
-    "bitsandbytes/fuzz": ["-max_total_time=60", "-runs=2000000"],
+    "codecs/bitsandbytes/fuzz": ["-max_total_time=60", "-runs=2000000"],
     "crypto/fuzz": ["-max_total_time=45", "-runs=500000"],
     "pki/fuzz": ["-max_total_time=45", "-runs=500000"],
     # Release runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
@@ -84,8 +84,9 @@ DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/
             "tools/rust-skills")
 # Former paths of moved detached workspaces, read only from historical (base) trees, so a plan
 # across the move still finds the old owner; a head tree may not use them. An entry can go
-# once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9).
-MOVED_DETACHED = ("rsl-usdr/oracle",)
+# once no comparison base predates its move (rsl-usdr/oracle: d22ca2c9; the codec's fuzz and
+# no_std workspaces moved under codecs/ with the domain-group layout).
+MOVED_DETACHED = ("rsl-usdr/oracle", "bitsandbytes/fuzz", "bitsandbytes/bnb/nostd-check")
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
     "rustfmt.toml", "deny.toml", "release-plz.toml", "AGENTS.md",
@@ -216,9 +217,9 @@ def is_prose(path):
             or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md", f"{LSDR}/PORTING.md",
                         f"{LIMESDR}/PORTING.md", f"{PE_SYNC}/PORTING.md"}
             or (path.endswith(".md") and (path.startswith("docs/")
-                or path.startswith("bitsandbytes/docs/")
+                or path.startswith("codecs/bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))
-            or (path.startswith("bitsandbytes/docs/assets/")
+            or (path.startswith("codecs/bitsandbytes/docs/assets/")
                 and PurePosixPath(path).suffix in {".png", ".svg"}))
 
 
@@ -241,7 +242,7 @@ def owners(path, graph):
         nested = {root for root in graph if root.startswith(directory + "/")}
         if nested:
             return nested
-    if path.startswith("bitsandbytes/"):
+    if path.startswith("codecs/bitsandbytes/"):
         return {BNB, MACROS} & graph.keys()
     return set()
 

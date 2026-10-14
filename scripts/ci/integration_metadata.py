@@ -147,11 +147,11 @@ windows = { path = "../windows" }
         cases = [
             ("deps/src/lib.rs", {"rsl-deps", "dns"}, {"socks", "rsl-compression"}, set()),
             (f"{SOCKS}/src/blocking.rs", {"socks"}, set(), {f"{SOCKS}/fuzz"}),
-            ("compression/src/lib.rs", {"rsl-compression", "rsl"}, {"socks", "rsl-crypto"}, set()),
-            ("crypto/src/lib.rs", {"rsl-crypto", "rsl-crypto-legacy", "rsl-pki", "rsl"},
+            ("codecs/compression/src/lib.rs", {"rsl-compression", "rsl"}, {"socks", "rsl-crypto"}, set()),
+            ("crypto/core/src/lib.rs", {"rsl-crypto", "rsl-crypto-legacy", "rsl-pki", "rsl"},
              {"socks", "bitsandbytes"}, {"crypto/fuzz", "pki/fuzz"}),
             (f"{BNB}/src/lib.rs", {"bitsandbytes", "socks", "rsl-asn1", "rsl-x509", "rsl-pki"},
-             {"rsl-crypto", "rsl-crypto-legacy"}, {"bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"}),
+             {"rsl-crypto", "rsl-crypto-legacy"}, {"codecs/bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"}),
         ]
         for path, required, unrelated, fuzz in cases:
             with self.subTest(path=path):

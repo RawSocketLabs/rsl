@@ -43,7 +43,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(locked_command(already), already)
     def test_optional_adapters_are_compiled_and_tested_without_enabling_release_ladders(self):
         for path, name in (("protocols/session/socks/src/mio.rs", "socks"),
-                           ("bitsandbytes/bnb/src/io.rs", "bitsandbytes")):
+                           ("codecs/bitsandbytes/bnb/src/io.rs", "bitsandbytes")):
             with self.subTest(package=name):
                 plan = planned([path])
                 sequence = commands("workspace", plan, BNB_CONFIG)
@@ -146,7 +146,7 @@ curl() {
 
     def test_full_routine_scope_cannot_expand_release_commands(self):
         scoped = planned(release=True)
-        broad = planned(["Cargo.lock", "crypto/src/lib.rs"], release=True)
+        broad = planned(["Cargo.lock", "crypto/core/src/lib.rs"], release=True)
         for profile in ("msrv", "no-std", "package", "bnb", "socks", "semver"):
             if profile in scoped["profiles"]:
                 with self.subTest(profile=profile):
@@ -271,7 +271,7 @@ curl() {
         self.assertTrue(all(command[command.index("--baseline-version") + 1] == "0.6.0" for command in sequence))
 
     def test_compression_only_builds_its_affected_facade(self):
-        sequence = commands("facades", planned(["compression/src/lib.rs"]), BNB_CONFIG)
+        sequence = commands("facades", planned(["codecs/compression/src/lib.rs"]), BNB_CONFIG)
         self.assertEqual(sequence, [["cargo", "build", "-p", "rsl", "--features", "full"]])
 
     def test_package_verification_never_uploads_or_disables_verification(self):
