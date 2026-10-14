@@ -21,6 +21,10 @@ import tomllib
 from dependencies import DependencyState, LockGraph, dependency_delta
 
 SCHEMA = 2
+# Per-path selection detail, which grows with the diff. No job reads it, and every step gets
+# the plan as one environment variable, which Linux caps at 128 KiB (MAX_ARG_STRLEN), so it
+# stays in the plan step's log and the coverage report, out of the plan jobs pass on.
+DETAIL = frozenset({"paths", "prose", "reasons"})
 BNB = "bitsandbytes/bnb"
 MACROS = "bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"
@@ -393,6 +397,11 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
             "roots": sorted(roots), "profiles": sorted(profiles), "fuzz": fuzz,
             "reasons": {root: sorted(reasons[root]) for root in sorted(roots)},
             "full_reasons": sorted(global_reasons)}
+
+
+def handed_on(plan):
+    """The plan as jobs pass it on: everything a job reads, without the per-path detail."""
+    return {key: value for key, value in plan.items() if key not in DETAIL}
 
 
 def release_config(root, revision=None):

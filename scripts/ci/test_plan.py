@@ -1,20 +1,24 @@
 """Fast policy tests: hand-authored dependency/ownership oracles, no builds or network."""
 
 import copy
+import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from gate import check_plan, check_release, check_results
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR, XSDR_ORACLE,
                   XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC, PE_SYNC_ORACLE,
                   PE_SYNC_PORTABLE, LMK05318, LIMESDR,
                   LIMESDR_ORACLE, LIMESDR_PORTABLE, LOWLEVEL, LP8758, LMS7002M, FRONTEND,
-                  RELEASE_PROFILES, Package,
-                  affected_packages, bare_metal_devices, changed_paths, released_members,
-                  select)
-from prepare import event_options, is_release_merge, is_release_pr, needs_cargo
+                  RELEASE_PROFILES, DETAIL, Package,
+                  affected_packages, bare_metal_devices, changed_paths, handed_on,
+                  released_members, select)
+from prepare import (OUTPUT_LIMIT, emit_output, event_options, is_release_merge, is_release_pr,
+                     needs_cargo)
 
 
 def fixture():
@@ -603,6 +607,27 @@ class GateTests(unittest.TestCase):
                 actual[key] = actual[key][1:]
                 with self.assertRaises(ValueError):
                     check_plan(actual, expected)
+
+    def test_a_large_diff_hands_jobs_a_plan_that_fits_one_environment_variable(self):
+        paths = [f"{BNB}/src/generated/{index:05}.rs" for index in range(20000)]
+        plan = planned(paths)
+        self.assertGreater(len(json.dumps(plan, separators=(",", ":"))), OUTPUT_LIMIT,
+                           "the scenario must overflow with the per-path detail")
+        handed = handed_on(plan)
+        self.assertFalse(DETAIL & handed.keys())
+        self.assertLess(len(json.dumps(handed, separators=(",", ":"))), OUTPUT_LIMIT)
+        check_results(handed, results(handed))
+        check_plan(handed, handed_on(copy.deepcopy(plan)))
+
+    def test_an_oversized_output_fails_where_it_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.write_text("")
+            with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}):
+                emit_output("small", "x" * 16)
+                with self.assertRaisesRegex(ValueError, "environment variable"):
+                    emit_output("plan", "x" * (OUTPUT_LIMIT + 1))
+            self.assertEqual(output.read_text(), "small=" + "x" * 16 + "\n")
 
     def test_empty_successful_docs_plan_legitimately_skips_heavy_jobs(self):
         plan = planned(["README.md"])

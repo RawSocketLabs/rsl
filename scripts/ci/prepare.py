@@ -10,7 +10,12 @@ import sys
 import tomllib
 
 from gate import validate_plan
-from plan import build_plan, changed_paths, command, is_prose, release_policy
+from plan import build_plan, changed_paths, command, handed_on, is_prose, release_policy
+
+# Steps receive job outputs as environment variables. Linux refuses to start a process with
+# one longer than 128 KiB (MAX_ARG_STRLEN, name included), so a larger output fails here
+# instead of failing every later step with "Argument list too long".
+OUTPUT_LIMIT = 128 * 1024 - 256
 
 
 def is_release_pr(pr, repository, prefix):
@@ -59,6 +64,8 @@ def emit_output(name, value):
     encoded = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
     if "\n" in encoded or "\r" in encoded:
         raise ValueError("GitHub output must occupy one line")
+    if len(encoded.encode()) > OUTPUT_LIMIT:
+        raise ValueError(f"GitHub output {name} exceeds one environment variable's limit")
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         output.write(f"{name}={encoded}\n")
 
@@ -112,7 +119,7 @@ def main():
                "toolchain": ("1.85.0" if profile == "msrv" else
                              bnb["public_api_toolchain"] if profile == "public-api" else "stable")}
               for profile in plan["profiles"]]
-    emit_output("plan", plan)
+    emit_output("plan", handed_on(plan))
     emit_output("checks", {"include": checks or [{"profile": "none", "toolchain": "stable"}]})
     emit_output("fuzz", {"include": plan["fuzz"] or [{"root": "none", "target": "none", "args": []}]})
     emit_output("has_checks", bool(checks))

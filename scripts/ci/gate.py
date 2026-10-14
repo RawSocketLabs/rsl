@@ -8,8 +8,8 @@ from pathlib import Path
 import re
 import sys
 
-from plan import (FUZZ, PROFILES, RELEASE_PROFILES, SCHEMA, command, graph_at, metadata_graph,
-                  release_config, release_policy, released_members, select)
+from plan import (FUZZ, PROFILES, RELEASE_PROFILES, SCHEMA, command, graph_at, handed_on,
+                  metadata_graph, release_config, release_policy, released_members, select)
 
 
 def validate_plan(plan):
@@ -109,9 +109,11 @@ def main():
 
         plan = json.loads(os.environ["CI_PLAN"])
         needs = json.loads(os.environ["CI_NEEDS"])
-        check_plan(plan, plan_for_event())
+        recomputed = plan_for_event()
+        check_plan(plan, handed_on(recomputed))
         check_results(plan, needs)
-        report = {"schema": SCHEMA, "head": plan["head"], "plan": plan, "needs": needs,
+        # The report keeps the per-path detail the jobs were not handed.
+        report = {"schema": SCHEMA, "head": plan["head"], "plan": recomputed, "needs": needs,
                   "event": os.environ["GITHUB_EVENT_NAME"],
                   "run_id": int(os.environ["GITHUB_RUN_ID"]),
                   "run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "1"))}
