@@ -78,12 +78,12 @@ impl Search {
         Some(self)
     }
 
-    /// Applies one comparator reading: the search's next state, or its end (`Ok(None)`),
-    /// or a fault for a reading with both bits set.
+    /// Applies one comparator reading: the search's next state, or the window it ended
+    /// with, or a fault for a reading with both bits set.
     ///
     /// In the binary phase an in-window reading counts as too high, as libusdr's switch
     /// falls through; code 0 is never probed.
-    fn reading(mut self, comparator: Comparator) -> Result<Option<Self>, TuneFault> {
+    fn reading(mut self, comparator: Comparator) -> Result<Probe, TuneFault> {
         match (comparator.vtune_high(), comparator.vtune_low()) {
             (true, true) => return Err(TuneFault::Fault),
             // Capacitor too low: raise it, or move the window's bottom up.
@@ -95,7 +95,7 @@ impl Search {
             _ if self.binary => self.code -= 1 << self.step,
             _ => {
                 self.high = (self.code - 1).max(0);
-                return Ok(None);
+                return Ok(Probe::Done(self.window()));
             }
         }
         if self.binary {
@@ -103,7 +103,7 @@ impl Search {
         } else {
             self.code += 1;
         }
-        Ok(Some(self))
+        Ok(Probe::Next(self))
     }
 
     /// The window found: a missing top counts as 0.
@@ -114,6 +114,15 @@ impl Search {
             high: byte(self.high.max(0)),
         }
     }
+}
+
+/// What a comparator reading leaves the search with.
+#[derive(Clone, Copy, Debug)]
+enum Probe {
+    /// The search goes on.
+    Next(Search),
+    /// It ended with this window.
+    Done(CapacitorWindow),
 }
 
 /// Where a tuning is.
@@ -334,8 +343,8 @@ impl Sequence for PllTune {
                 }
                 self.stage = match search.reading(Comparator::from(spi::value(word))) {
                     Err(fault) => Stage::Done(Some(Err(fault))),
-                    Ok(Some(next)) => self.probing(next),
-                    Ok(None) => self.finish(search.window()),
+                    Ok(Probe::Next(next)) => self.probing(next),
+                    Ok(Probe::Done(window)) => self.finish(window),
                 };
             }
             Stage::Finish { window, script } => {
@@ -361,5 +370,62 @@ impl Sequence for PllTune {
             Stage::Done(_) => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::sequence::FpgaAccess;
+    use super::*;
+
+    /// The comparator reading the capacitor too low (`VTUNE_H`).
+    const TOO_LOW: u32 = 0x80;
+    /// The comparator reading the capacitor too high (`VTUNE_L`).
+    const TOO_HIGH: u32 = 0x40;
+
+    #[test]
+    fn a_window_ended_in_the_linear_phase_keeps_its_top() {
+        // libusdr's `lms6002d_find_vcocap`, worked by hand: the binary phase probes 32
+        // (too low), 48 (too high), 40 (low), 44 (high) and 42 (low), leaving 43; the
+        // linear phase starts there with the window's bottom at 43 and finds 43 too high,
+        // so the top is 42. The window {43, 42} is no lock failure (its top is not 0), and
+        // the capacitor settles at the midpoint, 42.
+        let (lms, _) = Lms6002d::create(Lms6002d::USDR_TARGET);
+        let mut tune = PllTune::new(lms, Pll::Rx, 1_000_000_000, 26_000_000);
+        let mut divider = tune.divider.into_iter();
+        let mut readings = [TOO_LOW, TOO_HIGH, TOO_LOW, TOO_HIGH, TOO_LOW, TOO_HIGH].into_iter();
+        let comparator = u32::from(u8::from(pll::Reg::RxComparator));
+        let capacitor = u32::from(u8::from(pll::Reg::RxVcoCapacitor));
+        let mut settled = None;
+        while let Some(action) = tune.next() {
+            let reply = match action {
+                SequenceAction::Fpga(FpgaAccess::Spi {
+                    write: false, reg, ..
+                }) if reg == comparator => readings.next().expect("a scripted comparator reading"),
+                SequenceAction::Fpga(FpgaAccess::Spi { write: false, .. }) => {
+                    divider.next().map_or(0, u32::from)
+                }
+                SequenceAction::Fpga(FpgaAccess::Spi {
+                    write: true,
+                    reg,
+                    word,
+                    ..
+                }) if reg == capacitor => {
+                    settled = Some(word.to_le_bytes()[0] & 0x3f);
+                    0
+                }
+                _ => 0,
+            };
+            tune.complete::<()>(Ok(reply)).unwrap();
+        }
+        assert_eq!(
+            tune.outcome(),
+            Some(Ok(CapacitorWindow { low: 43, high: 42 }))
+        );
+        assert_eq!(
+            settled,
+            Some(42),
+            "the last capacitor written is mid-window"
+        );
     }
 }
