@@ -1,4 +1,4 @@
-# rsl-usdr
+# usdr
 
 > Inherits `../../AGENTS.md` (devices) and the workspace-root `../../../AGENTS.md`.
 
@@ -19,7 +19,7 @@ start, mute, throttle and stop, the RF chains' power, tuning and DC calibration
 included), so a board goes from open to streaming with no blocking `Device`; plus the
 RX/TX streams at the transport, `ManagedUsb`, a synchronous runner over it, and
 `AsyncUsb`, a runtime-free asynchronous one. Generic USB offers bounded
-reap/filed-only completion primitives and an exclusive Mio `Readiness` (`rsl-usb` feature
+reap/filed-only completion primitives and an exclusive Mio `Readiness` (`usb` feature
 `mio`), which `transport/usb/native` registers; cancellation remains an owned-worker
 operation because the Linux discard ioctl can block. The worker is supervised: a panic,
 a lost report or an idle hang-up ends the session with an event, and the worker still
@@ -53,11 +53,11 @@ intentional addition.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `rsl-usdr` (unpublished until parity) | The driver |
-| `sim/` | `rsl-usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
-| `oracle/` | `rsl-usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c`; libusdr's Verilator host bridge compiled whole by `oracle/shim/verilator.c` against a fake model |
-| `nostd-check/` | `rsl-usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
-| `pcie/` | `rsl-usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
+| `.` | `usdr` (unpublished until parity) | The driver |
+| `sim/` | `usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
+| `oracle/` | `usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c`; libusdr's Verilator host bridge compiled whole by `oracle/shim/verilator.c` against a fake model |
+| `nostd-check/` | `usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
+| `pcie/` | `usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
 
 ## Driver layout
 
@@ -112,7 +112,7 @@ Each layer calls only the ones below it.
   `src/board/` until it migrates to a portable machine. A chip whose values a portable
   machine uses keeps its address map, value types and ID facts in `src/portable/<chip>/`
   (TPS6381x, Si5332, TMP114), or in a shared per-chip crate another driver needs too
-  (LP8758: `rsl-lp8758`, re-exported as `src/portable/lp8758.rs`); `src/chips/<chip>/`
+  (LP8758: `lp8758`, re-exported as `src/portable/lp8758.rs`); `src/chips/<chip>/`
   then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
@@ -132,10 +132,10 @@ Each layer calls only the ones below it.
   (`tools/usdr_flash.c`: `Flash::boot_images`, `Programmer::{update_master,
   update_golden, erase_master}`), step for step. The module docs hold the recovery story.
   `oracle/tests/{image,flash_update}_parity.rs` check both against the compiled C.
-- `src/frontend/`: public `rsl_usdr::frontend`, the boards libusdr probes on the M.2
+- `src/frontend/`: public `usdr::frontend`, the boards libusdr probes on the M.2
   connector (`device/device_fe.c`, `device/ext_*`). The probe itself, every board's
   identification, the connector's GPIO core, the `PCIe` front end and breakout whole and
-  their chips (TCA6416, TCA9555, DACx0501) are `rsl-sdr-frontend`'s (`../frontend`),
+  their chips (TCA6416, TCA9555, DACx0501) are `sdr-frontend`'s (`../frontend`),
   shared with the XSDR and LSDr drivers; `frontend/mod.rs` re-exports its public types
   (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and `Exm2peOptions` options,
   `XmassCalibrationPath`) and implements its `BringUp` with the bring-ups that stay here,
@@ -154,15 +154,15 @@ Each layer calls only the ones below it.
   registers with the C through `oracle/shim/lmk05318.c`, which needs GCC). Its
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
   place of the 8-bit shared ones. Since PE_SYNC needs it too, the bus-free modules (plan,
-  staging, map, `reg` and the value types) are the shared `rsl-lmk05318`
+  staging, map, `reg` and the value types) are the shared `lmk05318`
   (`devices/sdr/chips/lmk05318`), re-exported under `chips::lmk05318`; the bus code in
-  `lmk05318.rs` stays here (`rsl-pe-sync` has its own, `../../sync/pe_sync/PORTING.md`).
+  `lmk05318.rs` stays here (`pe-sync` has its own, `../../sync/pe_sync/PORTING.md`).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
   `rsl-lowlevel` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
-  rsl-usdr's own conversions into `BusError` (`usb_error` for `rsl_usb::Error`: `From`
+  usdr's own conversions into `BusError` (`usb_error` for `usb::Error`: `From`
   would be an orphan impl). Board code sleeps only through `Bus::sleep`. The uSDR has one
   I2C core; its transports refuse any `I2cAddr` core but 0.
-- `src/dsp/`: public `rsl_usdr::dsp`, libusdr's host sample conversions and channel
+- `src/dsp/`: public `usdr::dsp`, libusdr's host sample conversions and channel
   (de)interleaving (`xdsp/conv.c` generic kernels, core-only scalar code);
   `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
   `window`, `fftad`, `rtsa` and `fm` port FFT windowing, log-power averaging, the RTSA
@@ -175,14 +175,14 @@ Each layer calls only the ones below it.
   (turns to phases, dBFS to gain, `Chirp::sweep`, complex fills, the `cf32` `ToneF32`),
   checked against the tool's own producer threads and TX loop by
   `oracle/tests/generator_parity.rs`; the tool's option policy is not ported.
-- `src/discipline.rs`: public `rsl_usdr::discipline`, the oscillator discipline loop of
+- `src/discipline.rs`: public `usdr::discipline`, the oscillator discipline loop of
   libusdr's `usdr_dm_gpsdo` tool as a sans-I/O machine (`OscillatorDiscipline`): the caller
   reads the measurement, steps it with the time and writes and confirms the DAC code.
   `oracle/tests/gpsdo_parity.rs` runs the tool's own `main`; which gateware word carries the
   PPS count on the uSDR is unresolved (PORTING.md), so no `Device` method composes it.
 - `src/transport/`: `Bus` implementations for hardware, in safe code. `pcie` (feature `pcie`,
-  Linux) over `rsl-usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
-  `usb`, Linux) over the workspace's `rsl-usb` host queues; `verilator` (feature
+  Linux) over `usdr-pcie`, with the uSDR's driver layout (`USDR_LAYOUT`); `usb` (feature
+  `usb`, Linux) over the workspace's `usb` host queues; `verilator` (feature
   `verilator`, Linux) libusdr's Verilator host bridge to an external gateware model, a
   Unix socket plus a shared file read with positioned I/O (no mapping, so no `unsafe`),
   blocking on the calling thread, its divergences in its module docs;
@@ -193,7 +193,7 @@ Each layer calls only the ones below it.
   sequence seam (`address.rs`, `register.rs`, `sequence.rs`: thin re-exports of
   `rsl-lowlevel`; I²C register reads/writes, FPGA register reads/writes and SPI32 with
   32-bit results, and waits, one action at a time), LP8758 values (`lp8758.rs`, re-exporting
-  `rsl-lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
+  `lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
   power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
   (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), the
   LMS6002D's register values, cache, straight-line operations as `Script`s, PLL tuning
@@ -224,7 +224,7 @@ Each layer calls only the ones below it.
   with fake Mio readiness, managed-thread sync/future observation and callbacks, alongside
   bounded synthetic RX loans. `native/` (feature `mio`; `NativeUsb` in `handle.rs`) runs the
   same machines, and any portable sequence of them with waits as caller deadlines, over
-  `rsl_usb::Readiness` and endpoints 0x01/0x81/0x82: the reactor only registers, schedules and
+  `usb::Readiness` and endpoints 0x01/0x81/0x82: the reactor only registers, schedules and
   observes; once attached, one worker owns queues, syscalls, the readiness's Drop, cleanup
   and Drop. Retirement always completes, even when deregistration reports `NotFound`, and
   the adapter keeps the shared Waker open for the worker's final wake. `into_native` runs
@@ -322,11 +322,11 @@ Each layer calls only the ones below it.
   words rest on the MIT `pcie_uram/pcie_events.rst` instead.
 - The sim models chips at register level and states every transport assumption it encodes,
   with its evidence, at the point it is encoded (see the I2C readback packing in `oracle/src/lib.rs`).
-- Front ends (`fe=`): the probe (`rsl-sdr-frontend`, shared with the XSDR and LSDr) and
+- Front ends (`fe=`): the probe (`sdr-frontend`, shared with the XSDR and LSDr) and
   the boards the uSDR admits follow libusdr's `device_fe_probe`; every board it admits
   comes up (pciefe, xmass, supersync,
   simplesync, exm2pe), and a failed probe powers the board down again where libusdr
-  leaves it powered. libusdr's lock waits run on its wall clock; rsl-usdr's count their
+  leaves it powered. libusdr's lock waits run on its wall clock; usdr's count their
   100 µs poll sleeps, so they last at least as long on hardware, and the sim reports lock
   at once, which keeps both traces deterministic. The default `SimBoard`
   has nothing on its connector, so both drivers end the probe at the M.2-to-PCIe breakout
@@ -454,9 +454,9 @@ Each layer calls only the ones below it.
     the value types split by function (Si5332: `state`, `input`, `divider`, `output`). The
     TMP114, with one value type, stays one file.
 - `sim` stays an unpublished crate, not a feature of the driver.
-- `unsafe` lives only in `rsl-usdr-pcie`; `rsl-usdr` keeps `#![forbid(unsafe_code)]`. That
+- `unsafe` lives only in `usdr-pcie`; `usdr` keeps `#![forbid(unsafe_code)]`. That
   crate knows the driver's protocol and nothing of the board: layouts and register meanings
-  stay in `rsl-usdr`. Its ABI and the uSDR layout are checked against the vendored header and
+  stay in `usdr`. Its ABI and the uSDR layout are checked against the vendored header and
   libusdr's own layout by `oracle/tests/pcie_abi.rs`; nothing else of it can run without
   hardware (`tests/pcie_hardware.rs` is `#[ignore]`d). Its `unsafe` is in `device.rs`
   (ioctls, mappings); the XMASS requests pair each opcode with the buffer the driver
@@ -469,16 +469,16 @@ Each layer calls only the ones below it.
 ## Verify
 
 ```sh
-cargo clippy -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie --all-targets && cargo test -p rsl-usdr -p rsl-usdr-sim -p rsl-usdr-pcie
-cargo clippy -p rsl-usdr --all-targets --features pcie && cargo test -p rsl-usdr --features pcie
-cargo clippy -p rsl-usdr --all-targets --all-features -- -D warnings && cargo test -p rsl-usdr --all-features
+cargo clippy -p usdr -p usdr-sim -p usdr-pcie --all-targets && cargo test -p usdr -p usdr-sim -p usdr-pcie
+cargo clippy -p usdr --all-targets --features pcie && cargo test -p usdr --features pcie
+cargo clippy -p usdr --all-targets --all-features -- -D warnings && cargo test -p usdr --all-features
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
-cargo clippy -p rsl-lowlevel -p rsl-lp8758 --all-targets -- -D warnings && cargo clippy -p rsl-lowlevel --features std --all-targets -- -D warnings
-cargo test -p rsl-lowlevel --features std && cargo test -p rsl-lp8758
-cargo check -p rsl-lowlevel -p rsl-lp8758 -p rsl-sdr-frontend --target thumbv7em-none-eabi
-cargo clippy -p rsl-sdr-frontend --features std --all-targets -- -D warnings && cargo test -p rsl-sdr-frontend --features std
+cargo clippy -p rsl-lowlevel -p lp8758 --all-targets -- -D warnings && cargo clippy -p rsl-lowlevel --features std --all-targets -- -D warnings
+cargo test -p rsl-lowlevel --features std && cargo test -p lp8758
+cargo check -p rsl-lowlevel -p lp8758 -p sdr-frontend --target thumbv7em-none-eabi
+cargo clippy -p sdr-frontend --features std --all-targets -- -D warnings && cargo test -p sdr-frontend --features std
 python3 scripts/ci/portable.py
 cargo fmt --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
@@ -486,7 +486,7 @@ cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked
 # Explicit local portability milestone; hosted cross-target qualification stays release-only.
 cargo check --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --target thumbv7em-none-eabi
 # Opt-in hardware smoke: resets/claims only the explicitly selected USB port.
-RSL_USDR_USB_PORT=1-2 cargo test -p rsl-usdr --features usb,mio --test usb_hardware -- --ignored
+RSL_USDR_USB_PORT=1-2 cargo test -p usdr --features usb,mio --test usb_hardware -- --ignored
 ```
 
 The oracle is its own Cargo workspace: it sits inside this package's directory, where the

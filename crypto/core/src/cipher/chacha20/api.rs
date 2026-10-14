@@ -23,7 +23,7 @@ use crate::{CryptoError, Result, SecretBytes, cipher::StreamCipher, random::Rand
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::cipher::chacha20::ChaCha20Key;
+/// use crypto::cipher::chacha20::ChaCha20Key;
 ///
 /// let key = ChaCha20Key::new([0x42; 32]);
 /// assert_eq!(format!("{key:?}"), "ChaCha20Key([REDACTED])");

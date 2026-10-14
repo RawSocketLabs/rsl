@@ -1,6 +1,6 @@
-//! rsl-usdr's XMASS switch firmware update matches libusdr's `tools/xmass_fwupd.c`: the
+//! usdr's XMASS switch firmware update matches libusdr's `tools/xmass_fwupd.c`: the
 //! same requests to the XMASS device, in the same order, the same verdict and the same
-//! flash afterwards, on one fake `/dev/xmassN` (`rsl_usdr_oracle::xmass`), for the update,
+//! flash afterwards, on one fake `/dev/xmassN` (`usdr_oracle::xmass`), for the update,
 //! `info`, a failure at each request and a read-back that differs.
 //!
 //! The request codes themselves are checked against the driver header by `pcie_abi.rs`;
@@ -13,11 +13,11 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use rsl_usdr::frontend::xmass_firmware::{
+use usdr::frontend::xmass_firmware::{
     self, FIRMWARE_BYTES, Firmware, FirmwareSizeError, IDS_BYTES, READ_SUCCESS, SwitchFlash,
     SwitchIds, UnexpectedReturn, UpdateError,
 };
-use rsl_usdr_oracle::xmass::{FLASH_BYTES, FakeXmass, Request, XmassRun, xmass_fwupd};
+use usdr_oracle::xmass::{FLASH_BYTES, FakeXmass, Request, XmassRun, xmass_fwupd};
 
 /// Where both drivers find the device.
 const NODE: &str = "/dev/xmass0";
@@ -55,7 +55,7 @@ fn file(name: &str, bytes: &[u8]) -> String {
     path.to_str().expect("UTF-8 path").to_owned()
 }
 
-/// rsl-usdr's view of the fake: the four requests, with the driver's errno or return value.
+/// usdr's view of the fake: the four requests, with the driver's errno or return value.
 struct Switch<'a>(&'a mut FakeXmass);
 
 impl SwitchFlash for Switch<'_> {
@@ -118,7 +118,7 @@ fn an_update_makes_libusdrs_requests_in_its_order() {
     let image = pattern(9);
     let (tool, result, ours) = both("update", &device(), &image[..]);
     assert_eq!(tool.status, 0, "the tool succeeds:\n{}", tool.log);
-    let ids = result.expect("rsl-usdr succeeds");
+    let ids = result.expect("usdr succeeds");
     assert_eq!(
         (ids.firmware.as_slice(), ids.flash_id.as_slice()),
         IDS.split_at(6),
@@ -152,7 +152,7 @@ fn info_prints_the_ids_rsl_usdr_reads() {
     let tool = xmass_fwupd(device(), NODE, &["info", NODE]);
     assert_eq!(tool.status, 0, "the tool succeeds:\n{}", tool.log);
     let mut ours = device();
-    let ids = xmass_firmware::read_ids(&mut Switch(&mut ours)).expect("rsl-usdr reads them");
+    let ids = xmass_firmware::read_ids(&mut Switch(&mut ours)).expect("usdr reads them");
     assert_same_device(&tool, &ours, false);
     assert_eq!(ours.requests(), [Request::Ids], "the IDs alone");
     let [f0, f1, f2, f3, f4, f5] = ids.firmware;
@@ -180,7 +180,7 @@ fn a_failed_request_stops_both_where_libusdr_stops() {
             index + 1,
             "nothing after the failure"
         );
-        let error = result.expect_err("rsl-usdr fails");
+        let error = result.expect_err("usdr fails");
         let ((0, UpdateError::Ids(source))
         | (1, UpdateError::Erase(source))
         | (2, UpdateError::Write(source))
@@ -203,12 +203,12 @@ fn a_byte_that_reads_back_wrong_fails_both_unless_the_driver_signs_there() {
         assert_same_device(&tool, &ours, !signed);
         if signed {
             assert_eq!(tool.status, 0, "the tool skips byte {at:#x}");
-            result.expect("rsl-usdr skips it too");
+            result.expect("usdr skips it too");
         } else {
             assert_eq!(tool.status, FAILED, "the tool compares byte {at:#x}");
             assert!(
                 matches!(result, Err(UpdateError::VerifyFailed { first, bytes: 1, .. }) if first == at),
-                "rsl-usdr names byte {at:#x}: {result:?}"
+                "usdr names byte {at:#x}: {result:?}"
             );
         }
     }
@@ -226,12 +226,12 @@ fn a_short_file_is_refused_by_both_before_the_device_is_opened() {
         Err(FirmwareSizeError {
             len: FLASH_BYTES - 1
         }),
-        "rsl-usdr refuses it before any device exists"
+        "usdr refuses it before any device exists"
     );
 }
 
 /// Whitelisted divergence: the tool reads the first 64 KiB of a longer file and flashes
-/// them; rsl-usdr refuses the file, as it cannot tell a padded image from a wrong one.
+/// them; usdr refuses the file, as it cannot tell a padded image from a wrong one.
 #[test]
 fn a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr() {
     let image = pattern(9);
@@ -258,14 +258,14 @@ fn a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr() {
         Err(FirmwareSizeError {
             len: FLASH_BYTES + 1
         }),
-        "rsl-usdr refuses it before any device exists"
+        "usdr refuses it before any device exists"
     );
 }
 
 /// Whitelisted divergence: the tool takes any return value that is not an error as success,
 /// and the driver is observed to pass positive failure codes through. A read-back that
 /// returns one hands back the image just written (here, as from a stale staging buffer),
-/// so the tool verifies the image against itself; rsl-usdr accepts only the read's
+/// so the tool verifies the image against itself; usdr accepts only the read's
 /// success value.
 #[test]
 fn a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr() {
@@ -275,7 +275,7 @@ fn a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr() {
     let (tool, result, ours) = both("read_returns_code", &device, &image[..]);
     assert_eq!(tool.status, 0, "the tool reports success:\n{}", tool.log);
     assert_same_device(&tool, &ours, false);
-    let error = result.expect_err("rsl-usdr refuses the read-back");
+    let error = result.expect_err("usdr refuses the read-back");
     let UpdateError::ReadBack(source) = &error else {
         panic!("the read-back failed, not {error:?}");
     };
@@ -287,6 +287,6 @@ fn a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr() {
             returned: PCI_CONFIG_FAILURE,
             success: READ_SUCCESS
         }),
-        "rsl-usdr names the value the driver returned"
+        "usdr names the value the driver returned"
     );
 }

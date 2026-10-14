@@ -97,7 +97,7 @@ pub enum SimError {
 ///   the source.
 /// - Every chip answers regardless of the power GPOs (`IGPO_SY0_CTRL`, `IGPO_GEN_CTRL`,
 ///   `IGPO_DISTRIB_CTRL`, ...): the sim does not tie supplies to buses.
-/// - Absent I2C devices read `0xff` per byte, as in `rsl-usdr-sim` (no NACK is reported by
+/// - Absent I2C devices read `0xff` per byte, as in `usdr-sim` (no NACK is reported by
 ///   libusdr's transports).
 #[derive(Debug)]
 pub struct SimBoard {

@@ -1,4 +1,4 @@
-//! `rsl_usdr::dsp::{trig, sincos, nco}` against libusdr's compiled `xdsp/trig.c`,
+//! `usdr::dsp::{trig, sincos, nco}` against libusdr's compiled `xdsp/trig.c`,
 //! `sincos_functions.c` (generic kernels) and `nco.c`: every fixed-point phase, tones and
 //! chirps over several calls so phase carries, and the NCO when its SSSE3 kernel is built.
 //!
@@ -13,10 +13,10 @@
 
 use std::num::NonZeroI32;
 
-use rsl_usdr::dsp::nco::Nco;
-use rsl_usdr::dsp::sincos::{self, Amplitude, Chirp, Tone};
-use rsl_usdr::dsp::trig;
-use rsl_usdr_oracle::nco;
+use usdr::dsp::nco::Nco;
+use usdr::dsp::sincos::{self, Amplitude, Chirp, Tone};
+use usdr::dsp::trig;
+use usdr_oracle::nco;
 
 /// Extreme 16-bit values.
 const EXTREME_I16: [i16; 5] = [i16::MIN, i16::MAX, 0, -1, 1];

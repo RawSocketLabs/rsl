@@ -8,7 +8,7 @@
 //! big-endian addresses, one per block, and are answered with one address-then-value record
 //! per address, whose value half is the register (`MOD_INT32_16`). Only what the
 //! `LimeSDR`'s open uses is built: single-frame register writes and reads, and the LMS7002M
-//! reset pulse. `rsl-limesdr-oracle` compares each with libusdr's `lms64c_fill_packet` and
+//! reset pulse. `limesdr-oracle` compares each with libusdr's `lms64c_fill_packet` and
 //! `lms64c_parse_packet`.
 
 /// Length of every frame, either direction (`LMS64C_PKT_LENGTH`).

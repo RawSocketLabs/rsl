@@ -1,4 +1,4 @@
-//! rsl-usdr's per-channel LOs and baseband offsets against libusdr's
+//! usdr's per-channel LOs and baseband offsets against libusdr's
 //! `/dm/sdr/0/{rx,tx}/frequency[/0|/1]` and `/dm/sdr/0/{rx,tx}/frequency/bb[/0|/1]`,
 //! operation for operation, with what they leave for later rate changes and tunes.
 
@@ -11,10 +11,10 @@ use std::ffi::CString;
 use std::ops::Range;
 
 use crossing::{Crossing, with_band_crossing_fix};
-use rsl_usdr::{Device, Error, NcoChannels};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
+use usdr::{Device, Error, NcoChannels};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 /// A chain.
 #[derive(Clone, Copy, Debug)]
@@ -29,14 +29,14 @@ enum Chain {
 /// One call, made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
 enum Call {
-    /// libusdr's `{rate, 0}`; rsl-usdr's `set_rx_sample_rate`.
+    /// libusdr's `{rate, 0}`; usdr's `set_rx_sample_rate`.
     Rate(u32),
 
-    /// libusdr's `/dm/sdr/0/{rx,tx}/frequency[/0|/1]`; rsl-usdr's
+    /// libusdr's `/dm/sdr/0/{rx,tx}/frequency[/0|/1]`; usdr's
     /// `set_{rx,tx}_channel_frequency`.
     Frequency(Chain, NcoChannels, u32),
 
-    /// libusdr's `/dm/sdr/0/{rx,tx}/frequency/bb[/0|/1]`; rsl-usdr's
+    /// libusdr's `/dm/sdr/0/{rx,tx}/frequency/bb[/0|/1]`; usdr's
     /// `set_{rx,tx}_baseband_offset`.
     Baseband(Chain, NcoChannels, i32),
 }
@@ -87,7 +87,7 @@ impl Call {
         unsafe { oracle.set_uint(&path, value) }.is_ok()
     }
 
-    /// Makes the call through rsl-usdr.
+    /// Makes the call through usdr.
     fn on_rsl(self, device: &mut Device) -> Result<(), Error> {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -135,9 +135,9 @@ fn rev3_unlocked_below_245m() -> SimBoard {
     rev3().with_rx_pll_lock(lock).with_tx_pll_lock(lock)
 }
 
-/// Makes `calls` in turn on fresh boards from `board` through libusdr and rsl-usdr and
+/// Makes `calls` in turn on fresh boards from `board` through libusdr and usdr and
 /// compares each call's outcome and operations, with libusdr's band crossings replaced by
-/// rsl-usdr's fix where `crossing` expects them; returns whether each succeeded, with its
+/// usdr's fix where `crossing` expects them; returns whether each succeeded, with its
 /// operations.
 fn assert_calls_match(
     board: impl Fn() -> SimBoard,
@@ -154,7 +154,7 @@ fn assert_calls_match(
     let reference = oracle.close();
 
     let sim = SimBus::new(board());
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up the board");
     let mut actual: Vec<(Result<(), Error>, Range<usize>)> = Vec::new();
     for &call in calls {
         let start = sim.board().trace().len();
@@ -170,7 +170,7 @@ fn assert_calls_match(
         assert_eq!(
             result.is_ok(),
             expected_ok,
-            "{call:?}: libusdr ok={expected_ok}, rsl-usdr {result:?}"
+            "{call:?}: libusdr ok={expected_ok}, usdr {result:?}"
         );
         let mut expected = reference.trace()[expected].to_vec();
         if crossing == Crossing::Fixed {
@@ -179,7 +179,7 @@ fn assert_calls_match(
         let actual: &[Op] = &board.trace()[actual];
         if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
             panic!(
-                "{call:?}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+                "{call:?}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
                 expected[i], actual[i]
             );
         }
@@ -286,7 +286,7 @@ fn baseband_offsets_add_to_the_low_lo_fallback_like_libusdr() {
     assert!(outcomes.iter().all(|(ok, _)| *ok), "every call succeeds");
 }
 
-/// An offset before any tune retunes an LO of 0: libusdr and rsl-usdr fail or succeed
+/// An offset before any tune retunes an LO of 0: libusdr and usdr fail or succeed
 /// alike, with the same operations. The receiver's 0 Hz sits in the mixer band, so the
 /// scenario takes the band-crossing fix (whitelisted divergence).
 #[test]

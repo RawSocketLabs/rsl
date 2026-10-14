@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "mio")]
 use mio::{Registry, Token, Waker};
 
-use rsl_deps::tracing::{debug, trace};
-use rsl_usb::{DeviceInfo, InQueue, Interface, OutQueue};
+use deps::tracing::{debug, trace};
+use usb::{DeviceInfo, InQueue, Interface, OutQueue};
 
 use super::i2c::{Event, I2cTransaction};
 use super::machine::{Machine, Output, Step, Submission, Transfer};
@@ -250,9 +250,7 @@ impl UsbIo for Queues {
             let _ = queue.cancel_all();
             return Err(BusError::Timeout);
         };
-        done.status
-            .map_err(rsl_usb::Error::from)
-            .map_err(usb_error)?;
+        done.status.map_err(usb::Error::from).map_err(usb_error)?;
         Ok(done.buffer.to_vec())
     }
 }
@@ -379,7 +377,7 @@ impl UsbBus {
     /// # Errors
     /// [`Error::Open`] if USB enumeration fails. Does not open/reset any device.
     pub fn discover() -> Result<Vec<DeviceInfo>, Error> {
-        rsl_usb::devices()
+        usb::devices()
             .map(|devices| {
                 devices
                     .into_iter()
@@ -403,7 +401,7 @@ impl UsbBus {
         }
         let device = info
             .open()
-            .and_then(rsl_usb::Device::reset)
+            .and_then(usb::Device::reset)
             .map_err(|error| Error::Open(usb_error(error)))?;
         let interface = device
             .claim_interface(0)
@@ -609,7 +607,7 @@ impl UsbBus {
             };
             step = match transfer {
                 Transfer::Write(frame) => {
-                    trace!(target: "rsl_usdr::bus", bytes = ?frame.as_bytes(), "USB command");
+                    trace!(target: "usdr::bus", bytes = ?frame.as_bytes(), "USB command");
                     let event = match self.io.write(frame.as_bytes(), timeout) {
                         Ok(()) => Event::Written { id },
                         Err(error) => Event::Failed { id, error },

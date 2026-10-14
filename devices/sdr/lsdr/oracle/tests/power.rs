@@ -2,8 +2,8 @@
 //! (`usdr_device_m2_d09_4_ad45_2_initialize`, `_lsdr_adc_activate`,
 //! `usdr_device_m2_d09_4_ad45_2_destroy`).
 
-use rsl_lsdr_oracle::Oracle;
-use rsl_lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
+use lsdr_oracle::Oracle;
+use lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
 
 /// The TPS6594.
 const PMIC: I2cAddress = I2cAddress::new(0, 0x48);

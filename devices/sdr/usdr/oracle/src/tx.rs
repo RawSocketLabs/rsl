@@ -6,7 +6,7 @@ use std::ptr::{self, NonNull};
 use std::slice;
 use std::sync::PoisonError;
 
-use rsl_usdr_sim::SimBoard;
+use usdr_sim::SimBoard;
 
 use super::{
     BOARDS, DMS_START, DMS_STOP, EBUSY, EINVAL, ETIMEDOUT, Oracle, Stream, resume_callback_panic,

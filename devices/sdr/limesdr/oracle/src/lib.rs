@@ -18,7 +18,7 @@ use std::ptr::{self, NonNull};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_limesdr_sim::{DATA_LEN, FRAME_LEN, SimBoard};
+use limesdr_sim::{DATA_LEN, FRAME_LEN, SimBoard};
 
 /// `EINVAL`: an operation on an oracle that is already closed.
 const EINVAL: c_int = 22;
@@ -49,8 +49,8 @@ unsafe extern "C" {
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
-    fn rsl_limesdr_shim_fpga_info(out: *mut u16) -> c_int;
-    fn rsl_limesdr_shim_create_errno() -> c_int;
+    fn limesdr_shim_fpga_info(out: *mut u16) -> c_int;
+    fn limesdr_shim_create_errno() -> c_int;
     fn lms64c_fill_packet(
         cmd: u8,
         status: u8,
@@ -183,7 +183,7 @@ impl Oracle {
         // SAFETY: the connection string is NUL-terminated and `dev` is a valid out-pointer.
         let errno = unsafe { usdr_dmd_create_string(c"".as_ptr(), &raw mut dev) };
         // SAFETY: a plain read of the shim's record of its last create.
-        let device_errno = unsafe { rsl_limesdr_shim_create_errno() };
+        let device_errno = unsafe { limesdr_shim_create_errno() };
 
         let Some(dev) = NonNull::new(dev) else {
             resume_callback_panic();
@@ -258,7 +258,7 @@ impl Oracle {
         }
         let mut info = [0u16; 4];
         // SAFETY: `info` is valid for the four `u16`s the shim writes.
-        let errno = unsafe { rsl_limesdr_shim_fpga_info(info.as_mut_ptr()) };
+        let errno = unsafe { limesdr_shim_fpga_info(info.as_mut_ptr()) };
         resume_callback_panic();
         if errno == 0 { Ok(info) } else { Err(errno) }
     }
@@ -358,7 +358,7 @@ fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
 /// libusdr's `usleep`, redirected by the shim. The redirect is process-wide, so a call
 /// while no oracle is open returns at once.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_limesdr_oracle_sleep_us(us: c_ulonglong) {
+extern "C" fn limesdr_oracle_sleep_us(us: c_ulonglong) {
     if BOARD
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -381,7 +381,7 @@ extern "C" fn rsl_limesdr_oracle_sleep_us(us: c_ulonglong) {
 /// writable bytes; the shim passes two distinct `proto_lms64c_t`, which it checks are
 /// that size.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_limesdr_oracle_lms64c(request: *const u8, reply: *mut u8) -> c_int {
+unsafe extern "C" fn limesdr_oracle_lms64c(request: *const u8, reply: *mut u8) -> c_int {
     // SAFETY: the caller guarantees `request` is valid for `FRAME_LEN` readable bytes; a
     // `[u8; N]` has alignment 1.
     let request = unsafe { &*request.cast::<[u8; FRAME_LEN]>() };

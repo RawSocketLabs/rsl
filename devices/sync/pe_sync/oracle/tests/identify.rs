@@ -2,8 +2,8 @@
 //! factory (no hardware ID or variant follows), and the clock chips are then checked by
 //! their own identity registers during configuration.
 
-use rsl_pe_sync_oracle::Oracle;
-use rsl_pe_sync_sim::{I2cAddress, Op, SimBoard};
+use pe_sync_oracle::Oracle;
+use pe_sync_sim::{I2cAddress, Op, SimBoard};
 
 /// `ENODEV`: `lmk05318_create`'s refusal of a wrong device identity.
 const ENODEV: i32 = 19;

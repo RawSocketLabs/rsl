@@ -1,12 +1,12 @@
 //! Differential ECDSA P-384/SHA-384 evidence against the `p256` crate 0.14.0.
 
+use crypto::{
+    CryptoError,
+    signature::ecdsa_p384::{EcdsaP384Signature, EcdsaP384VerifyingKey},
+};
 use p384::{
     SecretKey,
     ecdsa::{Signature, SigningKey, VerifyingKey, signature::Signer},
-};
-use rsl_crypto::{
-    CryptoError,
-    signature::ecdsa_p384::{EcdsaP384Signature, EcdsaP384VerifyingKey},
 };
 
 /// Differential evidence: 32 reference signatures over varied keys and messages verify here,
@@ -52,8 +52,8 @@ fn reference_signatures_verify_and_tampered_copies_fail() {
 /// over 32 keys and messages, and the reference verifies them.
 #[test]
 fn deterministic_signatures_match_the_reference_byte_for_byte() {
+    use crypto::signature::ecdsa_p384::EcdsaP384SigningKey;
     use p384::ecdsa::signature::Verifier as _;
-    use rsl_crypto::signature::ecdsa_p384::EcdsaP384SigningKey;
 
     for case in 0_u8..32 {
         let private: [u8; 48] = core::array::from_fn(|index| {

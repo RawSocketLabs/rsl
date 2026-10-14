@@ -1,12 +1,12 @@
 [package]
-name = "rsl-pe-sync-nostd-check"
+name = "pe-sync-nostd-check"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 publish = false
 build = false
-description = "Exact-source no_std compilation witness for the private rsl-pe-sync portable sequences."
+description = "Exact-source no_std compilation witness for the private pe-sync portable sequences."
 
 # A validation workspace, not a second production library or an embedded executable.
 [workspace]
@@ -15,7 +15,7 @@ resolver = "3"
 [dependencies]
 # scripts/ci/portable.py checks these declarations against the actual driver/workspace.
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb", version = "0.8.0", default-features = false }
-rsl-lmk05318 = { path = "../../../sdr/chips/lmk05318", version = "0.0.0", default-features = false }
+lmk05318 = { path = "../../../sdr/chips/lmk05318", version = "0.0.0", default-features = false }
 rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
 
 [lints.rust]

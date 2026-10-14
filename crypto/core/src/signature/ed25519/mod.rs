@@ -52,7 +52,7 @@
 //! # Published example
 //!
 //! ```
-//! use rsl_crypto::signature::ed25519::Ed25519SigningKey;
+//! use crypto::signature::ed25519::Ed25519SigningKey;
 //!
 //! let seed = [
 //!     0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
@@ -66,7 +66,7 @@
 //!
 //! assert_eq!(&verifying_key.as_bytes()[..4], &[0xd7, 0x5a, 0x98, 0x01]);
 //! verifying_key.verify(b"", &signature)?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

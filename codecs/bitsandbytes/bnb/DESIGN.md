@@ -1498,7 +1498,7 @@ fails locally under Podman 5.8.7; hosted CI is the substitute for this change.
 `#[bitfield(uN)]` now emits `From<uN> for Struct` and `From<Struct> for uN`, delegating to the
 same unvalidated `from_raw`/`to_raw` conversion. A byte-aligned `BitEnum` already has
 `num_enum`-parity `From` impls; a bitfield did not, so a consumer that treats both as a
-register value (`rsl-usdr`'s `Register` trait) needed a macro per register to bridge
+register value (`usdr`'s `Register` trait) needed a macro per register to bridge
 `Bitfield::to_raw` and `Into<u8>`. With this, a plain `T: From<u8> + Into<u8>` bound covers
 both.
 

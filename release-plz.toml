@@ -47,5 +47,5 @@ version_group = "bitsandbytes"
 # Preserve netlink's registry opt-in, but inherit release = false. Re-enabling
 # requires review of its breaking synchronous-transport change and version.
 [[package]]
-name = "rsl-netlink"
+name = "netlink"
 publish = true

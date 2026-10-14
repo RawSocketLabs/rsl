@@ -16,7 +16,7 @@
 //! 2. The private [`integer`] module implements unsigned integers and Montgomery modular
 //!    multiplication with small, named operations.
 //! 3. Encoding methods consume the primitives: [`RSASSA-PSS`](crate::signature::rsa_pss)
-//!    verification lives in this crate; historical PKCS #1 v1.5 lives in `rsl-crypto-legacy`.
+//!    verification lives in this crate; historical PKCS #1 v1.5 lives in `crypto-legacy`.
 //!
 //! # RFC 8017 notation in Rust
 //!

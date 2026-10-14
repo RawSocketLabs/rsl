@@ -1,5 +1,5 @@
 //! A smoke test on a real uSDR over `PCIe`: needs the `usdr_pcie_uram` driver and a board at
-//! `/dev/usdr0`. Run with `cargo test -p rsl-usdr --features pcie -- --ignored`.
+//! `/dev/usdr0`. Run with `cargo test -p usdr --features pcie -- --ignored`.
 #![cfg(all(feature = "pcie", target_os = "linux"))]
 
 use std::os::fd::{AsFd, AsRawFd};
@@ -8,8 +8,8 @@ use std::time::Duration;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use num_complex::Complex;
-use rsl_usdr::transport::pcie::PcieBus;
-use rsl_usdr::{Device, HostFormat, RxConfig, StreamsConfig, WireFormat};
+use usdr::transport::pcie::PcieBus;
+use usdr::{Device, HostFormat, RxConfig, StreamsConfig, WireFormat};
 
 #[test]
 #[ignore = "needs a uSDR on /dev/usdr0"]

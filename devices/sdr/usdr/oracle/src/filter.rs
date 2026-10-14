@@ -3,7 +3,7 @@
 //!
 //! The vendored build defines no `WVLT_ARCH_*`, so `vbase.h` compiles no SIMD kernel and
 //! `cpu_vcap_get` stays `OPT_GENERIC`: `filter_data_alloc` selects the generic kernels and
-//! never applies its AVX2 tap reordering. Those kernels are what `rsl_usdr::dsp::filter`
+//! never applies its AVX2 tap reordering. Those kernels are what `usdr::dsp::filter`
 //! ports.
 
 use std::ffi::{c_uint, c_void};

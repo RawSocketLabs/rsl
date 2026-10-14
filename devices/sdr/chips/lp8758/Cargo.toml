@@ -1,5 +1,5 @@
 [package]
-name = "rsl-lp8758"
+name = "lp8758"
 version = "0.0.0"
 description = "TI LP8758 PMIC register values and identity, shared by the pure-Rust SDR drivers."
 publish = false

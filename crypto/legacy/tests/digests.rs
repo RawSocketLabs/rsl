@@ -1,13 +1,13 @@
 //! Public known-answer, boundary, streaming, classification, and differential digest evidence.
 
-use md5::{Digest as _, Md5 as ReferenceMd5};
-use rsl_crypto_legacy::{
+use crypto_legacy::{
     SecurityStatus,
     digest::{
         md5::{Md5, SECURITY_STATUS as MD5_STATUS},
         sha1::{SECURITY_STATUS as SHA1_STATUS, Sha1},
     },
 };
+use md5::{Digest as _, Md5 as ReferenceMd5};
 use sha1::Sha1 as ReferenceSha1;
 
 #[test]

@@ -1,5 +1,5 @@
 [package]
-name = "rsl-limesdr"
+name = "limesdr"
 version = "0.0.0"
 description = "Pure-Rust driver for libusdr's LimeSDR family (u3_limesdr): the LimeSDR-mini, over its LMS64C control channel."
 publish = false
@@ -9,12 +9,12 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rsl-lms7002m.workspace = true
+lms7002m.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-rsl-limesdr-sim.workspace = true
+limesdr-sim.workspace = true
 
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 //! Differential comparison with the independent `RustCrypto` HKDF-SHA-384 implementation.
 
+use crypto::kdf::hkdf::sha384::derive;
 use hkdf::Hkdf;
-use rsl_crypto::kdf::hkdf::sha384::derive;
 use sha2::Sha384 as ReferenceSha384;
 
 /// Differential evidence over absent/present salts, varied context, and output boundaries.

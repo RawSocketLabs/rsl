@@ -1,4 +1,4 @@
-//! rsl-usdr's front-end probe and controls against libusdr's (`fe=`), operation for
+//! usdr's front-end probe and controls against libusdr's (`fe=`), operation for
 //! operation over whole power-ups.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -8,20 +8,20 @@ mod thermal_gate;
 
 use std::ffi::CStr;
 
-use rsl_usdr::frontend::{
+use sim_bus::SimBus;
+use thermal_gate::{assert_same_ops, without_thermal_gate};
+use usdr::frontend::{
     Exm2peOptions, PciefeAttenuation, PciefeDuplexer, PciefeOptions, PciefePath, PciefeRevision,
     PciefeRxFilter, PciefeSetting, PciefeTxFilter, XmassCalibrationPath,
 };
-use rsl_usdr::{Device, Error, FrontEndKind, FrontEndSelection};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
-use sim_bus::SimBus;
-use thermal_gate::{assert_same_ops, without_thermal_gate};
+use usdr::{Device, Error, FrontEndKind, FrontEndSelection};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
 
 /// The revision every scenario runs on; the probe does not depend on it.
 const REVISION: BoardRevision = BoardRevision::Rev3;
 
-/// rsl-usdr's power-down: LMS6002D reset, LED off, booster off (GPO banks 0, 8, 7).
+/// usdr's power-down: LMS6002D reset, LED off, booster off (GPO banks 0, 8, 7).
 const POWER_DOWN: [Op; 3] = [
     Op::RegWrite { addr: 0, value: 0 },
     Op::RegWrite {
@@ -34,10 +34,10 @@ const POWER_DOWN: [Op; 3] = [
     },
 ];
 
-/// rsl-usdr's trace of a failed open without the power-down that ends it.
+/// usdr's trace of a failed open without the power-down that ends it.
 ///
 /// Intentional divergence, scoped to failed opens: when the front-end probe fails,
-/// rsl-usdr powers the board down again; libusdr leaves it powered and returns.
+/// usdr powers the board down again; libusdr leaves it powered and returns.
 fn without_failure_power_down(trace: &[Op]) -> &[Op] {
     let (kept, tail) = trace.split_at(trace.len() - POWER_DOWN.len());
     assert_eq!(
@@ -47,9 +47,9 @@ fn without_failure_power_down(trace: &[Op]) -> &[Op] {
     kept
 }
 
-/// Opens fresh copies of `board` through libusdr with `parameters` and through rsl-usdr
+/// Opens fresh copies of `board` through libusdr with `parameters` and through usdr
 /// with `selection`, closes whichever opened, and compares the whole traces. Returns
-/// rsl-usdr's open result with the front end it reports.
+/// usdr's open result with the front end it reports.
 fn assert_open_matches(
     board: impl Fn() -> SimBoard,
     parameters: &CStr,
@@ -64,7 +64,7 @@ fn assert_open_matches(
     let opened = Device::builder(sim.clone()).front_end(selection).open();
     let result = opened.map(|device| {
         let kind = device.front_end();
-        device.close().expect("rsl-usdr powers down");
+        device.close().expect("usdr powers down");
         kind
     });
 
@@ -84,7 +84,7 @@ fn bare() -> SimBoard {
 }
 
 /// libusdr's default probe finds nothing that identifies itself and settles on the
-/// breakout, which has no ID; so does rsl-usdr.
+/// breakout, which has no ID; so does usdr.
 #[test]
 fn the_automatic_probe_settles_on_a_breakout_without_a_dac() {
     let kind = assert_open_matches(bare, c"", FrontEndSelection::Auto).expect("both open");
@@ -99,7 +99,7 @@ fn naming_no_board_probes_nothing() {
 }
 
 /// libusdr admits the 100–5000 MHz front end on `LSDr` only: naming it probes nothing, as
-/// [`FrontEndSelection::None`] does, which is why rsl-usdr offers no selection for it.
+/// [`FrontEndSelection::None`] does, which is why usdr offers no selection for it.
 #[test]
 fn naming_the_lsdr_front_end_probes_nothing() {
     let kind = assert_open_matches(bare, c"fe=fe1005000", FrontEndSelection::None).expect("open");
@@ -187,7 +187,7 @@ fn with_exm2pe() -> SimBoard {
 
 /// libusdr's call for one step.
 type LibusdrCall = Box<dyn Fn(&mut Oracle) -> Result<(), i32>>;
-/// rsl-usdr's call for one step.
+/// usdr's call for one step.
 type RslUsdrCall = Box<dyn Fn(&mut Device) -> Result<(), Error>>;
 
 /// One control applied to both drivers.
@@ -196,8 +196,8 @@ struct Step {
     name: String,
     /// The libusdr call.
     libusdr: LibusdrCall,
-    /// The rsl-usdr call.
-    rsl_usdr: RslUsdrCall,
+    /// The usdr call.
+    usdr: RslUsdrCall,
 }
 
 /// A step applying one `PCIe` front-end command: the `FECMD_*` address and data, and the
@@ -206,7 +206,7 @@ fn pciefe_step(command: u8, value: u16, setting: PciefeSetting) -> Step {
     Step {
         name: format!("{setting:?}"),
         libusdr: Box::new(move |oracle| oracle.pciefe_command(command, value)),
-        rsl_usdr: Box::new(move |device| device.configure_pciefe(setting)),
+        usdr: Box::new(move |device| device.configure_pciefe(setting)),
     }
 }
 
@@ -215,12 +215,12 @@ fn dac_step(code: u16) -> Step {
     Step {
         name: format!("oscillator DAC {code:#06x}"),
         libusdr: Box::new(move |oracle| oracle.set_oscillator_dac(code)),
-        rsl_usdr: Box::new(move |device| device.set_oscillator_dac(code)),
+        usdr: Box::new(move |device| device.set_oscillator_dac(code)),
     }
 }
 
 /// Opens fresh copies of `board` in both drivers, runs `steps` on each, and compares each
-/// step's operations and whether it succeeded. Returns rsl-usdr's step results and its
+/// step's operations and whether it succeeded. Returns usdr's step results and its
 /// board after power-down.
 fn assert_steps_match(
     board: impl Fn() -> SimBoard,
@@ -241,17 +241,17 @@ fn assert_steps_match(
     let mut device = Device::builder(sim.clone())
         .front_end(selection)
         .open()
-        .expect("rsl-usdr opens");
+        .expect("usdr opens");
     let mut results = Vec::new();
     for (step, (window, ok)) in steps.iter().zip(expected) {
         let start = sim.board().trace().len();
-        let result = (step.rsl_usdr)(&mut device);
+        let result = (step.usdr)(&mut device);
         let actual: Vec<Op> = sim.board().trace()[start..].to_vec();
         assert_same_ops(&reference.trace()[window], &actual, &step.name);
         assert_eq!(result.is_ok(), ok, "{}: {result:?}", step.name);
         results.push(result);
     }
-    device.close().expect("rsl-usdr powers down");
+    device.close().expect("usdr powers down");
     let board = std::mem::replace(&mut *sim.board(), SimBoard::new(REVISION));
     (results, board)
 }
@@ -390,7 +390,7 @@ fn the_breakout_oscillator_dac_matches_libusdr() {
 ///
 /// Not compared: no front end at all (`fe=none`). libusdr's probe then returns before
 /// setting its front-end pointer, which `malloc` left uninitialised, so `dac_vctcxo` reads
-/// garbage (it crashes the oracle). rsl-usdr refuses; `tests/frontend.rs` covers it.
+/// garbage (it crashes the oracle). usdr refuses; `tests/frontend.rs` covers it.
 #[test]
 fn no_oscillator_dac_is_refused_without_bus_access() {
     let (results, _) = assert_steps_match(bare, c"", FrontEndSelection::Auto, &[dac_step(1)]);
@@ -413,7 +413,7 @@ fn pciefe_commands_need_a_pciefe() {
 
 /// The automatic probe meets the `PCIe` front end first. Its expanders, absent here, read
 /// the idle bus, which passes its checks, and the breakout's DAC then answers as the front
-/// end's: libusdr, and rsl-usdr with it, take a breakout with a DAC for a `PCIe` front end.
+/// end's: libusdr, and usdr with it, take a breakout with a DAC for a `PCIe` front end.
 #[test]
 fn a_lone_breakout_dac_passes_for_a_pciefe() {
     let kind = assert_open_matches(with_exm2pe, c"", FrontEndSelection::Auto).expect("both open");
@@ -545,7 +545,7 @@ fn simplesync_comes_up_like_libusdr() {
 
 /// With XMASS's LMK05318 silent, libusdr logs the failed identity check and carries on: the
 /// idle bus reads as a locked APLL1 (all ones), APLL2 is unused, so the board comes up.
-/// rsl-usdr does the same.
+/// usdr does the same.
 #[test]
 fn xmass_without_its_clock_carries_on_like_libusdr() {
     let make = || with(FrontEnd::Xmass)().without_front_end_clock();
@@ -570,7 +570,7 @@ fn calibration_step(hz: u32, sdr_path: bool) -> Step {
                 oracle.set_sync_calibration_frequency(hz.into())
             }
         }),
-        rsl_usdr: Box::new(move |device| device.set_sync_calibration_frequency(hz)),
+        usdr: Box::new(move |device| device.set_sync_calibration_frequency(hz)),
     }
 }
 
@@ -579,7 +579,7 @@ fn calibration_path_step(code: u64, path: XmassCalibrationPath) -> Step {
     Step {
         name: format!("calibration path {path:?}"),
         libusdr: Box::new(move |oracle| oracle.set_sync_calibration_path(code)),
-        rsl_usdr: Box::new(move |device| device.set_sync_calibration_path(path)),
+        usdr: Box::new(move |device| device.set_sync_calibration_path(path)),
     }
 }
 
@@ -738,7 +738,7 @@ const POLL_LEN: usize = 5;
 
 /// `trace` with each run of identical lock polls collapsed to its first. libusdr's lock waits
 /// time out on the host's wall clock, so how many polls it makes before giving up depends
-/// on the host; rsl-usdr counts its sleeps instead. Everything else must agree.
+/// on the host; usdr counts its sleeps instead. Everything else must agree.
 fn collapse_polls(trace: &[Op]) -> Vec<Op> {
     let mut kept: Vec<Op> = Vec::with_capacity(trace.len());
     let mut index = 0;
@@ -768,7 +768,7 @@ fn is_lock_status_read(op: &Op) -> bool {
 }
 
 /// Clock boards whose LMK05318 never locks: both drivers spend their lock wait (libusdr on
-/// the wall clock, rsl-usdr in counted sleeps; repeated polls collapsed), skip APLL2's wait
+/// the wall clock, usdr in counted sleeps; repeated polls collapsed), skip APLL2's wait
 /// and XMASS's `SYNC_N` pulse, read the lock status once more, and fail the board: a hint
 /// fails the open, the automatic probe moves on (past XMASS, then `SimpleSync`, whose
 /// probe meets the same chip, to the breakout).
@@ -799,7 +799,7 @@ fn clock_boards_that_never_lock_fail_like_libusdr() {
         let result = Device::builder(sim.clone()).front_end(selection).open();
         let result = result.map(|device| {
             let kind = device.front_end();
-            device.close().expect("rsl-usdr powers down");
+            device.close().expect("usdr powers down");
             kind
         });
         assert_eq!(result.is_ok(), opens, "{what}: {result:?}");

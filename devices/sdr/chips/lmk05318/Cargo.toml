@@ -1,5 +1,5 @@
 [package]
-name = "rsl-lmk05318"
+name = "lmk05318"
 version = "0.0.0"
 description = "TI LMK05318 network synchronizer register values and frequency plans, shared by the pure-Rust uSDR and PE_SYNC drivers."
 publish = false

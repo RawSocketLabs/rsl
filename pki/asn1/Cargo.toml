@@ -1,5 +1,5 @@
 [package]
-name = "rsl-asn1"
+name = "asn1"
 version = "0.1.0"
 description = "Strict, accuracy-first ASN.1 DER transport for the RSL stack."
 edition.workspace = true

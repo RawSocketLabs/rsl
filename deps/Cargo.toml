@@ -1,5 +1,5 @@
 [package]
-name = "rsl-deps"
+name = "deps"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -14,8 +14,8 @@ publish = false
 
 # ---------------------------------------------------------------------------
 # SINGLE SOURCE OF TRUTH for blessed third-party versions. Every dependency is `optional`;
-# `rsl-deps` compiles to nothing until a consumer enables a feature. Bump a version in ONE
-# place and every RSL crate that consumes `rsl-deps` moves together.
+# `deps` compiles to nothing until a consumer enables a feature. Bump a version in ONE
+# place and every RSL crate that consumes `deps` moves together.
 #
 # This crate is the "rented" half of the stack: everything here is a candidate for eventual
 # replacement by an owned RSL crate (which lives in `rsl`). When that happens, the pin is

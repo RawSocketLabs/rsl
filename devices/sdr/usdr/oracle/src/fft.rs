@@ -2,7 +2,7 @@
 //! (`xdsp/fftad_functions.c`), called through their own dispatchers.
 //!
 //! The vendored build defines no `WVLT_ARCH_*`, so the dispatchers return the generic
-//! (scalar) kernels: the reference `rsl_usdr::dsp::{window, fftad}` port. Complex samples
+//! (scalar) kernels: the reference `usdr::dsp::{window, fftad}` port. Complex samples
 //! are `[re, im]` pairs, libusdr's `wvlt_fftwf_complex` and `wvlt_fftwi16_complex`.
 
 use std::ffi::{c_char, c_uint};

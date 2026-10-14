@@ -1,11 +1,11 @@
 //! The `LSDr`'s front-end probe (`usdr_device_m2_d09_4_ad45_2_initialize`'s
-//! `device_fe_probe` with compatibility `lsdr`), run by `rsl-sdr-frontend`.
+//! `device_fe_probe` with compatibility `lsdr`), run by `sdr-frontend`.
 //!
 //! The connector admits fe1005000 (its XRA1405 over SPI 4) and fe4ch4007200 (its sensor
 //! and expanders on I2C core 1); neither board's bring-up is ported, so one that answers
 //! stops the open with [`Error::FrontEndNotPorted`] where libusdr would bring it up.
 
-use rsl_sdr_frontend::{BringUp, Connector, Detected, Failure, FrontEndSelection};
+use sdr_frontend::{BringUp, Connector, Detected, Failure, FrontEndSelection};
 
 use crate::error::Error;
 use crate::lowlevel::Bus;

@@ -1,4 +1,4 @@
-# rsl-compression
+# compression
 
 > Inherits the workspace-root `../../AGENTS.md`.
 

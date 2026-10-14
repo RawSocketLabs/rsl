@@ -1,6 +1,6 @@
 //! The driver's error type.
 
-pub use rsl_lmk05318::plan::ClockPlanError;
+pub use lmk05318::plan::ClockPlanError;
 pub use rsl_lowlevel::Access;
 use rsl_lowlevel::SequenceFailure;
 

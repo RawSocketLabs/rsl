@@ -11,7 +11,7 @@
 //! # Generic use
 //!
 //! ```
-//! use rsl_crypto::{Result, mac::{Mac, hmac::sha256::HmacSha256}};
+//! use crypto::{Result, mac::{Mac, hmac::sha256::HmacSha256}};
 //!
 //! fn authenticate_fragments<M: Mac>(key: &[u8], fragments: &[&[u8]]) -> Result<M::Tag> {
 //!     let mut state = M::new(key)?;
@@ -25,7 +25,7 @@
 //! let mut verifier = HmacSha256::new(b"teaching key")?;
 //! verifier.update(b"part one + two")?;
 //! verifier.verify(tag.as_bytes())?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 use crate::Result;

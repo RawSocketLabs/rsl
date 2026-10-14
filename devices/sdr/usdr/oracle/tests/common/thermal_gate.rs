@@ -1,16 +1,16 @@
-//! rsl-usdr's thermal gate, the one intentional addition to its power-up trace. Shared by
+//! usdr's thermal gate, the one intentional addition to its power-up trace. Shared by
 //! the parity tests that compare whole power-ups (`#[path]`-included).
 
-use rsl_usdr_sim::{BoardRevision, I2cAddress, Op};
+use usdr_sim::{BoardRevision, I2cAddress, Op};
 
 /// The TMP114.
 const TEMP: I2cAddress = I2cAddress { bus: 0, addr: 0x4e };
 /// The LP8758 PMIC.
 const PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
 
-/// rsl-usdr's trace without its thermal gate.
+/// usdr's trace without its thermal gate.
 ///
-/// Intentional addition: before the first PMIC operation rsl-usdr reads the TMP114
+/// Intentional addition: before the first PMIC operation usdr reads the TMP114
 /// temperature register, and on revisions 1 and 2 first checks the TMP114 ID (libusdr
 /// checks it only on revision 3). The gate must sit exactly there, so a misplaced or
 /// extra temperature read still fails the comparison.
@@ -42,7 +42,7 @@ pub(crate) fn without_thermal_gate(trace: &[Op], revision: BoardRevision) -> Vec
 pub(crate) fn assert_same_ops(expected: &[Op], actual: &[Op], context: &str) {
     if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
         panic!(
-            "{context}: first difference at op {i}: libusdr {:x?}, rsl-usdr {:x?}",
+            "{context}: first difference at op {i}: libusdr {:x?}, usdr {:x?}",
             expected[i], actual[i]
         );
     }

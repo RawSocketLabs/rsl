@@ -11,7 +11,7 @@
 //! # A complete historical round trip
 //!
 //! ```
-//! use rsl_crypto_legacy::cipher::rc4::{Rc4, Rc4Key};
+//! use crypto_legacy::cipher::rc4::{Rc4, Rc4Key};
 //!
 //! let key_bytes = b"historical key";
 //! let mut sender = Rc4::new(Rc4Key::try_from_slice(key_bytes)?);
@@ -22,7 +22,7 @@
 //! assert_ne!(&bytes, b"wire bytes");
 //! receiver.apply_keystream(&mut bytes)?;
 //! assert_eq!(&bytes, b"wire bytes");
-//! # Ok::<(), rsl_crypto_legacy::CryptoError>(())
+//! # Ok::<(), crypto_legacy::CryptoError>(())
 //! ```
 //!
 //! This works only because both directions begin with identical key and position and consume the

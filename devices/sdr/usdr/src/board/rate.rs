@@ -2,7 +2,7 @@
 //! (`usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`) and
 //! `usdr_rfic_bb_set_badwidth`, run over the board's bus.
 
-use rsl_deps::tracing::debug;
+use deps::tracing::debug;
 
 use super::Board;
 use crate::error::Error;

@@ -1,5 +1,5 @@
 [package]
-name = "rsl-usdr"
+name = "usdr"
 version = "0.0.0"
 description = "Pure-Rust driver for the Wavelet Lab uSDR software-defined radio."
 publish = false
@@ -11,32 +11,32 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 num-complex.workspace = true
-rsl-lmk05318.workspace = true
+lmk05318.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
-rsl-lp8758.workspace = true
-rsl-sdr-frontend = { workspace = true, features = ["std"] }
-rsl-deps = { workspace = true, features = ["tracing"] }
+lp8758.workspace = true
+sdr-frontend = { workspace = true, features = ["std"] }
+deps = { workspace = true, features = ["tracing"] }
 thiserror.workspace = true
 
 [features]
 ## The PCIe transport over the `usdr_pcie_uram` Linux driver (`transport::pcie`).
-pcie = ["dep:rsl-usdr-pcie"]
+pcie = ["dep:usdr-pcie"]
 ## USB control-plane access and RX streaming over the owned Linux usbfs backend.
-usb = ["dep:rsl-usb"]
+usb = ["dep:usb"]
 ## Unstable `transport::usb::NativeUsb`: the USB control plane driven by a caller-owned Mio
 ## reactor.
-mio = ["usb", "dep:mio", "rsl-usb/mio"]
+mio = ["usb", "dep:mio", "usb/mio"]
 ## The Verilator host bridge (`transport::verilator`): a simulated uSDR gateware model over
 ## libusdr's Unix-socket and shared-file protocol.
 verilator = []
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rsl-usdr-pcie = { workspace = true, optional = true }
-rsl-usb = { workspace = true, optional = true }
+usdr-pcie = { workspace = true, optional = true }
+usb = { workspace = true, optional = true }
 mio = { workspace = true, optional = true }
 
 [dev-dependencies]
-rsl-usdr-sim.workspace = true
+usdr-sim.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # Readiness-runner proofs; Mio enters production only through the opt-in `mio` feature. The

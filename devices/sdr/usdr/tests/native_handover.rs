@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use common::sim_bus::SimBus;
 use mio::{Poll, Token, Waker};
-use rsl_usdr::lowlevel::BusError;
-use rsl_usdr::{Device, Error};
-use rsl_usdr_sim::{BoardRevision, SimBoard};
+use usdr::lowlevel::BusError;
+use usdr::{Device, Error};
+use usdr_sim::{BoardRevision, SimBoard};
 
 /// GPO bank driving the LMS6002D reset line (active low).
 const GPO_LMS_RST: u8 = 0;

@@ -16,12 +16,12 @@
 //! # Example
 //!
 //! ```
-//! use rsl_crypto::digest::sha2::sha512::Sha512;
+//! use crypto::digest::sha2::sha512::Sha512;
 //!
 //! let digest = Sha512::digest("abc")?;
 //! assert_eq!(digest.as_bytes().len(), 64);
 //! assert_eq!(&digest.as_bytes()[..4], &[0xdd, 0xaf, 0x35, 0xa1]);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Standard and security status

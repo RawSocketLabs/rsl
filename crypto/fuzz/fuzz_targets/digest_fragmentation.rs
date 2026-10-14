@@ -4,8 +4,7 @@
 //! Run: `cargo +nightly fuzz run digest_fragmentation --fuzz-dir crypto/fuzz`.
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
-use rsl_crypto::{
+use crypto::{
     digest::{
         sha2::{sha256::Sha256, sha384::Sha384, sha512::Sha512},
         sha3::{Sha3_256, Shake256},
@@ -16,6 +15,7 @@ use rsl_crypto::{
         poly1305::{Poly1305, Poly1305Key},
     },
 };
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
@@ -55,18 +55,27 @@ fuzz_target!(|data: &[u8]| {
     for part in message.chunks(chunk) {
         mac.update(part).unwrap();
     }
-    assert_eq!(mac.finalize(), HmacSha256::authenticate(key, message).unwrap());
+    assert_eq!(
+        mac.finalize(),
+        HmacSha256::authenticate(key, message).unwrap()
+    );
     let mut mac = HmacSha384::new(key).unwrap();
     for part in message.chunks(chunk) {
         mac.update(part).unwrap();
     }
-    assert_eq!(mac.finalize(), HmacSha384::authenticate(key, message).unwrap());
+    assert_eq!(
+        mac.finalize(),
+        HmacSha384::authenticate(key, message).unwrap()
+    );
 
     let mut poly = Poly1305::new(Poly1305Key::new([0x42; 32]));
     for part in message.chunks(chunk) {
         poly.update(part);
     }
-    assert_eq!(poly.finalize(), Poly1305::authenticate(Poly1305Key::new([0x42; 32]), message));
+    assert_eq!(
+        poly.finalize(),
+        Poly1305::authenticate(Poly1305Key::new([0x42; 32]), message)
+    );
 
     let mut out256 = [0_u8; 64];
     hkdf256::derive(Some(key), message, key, &mut out256).unwrap();

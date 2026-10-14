@@ -13,7 +13,7 @@
 //! NIST's `AES_Core256.pdf` encrypts the first ECB block under the Appendix A.3 key:
 //!
 //! ```
-//! use rsl_crypto::cipher::aes::aes256::{Aes256, Aes256Block, Aes256Key};
+//! use crypto::cipher::aes::aes256::{Aes256, Aes256Block, Aes256Key};
 //!
 //! let key = Aes256Key::new([
 //!     0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,

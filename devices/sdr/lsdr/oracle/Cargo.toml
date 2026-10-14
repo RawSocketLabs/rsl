@@ -1,7 +1,7 @@
 [package]
-name = "rsl-lsdr-oracle"
+name = "lsdr-oracle"
 version = "0.0.0"
-description = "Runs wavelet-lab libusdr's LSDr (m2_da09_4_ad45_2) driver against rsl-lsdr-sim, as the reference for the LSDr port."
+description = "Runs wavelet-lab libusdr's LSDr (m2_da09_4_ad45_2) driver against lsdr-sim, as the reference for the LSDr port."
 publish = false
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -10,16 +10,16 @@ rust-version = "1.85"
 links = "lsdr_oracle"
 
 # Its own workspace root: it compiles vendored C, which the root workspace must not build, and
-# sits inside the `rsl-lsdr` member's directory, where the root workspace's `exclude` cannot
+# sits inside the `lsdr` member's directory, where the root workspace's `exclude` cannot
 # reach it.
 [workspace]
 
 [dependencies]
-rsl-lsdr-sim = { path = "../sim" }
+lsdr-sim = { path = "../sim" }
 thiserror = "2.0"
 
 [dev-dependencies]
-rsl-lsdr = { path = ".." }
+lsdr = { path = ".." }
 
 [build-dependencies]
 cc = "1.2"

@@ -54,4 +54,4 @@ bit themselves. The test retains the RFC's final byte `0x93`.
 
 Development-only comparisons use RustCrypto `x25519-dalek` 3.0.0 with default features disabled.
 That crate exposes the bare RFC 7748 `x25519` function, supports `no_std`, and has MSRV 1.85. It is
-supplementary evidence only; `rsl-crypto` production code neither imports nor calls it.
+supplementary evidence only; `crypto` production code neither imports nor calls it.

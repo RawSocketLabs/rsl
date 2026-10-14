@@ -1,6 +1,6 @@
 //! Public tests for input representations and incremental fragmentation.
 
-use rsl_crypto::digest::sha2::sha256::{Sha256, Sha256Digest};
+use crypto::digest::sha2::sha256::{Sha256, Sha256Digest};
 
 /// Regression evidence: common owned and borrowed byte-like inputs represent the same message.
 #[test]

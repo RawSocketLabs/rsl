@@ -1,4 +1,4 @@
-//! rsl-usdr's flash maintenance matches libusdr's `ipblks/espi_flash.c` on the simulated
+//! usdr's flash maintenance matches libusdr's `ipblks/espi_flash.c` on the simulated
 //! flash controller: the same register operations and waits, in the same order, the same
 //! result and the same flash contents afterwards.
 //!
@@ -13,11 +13,11 @@ mod sim_bus;
 
 use std::sync::{Arc, PoisonError};
 
-use rsl_usdr::flash::{Flash, FlashError, FlashId, MASTER_IMAGE_OFFSET, WriteOptions};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_oracle::flash::{DONT_ERASE, DONT_WRITE_HEADER, FlashOracle};
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard, SimFlash};
 use sim_bus::SimBus;
+use usdr::flash::{Flash, FlashError, FlashId, MASTER_IMAGE_OFFSET, WriteOptions};
+use usdr_oracle::Oracle;
+use usdr_oracle::flash::{DONT_ERASE, DONT_WRITE_HEADER, FlashOracle};
+use usdr_sim::{BoardRevision, Op, SimBoard, SimFlash};
 
 /// The controller's register base libusdr's flash callers pass: `M2PCI_REG_QSPI_FLASH`,
 /// checked against the board description by
@@ -71,8 +71,8 @@ fn libusdr<T>(board: SimBoard, op: impl FnOnce(&mut FlashOracle) -> T) -> (T, Si
     (result, oracle.close())
 }
 
-/// Runs rsl-usdr's flash maintenance on `board`.
-fn rsl_usdr<T>(board: SimBoard, op: impl FnOnce(&mut Flash<SimBus>) -> T) -> (T, SimBoard) {
+/// Runs usdr's flash maintenance on `board`.
+fn usdr<T>(board: SimBoard, op: impl FnOnce(&mut Flash<SimBus>) -> T) -> (T, SimBoard) {
     let bus = SimBus::new(board);
     let mut flash = Flash::new(bus.clone());
     let result = op(&mut flash);
@@ -99,7 +99,7 @@ fn assert_same_effect(libusdr: &SimBoard, rust: &SimBoard) {
     let (c, r) = (libusdr.trace(), rust.trace());
     if let Some(at) = first_difference(c, r) {
         panic!(
-            "operation {at} differs: libusdr {:?}, rsl-usdr {:?} ({} and {} operations)",
+            "operation {at} differs: libusdr {:?}, usdr {:?} ({} and {} operations)",
             c.get(at),
             r.get(at),
             c.len(),
@@ -129,11 +129,11 @@ fn the_controller_and_master_image_are_where_libusdr_describes_them() {
     assert_eq!(master, u64::from(MASTER_IMAGE_OFFSET));
 }
 
-/// Both drivers' ID reads of a flash answering `id`: libusdr's reply, and rsl-usdr's ID.
-fn read_ids(id: u32) -> (rsl_usdr_oracle::flash::IdReply, FlashId) {
+/// Both drivers' ID reads of a flash answering `id`: libusdr's reply, and usdr's ID.
+fn read_ids(id: u32) -> (usdr_oracle::flash::IdReply, FlashId) {
     let flash = || board_with(SimFlash::new(id, 1 << 16));
     let (reply, c) = libusdr(flash(), FlashOracle::get_id);
-    let (rust, r) = rsl_usdr(flash(), |flash| flash.id().expect("reads"));
+    let (rust, r) = usdr(flash(), |flash| flash.id().expect("reads"));
     assert_same_effect(&c, &r);
     (reply, rust)
 }
@@ -160,7 +160,7 @@ fn ids_and_descriptions_match_libusdr() {
 }
 
 /// Divergence: libusdr multiplies the size by 8 in 32 bits, which wraps from capacity code
-/// 29 (512 MiB) and is undefined from 32 (rsl-usdr does not run it there).
+/// 29 (512 MiB) and is undefined from 32 (usdr does not run it there).
 #[test]
 fn capacities_past_libusdrs_32_bit_arithmetic_are_reported_whole() {
     for (code, megabits) in [(29, 4096), (30, 8192), (31, 16384)] {
@@ -193,12 +193,12 @@ fn reads_of_every_length_and_alignment_match_libusdr() {
         (end - 16, 16),
     ] {
         let (c_result, c) = libusdr(board(), |flash| flash.read(offset, len));
-        let (r_result, r) = rsl_usdr(board(), |flash| {
+        let (r_result, r) = usdr(board(), |flash| {
             let mut out = vec![0; usize::try_from(len).expect("small")];
             flash.read(offset, &mut out).map(|()| out)
         });
         let c_bytes = c_result.expect("libusdr reads");
-        let r_bytes = r_result.expect("rsl-usdr reads");
+        let r_bytes = r_result.expect("usdr reads");
         assert_eq!(c_bytes, r_bytes, "{offset:#x}+{len}: bytes read");
         let start = usize::try_from(offset).expect("small");
         assert_eq!(
@@ -212,7 +212,7 @@ fn reads_of_every_length_and_alignment_match_libusdr() {
 
 /// Divergence: libusdr sends any 32-bit address; through the 24-bit core
 /// (`USDR_QSPI_FLASH_24_RW`) one at 16 MiB or past would reach the start of the flash, the
-/// golden image. rsl-usdr refuses the range before sending anything.
+/// golden image. usdr refuses the range before sending anything.
 #[test]
 fn a_range_past_16_mib_is_refused_where_libusdr_sends_its_address() {
     let offset = 1 << 24;
@@ -226,7 +226,7 @@ fn a_range_past_16_mib_is_refused_where_libusdr_sends_its_address() {
         "libusdr sent the address"
     );
 
-    let (r_result, r) = rsl_usdr(board(), |flash| flash.read(offset, &mut [0; 4]));
+    let (r_result, r) = usdr(board(), |flash| flash.read(offset, &mut [0; 4]));
     assert!(
         matches!(r_result, Err(FlashError::OutOfRange { .. })),
         "{r_result:?}"
@@ -243,7 +243,7 @@ fn erases_match_libusdrs_choice_of_sectors_and_subsectors() {
         (MASTER_IMAGE_OFFSET, 0x3_0000),
     ] {
         let (c_result, c) = libusdr(board(), |flash| flash.erase(offset, len));
-        let (r_result, r) = rsl_usdr(board(), |flash| flash.programmer().erase(offset, len));
+        let (r_result, r) = usdr(board(), |flash| flash.programmer().erase(offset, len));
         assert_eq!(c_result, Ok(()), "{offset:#x}+{len:#x}: libusdr erases");
         assert!(r_result.is_ok(), "{offset:#x}+{len:#x}: {r_result:?}");
         assert_same_effect(&c, &r);
@@ -259,7 +259,7 @@ fn erases_match_libusdrs_choice_of_sectors_and_subsectors() {
 #[test]
 fn a_chip_erase_matches_libusdrs_whole_flash_erase() {
     let (c_result, c) = libusdr(board(), |flash| flash.erase(0, u32::MAX));
-    let (r_result, r) = rsl_usdr(board(), |flash| flash.programmer().erase_chip());
+    let (r_result, r) = usdr(board(), |flash| flash.programmer().erase_chip());
     assert_eq!(c_result, Ok(()));
     assert!(r_result.is_ok(), "{r_result:?}");
     assert_same_effect(&c, &r);
@@ -270,7 +270,7 @@ fn a_chip_erase_matches_libusdrs_whole_flash_erase() {
 fn erases_both_drivers_refuse_send_nothing() {
     for (offset, len) in [(0, 0), (0, 0xfff), (0x800, 0x2000)] {
         let (c_result, c) = libusdr(board(), |flash| flash.erase(offset, len));
-        let (r_result, r) = rsl_usdr(board(), |flash| flash.programmer().erase(offset, len));
+        let (r_result, r) = usdr(board(), |flash| flash.programmer().erase(offset, len));
         assert_eq!(c_result, Err(EINVAL), "{offset:#x}+{len:#x}");
         assert!(
             matches!(r_result, Err(FlashError::EraseGranularity { .. })),
@@ -281,7 +281,7 @@ fn erases_both_drivers_refuse_send_nothing() {
 }
 
 /// Divergence: libusdr erases block by block and fails only at a remainder smaller than a
-/// subsector, after erasing what came before; rsl-usdr refuses the whole range up front.
+/// subsector, after erasing what came before; usdr refuses the whole range up front.
 #[test]
 fn a_misaligned_erase_remainder_is_refused_before_libusdr_would_start_erasing() {
     let (offset, len) = (0, 0x1800);
@@ -292,7 +292,7 @@ fn a_misaligned_erase_remainder_is_refused_before_libusdr_would_start_erasing() 
         "libusdr erased the first subsector before failing"
     );
 
-    let (r_result, r) = rsl_usdr(board(), |flash| flash.programmer().erase(offset, len));
+    let (r_result, r) = usdr(board(), |flash| flash.programmer().erase(offset, len));
     assert!(matches!(r_result, Err(FlashError::EraseGranularity { .. })));
     assert!(r.trace().is_empty(), "nothing sent");
 
@@ -301,7 +301,7 @@ fn a_misaligned_erase_remainder_is_refused_before_libusdr_would_start_erasing() 
     let (c_result, c) = libusdr(board(), |flash| flash.write(offset, &data, 0));
     assert_eq!(c_result, Err(EINVAL));
     assert!(!c.trace().is_empty(), "libusdr started erasing");
-    let (r_result, r) = rsl_usdr(board(), |flash| {
+    let (r_result, r) = usdr(board(), |flash| {
         flash.programmer().write(offset, &data, WriteOptions::new())
     });
     assert!(matches!(r_result, Err(FlashError::EraseGranularity { .. })));
@@ -332,7 +332,7 @@ fn writes_match_libusdr() {
             options = options.skip_header();
         }
         let (c_result, c) = libusdr(board(), |flash| flash.write(offset, &data, flags));
-        let (r_result, r) = rsl_usdr(board(), |flash| {
+        let (r_result, r) = usdr(board(), |flash| {
             flash.programmer().write(offset, &data, options)
         });
         assert_eq!(
@@ -366,7 +366,7 @@ fn writes_both_drivers_refuse_send_nothing() {
             options = options.skip_header();
         }
         let (c_result, c) = libusdr(board(), |flash| flash.write(offset, data, flags));
-        let (r_result, r) = rsl_usdr(board(), |flash| {
+        let (r_result, r) = usdr(board(), |flash| {
             flash.programmer().write(offset, data, options)
         });
         let len = data.len();
@@ -384,7 +384,7 @@ fn writes_both_drivers_refuse_send_nothing() {
 
 /// Divergence: libusdr programs 128-byte chunks from any offset, so from one that is not a
 /// multiple of 128 a chunk runs past its 256-byte page and the flash wraps the rest onto the
-/// page's start; rsl-usdr refuses such a write before sending anything.
+/// page's start; usdr refuses such a write before sending anything.
 #[test]
 fn a_chunk_crossing_a_page_is_refused_where_libusdr_corrupts_the_page() {
     let (offset, data) = (0x40, image(200));
@@ -401,7 +401,7 @@ fn a_chunk_crossing_a_page_is_refused_where_libusdr_corrupts_the_page() {
         "libusdr's second chunk wrapped its last 8 bytes onto the page start"
     );
 
-    let (r_result, r) = rsl_usdr(board(), |flash| {
+    let (r_result, r) = usdr(board(), |flash| {
         flash
             .programmer()
             .write(offset, &data, WriteOptions::new().without_erase())
@@ -424,7 +424,7 @@ fn a_chunk_crossing_a_page_is_refused_where_libusdr_corrupts_the_page() {
 fn a_controller_that_stays_busy_times_out_like_libusdr() {
     let stuck = || board().with_stuck_flash_controller();
     let (reply, c) = libusdr(stuck(), FlashOracle::get_id);
-    let (r_result, r) = rsl_usdr(stuck(), Flash::id);
+    let (r_result, r) = usdr(stuck(), Flash::id);
     assert_eq!(reply.errno, ETIMEDOUT);
     assert!(
         matches!(r_result, Err(FlashError::ControllerTimeout)),
@@ -437,7 +437,7 @@ fn a_controller_that_stays_busy_times_out_like_libusdr() {
 fn a_flash_that_stays_busy_times_out_like_libusdr() {
     let stuck = || board_with(SimFlash::new(ID, SIZE).stuck_busy());
     let (c_result, c) = libusdr(stuck(), |flash| flash.erase(0x1000, 0x1000));
-    let (r_result, r) = rsl_usdr(stuck(), |flash| flash.programmer().erase(0x1000, 0x1000));
+    let (r_result, r) = usdr(stuck(), |flash| flash.programmer().erase(0x1000, 0x1000));
     assert_eq!(c_result, Err(ETIMEDOUT));
     assert!(
         matches!(r_result, Err(FlashError::FlashTimeout)),

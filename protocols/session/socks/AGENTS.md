@@ -22,7 +22,7 @@ GSS-API, SOCKS4, and SOCKS4A remain absent. [`DESIGN.md`](DESIGN.md) records dec
 
 - Group imports under `// --- Standard library ---`, `// --- Workspace dependencies ---`, and
   `// --- Internal modules ---`, in that order, omitting empty groups. The dependency group
-  means workspace-managed crates (including bnb), not an `rsl_deps` facade. Keep
+  means workspace-managed crates (including bnb), not an `deps` facade. Keep
   attributes attached to their imports and alphabetize within each group. Apply the
   same grouping to scoped imports; facade re-exports remain after module declarations.
 - Keep `lib.rs` and every `mod.rs` facade-only: documentation/attributes, module

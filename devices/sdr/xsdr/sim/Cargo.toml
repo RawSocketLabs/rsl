@@ -1,7 +1,7 @@
 [package]
-name = "rsl-xsdr-sim"
+name = "xsdr-sim"
 version = "0.0.0"
-description = "Simulated LMS7 family (m2_lm7_1: XSDR, XTRX) board for testing libusdr and the future rsl-xsdr without hardware."
+description = "Simulated LMS7 family (m2_lm7_1: XSDR, XTRX) board for testing libusdr and the future xsdr without hardware."
 publish = false
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rsl-lms7002m-sim.workspace = true
+lms7002m-sim.workspace = true
 thiserror.workspace = true
 
 [lints]

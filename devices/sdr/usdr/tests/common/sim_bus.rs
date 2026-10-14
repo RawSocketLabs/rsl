@@ -1,15 +1,15 @@
-//! `lowlevel::Bus` over `rsl-usdr-sim`, as libusdr's real transports present the board.
+//! `lowlevel::Bus` over `usdr-sim`, as libusdr's real transports present the board.
 //!
-//! Shared by `rsl-usdr`'s tests and the oracle's parity tests (`#[path]`-included), so both
+//! Shared by `usdr`'s tests and the oracle's parity tests (`#[path]`-included), so both
 //! drive the simulator through the same adapter.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use rsl_usdr::lowlevel::{
+use usdr::lowlevel::{
     Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxCommit, TxFill,
 };
-use rsl_usdr_sim::{I2cAddress, SimBoard};
+use usdr_sim::{I2cAddress, SimBoard};
 
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the bus.
 #[derive(Clone)]

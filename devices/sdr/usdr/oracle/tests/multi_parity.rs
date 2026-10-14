@@ -1,7 +1,7 @@
-//! rsl-usdr's `MultiDevice` against libusdr's multi-device aggregate (`device/mdev.c`,
+//! usdr's `MultiDevice` against libusdr's multi-device aggregate (`device/mdev.c`,
 //! opened with `bus=sim0:sim1:sim2`): each board's operations in each step, the samples
 //! each device delivers and plays, and where both stop when one device fails. Also the
-//! points where libusdr's aggregate fails and rsl-usdr's does not, as evidence for the
+//! points where libusdr's aggregate fails and usdr's does not, as evidence for the
 //! divergences.
 
 #[path = "common/baseband.rs"]
@@ -25,15 +25,15 @@ use std::time::Duration;
 
 use baseband::without_baseband_loop;
 use num_complex::Complex;
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
-use rsl_usdr::{
+use sim_bus::SimBus;
+use thermal_gate::{assert_same_ops, without_thermal_gate};
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
+use usdr::{
     Device, Error, FrontEndKind, FrontEndSelection, HostFormat, MultiDevice, MultiError, MultiStep,
     Outcome, RxConfig, StreamTime, StreamsConfig, SyncMode, TxConfig, WireFormat,
 };
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, FrontEnd, Op, PllLock, SimBoard, TxPacket};
-use sim_bus::SimBus;
-use thermal_gate::{assert_same_ops, without_thermal_gate};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, FrontEnd, Op, PllLock, SimBoard, TxPacket};
 
 /// The aggregate's boards' revisions, the master first: libusdr's aggregate takes any
 /// uSDRs, whatever their revision.
@@ -211,7 +211,7 @@ fn ranges(before: &[usize], after: &[usize]) -> Vec<Range<usize>> {
     before.iter().zip(after).map(|(&b, &a)| b..a).collect()
 }
 
-/// rsl-usdr's sims, their trace lengths and the order of their operations.
+/// usdr's sims, their trace lengths and the order of their operations.
 struct Sims(Vec<SimBus>, Arc<Mutex<Vec<usize>>>);
 
 impl Sims {
@@ -290,7 +290,7 @@ fn le_bytes(samples: &[Complex<i16>]) -> Vec<u8> {
 /// A stream scenario made the same way on both sides.
 #[derive(Clone, Copy, Debug)]
 struct Scenario {
-    /// libusdr's aggregate sync type and rsl-usdr's mode.
+    /// libusdr's aggregate sync type and usdr's mode.
     sync: (&'static CStr, SyncMode),
     /// With a TX stream beside the RX one.
     with_tx: bool,
@@ -301,7 +301,7 @@ struct Scenario {
 }
 
 impl Scenario {
-    /// rsl-usdr's configuration.
+    /// usdr's configuration.
     fn config(self) -> StreamsConfig {
         let rx = StreamsConfig::rx(RxConfig::new(SAMPLES, HostFormat::Ci16, WireFormat::Ci16));
         let config = if self.with_tx {
@@ -406,12 +406,12 @@ fn on_libusdr(scenario: Scenario) -> Run {
     }
 }
 
-/// rsl-usdr's `MultiDevice`, the same calls.
+/// usdr's `MultiDevice`, the same calls.
 fn on_rsl(scenario: Scenario) -> Run {
     let sims = Sims::new(boards(plain));
     let mut multi = sims
         .open(FrontEndSelection::Auto)
-        .expect("rsl-usdr opens the aggregate");
+        .expect("usdr opens the aggregate");
     let mut windows = vec![("open", ranges(&[0; 3], &sims.lens()))];
     let mut order_windows = Vec::new();
     order_windows.push(0..sims.order().len());
@@ -436,11 +436,10 @@ fn on_rsl(scenario: Scenario) -> Run {
         });
     }
     step(&mut multi, "create", &mut |m| {
-        m.create_streams(scenario.config())
-            .expect("rsl-usdr creates");
+        m.create_streams(scenario.config()).expect("usdr creates");
     });
     step(&mut multi, "start", &mut |m| {
-        m.start_streams().expect("rsl-usdr starts");
+        m.start_streams().expect("usdr starts");
     });
     let mut received = Vec::new();
     for _ in 0..scenario.receives {
@@ -449,7 +448,7 @@ fn on_rsl(scenario: Scenario) -> Run {
             let mut channels: Vec<&mut [Complex<i16>]> =
                 buffers.iter_mut().map(Vec::as_mut_slice).collect();
             m.receive_into(&mut channels, Duration::from_millis(100))
-                .expect("rsl-usdr receives");
+                .expect("usdr receives");
             received.push(buffers.iter().map(|buffer| le_bytes(buffer)).collect());
         });
     }
@@ -462,15 +461,15 @@ fn on_rsl(scenario: Scenario) -> Run {
                 Some(StreamTime::from_samples(send_time(k))),
                 Duration::from_millis(100),
             )
-            .expect("rsl-usdr sends");
+            .expect("usdr sends");
         });
     }
     step(&mut multi, "stop", &mut |m| {
-        m.stop_streams().expect("rsl-usdr stops");
+        m.stop_streams().expect("usdr stops");
     });
     let before = sims.lens();
     let order = sims.order();
-    multi.close().expect("rsl-usdr closes");
+    multi.close().expect("usdr closes");
     windows.push(("close", ranges(&before, &sims.lens())));
     order_windows.push(order.len()..order.len());
     let (traces, played) = sims.finish();
@@ -485,7 +484,7 @@ fn on_rsl(scenario: Scenario) -> Run {
 }
 
 /// Every step's operations on every board match: libusdr's RX create without its
-/// baseband loop and rsl-usdr's open without its thermal gate, the whitelisted
+/// baseband loop and usdr's open without its thermal gate, the whitelisted
 /// differences of the single-device tests.
 fn assert_runs_match(expected: &Run, actual: &Run, context: &str) {
     let names = |run: &Run| {
@@ -615,7 +614,7 @@ fn a_one_pps_group_waits_on_every_device_like_libusdr() {
     }
 }
 
-/// libusdr's aggregate `"sysref"`, rsl-usdr's `GeneratedSysref`: every device waits for
+/// libusdr's aggregate `"sysref"`, usdr's `GeneratedSysref`: every device waits for
 /// 1PPS, then the master alone generates SYSREF.
 #[test]
 fn a_generated_sysref_group_has_the_master_generate_it_like_libusdr() {
@@ -647,7 +646,7 @@ fn a_generated_sysref_group_has_the_master_generate_it_like_libusdr() {
 }
 
 /// libusdr refuses its aggregate's direct `"sysref+gen"`, every device generating, before
-/// any operation; rsl-usdr's `GeneratedSysref` means the master's generator instead, so
+/// any operation; usdr's `GeneratedSysref` means the master's generator instead, so
 /// the refused form cannot be asked for.
 #[test]
 fn libusdr_refuses_every_device_generating_sysref() {
@@ -662,7 +661,7 @@ fn libusdr_refuses_every_device_generating_sysref() {
 }
 
 /// A setting that fails on device 1 stops there on both sides: device 0 has it, device 2
-/// never sees it; rsl-usdr reports each device's outcome.
+/// never sees it; usdr reports each device's outcome.
 #[test]
 fn a_failed_broadcast_stops_at_its_device_like_libusdr() {
     let unlocked = |index, board: SimBoard| {
@@ -721,7 +720,7 @@ fn a_failed_broadcast_stops_at_its_device_like_libusdr() {
 /// A TX create that fails on device 1 (gateware older than TX streaming needs) after RX
 /// was created everywhere: both stop there with the same operations. libusdr then holds
 /// device 0's TX stream with no handle to destroy it, and a retry fails `-EBUSY`;
-/// rsl-usdr reports each device's outcome and stops every group it left.
+/// usdr reports each device's outcome and stops every group it left.
 #[test]
 fn a_create_failing_on_one_device_stops_there_like_libusdr() {
     let old_build = 0xd2b1_0c08;
@@ -798,7 +797,7 @@ fn a_create_failing_on_one_device_stops_there_like_libusdr() {
     }
     multi
         .stop_streams()
-        .expect("rsl-usdr stops every group it left");
+        .expect("usdr stops every group it left");
     multi
         .create_streams(StreamsConfig::rx(RxConfig::new(
             SAMPLES,
@@ -877,7 +876,7 @@ fn a_receive_failing_on_one_device_stops_there_like_libusdr() {
 }
 
 /// A `SimpleSync` master distributes its 50 MHz reference: libusdr's aggregate moves
-/// every device to it at open (`/ll/mdev`), and so does rsl-usdr's.
+/// every device to it at open (`/ll/mdev`), and so does usdr's.
 #[test]
 fn a_simplesync_master_moves_every_device_to_its_reference_like_libusdr() {
     let simplesync = |index, board: SimBoard| {
@@ -892,7 +891,7 @@ fn a_simplesync_master_moves_every_device_to_its_reference_like_libusdr() {
     let expected = oracle.close_all();
 
     let sims = Sims::new(boards(simplesync));
-    let multi = sims.open(FrontEndSelection::Auto).expect("rsl-usdr opens");
+    let multi = sims.open(FrontEndSelection::Auto).expect("usdr opens");
     assert_eq!(multi.master().front_end(), Some(FrontEndKind::SimpleSync));
     let rsl_opened = sims.lens();
     multi.close().expect("closes");
@@ -910,7 +909,7 @@ fn a_simplesync_master_moves_every_device_to_its_reference_like_libusdr() {
 
 /// libusdr's aggregate needs its master's front-end node (`/ll/mdev`), which exists only
 /// with a front end: with `fe=none` it opens every device, then fails `-ENOENT` and
-/// powers them down. rsl-usdr opens; up to libusdr's failure, both did the same.
+/// powers them down. usdr opens; up to libusdr's failure, both did the same.
 #[test]
 fn libusdr_fails_an_aggregate_whose_master_has_no_front_end() {
     let Err(refused) = Oracle::open_multi(boards(plain), c"fe=none") else {
@@ -919,12 +918,12 @@ fn libusdr_fails_an_aggregate_whose_master_has_no_front_end() {
     assert_eq!(refused.errno, -2);
 
     let sims = Sims::new(boards(plain));
-    let multi = sims.open(FrontEndSelection::None).expect("rsl-usdr opens");
+    let multi = sims.open(FrontEndSelection::None).expect("usdr opens");
     for (board, revision) in REVISIONS.iter().enumerate() {
         let opened = without_thermal_gate(sims.0[board].board().trace(), *revision);
         assert!(
             refused.boards[board].trace().starts_with(&opened),
-            "board {board}: libusdr opened it as rsl-usdr does before failing"
+            "board {board}: libusdr opened it as usdr does before failing"
         );
     }
     assert_eq!(multi.device_count(), 3);
@@ -932,7 +931,7 @@ fn libusdr_fails_an_aggregate_whose_master_has_no_front_end() {
 
 /// libusdr's aggregate tells a stream's direction by an inverted test
 /// (`strstr(sid, "rx/0") == 0`), so its RX stream reports itself as TX; on one device it
-/// reports RX. rsl-usdr has no such report: each device's stream is the one it created.
+/// reports RX. usdr has no such report: each device's stream is the one it created.
 #[test]
 fn libusdr_reports_its_aggregate_rx_stream_as_tx() {
     let mut oracle = Oracle::open_multi(boards(plain), c"").expect("opens");

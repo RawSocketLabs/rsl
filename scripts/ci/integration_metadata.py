@@ -18,8 +18,8 @@ class CargoMetadataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-portable-") as directory:
             root = Path(directory)
             (root / "Cargo.toml").write_text(f'[workspace]\nresolver="2"\nmembers=["{USDR}"]\n')
-            crate(root, USDR, "rsl-usdr")
-            crate(root, USDR_PORTABLE, "rsl-usdr-nostd-check")
+            crate(root, USDR, "usdr")
+            crate(root, USDR_PORTABLE, "usdr-nostd-check")
             manifest = root / USDR_PORTABLE / "Cargo.toml"
             manifest.write_text(manifest.read_text() + '[workspace]\n')
             graph = metadata_graph(root)
@@ -33,7 +33,7 @@ class CargoMetadataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-orphan-portable-") as directory:
             root = Path(directory)
             crate(root, ".", "other")
-            crate(root, USDR_PORTABLE, "rsl-usdr-nostd-check")
+            crate(root, USDR_PORTABLE, "usdr-nostd-check")
             manifest = root / USDR_PORTABLE / "Cargo.toml"
             manifest.write_text(manifest.read_text() + '[workspace]\n')
             with self.assertRaisesRegex(ValueError, "unregistered owned dependencies"):
@@ -145,13 +145,13 @@ windows = { path = "../windows" }
     def test_actual_repository_matches_the_reviewed_blast_radius(self):
         graph = metadata_graph(Path(__file__).resolve().parents[2])
         cases = [
-            ("deps/src/lib.rs", {"rsl-deps", "dns"}, {"socks", "rsl-compression"}, set()),
+            ("deps/src/lib.rs", {"deps", "dns"}, {"socks", "compression"}, set()),
             (f"{SOCKS}/src/blocking.rs", {"socks"}, set(), {f"{SOCKS}/fuzz"}),
-            ("codecs/compression/src/lib.rs", {"rsl-compression", "rsl"}, {"socks", "rsl-crypto"}, set()),
-            ("crypto/core/src/lib.rs", {"rsl-crypto", "rsl-crypto-legacy", "rsl-pki", "rsl"},
+            ("codecs/compression/src/lib.rs", {"compression", "rsl"}, {"socks", "crypto"}, set()),
+            ("crypto/core/src/lib.rs", {"crypto", "crypto-legacy", "pki", "rsl"},
              {"socks", "bitsandbytes"}, {"crypto/fuzz", "pki/fuzz"}),
-            (f"{BNB}/src/lib.rs", {"bitsandbytes", "socks", "rsl-asn1", "rsl-x509", "rsl-pki"},
-             {"rsl-crypto", "rsl-crypto-legacy"}, {"codecs/bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"}),
+            (f"{BNB}/src/lib.rs", {"bitsandbytes", "socks", "asn1", "x509", "pki"},
+             {"crypto", "crypto-legacy"}, {"codecs/bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"}),
         ]
         for path, required, unrelated, fuzz in cases:
             with self.subTest(path=path):

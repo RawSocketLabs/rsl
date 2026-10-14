@@ -1,6 +1,6 @@
 //! Published `AEAD_CHACHA20_POLY1305` evidence from RFC 8439 and Project Wycheproof.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     aead::{
         Aead,

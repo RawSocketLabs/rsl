@@ -1,10 +1,10 @@
 //! Differential comparison with the independent `RustCrypto` SHA-256 implementation.
 //!
-//! `sha2` is a development-only dependency and is never called by `rsl-crypto` production code.
+//! `sha2` is a development-only dependency and is never called by `crypto` production code.
 //! This evidence can catch mistakes not exercised by the finite published-vector set; it is not
 //! a substitute for those vectors or for an independent cryptographic review.
 
-use rsl_crypto::digest::sha2::sha256::Sha256;
+use crypto::digest::sha2::sha256::Sha256;
 use sha2::{Digest as ReferenceDigest, Sha256 as ReferenceSha256};
 
 /// Differential evidence across padding, block, multi-block, and longer-message lengths.

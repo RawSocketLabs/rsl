@@ -1,7 +1,7 @@
 [package]
-name = "rsl-pe-sync-sim"
+name = "pe-sync-sim"
 version = "0.0.0"
-description = "Simulated Wavelet Lab PE_SYNC clock-distribution board for testing libusdr and the future rsl-pe-sync without hardware."
+description = "Simulated Wavelet Lab PE_SYNC clock-distribution board for testing libusdr and the future pe-sync without hardware."
 publish = false
 edition.workspace = true
 license.workspace = true

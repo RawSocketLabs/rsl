@@ -19,14 +19,14 @@
 //! # Example
 //!
 //! ```
-//! use rsl_crypto_legacy::digest::md5::Md5;
+//! use crypto_legacy::digest::md5::Md5;
 //!
 //! let digest = Md5::digest("abc")?;
 //! assert_eq!(digest.as_bytes(), &[
 //!     0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0,
 //!     0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1, 0x7f, 0x72,
 //! ]);
-//! # Ok::<(), rsl_crypto_legacy::CryptoError>(())
+//! # Ok::<(), crypto_legacy::CryptoError>(())
 //! ```
 //!
 //! This module implements only the digest. HMAC-MD5, TLS's historical PRF, certificate

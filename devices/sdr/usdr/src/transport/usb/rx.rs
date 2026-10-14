@@ -3,7 +3,7 @@
 use std::io;
 use std::time::Duration;
 
-use rsl_usb::{Buffer, InQueue};
+use usb::{Buffer, InQueue};
 
 use crate::lowlevel::{BusError, usb_error};
 
@@ -56,9 +56,7 @@ impl RxQueue for InQueue {
         let Some(done) = self.wait(timeout).map_err(usb_error)? else {
             return Ok(None);
         };
-        done.status
-            .map_err(rsl_usb::Error::from)
-            .map_err(usb_error)?;
+        done.status.map_err(usb::Error::from).map_err(usb_error)?;
         Ok(Some(done.buffer))
     }
 

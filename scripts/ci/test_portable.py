@@ -50,8 +50,8 @@ class PortableContractTests(unittest.TestCase):
             (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '../../src/portable/mod.rs',
              '../../../xsdr/src/portable/mod.rs'),
             (LIMESDR, f"{LIMESDR.path}/src/lib.rs", '#![forbid(unsafe_code)]', ''),
-            (PE_SYNC, f"{PE_SYNC.path}/Cargo.toml", 'rsl-lmk05318 = { path',
-             'rsl-lmk05318 = { features = ["std"], path'),
+            (PE_SYNC, f"{PE_SYNC.path}/Cargo.toml", 'lmk05318 = { path',
+             'lmk05318 = { features = ["std"], path'),
             (PE_SYNC, f"{PE_SYNC.path}/src/lib.rs", '../../src/portable/mod.rs',
              '../../../../sdr/lsdr/src/portable/mod.rs'),
         ]
@@ -99,8 +99,8 @@ class PortableContractTests(unittest.TestCase):
                             validate(root, [name_of(fixture)])
 
     def test_a_shared_crate_cannot_enable_std_on_another_behind_the_fixture(self):
-        for crate, owner in (("devices/sdr/chips/lp8758", "rsl-lp8758"),
-                             ("devices/sdr/chips/lms7002m", "rsl-lms7002m")):
+        for crate, owner in (("devices/sdr/chips/lp8758", "lp8758"),
+                             ("devices/sdr/chips/lms7002m", "lms7002m")):
             for after in ('rsl-lowlevel = { workspace = true, features = ["std"] }',
                           "rsl-lowlevel = { workspace = true, default-features = true }",
                           'rsl-lowlevel = { path = "../../../lowlevel" }'):
@@ -122,7 +122,7 @@ class PortableContractTests(unittest.TestCase):
             self.assertIn("bnb.workspace = true\n", text)
             path.write_text(text.replace("bnb.workspace = true\n",
                                          'bnb = { workspace = true, features = ["std"] }\n'))
-            with self.assertRaisesRegex(ValueError, "rsl-lms7002m"):
+            with self.assertRaisesRegex(ValueError, "lms7002m"):
                 validate(root, ["xsdr"])
 
     def test_an_unregistered_portable_dependency_fails_closed(self):
@@ -153,8 +153,8 @@ class PortableContractTests(unittest.TestCase):
 
     def test_production_dependency_feature_changes_cannot_silently_change_the_proof(self):
         for fixture, line in ((USDR, "bnb.workspace = true"),
-                              (XSDR, "rsl-lms7002m.workspace = true"),
-                              (LIMESDR, "rsl-lms7002m.workspace = true")):
+                              (XSDR, "lms7002m.workspace = true"),
+                              (LIMESDR, "lms7002m.workspace = true")):
             crate = line.split(".")[0]
             with (self.subTest(fixture=fixture.driver),
                   tempfile.TemporaryDirectory(prefix="rsl-portable-contract-") as directory):

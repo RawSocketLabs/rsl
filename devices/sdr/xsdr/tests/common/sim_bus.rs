@@ -1,6 +1,6 @@
-//! `lowlevel::Bus` over `rsl-xsdr-sim`, as libusdr's transports present the board.
+//! `lowlevel::Bus` over `xsdr-sim`, as libusdr's transports present the board.
 //!
-//! Shared by `rsl-xsdr`'s tests and the oracle's parity tests (`#[path]`-included), so both
+//! Shared by `xsdr`'s tests and the oracle's parity tests (`#[path]`-included), so both
 //! drive the simulator through the same adapter. Limits and refusals are the oracle shim's
 //! (`oracle/src/lib.rs`): at most three bytes written and four read per I2C transfer, and
 //! SPI only on wired buses.
@@ -8,8 +8,8 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use rsl_xsdr::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
-use rsl_xsdr_sim::{I2cAddress, SimBoard};
+use xsdr::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
+use xsdr_sim::{I2cAddress, SimBoard};
 
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the bus.
 #[derive(Clone)]

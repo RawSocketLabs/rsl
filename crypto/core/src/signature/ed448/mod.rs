@@ -25,7 +25,7 @@
 //! RFC 8032 §7.4 "1 octet" signs the single byte `0x03`:
 //!
 //! ```
-//! use rsl_crypto::signature::ed448::Ed448SigningKey;
+//! use crypto::signature::ed448::Ed448SigningKey;
 //!
 //! fn decode<const N: usize>(hex: &str) -> [u8; N] {
 //!     core::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
@@ -39,7 +39,7 @@
 //! let signature = key.sign(None, [0x03])?;
 //! assert_eq!(&signature.as_bytes()[..4], &[0x26, 0xb8, 0xf9, 0x17]);
 //! key.verifying_key().verify(None, [0x03], &signature)?;
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

@@ -1,6 +1,6 @@
 //! Published certificate-parser interoperability evidence.
 
-use rsl_x509::{Certificate, ErrorKind, Time, Version};
+use x509::{Certificate, ErrorKind, Time, Version};
 
 fn decode_hex(input: &str) -> Vec<u8> {
     let digits: Vec<u8> = input

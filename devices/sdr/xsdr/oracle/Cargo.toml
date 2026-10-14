@@ -1,7 +1,7 @@
 [package]
-name = "rsl-xsdr-oracle"
+name = "xsdr-oracle"
 version = "0.0.0"
-description = "Runs wavelet-lab libusdr's LMS7 family (m2_lm7_1) driver against rsl-xsdr-sim, as the reference for the LMS7 family port."
+description = "Runs wavelet-lab libusdr's LMS7 family (m2_lm7_1) driver against xsdr-sim, as the reference for the LMS7 family port."
 publish = false
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -10,19 +10,19 @@ rust-version = "1.85"
 links = "xsdr_oracle"
 
 # Its own workspace root: it compiles vendored C, which the root workspace must not build, and
-# sits inside the `rsl-xsdr` member's directory, where the root workspace's `exclude` cannot
+# sits inside the `xsdr` member's directory, where the root workspace's `exclude` cannot
 # reach it.
 [workspace]
 
 [dependencies]
-rsl-xsdr-sim = { path = "../sim" }
+xsdr-sim = { path = "../sim" }
 thiserror = "2.0"
 
 [dev-dependencies]
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb", default-features = false }
-rsl-lms7002m = { path = "../../chips/lms7002m" }
+lms7002m = { path = "../../chips/lms7002m" }
 rsl-lowlevel = { path = "../../../lowlevel", features = ["std"] }
-rsl-xsdr = { path = ".." }
+xsdr = { path = ".." }
 
 [build-dependencies]
 cc = "1.2"

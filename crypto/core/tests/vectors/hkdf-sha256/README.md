@@ -30,4 +30,4 @@ emits counter octets with values 1 through `N` without wrapping.
   boundaries, and the exact RFC maximum.
 - **Checked:** 2026-08-27.
 
-Production `rsl-crypto` code depends on neither differential implementation.
+Production `crypto` code depends on neither differential implementation.

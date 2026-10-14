@@ -1,6 +1,6 @@
 //! Published signature/encryption, malformed-input, boundary, and classification evidence.
 
-use rsl_crypto_legacy::{
+use crypto_legacy::{
     CryptoError, SecurityStatus,
     rsa::{
         RSA_PRIMITIVE_SECURITY_STATUS, RsaPrivateKey, RsaPublicKey,

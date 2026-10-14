@@ -1,4 +1,4 @@
-//! `rsl_usdr::dsp::{rtsa, fm}` against libusdr's compiled `xdsp/rtsa_functions.c` (generic
+//! `usdr::dsp::{rtsa, fm}` against libusdr's compiled `xdsp/rtsa_functions.c` (generic
 //! kernels) and `xdsp/fmquad.c`, bit for bit, over repeated calls.
 //!
 //! Inputs stay where the C is defined (the modules' docs list where it is not):
@@ -13,10 +13,10 @@
 //! oracle's baseline x86-64 build, not of FMA-capable targets (aarch64, `-march=native`).
 
 use num_complex::{Complex, Complex32};
-use rsl_usdr::dsp::fm::{self, Demodulator};
-use rsl_usdr::dsp::rtsa::{Rtsa, RtsaSettings};
-use rsl_usdr_oracle::fm as c_fm;
-use rsl_usdr_oracle::rtsa::{self as c_rtsa, Settings};
+use usdr::dsp::fm::{self, Demodulator};
+use usdr::dsp::rtsa::{Rtsa, RtsaSettings};
+use usdr_oracle::fm as c_fm;
+use usdr_oracle::rtsa::{self as c_rtsa, Settings};
 
 /// Deterministic xorshift64.
 struct Rng(u64);
@@ -239,7 +239,7 @@ fn rtsa_depth_and_lower_bound_match_libusdr() {
         (0, -127, 5),
     ] {
         let rust = RtsaSettings::new(upper, lower, divs, 64, 24, 1).expect("valid settings");
-        let c = rsl_usdr_oracle::rtsa::calc_depth(rsl_usdr_oracle::rtsa::Settings {
+        let c = usdr_oracle::rtsa::calc_depth(usdr_oracle::rtsa::Settings {
             upper_pwr_bound: upper,
             lower_pwr_bound: lower,
             divs_for_db: divs,

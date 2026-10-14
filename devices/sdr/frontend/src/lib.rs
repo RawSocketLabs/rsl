@@ -20,7 +20,7 @@
 //! it (`BringUp`), every board's identification, and the bring-ups this crate owns whole:
 //! the `PCIe` front end (`pciefe`, with its controls) and the M.2-to-`PCIe` breakout
 //! (`exm2pe`). The XMASS, `SuperSync` and `SimpleSync` bring-ups need the LMK05318 and
-//! LMK5C33216 drivers and stay in `rsl-usdr`; `xmass` drives XMASS's control expander for
+//! LMK5C33216 drivers and stay in `usdr`; `xmass` drives XMASS's control expander for
 //! it. Identification mixes connector writes with I2C transfers wider than one register,
 //! which the portable `Sequence` seam does not express, so it runs as blocking code.
 #![no_std]

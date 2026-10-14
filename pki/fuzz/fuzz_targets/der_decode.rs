@@ -4,8 +4,8 @@
 //! Run: `cargo +nightly fuzz run der_decode --fuzz-dir pki/fuzz`.
 #![no_main]
 
+use asn1::{Decoder, Encoder, Tag, decode_exact};
 use libfuzzer_sys::fuzz_target;
-use rsl_asn1::{Decoder, Encoder, Tag, decode_exact};
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(element) = decode_exact(data) {

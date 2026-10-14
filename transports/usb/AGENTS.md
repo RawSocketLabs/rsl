@@ -1,4 +1,4 @@
-# rsl-usb
+# usb
 
 > Inherits the workspace-root `../../AGENTS.md`. `CLAUDE.md` is a symlink to this file.
 
@@ -52,8 +52,8 @@ All of it is in `usbfs.rs` (ioctls, mmap), `buffer.rs` (the mapping), `queue.rs`
 ## Verify
 
 ```sh
-cargo clippy -p rsl-usb --all-targets -- -D warnings && cargo test -p rsl-usb
-cargo +nightly miri test -p rsl-usb --lib    # queue/dispatch ownership, against the fake backend
-cargo clippy -p rsl-usb --all-targets --features mio -- -D warnings && cargo test -p rsl-usb --features mio
-RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p rsl-usb --features mio -- --ignored   # real device, detaches its driver
+cargo clippy -p usb --all-targets -- -D warnings && cargo test -p usb
+cargo +nightly miri test -p usb --lib    # queue/dispatch ownership, against the fake backend
+cargo clippy -p usb --all-targets --features mio -- -D warnings && cargo test -p usb --features mio
+RSL_USB_TEST_DEVICE=vvvv:pppp cargo test -p usb --features mio -- --ignored   # real device, detaches its driver
 ```

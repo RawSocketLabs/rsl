@@ -1,9 +1,9 @@
 //! The second intentional divergence, shared by the stream parity tests: libusdr's stream
-//! create reapplies each channel's LO as a baseband offset; rsl-usdr does not.
+//! create reapplies each channel's LO as a baseband offset; usdr does not.
 
 use std::ops::RangeInclusive;
 
-use rsl_usdr_sim::Op;
+use usdr_sim::Op;
 
 use crate::crossing::{CLOCK, mixer_lo_block};
 
@@ -26,7 +26,7 @@ const TX_PLL: RangeInclusive<u32> = 0x10..=0x1f;
 /// Intentional divergence, the second: after its DC calibration, libusdr's stream create
 /// reapplies each channel's LO as a baseband offset (`usdr_rfic_fe_set_freq(FE_FREQ_BB_RX,
 /// .., rx_raw.lo[i])` in `usdr_device_m2_lm6_1_create_stream`), a bug that reselects the
-/// band, clamps the NCOs and bypasses the filter. rsl-usdr leaves it out. The cut runs from
+/// band, clamps the NCOs and bypasses the filter. usdr leaves it out. The cut runs from
 /// the calibration's last write, or the TX PLL retune that follows it when a TX LO is set
 /// (which ends with [`TX_PLL_TUNED`]), to the DMA engine's status read; it must hold only
 /// what that loop does (LMS6002D SPI off the TX PLL, GPO and PHY writes, Si5332 writes,
@@ -39,7 +39,7 @@ const TX_PLL: RangeInclusive<u32> = 0x10..=0x1f;
 ///
 /// Returns the trimmed window and whether the cut turned the board mixer on: with no
 /// frequency set, libusdr's loop selects the mixer band, and its next tune out of that band
-/// writes a mixer-off block rsl-usdr has no reason to (`stream_parity.rs` cuts it).
+/// writes a mixer-off block usdr has no reason to (`stream_parity.rs` cuts it).
 pub(crate) fn without_baseband_loop(window: &[Op], idle_loop: bool) -> (Vec<Op>, bool) {
     let dma_reset = window
         .iter()

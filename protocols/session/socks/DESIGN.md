@@ -1934,7 +1934,7 @@ instead of zero-filling 513 bytes for each read.
 3. Use bnb's reusable incremental core, verified upstream with multiple wire shapes and adopted
    here for SOCKS. Other stream protocols own their negotiation/policy and may use bnb adapters
    or their own I/O; do not generalize SOCKS session state into their framing contracts.
-4. TLS should consume PKI validation and `rsl-crypto` primitives; SSH should consume crypto
+4. TLS should consume PKI validation and `crypto` primitives; SSH should consume crypto
    primitives but owns its packet, negotiation, transcript, and host-key rules. Neither is a
    prerequisite for SOCKS, though SOCKS CONNECT can later carry either transparently.
 5. SMB depends on TCP plus its own framing and commonly composes with NBT, DCERPC, authentication,

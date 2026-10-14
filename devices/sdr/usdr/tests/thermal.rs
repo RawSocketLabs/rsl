@@ -7,8 +7,8 @@ mod common {
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use rsl_usdr::{Device, Error, HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr::{Device, Error, HARD_STOP_CELSIUS, ThermalLimits, ThermalPolicy};
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// GPO bank enabling the RF booster: set only once the board powers up.
 const GPO_BOOSTER: u8 = 7;

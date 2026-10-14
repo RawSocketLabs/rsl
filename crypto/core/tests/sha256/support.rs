@@ -1,6 +1,6 @@
 //! Small fixture helpers shared by the public SHA-256 tests.
 
-use rsl_crypto::digest::sha2::sha256::Sha256;
+use crypto::digest::sha2::sha256::Sha256;
 
 /// Decode an exact-size hexadecimal fixture without adding a test dependency.
 pub(crate) fn decode_hex<const N: usize>(encoded: &str) -> [u8; N] {

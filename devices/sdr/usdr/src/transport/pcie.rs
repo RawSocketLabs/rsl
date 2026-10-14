@@ -1,4 +1,4 @@
-//! The uSDR over `PCIe`, through the `usdr_pcie_uram` Linux driver (`rsl-usdr-pcie`).
+//! The uSDR over `PCIe`, through the `usdr_pcie_uram` Linux driver (`usdr-pcie`).
 //!
 //! [`PcieBus::open`] opens a device node (`/dev/usdrN`), checks it is a uSDR and hands the
 //! driver the board's layout; the result is a [`Bus`] for
@@ -17,11 +17,11 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use rsl_deps::tracing::{debug, trace};
+use deps::tracing::{debug, trace};
 /// An open XMASS device (`/dev/xmassN`): [`XmassDevice::open`], then
 /// [`xmass_firmware::update`](crate::frontend::xmass_firmware::update) over it.
-pub use rsl_usdr_pcie::XmassDevice;
-use rsl_usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stream};
+pub use usdr_pcie::XmassDevice;
+use usdr_pcie::{BoardLayout, Core, IndexedSpace, PcieDevice, PcieError, Stream};
 
 use super::window::{self, RegisterIo, Window};
 use crate::error::Error;
@@ -84,7 +84,7 @@ pub const USDR_LAYOUT: BoardLayout = BoardLayout {
 };
 
 /// The `tracing` target of every bus operation, at TRACE level.
-const BUS_TARGET: &str = "rsl_usdr::bus";
+const BUS_TARGET: &str = "usdr::bus";
 
 /// The register window [`USDR_LAYOUT`] gives the driver.
 const WINDOW: Window = Window {
@@ -117,7 +117,7 @@ impl PcieBus {
     /// The device nodes of every uSDR the driver has found, in name order.
     #[must_use]
     pub fn discover() -> Vec<PathBuf> {
-        rsl_usdr_pcie::discover()
+        usdr_pcie::discover()
     }
 }
 

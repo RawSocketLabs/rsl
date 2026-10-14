@@ -1,5 +1,5 @@
 //! Register-level models of the chips on the LMS7 family boards. The LMS7002M model is
-//! shared with the other LMS7002M boards' simulators, in `rsl-lms7002m-sim`.
+//! shared with the other LMS7002M boards' simulators, in `lms7002m-sim`.
 
 mod dac80501;
 mod lp8758;

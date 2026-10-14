@@ -2,7 +2,7 @@
 //!
 //! [`Device`] talks to the board through a [`lowlevel::Bus`], the register/SPI/I2C seam of
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
-//! (`rsl-pe-sync-oracle`).
+//! (`pe-sync-oracle`).
 //!
 //! **Unstable; unpublished.** Ported: libusdr's whole open ([`Device::open`]: power-on,
 //! status check, clock-tree configuration with every lock wait and the output

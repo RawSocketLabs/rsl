@@ -6,7 +6,7 @@ use zeroize::Zeroize;
 
 use super::key_schedule::{STATE_LEN, schedule};
 use crate::{CryptoError, Result, SecretVec};
-use rsl_crypto::cipher::StreamCipher as StreamCipherContract;
+use crypto::cipher::StreamCipher as StreamCipherContract;
 
 /// Smallest conventional RC4 key accepted by the algorithm, in bytes.
 pub const MIN_KEY_LEN: usize = 1;

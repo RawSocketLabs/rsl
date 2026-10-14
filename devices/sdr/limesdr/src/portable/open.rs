@@ -2,13 +2,13 @@
 //!
 //! The reference clock is measured (`limesdr_detect_refclk`), the LMS7002M's reset pulsed,
 //! its version word required to be exactly [`VERSION`], its reset programme loaded
-//! (`lms7002m_create`: `rsl-lms7002m`'s [`Create`]) and streaming stopped
+//! (`lms7002m_create`: `lms7002m`'s [`Create`]) and streaming stopped
 //! (`limesdr_stop_streaming`). `lms7002m_init`, between the reset and the version read,
 //! only fills libusdr's state.
 
 use core::time::Duration;
 
-use rsl_lms7002m::{self as lms7002m, Create, Reg, ResetPlan, Version, spi_read};
+use lms7002m::{self, Create, Reg, ResetPlan, Version, spi_read};
 use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::fpga::{
@@ -261,7 +261,7 @@ fn spi(access: FpgaAccess) -> LsOp {
     }
 }
 
-/// The action an `rsl-lms7002m` sequence's action is.
+/// The action an `lms7002m` sequence's action is.
 fn chip_action(action: SequenceAction) -> Action {
     match action {
         SequenceAction::Fpga(access) => Action::Op(spi(access)),

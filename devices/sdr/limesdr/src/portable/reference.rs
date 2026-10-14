@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn an_ideal_40_mhz_count_measures_exactly_40_mhz() {
-        // The count rsl-limesdr-sim derives for 40 MHz, 40e6 * 16 777 210 / 100e6.
+        // The count limesdr-sim derives for 40 MHz, 40e6 * 16 777 210 / 100e6.
         assert_eq!(measured_hz(6_710_884), 40_000_000);
     }
 

@@ -39,7 +39,7 @@ const BASE_COORDINATE: [u8; X448_BYTES] = {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x448::{X448, X448PrivateKey};
+/// use crypto::agreement::x448::{X448, X448PrivateKey};
 ///
 /// let private_key = X448PrivateKey::new([0x42; 56]);
 /// let public_key = X448::public_key(&private_key);
@@ -78,12 +78,12 @@ impl fmt::Debug for X448PrivateKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x448::X448PublicKey;
+/// use crypto::agreement::x448::X448PublicKey;
 ///
 /// let wire_bytes = [0x24; 56];
 /// let public_key = X448PublicKey::try_from(wire_bytes.as_slice())?;
 /// assert_eq!(public_key.into_bytes(), wire_bytes);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct X448PublicKey([u8; X448_BYTES]);
@@ -147,7 +147,7 @@ impl TryFrom<&[u8]> for X448PublicKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x448::{X448, X448PrivateKey};
+/// use crypto::agreement::x448::{X448, X448PrivateKey};
 ///
 /// let alice = X448PrivateKey::new([0x11; 56]);
 /// let bob = X448PrivateKey::new([0x22; 56]);
@@ -155,7 +155,7 @@ impl TryFrom<&[u8]> for X448PublicKey {
 /// let shared_secret = X448::agree(&alice, &bob_public)?;
 /// assert_eq!(shared_secret.expose_secret().len(), 56);
 /// assert_eq!(format!("{shared_secret:?}"), "X448SharedSecret([REDACTED])");
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct X448SharedSecret {
     bytes: SecretBytes<X448_BYTES>,

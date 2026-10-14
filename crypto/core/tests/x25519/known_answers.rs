@@ -1,6 +1,6 @@
 //! Published RFC 7748 X25519 vectors through the public API.
 
-use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use crypto::agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
 
 use crate::support::decode_32;
 

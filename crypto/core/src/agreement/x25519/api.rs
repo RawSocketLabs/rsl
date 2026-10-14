@@ -37,7 +37,7 @@ const BASE_COORDINATE: [u8; X25519_BYTES] = [
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey};
+/// use crypto::agreement::x25519::{X25519, X25519PrivateKey};
 ///
 /// let private_key = X25519PrivateKey::new([0x42; 32]);
 /// let public_key = X25519::public_key(&private_key);
@@ -76,12 +76,12 @@ impl fmt::Debug for X25519PrivateKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x25519::X25519PublicKey;
+/// use crypto::agreement::x25519::X25519PublicKey;
 ///
 /// let wire_bytes = [0x24; 32];
 /// let public_key = X25519PublicKey::try_from(wire_bytes.as_slice())?;
 /// assert_eq!(public_key.into_bytes(), wire_bytes);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct X25519PublicKey([u8; X25519_BYTES]);
@@ -145,7 +145,7 @@ impl TryFrom<&[u8]> for X25519PublicKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey};
+/// use crypto::agreement::x25519::{X25519, X25519PrivateKey};
 ///
 /// let alice = X25519PrivateKey::new([0x11; 32]);
 /// let bob = X25519PrivateKey::new([0x22; 32]);
@@ -153,7 +153,7 @@ impl TryFrom<&[u8]> for X25519PublicKey {
 /// let shared_secret = X25519::agree(&alice, &bob_public)?;
 /// assert_eq!(shared_secret.expose_secret().len(), 32);
 /// assert_eq!(format!("{shared_secret:?}"), "X25519SharedSecret([REDACTED])");
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct X25519SharedSecret {
     bytes: SecretBytes<X25519_BYTES>,

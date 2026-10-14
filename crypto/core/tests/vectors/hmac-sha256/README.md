@@ -37,5 +37,5 @@ status and the pending NIST transition from FIPS 198-1 to draft SP 800-224.
 - **Role:** development-only oracle across deterministic key and message boundary lengths.
 - **Checked:** 2026-08-27.
 
-Differential agreement is supplementary evidence. Production `rsl-crypto` code depends on
+Differential agreement is supplementary evidence. Production `crypto` code depends on
 neither RustCrypto crate.

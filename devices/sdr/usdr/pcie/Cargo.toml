@@ -1,7 +1,7 @@
 [package]
-name = "rsl-usdr-pcie"
+name = "usdr-pcie"
 version = "0.0.0"
-description = "The usdr_pcie_uram Linux driver's userspace interface for the uSDR, the one place rsl-usdr's stack uses unsafe."
+description = "The usdr_pcie_uram Linux driver's userspace interface for the uSDR, the one place usdr's stack uses unsafe."
 publish = false
 edition.workspace = true
 # MIT only: `uapi.rs` carries Wavelet Lab's interface definitions under their MIT option.

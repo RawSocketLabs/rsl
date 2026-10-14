@@ -6,13 +6,13 @@ use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rsl_usdr::lowlevel::BusError;
+use usdr::lowlevel::BusError;
 // Pull the oracle archive and its native link directives into this integration binary.
-use rsl_usdr_oracle as _;
+use usdr_oracle as _;
 
 /// Satisfies the production RX module's normal error import without copying that module.
 mod lowlevel {
-    pub(crate) use rsl_usdr::lowlevel::{BusError, usb_error};
+    pub(crate) use usdr::lowlevel::{BusError, usb_error};
 }
 
 #[path = "../../src/transport/usb/rx.rs"]

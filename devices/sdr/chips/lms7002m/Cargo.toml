@@ -1,5 +1,5 @@
 [package]
-name = "rsl-lms7002m"
+name = "lms7002m"
 version = "0.0.0"
 description = "LMS7002M RF transceiver register values and sans-I/O register sequences, shared by the pure-Rust LMS7002M board drivers."
 publish = false

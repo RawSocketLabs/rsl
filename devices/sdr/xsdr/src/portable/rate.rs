@@ -2,7 +2,7 @@
 //! (`device/m2_lm7_1/xsdr_ctrl.c`) on gateware with a TX MMCM and no RX MMCM or DUC/DDC.
 //!
 //! The AFE comes on (first time only), the LMS7002M's rate is set
-//! (`lms7002m_samplerate`, in `rsl-lms7002m`'s control code), the `LimeLight` receive
+//! (`lms7002m_samplerate`, in `lms7002m`'s control code), the `LimeLight` receive
 //! link is calibrated (`_xsdr_calibrate_lml`: RX streamed up, the deserializer reset and
 //! the clock phase swept against the LFSR checkers until a band of error-free phases is
 //! found), bank A selected, and the processors' self-tests waited out.
@@ -10,13 +10,13 @@
 //! Without a TX MMCM libusdr's calibration writes a fixed TX delay and then fails the
 //! rate with `-ERANGE`, its RX badness never having been measured; that is reproduced.
 
-use rsl_lms7002m::Batch;
-use rsl_lms7002m::ctrl::{Control, ControlError, Operation, RateFlags, RateRequest, StreamFlags};
-use rsl_lms7002m::{BistCheck, Mac, Tsp};
+use lms7002m::Batch;
+use lms7002m::ctrl::{Control, ControlError, Operation, RateFlags, RateRequest, StreamFlags};
+use lms7002m::{BistCheck, Mac, Tsp};
+use lp8758::{self, Buck, BuckVoltage};
 use rsl_lowlevel::{
     FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
 };
-use rsl_lp8758::{self as lp8758, Buck, BuckVoltage};
 
 use super::fpga::{
     Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE, LMS_TX_ENABLE, REG_CFG_PHY_0, RxPhyBank,

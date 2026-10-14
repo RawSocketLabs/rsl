@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn the_check_matches_libusdrs_words_on_an_empty_connector() {
-        // libusdr's own trace on the LSDr simulator's empty connector (rsl-lsdr-oracle's
+        // libusdr's own trace on the LSDr simulator's empty connector (lsdr-oracle's
         // golden, lines 27-47): seven pin writes, then select-and-exchange pairs.
         let (actions, found) = run(|_| u32::MAX);
         let words: Vec<(u32, u32)> = actions

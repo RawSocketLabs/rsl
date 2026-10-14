@@ -1,4 +1,4 @@
-//! rsl-usdr's Verilator host bridge against libusdr's, compiled whole: each connects to its
+//! usdr's Verilator host bridge against libusdr's, compiled whole: each connects to its
 //! own fake model (`tests/common/verilator_peer.rs`), runs the same operations, and the
 //! models' records of what each sent must match byte for byte. Results match too, but for
 //! the whitelisted divergences each test names.
@@ -8,15 +8,15 @@ mod verilator_peer;
 
 use std::time::Duration;
 
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr::transport::verilator::VerilatorBus;
-use rsl_usdr_oracle::verilator::Bridge;
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use usdr::transport::verilator::VerilatorBus;
+use usdr_oracle::verilator::Bridge;
 use verilator_peer::{NOTIFY_BASE, NOTIFY_BYTES, Op, Peer, Trace, i2c_reply, spi_reply};
 
 /// What libusdr's bridge returns for an invalid argument.
 const EINVAL: i32 = -22;
 
-/// Runs `c` on libusdr's bridge and `rust` on rsl-usdr's, each against a fresh model, and
+/// Runs `c` on libusdr's bridge and `rust` on usdr's, each against a fresh model, and
 /// returns what each model received with what each side returned. Each model's
 /// acknowledgements are awaited before it hangs up, as libusdr's monitor sends them from
 /// its own thread.
@@ -34,7 +34,7 @@ fn run<C, R>(
     let c_trace = peer.finish();
 
     let peer = Peer::start(&format!("{name}-rust"));
-    let mut bus = VerilatorBus::connect(peer.socket()).expect("rsl-usdr's bridge connects");
+    let mut bus = VerilatorBus::connect(peer.socket()).expect("usdr's bridge connects");
     let from_rust = rust(&mut bus, &peer);
     peer.settle();
     drop(bus);
@@ -43,8 +43,8 @@ fn run<C, R>(
 
 /// Both models received the same operations and the same bytes.
 fn assert_same_wire(c: &Trace, rust: &Trace) {
-    assert_eq!(rust.ops, c.ops, "rsl-usdr sends libusdr's operations");
-    assert_eq!(rust.bytes, c.bytes, "rsl-usdr sends libusdr's bytes");
+    assert_eq!(rust.ops, c.ops, "usdr sends libusdr's operations");
+    assert_eq!(rust.bytes, c.bytes, "usdr sends libusdr's bytes");
 }
 
 #[test]
@@ -67,10 +67,7 @@ fn connecting_matches_libusdrs_bridge() {
         c_ring.iter().all(|&byte| byte == 0xff),
         "libusdr clears the ring"
     );
-    assert_eq!(
-        rust_ring, c_ring,
-        "rsl-usdr clears the ring as libusdr does"
-    );
+    assert_eq!(rust_ring, c_ring, "usdr clears the ring as libusdr does");
 }
 
 #[test]
@@ -131,7 +128,7 @@ const I2C_TRANSFERS: [(u8, &[u8], usize); 8] = [
 ];
 
 /// Whitelisted: libusdr's bridge returns its readback array, which nothing writes (zeroed
-/// by the harness), for every SPI and I2C read; rsl-usdr returns the reply word the
+/// by the harness), for every SPI and I2C read; usdr returns the reply word the
 /// notification carries.
 #[test]
 fn spi_and_i2c_match_libusdrs_bridge_on_the_wire_and_return_the_models_replies() {
@@ -191,10 +188,7 @@ fn spi_and_i2c_match_libusdrs_bridge_on_the_wire_and_return_the_models_replies()
         "libusdr reads nothing back"
     );
     let replies: Vec<u32> = spi_words().into_iter().map(spi_reply).collect();
-    assert_eq!(
-        rust_spi, replies,
-        "rsl-usdr returns the model's SPI replies"
-    );
+    assert_eq!(rust_spi, replies, "usdr returns the model's SPI replies");
     // Each I2C read's reply is to the command the model received.
     let commands = rust.ops.iter().filter_map(|op| match op {
         Op::Write { reg: 1, words } if words[0] >> 31 == 1 => Some(words[0]),
@@ -244,7 +238,7 @@ fn the_notification_ring_wraps_and_is_acknowledged_like_libusdrs_bridge() {
 }
 
 /// Whitelisted: libusdr's bridge writes a block's first two status words through its size
-/// argument (the harness reads them there); rsl-usdr lends the lost-packet word and burst
+/// argument (the harness reads them there); usdr lends the lost-packet word and burst
 /// mask, then the DMA status, as libusdr's stream code reads its out-of-band words.
 #[test]
 fn rx_streams_match_libusdrs_bridge() {

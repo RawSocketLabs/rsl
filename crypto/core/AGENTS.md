@@ -1,4 +1,4 @@
-# rsl-crypto
+# crypto
 
 > Inherits the workspace-root `../../AGENTS.md`.
 

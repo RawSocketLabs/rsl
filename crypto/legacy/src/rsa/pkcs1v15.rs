@@ -19,7 +19,7 @@
 //! # Encryption walkthrough
 //!
 //! ```
-//! use rsl_crypto_legacy::{
+//! use crypto_legacy::{
 //!     RandomSource, Result,
 //!     rsa::{RsaPublicKey, pkcs1v15::Pkcs1v15PublicOperations},
 //! };
@@ -43,7 +43,7 @@
 //! let mut random = NonzeroExampleSource(0);
 //! let ciphertext = public.encrypt_pkcs1v15(&mut random, b"x")?;
 //! assert_eq!(ciphertext.as_bytes().len(), public.modulus_len());
-//! # Ok::<(), rsl_crypto_legacy::CryptoError>(())
+//! # Ok::<(), crypto_legacy::CryptoError>(())
 //! ```
 //!
 //! # Oracle warning
@@ -71,7 +71,7 @@ use core::fmt;
 use zeroize::Zeroize;
 
 use crate::{CryptoError, RandomSource, Result, SecurityClassification, SecurityStatus};
-use rsl_crypto::digest::sha2::sha256::Sha256;
+use crypto::digest::sha2::sha256::Sha256;
 
 use super::{RsaPrivateKey, RsaPublicKey};
 use crate::digest::sha1::Sha1;
@@ -176,7 +176,7 @@ impl fmt::Debug for RsaPkcs1v15Signature {
 /// Historical RSAES-PKCS1-v1_5 encryption and RSASSA-PKCS1-v1_5 verification on the shared
 /// [`RsaPublicKey`].
 ///
-/// The key type lives in `rsl_crypto::rsa`; this extension trait keeps the historical encodings
+/// The key type lives in `crypto::rsa`; this extension trait keeps the historical encodings
 /// inside the opt-in package. Import it to call these methods.
 pub trait Pkcs1v15PublicOperations {
     /// Encrypt a message with RFC 8017 §7.2 RSAES-PKCS1-v1_5.

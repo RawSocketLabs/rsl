@@ -37,7 +37,7 @@ use crate::{SecretBytes, cipher::BlockCipher};
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Key};
+/// use crypto::cipher::aes::aes128::{Aes128, Aes128Key};
 ///
 /// let key = Aes128Key::new([0x42; 16]);
 /// let cipher = Aes128::new(key); // consumes and expands the key owner
@@ -71,7 +71,7 @@ impl fmt::Debug for Aes128Key {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::cipher::aes::aes128::Aes128Block;
+/// use crypto::cipher::aes::aes128::Aes128Block;
 ///
 /// let bytes = *b"one-block-input!";
 /// let block = Aes128Block::new(bytes);
@@ -137,7 +137,7 @@ impl Drop for Aes128Block {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+/// use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 ///
 /// let cipher = Aes128::new(Aes128Key::new(*b"0123456789abcdef"));
 /// let plaintext = *b"one-block-input!";

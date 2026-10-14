@@ -2,7 +2,7 @@
 //!
 //! The vendored build defines no `WVLT_ARCH_*`, so `vbase.h` compiles no SIMD variant and
 //! `get_transform_fn` always returns the generic (scalar) kernels: the reference
-//! `rsl_usdr::dsp` ports.
+//! `usdr::dsp` ports.
 
 use std::ffi::{CString, c_char, c_uint, c_void};
 

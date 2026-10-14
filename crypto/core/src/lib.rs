@@ -1,6 +1,6 @@
 //! Accuracy-first cryptography you can read from standard to source.
 //!
-//! `rsl-crypto` is both a library and a teaching reference. Its implementations favor a direct
+//! `crypto` is both a library and a teaching reference. Its implementations favor a direct
 //! correspondence between published notation, named Rust types, and small testable operations.
 //! Speed is secondary to making every byte transformation explainable.
 //!
@@ -77,7 +77,7 @@
 //! bytes; arbitrary Rust values are not implicitly serialized.
 //!
 //! ```
-//! use rsl_crypto::digest::sha2::sha256::Sha256;
+//! use crypto::digest::sha2::sha256::Sha256;
 //!
 //! let digest = Sha256::digest("hello").expect("a short message fits SHA-256");
 //! assert_eq!(digest.as_bytes().len(), 32);
@@ -89,7 +89,7 @@
 //! stateful protocol should instead derive each nonce from its own sequence rules.
 //!
 //! ```
-//! use rsl_crypto::{
+//! use crypto::{
 //!     RandomSource, Result,
 //!     aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce},
 //! };

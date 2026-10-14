@@ -1,6 +1,6 @@
 //! Validation, range, ownership, and generic-contract evidence.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError, RandomSource, Result,
     agreement::{
         KeyAgreement,

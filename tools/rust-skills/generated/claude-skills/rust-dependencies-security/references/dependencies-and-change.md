@@ -17,11 +17,11 @@
 - **Mechanical owner:** Manifest and lockfile review, cargo-deny.
 - **Sources:** Preference R68, R70, R122, R136, R217.
 
-### CORE-DEP-002 Prefer an adopted `rsl-deps` capability
+### CORE-DEP-002 Prefer an adopted `deps` capability
 
 - **Strength:** SHOULD
 - **Applies to:** repositories that explicitly adopt RSL dependency policy
-- **Directive:** Check `rsl-deps` before proposing a normal external dependency.
+- **Directive:** Check `deps` before proposing a normal external dependency.
   Preserve optional features, empty defaults, registry sources, and canonical
   re-exports. Treat a new facade capability as a broad dependency change.
 - **Why:** Independent direct dependencies drift to different versions of the
@@ -31,7 +31,7 @@
 - **Exceptions:** Use a direct dependency when local rules require it or the
   facade cannot express the needed feature/MSRV contract; explain why.
 - **Mechanical owner:** Cargo metadata and dependency review.
-- **Sources:** Preference R69-R73; RawSocketLabs/rsl `rsl-deps` instructions.
+- **Sources:** Preference R69-R73; RawSocketLabs/rsl `deps` instructions.
 
 ### CORE-DEP-003 Configure features deliberately
 

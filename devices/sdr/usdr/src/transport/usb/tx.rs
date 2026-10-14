@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use rsl_usb::{Buffer, OutQueue};
+use usb::{Buffer, OutQueue};
 
 use crate::lowlevel::{BusError, TxFill, usb_error};
 
@@ -62,9 +62,7 @@ impl TxQueue for OutQueue {
         let Some(done) = self.wait(timeout).map_err(usb_error)? else {
             return Ok(None);
         };
-        done.status
-            .map_err(rsl_usb::Error::from)
-            .map_err(usb_error)?;
+        done.status.map_err(usb::Error::from).map_err(usb_error)?;
         Ok(Some(done.buffer))
     }
 

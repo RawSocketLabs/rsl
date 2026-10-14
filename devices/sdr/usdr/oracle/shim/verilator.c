@@ -1,5 +1,5 @@
 // libusdr's Verilator host bridge (lowlevel/verilator_ll), compiled whole from the vendored
-// source and driven against a fake model the tests serve (rsl-usdr's
+// source and driven against a fake model the tests serve (usdr's
 // tests/common/verilator_peer.rs).
 //
 // At the PIN the bridge no longer builds against the rest of libusdr (upstream only builds it
@@ -64,7 +64,7 @@ static const char* rsl_oracle_vll_path(const char* name)
 // `usdr_device_vfs_obj_val_get_by_path` is now `usdr_device_vfs_obj_val_get_u64`.
 #define usdr_device_vfs_obj_val_get_by_path usdr_device_vfs_obj_val_get_u64
 // `initialize` now takes the device's connection parameters too. The board bring-up it
-// starts is libusdr's device code, not the bridge, and rsl-usdr's `Device` runs its own
+// starts is libusdr's device code, not the bridge, and usdr's `Device` runs its own
 // over any `Bus`, so the harness skips it: `dev->udev->initialize(dev->udev)` becomes a
 // check that the device has one, then success.
 #define initialize(udev) initialize == NULL ? -ENODEV : rsl_oracle_vll_no_bring_up(udev)

@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rsl_usdr_sim::{BoardRevision, I2cAddress, SimBoard};
+use usdr_sim::{BoardRevision, I2cAddress, SimBoard};
 
 use super::UsbBus;
 use super::bus::{Reply, UsbIo};

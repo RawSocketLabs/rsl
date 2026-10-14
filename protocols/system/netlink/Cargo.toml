@@ -1,5 +1,5 @@
 [package]
-name = "rsl-netlink"
+name = "netlink"
 description = "Strict Linux netlink codecs with route, generic-netlink, and WireGuard APIs"
 version = "0.1.0"
 edition.workspace = true

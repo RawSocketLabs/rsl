@@ -1,16 +1,16 @@
 //! NIST-published, stateful, malformed-boundary, and differential CBC evidence.
 
-use des::{
-    TdesEde3 as ReferenceTdesEde3,
-    cipher::{Array, BlockCipherEncrypt, KeyInit},
-};
-use rsl_crypto::cipher::BlockCipher;
-use rsl_crypto_legacy::{
+use crypto::cipher::BlockCipher;
+use crypto_legacy::{
     CryptoError, SecurityStatus,
     cipher::{
         cbc::{CbcState, SECURITY_STATUS, decrypt_blocks, encrypt_blocks},
         des::{DesBlock, TripleDesEde3, TripleDesEde3Key},
     },
+};
+use des::{
+    TdesEde3 as ReferenceTdesEde3,
+    cipher::{Array, BlockCipherEncrypt, KeyInit},
 };
 
 const KEY: [u8; 24] = hex("0123456789abcdef23456789abcdef01456789abcdef0123");

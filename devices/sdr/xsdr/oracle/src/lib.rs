@@ -18,7 +18,7 @@ use std::slice;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use rsl_xsdr_sim::{I2cAddress, SimBoard};
+use xsdr_sim::{I2cAddress, SimBoard};
 
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
@@ -137,7 +137,7 @@ pub enum Lms7002mCall {
     Create(u32, bool),
 }
 
-/// The shim's `struct rsl_lms7002m_op`.
+/// The shim's `struct lms7002m_op`.
 #[repr(C)]
 struct LmsOp {
     kind: c_uint,
@@ -222,8 +222,7 @@ pub fn lms7002m_run(board: SimBoard, calls: &[Lms7002mCall]) -> (Vec<Lms7002mRes
     let count = c_uint::try_from(ops.len()).expect("invariant: a short call list");
     // SAFETY: `ops` and `results` are valid for `count` elements each; the shim reads and
     // writes the former's `out` and writes the latter, and keeps neither.
-    let status =
-        unsafe { rsl_xsdr_oracle_lms7002m_run(ops.as_mut_ptr(), count, results.as_mut_ptr()) };
+    let status = unsafe { xsdr_oracle_lms7002m_run(ops.as_mut_ptr(), count, results.as_mut_ptr()) };
     let board = take_board();
     resume_callback_panic();
     assert_eq!(status, 0, "the shim knows every call kind");
@@ -239,7 +238,7 @@ pub fn lms7002m_run(board: SimBoard, calls: &[Lms7002mCall]) -> (Vec<Lms7002mRes
 }
 
 unsafe extern "C" {
-    fn rsl_xsdr_oracle_lms7002m_run(ops: *mut LmsOp, count: c_uint, results: *mut c_int) -> c_int;
+    fn xsdr_oracle_lms7002m_run(ops: *mut LmsOp, count: c_uint, results: *mut c_int) -> c_int;
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
@@ -493,7 +492,7 @@ fn with_board(f: impl FnOnce(&mut SimBoard) -> c_int) -> c_int {
 /// libusdr's `usleep`, redirected by the shim. The redirect is process-wide, so a call
 /// while no oracle is open returns at once.
 #[unsafe(no_mangle)]
-extern "C" fn rsl_xsdr_oracle_sleep_us(us: c_ulonglong) {
+extern "C" fn xsdr_oracle_sleep_us(us: c_ulonglong) {
     if BOARD
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -518,7 +517,7 @@ extern "C" fn rsl_xsdr_oracle_sleep_us(us: c_ulonglong) {
 /// `pin` must be valid for `insz` writable bytes and `pout` for `outsz` readable bytes
 /// (either may be null when its size is zero), as libusdr's `lowlevel_ops.ls_op` requires.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rsl_xsdr_oracle_ls_op(
+unsafe extern "C" fn xsdr_oracle_ls_op(
     op: c_uint,
     addr: c_uint,
     insz: usize,
@@ -605,7 +604,7 @@ fn i2c(board: &mut SimBoard, addr: I2cAddress, input: &mut [u8], output: &[u8]) 
 
 #[cfg(test)]
 mod tests {
-    use rsl_xsdr_sim::Variant;
+    use xsdr_sim::Variant;
 
     use super::*;
 

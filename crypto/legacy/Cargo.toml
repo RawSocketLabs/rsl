@@ -1,5 +1,5 @@
 [package]
-name = "rsl-crypto-legacy"
+name = "crypto-legacy"
 version = "0.1.0"
 description = "Explicitly opt-in historical and broken cryptographic primitives for RSL interoperability and teaching."
 edition.workspace = true
@@ -9,7 +9,7 @@ rust-version.workspace = true
 readme = "README.md"
 
 [dependencies]
-rsl-crypto.workspace = true
+crypto.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

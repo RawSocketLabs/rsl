@@ -1,8 +1,8 @@
 //! What libusdr checks before it accepts a LimeSDR-mini: the transport's device ID, the
 //! reference clock `limesdr_detect_refclk` measures, and the LMS7002M version word.
 
-use rsl_limesdr_oracle::Oracle;
-use rsl_limesdr_sim::{Op, SimBoard};
+use limesdr_oracle::Oracle;
+use limesdr_sim::{Op, SimBoard};
 
 /// `EIO`: `limesdr_init`'s refusal of an LMS7002M version word other than 0x3841.
 const EIO: i32 = 5;
@@ -108,7 +108,7 @@ fn the_lms7002m_is_reset_after_the_reference_is_measured_and_before_any_access()
 /// 40 MHz (39 999 999 Hz) walk past the five-entry table and read `clkTbl[5]`, undefined
 /// behaviour whose outcome depends on the stack. Exactly 52 MHz would too; the 52 MHz row is
 /// deterministic only because the detector's integer count truncates it to 51 999 998 Hz
-/// (`rsl-limesdr-sim`'s `reference_count`), a dependency a sim change must keep.
+/// (`limesdr-sim`'s `reference_count`), a dependency a sim change must keep.
 #[test]
 fn only_a_reference_measured_from_40_to_41_mhz_is_accepted() {
     for (hz, expected) in [

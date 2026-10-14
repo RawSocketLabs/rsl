@@ -1,5 +1,5 @@
 [package]
-name = "rsl-x509"
+name = "x509"
 version = "0.1.0"
 description = "Borrowed X.509 structures and canonical certificate construction for RSL."
 edition.workspace = true
@@ -9,7 +9,7 @@ rust-version.workspace = true
 readme = "README.md"
 
 [dependencies]
-rsl-asn1.workspace = true
+asn1.workspace = true
 
 [lints]
 workspace = true

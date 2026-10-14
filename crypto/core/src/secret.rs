@@ -8,7 +8,7 @@
 //! # Examples
 //!
 //! ```
-//! use rsl_crypto::SecretBytes;
+//! use crypto::SecretBytes;
 //!
 //! let secret = SecretBytes::new(*b"secret!!");
 //! assert_eq!(format!("{secret:?}"), "Secret([REDACTED])");
@@ -18,7 +18,7 @@
 //! `into_inner` transfers responsibility to the caller:
 //!
 //! ```
-//! use rsl_crypto::SecretBytes;
+//! use crypto::SecretBytes;
 //!
 //! let secret = SecretBytes::new([0x42; 16]);
 //! let mut bytes = secret.into_inner();
@@ -30,7 +30,7 @@
 //! Mutation is equally explicit:
 //!
 //! ```
-//! use rsl_crypto::SecretVec;
+//! use crypto::SecretVec;
 //!
 //! let mut secret = SecretVec::new(vec![1, 2, 3]);
 //! secret.expose_secret_mut()[1] = 9;

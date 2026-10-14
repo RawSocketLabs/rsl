@@ -1,4 +1,4 @@
-# Workspace-wide cargo-deny config for the rsl monorepo. The `rsl-deps` member blesses large
+# Workspace-wide cargo-deny config for the rsl monorepo. The `deps` member blesses large
 # external ecosystems (tokio/axum/ratatui/…), so duplicate transitive versions are only warned
 # on; advisories and licenses are the hard gates. All inter-crate deps are `path` (no git deps).
 
@@ -25,7 +25,7 @@ allow = [
 confidence-threshold = 0.9
 
 [bans]
-# The workspace pulls whole framework trees (via rsl-deps' optional features); duplicate
+# The workspace pulls whole framework trees (via deps' optional features); duplicate
 # versions are unavoidable, so warn rather than fail.
 multiple-versions = "warn"
 wildcards = "allow"

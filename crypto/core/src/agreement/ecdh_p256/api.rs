@@ -91,7 +91,7 @@ impl fmt::Debug for EcdhP256PrivateKey {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::{CryptoError, agreement::ecdh_p256::EcdhP256PublicKey};
+/// use crypto::{CryptoError, agreement::ecdh_p256::EcdhP256PublicKey};
 ///
 /// assert_eq!(
 ///     EcdhP256PublicKey::try_from([0_u8; 64].as_slice()),

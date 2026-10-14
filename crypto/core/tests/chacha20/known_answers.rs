@@ -1,6 +1,6 @@
 //! Published `ChaCha20` evidence from RFC 8439 Appendix A.1 and A.2.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     cipher::chacha20::{ChaCha20, ChaCha20Key, ChaCha20Nonce},
 };

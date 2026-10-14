@@ -79,7 +79,7 @@ ciphertext from opening.
   payload lengths covering empty, one-byte, both sides of 16/32/64-byte block boundaries, and a
   129-byte multi-block value.
 
-The oracle is a development dependency only. Production `rsl-crypto` code does not call it.
+The oracle is a development dependency only. Production `crypto` code does not call it.
 
 ## GCM-AES256 examples
 

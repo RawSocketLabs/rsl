@@ -2,7 +2,7 @@
 //!
 //! ## Boundary
 //!
-//! This crate consumes already parsed [`rsl_x509::Certificate`] values and issuer public keys.
+//! This crate consumes already parsed [`x509::Certificate`] values and issuer public keys.
 //! It constructs a path, verifies the exact signed bytes, checks validity, CA/path constraints,
 //! critical extensions, optional key purpose and usage, and optional service identity. Root-store
 //! loading, clocks, and revocation transport remain platform inputs. TLS/SSH negotiation and
@@ -11,10 +11,10 @@
 //! ## Standards ownership
 //!
 //! RFC 5280 §6 controls path processing. RFC 9525 §6 controls optional DNS service-identity
-//! matching. Signature encodings come from RFC 5480, RFC 8410, and RFC 4055 through `rsl-x509`.
+//! matching. Signature encodings come from RFC 5480, RFC 8410, and RFC 4055 through `x509`.
 //! See `STANDARDS.md`.
 //!
-//! [`issuance`] joins `rsl-x509`'s syntax-only builder to supported `rsl-crypto` signing keys.
+//! [`issuance`] joins `x509`'s syntax-only builder to supported `crypto` signing keys.
 //! It deliberately does not allocate serials, authorize identities, choose lifetimes, or produce
 //! [`ValidatedPath`].
 //!
@@ -28,19 +28,19 @@
 
 extern crate alloc;
 
-/// Certificate-signing adapters for the algorithms implemented by `rsl-crypto`.
+/// Certificate-signing adapters for the algorithms implemented by `crypto`.
 pub mod issuance;
 
 use alloc::{vec, vec::Vec};
 use core::fmt;
-use rsl_crypto::signature::{
+use crypto::signature::{
     ecdsa_p256::{EcdsaP256Signature, EcdsaP256VerifyingKey},
     ecdsa_p384::{EcdsaP384Signature, EcdsaP384VerifyingKey},
     ed448::{Ed448Signature, Ed448VerifyingKey},
     ed25519::{Ed25519Signature, Ed25519VerifyingKey},
     rsa_pss::{RsaPssSha256VerifyingKey, RsaPssSignature},
 };
-use rsl_x509::{Certificate, GeneralName, PublicKey, SignatureAlgorithm, Time, oid};
+use x509::{Certificate, GeneralName, PublicKey, SignatureAlgorithm, Time, oid};
 
 const DEFAULT_MAX_CANDIDATE_CHECKS: usize = 1_024;
 
@@ -108,9 +108,9 @@ impl fmt::Display for Error {
 
 impl core::error::Error for Error {}
 
-impl From<rsl_x509::Error> for Error {
-    fn from(error: rsl_x509::Error) -> Self {
-        let kind = if error.kind == rsl_x509::ErrorKind::UnsupportedAlgorithm {
+impl From<x509::Error> for Error {
+    fn from(error: x509::Error) -> Self {
+        let kind = if error.kind == x509::ErrorKind::UnsupportedAlgorithm {
             ErrorKind::UnsupportedAlgorithm
         } else {
             ErrorKind::InvalidCertificate
@@ -494,13 +494,13 @@ fn issuer_matches(child: &Certificate<'_>, issuer: &Certificate<'_>) -> Result<b
     let authority = child
         .tbs_certificate()
         .extension(oid::AUTHORITY_KEY_IDENTIFIER)
-        .map(rsl_x509::Extension::authority_key_identifier)
+        .map(x509::Extension::authority_key_identifier)
         .transpose()?
         .flatten();
     let subject = issuer
         .tbs_certificate()
         .extension(oid::SUBJECT_KEY_IDENTIFIER)
-        .map(rsl_x509::Extension::subject_key_identifier)
+        .map(x509::Extension::subject_key_identifier)
         .transpose()?
         .flatten();
     let Some(authority) = authority else {
@@ -769,7 +769,7 @@ fn validate_ca(certificate: &Certificate<'_>) -> Result<()> {
     Ok(())
 }
 
-fn basic_constraints(certificate: &Certificate<'_>) -> Result<rsl_x509::BasicConstraints> {
+fn basic_constraints(certificate: &Certificate<'_>) -> Result<x509::BasicConstraints> {
     certificate
         .tbs_certificate()
         .extension(oid::BASIC_CONSTRAINTS)
@@ -848,10 +848,10 @@ fn valid_dns_label(label: &str) -> bool {
 mod tests {
     use super::*;
     use alloc::vec;
-    use rsl_asn1::{Encoder, ObjectIdentifier, Tag};
-    use rsl_crypto::signature::ed25519::Ed25519SigningKey;
+    use asn1::{Encoder, ObjectIdentifier, Tag};
+    use crypto::signature::ed25519::Ed25519SigningKey;
 
-    fn built(build: impl FnOnce(&mut Encoder) -> rsl_asn1::Result<()>) -> Vec<u8> {
+    fn built(build: impl FnOnce(&mut Encoder) -> asn1::Result<()>) -> Vec<u8> {
         let mut encoder = Encoder::new();
         build(&mut encoder).unwrap();
         encoder.finish()
@@ -871,7 +871,7 @@ mod tests {
     fn name(common_name: &str) -> Vec<u8> {
         let attribute = built(|encoder| {
             encoder.sequence(|sequence| {
-                sequence.object_identifier(&object_identifier(rsl_x509::oid::COMMON_NAME))?;
+                sequence.object_identifier(&object_identifier(x509::oid::COMMON_NAME))?;
                 sequence.element(Tag::UTF8_STRING, common_name.as_bytes())
             })
         });

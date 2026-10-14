@@ -1,6 +1,6 @@
 //! Public tests for HMAC input representations and incremental fragmentation.
 
-use rsl_crypto::mac::hmac::sha384::{HmacSha384, HmacSha384Tag};
+use crypto::mac::hmac::sha384::{HmacSha384, HmacSha384Tag};
 
 /// Regression evidence: text and byte containers expose only their existing byte representation.
 #[test]

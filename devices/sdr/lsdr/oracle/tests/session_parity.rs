@@ -1,20 +1,20 @@
-//! rsl-lsdr's sessions against libusdr's, operation for operation, on fresh simulated
+//! lsdr's sessions against libusdr's, operation for operation, on fresh simulated
 //! boards: open, ADC power, the receive PGA gain and close.
 //!
 //! Every open ends with its front-end probe (`device_fe_probe`, through
-//! `rsl-sdr-frontend`), compared whole with the I2C core each transfer addresses.
+//! `sdr-frontend`), compared whole with the I2C core each transfer addresses.
 //!
 //! Whitelisted divergence, confined to the scenario that shows it:
-//! - A PGA setting above 31: libusdr clamps it to 31; rsl-lsdr's `PgaGain` cannot hold it.
+//! - A PGA setting above 31: libusdr clamps it to 31; lsdr's `PgaGain` cannot hold it.
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
 use std::ffi::CStr;
 
-use rsl_lsdr::{Device, Error, Fitted, OpenOptions, PgaGain};
-use rsl_lsdr_oracle::Oracle;
-use rsl_lsdr_sim::{Op, SimBoard, Variant};
+use lsdr::{Device, Error, Fitted, OpenOptions, PgaGain};
+use lsdr_oracle::Oracle;
+use lsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
 
 /// `EIO`: open's "Device is dead!".
@@ -88,23 +88,23 @@ fn libusdr(variant: Variant, connection: &CStr, steps: &[Step]) -> Session {
     }
 }
 
-/// rsl-lsdr's session on `variant`, opened with `options`, and what it found.
-fn rsl_lsdr(variant: Variant, options: OpenOptions, steps: &[Step]) -> (Session, Fitted) {
+/// lsdr's session on `variant`, opened with `options`, and what it found.
+fn lsdr(variant: Variant, options: OpenOptions, steps: &[Step]) -> (Session, Fitted) {
     let sim = SimBus::new(SimBoard::new(variant));
-    let mut device = Device::open(sim.clone(), options).expect("rsl-lsdr opens the board");
+    let mut device = Device::open(sim.clone(), options).expect("lsdr opens the board");
     let fitted = device.fitted();
     let mut ends = vec![sim.board().trace().len()];
     for step in steps {
         match *step {
             Step::Power(on) => device.set_power(on),
             Step::Pga(value) => device.set_rx_pga_gain(
-                PgaGain::new(value).expect("rsl-lsdr is given representable settings"),
+                PgaGain::new(value).expect("lsdr is given representable settings"),
             ),
         }
-        .expect("rsl-lsdr runs the step");
+        .expect("lsdr runs the step");
         ends.push(sim.board().trace().len());
     }
-    device.close().expect("rsl-lsdr closes the board");
+    device.close().expect("lsdr closes the board");
     let board = sim.board();
     let mut phases = phases(board.trace(), &ends);
     let close = phases.pop().expect("a close phase");
@@ -125,7 +125,7 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
         (0..expected.len().max(actual.len())).find(|&i| expected.get(i) != actual.get(i))
     {
         panic!(
-            "{scenario}: rsl-lsdr diverges from libusdr at op {at}: libusdr {}, rsl-lsdr {}",
+            "{scenario}: lsdr diverges from libusdr at op {at}: libusdr {}, lsdr {}",
             expected.get(at).map_or("(end)".into(), Op::to_string),
             actual.get(at).map_or("(end)".into(), Op::to_string),
         );
@@ -133,17 +133,13 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
 }
 
 /// Compares the two sessions phase by phase.
-fn assert_same_session(libusdr: &Session, rsl_lsdr: &Session, scenario: &str) {
-    assert_same_ops(&libusdr.open, &rsl_lsdr.open, &format!("{scenario}, open"));
-    assert_eq!(libusdr.steps.len(), rsl_lsdr.steps.len());
-    for (at, (expected, actual)) in libusdr.steps.iter().zip(&rsl_lsdr.steps).enumerate() {
+fn assert_same_session(libusdr: &Session, lsdr: &Session, scenario: &str) {
+    assert_same_ops(&libusdr.open, &lsdr.open, &format!("{scenario}, open"));
+    assert_eq!(libusdr.steps.len(), lsdr.steps.len());
+    for (at, (expected, actual)) in libusdr.steps.iter().zip(&lsdr.steps).enumerate() {
         assert_same_ops(expected, actual, &format!("{scenario}, step {at}"));
     }
-    assert_same_ops(
-        &libusdr.close,
-        &rsl_lsdr.close,
-        &format!("{scenario}, close"),
-    );
+    assert_same_ops(&libusdr.close, &lsdr.close, &format!("{scenario}, close"));
 }
 
 #[test]
@@ -151,13 +147,13 @@ fn the_golden_sessions_match_libusdr_front_end_probe_included() {
     // The characterization goldens' scenarios: open, /dm/power/en = 1, close.
     let steps = [Step::Power(true)];
     let single = libusdr(Variant::SingleAdc, c"", &steps);
-    let (rust, fitted) = rsl_lsdr(Variant::SingleAdc, OpenOptions::new(), &steps);
+    let (rust, fitted) = lsdr(Variant::SingleAdc, OpenOptions::new(), &steps);
     assert_same_session(&single, &rust, "single ADC");
     assert_eq!(fitted.adcs, [true, false]);
 
     let dual = libusdr(Variant::DualAdcClockGen, c"lmk=1", &steps);
     let options = OpenOptions::new().probe_clock_generator(true);
-    let (rust, fitted) = rsl_lsdr(Variant::DualAdcClockGen, options, &steps);
+    let (rust, fitted) = lsdr(Variant::DualAdcClockGen, options, &steps);
     assert_same_session(&dual, &rust, "dual ADC, lmk=1");
     assert_eq!(
         fitted,
@@ -176,7 +172,7 @@ fn the_clock_generator_test_follows_the_option_on_every_fit() {
     ] {
         let scenario = format!("{variant:?}, {connection:?}");
         let options = OpenOptions::new().probe_clock_generator(probe);
-        let (rust, fitted) = rsl_lsdr(variant, options, &[]);
+        let (rust, fitted) = lsdr(variant, options, &[]);
         assert_same_session(&libusdr(variant, connection, &[]), &rust, &scenario);
         assert!(!fitted.clock_generator, "{scenario}: none found");
     }
@@ -191,7 +187,7 @@ fn power_down_and_pga_gains_match_libusdr() {
         Step::Pga(31),
         Step::Power(false),
     ];
-    let (rust, _) = rsl_lsdr(Variant::SingleAdc, OpenOptions::new(), &steps);
+    let (rust, _) = lsdr(Variant::SingleAdc, OpenOptions::new(), &steps);
     assert_same_session(
         &libusdr(Variant::SingleAdc, c"", &steps),
         &rust,
@@ -203,8 +199,8 @@ fn power_down_and_pga_gains_match_libusdr() {
 fn a_pga_setting_past_31_is_clamped_by_libusdr_and_unrepresentable_in_rsl_lsdr() {
     assert_eq!(PgaGain::new(40), None);
     let clamped = libusdr(Variant::SingleAdc, c"", &[Step::Pga(40)]);
-    let (rust, _) = rsl_lsdr(Variant::SingleAdc, OpenOptions::new(), &[Step::Pga(31)]);
-    assert_same_session(&clamped, &rust, "libusdr's 40 against rsl-lsdr's 31");
+    let (rust, _) = lsdr(Variant::SingleAdc, OpenOptions::new(), &[Step::Pga(31)]);
+    assert_same_session(&clamped, &rust, "libusdr's 40 against lsdr's 31");
 }
 
 #[test]

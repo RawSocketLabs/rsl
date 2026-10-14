@@ -9,7 +9,7 @@ use std::ptr;
 use std::slice;
 use std::sync::{MutexGuard, PoisonError};
 
-use rsl_usdr_sim::SimBoard;
+use usdr_sim::SimBoard;
 
 use crate::{SESSION, install, resume_callback_panic, take_board};
 
@@ -141,7 +141,7 @@ impl FlashOracle {
     /// ([`DONT_ERASE`], [`DONT_WRITE_HEADER`]).
     ///
     /// libusdr reads up to three bytes past `data` to fill its last word; they are `0xff`
-    /// here, the padding `rsl-usdr` uses, so the two traces are comparable.
+    /// here, the padding `usdr` uses, so the two traces are comparable.
     ///
     /// # Errors
     ///

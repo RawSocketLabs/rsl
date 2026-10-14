@@ -21,7 +21,7 @@
 //! These run as blocking code: the 16-bit addresses and four-byte identity read do not fit
 //! the portable `Sequence` seam.
 //!
-//! The plan, staging map, address map and value types are the shared `rsl-lmk05318` crate
+//! The plan, staging map, address map and value types are the shared `lmk05318` crate
 //! (`PE_SYNC` uses the chip too), re-exported here under their former module names; the
 //! bus code in `lmk05318.rs` is the uSDR driver's.
 //!
@@ -33,7 +33,7 @@
 
 mod lmk05318;
 
-pub(crate) use rsl_lmk05318::plan;
-use rsl_lmk05318::{apll, control, map, output, reg, staging};
+pub(crate) use ::lmk05318::plan;
+use ::lmk05318::{apll, control, map, output, reg, staging};
 
 pub(crate) use self::lmk05318::Lmk05318;

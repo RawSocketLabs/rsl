@@ -67,4 +67,4 @@ repeatable while keeping the test fixture small.
 - **Checked:** 2026-08-27.
 
 Differential agreement is supplementary evidence. It is not treated as a published NIST vector,
-and production `rsl-crypto` code has no dependency on RustCrypto.
+and production `crypto` code has no dependency on RustCrypto.

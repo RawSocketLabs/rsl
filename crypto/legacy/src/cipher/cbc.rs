@@ -17,7 +17,7 @@
 //! repository that defines each profile.
 //!
 //! ```
-//! use rsl_crypto_legacy::cipher::{
+//! use crypto_legacy::cipher::{
 //!     cbc::{CbcState, decrypt_blocks, encrypt_blocks},
 //!     des::{DesBlock, TripleDesEde3, TripleDesEde3Key},
 //! };
@@ -41,7 +41,7 @@
 //! ]));
 //! decrypt_blocks(&cipher, &mut decryption_chain, &mut blocks)?;
 //! assert_eq!(blocks[0].as_bytes(), &plaintext);
-//! # Ok::<(), rsl_crypto_legacy::CryptoError>(())
+//! # Ok::<(), crypto_legacy::CryptoError>(())
 //! ```
 //!
 //! SP 800-38A remains the mathematical baseline while NIST is preparing a revision. RFC 9325
@@ -52,7 +52,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::{CryptoError, Result};
-use rsl_crypto::cipher::BlockCipher;
+use crypto::cipher::BlockCipher;
 
 /// One CBC direction's current chaining block.
 ///

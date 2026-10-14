@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use mio::event::Source;
-use rsl_usb::{Buffer, InQueue, Interface, OutQueue, ReapProgress};
+use usb::{Buffer, InQueue, Interface, OutQueue, ReapProgress};
 
 use super::super::bus::{MAX_NOTIFICATION_BYTES, transfer_length};
 use super::super::i2c::Event;
@@ -158,10 +158,10 @@ impl<Q> Filed<Q> {
     /// Takes a filed completion through `take`, recording contention as "turn again".
     fn take(
         &mut self,
-        take: impl FnOnce(&mut Q) -> Result<Option<rsl_usb::Completion>, rsl_usb::Error>,
+        take: impl FnOnce(&mut Q) -> Result<Option<usb::Completion>, usb::Error>,
     ) -> Result<Option<Buffer>, BusError> {
         let done = match take(&mut self.queue) {
-            Err(rsl_usb::Error::Busy) => {
+            Err(usb::Error::Busy) => {
                 self.contended.store(true, Ordering::Relaxed);
                 return Ok(None);
             }
@@ -170,9 +170,7 @@ impl<Q> Filed<Q> {
         let Some(done) = done else {
             return Ok(None);
         };
-        done.status
-            .map_err(rsl_usb::Error::from)
-            .map_err(usb_error)?;
+        done.status.map_err(usb::Error::from).map_err(usb_error)?;
         Ok(Some(done.buffer))
     }
 }
@@ -358,7 +356,7 @@ impl Backend for Queues {
     fn turn(&mut self, budget: NonZeroUsize) -> Result<Turn, BusError> {
         // Busy, like an exhausted budget, calls for another turn rather than a readiness edge.
         let reaped = match self.interface.reap(budget) {
-            Err(rsl_usb::Error::Busy) => return Ok(Turn::AGAIN),
+            Err(usb::Error::Busy) => return Ok(Turn::AGAIN),
             reaped => reaped,
         };
         // A completion filed before a reap error, even as its prefix, is still delivered.
@@ -368,14 +366,14 @@ impl Backend for Queues {
                 Endpoint::Registers => self.registers.try_complete(),
                 Endpoint::Notifications => self.notifications.try_complete(),
             } {
-                Err(rsl_usb::Error::Busy) => return Ok(Turn::AGAIN),
+                Err(usb::Error::Busy) => return Ok(Turn::AGAIN),
                 done => done.map_err(usb_error)?,
             };
             done.map(|done| {
                 self.pending = None;
                 let result = done
                     .status
-                    .map_err(rsl_usb::Error::from)
+                    .map_err(usb::Error::from)
                     .map_err(usb_error)
                     .map(|()| match endpoint {
                         Endpoint::Commands => Reply::Written,

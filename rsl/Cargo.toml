@@ -9,13 +9,13 @@ description = "Feature-gated facade for RSL's codec, crypto, PKI, protocols, raw
 readme = "README.md"
 # Not published to a registry: it depends on the owned crates by `git`, which crates.io
 # forbids in a published package. Consumed directly as a git dependency by RSL application
-# crates. Blessed THIRD-PARTY crates live in the separate `rsl-deps` crate; private owned
+# crates. Blessed THIRD-PARTY crates live in the separate `deps` crate; private owned
 # crates live in the private `rsl-private` overlay.
 publish = false
 
 # ---------------------------------------------------------------------------
 # The libraries RSL OWNS, re-exported under semantic paths. This is the "owned" half of the
-# stack; the "rented" third-party half is `rsl-deps`. The two are orthogonal — a crate that
+# stack; the "rented" third-party half is `deps`. The two are orthogonal — a crate that
 # needs both depends on both.
 #
 # Every dependency is `optional`, so `rsl` compiles to nothing until a consumer opts into a
@@ -32,15 +32,15 @@ publish = false
 bnb = { workspace = true, optional = true }
 
 # Accuracy-first transformations.
-rsl-crypto = { workspace = true, optional = true }
-rsl-crypto-legacy = { workspace = true, optional = true }
-rsl-compression = { workspace = true, optional = true }
-rsl-error-correction = { workspace = true, optional = true }
+crypto = { workspace = true, optional = true }
+crypto-legacy = { workspace = true, optional = true }
+compression = { workspace = true, optional = true }
+error-correction = { workspace = true, optional = true }
 
 # DER transport, X.509 syntax, and certificate-path validation.
-rsl-asn1 = { workspace = true, optional = true }
-rsl-x509 = { workspace = true, optional = true }
-rsl-pki = { workspace = true, optional = true }
+asn1 = { workspace = true, optional = true }
+x509 = { workspace = true, optional = true }
+pki = { workspace = true, optional = true }
 
 # Protocol implementations.
 ethertype = { path = "../protocols/link/ethertype", version = "0.2.2", optional = true }
@@ -55,7 +55,7 @@ rawsock = { workspace = true, optional = true }
 rfus = { path = "../rf/rfus", version = "0.1.0", optional = true }
 
 # FFI bindings (need a C++ toolchain + system libs to build; opt-in only, off by default).
-usdr = { path = "../bindings/usdr", version = "0.1.0", optional = true }
+usdr-ffi = { path = "../bindings/usdr", version = "0.1.0", optional = true }
 "rust-dsdcc" = { path = "../bindings/dsdcc", version = "0.1.0", optional = true }
 
 # NOTE — the private owned crate `libsdr` (`sdr`) is absent by design; it lives in the private
@@ -65,7 +65,7 @@ usdr = { path = "../bindings/usdr", version = "0.1.0", optional = true }
 default = []
 
 # ---- convenience bundles (owned libraries) --------------------------------
-# All the owned public libraries (excludes the FFI `usdr` — add it explicitly).
+# All the owned public libraries (excludes the FFI `usdr-ffi` — add feature `usdr` explicitly).
 full = ["net", "radio", "transforms", "pki"]
 # Build/parse/emit network traffic.
 net  = ["codec", "proto", "rawsock"]
@@ -76,15 +76,15 @@ transforms = ["crypto", "compression", "error-correction"]
 
 # ---- owned RSL crates -----------------------------------------------------
 codec = ["dep:bnb"]
-crypto = ["dep:rsl-crypto"]
+crypto = ["dep:crypto"]
 # Historical/broken cryptography is intentionally excluded from `full` and `transforms`.
-legacy-crypto = ["dep:rsl-crypto-legacy"]
-compression = ["dep:rsl-compression"]
-error-correction = ["dep:rsl-error-correction"]
+legacy-crypto = ["dep:crypto-legacy"]
+compression = ["dep:compression"]
+error-correction = ["dep:error-correction"]
 
 # Certificate stack. The facade exposes each layer; downstream users can still depend on an
 # individual crate directly when they do not want the bundle.
-pki = ["dep:rsl-asn1", "dep:rsl-x509", "dep:rsl-pki"]
+pki = ["dep:asn1", "dep:x509", "dep:pki"]
 
 proto           = ["proto-ethertype", "proto-tcp", "proto-udp", "proto-dns"]
 proto-ethertype = ["dep:ethertype", "codec"]
@@ -96,7 +96,7 @@ rawsock = ["dep:rawsock"]
 rf      = ["dep:rfus"]
 
 # FFI-backed (needs a C++ toolchain + system libraries present to build).
-usdr = ["dep:usdr"]
+usdr = ["dep:usdr-ffi"]
 dsdcc = ["dep:rust-dsdcc"]
 
 [lints.rust]

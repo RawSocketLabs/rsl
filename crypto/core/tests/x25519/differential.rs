@@ -1,6 +1,6 @@
 //! Differential X25519 evidence against `x25519-dalek` 3.0.0.
 
-use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use crypto::agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
 use x25519_dalek::{X25519_BASEPOINT_BYTES, x25519 as reference_x25519};
 
 /// Differential evidence over deterministic private keys and peer public coordinates.
@@ -65,7 +65,7 @@ fn arbitrary_coordinate_encodings_match_rustcrypto() {
         match X25519::agree(&private_key, &coordinate) {
             Ok(shared) => assert_eq!(shared.expose_secret(), &expected, "case {case}"),
             Err(error) => {
-                assert_eq!(error, rsl_crypto::CryptoError::InvalidPublicKey);
+                assert_eq!(error, crypto::CryptoError::InvalidPublicKey);
                 assert_eq!(expected, [0_u8; 32], "only all-zero output is rejected");
             }
         }

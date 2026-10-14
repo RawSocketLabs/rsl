@@ -45,7 +45,7 @@
 //! for learning and for protocol key schedules that reuse it.
 //!
 //! ```
-//! use rsl_crypto::kdf::hkdf::sha384::extract;
+//! use crypto::kdf::hkdf::sha384::extract;
 //!
 //! // Project Wycheproof hkdf_sha384_test.json, tcId 12.
 //! let ikm = [
@@ -79,7 +79,7 @@
 //!         0xe4, 0x6d, 0xdf, 0x41, 0xdc, 0xf2, 0x56, 0xd9,
 //!     ]
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Convenience composition
@@ -88,7 +88,7 @@
 //! retain the intermediate `PRK`:
 //!
 //! ```
-//! use rsl_crypto::kdf::hkdf::sha384::derive;
+//! use crypto::kdf::hkdf::sha384::derive;
 //!
 //! let mut encryption_key = [0_u8; 16];
 //! derive(
@@ -98,7 +98,7 @@
 //!     &mut encryption_key,
 //! )?;
 //! assert_ne!(encryption_key, [0_u8; 16]);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes
@@ -156,12 +156,12 @@ use crate::Result;
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::kdf::hkdf::sha384::derive;
+/// use crypto::kdf::hkdf::sha384::derive;
 ///
 /// let mut output = [0_u8; 32];
 /// derive(Some(b"salt"), b"input keying material", b"example purpose", &mut output)?;
 /// assert_ne!(output, [0_u8; 32]);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub fn derive(
     salt: Option<&[u8]>,

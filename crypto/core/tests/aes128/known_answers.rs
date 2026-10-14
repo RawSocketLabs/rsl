@@ -1,6 +1,6 @@
 //! Published AES-128 block vectors through the public API.
 
-use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 
 /// Published complete-cipher evidence from FIPS 197-upd1 Appendix B.
 #[test]

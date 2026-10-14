@@ -6,14 +6,14 @@
 
 use std::sync::LazyLock;
 
+use asn1::{Encoder, ObjectIdentifier, Tag};
+use crypto::signature::ed25519::Ed25519SigningKey;
 use libfuzzer_sys::fuzz_target;
-use rsl_asn1::{Encoder, ObjectIdentifier, Tag};
-use rsl_crypto::signature::ed25519::Ed25519SigningKey;
-use rsl_pki::{
+use pki::{
     ErrorKind, PathValidator, Purpose, RequiredKeyUsage, RevocationChecker, RevocationMode,
     RevocationStatus,
 };
-use rsl_x509::{Certificate, Time, oid};
+use x509::{Certificate, Time, oid};
 
 struct ChainDer {
     root: Vec<u8>,
@@ -65,7 +65,7 @@ impl RevocationChecker for FixedRevocation {
     }
 }
 
-fn built(build: impl FnOnce(&mut Encoder) -> rsl_asn1::Result<()>) -> Vec<u8> {
+fn built(build: impl FnOnce(&mut Encoder) -> asn1::Result<()>) -> Vec<u8> {
     let mut encoder = Encoder::new();
     build(&mut encoder).unwrap();
     encoder.finish()

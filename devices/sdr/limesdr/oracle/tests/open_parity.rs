@@ -1,22 +1,22 @@
-//! rsl-limesdr's open, power-up and close against libusdr's, operation for operation
+//! limesdr's open, power-up and close against libusdr's, operation for operation
 //! (frames and the register operations they decode to), on fresh simulated boards.
 //!
 //! Whitelisted divergences, each confined to the scenario that shows it:
 //! - References libusdr's broken table walk refuses (10, 38.4 and 52 MHz measured): libusdr
-//!   stops with `-EFAULT` after the count read; rsl-limesdr recognises them and carries on
+//!   stops with `-EFAULT` after the count read; limesdr recognises them and carries on
 //!   exactly as from a 40 MHz count.
 //! - A detector that never finishes: after the same ten polls and waits libusdr reads
 //!   whatever count the registers hold, here a stale 40 MHz one it then opens with;
-//!   rsl-limesdr stops before that read. The stale count is seeded on purpose: a zero
+//!   limesdr stops before that read. The stale count is seeded on purpose: a zero
 //!   count makes libusdr's walk stop at its first entry and log `clkTbl[i - 1]` with
 //!   unsigned `i` = 0, an out-of-bounds read that may crash the oracle.
 
 #[path = "../../tests/common/sim_port.rs"]
 mod sim_port;
 
-use rsl_limesdr::{Device, Error};
-use rsl_limesdr_oracle::Oracle;
-use rsl_limesdr_sim::{DETECTOR_GATE_US, Op, SimBoard};
+use limesdr::{Device, Error};
+use limesdr_oracle::Oracle;
+use limesdr_sim::{DETECTOR_GATE_US, Op, SimBoard};
 use sim_port::SimPort;
 
 /// `EIO`: `limesdr_init`'s refusal of an LMS7002M version word other than 0x3841.
@@ -31,9 +31,9 @@ const STALE_40_MHZ: [(u16, u16); 2] = [(0x0072, 0x6664), (0x0073, 0x0066)];
 struct Session {
     /// The open's operations.
     open: Vec<Op>,
-    /// The open's outcome: the nominal reference recognised (rsl-limesdr; libusdr does
+    /// The open's outcome: the nominal reference recognised (limesdr; libusdr does
     /// not expose its own, so `None`), or the device's own errno (libusdr) or 0
-    /// (rsl-limesdr).
+    /// (limesdr).
     outcome: Result<Option<u32>, i32>,
     /// The power-up's operations.
     power_up: Vec<Op>,
@@ -67,8 +67,8 @@ fn libusdr(board: SimBoard) -> Session {
     }
 }
 
-/// rsl-limesdr's session on `board`, as [`libusdr`]'s; also its open's error.
-fn rsl_limesdr(board: SimBoard) -> (Session, Option<Error>) {
+/// limesdr's session on `board`, as [`libusdr`]'s; also its open's error.
+fn limesdr(board: SimBoard) -> (Session, Option<Error>) {
     let sim = SimPort::new(board);
     let mut device = match Device::open(sim.clone()) {
         Ok(device) => device,
@@ -84,11 +84,9 @@ fn rsl_limesdr(board: SimBoard) -> (Session, Option<Error>) {
     };
     let reference_hz = device.reference_hz();
     let opened = sim.board().trace().len();
-    device
-        .power_up()
-        .expect("rsl-limesdr's power-up does nothing");
+    device.power_up().expect("limesdr's power-up does nothing");
     let powered = sim.board().trace().len();
-    device.close().expect("rsl-limesdr's close does nothing");
+    device.close().expect("limesdr's close does nothing");
     let board = sim.board();
     let trace = board.trace();
     let session = Session {
@@ -106,18 +104,18 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
         (0..expected.len().max(actual.len())).find(|&i| expected.get(i) != actual.get(i))
     {
         panic!(
-            "{scenario}: rsl-limesdr diverges from libusdr at op {at}: libusdr {}, rsl-limesdr {}",
+            "{scenario}: limesdr diverges from libusdr at op {at}: libusdr {}, limesdr {}",
             expected.get(at).map_or("(end)".into(), Op::to_string),
             actual.get(at).map_or("(end)".into(), Op::to_string),
         );
     }
 }
 
-/// Both drivers' whole sessions on boards from `board`, which must agree: rsl-limesdr's
+/// Both drivers' whole sessions on boards from `board`, which must agree: limesdr's
 /// reference, or its open's error.
 fn assert_same_session(board: impl Fn() -> SimBoard, scenario: &str) -> Result<u32, Error> {
     let reference = libusdr(board());
-    let (ours, error) = rsl_limesdr(board());
+    let (ours, error) = limesdr(board());
     assert_same_ops(&reference.open, &ours.open, &format!("{scenario}: open"));
     assert_same_ops(
         &reference.power_up,
@@ -134,7 +132,7 @@ fn assert_same_session(board: impl Fn() -> SimBoard, scenario: &str) -> Result<u
         (_, Some(error)) => Err(error),
         (outcome, None) => Ok(outcome
             .expect("an open without an error succeeded")
-            .expect("rsl-limesdr reports its reference")),
+            .expect("limesdr reports its reference")),
     }
 }
 
@@ -209,8 +207,8 @@ fn references_libusdrs_walk_misses_are_recognised_and_opened_as_from_40_mhz() {
     for hz in [10_000_000, 38_400_000, 52_000_000] {
         let reference = libusdr(SimBoard::new().with_reference_hz(hz));
         assert_eq!(reference.outcome, Err(-EFAULT), "{hz} Hz: libusdr refuses");
-        let (ours, error) = rsl_limesdr(SimBoard::new().with_reference_hz(hz));
-        assert!(error.is_none(), "{hz} Hz: rsl-limesdr opens: {error:?}");
+        let (ours, error) = limesdr(SimBoard::new().with_reference_hz(hz));
+        assert!(error.is_none(), "{hz} Hz: limesdr opens: {error:?}");
         assert_eq!(ours.outcome, Ok(Some(hz)), "{hz} Hz: recognised as itself");
 
         let (measured, rest) = ours.open.split_at(reference.open.len());
@@ -239,7 +237,7 @@ fn a_stalled_detector_is_refused_where_libusdr_opens_on_a_stale_count() {
         Ok(None),
         "libusdr takes the stale count for a measurement"
     );
-    let (ours, error) = rsl_limesdr(board());
+    let (ours, error) = limesdr(board());
     assert!(matches!(error, Some(Error::DetectorStalled)), "{error:?}");
 
     let polls = |ops: &[Op]| {
@@ -262,6 +260,6 @@ fn the_revision_is_libusdrs_emulated_constant() {
     let mut oracle = Oracle::open(SimBoard::new()).expect("libusdr opens the LimeSDR-mini");
     let revision = oracle.get_uint(c"/dm/revision").expect("readable");
     drop(oracle.close());
-    let device = Device::open(SimPort::new(SimBoard::new())).expect("rsl-limesdr opens it");
+    let device = Device::open(SimPort::new(SimBoard::new())).expect("limesdr opens it");
     assert_eq!(device.revision(), revision);
 }

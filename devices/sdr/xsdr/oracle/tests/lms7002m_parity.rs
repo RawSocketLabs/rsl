@@ -1,4 +1,4 @@
-//! `rsl-lms7002m`'s chip operations against libusdr's compiled `hw/lms7002m/lms7002m.c`,
+//! `lms7002m`'s chip operations against libusdr's compiled `hw/lms7002m/lms7002m.c`,
 //! operation for operation (writes, reads and waits), on fresh simulated boards: every
 //! bank selection, every RFE/TRF path and mode, MIMO hand-over between channels, every
 //! AFE combination and both processors; the `LimeLight` configuration, maps and resets;
@@ -12,16 +12,16 @@ mod sim_bus;
 use core::num::NonZeroU32;
 
 use bnb::{u2, u3};
-use rsl_lms7002m::{
+use lms7002m::{
     Batch, Create, LmlConfig, LmlMap, LmlSample, Lms7002m, LpfParams, Mac, NoChannel, RbbMode,
     RbbPath, ResetPlan, RxGainStage, RxMode, RxPath, Synthesizer, TbbMode, TbbPath, Tsp, TuneError,
     TxGainStage, TxMode, TxPath,
 };
 use rsl_lowlevel::run_sequence;
-use rsl_xsdr::lowlevel::SpiAddr;
-use rsl_xsdr_oracle::{Lms7002mCall as Call, lms7002m_run};
-use rsl_xsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
+use xsdr::lowlevel::SpiAddr;
+use xsdr_oracle::{Lms7002mCall as Call, lms7002m_run};
+use xsdr_sim::{Op, SimBoard, Variant};
 
 /// `EINVAL`: libusdr's refusal of a banked call with no bank selected.
 const EINVAL: i32 = 22;
@@ -44,7 +44,7 @@ fn libusdr(calls: &[Call]) -> Run {
     )
 }
 
-/// rsl-lms7002m's run of `calls`, from [`Lms7002m::new`], on its own board.
+/// lms7002m's run of `calls`, from [`Lms7002m::new`], on its own board.
 fn rsl(calls: &[Call]) -> Run {
     let bus = SimBus::new(SimBoard::new(Variant::Xsdr));
     let mut executor = bus.clone();
@@ -57,7 +57,7 @@ fn rsl(calls: &[Call]) -> Run {
     (results, trace)
 }
 
-/// Runs one call on rsl-lms7002m's `chip` over `executor`: its result and reported values.
+/// Runs one call on lms7002m's `chip` over `executor`: its result and reported values.
 fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 3]) {
     match call {
         Call::MacSet(mac) => written(executor, chip.mac_set(mac_of(mac))),
@@ -298,7 +298,7 @@ fn assert_same(calls: &[Call], scenario: &str) {
         (0..expected.1.len().max(actual.1.len())).find(|&i| expected.1.get(i) != actual.1.get(i))
     {
         panic!(
-            "{scenario}: rsl-lms7002m diverges at op {at} of {}: libusdr {}, rsl-lms7002m {}",
+            "{scenario}: lms7002m diverges at op {at} of {}: libusdr {}, lms7002m {}",
             expected.1.len(),
             expected.1.get(at).map_or("(end)".into(), Op::to_string),
             actual.1.get(at).map_or("(end)".into(), Op::to_string),

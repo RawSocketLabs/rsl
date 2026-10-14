@@ -1,6 +1,6 @@
 //! RFC 5869 Appendix A SHA-256 vectors through the public Extract and Expand API.
 
-use rsl_crypto::kdf::hkdf::sha256::extract;
+use crypto::kdf::hkdf::sha256::extract;
 
 use super::support::decode_hex;
 

@@ -1,6 +1,6 @@
 //! Public HKDF output-bound and composition behavior.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     kdf::hkdf::sha256::{HkdfSha256Prk, derive, extract},
 };

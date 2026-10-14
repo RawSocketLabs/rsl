@@ -10,7 +10,7 @@
 use alloc::{vec, vec::Vec};
 use core::{fmt, marker::PhantomData};
 
-use rsl_asn1::{Encoder, ObjectIdentifier, Tag};
+use asn1::{Encoder, ObjectIdentifier, Tag};
 
 use super::{Certificate, Error, ErrorKind, Time, oid, parse_algorithm, parse_name, parse_spki};
 
@@ -51,7 +51,7 @@ impl NameDer {
     /// The bytes are not a syntactically valid X.509 name.
     pub fn from_der(bytes: Vec<u8>) -> super::Result<Self> {
         let empty = {
-            let element = rsl_asn1::decode_exact(&bytes)?;
+            let element = asn1::decode_exact(&bytes)?;
             parse_name(element)?.is_empty()
         };
         Ok(Self { bytes, empty })
@@ -215,7 +215,7 @@ impl SignatureAlgorithmDer {
     /// The bytes are not exactly one syntactically valid `AlgorithmIdentifier`.
     pub fn from_der(bytes: Vec<u8>) -> super::Result<Self> {
         {
-            let element = rsl_asn1::decode_exact(&bytes)?;
+            let element = asn1::decode_exact(&bytes)?;
             parse_algorithm(element)?;
         }
         Ok(Self(bytes))
@@ -326,7 +326,7 @@ impl SubjectPublicKeyInfoDer {
     /// The bytes are not syntactically valid `SubjectPublicKeyInfo`.
     pub fn from_der(bytes: Vec<u8>) -> super::Result<Self> {
         {
-            let element = rsl_asn1::decode_exact(&bytes)?;
+            let element = asn1::decode_exact(&bytes)?;
             parse_spki(element)?;
         }
         Ok(Self(bytes))
@@ -462,7 +462,7 @@ impl ExtensionDer {
         critical: bool,
         value_der: Vec<u8>,
     ) -> super::Result<Self> {
-        rsl_asn1::decode_exact(&value_der)?;
+        asn1::decode_exact(&value_der)?;
         Ok(Self {
             oid,
             critical,
@@ -886,7 +886,7 @@ impl CertificateBuilder<ReadyToSign> {
     /// Adds a caller-constructed extension without replacing an existing OID.
     ///
     /// This is the explicit extension escape hatch. Critical unknown extensions remain
-    /// fail-closed in `rsl-pki` validation.
+    /// fail-closed in `pki` validation.
     ///
     /// # Errors
     ///
@@ -1021,8 +1021,8 @@ impl CertificateBuilder<ReadyToSign> {
 /// Generic certificate-signing contract.
 ///
 /// Implementations choose an exact signature algorithm identifier and sign the immutable
-/// `TBSCertificate` bytes supplied by the builder. `rsl-pki::issuance` provides adapters for the
-/// signing keys implemented by `rsl-crypto`; external and experimental signers can implement this
+/// `TBSCertificate` bytes supplied by the builder. `pki::issuance` provides adapters for the
+/// signing keys implemented by `crypto`; external and experimental signers can implement this
 /// trait without being treated as validation-policy defaults.
 pub trait CertificateSigner {
     /// Signer-specific failure.
@@ -1099,7 +1099,7 @@ impl TbsCertificateDer {
 
 /// Owned exact DER for a constructed certificate.
 ///
-/// This type proves canonical certificate syntax only. Trust still requires `rsl-pki` path
+/// This type proves canonical certificate syntax only. Trust still requires `pki` path
 /// validation with external anchors, time, and policy inputs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertificateDer(Vec<u8>);
@@ -1155,7 +1155,7 @@ pub fn ecdsa_signature_value(fixed: &[u8]) -> super::Result<Vec<u8>> {
     })
 }
 
-fn encode_time(encoder: &mut Encoder, time: Time) -> rsl_asn1::Result<()> {
+fn encode_time(encoder: &mut Encoder, time: Time) -> asn1::Result<()> {
     let mut bytes = [b'0'; 15];
     let (tag, start, year) = if time.year <= 2049 {
         (Tag::UTC_TIME, 2, time.year % 100)
@@ -1204,7 +1204,7 @@ fn oid_der(arcs: &[u64]) -> super::Result<Vec<u8>> {
     built(|encoder| encoder.object_identifier(&oid))
 }
 
-fn built(build: impl FnOnce(&mut Encoder) -> rsl_asn1::Result<()>) -> super::Result<Vec<u8>> {
+fn built(build: impl FnOnce(&mut Encoder) -> asn1::Result<()>) -> super::Result<Vec<u8>> {
     let mut encoder = Encoder::new();
     build(&mut encoder)?;
     Ok(encoder.finish())

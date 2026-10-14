@@ -1,9 +1,9 @@
 //! The `usdr_pcie_uram` Linux driver's userspace interface, for the Wavelet Lab uSDR.
 //!
-//! This crate is the only place in the rsl-usdr stack that uses `unsafe`: ioctls against
+//! This crate is the only place in the usdr stack that uses `unsafe`: ioctls against
 //! the driver, the mapped register page and the mapped DMA buffers. It knows the driver's
 //! protocol and nothing about the board beyond the layout the caller passes in;
-//! `rsl-usdr`'s `pcie` feature builds its `Bus` on [`PcieDevice`]. The same driver's
+//! `usdr`'s `pcie` feature builds its `Bus` on [`PcieDevice`]. The same driver's
 //! XMASS device, the firmware flash of the XMASS board's `PCIe` switch, is
 //! [`XmassDevice`].
 //!

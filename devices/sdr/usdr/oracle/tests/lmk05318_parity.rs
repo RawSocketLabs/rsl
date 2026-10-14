@@ -1,18 +1,18 @@
-//! rsl-usdr's LMK05318 frequency plans and the registers it stages for them (the shared
-//! `rsl-lmk05318` crate) against libusdr's (`hw/lmk05318/lmk05318.c`), number for number
+//! usdr's LMK05318 frequency plans and the registers it stages for them (the shared
+//! `lmk05318` crate) against libusdr's (`hw/lmk05318/lmk05318.c`), number for number
 //! and bit for bit: the XO path and APLL1, the output solver with APLL2's state, and output
 //! 7's divider stages. The solver's `-Ofast` arithmetic makes the float results the
 //! sharpest check. Bus traces are compared by `frontend_parity.rs`.
 
 use std::collections::BTreeSet;
 
-use rsl_lmk05318::map::RegisterMap;
-use rsl_lmk05318::plan::{
+use lmk05318::map::RegisterMap;
+use lmk05318::plan::{
     self, Affinity, Apll2, Apll2Setting, ClockPlanError, Mux, OutputFormat, OutputRequest, Plan,
     Xo, XoInput, out7_stages,
 };
-use rsl_lmk05318::staging::{stage_apll1, stage_plan, stage_xo};
-use rsl_usdr_oracle::lmk05318::{self as oracle, Apll2State, MAP_LEN, PortRequest, Staged};
+use lmk05318::staging::{stage_apll1, stage_plan, stage_xo};
+use usdr_oracle::lmk05318::{self as oracle, Apll2State, MAP_LEN, PortRequest, Staged};
 
 /// Every XO input buffer with its C value (`enum xo_input_type`).
 const XO_INPUTS: [(XoInput, i32); 6] = [
@@ -114,7 +114,7 @@ fn differences(actual: &Staged, expected: &Staged) -> Vec<(usize, Option<u8>, Op
 
 /// Plans `requests` in both from equal APLL2 states and compares the outcome, the states
 /// after (which libusdr changes even on some failures), each output's route (frequency bits
-/// included) and every register staged. Returns rsl-usdr's plan.
+/// included) and every register staged. Returns usdr's plan.
 fn assert_plans_match(apll2: &mut Apll2, requests: &[OutputRequest], what: &str) -> Option<Plan> {
     let mut c_state = to_c(apll2);
     let c_requests: Vec<PortRequest> = requests.iter().map(to_c_request).collect();
@@ -138,10 +138,10 @@ fn assert_plans_match(apll2: &mut Apll2, requests: &[OutputRequest], what: &str)
     let regs = staged(&map);
     assert!(
         regs == c_regs,
-        "{what}: staged registers (address, rsl-usdr, libusdr): {:x?}",
+        "{what}: staged registers (address, usdr, libusdr): {:x?}",
         differences(&regs, &c_regs)
     );
-    // The C settles APLL2 into its state; so does rsl-usdr's plan, and its setting agrees.
+    // The C settles APLL2 into its state; so does usdr's plan, and its setting agrees.
     match plan.apll2 {
         Apll2Setting::Off => {}
         Apll2Setting::On {
@@ -248,7 +248,7 @@ fn xo_paths_and_apll1_match_libusdr() {
             let regs = staged(&map);
             assert!(
                 regs == c.regs,
-                "{what}: staged registers (address, rsl-usdr, libusdr): {:x?}",
+                "{what}: staged registers (address, usdr, libusdr): {:x?}",
                 differences(&regs, &c.regs)
             );
             let Ok(apll1) = apll1 else {

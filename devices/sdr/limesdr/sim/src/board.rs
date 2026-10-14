@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use rsl_lms7002m_sim::Lms7002m;
+use lms7002m_sim::Lms7002m;
 
 use crate::lms64c::{
     CMD_BRDSPI_RD, CMD_BRDSPI_WR, CMD_LMS7002_RD, CMD_LMS7002_RST, CMD_LMS7002_WR, DATA_LEN,

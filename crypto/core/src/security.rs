@@ -18,7 +18,7 @@
 pub enum SecurityStatus {
     /// Suitable for new protocol design according to the project's current standards baseline.
     ///
-    /// This label does not override `rsl-crypto`'s unaudited-library warning.
+    /// This label does not override `crypto`'s unaudited-library warning.
     Recommended,
     /// Retained only to interoperate with historical systems; prohibited from default negotiation.
     Legacy,

@@ -158,15 +158,15 @@ curl() {
     def test_usdr_transports_are_feature_checked_only_when_selected(self):
         for plan in (planned(["devices/sdr/usdr/src/transport/usb/bus.rs"]), planned(full=True)):
             sequence = commands("workspace", plan, BNB_CONFIG)
-            self.assertIn(["cargo", "clippy", "-p", "rsl-usdr", "--all-targets",
+            self.assertIn(["cargo", "clippy", "-p", "usdr", "--all-targets",
                            "--all-features", "--", "-D", "warnings"], sequence)
-            self.assertIn(["cargo", "test", "-p", "rsl-usdr", "--all-features"], sequence)
+            self.assertIn(["cargo", "test", "-p", "usdr", "--all-features"], sequence)
             self.assertNotIn("msrv", plan["profiles"])
         release = planned(release=True)
-        self.assertIn(["cargo", "check", "-p", "rsl-usdr", "--all-features"],
+        self.assertIn(["cargo", "check", "-p", "usdr", "--all-features"],
                       commands("msrv", release, BNB_CONFIG))
         sequence = commands("workspace", planned(["protocols/session/socks/src/lib.rs"]), BNB_CONFIG)
-        self.assertFalse(any("rsl-usdr" in command for command in sequence))
+        self.assertFalse(any("usdr" in command for command in sequence))
 
     def test_portable_routine_gate_is_locked_host_only_and_checks_manifest_drift(self):
         for profile, name, fixture in (("usdr-portable", "usdr", USDR_PORTABLE),
@@ -202,11 +202,11 @@ curl() {
                       commands("no-std", plan, BNB_CONFIG))
 
     def test_shared_device_crates_get_a_bare_metal_check_only_from_a_usdr_release(self):
-        bare = ["cargo", "check", "-p", "rsl-lowlevel", "-p", "rsl-lp8758",
+        bare = ["cargo", "check", "-p", "lp8758", "-p", "rsl-lowlevel",
                 "--target", "thumbv7em-none-eabi"]
         codec = planned(release=True)
         self.assertIn(LP8758, codec["release_roots"])
-        self.assertFalse(any("rsl-lp8758" in row for row in commands("no-std", codec, BNB_CONFIG)))
+        self.assertFalse(any("lp8758" in row for row in commands("no-std", codec, BNB_CONFIG)))
         plan = planned([f"{LOWLEVEL}/src/lib.rs"])
         plan["release_roots"] = [USDR, USDR_PORTABLE, LOWLEVEL, LP8758]
         plan["release_members"] = [{"root": USDR}]
@@ -223,8 +223,8 @@ curl() {
         sequence = commands("no-std", plan, BNB_CONFIG)
         self.assertIn(["cargo", "check", "--manifest-path", f"{XSDR_PORTABLE}/Cargo.toml",
                        "--locked", "--target", "thumbv7em-none-eabi"], sequence)
-        self.assertIn(["cargo", "check", "-p", "rsl-lms7002m", "-p", "rsl-lowlevel",
-                       "-p", "rsl-lp8758", "--target", "thumbv7em-none-eabi"], sequence)
+        self.assertIn(["cargo", "check", "-p", "lms7002m", "-p", "lp8758",
+                       "-p", "rsl-lowlevel", "--target", "thumbv7em-none-eabi"], sequence)
         self.assertFalse(any(f"{USDR_PORTABLE}/Cargo.toml" in row for row in sequence))
 
     def test_an_explicit_lsdr_release_checks_its_core_on_bare_metal(self):
@@ -244,7 +244,7 @@ curl() {
         self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
         plan["release_roots"] = [LSDR, LSDR_PORTABLE, LOWLEVEL, FRONTEND]
         plan["release_members"] = [{"root": LSDR}]
-        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "-p", "rsl-sdr-frontend",
+        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "-p", "sdr-frontend",
                        "--target", "thumbv7em-none-eabi"],
                       commands("no-std", plan, BNB_CONFIG))
 
@@ -279,7 +279,7 @@ curl() {
         self.assertEqual(sequence, [["cargo", "package", "-p", "bitsandbytes", "-p", "bitsandbytes-macros", "--all-features"]])
 
     def test_ffi_profiles_check_the_relocated_manifests(self):
-        for profile, manifest in (("usdr", "bindings/usdr/Cargo.toml"),
+        for profile, manifest in (("usdr-ffi", "bindings/usdr/Cargo.toml"),
                                   ("rust-dsdcc", "bindings/dsdcc/Cargo.toml")):
             with self.subTest(profile=profile):
                 sequence = commands(profile, planned(full=True), BNB_CONFIG)

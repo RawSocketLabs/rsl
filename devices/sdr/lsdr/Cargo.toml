@@ -1,5 +1,5 @@
 [package]
-name = "rsl-lsdr"
+name = "lsdr"
 version = "0.0.0"
 description = "Pure-Rust driver for libusdr's LSDr (m2_da09_4_ad45_2), the receive-only ADS42LBx9 ADC board."
 publish = false
@@ -11,11 +11,11 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 rsl-lowlevel = { workspace = true, features = ["std"] }
-rsl-sdr-frontend = { workspace = true, features = ["std"] }
+sdr-frontend = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-rsl-lsdr-sim.workspace = true
+lsdr-sim.workspace = true
 
 [lints]
 workspace = true

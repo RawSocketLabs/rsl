@@ -58,6 +58,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+]
+
+[[package]]
+name = "lsdr"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "rsl-lowlevel",
+ "sdr-frontend",
+ "thiserror",
+]
+
+[[package]]
+name = "lsdr-oracle"
+version = "0.0.0"
+dependencies = [
+ "cc",
+ "lsdr",
+ "lsdr-sim",
+ "thiserror",
+]
+
+[[package]]
+name = "lsdr-sim"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -91,13 +125,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lmk05318"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
-]
-
-[[package]]
 name = "rsl-lowlevel"
 version = "0.0.0"
 dependencies = [
@@ -105,38 +132,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lsdr"
+name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
- "rsl-sdr-frontend",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-lsdr-oracle"
-version = "0.0.0"
-dependencies = [
- "cc",
- "rsl-lsdr",
- "rsl-lsdr-sim",
- "thiserror",
-]
-
-[[package]]
-name = "rsl-lsdr-sim"
-version = "0.0.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "rsl-sdr-frontend"
-version = "0.0.0"
-dependencies = [
- "bitsandbytes",
- "rsl-lmk05318",
+ "lmk05318",
  "rsl-lowlevel",
  "thiserror",
 ]

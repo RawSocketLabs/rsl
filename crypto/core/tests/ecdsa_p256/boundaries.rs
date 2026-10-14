@@ -1,6 +1,6 @@
 //! Range, encoding, and rejection evidence for the ECDSA P-256 public boundary.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     signature::ecdsa_p256::{EcdsaP256Signature, EcdsaP256VerifyingKey},
 };
@@ -152,8 +152,8 @@ struct CountingSource {
     fills: Vec<u8>,
 }
 
-impl rsl_crypto::RandomSource for CountingSource {
-    fn fill_bytes(&mut self, output: &mut [u8]) -> rsl_crypto::Result<()> {
+impl crypto::RandomSource for CountingSource {
+    fn fill_bytes(&mut self, output: &mut [u8]) -> crypto::Result<()> {
         let value = self.fills.pop().ok_or(CryptoError::EntropyUnavailable)?;
         output.fill(value);
         Ok(())
@@ -164,7 +164,7 @@ impl rsl_crypto::RandomSource for CountingSource {
 /// skips `c > n - 2` then returns `d = c + 1`.
 #[test]
 fn signing_key_range_and_candidate_testing_generation() {
-    use rsl_crypto::signature::ecdsa_p256::EcdsaP256SigningKey;
+    use crypto::signature::ecdsa_p256::EcdsaP256SigningKey;
 
     let n: [u8; 32] = support::decode(ORDER);
     assert!(EcdsaP256SigningKey::from_bytes([0; 32]).is_err());
@@ -195,7 +195,7 @@ fn signing_key_range_and_candidate_testing_generation() {
 /// deterministic path; the prehashed path matches the message path.
 #[test]
 fn generic_signer_and_prehashed_signing_match_the_message_path() {
-    use rsl_crypto::signature::{Signer, ecdsa_p256::EcdsaP256SigningKey};
+    use crypto::signature::{Signer, ecdsa_p256::EcdsaP256SigningKey};
 
     let key = EcdsaP256SigningKey::from_bytes([0x42; 32]).unwrap();
     let inherent = key.sign_sha256(b"message").unwrap();
@@ -209,7 +209,7 @@ fn generic_signer_and_prehashed_signing_match_the_message_path() {
         3,
         "deterministic signing consumed no entropy"
     );
-    let digest = rsl_crypto::digest::sha2::sha256::Sha256::digest(b"message").unwrap();
+    let digest = crypto::digest::sha2::sha256::Sha256::digest(b"message").unwrap();
     assert_eq!(key.sign_sha256_digest(&digest).unwrap(), inherent);
     assert_ne!(key.sign_sha256(b"messagf").unwrap(), inherent);
 }

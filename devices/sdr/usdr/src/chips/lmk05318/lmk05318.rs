@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use rsl_deps::tracing::{debug, info};
+use deps::tracing::{debug, info};
 
 use super::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
 use super::control::{DeviceControl, DpllFlags, LossFlags};
@@ -94,7 +94,7 @@ impl Lmk05318 {
     }
 
     /// The rest of `lmk05318_create` once the chip has identified itself (`SimpleSync`'s
-    /// probe in `rsl-sdr-frontend` reads the ID): plans `xo`, APLL1 and `outputs`, writes
+    /// probe in `sdr-frontend` reads the ID): plans `xo`, APLL1 and `outputs`, writes
     /// the plan with the common settings, waits for it to settle and soft-resets. Call it
     /// on a state fresh from [`Lmk05318::at`].
     ///

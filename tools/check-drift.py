@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Alert when a consumer's DIRECT dependency on a blessed crate drifts to a different major line
-than rsl-deps blesses. Governs the crates that can't route through the facade (serde, thiserror,
+than deps blesses. Governs the crates that can't route through the facade (serde, thiserror,
 utoipa, …) — the version the consumer actually controls — without the false positives cargo-deny's
 whole-graph checks produce from transitive version diversity.
 
@@ -62,12 +62,12 @@ def main():
             if name in blessed and line(req) and line(blessed[name]) and line(req) != line(blessed[name]):
                 drifts.append((name, req, blessed[name], cargo))
     if not drifts:
-        print("blessed-version drift: none — all governed direct deps match rsl-deps.")
+        print("blessed-version drift: none — all governed direct deps match deps.")
         return 0
     print(f"blessed-version drift: {len(drifts)} governed direct dep(s) off the blessed line:")
     for name, req, bless, cargo in sorted(set((n, r, b, str(c)) for n, r, b, c in drifts)):
         print(f"  {name}: you={req}  blessed={bless}   ({cargo})")
-    print("\nEither align these to the blessed major line, or bless the new version in rsl-deps.")
+    print("\nEither align these to the blessed major line, or bless the new version in deps.")
     return 1 if a.strict else 0
 
 if __name__ == "__main__":

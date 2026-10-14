@@ -1,4 +1,4 @@
-# rsl-crypto
+# crypto
 
 An accuracy-first cryptographic library for the RSL stack. Its first consumers will be
 record/packet protection in TLS and SSH, but protocol framing and connection state remain in
@@ -18,9 +18,9 @@ Cryptographic libraries make different primary tradeoffs:
 | [libsodium](https://doc.libsodium.org/doc) | Portable, high-level operations designed for ease of use |
 | [`ring`](https://github.com/briansmith/ring) / [AWS-LC for Rust](https://github.com/aws/aws-lc-rs) | Native optimized providers; AWS-LC for Rust additionally targets FIPS requirements |
 | [EverCrypt](https://project-everest.github.io/) | Formally verified implementations with platform-selected performance |
-| **`rsl-crypto`** | Traceable protocol engineering: readable standards mappings, semantic lifecycle APIs, and explicit research escape hatches |
+| **`crypto`** | Traceable protocol engineering: readable standards mappings, semantic lifecycle APIs, and explicit research escape hatches |
 
-`rsl-crypto` exists for work where developers need to follow a construction from publication to
+`crypto` exists for work where developers need to follow a construction from publication to
 source and test evidence, compose it into protocol machinery without losing security state, and
 still reach lower-level operations for vectors, interoperability, and new protocol research. The
 guided path makes complete constructions conspicuous; an escape hatch returns only the narrower
@@ -74,7 +74,7 @@ public-key validation) and [`EcdsaP256SigningKey`](src/signature/ecdsa_p256/api.
 deterministic `k` and verification, both with SHA-256). The RFC 8017 RSA integer engine lives in
 [`src/rsa/`](src/rsa/) and backs [`RsaPssSha256VerifyingKey`](src/signature/rsa_pss/api.rs)
 (RSASSA-PSS verification for TLS certificates) as well as the opt-in PKCS #1 v1.5 encodings in
-`rsl-crypto-legacy`.
+`crypto-legacy`.
 
 SHA-256 is tested at several levels: private formula and intermediate-state tests,
 NIST-published known answers, NIST CAVP padding/block-boundary vectors, awkward input
@@ -152,13 +152,13 @@ Build the complete reference, including the private specification layers linked 
 map, with:
 
 ```console
-cargo doc -p rsl-crypto --no-deps --document-private-items --open
+cargo doc -p crypto --no-deps --document-private-items --open
 ```
 
 All displayed Rust examples are compiled and run as doctests:
 
 ```console
-cargo test -p rsl-crypto --doc
+cargo test -p crypto --doc
 ```
 
 The docs.rs package metadata also enables private-item documentation so hosted source-map links
@@ -189,7 +189,7 @@ regression case, or a differential comparison.
 ## Current SHA-256 API
 
 ```rust
-use rsl_crypto::digest::sha2::sha256::Sha256;
+use crypto::digest::sha2::sha256::Sha256;
 
 let one_shot = Sha256::digest("hello").expect("a short message fits SHA-256");
 
@@ -209,7 +209,7 @@ then the resulting bytes can be hashed.
 ## Current SHA-512 API
 
 ```rust
-use rsl_crypto::digest::sha2::sha512::Sha512;
+use crypto::digest::sha2::sha512::Sha512;
 
 let one_shot = Sha512::digest("hello").expect("a short message fits SHA-512");
 let mut incremental = Sha512::new();
@@ -226,7 +226,7 @@ output remain visible in the teaching source.
 ## Current HMAC-SHA-256 API
 
 ```rust
-use rsl_crypto::{
+use crypto::{
     SecretBytes,
     mac::hmac::sha256::HmacSha256,
 };
@@ -250,7 +250,7 @@ or protocol that specifies it.
 ## Current HKDF-SHA-256 API
 
 ```rust
-use rsl_crypto::kdf::hkdf::sha256::{derive, extract};
+use crypto::kdf::hkdf::sha256::{derive, extract};
 
 let prk = extract(Some(b"public salt"), b"secret input keying material")
     .expect("the input fits HMAC-SHA-256");
@@ -278,7 +278,7 @@ limit of 8,160 bytes, and protocol-specific `info` encoding stays in the protoco
 ## Current X25519 API
 
 ```rust
-use rsl_crypto::agreement::x25519::{X25519, X25519PrivateKey};
+use crypto::agreement::x25519::{X25519, X25519PrivateKey};
 
 // Reproducible example inputs only. A protocol integration must generate ephemeral private bytes
 // with an approved cryptographic random source.
@@ -303,7 +303,7 @@ and feeding the secret plus required public context into its specified KDF.
 ## Current Ed25519 API
 
 ```rust
-use rsl_crypto::signature::ed25519::Ed25519SigningKey;
+use crypto::signature::ed25519::Ed25519SigningKey;
 
 // Reproducible example only. Real seeds come from an approved RandomSource adapter.
 let signing_key = Ed25519SigningKey::from_seed([0x42; 32]);
@@ -324,7 +324,7 @@ encoding, public-key identity, certificates/key blobs, and signature-algorithm n
 ## Current AES-128 API
 
 ```rust
-use rsl_crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
+use crypto::cipher::aes::aes128::{Aes128, Aes128Block, Aes128Key};
 
 let cipher = Aes128::new(Aes128Key::new(*b"0123456789abcdef"));
 let mut block = Aes128Block::new(*b"one-block-input!");
@@ -346,7 +346,7 @@ below rather than apply raw AES directly.
 ## Current AES-128-GCM API
 
 ```rust
-use rsl_crypto::{
+use crypto::{
     RandomSource, Result,
     aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce},
 };

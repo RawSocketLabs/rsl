@@ -1,4 +1,4 @@
-//! The gateware update on the simulated flash: what rsl-usdr guarantees beyond libusdr's
+//! The gateware update on the simulated flash: what usdr guarantees beyond libusdr's
 //! flash tool, and what the oracle cannot show (a failing bus or flash). Parity with the
 //! tool is `oracle/tests/flash_update_parity.rs`; with its header parser,
 //! `oracle/tests/image_parity.rs`.
@@ -16,12 +16,12 @@ use std::time::Duration;
 
 use common::bitstream::{Bitstream, Facts, IDCODE, NOOP, WBSTAR, XC7A35T};
 use common::sim_bus::SimBus;
-use rsl_usdr::flash::{
+use usdr::flash::{
     ADDRESS_SPACE, Flash, FlashError, Image, ImageError, ImageHeader, MASTER_IMAGE_OFFSET,
     ParseOptions, UpdateError, UpdateOptions,
 };
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr_sim::{BoardRevision, SimBoard, SimFlash};
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use usdr_sim::{BoardRevision, SimBoard, SimFlash};
 
 /// A Micron MT25QL128 (128 Mbit, 3.3 V).
 const MT25QL128: u32 = 0x0018_ba20;
@@ -50,9 +50,10 @@ fn contents(sim: &SimBus) -> Vec<u8> {
 /// Whether the board's trace sets the flash's write enable latch, which every erase and
 /// program does first.
 fn changed_flash(sim: &SimBus) -> bool {
-    sim.board().trace().iter().any(
-        |op| matches!(op, rsl_usdr_sim::Op::RegWrite { addr: 10, value } if value >> 24 == 0x06),
-    )
+    sim.board()
+        .trace()
+        .iter()
+        .any(|op| matches!(op, usdr_sim::Op::RegWrite { addr: 10, value } if value >> 24 == 0x06))
 }
 
 /// A bus that interferes with the `n`th page program command (counting from 0): fails it

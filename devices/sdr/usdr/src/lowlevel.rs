@@ -44,14 +44,14 @@ impl From<Failure<BusError>> for BusError {
 /// [`BusError::Other`].
 ///
 /// A function, not `From` (which this replaces): both types are foreign here, and
-/// `rsl-lowlevel` stays independent of `rsl-usb`.
+/// `rsl-lowlevel` stays independent of `usb`.
 #[cfg(all(feature = "usb", target_os = "linux"))]
 #[must_use]
-pub fn usb_error(error: rsl_usb::Error) -> BusError {
+pub fn usb_error(error: usb::Error) -> BusError {
     match error {
-        rsl_usb::Error::TimedOut => BusError::Timeout,
-        rsl_usb::Error::Disconnected => BusError::Disconnected,
-        rsl_usb::Error::Io(error) => BusError::Io(error),
+        usb::Error::TimedOut => BusError::Timeout,
+        usb::Error::Disconnected => BusError::Disconnected,
+        usb::Error::Io(error) => BusError::Io(error),
         other => BusError::Other(Box::new(other)),
     }
 }

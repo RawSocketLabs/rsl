@@ -1,4 +1,4 @@
-//! Boot-flash maintenance on the simulated flash controller: what rsl-usdr does beyond
+//! Boot-flash maintenance on the simulated flash controller: what usdr does beyond
 //! libusdr's checks. Parity with libusdr is `oracle/tests/flash_parity.rs`.
 
 mod common {
@@ -8,9 +8,9 @@ mod common {
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use rsl_usdr::flash::{Flash, FlashError, MASTER_IMAGE_OFFSET, WriteOptions};
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_usdr_sim::{BoardRevision, SimBoard, SimFlash};
+use usdr::flash::{Flash, FlashError, MASTER_IMAGE_OFFSET, WriteOptions};
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use usdr_sim::{BoardRevision, SimBoard, SimFlash};
 
 /// A Micron MT25QL128 (128 Mbit, 3.3 V): manufacturer 0x20, type 0xba, capacity 0x18.
 const MT25QL128: u32 = 0x0018_ba20;

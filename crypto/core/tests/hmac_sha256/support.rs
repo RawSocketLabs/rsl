@@ -1,6 +1,6 @@
 //! Small fixture helpers shared by public HMAC-SHA-256 tests.
 
-use rsl_crypto::mac::hmac::sha256::HmacSha256;
+use crypto::mac::hmac::sha256::HmacSha256;
 
 /// Decode an exact-size hexadecimal fixture without adding a general-purpose dependency.
 pub(crate) fn decode_hex<const N: usize>(encoded: &str) -> [u8; N] {

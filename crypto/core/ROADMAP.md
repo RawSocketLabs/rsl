@@ -1,4 +1,4 @@
-# rsl-crypto — roadmap
+# crypto — roadmap
 
 The first goal is an inspectable AES-128-GCM protection path suitable for later TLS and SSH
 record/packet contexts. Every layer lands independently and remains testable on its own.
@@ -111,8 +111,8 @@ Each algorithm change must include:
    and hashes remain deliberately unsupported.
 
 10. **RSA primitive and RSASSA-PSS verification** — the RFC 8017 integer engine (`BigUint`,
-    Montgomery `modpow`) and `RsaPublicKey`/`RsaPrivateKey` owners moved from `rsl-crypto-legacy`
-    into `rsl-crypto::rsa` so one exponentiation serves both contemporary PSS verification and
+    Montgomery `modpow`) and `RsaPublicKey`/`RsaPrivateKey` owners moved from `crypto-legacy`
+    into `crypto::rsa` so one exponentiation serves both contemporary PSS verification and
     the opt-in historical PKCS #1 v1.5 encodings, which now attach through extension traits.
     `signature::rsa_pss` exposes `RsaPssSha256VerifyingKey` and `RsaPssSignature` with §8.1.2
     verification, §9.1.2 EMSA-PSS-VERIFY in numbered steps, Appendix B.2.1 MGF1, a 2048-bit

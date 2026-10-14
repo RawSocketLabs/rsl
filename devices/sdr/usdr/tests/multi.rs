@@ -13,12 +13,12 @@ use std::time::Duration;
 
 use common::sim_bus::SimBus;
 use num_complex::Complex;
-use rsl_usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
-use rsl_usdr::{
+use usdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill};
+use usdr::{
     Device, Error, HostFormat, MultiDevice, MultiError, MultiStep, Outcome, RxConfig,
     StreamsConfig, SyncMode, TxChannels, TxConfig, WireFormat,
 };
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 /// The sync unit's register, which the TX core's commands share.
 const REG_SYNC: u32 = 14;

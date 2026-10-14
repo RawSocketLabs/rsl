@@ -3,11 +3,11 @@
 //!
 //! ```no_run
 //! # use std::time::Duration;
-//! # fn main() -> Result<(), rsl_usb::Error> {
-//! let info = rsl_usb::devices()?
+//! # fn main() -> Result<(), usb::Error> {
+//! let info = usb::devices()?
 //!     .into_iter()
 //!     .find(|d| (d.vendor_id(), d.product_id()) == (0x3727, 0x1001))
-//!     .ok_or(rsl_usb::Error::NotFound)?;
+//!     .ok_or(usb::Error::NotFound)?;
 //! let device = info.open()?.reset()?;
 //! let interface = device.claim_interface(0)?;
 //! let mut rx = interface.in_queue(0x83)?;
@@ -48,7 +48,7 @@
 //!
 //! ```no_run
 //! # use std::num::NonZeroUsize;
-//! # use rsl_usb::{Error, Interface, InQueue, ReapProgress};
+//! # use usb::{Error, Interface, InQueue, ReapProgress};
 //! /// One bounded turn; `true` means turn again before waiting for readiness.
 //! fn turn(interface: &Interface, rx: &mut InQueue) -> Result<bool, Error> {
 //! let budget = NonZeroUsize::new(16).expect("nonzero budget");
@@ -89,7 +89,7 @@
 //! ```no_run
 //! # use std::sync::mpsc::{self, Receiver};
 //! # use std::thread;
-//! # use rsl_usb::{Buffer, Error, InQueue};
+//! # use usb::{Buffer, Error, InQueue};
 //! # fn retire(mut rx: InQueue, wake: impl FnOnce() + Send + 'static)
 //! #     -> Receiver<Result<Vec<Buffer>, Error>> {
 //! let (finished, observer) = mpsc::channel();

@@ -1,10 +1,10 @@
-//! The uSDR USB control plane and RX streaming over the owned `rsl-usb` host backend.
+//! The uSDR USB control plane and RX streaming over the owned `usb` host backend.
 //!
 //! ```no_run
-//! # fn main() -> Result<(), rsl_usdr::Error> {
-//! use rsl_usdr::{Device, transport::usb::UsbBus};
+//! # fn main() -> Result<(), usdr::Error> {
+//! use usdr::{Device, transport::usb::UsbBus};
 //! let info = UsbBus::discover()?.into_iter().next()
-//!     .ok_or(rsl_usdr::Error::Open(rsl_usdr::lowlevel::BusError::Unsupported("no uSDR attached")))?;
+//!     .ok_or(usdr::Error::Open(usdr::lowlevel::BusError::Unsupported("no uSDR attached")))?;
 //! let mut radio = Device::with_bus(UsbBus::open(&info)?)?;
 //! println!("{} °C", radio.temperature()?);
 //! radio.set_rx_sample_rate(20_000_000)?;

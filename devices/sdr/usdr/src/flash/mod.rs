@@ -56,8 +56,8 @@
 //! the bus; [`FlashError`] lists the cases.
 //!
 //! ```no_run
-//! # fn demo(bus: impl rsl_usdr::lowlevel::Bus) -> Result<(), rsl_usdr::flash::FlashError> {
-//! use rsl_usdr::flash::{Flash, MASTER_IMAGE_OFFSET};
+//! # fn demo(bus: impl usdr::lowlevel::Bus) -> Result<(), usdr::flash::FlashError> {
+//! use usdr::flash::{Flash, MASTER_IMAGE_OFFSET};
 //!
 //! let mut flash = Flash::new(bus);
 //! println!("{}", flash.id()?);

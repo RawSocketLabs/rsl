@@ -1,8 +1,8 @@
 //! How libusdr recognises an `LSDr` and finds out what is fitted: the transport's device ID
 //! picks the factory, then open probes each chip (`usdr_device_m2_d09_4_ad45_2_initialize`).
 
-use rsl_lsdr_oracle::Oracle;
-use rsl_lsdr_sim::{Op, SimBoard, Variant};
+use lsdr_oracle::Oracle;
+use lsdr_sim::{Op, SimBoard, Variant};
 
 /// `EIO`: open's "Device is dead!".
 const EIO: i32 = 5;

@@ -27,7 +27,7 @@
 //!   one half a byte short. Evidence: `sfe_rx4_configure` sizes a burst as `lanes × 12
 //!   bits` per sample over 64-bit words (`burst_fe_calculate`), with no per-sample
 //!   alignment, and libusdr's `ci12` and `i12` host formats unpack exactly that layout
-//!   (`xdsp/conv.c`'s 12-bit kernels, `rsl_usdr::dsp`).
+//!   (`xdsp/conv.c`'s 12-bit kernels, `usdr::dsp`).
 //! - Real lanes: assumed that a one-lane format carries that lane's values alone, in
 //!   order, as `IFMT_CH_xxx0` and `IFMT_CH_xx1x` name them.
 //!
@@ -40,7 +40,7 @@
 //! - The DMA's own words-per-burst register (0x10020). Block sizes come from the front
 //!   end's burst format instead; both drivers write the two consistently.
 //! - The host-ready strobe (register 5, value 4). Blocks flow without it; libusdr writes
-//!   it before every receive until the first succeeds, and so does rsl-usdr.
+//!   it before every receive until the first succeeds, and so does usdr.
 //! - The DMA status, the second out-of-band word, whose fields libusdr only logs
 //!   (`_sfetrx4_stream_recv`). Only its transferred-buffer count, bits 13:8, moves: the
 //!   blocks delivered so far, the one just delivered included, modulo 64. The rest reads 0.

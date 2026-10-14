@@ -1,7 +1,7 @@
-//! Compile witness for the exact private rsl-pe-sync portable sequences, not another driver.
+//! Compile witness for the exact private pe-sync portable sequences, not another driver.
 //! A bare-metal check proves core (+ `bnb`'s alloc) compilation, not linking or hardware
 //! operation. The LMK05318's bus traffic is blocking std code in the driver, outside this
-//! tree; its plan comes from the `no_std` `rsl-lmk05318`, exercised here.
+//! tree; its plan comes from the `no_std` `lmk05318`, exercised here.
 #![no_std]
 #![forbid(unsafe_code)]
 
@@ -11,6 +11,7 @@ extern crate std;
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
+use lmk05318::plan::Apll2;
 use portable::board::{
     LMK1D1208I_LCK, LMK1D1208I_SETUP, LMK05318, LMK05318_OUTPUTS, LMK05318_XO, LMX1204,
     LMX1204_SETUP, LMX1214, LMX1214_SETUP, LMX2820_0, LMX2820_0_TUNE, LMX2820_1_TUNE,
@@ -24,7 +25,6 @@ use portable::lmx2820::plan::Plan as Lmx2820Plan;
 use portable::lmx2820::sequence::{self as lmx2820, Tune};
 use portable::power::Power;
 use portable::status::status_check;
-use rsl_lmk05318::plan::Apll2;
 use rsl_lowlevel::{Sequence, SequenceFailure};
 
 /// Runs `sequence` to its end, answering every action with `answer`: the actions issued,

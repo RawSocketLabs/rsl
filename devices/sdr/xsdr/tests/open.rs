@@ -5,8 +5,8 @@
 mod common;
 
 use common::sim_bus::SimBus;
-use rsl_xsdr::{Device, Error, FrontEndKind, Variant};
-use rsl_xsdr_sim::{Op, SimBoard, Variant as SimVariant};
+use xsdr::{Device, Error, FrontEndKind, Variant};
+use xsdr_sim::{Op, SimBoard, Variant as SimVariant};
 
 /// GPO bank `IGPO_LMS_PWR`.
 const GPO_LMS_PWR: u8 = 0;

@@ -3,7 +3,7 @@
 //! RFC 5869 publishes vectors only for SHA-256 and SHA-1, so the independent Wycheproof suite is
 //! the published evidence for this hash. Provenance: `tests/vectors/hkdf-sha384/README.md`.
 
-use rsl_crypto::{
+use crypto::{
     CryptoError,
     kdf::hkdf::sha384::{HkdfSha384Prk, derive, extract},
 };

@@ -1,22 +1,22 @@
 //! The LMK05318B's bus traffic as `PE_SYNC`'s open runs it: libusdr's `lmk05318_create`,
 //! `lmk05318_wait_apll1_lock`, `lmk05318_wait_apll2_lock`, `lmk05318_check_lock` and
-//! `lmk05318_sync` (`hw/lmk05318/lmk05318.c`), on `rsl-lmk05318`'s plan, staging map and
+//! `lmk05318_sync` (`hw/lmk05318/lmk05318.c`), on `lmk05318`'s plan, staging map and
 //! register types.
 //!
 //! Blocking code: the chip's 16-bit register pointer and four-byte identity read do not fit
-//! `rsl-lowlevel`'s `Sequence` seam. `rsl-usdr` runs the same steps for its front ends in
+//! `rsl-lowlevel`'s `Sequence` seam. `usdr` runs the same steps for its front ends in
 //! its own blocking driver (`chips/lmk05318/lmk05318.rs`, with its own error type); the two
-//! merge into `rsl-lmk05318` once the seam carries such transfers (`PORTING.md`).
+//! merge into `lmk05318` once the seam carries such transfers (`PORTING.md`).
 
 use std::time::Duration;
 
-use rsl_lmk05318::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
-use rsl_lmk05318::control::{DeviceControl, DpllFlags, LossFlags};
-use rsl_lmk05318::map::RegisterMap;
-use rsl_lmk05318::plan::{Apll2, OutputRequest, Xo};
-use rsl_lmk05318::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
-use rsl_lmk05318::staging::{stage_apll1, stage_common, stage_plan, stage_xo};
-use rsl_lmk05318::{ID, NAME};
+use lmk05318::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
+use lmk05318::control::{DeviceControl, DpllFlags, LossFlags};
+use lmk05318::map::RegisterMap;
+use lmk05318::plan::{Apll2, OutputRequest, Xo};
+use lmk05318::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
+use lmk05318::staging::{stage_apll1, stage_common, stage_plan, stage_xo};
+use lmk05318::{ID, NAME};
 
 use crate::error::{Access, Error};
 use crate::lowlevel::{Bus, BusError, I2cAddr};

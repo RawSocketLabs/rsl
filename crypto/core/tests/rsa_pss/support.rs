@@ -1,6 +1,6 @@
 //! Mechanical conversion helpers for published hexadecimal fixtures.
 
-use rsl_crypto::signature::rsa_pss::RsaPssSignature;
+use crypto::signature::rsa_pss::RsaPssSignature;
 
 /// Decode a printed hexadecimal string into its byte order, keeping leading zero bytes.
 pub(crate) fn decode(encoded: &str) -> Vec<u8> {

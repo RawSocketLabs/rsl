@@ -12,8 +12,8 @@
 
 use std::time::Duration;
 
+use deps::tracing::{debug, warn};
 use num_complex::Complex;
-use rsl_deps::tracing::{debug, warn};
 
 use super::Board;
 use super::tx_stream::TxStream;
@@ -353,7 +353,7 @@ impl Board {
     }
 
     /// Creates, starts and free-runs a `ci16` channel-0 RX stream with `samples_per_packet`
-    /// samples per packet, in the FFI `usdr` crate's order: create, `USDR_DMS_START`, then
+    /// samples per packet, in the FFI `usdr-ffi` crate's order: create, `USDR_DMS_START`, then
     /// `usdr_dms_sync(.., "none", ..)`.
     pub(crate) fn start_rx_stream(&mut self, samples_per_packet: u32) -> Result<(), Error> {
         let config = RxConfig::new(samples_per_packet, HostFormat::Ci16, WireFormat::Ci16);

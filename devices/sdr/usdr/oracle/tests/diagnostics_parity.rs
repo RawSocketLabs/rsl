@@ -1,4 +1,4 @@
-//! rsl-usdr's raw diagnostic registers against libusdr's: the ATCRBS core register and
+//! usdr's raw diagnostic registers against libusdr's: the ATCRBS core register and
 //! `/dm/debug/all`'s TX DMA status words.
 
 #[path = "../../tests/common/sim_bus.rs"]
@@ -6,10 +6,10 @@ mod sim_bus;
 
 use std::ffi::CStr;
 
-use rsl_usdr::{DebugChip, Device, Error};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Op, SimBoard};
 use sim_bus::SimBus;
+use usdr::{DebugChip, Device, Error};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Op, SimBoard};
 
 #[test]
 fn diagnostic_registers_match_libusdr() {
@@ -26,13 +26,13 @@ fn diagnostic_registers_match_libusdr() {
     let reference = oracle.close();
 
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     let actual_start = sim.board().trace().len();
     device
         .set_atcrbs_register(0x1234_5678)
-        .expect("rsl-usdr writes");
-    let value = device.atcrbs_register().expect("rsl-usdr reads");
-    let status = device.tx_dma_status().expect("rsl-usdr reads the status");
+        .expect("usdr writes");
+    let value = device.atcrbs_register().expect("usdr reads");
+    let status = device.tx_dma_status().expect("usdr reads the status");
     let board = sim.board();
 
     assert_eq!(u64::from(value), atcrbs, "ATCRBS value");
@@ -46,7 +46,7 @@ fn diagnostic_registers_match_libusdr() {
     assert_eq!(expected, actual, "operations");
 }
 
-/// What libusdr's or rsl-usdr's raw chip accesses did and returned.
+/// What libusdr's or usdr's raw chip accesses did and returned.
 struct ChipAccesses {
     /// The values read, in order.
     values: Vec<u64>,
@@ -74,11 +74,11 @@ fn libusdr_chip_accesses(accesses: &[(&CStr, u64)]) -> ChipAccesses {
     }
 }
 
-/// rsl-usdr's: each `(chip, register, Some(value))` writes and `None` reads, giving the
+/// usdr's: each `(chip, register, Some(value))` writes and `None` reads, giving the
 /// byte read (or the byte written).
 fn rsl_chip_accesses(accesses: &[(DebugChip, u8, Option<u8>)]) -> ChipAccesses {
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     let start = sim.board().trace().len();
     let values = accesses
         .iter()
@@ -86,10 +86,10 @@ fn rsl_chip_accesses(accesses: &[(DebugChip, u8, Option<u8>)]) -> ChipAccesses {
             Some(value) => {
                 device
                     .set_chip_register(chip, reg, value)
-                    .expect("rsl-usdr writes");
+                    .expect("usdr writes");
                 u64::from(value)
             }
-            None => u64::from(device.chip_register(chip, reg).expect("rsl-usdr reads")),
+            None => u64::from(device.chip_register(chip, reg).expect("usdr reads")),
         })
         .collect();
     let ops = sim.board().trace()[start..].to_vec();
@@ -152,13 +152,13 @@ fn a_tps6381x_debug_write_reaches_the_register_libusdr_misaddresses() {
         panic!("both writes are I2C transfers");
     };
     assert_eq!(theirs, &[0x85, 0x2a], "libusdr writes register 0x85");
-    assert_eq!(ours, &[0x05, 0x2a], "rsl-usdr writes the register named");
+    assert_eq!(ours, &[0x05, 0x2a], "usdr writes the register named");
 }
 
 #[test]
 fn an_lms6002d_address_past_seven_bits_is_refused_before_the_bus() {
     let sim = SimBus::new(SimBoard::new(BoardRevision::Rev3));
-    let mut device = Device::with_bus(sim.clone()).expect("rsl-usdr powers up");
+    let mut device = Device::with_bus(sim.clone()).expect("usdr powers up");
     let start = sim.board().trace().len();
     assert!(matches!(
         device.chip_register(DebugChip::Lms6002d, 0x80),

@@ -36,7 +36,7 @@ const DOM2_PREFIX: &[u8] = b"SigEd25519 no Ed25519 collisions";
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::{CryptoError, signature::ed25519::Ed25519Context};
+/// use crypto::{CryptoError, signature::ed25519::Ed25519Context};
 ///
 /// assert!(Ed25519Context::new(b"foo").is_ok());
 /// assert_eq!(Ed25519Context::new(b"").err(), Some(CryptoError::InvalidLength {

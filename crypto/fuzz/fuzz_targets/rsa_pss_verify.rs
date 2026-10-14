@@ -4,11 +4,11 @@
 //! Run: `cargo +nightly fuzz run rsa_pss_verify --fuzz-dir crypto/fuzz`.
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
-use rsl_crypto::{
+use crypto::{
     rsa::RsaPublicKey,
     signature::rsa_pss::{RsaPssSha256VerifyingKey, RsaPssSignature},
 };
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if data.len() < 4 {

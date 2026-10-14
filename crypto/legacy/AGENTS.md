@@ -1,4 +1,4 @@
-# rsl-crypto-legacy
+# crypto-legacy
 
 > Inherits the workspace-root `../../AGENTS.md` and the evidence discipline in `../core/AGENTS.md`.
 
@@ -15,10 +15,10 @@ otherwise unsuitable for new protection. Correct output must never be described 
   sources in `STANDARDS.md`.
 - Published known-answer, boundary/malformed, intermediate where available, and differential
   evidence are required before public usability is claimed.
-- Secret-bearing owners follow `rsl-crypto`'s non-`Clone`, redacted, zeroizing policy.
+- Secret-bearing owners follow `crypto`'s non-`Clone`, redacted, zeroizing policy.
 - This package never defines cipher-suite negotiation, fallback, record padding, MAC ordering,
   protocol version policy, or downgrade behavior. Those remain in protocol crates.
 - No default facade bundle includes this package. Every consumer must opt into `legacy-crypto` or
-  depend on `rsl-crypto-legacy` directly.
+  depend on `crypto-legacy` directly.
 - APIs should permit exact historical reproduction when required, but documentation and types
   must make dangerous use unmistakable.

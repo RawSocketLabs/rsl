@@ -1,5 +1,5 @@
 // Calls libusdr's LMK05318 planning functions (hw/lmk05318/lmk05318.c) on a state the
-// caller supplies and captures the registers each stages, for rsl-usdr's plan parity tests.
+// caller supplies and captures the registers each stages, for usdr's plan parity tests.
 //
 // The register map is static in lmk05318.c; each call empties it first, then writes it out
 // (lmk05318_reg_wr_from_map) to a capture device that records every register write by

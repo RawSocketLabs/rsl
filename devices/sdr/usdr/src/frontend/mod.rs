@@ -5,17 +5,17 @@
 //! `m2a+e`, trying each board in a fixed order until one comes up. A board reaches the
 //! uSDR through the connector's GPIO pins (FPGA register 3) and the FPGA's I2C bus 1
 //! (`I2C_BUS_FRONTEND`). The probe, every board's identification, and the `PCIe` front end
-//! and breakout whole, are `rsl-sdr-frontend`'s, shared with the other drivers whose
+//! and breakout whole, are `sdr-frontend`'s, shared with the other drivers whose
 //! devices have a front-end connector; the bring-ups that need the LMK05318 or LMK5C33216
 //! are here. Which boards the uSDR admits:
 //!
 //! | Board (libusdr name) | Admitted | Here |
 //! |----------------------|----------|------|
-//! | `PCIe` front end (`pciefe`) | yes | ported (`rsl-sdr-frontend`) |
+//! | `PCIe` front end (`pciefe`) | yes | ported (`sdr-frontend`) |
 //! | XMASS (`xmass`) | yes | ported (LMK05318 bring-up, calibration LO and path) |
 //! | `SuperSync` (`supersync`) | yes | ported (fixed register load) |
 //! | `SimpleSync` (`simplesync`) | yes | ported (LMK05318 bring-up, measurement LO) |
-//! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported (`rsl-sdr-frontend`) |
+//! | M.2-to-`PCIe` breakout (`exm2pe`) | yes | ported (`sdr-frontend`) |
 //! | 100–5000 MHz front end (`fe1005000`) | no: `LSDr` only | not offered; probing it accesses nothing |
 //! | 4-channel 400–7200 MHz (`fe4ch4007200`) | tried, cannot work: needs I2C core 1 | not offered; the automatic probe tries it as libusdr does, and the uSDR's transports refuse its first transfer |
 //!
@@ -33,9 +33,9 @@ mod supersync;
 mod xmass;
 pub mod xmass_firmware;
 
-use rsl_deps::tracing::{debug, warn};
-use rsl_sdr_frontend::{Board, BringUp, Connector, Detected, Exm2pe, Failure, Pciefe};
-pub use rsl_sdr_frontend::{
+use deps::tracing::{debug, warn};
+use sdr_frontend::{Board, BringUp, Connector, Detected, Exm2pe, Failure, Pciefe};
+pub use sdr_frontend::{
     Exm2peOptions, FrontEndKind, FrontEndSelection, PciefeAttenuation, PciefeDuplexer,
     PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter, PciefeSetting, PciefeTxFilter,
     XmassCalibrationPath,

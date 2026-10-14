@@ -6,10 +6,10 @@
 
 use std::sync::LazyLock;
 
+use crypto::signature::ed25519::Ed25519SigningKey;
 use libfuzzer_sys::fuzz_target;
-use rsl_crypto::signature::ed25519::Ed25519SigningKey;
-use rsl_pki::issuance::Ed25519CertificateSigner;
-use rsl_x509::{
+use pki::issuance::Ed25519CertificateSigner;
+use x509::{
     Certificate, Time,
     builder::{CertificateBuilder, NameDer},
 };

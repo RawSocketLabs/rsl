@@ -6,11 +6,11 @@
 //! implemented extensions. RFC 5480 owns NIST-curve public-key identifiers. RFC 8410 owns
 //! Ed25519/Ed448 identifiers. RFC 4055 owns RSASSA-PSS parameters. See `STANDARDS.md`.
 //!
-//! Parsing is strict DER through `rsl-asn1`. [`TbsCertificate::encoded`] returns the original
+//! Parsing is strict DER through `asn1`. [`TbsCertificate::encoded`] returns the original
 //! complete DER element that an issuer signed; callers must verify those bytes directly.
 //! [`builder::CertificateBuilder`] constructs new V3 certificates through mandatory validity and
 //! public-key typestates. Construction yields syntax, never trusted state; trust decisions remain
-//! in `rsl-pki`.
+//! in `pki`.
 //!
 //! This implementation is unaudited and makes no production-security claim.
 
@@ -24,8 +24,8 @@ extern crate alloc;
 pub mod builder;
 
 use alloc::{vec, vec::Vec};
+use asn1::{BitString, Class, Decoder, Element, ObjectIdentifier, Tag};
 use core::{fmt, str};
-use rsl_asn1::{BitString, Class, Decoder, Element, ObjectIdentifier, Tag};
 
 /// Common object identifiers used by the supported X.509 profile.
 pub mod oid {
@@ -131,8 +131,8 @@ impl fmt::Display for Error {
 
 impl core::error::Error for Error {}
 
-impl From<rsl_asn1::Error> for Error {
-    fn from(_: rsl_asn1::Error) -> Self {
+impl From<asn1::Error> for Error {
+    fn from(_: asn1::Error) -> Self {
         Self::new(ErrorKind::Der)
     }
 }
@@ -191,7 +191,7 @@ impl<'a> AlgorithmIdentifier<'a> {
         self.encoded
     }
 
-    /// Interprets a certificate-signature identifier supported by `rsl-crypto`.
+    /// Interprets a certificate-signature identifier supported by `crypto`.
     ///
     /// # Errors
     ///
@@ -667,7 +667,7 @@ fn require_length(bytes: &[u8], expected: usize) -> Result<()> {
 }
 
 fn parse_rsa_public_key(input: &[u8]) -> Result<(&[u8], &[u8])> {
-    let element = rsl_asn1::decode_exact(input)?;
+    let element = asn1::decode_exact(input)?;
     let mut fields = sequence(element)?;
     let modulus = fields.read()?.unsigned_bytes()?;
     let exponent = fields.read()?.unsigned_bytes()?;
@@ -734,7 +734,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::BASIC_CONSTRAINTS) {
             return Ok(None);
         }
-        let element = rsl_asn1::decode_exact(self.value)?;
+        let element = asn1::decode_exact(self.value)?;
         let mut fields = sequence(element)?;
         let ca = if fields.is_finished() {
             false
@@ -776,7 +776,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::KEY_USAGE) {
             return Ok(None);
         }
-        let bits = rsl_asn1::decode_exact(self.value)?.bit_string()?;
+        let bits = asn1::decode_exact(self.value)?.bit_string()?;
         if bits.bit_len() == 0 || bits.bit_len() > 9 {
             return Err(Error::new(ErrorKind::InvalidExtension));
         }
@@ -796,7 +796,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::SUBJECT_ALT_NAME) {
             return Ok(None);
         }
-        let element = rsl_asn1::decode_exact(self.value)?;
+        let element = asn1::decode_exact(self.value)?;
         let mut names = sequence(element)?;
         let mut parsed = Vec::new();
         while !names.is_finished() {
@@ -817,7 +817,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::EXTENDED_KEY_USAGE) {
             return Ok(None);
         }
-        let element = rsl_asn1::decode_exact(self.value)?;
+        let element = asn1::decode_exact(self.value)?;
         let mut purposes = sequence(element)?;
         let mut parsed = Vec::new();
         while !purposes.is_finished() {
@@ -842,7 +842,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::SUBJECT_KEY_IDENTIFIER) {
             return Ok(None);
         }
-        let value = rsl_asn1::decode_exact(self.value)?;
+        let value = asn1::decode_exact(self.value)?;
         value.expect(Tag::OCTET_STRING)?;
         if value.contents().is_empty() {
             return Err(Error::new(ErrorKind::InvalidExtension));
@@ -859,7 +859,7 @@ impl<'a> Extension<'a> {
         if !self.oid.is(oid::AUTHORITY_KEY_IDENTIFIER) {
             return Ok(None);
         }
-        let element = rsl_asn1::decode_exact(self.value)?;
+        let element = asn1::decode_exact(self.value)?;
         let mut fields = sequence(element)?;
         let mut key_identifier = None;
         let mut authority_cert_issuer = None;
@@ -1298,7 +1298,7 @@ impl<'a> Certificate<'a> {
     ///
     /// Malformed DER, invalid X.509 structure, or inconsistent signature identifiers.
     pub fn from_der(input: &'a [u8]) -> Result<Self> {
-        let outer = rsl_asn1::decode_exact(input)?;
+        let outer = asn1::decode_exact(input)?;
         let mut fields = sequence(outer)?;
         let body = parse_tbs(fields.read()?)?;
         let signature_algorithm = parse_algorithm(fields.read()?)?;
@@ -1354,7 +1354,7 @@ impl<'a> Certificate<'a> {
     ///
     /// The signature is not a pair of positive integers fitting the requested width.
     pub fn ecdsa_signature(&self, component_len: usize) -> Result<Vec<u8>> {
-        let element = rsl_asn1::decode_exact(self.signature_value)
+        let element = asn1::decode_exact(self.signature_value)
             .map_err(|_| Error::new(ErrorKind::InvalidSignature))?;
         let mut components =
             sequence(element).map_err(|_| Error::new(ErrorKind::InvalidSignature))?;
@@ -1382,9 +1382,9 @@ impl<'a> Certificate<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rsl_asn1::Encoder;
+    use asn1::Encoder;
 
-    fn built(build: impl FnOnce(&mut Encoder) -> rsl_asn1::Result<()>) -> Vec<u8> {
+    fn built(build: impl FnOnce(&mut Encoder) -> asn1::Result<()>) -> Vec<u8> {
         let mut encoder = Encoder::new();
         build(&mut encoder).unwrap();
         encoder.finish()
@@ -1564,7 +1564,7 @@ mod tests {
             ErrorKind::InvalidTime
         );
         assert_eq!(
-            parse_time(rsl_asn1::decode_exact(b"\x18\x0f20260101000000Z").unwrap())
+            parse_time(asn1::decode_exact(b"\x18\x0f20260101000000Z").unwrap())
                 .unwrap_err()
                 .kind,
             ErrorKind::InvalidTime

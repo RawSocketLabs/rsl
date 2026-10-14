@@ -1,4 +1,4 @@
-//! Compile witness for the exact private rsl-lsdr portable sequences, not another driver.
+//! Compile witness for the exact private lsdr portable sequences, not another driver.
 //! A bare-metal check proves core (+ `bnb`'s alloc) compilation, not linking or hardware
 //! operation.
 #![no_std]

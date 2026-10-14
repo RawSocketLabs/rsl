@@ -150,7 +150,7 @@ jobs:
         with:
           tool: ${{ needs.plan.outputs.semver_tool }}
       - name: Native compiler for FFI bridge checks
-        if: contains(fromJSON('["usdr","rust-dsdcc","usdr-oracle","xsdr-oracle","lsdr-oracle","pe-sync-oracle","limesdr-oracle"]'), matrix.profile) && inputs.runner != 'beefy'
+        if: contains(fromJSON('["usdr-ffi","rust-dsdcc","usdr-oracle","xsdr-oracle","lsdr-oracle","pe-sync-oracle","limesdr-oracle"]'), matrix.profile) && inputs.runner != 'beefy'
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - name: Fetch DSDcc headers (compile check only, no hardware/native linking)
         if: matrix.profile == 'rust-dsdcc'

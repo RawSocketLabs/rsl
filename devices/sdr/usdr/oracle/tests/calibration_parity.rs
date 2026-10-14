@@ -1,6 +1,6 @@
-//! rsl-usdr's LO-leakage and IQ-imbalance calibration against libusdr's `usdr_calibrate`
+//! usdr's LO-leakage and IQ-imbalance calibration against libusdr's `usdr_calibrate`
 //! (`/dm/sdr/0/calibrate`), operation for operation, on fresh boards with the sim's RF
-//! loopback (`rsl_usdr_sim::Loopback`): a synthetic LO leakage and TX and RX IQ
+//! loopback (`usdr_sim::Loopback`): a synthetic LO leakage and TX and RX IQ
 //! imbalances, measured through the RX chain's DC estimator. Every measurement is a
 //! register read, so equal traces mean the searches probed the same points, saw the same
 //! costs and settled on the same corrections; the TX LO result is also compared with
@@ -14,11 +14,11 @@ mod sim_bus;
 
 use std::ops::Range;
 
-use rsl_usdr::Error;
-use rsl_usdr::{Calibration, CalibrationReport, Device, Feedback, IqCalibration, RxGain, TxGain};
-use rsl_usdr_oracle::Oracle;
-use rsl_usdr_sim::{BoardRevision, Imbalance, Loopback, Op, PllLock, SimBoard};
 use sim_bus::SimBus;
+use usdr::Error;
+use usdr::{Calibration, CalibrationReport, Device, Feedback, IqCalibration, RxGain, TxGain};
+use usdr_oracle::Oracle;
+use usdr_sim::{BoardRevision, Imbalance, Loopback, Op, PllLock, SimBoard};
 
 /// libusdr's `USDR_CAL_TXLO`.
 const TXLO: u32 = 2;
@@ -90,7 +90,7 @@ impl Setup {
         .unwrap_or_else(|errno| panic!("libusdr {self:?}: {errno}"));
     }
 
-    /// Through rsl-usdr.
+    /// Through usdr.
     fn on_rsl(self, device: &mut Device) {
         match self {
             Self::Rate(rate) => device.set_rx_sample_rate(rate),
@@ -102,7 +102,7 @@ impl Setup {
             Self::RxBandwidth(hz) => device.set_rx_bandwidth(hz),
             Self::TxBandwidth(hz) => device.set_tx_bandwidth(hz),
         }
-        .unwrap_or_else(|error| panic!("rsl-usdr {self:?}: {error}"));
+        .unwrap_or_else(|error| panic!("usdr {self:?}: {error}"));
     }
 }
 
@@ -137,20 +137,20 @@ const BOTH_TUNED: [Setup; 3] = [
     Setup::TxFrequency(1_000_000_000),
 ];
 
-/// What a scenario left: libusdr's result array and board, and rsl-usdr's report and
+/// What a scenario left: libusdr's result array and board, and usdr's report and
 /// board.
 struct Outcome {
     /// libusdr's `cal_data`.
     expected: [i32; 8],
-    /// rsl-usdr's report.
+    /// usdr's report.
     report: CalibrationReport,
     /// The board libusdr drove.
     libusdr: SimBoard,
-    /// The board rsl-usdr drove.
+    /// The board usdr drove.
     rsl: SimBus,
 }
 
-/// Runs `setup` then a calibration with `flags` (libusdr) and `calibration` (rsl-usdr) on
+/// Runs `setup` then a calibration with `flags` (libusdr) and `calibration` (usdr) on
 /// fresh boards from `make`, and compares the operations from the first setup call on.
 fn assert_calibration_matches(
     make: impl Fn() -> SimBoard,
@@ -171,7 +171,7 @@ fn assert_calibration_matches(
     let libusdr = oracle.close();
 
     let rsl = SimBus::new(make());
-    let mut device = Device::with_bus(rsl.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(rsl.clone()).expect("usdr powers up the board");
     let rsl_start = rsl.board().trace().len();
     for &call in setup {
         call.on_rsl(&mut device);
@@ -179,7 +179,7 @@ fn assert_calibration_matches(
     let rsl_calibrating = rsl.board().trace().len();
     let report = device
         .calibrate(calibration)
-        .unwrap_or_else(|error| panic!("rsl-usdr calibration failed: {error}"));
+        .unwrap_or_else(|error| panic!("usdr calibration failed: {error}"));
     let rsl_end = rsl.board().trace().len();
     // Keep the device, and so the powered board, until the comparison is done.
     {
@@ -209,7 +209,7 @@ fn assert_calibration_matches(
 fn assert_same_ops(expected: &[Op], actual: &[Op], context: &str) {
     if let Some(i) = expected.iter().zip(actual).position(|(e, a)| e != a) {
         panic!(
-            "{context}: first difference at op {i} of {}: libusdr {:x?}, rsl-usdr {:x?}",
+            "{context}: first difference at op {i} of {}: libusdr {:x?}, usdr {:x?}",
             expected.len(),
             expected[i],
             actual[i]
@@ -223,7 +223,7 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], context: &str) {
 }
 
 /// libusdr's TX LO result is its search's X and Y: Q then I, as it stores them
-/// crosswise. rsl-usdr reports them by name.
+/// crosswise. usdr reports them by name.
 fn assert_tx_lo_matches(outcome: &Outcome) {
     let leakage = outcome.report.tx_lo_leakage.expect("TX LO calibrated");
     assert_eq!(
@@ -374,7 +374,7 @@ fn a_signal_too_low_to_measure_matches_libusdr() {
 /// The options: TXVGA1's DC shift searched first (both searches then within -128 to 127,
 /// as libusdr leaves the limits narrowed) and an external loop that leaves the loopback
 /// switch alone. libusdr's coarse flags change nothing (its setup zeroes the mode), so
-/// rsl-usdr does not offer them: a full calibration matches libusdr's with them.
+/// usdr does not offer them: a full calibration matches libusdr's with them.
 #[test]
 fn calibration_options_match_libusdr() {
     let external = || {
@@ -464,7 +464,7 @@ fn an_unreachable_measuring_frequency_fails_like_libusdr() {
     let libusdr = oracle.close();
 
     let rsl = SimBus::new(make());
-    let mut device = Device::with_bus(rsl.clone()).expect("rsl-usdr powers up the board");
+    let mut device = Device::with_bus(rsl.clone()).expect("usdr powers up the board");
     for &call in &setup {
         call.on_rsl(&mut device);
     }
@@ -475,7 +475,7 @@ fn an_unreachable_measuring_frequency_fails_like_libusdr() {
     });
     assert!(
         matches!(result, Err(Error::PllUnlocked(_))),
-        "rsl-usdr fails alike: {result:?}"
+        "usdr fails alike: {result:?}"
     );
     let board = rsl.board();
     assert_same_ops(

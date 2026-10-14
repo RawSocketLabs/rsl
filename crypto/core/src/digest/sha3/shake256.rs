@@ -16,7 +16,7 @@ const SUFFIX: u8 = 0x1f;
 /// uses 114- and 64-byte outputs.
 ///
 /// ```
-/// use rsl_crypto::digest::sha3::Shake256;
+/// use crypto::digest::sha3::Shake256;
 ///
 /// let mut xof = Shake256::new();
 /// xof.update(b"");

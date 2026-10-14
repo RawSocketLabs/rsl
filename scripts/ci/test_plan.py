@@ -28,12 +28,12 @@ def fixture():
         MACROS: Package("bitsandbytes-macros", set()),
         BNB: Package("bitsandbytes", {MACROS}),
         SOCKS: Package("socks", {BNB}),
-        "codecs/compression": Package("rsl-compression", set()),
-        "crypto/core": Package("rsl-crypto", set()),
-        "crypto/legacy": Package("rsl-crypto-legacy", {"crypto/core"}),
-        "pki/asn1": Package("rsl-asn1", {BNB}),
-        "pki/x509": Package("rsl-x509", {"pki/asn1"}),
-        "pki/validation": Package("rsl-pki", {"pki/x509", "crypto/core"}),
+        "codecs/compression": Package("compression", set()),
+        "crypto/core": Package("crypto", set()),
+        "crypto/legacy": Package("crypto-legacy", {"crypto/core"}),
+        "pki/asn1": Package("asn1", {BNB}),
+        "pki/x509": Package("x509", {"pki/asn1"}),
+        "pki/validation": Package("pki", {"pki/x509", "crypto/core"}),
         "rsl": Package("rsl", {"codecs/compression", "pki/validation"}),
         "codecs/bitsandbytes/fuzz": Package("bnb-fuzz", {BNB}, False, ("decode", "stream_decode")),
         "crypto/fuzz": Package("crypto-fuzz", {"crypto/core"}, False, ("aead_open",)),
@@ -42,38 +42,38 @@ def fixture():
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
         LOWLEVEL: Package("rsl-lowlevel", set()),
-        LP8758: Package("rsl-lp8758", {BNB, LOWLEVEL}),
-        LMK05318: Package("rsl-lmk05318", {BNB}),
-        FRONTEND: Package("rsl-sdr-frontend", {BNB, LMK05318, LOWLEVEL}),
-        "devices/sdr/usdr": Package("rsl-usdr", {BNB, FRONTEND, LMK05318, LOWLEVEL, LP8758,
+        LP8758: Package("lp8758", {BNB, LOWLEVEL}),
+        LMK05318: Package("lmk05318", {BNB}),
+        FRONTEND: Package("sdr-frontend", {BNB, LMK05318, LOWLEVEL}),
+        "devices/sdr/usdr": Package("usdr", {BNB, FRONTEND, LMK05318, LOWLEVEL, LP8758,
                                                  "devices/sdr/usdr/sim"}),
-        "devices/sdr/usdr/sim": Package("rsl-usdr-sim", set()),
-        USDR_ORACLE: Package("rsl-usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
-        USDR_PORTABLE: Package("rsl-usdr-nostd-check", {BNB, USDR, LOWLEVEL, LP8758}, False),
-        LMS7002M: Package("rsl-lms7002m", {BNB, LOWLEVEL}),
-        "devices/sdr/chips/lms7002m/sim": Package("rsl-lms7002m-sim", set()),
-        XSDR: Package("rsl-xsdr", {FRONTEND, LMS7002M, LOWLEVEL, LP8758, "devices/sdr/xsdr/sim"}),
-        XSDR_PORTABLE: Package("rsl-xsdr-nostd-check", {XSDR, LMS7002M, LOWLEVEL, LP8758}, False),
-        "devices/sdr/xsdr/sim": Package("rsl-xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
-        XSDR_ORACLE: Package("rsl-xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
+        "devices/sdr/usdr/sim": Package("usdr-sim", set()),
+        USDR_ORACLE: Package("usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
+        USDR_PORTABLE: Package("usdr-nostd-check", {BNB, USDR, LOWLEVEL, LP8758}, False),
+        LMS7002M: Package("lms7002m", {BNB, LOWLEVEL}),
+        "devices/sdr/chips/lms7002m/sim": Package("lms7002m-sim", set()),
+        XSDR: Package("xsdr", {FRONTEND, LMS7002M, LOWLEVEL, LP8758, "devices/sdr/xsdr/sim"}),
+        XSDR_PORTABLE: Package("xsdr-nostd-check", {XSDR, LMS7002M, LOWLEVEL, LP8758}, False),
+        "devices/sdr/xsdr/sim": Package("xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
+        XSDR_ORACLE: Package("xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
                              False),
-        LSDR: Package("rsl-lsdr", {BNB, FRONTEND, LOWLEVEL, "devices/sdr/lsdr/sim"}),
-        LSDR_PORTABLE: Package("rsl-lsdr-nostd-check", {LSDR, BNB, LOWLEVEL}, False),
-        "devices/sdr/lsdr/sim": Package("rsl-lsdr-sim", set()),
-        LSDR_ORACLE: Package("rsl-lsdr-oracle", {LSDR, "devices/sdr/lsdr/sim", USDR_ORACLE},
+        LSDR: Package("lsdr", {BNB, FRONTEND, LOWLEVEL, "devices/sdr/lsdr/sim"}),
+        LSDR_PORTABLE: Package("lsdr-nostd-check", {LSDR, BNB, LOWLEVEL}, False),
+        "devices/sdr/lsdr/sim": Package("lsdr-sim", set()),
+        LSDR_ORACLE: Package("lsdr-oracle", {LSDR, "devices/sdr/lsdr/sim", USDR_ORACLE},
                              False),
-        "devices/sync/pe_sync/sim": Package("rsl-pe-sync-sim", set()),
-        PE_SYNC: Package("rsl-pe-sync", {BNB, LMK05318, LOWLEVEL, "devices/sync/pe_sync/sim"}),
-        PE_SYNC_PORTABLE: Package("rsl-pe-sync-nostd-check", {PE_SYNC, BNB, LMK05318, LOWLEVEL},
+        "devices/sync/pe_sync/sim": Package("pe-sync-sim", set()),
+        PE_SYNC: Package("pe-sync", {BNB, LMK05318, LOWLEVEL, "devices/sync/pe_sync/sim"}),
+        PE_SYNC_PORTABLE: Package("pe-sync-nostd-check", {PE_SYNC, BNB, LMK05318, LOWLEVEL},
                                   False),
-        PE_SYNC_ORACLE: Package("rsl-pe-sync-oracle", {PE_SYNC, "devices/sync/pe_sync/sim",
+        PE_SYNC_ORACLE: Package("pe-sync-oracle", {PE_SYNC, "devices/sync/pe_sync/sim",
                                                        LMK05318, LOWLEVEL, USDR_ORACLE},
                                 False),
-        LIMESDR: Package("rsl-limesdr", {LMS7002M, LOWLEVEL, "devices/sdr/limesdr/sim"}),
-        LIMESDR_PORTABLE: Package("rsl-limesdr-nostd-check", {LIMESDR, LMS7002M, LOWLEVEL},
+        LIMESDR: Package("limesdr", {LMS7002M, LOWLEVEL, "devices/sdr/limesdr/sim"}),
+        LIMESDR_PORTABLE: Package("limesdr-nostd-check", {LIMESDR, LMS7002M, LOWLEVEL},
                                   False),
-        "devices/sdr/limesdr/sim": Package("rsl-limesdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
-        LIMESDR_ORACLE: Package("rsl-limesdr-oracle",
+        "devices/sdr/limesdr/sim": Package("limesdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
+        LIMESDR_ORACLE: Package("limesdr-oracle",
                                 {LIMESDR, "devices/sdr/limesdr/sim", USDR_ORACLE}, False),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
@@ -101,14 +101,14 @@ def results(plan):
 
 class SelectionTests(unittest.TestCase):
     def test_blessed_changes_select_facade_and_consumers_in_both_layouts(self):
-        for root in ("rsl-deps", "deps"):
-            graph = {root: Package("rsl-deps", set()), "consumer": Package("consumer", {root})}
+        for root in ("deps", "deps"):
+            graph = {root: Package("deps", set()), "consumer": Package("consumer", {root})}
             for path in (f"{root}/src/lib.rs", "tools/gen-blessed.py", "tools/check-drift.py",
                          ".github/actions/blessed-drift/action.yml"):
                 with self.subTest(root=root, path=path):
                     plan = select([path], graph, graph)
                     self.assertFalse(plan["full"])
-                    self.assertEqual(set(plan["packages"]), {"rsl-deps", "consumer"})
+                    self.assertEqual(set(plan["packages"]), {"deps", "consumer"})
                     self.assertTrue({"blessed", "facades"} <= set(plan["profiles"]))
                     self.assertEqual(plan["fuzz"], [])
 
@@ -126,19 +126,19 @@ class SelectionTests(unittest.TestCase):
 
     def test_compression_covers_facade_but_not_facades_other_dependencies(self):
         plan = planned(["codecs/compression/src/lib.rs"])
-        self.assertEqual(plan["packages"], ["rsl", "rsl-compression"])
+        self.assertEqual(plan["packages"], ["compression", "rsl"])
         self.assertIn("facades", plan["profiles"])
         self.assertEqual(plan["fuzz"], [])
 
     def test_crypto_covers_legacy_and_pki_consumers(self):
         plan = planned(["crypto/core/src/lib.rs"])
-        self.assertEqual(set(plan["packages"]), {"rsl", "rsl-crypto", "rsl-crypto-legacy", "rsl-pki"})
+        self.assertEqual(set(plan["packages"]), {"rsl", "crypto", "crypto-legacy", "pki"})
         self.assertEqual(plan["fuzz"], [])
 
     def test_bnb_covers_protocol_pki_and_fuzz_consumers_not_crypto(self):
         plan = planned([f"{BNB}/src/lib.rs"])
-        self.assertTrue({"socks", "rsl-asn1", "rsl-x509", "rsl-pki"} <= set(plan["packages"]))
-        self.assertNotIn("rsl-crypto", plan["packages"])
+        self.assertTrue({"socks", "asn1", "x509", "pki"} <= set(plan["packages"]))
+        self.assertNotIn("crypto", plan["packages"])
         self.assertEqual(plan["fuzz"], [])
 
     def test_macros_propagate_through_runtime(self):
@@ -148,7 +148,7 @@ class SelectionTests(unittest.TestCase):
         for suffix in ("hex", "md"):
             with self.subTest(suffix=suffix):
                 plan = planned([f"pki/tests/vectors/nist-pkits/example.{suffix}"])
-                self.assertTrue({"rsl-asn1", "rsl-x509", "rsl-pki"} <= set(plan["packages"]))
+                self.assertTrue({"asn1", "x509", "pki"} <= set(plan["packages"]))
                 self.assertEqual(plan["fuzz"], [])
 
     def test_generated_skill_markdown_selects_its_validation(self):
@@ -164,17 +164,17 @@ class SelectionTests(unittest.TestCase):
 
     def test_usdr_sim_changes_rerun_the_driver_and_libusdr_oracle(self):
         plan = planned(["devices/sdr/usdr/sim/src/board.rs"])
-        self.assertEqual(plan["packages"], ["rsl-usdr", "rsl-usdr-sim"])
+        self.assertEqual(plan["packages"], ["usdr", "usdr-sim"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_bnb_changes_rerun_the_usdr_driver_and_oracle(self):
         plan = planned([f"{BNB}/src/lib.rs"])
-        self.assertIn("rsl-usdr", plan["packages"])
+        self.assertIn("usdr", plan["packages"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_usdr_driver_changes_rerun_the_libusdr_oracle(self):
         plan = planned(["devices/sdr/usdr/src/board/power.rs"])
-        self.assertEqual(plan["packages"], ["rsl-usdr"])
+        self.assertEqual(plan["packages"], ["usdr"])
         self.assertIn("usdr-oracle", plan["profiles"])
 
     def test_portable_fixture_changes_select_only_its_routine_host_gate(self):
@@ -195,9 +195,9 @@ class SelectionTests(unittest.TestCase):
     def test_shared_device_crates_rerun_their_consumers_and_the_portable_host_gate(self):
         cases = [
             (f"{LOWLEVEL}/src/bus.rs",
-             {"rsl-lowlevel", "rsl-lp8758", "rsl-lms7002m", "rsl-lsdr", "rsl-usdr", "rsl-xsdr",
-              "rsl-limesdr", "rsl-pe-sync", "rsl-sdr-frontend"}),
-            (f"{LP8758}/src/buck.rs", {"rsl-lp8758", "rsl-usdr", "rsl-xsdr"}),
+             {"rsl-lowlevel", "lp8758", "lms7002m", "lsdr", "usdr", "xsdr",
+              "limesdr", "pe-sync", "sdr-frontend"}),
+            (f"{LP8758}/src/buck.rs", {"lp8758", "usdr", "xsdr"}),
         ]
         for path, packages in cases:
             with self.subTest(path=path):
@@ -211,7 +211,7 @@ class SelectionTests(unittest.TestCase):
     def test_the_front_end_crate_reruns_its_three_drivers_and_their_oracles_not_the_limesdr(self):
         plan = planned([f"{FRONTEND}/src/probe.rs"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-lsdr", "rsl-sdr-frontend", "rsl-usdr", "rsl-xsdr"])
+        self.assertEqual(plan["packages"], ["lsdr", "sdr-frontend", "usdr", "xsdr"])
         self.assertTrue({"usdr-oracle", "xsdr-oracle", "lsdr-oracle", "usdr-portable",
                          "xsdr-portable", "lsdr-portable"} <= set(plan["profiles"]))
         # The LimeSDR oracle compiles the uSDR oracle's C, which a uSDR change reaches.
@@ -221,7 +221,7 @@ class SelectionTests(unittest.TestCase):
     def test_the_lms7002m_chip_crate_reruns_both_lms7002m_drivers_not_the_usdr(self):
         plan = planned([f"{LMS7002M}/src/chip.rs"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-limesdr", "rsl-lms7002m", "rsl-xsdr"])
+        self.assertEqual(plan["packages"], ["limesdr", "lms7002m", "xsdr"])
         self.assertTrue({"xsdr-portable", "xsdr-oracle", "limesdr-portable", "limesdr-oracle"}
                         <= set(plan["profiles"]))
         self.assertNotIn("usdr-portable", plan["profiles"])
@@ -235,7 +235,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan["release"])
 
     def test_an_explicit_xsdr_release_qualifies_its_core_and_the_lms7002m_bare_metal(self):
-        member = {"product": "rsl-xsdr", "root": XSDR, "name": "rsl-xsdr", "version": "0.0.0"}
+        member = {"product": "xsdr", "root": XSDR, "name": "xsdr", "version": "0.0.0"}
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "xsdr-portable"} <= set(release["profiles"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
@@ -250,7 +250,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(LP8758, codec["release_roots"])
         self.assertEqual(bare_metal_devices(codec["release_roots"], codec["release_members"]),
                          set())
-        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        member = {"product": "usdr", "root": USDR, "name": "usdr", "version": "0.0.0"}
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertIn("no-std", release["profiles"])
         self.assertTrue({LOWLEVEL, LP8758} <= set(release["release_roots"]))
@@ -283,16 +283,16 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(USDR_PORTABLE, codec["release_roots"])
         # This fake topology intentionally lacks bnb: the native owner still selects its
         # own qualification rather than relying on a codec release profile.
-        graph = {USDR: Package("rsl-usdr", set()),
-                 USDR_PORTABLE: Package("rsl-usdr-nostd-check", {USDR}, False)}
-        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        graph = {USDR: Package("usdr", set()),
+                 USDR_PORTABLE: Package("usdr-nostd-check", {USDR}, False)}
+        member = {"product": "usdr", "root": USDR, "name": "usdr", "version": "0.0.0"}
         release = select([], graph, graph, release_members=[member])
         self.assertIn("no-std", release["profiles"])
         self.assertIn("usdr-portable", release["profiles"])
 
     def test_an_explicit_usdr_release_cannot_skip_a_missing_portable_fixture(self):
-        graph = {USDR: Package("rsl-usdr", set())}
-        member = {"product": "rsl-usdr", "root": USDR, "name": "rsl-usdr", "version": "0.0.0"}
+        graph = {USDR: Package("usdr", set())}
+        member = {"product": "usdr", "root": USDR, "name": "usdr", "version": "0.0.0"}
         with self.assertRaisesRegex(ValueError, "registered portable fixture"):
             select([], graph, graph, release_members=[member])
 
@@ -309,18 +309,18 @@ class SelectionTests(unittest.TestCase):
     def test_a_kind_guide_above_its_crates_selects_them_not_full_coverage(self):
         plan = planned(["devices/sync/AGENTS.md"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-pe-sync", "rsl-pe-sync-sim"])
+        self.assertEqual(plan["packages"], ["pe-sync", "pe-sync-sim"])
         self.assertTrue({"pe-sync-oracle", "pe-sync-portable"} <= set(plan["profiles"]))
 
     def test_lsdr_driver_guide_selects_the_driver_its_oracle_and_fixture(self):
         plan = planned([f"{LSDR}/AGENTS.md"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-lsdr"])
+        self.assertEqual(plan["packages"], ["lsdr"])
         self.assertTrue({"lsdr-oracle", "lsdr-portable"} <= set(plan["profiles"]))
 
     def test_lsdr_driver_changes_rerun_its_oracle_and_fixture_not_the_usdr_ones(self):
         plan = planned([f"{LSDR}/src/portable/probes.rs"])
-        self.assertEqual(plan["packages"], ["rsl-lsdr"])
+        self.assertEqual(plan["packages"], ["lsdr"])
         self.assertIn("lsdr-oracle", plan["profiles"])
         self.assertIn("lsdr-portable", plan["profiles"], "its exact-source fixture imports it")
         for other in ("usdr-oracle", "usdr-portable", "xsdr-oracle", "xsdr-portable", "no-std"):
@@ -338,7 +338,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan["release"])
 
     def test_an_explicit_lsdr_release_qualifies_its_core_on_bare_metal(self):
-        member = {"product": "rsl-lsdr", "root": LSDR, "name": "rsl-lsdr", "version": "0.0.0"}
+        member = {"product": "lsdr", "root": LSDR, "name": "lsdr", "version": "0.0.0"}
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "lsdr-portable"} <= set(release["profiles"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
@@ -351,12 +351,12 @@ class SelectionTests(unittest.TestCase):
     def test_xsdr_driver_guide_selects_the_driver_and_its_oracle_not_full_coverage(self):
         plan = planned([f"{XSDR}/AGENTS.md"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-xsdr"])
+        self.assertEqual(plan["packages"], ["xsdr"])
         self.assertIn("xsdr-oracle", plan["profiles"])
 
     def test_xsdr_driver_changes_rerun_its_oracle_not_the_usdr_one(self):
         plan = planned([f"{XSDR}/src/portable/power.rs"])
-        self.assertEqual(plan["packages"], ["rsl-xsdr"])
+        self.assertEqual(plan["packages"], ["xsdr"])
         self.assertIn("xsdr-oracle", plan["profiles"])
         self.assertIn("xsdr-portable", plan["profiles"], "its exact-source fixture imports it")
         self.assertNotIn("usdr-oracle", plan["profiles"])
@@ -369,21 +369,21 @@ class SelectionTests(unittest.TestCase):
 
     def test_xsdr_simulator_selects_its_driver_and_oracle_not_the_usdr_one(self):
         plan = planned(["devices/sdr/xsdr/sim/src/lib.rs"])
-        self.assertEqual(plan["packages"], ["rsl-xsdr", "rsl-xsdr-sim"])
+        self.assertEqual(plan["packages"], ["xsdr", "xsdr-sim"])
         self.assertIn("xsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("lsdr-oracle", plan["profiles"])
 
     def test_lsdr_simulator_selects_its_driver_and_oracle_not_the_other_families(self):
         plan = planned(["devices/sdr/lsdr/sim/src/lib.rs"])
-        self.assertEqual(plan["packages"], ["rsl-lsdr", "rsl-lsdr-sim"])
+        self.assertEqual(plan["packages"], ["lsdr", "lsdr-sim"])
         self.assertIn("lsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
         self.assertNotIn("xsdr-oracle", plan["profiles"])
 
     def test_limesdr_simulator_selects_its_driver_and_oracle_not_the_other_families(self):
         plan = planned(["devices/sdr/limesdr/sim/src/board.rs"])
-        self.assertEqual(plan["packages"], ["rsl-limesdr", "rsl-limesdr-sim"])
+        self.assertEqual(plan["packages"], ["limesdr", "limesdr-sim"])
         self.assertIn("limesdr-oracle", plan["profiles"])
         self.assertNotIn("xsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
@@ -391,8 +391,8 @@ class SelectionTests(unittest.TestCase):
     def test_shared_lms7002m_model_selects_both_lms7002m_boards_and_their_oracles(self):
         plan = planned(["devices/sdr/chips/lms7002m/sim/src/lib.rs"])
         self.assertEqual(plan["packages"],
-                         ["rsl-limesdr", "rsl-limesdr-sim", "rsl-lms7002m-sim", "rsl-xsdr",
-                          "rsl-xsdr-sim"])
+                         ["limesdr", "limesdr-sim", "lms7002m-sim", "xsdr",
+                          "xsdr-sim"])
         self.assertIn("limesdr-oracle", plan["profiles"])
         self.assertIn("xsdr-oracle", plan["profiles"])
         self.assertNotIn("lsdr-oracle", plan["profiles"])
@@ -401,7 +401,7 @@ class SelectionTests(unittest.TestCase):
     def test_limesdr_driver_changes_rerun_its_oracle_and_fixture_not_the_other_families(self):
         plan = planned([f"{LIMESDR}/src/portable/open.rs"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-limesdr"])
+        self.assertEqual(plan["packages"], ["limesdr"])
         self.assertIn("limesdr-oracle", plan["profiles"])
         self.assertIn("limesdr-portable", plan["profiles"], "its exact-source fixture imports it")
         for other in ("usdr-oracle", "usdr-portable", "xsdr-oracle", "xsdr-portable"):
@@ -417,7 +417,7 @@ class SelectionTests(unittest.TestCase):
     def test_limesdr_driver_guide_selects_the_driver_and_its_oracle_not_full_coverage(self):
         plan = planned([f"{LIMESDR}/AGENTS.md"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-limesdr"])
+        self.assertEqual(plan["packages"], ["limesdr"])
         self.assertIn("limesdr-oracle", plan["profiles"])
 
     def test_the_limesdr_porting_ledger_is_prose_not_a_build_trigger(self):
@@ -426,7 +426,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan["full"])
 
     def test_an_explicit_limesdr_release_qualifies_its_core_and_its_bare_metal_crates(self):
-        member = {"product": "rsl-limesdr", "root": LIMESDR, "name": "rsl-limesdr",
+        member = {"product": "limesdr", "root": LIMESDR, "name": "limesdr",
                   "version": "0.0.0"}
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "limesdr-portable"} <= set(release["profiles"]))
@@ -439,7 +439,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_pe_sync_simulator_selects_its_driver_and_oracle_not_the_sdr_ones(self):
         plan = planned(["devices/sync/pe_sync/sim/src/lib.rs"])
-        self.assertEqual(plan["packages"], ["rsl-pe-sync", "rsl-pe-sync-sim"])
+        self.assertEqual(plan["packages"], ["pe-sync", "pe-sync-sim"])
         self.assertIn("pe-sync-oracle", plan["profiles"])
         for sdr_oracle in ("usdr-oracle", "xsdr-oracle", "lsdr-oracle"):
             self.assertNotIn(sdr_oracle, plan["profiles"])
@@ -447,7 +447,7 @@ class SelectionTests(unittest.TestCase):
     def test_pe_sync_driver_changes_rerun_its_oracle_and_fixture_not_the_sdr_ones(self):
         plan = planned([f"{PE_SYNC}/src/portable/power.rs"])
         self.assertFalse(plan["full"])
-        self.assertEqual(plan["packages"], ["rsl-pe-sync"])
+        self.assertEqual(plan["packages"], ["pe-sync"])
         self.assertIn("pe-sync-oracle", plan["profiles"])
         self.assertIn("pe-sync-portable", plan["profiles"], "its exact-source fixture imports it")
         for other in ("usdr-oracle", "usdr-portable", "xsdr-oracle", "lsdr-oracle", "no-std"):
@@ -468,14 +468,14 @@ class SelectionTests(unittest.TestCase):
         plan = planned([f"{LMK05318}/src/plan.rs"])
         self.assertFalse(plan["full"])
         # The front-end probe checks SimpleSync's LMK05318 ID, so its three drivers rerun.
-        self.assertEqual(plan["packages"], ["rsl-lmk05318", "rsl-lsdr", "rsl-pe-sync",
-                                            "rsl-sdr-frontend", "rsl-usdr", "rsl-xsdr"])
+        self.assertEqual(plan["packages"], ["lmk05318", "lsdr", "pe-sync",
+                                            "sdr-frontend", "usdr", "xsdr"])
         self.assertTrue({"usdr-oracle", "pe-sync-oracle", "pe-sync-portable"}
                         <= set(plan["profiles"]))
         self.assertNotIn("no-std", plan["profiles"])
 
     def test_an_explicit_pe_sync_release_qualifies_its_core_and_its_bare_metal_crates(self):
-        member = {"product": "rsl-pe-sync", "root": PE_SYNC, "name": "rsl-pe-sync",
+        member = {"product": "pe-sync", "root": PE_SYNC, "name": "pe-sync",
                   "version": "0.0.0"}
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "pe-sync-portable"} <= set(release["profiles"]))
@@ -502,7 +502,7 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 plan = planned([path])
                 self.assertTrue(plan["full"])
-                self.assertIn("rsl-crypto", plan["packages"])
+                self.assertIn("crypto", plan["packages"])
                 self.assertIn("socks", plan["packages"])
                 self.assertFalse(RELEASE_PROFILES & set(plan["profiles"]))
                 self.assertEqual(plan["fuzz"], [])
@@ -510,7 +510,7 @@ class SelectionTests(unittest.TestCase):
     def test_domain_ci_change_does_not_expand_to_unrelated_crypto(self):
         plan = planned([".github/ci/bnb.toml"])
         self.assertIn("workspace", plan["profiles"])
-        self.assertNotIn("rsl-crypto", plan["packages"])
+        self.assertNotIn("crypto", plan["packages"])
 
     def test_removed_dependency_still_selects_its_old_consumer(self):
         old = fixture()
@@ -539,12 +539,12 @@ class SelectionTests(unittest.TestCase):
         del new["crypto/fuzz"]
         plan = select(["crypto/fuzz/Cargo.toml"], old, new)
         self.assertTrue(plan["full"])
-        self.assertIn("rsl-crypto", plan["packages"])
+        self.assertIn("crypto", plan["packages"])
 
     def test_rename_checks_old_and_new_owners(self):
         graph = fixture()
         plan = select(["codecs/compression/src/old.rs", "crypto/core/src/new.rs"], graph, graph)
-        self.assertTrue({"rsl-compression", "rsl-crypto", "rsl-pki"} <= set(plan["packages"]))
+        self.assertTrue({"compression", "crypto", "pki"} <= set(plan["packages"]))
 
     def test_development_dependency_cycles_terminate(self):
         graph = {"a": Package("a", {"b"}), "b": Package("b", {"a"})}
@@ -559,13 +559,13 @@ class SelectionTests(unittest.TestCase):
         plan = planned(["README.md"], release=True)
         self.assertTrue({"bnb", "socks", "no-std", "public-api", "semver", "package"}
                         <= set(plan["profiles"]))
-        self.assertNotIn("rsl-crypto", plan["packages"])
+        self.assertNotIn("crypto", plan["packages"])
         self.assertFalse(plan["full"])
 
     def test_global_changes_cannot_widen_release_qualification(self):
         scoped = planned(release=True)
         broad = planned(["Cargo.lock", "scripts/ci/plan.py", "crypto/core/src/lib.rs"], release=True)
-        self.assertIn("rsl-crypto", broad["packages"])
+        self.assertIn("crypto", broad["packages"])
         for key in ("products", "release_members", "release_roots", "release_packages", "fuzz"):
             self.assertEqual(scoped[key], broad[key], key)
         self.assertNotIn("crypto/fuzz", {item["root"] for item in broad["fuzz"]})

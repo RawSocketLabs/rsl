@@ -45,7 +45,7 @@
 //! # One-shot example
 //!
 //! ```
-//! use rsl_crypto::digest::sha2::sha256::Sha256;
+//! use crypto::digest::sha2::sha256::Sha256;
 //!
 //! let digest = Sha256::digest(b"abc").expect("three bytes fit SHA-256");
 //! assert_eq!(
@@ -65,7 +65,7 @@
 //! bytes; this API does not invent a serialization for arbitrary Rust values.
 //!
 //! ```
-//! use rsl_crypto::digest::sha2::sha256::Sha256;
+//! use crypto::digest::sha2::sha256::Sha256;
 //!
 //! let mut state = Sha256::new();
 //! state.update("learn ").expect("the fragment is short");

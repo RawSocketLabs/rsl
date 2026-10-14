@@ -1,6 +1,6 @@
 //! USB simple-I²C cache/control sequence against the pinned, compiled C helpers.
 
-use rsl_usdr_oracle as _;
+use usdr_oracle as _;
 
 // Compile the driver's private wire encoder directly: no mock or testing API is public.
 #[path = "../../src/portable/usb/protocol.rs"]

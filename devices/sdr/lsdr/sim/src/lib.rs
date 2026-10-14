@@ -3,7 +3,7 @@
 //! The board is modelled at libusdr's low-level operation seam (`ls_op`): FPGA register
 //! reads and writes (GPO), 32-bit SPI transactions to the `ADS42LBx9` ADCs and the LMK04832
 //! clock generator, and I2C transfers to the TPS6594 PMIC and the Si549 oscillator.
-//! libusdr (through `rsl-lsdr-oracle`) and, later, `rsl-lsdr` drive the same model, so
+//! libusdr (through `lsdr-oracle`) and, later, `lsdr` drive the same model, so
 //! their recorded [`Op`] traces can be compared without hardware.
 //!
 //! The model covers open (`usdr_device_m2_d09_4_ad45_2_initialize`), ADC power-up

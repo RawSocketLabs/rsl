@@ -2,8 +2,8 @@
 //! (`_xsdr_antenna_port_switch`) and `LimeLight` sample orders (`lms7nfe_get_lml_portcfg`),
 //! and its automatic bands (`_xsdr_init_revx`).
 
-use rsl_lms7002m::ctrl::{Direction, Frontend, RxAntenna, StreamFlags, TxAntenna};
-use rsl_lms7002m::{LmlMap, LmlSample, Mac, RxPath, TxPath};
+use lms7002m::ctrl::{Direction, Frontend, RxAntenna, StreamFlags, TxAntenna};
+use lms7002m::{LmlMap, LmlSample, Mac, RxPath, TxPath};
 
 use super::fpga::Gpo;
 use super::step::Step;

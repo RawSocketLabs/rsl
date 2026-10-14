@@ -25,7 +25,7 @@ use crate::Result;
 /// the trait contract; it is not a safe scheme for encrypting a sequence of application blocks.
 ///
 /// ```
-/// use rsl_crypto::cipher::{BlockCipher, aes::aes128::{Aes128, Aes128Block, Aes128Key}};
+/// use crypto::cipher::{BlockCipher, aes::aes128::{Aes128, Aes128Block, Aes128Key}};
 ///
 /// fn round_trip<C: BlockCipher>(cipher: &C, block: &mut C::Block) {
 ///     cipher.encrypt_block(block);
@@ -58,9 +58,9 @@ pub trait BlockCipher {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::cipher::{StreamCipher, chacha20::{ChaCha20, ChaCha20Key, ChaCha20Nonce}};
+/// use crypto::cipher::{StreamCipher, chacha20::{ChaCha20, ChaCha20Key, ChaCha20Nonce}};
 ///
-/// fn mask<C: StreamCipher>(cipher: &mut C, buffer: &mut [u8]) -> rsl_crypto::Result<()> {
+/// fn mask<C: StreamCipher>(cipher: &mut C, buffer: &mut [u8]) -> crypto::Result<()> {
 ///     cipher.apply_keystream(buffer)
 /// }
 ///
@@ -68,7 +68,7 @@ pub trait BlockCipher {
 /// let mut buffer = *b"plaintext";
 /// mask(&mut stream, &mut buffer)?;
 /// assert_ne!(&buffer, b"plaintext");
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub trait StreamCipher {
     /// XOR the next keystream bytes into `buffer`.

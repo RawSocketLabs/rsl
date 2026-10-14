@@ -1,11 +1,11 @@
 //! Published, boundary, streaming, classification, and independent RC4 evidence.
 
-use rc4::{KeyInit as _, Rc4 as ReferenceRc4, StreamCipher as _};
-use rsl_crypto::cipher::StreamCipher as StreamCipherContract;
-use rsl_crypto_legacy::{
+use crypto::cipher::StreamCipher as StreamCipherContract;
+use crypto_legacy::{
     CryptoError, SecurityStatus,
     cipher::rc4::{Rc4, Rc4Key, SECURITY_STATUS},
 };
+use rc4::{KeyInit as _, Rc4 as ReferenceRc4, StreamCipher as _};
 
 #[test]
 fn rfc_6229_40_bit_key_covers_distant_stream_offsets() {

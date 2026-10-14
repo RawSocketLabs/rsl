@@ -1,9 +1,9 @@
-# cargo-fuzz crate for `rsl-crypto`. Deliberately its **own** workspace (the empty
+# cargo-fuzz crate for `crypto`. Deliberately its **own** workspace (the empty
 # `[workspace]` table below) so the unstable libfuzzer-sys toolchain never leaks into the
 # parent workspace's stable fmt/clippy/test/deny/MSRV jobs.
 # Run from the repo root: `cargo +nightly fuzz run <target> --fuzz-dir crypto/fuzz`.
 [package]
-name = "rsl-crypto-fuzz"
+name = "crypto-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -14,7 +14,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
-[dependencies.rsl-crypto]
+[dependencies.crypto]
 path = "../core"
 
 [[bin]]

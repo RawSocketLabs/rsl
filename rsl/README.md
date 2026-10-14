@@ -27,12 +27,12 @@ The RSL stack is split by concern — **what we own** vs. **what we rent**:
   `rsl::crypto`, explicitly opt-in `rsl::crypto_legacy`, `rsl::compression`,
   `rsl::error_correction`, `rsl::asn1`, `rsl::x509`, `rsl::pki`, `rsl::proto`,
   `rsl::rawsock`, `rsl::rf`, `rsl::usdr`).
-- **[`rsl-deps`](https://github.com/RawSocketLabs/rsl-deps)** — the blessed third-party crates
-  (`rsl_deps::tokio`, `rsl_deps::serde`, …). The version-pinned "rented" half.
+- **[`deps`](https://github.com/RawSocketLabs/rsl-deps)** — the blessed third-party crates
+  (`deps::tokio`, `deps::serde`, …). The version-pinned "rented" half.
 - **`rsl-private`** — the private owned libraries (`sdr`, `dsdcc`), layered on `rsl`.
 
 The two are **orthogonal**: a crate that needs both RSL libraries and blessed externals depends
-on both `rsl` and `rsl-deps`. That separation is the answer to "what do we own, and what might we
+on both `rsl` and `deps`. That separation is the answer to "what do we own, and what might we
 replace?" — and it makes the graduation below a clean, one-move change.
 
 ## Namespace map
@@ -42,21 +42,21 @@ Owned crates, sourced from this lockstep workspace through `path` + `version` de
 | Path | Backed by | Feature |
 |------|-----------|---------|
 | `rsl::codec` | `bitsandbytes` (`bnb`) — bit-aware binary codec | `codec` |
-| `rsl::crypto` | `rsl-crypto` — cryptographic primitives and protection contracts | `crypto` |
-| `rsl::crypto_legacy` | `rsl-crypto-legacy` — historical/broken primitives; never bundled | `legacy-crypto` |
-| `rsl::asn1` | `rsl-asn1` — strict ASN.1 DER transport | `pki` |
-| `rsl::x509` | `rsl-x509` — borrowed certificate syntax | `pki` |
-| `rsl::pki` | `rsl-pki` — certificate-path and identity validation | `pki` |
-| `rsl::compression` | `rsl-compression` — stateful compression contracts | `compression` |
-| `rsl::error_correction` | `rsl-error-correction` — coding and correction reports | `error-correction` |
+| `rsl::crypto` | `crypto` — cryptographic primitives and protection contracts | `crypto` |
+| `rsl::crypto_legacy` | `crypto-legacy` — historical/broken primitives; never bundled | `legacy-crypto` |
+| `rsl::asn1` | `asn1` — strict ASN.1 DER transport | `pki` |
+| `rsl::x509` | `x509` — borrowed certificate syntax | `pki` |
+| `rsl::pki` | `pki` — certificate-path and identity validation | `pki` |
+| `rsl::compression` | `compression` — stateful compression contracts | `compression` |
+| `rsl::error_correction` | `error-correction` — coding and correction reports | `error-correction` |
 | `rsl::proto::{ethertype,tcp,udp,dns}` | the `protocols` workspace | `proto` (or `proto-<name>`) |
 | `rsl::rawsock` | `rawsock` — L2/L3/L4 raw-packet I/O | `rawsock` |
 | `rsl::rf` | `rfus` — RF/sample-rate/scan-target parsing | `rf` |
-| `rsl::usdr` | `usdr` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
+| `rsl::usdr` | `usdr-ffi` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
 
 Bundles: `net` (`codec`+`proto`+`rawsock`), `radio` (`rf`), `transforms`
 (`crypto`+`compression`+`error-correction`), `pki` (DER+X.509+validation), and `full` (all four
-bundles). The FFI `usdr` is excluded from bundles — add it explicitly.
+bundles). The FFI `usdr-ffi` is excluded from bundles — add it explicitly.
 
 The `legacy-crypto` feature is also excluded from every bundle. Historical algorithms require a
 separate, visible opt-in and must never become a negotiation fallback.
@@ -67,11 +67,11 @@ separate, visible opt-in and must never become a negotiation fallback.
 ## The graduation path (rented → owned)
 
 When RSL writes an owned crate to supersede a blessed external, the pin **moves out of
-[`rsl-deps`] and the owned crate is added here**, under a semantic path. Consumers switch from
-`rsl_deps::foo` to `rsl::foo`. Keeping the two crates separate is what makes that replacement
-decision legible: `rsl-deps` is the standing shortlist of "things we rent"; `rsl` is what we own.
+[`deps`] and the owned crate is added here**, under a semantic path. Consumers switch from
+`deps::foo` to `rsl::foo`. Keeping the two crates separate is what makes that replacement
+decision legible: `deps` is the standing shortlist of "things we rent"; `rsl` is what we own.
 
-[`rsl-deps`]: https://github.com/RawSocketLabs/rsl-deps
+[`deps`]: https://github.com/RawSocketLabs/rsl-deps
 
 ## Sourcing & caveats
 

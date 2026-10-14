@@ -36,7 +36,7 @@
 //! RFC 5903 §8.1 publishes an initiator private key and its public point:
 //!
 //! ```
-//! use rsl_crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
+//! use crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
 //!
 //! let initiator = EcdhP256PrivateKey::from_bytes([
 //!     0xc8, 0x8f, 0x01, 0xf5, 0x10, 0xd9, 0xac, 0x3f, 0x70, 0xa2, 0x92, 0xda, 0xa2, 0x31, 0x6d,
@@ -49,13 +49,13 @@
 //!     &public.as_bytes()[1..9],
 //!     &[0xda, 0xd0, 0xb6, 0x53, 0x94, 0x22, 0x1c, 0xf9],
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Complete two-party exchange
 //!
 //! ```
-//! use rsl_crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
+//! use crypto::agreement::ecdh_p256::{EcdhP256, EcdhP256PrivateKey};
 //!
 //! // Fixed bytes keep the example reproducible; real keys need an approved random source.
 //! let alice = EcdhP256PrivateKey::from_bytes([0x11; 32])?;
@@ -63,7 +63,7 @@
 //! let alice_shared = EcdhP256::agree(&alice, &EcdhP256::public_key(&bob))?;
 //! let bob_shared = EcdhP256::agree(&bob, &EcdhP256::public_key(&alice))?;
 //! assert_eq!(alice_shared.expose_secret(), bob_shared.expose_secret());
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

@@ -29,7 +29,7 @@
 //! RFC 7748 §6.2 publishes Alice's private bytes and resulting public coordinate:
 //!
 //! ```
-//! use rsl_crypto::agreement::x448::{X448, X448PrivateKey};
+//! use crypto::agreement::x448::{X448, X448PrivateKey};
 //!
 //! let alice_private = X448PrivateKey::new([
 //!     0x9a, 0x8f, 0x49, 0x25, 0xd1, 0x51, 0x9f, 0x57, 0x75, 0xcf, 0x46, 0xb0, 0x4b, 0x58,

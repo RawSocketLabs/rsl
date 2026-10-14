@@ -42,7 +42,7 @@
 //! RFC 8439 §2.8.2 seals the sunscreen quotation with AAD `50515253c0c1c2c3c4c5c6c7`:
 //!
 //! ```
-//! use rsl_crypto::aead::chacha20poly1305::{
+//! use crypto::aead::chacha20poly1305::{
 //!     ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce,
 //! };
 //!
@@ -57,7 +57,7 @@
 //!     sealed.tag().as_bytes(),
 //!     &[0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60, 0x06, 0x91],
 //! );
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 //!
 //! # Common mistakes and non-goals

@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use rsl_lsdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
-use rsl_lsdr::{Access, Device, Error, Fitted, OpenOptions, PgaGain};
-use rsl_lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
+use lsdr::lowlevel::{Bus, BusError, I2cAddr, SpiAddr};
+use lsdr::{Access, Device, Error, Fitted, OpenOptions, PgaGain};
+use lsdr_sim::{I2cAddress, Op, SimBoard, Variant};
 
 /// GPO bank `IGPO_BANK_CFG_ADC`: bits 1:0 hold the ADCs in reset.
 const GPO_CFG_ADC: u8 = 2;
@@ -269,7 +269,7 @@ fn a_failed_liveness_read_fails_open_before_anything_else() {
                 ..
             })
         ),
-        "libusdr would carry on; rsl-lsdr reports the read: {refusal:?}"
+        "libusdr would carry on; lsdr reports the read: {refusal:?}"
     );
     assert!(
         bus.sim.board().trace().is_empty(),

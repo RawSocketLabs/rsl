@@ -199,7 +199,7 @@ impl ChaCha20Poly1305 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::aead::chacha20poly1305::{
+    /// use crypto::aead::chacha20poly1305::{
     ///     ChaCha20Poly1305, ChaCha20Poly1305Key, ChaCha20Poly1305Nonce,
     /// };
     ///
@@ -208,7 +208,7 @@ impl ChaCha20Poly1305 {
     /// let sealed = algorithm.seal(&nonce, b"header", b"payload")?;
     /// assert_eq!(sealed.ciphertext().len(), 7);
     /// assert_eq!(algorithm.open(&nonce, b"header", sealed.ciphertext(), sealed.tag())?, b"payload");
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn seal(
         &self,

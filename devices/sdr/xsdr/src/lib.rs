@@ -2,17 +2,17 @@
 //!
 //! [`Device`] talks to the board through a [`lowlevel::Bus`], the register/SPI/I2C seam of
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
-//! (`rsl-xsdr-oracle`).
+//! (`xsdr-oracle`).
 //!
 //! **Unstable; unpublished.** Ported: identification by HWID, the XSDR's supply bring-up and
 //! front-end board probe at open ([`Device::open`], [`Device::front_end`]; the probe is
-//! `rsl-sdr-frontend`'s), the RFIC power-up ([`Device::power_up`]), the sample rate on
+//! `sdr-frontend`'s), the RFIC power-up ([`Device::power_up`]), the sample rate on
 //! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
 //! baseband bandwidths, and the close ([`Device::close`]). Not yet ported: the XMASS,
 //! `SuperSync` and `SimpleSync` front-end bring-ups, the XTRX and sSDR variants
 //! (identified, then refused), gateware with an RX or shared MMCM or a DUC/DDC, explicit
 //! paths, streams and calibration. The LMS7002M's register values, chip operations and
-//! control code are `rsl-lms7002m`'s. See `PORTING.md` beside this crate.
+//! control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!
@@ -38,6 +38,6 @@ mod portable;
 
 pub use device::Device;
 pub use error::{Access, Error};
+pub use lms7002m::ctrl::{Direction, Gain};
 pub use portable::hwid::Variant;
-pub use rsl_lms7002m::ctrl::{Direction, Gain};
-pub use rsl_sdr_frontend::{Board as FrontEndBoard, FrontEndKind};
+pub use sdr_frontend::{Board as FrontEndBoard, FrontEndKind};

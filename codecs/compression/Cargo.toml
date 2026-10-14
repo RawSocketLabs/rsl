@@ -1,5 +1,5 @@
 [package]
-name = "rsl-compression"
+name = "compression"
 version = "0.1.0"
 description = "Accuracy-first compression and decompression contracts for the RSL stack."
 edition.workspace = true

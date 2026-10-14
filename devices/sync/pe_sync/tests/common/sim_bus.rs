@@ -1,6 +1,6 @@
-//! `lowlevel::Bus` over `rsl-pe-sync-sim`, as libusdr's transports present the board.
+//! `lowlevel::Bus` over `pe-sync-sim`, as libusdr's transports present the board.
 //!
-//! Shared by `rsl-pe-sync`'s tests and the oracle's parity tests (`#[path]`-included), so
+//! Shared by `pe-sync`'s tests and the oracle's parity tests (`#[path]`-included), so
 //! both drive the simulator through the same adapter. Limits and refusals are the oracle
 //! shim's (`oracle/src/lib.rs`): at most three bytes written and four read per I2C transfer,
 //! and SPI only on modelled buses. `PE_SYNC` has two I2C cores, both modelled.
@@ -8,8 +8,8 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use rsl_pe_sync::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
-use rsl_pe_sync_sim::{I2cAddress, SimBoard};
+use pe_sync::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
+use pe_sync_sim::{I2cAddress, SimBoard};
 
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the bus.
 #[derive(Clone)]

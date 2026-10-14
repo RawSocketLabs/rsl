@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use rsl_deps::tracing::{debug, warn};
+use deps::tracing::{debug, warn};
 
 use super::Board;
 use super::stream::{CHUNK_SAMPLES, MAX_CHANNELS, MAX_HOST_SAMPLE_BYTES};

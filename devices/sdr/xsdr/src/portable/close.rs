@@ -4,10 +4,10 @@
 //! The LMS7002M's streaming is brought down (`xsdr_rfic_streaming_down` for both
 //! directions, `lms7002m_streaming_down` in `lms7002m_ctrl.c`), the chip destroyed
 //! (`lms7002m_destroy`), its power and LDOs and the LED switched off, and the TX MMCM
-//! powered down. The chip operations come from `rsl-lms7002m`; the order, and which
+//! powered down. The chip operations come from `lms7002m`; the order, and which
 //! failures end the close, are the family's.
 
-use rsl_lms7002m::{Batch, Lms7002m, Mac, RxMode, RxPath, Tsp, TxMode, TxPath};
+use lms7002m::{Batch, Lms7002m, Mac, RxMode, RxPath, Tsp, TxMode, TxPath};
 use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, TX_MMCM_POWER_DOWN};

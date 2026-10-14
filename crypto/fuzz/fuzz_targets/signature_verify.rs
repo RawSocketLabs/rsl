@@ -4,13 +4,13 @@
 //! Run: `cargo +nightly fuzz run signature_verify --fuzz-dir crypto/fuzz`.
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
-use rsl_crypto::signature::{
+use crypto::signature::{
     ecdsa_p256::{EcdsaP256Signature, EcdsaP256VerifyingKey},
     ecdsa_p384::{EcdsaP384Signature, EcdsaP384VerifyingKey},
     ed448::{Ed448Signature, Ed448VerifyingKey},
     ed25519::{Ed25519Signature, Ed25519VerifyingKey},
 };
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if data.len() < 2 {
@@ -36,7 +36,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         1 => {
-            if let (Ok(key), Ok(sig)) = (Ed448VerifyingKey::try_from(key), Ed448Signature::try_from(sig)) {
+            if let (Ok(key), Ok(sig)) = (
+                Ed448VerifyingKey::try_from(key),
+                Ed448Signature::try_from(sig),
+            ) {
                 let _ = key.verify(None, message, &sig);
             }
         }

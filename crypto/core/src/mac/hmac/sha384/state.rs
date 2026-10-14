@@ -38,11 +38,11 @@ const TAG_LEN: usize = 48;
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::mac::hmac::sha384::{HmacSha384, HmacSha384Tag};
+/// use crypto::mac::hmac::sha384::{HmacSha384, HmacSha384Tag};
 ///
 /// let tag: HmacSha384Tag = HmacSha384::authenticate(b"key", b"message")?;
 /// assert_eq!(tag.as_bytes().len(), HmacSha384Tag::LEN);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 #[derive(Clone, Eq, Hash, PartialEq)]
 #[must_use = "an authentication tag should be transmitted, verified, or otherwise consumed"]
@@ -92,7 +92,7 @@ impl fmt::Debug for HmacSha384Tag {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::mac::hmac::sha384::HmacSha384;
+/// use crypto::mac::hmac::sha384::HmacSha384;
 ///
 /// let mut state = HmacSha384::new(b"shared secret")?;
 /// state.update(b"one ")?;
@@ -102,7 +102,7 @@ impl fmt::Debug for HmacSha384Tag {
 /// let mut verifier = HmacSha384::new(b"shared secret")?;
 /// verifier.update(b"one message")?;
 /// verifier.verify(tag.as_bytes())?;
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct HmacSha384 {
     /// SHA-384 state after `K0 XOR ipad`, followed by message bytes accepted so far.
@@ -176,11 +176,11 @@ impl HmacSha384 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::mac::hmac::sha384::HmacSha384;
+    /// use crypto::mac::hmac::sha384::HmacSha384;
     ///
     /// let tag = HmacSha384::authenticate(b"shared secret", "UTF-8 message")?;
     /// assert_eq!(tag.as_bytes().len(), 48);
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     ///
     /// # Errors
@@ -207,7 +207,7 @@ impl HmacSha384 {
     /// # Examples
     ///
     /// ```
-    /// use rsl_crypto::{CryptoError, mac::hmac::sha384::HmacSha384};
+    /// use crypto::{CryptoError, mac::hmac::sha384::HmacSha384};
     ///
     /// let mut verifier = HmacSha384::new(b"right key")?;
     /// verifier.update(b"message")?;
@@ -215,7 +215,7 @@ impl HmacSha384 {
     ///     verifier.verify([0_u8; 32]),
     ///     Err(CryptoError::AuthenticationFailed),
     /// );
-    /// # Ok::<(), rsl_crypto::CryptoError>(())
+    /// # Ok::<(), crypto::CryptoError>(())
     /// ```
     pub fn verify(self, expected: impl AsRef<[u8]>) -> Result<()> {
         let computed = self.finalize();

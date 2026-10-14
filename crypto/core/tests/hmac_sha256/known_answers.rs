@@ -3,7 +3,7 @@
 //! The exact publication metadata and fixture-conversion policy are recorded in
 //! `tests/vectors/hmac-sha256/README.md`.
 
-use rsl_crypto::mac::hmac::sha256::HmacSha256;
+use crypto::mac::hmac::sha256::HmacSha256;
 
 use super::support::{assert_hmac_sha256, decode_hex};
 

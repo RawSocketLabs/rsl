@@ -2,7 +2,7 @@
 //! firmware tool (`tools/xmass_fwupd.c`) run against it ([`xmass_fwupd`]).
 //!
 //! The tool reaches the device only through `open`, `ioctl` and `close`, which
-//! `shim/xmass_fwupd.c` redirects here; rsl-usdr's port reaches the same [`FakeXmass`]
+//! `shim/xmass_fwupd.c` redirects here; usdr's port reaches the same [`FakeXmass`]
 //! through its `SwitchFlash` trait. Both drivers' requests land in one list, so they compare
 //! request for request.
 //!

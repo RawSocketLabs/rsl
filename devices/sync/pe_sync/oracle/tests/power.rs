@@ -1,8 +1,8 @@
 //! Power sequencing around the clock tree: `pe_sync_power_on` enables every supply before
 //! any chip is addressed, and close leaves every output it drove off.
 
-use rsl_pe_sync_oracle::Oracle;
-use rsl_pe_sync_sim::{Op, SimBoard};
+use pe_sync_oracle::Oracle;
+use pe_sync_sim::{Op, SimBoard};
 
 /// The supply banks `pe_sync_power_on` enables: `IGPO_IN_CTRL`, `IGPO_SY0_CTRL`,
 /// `IGPO_SY1_CTRL`, `IGPO_GEN_CTRL`, `IGPO_DISTRIB_CTRL`.

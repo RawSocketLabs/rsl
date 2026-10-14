@@ -5,9 +5,9 @@ DER transport, certificate meaning, and trust policy can evolve independently.
 
 | Crate | Owns | Direct foundation |
 |---|---|---|
-| [`rsl-asn1`](asn1/) | Strict DER tag/length/value transport and canonical encoding | `bitsandbytes` |
-| [`rsl-x509`](x509/) | Borrowed certificate fields, canonical construction, extensions, and exact `TBSCertificate` bytes | `rsl-asn1` |
-| [`rsl-pki`](validation/) | Signing-key adapters; trust anchors, path construction, constraints, purpose, and service identity | `rsl-x509` + `rsl-crypto` |
+| [`asn1`](asn1/) | Strict DER tag/length/value transport and canonical encoding | `bitsandbytes` |
+| [`x509`](x509/) | Borrowed certificate fields, canonical construction, extensions, and exact `TBSCertificate` bytes | `asn1` |
+| [`pki`](validation/) | Signing-key adapters; trust anchors, path construction, constraints, purpose, and service identity | `x509` + `crypto` |
 
 Only the transport layer uses `bitsandbytes` directly. Higher layers still benefit from its exact
 borrowed spans and bounded cursors without turning the codec into a certificate-policy library.
@@ -20,7 +20,7 @@ configurable path-search budgets remain available for interoperability work and 
 without being mislabeled as validated trust.
 
 Certificate construction follows the same split. Guided end-entity and CA typestates live in
-`rsl-x509`; `rsl-pki::issuance` adapts supported signing keys. Raw canonical names, SPKIs,
+`x509`; `pki::issuance` adapts supported signing keys. Raw canonical names, SPKIs,
 extensions, algorithms, and staged external signing remain available without turning a constructed
 certificate into trusted state.
 

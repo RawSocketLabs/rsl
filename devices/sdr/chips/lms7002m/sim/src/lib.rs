@@ -1,5 +1,5 @@
 //! The LMS7002M RF transceiver's SPI register file, shared by the simulated boards that
-//! carry the chip (`rsl-xsdr-sim`, `rsl-limesdr-sim`).
+//! carry the chip (`xsdr-sim`, `limesdr-sim`).
 //!
 //! Word format, from libusdr's register YAML (`hw/lms7002m/lms7002m.yaml`: `wr_mask:
 //! 0x80000000`, 16-bit address and data) and `gen/def_lms7002m.h` (`MAKE_LMS7002M_REG_WR`,

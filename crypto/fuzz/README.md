@@ -1,4 +1,4 @@
-# `rsl-crypto` fuzzing
+# `crypto` fuzzing
 
 Coverage-guided fuzzing of every **untrusted-input boundary** in the crate — the contract that
 parsers, verifiers, and authenticated decryption fed hostile or garbage bytes return `Ok`/`Err`

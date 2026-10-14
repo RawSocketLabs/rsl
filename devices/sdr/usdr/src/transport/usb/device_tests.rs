@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use num_complex::Complex;
-use rsl_usdr_sim::{Op, SimBoard};
+use usdr_sim::{Op, SimBoard};
 
 use super::{BoardRevision, BusError, StreamScript, simulated_device};
 use crate::Device;

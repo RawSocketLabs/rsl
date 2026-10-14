@@ -11,7 +11,7 @@
 //! address 0 (`VNDRID_BY1`, `VNDRID_BY0`, `PRODID`, `REVID` in `lmk5c33216.yaml`) and
 //! requires `10 0B 40 05`, then writes the register load in [`rom`] (a fixed
 //! configuration; libusdr notes a soft reset as still to do). The identification is the
-//! `SuperSync` probe's, in `rsl-sdr-frontend`; this driver writes the load.
+//! `SuperSync` probe's, in `sdr-frontend`; this driver writes the load.
 
 mod rom;
 

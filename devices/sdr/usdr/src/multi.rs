@@ -15,7 +15,7 @@ use std::fmt;
 use std::mem;
 use std::time::Duration;
 
-use rsl_deps::tracing::debug;
+use deps::tracing::debug;
 
 use crate::board::{Board, Direction};
 use crate::device::{Device, DeviceBuilder};

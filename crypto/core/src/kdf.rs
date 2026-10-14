@@ -13,7 +13,7 @@
 //! # Generic expansion
 //!
 //! ```
-//! use rsl_crypto::{Result, kdf::{KeyExpander, hkdf::sha256::extract}};
+//! use crypto::{Result, kdf::{KeyExpander, hkdf::sha256::extract}};
 //!
 //! fn derive_record_key<E: KeyExpander>(prk: &E) -> Result<[u8; 16]> {
 //!     let mut key = [0_u8; 16];
@@ -24,7 +24,7 @@
 //! let prk = extract(Some(b"public salt"), b"secret input keying material")?;
 //! let key = derive_record_key(&prk)?;
 //! assert_ne!(key, [0_u8; 16]);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 use crate::Result;

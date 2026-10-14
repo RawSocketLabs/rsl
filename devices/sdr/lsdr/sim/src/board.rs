@@ -196,7 +196,7 @@ impl SimBoard {
     /// Writes `write` to the device at `addr`, then reads `read_len` bytes in wire order.
     ///
     /// Neither libusdr transport reports a missing acknowledge, so an absent device is not
-    /// an error: as a sim choice (the same as `rsl-usdr-sim`'s), its reads return the
+    /// an error: as a sim choice (the same as `usdr-sim`'s), its reads return the
     /// idle-high bus, `0xff` per byte.
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
         let chip: Option<&mut dyn I2cChip> = match addr {

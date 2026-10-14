@@ -1,23 +1,23 @@
-//! rsl-xsdr's open, RFIC power-up and close against libusdr's, operation for operation, on
+//! xsdr's open, RFIC power-up and close against libusdr's, operation for operation, on
 //! fresh simulated boards.
 //!
 //! Each open includes its front-end probe on I2C bus 1 (`device_fe_probe`, through
-//! `rsl-sdr-frontend`), compared whole.
+//! `sdr-frontend`), compared whole.
 //!
 //! Whitelisted divergences, each confined to the scenario that shows it:
-//! - Variants rsl-xsdr identifies but does not bring up are refused after the HWID reads
+//! - Variants xsdr identifies but does not bring up are refused after the HWID reads
 //!   libusdr makes too; libusdr carries on.
 //! - A PMIC revision libusdr rejects: libusdr fails the power-up after holding the LMS7002M
-//!   in reset and reading the temperature sensor's ID for its log; rsl-xsdr refuses before
+//!   in reset and reading the temperature sensor's ID for its log; xsdr refuses before
 //!   any bus access.
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
 
-use rsl_xsdr::{Device, Error, FrontEndKind};
-use rsl_xsdr_oracle::Oracle;
-use rsl_xsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
+use xsdr::{Device, Error, FrontEndKind};
+use xsdr_oracle::Oracle;
+use xsdr_sim::{Op, SimBoard, Variant};
 
 /// `EINVAL`: `xsdr_init`'s refusal of an unknown device ID.
 const EINVAL: i32 = 22;
@@ -69,7 +69,7 @@ fn assert_same_ops(expected: &[Op], actual: &[Op], scenario: &str) {
         (0..expected.len().max(actual.len())).find(|&i| expected.get(i) != actual.get(i))
     {
         panic!(
-            "{scenario}: rsl-xsdr diverges from libusdr at op {at}: libusdr {}, rsl-xsdr {}",
+            "{scenario}: xsdr diverges from libusdr at op {at}: libusdr {}, xsdr {}",
             expected.get(at).map_or("(end)".into(), Op::to_string),
             actual.get(at).map_or("(end)".into(), Op::to_string),
         );
@@ -82,16 +82,16 @@ fn an_xsdr_session_matches_libusdr_front_end_probe_included() {
     assert_eq!(libusdr.power_up.1, Ok(()), "libusdr powers the RFIC up");
 
     let sim = SimBus::new(SimBoard::new(Variant::Xsdr));
-    let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
+    let mut device = Device::open(sim.clone()).expect("xsdr opens the XSDR");
     assert_eq!(
         device.front_end(),
         Some(FrontEndKind::Exm2pe { dac: false }),
         "libusdr's probe ends at the breakout without a DAC (`Detected external FE: exm2pe`)"
     );
     let opened = sim.board().trace().len();
-    device.power_up().expect("rsl-xsdr powers the RFIC up");
+    device.power_up().expect("xsdr powers the RFIC up");
     let powered = sim.board().trace().len();
-    device.close().expect("rsl-xsdr closes the XSDR");
+    device.close().expect("xsdr closes the XSDR");
 
     let board = sim.board();
     let trace = board.trace();
@@ -116,9 +116,9 @@ fn closing_an_xsdr_never_powered_up_matches_libusdrs_zeroed_chip_state() {
     );
 
     let sim = SimBus::new(SimBoard::new(Variant::Xsdr));
-    let device = Device::open(sim.clone()).expect("rsl-xsdr opens the XSDR");
+    let device = Device::open(sim.clone()).expect("xsdr opens the XSDR");
     let opened = sim.board().trace().len();
-    device.close().expect("rsl-xsdr closes the XSDR");
+    device.close().expect("xsdr closes the XSDR");
     assert_same_ops(&libusdr.close, &sim.board().trace()[opened..], "close");
 }
 
@@ -185,7 +185,7 @@ fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
     );
 
     let sim = SimBus::new(board());
-    let mut device = Device::open(sim.clone()).expect("rsl-xsdr opens it, as libusdr");
+    let mut device = Device::open(sim.clone()).expect("xsdr opens it, as libusdr");
     assert_same_ops(
         &libusdr.open,
         sim.board().trace(),
@@ -199,9 +199,9 @@ fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
     assert_eq!(
         sim.board().trace().len(),
         opened,
-        "rsl-xsdr's refusal drives nothing"
+        "xsdr's refusal drives nothing"
     );
-    device.close().expect("rsl-xsdr closes it");
+    device.close().expect("xsdr closes it");
     assert_same_ops(
         &libusdr.close,
         &sim.board().trace()[opened..],

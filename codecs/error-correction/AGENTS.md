@@ -1,4 +1,4 @@
-# rsl-error-correction
+# error-correction
 
 > Inherits the workspace-root `../../AGENTS.md`.
 

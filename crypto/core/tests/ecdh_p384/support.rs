@@ -1,6 +1,6 @@
 //! Mechanical conversion helpers for published hexadecimal fixtures.
 
-use rsl_crypto::agreement::ecdh_p384::EcdhP384PublicKey;
+use crypto::agreement::ecdh_p384::EcdhP384PublicKey;
 
 /// Decode exactly `2 * N` hexadecimal digits into their printed big-endian byte order.
 pub(crate) fn decode<const N: usize>(encoded: &str) -> [u8; N] {

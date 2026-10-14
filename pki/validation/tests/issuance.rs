@@ -1,11 +1,11 @@
 //! Standard-derived construction tests over the complete X.509 → crypto → validation path.
 
-use rsl_asn1::{Encoder, ObjectIdentifier};
-use rsl_crypto::signature::{
+use asn1::{Encoder, ObjectIdentifier};
+use crypto::signature::{
     ecdsa_p256::EcdsaP256SigningKey, ecdsa_p384::EcdsaP384SigningKey, ed448::Ed448SigningKey,
     ed25519::Ed25519SigningKey,
 };
-use rsl_pki::{
+use pki::{
     ErrorKind, PathValidator, Purpose, RequiredKeyUsage,
     issuance::{
         EcdsaP256CertificateSigner, EcdsaP384CertificateSigner, Ed448CertificateSigner,
@@ -13,7 +13,7 @@ use rsl_pki::{
     },
     verify_certificate_signature,
 };
-use rsl_x509::{
+use x509::{
     Certificate, Time,
     builder::{
         CertificateBuilder, ExtendedKeyPurpose, ExtensionDer, NameBuilder, NameDer,
@@ -29,10 +29,7 @@ fn time(year: u16) -> Time {
 fn assert_self_signed(der: &[u8]) {
     let certificate = Certificate::from_der(der).unwrap();
     assert_eq!(certificate.encoded(), der);
-    assert_eq!(
-        certificate.tbs_certificate().version(),
-        rsl_x509::Version::V3
-    );
+    assert_eq!(certificate.tbs_certificate().version(), x509::Version::V3);
     assert!(
         certificate
             .tbs_certificate()
@@ -221,7 +218,7 @@ fn guided_profiles_reject_invalid_inputs_and_duplicate_extensions() {
         .subject_public_key_info(signer.subject_public_key_info().unwrap());
     assert!(
         unsigned
-            .build_tbs(rsl_x509::builder::SignatureAlgorithmDer::ed25519().unwrap())
+            .build_tbs(x509::builder::SignatureAlgorithmDer::ed25519().unwrap())
             .is_err()
     );
 
@@ -241,7 +238,7 @@ fn guided_profiles_reject_invalid_inputs_and_duplicate_extensions() {
             .validity(time(2026), time(2027))
             .unwrap()
             .subject_public_key_info(signer.subject_public_key_info().unwrap())
-            .key_usage(rsl_x509::builder::KeyUsages::DIGITAL_SIGNATURE)
+            .key_usage(x509::builder::KeyUsages::DIGITAL_SIGNATURE)
             .is_err()
     );
     assert!(
@@ -250,7 +247,7 @@ fn guided_profiles_reject_invalid_inputs_and_duplicate_extensions() {
             .validity(time(2026), time(2027))
             .unwrap()
             .subject_public_key_info(signer.subject_public_key_info().unwrap())
-            .key_usage(rsl_x509::builder::KeyUsages::KEY_CERT_SIGN)
+            .key_usage(x509::builder::KeyUsages::KEY_CERT_SIGN)
             .is_err()
     );
 }
@@ -343,7 +340,7 @@ fn raw_spki_and_staged_signing_remain_available() {
         .validity(time(2026), time(2027))
         .unwrap()
         .subject_public_key_info(imported)
-        .build_tbs(rsl_x509::builder::SignatureAlgorithmDer::ed25519().unwrap())
+        .build_tbs(x509::builder::SignatureAlgorithmDer::ed25519().unwrap())
         .unwrap();
     let signature = key.sign(tbs.as_bytes()).unwrap();
     let der = tbs.finish(signature.as_bytes()).unwrap();

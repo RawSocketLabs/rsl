@@ -11,9 +11,9 @@ use std::num::NonZeroU32;
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use rsl_usdr::Device;
-use rsl_usdr::discipline::{OscillatorDiscipline, Outcome, PpsMeasurement};
-use rsl_usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
+use usdr::Device;
+use usdr::discipline::{OscillatorDiscipline, Outcome, PpsMeasurement};
+use usdr_sim::{BoardRevision, FrontEnd, Op, SimBoard};
 
 /// The frequency the counter should see: the tool's default sample rate.
 const EXPECTED: u32 = 4_000_000;

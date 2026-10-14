@@ -1,6 +1,6 @@
 //! Published ECDH P-384 evidence from RFC 5903 §8.2 and NIST CAVP ECC CDH primitive cases.
 
-use rsl_crypto::agreement::ecdh_p384::{EcdhP384, EcdhP384PrivateKey};
+use crypto::agreement::ecdh_p384::{EcdhP384, EcdhP384PrivateKey};
 
 use crate::{cavp_cdh_fixtures::CASES, support};
 

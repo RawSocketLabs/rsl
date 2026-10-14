@@ -1,4 +1,4 @@
-// libusdr low-level transport that forwards every operation to rsl-usdr-sim (Rust).
+// libusdr low-level transport that forwards every operation to usdr-sim (Rust).
 //
 // libusdr's plugin list is fixed at build time (lowlevel/usdr_lowlevel.c), so this file
 // supplies the three registration functions it calls: the USB entries never match a
@@ -123,7 +123,7 @@ enum { SIM_DMA_BUFFERS = 32, SIM_DMA_MAX_BLOCK = 1 << 20 };
 
 // Stream setup as the PCIe transport reports it (pcie_uram_main.c stream_initialize): stream
 // 0 is RX, 1 TX. The kernel's own register writes (buffer addresses, block size) sit below
-// the ls_op seam that rsl-usdr shares, so they are not traced.
+// the ls_op seam that usdr shares, so they are not traced.
 static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
                                  stream_t* channel)
 {
@@ -439,7 +439,7 @@ int rsl_oracle_pcie_devlayout(unsigned char* out, size_t len)
 }
 
 // The driver interface's sizes, offsets and request codes, from the header itself, each
-// named by the C expression that produced it, so rsl-usdr-pcie's facts are matched by name.
+// named by the C expression that produced it, so usdr-pcie's facts are matched by name.
 struct rsl_abi_fact {
     const char* name;
     unsigned long long value;
@@ -527,7 +527,7 @@ int rsl_oracle_flash_write(unsigned base, unsigned mmap_base, const uint8_t* in,
 // to a buffer the caller frees. Returns the tool's exit status. On hardware the tool's
 // lowlevel_create also brings the board up (and lowlevel_destroy powers it down); here its
 // device gets the board description (the flash base and master offset the tool reads) and
-// nothing else, so the board's trace holds the tool's own operations. rsl-usdr's flash
+// nothing else, so the board's trace holds the tool's own operations. usdr's flash
 // maintenance powers nothing either. Returns RSL_ORACLE_TOOL_SETUP_FAILED, which the tool
 // never does (its statuses are 0 to 9), with no log if its streams cannot be set up.
 int rsl_oracle_usdr_flash_main(int argc, char** argv);

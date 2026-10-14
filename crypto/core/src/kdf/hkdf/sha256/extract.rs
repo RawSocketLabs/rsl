@@ -29,11 +29,11 @@ const ABSENT_SALT: [u8; HASH_LEN] = [0; HASH_LEN];
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::kdf::hkdf::sha256::{HkdfSha256Prk, extract};
+/// use crypto::kdf::hkdf::sha256::{HkdfSha256Prk, extract};
 ///
 /// let prk: HkdfSha256Prk = extract(Some(b"public salt"), b"secret input")?;
 /// assert_eq!(prk.expose_secret().len(), HkdfSha256Prk::LEN);
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct HkdfSha256Prk(SecretBytes<HASH_LEN>);
 
@@ -63,12 +63,12 @@ impl HkdfSha256Prk {
 /// # Examples
 ///
 /// ```
-/// use rsl_crypto::kdf::hkdf::sha256::extract;
+/// use crypto::kdf::hkdf::sha256::extract;
 ///
 /// let salted = extract(Some(b"public salt"), b"secret input keying material")?;
 /// let unsalted = extract(None, b"secret input keying material")?;
 /// assert_ne!(salted.expose_secret(), unsalted.expose_secret());
-/// # Ok::<(), rsl_crypto::CryptoError>(())
+/// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub fn extract(salt: Option<&[u8]>, input_key_material: &[u8]) -> Result<HkdfSha256Prk> {
     let hmac_key = salt.unwrap_or(&ABSENT_SALT);

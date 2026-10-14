@@ -11,7 +11,7 @@
 //! generate real keys or nonces.
 //!
 //! ```
-//! use rsl_crypto::{Result, random::RandomSource};
+//! use crypto::{Result, random::RandomSource};
 //!
 //! struct DeterministicTestSource(u8);
 //!
@@ -29,7 +29,7 @@
 //! let mut bytes = [0_u8; 4];
 //! source.fill_bytes(&mut bytes)?;
 //! assert_eq!(bytes, [0, 1, 2, 3]);
-//! # Ok::<(), rsl_crypto::CryptoError>(())
+//! # Ok::<(), crypto::CryptoError>(())
 //! ```
 
 use crate::Result;
