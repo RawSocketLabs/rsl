@@ -43,7 +43,7 @@
 //! per block, each with its own `Reg` enum, in the portable tree (`portable/lms6002d`),
 //! with the cached state, its operations and the tuning and calibration machines, which
 //! the blocking driver here and the native USB handle both run. Register meanings come
-//! from libusdr's `hw/lms6002d/lms6002d.yaml` (vendored under `oracle/libusdr`), and the
+//! from libusdr's `hw/lms6002d/lms6002d.yaml` (vendored under `devices/vendor/libusdr`), and the
 //! values written come from `hw/lms6002d/lms6002d.c`.
 
 pub(crate) use crate::portable::lms6002d::Lna;

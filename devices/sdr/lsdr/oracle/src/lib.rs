@@ -1,6 +1,6 @@
 //! Runs wavelet-lab libusdr's `LSDr` (`m2_da09_4_ad45_2`) driver against a [`SimBoard`].
 //!
-//! libusdr (vendored once, in `../../usdr/oracle/libusdr/`, pinned by its `PIN`) is compiled
+//! libusdr (vendored once, in `../../../vendor/libusdr/`, pinned by its `PIN`) is compiled
 //! with its hardware transports replaced by `shim/sim_plugin.c`. That plugin reports the
 //! `LSDr` factory's device ID and forwards every low-level operation to the board installed
 //! by [`Oracle::open`]; libusdr's `usleep` advances the board's virtual clock. The board's

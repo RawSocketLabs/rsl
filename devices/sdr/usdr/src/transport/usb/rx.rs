@@ -11,7 +11,7 @@ use crate::lowlevel::{BusError, usb_error};
 const TRANSFERS: usize = 8;
 /// Matches the driver's existing maximum DMA block; bounds allocations to about 8 MiB.
 const MAX_BLOCK: usize = 1 << 20;
-/// `RX_PKT_TRAILER_EX`, at oracle/libusdr/PIN.
+/// `RX_PKT_TRAILER_EX`, at devices/vendor/libusdr/PIN.
 const TRAILER: usize = 16;
 
 /// Owned transfer boundary, implemented by the USB queue and hardware-free tests.

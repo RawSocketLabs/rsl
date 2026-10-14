@@ -19,10 +19,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-// Data copied from libusdr's `ipblks/fgearbox.c` (vendored under `oracle/libusdr`, pinned
-// in `oracle/libusdr/PIN`), under the MIT licence above. Never edit by hand: copy the arrays
-// named in each doc from that file. The sample-rate parity tests load every table and
-// compare each byte written with libusdr's.
+// Data copied from libusdr's `ipblks/fgearbox.c` (vendored under `devices/vendor/libusdr`,
+// pinned in `devices/vendor/libusdr/PIN`), under the MIT licence above. Never edit by hand:
+// copy the arrays named in each doc from that file. The sample-rate parity tests load every
+// table and compare each byte written with libusdr's.
 
 //! The FPGA rate changers' FIR microcode, one table per RX decimation and TX
 //! interpolation factor: 32 DSP lines of 40 bits, loaded a byte per register write.

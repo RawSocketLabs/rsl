@@ -420,7 +420,7 @@ fn tx_dc_offsets_match_libusdr() {
 /// oversized one silently writes another. usdr's [`TxDcOffset`] rejects it before any
 /// operation; what libusdr writes for one is the masked offset's write.
 #[test]
-fn oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
+fn oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_usdr() {
     let oversized = [2048, -2049, i16::MAX, i16::MIN, 0x1234];
     for value in oversized {
         assert_eq!(TxDcOffset::new(value), None, "{value} is rejected");

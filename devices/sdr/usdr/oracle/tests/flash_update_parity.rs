@@ -5,7 +5,7 @@
 //!
 //! The tool's device is not brought up or powered down around it (see `usdr_flash` in the
 //! oracle); everything between is compared. One intentional divergence is whitelisted:
-//! `a_corrupted_image_is_refused_before_rsl_usdr_reads_the_flash`. libusdr reports a
+//! `a_corrupted_image_is_refused_before_usdr_reads_the_flash`. libusdr reports a
 //! failed read-back and exits 0; usdr returns an error, which the oracle cannot show
 //! (the simulated flash programs faithfully), so `tests/flash_update.rs` covers it.
 
@@ -484,7 +484,7 @@ fn an_unrecognized_flash_stops_both() {
 }
 
 #[test]
-fn a_corrupted_image_is_refused_before_rsl_usdr_reads_the_flash() {
+fn a_corrupted_image_is_refused_before_usdr_reads_the_flash() {
     // Whitelisted divergence: libusdr reads the board first, then refuses the file;
     // usdr refuses it when the image is made, before any bus access. Neither writes.
     let mut bytes = Facts::master(NEW).bytes();

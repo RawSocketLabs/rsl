@@ -58,7 +58,7 @@ libusdr on fresh boards; divergences are whitelisted per scenario there and list
 
 One crate set per device, under the `sync` kind because PE_SYNC is not an SDR. There is
 **one vendored libusdr tree and one PIN**: `oracle/build.rs` compiles
-`../../../sdr/usdr/oracle/libusdr` by relative path (it already lists `pe_sync.c` and its
+`devices/vendor/libusdr` by relative path (it already lists `pe_sync.c` and its
 chip drivers). Never copy it here or edit it; a PIN bump there moves this oracle too and
 must re-bless the golden below in the same change. The shim copies the XSDR oracle's
 pattern; a shared harness is extracted later, once the oracles are stable.

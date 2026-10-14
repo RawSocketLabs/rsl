@@ -196,7 +196,7 @@ fn power_down_and_pga_gains_match_libusdr() {
 }
 
 #[test]
-fn a_pga_setting_past_31_is_clamped_by_libusdr_and_unrepresentable_in_rsl_lsdr() {
+fn a_pga_setting_past_31_is_clamped_by_libusdr_and_unrepresentable_in_lsdr() {
     assert_eq!(PgaGain::new(40), None);
     let clamped = libusdr(Variant::SingleAdc, c"", &[Step::Pga(40)]);
     let (rust, _) = lsdr(Variant::SingleAdc, OpenOptions::new(), &[Step::Pga(31)]);

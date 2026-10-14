@@ -3,7 +3,7 @@
 The PE_SYNC row of the programme ledger (`../../sdr/usdr/PORTING.md`, "PE_SYNC clock tree /
 distribution / synchronization") in detail. Same contract: **Present** means source
 exists, test names are definitions, not run results; nothing is hardware-qualified (U).
-Reference: `../../vendor/libusdr/PIN`; `C:` paths are relative to its `lib/`.
+Reference: `devices/vendor/libusdr/PIN`; `C:` paths are relative to its `lib/`.
 `O:` = `oracle/tests/`, `T:` = `tests/`, `P:` = `src/portable/`.
 
 Golden-line numbers refer to `oracle/tests/golden/session.trace` (characterization).

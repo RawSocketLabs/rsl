@@ -7,29 +7,26 @@
 stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
 ASN.1/X.509/PKI (`pki/*`), compression (`compression`), error correction (`error-correction`),
 RF parsing (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), and
-(excluded, FFI) `usdr` and `rust-dsdcc`. Crates are **published independently** but developed
+(excluded, FFI) `usdr-ffi` and `rust-dsdcc`. Crates are **published independently** but developed
 **in lockstep** — inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no
 git-rev pinning.
 
 ## Layout
 
+One directory per domain group; each crate's own `AGENTS.md` holds its detail.
+
 | Path | Crate(s) | Notes |
 |------|----------|-------|
-| `codecs/bitsandbytes/bnb`, `codecs/bitsandbytes/bnb-macros` | `bitsandbytes`, `bitsandbytes-macros` | the codec; `#![forbid(unsafe_code)]` |
-| `transports/rawsock/` | `rawsock` | L2/L3/L4 raw I/O via `rustix`; `#![deny(unsafe_code)]`, one confined `unsafe` fn (L2 bind) |
-| `transports/usb/` | `usb` | owned USB host access (enumerate, claim, queued bulk/interrupt, control); Linux usbfs backend, portable API; unpublished |
-| `crypto/core/` | `crypto` | accuracy-first cryptographic primitives; `no_std + alloc`, zero `unsafe` |
-| `crypto/legacy/` | `crypto-legacy` | opt-in historical/broken cryptography; never a default negotiation source |
-| `pki/asn1`, `pki/x509`, `pki/validation` | `asn1`, `x509`, `pki` | strict DER transport, certificate syntax, and path validation; `no_std + alloc`, zero `unsafe` |
-| `codecs/compression/` | `compression` | accuracy-first compression algorithms; `no_std + alloc`, zero `unsafe` |
-| `codecs/error-correction/` | `error-correction` | accuracy-first redundancy coding; `no_std + alloc`, zero `unsafe` |
-| `rf/rfus/` | `rfus` | RF/sample-rate parsing |
-| `devices/<kind>/<device>` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `xsdr`, `xsdr-sim`, `xsdr-oracle`, `lsdr`, `lsdr-sim`, `lsdr-oracle`, `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `limesdr`, `limesdr-sim`, `limesdr-oracle`, `lms7002m`, `lms7002m-sim`, `lmk05318`, `lp8758`, `sdr-frontend` | pure-Rust device drivers, grouped by kind (see `devices/AGENTS.md`). Now: `sdr/usdr` — the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, and the libusdr parity oracle (its own workspace: compiles vendored C); `sdr/xsdr` — the LMS7 family driver `xsdr` (unpublished; XSDR open with its front-end probe, RFIC power-up, sample rate, LO tuning, gains, bandwidths and close), `xsdr-sim`, `xsdr-oracle` (own workspace, compiles the uSDR oracle's vendored C) and its `no_std` portable-tree witness `nostd-check`; `sdr/lsdr` — the LSDr (receive-only ADC board) driver `lsdr` (unpublished; open with its front-end probe, ADC power, PGA gain and close), `lsdr-sim`, `lsdr-oracle` (own workspace, same vendored C) and its `no_std` portable-tree witness `nostd-check`; `sync/pe_sync` — the PE_SYNC clock-distribution board driver `pe-sync` (unpublished; libusdr's whole open and close), `pe-sync-sim`, `pe-sync-oracle` (likewise) and its `no_std` portable-tree witness `nostd-check`; `sdr/limesdr` — the LimeSDR-mini driver `limesdr` (unpublished; open over its LMS64C control channel, power-up and close; no FT601 transport yet), `limesdr-sim`, `limesdr-oracle` (likewise) and its `no_std` portable-tree witness `nostd-check`; `sdr/chips/lms7002m` — `lms7002m`, the LMS7002M register values and chip sequences (`no_std`), with `sim/` — `lms7002m-sim`, the LMS7002M model the XSDR and LimeSDR sims share; `sdr/chips/lmk05318` — `lmk05318`, the LMK05318 register values and frequency plans the uSDR front ends and PE_SYNC share (`no_std`); `sdr/chips/lp8758` — `lp8758`, the LP8758 PMIC register values (`no_std`); `sdr/frontend` — `sdr-frontend`, libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and the `pciefe` and `exm2pe` bring-ups, shared by the uSDR, XSDR and LSDr drivers (`no_std` core, blocking probe behind `std`) |
-| `devices/hal` | `hal` | the drivers' shared `ls_op` seam: bus addresses, typed registers, portable `Sequence`s; `no_std`, `Bus`/`BusError`/blocking executor behind `std`; unpublished |
+| `codecs/` | `bitsandbytes` + `bitsandbytes-macros` (`bitsandbytes/{bnb,bnb-macros}`), `compression`, `error-correction` | the bit-aware codec (`#![forbid(unsafe_code)]`) and accuracy-first compression and redundancy coding (`no_std + alloc`, zero `unsafe`) |
+| `crypto/` | `crypto` (`core/`), `crypto-legacy` (`legacy/`) | accuracy-first primitives (`no_std + alloc`, zero `unsafe`); opt-in historical/broken cryptography, never a default negotiation source; `fuzz/` is the group's detached fuzz workspace |
+| `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe` |
+| `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (`#![deny(unsafe_code)]`, one confined `unsafe` fn); owned USB host access over Linux usbfs (unpublished) |
+| `rf/` | `rfus` | RF/sample-rate parsing |
+| `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `deps` | blessed external-dependency stack |
-| `bindings/usdr/`, `bindings/dsdcc/`, `bindings/bladerf/` | `usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | **excluded** FFI workspaces (need native toolchains/libraries) |
+| `bindings/` | `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | **excluded** FFI workspaces (need native toolchains/libraries) |
 | `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)
@@ -45,7 +42,7 @@ git-rev pinning.
   `publish = false` until the registry decision flips on.
 - **Commits** — Conventional Commits (commitlint). **No `Co-Authored-By:` trailer.**
 
-## FFI members (`usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys`)
+## FFI members (`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`)
 
 Excluded from the default workspace build/CI (they need a C++ toolchain + system libs). Build
 them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external

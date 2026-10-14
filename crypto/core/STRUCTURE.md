@@ -5,7 +5,7 @@ identify algorithm families. Private modules hold the small operations needed to
 validate one algorithm.
 
 ```text
-crypto/
+crypto/core/
 ├── src/
 │   ├── digest/
 │   │   ├── mod.rs                 digest contract

@@ -23,7 +23,7 @@ generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 ## Layout decision (2026-10-12)
 
 One crate set per family, as for the LMS7 family (`../xsdr/`). There is **one vendored
-libusdr tree and one PIN**: `oracle/build.rs` compiles `../../usdr/oracle/libusdr` by
+libusdr tree and one PIN**: `oracle/build.rs` compiles `devices/vendor/libusdr` by
 relative path. Never copy it here or edit it; a PIN bump there moves this oracle too and
 must re-bless the goldens below in the same change. The shim and `oracle/src/lib.rs` copy
 the XSDR oracle's (itself the uSDR shim's pattern); a shared harness is extracted later. CI runs the oracle as the `lsdr-oracle`

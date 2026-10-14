@@ -8,7 +8,7 @@
 //!
 //! Whitelisted divergence: gateware with an RX or shared MMCM or a DUC/DDC is refused by
 //! xsdr before any bus access, where libusdr configures it
-//! (`gateware_rsl_xsdr_does_not_port_is_refused_before_any_access`).
+//! (`gateware_xsdr_does_not_port_is_refused_before_any_access`).
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
@@ -303,7 +303,7 @@ fn rx_on_lml_port_2_matches_libusdr() {
 }
 
 #[test]
-fn gateware_rsl_xsdr_does_not_port_is_refused_before_any_access() {
+fn gateware_xsdr_does_not_port_is_refused_before_any_access() {
     for phy in [0x10, 0x01, 0x04] {
         let sim = SimBus::new(SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | phy));
         let mut device = Device::open(sim.clone()).expect("opens");

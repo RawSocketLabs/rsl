@@ -1,6 +1,6 @@
 //! Runs wavelet-lab libusdr's `PE_SYNC` driver (`device/pe_sync`) against a [`SimBoard`].
 //!
-//! libusdr (vendored once, in `../../../sdr/usdr/oracle/libusdr/`, pinned by its `PIN`) is
+//! libusdr (vendored once, in `../../../vendor/libusdr/`, pinned by its `PIN`) is
 //! compiled with its hardware transports replaced by `shim/sim_plugin.c`. That plugin
 //! reports the `PE_SYNC` device ID and forwards every low-level operation to the board
 //! installed by [`Oracle::open`]; libusdr's `usleep` advances the board's virtual clock. The
