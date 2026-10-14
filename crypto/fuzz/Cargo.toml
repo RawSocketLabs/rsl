@@ -15,7 +15,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 
 [dependencies.rsl-crypto]
-path = ".."
+path = "../core"
 
 [[bin]]
 name = "aead_open"

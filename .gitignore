@@ -2,4 +2,4 @@ target/
 __pycache__/
 /bindings/usdr/Cargo.lock
 /bindings/dsdcc/Cargo.lock
-/bitsandbytes/bnb/nostd-check/Cargo.lock
+/codecs/bitsandbytes/bnb/nostd-check/Cargo.lock

@@ -18,7 +18,7 @@ x509-parser = { version = "0.18.1", default-features = false }
 path = "../asn1"
 
 [dependencies.rsl-crypto]
-path = "../../crypto"
+path = "../../crypto/core"
 
 [dependencies.rsl-pki]
 path = "../validation"

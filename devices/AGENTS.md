@@ -54,5 +54,5 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   ask of the board (antenna switches, `LimeLight` sample order) its `Frontend`. Board
   composition stays in drivers.
 - Transports any device can use (raw sockets, USB) are not devices: they live at the
-  workspace root (`rawsock/`, …), and drivers depend on them.
+  workspace root (`transports/rawsock/`, …), and drivers depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).

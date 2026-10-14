@@ -30,4 +30,4 @@ A crash drops a reproducer in `crypto/fuzz/artifacts/<target>/`; replay it by pa
 
 Fuzzing is engineering evidence, not a security proof: it does not observe timing, and it cannot
 show that an accepted input was cryptographically correct. Published vectors, Wycheproof suites,
-and differential tests in `crypto/tests/` cover correctness.
+and differential tests in `crypto/core/tests/` cover correctness.

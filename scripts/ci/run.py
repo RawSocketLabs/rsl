@@ -193,7 +193,7 @@ def main():
     if args.profile not in plan["profiles"]:
         raise ValueError("validation profile was not selected")
     if args.profile == "public-api":
-        snapshot = Path("bitsandbytes/bnb/public-api.txt")
+        snapshot = Path("codecs/bitsandbytes/bnb/public-api.txt")
         generated = subprocess.run(["cargo", "public-api", "-p", "bitsandbytes", "--all-features"],
                                    check=True, stdout=subprocess.PIPE).stdout
         if generated != snapshot.read_bytes():

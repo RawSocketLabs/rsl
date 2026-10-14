@@ -28,16 +28,16 @@ def fixture():
         MACROS: Package("bitsandbytes-macros", set()),
         BNB: Package("bitsandbytes", {MACROS}),
         SOCKS: Package("socks", {BNB}),
-        "compression": Package("rsl-compression", set()),
-        "crypto": Package("rsl-crypto", set()),
-        "crypto-legacy": Package("rsl-crypto-legacy", {"crypto"}),
+        "codecs/compression": Package("rsl-compression", set()),
+        "crypto/core": Package("rsl-crypto", set()),
+        "crypto/legacy": Package("rsl-crypto-legacy", {"crypto/core"}),
         "pki/asn1": Package("rsl-asn1", {BNB}),
         "pki/x509": Package("rsl-x509", {"pki/asn1"}),
-        "pki/validation": Package("rsl-pki", {"pki/x509", "crypto"}),
-        "rsl": Package("rsl", {"compression", "pki/validation"}),
-        "bitsandbytes/fuzz": Package("bnb-fuzz", {BNB}, False, ("decode", "stream_decode")),
-        "crypto/fuzz": Package("crypto-fuzz", {"crypto"}, False, ("aead_open",)),
-        "pki/fuzz": Package("pki-fuzz", {"pki/asn1", "pki/x509", "pki/validation", "crypto"},
+        "pki/validation": Package("rsl-pki", {"pki/x509", "crypto/core"}),
+        "rsl": Package("rsl", {"codecs/compression", "pki/validation"}),
+        "codecs/bitsandbytes/fuzz": Package("bnb-fuzz", {BNB}, False, ("decode", "stream_decode")),
+        "crypto/fuzz": Package("crypto-fuzz", {"crypto/core"}, False, ("aead_open",)),
+        "pki/fuzz": Package("pki-fuzz", {"pki/asn1", "pki/x509", "pki/validation", "crypto/core"},
                             False, ("certificate_parse",)),
         f"{SOCKS}/fuzz": Package("socks-fuzz", {SOCKS}, False, ("session",)),
         NOSTD: Package("nostd-check", {BNB}, False),
@@ -113,7 +113,7 @@ class SelectionTests(unittest.TestCase):
                     self.assertEqual(plan["fuzz"], [])
 
     def test_prose_does_not_select_rust_or_fuzz(self):
-        plan = planned(["bitsandbytes/bnb/DESIGN.md", "README.md", "bitsandbytes/docs/RELEASING.md"])
+        plan = planned(["codecs/bitsandbytes/bnb/DESIGN.md", "README.md", "codecs/bitsandbytes/docs/RELEASING.md"])
         self.assertEqual(plan["profiles"], [])
         self.assertEqual(plan["fuzz"], [])
         self.assertFalse(plan["full"])
@@ -125,13 +125,13 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(plan["fuzz"], [])
 
     def test_compression_covers_facade_but_not_facades_other_dependencies(self):
-        plan = planned(["compression/src/lib.rs"])
+        plan = planned(["codecs/compression/src/lib.rs"])
         self.assertEqual(plan["packages"], ["rsl", "rsl-compression"])
         self.assertIn("facades", plan["profiles"])
         self.assertEqual(plan["fuzz"], [])
 
     def test_crypto_covers_legacy_and_pki_consumers(self):
-        plan = planned(["crypto/src/lib.rs"])
+        plan = planned(["crypto/core/src/lib.rs"])
         self.assertEqual(set(plan["packages"]), {"rsl", "rsl-crypto", "rsl-crypto-legacy", "rsl-pki"})
         self.assertEqual(plan["fuzz"], [])
 
@@ -522,9 +522,9 @@ class SelectionTests(unittest.TestCase):
     def test_deleted_package_selects_remaining_old_consumers(self):
         old = fixture()
         new = copy.deepcopy(old)
-        del new["compression"]
-        new["rsl"].dependencies.remove("compression")
-        plan = select(["compression/src/lib.rs"], old, new)
+        del new["codecs/compression"]
+        new["rsl"].dependencies.remove("codecs/compression")
+        plan = select(["codecs/compression/src/lib.rs"], old, new)
         self.assertIn("rsl", plan["packages"])
         self.assertTrue(plan["full"])
 
@@ -543,7 +543,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_rename_checks_old_and_new_owners(self):
         graph = fixture()
-        plan = select(["compression/src/old.rs", "crypto/src/new.rs"], graph, graph)
+        plan = select(["codecs/compression/src/old.rs", "crypto/core/src/new.rs"], graph, graph)
         self.assertTrue({"rsl-compression", "rsl-crypto", "rsl-pki"} <= set(plan["packages"]))
 
     def test_development_dependency_cycles_terminate(self):
@@ -551,7 +551,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(set(affected_packages({"a": {"changed"}}, graph, graph)), {"a", "b"})
 
     def test_selection_is_deterministic_and_monotone(self):
-        a, b = f"{SOCKS}/src/lib.rs", "crypto/src/lib.rs"
+        a, b = f"{SOCKS}/src/lib.rs", "crypto/core/src/lib.rs"
         self.assertEqual(planned([a, b]), planned([b, a, b]))
         self.assertTrue(set(planned([a])["roots"]) <= set(planned([a, b])["roots"]))
 
@@ -564,7 +564,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_global_changes_cannot_widen_release_qualification(self):
         scoped = planned(release=True)
-        broad = planned(["Cargo.lock", "scripts/ci/plan.py", "crypto/src/lib.rs"], release=True)
+        broad = planned(["Cargo.lock", "scripts/ci/plan.py", "crypto/core/src/lib.rs"], release=True)
         self.assertIn("rsl-crypto", broad["packages"])
         for key in ("products", "release_members", "release_roots", "release_packages", "fuzz"):
             self.assertEqual(scoped[key], broad[key], key)
