@@ -24,7 +24,7 @@ hardware-qualified.
 ## Layout decision (2026-10-12)
 
 One crate set per family, as for XSDR. There is **one vendored libusdr tree and one PIN**:
-`oracle/build.rs` compiles `../../usdr/oracle/libusdr` by relative path (its `sources.txt`
+`oracle/build.rs` compiles `devices/vendor/libusdr` by relative path (its `sources.txt`
 already lists `device/u3_limesdr/*`, `ipblks/lms64c_proto.c` and `stream_limesdr.c`).
 Never copy it here or edit it; a PIN bump there must re-bless the golden below in the same
 change. The shim copies the XSDR shim's pattern. The LMS7002M model moved to
@@ -211,7 +211,7 @@ is process-global.
 - The FT601 transport C (`lowlevel/usb_ft601/usb_ft601_{generic,libusb}.c`) is not
   vendored, so the `ls_op` → LMS64C mapping, transport-level open traffic (board info,
   FIFO reset) and FT601 framing are unverified, and `limesdr` has no hardware
-  `ControlPort`. Vendoring it (a PIN-subset change in `../../vendor/vendor.sh`) turns the
+  `ControlPort`. Vendoring it (a PIN-subset change in `devices/vendor/vendor.sh`) turns the
   shim assumptions above into evidence and lets an FT601 port over `usb` be framed
   against the C.
 - Firmware semantics (reply layout, write-flag handling, reset levels) and gateware

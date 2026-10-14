@@ -25,7 +25,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 ## Layout decision (2026-10-12)
 
 One crate set per family, so this family lives in `devices/sdr/xsdr/`. There is **one
-vendored libusdr tree and one PIN**: `oracle/build.rs` compiles `../../usdr/oracle/libusdr`
+vendored libusdr tree and one PIN**: `oracle/build.rs` compiles `devices/vendor/libusdr`
 by relative path. Never copy it here or edit it; a PIN bump there moves this oracle too and
 must re-bless the goldens below in the same change. The shim copies the uSDR shim's
 pattern instead of sharing it; a shared harness is extracted later, once both are stable.
@@ -218,7 +218,7 @@ by a lock: one is open at a time per process.
   feedback dividers up to 126 at low rates.
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
   `xsdr-portable` (host only); a change to `xsdr` or to the shared crates it builds on
-  (`sdr-frontend` included) selects both, a change to the uSDR oracle's vendored C
+  (`sdr-frontend` included) selects both, a change to the vendored C (`devices/vendor`)
   only the oracle (`scripts/ci/plan.py`). Their thumbv7em checks (fixture,
   `lms7002m`, `sdr-frontend`) join the
   release-only `no-std` profile on an explicit XSDR release, which no product enables yet.

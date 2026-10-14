@@ -1,5 +1,5 @@
 //! Si5332 clock generator (source: `hw/si5332/si5332.c`; register meanings from libusdr's
-//! `hw/si5332/si5332.yaml`, vendored under `oracle/libusdr`).
+//! `hw/si5332/si5332.yaml`, vendored under `devices/vendor/libusdr`).
 //!
 //! On the uSDR it turns the reference into the PLL, RX and TX clocks, and drives the external RX
 //! mixer's LO on output 3.

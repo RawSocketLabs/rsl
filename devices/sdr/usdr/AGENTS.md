@@ -307,9 +307,9 @@ Each layer calls only the ones below it.
 
 - libusdr is the reference until hardware is available. Behaviour the Rust driver ports must
   first be exercised through the oracle against `sim`, then matched.
-- The vendored subset under `../../vendor/libusdr/` is never edited by hand. Refresh it with
-  `../../vendor/vendor.sh <usdr-lib checkout>` at the commit in `../../vendor/libusdr/PIN`. Bump the PIN
-  in its own change. Three tools come along verbatim (`../../vendor/libusdr/tools/`); of them,
+- The vendored subset under `devices/vendor/libusdr/` is never edited by hand. Refresh it with
+  `devices/vendor/vendor.sh <usdr-lib checkout>` at the commit in `devices/vendor/libusdr/PIN`. Bump the PIN
+  in its own change. Three tools come along verbatim (`devices/vendor/libusdr/tools/`); of them,
   `usdr_dm_create.c` and `usdr_dm_gpsdo.c` reach `oracle/shim/{dm_create,gpsdo}.c`, which compile each
   whole with its `main` renamed, the gpsdo shim redirecting the tool's I/O, set-up and
   clock by macro before including it, and build them and `sincos_functions.c` with
@@ -388,23 +388,23 @@ Each layer calls only the ones below it.
   (its header-length underflow, its staging `assert`), so `tests/flash.rs` covers them.
   The gateware update refuses a corrupt image file when the `Image` is made, before any
   bus access, where libusdr's flash tool reads the board first
-  (`flash_update_parity.rs::a_corrupted_image_is_refused_before_rsl_usdr_reads_the_flash`);
+  (`flash_update_parity.rs::a_corrupted_image_is_refused_before_usdr_reads_the_flash`);
   reports a failed read-back as an error, where the tool exits 0; and refuses files past
   16 MiB, which the tool reads past its buffer (`tests/flash_update.rs`). The oracle runs
   the tool on a device that is not brought up or powered down, as `Flash` powers nothing.
   The XMASS switch firmware update refuses an image file longer than 64 KiB, which
   libusdr's `xmass_fwupd` cuts to its first 64 KiB and flashes
-  (`xmass_firmware_parity.rs::a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr`), and
+  (`xmass_firmware_parity.rs::a_long_file_is_cut_by_libusdr_and_refused_by_usdr`), and
   accepts a request only at its exact success value (0, or 1 for the read), where the tool
   takes any non-negative return as success
-  (`xmass_firmware_parity.rs::a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr`).
+  (`xmass_firmware_parity.rs::a_read_returning_a_failure_code_passes_libusdr_and_fails_usdr`).
   The RX controls reject trim codes libusdr masks to seven bits (`RxTrim`;
-  `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr`)
+  `rx_controls_parity.rs::oversized_trims_are_masked_by_libusdr_and_rejected_by_usdr`)
   and refuse, with a fixed low band, a frequency whose LO plus the mixer LO passes
   `u32::MAX`, where libusdr's double-to-`unsigned` conversion is undefined
   (`rx_controls_parity.rs::a_low_band_lo_past_u32_is_refused_where_libusdr_wraps_it`).
   The TX controls reject DC offsets libusdr masks to 12 bits (`TxDcOffset`;
-  `tx_controls_parity.rs::oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_rsl_usdr`).
+  `tx_controls_parity.rs::oversized_tx_dc_offsets_are_masked_by_libusdr_and_rejected_by_usdr`).
   The raw chip debug write names the `TPS6381x` register asked for, where libusdr leaves
   its write flag in the address byte and writes `reg | 0x80`
   (`diagnostics_parity.rs::a_tps6381x_debug_write_reaches_the_register_libusdr_misaddresses`).

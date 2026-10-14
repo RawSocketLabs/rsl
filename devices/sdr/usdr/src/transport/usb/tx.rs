@@ -1,6 +1,6 @@
 //! Queued USB TX blocks: libusdr's 16-byte header, then the samples, on endpoint 0x03.
 //!
-//! Source: `lowlevel/usb_uram/usb_uram_libusb.c` at oracle/libusdr/PIN
+//! Source: `lowlevel/usb_uram/usb_uram_libusb.c` at devices/vendor/libusdr/PIN
 //! (`_usb_uram_init_txstream`, `usb_uram_send_dma_get`, `usb_uram_send_dma_commit`,
 //! `usb_uram_stream_deinitialize`). The header carries the block's length and time, so
 //! the gateware learns of a block from its transfer, not from the TX core's registers.

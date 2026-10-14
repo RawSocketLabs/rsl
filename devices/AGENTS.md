@@ -5,12 +5,29 @@
 
 **What this is.** Pure-Rust drivers for hardware, grouped by kind: `devices/<kind>/<device>`,
 for example `sdr/usdr`. A driver's simulator, oracle and driver-interface crates live inside
-its directory (`sdr/usdr/{sim,pcie,oracle}`).
+its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
+
+## Layout
+
+| Path | Crate(s) | Notes |
+|------|----------|-------|
+| `hal/` | `hal` | the drivers' shared `ls_op` seam: bus addresses, typed registers, portable `Sequence`s; `no_std`, `Bus`/`BusError`/blocking executor behind `std` |
+| `chips/lmk05318/` | `lmk05318` | the LMK05318 register values and frequency plans the uSDR front ends and PE_SYNC share (`no_std`) |
+| `vendor/` | none | `libusdr/`, the vendored libusdr C subset every oracle compiles (one tree, one PIN), and `vendor.sh`, its refresh script |
+| `sdr/usdr/` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `usdr-nostd-check` | the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, the libusdr parity oracle (own workspace: compiles the vendored C) and its `no_std` portable-tree witness |
+| `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR open with its front-end probe, RFIC power-up, sample rate, LO tuning, gains, bandwidths and close; oracle and witness as above |
+| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe, ADC power, PGA gain and close |
+| `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up and close; no FT601 transport yet |
+| `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
+| `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
+| `sdr/frontend/` | `sdr-frontend` | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and the `pciefe` and `exm2pe` bring-ups, shared by the uSDR, XSDR and LSDr drivers (`no_std` core, blocking probe behind `std`) |
+| `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
 
 ## Layout rules
 
 - A new driver goes under the kind it is (`sdr/`, …); add a kind when the first device of it
-  arrives. Crate names stay `rsl-<device>` (`usdr`), independent of the path.
+  arrives. A crate is named for its device (`usdr`, `usdr-sim`), independent of the path,
+  with no `rsl-` prefix.
 - Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
   lives in `devices/<kind>/` once a second driver needs it, not before. The first is
@@ -37,7 +54,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   (2026-10-13; likewise). The chips only front-end boards carry (TCA6416, TCA9555,
   `DACx0501`) sit in `sdr-frontend` until a driver needs one directly (the XTRX's
   DAC80501 trim would move it to `sdr/chips/dac80501`).
-- A chip drivers of both kinds use stays under the kind that used it first:
+- A chip drivers of more than one kind use goes under `devices/chips/<chip>/`:
   `chips/lmk05318` (`lmk05318`) serves the uSDR's front ends and PE_SYNC (and
   `sdr-frontend`'s `SimpleSync` ID check).
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
@@ -53,6 +70,12 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   `lms7002_dev_t`, each operation a sans-I/O `Operation`, and what libusdr's callbacks
   ask of the board (antenna switches, `LimeLight` sample order) its `Frontend`. Board
   composition stays in drivers.
-- Transports any device can use (raw sockets, USB) are not devices: they live at the
-  workspace root (`transports/rawsock/`, …), and drivers depend on them.
-- FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`).
+- Vendored vendor-library C lives under `devices/vendor/`, not inside one oracle: there is
+  one libusdr tree and one PIN (`vendor/libusdr/PIN`), compiled by every oracle by relative
+  path. Never edit it by hand; refresh it with `vendor/vendor.sh`, and bump the PIN in its
+  own change.
+- Transports any device can use (raw sockets, USB) are not devices: they live under
+  `transports/` at the workspace root (`transports/rawsock`, `transports/usb`), and drivers
+  depend on them.
+- FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`,
+  crate `usdr-ffi`).

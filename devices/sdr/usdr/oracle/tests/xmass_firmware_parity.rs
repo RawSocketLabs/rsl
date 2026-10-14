@@ -6,8 +6,8 @@
 //! The request codes themselves are checked against the driver header by `pcie_abi.rs`;
 //! the fake decodes the tool's with the header's, so a code the tool got wrong shows here
 //! as a request the driver does not know. Two divergences are whitelisted:
-//! `a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr` and
-//! `a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr`.
+//! `a_long_file_is_cut_by_libusdr_and_refused_by_usdr` and
+//! `a_read_returning_a_failure_code_passes_libusdr_and_fails_usdr`.
 
 use std::fs;
 use std::io;
@@ -148,7 +148,7 @@ fn an_update_makes_libusdrs_requests_in_its_order() {
 }
 
 #[test]
-fn info_prints_the_ids_rsl_usdr_reads() {
+fn info_prints_the_ids_usdr_reads() {
     let tool = xmass_fwupd(device(), NODE, &["info", NODE]);
     assert_eq!(tool.status, 0, "the tool succeeds:\n{}", tool.log);
     let mut ours = device();
@@ -233,7 +233,7 @@ fn a_short_file_is_refused_by_both_before_the_device_is_opened() {
 /// Whitelisted divergence: the tool reads the first 64 KiB of a longer file and flashes
 /// them; usdr refuses the file, as it cannot tell a padded image from a wrong one.
 #[test]
-fn a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr() {
+fn a_long_file_is_cut_by_libusdr_and_refused_by_usdr() {
     let image = pattern(9);
     let mut long = image.to_vec();
     long.push(0);
@@ -268,7 +268,7 @@ fn a_long_file_is_cut_by_libusdr_and_refused_by_rsl_usdr() {
 /// so the tool verifies the image against itself; usdr accepts only the read's
 /// success value.
 #[test]
-fn a_read_returning_a_failure_code_passes_libusdr_and_fails_rsl_usdr() {
+fn a_read_returning_a_failure_code_passes_libusdr_and_fails_usdr() {
     const PCI_CONFIG_FAILURE: i32 = 0x87;
     let image = pattern(9);
     let device = device().returning(3, PCI_CONFIG_FAILURE);

@@ -1,6 +1,6 @@
 //! Runs wavelet-lab libusdr's LimeSDR-mini (`u3_limesdr`) driver against a [`SimBoard`].
 //!
-//! libusdr (vendored once, in `../../usdr/oracle/libusdr/`, pinned by its `PIN`) is compiled
+//! libusdr (vendored once, in `../../../vendor/libusdr/`, pinned by its `PIN`) is compiled
 //! with its hardware transports replaced by `shim/sim_plugin.c`. That plugin stands in for
 //! the FT601 USB transport: it reports the `U3_LIMESDR` device ID, turns each low-level
 //! operation into LMS64C frames with libusdr's own `lms64c_proto.c`, and hands every frame

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 //
 // Transcribed from `pcie_uram_driver_if.h` (vendored under
-// `oracle/libusdr/lib/lowlevel/pcie_uram/`), dual-licensed (GPL-2.0 WITH Linux-syscall-note)
-// OR MIT; taken under MIT. The oracle checks every size, offset and opcode here against
-// that header.
+// `devices/vendor/libusdr/lib/lowlevel/pcie_uram/`), dual-licensed (GPL-2.0 WITH
+// Linux-syscall-note) OR MIT; taken under MIT. The oracle checks every size, offset and
+// opcode here against that header.
 
 //! The `usdr_pcie_uram` driver's ioctl structures and request codes.
 //!

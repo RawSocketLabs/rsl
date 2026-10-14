@@ -425,7 +425,7 @@ fn rx_dc_and_ip2_trims_match_libusdr() {
 /// another. usdr's [`RxTrim`] rejects it before any operation. What libusdr writes
 /// for one is the masked code's write.
 #[test]
-fn oversized_trims_are_masked_by_libusdr_and_rejected_by_rsl_usdr() {
+fn oversized_trims_are_masked_by_libusdr_and_rejected_by_usdr() {
     for code in 0x80..=u8::MAX {
         assert_eq!(RxTrim::new(code), None, "{code:#x} is rejected");
     }

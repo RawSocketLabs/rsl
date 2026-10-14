@@ -9,7 +9,8 @@ no cross-repo version pinning to keep in sync.
 
 - **`bitsandbytes`** (`codecs/bitsandbytes/bnb`) + **`bitsandbytes-macros`** — the owned, bit-aware
   binary codec (imported as `bnb`). `no_std`, zero `unsafe`.
-- **`rawsock`** — dual-use, layered raw-packet I/O (L2/L3/L4).
+- **`rawsock`** (`transports/rawsock`) — dual-use, layered raw-packet I/O (L2/L3/L4).
+- **`usb`** (`transports/usb`) — owned USB host access (Linux usbfs backend; unpublished).
 - **`crypto`** (`crypto/core/`) — accuracy-first cryptographic primitives and protection
   contracts, including a readable AES-128-GCM path designed to make every byte transformation
   inspectable and independently testable.
@@ -21,14 +22,16 @@ no cross-repo version pinning to keep in sync.
 - **`compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.
 - **`error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
-- **`rfus`** — RF frequency / sample-rate / scan-target parsing.
+- **`rfus`** (`rf/rfus`) — RF frequency / sample-rate / scan-target parsing.
+- **`devices/*`** — pure-Rust device drivers with their simulators, parity oracles and shared
+  chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
   crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, and `dns`, plus
   **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
 - **`deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
-- **`usdr`, `rust-dsdcc`, `bladerf`, `bladerf-sys`** (`bindings/*`) — FFI/SDR bindings
+- **`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`** (`bindings/*`) — FFI/SDR bindings
   (excluded from the default build; need native toolchains/libraries).
 
 ## Engineering tooling
