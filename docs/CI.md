@@ -98,6 +98,10 @@ dashes); `lmk05318` is a registered bare-metal device crate. No PE_SYNC product 
 release-enabled. Its oracle runs as `pe-sync-oracle`, which a change to `pe-sync` or
 `lmk05318` selects too.
 
+All five device oracles compile the one vendored libusdr tree, `devices/vendor/libusdr`
+(refreshed by `devices/vendor/vendor.sh`); a change under `devices/vendor/` selects every
+oracle profile and no driver package. The FFI bindings' compile check runs as `usdr-ffi`.
+
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
 | Ordinary allowlisted prose | No Rust setup, builds, or fuzzing |
