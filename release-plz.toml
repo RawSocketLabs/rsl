@@ -44,8 +44,10 @@ release = true
 publish = true
 version_group = "bitsandbytes"
 
-# Preserve netlink's registry opt-in, but inherit release = false. Re-enabling
-# requires review of its breaking synchronous-transport change and version.
+# Preserve netlink's registry opt-in, but inherit release = false. The opt-in now targets the
+# crates.io name `netlink` (previously `rsl-netlink`, CHANGELOG 0.1.0), which needs a
+# name-ownership check before `release` is enabled. Re-enabling also requires review of its
+# breaking synchronous-transport change and version.
 [[package]]
 name = "netlink"
 publish = true

@@ -5,8 +5,7 @@ route-netlink and generic-netlink operations, including sequence/ACK/multipart
 validation, extended acknowledgements, typed network configuration, and WireGuard device state.
 
 Netlink is a Linux kernel/userspace socket protocol rather than an OSI network layer, so the crate
-lives under `protocols/system`. Its package and Rust import names remain `netlink` and
-`netlink`.
+lives under `protocols/system`. Its package and import name is `netlink`.
 
 The controlling wire definitions are the Linux UAPI headers and the
 [Linux kernel Netlink documentation](https://www.kernel.org/doc/html/latest/userspace-api/netlink/).

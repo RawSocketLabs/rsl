@@ -37,7 +37,7 @@ State which commands actually ran and which evidence remains unavailable.
 
 - Exact MSRV and current-development toolchain: `[required]`
 - First-class targets and native-test expectations: `[required]`
-- Dependency policy and whether `deps` is adopted: `[required]`
+- Dependency policy and whether `rsl-deps` is adopted: `[required]`
 - Feature combinations required in CI: `[if applicable]`
 
 Discuss material dependency changes before editing manifests. A change is
