@@ -15,7 +15,7 @@ resolver = "3"
 [dependencies]
 # scripts/ci/portable.py checks these declarations against the actual driver/workspace.
 lms7002m = { path = "../../chips/lms7002m", version = "0.0.0", default-features = false }
-rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
+hal = { path = "../../../hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "../../chips/lp8758", version = "0.0.0", default-features = false }
 
 [lints.rust]

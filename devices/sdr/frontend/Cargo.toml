@@ -11,12 +11,12 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 lmk05318.workspace = true
-rsl-lowlevel.workspace = true
+hal.workspace = true
 thiserror = { workspace = true, optional = true }
 
 [features]
-## The blocking probe over `rsl-lowlevel`'s `Bus`, the boards' bring-ups and `Error`.
-std = ["rsl-lowlevel/std", "dep:thiserror"]
+## The blocking probe over `hal`'s `Bus`, the boards' bring-ups and `Error`.
+std = ["hal/std", "dep:thiserror"]
 
 [lints]
 workspace = true

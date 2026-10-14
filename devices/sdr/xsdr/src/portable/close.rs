@@ -7,8 +7,8 @@
 //! powered down. The chip operations come from `lms7002m`; the order, and which
 //! failures end the close, are the family's.
 
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 use lms7002m::{Batch, Lms7002m, Mac, RxMode, RxPath, Tsp, TxMode, TxPath};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, TX_MMCM_POWER_DOWN};
 use super::outcome::outcome;
@@ -110,7 +110,7 @@ impl Sequence for Close {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{Access, SpiAddr};
+    use hal::{Access, SpiAddr};
 
     use super::*;
 

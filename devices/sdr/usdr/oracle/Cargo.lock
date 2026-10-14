@@ -72,6 +72,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "hal"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -111,7 +118,7 @@ name = "lp8758"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -178,13 +185,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
 name = "rustix"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -202,8 +202,8 @@ name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lmk05318",
- "rsl-lowlevel",
  "thiserror",
 ]
 
@@ -356,10 +356,10 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "deps",
+ "hal",
  "lmk05318",
  "lp8758",
  "num-complex",
- "rsl-lowlevel",
  "sdr-frontend",
  "thiserror",
  "usb",

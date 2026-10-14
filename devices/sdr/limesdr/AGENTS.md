@@ -14,7 +14,7 @@ hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `limesdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `lms7002m` |
+| `.` | `limesdr` (unpublished, root workspace member) | The driver, on `hal` and `lms7002m` |
 | `sim/` | `limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M, virtual clock, trace of frames and decoded register operations |
 | `oracle/` | `limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c`, and its `lms64c_proto.c` builder and parser called directly |
 | `nostd-check/` | `limesdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py limesdr` holds its dependencies to the driver's |
@@ -40,7 +40,7 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   control channel (`Box<dyn ControlPort>`) and runs the portable open, one LMS64C exchange
   per operation.
 - `src/control.rs`: `ControlPort`, the transport seam: one 64-byte request and its reply at
-  a time, plus sleep; `rsl-lowlevel`'s `BusError`, re-exported. Unlike `xsdr`'s `Bus`,
+  a time, plus sleep; `hal`'s `BusError`, re-exported. Unlike `xsdr`'s `Bus`,
   it is not libusdr's `ls_op`: on this board the firmware's LMS64C frames are the wire, and
   which frame carries which operation is the driver's (`portable/lsop.rs`).
 - `src/portable/`: core only, no allocation, imports within the tree and the shared
@@ -211,7 +211,7 @@ is process-global.
 - The FT601 transport C (`lowlevel/usb_ft601/usb_ft601_{generic,libusb}.c`) is not
   vendored, so the `ls_op` → LMS64C mapping, transport-level open traffic (board info,
   FIFO reset) and FT601 framing are unverified, and `limesdr` has no hardware
-  `ControlPort`. Vendoring it (a PIN-subset change in `../usdr/oracle/vendor.sh`) turns the
+  `ControlPort`. Vendoring it (a PIN-subset change in `../../vendor/vendor.sh`) turns the
   shim assumptions above into evidence and lets an FT601 port over `usb` be framed
   against the C.
 - Firmware semantics (reply layout, write-flag handling, reset levels) and gateware

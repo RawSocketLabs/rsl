@@ -4,7 +4,7 @@
 //! it (later calls never built).
 
 use bnb::u3;
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use crate::batch::Batch;
 use crate::chip::{

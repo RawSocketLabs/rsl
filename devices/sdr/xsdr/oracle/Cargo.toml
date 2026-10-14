@@ -21,7 +21,7 @@ thiserror = "2.0"
 [dev-dependencies]
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb", default-features = false }
 lms7002m = { path = "../../chips/lms7002m" }
-rsl-lowlevel = { path = "../../../lowlevel", features = ["std"] }
+hal = { path = "../../../hal", features = ["std"] }
 xsdr = { path = ".." }
 
 [build-dependencies]

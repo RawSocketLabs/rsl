@@ -7,8 +7,8 @@
 
 use core::time::Duration;
 
+use hal::{Sequence, SequenceAction, SequenceFailure};
 use lms7002m::{Create, Lms7002m, ResetPlan};
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE};
 use super::outcome::outcome;
@@ -119,7 +119,7 @@ impl Sequence for PowerUp {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, SpiAddr};
+    use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
 

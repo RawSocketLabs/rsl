@@ -5,12 +5,12 @@
 //! (`MAKE_LMK04832_RDREG`), the 15-bit register address in bits 22:8, data in bits 7:0; a
 //! read keeps the low byte of the word returned. The generated header and YAML put the read
 //! bit at 31 instead; the presence test does not use them. Register and field names are the
-//! vendored YAML's; its 15-bit addresses do not fit `rsl-lowlevel`'s 8-bit register traits,
+//! vendored YAML's; its 15-bit addresses do not fit `hal`'s 8-bit register traits,
 //! so values here are plain bytes. Chip-level code: it moves to a shared
 //! `devices/sdr/chips/lmk04832` crate when a second driver needs it (`PORTING.md`).
 
 use bnb::{bitfield, u3};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::outcome::outcome;
 

@@ -1,6 +1,6 @@
 //! Typed 16-bit registers: a value type names its address.
 //!
-//! `rsl-lowlevel`'s [`Register`](rsl_lowlevel::Register) traits are 8-bit, so the LMS7002M,
+//! `hal`'s [`Register`](hal::Register) traits are 8-bit, so the LMS7002M,
 //! with 15-bit addresses and 16-bit registers, has its own, as `usdr`'s LMK05318 does.
 
 use super::reg::Reg;

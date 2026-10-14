@@ -15,7 +15,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `lp8758`, `lms7002m` and `sdr-frontend` (`../frontend`, the front-end board probe) |
+| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m` and `sdr-frontend` (`../frontend`, the front-end board probe) |
 | `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
 | `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
@@ -39,7 +39,7 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   `set_gain`, `set_bandwidth` and `close`. It owns the bus (`Box<dyn Bus>`), the LMS7002M
   control state (`lms7002m::ctrl::Control`, its chip cache zeroed until a power-up
   creates it) and the board's rate and LO state, and runs the portable sequences and
-  control operations with `rsl-lowlevel`'s blocking `run_sequence`, keeping the state an
+  control operations with `hal`'s blocking `run_sequence`, keeping the state an
   operation leaves even when it fails.
 - `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`,
   `REFERENCE_HZ`), each citing the libusdr call it reproduces.
@@ -56,7 +56,7 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   `portable/frontend`). The `PCIe` front end and the breakout come up whole there
   (`Device::front_end`); XMASS, `SuperSync` and `SimpleSync` need `usdr`'s LMK
   bring-ups, so one that answers fails open with `Error::FrontEndNotPorted`.
-- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `xsdr-sim`; the oracle's parity tests include
   it with `#[path]`.
 

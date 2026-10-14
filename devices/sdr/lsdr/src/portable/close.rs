@@ -7,7 +7,7 @@
 //! writes come after their supply is cut, an order in which real hardware may lose them;
 //! the order is libusdr's.
 
-use rsl_lowlevel::{Register, RegisterAccess, SequenceAction};
+use hal::{Register, RegisterAccess, SequenceAction};
 
 use super::ads42lbx9::{self, PowerControl};
 use super::si549::{self, OutputControl};

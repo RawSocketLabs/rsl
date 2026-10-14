@@ -1,7 +1,7 @@
 //! The four converter channels: each one's control and output-voltage registers.
 
 use bnb::bitfield;
-use rsl_lowlevel::IndexedRegister;
+use hal::IndexedRegister;
 
 use super::reg::Reg;
 

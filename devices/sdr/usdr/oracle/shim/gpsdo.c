@@ -311,7 +311,7 @@ static int rsl_gpsdo_fprintf(FILE* stream, const char* format, ...)
 #define printf rsl_gpsdo_printf
 #define fprintf rsl_gpsdo_fprintf
 #define main rsl_gpsdo_main
-#include "../libusdr/tools/usdr_dm_gpsdo.c"
+#include "../../../../vendor/libusdr/tools/usdr_dm_gpsdo.c"
 #undef main
 
 // Runs the tool with `argc`/`argv` (its options), recording into `events` (room for

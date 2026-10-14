@@ -8,7 +8,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use hal::{Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, ADC_RESET, FIFO_RESET, Gpo};
 use super::outcome::outcome;
@@ -93,7 +93,7 @@ impl Sequence for AdcPower {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, I2cAddr, SpiAddr};
+    use hal::{FpgaAccess, I2cAddr, SpiAddr};
 
     use super::*;
 

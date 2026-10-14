@@ -14,7 +14,7 @@
 //! - Banked registers: the chip keeps per-channel copies of some registers;
 //!   [`LmlControl`]'s `MAC` selects the copies a write reaches.
 //! - Sequences: [`Create`] (`lms7002m_create`) and [`Batch`]es of writes that the
-//!   [`Lms7002m`] operations build (one `lms7002m_spi_post` each), all on `rsl-lowlevel`'s
+//!   [`Lms7002m`] operations build (one `lms7002m_spi_post` each), all on `hal`'s
 //!   `Sequence` seam. Where a board wires the chip and which LDOs it enables stay with the
 //!   board's driver ([`ResetPlan`]).
 //!

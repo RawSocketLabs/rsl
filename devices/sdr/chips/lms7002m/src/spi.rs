@@ -5,7 +5,7 @@
 //! returns the register in bits 15:0 of the reply (`lms7002m_spi_rd` keeps those).
 
 use bnb::{bitfield, u15};
-use rsl_lowlevel::{FpgaAccess, SpiAddr};
+use hal::{FpgaAccess, SpiAddr};
 
 use super::reg::Reg;
 

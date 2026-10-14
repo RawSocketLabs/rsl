@@ -15,7 +15,7 @@ generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `lsdr` (unpublished, root workspace member) | The driver, on `rsl-lowlevel`, `bnb` and `sdr-frontend` (`../frontend`, the front-end probe) |
+| `.` | `lsdr` (unpublished, root workspace member) | The driver, on `hal`, `bnb` and `sdr-frontend` (`../frontend`, the front-end probe) |
 | `sim/` | `lsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers/GPO, ADS42LBx9 and LMK04832 over SPI, TPS6594 and Si549 over I2C, virtual clock, op trace |
 | `oracle/` | `lsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_da09_4_ad45_2` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `lsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py lsdr` holds its dependencies to the driver's |
@@ -39,7 +39,7 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
 
 - `src/device.rs`: `Device`, the public API: `open` (with `OpenOptions`, libusdr's `lmk=1`
   as `probe_clock_generator`), `fitted`, `set_power`, `set_rx_pga_gain` and `close`. It
-  owns the bus (`Box<dyn Bus>`) and runs the portable sequences with `rsl-lowlevel`'s
+  owns the bus (`Box<dyn Bus>`) and runs the portable sequences with `hal`'s
   blocking `run_sequence`.
 - `src/board.rs`: the LSDr's wiring and setpoints (`LSDR_WIRING`, `LSDR_SUPPLIES`), each
   citing the libusdr enum or call it reproduces.
@@ -55,7 +55,7 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   compatibility `lsdr` and no hint: fe1005000's register-only XRA1405 check, then
   fe4ch4007200's sensor and expander reads on I2C core 1. Neither bring-up is ported, so
   a board that answers fails open with `Error::FrontEndNotPorted`.
-- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `lsdr-sim`; `oracle/tests/session_parity.rs`
   includes it with `#[path]`. Like the oracle shim, it passes every I2C core to the board.
 
@@ -205,7 +205,7 @@ by a lock: one is open at a time per process.
 
 ## Open items and blockers
 
-- `lsdr` builds on `rsl-lowlevel` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must not
+- `lsdr` builds on `hal` (`Bus`/`ls_op`, `I2cAddr`, `Sequence`); it must not
   depend on `usdr`. What it still needs from code `usdr` owns (FIR gearbox, RX
   stream core) is listed in `PORTING.md`; the front-end probe is `sdr-frontend`'s.
 - I2C core 1: the factory declares one I2C core (`DNLL_I2C_COUNT` 1), and the uSDR

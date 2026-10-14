@@ -1,6 +1,6 @@
 //! A batch of register writes: one `lms7002m_spi_post` call.
 
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::NAME;
 use super::reg::Reg;
@@ -99,7 +99,7 @@ impl Sequence for Batch {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Access;
+    use hal::Access;
 
     use super::*;
 

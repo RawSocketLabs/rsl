@@ -8,8 +8,8 @@
 
 use core::time::Duration;
 
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use lms7002m::{self, Create, Reg, ResetPlan, Version, spi_read};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::fpga::{
     self, DETECTOR_0063, DETECTOR_CONTROL, DETECTOR_COUNT, DETECTOR_DONE, DETECTOR_START,
@@ -293,7 +293,7 @@ fn op_failure<E>(op: LsOp, source: E) -> Failure<E> {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Access;
+    use hal::Access;
 
     use super::*;
 

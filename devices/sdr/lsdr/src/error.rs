@@ -1,7 +1,7 @@
 //! The driver's error type.
 
-pub use rsl_lowlevel::Access;
-use rsl_lowlevel::SequenceFailure;
+pub use hal::Access;
+use hal::SequenceFailure;
 use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
@@ -35,7 +35,7 @@ pub enum Error {
     DeadLink,
 
     /// A chip identified itself with an unexpected ID. Not produced yet: no ported sequence
-    /// checks an ID it requires; it keeps `rsl-lowlevel`'s sequence failures mapped one to
+    /// checks an ID it requires; it keeps `hal`'s sequence failures mapped one to
     /// one.
     #[error("{chip} reports ID {found:#x}, expected {expected:#x}")]
     #[non_exhaustive]
@@ -109,7 +109,7 @@ impl From<SequenceFailure<BusError>> for Error {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, SpiAddr};
+    use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
 

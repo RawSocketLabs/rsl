@@ -11,7 +11,7 @@ mod regs;
 
 use std::time::Duration;
 
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 use self::regs::{
     AttenuatorCode, DuplexerCode, V0FrontEnd0, V0FrontEnd1, V0Gpio0, V0Gpio1, V0RxSelect1,

@@ -4,7 +4,7 @@
 use core::time::Duration;
 
 use bnb::u5;
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::reg::Reg;
 use super::register::Register;

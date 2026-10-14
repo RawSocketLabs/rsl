@@ -2,7 +2,7 @@
 //! product ID and revision in the four registers from address 0, behind a 16-bit register
 //! address.
 
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 use crate::error::{BusContext, Error};
 

@@ -1,4 +1,5 @@
-//! Compiles the vendored libusdr subset plus the sim transport plugin into one static library.
+//! Compiles the vendored libusdr subset (`../../../vendor/libusdr`) plus the sim transport
+//! plugin into one static library.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,12 +9,12 @@ use std::path::{Path, PathBuf};
     reason = "one step per archive, in the order the linker needs them"
 )]
 fn main() {
-    let libusdr = Path::new("libusdr");
+    let libusdr = Path::new("../../../vendor/libusdr");
     let lib = libusdr.join("lib");
     let sources =
         fs::read_to_string(libusdr.join("sources.txt")).expect("libusdr/sources.txt is vendored");
 
-    println!("cargo:rerun-if-changed=libusdr");
+    println!("cargo:rerun-if-changed={}", libusdr.display());
     println!("cargo:rerun-if-changed=shim");
 
     let includes = ["", "port", "lowlevel", "common", "models", "xdsp"].map(|dir| lib.join(dir));
@@ -159,7 +160,7 @@ fn compile_wrapping(file: &Path, archive: &str, includes: &[PathBuf]) {
     cc::Build::new()
         .file(file)
         .includes(includes)
-        .include(Path::new("libusdr").join("gen"))
+        .include(Path::new("../../../vendor/libusdr").join("gen"))
         .flag("-std=gnu11")
         .flag("-ffp-contract=off")
         .flag("-fwrapv")

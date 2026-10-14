@@ -7,10 +7,8 @@
 
 use core::time::Duration;
 
+use hal::{I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use lp8758::{self, Buck, BuckControl, BuckVoltage, Revision};
-use rsl_lowlevel::{
-    I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
-};
 
 use super::fpga::{CLOCK_INTERNAL, Gpo, LMS_PULSE};
 use super::outcome::outcome;
@@ -167,7 +165,7 @@ impl Sequence for Supplies {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{Access, FpgaAccess};
+    use hal::{Access, FpgaAccess};
 
     use super::*;
 

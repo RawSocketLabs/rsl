@@ -34,13 +34,13 @@ class Fixture:
 
 
 FIXTURES = {
-    "usdr": Fixture(USDR, {"bnb": set(), "rsl-lowlevel": {"std"}, "lp8758": set()},
+    "usdr": Fixture(USDR, {"bnb": set(), "hal": {"std"}, "lp8758": set()},
                     {"default": ["usb"], "usb": []}),
-    "xsdr": Fixture(XSDR, {"lms7002m": set(), "rsl-lowlevel": {"std"}, "lp8758": set()},
+    "xsdr": Fixture(XSDR, {"lms7002m": set(), "hal": {"std"}, "lp8758": set()},
                     None),
-    "lsdr": Fixture(LSDR, {"bnb": set(), "rsl-lowlevel": {"std"}}, None),
-    "limesdr": Fixture(LIMESDR, {"lms7002m": set(), "rsl-lowlevel": {"std"}}, None),
-    "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "lmk05318": set(), "rsl-lowlevel": {"std"}},
+    "lsdr": Fixture(LSDR, {"bnb": set(), "hal": {"std"}}, None),
+    "limesdr": Fixture(LIMESDR, {"lms7002m": set(), "hal": {"std"}}, None),
+    "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "lmk05318": set(), "hal": {"std"}},
                        None),
 }
 # Every crate a fixture compiles without std, directly or through an owned dependency (the
@@ -75,7 +75,7 @@ def check_dependency(root, fixture, name, host_only, shared, member, candidate):
 
 def check_owned_edges(root, name, shared):
     """An owned dependency's own edges to core-only crates stay core-only as well, so
-    `lp8758` cannot enable `rsl-lowlevel/std` (or defaults) behind a fixture's back."""
+    `lp8758` cannot enable `hal/std` (or defaults) behind a fixture's back."""
     manifest = tomllib.loads((root / shared["path"] / "Cargo.toml").read_text())
     tables = [manifest.get("dependencies", {}),
               *(target.get("dependencies", {}) for target in manifest.get("target", {}).values())]

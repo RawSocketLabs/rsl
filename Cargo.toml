@@ -20,12 +20,12 @@ members = [
     # RF parsing
     "rf/rfus",
     # the register/SPI/I2C seam and sequence types the device drivers share
-    "devices/lowlevel",
+    "devices/hal",
     # LP8758 PMIC register values shared by the SDR drivers
     "devices/sdr/chips/lp8758",
     # LMK05318 network synchronizer register values and frequency plans, shared by the uSDR
     # front ends and PE_SYNC
-    "devices/sdr/chips/lmk05318",
+    "devices/chips/lmk05318",
     # libusdr's front-end board probe and the boards it brings up, shared by the SDR drivers
     "devices/sdr/frontend",
     # pure-Rust uSDR driver and its board simulator
@@ -103,10 +103,10 @@ x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 compression = { path = "codecs/compression", version = "0.1.0", default-features = false }
 # unpublished device crates shared by the drivers
-rsl-lowlevel = { path = "devices/lowlevel", version = "0.0.0", default-features = false }
+hal = { path = "devices/hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
 lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-features = false }
-lmk05318 = { path = "devices/sdr/chips/lmk05318", version = "0.0.0", default-features = false }
+lmk05318 = { path = "devices/chips/lmk05318", version = "0.0.0", default-features = false }
 sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 usdr-sim = { path = "devices/sdr/usdr/sim" }

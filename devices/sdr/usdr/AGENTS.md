@@ -155,10 +155,10 @@ Each layer calls only the ones below it.
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
   place of the 8-bit shared ones. Since PE_SYNC needs it too, the bus-free modules (plan,
   staging, map, `reg` and the value types) are the shared `lmk05318`
-  (`devices/sdr/chips/lmk05318`), re-exported under `chips::lmk05318`; the bus code in
+  (`devices/chips/lmk05318`), re-exported under `chips::lmk05318`; the bus code in
   `lmk05318.rs` stays here (`pe-sync` has its own, `../../sync/pe_sync/PORTING.md`).
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
-  `rsl-lowlevel` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
+  `hal` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
   usdr's own conversions into `BusError` (`usb_error` for `usb::Error`: `From`
   would be an orphan impl). Board code sleeps only through `Bus::sleep`. The uSDR has one
   I2C core; its transports refuse any `I2cAddr` core but 0.
@@ -191,7 +191,7 @@ Each layer calls only the ones below it.
   register-window and pair-write access libusdr's PCIe and USB transports share.
 - `src/portable/`: platform-independent addresses, the typed-register traits and the
   sequence seam (`address.rs`, `register.rs`, `sequence.rs`: thin re-exports of
-  `rsl-lowlevel`; I²C register reads/writes, FPGA register reads/writes and SPI32 with
+  `hal`; I²C register reads/writes, FPGA register reads/writes and SPI32 with
   32-bit results, and waits, one action at a time), LP8758 values (`lp8758.rs`, re-exporting
   `lp8758`), TMP114 values/temperature operation, TPS6381x register values and the
   power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
@@ -203,12 +203,12 @@ Each layer calls only the ones below it.
   composite's parts with libusdr's stop, carry-on-and-report and ignore failure
   policies; power, rate, tune, gain, path and stream parts), and USB framing plus the I²C
   and register/SPI state machines (`usb/`). A sequence that attempts steps after a
-  failure says so (`rsl-lowlevel`'s `Sequence::attempts_after_failure`, added
+  failure says so (`hal`'s `Sequence::attempts_after_failure`, added
   2026-10-13 for "attempt every step" paths, pending owner review); both executors then
   run them and report the first failure. FPGA actions name
   registers as the `Bus` does (32 bits), so a sequence may name the stream engine's
   configuration space; each executor reaches it through its index window.
-  `chips::register::run_sequence` wraps `rsl-lowlevel`'s blocking executor and
+  `chips::register::run_sequence` wraps `hal`'s blocking executor and
   turns its `SequenceFailure` into `Error` through the accesses' shared `context()`
   decoding. Uses core
   types and generic executor errors; no OS/runtime ownership. Keep imports within the
@@ -307,9 +307,9 @@ Each layer calls only the ones below it.
 
 - libusdr is the reference until hardware is available. Behaviour the Rust driver ports must
   first be exercised through the oracle against `sim`, then matched.
-- The vendored subset under `oracle/libusdr/` is never edited by hand. Refresh it with
-  `oracle/vendor.sh <usdr-lib checkout>` at the commit in `oracle/libusdr/PIN`. Bump the PIN
-  in its own change. Three tools come along verbatim (`oracle/libusdr/tools/`); of them,
+- The vendored subset under `../../vendor/libusdr/` is never edited by hand. Refresh it with
+  `../../vendor/vendor.sh <usdr-lib checkout>` at the commit in `../../vendor/libusdr/PIN`. Bump the PIN
+  in its own change. Three tools come along verbatim (`../../vendor/libusdr/tools/`); of them,
   `usdr_dm_create.c` and `usdr_dm_gpsdo.c` reach `oracle/shim/{dm_create,gpsdo}.c`, which compile each
   whole with its `main` renamed, the gpsdo shim redirecting the tool's I/O, set-up and
   clock by macro before including it, and build them and `sincos_functions.c` with
@@ -423,7 +423,7 @@ Each layer calls only the ones below it.
   (`gpsdo_parity.rs::the_dac_holds_at_zero_where_the_tool_wraps_it_to_full_scale`), and
   steps from the last confirmed code after a failed write, where the tool steps from the
   errno (`gpsdo_parity.rs::a_failed_dac_write_steps_from_the_last_code_where_the_tool_steps_from_the_errno`).
-- Registers are typed (`rsl-lowlevel`'s traits, through `src/portable/register.rs`;
+- Registers are typed (`hal`'s traits, through `src/portable/register.rs`;
   `src/chips/register.rs` adds blocking I2C access). Each chip has a `Reg` enum naming every
   address it touches, so no raw address appears.
   - A register whose contents the driver interprets gets a value type: a `bnb` bitfield,
@@ -475,9 +475,9 @@ cargo clippy -p usdr --all-targets --all-features -- -D warnings && cargo test -
 cargo fmt --manifest-path devices/sdr/usdr/oracle/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/usdr/oracle/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path devices/sdr/usdr/oracle/Cargo.toml
-cargo clippy -p rsl-lowlevel -p lp8758 --all-targets -- -D warnings && cargo clippy -p rsl-lowlevel --features std --all-targets -- -D warnings
-cargo test -p rsl-lowlevel --features std && cargo test -p lp8758
-cargo check -p rsl-lowlevel -p lp8758 -p sdr-frontend --target thumbv7em-none-eabi
+cargo clippy -p hal -p lp8758 --all-targets -- -D warnings && cargo clippy -p hal --features std --all-targets -- -D warnings
+cargo test -p hal --features std && cargo test -p lp8758
+cargo check -p hal -p lp8758 -p sdr-frontend --target thumbv7em-none-eabi
 cargo clippy -p sdr-frontend --features std --all-targets -- -D warnings && cargo test -p sdr-frontend --features std
 python3 scripts/ci/portable.py
 cargo fmt --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml -- --check

@@ -1,7 +1,7 @@
 //! What a probe or a front-end access fails with, in terms each driver maps into its own
 //! error.
 
-use rsl_lowlevel::{Access, BusError, SequenceFailure};
+use hal::{Access, BusError, SequenceFailure};
 
 /// A failed front-end probe or board access.
 #[derive(Debug, thiserror::Error)]

@@ -1,7 +1,7 @@
 //! `pe_sync_check_status`: one readback from each chip right after power-on, which libusdr
 //! logs. A failed access fails the open; the values themselves are not judged.
 
-use rsl_lowlevel::{RegisterAccess, SequenceAction};
+use hal::{RegisterAccess, SequenceAction};
 
 use super::board::{
     LMK1D1208I_LCK, LMK1D1208I_LRF, LMX1204, LMX1214, LMX2820_0, LMX2820_1, LP87524, LP87524_OTP,
@@ -65,7 +65,7 @@ pub(crate) fn status_check() -> Script {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Sequence;
+    use hal::Sequence;
 
     use super::*;
     use crate::portable::testing::{Exchange, drive};

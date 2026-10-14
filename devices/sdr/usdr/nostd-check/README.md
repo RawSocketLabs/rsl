@@ -6,7 +6,7 @@ types, TMP114 register values/temperature machine, Si5332 divider plan, USB wire
 I²C transaction machine, and the board's RF machines (LMS6002D operations, tuning and
 calibration, power-up, rate, tuning, gain, path and stream composites), which the witness
 drives against a register-file board. There are no copied algorithms or substitute host errors.
-Where the tree re-exports the shared no_std crates (`rsl-lowlevel`'s addresses, register
+Where the tree re-exports the shared no_std crates (`hal`'s addresses, register
 traits and sequence seam; `lp8758`'s LP8758 values), the fixture depends on them by
 path without default features, so it compiles exactly what the driver does minus `std`.
 
@@ -18,7 +18,7 @@ cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --of
 
 Run from the repository root with the pinned toolchain and target installed. The dependency
 check compares each fixture dependency's path/version/features with the actual production
-manifests (a per-dependency table in `scripts/ci/portable.py`; `rsl-lowlevel`'s `std` is the
+manifests (a per-dependency table in `scripts/ci/portable.py`; `hal`'s `std` is the
 only host-only feature).
 It deliberately does not depend on the whole std/native driver just to expose ownership;
 the CI selector explicitly records that production-source edge.

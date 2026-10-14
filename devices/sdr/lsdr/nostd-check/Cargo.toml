@@ -15,7 +15,7 @@ resolver = "3"
 [dependencies]
 # scripts/ci/portable.py checks these declarations against the actual driver/workspace.
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb", version = "0.8.0", default-features = false }
-rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
+hal = { path = "../../../hal", version = "0.0.0", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

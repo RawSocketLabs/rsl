@@ -7,12 +7,12 @@
 //! the register in bits 15:0 of the reply (`common_spi_get` keeps those).
 
 use bnb::{bitfield, u7};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::outcome::outcome;
 
 /// A 16-bit register at one fixed address of one of these chips: its value type names
-/// the address. `rsl-lowlevel`'s `Register` traits are 8-bit.
+/// the address. `hal`'s `Register` traits are 8-bit.
 pub(crate) trait Register: Copy + Into<u16> {
     /// The chip's register-address enum.
     type Map: Into<u8>;

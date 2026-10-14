@@ -4,7 +4,7 @@
 //! register types.
 //!
 //! Blocking code: the chip's 16-bit register pointer and four-byte identity read do not fit
-//! `rsl-lowlevel`'s `Sequence` seam. `usdr` runs the same steps for its front ends in
+//! `hal`'s `Sequence` seam. `usdr` runs the same steps for its front ends in
 //! its own blocking driver (`chips/lmk05318/lmk05318.rs`, with its own error type); the two
 //! merge into `lmk05318` once the seam carries such transfers (`PORTING.md`).
 

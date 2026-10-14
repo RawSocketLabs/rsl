@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 use crate::FRONT_END_BUS;
 use crate::chips::tca9555::{Reg, Tca9555};

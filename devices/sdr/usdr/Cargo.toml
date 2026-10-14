@@ -12,7 +12,7 @@ rust-version.workspace = true
 bnb.workspace = true
 num-complex.workspace = true
 lmk05318.workspace = true
-rsl-lowlevel = { workspace = true, features = ["std"] }
+hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }
 deps = { workspace = true, features = ["tracing"] }

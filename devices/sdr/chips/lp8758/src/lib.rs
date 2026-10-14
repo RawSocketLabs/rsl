@@ -4,7 +4,7 @@
 //!
 //! Register meanings: TI SNVSAC6B, "LP8758-E0", §7.6: the address map ([`Reg`]), the
 //! per-channel registers ([`BuckControl`], [`BuckVoltage`] per [`Buck`]), the chip-wide
-//! [`Config`] and the revision ([`Revision`]). Values implement `rsl-lowlevel`'s typed
+//! [`Config`] and the revision ([`Revision`]). Values implement `hal`'s typed
 //! register traits, so a driver writes them without naming an address. Where a board wires
 //! the chip and which voltages it sets stay with that board's driver.
 //!

@@ -1,5 +1,5 @@
 [package]
-name = "rsl-lowlevel"
+name = "hal"
 version = "0.0.0"
 description = "The register/SPI/I2C seam the pure-Rust device drivers share: bus addresses, typed registers, portable register sequences and the blocking bus."
 publish = false

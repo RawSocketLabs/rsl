@@ -12,12 +12,12 @@ mod sim_bus;
 use core::num::NonZeroU32;
 
 use bnb::{u2, u3};
+use hal::run_sequence;
 use lms7002m::{
     Batch, Create, LmlConfig, LmlMap, LmlSample, Lms7002m, LpfParams, Mac, NoChannel, RbbMode,
     RbbPath, ResetPlan, RxGainStage, RxMode, RxPath, Synthesizer, TbbMode, TbbPath, Tsp, TuneError,
     TxGainStage, TxMode, TxPath,
 };
-use rsl_lowlevel::run_sequence;
 use sim_bus::SimBus;
 use xsdr::lowlevel::SpiAddr;
 use xsdr_oracle::{Lms7002mCall as Call, lms7002m_run};

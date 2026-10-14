@@ -38,6 +38,8 @@ FUZZ = {
     # Release runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
 }
+# The vendored libusdr C subset and its refresh script, which every device oracle compiles.
+VENDOR_LIBUSDR = "devices/vendor"
 # Compiles vendored libusdr C; the reference for the pure-Rust uSDR port.
 USDR_ORACLE = "devices/sdr/usdr/oracle"
 USDR = "devices/sdr/usdr"
@@ -46,20 +48,20 @@ USDR_PORTABLE = f"{USDR}/nostd-check"
 # SDR front-end probe) by root. Like every cross-target check, their bare-metal gate is release-only: an explicit
 # release of a driver with a portable fixture selects it; a codec release reaching them does
 # not. They are not release-enabled.
-LOWLEVEL = "devices/lowlevel"
+HAL = "devices/hal"
 LP8758 = "devices/sdr/chips/lp8758"
 LMS7002M = "devices/sdr/chips/lms7002m"
-LMK05318 = "devices/sdr/chips/lmk05318"
+LMK05318 = "devices/chips/lmk05318"
 FRONTEND = "devices/sdr/frontend"
-BARE_METAL_DEVICES = {LOWLEVEL: "rsl-lowlevel", LP8758: "lp8758", LMS7002M: "lms7002m",
+BARE_METAL_DEVICES = {HAL: "hal", LP8758: "lp8758", LMS7002M: "lms7002m",
                       LMK05318: "lmk05318", FRONTEND: "sdr-frontend"}
 # The LMS7 family driver; its oracle runs libusdr's LMS7 family against xsdr-sim,
-# compiling the uSDR oracle's vendored C.
+# compiling the vendored C.
 XSDR = "devices/sdr/xsdr"
 XSDR_ORACLE = f"{XSDR}/oracle"
 XSDR_PORTABLE = f"{XSDR}/nostd-check"
 # The LSDr driver; its oracle runs libusdr's LSDr family against lsdr-sim, compiling the
-# uSDR oracle's vendored C.
+# vendored C.
 LSDR = "devices/sdr/lsdr"
 LSDR_ORACLE = f"{LSDR}/oracle"
 LSDR_PORTABLE = f"{LSDR}/nostd-check"
@@ -169,8 +171,9 @@ def metadata_graph(root, *, historical=False, toolchain=None):
             graph[fixture].dependencies.add(driver)
     for oracle in (XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE):
         if oracle in graph and USDR_ORACLE in graph:
-            # These oracles compile the uSDR oracle's vendored libusdr by path, so changes
-            # there must reach them; Cargo metadata cannot see a C source dependency.
+            # These oracles compile the vendored libusdr the uSDR oracle compiles, by path;
+            # Cargo metadata cannot see a C source dependency. The tree used to sit inside
+            # the uSDR oracle; the edge keeps selection as it was when it moved out.
             graph[oracle].dependencies.add(USDR_ORACLE)
     missing = {dep for package in graph.values() for dep in package.dependencies} - graph.keys()
     if missing:
@@ -230,6 +233,9 @@ def owners(path, graph):
         return (PKI | {"pki/fuzz"}) & graph.keys()
     if path == ".github/ci/bnb.toml":
         return {BNB, MACROS} & graph.keys()
+    if path.startswith(VENDOR_LIBUSDR + "/"):
+        # The vendored C belongs to every oracle that compiles it.
+        return {USDR_ORACLE, XSDR_ORACLE, LSDR_ORACLE, PE_SYNC_ORACLE, LIMESDR_ORACLE} & graph.keys()
     if path in {"tools/gen-blessed.py", "tools/check-drift.py", ".github/actions/blessed-drift/action.yml"}:
         return {root for root, package in graph.items() if package.name == "deps"}
     matches = [root for root in graph if path.startswith(root + "/")]

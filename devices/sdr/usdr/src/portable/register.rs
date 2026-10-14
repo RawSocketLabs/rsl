@@ -1,3 +1,3 @@
-//! Typed registers: `rsl-lowlevel`'s traits, under the portable tree's path.
+//! Typed registers: `hal`'s traits, under the portable tree's path.
 
-pub(crate) use rsl_lowlevel::{IndexedRegister, Register};
+pub(crate) use hal::{IndexedRegister, Register};

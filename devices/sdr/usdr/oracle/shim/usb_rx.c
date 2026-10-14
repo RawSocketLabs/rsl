@@ -111,7 +111,7 @@ static int buffers_usb_free(struct buffers* buffers)
     return 0;
 }
 
-#include "../libusdr/reference/usb_rx.inc"
+#include "../../../../vendor/libusdr/reference/usb_rx.inc"
 
 // `events`: initial posts, rounded capacity, MTU, channel, receive errno,
 // releases, closes. Output and OOB storage are valid for block bytes and 16 bytes.

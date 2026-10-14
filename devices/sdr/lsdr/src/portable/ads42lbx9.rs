@@ -8,7 +8,7 @@
 //! crate when a second driver needs it (`PORTING.md`).
 
 use bnb::{BitEnum, bitfield};
-use rsl_lowlevel::{FpgaAccess, Register, SpiAddr};
+use hal::{FpgaAccess, Register, SpiAddr};
 
 /// The chip's name in errors.
 pub(crate) const NAME: &str = "ADS42LBx9";

@@ -11,6 +11,7 @@ extern crate std;
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
+use hal::{Sequence, SequenceFailure};
 use lmk05318::plan::Apll2;
 use portable::board::{
     LMK1D1208I_LCK, LMK1D1208I_SETUP, LMK05318, LMK05318_OUTPUTS, LMK05318_XO, LMX1204,
@@ -25,7 +26,6 @@ use portable::lmx2820::plan::Plan as Lmx2820Plan;
 use portable::lmx2820::sequence::{self as lmx2820, Tune};
 use portable::power::Power;
 use portable::status::status_check;
-use rsl_lowlevel::{Sequence, SequenceFailure};
 
 /// Runs `sequence` to its end, answering every action with `answer`: the actions issued,
 /// or the chip a failure names.

@@ -67,32 +67,32 @@ explicitly enabled/releasing USDR product additionally requires its registered f
 selects its thumbv7em-none-eabi compile gate in the release-only `no-std` profile. A codec
 release can reach this fixture as a downstream consumer without enabling that USDR target.
 The fixture also depends, without default features, on the shared no_std device crates
-`rsl-lowlevel` and `lp8758`; `scripts/ci/portable.py` holds each portable-core dependency
-to the production declaration minus host-only features (`rsl-lowlevel`'s `std`). Those crates
+`hal` and `lp8758`; `scripts/ci/portable.py` holds each portable-core dependency
+to the production declaration minus host-only features (`hal`'s `std`). Those crates
 declare `#![no_std]` themselves, and their own thumbv7em-none-eabi `cargo check` (default
 features) joins the same release-only `no-std` profile when a driver with a portable fixture
 is explicitly released (`plan.BARE_METAL_DEVICES`, `plan.PORTABLE_FIXTURES`); a codec release
 does not select it.
 
 The LMS7 family driver's fixture (`devices/sdr/xsdr/nostd-check`, profile `xsdr-portable`)
-follows the same contract for `xsdr`'s `src/portable` tree, on `rsl-lowlevel`,
+follows the same contract for `xsdr`'s `src/portable` tree, on `hal`,
 `lp8758` and `lms7002m` (`portable.py xsdr`); `lms7002m` is a registered
 bare-metal device crate. No XSDR product is release-enabled, so its cross-target checks are
 registered but not selected today.
 
 The LSDr driver's fixture (`devices/sdr/lsdr/nostd-check`, profile `lsdr-portable`) does the
-same for `lsdr`'s `src/portable` tree, on `bnb` and `rsl-lowlevel` (`portable.py lsdr`);
+same for `lsdr`'s `src/portable` tree, on `bnb` and `hal` (`portable.py lsdr`);
 its chips' register values live in that tree, so it adds no device crate. No LSDr product is
 release-enabled either. Its oracle runs as `lsdr-oracle`, which a change to `lsdr`
 selects too (the oracle's parity tests depend on the driver).
 
 The LimeSDR-mini driver's fixture (`devices/sdr/limesdr/nostd-check`, profile
-`limesdr-portable`) does the same for `limesdr`'s `src/portable` tree, on `rsl-lowlevel`
+`limesdr-portable`) does the same for `limesdr`'s `src/portable` tree, on `hal`
 and `lms7002m` (`portable.py limesdr`); no LimeSDR product is release-enabled. Its oracle
 runs as `limesdr-oracle`, which a change to `limesdr` or `lms7002m` selects too.
 
 The PE_SYNC driver's fixture (`devices/sync/pe_sync/nostd-check`, profile `pe-sync-portable`)
-does the same for `pe-sync`'s `src/portable` tree, on `bnb`, `rsl-lowlevel` and
+does the same for `pe-sync`'s `src/portable` tree, on `bnb`, `hal` and
 `lmk05318` (`portable.py pe-sync`; portable profiles take the driver directory's name with
 dashes); `lmk05318` is a registered bare-metal device crate. No PE_SYNC product is
 release-enabled. Its oracle runs as `pe-sync-oracle`, which a change to `pe-sync` or

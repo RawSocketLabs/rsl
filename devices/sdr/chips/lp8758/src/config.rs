@@ -1,7 +1,7 @@
 //! The chip-wide configuration register.
 
 use bnb::bitfield;
-use rsl_lowlevel::Register;
+use hal::Register;
 
 use super::reg::Reg;
 

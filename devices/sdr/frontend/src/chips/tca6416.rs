@@ -14,7 +14,7 @@
 //! output values themselves are the `PCIe` front end's (`pciefe.yaml`), owned by that board.
 
 use crate::error::{BusContext, Error};
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 /// Register addresses (`enum tca6416_regs`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

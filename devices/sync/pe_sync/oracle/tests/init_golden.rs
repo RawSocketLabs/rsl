@@ -30,8 +30,7 @@ fn fixture() -> PathBuf {
 
 /// The vendored libusdr commit the golden was captured at.
 fn pin() -> String {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../sdr/usdr/oracle/libusdr/PIN");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../vendor/libusdr/PIN");
     fs::read_to_string(path)
         .expect("the vendored libusdr PIN is readable")
         .trim()

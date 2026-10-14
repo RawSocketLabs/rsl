@@ -26,6 +26,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "hal"
+version = "0.0.0"
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -46,7 +50,7 @@ name = "lsdr-nostd-check"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -81,10 +85,6 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "rsl-lowlevel"
-version = "0.0.0"
 
 [[package]]
 name = "serde_core"

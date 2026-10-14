@@ -5,7 +5,7 @@
 use core::num::NonZeroU32;
 
 use bnb::{u2, u3, u4, u5, u6, u10};
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::Lms7002m;
 use crate::batch::Batch;

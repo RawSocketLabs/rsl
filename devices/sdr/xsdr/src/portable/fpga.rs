@@ -2,7 +2,7 @@
 //! (GPO) core and the hardware-ID input. Facts from the pinned libusdr's
 //! `device/m2_lm7_1/xsdr_ctrl.{c,h}` and `device/generic_usdr/generic_regs.h`.
 
-use rsl_lowlevel::FpgaAccess;
+use hal::FpgaAccess;
 
 /// The chip name failed gateware accesses carry.
 pub(crate) const NAME: &str = "FPGA";

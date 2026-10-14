@@ -3,7 +3,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::plan::Plan;
 use super::reg::{LockStatus, MuxOut, Reg, Temperature};
@@ -130,7 +130,7 @@ impl Sequence for WaitLock {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::FpgaAccess;
+    use hal::FpgaAccess;
 
     use super::super::plan::{Channel, Request};
     use super::super::reg::{Format, SysrefModeCode};

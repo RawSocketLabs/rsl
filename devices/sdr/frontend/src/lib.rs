@@ -15,7 +15,7 @@
 //! - fe1005000's register-only identification, a portable sequence
 //!   ([`fe1005000::Fe1005000Probe`]).
 //!
-//! Feature `std` adds the blocking probe over `rsl-lowlevel`'s `Bus`:
+//! Feature `std` adds the blocking probe over `hal`'s `Bus`:
 //! `Connector::probe` with the `fe=` hint (`FrontEndSelection`) and the driver's part of
 //! it (`BringUp`), every board's identification, and the bring-ups this crate owns whole:
 //! the `PCIe` front end (`pciefe`, with its controls) and the M.2-to-`PCIe` breakout

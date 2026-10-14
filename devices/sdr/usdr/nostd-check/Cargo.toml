@@ -20,7 +20,7 @@ usb = []
 [dependencies]
 # scripts/ci/portable.py checks this declaration against the actual driver/workspace.
 bnb = { package = "bitsandbytes", path = "../../../../codecs/bitsandbytes/bnb", version = "0.8.0", default-features = false }
-rsl-lowlevel = { path = "../../../lowlevel", version = "0.0.0", default-features = false }
+hal = { path = "../../../hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "../../chips/lp8758", version = "0.0.0", default-features = false }
 
 [lints.rust]

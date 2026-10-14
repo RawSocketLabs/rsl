@@ -3,7 +3,7 @@
 //! `lms7002m_rxtsp_dc_corr`).
 
 use bnb::{u3, u4};
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::{Lms7002m, NoChannel, TSG_DIV8, Tsp};
 use crate::batch::Batch;
@@ -293,7 +293,7 @@ impl Sequence for BistCheck {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::SpiAddr;
+    use hal::SpiAddr;
 
     use super::*;
 
@@ -336,7 +336,7 @@ mod tests {
         let mut check = created().bist_check(Tsp::Tx);
         assert!(matches!(
             check.next(),
-            Some(SequenceAction::Fpga(rsl_lowlevel::FpgaAccess::Spi {
+            Some(SequenceAction::Fpga(hal::FpgaAccess::Spi {
                 reg: 0x0209,
                 write: false,
                 ..

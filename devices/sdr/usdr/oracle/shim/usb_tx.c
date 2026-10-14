@@ -15,7 +15,7 @@
 #undef USDR_LOG
 #define USDR_LOG(...) ((void)0)
 
-#include "../libusdr/reference/usb_tx_params.inc"
+#include "../../../../vendor/libusdr/reference/usb_tx_params.inc"
 
 // The fake owns plain memory instead of USB transfers. `ready` is the free-buffer count
 // libusdr's OUT semaphore holds: every buffer at first, one more per finished transfer.
@@ -132,7 +132,7 @@ static int buffers_usb_free(struct buffers* buffers)
     return 0;
 }
 
-#include "../libusdr/reference/usb_tx.inc"
+#include "../../../../vendor/libusdr/reference/usb_tx.inc"
 
 // A device as `usb_uram_plugin_create` leaves it for streams: zeroed, statistics started.
 void* rsl_oracle_usb_tx_new(void)

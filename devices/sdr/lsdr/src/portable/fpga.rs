@@ -2,7 +2,7 @@
 //! the general-purpose output (GPO) core. Facts from the pinned libusdr's
 //! `device/m2_lsdr/m2_da09_4_ad45_2.c`.
 
-use rsl_lowlevel::FpgaAccess;
+use hal::FpgaAccess;
 
 /// The chip name failed gateware accesses carry.
 pub(crate) const NAME: &str = "FPGA";

@@ -3,7 +3,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::NAME;
 use super::reg::Reg;

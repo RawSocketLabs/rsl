@@ -12,8 +12,8 @@
 
 use bnb::{BitEnum, bitfield, u2, u4, u15};
 #[cfg(feature = "std")]
-use rsl_lowlevel::{Bus, run_sequence};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
+use hal::{Bus, run_sequence};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 #[cfg(feature = "std")]
 use crate::error::Error;
@@ -259,10 +259,7 @@ mod tests {
         );
         setup.complete::<()>(Ok(0)).expect("the first write lands");
         let failure = setup.complete(Err(())).expect_err("the second fails");
-        assert_eq!(
-            failure.access(),
-            Some((FPGA, rsl_lowlevel::Access::Write, 3))
-        );
+        assert_eq!(failure.access(), Some((FPGA, hal::Access::Write, 3)));
         assert_eq!(setup.next(), None, "nothing follows a failure");
     }
 }

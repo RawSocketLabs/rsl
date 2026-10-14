@@ -3,7 +3,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{SequenceAction, SpiAddr};
+use hal::{SequenceAction, SpiAddr};
 
 use super::plan::Plan;
 use super::reg::{CLOCK_DIVIDER_RESET, CREATE, Reg};
@@ -58,7 +58,7 @@ pub(crate) fn configure(target: SpiAddr, plan: &Plan) -> Configure {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, Sequence};
+    use hal::{FpgaAccess, Sequence};
 
     use super::super::plan::{Aux, Request};
     use super::super::reg::AuxFormat;

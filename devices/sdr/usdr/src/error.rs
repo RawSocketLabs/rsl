@@ -1,6 +1,6 @@
 //! The driver's error type.
 
-pub use rsl_lowlevel::Access;
+pub use hal::Access;
 
 use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;

@@ -3,7 +3,7 @@
 The LimeSDR family (`u3_limesdr`) rows of the programme ledger (`../usdr/PORTING.md`,
 "LimeSDR board / framing / streams" and "FT601 USB transport") in detail. Same contract:
 **Present** means source exists, test names are definitions, not run results; nothing is
-hardware-qualified (U). Reference: `../usdr/oracle/libusdr/PIN`; `C:` paths are relative to
+hardware-qualified (U). Reference: `../../vendor/libusdr/PIN`; `C:` paths are relative to
 its `lib/`. `O:` = `oracle/tests/`, `T:` = `tests/`, `P:` = `src/portable/`, `L:` =
 `../chips/lms7002m/src/` (`lms7002m`).
 
@@ -46,7 +46,7 @@ LMS7002M, its reset pin and the gateware as the open left them.
 
 | Capability | Pinned C | Blocker or note |
 |---|---|---|
-| FT601 USB transport (a `ControlPort` over `usb`): endpoint setup, framing of LMS64C frames on the bulk pipes, transport-level open traffic (board info, FIFO reset), USB identity by VID:PID (`0x0403:0x601f`, `0x0403:0x601e`) | `C:lowlevel/usb_ft601/usb_ft601_{generic,libusb}.c` (upstream, **not vendored**); `lowlevel/libusb_vidpid_map.h` | Not provable without hardware or the C: vendor it (a PIN-subset change in `../usdr/oracle/vendor.sh`), then frame-test against it. It would also turn the `ls_op` → LMS64C mapping from an assumption into evidence |
+| FT601 USB transport (a `ControlPort` over `usb`): endpoint setup, framing of LMS64C frames on the bulk pipes, transport-level open traffic (board info, FIFO reset), USB identity by VID:PID (`0x0403:0x601f`, `0x0403:0x601e`) | `C:lowlevel/usb_ft601/usb_ft601_{generic,libusb}.c` (upstream, **not vendored**); `lowlevel/libusb_vidpid_map.h` | Not provable without hardware or the C: vendor it (a PIN-subset change in `../../vendor/vendor.sh`), then frame-test against it. It would also turn the `ls_op` → LMS64C mapping from an assumption into evidence |
 | Firmware reply semantics (echoed header, record layout, write-flag handling, other reset levels) | Not in libusdr; LimeSuite or the firmware | The sim and the driver share the shim's reading |
 | Close on drop | `usdr_dmd_close` | Nothing to do today: libusdr's close issues nothing |
 | Sample rate, tuning, gain, bandwidth, paths, antenna switch (`_limesdr_antenna_port_switch`, register 0x0017), direct clocking (0x0005) | `limesdr_ctrl.c::limesdr_set_samplerate`, `limesdr_set_direct_clocking`; `u3_limesdr.c` parameter handlers; `C:device/m2_lm7_1/lms7002m_ctrl.c` | The LMS7002M rate/tune/gain operations land in `lms7002m` (in progress for the XSDR); need the LMS7002M reset values and channel banking in `lms7002m-sim`; the driver must then keep `Create`'s chip state |

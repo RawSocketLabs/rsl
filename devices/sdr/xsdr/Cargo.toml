@@ -10,7 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 lms7002m.workspace = true
-rsl-lowlevel = { workspace = true, features = ["std"] }
+hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }
 thiserror.workspace = true

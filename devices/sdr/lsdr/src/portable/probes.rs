@@ -6,7 +6,7 @@
 //! reads each ADC socket's `REG_HF0`, then switches the ADC supply off again. An absent chip
 //! is a finding, not a failure (libusdr tolerates `-ENODEV`); a failed access ends open.
 
-use rsl_lowlevel::{Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use hal::{Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::ads42lbx9::{self, Reg as AdcReg};
 use super::lmk04832::ClockGeneratorProbe;
@@ -125,7 +125,7 @@ impl Sequence for Probes {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, I2cAddr, SpiAddr};
+    use hal::{FpgaAccess, I2cAddr, SpiAddr};
 
     use super::*;
 

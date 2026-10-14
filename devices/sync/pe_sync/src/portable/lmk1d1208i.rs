@@ -9,9 +9,7 @@
 //! needs it (`devices/AGENTS.md`); it knows no board.
 
 use bnb::{bitfield, u2, u4};
-use rsl_lowlevel::{
-    I2cAddr, Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte,
-};
+use hal::{I2cAddr, Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte};
 
 use super::outcome::outcome;
 

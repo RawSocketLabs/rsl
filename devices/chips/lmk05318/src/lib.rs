@@ -18,7 +18,7 @@
 //! the address map ([`reg`]) and the value types by block ([`apll`], [`control`],
 //! [`output`], [`xo`]). The bring-up's bus traffic (identity check, writing the map, soft
 //! reset, lock waits, output synchronization) stays with each driver: the 16-bit
-//! addresses and four-byte identity read do not fit `rsl-lowlevel`'s `Sequence` seam.
+//! addresses and four-byte identity read do not fit `hal`'s `Sequence` seam.
 //! Without the DPLL, which no board here enables (not ported), APLL1 runs free.
 //!
 //! # Sources

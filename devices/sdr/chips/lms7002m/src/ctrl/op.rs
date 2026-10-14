@@ -4,7 +4,7 @@
 use bnb::u3;
 use core::num::NonZeroU32;
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::calls::{Calls, ChipCall};
 use super::part::Part;
@@ -531,7 +531,7 @@ impl<F: Frontend> Sequence for Operation<F> {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::SpiAddr;
+    use hal::SpiAddr;
 
     use super::*;
     use crate::TxPath;
