@@ -82,7 +82,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANDIDATE_SHA: ${{ steps.verify.outputs.sha }}
         run: python3 scripts/ci/gate.py candidate
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@v8.0.2
         if: steps.candidate.outputs.publish == 'true'
         with:
           name: ci-coverage-${{ github.event.workflow_run.id }}-${{ steps.verify.outputs.attempt }}

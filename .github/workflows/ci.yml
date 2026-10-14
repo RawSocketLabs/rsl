@@ -234,7 +234,7 @@ jobs:
             "checks": {"result": "${{ needs.checks.result }}"},
             "fuzz": {"result": "${{ needs.fuzz.result }}"}}
         run: python3 scripts/ci/gate.py ci --report "$RUNNER_TEMP/ci-coverage.json"
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: env.ACT != 'true'
         with:
           name: ci-coverage-${{ github.run_id }}-${{ github.run_attempt }}
