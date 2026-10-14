@@ -65,8 +65,8 @@ Each layer calls only the ones below it.
 
 - `src/device.rs`: `Device`, the public API. It owns the `Board`, and the `Board` owns the bus
   (before power-up, `Identified` does). Board methods use `self.bus`; chip drivers stay
-  stateless and borrow `&mut dyn Bus` per call. The transmit chain's `TxState` is on
-  `Board` beside `RxState`.
+  stateless and borrow `&mut dyn Bus` per call. The chains' `RxState` and `TxState` are in
+  the board's portable `Radio` (`portable/radio/state.rs`).
 - `src/stream.rs`: the stream group's public configuration and results (`StreamsConfig`,
   `RxConfig`, `TxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`,
   `RxMetadata`, `TxTelemetry`, `TxMute`, the sealed `HostSample` buffer elements). One
@@ -116,8 +116,9 @@ Each layer calls only the ones below it.
   then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
-- `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`,
-  with the decimator FIR tables in `fir_tables.rs`), the RX stream engine (`stream`:
+- `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`;
+  the port words, GPO words and the decimator FIR tables are portable, `portable/fpga.rs`
+  and `portable/fir_tables.rs`), the RX stream engine (`stream`:
   front end, DMA, sync), the TX stream cores (`tx_stream`: the original core's
   announcement and status, the extended core's front end, lane map and cached
   announcement), and

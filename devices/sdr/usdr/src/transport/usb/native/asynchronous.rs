@@ -382,8 +382,18 @@ impl Reactor {
         wakers.into_iter().flatten().for_each(TaskWaker::wake);
     }
 
-    /// Starts a queued operation and routes the handle's events; `true` once closing.
+    /// Starts a queued operation and routes the handle's events, waking the futures they
+    /// finish once the state is unlocked (an executor may poll inline on a wake); `true`
+    /// once closing.
     fn serve(&mut self, now: Instant) -> bool {
+        let mut woken = Vec::new();
+        let closing = self.route(now, &mut woken);
+        woken.into_iter().for_each(TaskWaker::wake);
+        closing
+    }
+
+    /// [`Self::serve`]'s work, collecting the futures to wake in `woken`.
+    fn route(&mut self, now: Instant, woken: &mut Vec<TaskWaker>) -> bool {
         let mut state = self.shared.lock();
         if state.closing {
             return true;
@@ -397,7 +407,7 @@ impl Reactor {
             state = self.shared.lock();
             if let Err(error) = started {
                 state.slot = Slot::Done(Err(error));
-                Self::wake(&mut state.operation);
+                woken.extend(state.operation.take());
             }
         }
         // While no operation runs, a full block queue leaves blocks with the handle.
@@ -411,7 +421,7 @@ impl Reactor {
             match event {
                 NativeEvent::Received(block) => {
                     state.blocks.push_back(block);
-                    Self::wake(&mut state.block);
+                    woken.extend(state.block.take());
                 }
                 NativeEvent::SessionEnded(error) => {
                     drop(state);
@@ -421,7 +431,7 @@ impl Reactor {
                 event => {
                     if matches!(state.slot, Slot::Running) {
                         state.slot = Slot::Done(Ok(event));
-                        Self::wake(&mut state.operation);
+                        woken.extend(state.operation.take());
                     }
                 }
             }
@@ -440,18 +450,17 @@ impl Reactor {
     fn end(&self, error: Option<Error>) {
         let mut state = self.shared.lock();
         state.ended = true;
+        let mut operation = None;
         if let (Slot::Running, Some(error)) = (&state.slot, error) {
             state.slot = Slot::Done(Err(error));
-            Self::wake(&mut state.operation);
+            operation = state.operation.take();
         }
-        Self::wake(&mut state.block);
-    }
-
-    /// Wakes the future registered in `slot`, if any.
-    fn wake(slot: &mut Option<TaskWaker>) {
-        if let Some(waker) = slot.take() {
-            waker.wake();
-        }
+        let block = state.block.take();
+        drop(state);
+        [operation, block]
+            .into_iter()
+            .flatten()
+            .for_each(TaskWaker::wake);
     }
 
     /// Closes the handle and waits, in the reactor, for the worker's cleanup.
