@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from gate import check_plan, check_release, check_results
+from gate import check_plan, check_release, check_results, coverage_report
 from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, XSDR, XSDR_ORACLE,
                   XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC, PE_SYNC_ORACLE,
                   PE_SYNC_PORTABLE, LMK05318, LIMESDR,
@@ -18,7 +18,7 @@ from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, X
                   affected_packages, bare_metal_devices, changed_paths, handed_on,
                   released_members, select)
 from prepare import (OUTPUT_LIMIT, emit_output, event_options, is_release_merge, is_release_pr,
-                     needs_cargo)
+                     job_outputs, needs_cargo)
 
 
 def fixture():
@@ -608,26 +608,45 @@ class GateTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     check_plan(actual, expected)
 
-    def test_a_large_diff_hands_jobs_a_plan_that_fits_one_environment_variable(self):
-        paths = [f"{BNB}/src/generated/{index:05}.rs" for index in range(20000)]
+    def test_a_large_diff_hands_jobs_outputs_that_fit_one_environment_variable(self):
+        # Owned paths grow the per-root reasons; unowned ones the global reasons.
+        paths = ([f"{BNB}/src/generated/{index:05}.rs" for index in range(10000)]
+                 + [f"orphan/{index:05}.rs" for index in range(10000)])
         plan = planned(paths)
         self.assertGreater(len(json.dumps(plan, separators=(",", ":"))), OUTPUT_LIMIT,
                            "the scenario must overflow with the per-path detail")
-        handed = handed_on(plan)
-        self.assertFalse(DETAIL & handed.keys())
-        self.assertLess(len(json.dumps(handed, separators=(",", ":"))), OUTPUT_LIMIT)
-        check_results(handed, results(handed))
-        check_plan(handed, handed_on(copy.deepcopy(plan)))
+        self.assertTrue(plan["full_reasons"], "the scenario must reach the global reasons")
+        outputs = job_outputs(plan, {"public_api_toolchain": "nightly", "public_api_version": "0",
+                                     "semver_version": "0"})
+        self.assertEqual(outputs["plan"], handed_on(plan))
+        self.assertFalse(DETAIL & outputs["plan"].keys())
+        for name, value in outputs.items():
+            with self.subTest(output=name):
+                encoded = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+                self.assertLessEqual(len(encoded.encode()), OUTPUT_LIMIT)
+        check_results(outputs["plan"], results(outputs["plan"]))
+
+    def test_the_receipt_keeps_the_detail_the_jobs_were_not_handed(self):
+        recomputed = planned([f"{BNB}/src/lib.rs"])
+        report = coverage_report(handed_on(recomputed), results(recomputed), recomputed,
+                                 event="push", run_id=42, attempt=1)
+        self.assertEqual(report["plan"], recomputed)
+        self.assertEqual(report["plan"]["paths"], [f"{BNB}/src/lib.rs"])
+        tampered = handed_on(recomputed)
+        tampered["profiles"] = tampered["profiles"][1:]
+        with self.assertRaises(ValueError):
+            coverage_report(tampered, results(recomputed), recomputed,
+                            event="push", run_id=42, attempt=1)
 
     def test_an_oversized_output_fails_where_it_is_written(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
             output.write_text("")
             with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}):
-                emit_output("small", "x" * 16)
+                emit_output("largest", "x" * OUTPUT_LIMIT)
                 with self.assertRaisesRegex(ValueError, "environment variable"):
                     emit_output("plan", "x" * (OUTPUT_LIMIT + 1))
-            self.assertEqual(output.read_text(), "small=" + "x" * 16 + "\n")
+            self.assertEqual(output.read_text(), "largest=" + "x" * OUTPUT_LIMIT + "\n")
 
     def test_empty_successful_docs_plan_legitimately_skips_heavy_jobs(self):
         plan = planned(["README.md"])

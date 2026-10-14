@@ -226,7 +226,13 @@ jobs:
           INPUT_RELEASE: ${{ inputs.release }}
           INPUT_PRODUCTS: ${{ inputs.products }}
           CI_PLAN: ${{ needs.plan.outputs.plan }}
-          CI_NEEDS: ${{ toJSON(needs) }}
+          # Results only: toJSON(needs) would embed every job output, the plan included, and
+          # could exceed one environment variable's 128 KiB limit.
+          CI_NEEDS: >-
+            {"plan": {"result": "${{ needs.plan.result }}"},
+            "policy": {"result": "${{ needs.policy.result }}"},
+            "checks": {"result": "${{ needs.checks.result }}"},
+            "fuzz": {"result": "${{ needs.fuzz.result }}"}}
         run: python3 scripts/ci/gate.py ci --report "$RUNNER_TEMP/ci-coverage.json"
       - uses: actions/upload-artifact@v7.0.1
         if: env.ACT != 'true'

@@ -24,7 +24,7 @@ SCHEMA = 2
 # Per-path selection detail, which grows with the diff. No job reads it, and every step gets
 # the plan as one environment variable, which Linux caps at 128 KiB (MAX_ARG_STRLEN), so it
 # stays in the plan step's log and the coverage report, out of the plan jobs pass on.
-DETAIL = frozenset({"paths", "prose", "reasons"})
+DETAIL = frozenset({"full_reasons", "paths", "prose", "reasons"})
 BNB = "bitsandbytes/bnb"
 MACROS = "bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"

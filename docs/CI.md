@@ -147,6 +147,10 @@ Fast policy tests use only Python's standard library and Git. Full-tier selector
 tests exercise actual Cargo metadata without compilation/network, including other-platform
 and optional dependency declarations. The fixed profile adapter is `scripts/ci/run.py`;
 it consumes the plan through `CI_PLAN`, not arbitrary shell commands from changed filenames.
+Jobs are handed the plan without its per-path detail (`paths`, `prose`, `reasons`,
+`full_reasons`), which grows with the diff: Linux caps one environment variable at 128 KiB, and
+the plan step refuses any output past that. The detail stays in the plan step's log and the
+coverage receipt; the final job receives only the other jobs' results, not their outputs.
 
 Local pre-push requires a clean committed tree. Its default comparison is the merge base
 against the trunk recorded by repo-guard's local configuration; absent configuration/history

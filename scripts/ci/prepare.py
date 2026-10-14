@@ -103,6 +103,23 @@ def plan_for_event():
     return plan
 
 
+def job_outputs(plan, bnb):
+    """The plan step's outputs: the plan as jobs are handed it, the check and fuzz matrices,
+    and the tool pins."""
+    checks = [{"profile": profile,
+               "toolchain": ("1.85.0" if profile == "msrv" else
+                             bnb["public_api_toolchain"] if profile == "public-api" else "stable")}
+              for profile in plan["profiles"]]
+    return {"plan": handed_on(plan),
+            "checks": {"include": checks or [{"profile": "none", "toolchain": "stable"}]},
+            "fuzz": {"include": plan["fuzz"] or [{"root": "none", "target": "none", "args": []}]},
+            "has_checks": bool(checks),
+            "has_fuzz": bool(plan["fuzz"]),
+            "release": plan["release"],
+            "public_api_tool": "cargo-public-api@" + bnb["public_api_version"],
+            "semver_tool": "cargo-semver-checks@" + bnb["semver_version"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--probe", action="store_true", help="decide whether Cargo setup is needed, without Cargo")
@@ -115,25 +132,16 @@ def main():
     output = Path(os.environ["RUNNER_TEMP"]) / "ci-plan.json"
     output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
     bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
-    checks = [{"profile": profile,
-               "toolchain": ("1.85.0" if profile == "msrv" else
-                             bnb["public_api_toolchain"] if profile == "public-api" else "stable")}
-              for profile in plan["profiles"]]
-    emit_output("plan", handed_on(plan))
-    emit_output("checks", {"include": checks or [{"profile": "none", "toolchain": "stable"}]})
-    emit_output("fuzz", {"include": plan["fuzz"] or [{"root": "none", "target": "none", "args": []}]})
-    emit_output("has_checks", bool(checks))
-    emit_output("has_fuzz", bool(plan["fuzz"]))
-    emit_output("release", plan["release"])
-    emit_output("public_api_tool", "cargo-public-api@" + bnb["public_api_version"])
-    emit_output("semver_tool", "cargo-semver-checks@" + bnb["semver_version"])
+    outputs = job_outputs(plan, bnb)
+    for name, value in outputs.items():
+        emit_output(name, value)
     print(json.dumps(plan, indent=2))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
             summary.write("## CI coverage\n\n")
             summary.write(f"Mode: {'full' if plan['full'] else 'affected'}; "
                           f"release products: {', '.join(plan['products']) or 'none'}.\n\n")
-            summary.write(f"{len(plan['packages'])} workspace packages, {len(checks)} check profiles, "
+            summary.write(f"{len(plan['packages'])} workspace packages, {len(plan['profiles'])} check profiles, "
                           f"{len(plan['fuzz'])} fuzz targets.\n\n")
             summary.write("Selection reasons are in the plan step and exact-run coverage artifact.\n")
 

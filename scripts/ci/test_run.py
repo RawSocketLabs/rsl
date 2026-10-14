@@ -11,8 +11,14 @@ import unittest
 from run import commands, locked_command
 from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE,
                   PE_SYNC_PORTABLE, USDR,
-                  USDR_PORTABLE, XSDR, XSDR_PORTABLE)
-from test_plan import planned
+                  USDR_PORTABLE, XSDR, XSDR_PORTABLE, handed_on)
+import test_plan
+
+
+def planned(*args, **kwargs):
+    """A plan as the check jobs are handed it, so a key run.py reads cannot hide in the detail."""
+    return handed_on(test_plan.planned(*args, **kwargs))
+
 
 BNB_CONFIG = {"baseline": "0.6.0", "release_type": "patch"}
 

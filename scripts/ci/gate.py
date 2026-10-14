@@ -66,6 +66,16 @@ def check_plan(actual, expected):
         raise ValueError("coverage differs from the plan recomputed from the event and immutable Git trees")
 
 
+def coverage_report(handed, needs, recomputed, *, event, run_id, attempt):
+    """The exact-run coverage receipt: the jobs' plan must equal the recomputed one as handed
+    on, every selected job must have succeeded, and the receipt keeps the recomputed plan with
+    the per-path detail the jobs were not handed."""
+    check_plan(handed, handed_on(recomputed))
+    check_results(handed, needs)
+    return {"schema": SCHEMA, "head": recomputed["head"], "plan": recomputed, "needs": needs,
+            "event": event, "run_id": run_id, "run_attempt": attempt}
+
+
 def check_release(report, *, sha, run_id, attempt, graph, members):
     if (report["head"] != sha or report["run_id"] != run_id
             or report["run_attempt"] != attempt or report["plan"]["head"] != sha):
@@ -107,17 +117,12 @@ def main():
     if args.mode == "ci":
         from prepare import plan_for_event
 
-        plan = json.loads(os.environ["CI_PLAN"])
-        needs = json.loads(os.environ["CI_NEEDS"])
-        recomputed = plan_for_event()
-        check_plan(plan, handed_on(recomputed))
-        check_results(plan, needs)
-        # The report keeps the per-path detail the jobs were not handed.
-        report = {"schema": SCHEMA, "head": plan["head"], "plan": recomputed, "needs": needs,
-                  "event": os.environ["GITHUB_EVENT_NAME"],
-                  "run_id": int(os.environ["GITHUB_RUN_ID"]),
-                  "run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "1"))}
+        report = coverage_report(json.loads(os.environ["CI_PLAN"]), json.loads(os.environ["CI_NEEDS"]),
+                                 plan_for_event(), event=os.environ["GITHUB_EVENT_NAME"],
+                                 run_id=int(os.environ["GITHUB_RUN_ID"]),
+                                 attempt=int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")))
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        plan = report["plan"]
         print(f"Passed {len(plan['profiles'])} check profiles and {len(plan['fuzz'])} fuzz targets")
     else:
         root = Path.cwd()
