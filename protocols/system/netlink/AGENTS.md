@@ -20,8 +20,8 @@ the Linux kernel Netlink documentation; its future refcheck corpus name is `netl
 
 ## Rules
 
-- Preserve the public package/import names `netlink` / `netlink`; the filesystem category
-  is not part of the consumer API.
+- Preserve the public package and import name `netlink`; the filesystem category is not part
+  of the consumer API.
 - Treat native endianness, four-byte alignment, stored lengths, nested attribute flags, sequence
   numbers, port IDs, multipart termination, and signed kernel errno conversion as wire semantics.
   Keep the corresponding operations explicit and test them at their boundary.

@@ -102,7 +102,7 @@ def results(plan):
 
 class SelectionTests(unittest.TestCase):
     def test_blessed_changes_select_facade_and_consumers_in_both_layouts(self):
-        for root in ("deps", "deps"):
+        for root in ("rsl-deps", "deps"):
             graph = {root: Package("deps", set()), "consumer": Package("consumer", {root})}
             for path in (f"{root}/src/lib.rs", "tools/gen-blessed.py", "tools/check-drift.py",
                          ".github/actions/blessed-drift/action.yml"):

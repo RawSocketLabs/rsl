@@ -1,4 +1,4 @@
-# usdr
+# usdr-ffi
 
 Rust bindings to the USDR software-defined-radio library, via [`cxx`](https://cxx.rs).
 
