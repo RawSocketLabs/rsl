@@ -1,7 +1,7 @@
 //! The `LSDr`'s wiring and setpoints, as the pinned libusdr's
 //! `device/m2_lsdr/m2_da09_4_ad45_2.c` chooses them.
 
-use rsl_lowlevel::{I2cAddr, SpiAddr};
+use hal::{I2cAddr, SpiAddr};
 
 use crate::portable::supplies::SupplyPlan;
 use crate::portable::tps6594::{Buck, BuckVoltage};

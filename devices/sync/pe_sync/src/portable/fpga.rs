@@ -2,7 +2,7 @@
 //! banks and the status input. Facts and bit meanings from the comments in the pinned
 //! libusdr's `device/pe_sync/pe_sync.c`; register numbers from `sync_const.h`.
 
-use rsl_lowlevel::FpgaAccess;
+use hal::FpgaAccess;
 
 /// The chip name failed gateware accesses carry.
 pub(crate) const NAME: &str = "FPGA";

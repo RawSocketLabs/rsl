@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-pub use rsl_lowlevel::BusError;
+pub use hal::BusError;
 
 use crate::lms64c::FRAME_LEN;
 

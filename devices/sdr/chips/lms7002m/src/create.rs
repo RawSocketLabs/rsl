@@ -1,7 +1,7 @@
 //! The chip's bring-up after reset release: libusdr's `lms7002m_create`, which loads a fixed
 //! reset programme and checks the chip's version.
 
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::NAME;
 use super::batch::Batch;
@@ -174,7 +174,7 @@ impl Sequence for Create {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Access;
+    use hal::Access;
 
     use super::*;
 

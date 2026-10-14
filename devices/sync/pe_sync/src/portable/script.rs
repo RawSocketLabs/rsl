@@ -4,7 +4,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::outcome::outcome;
 
@@ -105,7 +105,7 @@ impl Sequence for Script {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{Access, FpgaAccess};
+    use hal::{Access, FpgaAccess};
 
     use super::*;
 

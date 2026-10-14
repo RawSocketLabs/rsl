@@ -54,7 +54,7 @@ static int fake_close(int fd)
 #define ioctl fake_ioctl
 #define close fake_close
 #define main rsl_oracle_xmass_fwupd_main
-#include "../libusdr/tools/xmass_fwupd.c"
+#include "../../../../vendor/libusdr/tools/xmass_fwupd.c"
 #undef main
 #undef close
 #undef ioctl

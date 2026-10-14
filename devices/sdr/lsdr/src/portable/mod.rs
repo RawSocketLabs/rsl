@@ -1,6 +1,6 @@
 //! Platform-independent board sequences: the gateware registers, the `LSDr`'s chips' register
 //! values, and the hand-written sans-I/O sequences the blocking [`Device`](crate::Device)
-//! runs with `rsl-lowlevel`'s executor. Core only: no std, no allocation; keep imports within
+//! runs with `hal`'s executor. Core only: no std, no allocation; keep imports within
 //! this tree and the shared `no_std` crates (`nostd-check` compiles it unchanged).
 
 pub(crate) mod adc_power;

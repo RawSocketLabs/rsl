@@ -292,7 +292,7 @@ fn port_map(map: LmlMap, siso: bool) -> LmlPortMap {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::SpiAddr;
+    use hal::SpiAddr;
 
     use super::*;
     use crate::regs::Mac;

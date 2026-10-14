@@ -10,13 +10,13 @@
 //! Without a TX MMCM libusdr's calibration writes a fixed TX delay and then fails the
 //! rate with `-ERANGE`, its RX badness never having been measured; that is reproduced.
 
+use hal::{
+    FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
+};
 use lms7002m::Batch;
 use lms7002m::ctrl::{Control, ControlError, Operation, RateFlags, RateRequest, StreamFlags};
 use lms7002m::{BistCheck, Mac, Tsp};
 use lp8758::{self, Buck, BuckVoltage};
-use rsl_lowlevel::{
-    FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
-};
 
 use super::fpga::{
     Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE, LMS_TX_ENABLE, REG_CFG_PHY_0, RxPhyBank,

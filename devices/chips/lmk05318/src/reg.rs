@@ -5,7 +5,7 @@
 //! Multi-byte numbers (the YAML's address ranges, such as `PLL1_NDIV` at `0x6C:0x6D`) are
 //! sent most significant byte first and written as bytes.
 //!
-//! `rsl-lowlevel`'s shared `Register` traits take 8-bit addresses, so this chip's value
+//! `hal`'s shared `Register` traits take 8-bit addresses, so this chip's value
 //! types implement the 16-bit [`Lmk05318Register`] and [`IndexedLmk05318Register`] instead.
 
 /// Register addresses, with the YAML's names (`hw/lmk05318/lmk05318.yaml`) in the docs.
@@ -282,14 +282,14 @@ impl Reg {
     pub(super) const LAST_STAGED: u16 = 0x019b;
 }
 
-/// A byte register at one fixed address; the 16-bit counterpart of `rsl-lowlevel`'s
+/// A byte register at one fixed address; the 16-bit counterpart of `hal`'s
 /// `Register`.
 pub trait Lmk05318Register: Copy + From<u8> + Into<u8> {
     /// Where this register lives.
     const ADDR: Reg;
 }
 
-/// A byte register the chip repeats; the 16-bit counterpart of `rsl-lowlevel`'s
+/// A byte register the chip repeats; the 16-bit counterpart of `hal`'s
 /// `IndexedRegister`.
 pub trait IndexedLmk05318Register: Copy + From<u8> + Into<u8> {
     /// What selects one copy.

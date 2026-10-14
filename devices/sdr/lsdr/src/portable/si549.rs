@@ -6,7 +6,7 @@
 //! shared `devices/sdr/chips/si549` crate when a second driver needs it (`PORTING.md`).
 
 use bnb::{BitEnum, bitfield};
-use rsl_lowlevel::Register;
+use hal::Register;
 
 /// The chip's name in errors.
 pub(crate) const NAME: &str = "Si549";

@@ -3,7 +3,7 @@
 The PE_SYNC row of the programme ledger (`../../sdr/usdr/PORTING.md`, "PE_SYNC clock tree /
 distribution / synchronization") in detail. Same contract: **Present** means source
 exists, test names are definitions, not run results; nothing is hardware-qualified (U).
-Reference: `../../sdr/usdr/oracle/libusdr/PIN`; `C:` paths are relative to its `lib/`.
+Reference: `../../vendor/libusdr/PIN`; `C:` paths are relative to its `lib/`.
 `O:` = `oracle/tests/`, `T:` = `tests/`, `P:` = `src/portable/`.
 
 Golden-line numbers refer to `oracle/tests/golden/session.trace` (characterization).
@@ -21,7 +21,7 @@ Golden-line numbers refer to `oracle/tests/golden/session.trace` (characterizati
 | LMK1D1208I ×2: identity check, output enables, swings, inputs and banks | `C:hw/lmk1d1208i/lmk1d1208i.c::lmk1d1208i_create` | `P:lmk1d1208i.rs` (`Create`) | 1488–1495 | same; `O:open_parity.rs::a_board_without_a_fan_out_buffer_is_refused_and_powered_off_like_libusdr`; `P:lmk1d1208i::tests` / U |
 | Power-off on a failed open; close | `pe_sync.c::usdr_device_pe_sync_initialize`, `pe_sync_power_off`, `usdr_device_pe_sync_destroy` | `Device::open`, `Device::close`, `P:power.rs` (`Power::off`) | 1496–1903 | `O:open_parity.rs` (all four tests); `T:open.rs` / U |
 
-Each register sequence is a hand-written sans-I/O machine over `rsl-lowlevel`'s `Sequence`,
+Each register sequence is a hand-written sans-I/O machine over `hal`'s `Sequence`,
 run by its blocking `run_sequence`; `nostd-check/` compiles the exact `src/portable` tree for
 `thumbv7em-none-eabi` and runs its machines. The LMK05318's bus traffic is blocking code
 (see below).
@@ -49,7 +49,7 @@ input is LMX2820 #0's planned 25 MHz though that synthesizer's SYSREF stays off.
 | Capability | Pinned C | Blocker or note |
 |---|---|---|
 | A transport (USB VID 0x3727 PID 0xE001, PCIe) | `C:lowlevel/usb_uram/`, `pcie_uram/` | PE_SYNC has two I2C cores; `usdr`'s transports refuse core ≠ 0 and know the uSDR's register layout. Shared transports belong outside `usdr` first |
-| LMK05318 bus code shared with `usdr` | `C:hw/lmk05318/lmk05318.c` | Duplicated today (`src/lmk05318.rs` here, `chips/lmk05318/lmk05318.rs` in `usdr`; the plan and registers are shared). Merge into `lmk05318` once `rsl-lowlevel`'s seam carries 16-bit-pointer and multi-byte I2C transfers, or with an error mapping both drivers accept |
+| LMK05318 bus code shared with `usdr` | `C:hw/lmk05318/lmk05318.c` | Duplicated today (`src/lmk05318.rs` here, `chips/lmk05318/lmk05318.rs` in `usdr`; the plan and registers are shared). Merge into `lmk05318` once `hal`'s seam carries 16-bit-pointer and multi-byte I2C transfers, or with an error mapping both drivers accept |
 | LMK05318 DPLL (reference validation, `REFVALSTAT`) | `lmk05318_dpll_config`, `lmk05318_wait_dpll_ref_stat` | `pe_sync.c` leaves it off; sim lacks reset values and reference validation |
 | LMX2820 SYSREF and instant calibration; LMX1204/LMX1214 precision mode, per-output SYSREF delays, SYSREF windowing; LMX2820 `sync` | `lmx2820_calculate_systef_chain`, `lmx2820_instant_calibration_init`, `*_sysref_windowing_*`, `lmx1204_init_sysrefout_ch_delay` | Not called by `pe_sync.c`; no control in libusdr reaches them |
 | AD5662 DACs, external SPI | `pe_sync.c` (SPI buses 0, 1, 6, 7) | Not driven at open; not modelled |

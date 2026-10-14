@@ -16,7 +16,7 @@
 use bnb::bitfield;
 
 use crate::error::{BusContext, Error};
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 /// Register addresses (`dac80501.yaml`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

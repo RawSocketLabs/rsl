@@ -3,7 +3,7 @@
 The LSDr (`m2_da09_4_ad45_2`) row of the programme ledger (`../usdr/PORTING.md`, "LSDr
 ADC/clock/power/RX driver") in detail. Same contract: **Present** means source exists, test
 names are definitions, not run results; nothing is hardware-qualified (U). Reference:
-`../usdr/oracle/libusdr/PIN`; `C:` paths are relative to its `lib/`, and `C:lsdr` is
+`../../vendor/libusdr/PIN`; `C:` paths are relative to its `lib/`, and `C:lsdr` is
 `C:device/m2_lsdr/m2_da09_4_ad45_2.c`. `O:` = `oracle/tests/`, `T:` = `tests/`, `P:` =
 `src/portable/`.
 
@@ -23,7 +23,7 @@ Golden-line numbers refer to `oracle/tests/golden/single_adc_session.trace` (S) 
 | Close: Si549 output gated, LDO4 off, both ADC sockets' `REG_PWR_CONTROL` = 0xE0, each write attempted whatever the others did | `C:lsdr::usdr_device_m2_d09_4_ad45_2_destroy`; `ads42lbx9_ctrl` | `P:close.rs` (`Wiring::close`), `P:ads42lbx9.rs` (`PowerControl::OFF`), `Device::close` | S65–68, D72–75 | `O:session_parity.rs` (every test closes); `T:open.rs::close_gates_the_clock_cuts_the_supply_and_powers_both_sockets_down`, `close_attempts_every_write_and_reports_the_first_failure` / U |
 | `no_std` compile witness for `src/portable` | — | `nostd-check/` (`lsdr-nostd-check`, exact-source `#[path]` import), `scripts/ci/portable.py lsdr` | — | `nostd-check` tests; `cargo check --target thumbv7em-none-eabi` (release-only in CI) / U |
 
-Each sequence is a hand-written sans-I/O machine over `rsl-lowlevel`'s `Sequence`, run by
+Each sequence is a hand-written sans-I/O machine over `hal`'s `Sequence`, run by
 its blocking `run_sequence`. The portable tree uses core only and allocates nothing (held by
 review; `bnb`, under the register value types, requires `alloc`); the fixture holds the
 compilation. The four chips' register values live in `P:` (one module each) because only

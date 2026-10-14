@@ -5,7 +5,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{
     self, DISTRIBUTION_ON, GENERATOR_ON, Gpo, INPUT_BUFFERS, INPUT_GPS_LDO, INPUT_GPS_PPS,
@@ -262,7 +262,7 @@ impl Sequence for Power {
 mod tests {
     use std::vec::Vec;
 
-    use rsl_lowlevel::{Access, FpgaAccess};
+    use hal::{Access, FpgaAccess};
 
     use super::*;
 

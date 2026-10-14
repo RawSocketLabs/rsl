@@ -96,7 +96,7 @@ def commands(profile, plan, bnb):
                                "--locked", "--target", "thumbv7em-none-eabi"])
         devices = bare_metal_devices(release_roots, plan["release_members"])
         if devices:
-            # Default features only: `std` (rsl-lowlevel's Bus) is the host driver's.
+            # Default features only: `std` (hal's Bus) is the host driver's.
             result.append(["cargo", "check",
                            *packages(BARE_METAL_DEVICES[root] for root in devices),
                            "--target", "thumbv7em-none-eabi"])

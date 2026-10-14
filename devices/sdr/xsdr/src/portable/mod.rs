@@ -1,5 +1,5 @@
 //! Platform-independent board sequences: the gateware registers and the hand-written
-//! sans-I/O sequences the blocking [`Device`](crate::Device) runs with `rsl-lowlevel`'s
+//! sans-I/O sequences the blocking [`Device`](crate::Device) runs with `hal`'s
 //! executor. The LMS7002M's own operations come from `lms7002m`. Core only: no std, no
 //! allocation; keep imports within this tree and the shared `no_std` crates.
 

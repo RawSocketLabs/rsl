@@ -1,7 +1,7 @@
 //! The driver's error type.
 
-pub use rsl_lowlevel::Access;
-use rsl_lowlevel::SequenceFailure;
+pub use hal::Access;
+use hal::SequenceFailure;
 use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
@@ -46,7 +46,7 @@ pub enum Error {
     },
 
     /// No chip answered where one must be. Not produced yet: no ported sequence reports
-    /// it; it keeps `rsl-lowlevel`'s sequence failures mapped one to one.
+    /// it; it keeps `hal`'s sequence failures mapped one to one.
     #[error("{0} not found")]
     ChipMissing(&'static str),
 
@@ -151,7 +151,7 @@ impl From<SequenceFailure<BusError>> for Error {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, SpiAddr};
+    use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
 

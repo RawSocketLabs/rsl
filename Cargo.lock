@@ -1653,6 +1653,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hal"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2117,9 +2124,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 name = "limesdr"
 version = "0.0.0"
 dependencies = [
+ "hal",
  "limesdr-sim",
  "lms7002m",
- "rsl-lowlevel",
  "thiserror 2.0.21",
 ]
 
@@ -2178,7 +2185,7 @@ name = "lms7002m"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -2205,7 +2212,7 @@ name = "lp8758"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -2222,8 +2229,8 @@ name = "lsdr"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lsdr-sim",
- "rsl-lowlevel",
  "sdr-frontend",
  "thiserror 2.0.21",
 ]
@@ -2646,9 +2653,9 @@ name = "pe-sync"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lmk05318",
  "pe-sync-sim",
- "rsl-lowlevel",
  "thiserror 2.0.21",
 ]
 
@@ -3361,13 +3368,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "rust-dsdcc"
 version = "0.1.0"
 dependencies = [
@@ -3522,8 +3522,8 @@ name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lmk05318",
- "rsl-lowlevel",
  "thiserror 2.0.21",
 ]
 
@@ -4630,11 +4630,11 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "deps",
+ "hal",
  "lmk05318",
  "lp8758",
  "mio",
  "num-complex",
- "rsl-lowlevel",
  "sdr-frontend",
  "thiserror 2.0.21",
  "usb",
@@ -5183,9 +5183,9 @@ dependencies = [
 name = "xsdr"
 version = "0.0.0"
 dependencies = [
+ "hal",
  "lms7002m",
  "lp8758",
- "rsl-lowlevel",
  "sdr-frontend",
  "thiserror 2.0.21",
  "xsdr-sim",

@@ -11,7 +11,7 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 lmk05318.workspace = true
-rsl-lowlevel = { workspace = true, features = ["std"] }
+hal = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]

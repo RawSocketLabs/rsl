@@ -1,6 +1,6 @@
 //! One part of a control-code operation: chip calls, a tuning or a board action.
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::calls::Calls;
 use crate::chip::{CgenTune, Lms7002m, SxxTune};

@@ -9,6 +9,7 @@ mod portable;
 
 use portable::adc_power::AdcPower;
 
+use hal::{FpgaAccess, I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use portable::fpga::{self, DEAD, LIVENESS};
 use portable::pga::{PgaGain, SetPga};
 use portable::probes::Probes;
@@ -16,7 +17,6 @@ use portable::single::Single;
 use portable::supplies::{Supplies, SupplyPlan};
 use portable::tps6594::{Buck, BuckVoltage};
 use portable::wiring::Wiring;
-use rsl_lowlevel::{FpgaAccess, I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 /// The LSDr's addresses (`enum BUSIDX_m2_da09_4_ad45_2_rev000`).
 const WIRING: Wiring = Wiring {

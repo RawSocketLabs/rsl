@@ -8,7 +8,7 @@
 //! `req`/`rep` lines encode. `limesdr-oracle` proves the driver and the shim agree, not
 //! that the board's firmware does.
 
-use rsl_lowlevel::{FpgaAccess, SpiAddr};
+use hal::{FpgaAccess, SpiAddr};
 
 use super::lms64c::{Frame, STATUS_COMPLETED, Space};
 

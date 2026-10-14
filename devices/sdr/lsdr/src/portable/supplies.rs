@@ -8,9 +8,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{
-    IndexedRegister, Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
-};
+use hal::{IndexedRegister, Register, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::outcome::outcome;
 use super::si549::{self, OutputControl};
@@ -118,7 +116,7 @@ impl Sequence for Supplies {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{Access, I2cAddr, SpiAddr};
+    use hal::{Access, I2cAddr, SpiAddr};
 
     use super::*;
 

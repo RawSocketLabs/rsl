@@ -1,6 +1,6 @@
 //! Which family member the board is: the hardware ID libusdr reads twice at open.
 
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, REG_HWID};
 use super::outcome::outcome;

@@ -2,7 +2,7 @@
 //!
 //! **Unstable before 1.0.** This mirrors libusdr's `lowlevel_ops.ls_op` so custom buses,
 //! including the board simulator, can drive a [`Device`](crate::Device). The seam itself is
-//! the shared `rsl-lowlevel` crate's, re-exported here. On the uSDR:
+//! the shared `hal` crate's, re-exported here. On the uSDR:
 //!
 //! - I2C uses core 0 only; the transports refuse any other [`I2cAddr::core`].
 //! - RX streaming ([`Bus::rx_stream_open`]): `PCIe` uses 32 DMA buffers; USB queues eight
@@ -17,9 +17,7 @@
 
 use std::io;
 
-pub use rsl_lowlevel::{
-    Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxCommit, TxFill,
-};
+pub use hal::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxCommit, TxFill};
 
 use crate::portable::error::Failure;
 
@@ -44,7 +42,7 @@ impl From<Failure<BusError>> for BusError {
 /// [`BusError::Other`].
 ///
 /// A function, not `From` (which this replaces): both types are foreign here, and
-/// `rsl-lowlevel` stays independent of `usb`.
+/// `hal` stays independent of `usb`.
 #[cfg(all(feature = "usb", target_os = "linux"))]
 #[must_use]
 pub fn usb_error(error: usb::Error) -> BusError {

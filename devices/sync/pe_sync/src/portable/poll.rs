@@ -7,7 +7,7 @@
 
 use core::time::Duration;
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::outcome::outcome;
 use super::ti_spi;
@@ -119,7 +119,7 @@ impl Sequence for LockPoll {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::{FpgaAccess, SpiAddr};
+    use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
 

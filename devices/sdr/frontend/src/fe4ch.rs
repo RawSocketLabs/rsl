@@ -11,7 +11,7 @@
 //! What follows an identified sensor (the expanders' test vectors, their outputs, the
 //! DAC and the channel set-up) is not ported.
 
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 use crate::error::{BusContext, Error};
 use crate::gpio::{FrontEndGpio, GpioCommand, PinMode};

@@ -42,6 +42,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "hal"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -69,7 +76,7 @@ name = "lms7002m"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -81,7 +88,7 @@ name = "lp8758"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
- "rsl-lowlevel",
+ "hal",
 ]
 
 [[package]]
@@ -118,19 +125,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
 name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lmk05318",
- "rsl-lowlevel",
  "thiserror",
 ]
 
@@ -240,9 +240,9 @@ dependencies = [
 name = "xsdr"
 version = "0.0.0"
 dependencies = [
+ "hal",
  "lms7002m",
  "lp8758",
- "rsl-lowlevel",
  "sdr-frontend",
  "thiserror",
 ]
@@ -253,8 +253,8 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "cc",
+ "hal",
  "lms7002m",
- "rsl-lowlevel",
  "thiserror",
  "xsdr",
  "xsdr-sim",

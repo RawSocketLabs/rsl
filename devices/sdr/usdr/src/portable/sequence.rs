@@ -1,5 +1,5 @@
-//! The register-sequence seam: `rsl-lowlevel`'s, under the portable tree's path.
+//! The register-sequence seam: `hal`'s, under the portable tree's path.
 
-pub(crate) use rsl_lowlevel::{
+pub(crate) use hal::{
     FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure, i2c_byte,
 };

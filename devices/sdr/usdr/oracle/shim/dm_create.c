@@ -4,7 +4,7 @@
 // buffer, and its own `do_transmit` sends from it. The oracle takes the packets out of the
 // ring, or hands `do_transmit` a TX stream it created on the simulated board.
 #define main rsl_dm_create_main
-#include "../libusdr/tools/usdr_dm_create.c"
+#include "../../../../vendor/libusdr/tools/usdr_dm_create.c"
 #undef main
 
 #include <errno.h>

@@ -1,14 +1,14 @@
 //! Compiles the vendored libusdr subset plus the sim transport plugin into static libraries.
 //!
-//! The vendored tree is the uSDR oracle's (`../../../sdr/usdr/oracle/libusdr`, one tree, one
-//! PIN); it already includes `device/pe_sync` and its clock chips. It is read, never copied
-//! or edited.
+//! The vendored tree is `devices/vendor/libusdr` (`../../../vendor/libusdr`), the one the
+//! uSDR oracle compiles: one tree, one PIN; it already includes `device/pe_sync` and its
+//! clock chips. It is read, never copied or edited.
 
 use std::fs;
 use std::path::Path;
 
 fn main() {
-    let libusdr = Path::new("../../../sdr/usdr/oracle/libusdr");
+    let libusdr = Path::new("../../../vendor/libusdr");
     let lib = libusdr.join("lib");
     let sources =
         fs::read_to_string(libusdr.join("sources.txt")).expect("libusdr/sources.txt is vendored");

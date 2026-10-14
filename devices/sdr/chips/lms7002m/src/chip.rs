@@ -22,7 +22,7 @@ pub use lml::{LmlConfig, LmlMap};
 pub use synth::{CgenTune, SxxTune, Synthesizer, TuneError};
 
 use bnb::{u2, u3, u4, u5};
-use rsl_lowlevel::SpiAddr;
+use hal::SpiAddr;
 
 use super::batch::Batch;
 use super::register::Register;
@@ -500,7 +500,7 @@ const fn afe_idle() -> Afe {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Sequence;
+    use hal::Sequence;
 
     use super::*;
     use crate::reg::Reg;

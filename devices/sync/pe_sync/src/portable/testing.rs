@@ -3,7 +3,7 @@
 
 use std::vec::Vec;
 
-use rsl_lowlevel::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
+use hal::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// One action a sequence took, in the trace's terms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

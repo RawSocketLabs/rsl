@@ -43,6 +43,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "hal"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -82,8 +89,8 @@ name = "pe-sync"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
  "lmk05318",
- "rsl-lowlevel",
  "thiserror",
 ]
 
@@ -93,10 +100,10 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "cc",
+ "hal",
  "lmk05318",
  "pe-sync",
  "pe-sync-sim",
- "rsl-lowlevel",
  "thiserror",
 ]
 
@@ -138,13 +145,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "rsl-lowlevel"
-version = "0.0.0"
-dependencies = [
- "thiserror",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 //! One access as a sequence, for the steps libusdr runs alone: the liveness read, and the
 //! close's writes, each of which it attempts whatever the others did.
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::outcome::outcome;
 

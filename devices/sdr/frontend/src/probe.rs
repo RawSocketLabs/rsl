@@ -1,7 +1,7 @@
 //! The probe itself (`device_fe_probe`): which boards to try, in which order, what to do
 //! when one fails, and the hand-over to the driver for the bring-ups it owns.
 
-use rsl_lowlevel::Bus;
+use hal::Bus;
 
 use crate::board::{Board, Connector};
 use crate::error::Error;
@@ -202,7 +202,7 @@ mod tests {
     use std::time::Duration;
     use std::vec::Vec;
 
-    use rsl_lowlevel::{BusError, I2cAddr, SpiAddr};
+    use hal::{BusError, I2cAddr, SpiAddr};
 
     use super::*;
     use crate::FrontEndKind;

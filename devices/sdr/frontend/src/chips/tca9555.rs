@@ -13,7 +13,7 @@
 //! access as `tca9555_reg16_get`/`tca9555_reg16_set` perform it.
 
 use crate::error::{BusContext, Error};
-use rsl_lowlevel::{Bus, I2cAddr};
+use hal::{Bus, I2cAddr};
 
 /// Register addresses: the port-0 register of each pair (`enum tca9555_regs`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

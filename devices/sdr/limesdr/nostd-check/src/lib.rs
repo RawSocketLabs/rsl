@@ -7,10 +7,10 @@
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
+use hal::SequenceFailure;
 use portable::lms64c::{FRAME_LEN, Frame, STATUS_COMPLETED};
 use portable::lsop::{BadReply, LsOp};
 use portable::open::{Action, Failure, Open};
-use rsl_lowlevel::SequenceFailure;
 
 /// A healthy LimeSDR-mini's register values: the detector done, a 40 MHz count, LMS7002M
 /// version `version`; every other register reads 0.

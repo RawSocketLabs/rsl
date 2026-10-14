@@ -9,7 +9,7 @@ import textwrap
 import unittest
 
 from run import commands, locked_command
-from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, LOWLEVEL, LP8758, LSDR, LSDR_PORTABLE,
+from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, HAL, LP8758, LSDR, LSDR_PORTABLE,
                   PE_SYNC_PORTABLE, USDR,
                   USDR_PORTABLE, XSDR, XSDR_PORTABLE, handed_on)
 import test_plan
@@ -202,13 +202,13 @@ curl() {
                       commands("no-std", plan, BNB_CONFIG))
 
     def test_shared_device_crates_get_a_bare_metal_check_only_from_a_usdr_release(self):
-        bare = ["cargo", "check", "-p", "lp8758", "-p", "rsl-lowlevel",
+        bare = ["cargo", "check", "-p", "hal", "-p", "lp8758",
                 "--target", "thumbv7em-none-eabi"]
         codec = planned(release=True)
         self.assertIn(LP8758, codec["release_roots"])
         self.assertFalse(any("lp8758" in row for row in commands("no-std", codec, BNB_CONFIG)))
-        plan = planned([f"{LOWLEVEL}/src/lib.rs"])
-        plan["release_roots"] = [USDR, USDR_PORTABLE, LOWLEVEL, LP8758]
+        plan = planned([f"{HAL}/src/lib.rs"])
+        plan["release_roots"] = [USDR, USDR_PORTABLE, HAL, LP8758]
         plan["release_members"] = [{"root": USDR}]
         sequence = commands("no-std", plan, BNB_CONFIG)
         self.assertIn(bare, sequence)
@@ -218,33 +218,33 @@ curl() {
     def test_an_explicit_xsdr_release_checks_its_core_and_the_lms7002m_bare_metal(self):
         plan = planned([f"{LMS7002M}/src/lib.rs"])
         self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
-        plan["release_roots"] = [XSDR, XSDR_PORTABLE, LOWLEVEL, LP8758, LMS7002M]
+        plan["release_roots"] = [XSDR, XSDR_PORTABLE, HAL, LP8758, LMS7002M]
         plan["release_members"] = [{"root": XSDR}]
         sequence = commands("no-std", plan, BNB_CONFIG)
         self.assertIn(["cargo", "check", "--manifest-path", f"{XSDR_PORTABLE}/Cargo.toml",
                        "--locked", "--target", "thumbv7em-none-eabi"], sequence)
-        self.assertIn(["cargo", "check", "-p", "lms7002m", "-p", "lp8758",
-                       "-p", "rsl-lowlevel", "--target", "thumbv7em-none-eabi"], sequence)
+        self.assertIn(["cargo", "check", "-p", "hal", "-p", "lms7002m",
+                       "-p", "lp8758", "--target", "thumbv7em-none-eabi"], sequence)
         self.assertFalse(any(f"{USDR_PORTABLE}/Cargo.toml" in row for row in sequence))
 
     def test_an_explicit_lsdr_release_checks_its_core_on_bare_metal(self):
         plan = planned([f"{LSDR}/src/portable/probes.rs"])
         self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
-        plan["release_roots"] = [LSDR, LSDR_PORTABLE, LOWLEVEL]
+        plan["release_roots"] = [LSDR, LSDR_PORTABLE, HAL]
         plan["release_members"] = [{"root": LSDR}]
         sequence = commands("no-std", plan, BNB_CONFIG)
         self.assertIn(["cargo", "check", "--manifest-path", f"{LSDR_PORTABLE}/Cargo.toml",
                        "--locked", "--target", "thumbv7em-none-eabi"], sequence)
-        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "--target", "thumbv7em-none-eabi"],
+        self.assertIn(["cargo", "check", "-p", "hal", "--target", "thumbv7em-none-eabi"],
                       sequence)
         self.assertFalse(any(f"{XSDR_PORTABLE}/Cargo.toml" in row for row in sequence))
 
     def test_the_front_end_crate_gets_its_bare_metal_check_without_std(self):
         plan = planned([f"{FRONTEND}/src/gpio.rs"])
         self.assertNotIn("no-std", plan["profiles"], "routine changes stay host-only")
-        plan["release_roots"] = [LSDR, LSDR_PORTABLE, LOWLEVEL, FRONTEND]
+        plan["release_roots"] = [LSDR, LSDR_PORTABLE, HAL, FRONTEND]
         plan["release_members"] = [{"root": LSDR}]
-        self.assertIn(["cargo", "check", "-p", "rsl-lowlevel", "-p", "sdr-frontend",
+        self.assertIn(["cargo", "check", "-p", "hal", "-p", "sdr-frontend",
                        "--target", "thumbv7em-none-eabi"],
                       commands("no-std", plan, BNB_CONFIG))
 

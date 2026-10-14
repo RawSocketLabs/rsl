@@ -5,7 +5,7 @@
 //! the gain's unit. libusdr writes the code `63 - 2 × gain` to the gain bank, then pulses the
 //! latch enable.
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::fpga::{self, Gpo, PGA_LATCH};
 use super::outcome::outcome;
@@ -88,7 +88,7 @@ impl Sequence for SetPga {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::FpgaAccess;
+    use hal::FpgaAccess;
 
     use super::*;
 

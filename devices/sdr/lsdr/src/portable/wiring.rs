@@ -1,6 +1,6 @@
 //! Where a board's chips answer: the addresses every `LSDr` sequence takes.
 
-use rsl_lowlevel::{I2cAddr, SpiAddr};
+use hal::{I2cAddr, SpiAddr};
 
 /// The chips' buses and addresses (the board's `enum BUSIDX_*`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -10,7 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 lms7002m.workspace = true
-rsl-lowlevel = { workspace = true, features = ["std"] }
+hal = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [dev-dependencies]

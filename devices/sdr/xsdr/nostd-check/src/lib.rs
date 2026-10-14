@@ -9,6 +9,7 @@ use core::num::NonZeroU32;
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
+use hal::{I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use lms7002m::ctrl::{Control, ControlError};
 use lms7002m::{Lms7002m, ResetPlan, Synthesizer};
 use lp8758::{Buck, BuckControl, BuckVoltage};
@@ -18,7 +19,6 @@ use portable::hwid::{IdentityRead, Variant};
 use portable::power::PowerUp;
 use portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use portable::supplies::{Supplies, SupplyPlan};
-use rsl_lowlevel::{I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 /// An LMS7002M on SPI bus 0 with libusdr's XSDR arguments (`xsdr_pwren`).
 const LMS: ResetPlan = ResetPlan {

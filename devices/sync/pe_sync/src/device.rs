@@ -4,7 +4,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use rsl_lowlevel::{Sequence, run_sequence};
+use hal::{Sequence, run_sequence};
 
 use crate::error::Error;
 use crate::lmk05318::Lmk05318;

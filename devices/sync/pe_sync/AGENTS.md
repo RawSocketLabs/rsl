@@ -16,11 +16,11 @@ hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `pe-sync` (unpublished, root workspace member) | The driver, on `rsl-lowlevel` and `lmk05318` |
+| `.` | `pe-sync` (unpublished, root workspace member) | The driver, on `hal` and `lmk05318` |
 | `sim/` | `pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
 | `oracle/` | `pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
 | `nostd-check/` | `pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
-| `../../sdr/chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13) |
+| `../../chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13) |
 
 ## Driver layout
 
@@ -28,7 +28,7 @@ Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
 
 - `src/device.rs`: `Device`, the public API: `open` (power-on, status check, clock tree;
   power-off on failure) and `close`. It owns the bus (`Box<dyn Bus>`) and runs the portable
-  sequences with `rsl-lowlevel`'s blocking `run_sequence`, in `pe_sync_configure`'s order and
+  sequences with `hal`'s blocking `run_sequence`, in `pe_sync_configure`'s order and
   with its failure rules (which reads libusdr only logs, which failures it ignores).
 - `src/lmk05318.rs`: the LMK05318's bus traffic (identity, register load, soft reset, APLL
   lock waits, sync) as blocking code on `lmk05318`: its 16-bit register pointer and
@@ -45,7 +45,7 @@ Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
   waits, `float.rs` C's conversions and exact integer forms of `ceil`/`floor`/`log2`).
   Those chips are only PE_SYNC's in libusdr, so they stay here until a second driver
   needs them (`../../AGENTS.md`).
-- `src/lowlevel.rs`: `rsl-lowlevel`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
+- `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `pe-sync-sim` (both I2C cores);
   `oracle/tests/open_parity.rs` includes it with `#[path]`, and
   `oracle/tests/chip_parity.rs` includes `src/portable` itself.

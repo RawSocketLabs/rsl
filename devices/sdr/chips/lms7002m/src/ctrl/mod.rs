@@ -29,7 +29,7 @@ pub use crate::chip::Synthesizer;
 
 use core::num::NonZeroU32;
 
-use rsl_lowlevel::Sequence;
+use hal::Sequence;
 
 use crate::chip::{LmlConfig, LmlMap, Lms7002m, LpfParams, RbbPath, TbbPath};
 use crate::regs::{LmlSample, Mac, RxPath};

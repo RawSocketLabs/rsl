@@ -1,6 +1,6 @@
 //! How a sequence reads the outcome an executor reported for its action.
 
-use rsl_lowlevel::{FpgaAccess, SequenceAction, SequenceFailure};
+use hal::{FpgaAccess, SequenceAction, SequenceFailure};
 
 use super::fpga;
 

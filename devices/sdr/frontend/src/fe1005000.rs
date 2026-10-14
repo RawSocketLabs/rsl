@@ -11,8 +11,8 @@
 //! is not ported.
 
 #[cfg(feature = "std")]
-use rsl_lowlevel::{Bus, run_sequence};
-use rsl_lowlevel::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{Bus, run_sequence};
+use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 #[cfg(feature = "std")]
 use crate::error::Error;
@@ -313,10 +313,7 @@ mod tests {
                 .expect("pins and the select land");
         }
         let failure = probe.complete(Err(())).expect_err("the exchange fails");
-        assert_eq!(
-            failure.access(),
-            Some((XRA1405, rsl_lowlevel::Access::Read, 0x0c))
-        );
+        assert_eq!(failure.access(), Some((XRA1405, hal::Access::Read, 0x0c)));
         assert_eq!(probe.next(), None);
         assert_eq!(probe.found(), None);
     }

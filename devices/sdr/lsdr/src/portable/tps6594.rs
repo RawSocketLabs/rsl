@@ -7,7 +7,7 @@
 //! `devices/sdr/chips/tps6594` crate when a second driver needs it (`PORTING.md`).
 
 use bnb::{BitEnum, bitfield};
-use rsl_lowlevel::{IndexedRegister, Register};
+use hal::{IndexedRegister, Register};
 
 /// The chip's name in errors.
 pub(crate) const NAME: &str = "TPS6594";

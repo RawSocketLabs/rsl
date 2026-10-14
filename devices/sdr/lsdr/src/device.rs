@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use rsl_lowlevel::{Sequence, SequenceAction, run_sequence};
+use hal::{Sequence, SequenceAction, run_sequence};
 
 use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
 use crate::error::Error;

@@ -20,6 +20,7 @@ mod sim_bus;
 
 use std::fmt::Debug;
 
+use hal::{Sequence, run_sequence};
 use pe_sync::lowlevel::SpiAddr;
 use pe_sync_oracle::{
     Lmx1204Request as CLmx1204, Lmx1214Request as CLmx1214, Lmx2820Tune, lmx1204_solver,
@@ -35,7 +36,6 @@ use portable::lmx1214::sequence::configure as lmx1214_configure;
 use portable::lmx2820::plan::{Plan as Lmx2820Plan, Request as Lmx2820Request};
 use portable::lmx2820::reg::MashOrder;
 use portable::lmx2820::sequence::Tune;
-use rsl_lowlevel::{Sequence, run_sequence};
 use sim_bus::SimBus;
 
 /// `EINVAL`: every solver's refusal.

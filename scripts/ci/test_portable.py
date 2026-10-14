@@ -9,9 +9,9 @@ import unittest
 from portable import FIXTURES, validate
 
 # The registered dependencies' own manifests, which the contract also reads.
-OWNED = ("codecs/bitsandbytes/bnb/Cargo.toml", "devices/lowlevel/Cargo.toml",
+OWNED = ("codecs/bitsandbytes/bnb/Cargo.toml", "devices/hal/Cargo.toml",
          "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml",
-         "devices/sdr/chips/lmk05318/Cargo.toml")
+         "devices/chips/lmk05318/Cargo.toml")
 USDR = FIXTURES["usdr"]
 XSDR = FIXTURES["xsdr"]
 LIMESDR = FIXTURES["limesdr"]
@@ -67,10 +67,10 @@ class PortableContractTests(unittest.TestCase):
                     validate(root)
 
     def test_every_portable_dependency_is_held_to_the_same_contract(self):
-        self.assertEqual(USDR.dependencies["rsl-lowlevel"], {"std"})
-        self.assertEqual(XSDR.dependencies["rsl-lowlevel"], {"std"})
-        self.assertEqual(LIMESDR.dependencies["rsl-lowlevel"], {"std"})
-        self.assertEqual(PE_SYNC.dependencies["rsl-lowlevel"], {"std"})
+        self.assertEqual(USDR.dependencies["hal"], {"std"})
+        self.assertEqual(XSDR.dependencies["hal"], {"std"})
+        self.assertEqual(LIMESDR.dependencies["hal"], {"std"})
+        self.assertEqual(PE_SYNC.dependencies["hal"], {"std"})
         source = Path(__file__).resolve().parents[2]
         for fixture in FIXTURES.values():
             declared = tomllib.loads((source / fixture.path / "Cargo.toml").read_text())
@@ -101,16 +101,16 @@ class PortableContractTests(unittest.TestCase):
     def test_a_shared_crate_cannot_enable_std_on_another_behind_the_fixture(self):
         for crate, owner in (("devices/sdr/chips/lp8758", "lp8758"),
                              ("devices/sdr/chips/lms7002m", "lms7002m")):
-            for after in ('rsl-lowlevel = { workspace = true, features = ["std"] }',
-                          "rsl-lowlevel = { workspace = true, default-features = true }",
-                          'rsl-lowlevel = { path = "../../../lowlevel" }'):
+            for after in ('hal = { workspace = true, features = ["std"] }',
+                          "hal = { workspace = true, default-features = true }",
+                          'hal = { path = "../../../hal" }'):
                 with (self.subTest(crate=owner, change=after),
                       tempfile.TemporaryDirectory(prefix="rsl-portable-contract-") as directory):
                     root = self.fixture(directory)
                     path = root / crate / "Cargo.toml"
                     text = path.read_text()
-                    self.assertIn("rsl-lowlevel.workspace = true\n", text)
-                    path.write_text(text.replace("rsl-lowlevel.workspace = true\n", after + "\n"))
+                    self.assertIn("hal.workspace = true\n", text)
+                    path.write_text(text.replace("hal.workspace = true\n", after + "\n"))
                     with self.assertRaisesRegex(ValueError, owner):
                         validate(root)
 
@@ -145,7 +145,7 @@ class PortableContractTests(unittest.TestCase):
                 root = self.fixture(directory)
                 path = root / fixture.driver / "Cargo.toml"
                 text = path.read_text()
-                self.assertIn('rsl-lowlevel = { workspace = true, features = ["std"] }', text)
+                self.assertIn('hal = { workspace = true, features = ["std"] }', text)
                 path.write_text(text.replace('features = ["std"] }',
                                              'features = ["std", "extra"] }'))
                 with self.assertRaisesRegex(ValueError, "core-only feature"):

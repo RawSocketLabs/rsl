@@ -19,14 +19,14 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   whole (`pciefe`, `exm2pe`), run by the uSDR, XSDR and LSDr drivers. A driver adds the
   bring-ups it owns through its `BringUp` (the uSDR's XMASS, `SuperSync` and `SimpleSync`)
   and re-exports the crate's types.
-- Code every kind's drivers share lives in `devices/lowlevel` (`rsl-lowlevel`): libusdr's
+- Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind
   feature `std`), knows no board, chip or transport crate, and depends on nothing owned;
   board-specific limits (which I2C cores or buses exist) stay in the driver's transports.
 - Shared chip code goes under `devices/<kind>/chips/<chip>/`, one directory per chip: the
   chip's register values and identity facts are the crate at the directory itself
-  (`sdr/chips/lp8758`: `lp8758`, `no_std`, on `rsl-lowlevel` and `bnb`), and per-chip
+  (`sdr/chips/lp8758`: `lp8758`, `no_std`, on `hal` and `bnb`), and per-chip
   crate roles sit beside it (`sdr/chips/lms7002m/sim`: `lms7002m-sim`, the LMS7002M
   model the XSDR and LimeSDR sims share). Board wiring, setpoints and sequences stay in
   the drivers. A driver keeps stable internal paths by re-exporting such a crate.
@@ -38,7 +38,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`).
   `DACx0501`) sit in `sdr-frontend` until a driver needs one directly (the XTRX's
   DAC80501 trim would move it to `sdr/chips/dac80501`).
 - A chip drivers of both kinds use stays under the kind that used it first:
-  `sdr/chips/lmk05318` (`lmk05318`) serves the uSDR's front ends and PE_SYNC (and
+  `chips/lmk05318` (`lmk05318`) serves the uSDR's front ends and PE_SYNC (and
   `sdr-frontend`'s `SimpleSync` ID check).
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `lms7002m` ports

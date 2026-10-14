@@ -3,7 +3,7 @@
 The LMS7 family (`m2_lm7_1`) row of the programme ledger (`../usdr/PORTING.md`, "LMS7-family
 board/RX/TX/rate controls") in detail. Same contract: **Present** means source exists, test
 names are definitions, not run results; nothing is hardware-qualified (U). Reference:
-`../usdr/oracle/libusdr/PIN`; `C:` paths are relative to its `lib/`. `O:` = `oracle/tests/`,
+`../../vendor/libusdr/PIN`; `C:` paths are relative to its `lib/`. `O:` = `oracle/tests/`,
 `T:` = `tests/`, `P:` = `src/portable/`, `L:` = `../chips/lms7002m/src/` (`lms7002m`).
 
 Golden-line numbers refer to `oracle/tests/golden/xsdr_session.trace` (characterization).
@@ -23,7 +23,7 @@ Golden-line numbers refer to `oracle/tests/golden/xsdr_session.trace` (character
 | RX/TX LO tuning (FDD), gains (every `/dm/sdr/0/{rx,tx}/gain*` path) and baseband bandwidths, both channels | `xsdr_ctrl.c::xsdr_rfic_fe_set_freq` (non-sSDR), `xsdr_rfic_set_gain`, `xsdr_rfic_bb_set_badwidth`; `m2_lm7_1.c` handlers | `Device::set_rx_frequency`, `set_tx_frequency`, `set_gain`, `set_bandwidth` | — | `O:rate_parity.rs::a_session_of_rates_tunings_gains_and_bandwidths_matches_libusdr`; `T:rate.rs` / U |
 | `no_std` compile witness for `src/portable` | — | `nostd-check/` (`xsdr-nostd-check`, exact-source `#[path]` import), `scripts/ci/portable.py xsdr` | — | `nostd-check` tests; `cargo check --target thumbv7em-none-eabi` (release-only in CI) / U |
 
-Each sequence is a hand-written sans-I/O machine over `rsl-lowlevel`'s `Sequence`, run by
+Each sequence is a hand-written sans-I/O machine over `hal`'s `Sequence`, run by
 its blocking `run_sequence`. The portable tree and `lms7002m` use core only and allocate
 nothing (held by review; `bnb`, under the value types, requires `alloc`); the fixture and
 `lms7002m`'s own `#![no_std]` hold the compilation.

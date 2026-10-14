@@ -4,7 +4,7 @@
 use core::time::Duration;
 
 use bnb::{u2, u11};
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{Sequence, SequenceAction, SequenceFailure, SpiAddr};
 
 use super::plan::Plan;
 use super::reg::{Control, LockDetect, LockStatus, Reg, TemperatureSensor};
@@ -148,7 +148,7 @@ impl Sequence for Tune {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::Access;
+    use hal::Access;
 
     use super::super::plan::Request;
     use super::super::reg::MashOrder;

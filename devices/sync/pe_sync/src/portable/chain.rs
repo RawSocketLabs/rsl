@@ -1,6 +1,6 @@
 //! Sequences built from sequences: one after another, and one whose failure libusdr ignores.
 
-use rsl_lowlevel::{Sequence, SequenceAction, SequenceFailure};
+use hal::{Sequence, SequenceAction, SequenceFailure};
 
 /// `first`, then `second`; a failure of `first` ends both (the C's `if (res) return res`).
 #[derive(Clone, Copy, Debug)]
@@ -65,7 +65,7 @@ impl<S: Sequence> Sequence for Lenient<S> {
 
 #[cfg(test)]
 mod tests {
-    use rsl_lowlevel::FpgaAccess;
+    use hal::FpgaAccess;
 
     use super::*;
     use crate::portable::script::Script;
