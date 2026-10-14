@@ -6,7 +6,7 @@
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs
 stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
 ASN.1/X.509/PKI (`pki/*`), compression (`compression`), error correction (`error-correction`),
-RF parsing (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), and
+RF value types (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), and
 (excluded, FFI) `usdr-ffi` and `rust-dsdcc`. Crates are **published independently** but developed
 **in lockstep** — inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no
 git-rev pinning.
@@ -21,7 +21,7 @@ One directory per domain group; each crate's own `AGENTS.md` holds its detail.
 | `crypto/` | `crypto` (`core/`), `crypto-legacy` (`legacy/`) | accuracy-first primitives (`no_std + alloc`, zero `unsafe`); opt-in historical/broken cryptography, never a default negotiation source; `fuzz/` is the group's detached fuzz workspace |
 | `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe` |
 | `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (`#![deny(unsafe_code)]`, one confined `unsafe` fn); owned USB host access over Linux usbfs (unpublished) |
-| `rf/` | `rfus` | RF/sample-rate parsing |
+| `types/` | `rfus` | plain domain value types, each with its units, parsing and validation; no I/O, hardware or protocol logic, `no_std` where possible. `rfus`: RF frequencies, sample rates and scan targets |
 | `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
