@@ -34,7 +34,7 @@ jobs:
   plan:
     docker:
       # The job image, by digest; scripts/ci/circleci.py pins the same one.
-      - image: ghcr.io/rawsocketlabs/rsl-ci@sha256:PENDING
+      - image: ghcr.io/rawsocketlabs/rsl-ci@sha256:232f958976b7cd76da1dd54f4ee7f95e2376feb538cd909cb2cb38bd9590cee9
     resource_class: medium
     environment:
       CI_TEMP: /tmp/ci

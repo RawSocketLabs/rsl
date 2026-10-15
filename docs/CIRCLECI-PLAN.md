@@ -32,8 +32,9 @@ resulting pipeline; this file records the decisions and what remains before and 
 
 ## 3. Before cutover (on this branch)
 
-1. Publish the first image and pin its digest. The bootstrap needs the `rsl-image` context
-   (a classic token with only `write:packages`); later images come from the `image` job.
+1. Done: the first image was published once from the verified local build
+   (`sha256:232f9589…`, tag `bootstrap-7be05951`) and pinned. Later images come from the `image`
+   job, which needs `rsl-image` filled with a classic token holding only `write:packages`.
 2. Push the branch and run CircleCI on it with the image: a full run and a `bitsandbytes`
    release run, both green, and `scripts/ci-local.sh pre-push --full` green locally.
 3. Fill `rsl-github` (`RELEASE_PLZ_TOKEN`) and `rsl-crates` (`CARGO_REGISTRY_TOKEN`); the

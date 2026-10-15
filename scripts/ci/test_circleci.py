@@ -289,7 +289,7 @@ class ImageTests(unittest.TestCase):
 
     def test_setup_config_and_generator_pin_the_same_image(self):
         self.assertIn(f"- image: {circleci.IMAGE}\n", (ROOT / ".circleci/config.yml").read_text())
-        self.assertRegex(circleci.IMAGE, r"^ghcr\.io/rawsocketlabs/rsl-ci@sha256:")
+        self.assertRegex(circleci.IMAGE, r"^ghcr\.io/rawsocketlabs/rsl-ci@sha256:[0-9a-f]{64}$")
 
     def test_image_provides_the_toolchains_jobs_select(self):
         bnb = tomllib.loads((ROOT / ".github/ci/bnb.toml").read_text())

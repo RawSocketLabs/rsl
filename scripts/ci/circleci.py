@@ -26,7 +26,7 @@ TRUNK = "main"
 REPOSITORY = "RawSocketLabs/rsl"
 # The job image (.circleci/image/Dockerfile), by digest. Its toolchains and tools are the only
 # ones jobs use: nothing is installed at run time. test_circleci.py holds these pins in step.
-IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:PENDING"
+IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:232f958976b7cd76da1dd54f4ee7f95e2376feb538cd909cb2cb38bd9590cee9"
 # The upstream commitlint image (21.2.3), which carries @commitlint/config-conventional.
 COMMITLINT = ("docker.io/commitlint/commitlint@"
               "sha256:33f225c84111a38ebac0c81fa21c488a79709b8a8e04056dfaaf4f80ef20be25")
