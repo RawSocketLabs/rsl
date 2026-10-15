@@ -1,27 +1,17 @@
 # CircleCI migration plan
 
-Status: draft, revised after adversarial review, 2026-10-15. Branch `ci/circleci-trial`.
+Status: draft, revised after adversarial review; CircleCI chosen, 2026-10-15. Branch `ci/circleci-trial`.
 Companion to [CI.md](CI.md), whose selection and receipt contract this plan keeps unchanged.
 
-## 0. Why, and the decision gate
+## 0. Decision
 
-None of the goals below needs CircleCI. The selector, gate and receipt already run on Actions.
-Most of what makes this plan hard (merge queue, cache scope, release credentials, required
-check identity) is something Actions already provides natively. CircleCI's case is the speed
-of per-job fan-out and test insights. The org also has the Blacksmith Actions runner app
-installed, which offers faster runners as a `runs-on` label change.
-
-**Gate before phase 1:** run the same full, cold selection three ways on this branch and
-compare wall time, slowest job, and queue time:
-
-| Candidate | Measured |
-|-----------|----------|
-| Actions, `ubuntu-24.04` (current) | not measured |
-| Actions, Blacksmith 4 to 8 vCPU, with the same workspace split and nextest | not measured |
-| CircleCI trial | 6 min (full, cold, before the workspace split) |
-
-Continue with CircleCI only if it is clearly ahead on that comparison, or on something
-Actions cannot offer. Otherwise apply the workspace split and nextest to Actions and stop.
+CircleCI is chosen (2026-10-15). The selector, gate and receipt would also run on Actions; the
+choice rests on CircleCI's fan-out and test insights, preferred over faster Actions runners.
+The trial's full, cold selection took 6 min before the workspace split and 3m37 after it. A
+`bitsandbytes` release run (37 jobs, 7 fuzz targets, cold) took 7m50; its critical path is the
+SOCKS fuzz budget (5m27 run). Pipeline parameters reach the continuation. Tool installs
+dominate other release jobs: building `cargo-semver-checks` from source took 4m25 of
+`checks-semver`'s 5m20, which is the case for the CI image (§4).
 
 ## 1. Goals
 
@@ -76,9 +66,10 @@ runs.
   to keep Conventional Commit subjects. Either rebase-merge with per-commit lint, or squash with
   a linted PR title. This contradicts the protocols guide (squash) and commitlint (rebase); one
   decision fixes both.
-- **Required check identity.** A ruleset requires the gate's check pinned to the CircleCI app.
-  Matching by name alone collides with Actions' `CI` check, and any branch could spoof it. The
-  App's actual check name and slug come from `gh api …/check-runs` on a trial commit.
+- **Required check identity.** CircleCI reports each job as a commit status (not a check run)
+  named `ci/circleci: <job>` and created by `circleci-app[bot]`. The ruleset requires
+  `ci/circleci: CI` pinned to the CircleCI app, because a status matched by name alone could be
+  posted by anything with write access to the repository. Verified on `810df77f`.
 
 ## 4. Execution environment
 
@@ -140,7 +131,7 @@ selected profile.
 
 | Phase | Work | Exit criterion | Rollback |
 |-------|------|----------------|----------|
-| 0 Trial | Branch config; manual runs; baseline comparison (§0); verify main-push base, check names, merge-queue trigger | All three verifications recorded; full and release runs green; §0 decision taken | Delete branch |
+| 0 Trial | Branch config; manual runs; verify main-push base and merge-queue trigger (check names verified) | Both verifications recorded; full and release runs green within budget | Delete branch |
 | 1 Shadow | Merge; push and nightly triggers; Actions remains required | ≥ 50 runs. Main-push plans equal the Actions plan for the same SHA (compared by a script over both receipts). Every CircleCI-only failure has an issue. | Remove triggers |
 | 2 Image | CI image, pinned toolchain file, executor measurements | Image runs reproduce phase 1 results; memory and pull time within budget | Revert to machine executor |
 | 3 Gate | Ruleset requires the CircleCI check (app-pinned); merge queue on; Actions CI still runs on PRs but is not required | 1 week of merges through the queue, main green; a branch-reported fake `CI` check does not satisfy the ruleset | Re-require Actions `CI` |
@@ -164,10 +155,9 @@ selected profile.
 ## 9. Open decisions
 
 Taken one at a time:
-1. §0: CircleCI or Actions on faster runners, decided from the three-way comparison.
-2. Merge method under a merge queue (rebase with per-commit lint, or squash with a linted title).
-3. Whether `rust-toolchain.toml` pins an exact stable version (recommended either way).
-4. Whether fork PRs should get a required check (the repository is public).
+1. Merge method under a merge queue (rebase with per-commit lint, or squash with a linted title).
+2. Whether `rust-toolchain.toml` pins an exact stable version (recommended either way).
+3. Whether fork PRs should get a required check (the repository is public).
 
 Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets kept as
 code.
