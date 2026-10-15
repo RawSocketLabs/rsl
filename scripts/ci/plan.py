@@ -425,8 +425,10 @@ def release_policy(root, revision=None):
     return release_config(root, revision)["workspace"].get("pr_branch_prefix", "release-plz-")
 
 
-def released_members(policy, old, new, products=None):
-    """Resolve enabled products and bind qualification to exact manifest versions."""
+def released_members(policy, old, new, products=None, *, required=True):
+    """Resolve enabled products and bind qualification to exact manifest versions.
+
+    An optional qualification (a trunk push) with no version change selects no product."""
     catalog = defaultdict(set)
     for package in policy["package"]:
         if package.get("release", False):
@@ -451,7 +453,7 @@ def released_members(policy, old, new, products=None):
             raise ValueError(f"release product has inconsistent versions: {product}")
         members.extend({"product": product, "root": root, "name": new[root].name,
                         "version": new[root].version} for root in roots)
-    if not members:
+    if not members and required:
         raise ValueError("release qualification requires a product with version changes or explicit --product")
     return members
 
@@ -488,7 +490,8 @@ def dependency_changes(root, base, head, paths, old, new):
     return result
 
 
-def build_plan(root, *, base=None, head="HEAD", full=False, release=False, products=None):
+def build_plan(root, *, base=None, head="HEAD", full=False, release=False, products=None,
+               release_optional=False):
     head = command(root, "git", "rev-parse", "--verify", head + "^{commit}").decode().strip()
     requested_base = base
     base = None
@@ -510,7 +513,7 @@ def build_plan(root, *, base=None, head="HEAD", full=False, release=False, produ
         # in the same change must still resolve to its old owner, not look unregistered.
         old = new if base in (None, head) else graph_at(root, base, historical=True)
     policy = release_config(root, head)
-    members = released_members(policy, old, new, products) if release else []
+    members = released_members(policy, old, new, products, required=not release_optional) if release else []
     if products and not release:
         raise ValueError("--product requires release qualification")
     deltas = dependency_changes(root, base, head, paths, old, new)

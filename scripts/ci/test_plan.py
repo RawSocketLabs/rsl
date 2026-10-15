@@ -589,6 +589,7 @@ class SelectionTests(unittest.TestCase):
                                for name in ("bitsandbytes", "bitsandbytes-macros")]}
         with self.assertRaisesRegex(ValueError, "version changes"):
             released_members(policy, old, new)
+        self.assertEqual(released_members(policy, old, new, required=False), [])
         new[BNB].version = "1.0.0"
         with self.assertRaisesRegex(ValueError, "every member"):
             released_members(policy, old, new)

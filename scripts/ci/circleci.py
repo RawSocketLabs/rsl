@@ -117,7 +117,9 @@ def event_options(root, env, prefix):
 
 def plan_for_event(root, env):
     event, base, full, release, products = event_options(root, env, release_policy(root))
-    plan = build_plan(root, base=base, full=full, release=release, products=products)
+    # A trunk push qualifies only the products whose versions it changes; most change none.
+    plan = build_plan(root, base=base, full=full, release=release, products=products,
+                      release_optional=event == "push")
     # A trunk push that qualifies a release is a publication candidate; `release` confirms it
     # came from a merged release-plz PR before anything is published.
     plan["release_candidate"] = event == "push" and plan["release"]
