@@ -1,7 +1,7 @@
 # CircleCI migration plan
 
-Status: cutover prepared on branch `ci/circleci-trial`, 2026-10-15. [CI.md](CI.md) describes the
-resulting pipeline; this file records the decisions and what remains before and after cutover.
+Status: cut over 2026-10-15 (`main` at `8f7f8697`); §4 steps 4 and 5 remain open. [CI.md](CI.md)
+describes the resulting pipeline; this file records the decisions and what remains after cutover.
 
 ## 1. Decisions
 
@@ -30,33 +30,35 @@ resulting pipeline; this file records the decisions and what remains before and 
 | `bitsandbytes` release (37 jobs, 7 fuzz targets), cold | 7m50 (SOCKS fuzz budget is the critical path) |
 | Heaviest job memory | 1.5 GiB peak, CPU saturated at 4 cores |
 
-## 3. Before cutover (on this branch)
+## 3. Before cutover (done)
 
 1. Done: the first image was published once from the verified local build
    (`sha256:232f9589…`, tag `bootstrap-7be05951`) and pinned. Later images come from the `image`
    job, which needs `images` filled with a classic token holding only `write:packages`.
-2. Push the branch and run CircleCI on it with the image: a full run and a `bitsandbytes`
-   release run, both green, and `scripts/ci-local.sh pre-push --full` green locally.
-3. Fill `github` (`RELEASE_PLZ_TOKEN`) and `crates` (`CARGO_REGISTRY_TOKEN`); the
-   contexts and their restrictions exist. Prove denial three ways: a branch job referencing
-   them, an SSH rerun of a main job, and an API-triggered pipeline whose config branch differs
-   from its checkout branch.
+2. Done: on `e2a95323`, a full run, a `bitsandbytes` release run (37 jobs, 7m04) and
+   `scripts/ci-local.sh pre-push --full` were green.
+3. Done: org-wide contexts `github`, `crates`, `images` (also libsdr) and `images-pull` (libsdr,
+   read-only, any branch) replace the `rsl-` ones, which CircleCI cannot rename. Denial was
+   proven three ways: a branch job referencing them was `unauthorized`, an SSH rerun of main's
+   `release-pr` was `unauthorized`, and the API refuses a pipeline whose config branch differs
+   from its checkout branch (400).
 
-Done: the contexts and their restrictions, auto-cancel of redundant branch workflows, and the
-project marked open source.
+Also done: auto-cancel of redundant branch workflows, and the project marked open source.
 
 ## 4. Cutover
 
-1. Fast-forward `main` to the branch. This removes the Actions workflows in the same change.
-2. Create the CircleCI triggers:
+1. Done: `main` fast-forwarded, removing the Actions workflows.
+2. Done: the CircleCI triggers (schedules attributed to the system actor):
    - GitHub App push, `all-pushes`;
    - schedule, `main`, daily at 09:17 UTC, parameter `full=true`;
    - schedule, `main`, Mondays at 06:00 UTC, parameter `audit=true`.
-3. Add a ruleset on `main` requiring `ci/circleci: CI` from the CircleCI app, and remove the
-   Actions `CI` requirement.
-4. On the first main pipeline, confirm `base` in the `plan` job's `ci-plan.json` artifact is the
-   previous main commit, not empty. If it is empty, every main push runs full coverage and
-   never qualifies a release; fix that before the next release.
+3. Done: `main` branch protection requires `ci/circleci: CI` from the CircleCI app (302869)
+   instead of the Actions `CI`.
+4. Open: the first GitHub App push to main (`8f7f8697`) planned with `base` empty
+   (`pipeline.git.base_revision` rendered `<nil>`); the previous main pipeline was API-triggered.
+   Confirm on a later push. While it stays empty, every main push runs full coverage and never
+   qualifies a release; fix that before the next release. The first main pipeline also showed
+   that a trunk push without a version change failed `plan`; `8f7f8697` fixed that.
 5. Set the `rsl-ci` package on GHCR to public, so pulls need no credentials.
 
 ## 5. After cutover
