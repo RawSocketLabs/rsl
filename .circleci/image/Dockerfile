@@ -2,7 +2,7 @@
 # pinned here so a run is reproducible from the image digest. Published as
 # ghcr.io/rawsocketlabs/rsl-ci by the CircleCI `image` job; scripts/ci/circleci.py and
 # .circleci/config.yml reference it by digest, and test_circleci.py holds the pins in step.
-FROM docker.io/library/ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+FROM docker.io/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 ARG STABLE=1.99.0
 ARG MSRV=1.85.0
