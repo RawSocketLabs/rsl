@@ -50,12 +50,12 @@ DETACHED_TARGETS = [
     "devices/sdr/limesdr/oracle", "devices/sdr/limesdr/nostd-check",
 ]
 IMAGE_SOURCE = ".circleci/image/"
-# Contexts hold the only secrets, each restricted to this project's trunk with SSH reruns
-# denied: `rsl-github` holds RELEASE_PLZ_TOKEN, `rsl-crates` CARGO_REGISTRY_TOKEN, and
-# `rsl-image` the GHCR credential. Each job gets only the contexts it uses.
-GITHUB_CONTEXT = "rsl-github"
-CRATES_CONTEXT = "rsl-crates"
-IMAGE_CONTEXT = "rsl-image"
+# Contexts hold the only secrets, each restricted to trunk with SSH reruns denied: `github`
+# holds RELEASE_PLZ_TOKEN and `crates` CARGO_REGISTRY_TOKEN (this project only), and `images`
+# the GHCR push credential (shared with libsdr). Each job gets only the contexts it uses.
+GITHUB_CONTEXT = "github"
+CRATES_CONTEXT = "crates"
+IMAGE_CONTEXT = "images"
 RELEASE_GROUP = "<< pipeline.project.slug >>/release"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
 # gate's recomputation sees the event the plan saw.

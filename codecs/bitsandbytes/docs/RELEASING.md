@@ -171,7 +171,7 @@ Do not merge the version PR with a stale fuzz lock.
 
 A token that acts as a **user or GitHub App** is required: it opens the release PR,
 pushes its branch, and creates the release tags. Its pushes trigger CircleCI like any
-other. Set `RELEASE_PLZ_TOKEN` in the CircleCI `rsl-github` context, which only trunk
+other. Set `RELEASE_PLZ_TOKEN` in the CircleCI `github` context, which only trunk
 jobs without SSH can read. Use one of:
 
 - **A fine-grained PAT** (simplest) — repository access to this repo, with
@@ -188,7 +188,7 @@ to the checkout's configuration.
 
 ## Publishing to crates.io
 
-The CircleCI `release` job reads `CARGO_REGISTRY_TOKEN` from the `rsl-crates` context — a
+The CircleCI `release` job reads `CARGO_REGISTRY_TOKEN` from the `crates` context — a
 crates.io token with publish scope for `bitsandbytes` and `bitsandbytes-macros`. The
 two crates are published in dependency order: the macro version must exist on the
 registry before the runtime is published. Locally, verify both unpublished archives

@@ -221,9 +221,9 @@ class ReleasePathTests(unittest.TestCase):
                 config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, event)
                 self.assertFalse({"release", "release-pr"} & config["jobs"].keys())
         workflow = self.workflow(continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, "push"))
-        self.assertEqual(workflow["release"], {"requires": ["CI"], "context": ["rsl-github", "rsl-crates"],
+        self.assertEqual(workflow["release"], {"requires": ["CI"], "context": ["github", "crates"],
                                                "serial-group": circleci.RELEASE_GROUP})
-        self.assertEqual(workflow["release-pr"], {"requires": ["release"], "context": ["rsl-github"],
+        self.assertEqual(workflow["release-pr"], {"requires": ["release"], "context": ["github"],
                                                   "serial-group": circleci.RELEASE_GROUP})
         self.assertEqual(circleci.RELEASE_GROUP, "<< pipeline.project.slug >>/release")
 
@@ -232,7 +232,7 @@ class ReleasePathTests(unittest.TestCase):
         workflow = self.workflow(config)
         self.assertNotIn("release", config["jobs"])
         self.assertEqual(workflow["release-pr"]["requires"], ["CI"])
-        self.assertNotIn("rsl-crates", workflow["release-pr"]["context"])
+        self.assertNotIn("crates", workflow["release-pr"]["context"])
 
     def test_release_jobs_check_the_trunk_before_any_token_is_used(self):
         plan = test_plan.planned(release=True)
@@ -268,7 +268,7 @@ class ReleasePathTests(unittest.TestCase):
         plan = test_plan.planned([".circleci/image/Dockerfile"])
         self.assertNotIn("image", cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})["jobs"])
         workflow = self.workflow(cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}))
-        self.assertEqual(workflow["image"], {"requires": ["CI"], "context": ["rsl-image"]})
+        self.assertEqual(workflow["image"], {"requires": ["CI"], "context": ["images"]})
 
     def test_only_release_and_image_jobs_hold_contexts(self):
         plan = test_plan.planned(release=True)

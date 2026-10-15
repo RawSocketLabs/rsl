@@ -197,7 +197,7 @@ generator and the setup config: its toolchains (pinned stable, MSRV, and the pin
 public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
 build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
 `image` job to a main push, after `CI` passes, that builds and publishes
-`ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `rsl-image` context's GHCR token; adopting it is a
+`ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `images` context's GHCR token; adopting it is a
 reviewed digest change. To try a changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
 Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
@@ -227,9 +227,10 @@ legitimate only after successful policy/selection verification.
 The gate writes `ci-coverage.json` (the plan and job results, bound to the exact tested SHA and
 the workflow ID) as an artifact and to the workspace. On a main push, `release-pr` refreshes the
 release-plz PR on every pipeline, and a release-qualifying push adds `release` before it. Both
-hold only the contexts they use (`release-pr`: `rsl-github`; `release`: `rsl-github` and
-`rsl-crates`) and share one serial group, so tag discovery never races a release. Every context
-is restricted to this project and `pipeline.git.branch == "main" and not job.ssh.enabled`, so
+hold only the contexts they use (`release-pr`: `github`; `release`: `github` and
+`crates`) and share one serial group, so tag discovery never races a release. Every context
+is restricted to this project (`images` is shared with libsdr) and
+`pipeline.git.branch == "main" and not job.ssh.enabled`, so
 neither a branch pipeline nor an SSH rerun can read a secret. `release` stops successfully unless main still points at the tested commit and
 the commit is the exact merge of a same-repository `release-plz-` PR. It then verifies the same
 workflow's receipt: the publisher independently recomputes released members from the commit's
