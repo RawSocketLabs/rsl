@@ -37,6 +37,10 @@ NATIVE_COMPILER = {"usdr-ffi", "rust-dsdcc", "usdr-oracle", "xsdr-oracle", "lsdr
 NO_RUST = {"deny", "blessed"}
 DENY_VERSION = "0.20.2"
 FUZZ_VERSION = "0.13.2"
+# A released binary, verified against its published SHA-256: building nextest takes minutes.
+NEXTEST = ("0.9.143", "66786b9abe23920d022a182d1416b1bbc8130dd4872a9553d76985a1708dcd1e")
+# The critical path; its parts run on separate machines (run.py workspace_parts).
+WORKSPACE_PARTS = ("lint", "test", "extra")
 ACTIONLINT = "rhysd/actionlint:1.7.12"
 # Cargo tools live in their own per-version roots (circleci-setup.sh), never in ~/.cargo/bin.
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
@@ -149,7 +153,7 @@ def slug(text):
     return re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-")
 
 
-def check_job(profile, toolchain, plan, bnb, *, hosted, save):
+def check_job(profile, toolchain, plan, bnb, *, hosted, save, part=None):
     steps = []
     if profile != "blessed":
         components = "rustfmt,clippy,rust-src" if profile in RUST_SRC else ""
@@ -163,6 +167,8 @@ def check_job(profile, toolchain, plan, bnb, *, hosted, save):
         steps.extend(tool("cargo-semver-checks", bnb["semver_version"], save=save))
     if profile == "deny":
         steps.extend(tool("cargo-deny", DENY_VERSION, save=save))
+    if part == "test":
+        steps.append(run("Install cargo-nextest", f"{SETUP} nextest {NEXTEST[0]} {NEXTEST[1]}"))
     if profile in NATIVE_COMPILER and hosted:
         steps.append(run("Native compiler for FFI bridge checks", f"{SETUP} apt build-essential"))
     if profile == "rust-dsdcc":
@@ -176,11 +182,12 @@ def check_job(profile, toolchain, plan, bnb, *, hosted, save):
         steps.append(run("cargo deny", "cargo deny --all-features check"))
     else:
         # Actions' timeout-minutes bounds the whole profile, not only a silent stretch.
-        steps.append(run("Run the complete selected profile", 'timeout 30m python3 scripts/ci/run.py "$PROFILE"',
-                         no_output_timeout="30m"))
+        selection = ' --part "$PART"' if part else ""
+        steps.append(run("Run the complete selected profile",
+                         f'timeout 30m python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout="30m"))
     if profile in NO_RUST:
         return steps
-    return cached(f"v1-checks-{profile}-{toolchain}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS],
+    return cached(f"v1-checks-{profile}{'-' + part if part else ''}-{toolchain}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS],
                   steps, save=save)
 
 
@@ -221,9 +228,11 @@ def continuation(plan, bnb, env):
         environment = {"PROFILE": profile, "DSDCC_INCLUDE": "/tmp/ci/dsdcc"}
         if profile not in NO_RUST:
             environment["RUSTUP_TOOLCHAIN"] = toolchain
-        name = f"checks-{profile}"
-        jobs[name] = job(check_job(profile, toolchain, plan, bnb, hosted=hosted, save=save), **environment)
-        selected.append(name)
+        for part in WORKSPACE_PARTS if profile == "workspace" else (None,):
+            name = f"checks-{profile}" + (f"-{part}" if part else "")
+            jobs[name] = job(check_job(profile, toolchain, plan, bnb, hosted=hosted, save=save, part=part),
+                             **environment, **({"PART": part} if part else {}))
+            selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
         jobs[name] = job(fuzz_job(item, save=save), RUSTUP_TOOLCHAIN="nightly",

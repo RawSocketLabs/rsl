@@ -212,6 +212,11 @@ fuzz target. Unselected profiles are never scheduled; a prose-only change runs `
 plan's concurrency limit (no four-target fuzz cap). `CI` requires every generated job, recomputes
 the plan from the pipeline's inputs and immutable trees, and stores `ci-coverage.json` as an
 artifact. `scripts/ci/circleci-setup.sh` stands in for the Actions toolchain/tool/apt steps.
+The `workspace` profile, the critical path, runs as three concurrent jobs (`run.py --part`):
+`lint` (fmt and Clippy), `test` (`cargo nextest run`, which runs every test binary at once,
+plus `cargo test --doc`) and `extra` (all-feature adapter tests and selector integration tests).
+The parts cover exactly the Actions profile's commands over the same packages and features, so
+full runs still test workspace feature unification; Actions keeps the sequential `cargo test`.
 
 Event mapping: the trunk compares against `pipeline.git.base_revision` (the previous trunk
 pipeline); any other branch compares from its merge base with `origin/main`, and a same-repository

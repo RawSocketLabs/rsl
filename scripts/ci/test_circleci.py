@@ -85,7 +85,8 @@ class ContinuationTests(unittest.TestCase):
     def test_only_selected_profiles_and_fuzz_targets_are_scheduled_concurrently(self):
         plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
         config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
-        selected = {f"checks-{profile}" for profile in plan["profiles"]}
+        selected = {f"checks-{profile}" for profile in plan["profiles"] if profile != "workspace"}
+        selected |= {f"checks-workspace-{part}" for part in ("lint", "test", "extra")}
         self.assertEqual(set(config["jobs"]) - {"policy", "CI"}, selected)
         workflow = {name: spec for entry in config["workflows"]["ci"]["jobs"] for name, spec in entry.items()}
         for name in selected:
@@ -119,18 +120,27 @@ class ContinuationTests(unittest.TestCase):
                 if isinstance(step, dict) and "save_cache" in step:
                     self.assertNotIn("~/.cargo/bin", step["save_cache"]["paths"])
 
+    def test_workspace_runs_as_three_concurrent_parts(self):
+        config = continuation(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
+        self.assertNotIn("checks-workspace", config["jobs"])
+        for part in ("lint", "test", "extra"):
+            job = config["jobs"][f"checks-workspace-{part}"]
+            self.assertEqual((job["environment"]["PROFILE"], job["environment"]["PART"]), ("workspace", part))
+            self.assertIn('--part "$PART"', " ".join(run_commands(job)))
+            self.assertEqual("nextest" in " ".join(run_commands(job)), part == "test")
+
     def test_only_the_trunk_saves_caches(self):
         plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
         for branch, saves in (("main", True), ("feat/x", False)):
             config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": branch})
-            steps = config["jobs"]["checks-workspace"]["steps"]
+            steps = config["jobs"]["checks-workspace-test"]["steps"]
             self.assertEqual(any("save_cache" in step for step in steps if isinstance(step, dict)), saves)
 
     def test_profile_setup_matches_the_actions_workflow(self):
         plan = test_plan.planned(release=True)
         config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"})
         jobs = config["jobs"]
-        self.assertIn("rustfmt,clippy,rust-src", " ".join(run_commands(jobs["checks-workspace"])))
+        self.assertIn("rustfmt,clippy,rust-src", " ".join(run_commands(jobs["checks-workspace-lint"])))
         self.assertEqual(jobs["checks-msrv"]["environment"]["RUSTUP_TOOLCHAIN"], "1.85.0")
         self.assertEqual(jobs["checks-public-api"]["environment"]["RUSTUP_TOOLCHAIN"], "nightly-2026-06-17")
         self.assertIn("cargo-public-api 0.52.0", " ".join(run_commands(jobs["checks-public-api"])))
@@ -141,7 +151,7 @@ class ContinuationTests(unittest.TestCase):
         runner = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main", "CI_INPUT_CLASS": "rsl/beefy"})["jobs"]
         self.assertIn("apt", " ".join(run_commands(hosted["checks-usdr-oracle"])))
         self.assertNotIn("apt", " ".join(run_commands(runner["checks-usdr-oracle"])))
-        self.assertEqual((runner["checks-workspace"]["machine"], runner["checks-workspace"]["resource_class"]),
+        self.assertEqual((runner["checks-workspace-test"]["machine"], runner["checks-workspace-test"]["resource_class"]),
                          (True, "rsl/beefy"))
 
     def test_gate_needs_produce_a_receipt_for_the_handed_plan(self):

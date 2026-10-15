@@ -8,7 +8,7 @@ import tempfile
 import textwrap
 import unittest
 
-from run import commands, locked_command
+from run import commands, locked_command, workspace_parts
 from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, HAL, LP8758, LSDR, LSDR_PORTABLE,
                   PE_SYNC_PORTABLE, USDR,
                   USDR_PORTABLE, XSDR, XSDR_PORTABLE, handed_on)
@@ -143,6 +143,18 @@ curl() {
         sequence = commands("workspace", planned(full=True), BNB_CONFIG)
         self.assertIn(["cargo", "test", "--workspace"], sequence)
         self.assertIn(["cargo", "clippy", "--workspace", "--all-targets"], sequence)
+
+    def test_workspace_parts_are_the_workspace_profile_with_nextest_for_cargo_test(self):
+        for plan in (planned(full=True), planned(["protocols/session/socks/src/lib.rs"]),
+                     planned(["codecs/bitsandbytes/bnb/src/io.rs"])):
+            parts = workspace_parts(plan)
+            sequence = commands("workspace", plan, BNB_CONFIG)
+            test = next(command for command in sequence if command[:2] == ["cargo", "test"])
+            scope = test[2:]
+            self.assertEqual(parts["test"], [["cargo", "nextest", "run", "--locked", "--no-tests=warn", *scope],
+                                             ["cargo", "test", "--doc", *scope]])
+            split = [command for part in ("lint", "extra") for command in parts[part]]
+            self.assertCountEqual(split, [command for command in sequence if command != test])
 
     def test_full_routine_scope_cannot_expand_release_commands(self):
         scoped = planned(release=True)

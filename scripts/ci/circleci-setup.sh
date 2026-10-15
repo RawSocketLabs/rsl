@@ -4,6 +4,7 @@
 # Usage:
 #   circleci-setup.sh rust TOOLCHAIN [COMPONENTS] [TARGETS]   # comma-separated lists
 #   circleci-setup.sh tool CRATE VERSION                      # cargo install into ~/ci-tools/CRATE-VERSION
+#   circleci-setup.sh nextest VERSION SHA256                  # released binary into ~/ci-tools
 #   circleci-setup.sh apt PACKAGE...
 set -euo pipefail
 
@@ -44,13 +45,26 @@ case "${1:-}" in
     fi
     on_path "${root}/bin"
     ;;
+  nextest)
+    version="$2" digest="$3" root="${HOME}/ci-tools/cargo-nextest-$2"
+    if [[ ! -x "${root}/bin/cargo-nextest" ]]; then
+      archive="$(mktemp)"
+      curl --proto '=https' --tlsv1.2 -sSfL -o "${archive}" \
+        "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${version}/cargo-nextest-${version}-x86_64-unknown-linux-gnu.tar.gz"
+      echo "${digest}  ${archive}" | sha256sum --check --quiet
+      mkdir -p "${root}/bin"
+      tar -xzf "${archive}" -C "${root}/bin" cargo-nextest
+      rm -f "${archive}"
+    fi
+    on_path "${root}/bin"
+    ;;
   apt)
     shift
     sudo apt-get update
     sudo apt-get install -y "$@"
     ;;
   *)
-    echo "usage: $0 rust|tool|apt ..." >&2
+    echo "usage: $0 rust|tool|nextest|apt ..." >&2
     exit 2
     ;;
 esac

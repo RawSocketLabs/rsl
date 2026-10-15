@@ -25,6 +25,28 @@ def packages(names):
     return [argument for name in sorted(names) for argument in ("-p", name)]
 
 
+def workspace_parts(plan):
+    """The workspace profile as independent parts, so a runner can give each its own machine.
+
+    `test` runs every test binary concurrently through nextest, plus the doctests nextest does
+    not run; together they are exactly `cargo test` over the same packages and features."""
+    selected = set(plan["packages"])
+    workspace = ["--workspace"] if plan["full"] else packages(selected)
+    # One representative configuration keeps optional adapters/transport code in
+    # the routine gate; independent feature ladders and docs stay release-only.
+    adapters = sorted(selected & {"bitsandbytes", "socks", "usdr"})
+    return {
+        "lint": [["cargo", "fmt", "--all", "--check"],
+                 ["cargo", "clippy", *workspace, "--all-targets"],
+                 *(["cargo", "clippy", "-p", name, "--all-targets", "--all-features", "--", "-D", "warnings"]
+                   for name in adapters)],
+        "test": [["cargo", "nextest", "run", "--locked", "--no-tests=warn", *workspace],
+                 ["cargo", "test", "--doc", *workspace]],
+        "extra": [*(["cargo", "test", "-p", name, "--all-features"] for name in adapters),
+                  [sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"]],
+    }
+
+
 def commands(profile, plan, bnb):
     selected = set(plan["packages"])
     roots = set(plan["roots"])
@@ -32,18 +54,8 @@ def commands(profile, plan, bnb):
     release_roots = set(plan["release_roots"])
     workspace = ["--workspace"] if plan["full"] else packages(selected)
     if profile == "workspace":
-        result = [["cargo", "fmt", "--all", "--check"],
-                ["cargo", "clippy", *workspace, "--all-targets"],
-                ["cargo", "test", *workspace]]
-        # One representative configuration keeps optional adapters/transport code in
-        # the routine gate; independent feature ladders and docs stay release-only.
-        for name in sorted(selected & {"bitsandbytes", "socks", "usdr"}):
-            result.extend([
-                ["cargo", "clippy", "-p", name, "--all-targets", "--all-features", "--", "-D", "warnings"],
-                ["cargo", "test", "-p", name, "--all-features"],
-            ])
-        result.append([sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"])
-        return result
+        parts = workspace_parts(plan)
+        return [*parts["lint"], ["cargo", "test", *workspace], *parts["extra"]]
     if profile == "bnb":
         return [["cargo", "clippy", "-p", "bitsandbytes", "-p", "bitsandbytes-macros",
                  "--all-targets", "--all-features", "--", "-D", "warnings"],
@@ -177,7 +189,10 @@ def execute(arguments):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", choices=sorted(PROFILES | {"fuzz"}))
+    parser.add_argument("--part", choices=("lint", "test", "extra"), help="one part of the workspace profile")
     args = parser.parse_args()
+    if args.part and args.profile != "workspace":
+        parser.error("--part applies only to the workspace profile")
     plan = json.loads(os.environ["CI_PLAN"])
     validate_plan(plan)
     if args.profile == "fuzz":
@@ -208,7 +223,8 @@ def main():
             raise ValueError("blessed-versions.toml is stale; regenerate and commit it")
     else:
         bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
-        sequence = commands(args.profile, plan, bnb)
+        sequence = (workspace_parts(plan)[args.part] if args.part else
+                    commands(args.profile, plan, bnb))
         if not sequence:
             raise ValueError("selected validation profile has no commands")
         for arguments in sequence:
