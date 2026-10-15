@@ -52,6 +52,15 @@ class InputTests(unittest.TestCase):
         self.assertEqual((inputs["CI_INPUT_BASE"], inputs["CI_INPUT_FULL"]), (head, "false"))
         self.assertEqual(inputs["CIRCLE_BRANCH"], "feat/x")
 
+    def test_full_breadth_keeps_the_base_release_inference_needs(self):
+        head = git_out(self.root, "rev-parse", "HEAD")
+        git(self.root, "update-ref", "refs/remotes/origin/main", head)
+        git(self.root, "config", "repoGuard.remote", "origin")
+        git(self.root, "config", "repoGuard.trunk", "main")
+        inputs = self.inputs(mode="release", full=True)
+        self.assertEqual((inputs["CI_INPUT_BASE"], inputs["CI_INPUT_FULL"], inputs["CI_INPUT_RELEASE"]),
+                         (head, "true", "true"))
+
     def test_without_a_configured_trunk_coverage_is_full(self):
         self.assertEqual(self.inputs()["CI_INPUT_FULL"], "true")
 

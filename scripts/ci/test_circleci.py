@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import re
+import subprocess
 import tomllib
 import unittest
 from unittest import mock
@@ -195,6 +196,86 @@ class ContinuationTests(unittest.TestCase):
                     for job, result in json.loads(config["jobs"]["CI"]["environment"]["CI_NEEDS"]).items()}}
         report = coverage_report(handed_on(plan), needs, plan, event="pull_request", run_id="w", attempt=1)
         self.assertEqual(report["plan"], plan)
+
+
+class ReleasePathTests(unittest.TestCase):
+    """Only a reviewed trunk push reaches a secret, and evidence that can authorise publication
+    never comes from a cache."""
+
+    def workflow(self, config):
+        return {name: spec for entry in config["workflows"]["ci"]["jobs"] for name, spec in entry.items()}
+
+    def test_release_qualifying_pipelines_restore_and_save_no_cache(self):
+        for branch in ("main", "feat/x"):
+            config = cont(test_plan.planned(release=True), BNB_GATE, {"CIRCLE_BRANCH": branch})
+            for name, job in config["jobs"].items():
+                with self.subTest(branch=branch, job=name):
+                    kinds = {key for step in job["steps"] if isinstance(step, dict) for key in step}
+                    self.assertFalse(kinds & {"restore_cache", "save_cache"})
+
+    def test_release_jobs_exist_only_for_a_trunk_push(self):
+        plan = test_plan.planned(release=True)
+        plan["release_candidate"] = True
+        for event in ("pull_request", "workflow_dispatch"):
+            with self.subTest(event=event):
+                config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, event)
+                self.assertFalse({"release", "release-pr"} & config["jobs"].keys())
+        workflow = self.workflow(continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, "push"))
+        self.assertEqual(workflow["release"], {"requires": ["CI"], "context": ["rsl-github", "rsl-crates"],
+                                               "serial-group": circleci.RELEASE_GROUP})
+        self.assertEqual(workflow["release-pr"], {"requires": ["release"], "context": ["rsl-github"],
+                                                  "serial-group": circleci.RELEASE_GROUP})
+        self.assertEqual(circleci.RELEASE_GROUP, "<< pipeline.project.slug >>/release")
+
+    def test_a_trunk_push_without_a_candidate_only_refreshes_the_release_pr(self):
+        config = cont(test_plan.planned(["README.md"]), BNB_GATE, {"CIRCLE_BRANCH": "main"})
+        workflow = self.workflow(config)
+        self.assertNotIn("release", config["jobs"])
+        self.assertEqual(workflow["release-pr"]["requires"], ["CI"])
+        self.assertNotIn("rsl-crates", workflow["release-pr"]["context"])
+
+    def test_release_jobs_check_the_trunk_before_any_token_is_used(self):
+        plan = test_plan.planned(release=True)
+        plan["release_candidate"] = True
+        jobs = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, "push")["jobs"]
+        for name in ("release", "release-pr"):
+            with self.subTest(job=name):
+                names = [step["run"]["name"] for step in jobs[name]["steps"] if isinstance(step, dict) and "run" in step]
+                commands = run_commands(jobs[name])
+                current = names.index("Stop unless the trunk still points at this commit")
+                self.assertEqual(current, 0)
+                self.assertTrue(all("RELEASE_PLZ_TOKEN" not in command for command in commands[:current + 1]))
+                self.assertFalse(any("x-access-token:$" in command or "@github.com" in command for command in commands))
+        names = [step["run"]["name"] for step in jobs["release"]["steps"] if isinstance(step, dict) and "run" in step]
+        self.assertLess(names.index("Stop unless this is the exact merged release PR"),
+                        names.index("Require complete exact-run release and downstream qualification"))
+        self.assertLess(names.index("Require complete exact-run release and downstream qualification"),
+                        names.index("release-plz release"))
+
+    def test_decisions_halt_but_failures_fail(self):
+        script = circleci.skip_unless("x", "decide")["run"]["command"]
+        for status, outcome in ((0, "continue"), (circleci.SKIP, "halt"), (1, "fail"), (2, "fail")):
+            with self.subTest(status=status):
+                shell = script.replace("decide", f"(exit {status})").replace("circleci-agent step halt", "echo halt")
+                result = subprocess.run(["bash", "-eo", "pipefail", "-c", shell + "\necho continue"],
+                                        capture_output=True, text=True)
+                if outcome == "fail":
+                    self.assertEqual(result.returncode, status)
+                else:
+                    self.assertEqual((result.returncode, result.stdout.split()[0]), (0, outcome))
+
+    def test_the_image_publishes_only_from_a_tested_trunk_push(self):
+        plan = test_plan.planned([".circleci/image/Dockerfile"])
+        self.assertNotIn("image", cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})["jobs"])
+        workflow = self.workflow(cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}))
+        self.assertEqual(workflow["image"], {"requires": ["CI"], "context": ["rsl-image"]})
+
+    def test_only_release_and_image_jobs_hold_contexts(self):
+        plan = test_plan.planned(release=True)
+        plan["release_candidate"] = True
+        workflow = self.workflow(continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, "push"))
+        holders = {name for name, spec in workflow.items() if spec and spec.get("context")}
+        self.assertEqual(holders, {"release", "release-pr"})
 
 
 class ImageTests(unittest.TestCase):

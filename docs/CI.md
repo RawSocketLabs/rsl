@@ -162,13 +162,15 @@ same pinned `rsl-ci` image. The plan job's generator writes the continuation Cir
 and each job's own `run` steps execute unchanged in a fresh clone of the tested commit: `policy`
 and `commitlint` first, then the selected checks and fuzz targets (`-j N`, default
 `CI_LOCAL_JOBS` or 2), then `CI`, which recomputes the plan and rejects divergence. Release jobs
-never run locally; a changed job image is built, not published. It requires a clean committed
+never run locally; a changed job image is built, not published. A machine job (`commitlint`)
+runs its script on the host with Podman standing in for Docker, so its own container does the work. It requires a clean committed
 tree and tests a self-contained clone, so linked worktrees and unstaged files never reach it.
 The default comparison is the merge base against the trunk recorded by repo-guard's local
 configuration; absent configuration/history means full routine coverage, and no remote is
 fetched to choose it. `--image` runs an unpublished image (for example `localhost/rsl-ci:trial`
 built from `.circleci/image/`). Build targets and the Cargo registry are cached under
-`~/.cache/rsl-ci-local`; per-run logs and clones stay in the printed temporary directory.
+`~/.cache/rsl-ci-local`, one job at a time per cache. Each run's clones and logs live under
+`~/.cache/rsl-ci-local/runs`; a passing run removes its directory, a failing one keeps it.
 
 ## Pipeline
 
@@ -194,8 +196,10 @@ Every job runs the `rsl-ci` image (`.circleci/image/Dockerfile`), pinned by dige
 generator and the setup config: its toolchains (pinned stable, MSRV, and the pinned nightly for
 public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
 build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
-`image` job that builds and publishes `ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `rsl-image`
-context's GHCR token; adopting it is a reviewed digest change. `test_circleci.py` keeps the
+`image` job to a main push, after `CI` passes, that builds and publishes
+`ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `rsl-image` context's GHCR token; adopting it is a
+reviewed digest change. To try a changed image first, build it locally and run
+`scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
 Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
 
@@ -223,8 +227,10 @@ legitimate only after successful policy/selection verification.
 The gate writes `ci-coverage.json` (the plan and job results, bound to the exact tested SHA and
 the workflow ID) as an artifact and to the workspace. On a main push, `release-pr` refreshes the
 release-plz PR on every pipeline, and a release-qualifying push adds `release` before it. Both
-use the `rsl-release` context (restricted to main) and one serial group, so tag discovery never
-races a release. `release` stops successfully unless main still points at the tested commit and
+hold only the contexts they use (`release-pr`: `rsl-github`; `release`: `rsl-github` and
+`rsl-crates`) and share one serial group, so tag discovery never races a release. Every context
+is restricted to this project and `pipeline.git.branch == "main" and not job.ssh.enabled`, so
+neither a branch pipeline nor an SSH rerun can read a secret. `release` stops successfully unless main still points at the tested commit and
 the commit is the exact merge of a same-repository `release-plz-` PR. It then verifies the same
 workflow's receipt: the publisher independently recomputes released members from the commit's
 first parent and exact manifest versions, and requires the receipt's products, members and
@@ -232,6 +238,10 @@ qualification scope to match, before `release-plz release` runs. Manual `release
 version changes from the comparison base; explicit `products` requests enabled products even
 without version changes. Neither authorizes publication. Release-plz still owns version
 selection, package allowlisting, PR discovery, and publication order.
+
+Recovery: a receipt is bound to its workflow ID, and "Rerun from failed" starts a new
+workflow whose `release` job would reject the earlier receipt. After a flaky failure on main,
+use "Rerun workflow from start". Redundant branch workflows are auto-cancelled; main's are not.
 
 No success is reused across different SHAs. Dependency edits use proven declaration/resolution
 deltas; shared policy or unavailable dependency-impact evidence retains the conservative

@@ -50,9 +50,11 @@ DETACHED_TARGETS = [
     "devices/sdr/limesdr/oracle", "devices/sdr/limesdr/nostd-check",
 ]
 IMAGE_SOURCE = ".circleci/image/"
-# Contexts hold the only secrets. `rsl-release` is restricted to the trunk; `rsl-image` to this
-# project (forks are never built).
-RELEASE_CONTEXT = "rsl-release"
+# Contexts hold the only secrets, each restricted to this project's trunk with SSH reruns
+# denied: `rsl-github` holds RELEASE_PLZ_TOKEN, `rsl-crates` CARGO_REGISTRY_TOKEN, and
+# `rsl-image` the GHCR credential. Each job gets only the contexts it uses.
+GITHUB_CONTEXT = "rsl-github"
+CRATES_CONTEXT = "rsl-crates"
 IMAGE_CONTEXT = "rsl-image"
 RELEASE_GROUP = "<< pipeline.project.slug >>/release"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
@@ -66,6 +68,9 @@ PARAMETERS = {"full": {"type": "boolean", "default": False}, "base": {"type": "s
               "audit": {"type": "boolean", "default": False},
               "resource_class": {"type": "string", "default": DEFAULT_CLASS}}
 SHA = re.compile(r"[0-9a-f]{40}")
+# `current` and `candidate` exit with SKIP when a release job has nothing to do; any other
+# failure fails the job.
+SKIP = 3
 # Jobs receive the plan as an environment variable. Linux refuses to start a process with one
 # longer than 128 KiB (MAX_ARG_STRLEN, name included), so a larger plan fails at generation.
 ENV_LIMIT = 128 * 1024 - 256
@@ -95,6 +100,8 @@ def event_options(root, env, prefix):
     elif branch == TRUNK:
         # CircleCI renders an absent previous revision as "<nil>"; anything but a SHA is no base.
         revision = env.get("CI_BASE_REVISION", "")
+        if revision == env.get("CIRCLE_SHA1"):
+            revision = ""  # A re-run of the same commit has no diff; never post an empty green.
         event, base, release = "push", revision if SHA.fullmatch(revision) else "", True
     elif branch:
         # The plan job pins the merge base so the gate cannot see a trunk that moved since.
@@ -175,22 +182,30 @@ def fuzz_job(item, *, save, caches):
 def commitlint_job(base):
     """Conventional Commits for every commit since the base: release-plz versions from them.
     The upstream image is run, not used as the executor: its entrypoint is commitlint itself."""
-    lint = (f'docker run --rm -v "$PWD:/repo" -w /repo --entrypoint commitlint {COMMITLINT} '
+    lint = (f'docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo --entrypoint commitlint {COMMITLINT} '
             f'--config .config/commitlint.config.mjs --from {base} --to "$CIRCLE_SHA1"')
     return {"machine": {"image": "ubuntu-2404:current"}, "resource_class": "medium",
             "steps": ["checkout", run("Lint commit messages", lint)]}
 
 
+def skip_unless(name, command):
+    """Run a decision: success continues, SKIP halts the job successfully, anything else fails."""
+    return run(name, f"status=0\n{command} || status=$?\n"
+                     f"case $status in 0) ;; {SKIP}) circleci-agent step halt ;; *) exit $status ;; esac")
+
+
 def release_jobs(release):
     """`release` publishes a verified release-plz merge; `release-pr` then refreshes the PR.
-    Both check that the trunk still points at this commit and hold the release context."""
-    authenticate = run("Authenticate Git as the release token",
-                       f'git remote set-url origin "https://x-access-token:${{RELEASE_PLZ_TOKEN}}@github.com/{REPOSITORY}.git"\n'
-                       'git config user.name release-plz\n'
-                       'git config user.email release-plz@users.noreply.github.com')
-    # Exit 1 is a decision (halt this job successfully); any other failure fails it.
-    current = run("Stop unless the trunk still points at this commit",
-                  "python3 scripts/ci/circleci.py current || { [ $? -eq 1 ] && circleci-agent step halt; }")
+    Both stop unless the trunk still points at this commit before any token is used."""
+    # The token reaches Git through a credential helper reading the environment, never .git/config.
+    authenticate = run("Authenticate Git with the release token",
+                       f"git remote set-url origin https://github.com/{REPOSITORY}.git\n"
+                       "git config credential.helper "
+                       "'!f() { echo username=x-access-token; echo \"password=$RELEASE_PLZ_TOKEN\"; }; f'\n"
+                       "git config user.name release-plz\n"
+                       "git config user.email release-plz@users.noreply.github.com")
+    current = skip_unless("Stop unless the trunk still points at this commit",
+                          "python3 scripts/ci/circleci.py current")
     jobs = {"release-pr": {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
         "checkout", current, authenticate,
         run("release-plz release-pr", 'release-plz release-pr --git-token "$RELEASE_PLZ_TOKEN"'),
@@ -198,8 +213,8 @@ def release_jobs(release):
     if release:
         jobs["release"] = {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
             "checkout", {"attach_workspace": {"at": "/tmp/ci"}}, current,
-            run("Stop unless this is the exact merged release PR",
-                "python3 scripts/ci/circleci.py candidate || { [ $? -eq 1 ] && circleci-agent step halt; }"),
+            skip_unless("Stop unless this is the exact merged release PR",
+                        "python3 scripts/ci/circleci.py candidate"),
             run("Require complete exact-run release and downstream qualification",
                 'CANDIDATE_SHA="$CIRCLE_SHA1" CI_RUN_ID="$CIRCLE_WORKFLOW_ID" CI_RUN_ATTEMPT=1 '
                 "python3 scripts/ci/gate.py release --report /tmp/ci/ci-coverage.json"),
@@ -273,15 +288,17 @@ def continuation(plan, bnb, env, event):
     workflow = [{"policy": {}},
                 *({name: {} if name == "commitlint" else {"requires": ["policy"]}} for name in selected),
                 {"CI": {"requires": ["policy", *selected]}}]
-    if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):
-        jobs["image"] = image_job()
-        workflow.append({"image": {"context": [IMAGE_CONTEXT]}})
     if event == "push":
+        # Only reviewed trunk commits reach a secret. The image publishes after CI passes.
+        if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):
+            jobs["image"] = image_job()
+            workflow.append({"image": {"requires": ["CI"], "context": [IMAGE_CONTEXT]}})
         jobs.update(release_jobs(plan["release_candidate"]))
-        serial = {"context": [RELEASE_CONTEXT], "serial-group": RELEASE_GROUP}
         if plan["release_candidate"]:
-            workflow.append({"release": {"requires": ["CI"], **serial}})
-        workflow.append({"release-pr": {"requires": ["release" if plan["release_candidate"] else "CI"], **serial}})
+            workflow.append({"release": {"requires": ["CI"], "context": [GITHUB_CONTEXT, CRATES_CONTEXT],
+                                         "serial-group": RELEASE_GROUP}})
+        workflow.append({"release-pr": {"requires": ["release" if plan["release_candidate"] else "CI"],
+                                        "context": [GITHUB_CONTEXT], "serial-group": RELEASE_GROUP}})
     return {"version": 2.1, "parameters": PARAMETERS, "jobs": jobs, "workflows": {"ci": {"jobs": workflow}}}
 
 
@@ -292,12 +309,11 @@ def audit_continuation():
             "workflows": {"audit": {"jobs": ["audit"]}}}
 
 
-def github(path, token):
-    """Every page of a GitHub REST list."""
+def github(path):
+    """Every page of a public GitHub REST list."""
     items, url = [], f"https://api.github.com/{path}?per_page=100"
     while url:
-        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                       "Authorization": f"Bearer {token}"})
+        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
         with urllib.request.urlopen(request, timeout=60) as response:
             items.extend(json.loads(response.read()))
             links = re.findall(r'<([^>]+)>;\s*rel="next"', response.headers.get("Link", ""))
@@ -343,14 +359,15 @@ def main():
     if args.mode == "current":
         if trunk_tip() != env["CIRCLE_SHA1"]:
             print("Superseded: the trunk has moved past this commit")
-            sys.exit(1)
+            sys.exit(SKIP)
         return
     if args.mode == "candidate":
+        # A read of a public repository: no write-scoped token is needed or used.
         sha = env["CIRCLE_SHA1"]
-        pulls = github(f"repos/{REPOSITORY}/commits/{sha}/pulls", env["RELEASE_PLZ_TOKEN"])
+        pulls = github(f"repos/{REPOSITORY}/commits/{sha}/pulls")
         if not any(is_release_merge(pr, sha, release_policy(root)) for pr in pulls):
             print("No publish operation for this commit")
-            sys.exit(1)
+            sys.exit(SKIP)
         print("Exact merged release candidate")
         return
     if args.mode == "plan":
@@ -380,6 +397,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
-        print(f"CircleCI planning failed: {error}", file=sys.stderr)
+    except Exception as error:  # Any failure must fail its job, never read as a decision (SKIP).
+        print(f"CircleCI planning failed: {error!r}", file=sys.stderr)
         sys.exit(2)

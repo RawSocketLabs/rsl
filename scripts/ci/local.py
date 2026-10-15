@@ -10,10 +10,12 @@ jobs never run locally, and a changed job image is built but not published.
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import fcntl
 import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,7 +28,9 @@ HOME = "/home/ci"
 PROJECT = f"{HOME}/project"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "rsl-ci-local"
 # Machine jobs call `docker run`; rootless Podman needs SELinux labelling off for their mounts.
-DOCKER = ('docker() { if [ "$1" = run ]; then shift; podman run --security-opt label=disable "$@"; '
+# `--userns=keep-id` keeps the host user's ID, so a job's `--user "$(id -u)"` owns its checkout.
+DOCKER = ('docker() { if [ "$1" = run ]; then shift; '
+          'podman run --security-opt label=disable --userns=keep-id "$@"; '
           'else podman "$@"; fi; }; export -f docker\n')
 # Never run locally: they publish, or need secrets.
 REMOTE_ONLY = {"release", "release-pr"}
@@ -94,7 +98,8 @@ def run_job(name, job, *, image, snapshot, run_dir, environment):
             # Build the changed image to prove the Dockerfile; publication is CircleCI's.
             command = ["podman", "build", "--format", "docker", str(workdir / circleci.IMAGE_SOURCE)]
         elif "machine" in job:
-            # Machine jobs drive containers themselves (commitlint); Podman stands in for Docker.
+            # Machine jobs drive containers themselves (commitlint): their script runs on the host
+            # with Podman standing in for Docker, and the container they start does the work.
             command = ["bash", "-eo", "pipefail", "-c",
                        DOCKER + job_script(name, job)]
             return finish(name, subprocess.run(command, cwd=workdir, env={**os.environ, **env},
@@ -109,6 +114,12 @@ def run_job(name, job, *, image, snapshot, run_dir, environment):
             registry.mkdir(parents=True, exist_ok=True)
             command = podman(image, workdir, run_dir / "tmp", env, job_script(name, job),
                              registry=registry, target=target)
+            # One job's caches serve one run at a time: concurrent runs (two worktrees) would
+            # race to unpack crates and share a target directory.
+            with (CACHE / f"{name}.lock").open("w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                result = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
+            return finish(name, result, started, log)
         result = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
     return finish(name, result, started, log)
 
@@ -143,7 +154,9 @@ def main():
     if git("status", "--porcelain", cwd=root):
         parser.error("requires a clean, committed worktree")
     head = git("rev-parse", "HEAD", cwd=root)
-    run_dir = Path(tempfile.mkdtemp(prefix="rsl-ci-local."))
+    # Not /tmp, which may be RAM-backed: clones and uncached targets are large.
+    (CACHE / "runs").mkdir(parents=True, exist_ok=True)
+    run_dir = Path(tempfile.mkdtemp(prefix="run.", dir=CACHE / "runs"))
     for directory in ("logs", "jobs", "tmp"):
         (run_dir / directory).mkdir()
     (CACHE / "registry" / "plan").mkdir(parents=True, exist_ok=True)
@@ -174,6 +187,7 @@ def main():
             print(f"\n--- {name}: last lines of {log}")
             print("".join(log.read_text().splitlines(keepends=True)[-30:]))
         sys.exit(1)
+    shutil.rmtree(run_dir, ignore_errors=True)  # Failed runs keep their logs and clones.
     print(f"Local CI passed for {head}")
 
 

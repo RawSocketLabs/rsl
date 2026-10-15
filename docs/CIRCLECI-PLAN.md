@@ -14,8 +14,9 @@ resulting pipeline; this file records the decisions and what remains before and 
 | Path to main | Fast-forward after the branch's `ci/circleci: CI` is green | Trunk-based; the tested commit is exactly what lands, so no merge queue |
 | Required check | `ci/circleci: CI`, pinned to the CircleCI app | Statuses are created by `circleci-app[bot]` (verified on `810df77f`) |
 | Fork PRs | Not built | Public repo; a fork's config could write project-wide caches |
-| Image publication | CircleCI `image` job, classic GHCR token (`write:packages`) in `rsl-image` | No Actions left to use the short-lived token; GHCR rejects fine-grained tokens |
-| Release credentials | `RELEASE_PLZ_TOKEN` (tags, release PRs) and `CARGO_REGISTRY_TOKEN` in `rsl-release`, restricted to main | Reuses the existing release-plz token |
+| Image publication | CircleCI `image` job after `CI` on a main push, classic GHCR token (`write:packages`) in `rsl-image` | No Actions left to use the short-lived token; GHCR rejects fine-grained tokens |
+| Release credentials | `RELEASE_PLZ_TOKEN` in `rsl-github` (release-pr, release), `CARGO_REGISTRY_TOKEN` in `rsl-crates` (release only) | Least privilege per job; reuses the existing release-plz token |
+| Context restrictions | This project, and `pipeline.git.branch == "main" and not job.ssh.enabled` | Branch pipelines and SSH reruns never read a secret |
 | Release serialisation | One CircleCI `serial-group` for `release` and `release-pr` | Replaces Actions' concurrency group (`serial-group` validated by the CLI) |
 | Caches | Main saves; any release-qualifying pipeline restores none | Project-wide caches must not feed publication evidence |
 | Commit lint | Pinned upstream commitlint image, run by a machine job | Same configuration and semantics as before |
@@ -35,8 +36,13 @@ resulting pipeline; this file records the decisions and what remains before and 
    (a classic token with only `write:packages`); later images come from the `image` job.
 2. Push the branch and run CircleCI on it with the image: a full run and a `bitsandbytes`
    release run, both green, and `scripts/ci-local.sh pre-push --full` green locally.
-3. Create the `rsl-release` context, restricted to `main`, holding `RELEASE_PLZ_TOKEN` and
-   `CARGO_REGISTRY_TOKEN`. Prove a branch job that references it is denied.
+3. Fill `rsl-github` (`RELEASE_PLZ_TOKEN`) and `rsl-crates` (`CARGO_REGISTRY_TOKEN`); the
+   contexts and their restrictions exist. Prove denial three ways: a branch job referencing
+   them, an SSH rerun of a main job, and an API-triggered pipeline whose config branch differs
+   from its checkout branch.
+
+Done: the contexts and their restrictions, auto-cancel of redundant branch workflows, and the
+project marked open source.
 
 ## 4. Cutover
 

@@ -169,25 +169,26 @@ Do not merge the version PR with a stale fuzz lock.
 
 ## Required: a token that can open the release PR
 
-A token that acts as a **user or GitHub App** is required: it makes CI run on the
-release PR and avoids the previously observed org restriction on Actions-created
-PRs. Set `RELEASE_PLZ_TOKEN`; there is deliberately **no `GITHUB_TOKEN` fallback**.
-Use one of:
+A token that acts as a **user or GitHub App** is required: it opens the release PR,
+pushes its branch, and creates the release tags. Its pushes trigger CircleCI like any
+other. Set `RELEASE_PLZ_TOKEN` in the CircleCI `rsl-github` context, which only trunk
+jobs without SSH can read. Use one of:
 
 - **A fine-grained PAT** (simplest) — repository access to this repo, with
   **Contents: read/write** and **Pull requests: read/write**.
-- **A GitHub App token** (no human owner, auto-rotated) — install an app with the same
-  permissions and mint the token via `actions/create-github-app-token` in the workflow.
+- **A GitHub App installation token** (no human owner) — install an app with the same
+  permissions; a minted installation token expires within an hour, so a long-lived
+  CircleCI secret must be a PAT unless the job mints one from the app's private key.
 
 Both `RELEASE_PLZ_TOKEN` and `CARGO_REGISTRY_TOKEN` must be nonempty before the
 release job starts any tag/publish side effects. Presence is not proof of scope,
 ownership, or validity; an administrator must verify those separately. Never print
-token values. The workflow uses the ordinary `GITHUB_TOKEN` only for release
-operations that do not need to trigger a PR's CI.
+token values. Git reads the token through a credential helper, so it is never written
+to the checkout's configuration.
 
 ## Publishing to crates.io
 
-The `release-plz-release` job reads the `CARGO_REGISTRY_TOKEN` repository secret — a
+The CircleCI `release` job reads `CARGO_REGISTRY_TOKEN` from the `rsl-crates` context — a
 crates.io token with publish scope for `bitsandbytes` and `bitsandbytes-macros`. The
 two crates are published in dependency order: the macro version must exist on the
 registry before the runtime is published. Locally, verify both unpublished archives
