@@ -40,7 +40,7 @@ def workspace_parts(plan):
                  ["cargo", "clippy", *workspace, "--all-targets"],
                  *(["cargo", "clippy", "-p", name, "--all-targets", "--all-features", "--", "-D", "warnings"]
                    for name in adapters)],
-        "test": [["cargo", "nextest", "run", "--locked", "--no-tests=warn", *workspace],
+        "test": [["cargo", "nextest", "run", "--profile", "ci", "--locked", "--no-tests=warn", *workspace],
                  ["cargo", "test", "--doc", *workspace]],
         "extra": [*(["cargo", "test", "-p", name, "--all-features"] for name in adapters),
                   [sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"]],

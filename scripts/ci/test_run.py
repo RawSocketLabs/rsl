@@ -151,7 +151,7 @@ curl() {
             sequence = commands("workspace", plan, BNB_CONFIG)
             test = next(command for command in sequence if command[:2] == ["cargo", "test"])
             scope = test[2:]
-            self.assertEqual(parts["test"], [["cargo", "nextest", "run", "--locked", "--no-tests=warn", *scope],
+            self.assertEqual(parts["test"], [["cargo", "nextest", "run", "--profile", "ci", "--locked", "--no-tests=warn", *scope],
                                              ["cargo", "test", "--doc", *scope]])
             split = [command for part in ("lint", "extra") for command in parts[part]]
             self.assertCountEqual(split, [command for command in sequence if command != test])

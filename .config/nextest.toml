@@ -1,0 +1,7 @@
+# The `ci` profile, used by CI's workspace test part (scripts/ci/run.py): report every failure
+# rather than stopping at the first, and write JUnit for CircleCI's test insights.
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"

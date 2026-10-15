@@ -35,10 +35,22 @@ RUST_SRC = {"workspace", "bnb", "socks", "usdr-oracle", "usdr-portable", "xsdr-p
 NATIVE_COMPILER = {"usdr-ffi", "rust-dsdcc", "usdr-oracle", "xsdr-oracle", "lsdr-oracle",
                    "pe-sync-oracle", "limesdr-oracle"}
 NO_RUST = {"deny", "blessed"}
-DENY_VERSION = "0.20.2"
 FUZZ_VERSION = "0.13.2"
-# A released binary, verified against its published SHA-256: building nextest takes minutes.
-NEXTEST = ("0.9.143", "66786b9abe23920d022a182d1416b1bbc8130dd4872a9553d76985a1708dcd1e")
+# Released binaries, verified against their published SHA-256: building them takes minutes.
+GITHUB = "https://github.com"
+RELEASES = {
+    "cargo-nextest": ("0.9.143", f"{GITHUB}/nextest-rs/nextest/releases/download/cargo-nextest-0.9.143/"
+                      "cargo-nextest-0.9.143-x86_64-unknown-linux-gnu.tar.gz",
+                      "66786b9abe23920d022a182d1416b1bbc8130dd4872a9553d76985a1708dcd1e", "cargo-nextest"),
+    "cargo-deny": ("0.20.2", f"{GITHUB}/EmbarkStudios/cargo-deny/releases/download/0.20.2/"
+                   "cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz",
+                   "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f",
+                   "cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny"),
+}
+# Every job's budget: a slow job fails rather than stretching the pipeline past it.
+BUDGET = "10m"
+# nextest's `ci` profile (.config/nextest.toml) writes JUnit here for CircleCI's test insights.
+JUNIT = "target/nextest/ci/junit.xml"
 # The critical path; its parts run on separate machines (run.py workspace_parts).
 WORKSPACE_PARTS = ("lint", "test", "extra")
 ACTIONLINT = "rhysd/actionlint:1.7.12"
@@ -149,6 +161,11 @@ def tool(crate, version, *, save):
                   [run(f"Install {crate}", f"{SETUP} tool {crate} {version}")], save=save, lock=False)
 
 
+def release(name):
+    version, url, digest, member = RELEASES[name]
+    return run(f"Install {name}", f"{SETUP} release {name} {version} {url} {digest} {member}")
+
+
 def slug(text):
     return re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-")
 
@@ -166,9 +183,9 @@ def check_job(profile, toolchain, plan, bnb, *, hosted, save, part=None):
     if profile == "semver":
         steps.extend(tool("cargo-semver-checks", bnb["semver_version"], save=save))
     if profile == "deny":
-        steps.extend(tool("cargo-deny", DENY_VERSION, save=save))
+        steps.append(release("cargo-deny"))
     if part == "test":
-        steps.append(run("Install cargo-nextest", f"{SETUP} nextest {NEXTEST[0]} {NEXTEST[1]}"))
+        steps.append(release("cargo-nextest"))
     if profile in NATIVE_COMPILER and hosted:
         steps.append(run("Native compiler for FFI bridge checks", f"{SETUP} apt build-essential"))
     if profile == "rust-dsdcc":
@@ -181,10 +198,13 @@ def check_job(profile, toolchain, plan, bnb, *, hosted, save, part=None):
     if profile == "deny":
         steps.append(run("cargo deny", "cargo deny --all-features check"))
     else:
-        # Actions' timeout-minutes bounds the whole profile, not only a silent stretch.
+        # The budget bounds the whole profile, not only a silent stretch.
         selection = ' --part "$PART"' if part else ""
         steps.append(run("Run the complete selected profile",
-                         f'timeout 30m python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout="30m"))
+                         f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}',
+                         no_output_timeout=BUDGET))
+    if part == "test":
+        steps.append({"store_test_results": {"path": JUNIT}})
     if profile in NO_RUST:
         return steps
     return cached(f"v1-checks-{profile}{'-' + part if part else ''}-{toolchain}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS],
@@ -195,7 +215,7 @@ def fuzz_job(item, *, save):
     steps = [run("Install Rust", f"{SETUP} rust nightly"),
              *tool("cargo-fuzz", FUZZ_VERSION, save=save),
              # Separate processes preserve each target's original budget. GNU is required for ASan.
-             run("Fuzz", "timeout 15m python3 scripts/ci/run.py fuzz", no_output_timeout="15m")]
+             run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
     return cached(f"v1-fuzz-{slug(item['root'])}-{item['target']}",
                   CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save)
 
