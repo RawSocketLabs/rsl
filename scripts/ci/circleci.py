@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Plan a CircleCI pipeline and continue it with only the selected jobs.
 
-The static `.circleci/config.yml` is a setup workflow: it runs `plan`, which selects coverage
-with the same `plan.py` contract as the Actions workflow and continues the pipeline with one
-job per selected check profile and fuzz target. Unselected work is never scheduled. Every
-generated job runs concurrently after `policy`; the final `CI` job recomputes the plan and
-requires the handed-on plan to match before it writes the coverage receipt.
-
-Publication stays with the Actions workflow: this adapter never marks a release candidate.
+The static `.circleci/config.yml` is a setup workflow: its `plan` job selects coverage with
+`plan.py` and continues the pipeline with one job per selected check profile and fuzz target.
+Unselected work is never scheduled. Every generated job runs concurrently after `policy`; the
+final `CI` job recomputes the plan and requires the handed-on plan to match before it writes
+the coverage receipt. On the trunk, `release` publishes a qualified release-plz merge and
+`release-pr` refreshes the release PR, both serialised and holding the only secrets.
 """
 
 import argparse
@@ -21,40 +20,27 @@ import tomllib
 import urllib.request
 
 from gate import coverage_report, validate_plan
-from plan import build_plan, changed_paths, handed_on, is_prose, release_policy
+from plan import build_plan, handed_on, release_policy
 
 TRUNK = "main"
-IMAGE = "ubuntu-2404:current"
-# The Actions runner equivalent: 4 vCPU, 15 GB.
+REPOSITORY = "RawSocketLabs/rsl"
+# The job image (.circleci/image/Dockerfile), by digest. Its toolchains and tools are the only
+# ones jobs use: nothing is installed at run time. test_circleci.py holds these pins in step.
+IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:PENDING"
+# The upstream commitlint image (21.2.3), which carries @commitlint/config-conventional.
+COMMITLINT = ("docker.io/commitlint/commitlint@"
+              "sha256:33f225c84111a38ebac0c81fa21c488a79709b8a8e04056dfaaf4f80ef20be25")
+STABLE = "1.99.0"
+MSRV = "1.85.0"
+# 4 vCPU, 8 GB: the heaviest trial job peaked at 1.5 GiB and saturated its CPUs.
 DEFAULT_CLASS = "large"
-SETUP = "bash scripts/ci/circleci-setup.sh"
-# trybuild panic snapshots need rust-src. Never silently switch their compiler.
-RUST_SRC = {"workspace", "bnb", "socks", "usdr-oracle", "usdr-portable", "xsdr-portable",
-            "xsdr-oracle", "lsdr-portable", "lsdr-oracle", "pe-sync-oracle", "pe-sync-portable",
-            "limesdr-oracle", "limesdr-portable", "rust-skills", "bladerf"}
-NATIVE_COMPILER = {"usdr-ffi", "rust-dsdcc", "usdr-oracle", "xsdr-oracle", "lsdr-oracle",
-                   "pe-sync-oracle", "limesdr-oracle"}
 NO_RUST = {"deny", "blessed"}
-FUZZ_VERSION = "0.13.2"
-# Released binaries, verified against their published SHA-256: building them takes minutes.
-GITHUB = "https://github.com"
-RELEASES = {
-    "cargo-nextest": ("0.9.143", f"{GITHUB}/nextest-rs/nextest/releases/download/cargo-nextest-0.9.143/"
-                      "cargo-nextest-0.9.143-x86_64-unknown-linux-gnu.tar.gz",
-                      "66786b9abe23920d022a182d1416b1bbc8130dd4872a9553d76985a1708dcd1e", "cargo-nextest"),
-    "cargo-deny": ("0.20.2", f"{GITHUB}/EmbarkStudios/cargo-deny/releases/download/0.20.2/"
-                   "cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz",
-                   "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f",
-                   "cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny"),
-}
 # Every job's budget: a slow job fails rather than stretching the pipeline past it.
 BUDGET = "10m"
 # nextest's `ci` profile (.config/nextest.toml) writes JUnit here for CircleCI's test insights.
 JUNIT = "target/nextest/ci/junit.xml"
 # The critical path; its parts run on separate machines (run.py workspace_parts).
 WORKSPACE_PARTS = ("lint", "test", "extra")
-ACTIONLINT = "rhysd/actionlint:1.7.12"
-# Cargo tools live in their own per-version roots (circleci-setup.sh), never in ~/.cargo/bin.
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
 DETACHED_TARGETS = [
     "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/usdr", "bindings/dsdcc",
@@ -63,15 +49,26 @@ DETACHED_TARGETS = [
     "devices/sdr/lsdr/nostd-check", "devices/sync/pe_sync/oracle", "devices/sync/pe_sync/nostd-check",
     "devices/sdr/limesdr/oracle", "devices/sdr/limesdr/nostd-check",
 ]
+IMAGE_SOURCE = ".circleci/image/"
+# Contexts hold the only secrets. `rsl-release` is restricted to the trunk; `rsl-image` to this
+# project (forks are never built).
+RELEASE_CONTEXT = "rsl-release"
+IMAGE_CONTEXT = "rsl-image"
+RELEASE_GROUP = "<< pipeline.project.slug >>/release"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
 # gate's recomputation sees the event the plan saw.
 INPUTS = ("CI_INPUT_FULL", "CI_INPUT_BASE", "CI_INPUT_RELEASE", "CI_INPUT_PRODUCTS",
-          "CI_INPUT_CLASS", "CI_TRIGGER_SOURCE", "CI_BASE_REVISION")
+          "CI_INPUT_CLASS", "CI_INPUT_AUDIT", "CI_TRIGGER_SOURCE", "CI_BASE_REVISION")
 # Declared again in the continuation: trigger-time parameters carry over into it.
 PARAMETERS = {"full": {"type": "boolean", "default": False}, "base": {"type": "string", "default": ""},
               "release": {"type": "boolean", "default": False},
               "products": {"type": "string", "default": ""},
+              "audit": {"type": "boolean", "default": False},
               "resource_class": {"type": "string", "default": DEFAULT_CLASS}}
+SHA = re.compile(r"[0-9a-f]{40}")
+# Jobs receive the plan as an environment variable. Linux refuses to start a process with one
+# longer than 128 KiB (MAX_ARG_STRLEN, name included), so a larger plan fails at generation.
+ENV_LIMIT = 128 * 1024 - 256
 
 
 def merge_base(root, revision):
@@ -81,11 +78,11 @@ def merge_base(root, revision):
 
 
 def event_options(root, env, prefix):
-    """(event, base, full, release, products) in the Actions vocabulary `gate.py` records.
+    """(event, base, full, release, products) in the vocabulary `gate.py` records.
 
-    Explicit pipeline parameters are a manual dispatch; a schedule is a full run; the trunk is
-    a push compared against the previous pipeline's revision; any other branch is compared
-    from its merge base with the trunk, as a pull request would be."""
+    Explicit pipeline parameters are a manual dispatch. A schedule passes `full`. The trunk is
+    a push compared against the previous pipeline's revision, qualifying any release whose
+    versions it changes; any other branch is compared from its merge base with the trunk."""
     base = env.get("CI_INPUT_BASE", "")
     if not re.fullmatch(r"(?:[A-Za-z0-9._][A-Za-z0-9._/-]*)?", base):
         raise ValueError("comparison base is not a Git revision")
@@ -93,12 +90,12 @@ def event_options(root, env, prefix):
     release = env.get("CI_INPUT_RELEASE") == "true"
     products = env.get("CI_INPUT_PRODUCTS", "").split()
     branch = env.get("CIRCLE_BRANCH", "")
-    if env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline":
-        event, full = "schedule", True
-    elif full or release or products or base:
+    if full or release or products or base:
         event = "workflow_dispatch"
     elif branch == TRUNK:
-        event, base = "push", env.get("CI_BASE_REVISION", "")
+        # CircleCI renders an absent previous revision as "<nil>"; anything but a SHA is no base.
+        revision = env.get("CI_BASE_REVISION", "")
+        event, base, release = "push", revision if SHA.fullmatch(revision) else "", True
     elif branch:
         # The plan job pins the merge base so the gate cannot see a trunk that moved since.
         event, base = "pull_request", env.get("CI_MERGE_BASE") or merge_base(root, f"origin/{TRUNK}")
@@ -108,127 +105,135 @@ def event_options(root, env, prefix):
         release |= branch.startswith(prefix) and not env.get("CIRCLE_PR_USERNAME")
     else:
         raise ValueError("CircleCI CI is only configured for branch pipelines")
-    if products and event != "workflow_dispatch":
-        raise ValueError("explicit products are only allowed for manual qualification")
     return event, base, full or not base, release, products or None
-
-
-def needs_cargo(root, env):
-    _, base, full, release, _ = event_options(root, env, release_policy(root))
-    if full or release:
-        return True
-    try:
-        return not all(is_prose(path) for path in changed_paths(root, base, "HEAD"))
-    except subprocess.CalledProcessError:
-        return True  # Missing history expands to full coverage, including metadata setup.
 
 
 def plan_for_event(root, env):
     event, base, full, release, products = event_options(root, env, release_policy(root))
     plan = build_plan(root, base=base, full=full, release=release, products=products)
-    plan["release_candidate"] = False
+    # A trunk push that qualifies a release is a publication candidate; `release` confirms it
+    # came from a merged release-plz PR before anything is published.
+    plan["release_candidate"] = event == "push" and plan["release"]
     if plan["head"] != env["CIRCLE_SHA1"]:
         raise ValueError("checkout does not match the pipeline's tested SHA")
     validate_plan(plan)
     return event, plan
 
 
-def executor(resource_class):
-    if "/" in resource_class:  # A self-hosted runner class, provisioned with native libraries.
-        return {"machine": True, "resource_class": resource_class}
-    return {"machine": {"image": IMAGE}, "resource_class": resource_class}
+def executor(resource_class, image=IMAGE):
+    # A namespace/name class is a self-hosted container runner; it runs the same image.
+    return {"docker": [{"image": image}], "resource_class": resource_class}
 
 
 def run(name, command, **extra):
     return {"run": {"name": name, "command": command, **extra}}
 
 
-def cached(key, paths, steps, *, save, lock=True):
-    exact = key + '-{{ checksum "Cargo.lock" }}' if lock else key
-    restore = {"restore_cache": {"keys": [exact, key + "-"] if lock else [exact]}}
-    result = [restore, *steps]
-    # Only trunk pipelines write caches. CircleCI does not scope caches by branch, so a branch
-    # that edits this generator could still write one: keep that in mind before requiring CI.
+def cached(key, paths, steps, *, save, enabled=True):
+    if not enabled:
+        return steps
+    exact = key + '-{{ checksum "Cargo.lock" }}'
+    result = [{"restore_cache": {"keys": [exact, key + "-"]}}, *steps]
+    # Only trunk pipelines write caches. CircleCI does not scope caches by branch, so a
+    # collaborator's branch could still write one: release candidates restore none.
     if save:
-        result.append({"save_cache": {"key": exact + "-{{ epoch }}" if lock else exact,
-                                      "paths": paths, "when": "on_success"}})
+        result.append({"save_cache": {"key": exact + "-{{ epoch }}", "paths": paths, "when": "on_success"}})
     return result
-
-
-def tool(crate, version, *, save):
-    root = f"~/ci-tools/{crate}-{version}"
-    return cached(f"v1-tool-{crate}-{version}", [root],
-                  [run(f"Install {crate}", f"{SETUP} tool {crate} {version}")], save=save, lock=False)
-
-
-def release(name):
-    version, url, digest, member = RELEASES[name]
-    return run(f"Install {name}", f"{SETUP} release {name} {version} {url} {digest} {member}")
 
 
 def slug(text):
     return re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-")
 
 
-def check_job(profile, toolchain, plan, bnb, *, hosted, save, part=None):
-    steps = []
-    if profile != "blessed":
-        components = "rustfmt,clippy,rust-src" if profile in RUST_SRC else ""
-        targets = "thumbv7em-none-eabi" if profile == "no-std" else ""
-        steps.append(run("Install Rust", f"{SETUP} rust {toolchain} '{components}' '{targets}'"))
-    if profile == "rust-skills" and any(root.startswith("tools/rust-skills/") for root in plan["release_roots"]):
-        steps.append(run("Install the MSRV toolchain", f"{SETUP} rust 1.85.0"))
-    if profile == "public-api":
-        steps.extend(tool("cargo-public-api", bnb["public_api_version"], save=save))
-    if profile == "semver":
-        steps.extend(tool("cargo-semver-checks", bnb["semver_version"], save=save))
+def toolchain_of(profile, bnb):
+    return (MSRV if profile == "msrv" else
+            bnb["public_api_toolchain"] if profile in {"public-api", "fuzz"} else STABLE)
+
+
+def check_job(profile, *, save, caches, part=None):
     if profile == "deny":
-        steps.append(release("cargo-deny"))
-    if part == "test":
-        steps.append(release("cargo-nextest"))
-    if profile in NATIVE_COMPILER and hosted:
-        steps.append(run("Native compiler for FFI bridge checks", f"{SETUP} apt build-essential"))
-    if profile == "rust-dsdcc":
-        steps.append(run("Fetch DSDcc headers (compile check only, no hardware/native linking)",
-                         'rm -rf "$DSDCC_INCLUDE" && '
-                         'git clone --depth 1 https://github.com/f4exb/dsdcc.git "$DSDCC_INCLUDE"'))
-    if profile == "bladerf" and hosted:
-        steps.append(run("Native development libraries for bladeRF bindings",
-                         f"{SETUP} apt libbladerf-dev libclang-dev"))
-    if profile == "deny":
-        steps.append(run("cargo deny", "cargo deny --all-features check"))
+        steps = [run("cargo deny", "cargo deny --all-features check")]
     else:
         # The budget bounds the whole profile, not only a silent stretch.
         selection = ' --part "$PART"' if part else ""
-        steps.append(run("Run the complete selected profile",
-                         f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}',
-                         no_output_timeout=BUDGET))
+        steps = [run("Run the complete selected profile",
+                     f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout=BUDGET)]
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
-    if profile in NO_RUST:
-        return steps
-    return cached(f"v1-checks-{profile}{'-' + part if part else ''}-{toolchain}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS],
-                  steps, save=save)
+    return cached(f"v2-checks-{profile}{'-' + part if part else ''}",
+                  CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
+                  save=save, enabled=caches and profile not in NO_RUST)
 
 
-def fuzz_job(item, *, save):
-    steps = [run("Install Rust", f"{SETUP} rust nightly"),
-             *tool("cargo-fuzz", FUZZ_VERSION, save=save),
-             # Separate processes preserve each target's original budget. GNU is required for ASan.
-             run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
-    return cached(f"v1-fuzz-{slug(item['root'])}-{item['target']}",
-                  CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save)
+def fuzz_job(item, *, save, caches):
+    # Separate processes preserve each target's original budget. GNU is required for ASan.
+    steps = [run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
+    return cached(f"v2-fuzz-{slug(item['root'])}-{item['target']}",
+                  CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, enabled=caches)
 
 
-def continuation(plan, bnb, env):
-    """The continued pipeline: policy, the selected checks and fuzz targets, then the gate."""
+def commitlint_job(base):
+    """Conventional Commits for every commit since the base: release-plz versions from them.
+    The upstream image is run, not used as the executor: its entrypoint is commitlint itself."""
+    lint = (f'docker run --rm -v "$PWD:/repo" -w /repo --entrypoint commitlint {COMMITLINT} '
+            f'--config .config/commitlint.config.mjs --from {base} --to "$CIRCLE_SHA1"')
+    return {"machine": {"image": "ubuntu-2404:current"}, "resource_class": "medium",
+            "steps": ["checkout", run("Lint commit messages", lint)]}
+
+
+def release_jobs(release):
+    """`release` publishes a verified release-plz merge; `release-pr` then refreshes the PR.
+    Both check that the trunk still points at this commit and hold the release context."""
+    authenticate = run("Authenticate Git as the release token",
+                       f'git remote set-url origin "https://x-access-token:${{RELEASE_PLZ_TOKEN}}@github.com/{REPOSITORY}.git"\n'
+                       'git config user.name release-plz\n'
+                       'git config user.email release-plz@users.noreply.github.com')
+    # Exit 1 is a decision (halt this job successfully); any other failure fails it.
+    current = run("Stop unless the trunk still points at this commit",
+                  "python3 scripts/ci/circleci.py current || { [ $? -eq 1 ] && circleci-agent step halt; }")
+    jobs = {"release-pr": {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
+        "checkout", current, authenticate,
+        run("release-plz release-pr", 'release-plz release-pr --git-token "$RELEASE_PLZ_TOKEN"'),
+    ]}}
+    if release:
+        jobs["release"] = {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
+            "checkout", {"attach_workspace": {"at": "/tmp/ci"}}, current,
+            run("Stop unless this is the exact merged release PR",
+                "python3 scripts/ci/circleci.py candidate || { [ $? -eq 1 ] && circleci-agent step halt; }"),
+            run("Require complete exact-run release and downstream qualification",
+                'CANDIDATE_SHA="$CIRCLE_SHA1" CI_RUN_ID="$CIRCLE_WORKFLOW_ID" CI_RUN_ATTEMPT=1 '
+                "python3 scripts/ci/gate.py release --report /tmp/ci/ci-coverage.json"),
+            run("Fail closed before release side effects",
+                'test -n "$CARGO_REGISTRY_TOKEN" && test -n "$RELEASE_PLZ_TOKEN"'),
+            authenticate,
+            run("release-plz release", 'release-plz release --git-token "$RELEASE_PLZ_TOKEN"'),
+        ]}
+    return jobs
+
+
+def image_job():
+    """Publish the job image for a changed Dockerfile; adopting it is a reviewed digest change."""
+    publish = ('echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin\n'
+               'image="ghcr.io/rawsocketlabs/rsl-ci:$CIRCLE_SHA1"\n'
+               f'docker build --tag "$image" {IMAGE_SOURCE}\n'
+               'docker push "$image"\n'
+               "echo \"Pin: $(docker inspect --format '{{index .RepoDigests 0}}' \"$image\")\"")
+    return {"machine": {"image": "ubuntu-2404:current"}, "resource_class": "large",
+            "steps": ["checkout", run("Build and publish rsl-ci", publish, no_output_timeout="45m")]}
+
+
+def continuation(plan, bnb, env, event):
+    """The continued pipeline: policy, the selected checks and fuzz targets, the gate, then
+    for a trunk push the release jobs."""
     resource_class = env.get("CI_INPUT_CLASS") or DEFAULT_CLASS
-    hosted = "/" not in resource_class
-    save = env.get("CIRCLE_BRANCH") == TRUNK
+    trunk = env.get("CIRCLE_BRANCH") == TRUNK
+    caches = not plan["release"]  # Evidence that can authorise publication restores no cache.
+    save = trunk and caches
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
+    if len(handed.encode()) > ENV_LIMIT:
+        raise ValueError("the handed-on plan exceeds one environment variable's limit")
     common = {"CI_PLAN": handed, "CI_TEMP": "/tmp/ci", "RUNNER_TEMP": "/tmp/ci",
-              "CARGO_TERM_COLOR": "always", "CI_MERGE_BASE": plan["base"] or "",
-              **{name: env.get(name, "") for name in INPUTS}}
+              "CI_MERGE_BASE": plan["base"] or "", **{name: env.get(name, "") for name in INPUTS}}
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]
 
     def job(steps, *, resource=resource_class, **environment):
@@ -238,39 +243,84 @@ def continuation(plan, bnb, env):
     jobs = {"policy": job([
         # Fast tier has no Cargo invocation, builds, registry access, or extra Python dependencies.
         run("CI tooling tests", "python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v"),
-        run("Shell syntax", "bash -n scripts/ci-act.sh scripts/ci/circleci-setup.sh"),
-        run("Actions workflow syntax", f'docker run --rm -v "$PWD:/repo" -w /repo {ACTIONLINT}'),
+        run("Shell syntax", "bash -n scripts/ci-local.sh"),
     ], resource="medium")}
     selected = []
+    if plan["base"]:
+        jobs["commitlint"] = commitlint_job(plan["base"])
+        selected.append("commitlint")
     for profile in plan["profiles"]:
-        toolchain = ("1.85.0" if profile == "msrv" else
-                     bnb["public_api_toolchain"] if profile == "public-api" else "stable")
-        environment = {"PROFILE": profile, "DSDCC_INCLUDE": "/tmp/ci/dsdcc"}
+        environment = {"PROFILE": profile}
         if profile not in NO_RUST:
-            environment["RUSTUP_TOOLCHAIN"] = toolchain
+            environment["RUSTUP_TOOLCHAIN"] = toolchain_of(profile, bnb)
         for part in WORKSPACE_PARTS if profile == "workspace" else (None,):
             name = f"checks-{profile}" + (f"-{part}" if part else "")
-            jobs[name] = job(check_job(profile, toolchain, plan, bnb, hosted=hosted, save=save, part=part),
+            jobs[name] = job(check_job(profile, save=save, caches=caches, part=part),
                              **environment, **({"PART": part} if part else {}))
             selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
-        jobs[name] = job(fuzz_job(item, save=save), RUSTUP_TOOLCHAIN="nightly",
+        jobs[name] = job(fuzz_job(item, save=save, caches=caches), RUSTUP_TOOLCHAIN=toolchain_of("fuzz", bnb),
                          FUZZ_ITEM=json.dumps(item, separators=(",", ":")))
         selected.append(name)
     needs = {"checks": "success" if plan["profiles"] else "skipped",
              "fuzz": "success" if plan["fuzz"] else "skipped"}
     jobs["CI"] = job([
-        run("Fetch the trunk", f"git fetch --no-tags origin +refs/heads/{TRUNK}:refs/remotes/origin/{TRUNK}"),
-        run("Install Rust when the plan needs Cargo metadata",
-            f'needs=$(python3 scripts/ci/circleci.py probe); if [ "$needs" = true ]; then {SETUP} rust stable; fi'),
         run("Recompute coverage and reject any divergence", "python3 scripts/ci/circleci.py gate"),
+        {"persist_to_workspace": {"root": "/tmp/ci", "paths": ["ci-coverage.json"]}},
         {"store_artifacts": {"path": "/tmp/ci/ci-coverage.json", "destination": "ci-coverage.json"}},
     ], resource="medium", CI_NEEDS=json.dumps(needs, sort_keys=True))
     workflow = [{"policy": {}},
-                *({name: {"requires": ["policy"]}} for name in selected),
+                *({name: {} if name == "commitlint" else {"requires": ["policy"]}} for name in selected),
                 {"CI": {"requires": ["policy", *selected]}}]
+    if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):
+        jobs["image"] = image_job()
+        workflow.append({"image": {"context": [IMAGE_CONTEXT]}})
+    if event == "push":
+        jobs.update(release_jobs(plan["release_candidate"]))
+        serial = {"context": [RELEASE_CONTEXT], "serial-group": RELEASE_GROUP}
+        if plan["release_candidate"]:
+            workflow.append({"release": {"requires": ["CI"], **serial}})
+        workflow.append({"release-pr": {"requires": ["release" if plan["release_candidate"] else "CI"], **serial}})
     return {"version": 2.1, "parameters": PARAMETERS, "jobs": jobs, "workflows": {"ci": {"jobs": workflow}}}
+
+
+def audit_continuation():
+    """The weekly scan for advisories disclosed against unchanged, already-pinned dependencies."""
+    job = {**executor("medium"), "steps": ["checkout", run("cargo deny advisories", "cargo deny check advisories")]}
+    return {"version": 2.1, "parameters": PARAMETERS, "jobs": {"audit": job},
+            "workflows": {"audit": {"jobs": ["audit"]}}}
+
+
+def github(path, token):
+    """Every page of a GitHub REST list."""
+    items, url = [], f"https://api.github.com/{path}?per_page=100"
+    while url:
+        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                                       "Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            items.extend(json.loads(response.read()))
+            links = re.findall(r'<([^>]+)>;\s*rel="next"', response.headers.get("Link", ""))
+            url = links[0] if links else None
+    return items
+
+
+def is_release_pr(pr, prefix):
+    return (pr["head"]["ref"].startswith(prefix)
+            and pr["head"]["repo"] is not None
+            and pr["head"]["repo"]["full_name"] == REPOSITORY
+            and pr["base"]["repo"]["full_name"] == REPOSITORY
+            and pr["base"]["ref"] == TRUNK)
+
+
+def is_release_merge(pr, sha, prefix):
+    return bool(pr["merged_at"] and pr["merge_commit_sha"] == sha and is_release_pr(pr, prefix))
+
+
+def trunk_tip():
+    out = subprocess.run(["git", "ls-remote", f"https://github.com/{REPOSITORY}.git", f"refs/heads/{TRUNK}"],
+                         check=True, stdout=subprocess.PIPE).stdout.decode().split()
+    return out[0] if out else ""
 
 
 def continue_pipeline(configuration):
@@ -285,23 +335,36 @@ def continue_pipeline(configuration):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("probe", "plan", "gate"))
+    parser.add_argument("mode", choices=("plan", "gate", "current", "candidate"))
     parser.add_argument("--dry-run", action="store_true", help="write the continuation without continuing")
     args = parser.parse_args()
     root, env = Path.cwd(), dict(os.environ)
     temp = Path(env.get("CI_TEMP", "/tmp/ci"))
-    if args.mode == "probe":
-        print("true" if needs_cargo(root, env) else "false")
+    if args.mode == "current":
+        if trunk_tip() != env["CIRCLE_SHA1"]:
+            print("Superseded: the trunk has moved past this commit")
+            sys.exit(1)
+        return
+    if args.mode == "candidate":
+        sha = env["CIRCLE_SHA1"]
+        pulls = github(f"repos/{REPOSITORY}/commits/{sha}/pulls", env["RELEASE_PLZ_TOKEN"])
+        if not any(is_release_merge(pr, sha, release_policy(root)) for pr in pulls):
+            print("No publish operation for this commit")
+            sys.exit(1)
+        print("Exact merged release candidate")
         return
     if args.mode == "plan":
-        _, plan = plan_for_event(root, env)
         temp.mkdir(parents=True, exist_ok=True)
-        (temp / "ci-plan.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
-        print(json.dumps(plan, indent=2))
-        bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
-        configuration = json.dumps(continuation(plan, bnb, env), indent=1)
+        if env.get("CI_INPUT_AUDIT") == "true":
+            configuration = json.dumps(audit_continuation(), indent=1)
+        else:
+            event, plan = plan_for_event(root, env)
+            (temp / "ci-plan.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+            print(json.dumps(plan, indent=2))
+            bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
+            configuration = json.dumps(continuation(plan, bnb, env, event), indent=1)
+            print(f"Selected {len(plan['profiles'])} check profiles and {len(plan['fuzz'])} fuzz targets")
         (temp / "continuation.json").write_text(configuration + "\n")
-        print(f"Selected {len(plan['profiles'])} check profiles and {len(plan['fuzz'])} fuzz targets")
         if not args.dry_run:
             continue_pipeline(configuration)
         return
@@ -319,4 +382,4 @@ if __name__ == "__main__":
         main()
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
         print(f"CircleCI planning failed: {error}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)

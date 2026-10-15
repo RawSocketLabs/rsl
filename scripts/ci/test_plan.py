@@ -18,8 +18,7 @@ from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, X
                   RELEASE_PROFILES, DETAIL, Package,
                   affected_packages, bare_metal_devices, changed_paths, handed_on,
                   released_members, select)
-from prepare import (OUTPUT_LIMIT, emit_output, event_options, is_release_merge, is_release_pr,
-                     job_outputs, needs_cargo)
+from circleci import ENV_LIMIT, continuation
 
 
 def fixture():
@@ -502,7 +501,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_shared_or_unknown_changes_force_full_coverage(self):
         for path in ("Cargo.lock", "Cargo.toml", ".cargo/config.toml", "AGENTS.md",
-                     "scripts/ci/plan.py", ".github/workflows/ci.yml", ".circleci/config.yml",
+                     "scripts/ci/plan.py", "scripts/ci-local.sh", ".circleci/config.yml",
                      "new-tool/input.dat"):
             with self.subTest(path=path):
                 plan = planned([path])
@@ -613,23 +612,30 @@ class GateTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     check_plan(actual, expected)
 
-    def test_a_large_diff_hands_jobs_outputs_that_fit_one_environment_variable(self):
+    def test_a_large_diff_hands_jobs_a_plan_that_fits_one_environment_variable(self):
         # Owned paths grow the per-root reasons; unowned ones the global reasons.
         paths = ([f"{BNB}/src/generated/{index:05}.rs" for index in range(10000)]
                  + [f"orphan/{index:05}.rs" for index in range(10000)])
         plan = planned(paths)
-        self.assertGreater(len(json.dumps(plan, separators=(",", ":"))), OUTPUT_LIMIT,
+        self.assertGreater(len(json.dumps(plan, separators=(",", ":"))), ENV_LIMIT,
                            "the scenario must overflow with the per-path detail")
         self.assertTrue(plan["full_reasons"], "the scenario must reach the global reasons")
-        outputs = job_outputs(plan, {"public_api_toolchain": "nightly", "public_api_version": "0",
-                                     "semver_version": "0"})
-        self.assertEqual(outputs["plan"], handed_on(plan))
-        self.assertFalse(DETAIL & outputs["plan"].keys())
-        for name, value in outputs.items():
-            with self.subTest(output=name):
-                encoded = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
-                self.assertLessEqual(len(encoded.encode()), OUTPUT_LIMIT)
-        check_results(outputs["plan"], results(outputs["plan"]))
+        config = continuation(plan, {"public_api_toolchain": "nightly"}, {"CIRCLE_BRANCH": "feat/x"},
+                              "pull_request")
+        for name, job in config["jobs"].items():
+            if "environment" in job:
+                with self.subTest(job=name):
+                    handed = json.loads(job["environment"]["CI_PLAN"])
+                    self.assertEqual(handed, handed_on(plan))
+                    self.assertFalse(DETAIL & handed.keys())
+                    for value in job["environment"].values():
+                        self.assertLessEqual(len(value.encode()), ENV_LIMIT)
+        check_results(handed_on(plan), results(handed_on(plan)))
+
+    def test_an_oversized_handed_plan_fails_where_it_is_generated(self):
+        plan = planned([f"{BNB}/src/lib.rs"])
+        with mock.patch("circleci.ENV_LIMIT", 10), self.assertRaisesRegex(ValueError, "environment variable"):
+            continuation(plan, {"public_api_toolchain": "nightly"}, {"CIRCLE_BRANCH": "feat/x"}, "pull_request")
 
     def test_the_receipt_keeps_the_detail_the_jobs_were_not_handed(self):
         recomputed = planned([f"{BNB}/src/lib.rs"])
@@ -642,16 +648,6 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             coverage_report(tampered, results(recomputed), recomputed,
                             event="push", run_id=42, attempt=1)
-
-    def test_an_oversized_output_fails_where_it_is_written(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "output"
-            output.write_text("")
-            with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}):
-                emit_output("largest", "x" * OUTPUT_LIMIT)
-                with self.assertRaisesRegex(ValueError, "environment variable"):
-                    emit_output("plan", "x" * (OUTPUT_LIMIT + 1))
-            self.assertEqual(output.read_text(), "largest=" + "x" * OUTPUT_LIMIT + "\n")
 
     def test_empty_successful_docs_plan_legitimately_skips_heavy_jobs(self):
         plan = planned(["README.md"])
@@ -746,53 +742,6 @@ class GitBoundaryTests(unittest.TestCase):
             git("add", "--all")
             new = git("write-tree").decode().strip()
             self.assertEqual(changed_paths(root, old, new), ["new\nname.rs", "old name.rs"])
-
-
-class EventTests(unittest.TestCase):
-    def test_empty_comparison_does_not_install_rust(self):
-        self.assertFalse(needs_cargo(Path(__file__).resolve().parents[2], "HEAD", False, False))
-        self.assertTrue(needs_cargo(Path.cwd(), None, False, False))
-
-    def test_manual_run_without_base_and_schedule_require_full_coverage(self):
-        options = dict(base="", full=False, release=False, repository="RawSocketLabs/rsl", prefix="release-plz-")
-        self.assertEqual(event_options(Path.cwd(), {}, "workflow_dispatch", **options), ("", True, False, False))
-        options["base"] = "a" * 40
-        self.assertEqual(event_options(Path.cwd(), {}, "schedule", **options), ("a" * 40, True, False, False))
-
-    def test_local_explicit_base_selects_affected_checks(self):
-        self.assertEqual(event_options(Path.cwd(), {}, "workflow_dispatch", base="abc", full=False,
-                                       release=False, repository="RawSocketLabs/rsl", prefix="release-plz-"),
-                         ("abc", False, False, False))
-
-    def test_manual_release_input_only_requests_extra_checks(self):
-        self.assertEqual(event_options(Path.cwd(), {}, "workflow_dispatch", base="abc", full=False,
-                                       release=True, repository="RawSocketLabs/rsl", prefix="release-plz-"),
-                         ("abc", False, True, False))
-
-    def test_associated_pr_must_be_the_exact_release_merge(self):
-        repository, sha = "RawSocketLabs/rsl", "a" * 40
-        pr = {"merged_at": "2026-09-12", "merge_commit_sha": sha,
-              "head": {"ref": "release-plz-2026", "repo": {"full_name": repository}},
-              "base": {"ref": "main", "repo": {"full_name": repository}}}
-        self.assertTrue(is_release_merge(pr, repository, sha, "release-plz-"))
-        self.assertFalse(is_release_merge(pr, repository, "b" * 40, "release-plz-"))
-        self.assertFalse(is_release_merge({**pr, "merged_at": None}, repository, sha, "release-plz-"))
-
-    def test_unknown_event_is_not_a_docs_run(self):
-        with self.assertRaises(ValueError):
-            event_options(Path.cwd(), {}, "pull_request_target", base="", full=False, release=False,
-                          repository="RawSocketLabs/rsl", prefix="release-plz-")
-
-    def test_release_association_requires_the_configured_repository_and_prefix(self):
-        repository = "RawSocketLabs/rsl"
-        pr = {"head": {"ref": "release-plz-2026-09-12", "repo": {"full_name": repository}},
-              "base": {"ref": "main", "repo": {"full_name": repository}}}
-        self.assertTrue(is_release_pr(pr, repository, "release-plz-"))
-        for replacement in ({"ref": "ci/affected-validation", "repo": {"full_name": repository}},
-                            {"ref": "release-plz-untrusted", "repo": {"full_name": "fork/rsl"}},
-                            {"ref": "release-plz-deleted", "repo": None}):
-            with self.subTest(head=replacement):
-                self.assertFalse(is_release_pr({**pr, "head": replacement}, repository, "release-plz-"))
 
 
 if __name__ == "__main__":

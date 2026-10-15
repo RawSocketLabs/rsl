@@ -1,6 +1,7 @@
 # CI coverage and delivery
 
-CI runs complete affected-package and downstream-consumer suites on PRs and main. It does
+CI runs on CircleCI: complete affected-package and downstream-consumer suites for every pushed
+branch and for main. It does
 not choose individual Rust functions or tests. Building an affected consumer's dependencies
 is expected; running every unrelated dependency's own tests is not.
 
@@ -13,8 +14,8 @@ supplies all declared owned dependency edges, including optional, dev, build and
 dependencies. Reverse reachability uses both old and tested trees, so removed edges still select
 old consumers. Input paths come from NUL-delimited Git diffs, without forge pagination limits.
 
-PRs compare from their merge base and test the checked-out merge revision. Main pushes compare
-the event's before/after revisions. Manual runs without a base, missing comparison history,
+Branches compare from their merge base with `origin/main` and test the pushed commit. Main pushes
+compare against the previous main pipeline's revision. Manual runs without a base, missing comparison history,
 shared toolchain/build policy, and central CI changes select full routine coverage, never
 release qualification. Invalid metadata is an error, not an empty plan. A changed unregistered Cargo manifest
 fails until its validation is registered; deleting an owned package selects full coverage.
@@ -24,7 +25,7 @@ members require explicit validation registration; rust-skills is validated as it
 workspace. Its evaluation manifests and generated Markdown are inputs, not prose exemptions.
 Shared PKI vectors select the certificate-stack consumers' routine checks.
 
-Scope and intensity are independent. Ordinary PRs, main pushes, local pre-push, and nightly
+Scope and intensity are independent. Ordinary branches, main pushes, local pre-push, and nightly
 full runs perform selected package tests and lint plus relevant feature/FFI smoke checks.
 One all-feature lint/test configuration keeps optional codec I/O, SOCKS adapters and USDR
 transports covered even when default features are empty. They do not run fuzzing,
@@ -141,10 +142,10 @@ requires its selected checks; ordinary editing does not invoke publication gates
 python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
 python3 -m unittest discover -s scripts/ci -p 'integration_*.py' -v
 python3 scripts/ci/plan.py --base origin/main
-scripts/ci-act.sh pre-push
-scripts/ci-act.sh pre-push --base REF
-scripts/ci-act.sh pre-push --full
-scripts/ci-act.sh release --product bitsandbytes
+scripts/ci-local.sh pre-push
+scripts/ci-local.sh pre-push --base REF
+scripts/ci-local.sh pre-push --full
+scripts/ci-local.sh release --product bitsandbytes
 ```
 
 Fast policy tests use only Python's standard library and Git. Full-tier selector integration
@@ -153,102 +154,98 @@ and optional dependency declarations. The fixed profile adapter is `scripts/ci/r
 it consumes the plan through `CI_PLAN`, not arbitrary shell commands from changed filenames.
 Jobs are handed the plan without its per-path detail (`paths`, `prose`, `reasons`,
 `full_reasons`), which grows with the diff: Linux caps one environment variable at 128 KiB, and
-the plan step refuses any output past that. The detail stays in the plan step's log and the
-coverage receipt; the final job receives only the other jobs' results, not their outputs.
+the generator refuses a handed plan past that. The detail stays in the plan job's artifact and
+the coverage receipt; the final job receives only the other jobs' results, not their outputs.
 
-Local pre-push requires a clean committed tree. Its default comparison is the merge base
-against the trunk recorded by repo-guard's local configuration; absent configuration/history
-means full routine coverage. Explicit `--base` selects a different comparison. No remote is fetched
-implicitly to choose that base. Linked worktrees use a retained self-contained temporary clone
-because act cannot follow their external Git-directory pointers; its path is printed. That
-clone is validation evidence, not a publication checkout. `ACT_CONCURRENT_JOBS` defaults to 2.
-Jobs run in a local derivative of the `.actrc` runner image, built on first use and whenever
-the upstream image changes. Its only difference is a relative `/var/run` link: act copies actions
-into `/var/run/act`, and Podman 5.8 rejects copies through the upstream absolute link.
+`scripts/ci-local.sh` runs CircleCI's pipeline on the local machine under rootless Podman, in the
+same pinned `rsl-ci` image. The plan job's generator writes the continuation CircleCI would run,
+and each job's own `run` steps execute unchanged in a fresh clone of the tested commit: `policy`
+and `commitlint` first, then the selected checks and fuzz targets (`-j N`, default
+`CI_LOCAL_JOBS` or 2), then `CI`, which recomputes the plan and rejects divergence. Release jobs
+never run locally; a changed job image is built, not published. It requires a clean committed
+tree and tests a self-contained clone, so linked worktrees and unstaged files never reach it.
+The default comparison is the merge base against the trunk recorded by repo-guard's local
+configuration; absent configuration/history means full routine coverage, and no remote is
+fetched to choose it. `--image` runs an unpublished image (for example `localhost/rsl-ci:trial`
+built from `.circleci/image/`). Build targets and the Cargo registry are cached under
+`~/.cache/rsl-ci-local`; per-run logs and clones stay in the printed temporary directory.
 
-Hosted profiles run independently. Fuzz targets use separate processes/matrix entries with
-at most four concurrent entries; bnb retains 60 seconds/2,000,000 runs per target, crypto/PKI
-retain 45 seconds/500,000 runs, and SOCKS runs the documented 2,000,000 cases with max length
-2048. Limits retain libFuzzer's original stop-when-either-limit-is-reached behavior. Full mode
-keeps `cargo test --workspace` so workspace feature unification remains tested. Relevant feature
-ladders, renamed no_std compilation, strict codec/SOCKS lints, FFI bridge checks, and pinned
-public-API/compatibility gates are not replaced with compile-only approximations.
+## Pipeline
 
-Full routine CI runs daily at 09:17 UTC and can be dispatched manually. The independent weekly
-advisory audit remains active for newly disclosed advisories on unchanged dependencies.
-Only obsolete PR CI runs are cancelled; main and publisher runs are not.
+`.circleci/config.yml` is a setup workflow: its `plan` job runs the selector through
+`scripts/ci/circleci.py` and continues the pipeline with only the selected jobs. Unselected
+profiles are never scheduled; a prose-only change runs `policy`, `commitlint` and the `CI` gate.
+Selected jobs all start once `policy` passes and run concurrently. The `workspace` profile, the
+critical path, runs as three jobs (`run.py --part`): `lint` (fmt and Clippy), `test` (`cargo
+nextest run`, which runs every test binary at once, plus `cargo test --doc`), and `extra`
+(all-feature adapter tests and selector integration tests). Together they are exactly the
+profile's commands over the same packages and features, so full runs still test workspace
+feature unification. Nextest's `ci` profile reports JUnit to CircleCI's test insights. Every job
+is bounded by a 10-minute budget.
+
+Fuzz targets run as separate jobs and processes: bnb retains 60 seconds/2,000,000 runs per
+target, crypto/PKI retain 45 seconds/500,000 runs, and SOCKS runs the documented 2,000,000 cases
+with max length 2048. Limits retain libFuzzer's original stop-when-either-limit-is-reached
+behavior. Relevant feature ladders, renamed no_std compilation, strict codec/SOCKS lints, FFI
+bridge checks, and pinned public-API/compatibility gates are not replaced with compile-only
+approximations.
+
+Every job runs the `rsl-ci` image (`.circleci/image/Dockerfile`), pinned by digest in the
+generator and the setup config: its toolchains (pinned stable, MSRV, and the pinned nightly for
+public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
+build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
+`image` job that builds and publishes `ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `rsl-image`
+context's GHCR token; adopting it is a reviewed digest change. `test_circleci.py` keeps the
+Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
+commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
+
+Event mapping: main compares against `pipeline.git.base_revision` (CircleCI renders an absent one
+as `<nil>`, which is no base and means full coverage) and qualifies any release whose versions it
+changes; any other branch compares from its merge base with `origin/main`, and a same-repository
+`release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
+`products`) is a manual run: the nightly schedule passes `full=true`, and the weekly advisory
+schedule passes `audit=true`, which continues with only `cargo deny check advisories`. A
+namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
+
+Caches are keyed by profile and `Cargo.lock`, and only main saves them. CircleCI caches are
+project-wide, not branch-scoped, so a pipeline whose evidence can authorise publication (any
+release qualification) restores and saves no cache at all. Forked pull requests are not built.
 
 ## Required gate and release boundary
 
-The required branch-protection context stays `CI`. The final job recomputes the plan from
-the actual event and immutable trees, then requires successful planning/policy checks and
-every selected check/fuzz matrix. An unexpected skip, failure or cancellation is red. An
-empty documentation plan is legitimate only after successful policy/selection verification.
+Changes reach main by fast-forward after their branch is green: the required status is
+`ci/circleci: CI`, created by the CircleCI GitHub App (`circleci-app[bot]`), so the pushed commit
+already carries it. The `CI` job recomputes the plan from the pipeline's inputs and immutable
+trees, then requires every generated job: CircleCI starts it only after all of them succeeded,
+so a failed or cancelled job leaves it pending, never green. An empty documentation plan is
+legitimate only after successful policy/selection verification.
 
-The successful gate uploads `ci-coverage-<run-id>-<attempt>` containing the plan and job
-results, bound to the exact tested SHA. Receipts expire after 30 days. The release workflow
-accepts only successful push CI from this repository's configured workflow on current main;
-it independently verifies the exact merged release-PR association. A read-only job checks the
-same run/attempt's artifact, outside the executable checkout, and verifies complete released-
-package/downstream coverage before any publishing job can start. The publisher independently
-recomputes released members from the candidate's first parent and exact manifest versions,
-and requires the receipt's products, members and qualification scope to match.
-Manual `release=true` infers version changes from the comparison base; explicit `products`
-(space-separated workflow input, repeatable CLI `--product`) requests enabled products even
-without version changes. Neither authorizes publication. Superseded commits and
-missing/invalid receipts do not publish. Release-plz still owns version selection, package
-allowlisting, PR discovery, and publication order; tokens and publisher serialization are unchanged.
+The gate writes `ci-coverage.json` (the plan and job results, bound to the exact tested SHA and
+the workflow ID) as an artifact and to the workspace. On a main push, `release-pr` refreshes the
+release-plz PR on every pipeline, and a release-qualifying push adds `release` before it. Both
+use the `rsl-release` context (restricted to main) and one serial group, so tag discovery never
+races a release. `release` stops successfully unless main still points at the tested commit and
+the commit is the exact merge of a same-repository `release-plz-` PR. It then verifies the same
+workflow's receipt: the publisher independently recomputes released members from the commit's
+first parent and exact manifest versions, and requires the receipt's products, members and
+qualification scope to match, before `release-plz release` runs. Manual `release=true` infers
+version changes from the comparison base; explicit `products` requests enabled products even
+without version changes. Neither authorizes publication. Release-plz still owns version
+selection, package allowlisting, PR discovery, and publication order.
 
 No success is reused across different SHAs. Dependency edits use proven declaration/resolution
 deltas; shared policy or unavailable dependency-impact evidence retains the conservative
 full-routine fallback. Release-only qualification remains limited to the releasing product's closure.
 
-## CircleCI trial
+## Measurements
 
-`.circleci/config.yml` is a setup workflow: its `plan` job runs the same selector through
-`scripts/ci/circleci.py` and continues the pipeline with one job per selected check profile and
-fuzz target. Unselected profiles are never scheduled; a prose-only change runs `policy` and the
-`CI` gate only. Selected jobs all start once `policy` passes and run concurrently up to the
-plan's concurrency limit (no four-target fuzz cap). `CI` requires every generated job, recomputes
-the plan from the pipeline's inputs and immutable trees, and stores `ci-coverage.json` as an
-artifact. `scripts/ci/circleci-setup.sh` stands in for the Actions toolchain/tool/apt steps.
-The `workspace` profile, the critical path, runs as three concurrent jobs (`run.py --part`):
-`lint` (fmt and Clippy), `test` (`cargo nextest run`, which runs every test binary at once,
-plus `cargo test --doc`) and `extra` (all-feature adapter tests and selector integration tests).
-The parts cover exactly the Actions profile's commands over the same packages and features, so
-full runs still test workspace feature unification; Actions keeps the sequential `cargo test`.
-
-Event mapping: the trunk compares against `pipeline.git.base_revision` (the previous trunk
-pipeline); any other branch compares from its merge base with `origin/main`, and a same-repository
-`release-plz-` branch qualifies its products; a scheduled pipeline is full routine coverage; any
-explicit parameter (`full`, `base`, `release`, `products`) is a manual dispatch. A namespaced
-`resource_class` parameter selects a self-hosted runner, which must provide the native libraries.
-
-The mapping assumes the GitHub OAuth integration; the GitHub App reports triggers and fork
-branches differently. The gate's `needs` record the workflow layout: CircleCI starts `CI` only
-after every required job succeeded, so a failed or cancelled job leaves it pending, never green.
-CircleCI caches are project-wide, not branch-scoped: only trunk pipelines save them, but a branch
-that edits the generator could still write one, so review that before requiring the status.
-Cargo tools install into per-version roots under `~/ci-tools`, cached separately from builds.
-
-Project setup, outside the repository: enable "dynamic config using setup workflows", create the
-nightly scheduled pipeline (`main`, 09:17 UTC, no parameters), and require the
-`ci/circleci: CI` status. Publication, commit lint and the weekly advisory audit stay on
-Actions: the release workflow accepts only the Actions `CI` receipt, and CircleCI never marks a
-release candidate. `scripts/ci-act.sh` still runs the Actions workflow locally.
-
-## Rollout and measurements
-
-The shadow checkpoint keeps legacy gates authoritative while reviewing the selector. The
-reference hosted main run `34317551178` at `436e3756` took 308 seconds; serial crypto fuzzing
-took 256 seconds and was the critical path. Those jobs overlap: summing their times is not
-wall time. Candidate timing must distinguish queue delay, workflow wall time, summed runner
-usage, and cold/warm caches; sharding can trade runner overhead for shorter latency.
+The last Actions reference main run (`34317551178` at `436e3756`) took 308 seconds with serial
+crypto fuzzing as its critical path. On CircleCI, the full routine selection (19 profiles, cold
+caches) took 3m37 after the workspace split; a `bitsandbytes` release run (37 jobs, 7 fuzz
+targets, cold) took 7m50, bounded by the SOCKS fuzz budget. Timing must distinguish queue delay,
+wall time, summed job time, and cold/warm caches.
 
 Acceptance: ordinary prose schedules zero Rust/fuzz profiles; SOCKS does not test upstream bnb
 or unrelated crypto; ordinary/full/nightly runs schedule zero heavy profiles; product releases
 retain relevant downstream fuzzing and qualification; complete full-routine gates remain
-reachable. Independent reviewer approval, selector/command tests, focused omission mutations,
-actionlint, shell checks, full container validation, and hosted CI are delivery requirements.
-Existing workspace warn-level lint debt is reported separately. Historical bnb-macro warnings
-and the yanked wnaf 0.14.0 blocker were already resolved and must not excuse new failures.
+reachable. Existing workspace warn-level lint debt is reported separately.

@@ -1,163 +1,75 @@
 # CircleCI migration plan
 
-Status: draft, revised after adversarial review; CircleCI chosen, 2026-10-15. Branch `ci/circleci-trial`.
-Companion to [CI.md](CI.md), whose selection and receipt contract this plan keeps unchanged.
+Status: cutover prepared on branch `ci/circleci-trial`, 2026-10-15. [CI.md](CI.md) describes the
+resulting pipeline; this file records the decisions and what remains before and after cutover.
 
-## 0. Decision
+## 1. Decisions
 
-CircleCI is chosen (2026-10-15). The selector, gate and receipt would also run on Actions; the
-choice rests on CircleCI's fan-out and test insights, preferred over faster Actions runners.
-The trial's full, cold selection took 6 min before the workspace split and 3m37 after it. A
-`bitsandbytes` release run (37 jobs, 7 fuzz targets, cold) took 7m50; its critical path is the
-SOCKS fuzz budget (5m27 run). Pipeline parameters reach the continuation. Tool installs
-dominate other release jobs: building `cargo-semver-checks` from source took 4m25 of
-`checks-semver`'s 5m20, which is the case for the CI image (§4).
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| CI platform | CircleCI replaces GitHub Actions entirely | Fan-out and test insights; one environment for CI and local runs |
+| Pipeline shape | Flat fan-out after `policy`; `workspace` split into three jobs | Lowest wall time; lint fails early as its own job |
+| Environment | `rsl-ci` image pinned by digest; nothing installed at run time | Reproducible runs; removes per-job setup (4m25 for semver-checks alone) |
+| Local runs | `scripts/ci-local.sh` runs CircleCI's generated jobs in the same image | Replaces act, which ran a different environment |
+| Path to main | Fast-forward after the branch's `ci/circleci: CI` is green | Trunk-based; the tested commit is exactly what lands, so no merge queue |
+| Required check | `ci/circleci: CI`, pinned to the CircleCI app | Statuses are created by `circleci-app[bot]` (verified on `810df77f`) |
+| Fork PRs | Not built | Public repo; a fork's config could write project-wide caches |
+| Image publication | CircleCI `image` job, classic GHCR token (`write:packages`) in `rsl-image` | No Actions left to use the short-lived token; GHCR rejects fine-grained tokens |
+| Release credentials | `RELEASE_PLZ_TOKEN` (tags, release PRs) and `CARGO_REGISTRY_TOKEN` in `rsl-release`, restricted to main | Reuses the existing release-plz token |
+| Release serialisation | One CircleCI `serial-group` for `release` and `release-pr` | Replaces Actions' concurrency group (`serial-group` validated by the CLI) |
+| Caches | Main saves; any release-qualifying pipeline restores none | Project-wide caches must not feed publication evidence |
+| Commit lint | Pinned upstream commitlint image, run by a machine job | Same configuration and semantics as before |
 
-## 1. Goals
+## 2. Measurements
 
-| # | Goal | Evidence |
-|---|------|----------|
-| G1 | A change runs only the checks its files and their consumers select; prose runs none. | `plan.py` contract tests; continuation job list per run |
-| G2 | Fail closed: no green required check unless every selected job ran and passed on the tested SHA, reported by the expected CI app. | gate recomputation; ruleset pins the check's app |
-| G3 | Routine pipeline wall time ≤ 10 min, measured from trigger to gate including setup, policy and the gate itself; each job's run step ≤ 7 min. | per-step `timeout`; insights over ≥ 50 runs |
-| G4 | Publication only for the exact main commit whose complete release coverage passed, from evidence no branch could influence. | release gate; release-candidate runs without caches |
-| G5 | Tools, toolchains and fetched sources are pinned and verified. | checksums; image digest; pinned commits |
-| G6 | Contributors can run the same checks locally in the same environment. | local runner uses the CI image |
+| Run | Result |
+|-----|--------|
+| Full routine selection, machine executor, cold, before split | 6m00 |
+| Same, after the workspace split and nextest | 3m37 |
+| `bitsandbytes` release (37 jobs, 7 fuzz targets), cold | 7m50 (SOCKS fuzz budget is the critical path) |
+| Heaviest job memory | 1.5 GiB peak, CPU saturated at 4 cores |
 
-Non-goals: changing what the selector chooses, replacing release-plz, hardware tests.
+## 3. Before cutover (on this branch)
 
-## 2. Pipeline shape
+1. Publish the first image and pin its digest. The bootstrap needs the `rsl-image` context
+   (a classic token with only `write:packages`); later images come from the `image` job.
+2. Push the branch and run CircleCI on it with the image: a full run and a `bitsandbytes`
+   release run, both green, and `scripts/ci-local.sh pre-push --full` green locally.
+3. Create the `rsl-release` context, restricted to `main`, holding `RELEASE_PLZ_TOKEN` and
+   `CARGO_REGISTRY_TOKEN`. Prove a branch job that references it is denied.
 
-```
-setup:  plan ── continue(selected jobs only)
-ci:     policy ─┬─ checks-workspace-{lint,test,extra}
-                ├─ checks-<profile> …          (each selected profile)
-                ├─ fuzz-<root>-<target> …      (release only)
-                └─ CI  (requires all; recomputes the plan; writes the receipt)
-```
+## 4. Cutover
 
-Flat fan-out. The serial overhead is plan, then policy, then the slowest check, then the gate;
-G3 budgets for it. When `checks-workspace-test` p95 exceeds 5 minutes, switch it to build once
-and test in parallel: `cargo nextest archive` in one job, persisted to the workspace, then
-`--partition hash:i/N` under `parallelism`. A tiered lint-first layout is rejected: it delays
-every passing run, and lint already fails early as its own job.
+1. Fast-forward `main` to the branch. This removes the Actions workflows in the same change.
+2. Create the CircleCI triggers:
+   - GitHub App push, `all-pushes`;
+   - schedule, `main`, daily at 09:17 UTC, parameter `full=true`;
+   - schedule, `main`, Mondays at 06:00 UTC, parameter `audit=true`.
+3. Add a ruleset on `main` requiring `ci/circleci: CI` from the CircleCI app, and remove the
+   Actions `CI` requirement.
+4. On the first main pipeline, confirm `base` in the `plan` job's `ci-plan.json` artifact is the
+   previous main commit, not empty. If it is empty, every main push runs full coverage and
+   never qualifies a release; fix that before the next release.
+5. Set the `rsl-ci` package on GHCR to public, so pulls need no credentials.
 
-Superseded runs: turn on auto-cancel for non-default branches, as Actions cancels obsolete PR
-runs.
+## 5. After cutover
 
-## 3. Triggers and the merge gate
+- First release through CircleCI: run `release-plz release --dry-run` from a release-PR merge
+  before the live one. Confirm tags are pushed with `RELEASE_PLZ_TOKEN`, and that a superseded
+  SHA, a failed `CI`, and a tampered receipt each stop before publishing.
+- Outage procedure: an admin can bypass the ruleset to land a fix while CircleCI is down. The
+  Actions workflows remain in history.
+- Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets
+  kept as code.
 
-| Event | Trigger | Plan |
-|-------|---------|------|
-| Push to a branch | GitHub App, `all-pushes` | merge base with `origin/main` |
-| Push to main | same | previous main pipeline's revision; **must be verified non-empty** |
-| Merge queue | GitHub App, `pushes-to-merge-queues` (**unverified**) | merge base with `main` |
-| Nightly | schedule trigger, parameter `full=true` | full routine |
-| Manual | `circleci pipeline run --param …` | explicit inputs |
-
-- **Main-push base (blocking).** Main pushes take their base from `pipeline.git.base_revision`. If
-  the GitHub App leaves it empty, every main push runs as a full run, and full runs never
-  qualify a release. The phase 0 check: push to main in a shadow run and read `base` in the
-  `ci-plan.json` artifact. Fallback: compare against the previous main commit, `HEAD^1`.
-- **Merge queue.** CircleCI tests the branch head, not the merge result. A merge queue restores
-  that guarantee. It is adopted only after a scratch repository shows the CircleCI App building
-  `gh-readonly-queue/*` and posting the check.
-- **Merge method.** release-plz reads main's commit messages, so the queue's merge method has
-  to keep Conventional Commit subjects. Either rebase-merge with per-commit lint, or squash with
-  a linted PR title. This contradicts the protocols guide (squash) and commitlint (rebase); one
-  decision fixes both.
-- **Required check identity.** CircleCI reports each job as a commit status (not a check run)
-  named `ci/circleci: <job>` and created by `circleci-app[bot]`. The ruleset requires
-  `ci/circleci: CI` pinned to the CircleCI app, because a status matched by name alone could be
-  posted by anything with write access to the repository. Verified on `810df77f`.
-
-## 4. Execution environment
-
-**CI image.** `.circleci/image/Dockerfile` builds an image with the pinned toolchains and
-components, the cargo tools, and the native packages at pinned versions. CI builds it, and it
-is published to GHCR under RawSocketLabs, signed, and referenced by digest. Rebuilding is a
-pull request that bumps the digest. Dependabot's `docker` ecosystem tracks the base image.
-
-- The `RUSTUP_TOOLCHAIN` variables that `circleci.py` sets come from `rust-toolchain.toml`, pinned
-  to an exact stable, rather than the literal `stable`. Otherwise pinning the file changes
-  nothing in CI.
-- The DSDcc headers are fetched at a pinned commit, not `--depth 1` of HEAD.
-- Docker versus machine executor is decided by measurement:
-  - check memory (Docker `large` has 8 GB against machine's 15 GB) on the workspace test;
-  - check image pull time;
-  - check the raw-socket needs of `network`;
-  - actionlint runs from its binary, not `docker run`.
-
-**Caches.** Only main saves caches, keyed by profile, toolchain and `Cargo.lock`. CircleCI caches
-are project-wide, so a branch can write one. Therefore:
-- **Release-candidate pipelines restore no caches at all**, routine jobs included, because their
-  results authorise publication (G4).
-- For other routine runs, the residual risk is accepted: only collaborators can push branches,
-  forks are not built, and fork secrets are off.
-
-**Test reporting.** Nextest's `ci` profile writes JUnit for `store_test_results`. There is no
-automatic retry: a flaky test is fixed or quarantined with an issue link.
-
-## 5. Release (CD): stays on Actions
-
-Moving publication to CircleCI costs more than it returns:
-- a long-lived crates.io token held by the CI vendor, where Actions can use short-lived OIDC
-  (trusted publishing support for CircleCI unverified);
-- no `GITHUB_TOKEN` for tagging;
-- cross-workflow `requires` is impossible, so the receipt has to be passed through the workspace;
-- release serialisation depends on an unverified `serial-group`. Checking that main still points
-  at the SHA does not prevent two release jobs from overlapping.
-
-Design: Actions keeps `release-plz.yml` and its `concurrency` group. Its trigger changes from
-`workflow_run` on Actions `CI` to the CircleCI check completing on main (`check_run`/`status`
-events from the CircleCI app). Its candidate job then:
-1. confirms the CircleCI pipeline is for the current main SHA and that the reporting app is
-   CircleCI;
-2. downloads `ci-coverage.json` through the CircleCI API, using a read-only CircleCI token
-   stored as an Actions secret;
-3. runs `gate.py release` on it. `gate.py` stops calling `int()` on run IDs, because CircleCI
-   workflow IDs are UUIDs.
-
-Commitlint and the weekly advisory audit also stay on Actions. They have no secrets and need no
-change.
-
-## 6. Local parity
-
-Until Actions CI is retired, `scripts/ci-act.sh` stays. After that, `scripts/ci-local.sh` runs the
-plan in the CI image under rootless Podman, running `run.py <profile> [--part …]` for each
-selected profile.
-
-## 7. Migration phases
-
-| Phase | Work | Exit criterion | Rollback |
-|-------|------|----------------|----------|
-| 0 Trial | Branch config; manual runs; verify main-push base and merge-queue trigger (check names verified) | Both verifications recorded; full and release runs green within budget | Delete branch |
-| 1 Shadow | Merge; push and nightly triggers; Actions remains required | ≥ 50 runs. Main-push plans equal the Actions plan for the same SHA (compared by a script over both receipts). Every CircleCI-only failure has an issue. | Remove triggers |
-| 2 Image | CI image, pinned toolchain file, executor measurements | Image runs reproduce phase 1 results; memory and pull time within budget | Revert to machine executor |
-| 3 Gate | Ruleset requires the CircleCI check (app-pinned); merge queue on; Actions CI still runs on PRs but is not required | 1 week of merges through the queue, main green; a branch-reported fake `CI` check does not satisfy the ruleset | Re-require Actions `CI` |
-| 4 Release link | `release-plz.yml` triggered by the CircleCI check and reading its receipt | Negative tests pass: superseded SHA, failed CI, and a tampered receipt all fail closed. A `release-plz --dry-run` succeeds from a CircleCI receipt. | Revert the trigger to Actions CI |
-| 5 Retire CI on Actions | Remove `ci.yml` and act tooling; update `plan.py` central paths, `CI.md` and `AGENTS.md` | Policy tests pass; documented admin bypass for a CircleCI outage | Restore `ci.yml` and re-require it |
-
-## 8. Risks
+## 6. Risks
 
 | Risk | Mitigation or evidence |
 |------|------------------------|
-| Main-push base empty under the GitHub App, blocking release qualification | Phase 0 verification; `HEAD^1` fallback |
-| Branch-written cache influences release evidence | Release-candidate pipelines without caches |
-| Required check spoofed or colliding with Actions | App-pinned ruleset; phase 3 negative test |
-| Merge queue unsupported for the CircleCI App | Scratch-repo test before phase 3; otherwise keep testing branch heads and accept merge skew |
-| Plan concurrency limit queues a release fan-out of about 30 jobs | Check the plan's limit; measure queue time |
-| Docker executor out of memory or slow to pull | Phase 2 measurements; machine executor fallback |
-| nextest exposes shared-state tests | Trial full run; quarantine with an issue |
-| Setup lists drift across `ci.yml`, `circleci.py` and the image | Test comparing them until phase 5 |
-| CircleCI outage blocks merges | Admin bypass documented; Actions CI restorable from history |
-
-## 9. Open decisions
-
-Taken one at a time:
-1. Merge method under a merge queue (rebase with per-commit lint, or squash with a linted title).
-2. Whether `rust-toolchain.toml` pins an exact stable version (recommended either way).
-3. Whether fork PRs should get a required check (the repository is public).
-
-Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets kept as
-code.
+| Main pushes get no base under the GitHub App, blocking release qualification | Cutover step 4 |
+| A branch-written cache influences release evidence | Release-qualifying pipelines use no caches |
+| Required status spoofed | Ruleset pins the CircleCI app |
+| release-plz git or API behaviour differs outside Actions | Dry-run release first; tags use the token-authenticated remote |
+| Long-lived tokens in CircleCI | Contexts restricted to main or this project; forks never built; tokens scoped to their single use |
+| Docker executor slower or out of memory on some job | 1.5 GiB measured peak; a machine executor is a one-line fallback |
+| CircleCI outage blocks merges | Documented admin bypass |

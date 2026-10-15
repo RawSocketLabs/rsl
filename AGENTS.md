@@ -89,10 +89,10 @@ cargo test -p <affected-package>
 cargo deny check
 ```
 
-Before pushing a source, dependency, API, FFI, or workflow change, run
-`scripts/ci-act.sh pre-push` from a clean, committed worktree. It executes complete
-affected-package and downstream-consumer suites from the checked-in GitHub Actions
-workflow in rootless Podman. The selector includes optional/dev/build/platform dependencies,
+Before pushing a source, dependency, API, FFI, or CI change, run
+`scripts/ci-local.sh pre-push` from a clean, committed worktree. It runs the jobs CircleCI
+would generate for the change, unchanged, in the same pinned `rsl-ci` image under rootless
+Podman: complete affected-package and downstream-consumer suites. The selector includes optional/dev/build/platform dependencies,
 detached validation workspaces, and shared fixtures; do not replace it with ad-hoc path filters.
 Dependency-only manifest/lockfile deltas select users and old/new consumers, including
 shared feature users. Shared build policy, central CI changes, unknown ownership, and
@@ -102,9 +102,10 @@ Missing trunk history also selects full routine coverage. Full routine CI runs n
 ordinary prose-only changes run policy checks without Rust builds or fuzzing.
 Fuzzing, packaging, compatibility and exhaustive feature/MSRV/cross-target qualification
 are release-only and scoped independently to enabled products and their affected closure.
-Use `scripts/ci-act.sh release --product NAME` for explicit qualification (never publication).
+Use `scripts/ci-local.sh release --product NAME` for explicit qualification (never publication).
 See [CI policy](docs/CI.md).
 
-Set `ACT_CONCURRENT_JOBS` to limit local container load; hosted CI remains the final authority.
-Linked worktrees are validated through a retained, self-contained temporary clone because
-the selector needs Git history inside the container. Never publish from that validation clone.
+Set `CI_LOCAL_JOBS` (or `-j N`) to limit local container load; CircleCI remains the final
+authority. Every run validates a self-contained temporary clone of the committed tree, so
+linked worktrees and unstaged files never reach it. Never publish from that validation clone.
+Changes reach `main` by fast-forward once their branch's `ci/circleci: CI` status is green.

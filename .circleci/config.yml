@@ -21,15 +21,20 @@ parameters:
     description: Explicit enabled product/version groups, space-separated (manual release qualification).
     type: string
     default: ''
+  audit:
+    description: Run only the dependency advisory scan (the weekly schedule sets this).
+    type: boolean
+    default: false
   resource_class:
-    description: Machine class for check and fuzz jobs; a namespace/name class selects a self-hosted runner.
+    description: Resource class for check and fuzz jobs; a namespace/name class selects a self-hosted container runner.
     type: string
     default: large
 
 jobs:
   plan:
-    machine:
-      image: ubuntu-2404:current
+    docker:
+      # The job image, by digest; scripts/ci/circleci.py pins the same one.
+      - image: ghcr.io/rawsocketlabs/rsl-ci@sha256:PENDING
     resource_class: medium
     environment:
       CI_TEMP: /tmp/ci
@@ -38,6 +43,7 @@ jobs:
       CI_INPUT_RELEASE: << pipeline.parameters.release >>
       CI_INPUT_PRODUCTS: << pipeline.parameters.products >>
       CI_INPUT_CLASS: << pipeline.parameters.resource_class >>
+      CI_INPUT_AUDIT: << pipeline.parameters.audit >>
       CI_TRIGGER_SOURCE: << pipeline.trigger_source >>
       CI_BASE_REVISION: << pipeline.git.base_revision >>
     steps:
@@ -45,11 +51,6 @@ jobs:
       - run:
           name: Fetch the trunk
           command: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-      - run:
-          name: Install Rust when the plan needs Cargo metadata
-          command: |
-            needs=$(python3 scripts/ci/circleci.py probe)
-            if [ "$needs" = true ]; then bash scripts/ci/circleci-setup.sh rust stable; fi
       - run:
           name: Select packages, profiles, and fuzz targets, then continue
           command: python3 scripts/ci/circleci.py plan

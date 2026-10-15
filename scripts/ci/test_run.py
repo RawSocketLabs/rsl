@@ -3,7 +3,6 @@
 from pathlib import Path
 import sys
 import subprocess
-import socket
 import tempfile
 import textwrap
 import unittest
@@ -52,53 +51,6 @@ class ProfileTests(unittest.TestCase):
                 self.assertIn(["cargo", "test", "-p", name, "--all-features"], sequence)
                 self.assertNotIn("socks" if name == "socks" else "bnb", plan["profiles"])
                 self.assertEqual(plan["fuzz"], [])
-
-    def test_full_local_release_still_discovers_the_version_comparison_base(self):
-        source = Path(__file__).resolve().parents[2] / "scripts/ci-act.sh"
-        with tempfile.TemporaryDirectory(prefix="rsl-ci-cli-") as directory:
-            root = Path(directory)
-            scripts = root / "scripts"
-            scripts.mkdir()
-            entry = scripts / "ci-act.sh"
-            entry.write_text(source.read_text())
-            (root / ".actrc").write_text("-P ubuntu-latest=fixture\n")
-            boundary = """
-set -euo pipefail
-podman() {
-  case "$1" in
-    info) printf '%s\\n' "$CI_SOCKET" ;;
-    image) [[ "$2" != inspect ]] || printf '123456789012fixture\\n' ;;
-    *) return 1 ;;
-  esac
-}
-git() {
-  case "$1" in
-    status) ;;
-    config) case "$3" in repoGuard.remote) printf 'origin\\n' ;; repoGuard.trunk) printf 'main\\n' ;; esac ;;
-    merge-base) printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n' ;;
-    symbolic-ref) printf 'release-plz-fixture\\n' ;;
-    *) return 1 ;;
-  esac
-}
-python3() { printf 'release-plz-\\n'; }
-"""
-            # PATH tools are test boundaries. The CLI only verifies that the API socket exists.
-            tools = root / "bin"
-            tools.mkdir()
-            (tools / "act").write_text('#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "$@"\n')
-            (tools / "act").chmod(0o755)
-            with socket.socket(socket.AF_UNIX) as api:
-                api.bind(str(root / "podman.sock"))
-                for mode in ("pre-push", "release"):
-                    with self.subTest(mode=mode):
-                        result = subprocess.run(
-                            ["bash", "-c", boundary + 'export -f podman git python3; bash "$CI_ENTRY" "$CI_MODE" --full'],
-                            check=True, capture_output=True, text=True,
-                            env={"PATH": str(tools) + ":/usr/bin:/bin", "CI_SOCKET": str(root / "podman.sock"),
-                                 "CI_ENTRY": str(entry), "CI_MODE": mode})
-                        self.assertIn("base=" + "a" * 40, result.stdout)
-                        self.assertIn("full=true", result.stdout)
-                        self.assertIn("release=true", result.stdout)
 
     def test_blessed_action_downloads_current_and_historical_snapshot_paths(self):
         root = Path(__file__).resolve().parents[2]

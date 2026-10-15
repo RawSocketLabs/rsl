@@ -27,7 +27,7 @@ release_commits = '^(feat|fix|perf|docs|revert)[(:]|^[a-z]+(?:\([^)]*\))?!:'
 # Only the codec pair is currently enabled for release processing.
 # The bitsandbytes runtime cannot be published (or verified) without its proc-macro
 # crate on the registry. The release job supplies the CARGO_REGISTRY_TOKEN secret
-# (see .github/workflows/release-plz.yml).
+# (see the release jobs in scripts/ci/circleci.py).
 #
 # The pair shares one version. Generated code calls runtime `__private` helpers that no
 # API or semver gate sees, so a macros release is only valid with the runtime it shipped

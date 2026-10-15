@@ -8,8 +8,8 @@ from pathlib import Path
 import re
 import sys
 
-from plan import (FUZZ, PROFILES, RELEASE_PROFILES, SCHEMA, command, graph_at, handed_on,
-                  metadata_graph, release_config, release_policy, released_members, select)
+from plan import (FUZZ, PROFILES, RELEASE_PROFILES, SCHEMA, graph_at, handed_on,
+                  metadata_graph, release_config, released_members, select)
 
 
 def validate_plan(plan):
@@ -98,43 +98,19 @@ def check_release(report, *, sha, run_id, attempt, graph, members):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("ci", "release", "candidate"))
-    parser.add_argument("--report", type=Path)
+    parser.add_argument("mode", choices=("release",))
+    parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
-    if args.mode == "candidate":
-        from prepare import associated_release, emit_output
-
-        sha = os.environ["CANDIDATE_SHA"]
-        root = Path.cwd()
-        if command(root, "git", "rev-parse", "HEAD").decode().strip() != sha:
-            raise ValueError("candidate checkout is not the verified CI commit")
-        candidate = associated_release(root, os.environ["GITHUB_REPOSITORY"], sha, release_policy(root))
-        emit_output("publish", candidate)
-        print("Exact merged release candidate" if candidate else "No publish operation for this commit")
-        return
-    if args.report is None:
-        parser.error("--report is required for ci/release qualification")
-    if args.mode == "ci":
-        from prepare import plan_for_event
-
-        report = coverage_report(json.loads(os.environ["CI_PLAN"]), json.loads(os.environ["CI_NEEDS"]),
-                                 plan_for_event(), event=os.environ["GITHUB_EVENT_NAME"],
-                                 run_id=int(os.environ["GITHUB_RUN_ID"]),
-                                 attempt=int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")))
-        args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-        plan = report["plan"]
-        print(f"Passed {len(plan['profiles'])} check profiles and {len(plan['fuzz'])} fuzz targets")
-    else:
-        root = Path.cwd()
-        graph = metadata_graph(root)
-        sha = os.environ["CANDIDATE_SHA"]
-        # Publication checks the actual merged commit's parent, never a receipt-supplied base.
-        members = released_members(release_config(root, sha),
-                                   graph_at(root, sha + "^", historical=True), graph)
-        check_release(json.loads(args.report.read_text()), sha=os.environ["CANDIDATE_SHA"],
-                      run_id=int(os.environ["CI_RUN_ID"]), attempt=int(os.environ["CI_RUN_ATTEMPT"]),
-                      graph=graph, members=members)
-        print("Exact-run release qualification verified")
+    root = Path.cwd()
+    graph = metadata_graph(root)
+    sha = os.environ["CANDIDATE_SHA"]
+    # Publication checks the actual merged commit's parent, never a receipt-supplied base.
+    members = released_members(release_config(root, sha),
+                               graph_at(root, sha + "^", historical=True), graph)
+    check_release(json.loads(args.report.read_text()), sha=sha,
+                  run_id=os.environ["CI_RUN_ID"], attempt=int(os.environ["CI_RUN_ATTEMPT"]),
+                  graph=graph, members=members)
+    print("Exact-run release qualification verified")
 
 
 if __name__ == "__main__":

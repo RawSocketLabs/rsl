@@ -92,8 +92,7 @@ MOVED_DETACHED = ("rsl-usdr/oracle", "bitsandbytes/fuzz", "bitsandbytes/bnb/nost
 GLOBAL_FILES = {
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
     "rustfmt.toml", "deny.toml", "release-plz.toml", "AGENTS.md",
-    ".github/workflows/ci.yml", ".github/workflows/release-plz.yml",
-    "scripts/ci-act.sh",
+    "scripts/ci-local.sh",
 }
 GLOBAL_PREFIXES = (".cargo/", ".circleci/", "scripts/ci/")
 PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",

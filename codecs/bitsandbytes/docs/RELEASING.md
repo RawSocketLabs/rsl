@@ -5,17 +5,16 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
 
 ## How it works
 
-1. **Every commit must be conventional.** `.github/workflows/commitlint.yml` lints
-   every commit in a PR against `.config/commitlint.config.mjs`. A non-conforming message
-   fails CI. The squash title must also carry the intended scope and breaking marker:
-   release-plz parses the history that actually reaches `main`.
-   Before the first push, run commitlint locally with that configuration; wrap body and
-   footer lines at 100 characters. The full `CI` container run does not include the separate
-   `commit-lint` workflow, and identity hooks do not validate commit-message style.
+1. **Every commit must be conventional.** CircleCI's `commitlint` job lints every commit
+   since the branch's merge base against `.config/commitlint.config.mjs`, and `CI` requires it.
+   A non-conforming message fails CI. Commits reach `main` unchanged by fast-forward, so each
+   message must carry its intended scope and breaking marker: release-plz parses that history.
+   `scripts/ci-local.sh pre-push` runs the same job locally; wrap body and footer lines at
+   100 characters. Identity hooks do not validate commit-message style.
 
-2. **Successful CI unlocks release automation.** After push CI succeeds for the
-   exact current `main` SHA,
-   `.github/workflows/release-plz.yml` opens (or updates) a **release PR** that, for
+2. **Successful CI unlocks release automation.** After `CI` succeeds for the
+   exact current `main` SHA, CircleCI's `release-pr` job opens (or updates) a
+   **release PR** that, for
    each enabled crate, bumps its version from the commits since its last tag and updates its
    `CHANGELOG.md`. The bump rule (pre-1.0, i.e. `0.x`):
 
@@ -38,7 +37,7 @@ by [release-plz](https://release-plz.dev). You never hand-edit a version number.
    In every release PR, confirm both crates carry the same version and that the rewritten
    requirement still begins with `=`; restore it by hand if release-plz drops it.
 
-3. **Merging the release PR cuts the release.** The `release-plz release` job then
+3. **Merging the release PR cuts the release.** CircleCI's `release` job then
    creates the git tag(s) — name-prefixed per crate (`bitsandbytes-v0.3.1`,
    `bitsandbytes-macros-v0.3.1`, …) — and publishes the crates that opt in to
    crates.io (see below).
@@ -53,17 +52,18 @@ GitHub Releases remain disabled (`git_release_enable = false`).
 
 ## CI and release ordering
 
-The `workflow_run` gate verifies the CI workflow path, successful push event,
-repository, branch, and SHA using GitHub's API. Superseded runs do nothing. Each
-write-capable job checks its checkout against that SHA before release-plz runs.
-Workflow-level concurrency serializes release and PR updates; the PR job waits for
-tagging/publishing so it cannot regenerate a release against stale tags. A new push
+The release jobs run in the same pipeline as the `CI` gate they require, on main only,
+with the `rsl-release` context. Each checks that `main` still points at the tested SHA before
+release-plz runs; superseded pipelines do nothing. `release` also requires the exact merged
+release-plz PR and verifies the gate's coverage receipt from the same workflow. One CircleCI
+serial group serializes release and PR updates; the PR job waits for tagging/publishing so it
+cannot regenerate a release against stale tags. A new push
 after verification can supersede the candidate; the workflow does not lock `main`.
 
 Changes affecting bnb, its dependencies, or its gate policy trigger bnb's complete CI gates, including
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
-fuzzing, and cargo-deny. `actionlint` checks every workflow. The compatibility
+fuzzing, and cargo-deny. The compatibility
 baseline is explicitly published `0.6.0` in `.github/ci/bnb.toml`; advance it deliberately after releases.
 Compatible additions enforce `--release-type patch` in all three feature modes.
 The breaking 0.4 → 0.5 and 0.5 → 0.6 transitions used major mode plus exact reviewed API deltas.
@@ -136,8 +136,8 @@ CI success is necessary, not sufficient. Before committing a runtime or macro re
    benchmarks remain the performance approval gate.
 5. Run the required formatting, strict Clippy, feature and affected-consumer tests, denied-warning docs,
    MSRV, bare-metal no_std, macro/UI and renamed-consumer checks, public API/compatibility,
-   fuzz, and package checks. Relevant workflow/dependency changes also require actionlint and
-   cargo-deny. Use root `scripts/ci-act.sh pre-push` for the complete selected suites; shared
+   fuzz, and package checks. Relevant dependency changes also require cargo-deny. Use root
+   `scripts/ci-local.sh pre-push` for the complete selected suites; shared
    build/dependency policy or central CI changes require its full mode. Record exact commands,
    results, limitations, and baseline-only failures.
 6. Obtain independent reviewer approval of the final post-fix diff, findings ledger, test

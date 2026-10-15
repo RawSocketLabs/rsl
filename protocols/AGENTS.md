@@ -151,7 +151,7 @@ The roadmap of protocols-to-come lives here, not as empty member dirs — a crat
 
 ## Working here
 
-- **One concern per change**, on a branch off `main` → PR → green CI → squash-merge.
+- **One concern per change**, on a branch off `main` → green CircleCI `CI` → fast-forward `main`.
 - **Conventional Commits**, scope = the crate/protocol name; commitlint enforces the format,
   release-plz derives versions. See [`VERSIONING.md`](VERSIONING.md).
 - **No `Co-Authored-By:` trailer in commit messages.** Do not append a `Co-Authored-By:` line
