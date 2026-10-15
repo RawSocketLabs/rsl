@@ -502,7 +502,8 @@ class SelectionTests(unittest.TestCase):
 
     def test_shared_or_unknown_changes_force_full_coverage(self):
         for path in ("Cargo.lock", "Cargo.toml", ".cargo/config.toml", "AGENTS.md",
-                     "scripts/ci/plan.py", ".github/workflows/ci.yml", "new-tool/input.dat"):
+                     "scripts/ci/plan.py", ".github/workflows/ci.yml", ".circleci/config.yml",
+                     "new-tool/input.dat"):
             with self.subTest(path=path):
                 plan = planned([path])
                 self.assertTrue(plan["full"])

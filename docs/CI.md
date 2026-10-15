@@ -203,6 +203,35 @@ No success is reused across different SHAs. Dependency edits use proven declarat
 deltas; shared policy or unavailable dependency-impact evidence retains the conservative
 full-routine fallback. Release-only qualification remains limited to the releasing product's closure.
 
+## CircleCI trial
+
+`.circleci/config.yml` is a setup workflow: its `plan` job runs the same selector through
+`scripts/ci/circleci.py` and continues the pipeline with one job per selected check profile and
+fuzz target. Unselected profiles are never scheduled; a prose-only change runs `policy` and the
+`CI` gate only. Selected jobs all start once `policy` passes and run concurrently up to the
+plan's concurrency limit (no four-target fuzz cap). `CI` requires every generated job, recomputes
+the plan from the pipeline's inputs and immutable trees, and stores `ci-coverage.json` as an
+artifact. `scripts/ci/circleci-setup.sh` stands in for the Actions toolchain/tool/apt steps.
+
+Event mapping: the trunk compares against `pipeline.git.base_revision` (the previous trunk
+pipeline); any other branch compares from its merge base with `origin/main`, and a same-repository
+`release-plz-` branch qualifies its products; a scheduled pipeline is full routine coverage; any
+explicit parameter (`full`, `base`, `release`, `products`) is a manual dispatch. A namespaced
+`resource_class` parameter selects a self-hosted runner, which must provide the native libraries.
+
+The mapping assumes the GitHub OAuth integration; the GitHub App reports triggers and fork
+branches differently. The gate's `needs` record the workflow layout: CircleCI starts `CI` only
+after every required job succeeded, so a failed or cancelled job leaves it pending, never green.
+CircleCI caches are project-wide, not branch-scoped: only trunk pipelines save them, but a branch
+that edits the generator could still write one, so review that before requiring the status.
+Cargo tools install into per-version roots under `~/ci-tools`, cached separately from builds.
+
+Project setup, outside the repository: enable "dynamic config using setup workflows", create the
+nightly scheduled pipeline (`main`, 09:17 UTC, no parameters), and require the
+`ci/circleci: CI` status. Publication, commit lint and the weekly advisory audit stay on
+Actions: the release workflow accepts only the Actions `CI` receipt, and CircleCI never marks a
+release candidate. `scripts/ci-act.sh` still runs the Actions workflow locally.
+
 ## Rollout and measurements
 
 The shadow checkpoint keeps legacy gates authoritative while reviewing the selector. The

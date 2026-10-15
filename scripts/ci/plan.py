@@ -95,7 +95,7 @@ GLOBAL_FILES = {
     ".github/workflows/ci.yml", ".github/workflows/release-plz.yml",
     "scripts/ci-act.sh",
 }
-GLOBAL_PREFIXES = (".cargo/", "scripts/ci/")
+GLOBAL_PREFIXES = (".cargo/", ".circleci/", "scripts/ci/")
 PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
                "LICENSE-MIT", "LICENSE-APACHE"}
 PROFILES = {

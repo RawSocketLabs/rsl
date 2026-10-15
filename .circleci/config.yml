@@ -1,0 +1,62 @@
+# Setup workflow: select affected coverage, then continue the pipeline with only the selected
+# jobs (scripts/ci/circleci.py). Unrelated profiles and fuzz targets are never scheduled.
+# Requires "Enable dynamic config using setup workflows" in the project's advanced settings.
+version: 2.1
+setup: true
+
+parameters:
+  full:
+    description: Run routine checks for all packages (does not enable release jobs).
+    type: boolean
+    default: false
+  base:
+    description: Comparison base for an affected run; absent means full coverage.
+    type: string
+    default: ''
+  release:
+    description: Qualify products with version changes; this does not authorize publication.
+    type: boolean
+    default: false
+  products:
+    description: Explicit enabled product/version groups, space-separated (manual release qualification).
+    type: string
+    default: ''
+  resource_class:
+    description: Machine class for check and fuzz jobs; a namespace/name class selects a self-hosted runner.
+    type: string
+    default: large
+
+jobs:
+  plan:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+    environment:
+      CI_TEMP: /tmp/ci
+      CI_INPUT_FULL: << pipeline.parameters.full >>
+      CI_INPUT_BASE: << pipeline.parameters.base >>
+      CI_INPUT_RELEASE: << pipeline.parameters.release >>
+      CI_INPUT_PRODUCTS: << pipeline.parameters.products >>
+      CI_INPUT_CLASS: << pipeline.parameters.resource_class >>
+      CI_TRIGGER_SOURCE: << pipeline.trigger_source >>
+      CI_BASE_REVISION: << pipeline.git.base_revision >>
+    steps:
+      - checkout
+      - run:
+          name: Fetch the trunk
+          command: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - run:
+          name: Install Rust when the plan needs Cargo metadata
+          command: |
+            needs=$(python3 scripts/ci/circleci.py probe)
+            if [ "$needs" = true ]; then bash scripts/ci/circleci-setup.sh rust stable; fi
+      - run:
+          name: Select packages, profiles, and fuzz targets, then continue
+          command: python3 scripts/ci/circleci.py plan
+      - store_artifacts:
+          path: /tmp/ci
+
+workflows:
+  setup:
+    jobs:
+      - plan
