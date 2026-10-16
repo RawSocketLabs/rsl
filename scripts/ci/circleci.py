@@ -82,12 +82,18 @@ def merge_base(root, revision):
     return result.stdout.decode().strip() if result.returncode == 0 else ""
 
 
+def first_parent(root):
+    result = subprocess.run(["git", "rev-parse", "--verify", "HEAD^1"], cwd=root,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return result.stdout.decode().strip() if result.returncode == 0 else ""
+
+
 def event_options(root, env, prefix):
     """(event, base, full, release, products) in the vocabulary `gate.py` records.
 
     Explicit pipeline parameters are a manual dispatch. A schedule passes `full`. The trunk is
     a push compared against the previous pipeline's revision, qualifying any release whose
-    versions it changes; any other branch is compared from its merge base with the trunk."""
+    versions it changes (without one: full coverage, releases judged against the first parent); any other branch is compared from its merge base with the trunk."""
     base = env.get("CI_INPUT_BASE", "")
     if not re.fullmatch(r"(?:[A-Za-z0-9._][A-Za-z0-9._/-]*)?", base):
         raise ValueError("comparison base is not a Git revision")
@@ -98,11 +104,18 @@ def event_options(root, env, prefix):
     if full or release or products or base:
         event = "workflow_dispatch"
     elif branch == TRUNK:
-        # CircleCI renders an absent previous revision as "<nil>"; anything but a SHA is no base.
         revision = env.get("CI_BASE_REVISION", "")
         if revision == env.get("CIRCLE_SHA1"):
             revision = ""  # A re-run of the same commit has no diff; never post an empty green.
-        event, base, release = "push", revision if SHA.fullmatch(revision) else "", True
+        if SHA.fullmatch(revision):
+            base = revision
+        else:
+            # CircleCI renders an absent previous revision as "<nil>", and GitHub App pipelines
+            # never set one. An admin push can bypass the branch run, so coverage stays full; the
+            # first parent (gate.py's `sha^`) only decides which versions this push changed. A
+            # version bump below the tip of a multi-commit push qualifies nothing.
+            base, full = first_parent(root), True
+        event, release = "push", True
     elif branch:
         # The plan job pins the merge base so the gate cannot see a trunk that moved since.
         event, base = "pull_request", env.get("CI_MERGE_BASE") or merge_base(root, f"origin/{TRUNK}")

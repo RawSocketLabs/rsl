@@ -1,6 +1,6 @@
 # CircleCI migration plan
 
-Status: cut over 2026-10-15 (`main` at `8f7f8697`); §4 steps 4 and 5 remain open. [CI.md](CI.md)
+Status: cut over 2026-10-15; §4 step 4 awaits one more push. [CI.md](CI.md)
 describes the resulting pipeline; this file records the decisions and what remains after cutover.
 
 ## 1. Decisions
@@ -56,10 +56,11 @@ Also done: auto-cancel of redundant branch workflows, and the project marked ope
    instead of the Actions `CI`.
 4. Open: the first GitHub App push to main (`8f7f8697`) planned with `base` empty
    (`pipeline.git.base_revision` rendered `<nil>`); the previous main pipeline was API-triggered.
-   Confirm on a later push. While it stays empty, every main push runs full coverage and never
-   qualifies a release; fix that before the next release. The first main pipeline also showed
+   A second push (`4775f4c1`) confirmed it: GitHub App pipelines never set it. Main now keeps
+   full coverage and takes the pushed head's first parent as the release base; confirm `base` on
+   the first push after that change. The first main pipeline also showed
    that a trunk push without a version change failed `plan`; `8f7f8697` fixed that.
-5. Set the `rsl-ci` package on GHCR to public, so pulls need no credentials.
+5. Done: the `rsl-ci` package on GHCR is public (anonymous manifest pull returns 200).
 
 ## 5. After cutover
 

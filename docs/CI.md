@@ -15,7 +15,7 @@ dependencies. Reverse reachability uses both old and tested trees, so removed ed
 old consumers. Input paths come from NUL-delimited Git diffs, without forge pagination limits.
 
 Branches compare from their merge base with `origin/main` and test the pushed commit. Main pushes
-compare against the previous main pipeline's revision. Manual runs without a base, missing comparison history,
+compare against the previous main pipeline's revision; without one they run full coverage. Manual runs without a base, missing comparison history,
 shared toolchain/build policy, and central CI changes select full routine coverage, never
 release qualification. Invalid metadata is an error, not an empty plan. A changed unregistered Cargo manifest
 fails until its validation is registered; deleting an owned package selects full coverage.
@@ -203,8 +203,10 @@ reviewed digest change. To try a changed image first, build it locally and run
 Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
 
-Event mapping: main compares against `pipeline.git.base_revision` (CircleCI renders an absent one
-as `<nil>`, which is no base and means full coverage) and qualifies any release whose versions it
+Event mapping: main compares against `pipeline.git.base_revision`. When that is absent (`<nil>`,
+always so for GitHub App pipelines) main runs full coverage, because an admin push can bypass the
+branch run, and judges releases against the pushed head's first parent, as the release gate does;
+a version bump below the tip of a multi-commit push qualifies nothing. Main qualifies any release whose versions it
 changes; any other branch compares from its merge base with `origin/main`, and a same-repository
 `release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
 `products`) is a manual run: the nightly schedule passes `full=true`, and the weekly advisory

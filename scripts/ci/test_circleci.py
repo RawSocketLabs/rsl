@@ -1,9 +1,11 @@
 """CircleCI adapter tests: event mapping and the continued pipeline's job selection."""
 
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import tomllib
 import unittest
 from unittest import mock
@@ -20,8 +22,9 @@ PREFIX = "release-plz-"
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def options(env, merge_base="c" * 40):
-    with mock.patch.object(circleci, "merge_base", return_value=merge_base):
+def options(env, merge_base="c" * 40, parent=""):
+    with mock.patch.object(circleci, "merge_base", return_value=merge_base), \
+            mock.patch.object(circleci, "first_parent", return_value=parent):
         return event_options(None, env, PREFIX)
 
 
@@ -38,13 +41,33 @@ class EventTests(unittest.TestCase):
         self.assertEqual(options({"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": "a" * 40}),
                          ("push", "a" * 40, False, True, None))
 
-    def test_an_absent_previous_revision_is_no_base(self):
+    def test_an_absent_previous_revision_on_a_root_commit_is_full_without_a_base(self):
         for revision in ("<nil>", "", "main", "a" * 39):
             with self.subTest(revision=revision):
                 self.assertEqual(options({"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": revision})[1:3], ("", True))
 
-    def test_first_trunk_pipeline_without_a_previous_revision_is_full(self):
-        self.assertTrue(options({"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": ""})[2])
+    def test_an_absent_previous_revision_is_full_with_the_first_parent_as_release_base(self):
+        for revision in ("<nil>", "", "e" * 40):
+            with self.subTest(revision=revision):
+                env = {"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": revision, "CIRCLE_SHA1": "e" * 40}
+                self.assertEqual(options(env, parent="d" * 40), ("push", "d" * 40, True, True, None))
+
+    def test_first_parent_reads_the_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="rsl-ci-parent-test-") as directory:
+            def git(*args):
+                # Plumbing only: no hooks, signing, or user configuration take part.
+                identity = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+                return subprocess.run(["git", *args], cwd=directory, check=True, stdout=subprocess.PIPE,
+                                      env={**os.environ, **identity}).stdout.decode().strip()
+
+            git("init", "--quiet")
+            tree = git("write-tree")
+            root = git("commit-tree", tree, "-m", "root")
+            git("update-ref", "HEAD", root)
+            self.assertEqual(circleci.first_parent(directory), "")
+            git("update-ref", "HEAD", git("commit-tree", tree, "-p", root, "-m", "child"))
+            self.assertEqual(circleci.first_parent(directory), root)
 
     def test_branch_compares_from_its_merge_base_with_the_trunk(self):
         event, base, full, release, _ = options({"CIRCLE_BRANCH": "feat/x", "CI_BASE_REVISION": "a" * 40})
