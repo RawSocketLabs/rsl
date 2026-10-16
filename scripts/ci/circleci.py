@@ -59,7 +59,7 @@ IMAGE_CONTEXT = "images"
 RELEASE_GROUP = "<< pipeline.project.slug >>/release"
 # The gate's job name is the required status. A manual run with an explicit `base` may cover less
 # than the commit's own diff, so its gate reports under another name and cannot satisfy it.
-GATE, SCOPED_GATE = "CI", "CI-scoped"
+GATE, SCOPED_GATE = "rsl", "rsl-scoped"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
 # gate's recomputation sees the event the plan saw.
 INPUTS = ("CI_INPUT_FULL", "CI_INPUT_BASE", "CI_INPUT_RELEASE", "CI_INPUT_PRODUCTS",
@@ -323,14 +323,14 @@ def continuation(plan, bnb, env, event):
         # Only reviewed trunk commits reach a secret. The image publishes after CI passes.
         if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):
             jobs["image"] = image_job()
-            workflow.append({"image": {"requires": ["CI"], "context": [IMAGE_CONTEXT]}})
+            workflow.append({"image": {"requires": [GATE], "context": [IMAGE_CONTEXT]}})
         jobs.update(release_jobs(plan["release_candidate"]))
         if plan["release_candidate"]:
-            workflow.append({"release": {"requires": ["CI"], "context": [GITHUB_CONTEXT, CRATES_CONTEXT],
+            workflow.append({"release": {"requires": [GATE], "context": [GITHUB_CONTEXT, CRATES_CONTEXT],
                                          "serial-group": RELEASE_GROUP}})
-        workflow.append({"release-pr": {"requires": ["release" if plan["release_candidate"] else "CI"],
+        workflow.append({"release-pr": {"requires": ["release" if plan["release_candidate"] else GATE],
                                         "context": [GITHUB_CONTEXT], "serial-group": RELEASE_GROUP}})
-    return {"version": 2.1, "parameters": PARAMETERS, "jobs": jobs, "workflows": {"ci": {"jobs": workflow}}}
+    return {"version": 2.1, "parameters": PARAMETERS, "jobs": jobs, "workflows": {"rsl": {"jobs": workflow}}}
 
 
 def audit_continuation():

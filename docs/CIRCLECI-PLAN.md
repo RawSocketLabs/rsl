@@ -11,8 +11,8 @@ describes the resulting pipeline; this file records the decisions and what remai
 | Pipeline shape | Flat fan-out after `policy`; `workspace` split into three jobs | Lowest wall time; lint fails early as its own job |
 | Environment | `rsl-ci` image pinned by digest; nothing installed at run time | Reproducible runs; removes per-job setup (4m25 for semver-checks alone) |
 | Local runs | `scripts/ci-local.sh` runs CircleCI's generated jobs in the same image | Replaces act, which ran a different environment |
-| Path to main | Fast-forward after the branch's `ci/circleci: CI` is green | Trunk-based; the tested commit is exactly what lands, so no merge queue |
-| Required check | `ci/circleci: CI`, pinned to the CircleCI app | Statuses are created by `circleci-app[bot]` (verified on `810df77f`) |
+| Path to main | Fast-forward after the branch's `ci/circleci: rsl` is green | Trunk-based; the tested commit is exactly what lands, so no merge queue |
+| Required check | `ci/circleci: rsl`, pinned to the CircleCI app | Statuses are created by `circleci-app[bot]` (verified on `810df77f`) |
 | Fork PRs | Not built | Public repo; a fork's config could write project-wide caches |
 | Image publication | CircleCI `image` job after `CI` on a main push, classic GHCR token (`write:packages`) in `images` | No Actions left to use the short-lived token; GHCR rejects fine-grained tokens |
 | Release credentials | `RELEASE_PLZ_TOKEN` in `github` (release-pr, release), `CARGO_REGISTRY_TOKEN` in `crates` (release only) | Least privilege per job; reuses the existing release-plz token |
@@ -63,6 +63,8 @@ Also done: auto-cancel of redundant branch workflows, and the project marked ope
    protection's admin bypass allowed. A manual run with an explicit `base` reports its gate as
    `CI-scoped`, so a narrowed run cannot satisfy the required status.
 5. Done: the `rsl-ci` package on GHCR is public (anonymous manifest pull returns 200).
+7. Pending: the gate job and workflow are renamed `rsl` (scoped: `rsl-scoped`), so the required
+   status becomes `ci/circleci: rsl`; the ruleset's required check moves with the rename.
 
 ## 5. After cutover
 

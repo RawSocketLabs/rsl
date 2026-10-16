@@ -108,4 +108,4 @@ See [CI policy](docs/CI.md).
 Set `CI_LOCAL_JOBS` (or `-j N`) to limit local container load; CircleCI remains the final
 authority. Every run validates a self-contained temporary clone of the committed tree, so
 linked worktrees and unstaged files never reach it. Never publish from that validation clone.
-Changes reach `main` by fast-forward once their branch's `ci/circleci: CI` status is green.
+Changes reach `main` by fast-forward once their branch's `ci/circleci: rsl` status is green.

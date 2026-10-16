@@ -132,13 +132,13 @@ class ContinuationTests(unittest.TestCase):
     def test_a_manual_base_cannot_report_the_required_gate(self):
         plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
         jobs = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x", "CI_INPUT_BASE": "c" * 40})["jobs"]
-        self.assertIn("CI-scoped", jobs)
-        self.assertNotIn("CI", jobs)
+        self.assertIn("rsl-scoped", jobs)
+        self.assertNotIn("rsl", jobs)
 
     def test_prose_schedules_only_policy_and_the_gate(self):
         config = cont(test_plan.planned(["README.md"]), BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
-        self.assertEqual(set(config["jobs"]), {"policy", "commitlint", "CI"})
-        self.assertEqual(json.loads(config["jobs"]["CI"]["environment"]["CI_NEEDS"]),
+        self.assertEqual(set(config["jobs"]), {"policy", "commitlint", "rsl"})
+        self.assertEqual(json.loads(config["jobs"]["rsl"]["environment"]["CI_NEEDS"]),
                          {"checks": "skipped", "fuzz": "skipped"})
 
     def test_only_selected_profiles_and_fuzz_targets_are_scheduled_concurrently(self):
@@ -146,12 +146,12 @@ class ContinuationTests(unittest.TestCase):
         config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
         selected = {f"checks-{profile}" for profile in plan["profiles"] if profile != "workspace"}
         selected |= {f"checks-workspace-{part}" for part in ("lint", "test", "extra")} | {"commitlint"}
-        self.assertEqual(set(config["jobs"]) - {"policy", "CI"}, selected)
-        workflow = {name: spec for entry in config["workflows"]["ci"]["jobs"] for name, spec in entry.items()}
+        self.assertEqual(set(config["jobs"]) - {"policy", "rsl"}, selected)
+        workflow = {name: spec for entry in config["workflows"]["rsl"]["jobs"] for name, spec in entry.items()}
         for name in selected - {"commitlint"}:
             self.assertEqual(workflow[name], {"requires": ["policy"]})
         self.assertEqual(workflow["commitlint"], {})
-        self.assertEqual(set(workflow["CI"]["requires"]), selected | {"policy"})
+        self.assertEqual(set(workflow["rsl"]["requires"]), selected | {"policy"})
 
     def test_release_fuzz_targets_are_independent_jobs(self):
         plan = test_plan.planned(release=True)
@@ -235,7 +235,7 @@ class ContinuationTests(unittest.TestCase):
         config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
         needs = {"plan": {"result": "success"}, "policy": {"result": "success"},
                  **{job: {"result": result}
-                    for job, result in json.loads(config["jobs"]["CI"]["environment"]["CI_NEEDS"]).items()}}
+                    for job, result in json.loads(config["jobs"]["rsl"]["environment"]["CI_NEEDS"]).items()}}
         report = coverage_report(handed_on(plan), needs, plan, event="pull_request", run_id="w", attempt=1)
         self.assertEqual(report["plan"], plan)
 
@@ -245,7 +245,7 @@ class ReleasePathTests(unittest.TestCase):
     never comes from a cache."""
 
     def workflow(self, config):
-        return {name: spec for entry in config["workflows"]["ci"]["jobs"] for name, spec in entry.items()}
+        return {name: spec for entry in config["workflows"]["rsl"]["jobs"] for name, spec in entry.items()}
 
     def test_release_qualifying_pipelines_restore_and_save_no_cache(self):
         for branch in ("main", "feat/x"):
@@ -263,7 +263,7 @@ class ReleasePathTests(unittest.TestCase):
                 config = continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, event)
                 self.assertFalse({"release", "release-pr"} & config["jobs"].keys())
         workflow = self.workflow(continuation(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}, "push"))
-        self.assertEqual(workflow["release"], {"requires": ["CI"], "context": ["github", "crates"],
+        self.assertEqual(workflow["release"], {"requires": ["rsl"], "context": ["github", "crates"],
                                                "serial-group": circleci.RELEASE_GROUP})
         self.assertEqual(workflow["release-pr"], {"requires": ["release"], "context": ["github"],
                                                   "serial-group": circleci.RELEASE_GROUP})
@@ -273,7 +273,7 @@ class ReleasePathTests(unittest.TestCase):
         config = cont(test_plan.planned(["README.md"]), BNB_GATE, {"CIRCLE_BRANCH": "main"})
         workflow = self.workflow(config)
         self.assertNotIn("release", config["jobs"])
-        self.assertEqual(workflow["release-pr"]["requires"], ["CI"])
+        self.assertEqual(workflow["release-pr"]["requires"], ["rsl"])
         self.assertNotIn("crates", workflow["release-pr"]["context"])
 
     def test_release_jobs_check_the_trunk_before_any_token_is_used(self):
@@ -310,7 +310,7 @@ class ReleasePathTests(unittest.TestCase):
         plan = test_plan.planned([".circleci/image/Dockerfile"])
         self.assertNotIn("image", cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})["jobs"])
         workflow = self.workflow(cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "main"}))
-        self.assertEqual(workflow["image"], {"requires": ["CI"], "context": ["images"]})
+        self.assertEqual(workflow["image"], {"requires": ["rsl"], "context": ["images"]})
 
     def test_only_release_and_image_jobs_hold_contexts(self):
         plan = test_plan.planned(release=True)

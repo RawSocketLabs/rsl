@@ -84,10 +84,10 @@ class ExecutionTests(unittest.TestCase):
 
     def test_release_jobs_never_run_and_the_gate_runs_last(self):
         config = cont(test_plan.planned(["README.md"]), BNB_GATE, {"CIRCLE_BRANCH": "main"})
-        workflow = config["workflows"]["ci"]["jobs"]
+        workflow = config["workflows"]["rsl"]["jobs"]
         self.assertIn("release-pr", config["jobs"])
         stages = local.stages(workflow)
-        self.assertEqual(stages[-1], ["CI"])
+        self.assertEqual(stages[-1], ["rsl"])
         self.assertIn("policy", stages[0])
         self.assertFalse(local.REMOTE_ONLY & {name for stage in stages for name in stage})
 

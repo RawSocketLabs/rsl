@@ -224,10 +224,10 @@ release qualification) restores and saves no cache at all. Forked pull requests 
 ## Required gate and release boundary
 
 Changes reach main by fast-forward after their branch is green: the required status is
-`ci/circleci: CI`, created by the CircleCI GitHub App (`circleci-app[bot]`), so the pushed commit
+`ci/circleci: rsl`, created by the CircleCI GitHub App (`circleci-app[bot]`), so the pushed commit
 already carries it. A repository ruleset requires it with no bypass actors. A manual run with an
-explicit `base` names its gate `CI-scoped`, so a narrowed run never reports the required status.
-The `CI` job recomputes the plan from the pipeline's inputs and immutable
+explicit `base` names its gate `rsl-scoped`, so a narrowed run never reports the required status.
+The `rsl` gate job recomputes the plan from the pipeline's inputs and immutable
 trees, then requires every generated job: CircleCI starts it only after all of them succeeded,
 so a failed or cancelled job leaves it pending, never green. An empty documentation plan is
 legitimate only after successful policy/selection verification.
