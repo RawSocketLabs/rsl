@@ -154,15 +154,21 @@ def run(name, command, **extra):
     return {"run": {"name": name, "command": command, **extra}}
 
 
-def cached(key, paths, steps, *, save, enabled=True):
+def cached(key, paths, steps, *, save, toolchain, lock="Cargo.lock", enabled=True):
     if not enabled:
         return steps
-    exact = key + '-{{ checksum "Cargo.lock" }}'
-    result = [{"restore_cache": {"keys": [exact, key + "-"]}}, *steps]
-    # Only trunk pipelines write caches. CircleCI does not scope caches by branch, so a
+    # The cached value is the dependency build: the image (native libraries), toolchain and
+    # lockfile decide it. Each key is written once, not on every trunk push.
+    key += f"-{toolchain}-{IMAGE.rsplit(':', 1)[1][:12]}"
+    exact = key + f'-{{{{ checksum "{lock}" }}}}'
+    # A saving job restores only its exact key, so a new key holds a clean build rather than
+    # accumulating every earlier lockfile's dependencies.
+    result = [{"restore_cache": {"keys": [exact] if save else [exact, key + "-"]}}, *steps]
+    # Only full-coverage trunk pipelines write caches, so a scoped push cannot fix a partial
+    # build under a key it never rewrites. CircleCI does not scope caches by branch, so a
     # collaborator's branch could still write one: release candidates restore none.
     if save:
-        result.append({"save_cache": {"key": exact + "-{{ epoch }}", "paths": paths, "when": "on_success"}})
+        result.append({"save_cache": {"key": exact, "paths": paths, "when": "on_success"}})
     return result
 
 
@@ -175,7 +181,7 @@ def toolchain_of(profile, bnb):
             bnb["public_api_toolchain"] if profile in {"public-api", "fuzz"} else STABLE)
 
 
-def check_job(profile, *, save, caches, part=None):
+def check_job(profile, *, save, caches, toolchain, part=None):
     if profile == "deny":
         steps = [run("cargo deny", "cargo deny --all-features check")]
     else:
@@ -185,16 +191,17 @@ def check_job(profile, *, save, caches, part=None):
                      f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout=BUDGET)]
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
-    return cached(f"v2-checks-{profile}{'-' + part if part else ''}",
+    return cached(f"v3-checks-{profile}{'-' + part if part else ''}",
                   CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
-                  save=save, enabled=caches and profile not in NO_RUST)
+                  save=save, toolchain=toolchain, enabled=caches and profile not in NO_RUST)
 
 
-def fuzz_job(item, *, save, caches):
+def fuzz_job(item, *, save, caches, toolchain):
     # Separate processes preserve each target's original budget. GNU is required for ASan.
     steps = [run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
-    return cached(f"v2-fuzz-{slug(item['root'])}-{item['target']}",
-                  CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, enabled=caches)
+    return cached(f"v3-fuzz-{slug(item['root'])}-{item['target']}",
+                  CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, toolchain=toolchain,
+                  lock=f"{item['root']}/Cargo.lock", enabled=caches)
 
 
 def commitlint_job(base):
@@ -261,11 +268,14 @@ def continuation(plan, bnb, env, event):
     resource_class = env.get("CI_INPUT_CLASS") or DEFAULT_CLASS
     trunk = env.get("CIRCLE_BRANCH") == TRUNK
     caches = not plan["release"]  # Evidence that can authorise publication restores no cache.
-    save = trunk and caches
+    save = trunk and caches and plan["full"]
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
     if len(handed.encode()) > ENV_LIMIT:
         raise ValueError("the handed-on plan exceeds one environment variable's limit")
+    # Incremental state and full debuginfo are most of a cached target directory; line tables
+    # keep panic locations.
     common = {"CI_PLAN": handed, "CI_TEMP": "/tmp/ci", "RUNNER_TEMP": "/tmp/ci",
+              "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
               "CI_MERGE_BASE": plan["base"] or "", **{name: env.get(name, "") for name in INPUTS}}
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]
 
@@ -288,12 +298,14 @@ def continuation(plan, bnb, env, event):
             environment["RUSTUP_TOOLCHAIN"] = toolchain_of(profile, bnb)
         for part in WORKSPACE_PARTS if profile == "workspace" else (None,):
             name = f"checks-{profile}" + (f"-{part}" if part else "")
-            jobs[name] = job(check_job(profile, save=save, caches=caches, part=part),
+            jobs[name] = job(check_job(profile, save=save, caches=caches,
+                                       toolchain=toolchain_of(profile, bnb), part=part),
                              **environment, **({"PART": part} if part else {}))
             selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
-        jobs[name] = job(fuzz_job(item, save=save, caches=caches), RUSTUP_TOOLCHAIN=toolchain_of("fuzz", bnb),
+        toolchain = toolchain_of("fuzz", bnb)
+        jobs[name] = job(fuzz_job(item, save=save, caches=caches, toolchain=toolchain), RUSTUP_TOOLCHAIN=toolchain,
                          FUZZ_ITEM=json.dumps(item, separators=(",", ":")))
         selected.append(name)
     needs = {"checks": "success" if plan["profiles"] else "skipped",

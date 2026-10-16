@@ -195,12 +195,25 @@ class ContinuationTests(unittest.TestCase):
             self.assertEqual(any("store_test_results" in step for step in job["steps"] if isinstance(step, dict)),
                              part == "test")
 
-    def test_only_the_trunk_saves_caches(self):
-        plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
-        for branch, saves in (("main", True), ("feat/x", False)):
+    def test_only_full_trunk_plans_save_caches(self):
+        scoped = test_plan.planned(["protocols/session/socks/src/lib.rs"])
+        for plan, branch, saves in ((test_plan.planned(full=True), "main", True), (scoped, "main", False),
+                                    (test_plan.planned(full=True), "feat/x", False)):
             config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch})
-            steps = config["jobs"]["checks-workspace-test"]["steps"]
-            self.assertEqual(any("save_cache" in step for step in steps if isinstance(step, dict)), saves)
+            steps = [step for step in config["jobs"]["checks-workspace-test"]["steps"] if isinstance(step, dict)]
+            self.assertEqual(any("save_cache" in step for step in steps), saves)
+            # A saving job starts from its exact key only, so the saved key holds a clean build.
+            keys = next(step["restore_cache"]["keys"] for step in steps if "restore_cache" in step)
+            self.assertEqual(len(keys), 1 if saves else 2)
+
+    def test_cache_keys_name_toolchain_image_and_lockfile(self):
+        config = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "main"})
+        steps = [step for step in config["jobs"]["checks-workspace-test"]["steps"] if isinstance(step, dict)]
+        key = next(step["save_cache"]["key"] for step in steps if "save_cache" in step)
+        self.assertIn(circleci.STABLE, key)
+        self.assertIn(circleci.IMAGE.rsplit(":", 1)[1][:12], key)
+        self.assertTrue(key.endswith('{{ checksum "Cargo.lock" }}'))
+        self.assertNotIn("epoch", key)
 
     def test_profiles_select_the_image_toolchains(self):
         jobs = cont(test_plan.planned(release=True), BNB_GATE, {"CIRCLE_BRANCH": "main"})["jobs"]

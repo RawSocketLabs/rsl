@@ -213,7 +213,11 @@ changes; any other branch compares from its merge base with `origin/main`, and a
 schedule passes `audit=true`, which continues with only `cargo deny check advisories`. A
 namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
 
-Caches are keyed by profile and `Cargo.lock`, and only main saves them. CircleCI caches are
+Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
+fuzz workspace's own). Each key is written once, from a clean build, and only by a
+full-coverage main pipeline, so a scoped push cannot store a partial build. Detached
+workspaces' own lockfiles are not in the key. Jobs build with `CARGO_INCREMENTAL=0` and
+line-tables-only debuginfo to keep cached targets small. CircleCI caches are
 project-wide, not branch-scoped, so a pipeline whose evidence can authorise publication (any
 release qualification) restores and saves no cache at all. Forked pull requests are not built.
 
