@@ -5,7 +5,14 @@
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # zip 8.6 is only a build dependency of utoipa-swagger-ui 10.0.1 (latest, pins zip ^8.6),
+    # whose build.rs unpacks a pinned Swagger-UI archive entry by entry and never calls the
+    # affected `ZipArchive::extract`/`ZipStreamReader::extract`. Drop once it moves to zip 9.
+    { id = "RUSTSEC-2026-0367", reason = "build-only zip; extract APIs unused" },
+    { id = "RUSTSEC-2026-0368", reason = "build-only zip; extract APIs unused" },
+    { id = "RUSTSEC-2026-0369", reason = "build-only zip; extract APIs unused" },
+]
 
 [licenses]
 version = 2
