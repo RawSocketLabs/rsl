@@ -191,7 +191,7 @@ def check_job(profile, *, save, caches, toolchain, part=None):
                      f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout=BUDGET)]
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
-    return cached(f"v3-checks-{profile}{'-' + part if part else ''}",
+    return cached(f"v4-checks-{profile}{'-' + part if part else ''}",
                   CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
                   save=save, toolchain=toolchain, enabled=caches and profile not in NO_RUST)
 
@@ -199,7 +199,7 @@ def check_job(profile, *, save, caches, toolchain, part=None):
 def fuzz_job(item, *, save, caches, toolchain):
     # Separate processes preserve each target's original budget. GNU is required for ASan.
     steps = [run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
-    return cached(f"v3-fuzz-{slug(item['root'])}-{item['target']}",
+    return cached(f"v4-fuzz-{slug(item['root'])}-{item['target']}",
                   CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, toolchain=toolchain,
                   lock=f"{item['root']}/Cargo.lock", enabled=caches)
 
