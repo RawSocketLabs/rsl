@@ -1,6 +1,6 @@
 # CircleCI migration plan
 
-Status: cut over 2026-10-15; §4 step 4 awaits one more push. [CI.md](CI.md)
+Status: cut over 2026-10-15; all cutover steps are done. [CI.md](CI.md)
 describes the resulting pipeline; this file records the decisions and what remains after cutover.
 
 ## 1. Decisions
@@ -54,12 +54,14 @@ Also done: auto-cancel of redundant branch workflows, and the project marked ope
    - schedule, `main`, Mondays at 06:00 UTC, parameter `audit=true`.
 3. Done: `main` branch protection requires `ci/circleci: CI` from the CircleCI app (302869)
    instead of the Actions `CI`.
-4. Open: the first GitHub App push to main (`8f7f8697`) planned with `base` empty
-   (`pipeline.git.base_revision` rendered `<nil>`); the previous main pipeline was API-triggered.
-   A second push (`4775f4c1`) confirmed it: GitHub App pipelines never set it. Main now keeps
-   full coverage and takes the pushed head's first parent as the release base; confirm `base` on
-   the first push after that change. The first main pipeline also showed
+4. Done: GitHub App pipelines never set `pipeline.git.base_revision` (`<nil>` on `8f7f8697` and
+   `4775f4c1`). Main now keeps full coverage and takes the pushed head's first parent as the
+   release base; `bd41ca4d` planned with `base` `4775f4c1`. The first main pipeline also showed
    that a trunk push without a version change failed `plan`; `8f7f8697` fixed that.
+6. Done: a repository ruleset requires `ci/circleci: CI` from the CircleCI app, up to date with
+   main, with no bypass actors, so an admin fast-forward cannot skip it as the branch
+   protection's admin bypass allowed. A manual run with an explicit `base` reports its gate as
+   `CI-scoped`, so a narrowed run cannot satisfy the required status.
 5. Done: the `rsl-ci` package on GHCR is public (anonymous manifest pull returns 200).
 
 ## 5. After cutover
@@ -67,10 +69,14 @@ Also done: auto-cancel of redundant branch workflows, and the project marked ope
 - First release through CircleCI: run `release-plz release --dry-run` from a release-PR merge
   before the live one. Confirm tags are pushed with `RELEASE_PLZ_TOKEN`, and that a superseded
   SHA, a failed `CI`, and a tampered receipt each stop before publishing.
-- Outage procedure: an admin can bypass the ruleset to land a fix while CircleCI is down. The
-  Actions workflows remain in history.
+- Outage procedure: an admin can disable the ruleset to land a fix while CircleCI is down, then
+  re-enable it. The Actions workflows remain in history.
 - Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets
   kept as code.
+- Before enabling a second release product: a trunk push judges version changes against its
+  first parent only, so a bump below the tip of a multi-commit push is never qualified, and the
+  next release-plz merge for another product could publish it. Make `release` refuse any
+  release-enabled package whose version is neither on the registry nor in the qualified members.
 
 ## 6. Risks
 

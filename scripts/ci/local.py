@@ -136,7 +136,7 @@ def stages(workflow):
     entries = [next(iter(entry.items())) for entry in workflow]
     names = [name for name, _ in entries if name not in REMOTE_ONLY]
     first = [name for name, spec in entries if name in names and not (spec or {}).get("requires")]
-    last = [name for name in names if name == "CI"]
+    last = [name for name in names if name in (circleci.GATE, circleci.SCOPED_GATE)]
     middle = [name for name in names if name not in first and name not in last]
     return [stage for stage in (first, middle, last) if stage]
 

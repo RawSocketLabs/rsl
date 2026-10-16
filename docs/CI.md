@@ -221,7 +221,9 @@ release qualification) restores and saves no cache at all. Forked pull requests 
 
 Changes reach main by fast-forward after their branch is green: the required status is
 `ci/circleci: CI`, created by the CircleCI GitHub App (`circleci-app[bot]`), so the pushed commit
-already carries it. The `CI` job recomputes the plan from the pipeline's inputs and immutable
+already carries it. A repository ruleset requires it with no bypass actors. A manual run with an
+explicit `base` names its gate `CI-scoped`, so a narrowed run never reports the required status.
+The `CI` job recomputes the plan from the pipeline's inputs and immutable
 trees, then requires every generated job: CircleCI starts it only after all of them succeeded,
 so a failed or cancelled job leaves it pending, never green. An empty documentation plan is
 legitimate only after successful policy/selection verification.

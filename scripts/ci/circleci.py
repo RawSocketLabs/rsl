@@ -57,6 +57,9 @@ GITHUB_CONTEXT = "github"
 CRATES_CONTEXT = "crates"
 IMAGE_CONTEXT = "images"
 RELEASE_GROUP = "<< pipeline.project.slug >>/release"
+# The gate's job name is the required status. A manual run with an explicit `base` may cover less
+# than the commit's own diff, so its gate reports under another name and cannot satisfy it.
+GATE, SCOPED_GATE = "CI", "CI-scoped"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
 # gate's recomputation sees the event the plan saw.
 INPUTS = ("CI_INPUT_FULL", "CI_INPUT_BASE", "CI_INPUT_RELEASE", "CI_INPUT_PRODUCTS",
@@ -295,14 +298,15 @@ def continuation(plan, bnb, env, event):
         selected.append(name)
     needs = {"checks": "success" if plan["profiles"] else "skipped",
              "fuzz": "success" if plan["fuzz"] else "skipped"}
-    jobs["CI"] = job([
+    gate = SCOPED_GATE if env.get("CI_INPUT_BASE") else GATE
+    jobs[gate] = job([
         run("Recompute coverage and reject any divergence", "python3 scripts/ci/circleci.py gate"),
         {"persist_to_workspace": {"root": "/tmp/ci", "paths": ["ci-coverage.json"]}},
         {"store_artifacts": {"path": "/tmp/ci/ci-coverage.json", "destination": "ci-coverage.json"}},
     ], resource="medium", CI_NEEDS=json.dumps(needs, sort_keys=True))
     workflow = [{"policy": {}},
                 *({name: {} if name == "commitlint" else {"requires": ["policy"]}} for name in selected),
-                {"CI": {"requires": ["policy", *selected]}}]
+                {gate: {"requires": ["policy", *selected]}}]
     if event == "push":
         # Only reviewed trunk commits reach a secret. The image publishes after CI passes.
         if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):

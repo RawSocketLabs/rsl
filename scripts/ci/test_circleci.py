@@ -129,6 +129,12 @@ class ReleaseAssociationTests(unittest.TestCase):
 
 
 class ContinuationTests(unittest.TestCase):
+    def test_a_manual_base_cannot_report_the_required_gate(self):
+        plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
+        jobs = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x", "CI_INPUT_BASE": "c" * 40})["jobs"]
+        self.assertIn("CI-scoped", jobs)
+        self.assertNotIn("CI", jobs)
+
     def test_prose_schedules_only_policy_and_the_gate(self):
         config = cont(test_plan.planned(["README.md"]), BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
         self.assertEqual(set(config["jobs"]), {"policy", "commitlint", "CI"})
