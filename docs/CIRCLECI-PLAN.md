@@ -63,8 +63,8 @@ Also done: auto-cancel of redundant branch workflows, and the project marked ope
    protection's admin bypass allowed. A manual run with an explicit `base` reports its gate as
    `CI-scoped`, so a narrowed run cannot satisfy the required status.
 5. Done: the `rsl-ci` package on GHCR is public (anonymous manifest pull returns 200).
-7. Pending: the gate job and workflow are renamed `rsl` (scoped: `rsl-scoped`), so the required
-   status becomes `ci/circleci: rsl`; the ruleset's required check moves with the rename.
+7. Done: the gate job and workflow are renamed `rsl` (scoped: `rsl-scoped`); the ruleset and
+   branch protection require `ci/circleci: rsl` from the CircleCI app since `f416fbad`.
 
 ## 5. After cutover
 
