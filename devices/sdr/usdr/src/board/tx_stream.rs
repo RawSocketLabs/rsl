@@ -134,8 +134,10 @@ impl TxLaneUse {
     /// the original core, the lanes swap as a new stream's would and a one-channel stream
     /// muting a lane mutes the other instead (`fe_tx4_swap_ab_get`, `sfe_tx4_upd`); on the
     /// `extended` core, its lane map is rewritten (`exfe_trx4_update_chmap`). The
-    /// blocking stream and `NativeUsb`'s group both run it. As libusdr, the new use is
-    /// kept before it is written, so a failed write leaves it ahead of the core's.
+    /// blocking stream and `NativeUsb`'s group both run it. The new use is kept before it
+    /// is written, so a failed write leaves it ahead of the core's: libusdr's order on the
+    /// original core; on the extended core libusdr keeps no channel state, and the count,
+    /// all that is read of it there, does not change.
     ///
     /// Intentional divergence: libusdr reads only as many entries of a new map as the
     /// stream has channels, so a map of another count still applies; it is refused here,
