@@ -272,7 +272,7 @@ impl Board {
             if tx_lo == 0 || !self.radio.tx.powered {
                 self.set_tx_power(true)?;
                 self.bus.sleep(WAKE);
-                Phy::Tx.set_iq_correction(self.bus.as_mut(), self.corrections.tx.tx_terms())?;
+                self.run_script(Phy::Tx.set_iq_correction(self.corrections.tx.tx_terms()))?;
             }
             if !external {
                 run_sequence(self.bus.as_mut(), &mut self.radio.lms.enable_rf_loopback())?;
@@ -344,7 +344,7 @@ impl Board {
             self.bus.sleep(WAKE);
             self.tune_rx_pll(RX_WAKE_LO_HZ)?;
             self.calibrate_rx_dc()?;
-            Phy::Rx.set_iq_correction(self.bus.as_mut(), self.corrections.rx.rx_terms())?;
+            self.run_script(Phy::Rx.set_iq_correction(self.corrections.rx.rx_terms()))?;
             retune_tx = false;
         }
         if retune_tx || self.radio.tx.lo_offset_hz != 0 {
@@ -680,7 +680,7 @@ impl Board {
                 let [i, q] = self.corrections.tx_lo_dc;
                 if digital {
                     let bits = |v: i16| u12::new(u16::from_ne_bytes(v.to_ne_bytes()) & 0xfff);
-                    Phy::set_tx_dc_offset(bus, bits(i), bits(q))
+                    run_sequence(bus, &mut Phy::set_tx_dc_offset(bits(i), bits(q)))
                 } else {
                     // `usdr_tx_vga1_dccorr`: narrowed to `int8_t`, then offset binary.
                     #[expect(
@@ -694,11 +694,17 @@ impl Board {
             }
             (Target::RxIq, axis) => {
                 self.corrections.rx.set(axis, value);
-                Phy::Rx.set_iq_correction(bus, self.corrections.rx.rx_terms())
+                run_sequence(
+                    bus,
+                    &mut Phy::Rx.set_iq_correction(self.corrections.rx.rx_terms()),
+                )
             }
             (Target::TxIq, axis) => {
                 self.corrections.tx.set(axis, value);
-                Phy::Tx.set_iq_correction(bus, self.corrections.tx.tx_terms())
+                run_sequence(
+                    bus,
+                    &mut Phy::Tx.set_iq_correction(self.corrections.tx.tx_terms()),
+                )
             }
         }
     }

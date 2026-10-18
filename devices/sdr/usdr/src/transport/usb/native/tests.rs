@@ -23,7 +23,9 @@ use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
 
 use super::{BoardUsb, simulated_device};
 use crate::Device;
-use crate::board::{RxGain, RxPath, RxThrottle, TxGain, TxPath};
+use crate::board::{
+    RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
+};
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
 use crate::fpga::IqImbalance;
@@ -31,7 +33,10 @@ use crate::frontend::FrontEndSelection;
 use crate::lowlevel::{Bus, BusError, TxFill};
 use crate::portable::radio::Chains;
 use crate::reference::ReferenceClock;
-use crate::stream::{HostFormat, RxConfig, StreamsConfig, SyncMode, TxConfig, TxMute, WireFormat};
+use crate::stream::{
+    HostFormat, RxChannels, RxConfig, StreamsConfig, SyncMode, TxChannels, TxConfig, TxMute,
+    WireFormat,
+};
 use crate::thermal::ThermalPolicy;
 use crate::transport::usb::bus::{Reply as Endpoint, UsbBus, UsbIo};
 use crate::transport::usb::i2c::I2cTransaction;
@@ -2498,10 +2503,15 @@ fn usb_board(revision: BoardRevision, millicelsius: i32) -> (UsbBus, Arc<Mutex<S
         unlocked_below_hz: 245_000_000,
         ..PllLock::default()
     };
-    let mut board = SimBoard::new(revision)
+    let board = SimBoard::new(revision)
         .with_temperature(millicelsius)
         .with_rx_pll_lock(lock)
         .with_tx_pll_lock(lock);
+    usb_bus(board)
+}
+
+/// `board` on a USB bus whose router is set up, as `simulated_device` makes it.
+fn usb_bus(mut board: SimBoard) -> (UsbBus, Arc<Mutex<SimBoard>>) {
     let hwid = board.read_reg(19);
     board.write_reg(19, hwid | 0x4000_0000);
     let board = Arc::new(Mutex::new(board));
@@ -2572,6 +2582,34 @@ enum Setting {
     RxBandwidth(u32),
     /// The TX bandwidth.
     TxBandwidth(u32),
+    /// The RX front end's DC trims, I then Q.
+    RxDcTrim(u8, u8),
+    /// The RX front end's IP2 trims, I then Q.
+    RxIp2Trim(u8, u8),
+    /// The RX chain's automatic DC correction.
+    RxAutoDc(bool),
+    /// The RX IQ correction.
+    RxIq(RxIqCorrection),
+    /// The RX IQ correction in the calibration's terms.
+    RxIqImbalance(IqImbalance),
+    /// The TX DC offsets, I then Q.
+    TxDcOffset(i16, i16),
+    /// The TX IQ correction.
+    TxIq(TxIqCorrection),
+    /// The TX IQ correction in the calibration's terms.
+    TxIqImbalance(IqImbalance),
+    /// The TX constant generator.
+    TxConstant(Option<Complex<i16>>),
+}
+
+/// The trim for `code`, which the settings keep in range.
+fn trim(code: u8) -> RxTrim {
+    RxTrim::new(code).expect("a seven-bit code")
+}
+
+/// The DC offset `value`, which the settings keep in range.
+fn offset(value: i16) -> TxDcOffset {
+    TxDcOffset::new(value).expect("a twelve-bit offset")
 }
 
 impl Setting {
@@ -2588,6 +2626,15 @@ impl Setting {
             Self::TxPath(path) => device.set_tx_path(path),
             Self::RxBandwidth(hz) => device.set_rx_bandwidth(hz),
             Self::TxBandwidth(hz) => device.set_tx_bandwidth(hz),
+            Self::RxDcTrim(i, q) => device.set_rx_dc_trim(trim(i), trim(q)),
+            Self::RxIp2Trim(i, q) => device.set_rx_ip2_trim(trim(i), trim(q)),
+            Self::RxAutoDc(enabled) => device.set_rx_auto_dc_correction(enabled),
+            Self::RxIq(correction) => device.set_rx_iq_correction(correction),
+            Self::RxIqImbalance(imbalance) => device.set_rx_iq_imbalance(imbalance),
+            Self::TxDcOffset(i, q) => device.set_tx_dc_offset(offset(i), offset(q)),
+            Self::TxIq(correction) => device.set_tx_iq_correction(correction),
+            Self::TxIqImbalance(imbalance) => device.set_tx_iq_imbalance(imbalance),
+            Self::TxConstant(constant) => device.set_tx_constant(constant),
         }
     }
 
@@ -2605,13 +2652,23 @@ impl Setting {
             Self::TxPath(path) => native.start_tx_path(path, now),
             Self::RxBandwidth(hz) => native.start_rx_bandwidth(hz, now),
             Self::TxBandwidth(hz) => native.start_tx_bandwidth(hz, now),
+            Self::RxDcTrim(i, q) => native.start_rx_dc_trim(trim(i), trim(q), now),
+            Self::RxIp2Trim(i, q) => native.start_rx_ip2_trim(trim(i), trim(q), now),
+            Self::RxAutoDc(enabled) => native.start_rx_auto_dc_correction(enabled, now),
+            Self::RxIq(correction) => native.start_rx_iq_correction(correction, now),
+            Self::RxIqImbalance(imbalance) => native.start_rx_iq_imbalance(imbalance, now),
+            Self::TxDcOffset(i, q) => native.start_tx_dc_offset(offset(i), offset(q), now),
+            Self::TxIq(correction) => native.start_tx_iq_correction(correction, now),
+            Self::TxIqImbalance(imbalance) => native.start_tx_iq_imbalance(imbalance, now),
+            Self::TxConstant(constant) => native.start_tx_constant(constant, now),
         }?;
         match settle(native, reactor) {
             NativeEvent::SampleRateSet(result)
             | NativeEvent::Tuned(result)
             | NativeEvent::GainSet(result)
             | NativeEvent::PathSet(result)
-            | NativeEvent::BandwidthSet(result) => result,
+            | NativeEvent::BandwidthSet(result)
+            | NativeEvent::CorrectionSet(result) => result,
             other => panic!("{self:?}: a setting's event, got {other:?}"),
         }
     }
@@ -2626,9 +2683,9 @@ fn same_outcome(blocking: &Result<(), Error>, native: &Result<(), Error>) -> boo
     }
 }
 
-#[test]
-fn a_native_power_up_setup_and_stream_perform_the_blocking_devices_operations() {
-    let settings = [
+/// The settings the native power-up test makes on both paths, in order.
+fn settings() -> [Setting; 32] {
+    [
         Setting::Rate(1_000_000),
         // Below 250 MHz without a lock: the low-LO sweep and its NCO fallback, then the
         // minimal LO found reused.
@@ -2656,7 +2713,38 @@ fn a_native_power_up_setup_and_stream_perform_the_blocking_devices_operations() 
         // FIR.
         Setting::RxHz(150_000_000),
         Setting::RxRate(5_000_000),
-    ];
+        // The corrections; the IQ ones also reach the stream create's DSP writes below.
+        Setting::RxDcTrim(0x41, 0x05),
+        Setting::RxIp2Trim(0x7f, 0),
+        Setting::RxAutoDc(false),
+        Setting::RxAutoDc(true),
+        Setting::TxDcOffset(-2048, 2047),
+        Setting::TxConstant(Some(Complex::new(-30_000, 1_234))),
+        Setting::TxConstant(None),
+        Setting::RxIq(RxIqCorrection {
+            i_gain: 2000,
+            q_gain: 2047,
+            phase: -300,
+        }),
+        Setting::TxIq(TxIqCorrection {
+            i_gain: 2047,
+            q_gain: 2100,
+            phase: 250,
+        }),
+        Setting::RxIqImbalance(IqImbalance {
+            amplitude: 30_000,
+            phase: -2_000,
+        }),
+        Setting::TxIqImbalance(IqImbalance {
+            amplitude: -12_000,
+            phase: 1_500,
+        }),
+    ]
+}
+
+#[test]
+fn a_native_power_up_setup_and_stream_perform_the_blocking_devices_operations() {
+    let settings = settings();
     for revision in [BoardRevision::Rev1, BoardRevision::Rev3] {
         let (mut device, blocking) = unprobed_device(revision);
         let (mut reactor, wake) = reactor();
@@ -3348,4 +3436,104 @@ fn a_transfer_failure_a_machine_would_ignore_still_ends_the_operation_with_its_a
         "the session ended"
     );
     native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+/// A powered, set-up blocking device on `board` (opened without the front-end probe), with
+/// both chains' rate and tuning.
+fn set_up_on(board: SimBoard) -> (Device, Arc<Mutex<SimBoard>>) {
+    let (bus, board) = usb_bus(board);
+    let mut device = Device::builder(bus)
+        .front_end(FrontEndSelection::None)
+        .open()
+        .unwrap();
+    device.set_sample_rate(20_000_000).unwrap();
+    device.set_rx_frequency(1_000_000_000).unwrap();
+    device.set_tx_frequency(1_200_000_000).unwrap();
+    (device, board)
+}
+
+/// Creates `config`'s group, starts it, mutes `mute` and stops it, on a blocking device
+/// set up on `board()` and on a native handle a second such device handed over to; each
+/// step's operations compared.
+fn group_on_both_paths(board: impl Fn() -> SimBoard, config: StreamsConfig, mute: TxMute) {
+    let (mut device, blocking) = set_up_on(board());
+    let mut expected = Vec::new();
+    let start = mark(&blocking);
+    device.create_streams(config).unwrap();
+    expected.push(operations(&blocking, start));
+    let start = mark(&blocking);
+    device.start_streams().unwrap();
+    expected.push(operations(&blocking, start));
+    let start = mark(&blocking);
+    device.set_tx_mute(mute).unwrap();
+    expected.push(operations(&blocking, start));
+    let start = mark(&blocking);
+    device.stop_streams().unwrap();
+    expected.push(operations(&blocking, start));
+
+    let (mut device, board) = set_up_on(board());
+    let handed = device.hand_over_usb().unwrap();
+    drop(device);
+    let (mut reactor, wake) = reactor();
+    let mut native = handed
+        .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
+        .unwrap();
+    for (step, expected) in ["create", "start", "mute", "stop"]
+        .into_iter()
+        .zip(expected)
+    {
+        let start = mark(&board);
+        let now = Instant::now();
+        match step {
+            "create" => native.start_create_streams(config, now),
+            "start" => native.start_streams(now),
+            "mute" => native.start_tx_mute(mute, now),
+            _ => native.start_stop_streams(now),
+        }
+        .unwrap();
+        let event = settle(&mut native, &mut reactor);
+        assert!(
+            matches!(
+                event,
+                NativeEvent::StreamsCreated(Ok(()))
+                    | NativeEvent::StreamsStarted(Ok(()))
+                    | NativeEvent::TxMuted(Ok(()))
+                    | NativeEvent::StreamsStopped(Ok(()))
+            ),
+            "{config:?} {step}: {event:?}"
+        );
+        assert!(!expected.is_empty(), "{config:?} {step} reached the board");
+        assert_eq!(operations(&board, start), expected, "{config:?} {step}");
+    }
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_native_group_on_the_extended_tx_core_performs_the_blocking_groups_operations() {
+    // Both channels each way, TX on the 12-bit wire: the extended core's reset, front-end
+    // setup and lane map at create, its own mute register, the two-channel lane count at
+    // start.
+    let both = StreamsConfig::rx(rx_config().with_channels(RxChannels::Both))
+        .with_tx(
+            TxConfig::new(1024, HostFormat::Ci16, WireFormat::Ci12).with_channels(TxChannels::Both),
+        )
+        .with_sync(SyncMode::All);
+    let extended = || SimBoard::new(BoardRevision::Rev3).with_extended_tx_core();
+    group_on_both_paths(extended, both, TxMute::A);
+    // One channel alone on the extended core: its lane map copies it onto lanes 2 and 3.
+    let channel1 = StreamsConfig::tx(tx_config().with_channels(TxChannels::Channel1));
+    group_on_both_paths(extended, channel1, TxMute::Both);
+}
+
+#[test]
+fn a_native_group_on_the_original_core_uses_the_lanes_the_blocking_one_does() {
+    // Channel 1 swaps the lanes and mutes lane A at create; a mute keeps the swap.
+    let fresh = || SimBoard::new(BoardRevision::Rev3);
+    let channel1 = StreamsConfig::tx(tx_config().with_channels(TxChannels::Channel1));
+    group_on_both_paths(fresh, channel1, TxMute::Neither);
+    let both = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config().with_channels(TxChannels::Both))
+        .with_sync(SyncMode::All);
+    group_on_both_paths(fresh, both, TxMute::B);
 }

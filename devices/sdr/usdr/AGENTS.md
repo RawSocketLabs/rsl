@@ -14,9 +14,10 @@ opt-in. The USB I²C and register/SPI machines run in the blocking bus, and feat
 exposes the unstable `NativeUsb` (`UsbBus::into_native`, or `Device::into_native` from a
 powered device), whose generic executor runs any portable sequence: the board's own
 (temperature, identity, reference switch, power-up behind the thermal policy and
-power-down, sample rate, tuning, bandwidths, gains, paths, and a stream group's create,
-start, mute, throttle and stop, the RF chains' power, tuning and DC calibration
-included), so a board goes from open to streaming with no blocking `Device`; plus the
+power-down, sample rate, tuning, bandwidths, gains, paths, the corrections and TX
+constant generator, and a stream group's create, start, mute, throttle and stop on
+either channel or both and either TX core, the RF chains' power, tuning and DC
+calibration included), so a board goes from open to streaming with no blocking `Device`; plus the
 RX/TX streams at the transport, `ManagedUsb`, a synchronous runner over it, and
 `AsyncUsb`, a runtime-free asynchronous one. Generic USB offers bounded
 reap/filed-only completion primitives and an exclusive Mio `Readiness` (`usb` feature
@@ -75,9 +76,9 @@ Each layer calls only the ones below it.
   registers (RX DMA, front end, sync unit, TX core control) as `EngineSequence`, which
   the board and `NativeUsb` run; `fpga/stream.rs` the burst maths and burst-format word,
   `fpga/tx_stream.rs` packet announcement, status decoding and the TX create's gateware
-  and block-size checks; `StreamsConfig::check_on` (`board/stream.rs`) the board's
-  refusals before any I/O, and `StreamsConfig::check` those narrowed to what `NativeUsb`'s
-  group runs (channel 0 on the original TX core).
+  and block-size checks; `StreamsConfig::check_on` (`board/stream.rs`) the refusals
+  before any I/O that the board and `NativeUsb`'s group both make, and `TxLaneUse`
+  (`board/tx_stream.rs`) how a TX stream uses the core's lanes, which both keep.
 - `src/multi.rs`: `MultiDevice`, libusdr's multi-device aggregate (`device/mdev.c`): a
   master and members, each a `Device`; settings broadcast through any `Device` method,
   one stream group across the devices (created stream by stream, started part by part
@@ -92,8 +93,9 @@ Each layer calls only the ones below it.
   power-down, rate, tune, gains, paths, the RF chains' part of a stream's create and
   destroy) are portable machines (`src/portable/radio`), which `Board` runs with
   `Board::run_radio`/`run_script`, lending its `Radio` state and taking it back; the stream
-  engine's are `portable/stream.rs`'s; the RX and TX controls, corrections, calibration
-  and streaming that remain blocking code run beside them. `board/board.rs` holds
+  engine's are `portable/stream.rs`'s; the corrections and the TX constant generator are
+  portable scripts (the LMS6002D's trims, `portable/fpga.rs`'s DSP-port words); the
+  calibration and streaming that remain blocking code run beside them. `board/board.rs` holds
   the `Board` struct (bus, `Radio`, the DSP corrections, reference, stream group, front
   end), its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
@@ -120,8 +122,8 @@ Each layer calls only the ones below it.
   the port words, GPO words and the decimator FIR tables are portable, `portable/fpga.rs`
   and `portable/fir_tables.rs`), the RX stream engine (`stream`:
   front end, DMA, sync), the TX stream cores (`tx_stream`: the original core's
-  announcement and status, the extended core's front end, lane map and cached
-  announcement), and
+  announcement and status, the extended core's cached announcement; its front-end
+  commands and lane map are `portable/stream.rs`'s `EngineSequence`s), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
 - `src/flash/`: the public boot-flash maintenance API. `Flash` owns a bus of its own (no
@@ -197,8 +199,9 @@ Each layer calls only the ones below it.
   power-rail machine (`power.rs`), Si5332 register values, divider maths and clock machines
   (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), the
   LMS6002D's register values, cache, straight-line operations as `Script`s, PLL tuning
-  and DC calibrations (`lms6002d/`), the gateware's GPO and DSP-port words and FIR loads
-  (`fpga.rs`, `fir_tables.rs`), `Script` (`script.rs`, a fixed action list), the board's
+  and DC calibrations (`lms6002d/`), the gateware's GPO and DSP-port words, FIR loads,
+  correction writes and constant generator (`fpga.rs`, `fir_tables.rs`; the IQ terms'
+  trigonometry stays host-side in `fpga/phy.rs`), `Script` (`script.rs`, a fixed action list), the board's
   RF state and composite machines (`radio/`: `Radio`; `run.rs`'s `Run` drives a
   composite's parts with libusdr's stop, carry-on-and-report and ignore failure
   policies; power, rate, tune, gain, path and stream parts), and USB framing plus the I²C
@@ -255,9 +258,10 @@ Each layer calls only the ones below it.
   `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the calling thread;
   `asynchronous.rs` (`AsyncUsb`) a reactor thread of its own behind futures woken through
   `core::task::Waker`. Its unit tests use a socket source, not usbfs; only the opt-in
-  `usb_hardware` test reaches real queues. A native power-up probes no front end; the
-  front-end controls, corrections, calibration and the extended TX core stay with the
-  blocking device; browser integration remains open.
+  `usb_hardware` test reaches real queues. Its corrections (`handle/correction.rs`) run
+  the same scripts as the board's. A native power-up probes no front end; the front-end
+  controls and calibration stay with the blocking device; browser integration remains
+  open.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -342,9 +346,8 @@ Each layer calls only the ones below it.
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
   `oracle/tests/calibration_parity.rs`), and so is the extended TX core and both
   directions' second channels (`oracle/tests/{tx_stream,stream_formats}_parity.rs`);
-  not ported natively are the front-end probe and controls, the corrections and
-  calibration, and second channels and the extended TX core in a native (`NativeUsb`)
-  stream group (channel 0 on the original TX core); not ported at all are the
+  not ported natively (`NativeUsb`) are the front-end probe and controls, the
+  calibration and a TX stream's remap (`set_tx_channels`); not ported at all are the
   gateware FFT format and lane bifurcation (no gateware evidence), and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment

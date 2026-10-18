@@ -14,13 +14,13 @@ use super::super::window::Windowed;
 use super::super::worker::StreamCommand;
 use super::stream::StreamOperation;
 use super::{NativeEvent, NativeUsb, Pending, Progress, SequenceOperation, StreamState, Wait};
-use crate::board::RxThrottle;
+use crate::board::{RxThrottle, TxLaneUse};
 use crate::error::Error;
 use crate::fpga::{self, BurstPlan, IdentityRead, Phy};
 use crate::lowlevel::BusError;
 use crate::portable::radio::Chain;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
-use crate::stream::{StreamsConfig, SyncMode, TxMute};
+use crate::stream::{StreamsConfig, SyncMode, TxMute, WireFormat};
 
 /// The stream group the handle holds: which streams joined it and how it starts.
 #[derive(Clone, Copy, Debug)]
@@ -31,9 +31,10 @@ pub(super) struct NativeGroup {
     tx: bool,
     /// How the group starts.
     mode: SyncMode,
-    /// The TX core's muted lanes, which starting the group applies: lane B from the TX
-    /// stream's create, as the blocking stream is created, until a mute changes it.
-    tx_mute: TxMute,
+    /// How the TX stream uses the TX core's lanes, which starting the group applies: as
+    /// the blocking stream is created for its channels, until a mute changes it (on the
+    /// original core).
+    tx_lanes: TxLaneUse,
     /// The group has started.
     started: bool,
 }
@@ -105,6 +106,8 @@ pub(super) struct GroupRun {
     kind: GroupKind,
     /// How a group it creates starts.
     mode: SyncMode,
+    /// How the TX stream it creates uses the TX core's lanes.
+    tx_lanes: TxLaneUse,
     /// The steps not yet begun.
     steps: VecDeque<GroupStep>,
     /// The step in flight.
@@ -119,6 +122,7 @@ impl GroupRun {
         Self {
             kind,
             mode,
+            tx_lanes: TxLaneUse::default(),
             steps,
             current: Current::Idle(now),
             error: None,
@@ -146,10 +150,14 @@ impl NativeUsb {
     /// stream, the RF chain's part (RX: the receiver powered, tuned to 320 MHz if no
     /// frequency was set, its DC offsets calibrated and the TX PLL tuned back; TX: the
     /// transmitter powered), then the engine's setup (RX: the DMA's liveness check and reset,
-    /// the front end's and DMA's burst configuration and the sync unit held stopped; TX:
-    /// the gateware's minimum build, then the sync unit held stopped), then the stream's
-    /// transport opens, the stream joins the group (TX with lane B muted), and the DSP
-    /// chain's port is written as the blocking create writes it (RX: its IQ correction
+    /// the front end's and DMA's burst configuration for the stream's channels and the
+    /// sync unit held stopped; TX: on the extended TX core its front-end reset, the
+    /// gateware's minimum build, on the extended core its front end set up for the
+    /// stream's lanes and sample width, then the sync unit held stopped), then the
+    /// stream's transport opens, the stream joins the group (TX using the core's lanes as
+    /// the blocking stream does: on the original core one channel mutes the other lane),
+    /// and the DSP chain's port is written as the blocking create writes it (RX: its IQ
+    /// correction
     /// again; TX: the constant generator off, then its IQ correction again, the
     /// corrections a handed-over device carried on). [`poll`](Self::poll) reports
     /// [`NativeEvent::StreamsCreated`]; RX blocks then arrive as
@@ -164,8 +172,8 @@ impl NativeUsb {
     /// Before any I/O, refusing it as the blocking device does: [`Error::Busy`] if an
     /// operation is pending; [`Error::AlreadyStreaming`] while a group exists or either
     /// stream is open, or failed and not yet closed, at the transport; [`Error::NoStreams`],
-    /// [`Error::UnsupportedSync`], [`Error::UnsupportedTxCore`] and the format and packet
-    /// refusals of [`Device::create_streams`](crate::Device::create_streams);
+    /// [`Error::UnsupportedSync`] and the channel, format and packet refusals of
+    /// [`Device::create_streams`](crate::Device::create_streams);
     /// [`Error::Stream`] if the handle is closed.
     pub fn start_create_streams(
         &mut self,
@@ -177,13 +185,14 @@ impl NativeUsb {
         {
             return Err(Error::AlreadyStreaming);
         }
-        config.check(self.session.board.chains.extended_tx_core)?;
+        let chains = self.session.board.chains;
+        config.check_on(chains)?;
         let mut steps = VecDeque::new();
         if let Some(rx) = config.rx {
             steps.push_back(GroupStep::Radio(Chain::Rx, true));
             // libusdr checks the packet size between the DMA reset and the configuration.
             steps.push_back(engine(EngineSequence::rx_reset()));
-            match BurstPlan::for_packet(rx.samples_per_packet, rx.wire) {
+            match BurstPlan::for_stream(rx.samples_per_packet, rx.wire, rx.channels) {
                 Some(plan) => {
                     let format = plan.rx_format(rx.channels);
                     steps.push_back(engine(EngineSequence::rx_configure(&format)));
@@ -200,26 +209,43 @@ impl NativeUsb {
                 self.session.board.rx_iq_imbalance,
             )));
         }
+        let mut tx_lanes = TxLaneUse::default();
         if let Some(tx) = config.tx {
+            let extended = chains.extended_tx_core;
+            tx_lanes = TxLaneUse::created(tx.channels, extended);
             steps.push_back(GroupStep::Radio(Chain::Tx, true));
+            if extended {
+                steps.push_back(engine(Phy::tx_extended_reset_writes()));
+            }
             let gate = SequenceOperation::TxGate(IdentityRead::default());
             steps.push_back(GroupStep::Sequence(gate));
+            if extended {
+                let twelve_bit = tx.wire == WireFormat::Ci12;
+                let map = tx.channels.lane_map();
+                steps.push_back(engine(EngineSequence::extended_tx_configure(
+                    map, twelve_bit,
+                )));
+            }
             steps.push_back(engine(EngineSequence::new().sync(SyncTrigger::Stop)));
-            steps.push_back(match fpga::tx_block_bytes(tx.samples_per_packet) {
-                Ok(block_bytes) => GroupStep::Stream(
-                    StreamOperation::TxOpen,
-                    StreamCommand::TxOpen {
-                        block_bytes,
-                        sample_bytes: fpga::TX_SAMPLE_BYTES,
-                    },
-                ),
-                Err(error) => GroupStep::Fail(error),
-            });
+            let sample_bytes = tx.sample_bytes();
+            steps.push_back(
+                match fpga::stream_block_bytes(tx.samples_per_packet, sample_bytes) {
+                    Ok(block_bytes) => GroupStep::Stream(
+                        StreamOperation::TxOpen,
+                        StreamCommand::TxOpen {
+                            block_bytes,
+                            sample_bytes,
+                        },
+                    ),
+                    Err(error) => GroupStep::Fail(error),
+                },
+            );
             steps.push_back(engine(Phy::tx_create_writes(
                 self.session.board.tx_iq_imbalance,
             )));
         }
-        let run = GroupRun::new(GroupKind::Create, config.sync, steps, now);
+        let mut run = GroupRun::new(GroupKind::Create, config.sync, steps, now);
+        run.tx_lanes = tx_lanes;
         self.pending = Some(Pending::Group(run));
         Ok(())
     }
@@ -245,8 +271,8 @@ impl NativeUsb {
             return Err(Error::AlreadyStreaming);
         }
         let trigger = group.mode.trigger(group.rx, group.tx)?;
-        let tx_mute = group.tx.then_some(group.tx_mute.bits());
-        let start = engine(EngineSequence::start(group.rx, tx_mute, trigger));
+        let tx_lanes = group.tx.then(|| group.tx_lanes.lanes());
+        let start = engine(EngineSequence::start_lanes(group.rx, tx_lanes, trigger));
         let run = GroupRun::new(GroupKind::Start, group.mode, VecDeque::from([start]), now);
         self.pending = Some(Pending::Group(run));
         Ok(())
@@ -275,8 +301,10 @@ impl NativeUsb {
 
     /// Starts muting the TX core's lanes as `mute` says, as
     /// [`Device::set_tx_mute`](crate::Device::set_tx_mute) does (libusdr's stream option
-    /// `"mute"`): the group keeps the setting, which its start applies, and the core
-    /// takes it now. [`poll`](Self::poll) reports [`NativeEvent::TxMuted`].
+    /// `"mute"`): on the original TX core the group keeps the setting, which its start
+    /// applies, and the core takes it now; on the extended core it goes to the core's
+    /// front end, raw, and the start mutes nothing. [`poll`](Self::poll) reports
+    /// [`NativeEvent::TxMuted`].
     ///
     /// # Errors
     ///
@@ -284,11 +312,17 @@ impl NativeUsb {
     /// without a TX stream in the group; [`Error::Stream`] if the handle is closed.
     pub fn start_tx_mute(&mut self, mute: TxMute, now: Instant) -> Result<(), Error> {
         self.refuse_group_operation()?;
+        let extended = self.session.board.chains.extended_tx_core;
         let Some(group) = self.group.as_mut().filter(|group| group.tx) else {
             return Err(Error::NotStreaming);
         };
-        group.tx_mute = mute;
-        let update = engine(EngineSequence::new().update_tx_flags(mute.bits()));
+        let update = if extended {
+            EngineSequence::new().extended_tx_mute(mute.bits().into())
+        } else {
+            group.tx_lanes.mute = mute;
+            EngineSequence::new().update_tx_lanes(group.tx_lanes.lanes())
+        };
+        let update = engine(update);
         let run = GroupRun::new(GroupKind::TxMute, group.mode, VecDeque::from([update]), now);
         self.pending = Some(Pending::Group(run));
         Ok(())
@@ -440,7 +474,7 @@ impl NativeUsb {
                     };
                     let result = self.settle_stream(operation, result);
                     if result.is_ok() {
-                        self.join(run.mode, operation);
+                        self.join(run.mode, run.tx_lanes, operation);
                     }
                     result
                 }
@@ -454,14 +488,14 @@ impl NativeUsb {
         }
     }
 
-    /// A stream whose transport opened joins the group, made to start with `mode` if
-    /// this is its first stream.
-    fn join(&mut self, mode: SyncMode, operation: StreamOperation) {
+    /// A stream whose transport opened joins the group, made to start with `mode` and a
+    /// TX stream's `tx_lanes` if this is its first stream.
+    fn join(&mut self, mode: SyncMode, tx_lanes: TxLaneUse, operation: StreamOperation) {
         let group = || NativeGroup {
             rx: false,
             tx: false,
             mode,
-            tx_mute: TxMute::B,
+            tx_lanes,
             started: false,
         };
         match operation {

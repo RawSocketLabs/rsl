@@ -36,6 +36,11 @@ impl RxTrim {
     pub fn code(self) -> u8 {
         self.0.value()
     }
+
+    /// The code's seven bits, as the LMS6002D's trim fields take them.
+    pub(crate) const fn bits(self) -> u7 {
+        self.0
+    }
 }
 
 /// An RX IQ imbalance correction, in the terms of libusdr's `rx/phgaincorr`. The FPGA's RX
@@ -59,7 +64,7 @@ pub struct RxIqCorrection {
 impl RxIqCorrection {
     /// The imbalance this correction asks for (`_phgaincorr_set`, then
     /// `usdr_rx_iqimb_set`); see [`iq_imbalance`].
-    fn imbalance(self) -> IqImbalance {
+    pub(crate) fn imbalance(self) -> IqImbalance {
         iq_imbalance(self.i_gain, self.q_gain, self.phase)
     }
 }
@@ -85,7 +90,7 @@ pub struct TxIqCorrection {
 impl TxIqCorrection {
     /// The imbalance this correction asks for (`_phgaincorr_set`, then
     /// `usdr_tx_iqimb_set`); see [`iq_imbalance`].
-    fn imbalance(self) -> IqImbalance {
+    pub(crate) fn imbalance(self) -> IqImbalance {
         iq_imbalance(self.i_gain, self.q_gain, self.phase)
     }
 }
@@ -145,7 +150,7 @@ impl TxDcOffset {
     }
 
     /// The offset's 12 two's-complement bits.
-    fn bits(self) -> u12 {
+    pub(crate) fn bits(self) -> u12 {
         u12::new(u16::from_ne_bytes(self.0.to_ne_bytes()) & 0xfff)
     }
 }
@@ -155,7 +160,7 @@ impl Board {
     pub(crate) fn set_rx_dc_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
         run_sequence(
             self.bus.as_mut(),
-            &mut self.radio.lms.set_rx_dc_trim(i.0, q.0),
+            &mut self.radio.lms.set_rx_dc_trim(i.bits(), q.bits()),
         )
     }
 
@@ -163,13 +168,13 @@ impl Board {
     pub(crate) fn set_rx_ip2_trim(&mut self, i: RxTrim, q: RxTrim) -> Result<(), Error> {
         run_sequence(
             self.bus.as_mut(),
-            &mut self.radio.lms.set_rx_ip2_trim(i.0, q.0),
+            &mut self.radio.lms.set_rx_ip2_trim(i.bits(), q.bits()),
         )
     }
 
     /// Switches the RX chain's automatic DC correction (`usdr_set_rxdccorr`).
     pub(crate) fn set_rx_auto_dc_correction(&mut self, enabled: bool) -> Result<(), Error> {
-        Phy::Rx.set_dc_correction(self.bus.as_mut(), enabled)
+        self.run_script(Phy::Rx.set_dc_correction(enabled))
     }
 
     /// Records and writes the RX IQ imbalance correction (`usdr_rx_iqimb_set`, then
@@ -182,12 +187,12 @@ impl Board {
     /// (libusdr's `rx_corr` set, then `usdr_rxupdate_cal`).
     pub(crate) fn set_rx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
         self.corrections.rx = imbalance;
-        Phy::Rx.set_iq_correction(self.bus.as_mut(), imbalance.rx_terms())
+        self.run_script(Phy::Rx.set_iq_correction(imbalance.rx_terms()))
     }
 
     /// Writes the TX chain's DC offsets (`usdr_tx_dccorr`).
     pub(crate) fn set_tx_dc_offset(&mut self, i: TxDcOffset, q: TxDcOffset) -> Result<(), Error> {
-        Phy::set_tx_dc_offset(self.bus.as_mut(), i.bits(), q.bits())
+        self.run_script(Phy::set_tx_dc_offset(i.bits(), q.bits()))
     }
 
     /// Writes the TX IQ imbalance correction (`usdr_tx_iqimb_set`, then
@@ -201,7 +206,7 @@ impl Board {
     /// (libusdr's `tx_corr` set, then `usdr_txupdate_cal`).
     pub(crate) fn set_tx_iq_imbalance(&mut self, imbalance: IqImbalance) -> Result<(), Error> {
         self.corrections.tx = imbalance;
-        Phy::Tx.set_iq_correction(self.bus.as_mut(), imbalance.tx_terms())
+        self.run_script(Phy::Tx.set_iq_correction(imbalance.tx_terms()))
     }
 }
 

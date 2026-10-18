@@ -22,3 +22,5 @@ pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use debug::DebugChip;
 pub(crate) use stream::Direction;
 pub use stream::{RxPacket, RxThrottle};
+#[cfg(all(feature = "mio", target_os = "linux"))]
+pub(crate) use tx_stream::TxLaneUse;

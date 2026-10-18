@@ -1,9 +1,11 @@
 //! The public reactor-driven handle over the native adapter: one generic executor runs the
 //! TMP114 read and portable sequences (gateware identity, reference-clock switch, the
-//! board's RF operations: `radio`), the RX and TX streams' operations at the transport
+//! board's RF operations: `radio`; its corrections: `correction`), the RX and TX streams'
+//! operations at the transport
 //! (`stream`), and the stream group's create, start and stop, which compose them
 //! (`group`).
 
+mod correction;
 mod group;
 mod radio;
 mod stream;
@@ -154,6 +156,9 @@ pub enum NativeEvent {
     GainSet(Result<(), Error>),
     /// A path was selected, or failed.
     PathSet(Result<(), Error>),
+    /// A correction (a trim, the RX DC correction's switch, a DC offset, an IQ
+    /// correction) or the TX constant generator was set, or failed.
+    CorrectionSet(Result<(), Error>),
     /// The session ended through a failure no operation or stream reported: the worker
     /// panicked or stopped answering, or the device hung up or failed while idle. The
     /// handle is closed; its worker cleans up and reports through
@@ -328,9 +333,10 @@ enum StreamState {
 ///
 /// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
 /// the reference clock, powers the board up behind a thermal policy and down, sets the
-/// sample rate, tunes, sets bandwidths, gains and paths, creates, starts and stops a stream
-/// group (the RF chains' power, tuning and DC calibration, the engine registers and DSP
-/// corrections), mutes the TX core's lanes and throttles RX bursts, all as
+/// sample rate, tunes, sets bandwidths, gains, paths, the corrections and the TX constant
+/// generator, creates, starts and stops a stream group on either channel or both and
+/// either TX core (the RF chains' power, tuning and DC calibration, the engine registers
+/// and DSP corrections), mutes the TX core's lanes and throttles RX bursts, all as
 /// [`Device`](crate::Device) does them, with the same portable machines, and runs the RX
 /// and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed and
 /// throttled as the blocking bus frames them). It keeps the board's RF state as the

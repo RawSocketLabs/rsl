@@ -350,9 +350,9 @@ pub fn clock_reference_switch(external: bool, state: u8) -> Result<usize, &'stat
     )
 }
 
-/// Runs the real stream-engine setup for one 1024-sample `ci16` burst, then a duplex start
-/// and the RX and TX stops, answering the DMA status read with `status`; returns the
-/// register accesses made.
+/// Runs the real stream-engine setup for one 1024-sample `ci16` burst, then a duplex start,
+/// the RX and TX stops and an extended TX core's two-channel `ci12` setup, answering the
+/// DMA status read with `status`; returns the register accesses made.
 ///
 /// # Errors
 ///
@@ -363,9 +363,10 @@ pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
     for sequence in [
         EngineSequence::rx_reset(),
         EngineSequence::rx_configure(&format),
-        EngineSequence::start(true, Some(2), SyncTrigger::Duplex),
+        EngineSequence::start_lanes(true, Some(one_channel(2)), SyncTrigger::Duplex),
         EngineSequence::new().run_rx(false),
         EngineSequence::new().stop_tx(),
+        EngineSequence::extended_tx_configure(&[0, 1], true),
     ] {
         accesses += engine(sequence, status)?;
     }
@@ -373,8 +374,8 @@ pub fn stream_engine(status: u32) -> Result<usize, &'static str> {
 }
 
 /// Runs the real stream controls: a sync write for every trigger, the throttle on and off,
-/// the host-ready signal, a TX mute, a channel-1 lane update and a TX create's five DSP-port
-/// writes; returns the register accesses made.
+/// the host-ready signal, a TX mute, a channel-1 lane update, an extended TX core's mute
+/// and a TX create's five DSP-port writes; returns the register accesses made.
 ///
 /// # Errors
 ///
@@ -394,20 +395,49 @@ pub fn stream_controls() -> Result<usize, &'static str> {
         .throttle_rx(Some((1, 2)))
         .throttle_rx(None)
         .signal_rx_ready()
-        .update_tx_flags(3)
+        .update_tx_lanes(one_channel(3))
         .update_tx_lanes(TxLanes {
             mute: 1,
             swap: true,
             channels_log2: 0,
-        });
+        })
+        .extended_tx_mute(3);
     let mut accesses = engine(controls, 0)?;
     for trigger in triggers {
         controls = EngineSequence::new().sync(trigger);
         accesses += engine(controls, 0)?;
     }
-    let ports = EngineSequence::port_writes(57, &[0x0700_0000, 1, 2, 3, 4]);
+    let ports = EngineSequence::port_writes(57, &[Phy::generator_off_word(), 1, 2, 3, 4]);
     accesses += engine(ports, 0)?;
     Ok(accesses)
+}
+
+/// One unswapped TX channel muting `mute`.
+const fn one_channel(mute: u8) -> TxLanes {
+    TxLanes {
+        mute,
+        swap: false,
+        channels_log2: 0,
+    }
+}
+
+/// Runs the real DSP corrections: the RX DC correction, both chains' IQ correction terms,
+/// the TX DC offset and the TX constant generator on and off; returns the accesses made.
+#[must_use]
+pub fn dsp_corrections() -> usize {
+    let mut board = RfBoard::new();
+    let scripts = [
+        Phy::Rx.set_dc_correction(true),
+        Phy::Rx.set_iq_correction([1, -1, 2, -2]),
+        Phy::Tx.set_iq_correction([3, -3, 4, -4]),
+        Phy::set_tx_dc_offset(u12::new(0x7ff), u12::new(0x800)),
+        Phy::set_tx_constant(Some([1000, -1000])),
+        Phy::set_tx_constant(None),
+    ];
+    scripts
+        .into_iter()
+        .map(|mut script| board.run(&mut script).0)
+        .sum()
 }
 
 /// Drives one engine sequence to its end, answering reads with `status`.
@@ -778,10 +808,11 @@ mod tests {
     #[test]
     fn the_exact_source_witness_runs_the_stream_engine_sequences() {
         // Setup: status, two DMA writes, four front-end commands, two DMA sizes, the sync;
-        // start: RX run (two), TX start (three), the sync; RX halt (two); TX stop (one).
-        assert_eq!(stream_engine(0), Ok(10 + 6 + 2 + 1));
+        // start: RX run (two), TX start (three), the sync; RX halt (two); TX stop (one);
+        // the extended TX setup: mute, expand, width, four shuffle stages.
+        assert_eq!(stream_engine(0), Ok(10 + 6 + 2 + 1 + 7));
         assert_eq!(stream_engine(0xffff_ffff), Err("RX DMA engine"));
-        assert_eq!(stream_controls(), Ok(5 + 8 + 5));
+        assert_eq!(stream_controls(), Ok(6 + 8 + 5));
     }
 
     #[test]
@@ -844,6 +875,8 @@ mod tests {
         assert!(lms_controls() > 0);
         assert!(rf_paths().is_ok_and(|actions| actions > 0));
         assert_ne!(gateware_words(), 0);
+        // One switch, four terms twice, one offset, the generator on (five) and off (one).
+        assert_eq!(dsp_corrections(), 1 + 4 + 4 + 1 + 5 + 1);
     }
 
     #[test]

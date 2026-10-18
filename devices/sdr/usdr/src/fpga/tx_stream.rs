@@ -16,7 +16,6 @@ use bnb::{bitfield, u15};
 use super::gpio::FPGA;
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
-use crate::stream::{TxChannels, WireFormat};
 
 /// The oldest gateware build libusdr streams TX from (`MINIM_FWID_COMPAT`), as the FPGA's
 /// `USR_ACCESS2` stamps it.
@@ -31,16 +30,6 @@ const REG_TX_STATUS: u32 = 28;
 /// The most bytes one TX packet takes: the core's FIFO (`MAX_TX_FIFO_SZ`, which
 /// `sfe_tx4_mtu_get` reports).
 pub(crate) const MAX_TX_PACKET_BYTES: u32 = 126_976;
-
-/// Bytes one `ci16` sample takes on the wire.
-#[cfg_attr(
-    not(all(feature = "mio", target_os = "linux")),
-    allow(
-        dead_code,
-        reason = "only NativeUsb's stream group (feature `mio`) uses it"
-    )
-)]
-pub(crate) const TX_SAMPLE_BYTES: u32 = 4;
 
 /// The largest timestamp the original core takes: 47 bits.
 pub(crate) const MAX_TX_TIMESTAMP: u64 = (1 << 47) - 1;
@@ -60,23 +49,6 @@ pub(crate) fn check_tx_gateware(build: u32) -> Result<(), Error> {
         return Err(Error::OutdatedGateware(build));
     }
     Ok(())
-}
-
-/// The transport block for `samples_per_packet` `ci16` samples; libusdr fails a packet over
-/// the core's FIFO at create (`sfe_tx4_mtu_get`).
-///
-/// # Errors
-///
-/// [`Error::UnsupportedPacketSize`] for a packet over [`MAX_TX_PACKET_BYTES`].
-#[cfg_attr(
-    not(all(feature = "mio", target_os = "linux")),
-    allow(
-        dead_code,
-        reason = "only NativeUsb's stream group (feature `mio`) uses it"
-    )
-)]
-pub(crate) fn tx_block_bytes(samples_per_packet: u32) -> Result<u32, Error> {
-    stream_block_bytes(samples_per_packet, TX_SAMPLE_BYTES)
 }
 
 /// The transport block for `samples_per_packet` samples of `sample_bytes` each, every
@@ -197,120 +169,11 @@ pub(crate) fn push_tx(bus: &mut dyn Bus, samples: u32, time: Option<u64>) -> Res
         .writing(FPGA, REG_TX_PUSH)
 }
 
-/// The extended TX core's front-end command register (`CSR_TFE4_BASE`,
-/// `VIRT_CFG_SFX_BASE + 3 * 256`): a command in bits 31:24, its value below
-/// (`MAKE_EXFE_REG`).
-const REG_EXTENDED_FRONT_END: u32 = 0x1_0300;
-
 /// The first of the extended core's four announcing registers
 /// (`M2PCI_REG_WR_TXDMA_CFG0`): bytes less one, then bursts and samples, then the
 /// timestamp's high and low halves; the last write announces the packet. The same
 /// addresses read back as the status words.
 const REG_EXTENDED_PUSH: u32 = 28;
-
-/// An extended TX front-end command (`exfe_rx_cmd_regs` in `sfe_rx_4.c`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ExtendedCommand {
-    /// The lanes the stream's channels expand to, as a power of two (`EXFE_CMD_EXPAND`).
-    Expand = 0x0d,
-
-    /// The sample width: 0 for 16 bits, 1 for 12 (`EXFE_CMD_TXFMT12`).
-    Format12 = 0x0e,
-
-    /// The mute mask, as libusdr's `"mute"` option passes it (`EXFE_CMD_MUTE`).
-    Mute = 0x0f,
-
-    /// The first of four lane-shuffle stages (`EXFE_CMD_SHUFFLE_0`).
-    Shuffle0 = 0x10,
-}
-
-/// The extended core's front end, set up for a stream as libusdr's TX create does
-/// (`initialize_stream_tx_32` with `CORE_EXFETX_DMA32_R0_2`): unmuted, then expanded to
-/// the stream's lanes and sample width, then its channels mapped onto the core's lanes
-/// (`exfe_tx4_mute`, `exfe_tx4_config`, `exfe_trx4_update_chmap`). The uSDR's core has
-/// four lanes; a stream of `channels` complex `wire` samples uses two per channel.
-pub(crate) fn configure_extended_tx(
-    bus: &mut dyn Bus,
-    channels: TxChannels,
-    wire: WireFormat,
-) -> Result<(), Error> {
-    let expand = match channels.count() {
-        1 => 1,
-        _ => 2,
-    };
-    let twelve_bit = u32::from(wire == WireFormat::Ci12);
-    mute_extended_tx(bus, 0)?;
-    extended_command(bus, ExtendedCommand::Expand, expand)?;
-    extended_command(bus, ExtendedCommand::Format12, twelve_bit)?;
-    map_extended_tx(bus, channels)
-}
-
-/// Mutes the extended core's lanes in `mask`, written as libusdr's `"mute"` option writes
-/// it (`exfe_tx4_mute`).
-pub(crate) fn mute_extended_tx(bus: &mut dyn Bus, mask: u32) -> Result<(), Error> {
-    extended_command(bus, ExtendedCommand::Mute, mask)
-}
-
-/// Maps a complex stream's `channels` onto the extended core's four lanes: the four
-/// shuffle stages `exfe_trx4_update_chmap` computes for TX, with its quirks.
-pub(crate) fn map_extended_tx(bus: &mut dyn Bus, channels: TxChannels) -> Result<(), Error> {
-    let stages = extended_tx_shuffle(channels);
-    (0_u8..).zip(stages).try_for_each(|(stage, bits)| {
-        let command = ExtendedCommand::Shuffle0 as u8 + stage;
-        extended_word(bus, command, u32::from(bits))
-    })
-}
-
-/// The extended core's four shuffle stages for a complex TX stream of `channels`: libusdr's
-/// `exfe_trx4_update_chmap` with `mask` set, four raw lanes and no 3x16 packing.
-///
-/// libusdr inverts the map for TX into a table of all four lanes whose unmapped entries
-/// are `0x7f` (its `memset` of `~CH_SWAP_IQ_FLAG`), not the `0xff` it skips, so lanes past
-/// the stream's take channel `0x7f` masked to the stream's channels; that is kept.
-fn extended_tx_shuffle(channels: TxChannels) -> [u16; 4] {
-    const LANES: usize = 4;
-    const UNMAPPED: u8 = 0x7f;
-    let map: &[u8] = match channels {
-        TxChannels::Channel0 => &[0],
-        TxChannels::Channel1 => &[1],
-        TxChannels::Both => &[0, 1],
-    };
-    // Lanes in use: two per complex channel; the channel mask libusdr applies.
-    let total = 2 * map.len();
-    let mask = map.len() - 1;
-    let mut reverse = [UNMAPPED; LANES];
-    for (lane, &channel) in map.iter().enumerate() {
-        reverse[usize::from(channel)] = u8::try_from(lane).expect("a lane index");
-    }
-    let mut stages = [0_u16; 4];
-    for group in (0..LANES).step_by(total) {
-        for offset in 0..total {
-            let lane = group + offset;
-            let channel = usize::from(reverse[lane / 2] & 0x7f);
-            let source = 2 * (channel & mask) + offset % 2;
-            let shuffle = source ^ lane;
-            // Two stages for four lanes (`lg_chans`); the other two stay 0.
-            for (bit, stage) in stages.iter_mut().take(2).enumerate() {
-                if shuffle & 1 << bit != 0 {
-                    *stage |= 1 << lane;
-                }
-            }
-        }
-    }
-    stages
-}
-
-/// Writes one extended front-end command.
-fn extended_command(bus: &mut dyn Bus, command: ExtendedCommand, value: u32) -> Result<(), Error> {
-    extended_word(bus, command as u8, value)
-}
-
-/// Writes command `command` with `value`'s low 24 bits (`MAKE_EXFE_REG`).
-fn extended_word(bus: &mut dyn Bus, command: u8, value: u32) -> Result<(), Error> {
-    let word = u32::from(command) << 24 | value & 0x00ff_ffff;
-    bus.write_regs(REG_EXTENDED_FRONT_END, &[word])
-        .writing(FPGA, REG_EXTENDED_FRONT_END)
-}
 
 /// The extended core's announcing registers as libusdr last wrote them
 /// (`extxcfg_cache`): it writes the first three only when they change.
@@ -397,13 +260,17 @@ mod tests {
 
     #[test]
     fn a_tx_block_holds_at_most_the_cores_fifo() {
-        assert_eq!(tx_block_bytes(31_744).ok(), Some(MAX_TX_PACKET_BYTES));
+        // `ci16`: four bytes a sample.
+        assert_eq!(
+            stream_block_bytes(31_744, 4).ok(),
+            Some(MAX_TX_PACKET_BYTES)
+        );
         assert!(matches!(
-            tx_block_bytes(31_745),
+            stream_block_bytes(31_745, 4),
             Err(Error::UnsupportedPacketSize(31_745))
         ));
         assert!(matches!(
-            tx_block_bytes(u32::MAX),
+            stream_block_bytes(u32::MAX, 4),
             Err(Error::UnsupportedPacketSize(_))
         ));
     }
@@ -452,17 +319,6 @@ mod tests {
         }
         // 0 → 5 → 250, then 3 is below 250: one wrap, 256 + 3, then 4.
         assert_eq!(total, 0x104);
-    }
-
-    #[test]
-    fn extended_shuffles_are_libusdrs_masked_lane_map() {
-        // One channel: lanes 2 and 3 take channel 0x7f masked to 0, so their sources are
-        // lanes 0 and 1, XOR 2: stage 1 set for lanes 2 and 3. libusdr masks the channel
-        // number away, so channel 1 alone maps as channel 0.
-        assert_eq!(extended_tx_shuffle(TxChannels::Channel0), [0, 0b1100, 0, 0]);
-        assert_eq!(extended_tx_shuffle(TxChannels::Channel1), [0, 0b1100, 0, 0]);
-        // Two channels fill the four lanes in order: no shuffle.
-        assert_eq!(extended_tx_shuffle(TxChannels::Both), [0; 4]);
     }
 
     #[test]

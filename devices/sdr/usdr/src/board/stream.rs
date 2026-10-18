@@ -177,35 +177,6 @@ impl SyncMode {
 }
 
 impl StreamsConfig {
-    /// The checks `NativeUsb`'s stream group makes before any I/O: those of
-    /// [`StreamsConfig::check_on`] for gateware without the DSP chains' second channels,
-    /// then the extended TX core, whose setup the native group does not run. So it takes
-    /// what it did before channel maps: channel 0, or RX's real channel 1, on the original
-    /// TX core. Returns the RX stream's wire-to-host converter, if it has one.
-    ///
-    /// # Errors
-    ///
-    /// Those of [`StreamsConfig::check_on`], then [`Error::UnsupportedTxCore`].
-    #[cfg_attr(
-        not(all(feature = "mio", target_os = "linux")),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) uses it"
-        )
-    )]
-    pub(crate) fn check(self, extended_tx_core: bool) -> Result<Option<Converter>, Error> {
-        let single_channels = Chains {
-            rx: false,
-            tx: false,
-            extended_tx_core,
-        };
-        let converter = self.check_on(single_channels)?;
-        if extended_tx_core && self.tx.is_some() {
-            return Err(Error::UnsupportedTxCore);
-        }
-        Ok(converter)
-    }
-
     /// The checks the board makes before any bus access, for gateware with `chains`: a
     /// configuration with no stream, a sync mode with no trigger, and a TX or RX stream the
     /// gateware's cores, the converters or the front ends cannot take. Returns the RX
@@ -215,7 +186,7 @@ impl StreamsConfig {
     ///
     /// [`Error::NoStreams`], [`Error::UnsupportedSync`], and those of
     /// [`TxConfig::check`] and [`RxConfig::checked_converter`], in that order.
-    pub(super) fn check_on(self, chains: Chains) -> Result<Option<Converter>, Error> {
+    pub(crate) fn check_on(self, chains: Chains) -> Result<Option<Converter>, Error> {
         if self.rx.is_none() && self.tx.is_none() {
             return Err(Error::NoStreams);
         }

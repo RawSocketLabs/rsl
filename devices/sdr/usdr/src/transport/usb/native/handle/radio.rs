@@ -116,6 +116,8 @@ pub(super) enum RadioKind {
     Gain,
     /// [`NativeEvent::PathSet`].
     Path,
+    /// [`NativeEvent::CorrectionSet`].
+    Correction,
     /// A step of a stream group's create or stop.
     GroupStep,
 }
@@ -214,7 +216,12 @@ impl NativeUsb {
     }
 
     /// Starts an RF operation's first action, refusing it while another is pending.
-    fn start_radio(&mut self, op: RadioOp, kind: RadioKind, now: Instant) -> Result<(), Error> {
+    pub(super) fn start_radio(
+        &mut self,
+        op: RadioOp,
+        kind: RadioKind,
+        now: Instant,
+    ) -> Result<(), Error> {
         self.start_sequence(SequenceOperation::Radio(RadioRun::new(op, kind)), now)
     }
 
@@ -253,6 +260,7 @@ impl NativeUsb {
             RadioKind::Bandwidth => NativeEvent::BandwidthSet(result),
             RadioKind::Gain => NativeEvent::GainSet(result),
             RadioKind::Path => NativeEvent::PathSet(result),
+            RadioKind::Correction => NativeEvent::CorrectionSet(result),
             RadioKind::GroupStep => {
                 unreachable!("invariant: group steps end through their group's run")
             }
@@ -376,7 +384,7 @@ impl NativeUsb {
     }
 
     /// The refusals every RF setting makes first: an operation pending, no power-up.
-    fn refuse_radio_operation(&self) -> Result<Radio, Error> {
+    pub(super) fn refuse_radio_operation(&self) -> Result<Radio, Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }

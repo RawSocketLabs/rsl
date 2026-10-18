@@ -205,8 +205,7 @@ pub enum Error {
     },
 
     /// RX channels the receiver's front end does not carry in the wire format asked for:
-    /// complex channel 1 (lanes 2 and 3) or both channels without the RX chain, or on
-    /// `NativeUsb`'s stream group, which carries channel 0 or the real channel 1 only.
+    /// complex channel 1 (lanes 2 and 3) or both channels without the RX chain.
     #[error("RX channels {channels:?} are not carried in wire format {wire:?}")]
     #[non_exhaustive]
     UnsupportedRxChannels {
@@ -217,14 +216,8 @@ pub enum Error {
         wire: WireFormat,
     },
 
-    /// The gateware has the extended TX core (hardware ID bit 26), whose stream setup the
-    /// native USB handle's stream group does not run; the blocking device does.
-    #[error("the gateware's extended TX core is not supported")]
-    UnsupportedTxCore,
-
     /// TX channels the gateware or stream cannot carry: a second channel without the TX
-    /// chain or on `NativeUsb`'s stream group (channel 0 only), or a remap to another
-    /// channel count.
+    /// chain, or a remap to another channel count.
     #[error("TX channels {channels:?} are not supported here")]
     #[non_exhaustive]
     UnsupportedTxChannels {

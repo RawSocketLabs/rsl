@@ -1,16 +1,19 @@
 //! The gateware's control words the board's sequences write: the general-purpose output
 //! banks (`IGPO_*`), the DSP chains' configuration ports (`REG_CFG_PHY_*`) with their NCOs,
-//! resets and FIR microcode loads, as register accesses with no I/O.
+//! resets, FIR microcode loads, corrections (RX DC correction, TX DC offset, IQ imbalance
+//! terms) and the TX constant generator, as register accesses with no I/O.
 //!
 //! Source: `device/generic_usdr/generic_regs.h`, `dev_gpo_set`, `fpga_phy_regs`,
-//! `_usdr_set_nco` and `usdr_set_samplerate_ex` in `device/m2_lm6_1/usdr_ctrl.c`;
-//! `fgearbox_load_ucode` in `ipblks/fgearbox.c`.
+//! `_usdr_set_nco`, `usdr_set_samplerate_ex`, `usdr_set_rxdccorr`, `usdr_tx_dccorr`,
+//! `usdr_rxupdate_cal`, `usdr_txupdate_cal` and `usdr_tx_gen_set` in
+//! `device/m2_lm6_1/usdr_ctrl.c`; `fgearbox_load_ucode` in `ipblks/fgearbox.c`.
 
 use core::time::Duration;
 
-use bnb::{bitfield, u7, u24};
+use bnb::{BitEnum, bitfield, u7, u12, u24};
 
 use super::fir_tables;
+use super::script::Script;
 use super::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// The gateware's name in failures.
@@ -153,6 +156,41 @@ struct PhyWrite {
     data: u24,
 }
 
+/// The value of one write to [`SubReg::Generator`] (`MAKE_PHY_WR_SUB_REG`): which of the
+/// generator's own registers, and its 16-bit value.
+#[bitfield(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GeneratorWrite {
+    /// The generator register.
+    #[bits(16..=23)]
+    reg: GeneratorReg,
+
+    /// The value written.
+    #[bits(0..=15)]
+    value: u16,
+}
+
+/// The constant generator's registers (libusdr's `CFG_REG_DC_GEN_*` in `usdr_ctrl.c`).
+#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[bit_enum(u8, closed)]
+#[repr(u8)]
+enum GeneratorReg {
+    /// 1 replaces the TX samples with the constants, 0 passes them (`CFG_REG_DC_GEN_CTRL`).
+    Control = 0,
+
+    /// Channel A's I constant (`CFG_REG_DC_GEN_AI`).
+    ChannelAI = 4,
+
+    /// Channel A's Q constant (`CFG_REG_DC_GEN_AQ`).
+    ChannelAQ = 5,
+
+    /// Channel B's I constant (`CFG_REG_DC_GEN_BI`).
+    ChannelBI = 6,
+
+    /// Channel B's Q constant (`CFG_REG_DC_GEN_BQ`).
+    ChannelBQ = 7,
+}
+
 /// One of a chain's two numerically controlled oscillators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Nco {
@@ -210,6 +248,83 @@ impl Phy {
             self.reset(1 << 8),
             self.reset(0),
         ]
+    }
+}
+
+impl Phy {
+    /// Switches the chain's DC correction (`usdr_set_rxdccorr` on RX).
+    pub(crate) fn set_dc_correction(self, on: bool) -> Script {
+        Script::new().fpga(FPGA, self.dc_correction(on))
+    }
+
+    /// The port words writing the IQ imbalance correction `terms` (I and Q amplitudes,
+    /// then I and Q phase terms), in that order. libusdr keeps each term's low 24 bits.
+    pub(crate) fn iq_correction_words(terms: [i32; 4]) -> [u32; 4] {
+        let subs = [
+            SubReg::IqAmplitudeI,
+            SubReg::IqAmplitudeQ,
+            SubReg::IqPhaseI,
+            SubReg::IqPhaseQ,
+        ];
+        let mut words = [0; 4];
+        for ((word, sub), term) in words.iter_mut().zip(subs).zip(terms) {
+            let [b0, b1, b2, _] = term.to_le_bytes();
+            *word = Self::word(sub, u32::from_le_bytes([b0, b1, b2, 0]));
+        }
+        words
+    }
+
+    /// Writes the IQ imbalance correction `terms` (`usdr_rxupdate_cal`,
+    /// `usdr_txupdate_cal`); the first failed write ends it.
+    pub(crate) fn set_iq_correction(self, terms: [i32; 4]) -> Script {
+        Self::iq_correction_words(terms)
+            .into_iter()
+            .fold(Script::new(), |script, word| {
+                script.fpga(FPGA, self.write_word(word))
+            })
+    }
+
+    /// Writes the TX chain's DC offset, 12-bit two's-complement `i` and `q`
+    /// (`usdr_tx_dccorr`): Q in bits 23:12, I in 11:0.
+    pub(crate) fn set_tx_dc_offset(i: u12, q: u12) -> Script {
+        let data = u32::from(q.value()) << 12 | u32::from(i.value());
+        Script::new().fpga(FPGA, Self::Tx.write(SubReg::DcControl, data))
+    }
+
+    /// The port word writing `value` to the constant generator's register `reg`.
+    fn generator_word(reg: GeneratorReg, value: u16) -> u32 {
+        let data = GeneratorWrite::new().with_reg(reg).with_value(value);
+        Self::word(SubReg::Generator, data.to_raw())
+    }
+
+    /// The port word turning the constant generator off (`usdr_tx_gen_set(.., false, ..)`).
+    pub(crate) fn generator_off_word() -> u32 {
+        Self::generator_word(GeneratorReg::Control, 0)
+    }
+
+    /// Replaces the TX chain's samples with the constant `[i, q]` on both channels, or
+    /// with `None` passes them again (`usdr_tx_gen_set` with channel mask 3): the enable,
+    /// then, when on, channel A's I and Q and channel B's; the first failed write ends it.
+    pub(crate) fn set_tx_constant(constant: Option<[i16; 2]>) -> Script {
+        let write = |script: Script, reg: GeneratorReg, value: u16| {
+            script.fpga(FPGA, Self::Tx.write_word(Self::generator_word(reg, value)))
+        };
+        let enable = u16::from(constant.is_some());
+        let script = write(Script::new(), GeneratorReg::Control, enable);
+        let Some([i, q]) = constant else {
+            return script;
+        };
+        // Two's-complement bits, as libusdr's `int16_t` masked to 16 bits.
+        let bits = |value: i16| u16::from_ne_bytes(value.to_ne_bytes());
+        let (i, q) = (bits(i), bits(q));
+        [
+            (GeneratorReg::ChannelAI, i),
+            (GeneratorReg::ChannelAQ, q),
+            (GeneratorReg::ChannelBI, i),
+            (GeneratorReg::ChannelBQ, q),
+        ]
+        .into_iter()
+        .fold(script, |script, (reg, value)| write(script, reg, value))
     }
 }
 

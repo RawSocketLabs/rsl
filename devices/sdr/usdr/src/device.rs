@@ -366,9 +366,10 @@ impl Device {
     /// - [`Error::UnsupportedSync`] for [`SyncMode::ExternalAll`]: libusdr's
     ///   `sfetrx4_stream_sync` has no `extall` case (it creates the stream, then fails
     ///   `usdr_dms_sync` with `-EINVAL`).
-    /// - [`Error::UnsupportedTxCore`] for a TX stream on gateware with the extended TX
-    ///   core, and [`Error::UnsupportedWireFormat`] for a TX wire format other than
-    ///   [`WireFormat::Ci16`] (libusdr refuses it once the transmitter is powered).
+    /// - [`Error::UnsupportedWireFormat`] for a TX wire format the gateware's TX core
+    ///   does not take: other than [`WireFormat::Ci16`] on the original core (libusdr
+    ///   refuses it once the transmitter is powered), or than it and [`WireFormat::Ci12`]
+    ///   on the extended one.
     /// - [`Error::NoConversion`] for a host format with no converter to or from the
     ///   wire format (a real host for a complex wire or the reverse, a real TX host), where
     ///   libusdr copies the bytes unconverted.
@@ -398,6 +399,7 @@ impl Device {
     ///
     /// [`SyncMode::ExternalAll`]: crate::SyncMode::ExternalAll
     /// [`WireFormat::Ci16`]: crate::WireFormat::Ci16
+    /// [`WireFormat::Ci12`]: crate::WireFormat::Ci12
     pub fn create_streams(&mut self, config: StreamsConfig) -> Result<(), Error> {
         self.board().create_streams(config)
     }

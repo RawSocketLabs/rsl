@@ -318,6 +318,16 @@ impl TxChannels {
             Self::Both => 2,
         }
     }
+
+    /// The channels in the stream's order, as libusdr's channel map lists them (`a` or
+    /// 0, 1, or both): what the extended TX core's lane map is computed from.
+    pub(crate) const fn lane_map(self) -> &'static [u8] {
+        match self {
+            Self::Channel0 => &[0],
+            Self::Channel1 => &[1],
+            Self::Both => &[0, 1],
+        }
+    }
 }
 
 /// Which of the TX front end's two lanes are muted: libusdr's stream option `"mute"`, a

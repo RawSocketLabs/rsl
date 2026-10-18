@@ -15,6 +15,6 @@ impl Board {
     /// Replaces the TX samples with `constant` on both channels, or with `None` passes
     /// them again (`usdr_tx_gen_set` with channel mask 3).
     pub(crate) fn set_tx_constant(&mut self, constant: Option<Complex<i16>>) -> Result<(), Error> {
-        Phy::set_tx_constant(self.bus.as_mut(), constant)
+        self.run_script(Phy::set_tx_constant(constant.map(|c| [c.re, c.im])))
     }
 }

@@ -42,22 +42,14 @@ pub(crate) struct TxStream {
     /// The host buffers' format.
     host: HostFormat,
 
-    /// The channels, one host buffer each.
-    channels: TxChannels,
+    /// The channels, one host buffer each, and how they use the core's lanes.
+    lanes: TxLaneUse,
 
     /// Host to wire conversion (libusdr's `tf_data`).
     converter: Converter,
 
     /// Wire bytes of one sample of every channel.
     sample_bytes: usize,
-
-    /// The lanes muted (`fe_old_tx_mute`), which starting the core applies. Always
-    /// [`TxMute::Neither`] on the extended core, whose own mute libusdr writes to its front
-    /// end instead.
-    mute: TxMute,
-
-    /// The original core's lanes swapped, a channel-1 stream (`fe_old_tx_swap`).
-    swap: bool,
 
     /// The extended core's announcing registers, `None` on the original core.
     extended: Option<ExtendedTxPush>,
@@ -70,17 +62,9 @@ pub(crate) struct TxStream {
 }
 
 impl TxStream {
-    /// How starting the core sets its lanes (`_sfetrx4_op` starting TX): the stream's mute
-    /// and swap, and its channel count (`fe_chans`).
+    /// How starting the core sets its lanes: the stream's [`TxLaneUse::lanes`].
     pub(super) const fn lanes(&self) -> TxLanes {
-        TxLanes {
-            mute: self.mute.bits(),
-            swap: self.swap,
-            channels_log2: match self.channels {
-                TxChannels::Channel0 | TxChannels::Channel1 => 0,
-                TxChannels::Both => 1,
-            },
-        }
+        self.lanes.lanes()
     }
 
     /// Takes a buffer's status words into the drop counts and reports them, as
@@ -95,6 +79,53 @@ impl TxStream {
             kernel_time,
             underruns: self.front_end_drops + self.dma_drops,
             fifo_used: status.fifo_used,
+        }
+    }
+}
+
+/// How a TX stream uses the TX core's two lanes: its channels, the lanes muted
+/// (`fe_old_tx_mute`) and whether they swap (`fe_old_tx_swap`), which starting the core
+/// applies. The blocking stream and `NativeUsb`'s group each keep one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TxLaneUse {
+    /// The channels, one host buffer each.
+    pub(crate) channels: TxChannels,
+
+    /// The lanes muted. Always [`TxMute::Neither`] on the extended core, whose own mute
+    /// libusdr writes to its front end instead.
+    pub(crate) mute: TxMute,
+
+    /// The original core's lanes swapped, a channel-1 stream.
+    pub(crate) swap: bool,
+}
+
+impl TxLaneUse {
+    /// How a new stream on `channels` uses the lanes (`initialize_stream_tx_32`): on the
+    /// original core, as [`Self::lane_use`] gives them; on the `extended` core nothing is
+    /// muted or swapped.
+    pub(crate) const fn created(channels: TxChannels, extended: bool) -> Self {
+        let (mute, swap) = if extended {
+            (TxMute::Neither, false)
+        } else {
+            Self::lane_use(channels, None)
+        };
+        Self {
+            channels,
+            mute,
+            swap,
+        }
+    }
+
+    /// How starting the core sets its lanes (`_sfetrx4_op` starting TX): the mute and
+    /// swap, and the channel count (`fe_chans`).
+    pub(crate) const fn lanes(self) -> TxLanes {
+        TxLanes {
+            mute: self.mute.bits(),
+            swap: self.swap,
+            channels_log2: match self.channels {
+                TxChannels::Channel0 | TxChannels::Channel1 => 0,
+                TxChannels::Both => 1,
+            },
         }
     }
 
@@ -169,7 +200,7 @@ impl TxConfig {
 
     /// Wire bytes of one sample of every channel, for the complex wires a TX stream takes
     /// (a real 12-bit sample is not a whole byte).
-    fn sample_bytes(self) -> u32 {
+    pub(crate) fn sample_bytes(self) -> u32 {
         let per_channel = self.wire.sample_bits() / 8;
         per_channel * u32::try_from(self.channels.count()).expect("1 or 2")
     }
@@ -209,26 +240,21 @@ impl Board {
         fpga::check_tx_gateware(self.identity()?.gateware_build)?;
         let bus = self.bus.as_mut();
         if extended {
-            fpga::configure_extended_tx(bus, channels, wire)?;
+            let twelve_bit = wire == WireFormat::Ci12;
+            let mut setup = EngineSequence::extended_tx_configure(channels.lane_map(), twelve_bit);
+            run_sequence(bus, &mut setup)?;
         }
         run_sequence(bus, &mut EngineSequence::new().sync(SyncTrigger::Stop))?;
         let sample_bytes = config.sample_bytes();
         let block_bytes = fpga::stream_block_bytes(samples_per_packet, sample_bytes)?;
         bus.tx_stream_open(block_bytes, sample_bytes)
             .map_err(Error::Stream)?;
-        let (mute, swap) = if extended {
-            (TxMute::Neither, false)
-        } else {
-            TxStream::lane_use(channels, None)
-        };
         self.group(mode).tx = Some(TxStream {
             samples_per_packet,
             host,
-            channels,
+            lanes: TxLaneUse::created(channels, extended),
             converter,
             sample_bytes: usize::try_from(sample_bytes).expect("a few bytes"),
-            mute,
-            swap,
             extended: extended.then(ExtendedTxPush::new),
             front_end_drops: 0,
             dma_drops: 0,
@@ -282,7 +308,7 @@ impl Board {
                 buffer: S::FORMAT,
             });
         }
-        let expected = stream.channels.count();
+        let expected = stream.lanes.channels.count();
         if channels.len() != expected {
             return Err(Error::ChannelBuffers {
                 expected,
@@ -320,7 +346,7 @@ impl Board {
     /// Host buffers one send takes, with a TX stream.
     pub(crate) fn tx_channel_count(&self) -> Option<usize> {
         let tx = self.streams.as_ref()?.tx.as_ref()?;
-        Some(tx.channels.count())
+        Some(tx.lanes.channels.count())
     }
 
     /// Mutes the core's lanes as `mute` says (`_sfetrx4_option_set`'s `"mute"`). On the
@@ -332,9 +358,10 @@ impl Board {
             return Err(Error::NotStreaming);
         };
         if stream.extended.is_some() {
-            return fpga::mute_extended_tx(self.bus.as_mut(), mute.bits().into());
+            let mut update = EngineSequence::new().extended_tx_mute(mute.bits().into());
+            return run_sequence(self.bus.as_mut(), &mut update);
         }
-        stream.mute = mute;
+        stream.lanes.mute = mute;
         let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
         run_sequence(self.bus.as_mut(), &mut update)
     }
@@ -354,18 +381,23 @@ impl Board {
             return Err(Error::NotStreaming);
         };
         let second_channel = matches!(channels, TxChannels::Channel1 | TxChannels::Both);
-        if channels.count() != stream.channels.count() || (second_channel && !tx_chain) {
+        if channels.count() != stream.lanes.channels.count() || (second_channel && !tx_chain) {
             return Err(Error::UnsupportedTxChannels { channels });
         }
         if stream.extended.is_some() {
-            fpga::map_extended_tx(self.bus.as_mut(), channels)?;
-            stream.channels = channels;
+            let mut update = EngineSequence::new().extended_tx_map(channels.lane_map());
+            run_sequence(self.bus.as_mut(), &mut update)?;
+            stream.lanes.channels = channels;
             return Ok(());
         }
         // libusdr keeps the new swap and mute before writing them, so a failed write
         // leaves the stream's state ahead of the core's; kept.
-        stream.channels = channels;
-        (stream.mute, stream.swap) = TxStream::lane_use(channels, Some(stream.mute));
+        let (mute, swap) = TxLaneUse::lane_use(channels, Some(stream.lanes.mute));
+        stream.lanes = TxLaneUse {
+            channels,
+            mute,
+            swap,
+        };
         let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
         run_sequence(self.bus.as_mut(), &mut update)
     }
@@ -525,33 +557,33 @@ mod tests {
     #[test]
     fn one_channel_mutes_the_lane_it_does_not_use_and_two_mute_neither() {
         assert_eq!(
-            TxStream::lane_use(TxChannels::Channel0, None),
+            TxLaneUse::lane_use(TxChannels::Channel0, None),
             (TxMute::B, false)
         );
         assert_eq!(
-            TxStream::lane_use(TxChannels::Channel1, None),
+            TxLaneUse::lane_use(TxChannels::Channel1, None),
             (TxMute::A, true)
         );
         assert_eq!(
-            TxStream::lane_use(TxChannels::Both, None),
+            TxLaneUse::lane_use(TxChannels::Both, None),
             (TxMute::Neither, false)
         );
         // A remap keeps "neither", and moves any other one-channel mute to the idle lane
         // (`fe_old_tx_mute = swap ? 1 : 2`); two channels keep theirs.
         assert_eq!(
-            TxStream::lane_use(TxChannels::Channel1, Some(TxMute::Neither)),
+            TxLaneUse::lane_use(TxChannels::Channel1, Some(TxMute::Neither)),
             (TxMute::Neither, true)
         );
         assert_eq!(
-            TxStream::lane_use(TxChannels::Channel1, Some(TxMute::Both)),
+            TxLaneUse::lane_use(TxChannels::Channel1, Some(TxMute::Both)),
             (TxMute::A, true)
         );
         assert_eq!(
-            TxStream::lane_use(TxChannels::Channel0, Some(TxMute::A)),
+            TxLaneUse::lane_use(TxChannels::Channel0, Some(TxMute::A)),
             (TxMute::B, false)
         );
         assert_eq!(
-            TxStream::lane_use(TxChannels::Both, Some(TxMute::Both)),
+            TxLaneUse::lane_use(TxChannels::Both, Some(TxMute::Both)),
             (TxMute::Both, false)
         );
     }

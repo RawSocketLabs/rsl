@@ -13,49 +13,11 @@
 
 use std::f64::consts::FRAC_PI_4;
 
-use bnb::{BitEnum, bitfield, u12};
-use num_complex::Complex;
-
 use crate::error::{BusContext, Error};
 use crate::lowlevel::Bus;
 pub(crate) use crate::portable::fpga::{FPGA, Nco, Phy, SubReg};
 use crate::portable::sequence::FpgaAccess;
 use crate::portable::stream::EngineSequence;
-
-/// The value of one write to [`SubReg::Generator`] (`MAKE_PHY_WR_SUB_REG`): which of the
-/// generator's own registers, and its 16-bit value.
-#[bitfield(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct GeneratorWrite {
-    /// The generator register.
-    #[bits(16..=23)]
-    reg: GeneratorReg,
-
-    /// The value written.
-    #[bits(0..=15)]
-    value: u16,
-}
-
-/// The constant generator's registers (libusdr's `CFG_REG_DC_GEN_*` in `usdr_ctrl.c`).
-#[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[bit_enum(u8, closed)]
-#[repr(u8)]
-enum GeneratorReg {
-    /// 1 replaces the TX samples with the constants, 0 passes them (`CFG_REG_DC_GEN_CTRL`).
-    Control = 0,
-
-    /// Channel A's I constant (`CFG_REG_DC_GEN_AI`).
-    ChannelAI = 4,
-
-    /// Channel A's Q constant (`CFG_REG_DC_GEN_AQ`).
-    ChannelAQ = 5,
-
-    /// Channel B's I constant (`CFG_REG_DC_GEN_BI`).
-    ChannelBI = 6,
-
-    /// Channel B's Q constant (`CFG_REG_DC_GEN_BQ`).
-    ChannelBQ = 7,
-}
 
 /// An IQ imbalance correction as libusdr keeps it for a chain (`struct imb_data`), the
 /// terms its calibration searches; the default is none.
@@ -149,79 +111,12 @@ impl IqImbalance {
 }
 
 impl Phy {
-    /// Switches the chain's DC correction.
-    pub(crate) fn set_dc_correction(self, bus: &mut dyn Bus, on: bool) -> Result<(), Error> {
-        Self::run(bus, self.dc_correction(on))
-    }
-
-    /// Writes the IQ imbalance correction terms, as [`IqImbalance::rx_terms`] and
-    /// [`IqImbalance::tx_terms`] make them: I and Q amplitudes, then I and Q phase terms
-    /// (`usdr_rxupdate_cal`, `usdr_txupdate_cal`). libusdr keeps each term's low 24 bits.
-    pub(crate) fn set_iq_correction(self, bus: &mut dyn Bus, terms: [i32; 4]) -> Result<(), Error> {
-        for word in Self::iq_correction_words(terms) {
-            Self::run(bus, self.write_word(word))?;
-        }
-        Ok(())
-    }
-
-    /// The words [`Self::set_iq_correction`] writes for `terms`, in its order.
-    fn iq_correction_words(terms: [i32; 4]) -> [u32; 4] {
-        let subs = [
-            SubReg::IqAmplitudeI,
-            SubReg::IqAmplitudeQ,
-            SubReg::IqPhaseI,
-            SubReg::IqPhaseQ,
-        ];
-        let mut words = [0; 4];
-        for ((word, sub), term) in words.iter_mut().zip(subs).zip(terms) {
-            let [b0, b1, b2, _] = term.to_le_bytes();
-            *word = Self::word(sub, u32::from_le_bytes([b0, b1, b2, 0]));
-        }
-        words
-    }
-
     /// Sets an NCO's frequency word, then pulses the NCO reset (`_usdr_set_nco`).
     pub(crate) fn set_nco(self, bus: &mut dyn Bus, nco: Nco, word: i32) -> Result<(), Error> {
         for access in self.nco(nco, word) {
             Self::run(bus, access)?;
         }
         Ok(())
-    }
-
-    /// Writes the TX chain's DC offset, 12-bit two's-complement `i` and `q`
-    /// (`usdr_tx_dccorr`).
-    pub(crate) fn set_tx_dc_offset(bus: &mut dyn Bus, i: u12, q: u12) -> Result<(), Error> {
-        let data = u32::from(q.value()) << 12 | u32::from(i.value());
-        Self::run(bus, Self::Tx.write(SubReg::DcControl, data))
-    }
-
-    /// Replaces the TX chain's samples with `constant` on both channels, or with `None`
-    /// passes them again (`usdr_tx_gen_set` with channel mask 3): the enable, then, when
-    /// on, channel A's I and Q and channel B's.
-    pub(crate) fn set_tx_constant(
-        bus: &mut dyn Bus,
-        constant: Option<Complex<i16>>,
-    ) -> Result<(), Error> {
-        let write = |bus: &mut dyn Bus, reg: GeneratorReg, value: u16| {
-            Self::run(bus, Self::Tx.write_word(Self::generator_word(reg, value)))
-        };
-        write(bus, GeneratorReg::Control, u16::from(constant.is_some()))?;
-        let Some(constant) = constant else {
-            return Ok(());
-        };
-        // Two's-complement bits, as libusdr's `int16_t` masked to 16 bits.
-        let bits = |value: i16| u16::from_ne_bytes(value.to_ne_bytes());
-        let (i, q) = (bits(constant.re), bits(constant.im));
-        write(bus, GeneratorReg::ChannelAI, i)?;
-        write(bus, GeneratorReg::ChannelAQ, q)?;
-        write(bus, GeneratorReg::ChannelBI, i)?;
-        write(bus, GeneratorReg::ChannelBQ, q)
-    }
-
-    /// The port word writing `value` to the constant generator's register `reg`.
-    fn generator_word(reg: GeneratorReg, value: u16) -> u32 {
-        let data = GeneratorWrite::new().with_reg(reg).with_value(value);
-        Self::word(SubReg::Generator, data.to_raw())
     }
 
     /// Performs one port write.
@@ -253,7 +148,7 @@ impl Phy {
     /// `imbalance`, again (`usdr_txupdate_cal`).
     pub(crate) fn tx_create_writes(imbalance: IqImbalance) -> EngineSequence {
         let [a, b, c, d] = Self::iq_correction_words(imbalance.tx_terms());
-        let off = Self::generator_word(GeneratorReg::Control, 0);
+        let off = Self::generator_off_word();
         EngineSequence::port_writes(Self::Tx as u32, &[off, a, b, c, d])
     }
 }

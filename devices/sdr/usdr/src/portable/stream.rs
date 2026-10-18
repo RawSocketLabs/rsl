@@ -273,20 +273,6 @@ struct TxControl {
 }
 
 impl TxControl {
-    /// The control word sending `command` with `mute` (bit 0 lane A, bit 1 lane B), for one
-    /// unswapped channel.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
-                      the lane-aware forms"
-        )
-    )]
-    fn word(command: TxCommand, mute: u8) -> u32 {
-        Self::lanes_word(command, TxLanes::one_channel(mute))
-    }
-
     /// The control word sending `command` with `lanes`' mute, swap and channel count.
     fn lanes_word(command: TxCommand, lanes: TxLanes) -> u32 {
         Self::new()
@@ -316,14 +302,7 @@ pub(crate) struct TxLanes {
 
 impl TxLanes {
     /// One unswapped channel with `mute`.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
-                      the lane-aware forms"
-        )
-    )]
+    #[cfg(test)]
     pub(crate) const fn one_channel(mute: u8) -> Self {
         Self {
             mute,
@@ -331,6 +310,64 @@ impl TxLanes {
             channels_log2: 0,
         }
     }
+}
+
+/// The extended TX core's front-end command register (`CSR_TFE4_BASE`,
+/// `VIRT_CFG_SFX_BASE + 3 * 256`): a command in bits 31:24, its value below
+/// (`MAKE_EXFE_REG`).
+const REG_EXTENDED_TX_FRONT_END: u32 = 0x1_0300;
+
+/// An extended TX front-end command (`exfe_rx_cmd_regs` in `sfe_rx_4.c`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExtendedTxCommand {
+    /// The lanes the stream's channels expand to, as a power of two (`EXFE_CMD_EXPAND`).
+    Expand = 0x0d,
+
+    /// The sample width: 0 for 16 bits, 1 for 12 (`EXFE_CMD_TXFMT12`).
+    Format12 = 0x0e,
+
+    /// The mute mask, as libusdr's `"mute"` option passes it (`EXFE_CMD_MUTE`).
+    Mute = 0x0f,
+
+    /// The first of four lane-shuffle stages (`EXFE_CMD_SHUFFLE_0`).
+    Shuffle0 = 0x10,
+}
+
+/// The extended core's four shuffle stages for a complex TX stream whose channel map is
+/// `map` (one or two channel numbers, each 0 or 1, in the stream's order): libusdr's
+/// `exfe_trx4_update_chmap` with `mask` set, four raw lanes and no 3x16 packing.
+///
+/// libusdr inverts the map for TX into a table of all four lanes whose unmapped entries
+/// are `0x7f` (its `memset` of `~CH_SWAP_IQ_FLAG`), not the `0xff` it skips, so lanes past
+/// the stream's take channel `0x7f` masked to the stream's channels; that is kept.
+fn extended_tx_shuffle(map: &[u8]) -> [u16; 4] {
+    const LANES: usize = 4;
+    const UNMAPPED: u8 = 0x7f;
+    // Lanes in use: two per complex channel; the channel mask libusdr applies.
+    let total = 2 * map.len();
+    let mask = map.len().saturating_sub(1);
+    let mut reverse = [UNMAPPED; LANES];
+    for (lane, &channel) in map.iter().enumerate() {
+        if let Some(entry) = reverse.get_mut(usize::from(channel)) {
+            *entry = u8::try_from(lane).expect("invariant: at most two channels");
+        }
+    }
+    let mut stages = [0_u16; 4];
+    for group in (0..LANES).step_by(total.max(1)) {
+        for offset in 0..total {
+            let lane = group + offset;
+            let channel = usize::from(reverse[lane / 2] & 0x7f);
+            let source = 2 * (channel & mask) + offset % 2;
+            let shuffle = source ^ lane;
+            // Two stages for four lanes (`lg_chans`); the other two stay 0.
+            for (bit, stage) in stages.iter_mut().take(2).enumerate() {
+                if shuffle & 1 << bit != 0 {
+                    *stage |= 1 << lane;
+                }
+            }
+        }
+    }
+    stages
 }
 
 /// What the RX front end and DMA take for one stream's packets: the driver's burst plan
@@ -444,21 +481,8 @@ impl EngineSequence {
         Self::new().configure_rx(format).sync(SyncTrigger::Stop)
     }
 
-    /// Starts a group with an RX stream if `rx` and a TX stream muted as `tx_mute` says,
-    /// if any, on `trigger`: its [`StartPart::order`] in one sequence.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
-                      the lane-aware forms"
-        )
-    )]
-    pub(crate) fn start(rx: bool, tx_mute: Option<u8>, trigger: SyncTrigger) -> Self {
-        Self::start_lanes(rx, tx_mute.map(TxLanes::one_channel), trigger)
-    }
-
-    /// As [`EngineSequence::start`], with a TX stream on `tx` lanes, if any.
+    /// Starts a group with an RX stream if `rx` and a TX stream on `tx` lanes, if any, on
+    /// `trigger`: its [`StartPart::order`] in one sequence.
     pub(crate) fn start_lanes(rx: bool, tx: Option<TxLanes>, trigger: SyncTrigger) -> Self {
         StartPart::order(rx, tx, trigger)
             .into_iter()
@@ -538,19 +562,6 @@ impl EngineSequence {
         self.write(REG_SYNC, TxControl::new().to_raw())
     }
 
-    /// Sets the TX core's mute flags, unswapped (`sfe_tx4_upd`).
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) runs it; the board runs \
-                      the lane-aware forms"
-        )
-    )]
-    pub(crate) fn update_tx_flags(self, mute: u8) -> Self {
-        self.write(REG_SYNC, TxControl::word(TxCommand::UpdateFlags, mute))
-    }
-
     /// Sets the TX core's mute and swap flags from `lanes` (`sfe_tx4_upd`); the update
     /// command carries no channel count.
     pub(crate) fn update_tx_lanes(self, lanes: TxLanes) -> Self {
@@ -580,6 +591,44 @@ impl EngineSequence {
             REG_RX_DMA_CONTROL,
             DmaControl::new().with_ready(true).to_raw(),
         )
+    }
+
+    /// Sets the extended TX core's front end up for a stream, as libusdr's TX create does
+    /// (`initialize_stream_tx_32` with `CORE_EXFETX_DMA32_R0_2`): unmuted, then expanded to
+    /// the stream's lanes and sample width (`twelve_bit`: `ci12`), then its channel `map`
+    /// (one or two channel numbers) put onto the core's lanes (`exfe_tx4_mute`,
+    /// `exfe_tx4_config`, `exfe_trx4_update_chmap`). The uSDR's core has four lanes; a
+    /// stream of complex samples uses two per channel.
+    pub(crate) fn extended_tx_configure(map: &[u8], twelve_bit: bool) -> Self {
+        let expand = if map.len() > 1 { 2 } else { 1 };
+        Self::new()
+            .extended_tx_mute(0)
+            .extended_tx(ExtendedTxCommand::Expand as u8, expand)
+            .extended_tx(ExtendedTxCommand::Format12 as u8, u32::from(twelve_bit))
+            .extended_tx_map(map)
+    }
+
+    /// Mutes the extended TX core's lanes in `mask`, written as libusdr's `"mute"` option
+    /// writes it (`exfe_tx4_mute`).
+    pub(crate) fn extended_tx_mute(self, mask: u32) -> Self {
+        self.extended_tx(ExtendedTxCommand::Mute as u8, mask)
+    }
+
+    /// Puts a complex stream's channel `map` onto the extended TX core's four lanes: the
+    /// four shuffle stages `exfe_trx4_update_chmap` computes for TX, with its quirks.
+    pub(crate) fn extended_tx_map(self, map: &[u8]) -> Self {
+        (ExtendedTxCommand::Shuffle0 as u8..)
+            .zip(extended_tx_shuffle(map))
+            .fold(self, |sequence, (command, bits)| {
+                sequence.extended_tx(command, u32::from(bits))
+            })
+    }
+
+    /// Appends extended TX front-end command `command` with `value`'s low 24 bits
+    /// (`MAKE_EXFE_REG`).
+    fn extended_tx(self, command: u8, value: u32) -> Self {
+        let word = u32::from(command) << 24 | value & 0x00ff_ffff;
+        self.write(REG_EXTENDED_TX_FRONT_END, word)
     }
 
     /// Writes `words` to `reg` in order: a register port that takes a run of words, such as
@@ -770,7 +819,10 @@ mod tests {
 
     #[test]
     fn rx_alone_syncs_before_it_runs_and_tx_starts_before_the_sync() {
-        let rx = run(EngineSequence::start(true, None, SyncTrigger::FreeRun), 0);
+        let rx = run(
+            EngineSequence::start_lanes(true, None, SyncTrigger::FreeRun),
+            0,
+        );
         assert_eq!(
             rx.accesses(),
             [
@@ -779,7 +831,11 @@ mod tests {
                 write(0x1_0100, 0x3000_0002),
             ]
         );
-        let duplex = run(EngineSequence::start(true, Some(2), SyncTrigger::Duplex), 0);
+        let muted_b = Some(TxLanes::one_channel(2));
+        let duplex = run(
+            EngineSequence::start_lanes(true, muted_b, SyncTrigger::Duplex),
+            0,
+        );
         assert_eq!(
             duplex.accesses(),
             [
@@ -793,7 +849,11 @@ mod tests {
             ]
         );
         let tx = run(
-            EngineSequence::start(false, Some(3), SyncTrigger::TxActivity),
+            EngineSequence::start_lanes(
+                false,
+                Some(TxLanes::one_channel(3)),
+                SyncTrigger::TxActivity,
+            ),
             0,
         );
         assert_eq!(
@@ -839,34 +899,54 @@ mod tests {
             [write(14, 0x601)],
             "sfe_tx4_upd has no FMT"
         );
-        // The one-channel forms the native group runs are the lane-aware ones.
-        for mute in 0..4 {
-            let lanes = TxLanes::one_channel(mute);
-            assert_eq!(
-                run(EngineSequence::new().update_tx_flags(mute), 0).accesses(),
-                run(EngineSequence::new().update_tx_lanes(lanes), 0).accesses()
-            );
-            assert_eq!(
-                run(
-                    EngineSequence::start(true, Some(mute), SyncTrigger::Duplex),
-                    0
-                )
-                .accesses(),
-                run(
-                    EngineSequence::start_lanes(true, Some(lanes), SyncTrigger::Duplex),
-                    0
-                )
-                .accesses()
-            );
-        }
     }
 
     #[test]
     fn libusdrs_control_words() {
-        assert_eq!(TxControl::word(TxCommand::UpdateFlags, 3), 0x301);
+        assert_eq!(
+            TxControl::lanes_word(TxCommand::UpdateFlags, TxLanes::one_channel(3)),
+            0x301
+        );
         assert_eq!(
             FrontEndWrite::word(FrontEndCommand::Throttle, 1 << 16 | 2 << 8 | 5),
             0x2001_0205
+        );
+    }
+
+    #[test]
+    fn extended_shuffles_are_libusdrs_masked_lane_map() {
+        // One channel: lanes 2 and 3 take channel 0x7f masked to 0, so their sources are
+        // lanes 0 and 1, XOR 2: stage 1 set for lanes 2 and 3. libusdr masks the channel
+        // number away, so channel 1 alone maps as channel 0.
+        assert_eq!(extended_tx_shuffle(&[0]), [0, 0b1100, 0, 0]);
+        assert_eq!(extended_tx_shuffle(&[1]), [0, 0b1100, 0, 0]);
+        // Two channels fill the four lanes in order: no shuffle.
+        assert_eq!(extended_tx_shuffle(&[0, 1]), [0; 4]);
+    }
+
+    #[test]
+    fn an_extended_tx_setup_unmutes_expands_sets_the_width_then_maps_the_lanes() {
+        // Two ci12 channels: mute 0, expand 2, 12-bit, then four zero shuffle stages, all
+        // at `CSR_TFE4_BASE` as `cmd << 24 | value`.
+        let setup = run(EngineSequence::extended_tx_configure(&[0, 1], true), 0);
+        assert_eq!(setup.outcome, Ok(()));
+        assert_eq!(
+            setup.accesses(),
+            [
+                write(0x1_0300, 0x0f00_0000),
+                write(0x1_0300, 0x0d00_0002),
+                write(0x1_0300, 0x0e00_0001),
+                write(0x1_0300, 0x1000_0000),
+                write(0x1_0300, 0x1100_0000),
+                write(0x1_0300, 0x1200_0000),
+                write(0x1_0300, 0x1300_0000),
+            ]
+        );
+        let mute = run(EngineSequence::new().extended_tx_mute(0x1ff_ffff), 0);
+        assert_eq!(
+            mute.accesses(),
+            [write(0x1_0300, 0x0fff_ffff)],
+            "the mask's low 24 bits"
         );
     }
 }

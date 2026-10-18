@@ -44,13 +44,7 @@ pub(crate) struct BurstPlan {
 impl BurstPlan {
     /// The plan for packets of `samples` of one channel in `wire` format; see
     /// [`BurstPlan::for_stream`].
-    #[cfg_attr(
-        not(all(feature = "mio", target_os = "linux")),
-        allow(
-            dead_code,
-            reason = "only NativeUsb's stream group (feature `mio`) uses it"
-        )
-    )]
+    #[cfg(test)]
     pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
         Self::for_stream(samples, wire, RxChannels::Channel0)
     }
