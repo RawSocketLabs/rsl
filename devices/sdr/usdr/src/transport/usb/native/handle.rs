@@ -14,6 +14,8 @@ mod stream;
 
 use std::fmt;
 use std::io;
+#[cfg(test)]
+use std::marker;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -401,6 +403,23 @@ pub struct NativeUsb {
     tx: StreamState,
     /// The stream group, from its first stream's transport open until it stops.
     group: Option<NativeGroup>,
+    /// A test's hook between [`poll`](Self::poll)'s steps.
+    #[cfg(test)]
+    stepped: Option<StepHook>,
+}
+
+/// A test's hook, called at each [`PollStep`] with the handle.
+#[cfg(test)]
+type StepHook = Box<dyn FnMut(PollStep, &NativeUsb) + marker::Send>;
+
+/// Where [`NativeUsb::poll`] is, for a test that lands a worker report between its steps.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) enum PollStep {
+    /// The operation step found no event.
+    Operation,
+    /// The RX step found no event either; only the session's end is left to report.
+    Rx,
 }
 
 impl fmt::Debug for NativeUsb {
@@ -431,7 +450,27 @@ impl NativeUsb {
             rx: StreamState::Closed,
             tx: StreamState::Closed,
             group: None,
+            #[cfg(test)]
+            stepped: None,
         })
+    }
+
+    /// Calls `hook` at every [`PollStep`] of each later poll, with the handle.
+    #[cfg(test)]
+    pub(in super::super) fn step_with(
+        &mut self,
+        hook: impl FnMut(PollStep, &Self) + marker::Send + 'static,
+    ) {
+        self.stepped = Some(Box::new(hook));
+    }
+
+    /// Runs the test's hook at `step`.
+    #[cfg(test)]
+    fn step(&mut self, step: PollStep) {
+        if let Some(mut hook) = self.stepped.take() {
+            hook(step, self);
+            self.stepped = Some(hook);
+        }
     }
 
     /// Starts reading the TMP114 temperature; [`poll`](Self::poll) reports the result.
@@ -601,9 +640,17 @@ impl NativeUsb {
         // The session's end is judged on what this pump saw: a failure arriving later in
         // the poll goes to the operation or stream that pumps it, else to the next poll.
         self.adapter.pump();
-        self.poll_operation(now)
-            .or_else(|| self.poll_rx())
-            .or_else(|| self.adapter.take_unclaimed().map(NativeEvent::SessionEnded))
+        if let Some(event) = self.poll_operation(now) {
+            return Some(event);
+        }
+        #[cfg(test)]
+        self.step(PollStep::Operation);
+        if let Some(event) = self.poll_rx() {
+            return Some(event);
+        }
+        #[cfg(test)]
+        self.step(PollStep::Rx);
+        self.adapter.take_unclaimed().map(NativeEvent::SessionEnded)
     }
 
     /// Advances the operation in flight; its event once it ends.
@@ -780,7 +827,7 @@ impl NativeUsb {
     }
 
     /// Whether an operation is in flight.
-    pub(super) const fn is_busy(&self) -> bool {
+    pub(in super::super) const fn is_busy(&self) -> bool {
         self.pending.is_some()
     }
 

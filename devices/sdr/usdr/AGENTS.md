@@ -263,7 +263,10 @@ Each layer calls only the ones below it.
   `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the calling thread;
   `asynchronous.rs` (`AsyncUsb`) a reactor thread of its own behind futures woken through
   `core::task::Waker`. Its unit tests use a socket source, not usbfs; only the opt-in
-  `usb_hardware` test reaches real queues. Its corrections (`handle/correction.rs`) run
+  `usb_hardware` test reaches real queues. A race fix is proven by a test that forces
+  the interleaving: the fake backend holds a worker publication (`Backend::publish`) and
+  a test-only hook runs between `poll`'s steps (`PollStep`), so a report lands exactly
+  where the race needs it; stress loops are a smoke check only. Its corrections (`handle/correction.rs`) run
   the same scripts as the board's, its calibration (`handle/calibration.rs`) the board's
   `Calibrate`. A native power-up probes no front end; the front-end controls stay with
   the blocking device; browser integration remains open.

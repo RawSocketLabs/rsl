@@ -142,6 +142,13 @@ pub(in super::super) trait Backend: Send + 'static {
     ) -> Result<(), BusError>;
     /// Cancels TX and releases the endpoint once every transfer is back; may block.
     fn tx_close(&mut self) -> Result<(), BusError>;
+
+    /// Runs `publish`, which makes one report, or the worker's failure, visible to the
+    /// reactor and wakes it. Real queues publish at once; a test backend may hold the
+    /// worker here, so a test chooses where in the reactor's poll the report lands.
+    fn publish<R>(&mut self, publish: impl FnOnce() -> R) -> R {
+        publish()
+    }
 }
 
 /// A stream queue whose waits only take completions a reap turn has already filed: the

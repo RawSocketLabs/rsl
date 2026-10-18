@@ -147,8 +147,14 @@ impl Worker {
                     );
                 }));
                 if served.is_err() {
-                    worker_signals.failed.store(true, Ordering::Release);
-                    let _ = wake.wake();
+                    let fail = || {
+                        worker_signals.failed.store(true, Ordering::Release);
+                        let _ = wake.wake();
+                    };
+                    // A backend that panics again while publishing still leaves it failed.
+                    if catch_unwind(AssertUnwindSafe(|| backend.publish(fail))).is_err() {
+                        fail();
+                    }
                 }
                 while !worker_signals.retired.load(Ordering::Acquire) {
                     thread::park();
@@ -227,12 +233,17 @@ impl Worker {
                 }
                 Work::Stream(command) => Report::Stream(Self::stream(backend, command)),
             };
-            if reports.try_send(report).is_err() {
-                signals.failed.store(true, Ordering::Release);
+            let published = backend.publish(|| {
+                let sent = reports.try_send(report).is_ok();
+                if !sent {
+                    signals.failed.store(true, Ordering::Release);
+                }
                 let _ = wake.wake();
+                sent
+            });
+            if !published {
                 break;
             }
-            let _ = wake.wake();
         }
     }
 

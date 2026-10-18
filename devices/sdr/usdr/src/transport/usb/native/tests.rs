@@ -47,8 +47,8 @@ use crate::transport::usb::i2c::I2cTransaction;
 use crate::transport::usb::machine::{Machine, Output, Step, Submission, Transfer};
 use crate::transport::usb::native::{
     Adapter, AsyncUsb, Backend, BoardState, Completion, Filing, ManagedUsb, NativeEvent, NativeUsb,
-    Queues, RX_BACKLOG, Reply, Report, Request, Session, StreamCommand, StreamOutcome, Turn, Work,
-    Worker,
+    PollStep, Queues, RX_BACKLOG, Reply, Report, Request, Session, StreamCommand, StreamOutcome,
+    Turn, Work, Worker,
 };
 use crate::transport::usb::protocol::I2cCache;
 use crate::transport::usb::tx::TxStatus;
@@ -111,6 +111,100 @@ impl Gate {
     }
 }
 
+/// Where the fake holds the worker's publication of a report for the test to land.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HoldAt {
+    /// The publication right after an injected failure (a turn's panic or error).
+    Failure,
+    /// The first report filing a control completion after an earlier turn took an RX
+    /// block.
+    CompletionAfterBlocks,
+}
+
+/// Holds one worker publication until the test lands it: the deterministic seam that puts
+/// a report at an exact point of the reactor's poll.
+struct Hold {
+    /// Reports that the worker reached the publication.
+    entered: mpsc::SyncSender<()>,
+    /// Lets the publication through.
+    release: mpsc::Receiver<()>,
+    /// Reports that the report is visible to the reactor.
+    landed: mpsc::SyncSender<()>,
+}
+
+/// The test's side of a [`Hold`].
+struct Landing {
+    /// The worker reached the held publication.
+    entered: mpsc::Receiver<()>,
+    /// Lets it through.
+    release: mpsc::SyncSender<()>,
+    /// It is visible to the reactor.
+    landed: mpsc::Receiver<()>,
+}
+
+/// Both ends of one held publication.
+fn hold() -> (Hold, Landing) {
+    let (entered, entering) = mpsc::sync_channel(1);
+    let (release, releasing) = mpsc::sync_channel(1);
+    let (landed, landing) = mpsc::sync_channel(1);
+    (
+        Hold {
+            entered,
+            release: releasing,
+            landed,
+        },
+        Landing {
+            entered: entering,
+            release,
+            landed: landing,
+        },
+    )
+}
+
+impl Hold {
+    /// Holds the worker before `publish`, waking the reactor (if `wake`) so it polls,
+    /// then publishes once released and says so.
+    fn publish<R>(self, publish: impl FnOnce() -> R, wake: Option<&Waker>) -> R {
+        self.entered.send(()).unwrap();
+        if let Some(wake) = wake {
+            wake.wake().unwrap();
+        }
+        self.release.recv_timeout(GUARD).unwrap();
+        let published = publish();
+        self.landed.send(()).unwrap();
+        published
+    }
+}
+
+impl Landing {
+    /// Waits until the worker holds the publication; bounded only to catch a broken test.
+    fn entered(&self) {
+        self.entered.recv_timeout(GUARD).unwrap();
+    }
+
+    /// Whether the worker holds the publication by now, without waiting.
+    fn has_entered(&self) -> bool {
+        self.entered.try_recv().is_ok()
+    }
+
+    /// Lets the held publication through and returns once the reactor can see it.
+    fn land(self) {
+        self.release.send(()).unwrap();
+        self.landed.recv_timeout(GUARD).unwrap();
+    }
+}
+
+/// A poll hook landing the held report at the first `at` step of a poll that finds the
+/// worker holding it, so it arrives exactly between that step and the next.
+fn landing_at(at: PollStep, landing: Landing) -> impl FnMut(PollStep, &NativeUsb) + Send {
+    let mut landing = Some(landing);
+    move |step, _| {
+        if step == at && landing.as_ref().is_some_and(Landing::has_entered) {
+            landing.take().expect("checked above").land();
+        }
+    }
+}
+
 /// Boundary observations prove syscall/Drop thread affinity, not internal adapter fields.
 #[derive(Default)]
 struct Record {
@@ -157,6 +251,17 @@ struct Fake<I = BoardUsb> {
     /// When set, RX blocks the worker may take: as on usbfs, only a reap turn files them,
     /// a whole ring's worth each turn. Unset, every block is filed at once.
     rx_filed: Option<usize>,
+    /// Holds one publication of the worker for the test to land, and which.
+    hold: Option<(HoldAt, Hold)>,
+    /// The reactor's Waker, woken when the worker reaches the held publication.
+    wake: Option<Arc<Waker>>,
+    /// When set, each control completion is reaped one turn late, as one the kernel has
+    /// not yet returned when a turn reaps; `true` once the pending one had its empty turn.
+    lag: Option<bool>,
+    /// A turn took an RX block since the last control completion was filed.
+    took_block: bool,
+    /// The next publication is the one [`Self::hold`] holds.
+    hold_due: bool,
     /// Shared boundary log; no adapter state is inspected.
     record: Arc<Mutex<Record>>,
     /// Signals backend Drop without joining the worker.
@@ -202,6 +307,11 @@ impl<I> Fake<I> {
                 turn_error: None,
                 cleanup_error: None,
                 rx_filed: None,
+                hold: None,
+                wake: None,
+                lag: None,
+                took_block: false,
+                hold_due: false,
                 record: Arc::clone(&record),
                 dropped,
             },
@@ -218,6 +328,11 @@ impl<I> Fake<I> {
             Some((passed, pause)) => self.stream_pause = Some((passed - 1, pause)),
             None => {}
         }
+    }
+
+    /// Makes the next publication the held one, if the hold is for `at`.
+    fn hold_next(&mut self, at: HoldAt) {
+        self.hold_due |= self.hold.as_ref().is_some_and(|(held, _)| *held == at);
     }
 
     fn record(&self, call: &'static str) {
@@ -323,8 +438,12 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
     fn turn(&mut self, _: NonZeroUsize) -> Result<Turn, BusError> {
         self.record("reap");
         let panic = mem::take(&mut self.record.lock().unwrap().panic_turn);
+        if panic {
+            self.hold_next(HoldAt::Failure);
+        }
         assert!(!panic, "injected worker turn panic");
         if let Some(error) = self.turn_error.take() {
+            self.hold_next(HoldAt::Failure);
             return Err(error);
         }
         if let Some(pause) = self.turn_pause.take() {
@@ -339,8 +458,21 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
                 exhausted,
             });
         }
+        if let (Some(lagged), Some(_)) = (&mut self.lag, &self.completion) {
+            *lagged = !*lagged;
+            if *lagged {
+                return Ok(Turn {
+                    completion: None,
+                    exhausted: true,
+                });
+            }
+        }
+        let completion = self.completion.take();
+        if completion.is_some() && mem::take(&mut self.took_block) {
+            self.hold_next(HoldAt::CompletionAfterBlocks);
+        }
         Ok(Turn {
-            completion: self.completion.take(),
+            completion,
             exhausted: false,
         })
     }
@@ -368,7 +500,9 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
             Some(filed) => *filed -= 1,
             None => {}
         }
-        filing(self.io.rx_recv(Duration::ZERO, consume))
+        let filed = filing(self.io.rx_recv(Duration::ZERO, consume));
+        self.took_block |= matches!(filed, Ok(Filing::Taken));
+        filed
     }
 
     fn rx_close(&mut self) -> Result<(), BusError> {
@@ -403,6 +537,14 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
         self.record("tx close");
         self.stream_command();
         self.io.tx_close()
+    }
+
+    fn publish<R>(&mut self, publish: impl FnOnce() -> R) -> R {
+        if !mem::take(&mut self.hold_due) {
+            return publish();
+        }
+        let (_, hold) = self.hold.take().expect("a due publication is held");
+        hold.publish(publish, self.wake.as_deref())
     }
 }
 
@@ -3340,6 +3482,213 @@ fn an_async_session_end_fails_the_running_operation_and_ends_the_blocks() {
     assert!(block.is_none(), "no block follows the session's end");
     let (after, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
     assert!(after.is_err(), "the ended session refuses: {after:?}");
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+}
+
+// Deterministic regressions for the interleavings `NativeUsb::poll` and `AsyncUsb` must
+// handle: each holds a worker report in the fake backend and lands it at the exact step
+// the race needs, so it fails every time the handling is wrong.
+
+#[test]
+fn a_worker_panic_landing_after_the_rx_step_reaches_the_open_stream() {
+    // The panic's report lands after the RX step looked and before the session's end is
+    // judged: the open stream must still report it, not `SessionEnded`.
+    let (mut reactor, wake) = reactor();
+    let (bus, _) = usb_board(BoardRevision::Rev3, 25_000);
+    let (held, landing) = hold();
+    let mut records = None;
+    let reactor_wake = Arc::clone(&wake);
+    let mut native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(
+            |io| {
+                let (mut fake, record, _) = Fake::over(io);
+                fake.hold = Some((HoldAt::Failure, held));
+                fake.wake = Some(reactor_wake);
+                records = Some(record);
+                Ok(fake)
+            },
+            reactor.registry(),
+            DEVICE,
+            wake,
+        )
+        .unwrap();
+    let record = records.unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
+        "RX opens",
+    );
+    native.step_with(landing_at(PollStep::Rx, landing));
+    record.lock().unwrap().panic_turn = true;
+    // An edge brings a turn, which panics; its report waits for the RX step.
+    native.on_ready(DEVICE);
+    let event = finish(&mut native, &mut reactor);
+    assert!(
+        matches!(
+            event,
+            NativeEvent::Received(Err(Error::Stream(BusError::Disconnected)))
+        ),
+        "the open stream reports the worker's failure: got {event:?}"
+    );
+    assert!(
+        native.poll(Instant::now()).is_none(),
+        "the stream carried the session's end: no SessionEnded follows"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_failure_landing_after_the_operation_step_reaches_the_async_operation() {
+    // The failure lands after the poll's operation step looked: the running read must get
+    // its own event with the worker's failure, not the adapter's `Disconnected`.
+    let (mut fake, record, _) = Fake::new();
+    let (pause, gate) = Pause::new();
+    fake.submit_pause = Some(pause);
+    let (held, landing) = hold();
+    fake.hold = Some((HoldAt::Failure, held));
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        fake.wake = Some(Arc::clone(&waker));
+        let mut native =
+            NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)?;
+        native.step_with(landing_at(PollStep::Operation, landing));
+        Ok(native)
+    })
+    .unwrap();
+    let read = adapter.operation(NativeUsb::start_temperature);
+    // Armed while the worker holds the read's first transfer, so the turn that panics is
+    // one of the read's, never the registration edge's idle turn.
+    gate.entered();
+    record.lock().unwrap().panic_turn = true;
+    gate.release();
+    let (read, ..) = block_on(read);
+    assert!(
+        matches!(read, Ok(NativeEvent::Temperature(Err(_)))),
+        "the operation's event carries the worker's failure: {read:?}"
+    );
+    let (block, ..) = block_on(adapter.next_block());
+    assert!(block.is_none(), "the session ended");
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+}
+
+#[test]
+fn an_idle_failure_before_the_read_is_queued_ends_the_session_and_refuses_the_read() {
+    // The registration edge's idle turn fails before `operation` queues a read: the
+    // session ends idle, and the read fails as a session that has ended, every time.
+    let (fake, record, _) = Fake::new();
+    record.lock().unwrap().panic_turn = true;
+    let adapter = AsyncUsb::start(|registry, token, waker| {
+        NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
+    })
+    .unwrap();
+    let (block, ..) = block_on(adapter.next_block());
+    assert!(block.is_none(), "the idle failure ended the session");
+    let (read, pending, _) = block_on(adapter.operation(NativeUsb::start_temperature));
+    assert!(
+        matches!(read, Err(Error::Stream(BusError::Disconnected))) && !pending,
+        "the read is refused at once as session-ended: {read:?}"
+    );
+    assert_eq!(submits(&record), 0, "no transfer was attempted");
+    let (closed, ..) = block_on(adapter.close());
+    closed.unwrap();
+}
+
+#[test]
+fn rx_blocks_before_the_starts_last_completion_come_before_streams_started() {
+    // The start's last completion is reaped a turn after RX blocks, and its report is
+    // held until a block has been delivered: `Received` comes before `StreamsStarted`
+    // and every such block is good.
+    let (_device, board, _) = tuned_device();
+    let (mut reactor, wake) = reactor();
+    let (mut fake, _, _) = Fake::new();
+    fake.io.board = Arc::clone(&board);
+    fake.lag = Some(false);
+    let (held, landing) = hold();
+    fake.hold = Some((HoldAt::CompletionAfterBlocks, held));
+    let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    native
+        .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
+        .unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::StreamsCreated(Ok(()))),
+        "the group is created",
+    );
+    native.start_streams(Instant::now()).unwrap();
+    let first = finish(&mut native, &mut reactor);
+    let NativeEvent::Received(Ok(block)) = first else {
+        panic!("a good block comes before the start ends: got {first:?}");
+    };
+    assert_eq!(block.payload.len(), 4096, "one 1024-sample ci16 packet");
+    landing.entered();
+    landing.land();
+    let started = loop {
+        match finish(&mut native, &mut reactor) {
+            NativeEvent::Received(Ok(block)) => {
+                assert_eq!(
+                    block.payload.len(),
+                    4096,
+                    "a good block before the start ends"
+                );
+            }
+            event => break event,
+        }
+    };
+    assert!(
+        matches!(started, NativeEvent::StreamsStarted(Ok(()))),
+        "the group starts after its blocks: got {started:?}"
+    );
+}
+
+#[test]
+fn a_read_finishing_before_its_futures_first_poll_is_still_delivered() {
+    // The reactor finishes the read before its future is first polled: that poll takes
+    // the read's event.
+    let (fake, _, _) = Fake::new();
+    let (steps, observed) = mpsc::channel();
+    let polled = steps.clone();
+    let adapter = AsyncUsb::start(move |registry, token, waker| {
+        let mut native =
+            NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)?;
+        native.step_with(move |step, native| {
+            let _ = polled.send((Some(step), native.is_busy()));
+        });
+        Ok(native)
+    })
+    .unwrap();
+    let read = adapter.operation(move |native, now| {
+        let started = native.start_temperature(now);
+        let _ = steps.send((None, native.is_busy()));
+        started
+    });
+    // The reactor thread reports in order: after the start's report, a poll that finds
+    // nothing with no operation in flight comes after the read ended, and the reactor
+    // files an operation's end before it polls again.
+    let mut started = false;
+    loop {
+        match observed.recv_timeout(GUARD).unwrap() {
+            (None, busy) => {
+                assert!(busy, "the read started");
+                started = true;
+            }
+            (Some(PollStep::Rx), false) if started => break,
+            _ => {}
+        }
+    }
+    let mut read = pin!(read);
+    let first = read
+        .as_mut()
+        .poll(&mut Context::from_waker(TaskWaker::noop()));
+    assert!(
+        matches!(&first, task::Poll::Ready(Ok(NativeEvent::Temperature(Ok(celsius)))) if (celsius - 25.0).abs() < f32::EPSILON),
+        "the first poll takes the finished read: {first:?}"
+    );
     let (closed, ..) = block_on(adapter.close());
     closed.unwrap();
 }

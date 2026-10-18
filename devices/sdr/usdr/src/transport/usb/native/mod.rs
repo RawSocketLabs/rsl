@@ -27,6 +27,8 @@ pub(super) use backend::{Backend, Queues};
 #[cfg(test)]
 pub(super) use backend::{Completion, Filing, Reply, Request, Turn};
 pub(crate) use handle::BoardState;
+#[cfg(test)]
+pub(super) use handle::PollStep;
 pub(super) use handle::Session;
 pub use handle::{NativeEvent, NativeUsb, RxBlock};
 pub use managed::ManagedUsb;
