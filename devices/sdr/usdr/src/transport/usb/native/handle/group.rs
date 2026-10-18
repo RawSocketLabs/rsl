@@ -1,6 +1,6 @@
-//! The stream group on [`NativeUsb`]: create, start, host-ready, TX mute, RX throttle and
-//! stop, as the blocking device's stream group performs them (`board/stream.rs`,
-//! `board/tx_stream.rs`). Each operation is a list of steps run one at a time: the RF
+//! The stream group on [`NativeUsb`]: create, start, host-ready, TX mute and remap, RX
+//! throttle and stop, as the blocking device's stream group performs them
+//! (`board/stream.rs`, `board/tx_stream.rs`). Each operation is a list of steps run one at a time: the RF
 //! chains' part (power, the default tuning and DC calibration, from the handle's RF
 //! state), the same portable engine sequences, DSP-port writes and gateware gate, each
 //! stream's transport open or close, and the refusals the blocking device makes between
@@ -20,7 +20,7 @@ use crate::fpga::{self, BurstPlan, IdentityRead, Phy};
 use crate::lowlevel::BusError;
 use crate::portable::radio::Chain;
 use crate::portable::stream::{EngineSequence, SyncTrigger};
-use crate::stream::{StreamsConfig, SyncMode, TxMute, WireFormat};
+use crate::stream::{StreamsConfig, SyncMode, TxChannels, TxMute, WireFormat};
 
 /// The stream group the handle holds: which streams joined it and how it starts.
 #[derive(Clone, Copy, Debug)]
@@ -62,6 +62,8 @@ enum GroupKind {
     RxReady,
     /// Mute the TX core's lanes.
     TxMute,
+    /// Move the TX stream to other channels.
+    TxChannels,
     /// Throttle the RX front end's bursts.
     RxThrottle,
     /// Stop: every step is attempted; the first failure is reported.
@@ -328,6 +330,40 @@ impl NativeUsb {
         Ok(())
     }
 
+    /// Starts moving the TX stream to `channels`, as many as it carries, as
+    /// [`Device::set_tx_channels`](crate::Device::set_tx_channels) does (libusdr's stream
+    /// option `"chmap"`), with the same lane rule: on the original TX core a one-channel
+    /// stream's lanes swap and a lane mute moves to the lane left idle, which the group
+    /// keeps for its start; on the extended core the lane map is rewritten.
+    /// [`poll`](Self::poll) reports [`NativeEvent::TxChannelsSet`].
+    ///
+    /// Unstable, pending owner review, as the blocking method is.
+    ///
+    /// # Errors
+    ///
+    /// Before any I/O: [`Error::Busy`] if an operation is pending; [`Error::NotStreaming`]
+    /// without a TX stream in the group; [`Error::UnsupportedTxChannels`] for another
+    /// channel count or, without the TX chain, channel 1; [`Error::Stream`] if the handle
+    /// is closed.
+    pub fn start_tx_channels(&mut self, channels: TxChannels, now: Instant) -> Result<(), Error> {
+        self.refuse_group_operation()?;
+        let chains = self.session.board.chains;
+        let Some(group) = self.group.as_mut().filter(|group| group.tx) else {
+            return Err(Error::NotStreaming);
+        };
+        let update = group
+            .tx_lanes
+            .remap(channels, chains.extended_tx_core, chains.tx)?;
+        let run = GroupRun::new(
+            GroupKind::TxChannels,
+            group.mode,
+            VecDeque::from([engine(update)]),
+            now,
+        );
+        self.pending = Some(Pending::Group(run));
+        Ok(())
+    }
+
     /// Starts throttling the RX front end's bursts (`Some`) or delivering them all
     /// (`None`), as [`Device::set_rx_throttle`](crate::Device::set_rx_throttle) does
     /// (libusdr's `/dm/sdr/0/rfe/throttle`). [`poll`](Self::poll) reports
@@ -518,6 +554,7 @@ impl NativeUsb {
             }
             GroupKind::RxReady => NativeEvent::RxReady(result),
             GroupKind::TxMute => NativeEvent::TxMuted(result),
+            GroupKind::TxChannels => NativeEvent::TxChannelsSet(result),
             GroupKind::RxThrottle => NativeEvent::RxThrottled(result),
             GroupKind::Stop => NativeEvent::StreamsStopped(result),
         }

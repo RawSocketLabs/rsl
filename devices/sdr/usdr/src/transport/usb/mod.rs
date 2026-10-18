@@ -43,9 +43,9 @@
 //! one transfer or caller-time wait at a time: the TMP114 and gateware identity reads, the
 //! reference switch, power-up behind the thermal policy and power-down, the sample rate,
 //! tuning, bandwidths, gains and paths, and a stream group's create (the RF chains' power,
-//! tuning and DC calibration included), start, mute, throttle and stop; and it opens,
-//! receives on, sends on and closes the RX and TX streams at the transport, through the
-//! same `Rx`/`Tx` adapters and send order as the blocking bus. It takes over the whole
+//! tuning and DC calibration included), start, mute, remap, throttle and stop; and it
+//! opens, receives on, sends on and closes the RX and TX streams at the transport, through
+//! the same `Rx`/`Tx` adapters and send order as the blocking bus. It takes over the whole
 //! device. `ManagedUsb` drives one on a reactor of its own, on the calling thread, and
 //! `AsyncUsb` on a reactor thread of its own, observed through futures, with no async
 //! runtime.

@@ -129,6 +129,44 @@ impl TxLaneUse {
         }
     }
 
+    /// Moves the stream to `channels`, of the same count (`_sfetrx4_option_set`'s
+    /// `"chmap"`), keeping the new use, and returns the engine writes that apply it: on
+    /// the original core, the lanes swap as a new stream's would and a one-channel stream
+    /// muting a lane mutes the other instead (`fe_tx4_swap_ab_get`, `sfe_tx4_upd`); on the
+    /// `extended` core, its lane map is rewritten (`exfe_trx4_update_chmap`). The
+    /// blocking stream and `NativeUsb`'s group both run it. As libusdr, the new use is
+    /// kept before it is written, so a failed write leaves it ahead of the core's.
+    ///
+    /// Intentional divergence: libusdr reads only as many entries of a new map as the
+    /// stream has channels, so a map of another count still applies; it is refused here,
+    /// as is a second channel without the TX chain (`tx_chain`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedTxChannels`], before any change.
+    pub(crate) fn remap(
+        &mut self,
+        channels: TxChannels,
+        extended: bool,
+        tx_chain: bool,
+    ) -> Result<EngineSequence, Error> {
+        let second_channel = matches!(channels, TxChannels::Channel1 | TxChannels::Both);
+        if channels.count() != self.channels.count() || (second_channel && !tx_chain) {
+            return Err(Error::UnsupportedTxChannels { channels });
+        }
+        if extended {
+            self.channels = channels;
+            return Ok(EngineSequence::new().extended_tx_map(channels.lane_map()));
+        }
+        let (mute, swap) = Self::lane_use(channels, Some(self.mute));
+        *self = Self {
+            channels,
+            mute,
+            swap,
+        };
+        Ok(EngineSequence::new().update_tx_lanes(self.lanes()))
+    }
+
     /// The original core's mute and swap for `channels` at creation, or after a remap with
     /// the stream's `mute` (`initialize_stream_tx_32`, `_sfetrx4_option_set`'s `"chmap"`):
     /// one channel mutes the lane it does not use, unless remapped while muting neither;
@@ -367,38 +405,15 @@ impl Board {
     }
 
     /// Moves the stream to `channels`, of the same count (`_sfetrx4_option_set`'s
-    /// `"chmap"`): on the original core, the lanes swap as a new stream's would and a
-    /// one-channel stream muting a lane mutes the other instead (`fe_tx4_swap_ab_get`,
-    /// `sfe_tx4_upd`); on the extended core, its lane map is rewritten
-    /// (`exfe_trx4_update_chmap`).
-    ///
-    /// Intentional divergence: libusdr reads only as many entries of a new map as the
-    /// stream has channels, so a map of another count still applies; it is refused here,
-    /// as is a second channel without the TX chain.
+    /// `"chmap"`), as [`TxLaneUse::remap`] says.
     pub(crate) fn set_tx_channels(&mut self, channels: TxChannels) -> Result<(), Error> {
         let tx_chain = self.radio.chains.tx;
         let Some(stream) = self.streams.as_mut().and_then(|group| group.tx.as_mut()) else {
             return Err(Error::NotStreaming);
         };
-        let second_channel = matches!(channels, TxChannels::Channel1 | TxChannels::Both);
-        if channels.count() != stream.lanes.channels.count() || (second_channel && !tx_chain) {
-            return Err(Error::UnsupportedTxChannels { channels });
-        }
-        if stream.extended.is_some() {
-            let mut update = EngineSequence::new().extended_tx_map(channels.lane_map());
-            run_sequence(self.bus.as_mut(), &mut update)?;
-            stream.lanes.channels = channels;
-            return Ok(());
-        }
-        // libusdr keeps the new swap and mute before writing them, so a failed write
-        // leaves the stream's state ahead of the core's; kept.
-        let (mute, swap) = TxLaneUse::lane_use(channels, Some(stream.lanes.mute));
-        stream.lanes = TxLaneUse {
-            channels,
-            mute,
-            swap,
-        };
-        let mut update = EngineSequence::new().update_tx_lanes(stream.lanes());
+        let mut update = stream
+            .lanes
+            .remap(channels, stream.extended.is_some(), tx_chain)?;
         run_sequence(self.bus.as_mut(), &mut update)
     }
 

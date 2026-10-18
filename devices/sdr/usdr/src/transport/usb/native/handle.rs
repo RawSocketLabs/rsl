@@ -140,6 +140,9 @@ pub enum NativeEvent {
     /// The TX core's lanes were muted as asked, or the write failed; the group keeps the
     /// setting for its start either way.
     TxMuted(Result<(), Error>),
+    /// The TX stream moved to the channels asked for, or the write failed; the group keeps
+    /// the new lane use for its start either way, as the blocking stream does.
+    TxChannelsSet(Result<(), Error>),
     /// The RX front end's bursts were throttled as asked, or the write failed.
     RxThrottled(Result<(), Error>),
     /// The board powered up, or failed to: refused as too hot before anything powered, or
@@ -352,7 +355,8 @@ enum StreamState {
 /// sample rate, tunes, sets bandwidths, gains, paths, the corrections and the TX constant
 /// generator, calibrates LO leakage and IQ imbalance, creates, starts and stops a stream group on either channel or both and
 /// either TX core (the RF chains' power, tuning and DC calibration, the engine registers
-/// and DSP corrections), mutes the TX core's lanes and throttles RX bursts, all as
+/// and DSP corrections), mutes the TX core's lanes, remaps the TX stream's channels and
+/// throttles RX bursts, all as
 /// [`Device`](crate::Device) does them, with the same portable machines, and runs the RX
 /// and TX streams at the transport (the blocks on endpoints 0x83 and 0x03, framed and
 /// throttled as the blocking bus frames them). It keeps the board's RF state as the

@@ -15,7 +15,7 @@ exposes the unstable `NativeUsb` (`UsbBus::into_native`, or `Device::into_native
 powered device), whose generic executor runs any portable sequence: the board's own
 (temperature, identity, reference switch, power-up behind the thermal policy and
 power-down, sample rate, tuning, bandwidths, gains, paths, the corrections and TX
-constant generator, the LO/IQ calibration, and a stream group's create, start, mute, throttle and stop on
+constant generator, the LO/IQ calibration, and a stream group's create, start, mute, remap, throttle and stop on
 either channel or both and either TX core, the RF chains' power, tuning and DC
 calibration included), so a board goes from open to streaming with no blocking `Device`; plus the
 RX/TX streams at the transport, `ManagedUsb`, a synchronous runner over it, and
@@ -252,7 +252,8 @@ Each layer calls only the ones below it.
   machines on the session's `Radio` (a handed-over device's, or its own from
   `start_power_up`, which reads the TMP114 first and refuses at the thermal policy's
   start limit). Its stream group (`handle/group.rs`) creates, starts, readies, mutes,
-  throttles and stops the engine with the board's own `EngineSequence`s and
+  remaps (`TxLaneUse::remap`, as the board's), throttles and stops the engine with the
+  board's own `EngineSequence`s and
   `Phy::{rx,tx}_create_writes` (the create's DSP-port writes, also `EngineSequence`s), the
   RF chains' create and stop parts, the TX gateware gate and the
   transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
@@ -354,8 +355,8 @@ Each layer calls only the ones below it.
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
   `oracle/tests/calibration_parity.rs`), and so is the extended TX core and both
   directions' second channels (`oracle/tests/{tx_stream,stream_formats}_parity.rs`);
-  not ported natively (`NativeUsb`) are the front-end probe and controls and a TX
-  stream's remap (`set_tx_channels`); not ported at all are the
+  not ported natively (`NativeUsb`) are the front-end probe and controls; not ported
+  at all are the
   gateware FFT format and lane bifurcation (no gateware evidence), and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment

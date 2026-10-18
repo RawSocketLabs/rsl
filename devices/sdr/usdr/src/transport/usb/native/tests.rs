@@ -3886,24 +3886,66 @@ fn set_up_on(board: SimBoard) -> (Device, Arc<Mutex<SimBoard>>) {
     (device, board)
 }
 
-/// Creates `config`'s group, starts it, mutes `mute` and stops it, on a blocking device
-/// set up on `board()` and on a native handle a second such device handed over to; each
-/// step's operations compared.
-fn group_on_both_paths(board: impl Fn() -> SimBoard, config: StreamsConfig, mute: TxMute) {
+/// One stream-group call, made on either path.
+#[derive(Clone, Copy, Debug)]
+enum GroupCall {
+    /// Create the group.
+    Create(StreamsConfig),
+    /// Start it.
+    Start,
+    /// Mute the TX core's lanes.
+    Mute(TxMute),
+    /// Move the TX stream to other channels.
+    Channels(TxChannels),
+    /// Stop it.
+    Stop,
+}
+
+impl GroupCall {
+    /// Makes the call on the blocking device.
+    fn on_device(self, device: &mut Device) -> Result<(), Error> {
+        match self {
+            Self::Create(config) => device.create_streams(config),
+            Self::Start => device.start_streams(),
+            Self::Mute(mute) => device.set_tx_mute(mute),
+            Self::Channels(channels) => device.set_tx_channels(channels),
+            Self::Stop => device.stop_streams(),
+        }
+    }
+
+    /// Makes the call on the native handle and waits for its event: its result.
+    fn on_native(self, native: &mut NativeUsb, reactor: &mut Poll) -> Result<(), Error> {
+        let now = Instant::now();
+        match self {
+            Self::Create(config) => native.start_create_streams(config, now),
+            Self::Start => native.start_streams(now),
+            Self::Mute(mute) => native.start_tx_mute(mute, now),
+            Self::Channels(channels) => native.start_tx_channels(channels, now),
+            Self::Stop => native.start_stop_streams(now),
+        }?;
+        match settle(native, reactor) {
+            NativeEvent::StreamsCreated(result)
+            | NativeEvent::StreamsStarted(result)
+            | NativeEvent::TxMuted(result)
+            | NativeEvent::TxChannelsSet(result)
+            | NativeEvent::StreamsStopped(result) => result,
+            other => panic!("{self:?}: the call's event, got {other:?}"),
+        }
+    }
+}
+
+/// Makes `calls` on a blocking device set up on `board()` and on a native handle a second
+/// such device handed over to; each call's operations compared.
+fn group_calls_on_both_paths(board: impl Fn() -> SimBoard, calls: &[GroupCall]) {
     let (mut device, blocking) = set_up_on(board());
-    let mut expected = Vec::new();
-    let start = mark(&blocking);
-    device.create_streams(config).unwrap();
-    expected.push(operations(&blocking, start));
-    let start = mark(&blocking);
-    device.start_streams().unwrap();
-    expected.push(operations(&blocking, start));
-    let start = mark(&blocking);
-    device.set_tx_mute(mute).unwrap();
-    expected.push(operations(&blocking, start));
-    let start = mark(&blocking);
-    device.stop_streams().unwrap();
-    expected.push(operations(&blocking, start));
+    let expected: Vec<_> = calls
+        .iter()
+        .map(|call| {
+            let start = mark(&blocking);
+            call.on_device(&mut device).unwrap();
+            operations(&blocking, start)
+        })
+        .collect();
 
     let (mut device, board) = set_up_on(board());
     let handed = device.hand_over_usb().unwrap();
@@ -3912,33 +3954,157 @@ fn group_on_both_paths(board: impl Fn() -> SimBoard, config: StreamsConfig, mute
     let mut native = handed
         .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
         .unwrap();
-    for (step, expected) in ["create", "start", "mute", "stop"]
-        .into_iter()
-        .zip(expected)
-    {
+    for (call, expected) in calls.iter().zip(expected) {
         let start = mark(&board);
-        let now = Instant::now();
-        match step {
-            "create" => native.start_create_streams(config, now),
-            "start" => native.start_streams(now),
-            "mute" => native.start_tx_mute(mute, now),
-            _ => native.start_stop_streams(now),
-        }
-        .unwrap();
-        let event = settle(&mut native, &mut reactor);
-        assert!(
-            matches!(
-                event,
-                NativeEvent::StreamsCreated(Ok(()))
-                    | NativeEvent::StreamsStarted(Ok(()))
-                    | NativeEvent::TxMuted(Ok(()))
-                    | NativeEvent::StreamsStopped(Ok(()))
-            ),
-            "{config:?} {step}: {event:?}"
-        );
-        assert!(!expected.is_empty(), "{config:?} {step} reached the board");
-        assert_eq!(operations(&board, start), expected, "{config:?} {step}");
+        call.on_native(&mut native, &mut reactor)
+            .unwrap_or_else(|error| panic!("{calls:?} {call:?}: {error}"));
+        assert!(!expected.is_empty(), "{calls:?} {call:?} reached the board");
+        assert_eq!(operations(&board, start), expected, "{calls:?} {call:?}");
     }
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+/// Creates `config`'s group, starts it, mutes `mute` and stops it, on both paths.
+fn group_on_both_paths(board: impl Fn() -> SimBoard, config: StreamsConfig, mute: TxMute) {
+    group_calls_on_both_paths(
+        board,
+        &[
+            GroupCall::Create(config),
+            GroupCall::Start,
+            GroupCall::Mute(mute),
+            GroupCall::Stop,
+        ],
+    );
+}
+
+#[test]
+fn a_native_tx_remap_performs_the_blocking_remaps_operations() {
+    use GroupCall::{Channels, Create, Mute, Start, Stop};
+    let fresh = || SimBoard::new(BoardRevision::Rev3);
+    let channel0 = StreamsConfig::tx(tx_config());
+    // The original core: a remap before the start swaps the lanes and moves the create's
+    // lane-B mute to lane A, which the start applies; a running remap back, after a mute
+    // of neither lane, keeps muting neither.
+    group_calls_on_both_paths(
+        fresh,
+        &[
+            Create(channel0),
+            Channels(TxChannels::Channel1),
+            Start,
+            Mute(TxMute::Neither),
+            Channels(TxChannels::Channel0),
+            Stop,
+        ],
+    );
+    // Two channels stay two: the remap rewrites the same flags.
+    let both = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config().with_channels(TxChannels::Both))
+        .with_sync(SyncMode::All);
+    group_calls_on_both_paths(
+        fresh,
+        &[Create(both), Start, Channels(TxChannels::Both), Stop],
+    );
+    // The extended core: the lane map is rewritten, before and after the start.
+    let extended = || SimBoard::new(BoardRevision::Rev3).with_extended_tx_core();
+    group_calls_on_both_paths(
+        extended,
+        &[
+            Create(channel0),
+            Channels(TxChannels::Channel1),
+            Start,
+            Channels(TxChannels::Channel0),
+            Stop,
+        ],
+    );
+}
+
+#[test]
+fn a_native_tx_remap_refuses_before_any_io_as_the_blocking_one_does() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, _, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    let start = mark(&board);
+    assert!(
+        matches!(
+            native.start_tx_channels(TxChannels::Channel1, Instant::now()),
+            Err(Error::NotStreaming)
+        ),
+        "no group"
+    );
+    assert_eq!(operations(&board, start), [], "no group: before any I/O");
+    GroupCall::Create(StreamsConfig::rx(rx_config()))
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    let start = mark(&board);
+    assert!(
+        matches!(
+            native.start_tx_channels(TxChannels::Channel1, Instant::now()),
+            Err(Error::NotStreaming)
+        ),
+        "a group without TX"
+    );
+    assert_eq!(operations(&board, start), [], "no TX: before any I/O");
+    GroupCall::Stop
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    GroupCall::Create(StreamsConfig::tx(tx_config()))
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    let start = mark(&board);
+    assert!(
+        matches!(
+            native.start_tx_channels(TxChannels::Both, Instant::now()),
+            Err(Error::UnsupportedTxChannels {
+                channels: TxChannels::Both,
+                ..
+            })
+        ),
+        "one channel cannot become two"
+    );
+    assert_eq!(
+        operations(&board, start),
+        [],
+        "another count: before any I/O"
+    );
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_native_tx_remap_to_channel_1_without_the_tx_chain_is_refused_as_the_blocking_one_is() {
+    let rx_only = || SimBoard::new(BoardRevision::Rev3).with_rx_only();
+    let (mut device, blocking) = set_up_on(rx_only());
+    device
+        .create_streams(StreamsConfig::tx(tx_config()))
+        .unwrap();
+    let start = mark(&blocking);
+    assert!(matches!(
+        device.set_tx_channels(TxChannels::Channel1),
+        Err(Error::UnsupportedTxChannels {
+            channels: TxChannels::Channel1,
+            ..
+        })
+    ));
+    assert_eq!(operations(&blocking, start), [], "the blocking refusal");
+    let (mut device, board) = set_up_on(rx_only());
+    let handed = device.hand_over_usb().unwrap();
+    drop(device);
+    let (mut reactor, wake) = reactor();
+    let mut native = handed
+        .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
+        .unwrap();
+    GroupCall::Create(StreamsConfig::tx(tx_config()))
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    let start = mark(&board);
+    assert!(matches!(
+        native.start_tx_channels(TxChannels::Channel1, Instant::now()),
+        Err(Error::UnsupportedTxChannels {
+            channels: TxChannels::Channel1,
+            ..
+        })
+    ));
+    assert_eq!(operations(&board, start), [], "the native refusal");
     native.close().unwrap();
     native_cleanup(&mut native, &mut reactor).unwrap();
 }
