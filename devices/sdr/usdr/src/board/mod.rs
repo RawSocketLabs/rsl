@@ -17,6 +17,10 @@ pub use crate::portable::radio::gain::{RxGain, TxGain};
 pub use crate::portable::radio::path::{RxPath, TxPath};
 pub use crate::portable::radio::state::NcoChannels;
 pub(crate) use board::Board;
+#[cfg(all(feature = "mio", target_os = "linux"))]
+pub(crate) use board::Corrections;
+#[cfg(all(feature = "mio", target_os = "linux"))]
+pub(crate) use calibration::Calibrate;
 pub use calibration::{Calibration, CalibrationReport, Feedback, IqCalibration, TxLoLeakage};
 pub use correction::{RxIqCorrection, RxTrim, TxDcOffset, TxIqCorrection};
 pub use debug::DebugChip;

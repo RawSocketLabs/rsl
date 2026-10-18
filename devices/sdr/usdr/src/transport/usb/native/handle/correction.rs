@@ -87,7 +87,7 @@ impl NativeUsb {
         now: Instant,
     ) -> Result<(), Error> {
         self.refuse_radio_operation()?;
-        self.session.board.rx_iq_imbalance = imbalance;
+        self.session.board.corrections.rx = imbalance;
         self.start_dsp(&Phy::Rx.set_iq_correction(imbalance.rx_terms()), now)
     }
 
@@ -136,7 +136,7 @@ impl NativeUsb {
         now: Instant,
     ) -> Result<(), Error> {
         self.refuse_radio_operation()?;
-        self.session.board.tx_iq_imbalance = imbalance;
+        self.session.board.corrections.tx = imbalance;
         self.start_dsp(&Phy::Tx.set_iq_correction(imbalance.tx_terms()), now)
     }
 

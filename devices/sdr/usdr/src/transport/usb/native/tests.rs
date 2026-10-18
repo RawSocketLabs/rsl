@@ -19,12 +19,13 @@ use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use num_complex::Complex;
-use usdr_sim::{BoardRevision, Op, PllLock, SimBoard};
+use usdr_sim::{BoardRevision, Imbalance, Loopback, Op, PllLock, SimBoard};
 
 use super::{BoardUsb, simulated_device};
 use crate::Device;
 use crate::board::{
-    RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim, TxDcOffset, TxGain, TxIqCorrection, TxPath,
+    Calibration, Corrections, Feedback, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim,
+    TxDcOffset, TxGain, TxIqCorrection, TxPath,
 };
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::{Access, Error};
@@ -809,8 +810,7 @@ fn revision_session(rev3: bool) -> Session {
                 extended_tx_core: false,
             },
             radio: None,
-            rx_iq_imbalance: IqImbalance::default(),
-            tx_iq_imbalance: IqImbalance::default(),
+            corrections: Corrections::default(),
         },
         tx_status: TxStatus::default(),
         thermal: None,
@@ -3536,4 +3536,250 @@ fn a_native_group_on_the_original_core_uses_the_lanes_the_blocking_one_does() {
         .with_tx(tx_config().with_channels(TxChannels::Both))
         .with_sync(SyncMode::All);
     group_on_both_paths(fresh, both, TxMute::B);
+}
+
+/// A revision-3 board whose RF loopback the calibration searches against: leakage off
+/// the integer grid and a few percent and degrees of imbalance either way, as the
+/// oracle's calibration scenarios model it, at `rate` with decimation 4.
+fn loopback_board(rate: u32) -> SimBoard {
+    SimBoard::new(BoardRevision::Rev3).with_loopback(Loopback {
+        converter_clock_hz: 4 * rate,
+        tx_lo_leakage: [-310.4, 205.7],
+        tx_imbalance: Imbalance {
+            gain: -0.02,
+            phase: (-1.5_f64).to_radians(),
+        },
+        rx_imbalance: Imbalance {
+            gain: 0.03,
+            phase: 2_f64.to_radians(),
+        },
+        gain: 1.0,
+        external: false,
+    })
+}
+
+/// A board's transport whose virtual clock moves 100 µs with every command packet and not
+/// with waits, so the DC estimator (one measurement a virtual millisecond) moves alike on
+/// the blocking bus, whose waits reach the transport, and on the native handle, whose
+/// waits are caller deadlines that never do; a poll's four reads fit in one measurement
+/// most of the time, and both paths retry the same ones.
+struct Clocked(BoardUsb);
+
+impl UsbIo for Clocked {
+    fn write(&mut self, packet: &[u8], timeout: Duration) -> Result<(), BusError> {
+        let written = self.0.write(packet, timeout);
+        self.0.board.lock().unwrap().sleep_us(100);
+        written
+    }
+
+    fn read(&mut self, reply: Endpoint, timeout: Duration) -> Result<Vec<u8>, BusError> {
+        self.0.read(reply, timeout)
+    }
+
+    fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.0.rx_open(block_bytes)
+    }
+
+    fn rx_recv(
+        &mut self,
+        timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        self.0.rx_recv(timeout, consume)
+    }
+
+    fn rx_close(&mut self) -> Result<(), BusError> {
+        self.0.rx_close()
+    }
+
+    fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
+        self.0.tx_open(block_bytes, sample_bytes)
+    }
+
+    fn tx_acquire(&mut self, timeout: Duration) -> Result<(), BusError> {
+        self.0.tx_acquire(timeout)
+    }
+
+    fn tx_commit(
+        &mut self,
+        time: Option<u64>,
+        status: Option<[u32; 4]>,
+        fill: &mut TxFill<'_>,
+    ) -> Result<(), BusError> {
+        self.0.tx_commit(time, status, fill)
+    }
+
+    fn tx_close(&mut self) -> Result<(), BusError> {
+        self.0.tx_close()
+    }
+
+    fn sleep(&mut self, _: Duration) {}
+
+    fn holds_stream(&self) -> bool {
+        self.0.holds_stream()
+    }
+}
+
+/// `board` on a [`Clocked`] USB bus whose router is set up.
+fn clocked_bus(mut board: SimBoard) -> (UsbBus, Arc<Mutex<SimBoard>>) {
+    let hwid = board.read_reg(19);
+    board.write_reg(19, hwid | 0x4000_0000);
+    let board = Arc::new(Mutex::new(board));
+    let io = BoardUsb {
+        script: Arc::default(),
+        rx: None,
+        tx: None,
+        board: Arc::clone(&board),
+        registers: VecDeque::new(),
+        notifications: VecDeque::new(),
+        sequence: 0,
+        lut: 0,
+        index: 0,
+    };
+    let mut bus = UsbBus::from_io(Box::new(Clocked(io)));
+    bus.initialize().unwrap();
+    (bus, board)
+}
+
+/// Opens a blocking device on `board` without the front-end probe and powers a native
+/// handle up on a second such board, both on [`Clocked`] buses; makes `settings` on both
+/// and returns them.
+fn calibration_pair(
+    board: impl Fn() -> SimBoard,
+    settings: &[Setting],
+    reactor: &mut Poll,
+    wake: Arc<Waker>,
+) -> (
+    Device,
+    Arc<Mutex<SimBoard>>,
+    NativeUsb,
+    Arc<Mutex<SimBoard>>,
+) {
+    let (bus, blocking) = clocked_bus(board());
+    let mut device = Device::builder(bus)
+        .front_end(FrontEndSelection::None)
+        .open()
+        .unwrap();
+    let (bus, native_board) = clocked_bus(board());
+    let mut native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(|io| Ok(Fake::over(io).0), reactor.registry(), DEVICE, wake)
+        .unwrap();
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    for setting in settings {
+        setting.on_device(&mut device).unwrap();
+        setting.on_native(&mut native, reactor).unwrap();
+    }
+    (device, blocking, native, native_board)
+}
+
+#[test]
+fn a_native_calibration_performs_the_blocking_calibrations_operations() {
+    const RATE: u32 = 10_000_000;
+    let both = [
+        Setting::Rate(RATE),
+        Setting::RxHz(1_000_000_000),
+        Setting::TxHz(1_000_000_000),
+    ];
+    let full = Calibration {
+        tx_lo_leakage: true,
+        tx_iq_imbalance: true,
+        rx_iq_imbalance: true,
+        ..Calibration::default()
+    };
+    let analog = Calibration {
+        tx_lo_leakage: true,
+        analog_lo_first: true,
+        feedback: Feedback::External,
+        ..Calibration::default()
+    };
+    // Both chains tuned, then only the transmitter: the TX calibrations wake, tune and
+    // DC-calibrate the receiver and power it down again; then the analog LO search first.
+    let scenarios: [(&[Setting], Calibration); 3] = [
+        (&both, full),
+        (&[Setting::Rate(RATE), Setting::TxHz(1_000_000_000)], full),
+        (&both, analog),
+    ];
+    for (settings, calibration) in scenarios {
+        let (mut reactor, wake) = reactor();
+        let (mut device, blocking, mut native, board) =
+            calibration_pair(|| loopback_board(RATE), settings, &mut reactor, wake);
+        let (blocking_start, native_start) = (mark(&blocking), mark(&board));
+        let expected = device
+            .calibrate(calibration)
+            .unwrap_or_else(|error| panic!("{settings:?} {calibration:?}: {error}"));
+        native.start_calibrate(calibration, Instant::now()).unwrap();
+        let NativeEvent::Calibrated(found) = settle(&mut native, &mut reactor) else {
+            panic!("{calibration:?}: the calibration's event");
+        };
+        assert_eq!(found.unwrap(), expected, "{calibration:?}: the same report");
+        let expected = operations(&blocking, blocking_start);
+        assert!(expected.len() > 100, "{calibration:?} searched the board");
+        assert_eq!(
+            operations(&board, native_start),
+            expected,
+            "{calibration:?}: op for op"
+        );
+        // The corrections found are kept for the stream group's create, as the device's.
+        let config = StreamsConfig::rx(rx_config()).with_tx(tx_config());
+        let (blocking_start, native_start) = (mark(&blocking), mark(&board));
+        device.create_streams(config).unwrap();
+        native.start_create_streams(config, Instant::now()).unwrap();
+        assert!(matches!(
+            settle(&mut native, &mut reactor),
+            NativeEvent::StreamsCreated(Ok(()))
+        ));
+        assert_eq!(
+            operations(&board, native_start),
+            operations(&blocking, blocking_start),
+            "{calibration:?}: the create after it"
+        );
+        native.close().unwrap();
+        native_cleanup(&mut native, &mut reactor).unwrap();
+    }
+}
+
+#[test]
+fn a_native_calibration_refuses_before_any_io_as_the_blocking_one_does() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, &reactor, wake);
+    let start = mark(&board);
+    let calibration = Calibration::default();
+    assert!(matches!(
+        native.start_calibrate(calibration, Instant::now()),
+        Err(Error::NotPowered)
+    ));
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    let start = start.max(mark(&board));
+    assert!(
+        matches!(
+            native.start_calibrate(calibration, Instant::now()),
+            Err(Error::NoSampleRate)
+        ),
+        "no sample rate, where libusdr divides by zero"
+    );
+    assert_eq!(operations(&board, start), [], "refused before any I/O");
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
 }

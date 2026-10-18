@@ -59,18 +59,19 @@ pub(crate) struct Board {
     pub(super) front_end: Option<FrontEnd>,
 }
 
-/// The DSP chains' digital corrections as libusdr keeps them (its `rx_corr` and `tx_corr`).
+/// The DSP chains' digital corrections as libusdr keeps them (its `rx_corr` and
+/// `tx_corr`): the blocking board's, and a native handle's after a hand-over.
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct Corrections {
+pub(crate) struct Corrections {
     /// The RX IQ imbalance correction, which stream creation writes again.
-    pub(super) rx: IqImbalance,
+    pub(crate) rx: IqImbalance,
 
     /// The TX IQ imbalance correction, which TX stream creation writes again.
-    pub(super) tx: IqImbalance,
+    pub(crate) tx: IqImbalance,
 
     /// The LO-leakage calibration's DC offsets, I then Q (libusdr's `tx_corr.dc_i` and
     /// `dc_q`): where its searches last moved each, kept from one calibration to the next.
-    pub(super) tx_lo_dc: [i16; 2],
+    pub(crate) tx_lo_dc: [i16; 2],
 }
 
 impl fmt::Debug for Board {
@@ -136,8 +137,7 @@ impl Board {
             rev3: self.radio.rev3,
             chains: self.radio.chains,
             radio: Some(self.radio),
-            rx_iq_imbalance: self.corrections.rx,
-            tx_iq_imbalance: self.corrections.tx,
+            corrections: self.corrections,
         };
         (state, self.bus.as_mut())
     }

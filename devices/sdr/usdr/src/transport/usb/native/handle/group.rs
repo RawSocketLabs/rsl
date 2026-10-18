@@ -206,7 +206,7 @@ impl NativeUsb {
                 ))),
             }
             steps.push_back(engine(Phy::rx_create_writes(
-                self.session.board.rx_iq_imbalance,
+                self.session.board.corrections.rx,
             )));
         }
         let mut tx_lanes = TxLaneUse::default();
@@ -241,7 +241,7 @@ impl NativeUsb {
                 },
             );
             steps.push_back(engine(Phy::tx_create_writes(
-                self.session.board.tx_iq_imbalance,
+                self.session.board.corrections.tx,
             )));
         }
         let mut run = GroupRun::new(GroupKind::Create, config.sync, steps, now);

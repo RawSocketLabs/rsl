@@ -25,12 +25,14 @@ use super::protocol::I2cCache;
 use super::rx::Rx;
 use super::tx::{self, Tx, TxDevice, TxStatus};
 #[cfg(feature = "mio")]
+use crate::board::Corrections;
+#[cfg(feature = "mio")]
 use crate::chips::register::run_sequence;
 #[cfg(feature = "mio")]
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
 #[cfg(feature = "mio")]
-use crate::fpga::{Gpo, IdentityRead, IqImbalance};
+use crate::fpga::{Gpo, IdentityRead};
 use crate::lowlevel::{Bus, BusError, I2cAddr, SpiAddr, TxCommit, TxFill, usb_error};
 #[cfg(feature = "mio")]
 use crate::portable::radio::Chains;
@@ -507,8 +509,7 @@ impl UsbBus {
                 extended_tx_core: identity.has_extended_tx_core(),
             },
             radio: None,
-            rx_iq_imbalance: IqImbalance::default(),
-            tx_iq_imbalance: IqImbalance::default(),
+            corrections: Corrections::default(),
         })
     }
 

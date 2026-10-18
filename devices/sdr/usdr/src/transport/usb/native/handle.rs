@@ -1,10 +1,12 @@
 //! The public reactor-driven handle over the native adapter: one generic executor runs the
 //! TMP114 read and portable sequences (gateware identity, reference-clock switch, the
-//! board's RF operations: `radio`; its corrections: `correction`), the RX and TX streams'
+//! board's RF operations: `radio`; its corrections: `correction`; its calibration:
+//! `calibration`), the RX and TX streams'
 //! operations at the transport
 //! (`stream`), and the stream group's create, start and stop, which compose them
 //! (`group`).
 
+mod calibration;
 mod correction;
 mod group;
 mod radio;
@@ -28,11 +30,11 @@ use super::super::tx::TxStatus;
 use super::adapter::Adapter;
 use super::backend::Backend;
 use super::window::Windowed;
-use crate::board::Board;
+use crate::board::{Board, Calibrate, CalibrationReport, Corrections};
 use crate::chips::si5332::Si5332;
 use crate::chips::tmp114::{TemperatureRead, Tmp114};
 use crate::error::Error;
-use crate::fpga::{self, IdentityRead, IqImbalance};
+use crate::fpga::{self, IdentityRead};
 use crate::identity::Identity;
 use crate::lowlevel::BusError;
 use crate::portable::radio::{Chains, PowerUpPlan, Radio};
@@ -67,8 +69,9 @@ pub(in super::super) struct Session {
 }
 
 /// What a native handle carries on from the board it takes over: the facts the board's
-/// identity established, the IQ corrections a stream group's create writes again, and the
-/// powered board's RF state, which the handle's RF operations change.
+/// identity established, the DSP corrections (the IQ corrections a stream group's create
+/// writes again, the LO-leakage calibration's offsets), and the powered board's RF state,
+/// which the handle's RF operations change.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BoardState {
     /// Revision 3: decides which Si5332 input [`ReferenceClock::Board`] selects.
@@ -79,12 +82,10 @@ pub(crate) struct BoardState {
     /// The powered board's RF state: a handed-over device's, or the handle's own after its
     /// power-up; `None` on an unpowered board.
     pub(crate) radio: Option<Radio>,
-    /// The RX chain's IQ correction (libusdr's `rx_corr`), which an RX create writes
-    /// again, as the blocking device's does: a handed-over device's, else a fresh board's.
-    pub(crate) rx_iq_imbalance: IqImbalance,
-    /// The TX chain's IQ correction (libusdr's `tx_corr`), which a TX create writes again;
-    /// likewise.
-    pub(crate) tx_iq_imbalance: IqImbalance,
+    /// The DSP chains' corrections (libusdr's `rx_corr` and `tx_corr`), which a stream
+    /// create writes again and the calibration moves, as the blocking device's: a
+    /// handed-over device's, else a fresh board's.
+    pub(crate) corrections: Corrections,
 }
 
 /// Something a [`NativeUsb`] finished or received.
@@ -156,6 +157,9 @@ pub enum NativeEvent {
     GainSet(Result<(), Error>),
     /// A path was selected, or failed.
     PathSet(Result<(), Error>),
+    /// The LO-leakage and IQ-imbalance calibration finished, with what it found, or
+    /// failed.
+    Calibrated(Result<CalibrationReport, Error>),
     /// A correction (a trim, the RX DC correction's switch, a DC offset, an IQ
     /// correction) or the TX constant generator was set, or failed.
     CorrectionSet(Result<(), Error>),
@@ -204,10 +208,6 @@ enum Pending {
 }
 
 /// The sequences the handle runs, and how each reports its end.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per handle; boxing the machine would allocate per operation"
-)]
 enum SequenceOperation {
     /// The gateware build and hardware ID reads.
     Identity(IdentityRead),
@@ -221,6 +221,8 @@ enum SequenceOperation {
     Engine(Windowed<EngineSequence>),
     /// A TX create's gateware read, then its minimum-build check. A group step.
     TxGate(IdentityRead),
+    /// The LO-leakage and IQ-imbalance calibration.
+    Calibrate(Calibrate),
 }
 
 /// Where a sequence is after an outcome.
@@ -243,6 +245,7 @@ impl SequenceOperation {
             Self::ReferenceClock(switch, _) => switch.next(),
             Self::Engine(engine) => engine.next(),
             Self::Radio(run) => run.next(),
+            Self::Calibrate(calibrate) => calibrate.next(),
         }
     }
 
@@ -253,6 +256,7 @@ impl SequenceOperation {
             Self::ReferenceClock(switch, _) => switch.complete(result),
             Self::Engine(engine) => engine.complete(result),
             Self::Radio(run) => return run.complete(result),
+            Self::Calibrate(calibrate) => calibrate.complete(result),
         }
         .map_err(Error::from)
     }
@@ -296,6 +300,7 @@ impl SequenceOperation {
                     .expect("invariant: a finished identity sequence read both words")
             })),
             Self::ReferenceClock(..) => NativeEvent::ReferenceClock(result),
+            Self::Calibrate(_) => unreachable!("invariant: a calibration ends through its own run"),
             Self::Engine(_) | Self::TxGate(_) | Self::Radio(_) => {
                 unreachable!("invariant: group steps end through their group's run")
             }
@@ -334,7 +339,7 @@ enum StreamState {
 /// Unstable pilot: it reads the TMP114 temperature and the gateware identity, switches
 /// the reference clock, powers the board up behind a thermal policy and down, sets the
 /// sample rate, tunes, sets bandwidths, gains, paths, the corrections and the TX constant
-/// generator, creates, starts and stops a stream group on either channel or both and
+/// generator, calibrates LO leakage and IQ imbalance, creates, starts and stops a stream group on either channel or both and
 /// either TX core (the RF chains' power, tuning and DC calibration, the engine registers
 /// and DSP corrections), mutes the TX core's lanes and throttles RX bursts, all as
 /// [`Device`](crate::Device) does them, with the same portable machines, and runs the RX
@@ -617,6 +622,9 @@ impl NativeUsb {
             }
             Progress::Finished(SequenceOperation::Radio(run), result) => {
                 Some(self.finish_radio(run, result))
+            }
+            Progress::Finished(SequenceOperation::Calibrate(calibrate), result) => {
+                Some(self.finish_calibration(&calibrate, result))
             }
             Progress::Finished(operation, result) => {
                 if let SequenceOperation::ReferenceClock(_, reference) = operation {

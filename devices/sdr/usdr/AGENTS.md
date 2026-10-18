@@ -15,7 +15,7 @@ exposes the unstable `NativeUsb` (`UsbBus::into_native`, or `Device::into_native
 powered device), whose generic executor runs any portable sequence: the board's own
 (temperature, identity, reference switch, power-up behind the thermal policy and
 power-down, sample rate, tuning, bandwidths, gains, paths, the corrections and TX
-constant generator, and a stream group's create, start, mute, throttle and stop on
+constant generator, the LO/IQ calibration, and a stream group's create, start, mute, throttle and stop on
 either channel or both and either TX core, the RF chains' power, tuning and DC
 calibration included), so a board goes from open to streaming with no blocking `Device`; plus the
 RX/TX streams at the transport, `ManagedUsb`, a synchronous runner over it, and
@@ -95,16 +95,18 @@ Each layer calls only the ones below it.
   `Board::run_radio`/`run_script`, lending its `Radio` state and taking it back; the stream
   engine's are `portable/stream.rs`'s; the corrections and the TX constant generator are
   portable scripts (the LMS6002D's trims, `portable/fpga.rs`'s DSP-port words); the
-  calibration and streaming that remain blocking code run beside them. `board/board.rs` holds
+  streaming that remains blocking code runs beside them. `board/board.rs` holds
   the `Board` struct (bus, `Radio`, the DSP corrections, reference, stream group, front
   end), its chips and supply setpoints as associated consts
   (`Board::CLOCK = Si5332::usdr()`, `Board::BOOST_VOLTAGE`, `Board::RAILS`). Each sequence
   file (`power.rs`, ...) adds an `impl Board` block. Chip facts (IDs, revisions) stay with
   the chip's register values.
-  `board/calibration.rs` runs libusdr's LO-leakage and IQ-imbalance calibration
-  (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) on `cal::search::best_2d`, measuring with the
-  gateware's DC estimator (`fpga/dc_estimator.rs`, `ipblks/dc_estim.c`); blocking
-  register code, no streaming (`oracle/tests/calibration_parity.rs`).
+  `board/calibration.rs` holds libusdr's LO-leakage and IQ-imbalance calibration
+  (`usdr_calibrate`, `cal/cal_lo_iqimb.c`) as `Calibrate`, a sans-I/O machine over the
+  board's other machines, `cal::search`'s resumable `Search2d` and the gateware's DC
+  estimator (`fpga/dc_estimator.rs`'s `DcMeasure`, `ipblks/dc_estim.c`), which
+  `Board::calibrate` and `NativeUsb::start_calibrate` both run; host-side, as its
+  arithmetic needs libm; no streaming (`oracle/tests/calibration_parity.rs`).
 - `src/chips/`: one module per chip. Each knows its own registers (`bnb` bitfields) and maths;
   the LMS6002D's register values, cache and operations are portable (`portable/lms6002d`),
   so `chips/lms6002d` keeps its docs.
@@ -259,9 +261,9 @@ Each layer calls only the ones below it.
   `asynchronous.rs` (`AsyncUsb`) a reactor thread of its own behind futures woken through
   `core::task::Waker`. Its unit tests use a socket source, not usbfs; only the opt-in
   `usb_hardware` test reaches real queues. Its corrections (`handle/correction.rs`) run
-  the same scripts as the board's. A native power-up probes no front end; the front-end
-  controls and calibration stay with the blocking device; browser integration remains
-  open.
+  the same scripts as the board's, its calibration (`handle/calibration.rs`) the board's
+  `Calibrate`. A native power-up probes no front end; the front-end controls stay with
+  the blocking device; browser integration remains open.
 - `tests/common/sim_bus.rs`: `Bus` over the sim. The oracle's parity tests include it with
   `#[path]`.
 
@@ -346,8 +348,8 @@ Each layer calls only the ones below it.
   LO-leakage/IQ-imbalance calibration (`Device::calibrate`;
   `oracle/tests/calibration_parity.rs`), and so is the extended TX core and both
   directions' second channels (`oracle/tests/{tx_stream,stream_formats}_parity.rs`);
-  not ported natively (`NativeUsb`) are the front-end probe and controls, the
-  calibration and a TX stream's remap (`set_tx_channels`); not ported at all are the
+  not ported natively (`NativeUsb`) are the front-end probe and controls and a TX
+  stream's remap (`set_tx_channels`); not ported at all are the
   gateware FFT format and lane bifurcation (no gateware evidence), and
   the antenna-timing mockup gets no method.
   Their functional behaviours are in the approved phased scope; legacy environment

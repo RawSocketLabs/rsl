@@ -13,10 +13,9 @@ use std::time::Duration;
 
 use bnb::{bitfield, u7};
 
-use super::gpio::FPGA;
 use super::phy::Phy;
-use crate::error::{BusContext, Error};
-use crate::lowlevel::Bus;
+use crate::portable::fpga::FPGA;
+use crate::portable::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
 /// One access to the estimator through the RX port (`_phy_rx_reg`).
 #[bitfield(u32)]
@@ -66,54 +65,195 @@ const FULL_SCALE: f64 = 32_767.0;
 /// How often libusdr polls for a finished measurement before giving up.
 const POLLS: u32 = 8000;
 
-/// What one estimator poll found (`phy_rfe_pwrdc_get`).
-enum Poll {
-    /// No measurement finished since the one at the start (`-EAGAIN`).
-    Pending,
-
-    /// A finished measurement's I and Q means, 16.16 fixed point.
-    Done(i32, i32),
+/// Which estimator word a [`DcMeasure`] reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Word {
+    /// The generation at the start.
+    Start,
+    /// The generation at a poll's start.
+    Generation,
+    /// The channel's I mean.
+    I,
+    /// The channel's Q mean.
+    Q,
+    /// The generation again, to confirm the means are of one measurement.
+    Confirm,
 }
 
-/// Measures the power at DC after channel `channel`'s NCO (0 for A, 1 for B), in
-/// thousandths of a dB of full scale, as libusdr's `phy_do_meas_nco_avg` does: set the
+/// Where a [`DcMeasure`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    /// Setting the accumulation.
+    Accumulate,
+    /// Holding the estimator.
+    Hold,
+    /// Waiting a microsecond in hold.
+    Settle,
+    /// Running it.
+    Release,
+    /// Selecting a word for the next read.
+    Select(Word),
+    /// Reading the selected word.
+    Read(Word),
+    /// Waiting a millisecond between polls.
+    Wait,
+    /// Finished.
+    Done,
+}
+
+/// One measurement of the power at DC after channel `channel`'s NCO (0 for A, 1 for B),
+/// in thousandths of a dB of full scale, as libusdr's `phy_do_meas_nco_avg` does: set the
 /// accumulation, hold and run the estimator, note its generation, then poll every
-/// millisecond until it moves and the means read between two equal generations.
-///
-/// # Errors
-///
-/// [`Error::Timeout`] if no measurement finishes in 8000 polls (libusdr's `-EAGAIN`); any
-/// bus failure.
-pub(crate) fn measure(bus: &mut dyn Bus, channel: u8) -> Result<i32, Error> {
-    write(bus, ACCUMULATION, ACCUMULATION_SETTING)?;
-    write(bus, HOLD, 1)?;
-    bus.sleep(Duration::from_micros(1));
-    write(bus, HOLD, 0)?;
-    let start = read(bus, GENERATION)?;
-    for _ in 0..POLLS {
-        if let Poll::Done(i, q) = poll(bus, start, channel)? {
-            return Ok(millidecibels(i, q));
-        }
-        bus.sleep(Duration::from_millis(1));
-    }
-    Err(Error::Timeout)
+/// millisecond until it moves and the means read between two equal generations
+/// (`phy_rfe_pwrdc_get`, retried at once when the generation moved during the reads). A
+/// sans-I/O machine over the RX port: the calibration runs it on the blocking board and
+/// on the native USB handle. No measurement in 8000 polls is libusdr's `-EAGAIN`
+/// ([`Self::value`] then reports `Err(())`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DcMeasure {
+    /// The channel's I mean's read address.
+    i_addr: u8,
+    /// Where it is.
+    step: Step,
+    /// The generation at the start.
+    start: u32,
+    /// The generation the current poll read.
+    generation: u32,
+    /// The I mean read.
+    i: u32,
+    /// The Q mean read.
+    q: u32,
+    /// Polls that found no new measurement.
+    polls: u32,
+    /// The power, or `Err(())` for no measurement in time; `None` until finished, and after
+    /// a bus failure.
+    value: Option<Result<i32, ()>>,
 }
 
-/// One poll: if the generation moved from `start`, the channel's means, read again until
-/// the generation holds across them.
-fn poll(bus: &mut dyn Bus, start: u32, channel: u8) -> Result<Poll, Error> {
-    let i_addr = CHANNEL_A_I + 2 * channel;
-    loop {
-        let generation = read(bus, GENERATION)?;
-        if generation == start {
-            return Ok(Poll::Pending);
+impl DcMeasure {
+    /// A measurement on `channel`, before its first write.
+    pub(crate) const fn new(channel: u8) -> Self {
+        Self {
+            i_addr: CHANNEL_A_I + 2 * channel,
+            step: Step::Accumulate,
+            start: 0,
+            generation: 0,
+            i: 0,
+            q: 0,
+            polls: 0,
+            value: None,
         }
-        let i = read(bus, i_addr)?;
-        let q = read(bus, i_addr + 1)?;
-        if read(bus, GENERATION)? == generation {
-            let signed = |word: u32| i32::from_ne_bytes(word.to_ne_bytes());
-            return Ok(Poll::Done(signed(i), signed(q)));
+    }
+
+    /// The power once measured, in thousandths of a dB; `Err(())` when no measurement
+    /// finished in 8000 polls.
+    pub(crate) const fn value(&self) -> Option<Result<i32, ()>> {
+        self.value
+    }
+
+    /// The register address `word` reads.
+    const fn addr(&self, word: Word) -> u8 {
+        match word {
+            Word::Start | Word::Generation | Word::Confirm => GENERATION,
+            Word::I => self.i_addr,
+            Word::Q => self.i_addr + 1,
         }
+    }
+
+    /// Where it goes once `word`, reading `value`, has been read.
+    fn after_read(&mut self, word: Word, value: u32) -> Step {
+        match word {
+            Word::Start => {
+                self.start = value;
+                Step::Select(Word::Generation)
+            }
+            Word::Generation if value == self.start => Step::Wait,
+            Word::Generation => {
+                self.generation = value;
+                Step::Select(Word::I)
+            }
+            Word::I => {
+                self.i = value;
+                Step::Select(Word::Q)
+            }
+            Word::Q => {
+                self.q = value;
+                Step::Select(Word::Confirm)
+            }
+            Word::Confirm if value == self.generation => {
+                let signed = |word: u32| i32::from_ne_bytes(word.to_ne_bytes());
+                self.value = Some(Ok(millidecibels(signed(self.i), signed(self.q))));
+                Step::Done
+            }
+            Word::Confirm => Step::Select(Word::Generation),
+        }
+    }
+}
+
+impl Sequence for DcMeasure {
+    fn next(&self) -> Option<SequenceAction> {
+        let write = |access: EstimatorAccess| {
+            let value = access.with_bank(u7::new(BANK)).to_raw();
+            SequenceAction::Fpga(FpgaAccess::Write {
+                reg: Phy::Rx as u32,
+                value,
+            })
+        };
+        let set = |addr, value| write(EstimatorAccess::new().with_addr(addr).with_value(value));
+        Some(match self.step {
+            Step::Accumulate => set(ACCUMULATION, ACCUMULATION_SETTING),
+            Step::Hold => set(HOLD, 1),
+            Step::Settle => SequenceAction::Sleep(Duration::from_micros(1)),
+            Step::Release => set(HOLD, 0),
+            Step::Select(word) => write(
+                EstimatorAccess::new()
+                    .with_read(true)
+                    .with_addr(self.addr(word)),
+            ),
+            Step::Read(_) => SequenceAction::Fpga(FpgaAccess::Read {
+                reg: Phy::Rx as u32,
+            }),
+            Step::Wait => SequenceAction::Sleep(Duration::from_millis(1)),
+            Step::Done => return None,
+        })
+    }
+
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        let Some(action) = self.next() else {
+            return Ok(());
+        };
+        let value = match (action, result) {
+            (SequenceAction::Fpga(access), Err(source)) => {
+                self.step = Step::Done;
+                return Err(SequenceFailure::FpgaTransport {
+                    chip: FPGA,
+                    access,
+                    source,
+                });
+            }
+            (_, Ok(value)) => value,
+            // A wait cannot fail.
+            (_, Err(_)) => 0,
+        };
+        self.step = match self.step {
+            Step::Accumulate => Step::Hold,
+            Step::Hold => Step::Settle,
+            Step::Settle => Step::Release,
+            Step::Release => Step::Select(Word::Start),
+            Step::Select(word) => Step::Read(word),
+            Step::Read(word) => self.after_read(word, value),
+            Step::Wait => {
+                self.polls += 1;
+                if self.polls >= POLLS {
+                    self.value = Some(Err(()));
+                    Step::Done
+                } else {
+                    Step::Select(Word::Generation)
+                }
+            }
+            Step::Done => Step::Done,
+        };
+        Ok(())
     }
 }
 
@@ -130,30 +270,6 @@ fn millidecibels(i: i32, q: i32) -> i32 {
     )]
     let millidecibels = (1000.0 * 10.0 * power.log10()) as i32;
     millidecibels
-}
-
-/// Writes estimator register `addr`.
-fn write(bus: &mut dyn Bus, addr: u8, value: u16) -> Result<(), Error> {
-    access(
-        bus,
-        EstimatorAccess::new().with_addr(addr).with_value(value),
-    )
-}
-
-/// Selects the word at `addr`, then reads it.
-fn read(bus: &mut dyn Bus, addr: u8) -> Result<u32, Error> {
-    access(bus, EstimatorAccess::new().with_read(true).with_addr(addr))?;
-    let reg = Phy::Rx as u32;
-    let mut word = [0];
-    bus.read_regs(reg, &mut word).reading(FPGA, reg)?;
-    Ok(word[0])
-}
-
-/// Sends one access word to the RX port.
-fn access(bus: &mut dyn Bus, access: EstimatorAccess) -> Result<(), Error> {
-    let reg = Phy::Rx as u32;
-    let word = access.with_bank(u7::new(BANK)).to_raw();
-    bus.write_regs(reg, &[word]).writing(FPGA, reg)
 }
 
 #[cfg(test)]
@@ -182,5 +298,49 @@ mod tests {
         assert_eq!(millidecibels(32_767 * 65_536, 0), 0);
         // Half scale: -6.0206 dB, truncated towards zero.
         assert_eq!(millidecibels(32_767 * 32_768, 0), -6020);
+    }
+
+    /// Runs `measure`, answering each read of the RX port with the next of `reads` (the
+    /// last repeated); the reads made, the waits taken and the value.
+    fn run(mut measure: DcMeasure, reads: &[u32]) -> (usize, usize, Option<Result<i32, ()>>) {
+        let (mut taken, mut waits) = (0, 0);
+        while let Some(action) = measure.next() {
+            let word = match action {
+                SequenceAction::Fpga(FpgaAccess::Read { reg: 56 }) => {
+                    taken += 1;
+                    reads[(taken - 1).min(reads.len() - 1)]
+                }
+                SequenceAction::Sleep(wait) if wait == Duration::from_millis(1) => {
+                    waits += 1;
+                    0
+                }
+                _ => 0,
+            };
+            measure.complete::<()>(Ok(word)).unwrap();
+        }
+        (taken, waits, measure.value())
+    }
+
+    #[test]
+    fn a_generation_that_never_moves_times_out_after_8000_polls() {
+        let (reads, waits, value) = run(DcMeasure::new(0), &[7]);
+        assert_eq!(value, Some(Err(())));
+        assert_eq!(waits, 8000, "a millisecond after every poll, as libusdr");
+        assert_eq!(
+            reads,
+            1 + 8000,
+            "the start, then one generation read a poll"
+        );
+    }
+
+    #[test]
+    fn means_read_across_a_moving_generation_are_read_again() {
+        // Start 1; the first poll finds 2 with means, but 3 after them; the retry reads 3,
+        // the means and 3 again.
+        let full_scale = 32_767 * 65_536;
+        let reads = [1, 2, 0, 0, 3, 3, full_scale, 0, 3];
+        let (taken, waits, value) = run(DcMeasure::new(0), &reads);
+        assert_eq!(value, Some(Ok(0)), "the confirmed means, full scale on I");
+        assert_eq!((taken, waits), (9, 0), "no wait between the retries");
     }
 }

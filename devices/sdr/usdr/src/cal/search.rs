@@ -46,36 +46,11 @@ pub fn golden_min<E>(
     stop: i32,
     mut cost: impl FnMut(i32) -> Result<i32, E>,
 ) -> Result<Minimum, E> {
-    let (mut a, mut b) = (start, stop);
-    let mut d = golden_step(a, b);
-    let mut x1 = a.saturating_add(d);
-    let mut x2 = b.saturating_sub(d);
-    let mut f1 = cost(x1)?;
-    let mut f2 = cost(x2)?;
-    while d > 0 {
-        if f1 < f2 {
-            a = x2;
-            x2 = x1;
-            f2 = f1;
-            d = golden_step(a, b);
-            if d == 0 {
-                break;
-            }
-            x1 = a.saturating_add(d);
-            f1 = cost(x1)?;
-        } else {
-            b = x1;
-            x1 = x2;
-            f1 = f2;
-            d = golden_step(a, b);
-            if d == 0 {
-                break;
-            }
-            x2 = b.saturating_sub(d);
-            f2 = cost(x2)?;
-        }
+    let mut search = Line::golden(start, stop);
+    while let Some(x) = search.probe() {
+        search.report(cost(x)?);
     }
-    Ok(Minimum { x: x1, cost: f1 })
+    Ok(search.minimum())
 }
 
 /// Exhaustive search over `start, start + step, ...` while below `stop`, where the step
@@ -93,21 +68,184 @@ pub fn iterate_min<E>(
     extra_step: u16,
     mut cost: impl FnMut(i32) -> Result<i32, E>,
 ) -> Result<Minimum, E> {
-    let extra = i32::from(extra_step);
-    let delta = if start > stop { -1 - extra } else { 1 + extra };
-    let mut best = Minimum {
-        x: -1,
-        cost: i32::MAX,
-    };
-    let mut i = start;
-    while i < stop {
-        let value = cost(i)?;
-        if value < best.cost {
-            best = Minimum { x: i, cost: value };
-        }
-        i = i.saturating_add(delta);
+    let mut search = Line::iterate(start, stop, extra_step);
+    while let Some(x) = search.probe() {
+        search.report(cost(x)?);
     }
-    Ok(best)
+    Ok(search.minimum())
+}
+
+/// Where a golden-section search is: which probe's cost it waits for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Golden {
+    /// The first left probe, `x1`.
+    FirstLeft,
+    /// The first right probe, `x2`.
+    FirstRight,
+    /// A new left probe, after the interval moved right.
+    Left,
+    /// A new right probe, after the interval moved left.
+    Right,
+    /// Finished.
+    Done,
+}
+
+/// A one-dimensional minimum search as a resumable machine: [`Line::probe`] names the
+/// parameter whose cost it needs next, [`Line::report`] takes the cost. [`golden_min`] and
+/// [`iterate_min`] drive it with their closures; the calibration drives it one bus
+/// measurement at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Line {
+    /// [`golden_min`]'s state: the interval `a..=b`, its step `d`, the probes and their
+    /// costs.
+    Golden {
+        /// The interval's lower end.
+        a: i32,
+        /// The interval's upper end.
+        b: i32,
+        /// The truncated golden step.
+        d: i32,
+        /// The left probe.
+        x1: i32,
+        /// The right probe.
+        x2: i32,
+        /// The left probe's cost.
+        f1: i32,
+        /// The right probe's cost.
+        f2: i32,
+        /// The probe awaited.
+        at: Golden,
+    },
+    /// [`iterate_min`]'s state: the next parameter, the step, the end and the best so far.
+    Iterate {
+        /// The next parameter.
+        i: i32,
+        /// The step.
+        delta: i32,
+        /// The end, excluded.
+        stop: i32,
+        /// The best found so far.
+        best: Minimum,
+    },
+}
+
+impl Line {
+    /// [`golden_min`] over `start..=stop`, before its first probe.
+    pub(crate) fn golden(start: i32, stop: i32) -> Self {
+        let d = golden_step(start, stop);
+        Self::Golden {
+            a: start,
+            b: stop,
+            d,
+            x1: start.saturating_add(d),
+            x2: stop.saturating_sub(d),
+            f1: 0,
+            f2: 0,
+            at: Golden::FirstLeft,
+        }
+    }
+
+    /// [`iterate_min`] over `start..stop` with `extra_step`, before its first probe.
+    pub(crate) fn iterate(start: i32, stop: i32, extra_step: u16) -> Self {
+        let extra = i32::from(extra_step);
+        Self::Iterate {
+            i: start,
+            delta: if start > stop { -1 - extra } else { 1 + extra },
+            stop,
+            best: Minimum {
+                x: -1,
+                cost: i32::MAX,
+            },
+        }
+    }
+
+    /// The parameter whose cost the search needs next; `None` once it has finished.
+    pub(crate) fn probe(&self) -> Option<i32> {
+        match *self {
+            Self::Golden { at, x1, x2, .. } => match at {
+                Golden::FirstLeft | Golden::Left => Some(x1),
+                Golden::FirstRight | Golden::Right => Some(x2),
+                Golden::Done => None,
+            },
+            Self::Iterate { i, stop, .. } => (i < stop).then_some(i),
+        }
+    }
+
+    /// Takes the cost at [`Self::probe`]'s parameter; ignored once finished.
+    pub(crate) fn report(&mut self, cost: i32) {
+        match self {
+            Self::Golden {
+                a,
+                b,
+                d,
+                x1,
+                x2,
+                f1,
+                f2,
+                at,
+            } => {
+                match at {
+                    Golden::FirstLeft => {
+                        *f1 = cost;
+                        *at = Golden::FirstRight;
+                        return;
+                    }
+                    Golden::FirstRight => {
+                        *f2 = cost;
+                        if *d <= 0 {
+                            *at = Golden::Done;
+                            return;
+                        }
+                    }
+                    Golden::Left => *f1 = cost,
+                    Golden::Right => *f2 = cost,
+                    Golden::Done => return,
+                }
+                // One turn of `find_golden_min`'s loop, up to its next probe.
+                // A step that truncates to zero ends it before the next probe moves.
+                if *f1 < *f2 {
+                    *a = *x2;
+                    *x2 = *x1;
+                    *f2 = *f1;
+                    *d = golden_step(*a, *b);
+                    *x1 = if *d == 0 { *x1 } else { a.saturating_add(*d) };
+                    *at = Golden::Left;
+                } else {
+                    *b = *x1;
+                    *x1 = *x2;
+                    *f1 = *f2;
+                    *d = golden_step(*a, *b);
+                    *x2 = if *d == 0 { *x2 } else { b.saturating_sub(*d) };
+                    *at = Golden::Right;
+                }
+                if *d == 0 {
+                    *at = Golden::Done;
+                }
+            }
+            Self::Iterate {
+                i,
+                delta,
+                stop,
+                best,
+            } => {
+                if *i >= *stop {
+                    return;
+                }
+                if cost < best.cost {
+                    *best = Minimum { x: *i, cost };
+                }
+                *i = i.saturating_add(*delta);
+            }
+        }
+    }
+
+    /// The minimum found: once finished, the search's answer.
+    pub(crate) const fn minimum(&self) -> Minimum {
+        match *self {
+            Self::Golden { x1, f1, .. } => Minimum { x: x1, cost: f1 },
+            Self::Iterate { best, .. } => best,
+        }
+    }
 }
 
 /// Which one-dimensional search a [`Stage`] uses (`enum search_function`).
@@ -203,70 +341,210 @@ pub fn best_2d<O: Objective2d>(
     stop_when: i32,
     objective: &mut O,
 ) -> Result<Best2d, O::Error> {
-    let Some(first) = stages.first() else {
-        return Ok(Best2d {
-            x: 0,
-            y: 0,
-            cost: i32::MAX,
-        });
-    };
-    let [x_limits, y_limits] = first.limits;
-    let mut x = (x_limits.min + x_limits.max) / 2;
-    let mut y = (y_limits.min + y_limits.max) / 2;
-    let (mut best_x, mut best_y, mut best_cost) = (x, y, i32::MAX);
-    // Set the starting Y, as X is searched first.
-    objective.set(0, Axis::Y, y)?;
-    for (index, stage) in stages.iter().enumerate() {
-        let window = |at: i32, axis: usize, limits: Limits| {
-            (
-                max(at.saturating_add(stage.limits[axis].min), limits.min),
-                min(at.saturating_add(stage.limits[axis].max), limits.max),
-            )
-        };
-        let (start, stop) = window(x, 0, x_limits);
-        let found = search(stage, start, stop, |value| {
-            objective.evaluate(index, Axis::X, value)
-        })?;
-        x = found.x;
-        if found.cost < best_cost {
-            best_x = x;
-            best_cost = found.cost;
+    let mut search = Search2d::new(stages, stop_when);
+    while let Some(probe) = search.probe() {
+        match probe {
+            Probe2d::Set { stage, axis, value } => objective.set(stage, axis, value)?,
+            Probe2d::Evaluate { stage, axis, value } => {
+                search.report(objective.evaluate(stage, axis, value)?);
+                continue;
+            }
         }
-        objective.set(index, Axis::X, best_x)?;
-
-        let (start, stop) = window(y, 1, y_limits);
-        let found = search(stage, start, stop, |value| {
-            objective.evaluate(index, Axis::Y, value)
-        })?;
-        y = found.x;
-        if found.cost < best_cost {
-            best_y = y;
-            best_cost = found.cost;
-        }
-        objective.set(index, Axis::Y, best_y)?;
-        if found.cost < stop_when {
-            break;
-        }
-        // Start over from the best.
-        (x, y) = (best_x, best_y);
+        search.report(0);
     }
-    Ok(Best2d {
-        x: best_x,
-        y: best_y,
-        cost: best_cost,
-    })
+    Ok(search.best())
 }
 
-/// Runs `stage`'s one-dimensional search.
-fn search<E>(
-    stage: &Stage,
-    start: i32,
-    stop: i32,
-    cost: impl FnMut(i32) -> Result<i32, E>,
-) -> Result<Minimum, E> {
-    match stage.search {
-        Search::Iterate => iterate_min(start, stop, stage.extra_step, cost),
-        Search::Golden => golden_min(start, stop, cost),
+/// What a [`Search2d`] needs done next: the [`Objective2d`] calls, as data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Probe2d {
+    /// [`Objective2d::set`]; report any value.
+    Set {
+        /// The stage whose evaluator libusdr would call.
+        stage: usize,
+        /// The coordinate.
+        axis: Axis,
+        /// Its value.
+        value: i32,
+    },
+    /// [`Objective2d::evaluate`]; report the cost.
+    Evaluate {
+        /// The stage whose evaluator libusdr would call.
+        stage: usize,
+        /// The coordinate.
+        axis: Axis,
+        /// Its value.
+        value: i32,
+    },
+}
+
+/// Where a [`Search2d`] is in a stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step2d {
+    /// Setting the starting Y.
+    Start,
+    /// Searching `axis` along this line.
+    Searching(Axis, Line),
+    /// Setting `axis` to its best.
+    Setting(Axis),
+    /// Finished.
+    Done,
+}
+
+/// [`best_2d`] as a resumable machine over stages `S`: [`Search2d::probe`] names the next
+/// objective call, [`Search2d::report`] takes its result. The calibration drives it one bus
+/// measurement at a time.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Search2d<S> {
+    /// The stages.
+    stages: S,
+    /// The cost below which the search stops after a stage.
+    stop_when: i32,
+    /// The stage running.
+    stage: usize,
+    /// The current X and Y.
+    at: (i32, i32),
+    /// The best X, Y and cost so far.
+    best: Best2d,
+    /// The last line search's cost, which decides the early stop.
+    found_cost: i32,
+    /// Where it is.
+    step: Step2d,
+}
+
+impl<S: AsRef<[Stage]>> Search2d<S> {
+    /// The search over `stages`, stopping early below `stop_when`, before its first call:
+    /// at the midpoint of the first stage's limits.
+    pub(crate) fn new(stages: S, stop_when: i32) -> Self {
+        let first = stages.as_ref().first().map(|first| first.limits);
+        let (at, step) = match first {
+            Some([x, y]) => (((x.min + x.max) / 2, (y.min + y.max) / 2), Step2d::Start),
+            None => ((0, 0), Step2d::Done),
+        };
+        Self {
+            stages,
+            stop_when,
+            stage: 0,
+            at,
+            best: Best2d {
+                x: at.0,
+                y: at.1,
+                cost: i32::MAX,
+            },
+            found_cost: i32::MAX,
+            step,
+        }
+    }
+
+    /// The next objective call; `None` once the search has finished.
+    pub(crate) fn probe(&self) -> Option<Probe2d> {
+        let stage = self.stage;
+        Some(match self.step {
+            // Set the starting Y, as X is searched first.
+            Step2d::Start => Probe2d::Set {
+                stage,
+                axis: Axis::Y,
+                value: self.at.1,
+            },
+            Step2d::Searching(axis, line) => Probe2d::Evaluate {
+                stage,
+                axis,
+                value: line.probe()?,
+            },
+            Step2d::Setting(axis) => Probe2d::Set {
+                stage,
+                axis,
+                value: match axis {
+                    Axis::X => self.best.x,
+                    Axis::Y => self.best.y,
+                },
+            },
+            Step2d::Done => return None,
+        })
+    }
+
+    /// Takes the result of [`Self::probe`]'s call: the cost of an evaluation, any value
+    /// for a set. Ignored once finished.
+    pub(crate) fn report(&mut self, cost: i32) {
+        match self.step {
+            Step2d::Start => self.search(Axis::X),
+            Step2d::Searching(axis, mut line) => {
+                line.report(cost);
+                self.step = Step2d::Searching(axis, line);
+                self.settle_line();
+            }
+            Step2d::Setting(Axis::X) => self.search(Axis::Y),
+            Step2d::Setting(Axis::Y) => {
+                let stages = self.stages.as_ref().len();
+                if self.found_cost < self.stop_when || self.stage + 1 >= stages {
+                    self.step = Step2d::Done;
+                    return;
+                }
+                // Start over from the best.
+                self.at = (self.best.x, self.best.y);
+                self.stage += 1;
+                self.search(Axis::X);
+            }
+            Step2d::Done => {}
+        }
+    }
+
+    /// The best point found: once finished, the search's answer.
+    pub(crate) const fn best(&self) -> Best2d {
+        self.best
+    }
+
+    /// Starts the current stage's line search along `axis`, from the current point.
+    fn search(&mut self, axis: Axis) {
+        let stages = self.stages.as_ref();
+        let (Some(stage), Some(first)) = (stages.get(self.stage), stages.first()) else {
+            self.step = Step2d::Done;
+            return;
+        };
+        let (index, at) = match axis {
+            Axis::X => (0, self.at.0),
+            Axis::Y => (1, self.at.1),
+        };
+        let limits = first.limits[index];
+        let start = max(at.saturating_add(stage.limits[index].min), limits.min);
+        let stop = min(at.saturating_add(stage.limits[index].max), limits.max);
+        let line = match stage.search {
+            Search::Iterate => Line::iterate(start, stop, stage.extra_step),
+            Search::Golden => Line::golden(start, stop),
+        };
+        self.step = Step2d::Searching(axis, line);
+        self.settle_line();
+    }
+
+    /// Moves past a finished line search: records its minimum, then sets the axis.
+    fn settle_line(&mut self) {
+        let Step2d::Searching(axis, line) = self.step else {
+            return;
+        };
+        if line.probe().is_some() {
+            return;
+        }
+        let found = line.minimum();
+        self.found_cost = found.cost;
+        let improved = found.cost < self.best.cost;
+        match axis {
+            Axis::X => {
+                self.at.0 = found.x;
+                if improved {
+                    self.best.x = found.x;
+                }
+            }
+            Axis::Y => {
+                self.at.1 = found.x;
+                if improved {
+                    self.best.y = found.x;
+                }
+            }
+        }
+        if improved {
+            self.best.cost = found.cost;
+        }
+        self.step = Step2d::Setting(axis);
     }
 }
 

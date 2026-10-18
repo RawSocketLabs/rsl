@@ -13,10 +13,7 @@
 
 use std::f64::consts::FRAC_PI_4;
 
-use crate::error::{BusContext, Error};
-use crate::lowlevel::Bus;
-pub(crate) use crate::portable::fpga::{FPGA, Nco, Phy, SubReg};
-use crate::portable::sequence::FpgaAccess;
+pub(crate) use crate::portable::fpga::{Nco, Phy, SubReg};
 use crate::portable::stream::EngineSequence;
 
 /// An IQ imbalance correction as libusdr keeps it for a chain (`struct imb_data`), the
@@ -111,22 +108,6 @@ impl IqImbalance {
 }
 
 impl Phy {
-    /// Sets an NCO's frequency word, then pulses the NCO reset (`_usdr_set_nco`).
-    pub(crate) fn set_nco(self, bus: &mut dyn Bus, nco: Nco, word: i32) -> Result<(), Error> {
-        for access in self.nco(nco, word) {
-            Self::run(bus, access)?;
-        }
-        Ok(())
-    }
-
-    /// Performs one port write.
-    fn run(bus: &mut dyn Bus, access: FpgaAccess) -> Result<(), Error> {
-        let FpgaAccess::Write { reg, value } = access else {
-            unreachable!("invariant: a port access is a register write");
-        };
-        bus.write_regs(reg, &[value]).writing(FPGA, reg)
-    }
-
     /// An RX stream create's DSP-port writes, as a sequence the blocking board and the
     /// native USB handle both run: the RX chain's IQ correction for `imbalance`, again
     /// (`usdr_rxupdate_cal`).
