@@ -365,7 +365,11 @@ enum StreamState {
 /// only their stream. A failure no operation or stream reports (the worker panicking or
 /// no longer answering, the device hanging up while idle: an edge with nothing in flight
 /// still brings a reap) ends the session with [`NativeEvent::SessionEnded`], once; the
-/// worker still cleans up and releases the device.
+/// worker still cleans up and releases the device. A stream command (an open, a close, a
+/// send's commit) the worker has not answered by its deadline (2 s, a close 10 s: twice
+/// the `usb` queues' 5 s cancellation grace) is taken for a worker stuck in the kernel:
+/// the operation fails with [`Error::Stream`] carrying [`BusError::Timeout`] and the
+/// session ends; the worker cleans up once its call returns.
 ///
 /// Fairness: [`poll`](Self::poll) advances the operation before it hands over an RX block,
 /// so RX traffic never holds an operation back, and an operation's waits and transfers
@@ -601,7 +605,7 @@ impl NativeUsb {
                 Some(self.conclude(read, outcome))
             }
             Pending::Sequence(operation, wait) => self.poll_sequence(operation, wait, now),
-            Pending::Stream(operation) => self.poll_stream(operation),
+            Pending::Stream(operation) => self.poll_stream(operation, now),
             Pending::Send(send) => self.poll_send(send, now),
             Pending::Group(run) => self.poll_group(run, now),
             Pending::Thermal(read, machine, plan) => self.poll_thermal(read, machine, plan, now),

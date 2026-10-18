@@ -138,6 +138,9 @@ struct Fake<I = BoardUsb> {
     turn_pause: Option<Pause>,
     /// Blocks cleanup after registration retirement.
     cleanup_pause: Option<Pause>,
+    /// Blocks the stream command after this many have passed, as a worker stuck in the
+    /// kernel would be.
+    stream_pause: Option<(u32, Pause)>,
     /// Injects a worker panic while retaining backend ownership outside unwind.
     panic_submit: bool,
     /// Injects an original OS failure at the submission boundary.
@@ -188,6 +191,7 @@ impl<I> Fake<I> {
                 submit_pause: None,
                 turn_pause: None,
                 cleanup_pause: None,
+                stream_pause: None,
                 panic_submit: false,
                 submit_error: None,
                 turn_error: None,
@@ -202,6 +206,15 @@ impl<I> Fake<I> {
     }
 
     /// Records only calls at the deliberate worker/backend boundary.
+    /// Blocks here if this is the stream command [`Self::stream_pause`] names.
+    fn stream_command(&mut self) {
+        match self.stream_pause.take() {
+            Some((0, pause)) => pause.wait(),
+            Some((passed, pause)) => self.stream_pause = Some((passed - 1, pause)),
+            None => {}
+        }
+    }
+
     fn record(&self, call: &'static str) {
         self.record
             .lock()
@@ -331,6 +344,7 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
 
     fn rx_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
         self.record("rx open");
+        self.stream_command();
         self.io.rx_open(block_bytes)
     }
 
@@ -346,11 +360,13 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
 
     fn rx_close(&mut self) -> Result<(), BusError> {
         self.record("rx close");
+        self.stream_command();
         self.io.rx_close()
     }
 
     fn tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), BusError> {
         self.record("tx open");
+        self.stream_command();
         self.io.tx_open(block_bytes, sample_bytes)
     }
 
@@ -366,11 +382,13 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
         fill: &mut TxFill<'_>,
     ) -> Result<(), BusError> {
         self.record("tx commit");
+        self.stream_command();
         self.io.tx_commit(time, Some(status), fill)
     }
 
     fn tx_close(&mut self) -> Result<(), BusError> {
         self.record("tx close");
+        self.stream_command();
         self.io.tx_close()
     }
 }
@@ -1317,7 +1335,7 @@ fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
     let script = Arc::clone(&fake.io.script);
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1350,7 +1368,7 @@ fn native_rx_delivers_the_samples_and_losses_the_blocking_receiver_does() {
         taken <= 4 + RX_BACKLOG,
         "the worker copies at most the backlog ahead of the caller ({taken} taken)"
     );
-    native.start_rx_close().unwrap();
+    native.start_rx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1384,7 +1402,7 @@ fn an_rx_failure_ends_only_the_stream_until_it_is_closed() {
         .push_back(Ok(Some(vec![0; 10])));
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1408,17 +1426,17 @@ fn an_rx_failure_ends_only_the_stream_until_it_is_closed() {
         "the control plane is unaffected",
     );
     assert!(matches!(
-        native.start_rx_open(RX_BLOCK),
+        native.start_rx_open(RX_BLOCK, Instant::now()),
         Err(Error::AlreadyStreaming)
     ));
-    native.start_rx_close().unwrap();
+    native.start_rx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
         |event| matches!(event, NativeEvent::RxClosed(Ok(()))),
         "the failed stream closes",
     );
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1433,7 +1451,7 @@ fn a_failed_rx_cancellation_keeps_the_endpoint_until_a_retry_succeeds() {
     let script = Arc::clone(&fake.io.script);
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1441,7 +1459,7 @@ fn a_failed_rx_cancellation_keeps_the_endpoint_until_a_retry_succeeds() {
         "RX opens",
     );
     script.lock().unwrap().fail_cancel = true;
-    native.start_rx_close().unwrap();
+    native.start_rx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1459,11 +1477,11 @@ fn a_failed_rx_cancellation_keeps_the_endpoint_until_a_retry_succeeds() {
         "the worker still owns every transfer"
     );
     assert!(matches!(
-        native.start_rx_open(RX_BLOCK),
+        native.start_rx_open(RX_BLOCK, Instant::now()),
         Err(Error::AlreadyStreaming)
     ));
     script.lock().unwrap().fail_cancel = false;
-    native.start_rx_close().unwrap();
+    native.start_rx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1517,7 +1535,7 @@ fn native_tx_frames_and_reads_status_as_the_blocking_bus_does() {
     script.lock().unwrap().tx_finished = usize::MAX;
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_tx_open(4096, 4).unwrap();
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1536,7 +1554,7 @@ fn native_tx_frames_and_reads_status_as_the_blocking_bus_does() {
             "send {index} reports the same status"
         );
     }
-    native.start_tx_close().unwrap();
+    native.start_tx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1576,7 +1594,7 @@ fn a_full_tx_ring_times_out_uncounted_until_a_transfer_finishes() {
     let (board, script) = (Arc::clone(&fake.io.board), Arc::clone(&fake.io.script));
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_tx_open(4096, 4).unwrap();
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1635,14 +1653,14 @@ fn closing_the_handle_cancels_its_open_streams_on_the_worker() {
     let script = Arc::clone(&fake.io.script);
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
         |event| matches!(event, NativeEvent::RxOpened(Ok(()))),
         "RX opens",
     );
-    native.start_tx_open(4096, 4).unwrap();
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -1691,7 +1709,10 @@ fn the_managed_runner_drives_the_handle_without_a_caller_reactor() {
         managed.next_event(GUARD).unwrap(),
         Some(NativeEvent::Temperature(Ok(celsius))) if (celsius - 25.0).abs() < f32::EPSILON
     ));
-    managed.native().start_tx_open(4096, 4).unwrap();
+    managed
+        .native()
+        .start_tx_open(4096, 4, Instant::now())
+        .unwrap();
     assert!(matches!(
         managed.next_event(GUARD).unwrap(),
         Some(NativeEvent::TxOpened(Ok(())))
@@ -1716,7 +1737,7 @@ fn the_managed_runner_drives_the_handle_without_a_caller_reactor() {
 fn outcome(adapter: &mut Adapter, reactor: &mut Poll) -> StreamOutcome {
     let until = Instant::now() + GUARD;
     loop {
-        if let Some(outcome) = adapter.try_outcome() {
+        if let Some(outcome) = adapter.try_outcome(Instant::now()) {
             return outcome;
         }
         assert!(Instant::now() < until, "native stream outcome deadline");
@@ -1752,7 +1773,9 @@ fn room_freed_after_a_turn_with_none_takes_the_blocks_that_turn_filed() {
     reactor
         .poll(&mut Events::with_capacity(8), Some(Duration::ZERO))
         .unwrap();
-    adapter.command(StreamCommand::RxOpen(RX_BLOCK)).unwrap();
+    adapter
+        .command(StreamCommand::RxOpen(RX_BLOCK), Instant::now())
+        .unwrap();
     assert!(matches!(
         outcome(&mut adapter, &mut reactor),
         StreamOutcome::Command(Ok(()))
@@ -1787,7 +1810,7 @@ fn a_failed_status_read_closes_the_handle_and_is_no_full_ring() {
     fake.submit_error = Some(BusError::Timeout);
     let (mut reactor, wake) = reactor();
     let mut native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
-    native.start_tx_open(4096, 4).unwrap();
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -2099,7 +2122,7 @@ fn a_stop_attempts_every_step_after_a_failed_close() {
         "the group is gone"
     );
     script.lock().unwrap().fail_cancel = false;
-    native.start_rx_close().unwrap();
+    native.start_rx_close(Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -2162,7 +2185,10 @@ fn group_operations_refuse_before_any_io_as_the_blocking_group_does() {
         Err(Error::AlreadyStreaming)
     ));
     assert!(
-        matches!(native.start_rx_close(), Err(Error::AlreadyStreaming)),
+        matches!(
+            native.start_rx_close(Instant::now()),
+            Err(Error::AlreadyStreaming)
+        ),
         "the group's streams close with the group"
     );
     native.start_rx_ready(Instant::now()).unwrap();
@@ -3131,7 +3157,7 @@ fn a_worker_panic_while_streaming_fails_the_stream_once_and_releases_it() {
         )
         .unwrap();
     let (record, dropped) = panicking.unwrap();
-    native.start_rx_open(RX_BLOCK).unwrap();
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
     expect_event(
         &mut native,
         &mut reactor,
@@ -3214,7 +3240,7 @@ fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
         pending && wakes > 0,
         "the read waited for the worker and woke its task"
     );
-    let open = adapter.operation(|native, _| native.start_rx_open(RX_BLOCK));
+    let open = adapter.operation(|native, _| native.start_rx_open(RX_BLOCK, Instant::now()));
     let (second, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
     assert!(
         matches!(second, Err(Error::Busy)),
@@ -3321,7 +3347,8 @@ fn several_async_block_waiters_each_get_a_block() {
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
-    let (opened, ..) = block_on(adapter.operation(|native, _| native.start_rx_open(RX_BLOCK)));
+    let (opened, ..) =
+        block_on(adapter.operation(|native, _| native.start_rx_open(RX_BLOCK, Instant::now())));
     assert!(
         matches!(opened, Ok(NativeEvent::RxOpened(Ok(())))),
         "{opened:?}"
@@ -3781,5 +3808,108 @@ fn a_native_calibration_refuses_before_any_io_as_the_blocking_one_does() {
     );
     assert_eq!(operations(&board, start), [], "refused before any I/O");
     native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+/// A handle over a fake whose stream command after `passed` others sticks in the "kernel"
+/// until the returned gate releases it.
+fn stuck_stream_command(passed: u32, reactor: &Poll, wake: Arc<Waker>) -> (NativeUsb, Gate) {
+    let (mut fake, _, _) = Fake::new();
+    let (pause, gate) = Pause::new();
+    fake.stream_pause = Some((passed, pause));
+    let native = NativeUsb::attach(fake, session(), reactor.registry(), DEVICE, wake).unwrap();
+    (native, gate)
+}
+
+#[test]
+fn a_stream_open_stuck_in_the_kernel_times_out_and_ends_the_session() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, gate) = stuck_stream_command(0, &reactor, wake);
+    let start = Instant::now();
+    native.start_rx_open(RX_BLOCK, start).unwrap();
+    gate.entered();
+    let due = native.deadline().expect("a stream command has a deadline");
+    assert_eq!(due, start + Duration::from_secs(2), "an open's deadline");
+    assert!(
+        native.poll(start + Duration::from_millis(1999)).is_none(),
+        "outstanding until its deadline"
+    );
+    let event = native.poll(due);
+    assert!(
+        matches!(
+            event,
+            Some(NativeEvent::RxOpened(Err(Error::Stream(BusError::Timeout))))
+        ),
+        "the stuck open surfaces as a timeout: {event:?}"
+    );
+    assert!(
+        native.start_temperature(due).is_err(),
+        "the session ended: a stuck worker takes no more commands"
+    );
+    assert!(
+        native.try_cleanup().is_none(),
+        "cleanup waits for the worker's call to return"
+    );
+    gate.release();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_stream_close_stuck_past_the_cancellation_grace_times_out() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, gate) = stuck_stream_command(1, &reactor, wake);
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::RxOpened(Ok(()))
+    ));
+    let start = Instant::now();
+    native.start_rx_close(start).unwrap();
+    gate.entered();
+    // A close cancels and may wait out the queues' 5 s grace: twice that is allowed.
+    let due = native.deadline().expect("a stream command has a deadline");
+    assert_eq!(due, start + Duration::from_secs(10), "a close's deadline");
+    assert!(native.poll(start + Duration::from_secs(9)).is_none());
+    assert!(matches!(
+        native.poll(due),
+        Some(NativeEvent::RxClosed(Err(Error::Stream(BusError::Timeout))))
+    ));
+    gate.release();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_group_create_whose_stream_open_sticks_fails_with_a_timeout() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, gate) = stuck_stream_command(0, &reactor, wake);
+    native
+        .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
+        .unwrap();
+    let mut events = Events::with_capacity(8);
+    let event = loop {
+        let now = Instant::now();
+        if let Some(event) = native.poll(now) {
+            break event;
+        }
+        // Once the open is stuck on the worker, jump the caller's clock to its deadline.
+        if gate.entered.try_recv().is_ok() {
+            let due = native.deadline().expect("the open's deadline");
+            break native
+                .poll(due)
+                .expect("the create ends at its open's deadline");
+        }
+        reactor.poll(&mut events, Some(GUARD / 50)).unwrap();
+        for event in &events {
+            native.on_ready(event.token());
+        }
+    };
+    assert!(
+        matches!(
+            event,
+            NativeEvent::StreamsCreated(Err(Error::Stream(BusError::Timeout)))
+        ),
+        "{event:?}"
+    );
+    gate.release();
     native_cleanup(&mut native, &mut reactor).unwrap();
 }

@@ -7,7 +7,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::{self, Thread};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use mio::Waker;
 use mio::event::Source;
@@ -52,6 +52,19 @@ pub(in super::super) enum StreamCommand {
     },
     /// Cancels TX and releases its endpoint.
     TxClose,
+}
+
+impl StreamCommand {
+    /// How long the worker may take over this command before the handle takes it for
+    /// stuck in the kernel and ends the session. An open allocates and queues transfers
+    /// and a commit queues one; a close cancels every transfer and waits up to the `usb`
+    /// queues' own 5 s grace for them, so it gets twice that.
+    pub(in super::super) const fn deadline(&self) -> Duration {
+        match self {
+            Self::RxOpen(_) | Self::TxOpen { .. } | Self::TxCommit { .. } => Duration::from_secs(2),
+            Self::RxClose | Self::TxClose => Duration::from_secs(10),
+        }
+    }
 }
 
 /// What one worker turn collected: no kernel-owned memory, and RX blocks already copied.

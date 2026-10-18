@@ -59,6 +59,9 @@ pub(in super::super) struct Adapter {
     last_id: Option<u64>,
     /// An operation's command (a control submission or a stream command) awaits its report.
     commanding: bool,
+    /// When the outstanding stream command's report is due: past it, the worker is taken
+    /// for stuck in the kernel and the session ends.
+    command_due: Option<Instant>,
     /// A reap turn awaits its report.
     turning: bool,
     /// Coalesces edges received while a worker turn is in flight or nothing wanted a turn.
@@ -118,6 +121,7 @@ impl Adapter {
             pending: None,
             last_id: None,
             commanding: false,
+            command_due: None,
             turning: false,
             dirty: false,
             rx_wanted: false,
@@ -174,12 +178,21 @@ impl Adapter {
         Ok(())
     }
 
-    /// Hands one stream command to the worker; its result arrives as
-    /// [`StreamOutcome::Command`]. It has no deadline: cancellation can take seconds.
-    pub(in super::super) fn command(&mut self, command: StreamCommand) -> Result<(), BusError> {
+    /// Hands one stream command to the worker at `now`; its result arrives as
+    /// [`StreamOutcome::Command`], or, once [`StreamCommand::deadline`] has passed without
+    /// one, as a timeout that ends the session (see [`Self::try_outcome`]).
+    pub(in super::super) fn command(
+        &mut self,
+        command: StreamCommand,
+        now: Instant,
+    ) -> Result<(), BusError> {
         self.admissible()?;
+        let due = now
+            .checked_add(command.deadline())
+            .ok_or(BusError::Unsupported("native USB deadline overflow"))?;
         self.worker.send(Work::Stream(command))?;
         self.commanding = true;
+        self.command_due = Some(due);
         Ok(())
     }
 
@@ -277,9 +290,21 @@ impl Adapter {
         block
     }
 
-    /// The oldest acquisition or stream-command result.
-    pub(in super::super) fn try_outcome(&mut self) -> Option<StreamOutcome> {
+    /// The oldest acquisition or stream-command result. A stream command the worker has not
+    /// answered by its deadline at `now` fails with [`BusError::Timeout`] and ends the
+    /// session: the worker is stuck in the kernel, and whatever it answers later is never
+    /// read. Its cleanup still runs on the worker once the call returns.
+    pub(in super::super) fn try_outcome(&mut self, now: Instant) -> Option<StreamOutcome> {
         self.pump();
+        if self.command_due.is_some_and(|due| now >= due) {
+            self.command_due = None;
+            self.commanding = false;
+            self.outcomes
+                .push_back(StreamOutcome::Command(Err(BusError::Timeout)));
+            // Open streams outlive the command: they learn the session ended.
+            self.fault.get_or_insert(BusError::Timeout);
+            self.retire_after_completion();
+        }
         let outcome = self.outcomes.pop_front();
         self.schedule();
         outcome
@@ -317,6 +342,7 @@ impl Adapter {
             }
             Report::Stream(result) => {
                 self.commanding = false;
+                self.command_due = None;
                 self.outcomes.push_back(StreamOutcome::Command(result));
             }
             Report::Turn(Err(error)) => {
@@ -422,9 +448,14 @@ impl Adapter {
         self.retirement_error.take()
     }
 
-    /// Returns the pending timer to the caller's Poll policy; no internal timer thread.
+    /// Returns the pending timer to the caller's Poll policy (the control request's, or the
+    /// stream command's); no internal timer thread.
     pub(in super::super) fn deadline(&self) -> Option<Instant> {
-        self.pending.map(|(_, expires)| expires)
+        let control = self.pending.map(|(_, expires)| expires);
+        match (control, self.command_due) {
+            (Some(control), Some(command)) => Some(control.min(command)),
+            (control, command) => control.or(command),
+        }
     }
 
     /// Deregisters, then retires the worker, which drops the source before cleaning up
@@ -435,6 +466,7 @@ impl Adapter {
     pub(in super::super) fn close(&mut self) -> io::Result<()> {
         self.stopped = true;
         self.pending = None;
+        self.command_due = None;
         self.dirty = false;
         self.rx_wanted = false;
         self.tx_wanted = false;

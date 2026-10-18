@@ -432,7 +432,7 @@ impl NativeUsb {
                             }
                         }
                         GroupStep::Stream(operation, command) => {
-                            match self.begin_stream(operation, command) {
+                            match self.begin_stream(operation, command, now) {
                                 Ok(()) => {
                                     run.current = Current::Stream(operation);
                                     continue;
@@ -467,7 +467,7 @@ impl NativeUsb {
                     Progress::Finished(operation, result) => operation.step_result(result),
                 },
                 Current::Stream(operation) => {
-                    let Some(result) = self.command_result() else {
+                    let Some(result) = self.command_result(now) else {
                         run.current = Current::Stream(operation);
                         self.pending = Some(Pending::Group(run));
                         return None;

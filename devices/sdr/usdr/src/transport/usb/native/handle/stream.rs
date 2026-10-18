@@ -79,7 +79,7 @@ impl NativeUsb {
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] unless RX
     /// is closed, or while a stream group exists; [`Error::Stream`] if the handle is closed.
-    pub fn start_rx_open(&mut self, block_bytes: u32) -> Result<(), Error> {
+    pub fn start_rx_open(&mut self, block_bytes: u32, now: Instant) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
@@ -87,7 +87,11 @@ impl NativeUsb {
         if self.rx != StreamState::Closed {
             return Err(Error::AlreadyStreaming);
         }
-        self.start_stream(StreamOperation::RxOpen, StreamCommand::RxOpen(block_bytes))
+        self.start_stream(
+            StreamOperation::RxOpen,
+            StreamCommand::RxOpen(block_bytes),
+            now,
+        )
     }
 
     /// Starts closing RX: blocks not yet polled are dropped, and the worker cancels every
@@ -99,12 +103,12 @@ impl NativeUsb {
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
     /// stream group holds RX (stop the group instead); [`Error::Stream`] if the handle is closed.
-    pub fn start_rx_close(&mut self) -> Result<(), Error> {
+    pub fn start_rx_close(&mut self, now: Instant) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
         self.refuse_group_close(true)?;
-        self.start_stream(StreamOperation::RxClose, StreamCommand::RxClose)
+        self.start_stream(StreamOperation::RxClose, StreamCommand::RxClose, now)
     }
 
     /// Starts opening TX endpoint 0x03 for blocks of up to `block_bytes` of samples of
@@ -117,7 +121,12 @@ impl NativeUsb {
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] unless TX
     /// is closed, or while a stream group exists; [`Error::Stream`] if the handle is closed.
-    pub fn start_tx_open(&mut self, block_bytes: u32, sample_bytes: u32) -> Result<(), Error> {
+    pub fn start_tx_open(
+        &mut self,
+        block_bytes: u32,
+        sample_bytes: u32,
+        now: Instant,
+    ) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
@@ -129,7 +138,7 @@ impl NativeUsb {
             block_bytes,
             sample_bytes,
         };
-        self.start_stream(StreamOperation::TxOpen, command)
+        self.start_stream(StreamOperation::TxOpen, command, now)
     }
 
     /// Starts sending `block`, wire-format samples, to play at `time` in samples (`None`:
@@ -184,12 +193,12 @@ impl NativeUsb {
     ///
     /// [`Error::Busy`] if an operation is pending; [`Error::AlreadyStreaming`] while a
     /// stream group holds TX (stop the group instead); [`Error::Stream`] if the handle is closed.
-    pub fn start_tx_close(&mut self) -> Result<(), Error> {
+    pub fn start_tx_close(&mut self, now: Instant) -> Result<(), Error> {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
         self.refuse_group_close(false)?;
-        self.start_stream(StreamOperation::TxClose, StreamCommand::TxClose)
+        self.start_stream(StreamOperation::TxClose, StreamCommand::TxClose, now)
     }
 
     /// Hands a stream command to the worker as the operation in flight.
@@ -197,15 +206,20 @@ impl NativeUsb {
         &mut self,
         operation: StreamOperation,
         command: StreamCommand,
+        now: Instant,
     ) -> Result<(), Error> {
-        self.begin_stream(operation, command)?;
+        self.begin_stream(operation, command, now)?;
         self.pending = Some(Pending::Stream(operation));
         Ok(())
     }
 
     /// Ends a stream command once the worker answers it.
-    pub(super) fn poll_stream(&mut self, operation: StreamOperation) -> Option<NativeEvent> {
-        let Some(result) = self.command_result() else {
+    pub(super) fn poll_stream(
+        &mut self,
+        operation: StreamOperation,
+        now: Instant,
+    ) -> Option<NativeEvent> {
+        let Some(result) = self.command_result(now) else {
             self.pending = Some(Pending::Stream(operation));
             return None;
         };
@@ -224,8 +238,9 @@ impl NativeUsb {
         &mut self,
         operation: StreamOperation,
         command: StreamCommand,
+        now: Instant,
     ) -> Result<(), Error> {
-        self.adapter.command(command).map_err(Error::Stream)?;
+        self.adapter.command(command, now).map_err(Error::Stream)?;
         match operation {
             StreamOperation::RxClose => {
                 self.rx = StreamState::Closed;
@@ -289,12 +304,13 @@ impl NativeUsb {
         Ok(())
     }
 
-    /// The worker's answer to the outstanding stream command, or the failure that ended
-    /// the session; `None` while it is outstanding. A late acquisition for a send that
-    /// timed out is passed over: its transfer stays held for the next send.
-    pub(super) fn command_result(&mut self) -> Option<Result<(), BusError>> {
+    /// The worker's answer to the outstanding stream command, a timeout once its deadline
+    /// passed at `now` (which ends the session), or the failure that ended the session;
+    /// `None` while it is outstanding. A late acquisition for a send that timed out is
+    /// passed over: its transfer stays held for the next send.
+    pub(super) fn command_result(&mut self, now: Instant) -> Option<Result<(), BusError>> {
         loop {
-            match self.adapter.try_outcome() {
+            match self.adapter.try_outcome(now) {
                 Some(StreamOutcome::Command(result)) => return Some(result),
                 Some(StreamOutcome::Acquired(_)) => {}
                 None if self.adapter.is_stopped() => return Some(Err(self.fault())),
@@ -312,7 +328,7 @@ impl NativeUsb {
                 until,
                 mut tried,
             } => {
-                while let Some(outcome) = self.adapter.try_outcome() {
+                while let Some(outcome) = self.adapter.try_outcome(now) {
                     let StreamOutcome::Acquired(acquired) = outcome else {
                         continue;
                     };
@@ -365,10 +381,10 @@ impl NativeUsb {
                     Err(error) => return Some(self.status_failed(error)),
                 };
                 self.session.tx_status.record(words);
-                self.commit(time, block, words)
+                self.commit(time, block, words, now)
             }
             Send::Commit(words) => {
-                let Some(result) = self.command_result() else {
+                let Some(result) = self.command_result(now) else {
                     self.pending = Some(Pending::Send(Send::Commit(words)));
                     return None;
                 };
@@ -384,7 +400,7 @@ impl NativeUsb {
     fn acquired(&mut self, time: Option<u64>, block: Vec<u8>, now: Instant) -> Option<NativeEvent> {
         if !self.session.tx_status.count_send() {
             let words = self.session.tx_status.words();
-            return self.commit(time, block, words);
+            return self.commit(time, block, words, now);
         }
         let address = u16::try_from(STATUS_REGISTER)
             .expect("invariant: the TX status words are physical registers");
@@ -412,13 +428,14 @@ impl NativeUsb {
         time: Option<u64>,
         block: Vec<u8>,
         words: [u32; 4],
+        now: Instant,
     ) -> Option<NativeEvent> {
         let command = StreamCommand::TxCommit {
             time,
             status: words,
             block,
         };
-        match self.adapter.command(command) {
+        match self.adapter.command(command, now) {
             Ok(()) => {
                 self.pending = Some(Pending::Send(Send::Commit(words)));
                 None

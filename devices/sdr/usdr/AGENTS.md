@@ -256,7 +256,8 @@ Each layer calls only the ones below it.
   transport opens and closes, as steps of one operation; `native/window.rs` (`Windowed`)
   reaches configuration-space registers as `UsbBus` does (index, then data register).
   One operation command and one reap turn are outstanding at a time
-  (`worker::MAILBOX`); `poll` advances the operation before handing over an RX block.
+  (`worker::MAILBOX`); a stream command past its deadline (`StreamCommand::deadline`)
+  fails with a timeout and ends the session, as a worker stuck in the kernel; `poll` advances the operation before handing over an RX block.
   `managed.rs` (`ManagedUsb`) owns a `Poll` and drives a handle on the calling thread;
   `asynchronous.rs` (`AsyncUsb`) a reactor thread of its own behind futures woken through
   `core::task::Waker`. Its unit tests use a socket source, not usbfs; only the opt-in
