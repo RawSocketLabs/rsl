@@ -25,7 +25,9 @@
 //!
 //! Everything here is register access: [`Calibrate`] is a sans-I/O machine over the
 //! board's other machines, which the blocking board runs ([`Board::calibrate`]) and the
-//! native USB handle runs the same way; it does not stream.
+//! native USB handle runs too, where a transfer failure ends the session and with it the
+//! machine ([`Calibrate::abort`]), skipping whatever restore and power-down remain; it does
+//! not stream.
 
 use std::mem;
 use std::time::Duration;
@@ -1429,6 +1431,17 @@ impl Calibrate {
         }
     }
 
+    /// Ends the calibration at a failed transfer that ends the session, before reporting
+    /// it: takes back what the running part changed and found, its fault included, and
+    /// runs nothing more, so [`Self::finish`] reports the fault the blocking run would.
+    #[cfg(all(feature = "mio", target_os = "linux"))]
+    pub(crate) fn abort(&mut self) {
+        if let Some(part) = self.part.take() {
+            self.absorb(&part);
+        }
+        self.phase = Phase::Done;
+    }
+
     /// Ends the calibration with `fault`.
     fn fail(&mut self, fault: CalibrationFault) -> Option<Part> {
         self.fault = Some(fault);
@@ -1487,8 +1500,10 @@ impl Board {
         let ran = run_sequence(self.bus.as_mut(), &mut calibrate);
         let (radio, corrections, result) = calibrate.finish();
         (self.radio, self.corrections) = (radio, corrections);
-        ran?;
+        // A fault first: the DC calibration reports its tuning fault over a later bus
+        // failure, as libusdr's does.
         let report = result?;
+        ran?;
         debug!(?report, "calibrated");
         Ok(report)
     }

@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use mio::{Registry, Token, Waker};
 
 use self::group::{GroupRun, NativeGroup};
-use self::radio::RadioRun;
+use self::radio::{RadioRun, transfer_failure};
 use self::stream::{Send, StreamOperation};
 use super::super::i2c::I2cTransaction;
 use super::super::machine::{Machine, Output, Step};
@@ -256,7 +256,16 @@ impl SequenceOperation {
             Self::ReferenceClock(switch, _) => switch.complete(result),
             Self::Engine(engine) => engine.complete(result),
             Self::Radio(run) => return run.complete(result),
-            Self::Calibrate(calibrate) => calibrate.complete(result),
+            Self::Calibrate(calibrate) => match (result, calibrate.next()) {
+                // A transfer failure ends the session, so the calibration ends with it at
+                // once, even where the machine would go on or ignore it (its power-downs),
+                // keeping any fault its running part found.
+                (Err(source), Some(action)) => {
+                    calibrate.abort();
+                    return Err(transfer_failure(action, source));
+                }
+                (result, _) => calibrate.complete(result),
+            },
         }
         .map_err(Error::from)
     }

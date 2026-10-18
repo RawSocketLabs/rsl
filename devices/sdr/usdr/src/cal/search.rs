@@ -190,32 +190,33 @@ impl Line {
                         *at = Golden::FirstRight;
                         return;
                     }
-                    Golden::FirstRight => {
-                        *f2 = cost;
-                        if *d <= 0 {
-                            *at = Golden::Done;
-                            return;
-                        }
-                    }
                     Golden::Left => *f1 = cost,
-                    Golden::Right => *f2 = cost,
+                    Golden::FirstRight | Golden::Right => *f2 = cost,
                     Golden::Done => return,
                 }
-                // One turn of `find_golden_min`'s loop, up to its next probe.
-                // A step that truncates to zero ends it before the next probe moves.
+                // The loop's test, then one turn of `find_golden_min`'s loop up to its next
+                // probe; a step that truncates to zero ends it before that probe.
+                if *d <= 0 {
+                    *at = Golden::Done;
+                    return;
+                }
                 if *f1 < *f2 {
                     *a = *x2;
                     *x2 = *x1;
                     *f2 = *f1;
                     *d = golden_step(*a, *b);
-                    *x1 = if *d == 0 { *x1 } else { a.saturating_add(*d) };
+                    if *d != 0 {
+                        *x1 = a.saturating_add(*d);
+                    }
                     *at = Golden::Left;
                 } else {
                     *b = *x1;
                     *x1 = *x2;
                     *f1 = *f2;
                     *d = golden_step(*a, *b);
-                    *x2 = if *d == 0 { *x2 } else { b.saturating_sub(*d) };
+                    if *d != 0 {
+                        *x2 = b.saturating_sub(*d);
+                    }
                     *at = Golden::Right;
                 }
                 if *d == 0 {

@@ -177,7 +177,7 @@ impl RadioRun {
 }
 
 /// The failure of `action`'s transfer: the access and the chip the uSDR wires there.
-fn transfer_failure(action: SequenceAction, source: BusError) -> Error {
+pub(super) fn transfer_failure(action: SequenceAction, source: BusError) -> Error {
     let failure = match action {
         SequenceAction::Fpga(access @ FpgaAccess::Spi { .. }) => SequenceFailure::FpgaTransport {
             chip: lms6002d::chip::NAME,

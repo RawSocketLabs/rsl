@@ -33,6 +33,9 @@ use crate::fpga::IqImbalance;
 use crate::frontend::FrontEndSelection;
 use crate::lowlevel::{Bus, BusError, TxFill};
 use crate::portable::radio::Chains;
+use crate::portable::usb::protocol::Command;
+use crate::portable::usb::register::SPI_REGISTER;
+use crate::portable::usb::transfer::Frame;
 use crate::reference::ReferenceClock;
 use crate::stream::{
     HostFormat, RxChannels, RxConfig, StreamsConfig, SyncMode, TxChannels, TxConfig, TxMute,
@@ -117,6 +120,8 @@ struct Record {
     panic_turn: bool,
     /// The next submission fails at the kernel boundary.
     fail_submit: bool,
+    /// The first command transfer of exactly these bytes fails at the kernel boundary.
+    fail_frame: Option<Frame>,
 }
 
 /// Whole-transfer stand-in for the native queue owner; genuine production machines run above.
@@ -272,8 +277,16 @@ impl<I: UsbIo + 'static> Backend for Fake<I> {
 
     fn submit(&mut self, request: Request) -> Result<(), BusError> {
         self.record("submit");
-        if mem::take(&mut self.record.lock().unwrap().fail_submit) {
-            return Err(BusError::Disconnected);
+        {
+            let mut record = self.record.lock().unwrap();
+            let chosen = match &request.transfer {
+                Transfer::Write(frame) => record.fail_frame == Some(*frame),
+                _ => false,
+            };
+            if mem::take(&mut record.fail_submit) || chosen {
+                record.fail_frame = None;
+                return Err(BusError::Disconnected);
+            }
         }
         if let Some(pause) = self.submit_pause.take() {
             pause.wait();
@@ -3778,6 +3791,49 @@ fn a_native_calibration_performs_the_blocking_calibrations_operations() {
 }
 
 #[test]
+fn a_tuning_fault_ends_a_native_calibration_as_it_ends_the_blocking_one() {
+    const RATE: u32 = 10_000_000;
+    // The receiver untuned, so the TX calibration wakes it and DC-calibrates it, whose
+    // filter tuning puts the TX PLL at 320 MHz, where this one cannot lock.
+    let board = || {
+        loopback_board(RATE).with_tx_pll_lock(PllLock {
+            unlocked_below_hz: 330_000_000,
+            ..PllLock::default()
+        })
+    };
+    let settings = [Setting::Rate(RATE), Setting::TxHz(1_000_000_000)];
+    let (mut reactor, wake) = reactor();
+    let (mut device, blocking, mut native, native_board) =
+        calibration_pair(board, &settings, &mut reactor, wake);
+    let (blocking_start, native_start) = (mark(&blocking), mark(&native_board));
+    let calibration = Calibration {
+        tx_lo_leakage: true,
+        ..Calibration::default()
+    };
+    let expected = device.calibrate(calibration);
+    assert!(
+        matches!(expected, Err(Error::PllUnlocked(320_000_000))),
+        "the blocking calibration stops at the fault: {expected:?}"
+    );
+    native.start_calibrate(calibration, Instant::now()).unwrap();
+    let event = settle(&mut native, &mut reactor);
+    assert!(
+        matches!(
+            event,
+            NativeEvent::Calibrated(Err(Error::PllUnlocked(320_000_000)))
+        ),
+        "the same fault: {event:?}"
+    );
+    assert_eq!(
+        operations(&native_board, native_start),
+        operations(&blocking, blocking_start),
+        "op for op"
+    );
+    native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
 fn a_native_calibration_refuses_before_any_io_as_the_blocking_one_does() {
     let (mut reactor, wake) = reactor();
     let (mut native, board) = unpowered_native(BoardRevision::Rev3, 25_000, &reactor, wake);
@@ -3807,8 +3863,175 @@ fn a_native_calibration_refuses_before_any_io_as_the_blocking_one_does() {
         "no sample rate, where libusdr divides by zero"
     );
     assert_eq!(operations(&board, start), [], "refused before any I/O");
+    for setting in [Setting::Rate(10_000_000), Setting::RxHz(1_000_000_000)] {
+        setting.on_native(&mut native, &mut reactor).unwrap();
+    }
+    // A TX stream's samples would go out in place of the test tone, and a group's too.
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxOpened(Ok(()))),
+        "TX opens",
+    );
+    let start = mark(&board);
+    assert!(
+        matches!(
+            native.start_calibrate(calibration, Instant::now()),
+            Err(Error::AlreadyStreaming)
+        ),
+        "an open TX stream"
+    );
+    native.start_tx_close(Instant::now()).unwrap();
+    expect_event(
+        &mut native,
+        &mut reactor,
+        |event| matches!(event, NativeEvent::TxClosed(Ok(()))),
+        "TX closes",
+    );
+    native
+        .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::StreamsCreated(Ok(()))
+    ));
+    let created = mark(&board);
+    assert!(
+        matches!(
+            native.start_calibrate(calibration, Instant::now()),
+            Err(Error::AlreadyStreaming)
+        ),
+        "a stream group"
+    );
+    assert_eq!(
+        operations(&board, start.max(created)),
+        [],
+        "refused before any I/O"
+    );
     native.close().unwrap();
     native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+/// An RX IQ calibration of a receiver tuned alone, so the transmitter it wakes is powered
+/// down again at the end, on a fresh native handle whose command transfer `fail` fails;
+/// its event, the board's operations from its start and whether the session is still open
+/// after.
+fn native_calibration_failing(fail: Option<&Frame>) -> (NativeEvent, Vec<Op>, bool) {
+    const RATE: u32 = 10_000_000;
+    let (mut reactor, wake) = reactor();
+    let (bus, board) = clocked_bus(loopback_board(RATE));
+    let mut records = None;
+    let mut native = bus
+        .hand_over()
+        .unwrap()
+        .attach_with(
+            |io| {
+                let (fake, record, _) = Fake::over(io);
+                records = Some(record);
+                Ok(fake)
+            },
+            reactor.registry(),
+            DEVICE,
+            wake,
+        )
+        .unwrap();
+    let record = records.unwrap();
+    native
+        .start_power_up(
+            ReferenceClock::Board,
+            ThermalPolicy::WithinSpec,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(matches!(
+        settle(&mut native, &mut reactor),
+        NativeEvent::PoweredUp(Ok(()))
+    ));
+    for setting in [Setting::Rate(RATE), Setting::RxHz(1_000_000_000)] {
+        setting.on_native(&mut native, &mut reactor).unwrap();
+    }
+    let start = mark(&board);
+    record.lock().unwrap().fail_frame = fail.copied();
+    native
+        .start_calibrate(
+            Calibration {
+                rx_iq_imbalance: true,
+                ..Calibration::default()
+            },
+            Instant::now(),
+        )
+        .unwrap();
+    let event = settle(&mut native, &mut reactor);
+    let trace = operations(&board, start);
+    let open = native.start_temperature(Instant::now()).is_ok();
+    if open {
+        settle(&mut native, &mut reactor);
+        native.close().unwrap();
+    }
+    native_cleanup(&mut native, &mut reactor).unwrap();
+    (event, trace, open)
+}
+
+#[test]
+fn a_transfer_failure_ends_a_native_calibration_and_the_session_at_once() {
+    let (whole, trace, open) = native_calibration_failing(None);
+    assert!(matches!(whole, NativeEvent::Calibrated(Ok(_))), "{whole:?}");
+    assert!(open, "a calibration leaves the session open");
+    // The restore's first write, the constant generator off on the TX port: the blocking
+    // machine still powers down the transmitter after it fails; natively the failed
+    // transfer ends the session, and the calibration with it.
+    let generator_off = Op::RegWrite {
+        addr: 57,
+        value: 0x0700_0000,
+    };
+    let at = trace
+        .iter()
+        .position(|op| *op == generator_off)
+        .expect("the restore turns the generator off");
+    assert!(at + 1 < trace.len(), "the power-down follows the restore");
+    let frame = Frame::new(Command::encode(57, 1, false), &[0x0700_0000]);
+    let (failed, failed_trace, open) = native_calibration_failing(Some(&frame));
+    assert!(
+        matches!(
+            failed,
+            NativeEvent::Calibrated(Err(Error::Bus {
+                access: Access::Write,
+                reg: 57,
+                ..
+            }))
+        ),
+        "the failed write is the result: {failed:?}"
+    );
+    assert_eq!(failed_trace, trace[..at], "nothing follows the failure");
+    assert!(!open, "the session ended");
+    // The transmitter's power-down, the last access, whose failure the blocking machine
+    // ignores: natively it still ends the calibration with its error.
+    let Some(&Op::Spi { out, .. }) = trace.last() else {
+        panic!("the calibration ends with the transmitter's power-down write");
+    };
+    assert_eq!(
+        trace
+            .iter()
+            .filter(|op| matches!(op, Op::Spi { out: word, .. } if *word == out))
+            .count(),
+        1,
+        "the power-down's word is the calibration's only such write"
+    );
+    let frame = Frame::new(Command::encode(SPI_REGISTER, 1, false), &[out]);
+    let (failed, failed_trace, open) = native_calibration_failing(Some(&frame));
+    assert!(
+        matches!(
+            failed,
+            NativeEvent::Calibrated(Err(Error::Bus {
+                chip: "LMS6002D",
+                ..
+            }))
+        ),
+        "an ignored failure still ends it: {failed:?}"
+    );
+    assert_eq!(failed_trace, trace[..trace.len() - 1]);
+    assert!(!open, "the session ended");
 }
 
 /// A handle over a fake whose stream command after `passed` others sticks in the "kernel"

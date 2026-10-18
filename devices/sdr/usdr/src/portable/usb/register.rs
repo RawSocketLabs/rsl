@@ -26,7 +26,7 @@ const IO_TIMEOUT: Duration = Duration::from_secs(20);
 /// `usb_read_bus` allows one second for a command's IRQ completion.
 const IRQ_TIMEOUT: Duration = Duration::from_secs(1);
 /// The simple SPI core's data register.
-const SPI_REGISTER: u16 = 2;
+pub(crate) const SPI_REGISTER: u16 = 2;
 /// The SPI core's completion IRQ.
 const SPI_EVENT: u8 = 2;
 /// Physical registers the 16-bit command address reaches.
