@@ -1120,19 +1120,27 @@ fn handing_over_the_blocking_bus_carries_its_notification_session() {
     );
 }
 
-/// Drives the handle's pending operation through the caller's reactor and its deadlines.
+/// Drives the handle's pending operation through the caller's reactor and its deadlines,
+/// until its next event. Each step waits for what the handle waits for: a worker report or
+/// device edge (an event), or its own deadline. There is no overall time budget, so a long
+/// operation (a calibration's thousands of transfers) passes however slowly the host runs
+/// it; only a wait that sees no event for [`GUARD`] with no deadline of the handle's due
+/// fails, as a stalled worker.
 fn finish(native: &mut NativeUsb, reactor: &mut Poll) -> NativeEvent {
-    let until = Instant::now() + GUARD;
     let mut events = Events::with_capacity(8);
     loop {
         if let Some(event) = native.poll(Instant::now()) {
             return event;
         }
-        assert!(Instant::now() < until, "native operation deadline");
-        let timeout = native.deadline().map_or(GUARD, |deadline| {
-            deadline.saturating_duration_since(Instant::now())
-        });
-        reactor.poll(&mut events, Some(timeout)).unwrap();
+        let due = native
+            .deadline()
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        let wait = due.map_or(GUARD, |due| due.min(GUARD));
+        reactor.poll(&mut events, Some(wait)).unwrap();
+        assert!(
+            !events.is_empty() || due.is_some_and(|due| due <= GUARD),
+            "the native handle stalled: no worker report, device edge or deadline in {GUARD:?}"
+        );
         for event in &events {
             native.on_ready(event.token());
         }
