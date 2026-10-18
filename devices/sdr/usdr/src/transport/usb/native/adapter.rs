@@ -310,8 +310,11 @@ impl Adapter {
         outcome
     }
 
-    /// Drains every report the worker has published, routing each.
-    fn pump(&mut self) {
+    /// Drains every report the worker has published, routing each. [`NativeUsb::poll`]
+    /// calls it first; each `try_*` calls it again before it looks.
+    ///
+    /// [`NativeUsb::poll`]: super::NativeUsb::poll
+    pub(in super::super) fn pump(&mut self) {
         while !self.stopped {
             match self.worker.report() {
                 Ok(Some(report)) => self.route(report),
@@ -427,8 +430,9 @@ impl Adapter {
 
     /// The failure that ended the session with no control request to carry it (a worker
     /// panic or lost report, a failed turn while idle), once, unless a stream took it.
+    /// Only what an earlier [`pump`](Self::pump) routed: a report that arrives after the
+    /// stream looked waits for the next pump, so an open stream still reports it.
     pub(in super::super) fn take_unclaimed(&mut self) -> Option<BusError> {
-        self.pump();
         if !mem::take(&mut self.unclaimed) {
             return None;
         }

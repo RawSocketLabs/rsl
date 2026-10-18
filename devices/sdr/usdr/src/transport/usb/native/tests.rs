@@ -2,7 +2,7 @@
 //! No usbfs node, device reset, kernel install, or hardware claim is performed.
 
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::io;
 use std::mem;
 use std::num::NonZeroUsize;
@@ -1924,16 +1924,31 @@ fn a_native_stream_group_writes_the_blocking_groups_engine_registers() {
         );
         let start = board.lock().unwrap().trace().len();
         native.start_streams(Instant::now()).unwrap();
-        expect_event(
-            &mut native,
-            &mut reactor,
-            |event| matches!(event, NativeEvent::StreamsStarted(Ok(()))),
-            "the group starts",
+        // RX runs from the start's run write on, so blocks may come before the start ends.
+        let mut first = None;
+        let started_event = loop {
+            match finish(&mut native, &mut reactor) {
+                NativeEvent::Received(Ok(block)) => {
+                    first.get_or_insert(Ok(block));
+                }
+                NativeEvent::Received(Err(error)) => {
+                    panic!("{config:?}: a block before the start's end fails: {error:?}")
+                }
+                event => break event,
+            }
+        };
+        assert!(
+            matches!(started_event, NativeEvent::StreamsStarted(Ok(()))),
+            "{config:?}: the group starts: got {started_event:?}"
         );
         assert_eq!(operations(&board, start), started, "{config:?}: start");
         if config.rx.is_some() {
-            let NativeEvent::Received(Ok(block)) = finish(&mut native, &mut reactor) else {
-                panic!("{config:?}: a started RX stream delivers blocks");
+            let first = first.unwrap_or_else(|| match finish(&mut native, &mut reactor) {
+                NativeEvent::Received(block) => block,
+                event => panic!("{config:?}: a started RX stream delivers blocks: {event:?}"),
+            });
+            let Ok(block) = first else {
+                panic!("{config:?}: a started RX stream delivers blocks: {first:?}");
             };
             assert_eq!(block.payload.len(), 4096, "one 1024-sample ci16 packet");
         }
@@ -2032,11 +2047,11 @@ fn a_create_that_fails_after_rx_opened_keeps_rx_in_the_group_as_the_blocking_one
     assert_eq!(operations(&board, start), created, "the same create");
     let start = board.lock().unwrap().trace().len();
     native.start_streams(Instant::now()).unwrap();
-    expect_event(
-        &mut native,
-        &mut reactor,
-        |event| matches!(event, NativeEvent::StreamsStarted(Ok(()))),
-        "the RX-only group starts",
+    // RX runs from the start's run write on, so blocks may come before the start ends.
+    let started_event = settle(&mut native, &mut reactor);
+    assert!(
+        matches!(started_event, NativeEvent::StreamsStarted(Ok(()))),
+        "the RX-only group starts: got {started_event:?}"
     );
     assert_eq!(
         operations(&board, start),
@@ -3240,11 +3255,24 @@ fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
     let (_device, board) = rx_streaming(&[]);
     let (mut fake, _, dropped) = Fake::new();
     fake.io.board = board;
+    let (pause, gate) = Pause::new();
+    fake.submit_pause = Some(pause);
     let adapter = AsyncUsb::start(|registry, token, waker| {
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
-    let (read, pending, wakes) = block_on(adapter.operation(NativeUsb::start_temperature));
+    let mut read = pin!(adapter.operation(NativeUsb::start_temperature));
+    // The worker holds the read's first transfer until the future's first poll, so that
+    // poll waits however the threads are scheduled.
+    gate.entered();
+    let mut gate = Some(gate);
+    let (read, pending, wakes) = block_on(poll_fn(|cx| {
+        let polled = read.as_mut().poll(cx);
+        if let Some(gate) = gate.take() {
+            gate.release();
+        }
+        polled
+    }));
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Ok(celsius))) if (celsius - 25.0).abs() < f32::EPSILON),
         "{read:?}"
@@ -3288,13 +3316,22 @@ fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
 
 #[test]
 fn an_async_session_end_fails_the_running_operation_and_ends_the_blocks() {
-    let (fake, record, _) = Fake::new();
+    let (mut fake, record, _) = Fake::new();
+    let (pause, gate) = Pause::new();
+    fake.submit_pause = Some(pause);
     let adapter = AsyncUsb::start(|registry, token, waker| {
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
+    let read = adapter.operation(NativeUsb::start_temperature);
+    // Armed only once the worker holds the read's first transfer: the registration's edge
+    // brings an idle reap turn, which the panic must not hit, or the session ends before
+    // the read starts. A failure arriving after the poll's operation step looked reaches
+    // the read on the next poll, after the worker's wake.
+    gate.entered();
     record.lock().unwrap().panic_turn = true;
-    let (read, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    gate.release();
+    let (read, ..) = block_on(read);
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Err(_)))),
         "the operation's event carries the worker's failure: {read:?}"
@@ -3371,7 +3408,7 @@ fn several_async_block_waiters_each_get_a_block() {
         let mut first = pin!(first);
         let mut second = pin!(second);
         let (mut a, mut b) = (None, None);
-        std::future::poll_fn(|cx| {
+        poll_fn(|cx| {
             if a.is_none() {
                 if let task::Poll::Ready(block) = first.as_mut().poll(cx) {
                     a = Some(block);

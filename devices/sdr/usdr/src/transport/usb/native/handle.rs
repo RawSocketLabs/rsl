@@ -598,6 +598,9 @@ impl NativeUsb {
     /// returns `None`; it never waits or performs USB I/O.
     #[must_use]
     pub fn poll(&mut self, now: Instant) -> Option<NativeEvent> {
+        // The session's end is judged on what this pump saw: a failure arriving later in
+        // the poll goes to the operation or stream that pumps it, else to the next poll.
+        self.adapter.pump();
         self.poll_operation(now)
             .or_else(|| self.poll_rx())
             .or_else(|| self.adapter.take_unclaimed().map(NativeEvent::SessionEnded))
