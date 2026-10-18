@@ -1,8 +1,10 @@
-//! **decode_response** — decode a real DNS response packet and walk its sections,
+//! **`decode_response`** — decode a real DNS response packet and walk its sections,
 //! showing that unknown record types are preserved as raw `Custom` bytes (dual-use),
 //! never misparsed.
 //!
 //! Run with: `cargo run -p dns --example decode_response`
+
+#![allow(clippy::print_stdout)]
 
 use dns::{Message, RData};
 

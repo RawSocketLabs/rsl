@@ -1,4 +1,4 @@
-//! **inject_segment** — compose a TCP SYN over rawsock, checksum it against an IPv4
+//! **`inject_segment`** — compose a TCP SYN over rawsock, checksum it against an IPv4
 //! pseudo-header, and hand the bytes to a rawsock sink (Loopback — no privilege needed).
 //!
 //! Run with: `cargo run -p tcp --features inject --example inject_segment`

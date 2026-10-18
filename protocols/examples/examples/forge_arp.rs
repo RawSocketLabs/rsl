@@ -1,4 +1,4 @@
-//! **forge_arp** — compose a gratuitous **ARP reply** (cache poisoning) and inject it at L2.
+//! **`forge_arp`** — compose a gratuitous **ARP reply** (cache poisoning) and inject it at L2.
 //!
 //! Claims a victim IP is at the attacker's MAC, framed in Ethernet and sent on a chosen
 //! interface. Run with `sudo -E cargo run -p protocol-examples --example forge_arp -- <iface>` (composing
@@ -34,7 +34,7 @@ fn main() {
         "forged ARP reply  {claimed_ip} is-at {attacker_mac:02x?}  -> {victim_ip}  ({} bytes)",
         bytes.len()
     );
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
 
     if capabilities().link {
         let iface = std::env::args()

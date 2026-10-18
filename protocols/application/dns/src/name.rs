@@ -245,20 +245,17 @@ fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError>
         let offset = w.bit_pos() / 8;
         // Consult/extend the compression dictionary if the sink carries one. The scratch
         // borrow is scoped (the pointer copied out) so it's dropped before writing to `w`.
-        let pointer = {
-            match w
-                .scratch()
-                .and_then(|s| s.downcast_mut::<CompressionDict>())
-            {
-                Some(dict) => match dict.lookup(&labels[i..]) {
-                    Some(off) => Some(off),
-                    None => {
-                        dict.record(labels[i..].to_vec(), offset);
-                        None
-                    }
-                },
-                None => None,
+        let pointer = if let Some(dict) = w
+            .scratch()
+            .and_then(|s| s.downcast_mut::<CompressionDict>())
+        {
+            let found = dict.lookup(&labels[i..]);
+            if found.is_none() {
+                dict.record(labels[i..].to_vec(), offset);
             }
+            found
+        } else {
+            None
         };
         if let Some(off) = pointer {
             // A pointer both replaces this suffix and terminates the name.

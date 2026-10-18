@@ -3,7 +3,7 @@
 //! From-scratch and dual-use: [`ArpPacket`] decodes/encodes the 28-byte IPv4-over-Ethernet ARP
 //! packet. Every field is stored **verbatim** — the parser rejects nothing representable, so a
 //! packet with an unusual operation or a mismatched `hlen`/`plen` round-trips unchanged. The
-//! `inject` feature makes `ArpPacket` a `rawsock::Protocol` (an Ethernet payload, EtherType
+//! `inject` feature makes `ArpPacket` a `rawsock::Protocol` (an Ethernet payload, `EtherType`
 //! `0x0806`); it has no checksum or length field, so nothing is derived on encode.
 //!
 //! Reuses the [`ethertype`] crate for the protocol-type field and `bnb`'s native
@@ -43,7 +43,7 @@ pub enum Operation {
     Request = 1,
     /// Reply (2) — "`tpa` is at `sha`".
     Reply = 2,
-    /// Any other operation (RARP, InARP, …), preserved verbatim (dual-use).
+    /// Any other operation (RARP, `InARP`, …), preserved verbatim (dual-use).
     #[catch_all]
     Other(u16),
 }
@@ -60,7 +60,7 @@ pub enum Operation {
 pub struct ArpPacket {
     /// Hardware type (1 = Ethernet).
     pub htype: u16,
-    /// Protocol type — an EtherType (`0x0800` = IPv4).
+    /// Protocol type — an `EtherType` (`0x0800` = IPv4).
     pub ptype: EtherType,
     /// Hardware address length (6 for a MAC).
     pub hlen: u8,

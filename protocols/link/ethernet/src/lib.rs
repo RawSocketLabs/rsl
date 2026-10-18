@@ -1,7 +1,7 @@
 //! **ethernet** — an Ethernet II (IEEE 802.3) frame-header codec on the [`bnb`] bit-aware codec.
 //!
 //! From-scratch and dual-use: [`EthernetHeader`] decodes/encodes the 14-byte frame header
-//! (destination MAC, source MAC, EtherType). The `inject` feature adds a `rawsock::Protocol`
+//! (destination MAC, source MAC, `EtherType`). The `inject` feature adds a `rawsock::Protocol`
 //! layer (`Ethernet`) that frames an L3 payload for L2 injection — the top of the stack.
 //!
 //! The 4-byte FCS (frame check sequence) is **not** part of this codec: on transmit the NIC /
@@ -35,7 +35,7 @@ pub use inject::Ethernet;
 /// The broadcast MAC address (`ff:ff:ff:ff:ff:ff`).
 pub const BROADCAST: [u8; 6] = [0xff; 6];
 
-/// An Ethernet II frame header (IEEE 802.3): destination MAC, source MAC, and the EtherType —
+/// An Ethernet II frame header (IEEE 802.3): destination MAC, source MAC, and the `EtherType` —
 /// a 14-byte header. The payload and the 4-byte FCS follow (the FCS is added by the NIC on
 /// transmit, so it is not part of this codec).
 //~ models ieee802.3 part="Ethernet II frame header"
@@ -46,7 +46,7 @@ pub struct EthernetHeader {
     pub dst: [u8; 6],
     /// Source MAC address.
     pub src: [u8; 6],
-    /// The EtherType — the encapsulated protocol (`0x0800` IPv4, `0x0806` ARP, `0x86DD` IPv6, …).
+    /// The `EtherType` — the encapsulated protocol (`0x0800` IPv4, `0x0806` ARP, `0x86DD` IPv6, …).
     pub ethertype: EtherType,
 }
 

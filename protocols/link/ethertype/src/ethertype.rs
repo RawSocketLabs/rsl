@@ -2,7 +2,7 @@
 
 use bnb::BitEnum;
 
-/// The 16-bit **EtherType**: the field in an Ethernet II frame that names the
+/// The 16-bit **`EtherType`**: the field in an Ethernet II frame that names the
 /// encapsulated protocol (IEEE 802.3 / the IANA ethertype registry).
 ///
 /// A `bnb` [`BitEnum`] at a byte-aligned `u16` width, big-endian (network order). The
@@ -50,7 +50,7 @@ pub enum EtherType {
 #[cfg(test)]
 mod unit {
     use super::*;
-    use bnb::{BitReader, BitWriter, Sink, Source};
+    use bnb::{BitReader, BitWriter};
 
     /// Encode one `EtherType` to its two big-endian wire bytes.
     fn to_bytes(e: EtherType) -> [u8; 2] {

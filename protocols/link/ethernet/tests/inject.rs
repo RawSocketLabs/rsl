@@ -1,4 +1,4 @@
-//! The rawsock injection layer: `Ethernet<P>` framing, the payload-driven EtherType, the full
+//! The rawsock injection layer: `Ethernet<P>` framing, the payload-driven `EtherType`, the full
 //! `Ethernet(Ip(Icmp(..)))` stack, and handing the frame to an L2 Loopback sink.
 #![cfg(feature = "inject")]
 

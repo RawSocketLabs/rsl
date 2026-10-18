@@ -1,4 +1,4 @@
-//! **inject_stack** — compose a full `Ip(Udp(payload))` datagram, so the IP layer supplies the
+//! **`inject_stack`** — compose a full `Ip(Udp(payload))` datagram, so the IP layer supplies the
 //! UDP checksum's pseudo-header and computes its own header checksum, then hand the bytes to a
 //! rawsock sink (Loopback — no privilege).
 //!
@@ -22,7 +22,7 @@ fn main() {
     let bytes = packet.encode();
 
     println!("full IPv4+UDP datagram, {} bytes:", bytes.len());
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
     println!(
         "  ip.total_length={}  ip.protocol={}  ip.checksum={:#06x}",
         u16::from_be_bytes([bytes[2], bytes[3]]),

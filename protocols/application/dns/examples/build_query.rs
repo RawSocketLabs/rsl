@@ -1,7 +1,9 @@
-//! **build_query** — construct a recursive A-record query, encode it to wire bytes, and
+//! **`build_query`** — construct a recursive A-record query, encode it to wire bytes, and
 //! confirm it round-trips. The encode/construction path.
 //!
 //! Run with: `cargo run -p dns --example build_query`
+
+#![allow(clippy::print_stdout)]
 
 use dns::{Message, QClass, QType, Question};
 

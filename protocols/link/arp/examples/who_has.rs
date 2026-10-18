@@ -1,6 +1,6 @@
-//! **who_has** — compose an `Ethernet(ArpPacket)` frame: an ARP request broadcast asking who
+//! **`who_has`** — compose an `Ethernet(ArpPacket)` frame: an ARP request broadcast asking who
 //! owns an IP, then hand it to a rawsock sink (Loopback — no privilege). The Ethernet layer
-//! auto-fills its EtherType to `0x0806` from the ARP payload.
+//! auto-fills its `EtherType` to `0x0806` from the ARP payload.
 //!
 //! Run with: `cargo run -p arp --features inject --example who_has`
 #![allow(clippy::print_stdout)]
@@ -27,7 +27,7 @@ fn main() {
     let bytes = frame.encode();
 
     println!("Ethernet + ARP request, {} bytes:", bytes.len());
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
     println!(
         "  ethertype={:#06x} (ARP), oper={}",
         u16::from_be_bytes([bytes[12], bytes[13]]),

@@ -21,7 +21,7 @@ fn main() {
     let bytes = packet.encode();
 
     println!("IPv4 + ICMP echo request, {} bytes:", bytes.len());
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
     let icmp = &bytes[20..];
     println!(
         "  icmp type={} code={} checksum={:#06x}",

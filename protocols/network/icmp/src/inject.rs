@@ -32,7 +32,7 @@ impl<P> Icmp<P> {
 }
 
 /// The 8-byte header (with `checksum`) followed by `payload`.
-fn message_bytes(h: &IcmpHeader, payload: &[u8], checksum: u16) -> Vec<u8> {
+fn message_bytes(h: IcmpHeader, payload: &[u8], checksum: u16) -> Vec<u8> {
     let mut m = Vec::with_capacity(8 + payload.len());
     m.push(h.icmp_type);
     m.push(h.code);
@@ -57,7 +57,7 @@ impl<P: Protocol> Protocol for Icmp<P> {
         let payload = self.payload.encode_with(ctx);
         // Self-contained checksum: over the header (checksum zeroed) + data, never a
         // pseudo-header — so it's computed unconditionally, regardless of `ctx`.
-        let mut msg = message_bytes(&self.header, &payload, 0);
+        let mut msg = message_bytes(self.header, &payload, 0);
         let ck = internet_checksum(&msg);
         msg[2..4].copy_from_slice(&ck.to_be_bytes());
         msg
@@ -65,6 +65,6 @@ impl<P: Protocol> Protocol for Icmp<P> {
 
     fn encode_raw_with(&self, ctx: &Context) -> Vec<u8> {
         let payload = self.payload.encode_raw_with(ctx);
-        message_bytes(&self.header, &payload, self.header.checksum) // verbatim (forgeable)
+        message_bytes(self.header, &payload, self.header.checksum) // verbatim (forgeable)
     }
 }

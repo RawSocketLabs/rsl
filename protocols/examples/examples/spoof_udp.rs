@@ -1,4 +1,4 @@
-//! **spoof_udp** — compose a UDP datagram with a **forged source IP** and inject it at L3.
+//! **`spoof_udp`** — compose a UDP datagram with a **forged source IP** and inject it at L3.
 //!
 //! The dual-use payoff: the `ip` layer stores whatever source address you give it, so we can
 //! impersonate another host. Run with `cargo run -p protocol-examples --example spoof_udp` (composing works
@@ -25,7 +25,7 @@ fn main() {
         "forged IPv4+UDP  {forged_src} -> {target}  ({} bytes)",
         bytes.len()
     );
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
 
     if capabilities().network {
         let mut sock = NetworkSocket::open().expect("open raw L3 socket");

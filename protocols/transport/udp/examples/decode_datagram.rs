@@ -1,4 +1,4 @@
-//! **decode_datagram** — decode a UDP header and build one back.
+//! **`decode_datagram`** — decode a UDP header and build one back.
 //!
 //! Run with: `cargo run -p udp --example decode_datagram`
 #![allow(clippy::print_stdout)]

@@ -8,7 +8,7 @@
 use crate::ArpPacket;
 use rawsock::{Context, Layer, Protocol};
 
-/// ARP's EtherType (`0x0806`), the demux id it presents to an enclosing Ethernet frame.
+/// ARP's `EtherType` (`0x0806`), the demux id it presents to an enclosing Ethernet frame.
 const ARP_ETHERTYPE: u32 = 0x0806;
 
 impl Protocol for ArpPacket {

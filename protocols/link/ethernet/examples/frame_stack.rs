@@ -1,5 +1,5 @@
-//! **frame_stack** — compose the whole stack, `Ethernet(Ip(Icmp(echo request)))`, so every
-//! layer fills its derived fields (EtherType, IP length/protocol/checksum, ICMP checksum), then
+//! **`frame_stack`** — compose the whole stack, `Ethernet(Ip(Icmp(echo request)))`, so every
+//! layer fills its derived fields (`EtherType`, IP length/protocol/checksum, ICMP checksum), then
 //! hand the frame to a rawsock sink (Loopback — no privilege).
 //!
 //! Run with: `cargo run -p ethernet --features inject --example frame_stack`
@@ -31,7 +31,7 @@ fn main() {
     let bytes = frame.encode();
 
     println!("full Ethernet+IPv4+ICMP frame, {} bytes:", bytes.len());
-    println!("  {:02x?}", bytes);
+    println!("  {bytes:02x?}");
     println!(
         "  ethertype={:#06x} (from the IP payload), layer={}",
         u16::from_be_bytes([bytes[12], bytes[13]]),

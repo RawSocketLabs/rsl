@@ -1,4 +1,4 @@
-//! **build_syn** — construct a SYN segment, encode it, and confirm it round-trips.
+//! **`build_syn`** — construct a SYN segment, encode it, and confirm it round-trips.
 //!
 //! Run with: `cargo run -p tcp --example build_syn`
 #![allow(clippy::print_stdout)]

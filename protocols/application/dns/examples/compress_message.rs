@@ -1,8 +1,10 @@
-//! **compress_message** — encode a response two ways and compare. `to_compressed_bytes`
+//! **`compress_message`** — encode a response two ways and compare. `to_compressed_bytes`
 //! (RFC 1035 §4.1.4) points a repeated name back to its first occurrence, so the wire
 //! form shrinks while decoding to the same message.
 //!
 //! Run with: `cargo run -p dns --example compress_message`
+
+#![allow(clippy::print_stdout)]
 
 use dns::{Header, Message, QClass, QType, Question, RClass, RData, RType, Record, State, WireLen};
 use std::net::Ipv4Addr;

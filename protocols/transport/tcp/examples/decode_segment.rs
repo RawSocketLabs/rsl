@@ -1,4 +1,4 @@
-//! **decode_segment** — decode a TCP header and print its ports, sequence numbers, and the
+//! **`decode_segment`** — decode a TCP header and print its ports, sequence numbers, and the
 //! set control flags.
 //!
 //! Run with: `cargo run -p tcp --example decode_segment`

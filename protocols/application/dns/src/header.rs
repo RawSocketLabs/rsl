@@ -59,7 +59,7 @@ pub struct State {
     pub op: Op,
     /// Authoritative Answer.
     pub authoritative: bool,
-    /// TrunCation.
+    /// `TrunCation`.
     pub truncated: bool,
     /// Recursion Desired.
     pub recursion_desired: bool,

@@ -1,9 +1,11 @@
-//! **dual_use_forge** — the escape hatch. Section counts are [`WireLen`]: left `auto()`
+//! **`dual_use_forge`** — the escape hatch. Section counts are [`WireLen`]: left `auto()`
 //! they derive from their sections on encode, but `set(n)` pins a value that deliberately
 //! *disagrees* — a malformed frame for fuzzing / interop testing. The codec emits exactly
 //! what you pin; it enforces no policy.
 //!
 //! Run with: `cargo run -p dns --example dual_use_forge`
+
+#![allow(clippy::print_stdout)]
 
 use dns::{Header, Message, State, WireLen};
 

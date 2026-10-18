@@ -1,4 +1,4 @@
-//! **inject_packet** — compose a UDP packet over rawsock, checksum it against an IPv4
+//! **`inject_packet`** — compose a UDP packet over rawsock, checksum it against an IPv4
 //! pseudo-header, and hand the bytes to a rawsock sink (Loopback — no privilege needed).
 //!
 //! Run with: `cargo run -p udp --features inject --example inject_packet`
