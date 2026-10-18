@@ -150,7 +150,9 @@ Each layer calls only the ones below it.
   `transport/pcie.rs`); `oracle/tests/xmass_firmware_parity.rs` runs both against one fake
   device. `board/frontend.rs` runs the probe at the
   end of power-up and owns the board that came up. Blocking code: the probes interleave
-  GPIO-core writes with I2C transfers the `Sequence` seam cannot express. The LMK05318 (`chips/lmk05318/`, XMASS and
+  GPIO-core writes with I2C transfers wider than the `Sequence` seam's one-register
+  actions; why the native power-up still skips the probe, and the seam extension it
+  would take, is PORTING.md's front-end row (*Native probe*). The LMK05318 (`chips/lmk05318/`, XMASS and
   `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
   frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
   the oracle compiles them with the map and value types directly
