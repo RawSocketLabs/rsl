@@ -4101,6 +4101,31 @@ fn a_stream_close_stuck_past_the_cancellation_grace_times_out() {
     native_cleanup(&mut native, &mut reactor).unwrap();
 }
 
+/// Drives the handle until its stream command is stuck on the worker, then jumps the
+/// caller's clock to that command's deadline: the deadline's length and the event then.
+fn at_stuck_deadline(
+    native: &mut NativeUsb,
+    reactor: &mut Poll,
+    gate: &Gate,
+) -> (Duration, NativeEvent) {
+    let mut events = Events::with_capacity(8);
+    loop {
+        if let Some(event) = native.poll(Instant::now()) {
+            panic!("an event before the command stuck: {event:?}");
+        }
+        if gate.entered.try_recv().is_ok() {
+            let now = Instant::now();
+            let due = native.deadline().expect("the stuck command's deadline");
+            let event = native.poll(due).expect("an event at the deadline");
+            return (due.saturating_duration_since(now), event);
+        }
+        reactor.poll(&mut events, Some(GUARD / 50)).unwrap();
+        for event in &events {
+            native.on_ready(event.token());
+        }
+    }
+}
+
 #[test]
 fn a_group_create_whose_stream_open_sticks_fails_with_a_timeout() {
     let (mut reactor, wake) = reactor();
@@ -4108,30 +4133,75 @@ fn a_group_create_whose_stream_open_sticks_fails_with_a_timeout() {
     native
         .start_create_streams(StreamsConfig::rx(rx_config()), Instant::now())
         .unwrap();
-    let mut events = Events::with_capacity(8);
-    let event = loop {
-        let now = Instant::now();
-        if let Some(event) = native.poll(now) {
-            break event;
-        }
-        // Once the open is stuck on the worker, jump the caller's clock to its deadline.
-        if gate.entered.try_recv().is_ok() {
-            let due = native.deadline().expect("the open's deadline");
-            break native
-                .poll(due)
-                .expect("the create ends at its open's deadline");
-        }
-        reactor.poll(&mut events, Some(GUARD / 50)).unwrap();
-        for event in &events {
-            native.on_ready(event.token());
-        }
-    };
+    let (_, event) = at_stuck_deadline(&mut native, &mut reactor, &gate);
     assert!(
         matches!(
             event,
             NativeEvent::StreamsCreated(Err(Error::Stream(BusError::Timeout)))
         ),
         "{event:?}"
+    );
+    gate.release();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_send_whose_commit_sticks_times_out_and_ends_the_session() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, gate) = stuck_stream_command(1, &reactor, wake);
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::TxOpened(Ok(()))
+    ));
+    native
+        .start_send(None, &[0; 64], GUARD, Instant::now())
+        .unwrap();
+    let (allowed, event) = at_stuck_deadline(&mut native, &mut reactor, &gate);
+    assert!(
+        allowed <= Duration::from_secs(2),
+        "a commit's deadline: {allowed:?}"
+    );
+    assert!(
+        matches!(
+            event,
+            NativeEvent::Sent(Err(Error::Stream(BusError::Timeout)))
+        ),
+        "the stuck commit surfaces as a timeout: {event:?}"
+    );
+    assert!(
+        native.start_temperature(Instant::now()).is_err(),
+        "the session ended"
+    );
+    gate.release();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn an_open_stream_learns_a_stuck_command_ended_the_session() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, gate) = stuck_stream_command(1, &reactor, wake);
+    native.start_rx_open(RX_BLOCK, Instant::now()).unwrap();
+    assert!(matches!(
+        finish(&mut native, &mut reactor),
+        NativeEvent::RxOpened(Ok(()))
+    ));
+    native.start_tx_open(4096, 4, Instant::now()).unwrap();
+    let (_, event) = at_stuck_deadline(&mut native, &mut reactor, &gate);
+    assert!(
+        matches!(
+            event,
+            NativeEvent::TxOpened(Err(Error::Stream(BusError::Timeout)))
+        ),
+        "{event:?}"
+    );
+    let event = native.poll(Instant::now());
+    assert!(
+        matches!(
+            event,
+            Some(NativeEvent::Received(Err(Error::Stream(BusError::Timeout))))
+        ),
+        "the open RX stream ends with the session: {event:?}"
     );
     gate.release();
     native_cleanup(&mut native, &mut reactor).unwrap();

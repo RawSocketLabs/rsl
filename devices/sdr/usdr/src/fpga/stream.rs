@@ -42,13 +42,6 @@ pub(crate) struct BurstPlan {
 }
 
 impl BurstPlan {
-    /// The plan for packets of `samples` of one channel in `wire` format; see
-    /// [`BurstPlan::for_stream`].
-    #[cfg(test)]
-    pub(crate) fn for_packet(samples: u32, wire: WireFormat) -> Option<Self> {
-        Self::for_stream(samples, wire, RxChannels::Channel0)
-    }
-
     /// The plan for packets of `samples` per channel of `channels` in `wire` format, or
     /// `None` where libusdr returns `-EINVAL` (or would divide by zero, for packets too
     /// small to fill a word per burst).
@@ -235,11 +228,16 @@ struct BurstFormat {
 mod tests {
     use super::*;
 
+    /// The plan for packets of `samples` of one channel in `wire` format.
+    fn for_packet(samples: u32, wire: WireFormat) -> Option<BurstPlan> {
+        BurstPlan::for_stream(samples, wire, RxChannels::Channel0)
+    }
+
     // Expected values: libusdr's arithmetic worked by hand.
 
     #[test]
     fn a_1024_sample_packet_is_one_4096_byte_burst() {
-        let plan = BurstPlan::for_packet(1024, WireFormat::Ci16).expect("valid");
+        let plan = for_packet(1024, WireFormat::Ci16).expect("valid");
         assert_eq!(
             plan,
             BurstPlan {
@@ -256,7 +254,7 @@ mod tests {
     #[test]
     fn a_packet_too_big_for_one_burst_splits_evenly() {
         // 16384 samples are 8192 words: one burst would leave no FIFO room for two.
-        let plan = BurstPlan::for_packet(16384, WireFormat::Ci16).expect("valid");
+        let plan = for_packet(16384, WireFormat::Ci16).expect("valid");
         assert_eq!(
             (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
             (2, 8192, 32768)
@@ -266,14 +264,14 @@ mod tests {
     #[test]
     fn small_packets_get_a_deep_fifo() {
         // 256 samples are 128 words: 64 bursts fit the FIFO, past the bottom 24 bits.
-        let plan = BurstPlan::for_packet(256, WireFormat::Ci16).expect("valid");
+        let plan = for_packet(256, WireFormat::Ci16).expect("valid");
         assert_eq!((plan.bursts, plan.fifo_bursts), (1, 64));
     }
 
     #[test]
     fn a_packet_that_cannot_split_evenly_pads_each_burst() {
         // 16383 = 3 × 43 × 127: three bursts of 5461 samples, each 2730.5 words, so 2731.
-        let plan = BurstPlan::for_packet(16383, WireFormat::Ci16).expect("valid");
+        let plan = for_packet(16383, WireFormat::Ci16).expect("valid");
         assert_eq!(
             (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
             (3, 5461, 21848)
@@ -283,13 +281,13 @@ mod tests {
     #[test]
     fn twelve_bit_samples_pack_three_bytes_each_across_words() {
         // 1024 samples of 24 bits are 384 words: one burst, 3072 bytes, 21 in the FIFO.
-        let plan = BurstPlan::for_packet(1024, WireFormat::Ci12).expect("valid");
+        let plan = for_packet(1024, WireFormat::Ci12).expect("valid");
         assert_eq!(
             (plan.bursts, plan.bytes_per_burst, plan.fifo_bursts),
             (1, 3072, 21)
         );
         // 1023 samples are 3069 bytes, so the burst ends in a 3-byte stub.
-        let plan = BurstPlan::for_packet(1023, WireFormat::Ci12).expect("valid");
+        let plan = for_packet(1023, WireFormat::Ci12).expect("valid");
         assert_eq!((plan.bursts, plan.bytes_per_burst), (1, 3072));
     }
 
@@ -297,7 +295,7 @@ mod tests {
     fn a_twelve_bit_packet_splits_by_its_own_word_count() {
         // 16384 samples are 6144 words: one burst fits 8192 words but leaves no FIFO room
         // for two (65536 / 49152 bytes), so two bursts of 3072 words.
-        let plan = BurstPlan::for_packet(16384, WireFormat::Ci12).expect("valid");
+        let plan = for_packet(16384, WireFormat::Ci12).expect("valid");
         assert_eq!(
             (plan.bursts, plan.samples_per_burst, plan.bytes_per_burst),
             (2, 8192, 24576)
@@ -306,12 +304,12 @@ mod tests {
 
     #[test]
     fn a_packet_too_large_to_count_is_refused() {
-        assert_eq!(BurstPlan::for_packet(1 << 27, WireFormat::Ci16), None);
+        assert_eq!(for_packet(1 << 27, WireFormat::Ci16), None);
     }
 
     #[test]
     fn the_front_end_words_are_libusdrs() {
-        let plan = BurstPlan::for_packet(1024, WireFormat::Ci16).expect("valid");
+        let plan = for_packet(1024, WireFormat::Ci16).expect("valid");
         assert_eq!(
             plan.rx_format(RxChannels::Channel0),
             // 16 bursts in the FIFO, 511 words, lanes 1 and 0, 16 bits.

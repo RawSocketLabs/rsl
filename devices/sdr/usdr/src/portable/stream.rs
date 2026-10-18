@@ -300,18 +300,6 @@ pub(crate) struct TxLanes {
     pub(crate) channels_log2: u8,
 }
 
-impl TxLanes {
-    /// One unswapped channel with `mute`.
-    #[cfg(test)]
-    pub(crate) const fn one_channel(mute: u8) -> Self {
-        Self {
-            mute,
-            swap: false,
-            channels_log2: 0,
-        }
-    }
-}
-
 /// The extended TX core's front-end command register (`CSR_TFE4_BASE`,
 /// `VIRT_CFG_SFX_BASE + 3 * 256`): a command in bits 31:24, its value below
 /// (`MAKE_EXFE_REG`).
@@ -702,6 +690,15 @@ impl Sequence for EngineSequence {
 mod tests {
     use super::*;
 
+    /// One unswapped TX channel with `mute`.
+    const fn one_channel(mute: u8) -> TxLanes {
+        TxLanes {
+            mute,
+            swap: false,
+            channels_log2: 0,
+        }
+    }
+
     // Expected values: libusdr's shifts worked by hand.
 
     /// The accesses a sequence made, in order, and how it ended; no allocation, as the
@@ -831,7 +828,7 @@ mod tests {
                 write(0x1_0100, 0x3000_0002),
             ]
         );
-        let muted_b = Some(TxLanes::one_channel(2));
+        let muted_b = Some(one_channel(2));
         let duplex = run(
             EngineSequence::start_lanes(true, muted_b, SyncTrigger::Duplex),
             0,
@@ -849,11 +846,7 @@ mod tests {
             ]
         );
         let tx = run(
-            EngineSequence::start_lanes(
-                false,
-                Some(TxLanes::one_channel(3)),
-                SyncTrigger::TxActivity,
-            ),
+            EngineSequence::start_lanes(false, Some(one_channel(3)), SyncTrigger::TxActivity),
             0,
         );
         assert_eq!(
@@ -904,7 +897,7 @@ mod tests {
     #[test]
     fn libusdrs_control_words() {
         assert_eq!(
-            TxControl::lanes_word(TxCommand::UpdateFlags, TxLanes::one_channel(3)),
+            TxControl::lanes_word(TxCommand::UpdateFlags, one_channel(3)),
             0x301
         );
         assert_eq!(
