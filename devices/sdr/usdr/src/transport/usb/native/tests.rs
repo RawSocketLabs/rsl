@@ -21,7 +21,7 @@ use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use num_complex::Complex;
 use usdr_sim::{BoardRevision, Imbalance, Loopback, Op, PllLock, SimBoard};
 
-use super::{BoardUsb, simulated_device};
+use super::{BoardUsb, StreamScript, simulated_device};
 use crate::Device;
 use crate::board::{
     Calibration, Corrections, Feedback, RxGain, RxIqCorrection, RxPath, RxThrottle, RxTrim,
@@ -2715,12 +2715,20 @@ fn usb_board(revision: BoardRevision, millicelsius: i32) -> (UsbBus, Arc<Mutex<S
 }
 
 /// `board` on a USB bus whose router is set up, as `simulated_device` makes it.
-fn usb_bus(mut board: SimBoard) -> (UsbBus, Arc<Mutex<SimBoard>>) {
+fn usb_bus(board: SimBoard) -> (UsbBus, Arc<Mutex<SimBoard>>) {
+    scripted_usb_bus(board, Arc::default())
+}
+
+/// `board` on a USB bus whose router is set up, its transport's faults from `script`.
+fn scripted_usb_bus(
+    mut board: SimBoard,
+    script: Arc<Mutex<StreamScript>>,
+) -> (UsbBus, Arc<Mutex<SimBoard>>) {
     let hwid = board.read_reg(19);
     board.write_reg(19, hwid | 0x4000_0000);
     let board = Arc::new(Mutex::new(board));
     let io = BoardUsb {
-        script: Arc::default(),
+        script,
         rx: None,
         tx: None,
         board: Arc::clone(&board),
@@ -3379,8 +3387,13 @@ impl Wake for ThreadWake {
 }
 
 /// Polls `future` on this thread until it resolves, parking between wakes; its output,
-/// whether its first poll was pending, and the wakes it took.
-fn block_on<F: Future>(future: F) -> (F::Output, bool, usize) {
+/// whether its first poll was pending, and the wakes it took. As [`finish`], there is no
+/// overall time budget: the future waits on the adapter's reactor thread, which waits on
+/// the worker (whose every call at the fake's boundary `record` logs) or on the handle's
+/// own deadline, which then brings a transfer or the operation's end. So only a park that
+/// sees, for [`GUARD`], neither a wake nor a worker call fails, as a stalled reactor or
+/// worker; a long operation passes however slowly the host runs it.
+fn block_on<F: Future>(record: &Mutex<Record>, future: F) -> (F::Output, bool, usize) {
     let wake = Arc::new(ThreadWake {
         thread: thread::current(),
         wakes: AtomicUsize::new(0),
@@ -3388,22 +3401,29 @@ fn block_on<F: Future>(future: F) -> (F::Output, bool, usize) {
     let waker = TaskWaker::from(Arc::clone(&wake));
     let mut cx = Context::from_waker(&waker);
     let mut future = pin!(future);
-    let until = Instant::now() + GUARD;
+    let progress = || {
+        let calls = record.lock().unwrap().calls.len();
+        (wake.wakes.load(Ordering::SeqCst), calls)
+    };
     let mut pending = false;
     loop {
         if let task::Poll::Ready(output) = future.as_mut().poll(&mut cx) {
             return (output, pending, wake.wakes.load(Ordering::SeqCst));
         }
         pending = true;
-        assert!(Instant::now() < until, "the future resolves");
+        let (before, parked) = (progress(), Instant::now());
         thread::park_timeout(GUARD);
+        assert!(
+            parked.elapsed() < GUARD || progress() != before,
+            "the async adapter stalled: no wake or worker call in {GUARD:?}"
+        );
     }
 }
 
 #[test]
 fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
     let (_device, board) = rx_streaming(&[]);
-    let (mut fake, _, dropped) = Fake::new();
+    let (mut fake, record, dropped) = Fake::new();
     fake.io.board = board;
     let (pause, gate) = Pause::new();
     fake.submit_pause = Some(pause);
@@ -3416,13 +3436,16 @@ fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
     // poll waits however the threads are scheduled.
     gate.entered();
     let mut gate = Some(gate);
-    let (read, pending, wakes) = block_on(poll_fn(|cx| {
-        let polled = read.as_mut().poll(cx);
-        if let Some(gate) = gate.take() {
-            gate.release();
-        }
-        polled
-    }));
+    let (read, pending, wakes) = block_on(
+        &record,
+        poll_fn(|cx| {
+            let polled = read.as_mut().poll(cx);
+            if let Some(gate) = gate.take() {
+                gate.release();
+            }
+            polled
+        }),
+    );
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Ok(celsius))) if (celsius - 25.0).abs() < f32::EPSILON),
         "{read:?}"
@@ -3432,30 +3455,32 @@ fn the_async_adapter_resolves_operations_and_blocks_by_waking_its_task() {
         "the read waited for the worker and woke its task"
     );
     let open = adapter.operation(|native, _| native.start_rx_open(RX_BLOCK, Instant::now()));
-    let (second, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    let (second, ..) = block_on(&record, adapter.operation(NativeUsb::start_temperature));
     assert!(
         matches!(second, Err(Error::Busy)),
         "one operation at a time: {second:?}"
     );
-    let (opened, ..) = block_on(open);
+    let (opened, ..) = block_on(&record, open);
     assert!(
         matches!(opened, Ok(NativeEvent::RxOpened(Ok(())))),
         "{opened:?}"
     );
     for _ in 0..3 {
-        let (block, ..) = block_on(adapter.next_block());
+        let (block, ..) = block_on(&record, adapter.next_block());
         assert!(
             matches!(&block, Some(Ok(block)) if block.payload.len() == 4096),
             "{block:?}"
         );
     }
-    let (refused, ..) =
-        block_on(adapter.operation(|native, now| native.start_sample_rate(20_000_000, now)));
+    let (refused, ..) = block_on(
+        &record,
+        adapter.operation(|native, now| native.start_sample_rate(20_000_000, now)),
+    );
     assert!(
         matches!(refused, Err(Error::NotPowered)),
         "a start's refusal resolves its future: {refused:?}"
     );
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
     assert_ne!(
         dropped.recv_timeout(GUARD).unwrap(),
@@ -3481,16 +3506,16 @@ fn an_async_session_end_fails_the_running_operation_and_ends_the_blocks() {
     gate.entered();
     record.lock().unwrap().panic_turn = true;
     gate.release();
-    let (read, ..) = block_on(read);
+    let (read, ..) = block_on(&record, read);
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Err(_)))),
         "the operation's event carries the worker's failure: {read:?}"
     );
-    let (block, ..) = block_on(adapter.next_block());
+    let (block, ..) = block_on(&record, adapter.next_block());
     assert!(block.is_none(), "no block follows the session's end");
-    let (after, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    let (after, ..) = block_on(&record, adapter.operation(NativeUsb::start_temperature));
     assert!(after.is_err(), "the ended session refuses: {after:?}");
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
@@ -3573,14 +3598,14 @@ fn a_failure_landing_after_the_operation_step_reaches_the_async_operation() {
     gate.entered();
     record.lock().unwrap().panic_turn = true;
     gate.release();
-    let (read, ..) = block_on(read);
+    let (read, ..) = block_on(&record, read);
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Err(_)))),
         "the operation's event carries the worker's failure: {read:?}"
     );
-    let (block, ..) = block_on(adapter.next_block());
+    let (block, ..) = block_on(&record, adapter.next_block());
     assert!(block.is_none(), "the session ended");
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
@@ -3594,15 +3619,15 @@ fn an_idle_failure_before_the_read_is_queued_ends_the_session_and_refuses_the_re
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
-    let (block, ..) = block_on(adapter.next_block());
+    let (block, ..) = block_on(&record, adapter.next_block());
     assert!(block.is_none(), "the idle failure ended the session");
-    let (read, pending, _) = block_on(adapter.operation(NativeUsb::start_temperature));
+    let (read, pending, _) = block_on(&record, adapter.operation(NativeUsb::start_temperature));
     assert!(
         matches!(read, Err(Error::Stream(BusError::Disconnected))) && !pending,
         "the read is refused at once as session-ended: {read:?}"
     );
     assert_eq!(submits(&record), 0, "no transfer was attempted");
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
@@ -3658,7 +3683,7 @@ fn rx_blocks_before_the_starts_last_completion_come_before_streams_started() {
 fn a_read_finishing_before_its_futures_first_poll_is_still_delivered() {
     // The reactor finishes the read before its future is first polled: that poll takes
     // the read's event.
-    let (fake, _, _) = Fake::new();
+    let (fake, record, _) = Fake::new();
     let (steps, observed) = mpsc::channel();
     let polled = steps.clone();
     let adapter = AsyncUsb::start(move |registry, token, waker| {
@@ -3697,13 +3722,13 @@ fn a_read_finishing_before_its_futures_first_poll_is_still_delivered() {
         matches!(&first, task::Poll::Ready(Ok(NativeEvent::Temperature(Ok(celsius)))) if (celsius - 25.0).abs() < f32::EPSILON),
         "the first poll takes the finished read: {first:?}"
     );
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
 #[test]
 fn closing_the_async_adapter_resolves_an_operation_still_in_flight() {
-    let (mut fake, _, _) = Fake::new();
+    let (mut fake, record, _) = Fake::new();
     let (pause, gate) = Pause::new();
     fake.submit_pause = Some(pause);
     let adapter = AsyncUsb::start(|registry, token, waker| {
@@ -3714,53 +3739,55 @@ fn closing_the_async_adapter_resolves_an_operation_still_in_flight() {
     // The worker holds the read's first transfer.
     gate.entered();
     let closing = adapter.close();
-    let (read, ..) = block_on(read);
+    let (read, ..) = block_on(&record, read);
     assert!(
         matches!(read, Err(Error::Stream(BusError::Disconnected))),
         "the close fails the operation in flight: {read:?}"
     );
     gate.release();
-    let (closed, ..) = block_on(closing);
+    let (closed, ..) = block_on(&record, closing);
     assert!(closed.is_ok(), "the worker still cleans up: {closed:?}");
 }
 
 #[test]
 fn an_async_start_that_begins_nothing_resolves_and_frees_the_slot() {
-    let (fake, _, _) = Fake::new();
+    let (fake, record, _) = Fake::new();
     let adapter = AsyncUsb::start(|registry, token, waker| {
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
-    let (nothing, ..) = block_on(adapter.operation(|_, _| Ok(())));
+    let (nothing, ..) = block_on(&record, adapter.operation(|_, _| Ok(())));
     assert!(
         matches!(nothing, Err(Error::Stream(BusError::Unsupported(_)))),
         "{nothing:?}"
     );
-    let (read, ..) = block_on(adapter.operation(NativeUsb::start_temperature));
+    let (read, ..) = block_on(&record, adapter.operation(NativeUsb::start_temperature));
     assert!(
         matches!(read, Ok(NativeEvent::Temperature(Ok(_)))),
         "{read:?}"
     );
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
 #[test]
 fn several_async_block_waiters_each_get_a_block() {
     let (_device, board) = rx_streaming(&[]);
-    let (mut fake, _, _) = Fake::new();
+    let (mut fake, record, _) = Fake::new();
     fake.io.board = board;
     let adapter = AsyncUsb::start(|registry, token, waker| {
         NativeUsb::attach(fake, session(), registry, token, waker).map_err(Error::Open)
     })
     .unwrap();
-    let (opened, ..) =
-        block_on(adapter.operation(|native, _| native.start_rx_open(RX_BLOCK, Instant::now())));
+    let (opened, ..) = block_on(
+        &record,
+        adapter.operation(|native, _| native.start_rx_open(RX_BLOCK, Instant::now())),
+    );
     assert!(
         matches!(opened, Ok(NativeEvent::RxOpened(Ok(())))),
         "{opened:?}"
     );
-    let (first, second) = block_on(async {
+    let (first, second) = block_on(&record, async {
         let (first, second) = (adapter.next_block(), adapter.next_block());
         let mut first = pin!(first);
         let mut second = pin!(second);
@@ -3786,7 +3813,7 @@ fn several_async_block_waiters_each_get_a_block() {
     })
     .0;
     assert!(matches!(first, Some(Ok(_))) && matches!(second, Some(Ok(_))));
-    let (closed, ..) = block_on(adapter.close());
+    let (closed, ..) = block_on(&record, adapter.close());
     closed.unwrap();
 }
 
@@ -3876,6 +3903,11 @@ fn a_transfer_failure_a_machine_would_ignore_still_ends_the_operation_with_its_a
 /// both chains' rate and tuning.
 fn set_up_on(board: SimBoard) -> (Device, Arc<Mutex<SimBoard>>) {
     let (bus, board) = usb_bus(board);
+    (set_up(bus), board)
+}
+
+/// A powered device on `bus`, set up as [`set_up_on`] sets one up.
+fn set_up(bus: UsbBus) -> Device {
     let mut device = Device::builder(bus)
         .front_end(FrontEndSelection::None)
         .open()
@@ -3883,7 +3915,7 @@ fn set_up_on(board: SimBoard) -> (Device, Arc<Mutex<SimBoard>>) {
     device.set_sample_rate(20_000_000).unwrap();
     device.set_rx_frequency(1_000_000_000).unwrap();
     device.set_tx_frequency(1_200_000_000).unwrap();
-    (device, board)
+    device
 }
 
 /// One stream-group call, made on either path.
@@ -4106,6 +4138,166 @@ fn a_native_tx_remap_to_channel_1_without_the_tx_chain_is_refused_as_the_blockin
     ));
     assert_eq!(operations(&board, start), [], "the native refusal");
     native.close().unwrap();
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_native_tx_remap_is_refused_before_any_io_while_busy_or_closed() {
+    let (mut reactor, wake) = reactor();
+    let (mut native, board, record, _device) = powered(BoardRevision::Rev3, &reactor, wake);
+    GroupCall::Create(StreamsConfig::tx(tx_config()))
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    // A mute is the operation in flight: started, not yet polled into any I/O.
+    native
+        .start_tx_mute(TxMute::Neither, Instant::now())
+        .unwrap();
+    let (start, submitted) = (mark(&board), submits(&record));
+    assert!(
+        matches!(
+            native.start_tx_channels(TxChannels::Channel1, Instant::now()),
+            Err(Error::Busy)
+        ),
+        "another operation is running"
+    );
+    assert_eq!(
+        operations(&board, start),
+        [],
+        "busy: nothing reached the board"
+    );
+    assert_eq!(
+        submits(&record),
+        submitted,
+        "busy: nothing reached the worker"
+    );
+    assert!(
+        matches!(
+            settle(&mut native, &mut reactor),
+            NativeEvent::TxMuted(Ok(()))
+        ),
+        "the running mute is unaffected by the refusal"
+    );
+    native.close().unwrap();
+    let (start, submitted) = (mark(&board), submits(&record));
+    assert!(
+        matches!(
+            native.start_tx_channels(TxChannels::Channel1, Instant::now()),
+            Err(Error::Stream(BusError::Disconnected))
+        ),
+        "a closed handle"
+    );
+    assert_eq!(
+        operations(&board, start),
+        [],
+        "closed: nothing reached the board"
+    );
+    assert_eq!(
+        submits(&record),
+        submitted,
+        "closed: nothing reached the worker"
+    );
+    native_cleanup(&mut native, &mut reactor).unwrap();
+}
+
+#[test]
+fn a_failed_native_remap_write_fails_the_remap_with_its_access_as_the_blocking_one_does() {
+    // The extended core's remap writes four lane-map commands, each through the index
+    // window (index, then data): the second command's data write fails on both paths.
+    let extended = || SimBoard::new(BoardRevision::Rev3).with_extended_tx_core();
+    // RX in the group: the blocking transport fails control packets only while RX owns
+    // transfers.
+    let config = StreamsConfig::rx(rx_config())
+        .with_tx(tx_config())
+        .with_sync(SyncMode::All);
+    let script = Arc::<Mutex<StreamScript>>::default();
+    let (bus, blocking) = scripted_usb_bus(extended(), Arc::clone(&script));
+    let mut device = set_up(bus);
+    device.create_streams(config).unwrap();
+    let failing = script.lock().unwrap().control_after_rx.len() + 3;
+    script.lock().unwrap().fail_control = Some((failing, false));
+    let start = mark(&blocking);
+    let expected = device.set_tx_channels(TxChannels::Channel1);
+    let trace = operations(&blocking, start);
+    let Err(Error::Bus {
+        chip, access, reg, ..
+    }) = expected
+    else {
+        panic!("the blocking remap fails at the write: {expected:?}");
+    };
+    assert_eq!(
+        (chip, access, reg),
+        ("FPGA", Access::Write, 0x1_0300),
+        "the extended TX front end's register, by its configuration-space address"
+    );
+    assert!(!trace.is_empty(), "the first command reached the board");
+    let packet = script.lock().unwrap().control_after_rx[failing].clone();
+    let header: [u8; 4] = packet[..4].try_into().unwrap();
+    assert_eq!(
+        u32::from_le_bytes(header) & 0xffff,
+        7,
+        "the failed packet is a data-register write"
+    );
+    let start = mark(&blocking);
+    assert!(
+        device.set_tx_mute(TxMute::Neither).is_err(),
+        "the failed write poisoned the blocking bus"
+    );
+    assert_eq!(
+        operations(&blocking, start),
+        [],
+        "blocking: nothing after it"
+    );
+
+    let (mut device, board) = set_up_on(extended());
+    let handed = device.hand_over_usb().unwrap();
+    drop(device);
+    let (mut reactor, wake) = reactor();
+    let mut records = None;
+    let mut native = handed
+        .attach_with(
+            |io| {
+                let (fake, record, _) = Fake::over(io);
+                records = Some(record);
+                Ok(fake)
+            },
+            reactor.registry(),
+            DEVICE,
+            wake,
+        )
+        .unwrap();
+    let record = records.unwrap();
+    GroupCall::Create(config)
+        .on_native(&mut native, &mut reactor)
+        .unwrap();
+    let value = u32::from_le_bytes(packet[4..8].try_into().unwrap());
+    record.lock().unwrap().fail_frame = Some(Frame::new(header, &[value]));
+    let start = mark(&board);
+    native
+        .start_tx_channels(TxChannels::Channel1, Instant::now())
+        .unwrap();
+    let event = settle(&mut native, &mut reactor);
+    assert!(
+        matches!(
+            event,
+            NativeEvent::TxChannelsSet(Err(Error::Bus { chip: c, access: a, reg: r, .. }))
+                if (c, a, r) == (chip, access, reg)
+        ),
+        "the remap's event is the failed write, with the blocking access context: {event:?}"
+    );
+    assert_eq!(
+        operations(&board, start),
+        trace,
+        "op for op with the blocking remap up to the failure"
+    );
+    let start = mark(&board);
+    assert!(
+        matches!(
+            native.start_tx_mute(TxMute::Neither, Instant::now()),
+            Err(Error::Stream(BusError::Disconnected))
+        ),
+        "the failed transfer ended the session"
+    );
+    assert_eq!(operations(&board, start), [], "native: nothing after it");
     native_cleanup(&mut native, &mut reactor).unwrap();
 }
 
