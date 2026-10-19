@@ -8,8 +8,9 @@
 //! front-end board probe at open ([`Device::open`], [`Device::front_end`]; the probe is
 //! `sdr-frontend`'s), the RFIC power-up ([`Device::power_up`]), the sample rate on
 //! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
-//! baseband bandwidths, and the close ([`Device::close`]). Not yet ported: the XMASS,
-//! `SuperSync` and `SimpleSync` front-end bring-ups, the XTRX and sSDR variants
+//! baseband bandwidths, and the close ([`Device::close`]); the probe brings up every
+//! board the connector admits, as libusdr does. Not yet ported: the front ends' controls,
+//! the XTRX and sSDR variants
 //! (identified, then refused), gateware with an RX or shared MMCM or a DUC/DDC, explicit
 //! paths, streams and calibration. The LMS7002M's register values, chip operations and
 //! control code are `lms7002m`'s. See `PORTING.md` beside this crate.
@@ -40,4 +41,4 @@ pub use device::Device;
 pub use error::{Access, Error};
 pub use lms7002m::ctrl::{Direction, Gain};
 pub use portable::hwid::Variant;
-pub use sdr_frontend::{Board as FrontEndBoard, FrontEndKind};
+pub use sdr_frontend::FrontEndKind;

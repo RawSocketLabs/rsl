@@ -2,7 +2,6 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
-use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
 use crate::portable::hwid::Variant;
@@ -104,14 +103,9 @@ pub enum Error {
     NoSampleRate,
 
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
-    /// is skipped as libusdr skips it, so open reports none of these yet.
+    /// is logged and skipped as libusdr skips it, so open reports none of these yet.
     #[error("front-end probe failed")]
     FrontEnd(#[from] sdr_frontend::Error),
-
-    /// A front-end board answered whose bring-up this driver does not port; libusdr would
-    /// bring it up. Open stops there.
-    #[error("the {} front end answered; its bring-up is not ported", .0.name())]
-    FrontEndNotPorted(Board),
 }
 
 /// A failed portable register sequence, with the register or chip it names.

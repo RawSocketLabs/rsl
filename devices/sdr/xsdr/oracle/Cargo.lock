@@ -155,6 +155,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-frontend-sim"
+version = "0.0.0"
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,5 +331,6 @@ name = "xsdr-sim"
 version = "0.0.0"
 dependencies = [
  "lms7002m-sim",
+ "sdr-frontend-sim",
  "thiserror",
 ]

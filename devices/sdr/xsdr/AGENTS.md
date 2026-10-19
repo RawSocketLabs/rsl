@@ -7,7 +7,8 @@
 
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
 oracle. The driver covers XSDR identification, supply bring-up and the front-end probe at
-open (`sdr-frontend`'s, shared with the uSDR and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
+open with every board libusdr brings up there (`sdr-frontend`'s, shared with the uSDR
+and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
 gains, baseband bandwidths and close; see [PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
@@ -15,8 +16,8 @@ secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m` and `sdr-frontend` (`../frontend`, the front-end board probe) |
-| `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, virtual clock, op trace |
+| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m` and `sdr-frontend` (`../frontend`, the front-end board probe and bring-ups) |
+| `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, the front-end boards on the M.2 connector (`sdr-frontend-sim`, `../frontend/sim`, shared with `usdr-sim`), virtual clock, op trace |
 | `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
 | `../chips/lms7002m/` | `lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`), the `hw/lms7002m` operations on its cached state (`Lms7002m`, CGEN/SXX tuning machines) and `lms7002m_ctrl.c`'s control code (`ctrl`: `Control`, `Operation`, the board's `Frontend` hooks), shared with `limesdr` (`../limesdr`) |
@@ -53,9 +54,11 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   (`nostd-check` compiles it unchanged).
 - `src/fe_probe.rs`: the front-end board probe at the end of open, `sdr-frontend`'s
   with compatibility `m2a+e` and no hint (not the RFIC's own RF front end in
-  `portable/frontend`). The `PCIe` front end and the breakout come up whole there
-  (`Device::front_end`); XMASS, `SuperSync` and `SimpleSync` need `usdr`'s LMK
-  bring-ups, so one that answers fails open with `Error::FrontEndNotPorted`.
+  `portable/frontend`). Every board the connector admits comes up whole there, as on the
+  uSDR (the `PCIe` front end, XMASS, `SuperSync`, `SimpleSync`, the breakout); `Device`
+  keeps the `FrontEnd` and reports its kind (`Device::front_end`). fe4ch4007200, whose
+  bring-up is not ported, cannot answer: its chips sit on I2C core 1, which the XSDR's
+  transports refuse. The boards' controls are not offered yet (`PORTING.md`).
 - `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `xsdr-sim`; the oracle's parity tests include
   it with `#[path]`.
@@ -146,8 +149,14 @@ Each is stated again, with its evidence, where it is encoded.
   the `pciefe` probe at its DAC with `-EIO` (logged, ignored without a hint), finds no
   clock board and settles on the M.2-to-`PCIe` breakout without a DAC, which has no ID
   ("Detected external FE: exm2pe"); that characterises libusdr on an empty connector, not
-  hardware. The sim models no front-end board, so only that path is compared on the
-  XSDR; the boards' bring-ups are compared on the uSDR's sim (`../usdr/oracle`).
+  hardware, and is what the goldens hold.
+- Front-end boards (`SimBoard::with_front_end`): `sdr-frontend-sim`'s models on I2C bus
+  1 (`I2C_BUS_FRONTEND`, as on the uSDR), the same the uSDR's sim attaches, with their
+  assumptions stated there (TCA6416/TCA9555 pair access and pulled-up inputs, DAC80501
+  ID 0x0195, the LMK5C33216 register file, the LMK05318 whose VCO status reports lock at
+  once or never, XMASS revision 1a's TMP114s and AT24 serial). The connector's GPIO core
+  (register 3) stays plain storage. A lone breakout's DAC passes for the `PCIe` front
+  end's on the idle bus, in libusdr and xsdr alike.
 - I2C readback packing (first byte most significant, little-endian copy) and the
   three-out/four-in limits are transport facts copied from the uSDR oracle.
 - Sleeps advance virtual time only (the shim replaces `usleep`).
@@ -178,7 +187,13 @@ LMS7002M state). `oracle/tests/lms7002m_parity.rs` calls the compiled
 the sim's SPI) and compares `lms7002m`'s words for every bank selection, RFE/TRF path
 and mode, MIMO hand-over, AFE combination and processor enable, and every chip operation
 the rate, tuning, gain and bandwidth paths use (whole traces, comparator reads included),
-which no session reaches. `oracle/tests/rate_parity.rs` drives libusdr's `/dm/rate`,
+which no session reaches. `oracle/tests/frontend_parity.rs` opens and closes an XSDR
+with each board attached (the `PCIe` front end, XMASS and its revision 1a, `SuperSync`,
+`SimpleSync`, the breakout, which the automatic probe takes for a `PCIe` front end, so
+the breakout's own bring-up with a DAC is compared on the uSDR only, through its `fe=`
+hint), XMASS without its LMK05318, and the clock boards whose
+LMK05318 never locks (repeated lock polls collapsed: libusdr's count follows its wall
+clock), compared whole. `oracle/tests/rate_parity.rs` drives libusdr's `/dm/rate`,
 `/dm/sdr/0/{rx,tx}/frequency`, gain and bandwidth paths and compares everything between
 the open and the close.
 

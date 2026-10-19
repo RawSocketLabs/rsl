@@ -5201,6 +5201,7 @@ name = "xsdr-sim"
 version = "0.0.0"
 dependencies = [
  "lms7002m-sim",
+ "sdr-frontend-sim",
  "thiserror 2.0.21",
 ]
 

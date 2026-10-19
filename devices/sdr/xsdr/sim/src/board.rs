@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use lms7002m_sim::Lms7002m;
+use sdr_frontend_sim::{FrontEnd, Model};
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
@@ -55,6 +56,9 @@ const I2C_LMS_PMIC: I2cAddress = I2cAddress { bus: 1, addr: 0x60 };
 /// The XTRX revision-5 DAC80501 (`I2C_BUS_DAC80501`: bus 0, `I2C_DEV_DAC80501M_A0_SCL`
 /// 0x4b).
 const I2C_DAC80501: I2cAddress = I2cAddress { bus: 0, addr: 0x4b };
+/// The M.2 connector's I2C bus (`I2C_BUS_FRONTEND`, as on the uSDR), where an attached
+/// front end's chips answer.
+const FRONT_END_BUS: u8 = 1;
 
 /// The family members libusdr tells apart by HWID bits 23:16 (`enum xsdr_devices`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +148,8 @@ pub struct SimBoard {
     lms_pmic: Option<Lp8758>,
     /// The XTRX's reference-trim DAC.
     dac: Option<Dac80501>,
+    /// The front end on the M.2 connector, if any; see [`SimBoard::with_front_end`].
+    front_end: Option<Model>,
     /// Values the RX PHY port returns, in order, before [`Self::rx_phy_after`].
     rx_phy_script: VecDeque<u32>,
     /// What the RX PHY port returns once the script is spent.
@@ -172,6 +178,7 @@ impl SimBoard {
             // The C requires 0xe001 here too (`_xsdr_init_revo`).
             lms_pmic: xtrx.then(|| Lp8758::with_revision(0xe001)),
             dac: xtrx.then(Dac80501::new),
+            front_end: None,
             rx_phy_script: VecDeque::new(),
             rx_phy_after: 0,
             now_us: 0,
@@ -203,6 +210,40 @@ impl SimBoard {
     #[must_use]
     pub fn with_hwid(mut self, hwid: u32) -> Self {
         self.regs.insert(REG_GPI_HWID, hwid);
+        self
+    }
+
+    /// The same board with `front_end` on its M.2 connector, modelled as on the uSDR's
+    /// sim (`sdr-frontend-sim`). Without one, as by default, the connector's bus is idle.
+    #[must_use]
+    pub fn with_front_end(mut self, front_end: FrontEnd) -> Self {
+        self.front_end = Some(Model::new(front_end));
+        self
+    }
+
+    /// The same board whose front end's LMK05318 (`SimpleSync`, XMASS) reports its charge
+    /// pumps out of range forever, so its APLLs never lock.
+    ///
+    /// # Panics
+    ///
+    /// If no front end with an LMK05318 is attached.
+    #[must_use]
+    pub fn with_unlocked_front_end_clock(mut self) -> Self {
+        let unlocked = self.front_end.as_mut().is_some_and(Model::unlock_lmk05318);
+        assert!(unlocked, "no front end with an LMK05318 is attached");
+        self
+    }
+
+    /// The same board whose front end's LMK05318 (`SimpleSync`, XMASS) does not answer: its
+    /// reads return the idle bus, as for an absent chip.
+    ///
+    /// # Panics
+    ///
+    /// If no front end with an LMK05318 is attached.
+    #[must_use]
+    pub fn without_front_end_clock(mut self) -> Self {
+        let removed = self.front_end.as_mut().is_some_and(Model::remove_lmk05318);
+        assert!(removed, "no front end with an LMK05318 is attached");
         self
     }
 
@@ -263,7 +304,7 @@ impl SimBoard {
     /// Neither libusdr transport reports a missing acknowledge, so an absent device is not
     /// an error: as a sim choice (the same as `usdr-sim`'s), its reads return the
     /// idle-high bus, `0xff` per byte. libusdr's front-end probe relies on that to find no
-    /// front end on XSDR's bus 1.
+    /// front end on XSDR's bus 1 unless one is attached ([`SimBoard::with_front_end`]).
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
         let second_bus_to_fpga = self.gpo(GPO_LMS_PWR).unwrap_or(0) & LMS_PWR_SECOND_I2C != 0;
         let chip: Option<&mut dyn I2cChip> = match addr {
@@ -272,6 +313,13 @@ impl SimBoard {
                 self.lms_pmic.as_mut().map(|c| c as &mut dyn I2cChip)
             }
             I2C_DAC80501 => self.dac.as_mut().map(|c| c as &mut dyn I2cChip),
+            I2cAddress {
+                bus: FRONT_END_BUS,
+                addr,
+            } => self
+                .front_end
+                .as_mut()
+                .and_then(|front_end| front_end.chip(addr)),
             _ => None,
         };
         let read = chip.map_or_else(
@@ -314,6 +362,21 @@ impl SimBoard {
     #[must_use]
     pub fn lms7_reg(&self, addr: u16) -> u16 {
         self.lms.reg(addr)
+    }
+
+    /// A register of the front end's clock synchronizer, if a front end with one is
+    /// attached.
+    #[must_use]
+    pub fn front_end_clock_reg(&self, addr: u16) -> Option<u8> {
+        self.front_end
+            .as_ref()
+            .and_then(|front_end| front_end.clock_reg(addr))
+    }
+
+    /// The front end's oscillator DAC code, if a front end with one is attached.
+    #[must_use]
+    pub fn front_end_dac_code(&self) -> Option<u16> {
+        self.front_end.as_ref().and_then(Model::dac_code)
     }
 
     /// A register of the FPGA-side LP8758.
