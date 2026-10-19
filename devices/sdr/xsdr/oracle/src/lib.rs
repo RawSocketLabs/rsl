@@ -135,6 +135,16 @@ pub enum Lms7002mCall {
     TbbLpfDef(u32, bool),
     /// `lms7002m_create(.., lsaddr 0, ldo_mask, txrx_clk, ..)` on the same state.
     Create(u32, bool),
+    /// `lms7002m_dc_corr(p, v)`: `P_TXA_I` 0 to `P_RXB_Q` 7, the value's low 16 bits.
+    DcCorr(u32, i16),
+    /// `lms7002m_dc_corr_en(rxa, rxb, txa, txb)`.
+    DcCorrEnable([bool; 4]),
+    /// `lms7002m_xxtsp_iq_gcorr(tsp, ig, qg)`.
+    TspGainCorrection(u32, u32, u32),
+    /// `lms7002m_xxtsp_iq_phcorr(tsp, acorr)`.
+    TspPhaseCorrection(u32, i32),
+    /// `lms7002m_xxtsp_gen(tsp, gen, dci, dcq)`: `XXTSP_NORMAL` 0, `_DC` 1, `_TONE` 2.
+    TspGenerator(u32, u32, i16, i16),
 }
 
 /// The shim's `struct lms7002m_op`.
@@ -192,6 +202,15 @@ impl From<Lms7002mCall> for LmsOp {
             Lms7002mCall::RbbLpfDef(bw, low) => op(29, bw, low.into(), 0, 0),
             Lms7002mCall::TbbLpfDef(bw, low) => op(30, bw, low.into(), 0, 0),
             Lms7002mCall::Create(ldo, txrx) => op(31, ldo, txrx.into(), 0, 0),
+            Lms7002mCall::DcCorr(param, value) => op(32, param, bits(value.into()), 0, 0),
+            Lms7002mCall::DcCorrEnable([a, b, c, d]) => {
+                op(33, a.into(), b.into(), c.into(), d.into())
+            }
+            Lms7002mCall::TspGainCorrection(tsp, i, q) => op(34, tsp, i, q, 0),
+            Lms7002mCall::TspPhaseCorrection(tsp, corr) => op(35, tsp, bits(corr), 0, 0),
+            Lms7002mCall::TspGenerator(tsp, kind, i, q) => {
+                op(36, tsp, kind, bits(i.into()), bits(q.into()))
+            }
         }
     }
 }

@@ -14,9 +14,9 @@ use core::num::NonZeroU32;
 use bnb::{u2, u3};
 use hal::run_sequence;
 use lms7002m::{
-    Batch, Create, LmlConfig, LmlMap, LmlSample, Lms7002m, LpfParams, Mac, NoChannel, RbbMode,
-    RbbPath, ResetPlan, RxGainStage, RxMode, RxPath, Synthesizer, TbbMode, TbbPath, Tsp, TuneError,
-    TxGainStage, TxMode, TxPath,
+    Batch, Create, DcDac, LmlConfig, LmlMap, LmlSample, Lms7002m, LpfParams, Mac, NoChannel,
+    RbbMode, RbbPath, ResetPlan, RxGainStage, RxMode, RxPath, Synthesizer, TbbMode, TbbPath, Tsp,
+    TspGenerator, TuneError, TxGainStage, TxMode, TxPath,
 };
 use sim_bus::SimBus;
 use xsdr::lowlevel::SpiAddr;
@@ -58,6 +58,10 @@ fn rsl(calls: &[Call]) -> Run {
 }
 
 /// Runs one call on lms7002m's `chip` over `executor`: its result and reported values.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per libusdr call the shim dispatches"
+)]
 fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 3]) {
     match call {
         Call::MacSet(mac) => written(executor, chip.mac_set(mac_of(mac))),
@@ -145,7 +149,45 @@ fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 
             *chip = create.chip().expect("created");
             (0, [0; 3])
         }
+        Call::DcCorr(param, value) => written(executor, chip.dc_dac(dc_dac(param), value)),
+        Call::DcCorrEnable([rxa, rxb, txa, txb]) => {
+            written(executor, chip.dc_corrector_enable([rxa, rxb], [txa, txb]))
+        }
+        Call::TspGainCorrection(tsp, i, q) => banked(
+            executor,
+            chip.tsp_gain_correction(
+                tsp_of(tsp),
+                u16::try_from(i).unwrap(),
+                u16::try_from(q).unwrap(),
+            ),
+        ),
+        Call::TspPhaseCorrection(tsp, correction) => {
+            written(executor, chip.tsp_phase_correction(tsp_of(tsp), correction))
+        }
+        Call::TspGenerator(tsp, kind, i, q) => written(
+            executor,
+            chip.tsp_generator(tsp_of(tsp), generator(kind), i, q),
+        ),
     }
+}
+
+/// libusdr's `dc_param`.
+fn dc_dac(code: u32) -> DcDac {
+    [
+        DcDac::TxAI,
+        DcDac::TxAQ,
+        DcDac::TxBI,
+        DcDac::TxBQ,
+        DcDac::RxAI,
+        DcDac::RxAQ,
+        DcDac::RxBI,
+        DcDac::RxBQ,
+    ][code as usize]
+}
+
+/// libusdr's `lms7002m_xxtsp_gen_t`.
+fn generator(code: u32) -> TspGenerator {
+    [TspGenerator::Normal, TspGenerator::Dc, TspGenerator::Tone][code as usize]
 }
 
 /// Runs `batch` on `bus`: a call that returns 0.
@@ -545,4 +587,42 @@ fn the_lo_synthesizers_tune_like_libusdr_across_their_range() {
         tuned(0) && tuned(-ERANGE),
         "the scenario both locks and runs out of range"
     );
+}
+
+#[test]
+fn the_dc_dacs_and_processor_corrections_match_libusdr_on_every_bank_selection() {
+    let mut calls = vec![Call::Create(0, true)];
+    for param in 0..8 {
+        for value in [0, 1, -1, 1023, -1024, 0x7fff, i16::MIN] {
+            calls.push(Call::DcCorr(param, value));
+        }
+    }
+    for bits in 0..16u8 {
+        calls.push(Call::DcCorrEnable(core::array::from_fn(|i| {
+            bits >> i & 1 == 1
+        })));
+    }
+    for mac in [3, 1, 2, 0, 3] {
+        calls.push(Call::MacSet(mac));
+        for tsp in 0..2 {
+            calls.extend([
+                Call::TspEnable(tsp, true),
+                Call::TspIntDec(tsp, 2),
+                Call::TspGainCorrection(tsp, 2047, 0),
+                Call::TspGainCorrection(tsp, 0, 0),
+                Call::TspGainCorrection(tsp, 0xffff, 1),
+                Call::TspPhaseCorrection(tsp, -2048),
+                Call::TspPhaseCorrection(tsp, 0x1000),
+                Call::TspPhaseCorrection(tsp, 0),
+                Call::TspCmix(tsp, 77),
+                Call::TspIntDec(tsp, 4),
+            ]);
+            for kind in 0..3 {
+                for (i, q) in [(0, 0), (-1, 1), (0x2000, 0), (0, -7)] {
+                    calls.push(Call::TspGenerator(tsp, kind, i, q));
+                }
+            }
+        }
+    }
+    assert_same(&calls, "corrections");
 }

@@ -207,6 +207,11 @@ int xsdr_oracle_lms7002m_run(struct lms7002m_op* ops, unsigned count, int* resul
             op->out[0] = p.rcc; op->out[1] = p.r; op->out[2] = p.c;
             break;
         case 31: results[i] = lms7002m_create(&d.ll, 0, 0, op->a, op->b, &m); break;
+        case 32: results[i] = lms7002m_dc_corr(&m, op->a, (int16_t)op->b); break;
+        case 33: results[i] = lms7002m_dc_corr_en(&m, op->a, op->b, op->c, op->d); break;
+        case 34: results[i] = lms7002m_xxtsp_iq_gcorr(&m, (lms7002m_xxtsp_t)op->a, op->b, op->c); break;
+        case 35: results[i] = lms7002m_xxtsp_iq_phcorr(&m, (lms7002m_xxtsp_t)op->a, (int)op->b); break;
+        case 36: results[i] = lms7002m_xxtsp_gen(&m, (lms7002m_xxtsp_t)op->a, (lms7002m_xxtsp_gen_t)op->b, (int16_t)op->c, (int16_t)op->d); break;
         default: return -EINVAL;
         }
     }

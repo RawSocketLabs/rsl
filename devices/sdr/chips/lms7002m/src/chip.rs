@@ -10,13 +10,15 @@
 //! the gains in `gain` and the synthesizers' disables in `synth`.
 
 mod baseband;
+mod dc;
 mod dsp;
 mod gain;
 mod lml;
 mod synth;
 
 pub use baseband::{LpfParams, RbbMode, RbbPath, TbbMode, TbbPath};
-pub use dsp::BistCheck;
+pub use dc::DcDac;
+pub use dsp::{BistCheck, TspGenerator};
 pub use gain::{RxGainStage, TxGainStage};
 pub use lml::{LmlConfig, LmlMap};
 pub use synth::{CgenTune, SxxTune, Synthesizer, TuneError};

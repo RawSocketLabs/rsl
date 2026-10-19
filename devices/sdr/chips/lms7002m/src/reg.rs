@@ -210,4 +210,56 @@ pub enum Reg {
 
     /// The RX NCO's frequency word, bits 15:0. `RXNCO_0x0443`.
     RxNcoFcwLow = 0x0443,
+
+    /// The RX processor's Q gain correction, 11 bits. `RXTSP_0x0401`.
+    RxTspGainQ = 0x0401,
+
+    /// The RX processor's I gain correction, 11 bits. `RXTSP_0x0402`.
+    RxTspGainI = 0x0402,
+
+    /// The RX test generator's DC level, loaded into I or Q by its mode word's strobes.
+    /// `RXTSP_0x040B`.
+    RxTspDcLevel = 0x040b,
+
+    /// The TX processor's Q gain correction, 11 bits. `TXTSP_0x0201`.
+    TxTspGainQ = 0x0201,
+
+    /// The TX processor's I gain correction, 11 bits. `TXTSP_0x0202`.
+    TxTspGainI = 0x0202,
+
+    /// The TX test generator's DC level, as [`Self::RxTspDcLevel`]. `TXTSP_0x020C`.
+    TxTspDcLevel = 0x020c,
+
+    /// See [`DcPowerDown`](crate::DcPowerDown). `DC_PD`.
+    DcPowerDown = 0x05c0,
+
+    /// See [`DcCalibration`](crate::DcCalibration). `DC_0x05C2`.
+    DcCalibration = 0x05c2,
+
+    /// TX channel A's I DC DAC, a [`DcDacWord`](crate::DcDacWord). `DC_0x05C3`.
+    DcTxAI = 0x05c3,
+
+    /// TX A's Q DAC. `DC_0x05C4`.
+    DcTxAQ = 0x05c4,
+
+    /// TX B's I DAC. `DC_0x05C5`.
+    DcTxBI = 0x05c5,
+
+    /// TX B's Q DAC. `DC_0x05C6`.
+    DcTxBQ = 0x05c6,
+
+    /// RX A's I DAC. `DC_0x05C7`.
+    DcRxAI = 0x05c7,
+
+    /// RX A's Q DAC. `DC_0x05C8`.
+    DcRxAQ = 0x05c8,
+
+    /// RX B's I DAC. `DC_0x05C9`.
+    DcRxBI = 0x05c9,
+
+    /// RX B's Q DAC. `DC_0x05CA`.
+    DcRxBQ = 0x05ca,
+
+    /// See [`DcClockDivider`](crate::DcClockDivider). `DC_0x05CB`.
+    DcClockDivider = 0x05cb,
 }

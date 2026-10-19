@@ -2,7 +2,7 @@
 //! corrector, the mixer's NCO and the built-in self-test (`lms7002m_xxtsp_*`,
 //! `lms7002m_rxtsp_dc_corr`).
 
-use bnb::{u3, u4};
+use bnb::{u2, u3, u4, u11, u12};
 use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use super::{Lms7002m, NoChannel, TSG_DIV8, Tsp};
@@ -14,6 +14,22 @@ use crate::regs::{
     RxTspDecimation, RxTspMode, TsgMode, TsgScale, TspInput, TxTspInterpolation, TxTspMode,
 };
 use crate::step::Read;
+
+/// The test signal's frequency code `DIV4` (2).
+const TSG_DIV4: u2 = u2::new(2);
+
+/// What a processor takes as input: libusdr's `lms7002m_xxtsp_gen_t`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TspGenerator {
+    /// `LimeLight` samples (`XXTSP_NORMAL`).
+    Normal,
+
+    /// The test generator's DC level (`XXTSP_DC`).
+    Dc,
+
+    /// The test generator from its NCO (`XXTSP_TONE`).
+    Tone,
+}
 
 /// One channel's cached processor words: the bypass word (`reg_*tsp_dscpcfg`) and the
 /// decimation or interpolation word (`reg_*tsp_hbdo_iq`), raw as libusdr keeps them.
@@ -140,6 +156,127 @@ impl Lms7002m {
         batch.push((mode, NcoMode::new().with_dither(u4::new(1)).to_raw()));
         self.push_config_words(tsp, &mut batch);
         Ok(batch)
+    }
+
+    /// Sets the processor's I and Q gain corrections (11-bit codes; the registers keep the
+    /// low bits) on the selected channels (`lms7002m_xxtsp_iq_gcorr`): the gain stage is
+    /// bypassed when both are 0. Writes Q, then I, then the bypass words.
+    ///
+    /// # Errors
+    ///
+    /// [`NoChannel`] when no bank is selected; nothing changes.
+    pub fn tsp_gain_correction(&mut self, tsp: Tsp, i: u16, q: u16) -> Result<Batch, NoChannel> {
+        let selected = self.selected()?;
+        let bypass = i == 0 && q == 0;
+        for (words, _) in self
+            .dsp_mut(tsp)
+            .iter_mut()
+            .zip(selected)
+            .filter(|(_, on)| *on)
+        {
+            words.config = RxTspBypass::from_raw(words.config)
+                .with_gain_bypassed(bypass)
+                .to_raw();
+        }
+        let (gain_q, gain_i) = match tsp {
+            Tsp::Rx => (Reg::RxTspGainQ, Reg::RxTspGainI),
+            Tsp::Tx => (Reg::TxTspGainQ, Reg::TxTspGainI),
+        };
+        let mut batch = Batch::new(self.target);
+        batch.push((gain_q, u11::from_raw(q).value()));
+        batch.push((gain_i, u11::from_raw(i).value()));
+        self.push_config_words(tsp, &mut batch);
+        Ok(batch)
+    }
+
+    /// Sets the processor's I/Q phase correction to `correction`'s low 12 bits
+    /// (`lms7002m_xxtsp_iq_phcorr`): the phase stage is bypassed when it is 0. Writes one
+    /// decimation word, channel A's when A is selected, else B's.
+    ///
+    /// libusdr updates the cached bypass words but does not write them here, and checks no
+    /// bank: with none selected it updates nothing and writes channel B's word. Both are
+    /// reproduced.
+    pub fn tsp_phase_correction(&mut self, tsp: Tsp, correction: i32) -> Batch {
+        let selected = self.banks();
+        let [low, high, ..] = correction.to_le_bytes();
+        let field = u12::from_raw(u16::from_le_bytes([low, high]));
+        let bypass = correction == 0;
+        for (words, _) in self
+            .dsp_mut(tsp)
+            .iter_mut()
+            .zip(selected)
+            .filter(|(_, on)| *on)
+        {
+            words.config = RxTspBypass::from_raw(words.config)
+                .with_phase_bypassed(bypass)
+                .to_raw();
+            words.decimation = match tsp {
+                Tsp::Rx => RxTspDecimation::from_raw(words.decimation)
+                    .with_phase_correction(field)
+                    .to_raw(),
+                Tsp::Tx => TxTspInterpolation::from_raw(words.decimation)
+                    .with_phase_correction(field)
+                    .to_raw(),
+            };
+        }
+        let reg = match tsp {
+            Tsp::Rx => Reg::RxTspDecimation,
+            Tsp::Tx => Reg::TxTspInterpolation,
+        };
+        let index = usize::from(!selected[0]);
+        let mut batch = Batch::new(self.target);
+        batch.push((reg, self.dsp_mut(tsp)[index].decimation));
+        batch
+    }
+
+    /// Switches the processor's input between `LimeLight` and its test-signal generator
+    /// (`lms7002m_xxtsp_gen`): [`TspGenerator::Normal`] writes the enabled mode word with
+    /// `LimeLight` input; the others select the generator, as a DC level
+    /// ([`TspGenerator::Dc`]: `dc_i` and `dc_q` loaded through the level register and the
+    /// mode word's strobes) or from the NCO ([`TspGenerator::Tone`]: the mode word only).
+    /// A zero `dc_i` selects full scale, else −6 dB; a zero `dc_q` the /4 frequency, else /8.
+    /// Not banked.
+    pub fn tsp_generator(&self, tsp: Tsp, generator: TspGenerator, dc_i: i16, dc_q: i16) -> Batch {
+        let scale = if dc_i == 0 {
+            TsgScale::FullScale
+        } else {
+            TsgScale::Minus6Db
+        };
+        let frequency = if dc_q == 0 { TSG_DIV4 } else { TSG_DIV8 };
+        let mode = if generator == TspGenerator::Dc {
+            TsgMode::Dc
+        } else {
+            TsgMode::Nco
+        };
+        let input = if generator == TspGenerator::Normal {
+            TspInput::Lml
+        } else {
+            TspInput::Test
+        };
+        // libusdr builds the word in the RX layout for both; the TX layout matches it with
+        // the capture fields 0.
+        let word = RxTspMode::new()
+            .with_capture_select(Capture::Rssi)
+            .with_capture_adc(CaptureAdc::Input)
+            .with_tsg_scale(scale)
+            .with_tsg_frequency(frequency)
+            .with_tsg_mode(mode)
+            .with_input(input)
+            .with_enabled(true);
+        let (mode_reg, level_reg) = match tsp {
+            Tsp::Rx => (Reg::RxTspMode, Reg::RxTspDcLevel),
+            Tsp::Tx => (Reg::TxTspMode, Reg::TxTspDcLevel),
+        };
+        let level = |value: i16| u16::from_le_bytes(value.to_le_bytes());
+        let mut batch = Batch::new(self.target);
+        batch.push((mode_reg, word.to_raw()));
+        if generator == TspGenerator::Dc {
+            batch.push((level_reg, level(dc_i)));
+            batch.push((mode_reg, word.with_tsg_load_dc_i(true).to_raw()));
+            batch.push((level_reg, level(dc_q)));
+            batch.push((mode_reg, word.with_tsg_load_dc_q(true).to_raw()));
+        }
+        batch
     }
 
     /// Starts the processor's built-in self-test (`lms7002m_xxtsp_bst`): its mode word

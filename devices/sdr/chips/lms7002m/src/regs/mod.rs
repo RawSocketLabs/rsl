@@ -4,6 +4,7 @@
 mod afe;
 mod baseband;
 mod cgen;
+mod dc;
 mod dsp;
 mod ldo;
 mod limelight;
@@ -21,6 +22,7 @@ pub use baseband::{
 pub use cgen::{
     CgenDivider, CgenEnable, CgenFracLow, CgenIntFrac, CgenVco, VcoComparators, VcoReading,
 };
+pub use dc::{DcCalibration, DcClockDivider, DcDacWord, DcPowerDown};
 pub use dsp::{BistStatus, NcoMode, RxTspDc, RxTspDecimation, TxTspInterpolation};
 pub use ldo::{LdoBypass, LdoBypassLoad, LdoDigital, LdoEnables, LdoEnablesLoad};
 pub use limelight::{
