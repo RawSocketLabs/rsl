@@ -152,6 +152,19 @@ impl Oracle {
         self.set_uint(c"/dm/sdr/0/rx/gain/pga", value)
     }
 
+    /// Writes one fe1005000 command, `/debug/hw/fe_100_5000_cmd/0/reg`
+    /// (`ext_fe_100_5000_cmd_wr`): `command` is the `FE_*` address
+    /// (`ext_fe_100_5000.yaml`: 0 frequency in kHz, 1 attenuation, 2 preselector), `value`
+    /// its 24-bit data; bit 31 marks the write.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the path exists only while fe1005000 is up.
+    pub fn fe1005000_command(&mut self, command: u8, value: u32) -> Result<(), i32> {
+        let word = 0x8000_0000 | u64::from(command & 0x7f) << 24 | u64::from(value & 0x00ff_ffff);
+        self.set_uint(c"/debug/hw/fe_100_5000_cmd/0/reg", word)
+    }
+
     /// Reads a libusdr device-manager value, such as `c"/ll/sdr/max_hw_tx_chans"`.
     ///
     /// # Errors

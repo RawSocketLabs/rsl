@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{Ads42lbx9, I2cChip, Lmk04832, Si549, Tps6594};
+use crate::chips::{Ads42lbx9, Fe1005000, I2cChip, Lmk04832, Si549, Tps6594};
 use crate::trace::Op;
 
 /// FPGA register 0: the general-purpose outputs on write (`dev_gpo_set` writes
@@ -23,6 +23,12 @@ const SPI_ADC0: u32 = 0;
 const SPI_ADC1: u32 = 1;
 /// `SPI_LMK04832`.
 const SPI_LMK04832: u32 = 2;
+/// `SPI_EXTERNAL`, the front-end connector's bus (`device_fe_probe` passes 4).
+const SPI_EXTERNAL: u32 = 4;
+/// The SPI-extension core's configuration register (`spiext_cfg`, hard-coded in
+/// `device_fe_probe`): libusdr writes the chip select and frame there before each
+/// exchange on [`SPI_EXTERNAL`] (`s_spi_ext_op`).
+const REG_SPI_EXT_CONFIG: u32 = 58;
 
 /// `I2C_BUS_TPS6594`: bus 0, 0x48.
 const I2C_TPS6594: I2cAddress = I2cAddress::new(0, 0x48);
@@ -119,6 +125,9 @@ pub struct SimBoard {
     pmic: Tps6594,
     /// The ADC clock oscillator.
     oscillator: Si549,
+    /// fe1005000 on the front-end connector, if attached; see
+    /// [`SimBoard::with_fe1005000`].
+    fe1005000: Option<Fe1005000>,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -137,6 +146,7 @@ impl SimBoard {
             lmk: dual.then(Lmk04832::new),
             pmic: Tps6594::new(),
             oscillator: Si549::new(),
+            fe1005000: None,
             now_us: 0,
             trace: Vec::new(),
         }
@@ -147,6 +157,16 @@ impl SimBoard {
     #[must_use]
     pub fn dead(mut self) -> Self {
         self.regs.insert(REG_GPO, u32::MAX);
+        self
+    }
+
+    /// The same board with fe1005000 on its front-end connector: an XRA1405 expander, two
+    /// MAX2871 LOs and an RFSA3713 attenuator behind the SPI-extension core on SPI 4
+    /// (`chips::fe1005000` states the model's assumptions). Without it, as by default, the
+    /// connector's bus floats.
+    #[must_use]
+    pub fn with_fe1005000(mut self) -> Self {
+        self.fe1005000 = Some(Fe1005000::new());
         self
     }
 
@@ -172,7 +192,8 @@ impl SimBoard {
     /// A bus with nothing fitted (SPI 1 and 2 on a single-ADC board, the DAC bus, the
     /// empty front-end connector) reads all ones, as a sim choice: a floating MISO. That
     /// fails `ads42lbx9_reset_and_check` and `lmk04832_reset_and_test`, which libusdr takes
-    /// for an absent chip.
+    /// for an absent chip. On the front-end connector the chip select last written to the
+    /// SPI-extension configuration register picks fe1005000's chip.
     ///
     /// # Errors
     ///
@@ -186,6 +207,10 @@ impl SimBoard {
                 .as_mut()
                 .map(|adc| adc.transact(out)),
             SPI_LMK04832 => self.lmk.as_mut().map(|lmk| lmk.transact(out)),
+            SPI_EXTERNAL => {
+                let config = self.regs.get(&REG_SPI_EXT_CONFIG).copied().unwrap_or(0);
+                self.fe1005000.as_mut().map(|fe| fe.transact(config, out))
+            }
             _ => None,
         }
         .unwrap_or(u32::MAX);
@@ -262,6 +287,26 @@ impl SimBoard {
     #[must_use]
     pub fn adc_reg(&self, index: usize, addr: u8) -> Option<u8> {
         self.adcs.get(index)?.as_ref().map(|adc| adc.reg(addr))
+    }
+
+    /// A register of fe1005000's XRA1405 expander as read, or `None` without the board.
+    #[must_use]
+    pub fn fe1005000_expander_reg(&self, reg: u8) -> Option<u8> {
+        self.fe1005000.as_ref().map(|fe| fe.expander_reg(reg))
+    }
+
+    /// Register `addr` of fe1005000's LO `lo` (0 the first, 1 the second), once written;
+    /// `None` without the board.
+    #[must_use]
+    pub fn fe1005000_lo_reg(&self, lo: usize, addr: u8) -> Option<u32> {
+        self.fe1005000.as_ref()?.synthesizer_reg(lo, addr)
+    }
+
+    /// fe1005000's attenuator code, in 0.25 dB steps, once written; `None` without the
+    /// board.
+    #[must_use]
+    pub fn fe1005000_attenuation(&self) -> Option<u8> {
+        self.fe1005000.as_ref()?.attenuation()
     }
 
     /// A register of the LMK04832, or `None` where none is fitted.

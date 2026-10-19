@@ -3,7 +3,7 @@
 use std::fmt;
 
 use hal::{Sequence, SequenceAction, run_sequence};
-use sdr_frontend::{FrontEnd, FrontEndKind};
+use sdr_frontend::{Fe1005000Setting, FrontEnd, FrontEndKind};
 
 use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
 use crate::error::Error;
@@ -101,6 +101,23 @@ impl Device {
     #[must_use]
     pub fn front_end(&self) -> Option<FrontEndKind> {
         self.front_end.as_ref().map(FrontEnd::kind)
+    }
+
+    /// Applies one fe1005000 control (libusdr's `/debug/hw/fe_100_5000_cmd/0/reg` write,
+    /// `ext_fe_100_5000_cmd_wr`): a frequency tunes the RF path, an attenuation sets the
+    /// attenuator, a preselector the LNA switches. The setting is kept even when it fails,
+    /// as libusdr keeps it.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEndMissing`] without fe1005000, before any bus access;
+    /// [`Error::FrontEnd`] for a frequency below 20 MHz or above 6 GHz (libusdr's
+    /// `-EINVAL`, before any bus access) or a failed access.
+    pub fn configure_fe1005000(&mut self, setting: Fe1005000Setting) -> Result<(), Error> {
+        let Some(FrontEnd::Fe1005000(board)) = &mut self.front_end else {
+            return Err(Error::FrontEndMissing("fe1005000"));
+        };
+        Ok(board.apply(&mut *self.bus, setting)?)
     }
 
     /// Powers both ADCs up or down (libusdr's `/dm/power/en`): switches their supply, then

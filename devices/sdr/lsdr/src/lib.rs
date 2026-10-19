@@ -5,10 +5,13 @@
 //! (`lsdr-oracle`).
 //!
 //! **First slice; unstable; unpublished.** Ported: open with libusdr's front-end probe
-//! ([`Device::open`], with what it finds in [`Device::fitted`]; the probe is
-//! `sdr-frontend`'s), ADC power ([`Device::set_power`]), the receive PGA gain
-//! ([`Device::set_rx_pga_gain`]) and close ([`Device::close`]). Not yet ported: the
-//! fe1005000 and fe4ch4007200 front-end bring-ups, the sample rate (Si549
+//! ([`Device::open`], with what it finds in [`Device::fitted`] and
+//! [`Device::front_end`]; the probe and fe1005000's bring-up are `sdr-frontend`'s), ADC
+//! power ([`Device::set_power`]), the receive PGA gain ([`Device::set_rx_pga_gain`]),
+//! fe1005000's debug-command controls ([`Device::configure_fe1005000`]) and close
+//! ([`Device::close`]). Not yet ported: fe1005000's device-level controls (gains and
+//! frequency with a front end, `/dm/sdr/0/fe/*`), fe4ch4007200's bring-up, the sample
+//! rate (Si549
 //! frequency, FIR gearbox, LMK04832 layout, ADC normal mode, LVDS PHY), the NCO frequency,
 //! RX streaming and the temperature sensor. See `PORTING.md` beside this crate.
 //!
@@ -32,4 +35,4 @@ pub use device::{Device, OpenOptions};
 pub use error::{Access, Error};
 pub use portable::pga::PgaGain;
 pub use portable::probes::Fitted;
-pub use sdr_frontend::Board as FrontEndBoard;
+pub use sdr_frontend::{Board as FrontEndBoard, Fe1005000Setting, FrontEndKind};

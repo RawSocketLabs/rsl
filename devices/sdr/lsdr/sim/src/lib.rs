@@ -7,7 +7,8 @@
 //! their recorded [`Op`] traces can be compared without hardware.
 //!
 //! The model covers open (`usdr_device_m2_d09_4_ad45_2_initialize`), ADC power-up
-//! (`/dm/power/en`) and close. The board is receive-only: libusdr declares no TX channel
+//! (`/dm/power/en`) and close, and fe1005000 on the front-end connector
+//! ([`SimBoard::with_fe1005000`]). The board is receive-only: libusdr declares no TX channel
 //! and no DAC, and neither does the sim. Each modelling assumption is stated, with its
 //! evidence, where it is encoded; see the family's `AGENTS.md` for the full list.
 #![forbid(unsafe_code)]
