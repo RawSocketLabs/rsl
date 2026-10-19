@@ -300,7 +300,8 @@ impl Device {
 
     /// Closes the board as libusdr's `usdr_dmd_close` does on an XSDR: an RX stream's DMA
     /// and front end stopped and its transport buffers released, their failures ignored as
-    /// libusdr ignores them; then `xsdr_dtor`: the LMS7002M's receive and transmit paths
+    /// libusdr's device destroy ignores its stream destroy's (which, unlike this, returns
+    /// at its first failed write, leaving the buffers held); then `xsdr_dtor`: the LMS7002M's receive and transmit paths
     /// brought down and the chip destroyed, its power control, LDOs and the LED off, the TX
     /// MMCM powered down.
     ///

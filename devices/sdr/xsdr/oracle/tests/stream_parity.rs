@@ -313,6 +313,19 @@ fn a_packet_no_burst_carries_fails_after_the_dma_reset_like_libusdr() {
 }
 
 #[test]
+fn gateware_without_a_tx_mmcm_fails_the_create_after_streaming_up_like_libusdr() {
+    let outcomes = compare(
+        || SimBoard::new(Variant::Xsdr),
+        &[Call::Rate(10_000_000), Call::Create(RxChannels::A, 1024)],
+    );
+    assert_eq!(
+        outcomes,
+        [(-ERANGE, None), (-ERANGE, None)],
+        "the rate's calibration fails, then the create's"
+    );
+}
+
+#[test]
 fn gateware_without_a_tx_mmcm_fails_the_create_like_libusdr() {
     let outcomes = compare(
         || SimBoard::new(Variant::Xsdr),

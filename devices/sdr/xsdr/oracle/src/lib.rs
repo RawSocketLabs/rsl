@@ -27,8 +27,6 @@ const EIO: c_int = 5;
 /// `EOPNOTSUPP`: an operation class the sim does not model (`USDR_LSOP_DRP`, `URAM`, ...).
 /// None is used by open, power-up or close; seeing one fails the oracle loudly.
 const EOPNOTSUPP: c_int = 95;
-/// `EBUSY`: a stream already exists.
-const EBUSY: c_int = 16;
 /// `ETIMEDOUT`: no RX block, the sim's stream engine being stopped.
 const ETIMEDOUT: c_int = 110;
 
@@ -495,14 +493,12 @@ impl Oracle {
     ///
     /// # Errors
     ///
-    /// The negative errno libusdr returned; `-EBUSY` if a stream exists.
+    /// The negative errno libusdr returned: `-EBUSY` if a stream exists.
     pub fn create_rx_stream(&mut self, channels: u64, samples_per_packet: u32) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
-        if self.stream.is_some() {
-            return Err(-EBUSY);
-        }
+        // A second create reaches libusdr, whose own check refuses it with `-EBUSY`.
         let mut stream: Stream = ptr::null_mut();
         // SAFETY: `dev` is open, the strings are NUL-terminated, `stream` is a valid
         // out-pointer.
@@ -521,6 +517,7 @@ impl Oracle {
         if errno != 0 {
             return Err(errno);
         }
+        assert!(self.stream.is_none(), "libusdr refuses a second RX stream");
         self.stream = NonNull::new(stream);
         Ok(())
     }

@@ -81,7 +81,8 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   LMS7002M control code too, despite its directory (the LimeSDR's `limesdr_ctrl.c` calls
   its `lms7002m_streaming_up`): its functions belong in `lms7002m` once a second
   driver needs them; until then a port of one may sit in its first driver
-  (`lms7002m_streaming_down` in `xsdr`'s `Close`). Those both LMS7 drivers call
+  (`lms7002m_streaming_down` in `xsdr`'s `portable/close.rs`, `streaming_down`, which
+  its `Close` and its RX stream's destroy both build). Those both LMS7 drivers call
   (`lms7002m_samplerate`, `_set_gain`, `_bb_set_badwidth`, `_fe_set_freq`,
   `_streaming_up`) are `lms7002m::ctrl` (2026-10-13), and so are the paths and NCOs
   (`_rfe_set_path`, `_tfe_set_path`, `_fe_set_lna`, `_bb_set_freq`), which only the

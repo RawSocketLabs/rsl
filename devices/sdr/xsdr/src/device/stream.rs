@@ -12,14 +12,15 @@
 use std::time::Duration;
 
 use hal::run_sequence;
+use lms7002m::Mac;
 use lms7002m::ctrl::StreamFlags;
-use lms7002m::{Mac, RxMode, RxPath, Tsp};
 use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat, SyncTrigger};
 
 use super::{Device, control_error, run};
 use crate::board::XSDR_SUPPLIES;
 use crate::error::Error;
 use crate::lowlevel::BusError;
+use crate::portable::close::{Down, streaming_down};
 use crate::portable::fpga::{Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE};
 use crate::portable::frontend::XsdrFrontend;
 use crate::portable::rate::{Gateware, RateError, SetSampleRate};
@@ -226,9 +227,14 @@ impl Device {
     /// (`_sfetrx4_stream_recv` into `ci16`). Until the first packet arrives, each call
     /// first tells the DMA engine the host is ready, as libusdr does.
     ///
-    /// Divergence, invisible on the bus: a burst padded to whole front-end words (an odd
-    /// number of one channel's samples) arrives without its stub, which libusdr copies in
-    /// with the samples.
+    /// Divergences, invisible on the bus: a burst padded to whole front-end words (an odd
+    /// number of one channel's samples) arrives without its stub, where libusdr copies the
+    /// block whole, so its buffer holds each burst's stub as a sample and, in a packet of
+    /// several bursts, every later sample shifted along; buffers other than one per
+    /// channel, shorter than a packet, or a block shorter than a packet are refused, where
+    /// libusdr writes whatever it is given. A refused block counts as no packet: the next
+    /// receive signals host-ready again (if none arrived yet) and its lost-packet count is
+    /// not added.
     ///
     /// # Errors
     ///
@@ -237,6 +243,10 @@ impl Device {
     /// packet. Then [`Error::Timeout`] when no packet arrives in time, [`Error::Stream`]
     /// for another transport failure, [`Error::ShortRxBlock`] for a block shorter than a
     /// packet, or [`Error::Bus`].
+    ///
+    /// # Panics
+    ///
+    /// Never: a packet's sample count is a `u32`.
     pub fn receive(
         &mut self,
         buffers: &mut [&mut [[i16; 2]]],
@@ -285,7 +295,7 @@ impl Device {
                 got: delivered,
             });
         }
-        let samples = u64::try_from(needed).unwrap_or(u64::MAX);
+        let samples = u64::try_from(needed).expect("invariant: a packet size fits in u64");
         let lost = oob[0] & 0xff_ffff;
         stream.lost_packets += lost;
         stream.next_sample += samples * lost;
@@ -302,9 +312,12 @@ impl Device {
     /// Stops and destroys the RX stream: libusdr's `USDR_DMS_STOP` (the DMA, then the front
     /// end, stopped), then `usdr_dms_destroy` (the receiver streamed down, the DMA and
     /// front end stopped again, the transport's buffers released, the RX LO forgotten).
-    /// Every step is attempted.
     ///
-    /// Divergence: the first failure is returned; libusdr's destroy ignores its own.
+    /// Divergence: every step is attempted, so the buffers are always released, and the
+    /// first failure is returned; libusdr's destroy returns at its first failed write,
+    /// skipping the second stop of the front end and the buffers' release, and
+    /// `unregister_stream` reports nothing of it. The stop's own failure libusdr reports
+    /// too (`usdr_dms_op`).
     ///
     /// # Errors
     ///
@@ -336,15 +349,8 @@ impl Device {
         self.rate.afe_active = false;
         let tx_running = self.control.tx_running();
         self.control.set_running([false; 2], tx_running);
-        let chip = self.control.chip_mut();
-        let batches = [
-            chip.mac_set(Mac::Both),
-            chip.tsp_enable(Tsp::Rx, false),
-            chip.rfe_path(RxPath::None, RxMode::Disable)
-                .expect("invariant: both banks are selected just before"),
-            chip.afe_enable([false; 2], tx_running),
-        ];
-        for mut batch in batches {
+        let batches = streaming_down(self.control.chip_mut(), Down::Rx, tx_running);
+        for mut batch in batches.into_iter().flatten() {
             let _ = run(&mut *self.bus, &mut batch);
         }
     }
@@ -380,4 +386,50 @@ fn bits(bits: usize) -> u32 {
 /// A register-sized count as a buffer length.
 fn size(count: u32) -> usize {
     usize::try_from(count).expect("invariant: a 32-bit count fits in usize")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A one-channel stream of `samples` per packet in bursts of `samples_per_burst`, each
+    /// padded to `bytes_per_burst`.
+    fn stream(samples: usize, samples_per_burst: usize, bytes_per_burst: usize) -> RxStream {
+        RxStream {
+            samples_per_packet: samples,
+            channels: RxChannels::A,
+            samples_per_burst,
+            bytes_per_burst,
+            block_bytes: bytes_per_burst * samples / samples_per_burst,
+            packets: 0,
+            next_sample: 0,
+            lost_packets: 0,
+        }
+    }
+
+    #[test]
+    fn padded_bursts_skip_their_stubs() {
+        // Three bursts of one sample, each padded with a 4-byte stub of 0xEE.
+        let mut block = Vec::new();
+        for n in 1..=3_u8 {
+            block.extend([n, 0, 0x10 + n, 0, 0xee, 0xee, 0xee, 0xee]);
+        }
+        let mut samples = [[0; 2]; 3];
+        stream(3, 1, 8).convert(&block, &mut [&mut samples]);
+        assert_eq!(
+            samples,
+            [[1, 0x11], [2, 0x12], [3, 0x13]],
+            "each burst's sample, the stubs between them left out"
+        );
+    }
+
+    #[test]
+    fn both_channels_split_sample_by_sample() {
+        let block = [1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0];
+        let mut stream = stream(2, 2, 16);
+        stream.channels = RxChannels::Both;
+        let (mut a, mut b) = ([[0; 2]; 2], [[0; 2]; 2]);
+        stream.convert(&block, &mut [&mut a, &mut b]);
+        assert_eq!((a, b), ([[1, 2], [5, 6]], [[3, 4], [7, 8]]));
+    }
 }

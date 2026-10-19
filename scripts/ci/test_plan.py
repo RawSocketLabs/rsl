@@ -14,7 +14,7 @@ from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, X
                   VENDOR_LIBUSDR, XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC,
                   PE_SYNC_ORACLE,
                   PE_SYNC_PORTABLE, LMK05318, LIMESDR,
-                  LIMESDR_ORACLE, LIMESDR_PORTABLE, HAL, LP8758, LMS7002M, FRONTEND,
+                  LIMESDR_ORACLE, LIMESDR_PORTABLE, HAL, LP8758, LMS7002M, FRONTEND, STREAM,
                   RELEASE_PROFILES, DETAIL, Package,
                   affected_packages, bare_metal_devices, changed_paths, handed_on,
                   released_members, select)
@@ -45,16 +45,19 @@ def fixture():
         LP8758: Package("lp8758", {BNB, HAL}),
         LMK05318: Package("lmk05318", {BNB}),
         FRONTEND: Package("sdr-frontend", {BNB, LMK05318, HAL}),
-        "devices/sdr/usdr": Package("usdr", {BNB, FRONTEND, LMK05318, HAL, LP8758,
+        STREAM: Package("sdr-stream", {BNB, HAL}),
+        f"{STREAM}/sim": Package("sdr-stream-sim", set()),
+        "devices/sdr/usdr": Package("usdr", {BNB, FRONTEND, LMK05318, HAL, LP8758, STREAM,
                                                  "devices/sdr/usdr/sim"}),
-        "devices/sdr/usdr/sim": Package("usdr-sim", set()),
+        "devices/sdr/usdr/sim": Package("usdr-sim", {f"{STREAM}/sim"}),
         USDR_ORACLE: Package("usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
-        USDR_PORTABLE: Package("usdr-nostd-check", {BNB, USDR, HAL, LP8758}, False),
+        USDR_PORTABLE: Package("usdr-nostd-check", {BNB, USDR, HAL, LP8758, STREAM}, False),
         LMS7002M: Package("lms7002m", {BNB, HAL}),
         "devices/sdr/chips/lms7002m/sim": Package("lms7002m-sim", set()),
-        XSDR: Package("xsdr", {FRONTEND, LMS7002M, HAL, LP8758, "devices/sdr/xsdr/sim"}),
+        XSDR: Package("xsdr", {FRONTEND, LMS7002M, HAL, LP8758, STREAM, "devices/sdr/xsdr/sim"}),
         XSDR_PORTABLE: Package("xsdr-nostd-check", {XSDR, LMS7002M, HAL, LP8758}, False),
-        "devices/sdr/xsdr/sim": Package("xsdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
+        "devices/sdr/xsdr/sim": Package("xsdr-sim", {"devices/sdr/chips/lms7002m/sim",
+                                                     f"{STREAM}/sim"}),
         XSDR_ORACLE: Package("xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
                              False),
         LSDR: Package("lsdr", {BNB, FRONTEND, HAL, "devices/sdr/lsdr/sim"}),
@@ -196,7 +199,7 @@ class SelectionTests(unittest.TestCase):
         cases = [
             (f"{HAL}/src/bus.rs",
              {"hal", "lp8758", "lms7002m", "lsdr", "usdr", "xsdr",
-              "limesdr", "pe-sync", "sdr-frontend"}),
+              "limesdr", "pe-sync", "sdr-frontend", "sdr-stream"}),
             (f"{LP8758}/src/buck.rs", {"lp8758", "usdr", "xsdr"}),
         ]
         for path, packages in cases:
@@ -217,6 +220,17 @@ class SelectionTests(unittest.TestCase):
         # The LimeSDR oracle depends on the uSDR oracle, which a uSDR change reaches.
         self.assertFalse({"limesdr-portable", "pe-sync-portable", "no-std"}
                          & set(plan["profiles"]))
+
+    def test_the_stream_engine_crates_rerun_the_usdr_and_xsdr_and_their_oracles(self):
+        for path in (f"{STREAM}/src/engine.rs", f"{STREAM}/sim/src/rx.rs"):
+            with self.subTest(path=path):
+                plan = planned([path])
+                self.assertFalse(plan["full"])
+                self.assertTrue({"usdr", "xsdr"} <= set(plan["packages"]))
+                self.assertTrue({"usdr-oracle", "xsdr-oracle"} <= set(plan["profiles"]))
+                # The LSDr oracle builds on the uSDR's, which a uSDR change reaches.
+                self.assertFalse({"lsdr-portable", "limesdr-portable", "pe-sync-portable",
+                                  "no-std"} & set(plan["profiles"]))
 
     def test_the_lms7002m_chip_crate_reruns_both_lms7002m_drivers_not_the_usdr(self):
         plan = planned([f"{LMS7002M}/src/chip.rs"])
@@ -239,7 +253,7 @@ class SelectionTests(unittest.TestCase):
         release = select([], fixture(), fixture(), release_members=[member])
         self.assertTrue({"no-std", "xsdr-portable"} <= set(release["profiles"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
-                         {HAL, LP8758, LMS7002M, FRONTEND, LMK05318})
+                         {HAL, LP8758, LMS7002M, FRONTEND, LMK05318, STREAM})
         graph = fixture()
         del graph[XSDR_PORTABLE]
         with self.assertRaisesRegex(ValueError, "registered portable fixture"):
@@ -255,7 +269,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("no-std", release["profiles"])
         self.assertTrue({HAL, LP8758} <= set(release["release_roots"]))
         self.assertEqual(bare_metal_devices(release["release_roots"], [member]),
-                         {HAL, LP8758, LMK05318, FRONTEND})
+                         {HAL, LP8758, LMK05318, FRONTEND, STREAM})
 
     def test_the_porting_ledger_is_prose_not_a_build_or_qualification_trigger(self):
         plan = planned([f"{USDR}/PORTING.md"])
