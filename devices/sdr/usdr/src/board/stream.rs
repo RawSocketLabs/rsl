@@ -20,14 +20,15 @@ use super::tx_stream::TxStream;
 use crate::chips::register::run_sequence;
 use crate::dsp::Converter;
 use crate::error::Error;
-use crate::fpga::{BurstPlan, Phy};
+use crate::fpga::{BurstPlan, Phy, rx_lanes};
 use crate::lowlevel::BusError;
 use crate::portable::radio::{Chain, Chains, StreamUp, stream_down};
-use crate::portable::stream::{EngineSequence, StartPart, SyncTrigger, TxLanes};
+use crate::portable::stream::{EngineSequence, SyncTrigger, TxLanes};
 use crate::stream::{
     HostFormat, HostSample, RxChannels, RxConfig, RxMetadata, StreamTime, StreamsConfig, SyncMode,
     WireFormat,
 };
+use sdr_stream::StartPart;
 
 /// Samples converted per step inside the transport's loan: bounds the scratch the
 /// converter writes before the samples reach the caller's buffer, or the wire.
@@ -370,9 +371,9 @@ impl Board {
 
         let bus = self.bus.as_mut();
         run_sequence(bus, &mut EngineSequence::rx_reset())?;
-        let plan = BurstPlan::for_stream(samples_per_packet, wire, channels)
+        let plan = BurstPlan::for_stream(samples_per_packet, channels.sample_bits(wire))
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
-        let format = plan.rx_format(channels);
+        let format = plan.rx_format(rx_lanes(wire, channels), wire.into());
         run_sequence(bus, &mut EngineSequence::rx_configure(&format))?;
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
@@ -650,7 +651,7 @@ impl RxConfig {
         let outputs = channels.count();
         let converter = Converter::new(wire.sample_format(), host.sample_format(), 1, outputs)
             .map_err(|_| Error::NoConversion { host, wire })?;
-        let half_byte = BurstPlan::for_stream(samples_per_packet, wire, channels)
+        let half_byte = BurstPlan::for_stream(samples_per_packet, channels.sample_bits(wire))
             .is_some_and(|plan| plan.samples_per_burst() * channels.sample_bits(wire) % 8 != 0);
         if half_byte {
             return Err(Error::UnsupportedPacketSize(samples_per_packet));

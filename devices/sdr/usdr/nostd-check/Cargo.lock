@@ -87,6 +87,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-stream"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "hal",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -160,6 +168,7 @@ dependencies = [
  "bitsandbytes",
  "hal",
  "lp8758",
+ "sdr-stream",
 ]
 
 [[package]]

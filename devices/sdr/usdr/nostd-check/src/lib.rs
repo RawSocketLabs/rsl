@@ -26,12 +26,13 @@ use portable::radio::{
 };
 use portable::sequence::{FpgaAccess, RegisterAccess, Sequence, SequenceAction, SequenceFailure};
 use portable::si5332::{ClockSequence, LvpeclOutput, Reference};
-use portable::stream::{EngineSequence, RxFormat, SyncTrigger, TxLanes};
+use portable::stream::{EngineSequence, SyncTrigger, TxLanes};
 use portable::temperature::{DeviceId, Reg, TemperatureRead};
 use portable::tps6381x::OutputVoltage;
 use portable::usb::i2c::{Action, Event, I2cTransaction};
 use portable::usb::protocol::{Command, I2cCache};
 use portable::usb::register::{self as register_usb, RegisterTransaction};
+use sdr_stream::RxFormat;
 
 /// Exercises real chip register macro expansions, including checked enum conversion.
 #[must_use]

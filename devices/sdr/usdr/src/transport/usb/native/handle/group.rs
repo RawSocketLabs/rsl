@@ -194,9 +194,10 @@ impl NativeUsb {
             steps.push_back(GroupStep::Radio(Chain::Rx, true));
             // libusdr checks the packet size between the DMA reset and the configuration.
             steps.push_back(engine(EngineSequence::rx_reset()));
-            match BurstPlan::for_stream(rx.samples_per_packet, rx.wire, rx.channels) {
+            match BurstPlan::for_stream(rx.samples_per_packet, rx.channels.sample_bits(rx.wire)) {
                 Some(plan) => {
-                    let format = plan.rx_format(rx.channels);
+                    let format =
+                        plan.rx_format(fpga::rx_lanes(rx.wire, rx.channels), rx.wire.into());
                     steps.push_back(engine(EngineSequence::rx_configure(&format)));
                     steps.push_back(GroupStep::Stream(
                         StreamOperation::RxOpen,

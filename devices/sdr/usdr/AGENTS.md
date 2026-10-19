@@ -55,7 +55,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `usdr` (unpublished until parity) | The driver |
-| `sim/` | `usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default; the boards' models, with the plain register file and TMP114 the board itself uses, are `sdr-frontend-sim`'s, `../frontend/sim`, shared with `xsdr-sim`), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
+| `sim/` | `usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone; with the sync unit, `sdr-stream-sim`'s model, `../stream/sim`), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default; the boards' models, with the plain register file and TMP114 the board itself uses, are `sdr-frontend-sim`'s, `../frontend/sim`, shared with `xsdr-sim`), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
 | `oracle/` | `usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c`; libusdr's Verilator host bridge compiled whole by `oracle/shim/verilator.c` against a fake model |
 | `nostd-check/` | `usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
@@ -72,9 +72,12 @@ Each layer calls only the ones below it.
   `RxConfig`, `TxConfig`, `WireFormat`, `HostFormat`, `SyncMode`, `StreamTime`,
   `RxMetadata`, `TxTelemetry`, `TxMute`, the sealed `HostSample` buffer elements). One
   device-owned group per PORTING.md's stream-handle decision; `board/stream.rs` runs the
-  group and RX, `board/tx_stream.rs` TX; `portable/stream.rs` holds the stream engine's
-  registers (RX DMA, front end, sync unit, TX core control) as `EngineSequence`, which
-  the board and `NativeUsb` run; `fpga/stream.rs` the burst maths and burst-format word,
+  group and RX, `board/tx_stream.rs` TX; the stream engine's registers (RX DMA, front
+  end, sync unit, TX core control) are `EngineSequence`, which the board and `NativeUsb`
+  run, and its burst maths and burst-format word `BurstPlan`, both the shared
+  `sdr-stream`'s (`../stream`, 2026-10-18: the LMS7 family's gateware has the same
+  engine at the same addresses), re-exported by `portable/stream.rs` and
+  `fpga/stream.rs`, which adds the uSDR's lanes and sample formats (`rx_lanes`),
   `fpga/tx_stream.rs` packet announcement, status decoding and the TX create's gateware
   and block-size checks; `StreamsConfig::check_on` (`board/stream.rs`) the refusals
   before any I/O that the board and `NativeUsb`'s group both make, and `TxLaneUse`

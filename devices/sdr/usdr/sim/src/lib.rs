@@ -16,8 +16,6 @@ mod board;
 mod chips;
 mod flash;
 mod loopback;
-mod stream;
-mod sync;
 mod trace;
 mod tx_stream;
 

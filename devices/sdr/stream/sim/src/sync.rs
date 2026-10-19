@@ -1,6 +1,6 @@
 //! The FPGA's stream sync unit: register 14 with bit 31 set, its mode (`ST_*`) in bits
 //! 19:16, as libusdr's `sfetrx4_stream_sync` writes it. Writes with bit 31 clear are the TX
-//! core's commands (see `tx_stream.rs`) and leave the mode alone.
+//! core's commands (the uSDR sim's `tx_stream.rs`) and leave the mode alone.
 //!
 //! Assumed, from the C that writes it (no gateware source is vendored):
 //! - Bit 31 selects the sync unit. Evidence: every `sfetrx4_stream_sync` write sets it;
@@ -16,20 +16,20 @@
 //!   (`ST_ONEPPS | ST_SYSREF_GEN`, 9) hold them.
 
 /// The register the sync unit shares with the TX core's commands.
-pub(crate) const REG_SYNC: u32 = 14;
+pub const REG_SYNC: u32 = 14;
 /// Bit 31 of a [`REG_SYNC`] write selects the sync unit.
-pub(crate) const SYNC_SELECT: u32 = 1 << 31;
+pub const SYNC_SELECT: u32 = 1 << 31;
 
 /// The sync unit's mode.
 #[derive(Debug, Default)]
-pub(crate) struct SyncUnit {
+pub struct SyncUnit {
     /// The last mode written (`ST_*`); 0, stop, from reset.
     mode: u32,
 }
 
 impl SyncUnit {
     /// Follows a register write.
-    pub(crate) fn on_write(&mut self, addr: u32, value: u32) {
+    pub fn on_write(&mut self, addr: u32, value: u32) {
         if addr == REG_SYNC && value & SYNC_SELECT != 0 {
             self.mode = (value >> 16) & 0xf;
         }
@@ -37,7 +37,8 @@ impl SyncUnit {
 
     /// Whether the streams may run, with RX running if `rx` and the TX core started if
     /// `tx`.
-    pub(crate) const fn releases(&self, rx: bool, tx: bool) -> bool {
+    #[must_use]
+    pub const fn releases(&self, rx: bool, tx: bool) -> bool {
         match self.mode {
             // `ST_FREERUN`.
             7 => true,

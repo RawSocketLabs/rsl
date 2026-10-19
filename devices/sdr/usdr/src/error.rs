@@ -6,8 +6,8 @@ use crate::frontend::ClockPlanError;
 use crate::lowlevel::BusError;
 use crate::portable::lms6002d::TuneFault;
 use crate::portable::sequence::SequenceFailure;
-use crate::portable::stream::RX_DMA;
 use crate::stream::{HostFormat, RxChannels, StreamTime, SyncMode, TxChannels, WireFormat};
+use sdr_stream::RX_DMA;
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]

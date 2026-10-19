@@ -47,11 +47,11 @@
 
 /// RX DMA control: 1 runs the DMA; 0 and 2 (stop and front-end reset) halt it; 4 (the host
 /// is ready) leaves it as it is.
-pub(crate) const REG_RX_DMA_CONTROL: u32 = 5;
+const REG_RX_DMA_CONTROL: u32 = 5;
 /// RX DMA configuration: bursts per block, less one.
-pub(crate) const REG_RX_DMA_BURSTS: u32 = 0x1_0040;
+const REG_RX_DMA_BURSTS: u32 = 0x1_0040;
 /// The RX front end's command register: command in bits 31:28, value below.
-pub(crate) const REG_RX_FRONT_END: u32 = 0x1_0100;
+const REG_RX_FRONT_END: u32 = 0x1_0100;
 
 /// Front-end command: samples per burst, less one.
 const CMD_BURST_SAMPLES: u32 = 0;
@@ -156,7 +156,7 @@ impl Packing {
 
 /// The RX stream engine's observable state.
 #[derive(Debug, Default)]
-pub(crate) struct RxEngine {
+pub struct RxEngine {
     /// The DMA runs.
     dma_running: bool,
 
@@ -184,7 +184,12 @@ pub(crate) struct RxEngine {
 
 impl RxEngine {
     /// Follows a register write.
-    pub(crate) fn on_write(&mut self, addr: u32, value: u32) {
+    ///
+    /// # Panics
+    ///
+    /// For more bursts per block than the engine has, and for burst formats the module
+    /// does not model.
+    pub fn on_write(&mut self, addr: u32, value: u32) {
         match addr {
             REG_RX_DMA_CONTROL => match value {
                 1 => self.dma_running = true,
@@ -221,14 +226,20 @@ impl RxEngine {
     }
 
     /// Whether the DMA and front end both run: the RX activity the sync unit can wait for.
-    pub(crate) const fn running(&self) -> bool {
+    #[must_use]
+    pub const fn running(&self) -> bool {
         self.dma_running && self.front_end_running
     }
 
     /// The next block and its out-of-band words (no packets lost; the completed-burst
     /// mask; the DMA status with its block count), or `None` while the engine is stopped
     /// or the sync unit holds it (`released` false).
-    pub(crate) fn next_block(&mut self, released: bool) -> Option<(Vec<u8>, [u64; 2])> {
+    ///
+    /// # Panics
+    ///
+    /// When the configured samples overflow the configured burst, which neither driver
+    /// configures.
+    pub fn next_block(&mut self, released: bool) -> Option<(Vec<u8>, [u64; 2])> {
         if !(self.running() && released) {
             return None;
         }

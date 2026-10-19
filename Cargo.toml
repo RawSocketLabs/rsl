@@ -30,6 +30,10 @@ members = [
     # and the boards' register models, shared by their simulators
     "devices/sdr/frontend",
     "devices/sdr/frontend/sim",
+    # libusdr's FPGA stream engine registers and burst arithmetic, shared by the SDR drivers,
+    # and its model, shared by their simulators
+    "devices/sdr/stream",
+    "devices/sdr/stream/sim",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -110,11 +114,13 @@ lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-feature
 lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-features = false }
 lmk05318 = { path = "devices/chips/lmk05318", version = "0.0.0", default-features = false }
 sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
+sdr-stream = { path = "devices/sdr/stream", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 usdr-sim = { path = "devices/sdr/usdr/sim" }
 usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
 sdr-frontend-sim = { path = "devices/sdr/frontend/sim" }
+sdr-stream-sim = { path = "devices/sdr/stream/sim" }
 xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 lsdr-sim = { path = "devices/sdr/lsdr/sim" }
 limesdr-sim = { path = "devices/sdr/limesdr/sim" }

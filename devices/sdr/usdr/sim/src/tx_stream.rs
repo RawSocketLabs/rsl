@@ -42,7 +42,7 @@
 
 use std::collections::VecDeque;
 
-use crate::sync::{REG_SYNC, SYNC_SELECT};
+use sdr_stream_sim::{REG_SYNC, SYNC_SELECT};
 
 /// The first word announcing a packet to the original core.
 const REG_TX_PUSH: u32 = 12;

@@ -21,6 +21,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
 | `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
+| `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores) and RX burst arithmetic (`BurstPlan`), `no_std`; and the RX engine and sync unit models the uSDR and XSDR sims share |
 | `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
 
 ## Layout rules
@@ -42,6 +43,12 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   boards' register models live beside it (`sdr/frontend/sim`, `sdr-frontend-sim`), shared
   by the sims whose connector admits them (`usdr-sim`, `xsdr-sim`); a board only one
   driver admits keeps its model in that driver's sim (fe1005000 in `lsdr-sim`).
+  The second is `sdr/stream` (`sdr-stream`, 2026-10-18), the stream engine's registers
+  and burst arithmetic, moved out of `usdr` (which re-exports them where its board and
+  `NativeUsb` found them) when the XSDR's RX streams needed them; which logical channel
+  rides which lanes, host formats and the RF side of a stream stay in each driver. Its
+  sim model (`sdr/stream/sim`, `sdr-stream-sim`: the RX engine and sync unit) is shared
+  likewise; the uSDR's TX core model stays in `usdr-sim` until a second sim needs it.
 - Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind

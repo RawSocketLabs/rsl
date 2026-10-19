@@ -21,9 +21,10 @@ use crate::board::{Board, Direction};
 use crate::device::{Device, DeviceBuilder};
 use crate::error::Error;
 use crate::frontend::FrontEndKind;
-use crate::portable::stream::{StartPart, SyncTrigger};
+use crate::portable::stream::SyncTrigger;
 use crate::reference::ReferenceClock;
 use crate::stream::{HostSample, RxMetadata, StreamTime, StreamsConfig, SyncMode, TxTelemetry};
+use sdr_stream::StartPart;
 
 /// The reference every device takes when the master's front end is `SimpleSync`, in Hz:
 /// libusdr's `_debug_ll_mdev_set` (`device/device_fe.c`) sets `/dm/sdr/refclk/path` to

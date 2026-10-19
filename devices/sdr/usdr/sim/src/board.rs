@@ -4,12 +4,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use sdr_frontend_sim::{FrontEnd, Model};
+use sdr_stream_sim::{RxEngine, SyncUnit};
 
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::flash::{FlashController, SimFlash};
 use crate::loopback::{Chains, Loopback};
-use crate::stream::RxEngine;
-use crate::sync::SyncUnit;
 use crate::trace::Op;
 use crate::tx_stream::{TxEngine, TxGrant, TxPacket};
 

@@ -213,6 +213,18 @@ name = "sdr-frontend-sim"
 version = "0.0.0"
 
 [[package]]
+name = "sdr-stream"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "hal",
+]
+
+[[package]]
+name = "sdr-stream-sim"
+version = "0.0.0"
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -365,6 +377,7 @@ dependencies = [
  "lp8758",
  "num-complex",
  "sdr-frontend",
+ "sdr-stream",
  "thiserror",
  "usb",
  "usdr-pcie",
@@ -398,6 +411,7 @@ name = "usdr-sim"
 version = "0.0.0"
 dependencies = [
  "sdr-frontend-sim",
+ "sdr-stream-sim",
  "thiserror",
 ]
 

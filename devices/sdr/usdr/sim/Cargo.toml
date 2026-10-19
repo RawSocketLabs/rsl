@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 sdr-frontend-sim.workspace = true
+sdr-stream-sim.workspace = true
 thiserror.workspace = true
 
 [lints]

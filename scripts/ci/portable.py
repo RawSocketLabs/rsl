@@ -34,7 +34,7 @@ class Fixture:
 
 
 FIXTURES = {
-    "usdr": Fixture(USDR, {"bnb": set(), "hal": {"std"}, "lp8758": set()},
+    "usdr": Fixture(USDR, {"bnb": set(), "hal": {"std"}, "lp8758": set(), "sdr-stream": set()},
                     {"default": ["usb"], "usb": []}),
     "xsdr": Fixture(XSDR, {"lms7002m": set(), "hal": {"std"}, "lp8758": set()},
                     None),

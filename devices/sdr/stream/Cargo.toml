@@ -1,0 +1,16 @@
+[package]
+name = "sdr-stream"
+version = "0.0.0"
+description = "libusdr's FPGA stream engine registers and RX burst arithmetic, shared by the pure-Rust uSDR and LMS7 family drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb.workspace = true
+hal.workspace = true
+
+[lints]
+workspace = true
