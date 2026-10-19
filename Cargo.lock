@@ -3529,6 +3529,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-frontend-sim"
+version = "0.0.0"
+
+[[package]]
 name = "sec1"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4663,6 +4667,7 @@ dependencies = [
 name = "usdr-sim"
 version = "0.0.0"
 dependencies = [
+ "sdr-frontend-sim",
  "thiserror 2.0.21",
 ]
 

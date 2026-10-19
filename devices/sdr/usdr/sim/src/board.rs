@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use sdr_frontend_sim::{FrontEnd, Model};
+
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::flash::{FlashController, SimFlash};
-use crate::frontend::{FrontEnd, Model};
 use crate::loopback::{Chains, Loopback};
 use crate::stream::RxEngine;
 use crate::sync::SyncUnit;
@@ -53,6 +54,9 @@ const I2C_TEMP: I2cAddress = I2cAddress { bus: 0, addr: 0x4e };
 const I2C_CLOCK: I2cAddress = I2cAddress { bus: 0, addr: 0x6a };
 /// The `TPS6381x` boost converter.
 const I2C_BOOST: I2cAddress = I2cAddress { bus: 0, addr: 0x75 };
+/// The M.2 connector's I2C bus (`I2C_BUS_FRONTEND`), where an attached front end's chips
+/// answer.
+const FRONT_END_BUS: u8 = 1;
 
 /// The uSDR board revisions libusdr supports; the revision sits in HWID bits 15:8.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -383,10 +387,14 @@ impl SimBoard {
                 Some(&mut self.clock)
             }
             I2C_BOOST => Some(&mut self.boost),
-            _ => self
+            I2cAddress {
+                bus: FRONT_END_BUS,
+                addr,
+            } => self
                 .front_end
                 .as_mut()
                 .and_then(|front_end| front_end.chip(addr)),
+            _ => None,
         };
         let read = chip.map_or_else(
             || vec![0xff; read_len],
@@ -505,13 +513,13 @@ impl SimBoard {
     /// An LP8758 PMIC register.
     #[must_use]
     pub fn pmic_reg(&self, addr: u8) -> u8 {
-        self.pmic.regs[usize::from(addr)]
+        self.pmic.reg(addr)
     }
 
     /// A `TPS6381x` boost-converter register.
     #[must_use]
     pub fn boost_reg(&self, addr: u8) -> u8 {
-        self.boost.regs[usize::from(addr)]
+        self.boost.reg(addr)
     }
 
     /// A board whose front-end DAC identifies as `id` instead of a DAC80501M (0x0195);
@@ -590,7 +598,7 @@ impl SimBoard {
     /// A Si5332 clock-generator register.
     #[must_use]
     pub fn clock_reg(&self, addr: u8) -> u8 {
-        self.clock.file.regs[usize::from(addr)]
+        self.clock.file.reg(addr)
     }
 }
 

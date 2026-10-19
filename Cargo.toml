@@ -26,8 +26,10 @@ members = [
     # LMK05318 network synchronizer register values and frequency plans, shared by the uSDR
     # front ends and PE_SYNC
     "devices/chips/lmk05318",
-    # libusdr's front-end board probe and the boards it brings up, shared by the SDR drivers
+    # libusdr's front-end board probe and the boards it brings up, shared by the SDR drivers,
+    # and the boards' register models, shared by their simulators
     "devices/sdr/frontend",
+    "devices/sdr/frontend/sim",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -112,6 +114,7 @@ sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-featu
 usdr-sim = { path = "devices/sdr/usdr/sim" }
 usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
+sdr-frontend-sim = { path = "devices/sdr/frontend/sim" }
 xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 lsdr-sim = { path = "devices/sdr/lsdr/sim" }
 limesdr-sim = { path = "devices/sdr/limesdr/sim" }

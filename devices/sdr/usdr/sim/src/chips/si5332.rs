@@ -29,12 +29,13 @@ impl Si5332 {
 
     /// Recomputes the status register from the control register and the input clock.
     fn sync_status(&mut self) {
-        let ctrl = self.file.regs[usize::from(USYS_CTRL)];
-        self.file.regs[usize::from(USYS_STAT)] = if self.input_clock {
+        let ctrl = self.file.reg(USYS_CTRL);
+        let status = if self.input_clock {
             ctrl
         } else {
             NO_INPUT_CLOCK
         };
+        self.file.set(USYS_STAT, status);
     }
 }
 

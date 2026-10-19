@@ -1,27 +1,13 @@
 //! Register-level models of the chips on the uSDR board.
+//!
+//! The front-end boards' chips, the plain register file and the TMP114 are
+//! `sdr-frontend-sim`'s, shared with the other simulated boards; the board uses the last
+//! two for its PMIC, boost converter and temperature sensor.
 
-mod dac80501;
-mod expander;
-mod lmk05318;
 mod lms6002d;
-mod reg16;
-mod reg8;
 mod si5332;
-mod tmp114;
 
-pub(crate) use dac80501::Dac80501;
-pub(crate) use expander::Expander;
-pub(crate) use lmk05318::Lmk05318;
 pub(crate) use lms6002d::Lms6002d;
 pub use lms6002d::{DcCalibration, PllLock};
-pub(crate) use reg8::Reg8File;
-pub(crate) use reg16::Reg16File;
+pub(crate) use sdr_frontend_sim::chips::{I2cChip, Reg8File, Tmp114};
 pub(crate) use si5332::Si5332;
-pub(crate) use tmp114::Tmp114;
-
-/// A chip on an I2C bus, addressed with a register pointer as the first written byte.
-pub(crate) trait I2cChip {
-    /// Performs a write-then-read transfer: `write` is the bytes sent (register pointer
-    /// first), and the returned bytes are what the chip transmits for `read_len` bytes.
-    fn transfer(&mut self, write: &[u8], read_len: usize) -> Vec<u8>;
-}

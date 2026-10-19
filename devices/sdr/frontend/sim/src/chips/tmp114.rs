@@ -1,4 +1,5 @@
-//! TMP114 temperature sensor: 8-bit pointer, 16-bit registers sent MSB first.
+//! TMP114 temperature sensor (XMASS revision 1a's two; `usdr-sim`'s board sensor): 8-bit
+//! pointer, 16-bit registers sent MSB first.
 
 use super::I2cChip;
 
@@ -9,14 +10,15 @@ const DEVICE_ID: u8 = 0x0b;
 
 /// A TMP114 reporting whatever temperature the board sets.
 #[derive(Debug)]
-pub(crate) struct Tmp114 {
+pub struct Tmp114 {
     /// Register contents, indexed by pointer.
     regs: [u16; 16],
 }
 
 impl Tmp114 {
     /// A sensor reading `millicelsius`, with datasheet reset values elsewhere.
-    pub(crate) fn new(millicelsius: i32) -> Self {
+    #[must_use]
+    pub fn new(millicelsius: i32) -> Self {
         let mut regs = [0; 16];
         regs[0x03] = 0x0004;
         regs[0x04] = 0xf380;
@@ -29,7 +31,7 @@ impl Tmp114 {
     }
 
     /// Updates the temperature result register.
-    pub(crate) fn set_millicelsius(&mut self, millicelsius: i32) {
+    pub fn set_millicelsius(&mut self, millicelsius: i32) {
         self.regs[usize::from(TEMP_RESULT)] = Self::encode(millicelsius);
     }
 

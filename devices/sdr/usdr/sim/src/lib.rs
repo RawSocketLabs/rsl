@@ -15,7 +15,6 @@
 mod board;
 mod chips;
 mod flash;
-mod frontend;
 mod loopback;
 mod stream;
 mod sync;
@@ -25,7 +24,7 @@ mod tx_stream;
 pub use board::{BoardRevision, I2cAddress, SimBoard, SimError};
 pub use chips::{DcCalibration, PllLock};
 pub use flash::SimFlash;
-pub use frontend::FrontEnd;
 pub use loopback::{Imbalance, Loopback};
+pub use sdr_frontend_sim::FrontEnd;
 pub use trace::Op;
 pub use tx_stream::{TxGrant, TxPacket};

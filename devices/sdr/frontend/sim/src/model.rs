@@ -1,15 +1,11 @@
-//! Front-end boards on the uSDR's M.2 connector, at register level: the chips libusdr's
-//! `device/ext_*` drivers reach on FPGA I2C bus 1 (`I2C_BUS_FRONTEND`).
+//! Front-end boards on the M.2 key A+E connector, at register level: the chips libusdr's
+//! `device/ext_*` drivers reach on the connector's I2C bus (FPGA I2C bus 1,
+//! `I2C_BUS_FRONTEND`, on the uSDR and XSDR alike).
 //!
-//! The connector's GPIO core (FPGA register 3) is only traced: no modelled chip depends on
-//! the pins it sets. Addresses not listed for a board read the idle bus, as on the bare
-//! board.
+//! Addresses not listed for a board read the idle bus, as on the bare connector; the host
+//! sim answers them.
 
-use crate::board::I2cAddress;
 use crate::chips::{Dac80501, Expander, I2cChip, Lmk05318, Reg8File, Reg16File, Tmp114};
-
-/// The FPGA I2C bus on the connector.
-const BUS: u8 = 1;
 /// The `PCIe` front end's RF-path expander (`ext_pciefe.c`, `I2C_ADDR_FE`).
 const PCIEFE_FE_EXPANDER: u16 = 0x20;
 /// The `PCIe` front end's power and LED expander (`I2C_ADDR_GPIO`).
@@ -58,7 +54,7 @@ const XMASS_TEMPERATURES_MC: [i32; 2] = [31_500, 29_250];
 /// `dac80501_init` accepts.
 const DAC_ID: u16 = 0x0195;
 
-/// A front-end board to attach to a [`SimBoard`](crate::SimBoard).
+/// A front-end board to attach to a host sim's connector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FrontEnd {
@@ -89,9 +85,13 @@ pub enum FrontEnd {
     XmassRev1a,
 }
 
-/// The chips of an attached front end.
+/// The chips of an attached front end, as a host sim keeps them.
 #[derive(Debug)]
-pub(crate) enum Model {
+pub struct Model(Chips);
+
+/// The chips of each board.
+#[derive(Debug)]
+enum Chips {
     /// See [`FrontEnd::Pciefe`].
     Pciefe {
         /// RF-path expander.
@@ -129,7 +129,7 @@ pub(crate) enum Model {
 
 /// The chips XMASS revision 1a adds.
 #[derive(Debug)]
-pub(crate) struct XmassRev1a {
+struct XmassRev1a {
     /// The TMP114NA.
     sensor_a: Tmp114,
     /// The TMP114NB.
@@ -140,9 +140,9 @@ pub(crate) struct XmassRev1a {
     eeprom: Reg8File,
 }
 
-impl Model {
+impl Chips {
     /// The chips of `board` at reset.
-    pub(crate) fn new(board: FrontEnd) -> Self {
+    fn new(board: FrontEnd) -> Self {
         match board {
             FrontEnd::Pciefe => Self::Pciefe {
                 fe: Expander::new(),
@@ -172,12 +172,10 @@ impl Model {
         }
     }
 
-    /// The chip answering at `addr`, if this board has one there.
-    pub(crate) fn chip(&mut self, addr: I2cAddress) -> Option<&mut dyn I2cChip> {
-        if addr.bus != BUS {
-            return None;
-        }
-        match (self, addr.addr) {
+    /// The chip answering at `addr` on the connector's I2C bus, if this board has one
+    /// there.
+    fn chip(&mut self, addr: u16) -> Option<&mut dyn I2cChip> {
+        match (self, addr) {
             (Self::Pciefe { fe, .. }, PCIEFE_FE_EXPANDER) => Some(fe),
             (Self::Pciefe { gpio, .. }, PCIEFE_GPIO_EXPANDER) => Some(gpio),
             (Self::Pciefe { dac, .. } | Self::Exm2pe { dac }, DAC) => Some(dac),
@@ -209,7 +207,7 @@ impl Model {
     }
 
     /// The oscillator DAC's output code, on boards with one.
-    pub(crate) fn dac_code(&self) -> Option<u16> {
+    fn dac_code(&self) -> Option<u16> {
         match self {
             Self::Pciefe { dac, .. } | Self::Exm2pe { dac } => Some(dac.code()),
             Self::SuperSync { .. } | Self::SimpleSync { .. } | Self::Xmass { .. } => None,
@@ -217,7 +215,7 @@ impl Model {
     }
 
     /// Makes the board's DAC identify as `id`; `false` if it has none.
-    pub(crate) fn set_dac_id(&mut self, id: u16) -> bool {
+    fn set_dac_id(&mut self, id: u16) -> bool {
         match self {
             Self::Pciefe { dac, .. } | Self::Exm2pe { dac } => {
                 dac.set_id(id);
@@ -229,7 +227,7 @@ impl Model {
 
     /// Makes the `PCIe` front end's RF-path expander read all inputs low; `false` on other
     /// boards.
-    pub(crate) fn stick_expander_low(&mut self) -> bool {
+    fn stick_expander_low(&mut self) -> bool {
         match self {
             Self::Pciefe { fe, .. } => {
                 fe.stick_inputs_low();
@@ -240,7 +238,7 @@ impl Model {
     }
 
     /// A clock-synchronizer register, on boards with one fitted.
-    pub(crate) fn clock_reg(&self, addr: u16) -> Option<u8> {
+    fn clock_reg(&self, addr: u16) -> Option<u8> {
         match self {
             Self::SuperSync { lmk } => Some(lmk.reg(addr)),
             Self::SimpleSync { lmk } | Self::Xmass { lmk, .. } => {
@@ -259,7 +257,7 @@ impl Model {
     }
 
     /// Makes the board's LMK05318 APLLs never lock; `false` on boards without one fitted.
-    pub(crate) fn unlock_lmk05318(&mut self) -> bool {
+    fn unlock_lmk05318(&mut self) -> bool {
         self.lmk05318()
             .and_then(Option::as_mut)
             .map(Lmk05318::unlock)
@@ -267,7 +265,54 @@ impl Model {
     }
 
     /// Takes the board's LMK05318 off the bus; `false` on boards without one fitted.
-    pub(crate) fn remove_lmk05318(&mut self) -> bool {
+    fn remove_lmk05318(&mut self) -> bool {
         self.lmk05318().and_then(Option::take).is_some()
+    }
+}
+
+impl Model {
+    /// The chips of `board` at reset.
+    #[must_use]
+    pub fn new(board: FrontEnd) -> Self {
+        Self(Chips::new(board))
+    }
+
+    /// The chip answering at `addr` on the connector's I2C bus, if this board has one
+    /// there.
+    pub fn chip(&mut self, addr: u16) -> Option<&mut dyn I2cChip> {
+        self.0.chip(addr)
+    }
+
+    /// The oscillator DAC's output code, on boards with one.
+    #[must_use]
+    pub fn dac_code(&self) -> Option<u16> {
+        self.0.dac_code()
+    }
+
+    /// Makes the board's DAC identify as `id`; `false` if it has none.
+    pub fn set_dac_id(&mut self, id: u16) -> bool {
+        self.0.set_dac_id(id)
+    }
+
+    /// Makes the `PCIe` front end's RF-path expander read all inputs low; `false` on other
+    /// boards.
+    pub fn stick_expander_low(&mut self) -> bool {
+        self.0.stick_expander_low()
+    }
+
+    /// A clock-synchronizer register, on boards with one fitted.
+    #[must_use]
+    pub fn clock_reg(&self, addr: u16) -> Option<u8> {
+        self.0.clock_reg(addr)
+    }
+
+    /// Makes the board's LMK05318 APLLs never lock; `false` on boards without one fitted.
+    pub fn unlock_lmk05318(&mut self) -> bool {
+        self.0.unlock_lmk05318()
+    }
+
+    /// Takes the board's LMK05318 off the bus; `false` on boards without one fitted.
+    pub fn remove_lmk05318(&mut self) -> bool {
+        self.0.remove_lmk05318()
     }
 }
