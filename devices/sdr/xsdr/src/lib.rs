@@ -8,12 +8,13 @@
 //! front-end board probe at open ([`Device::open`], [`Device::front_end`]; the probe is
 //! `sdr-frontend`'s), the RFIC power-up ([`Device::power_up`]), the sample rate on
 //! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
-//! baseband bandwidths, and the close ([`Device::close`]); the probe brings up every
-//! board the connector admits, as libusdr does. Not yet ported: the front ends' controls,
-//! the XTRX and sSDR variants
-//! (identified, then refused), gateware with an RX or shared MMCM or a DUC/DDC, explicit
-//! paths, streams and calibration. The LMS7002M's register values, chip operations and
-//! control code are `lms7002m`'s. See `PORTING.md` beside this crate.
+//! baseband bandwidths, explicit RX/TX paths with the RF loopback, TDD tuning, the
+//! baseband NCOs, the DC and I/Q corrections, the TX test generator and mute, the
+//! baseband and digital loopbacks, and the close ([`Device::close`]); the probe brings up
+//! every board the connector admits, as libusdr does. Not yet ported: the front ends'
+//! controls, the XTRX and sSDR variants (identified, then refused), gateware with an RX or
+//! shared MMCM or a DUC/DDC, streams and calibration. The LMS7002M's register values,
+//! chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!
@@ -37,8 +38,9 @@ mod fe_probe;
 pub mod lowlevel;
 mod portable;
 
-pub use device::Device;
+pub use device::{Device, IqCorrection, LmlRxMode, TxGenerator};
 pub use error::{Access, Error};
-pub use lms7002m::ctrl::{Direction, Gain};
+pub use lms7002m::Mac;
+pub use lms7002m::ctrl::{Direction, Gain, RfPath, RxRoute, TxRoute};
 pub use portable::hwid::Variant;
 pub use sdr_frontend::FrontEndKind;

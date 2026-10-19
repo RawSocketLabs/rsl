@@ -111,6 +111,12 @@ pub enum Error {
     #[error("NCO frequency {0} Hz is beyond half the converter clock")]
     NcoOutOfRange(i32),
 
+    /// A DC offset outside the 11-bit DACs' −1024 to 1023, an I/Q gain correction above
+    /// 2047 or a phase correction outside −2048 to 2047, which libusdr masks into the
+    /// register: refused before any bus access.
+    #[error("correction value out of range")]
+    InvalidCorrection,
+
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
     /// is logged and skipped as libusdr skips it, so open reports none of these yet.
     #[error("front-end probe failed")]

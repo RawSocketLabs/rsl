@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+bnb.workspace = true
 lms7002m.workspace = true
 hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true

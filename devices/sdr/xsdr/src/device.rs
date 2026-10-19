@@ -1,7 +1,12 @@
 //! The public device: identification, supply bring-up, RFIC power-up, sample rate, LO
-//! tuning, gains, bandwidths and close.
+//! tuning, gains, bandwidths and close; the other RF and baseband controls are
+//! `controls`'.
 
 use std::fmt;
+
+mod controls;
+
+pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
 
 use hal::{Sequence, run_sequence};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
@@ -197,9 +202,10 @@ impl Device {
     }
 
     /// Tunes the RX LO to `hertz` (libusdr's `/dm/sdr/0/rx/frequency`); 0 stops the
-    /// synthesizer. While RX runs, the receive band and antenna switch follow the LO
-    /// (below 2.2 GHz the wide-band LNA, above it the high-band one). Tuning to the LO
-    /// last tuned does nothing, as in libusdr.
+    /// synthesizer. While RX runs on the automatic path ([`Self::set_rx_path`]), the
+    /// receive band and antenna switch follow the LO (below 2.2 GHz the wide-band LNA,
+    /// above it the high-band one). Tuning to the LO last tuned does nothing, as in
+    /// libusdr.
     ///
     /// # Errors
     ///

@@ -8,8 +8,10 @@
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
 oracle. The driver covers XSDR identification, supply bring-up and the front-end probe at
 open with every board libusdr brings up there (`sdr-frontend`'s, shared with the uSDR
-and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning,
-gains, baseband bandwidths and close; see [PORTING.md](PORTING.md) for done,
+and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning (FDD
+and TDD), gains, baseband bandwidths, explicit paths with the RF loopback, the baseband
+NCOs, the DC and I/Q corrections, the TX generator and mute, the baseband and digital
+loopbacks, and close; see [PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
@@ -37,7 +39,9 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
 
 - `src/device.rs`: `Device`, the public API: `open` (identification, then the XSDR's
   supplies), `power_up`, `set_sample_rate`, `set_rx_frequency`, `set_tx_frequency`,
-  `set_gain`, `set_bandwidth` and `close`. It owns the bus (`Box<dyn Bus>`), the LMS7002M
+  `set_gain`, `set_bandwidth` and `close`, with the other RF and baseband controls
+  (paths, TDD, NCOs, corrections, generator, loopbacks) in `src/device/controls.rs`,
+  each one libusdr device-manager path. It owns the bus (`Box<dyn Bus>`), the LMS7002M
   control state (`lms7002m::ctrl::Control`, its chip cache zeroed until a power-up
   creates it) and the board's rate and LO state, and runs the portable sequences and
   control operations with `hal`'s blocking `run_sequence`, keeping the state an
@@ -195,7 +199,8 @@ hint), XMASS without its LMK05318, and the clock boards whose
 LMK05318 never locks (repeated lock polls collapsed: libusdr's count follows its wall
 clock), compared whole. `oracle/tests/rate_parity.rs` drives libusdr's `/dm/rate`,
 `/dm/sdr/0/{rx,tx}/frequency`, gain and bandwidth paths and compares everything between
-the open and the close.
+the open and the close; `oracle/tests/controls_parity.rs` does the same for the paths,
+loopbacks, TDD, NCO, correction and generator paths (`Device`'s `controls`).
 
 ## Verify
 
