@@ -494,6 +494,10 @@ impl Oracle {
     /// # Errors
     ///
     /// The negative errno libusdr returned: `-EBUSY` if a stream exists.
+    ///
+    /// # Panics
+    ///
+    /// If libusdr creates a second RX stream while one exists, which it refuses.
     pub fn create_rx_stream(&mut self, channels: u64, samples_per_packet: u32) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);

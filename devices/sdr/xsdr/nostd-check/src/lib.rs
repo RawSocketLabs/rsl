@@ -9,11 +9,11 @@ use core::num::NonZeroU32;
 #[path = "../../src/portable/mod.rs"]
 mod portable;
 
-use hal::{I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
+use hal::{FpgaAccess, I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use lms7002m::ctrl::{Control, ControlError};
 use lms7002m::{Lms7002m, ResetPlan, Synthesizer};
 use lp8758::{Buck, BuckControl, BuckVoltage};
-use portable::close::Close;
+use portable::close::{Close, Down, streaming_down};
 use portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
 use portable::hwid::{IdentityRead, Variant};
 use portable::power::PowerUp;
@@ -86,6 +86,30 @@ pub fn close(powered: bool, failing: Option<usize>) -> Result<usize, &'static st
     drive(&mut Close::new(chip), |at, _| {
         if failing == Some(at) { Err(()) } else { Ok(0) }
     })
+}
+
+/// Brings RX alone (`rx_only`) or both directions of a created chip down: the SPI words
+/// issued, the first `.1` of `.0` used.
+pub fn streaming_down_words(rx_only: bool) -> Result<([u32; 32], usize), &'static str> {
+    let mut chip = power_up_chip(0x3840)?.1.ok_or("not created")?;
+    let mut words = [0; 32];
+    let mut len = 0;
+    let down = if rx_only { Down::Rx } else { Down::Both };
+    for mut batch in streaming_down(&mut chip, down, [false; 2])
+        .into_iter()
+        .flatten()
+    {
+        drive(&mut batch, |_, action| {
+            if let (SequenceAction::Fpga(FpgaAccess::Spi { word, .. }), Some(slot)) =
+                (action, words.get_mut(len))
+            {
+                *slot = word;
+                len += 1;
+            }
+            Ok(0)
+        })?;
+    }
+    Ok((words, len))
 }
 
 /// A created chip's control state on the XSDR's 26 MHz reference and bands.
@@ -222,6 +246,27 @@ mod tests {
         assert_eq!(calibrate_link(false), Ok((1, "calibration")));
         // With one: the RX pins and their 1 ms, then streaming up finds no rate.
         assert_eq!(calibrate_link(true), Ok((2, "no rate")));
+    }
+
+    #[test]
+    fn the_exact_source_witness_brings_either_direction_down() {
+        // Golden lines 99-124: the close's 26 streaming-down writes.
+        let (both, both_len) = streaming_down_words(false).expect("no failure");
+        assert_eq!(both_len, 26);
+        // RX alone: the same RX writes first, no TX writes, and the AFE word last.
+        let (rx, rx_len) = streaming_down_words(true).expect("no failure");
+        assert!(rx_len < both_len, "the TX writes are left out");
+        assert_eq!(
+            rx[..rx_len - 1],
+            both[..rx_len - 1],
+            "the RX writes, as the close's"
+        );
+        let afe = |word: u32| word >> 16 & 0x7fff;
+        assert_eq!(
+            afe(rx[rx_len - 1]),
+            afe(both[both_len - 1]),
+            "the AFE word last"
+        );
     }
 
     #[test]
