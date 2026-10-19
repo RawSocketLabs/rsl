@@ -1,6 +1,8 @@
 //! The front end on the board's M.2 connector: the probe at the end of power-up
 //! (`usdr_device_m2_lm6_1_initialize`'s `device_fe_probe`) and the controls that reach it.
 
+use sdr_frontend::Pciefe;
+
 use super::Board;
 use crate::error::Error;
 use crate::frontend::{
@@ -20,10 +22,16 @@ impl Board {
         self.front_end.as_ref().map(FrontEnd::kind)
     }
 
-    /// Sets the front end's oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`).
+    /// Sets the front end's oscillator DAC (`dev_m2_lm6_1_sdr_vctcxo_set`): the `PCIe` front
+    /// end's, or the breakout's if it answered.
     pub(crate) fn set_oscillator_dac(&mut self, code: u16) -> Result<(), Error> {
-        let front_end = self.front_end.as_ref().ok_or(Error::NoOscillatorDac)?;
-        front_end.set_oscillator_dac(self.bus.as_mut(), code)
+        let bus = self.bus.as_mut();
+        match &self.front_end {
+            Some(FrontEnd::Pciefe(_)) => Ok(Pciefe::set_dac(bus, code)?),
+            Some(FrontEnd::Exm2pe(board)) => Ok(board.set_dac(bus, code)?),
+            // The other boards have none (libusdr's `-EINVAL`).
+            _ => Err(Error::NoOscillatorDac),
+        }
     }
 
     /// Applies one `PCIe` front-end control (`/debug/hw/pciefe_cmd/0/reg`).
@@ -34,13 +42,15 @@ impl Board {
         Ok(board.apply(self.bus.as_mut(), setting)?)
     }
 
-    /// Retunes a synchronization board's calibration LO (`/dm/sync/cal/freq`).
+    /// Retunes a synchronization board's calibration or measurement LO
+    /// (`/dm/sync/cal/freq`): XMASS's output 4, `SimpleSync`'s outputs 0 to 3.
     pub(crate) fn set_sync_calibration_hz(&mut self, hz: u32) -> Result<(), Error> {
-        let front_end = self
-            .front_end
-            .as_mut()
-            .ok_or(Error::FrontEndMissing(SYNC_CALIBRATION_BOARDS))?;
-        front_end.set_sync_calibration_hz(self.bus.as_mut(), hz)
+        let bus = self.bus.as_mut();
+        match &mut self.front_end {
+            Some(FrontEnd::Xmass(board)) => Ok(board.tune_calibration(bus, hz)?),
+            Some(FrontEnd::SimpleSync(board)) => Ok(board.tune_lo(bus, hz)?),
+            _ => Err(Error::FrontEndMissing(SYNC_CALIBRATION_BOARDS)),
+        }
     }
 
     /// The XMASS calibration LO last requested (`/dm/sync/cal/freq` read).
@@ -56,9 +66,9 @@ impl Board {
         &mut self,
         path: XmassCalibrationPath,
     ) -> Result<(), Error> {
-        let Some(FrontEnd::Xmass(_)) = &self.front_end else {
+        let Some(FrontEnd::Xmass(board)) = &self.front_end else {
             return Err(Error::FrontEndMissing(XMASS));
         };
-        Ok(path.select(self.bus.as_mut())?)
+        Ok(board.set_calibration_path(self.bus.as_mut(), path)?)
     }
 }

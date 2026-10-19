@@ -411,8 +411,27 @@ impl From<sdr_frontend::Error> for Error {
                 reg,
                 source,
             },
-            sdr_frontend::Error::Board { board, reason, .. } => Self::FrontEnd { board, reason },
+            sdr_frontend::Error::Board { board, reason, .. }
+            | sdr_frontend::Error::InvalidSetting { board, reason, .. } => {
+                Self::FrontEnd { board, reason }
+            }
             sdr_frontend::Error::NoOscillatorDac => Self::NoOscillatorDac,
+            sdr_frontend::Error::ChipId {
+                chip,
+                expected,
+                found,
+                ..
+            } => Self::ChipId {
+                chip,
+                expected,
+                found,
+            },
+            sdr_frontend::Error::ClockPlan(error) => Self::ClockPlan(error),
+            sdr_frontend::Error::ClockUnlocked(pll) => Self::ClockUnlocked(pll),
+            sdr_frontend::Error::NotPorted(board) => Self::FrontEnd {
+                board: board.name(),
+                reason: "its bring-up is not ported",
+            },
         }
     }
 }

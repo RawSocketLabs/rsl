@@ -85,13 +85,6 @@ impl Tmp114 {
         }
     }
 
-    /// Whether the device ID register reads the ID libusdr requires (`tmp114_devid_get`
-    /// compared with 0x1114); a missing sensor reads `false`.
-    pub(crate) fn identifies(self, bus: &mut dyn Bus) -> Result<bool, Error> {
-        let raw = self.read(bus, Reg::DeviceId)?;
-        Ok(DeviceId::from_raw(u16::from_be_bytes(raw)) == Self::DEVICE_ID)
-    }
-
     /// Reads one 16-bit register, in wire order.
     fn read(self, bus: &mut dyn Bus, reg: Reg) -> Result<[u8; 2], Error> {
         let reg = reg.into();

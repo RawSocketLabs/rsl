@@ -3522,6 +3522,7 @@ name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "deps",
  "hal",
  "lmk05318",
  "thiserror 2.0.21",
@@ -4631,7 +4632,6 @@ dependencies = [
  "bitsandbytes",
  "deps",
  "hal",
- "lmk05318",
  "lp8758",
  "mio",
  "num-complex",

@@ -12,11 +12,13 @@ rust-version.workspace = true
 bnb.workspace = true
 lmk05318.workspace = true
 hal.workspace = true
+deps = { workspace = true, optional = true, features = ["tracing"] }
 thiserror = { workspace = true, optional = true }
 
 [features]
-## The blocking probe over `hal`'s `Bus`, the boards' bring-ups and `Error`.
-std = ["hal/std", "dep:thiserror"]
+## The blocking probe over `hal`'s `Bus`, the boards' bring-ups (logging, through
+## `tracing`, the events libusdr logs) and `Error`.
+std = ["hal/std", "dep:deps", "dep:thiserror"]
 
 [lints]
 workspace = true

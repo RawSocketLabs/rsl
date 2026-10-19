@@ -2,45 +2,25 @@
 //! with compatibility `m2a+e` on I2C bus 1), run by `sdr-frontend` as on the uSDR. Not
 //! the RFIC's own RF front end (`portable::frontend`).
 //!
-//! The `PCIe` front end and the M.2-to-`PCIe` breakout come up whole in the shared crate.
-//! XMASS, `SuperSync` and `SimpleSync` need the LMK05318 and LMK5C33216 bring-ups, which
-//! `usdr` owns until they move to the shared crate: a board of theirs that answers
-//! stops the open with [`Error::FrontEndNotPorted`] where libusdr would bring it up.
+//! Every board the connector admits comes up whole in the shared crate, as libusdr brings
+//! it up: the `PCIe` front end, XMASS, `SuperSync`, `SimpleSync` and the M.2-to-`PCIe`
+//! breakout. fe4ch4007200, the one board the shared crate does not bring up, cannot come
+//! up on the XSDR: its chips sit on I2C core 1, which the XSDR's transports refuse (one
+//! core, `rev_generic`), and the automatic probe reaches it only if the breakout fails.
 
-use sdr_frontend::{BringUp, Connector, Detected, Failure, FrontEndKind, FrontEndSelection};
+use sdr_frontend::{Connector, FrontEnd, FrontEndSelection};
 
 use crate::error::Error;
 use crate::lowlevel::Bus;
 
 /// Probes the XSDR's connector as libusdr's open does without an `fe=` hint, and keeps the
-/// board that came up.
+/// board that came up. A board that fails to come up is logged and skipped, as libusdr
+/// does.
 ///
 /// # Errors
 ///
-/// [`Error::FrontEndNotPorted`] for a board whose bring-up is not ported. A board that
-/// fails to come up is skipped, as libusdr does.
-pub(crate) fn probe(bus: &mut dyn Bus) -> Result<Option<FrontEndKind>, Error> {
-    Connector::M2KeyAE.probe(bus, &FrontEndSelection::Auto, &mut XsdrBringUp)
-}
-
-/// The XSDR's part of the probe: the boards the shared crate brings up whole.
-struct XsdrBringUp;
-
-impl BringUp for XsdrBringUp {
-    type FrontEnd = FrontEndKind;
-    type Error = Error;
-
-    fn bring_up(
-        &mut self,
-        _: &mut dyn Bus,
-        detected: Detected,
-    ) -> Result<FrontEndKind, Failure<Error>> {
-        match detected {
-            Detected::Pciefe(_) => Ok(FrontEndKind::Pciefe),
-            Detected::Exm2pe(board) => Ok(FrontEndKind::Exm2pe {
-                dac: board.has_dac(),
-            }),
-            other => Err(Failure::Stop(Error::FrontEndNotPorted(other.board()))),
-        }
-    }
+/// Only a bus failure the probe does not skip; open never sees one from an automatic
+/// probe.
+pub(crate) fn probe(bus: &mut dyn Bus) -> Result<Option<FrontEnd>, Error> {
+    Ok(Connector::M2KeyAE.probe(bus, &FrontEndSelection::Auto)?)
 }

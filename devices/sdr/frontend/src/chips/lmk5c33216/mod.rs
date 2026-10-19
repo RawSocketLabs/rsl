@@ -11,12 +11,13 @@
 //! address 0 (`VNDRID_BY1`, `VNDRID_BY0`, `PRODID`, `REVID` in `lmk5c33216.yaml`) and
 //! requires `10 0B 40 05`, then writes the register load in [`rom`] (a fixed
 //! configuration; libusdr notes a soft reset as still to do). The identification is the
-//! `SuperSync` probe's, in `sdr-frontend`; this driver writes the load.
+//! `SuperSync` probe's ([`super::clock_id`]); this driver writes the load.
 
 mod rom;
 
+use hal::{Bus, I2cAddr};
+
 use crate::error::{BusContext, Error};
-use crate::lowlevel::{Bus, I2cAddr};
 
 /// An LMK5C33216 on the I2C bus.
 #[derive(Clone, Copy, Debug)]
@@ -27,7 +28,7 @@ pub(crate) struct Lmk5c33216 {
 
 impl Lmk5c33216 {
     /// The chip's name in errors.
-    const NAME: &'static str = "LMK5C33216";
+    pub(crate) const NAME: &'static str = "LMK5C33216";
 
     /// The chip at `dev`.
     pub(crate) const fn at(dev: I2cAddr) -> Self {

@@ -3,6 +3,7 @@
 use std::fmt;
 
 use hal::{Sequence, SequenceAction, run_sequence};
+use sdr_frontend::{FrontEnd, FrontEndKind};
 
 use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
 use crate::error::Error;
@@ -50,6 +51,10 @@ pub struct Device {
 
     /// What open found.
     fitted: Fitted,
+
+    /// The front end the open's probe brought up, if any, with the state libusdr keeps
+    /// for it.
+    front_end: Option<FrontEnd>,
 }
 
 impl Device {
@@ -57,16 +62,17 @@ impl Device {
     /// the link is alive, reads the PMIC's identification, sets four rails, gates the
     /// Si549 sample clock, supplies the ADCs while it probes for them (and, when asked, for
     /// an LMK04832), cuts their supply again, then probes the front-end connector for
-    /// fe1005000 and fe4ch4007200. The ADCs stay unpowered ([`Self::set_power`]).
+    /// fe1005000 and fe4ch4007200 and brings up the board that answers
+    /// ([`Self::front_end`]). The ADCs stay unpowered ([`Self::set_power`]).
     ///
     /// # Errors
     ///
     /// [`Error::DeadLink`] when the status register reads all ones, before anything is
     /// driven; [`Error::Bus`] when an access fails, the liveness read included (libusdr
-    /// ignores that read's failure and carries on); [`Error::FrontEndNotPorted`] when a
-    /// front end answers, since no `LSDr` front-end bring-up is ported. A missing chip is
-    /// not an error: see [`Self::fitted`]; a front end that fails to come up is skipped,
-    /// as libusdr does.
+    /// ignores that read's failure and carries on); [`Error::FrontEndNotPorted`] when
+    /// fe4ch4007200 answers, whose bring-up is not ported. A missing chip is not an error:
+    /// see [`Self::fitted`]; a front end that fails to come up is logged and skipped, as
+    /// libusdr does.
     pub fn open(bus: impl Bus + 'static, options: OpenOptions) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);
         let mut liveness = Single::new(SequenceAction::Fpga(LIVENESS), fpga::NAME);
@@ -77,10 +83,11 @@ impl Device {
         run(&mut *bus, &mut Supplies::new(LSDR_SUPPLIES))?;
         let mut probes = Probes::new(LSDR_WIRING, options.probe_clock_generator);
         run(&mut *bus, &mut probes)?;
-        frontend::probe(&mut *bus)?;
+        let front_end = frontend::probe(&mut *bus)?;
         Ok(Self {
             bus,
             fitted: probes.fitted(),
+            front_end,
         })
     }
 
@@ -88,6 +95,12 @@ impl Device {
     #[must_use]
     pub fn fitted(&self) -> Fitted {
         self.fitted
+    }
+
+    /// The front end the open's probe brought up, if any: fe1005000, tuned to 900 MHz.
+    #[must_use]
+    pub fn front_end(&self) -> Option<FrontEndKind> {
+        self.front_end.as_ref().map(FrontEnd::kind)
     }
 
     /// Powers both ADCs up or down (libusdr's `/dm/power/en`): switches their supply, then
@@ -134,6 +147,7 @@ impl fmt::Debug for Device {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Device")
             .field("fitted", &self.fitted)
+            .field("front_end", &self.front_end)
             .finish_non_exhaustive()
     }
 }

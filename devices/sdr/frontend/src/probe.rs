@@ -1,64 +1,78 @@
 //! The probe itself (`device_fe_probe`): which boards to try, in which order, what to do
-//! when one fails, and the hand-over to the driver for the bring-ups it owns.
+//! when one fails, and the board that came up.
 
+use std::boxed::Box;
+
+use deps::tracing::{debug, info, warn};
 use hal::Bus;
 
-use crate::board::{Board, Connector};
+use crate::board::{Board, Connector, FrontEndKind};
 use crate::error::Error;
 use crate::exm2pe::Exm2pe;
+use crate::fe4ch;
+use crate::fe1005000::Fe1005000;
 use crate::pciefe::Pciefe;
 use crate::selection::FrontEndSelection;
-use crate::{fe4ch, fe1005000, simplesync, supersync, xmass};
+use crate::simplesync::SimpleSync;
+use crate::supersync::SuperSync;
+use crate::xmass::Xmass;
 
-/// A board that answered the probe, brought up as far as this crate goes.
+/// A front-end board that came up, with the state libusdr keeps for it (`struct dev_fe`'s
+/// union).
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Detected {
-    /// The `PCIe` front end, up with the selection's options (`board_ext_pciefe_init`).
+pub enum FrontEnd {
+    /// The `PCIe` front end (`board_ext_pciefe_init`).
     Pciefe(Pciefe),
 
-    /// The M.2-to-`PCIe` breakout, up with the selection's options (`board_exm2pe_init`).
+    /// The M.2-to-`PCIe` breakout (`board_exm2pe_init`).
     Exm2pe(Exm2pe),
 
-    /// XMASS: its control expander kept the direction mask. The rest of
-    /// `board_xmass_init` (power, the LMK05318, the sync pulse) is the driver's; this
-    /// crate's [`xmass`](crate::xmass) functions drive the expander for it.
-    Xmass,
+    /// XMASS (`board_xmass_init`); boxed, its clock synchronizer's state is large.
+    Xmass(Box<Xmass>),
 
-    /// `SuperSync`: its LMK5C33216 identified itself. Its register load is the driver's.
-    SuperSync,
+    /// `SuperSync` (`board_ext_supersync_init`).
+    SuperSync(SuperSync),
 
-    /// `SimpleSync`: its LMK05318 identified itself, with the board's clock tree and GPS
-    /// powered. The rest of `lmk05318_create` and the board's bring-up are the driver's.
-    SimpleSync,
+    /// `SimpleSync` (`board_ext_simplesync_init`); boxed as XMASS.
+    SimpleSync(Box<SimpleSync>),
 
-    /// fe1005000: its XRA1405 expander kept its configuration. Its bring-up
-    /// (`tune_rf_path`) is not ported.
-    Fe1005000,
-
-    /// fe4ch4007200: its TMP114 identified itself. Its expander test and bring-up are not
-    /// ported.
-    Fe4ch4007200,
+    /// The 100–5000 MHz front end (`ext_fe_100_5000_init`).
+    Fe1005000(Fe1005000),
 }
 
-impl Detected {
+impl FrontEnd {
     /// Which board this is.
     #[must_use]
     pub const fn board(&self) -> Board {
         match self {
             Self::Pciefe(_) => Board::Pciefe,
             Self::Exm2pe(_) => Board::Exm2pe,
-            Self::Xmass => Board::Xmass,
-            Self::SuperSync => Board::SuperSync,
-            Self::SimpleSync => Board::SimpleSync,
-            Self::Fe1005000 => Board::Fe1005000,
-            Self::Fe4ch4007200 => Board::Fe4ch4007200,
+            Self::Xmass(_) => Board::Xmass,
+            Self::SuperSync(_) => Board::SuperSync,
+            Self::SimpleSync(_) => Board::SimpleSync,
+            Self::Fe1005000(_) => Board::Fe1005000,
         }
     }
 
-    /// Looks for `board` as libusdr's init function does, as far as this crate brings it
-    /// up; `None` when it is absent. `selection` carries a hint's options, if any.
-    fn detect(
+    /// What a device reports for this board.
+    #[must_use]
+    pub const fn kind(&self) -> FrontEndKind {
+        match self {
+            Self::Pciefe(_) => FrontEndKind::Pciefe,
+            Self::Exm2pe(board) => FrontEndKind::Exm2pe {
+                dac: board.has_dac(),
+            },
+            Self::Xmass(_) => FrontEndKind::Xmass,
+            Self::SuperSync(_) => FrontEndKind::SuperSync,
+            Self::SimpleSync(_) => FrontEndKind::SimpleSync,
+            Self::Fe1005000(_) => FrontEndKind::Fe1005000,
+        }
+    }
+
+    /// Looks for `board` and brings it up as libusdr's init function does; `None` when it
+    /// is absent. `selection` carries a hint's options, if any.
+    fn init(
         board: Board,
         bus: &mut dyn Bus,
         selection: &FrontEndSelection,
@@ -71,9 +85,11 @@ impl Detected {
                 };
                 Pciefe::init(bus, options)?.map(Self::Pciefe)
             }
-            Board::Xmass => xmass::detect(bus)?.then_some(Self::Xmass),
-            Board::SuperSync => supersync::detect(bus)?.then_some(Self::SuperSync),
-            Board::SimpleSync => simplesync::detect(bus)?.then_some(Self::SimpleSync),
+            Board::Xmass => Xmass::init(bus)?.map(|board| Self::Xmass(Box::new(board))),
+            Board::SuperSync => SuperSync::init(bus)?.map(Self::SuperSync),
+            Board::SimpleSync => {
+                SimpleSync::init(bus)?.map(|board| Self::SimpleSync(Box::new(board)))
+            }
             Board::Exm2pe => {
                 let options = match selection {
                     FrontEndSelection::Exm2pe(options) => Some(options),
@@ -81,69 +97,27 @@ impl Detected {
                 };
                 Some(Self::Exm2pe(Exm2pe::init(bus, options)?))
             }
-            Board::Fe1005000 => fe1005000::detect(bus)?.then_some(Self::Fe1005000),
-            Board::Fe4ch4007200 => fe4ch::detect(bus)?.then_some(Self::Fe4ch4007200),
+            Board::Fe1005000 => Fe1005000::init(bus)?.map(Self::Fe1005000),
+            Board::Fe4ch4007200 => {
+                if fe4ch::detect(bus)? {
+                    return Err(Error::NotPorted(board));
+                }
+                None
+            }
         })
-    }
-}
-
-/// How a driver's bring-up of a [`Detected`] board failed.
-#[derive(Debug)]
-pub enum Failure<E> {
-    /// The board did not come up, as a libusdr init function returning an error: the
-    /// automatic probe reports it to [`BringUp::skipped`] and tries the next board; a
-    /// hinted probe fails with it.
-    Board(E),
-
-    /// Stop probing and fail with this error, whatever the selection: the driver cannot
-    /// continue libusdr's bring-up (it is not ported), so carrying on would leave
-    /// libusdr's path.
-    Stop(E),
-}
-
-impl<E> Failure<E> {
-    /// The error, whichever failure it is.
-    fn into_inner(self) -> E {
-        match self {
-            Self::Board(error) | Self::Stop(error) => error,
-        }
-    }
-}
-
-/// What a driver adds to the probe: the bring-ups it owns, in its own error type.
-pub trait BringUp {
-    /// The front end the driver keeps.
-    type FrontEnd;
-
-    /// The driver's error; this crate's failures convert into it.
-    type Error: From<Error>;
-
-    /// Continues libusdr's init of a board that answered.
-    ///
-    /// # Errors
-    ///
-    /// [`Failure::Board`] when the board does not come up; [`Failure::Stop`] when the
-    /// driver cannot bring it up at all.
-    fn bring_up(
-        &mut self,
-        bus: &mut dyn Bus,
-        detected: Detected,
-    ) -> Result<Self::FrontEnd, Failure<Self::Error>>;
-
-    /// The automatic probe skips `board`, which failed with `error` (libusdr logs it).
-    fn skipped(&mut self, board: Board, error: &Self::Error) {
-        let _ = (board, error);
     }
 }
 
 impl Connector {
     /// Looks for a front end on this connector as `selection` says and brings up the first
-    /// that answers (`device_fe_probe`), handing each board that answers to `driver`.
+    /// that answers (`device_fe_probe`), logging the events libusdr logs (in this crate's
+    /// words and levels: a skipped board at WARN, where libusdr's `Unable to initialize`
+    /// is an ERROR).
     ///
     /// Automatically, every board the connector admits is tried in libusdr's order; one
-    /// that fails is reported to [`BringUp::skipped`] and the next is tried. With a hint,
-    /// only the named board is tried and its failure is the probe's. A board the connector
-    /// does not admit is skipped without a bus access.
+    /// that fails is logged and skipped, and the next is tried. With a hint, only the named
+    /// board is tried and its failure is the probe's. A board the connector does not admit
+    /// is skipped without a bus access.
     ///
     /// `Ok(None)` when nothing came up. With a hint (or [`FrontEndSelection::None`]) that
     /// is libusdr's `-ENODEV`, which the uSDR ignores and the XSDR and `LSDr` fail their
@@ -151,61 +125,91 @@ impl Connector {
     ///
     /// # Errors
     ///
-    /// The hinted board's failure, or a [`Failure::Stop`] from `driver`.
-    pub fn probe<B: BringUp>(
+    /// The hinted board's failure; [`Error::NotPorted`] when fe4ch4007200 answers, hinted
+    /// or not (libusdr would bring it up; no device this crate serves can reach it, its
+    /// chips sit on an I2C core only the sSDR has).
+    pub fn probe(
         self,
         bus: &mut dyn Bus,
         selection: &FrontEndSelection,
-        driver: &mut B,
-    ) -> Result<Option<B::FrontEnd>, B::Error> {
-        if let Some(board) = selection.hinted() {
-            return self
-                .try_board(bus, board, selection, driver)
-                .map_err(Failure::into_inner);
+    ) -> Result<Option<FrontEnd>, Error> {
+        self.probe_reporting(bus, selection, &mut |board, error| {
+            warn!(board = board.name(), %error, "front end failed to come up; skipped");
+        })
+    }
+
+    /// [`Self::probe`], handing each board the automatic probe skips, with its failure, to
+    /// `skipped` (which logs it).
+    fn probe_reporting(
+        self,
+        bus: &mut dyn Bus,
+        selection: &FrontEndSelection,
+        skipped: &mut dyn FnMut(Board, &Error),
+    ) -> Result<Option<FrontEnd>, Error> {
+        let found = if let Some(board) = selection.hinted() {
+            let found = self.try_board(bus, board, selection)?;
+            if found.is_none() {
+                warn!(hint = board.name(), connector = ?self, "no front end found with the hint");
+            }
+            found
+        } else if *selection == FrontEndSelection::None {
+            debug!("front-end probe skipped");
+            None
+        } else {
+            self.first_up(bus, selection, skipped)?
+        };
+        if let Some(front_end) = &found {
+            info!(board = front_end.board().name(), "front end detected");
         }
-        if *selection == FrontEndSelection::None {
-            return Ok(None);
-        }
+        Ok(found)
+    }
+
+    /// The automatic probe: the first board in libusdr's order that comes up.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotPorted`] for a board that answers but is not brought up: carrying on
+    /// would leave libusdr's path.
+    fn first_up(
+        self,
+        bus: &mut dyn Bus,
+        selection: &FrontEndSelection,
+        skipped: &mut dyn FnMut(Board, &Error),
+    ) -> Result<Option<FrontEnd>, Error> {
         for board in Board::ALL {
-            match self.try_board(bus, board, selection, driver) {
+            match self.try_board(bus, board, selection) {
                 Ok(Some(front_end)) => return Ok(Some(front_end)),
                 Ok(None) => {}
-                Err(Failure::Board(error)) => driver.skipped(board, &error),
-                Err(Failure::Stop(error)) => return Err(error),
+                Err(error @ Error::NotPorted(_)) => return Err(error),
+                Err(error) => skipped(board, &error),
             }
         }
+        debug!("no front end detected");
         Ok(None)
     }
 
     /// Tries one board: `None` when the connector does not admit it or it is absent.
-    fn try_board<B: BringUp>(
+    fn try_board(
         self,
         bus: &mut dyn Bus,
         board: Board,
         selection: &FrontEndSelection,
-        driver: &mut B,
-    ) -> Result<Option<B::FrontEnd>, Failure<B::Error>> {
+    ) -> Result<Option<FrontEnd>, Error> {
         if !board.admits(self) {
             return Ok(None);
         }
-        let detected = Detected::detect(board, bus, selection)
-            .map_err(|error| Failure::Board(error.into()))?;
-        detected
-            .map(|detected| driver.bring_up(bus, detected))
-            .transpose()
+        FrontEnd::init(board, bus, selection)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::boxed::Box;
     use std::time::Duration;
     use std::vec::Vec;
 
     use hal::{BusError, I2cAddr, SpiAddr};
 
     use super::*;
-    use crate::FrontEndKind;
 
     /// An empty connector: idle-high I2C and SPI, every access recorded. I2C core 1 is
     /// refused, as a one-core device's transport does.
@@ -245,63 +249,36 @@ mod tests {
         fn sleep(&mut self, _: Duration) {}
     }
 
-    /// A driver that keeps the kinds this crate brings up whole and stops on the rest,
-    /// recording what it was offered and what was skipped.
-    #[derive(Default)]
-    struct Recorder {
-        offered: Vec<Board>,
-        skipped: Vec<Board>,
-    }
-
-    impl BringUp for Recorder {
-        type FrontEnd = FrontEndKind;
-        type Error = Box<Error>;
-
-        fn bring_up(
-            &mut self,
-            _: &mut dyn Bus,
-            detected: Detected,
-        ) -> Result<FrontEndKind, Failure<Box<Error>>> {
-            self.offered.push(detected.board());
-            match detected {
-                Detected::Exm2pe(board) => Ok(FrontEndKind::Exm2pe {
-                    dac: board.has_dac(),
-                }),
-                Detected::Pciefe(_) => Ok(FrontEndKind::Pciefe),
-                other => Err(Failure::Stop(Box::new(Error::Board {
-                    board: other.board().name(),
-                    reason: "not ported",
-                }))),
-            }
-        }
-
-        fn skipped(&mut self, board: Board, _: &Box<Error>) {
-            self.skipped.push(board);
-        }
+    /// Probes `connector` on `bus` as `selection` says, collecting the boards skipped.
+    fn probe(
+        connector: Connector,
+        bus: &mut dyn Bus,
+        selection: &FrontEndSelection,
+    ) -> (Result<Option<FrontEnd>, Error>, Vec<Board>) {
+        let mut skipped = Vec::new();
+        let found = connector.probe_reporting(bus, selection, &mut |board, _| skipped.push(board));
+        (found, skipped)
     }
 
     #[test]
     fn an_empty_key_a_e_connector_skips_the_pciefe_and_settles_on_a_breakout_without_a_dac() {
         let mut bus = EmptyConnector::default();
-        let mut driver = Recorder::default();
-        let found = Connector::M2KeyAE
-            .probe(&mut bus, &FrontEndSelection::Auto, &mut driver)
-            .expect("the probe succeeds");
-        assert_eq!(found, Some(FrontEndKind::Exm2pe { dac: false }));
-        assert_eq!(driver.skipped, [Board::Pciefe], "its DAC is not recognised");
-        assert_eq!(driver.offered, [Board::Exm2pe]);
+        let (found, skipped) = probe(Connector::M2KeyAE, &mut bus, &FrontEndSelection::Auto);
+        let found = found.expect("the probe succeeds");
+        assert_eq!(
+            found.as_ref().map(FrontEnd::kind),
+            Some(FrontEndKind::Exm2pe { dac: false })
+        );
+        assert_eq!(skipped, [Board::Pciefe], "its DAC is not recognised");
     }
 
     #[test]
     fn an_empty_lsdr_connector_finds_nothing_and_touches_only_its_two_boards() {
         let mut bus = EmptyConnector::default();
-        let mut driver = Recorder::default();
-        let found = Connector::Lsdr
-            .probe(&mut bus, &FrontEndSelection::Auto, &mut driver)
-            .expect("the probe succeeds");
-        assert_eq!(found, None);
+        let (found, skipped) = probe(Connector::Lsdr, &mut bus, &FrontEndSelection::Auto);
+        assert_eq!(found.expect("the probe succeeds"), None);
         assert_eq!(
-            driver.skipped,
+            skipped,
             [Board::Fe4ch4007200],
             "this bus refuses I2C core 1"
         );
@@ -313,73 +290,74 @@ mod tests {
     #[test]
     fn a_hint_tries_only_its_board_and_an_unadmitted_one_touches_nothing() {
         let mut bus = EmptyConnector::default();
-        let mut driver = Recorder::default();
-        let found = Connector::Lsdr
-            .probe(&mut bus, &FrontEndSelection::Xmass, &mut driver)
-            .expect("an unadmitted hint is not an error");
-        assert_eq!(found, None);
+        let (found, _) = probe(Connector::Lsdr, &mut bus, &FrontEndSelection::Xmass);
+        assert_eq!(found.expect("an unadmitted hint is not an error"), None);
         assert_eq!((bus.i2c.len(), bus.other), (0, 0));
 
-        let found = Connector::M2KeyAE
-            .probe(&mut bus, &FrontEndSelection::SuperSync, &mut driver)
-            .expect("an absent hinted board is not an error");
-        assert_eq!(found, None);
+        let (found, _) = probe(Connector::M2KeyAE, &mut bus, &FrontEndSelection::SuperSync);
+        assert_eq!(found.expect("an absent hinted board is not an error"), None);
         assert_eq!(bus.i2c, [I2cAddr::new(1, 0x64)], "only SuperSync's ID read");
     }
 
     #[test]
     fn a_hinted_board_that_fails_fails_the_probe() {
         let mut bus = EmptyConnector::default();
-        let failure = Connector::M2KeyAE
-            .probe(
-                &mut bus,
-                &FrontEndSelection::Pciefe(crate::PciefeOptions::default()),
-                &mut Recorder::default(),
-            )
-            .expect_err("the pciefe's DAC is not recognised");
+        let (found, skipped) = probe(
+            Connector::M2KeyAE,
+            &mut bus,
+            &FrontEndSelection::Pciefe(crate::PciefeOptions::default()),
+        );
+        let failure = found.expect_err("the pciefe's DAC is not recognised");
         assert!(matches!(
-            *failure,
+            failure,
             Error::Board {
                 board: "pciefe",
                 ..
             }
         ));
+        assert_eq!(skipped, [], "a hinted failure is not skipped");
     }
 
     #[test]
-    fn a_stopping_driver_ends_the_automatic_probe_at_the_board_it_cannot_bring_up() {
-        /// Answers XMASS's direction test, so XMASS is detected.
-        #[derive(Default)]
-        struct WithXmass(EmptyConnector);
+    fn naming_no_board_probes_nothing() {
+        let mut bus = EmptyConnector::default();
+        let (found, _) = probe(Connector::M2KeyAE, &mut bus, &FrontEndSelection::None);
+        assert_eq!(found.expect("not an error"), None);
+        assert_eq!((bus.i2c.len(), bus.other), (0, 0));
+    }
 
-        impl Bus for WithXmass {
-            fn read_regs(&mut self, addr: u32, out: &mut [u32]) -> Result<(), BusError> {
-                self.0.read_regs(addr, out)
+    #[test]
+    fn a_fe4ch4007200_that_answers_stops_the_automatic_probe() {
+        /// Answers on I2C core 1 with fe4ch4007200's sensor ID, as a transport with a second
+        /// core and the board attached would.
+        struct WithFe4ch;
+
+        impl Bus for WithFe4ch {
+            fn read_regs(&mut self, _: u32, out: &mut [u32]) -> Result<(), BusError> {
+                out.fill(0);
+                Ok(())
             }
-            fn write_regs(&mut self, addr: u32, values: &[u32]) -> Result<(), BusError> {
-                self.0.write_regs(addr, values)
+            fn write_regs(&mut self, _: u32, _: &[u32]) -> Result<(), BusError> {
+                Ok(())
             }
-            fn spi32(&mut self, target: SpiAddr, word: u32) -> Result<u32, BusError> {
-                self.0.spi32(target, word)
+            fn spi32(&mut self, _: SpiAddr, _: u32) -> Result<u32, BusError> {
+                Ok(u32::MAX)
             }
             fn i2c(&mut self, dev: I2cAddr, write: &[u8], read: &mut [u8]) -> Result<(), BusError> {
-                self.0.i2c(dev, write, read)?;
-                if dev.addr() == 0x14 && write == [0x06] {
-                    read.copy_from_slice(&0xe000_u16.to_le_bytes());
+                read.fill(0xff);
+                if dev.core() == 1 && write == [0x0b] {
+                    read.copy_from_slice(&0x1114_u16.to_be_bytes());
                 }
                 Ok(())
             }
-            fn sleep(&mut self, duration: Duration) {
-                self.0.sleep(duration);
-            }
+            fn sleep(&mut self, _: Duration) {}
         }
 
-        let mut bus = WithXmass::default();
-        let mut driver = Recorder::default();
-        let failure = Connector::M2KeyAE
-            .probe(&mut bus, &FrontEndSelection::Auto, &mut driver)
-            .expect_err("the driver cannot bring XMASS up");
-        assert!(matches!(*failure, Error::Board { board: "xmass", .. }));
-        assert_eq!(driver.offered, [Board::Xmass], "no later board is tried");
+        let (found, skipped) = probe(Connector::Lsdr, &mut WithFe4ch, &FrontEndSelection::Auto);
+        assert!(
+            matches!(found, Err(Error::NotPorted(Board::Fe4ch4007200))),
+            "libusdr would bring the board up: {found:?}"
+        );
+        assert_eq!(skipped, [], "fe1005000 is absent, not failed");
     }
 }

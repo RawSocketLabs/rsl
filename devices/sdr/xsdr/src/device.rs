@@ -7,7 +7,7 @@ use hal::{Sequence, run_sequence};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
 use lms7002m::{Lms7002m, Synthesizer, TuneError};
 use lp8758::{self, Revision};
-use sdr_frontend::FrontEndKind;
+use sdr_frontend::{FrontEnd, FrontEndKind};
 
 use crate::board::{REFERENCE_HZ, XSDR_LMS, XSDR_SUPPLIES};
 use crate::error::Error;
@@ -63,8 +63,9 @@ pub struct Device {
     /// `lms7_txlo_last`).
     lo_last: [u32; 2],
 
-    /// The front end the open's probe brought up, if any.
-    front_end: Option<FrontEndKind>,
+    /// The front end the open's probe brought up, if any, with the state libusdr keeps
+    /// for it.
+    front_end: Option<FrontEnd>,
 }
 
 impl Device {
@@ -77,9 +78,8 @@ impl Device {
     /// # Errors
     ///
     /// [`Error::UnknownDevice`] or [`Error::UnsupportedVariant`] after the identification
-    /// reads, before anything is driven; [`Error::Bus`] when an access fails;
-    /// [`Error::FrontEndNotPorted`] when a front end answers whose bring-up is not ported.
-    /// A front end that fails to come up is skipped, as libusdr does.
+    /// reads, before anything is driven; [`Error::Bus`] when an access fails. A front end
+    /// that fails to come up is logged and skipped, as libusdr does.
     pub fn open(bus: impl Bus + 'static) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);
         let mut identity = IdentityRead::new();
@@ -114,7 +114,7 @@ impl Device {
     /// breakout without a DAC, which libusdr cannot tell from no board.
     #[must_use]
     pub fn front_end(&self) -> Option<FrontEndKind> {
-        self.front_end
+        self.front_end.as_ref().map(FrontEnd::kind)
     }
 
     /// Powers the LMS7002M up (libusdr's `/dm/power/en` = 1): its LDOs on, its reset

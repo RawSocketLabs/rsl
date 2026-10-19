@@ -12,8 +12,9 @@
 //! most four bytes (the FPGA I2C core's limit), each from its own pointer, and stops
 //! reading at the first failure; `AT24_SECURE_SERIAL_OFF` is 0x80.
 
+use hal::{Bus, I2cAddr};
+
 use crate::error::{BusContext, Error};
-use crate::lowlevel::{Bus, I2cAddr};
 
 /// Register addresses (`at24.h`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

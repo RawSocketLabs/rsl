@@ -202,6 +202,7 @@ name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "deps",
  "hal",
  "lmk05318",
  "thiserror",
@@ -357,7 +358,6 @@ dependencies = [
  "bitsandbytes",
  "deps",
  "hal",
- "lmk05318",
  "lp8758",
  "num-complex",
  "sdr-frontend",

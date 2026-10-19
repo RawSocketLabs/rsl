@@ -9,10 +9,14 @@
 //! `-EINVAL`), which libusdr reports as a failed board.
 //!
 //! What follows an identified sensor (the expanders' test vectors, their outputs, the
-//! DAC and the channel set-up) is not ported.
+//! DAC and the channel set-up) is not ported: no device this crate serves can reach it.
+//! Every one declares a single I2C core (`DNLL_I2C_COUNT` 1 on the uSDR, the XSDR's
+//! `rev_generic` and the `LSDr`); only the sSDR (`rev_advanced`, not ported) declares two.
+//! A sensor that answers anyway stops the probe ([`Error::NotPorted`]).
 
 use hal::{Bus, I2cAddr};
 
+use crate::chips::tmp114::Tmp114;
 use crate::error::{BusContext, Error};
 use crate::gpio::{FrontEndGpio, GpioCommand, PinMode};
 
@@ -40,11 +44,6 @@ const EXPANDERS: [I2cAddr; 4] = [
 /// The TMP114's `Device_ID` register (0x0B), 16 bits, MSB first.
 const SENSOR_ID_REG: u8 = 0x0b;
 
-/// The ID libusdr requires (`TMP114_DEVICE_ID`): device 0x114, revision 1. A copy of the
-/// value `usdr`'s TMP114 driver checks, kept here because the board's probe needs only
-/// it.
-const SENSOR_ID: u16 = 0x1114;
-
 /// The TCA6424A's first direction register (`TCA6424_CFG0`).
 const EXPANDER_CONFIG0: u8 = 12;
 
@@ -69,5 +68,5 @@ pub(crate) fn detect(bus: &mut dyn Bus) -> Result<bool, Error> {
         bus.i2c(expander, &[AUTO_INCREMENT | EXPANDER_CONFIG0], &mut [0; 2])
             .reading("TCA6424A", EXPANDER_CONFIG0)?;
     }
-    Ok(u16::from_be_bytes(id) == SENSOR_ID)
+    Ok(u16::from_be_bytes(id) == Tmp114::DEVICE_ID)
 }

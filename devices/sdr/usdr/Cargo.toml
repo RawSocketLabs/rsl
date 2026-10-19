@@ -11,7 +11,6 @@ rust-version.workspace = true
 [dependencies]
 bnb.workspace = true
 num-complex.workspace = true
-lmk05318.workspace = true
 hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }

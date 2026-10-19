@@ -12,15 +12,7 @@
 //! access in [`register`]. The LMS6002D is on SPI and has its own word format.
 //!
 //! The front-end boards (`crate::frontend`) carry their own chips on I2C bus 1, the M.2
-//! connector's bus. Those the shared probe and the `PCIe` front end and breakout need (the
-//! TCA6416 and TCA9555 expanders, the `DACx0501`) are `sdr-frontend`'s; the ones the
-//! uSDR's bring-ups need are here:
-//!
-//! | Module | Chip | Front end |
-//! |--------|------|-----------|
-//! | [`lmk5c33216`] | LMK5C33216 clock synchronizer | `SuperSync` |
-//! | [`lmk05318`] | LMK05318 clock synchronizer | `SimpleSync`, XMASS |
-//! | [`at24`] | AT24 EEPROM (security registers) | XMASS revision 1a: serial number |
+//! connector's bus; they are `sdr-frontend`'s, with the boards' bring-ups.
 //!
 //! A chip driver is a small `Copy` value naming where the chip answers. `at(addr)` builds
 //! one anywhere; `usdr()` builds the one the uSDR has, and its doc says where the address
@@ -28,9 +20,6 @@
 //! driver: like libusdr, it caches the registers it updates field by field instead of
 //! reading them back.
 
-pub(crate) mod at24;
-pub(crate) mod lmk05318;
-pub(crate) mod lmk5c33216;
 pub(crate) mod lms6002d;
 pub(crate) mod lp8758;
 pub(crate) mod register;

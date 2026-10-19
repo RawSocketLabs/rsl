@@ -1,20 +1,25 @@
-//! The LMK05318 driver: bring-up, output plans, lock waits, synchronization and output
-//! power-down, as libusdr's `hw/lmk05318/lmk05318.c` runs them for the `SimpleSync` and
-//! XMASS front ends.
+//! TI LMK05318 network synchronizer clock, the clock tree of the `SimpleSync` and XMASS
+//! front ends: bring-up, output plans, lock waits, synchronization and output power-down,
+//! as libusdr's `hw/lmk05318/lmk05318.c` runs them for those boards.
+//!
+//! The plan, staging map, address map and value types are `lmk05318`'s (`PE_SYNC`
+//! uses the chip too); this is the bus code. It runs as blocking code: the 16-bit
+//! addresses and four-byte identity read do not fit the portable `Sequence` seam. Without
+//! the DPLL, which neither board enables (not ported), APLL1 runs free.
 
 use std::time::Duration;
 
 use deps::tracing::{debug, info};
+use hal::{Bus, I2cAddr};
+use lmk05318::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
+use lmk05318::control::{DeviceControl, DpllFlags, LossFlags};
+use lmk05318::map::RegisterMap;
+use lmk05318::output::{OutputControlReg, without_format};
+use lmk05318::plan::{Apll2, ClockPlanError, OutputRequest, Xo};
+use lmk05318::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
+use lmk05318::staging::{stage_apll1, stage_common, stage_plan, stage_xo};
 
-use super::apll::{Apll, BawLock, Pll1Control, Pll2Control, VcoStatus};
-use super::control::{DeviceControl, DpllFlags, LossFlags};
-use super::map::RegisterMap;
-use super::output::{OutputControlReg, without_format};
-use super::plan::{Apll2, ClockPlanError, OutputRequest, Xo};
-use super::reg::{IndexedLmk05318Register, Lmk05318Register, Reg};
-use super::staging::{stage_apll1, stage_common, stage_plan, stage_xo};
 use crate::error::{BusContext, Error};
-use crate::lowlevel::{Bus, I2cAddr};
 
 /// An LMK05318 on the I2C bus, with the state libusdr keeps for it (`lmk05318_state_t`
 /// without the DPLL, and its register staging map).
@@ -41,10 +46,10 @@ pub(crate) struct LockStatus {
 
 impl Lmk05318 {
     /// The chip's name in errors.
-    pub(crate) const NAME: &'static str = "LMK05318";
+    const NAME: &'static str = lmk05318::NAME;
 
     /// The identification bytes from address 0, in wire order.
-    pub(crate) const ID: [u8; 4] = [0x10, 0x0b, 0x35, 0x42];
+    const ID: [u8; 4] = lmk05318::ID;
 
     /// How long a lock wait sleeps between polls (`usleep(100)`).
     const POLL_INTERVAL: Duration = Duration::from_micros(100);

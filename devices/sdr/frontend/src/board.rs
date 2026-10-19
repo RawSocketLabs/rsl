@@ -114,6 +114,9 @@ pub enum FrontEndKind {
 
     /// The `SimpleSync` clock board.
     SimpleSync,
+
+    /// The 100–5000 MHz front end.
+    Fe1005000,
 }
 
 #[cfg(test)]

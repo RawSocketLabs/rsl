@@ -2,6 +2,9 @@
 //! error.
 
 use hal::{Access, BusError, SequenceFailure};
+use lmk05318::plan::ClockPlanError;
+
+use crate::board::Board;
 
 /// A failed front-end probe or board access.
 #[derive(Debug, thiserror::Error)]
@@ -40,6 +43,47 @@ pub enum Error {
     /// breakout whose DAC did not identify itself).
     #[error("no front end with an oscillator DAC is attached")]
     NoOscillatorDac,
+
+    /// A board's chip identified itself with an unexpected ID: XMASS's LMK05318, which
+    /// libusdr's `lmk05318_create` refuses with `-ENODEV` (XMASS logs it and carries on).
+    #[error("{chip} reports ID {found:#x}, expected {expected:#x}")]
+    #[non_exhaustive]
+    ChipId {
+        /// Which chip.
+        chip: &'static str,
+
+        /// The ID the bring-up requires.
+        expected: u32,
+
+        /// The ID read.
+        found: u32,
+    },
+
+    /// A board's clock synthesizer has no configuration for the requested frequencies
+    /// (libusdr's `-EINVAL`).
+    #[error("no clock plan for the requested frequencies")]
+    ClockPlan(#[from] ClockPlanError),
+
+    /// A board's clock synthesizer did not report lock in time (libusdr's `-ETIMEDOUT`);
+    /// which PLL, such as `"LMK05318 APLL1"`.
+    #[error("{0} did not lock")]
+    ClockUnlocked(&'static str),
+
+    /// A board refuses a setting, as libusdr does with `-EINVAL`.
+    #[error("{board} front end refuses the setting: {reason}")]
+    #[non_exhaustive]
+    InvalidSetting {
+        /// libusdr's name for the board, such as `"fe1005000"`.
+        board: &'static str,
+
+        /// Why.
+        reason: &'static str,
+    },
+
+    /// A board answered whose bring-up this crate does not port; libusdr would bring it up.
+    /// The probe stops there, hinted or not.
+    #[error("the {} front end answered; its bring-up is not ported", .0.name())]
+    NotPorted(Board),
 }
 
 impl Error {

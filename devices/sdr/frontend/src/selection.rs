@@ -5,6 +5,10 @@ use crate::exm2pe::Exm2peOptions;
 use crate::pciefe::PciefeOptions;
 
 /// Which front end to look for: libusdr's `fe=` option, typed.
+///
+/// A hint names one board; libusdr matches the option's start against each board's name
+/// (`fe=xmass:anything` names XMASS), and only the `PCIe` front end and the breakout read
+/// what follows. A hint for a board the device's connector does not admit finds nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FrontEndSelection {
@@ -30,6 +34,12 @@ pub enum FrontEndSelection {
 
     /// Only `SimpleSync` (`fe=simplesync`).
     SimpleSync,
+
+    /// Only the 100–5000 MHz front end (`fe=fe1005000`).
+    Fe1005000,
+
+    /// Only the four-channel 400–7200 MHz front end (`fe=fe4ch4007200`).
+    Fe4ch4007200,
 }
 
 impl FrontEndSelection {
@@ -43,6 +53,8 @@ impl FrontEndSelection {
             Self::Xmass => Board::Xmass,
             Self::SuperSync => Board::SuperSync,
             Self::SimpleSync => Board::SimpleSync,
+            Self::Fe1005000 => Board::Fe1005000,
+            Self::Fe4ch4007200 => Board::Fe4ch4007200,
         })
     }
 }

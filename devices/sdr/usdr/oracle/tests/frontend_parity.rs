@@ -99,11 +99,13 @@ fn naming_no_board_probes_nothing() {
 }
 
 /// libusdr admits the 100–5000 MHz front end on `LSDr` only: naming it probes nothing, as
-/// [`FrontEndSelection::None`] does, which is why usdr offers no selection for it.
+/// [`FrontEndSelection::None`] does, and so does usdr's selection of it.
 #[test]
 fn naming_the_lsdr_front_end_probes_nothing() {
-    let kind = assert_open_matches(bare, c"fe=fe1005000", FrontEndSelection::None).expect("open");
-    assert_eq!(kind, None);
+    for selection in [FrontEndSelection::None, FrontEndSelection::Fe1005000] {
+        let kind = assert_open_matches(bare, c"fe=fe1005000", selection).expect("open");
+        assert_eq!(kind, None, "{selection:?}");
+    }
 }
 
 /// The clock boards each probe their chip and, finding none, leave the uSDR without a
