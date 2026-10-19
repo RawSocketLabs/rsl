@@ -49,7 +49,7 @@ input is LMX2820 #0's planned 25 MHz though that synthesizer's SYSREF stays off.
 | Capability | Pinned C | Blocker or note |
 |---|---|---|
 | A transport (USB VID 0x3727 PID 0xE001, PCIe) | `C:lowlevel/usb_uram/`, `pcie_uram/` | PE_SYNC has two I2C cores; `usdr`'s transports refuse core ≠ 0 and know the uSDR's register layout. Shared transports belong outside `usdr` first |
-| LMK05318 bus code shared with `usdr` | `C:hw/lmk05318/lmk05318.c` | Duplicated today (`src/lmk05318.rs` here, `chips/lmk05318/lmk05318.rs` in `usdr`; the plan and registers are shared). Merge into `lmk05318` once `hal`'s seam carries 16-bit-pointer and multi-byte I2C transfers, or with an error mapping both drivers accept |
+| LMK05318 bus code shared with `sdr-frontend` | `C:hw/lmk05318/lmk05318.c` | Duplicated today (`src/lmk05318.rs` here, `src/chips/lmk05318.rs` in `sdr-frontend`, which runs it for the front ends of the uSDR and XSDR; the plan and registers are shared). Merge into `lmk05318` once `hal`'s seam carries 16-bit-pointer and multi-byte I2C transfers, or with an error mapping both drivers accept |
 | LMK05318 DPLL (reference validation, `REFVALSTAT`) | `lmk05318_dpll_config`, `lmk05318_wait_dpll_ref_stat` | `pe_sync.c` leaves it off; sim lacks reset values and reference validation |
 | LMX2820 SYSREF and instant calibration; LMX1204/LMX1214 precision mode, per-output SYSREF delays, SYSREF windowing; LMX2820 `sync` | `lmx2820_calculate_systef_chain`, `lmx2820_instant_calibration_init`, `*_sysref_windowing_*`, `lmx1204_init_sysrefout_ch_delay` | Not called by `pe_sync.c`; no control in libusdr reaches them |
 | AD5662 DACs, external SPI | `pe_sync.c` (SPI buses 0, 1, 6, 7) | Not driven at open; not modelled |

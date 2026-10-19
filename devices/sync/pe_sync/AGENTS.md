@@ -32,8 +32,8 @@ Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
   with its failure rules (which reads libusdr only logs, which failures it ignores).
 - `src/lmk05318.rs`: the LMK05318's bus traffic (identity, register load, soft reset, APLL
   lock waits, sync) as blocking code on `lmk05318`: its 16-bit register pointer and
-  four-byte identity read do not fit the `Sequence` seam. `usdr`'s
-  `chips/lmk05318/lmk05318.rs` does the same for its front ends with its own error type;
+  four-byte identity read do not fit the `Sequence` seam. `sdr-frontend`'s
+  `src/chips/lmk05318.rs` does the same for the front ends with its own error type;
   `PORTING.md` records the duplication.
 - `src/portable/`: core only, no allocation. `board.rs` holds the wiring and every setpoint
   (`pe_sync_configure`'s frequencies and configurations); `fpga.rs` the GPO banks and bits;

@@ -55,7 +55,7 @@ intentional addition.
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `usdr` (unpublished until parity) | The driver |
-| `sim/` | `usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
+| `sim/` | `usdr-sim` (unpublished, workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers, SPI, I2C, virtual clock, op trace, the RX stream engine's blocks below it (16- and 12-bit packing of channel 0's I and Q, channel 1's on lanes 2 and 3, both, or lane 0 or 1 alone), the original or extended TX core and its `PCIe`-driver buffer ring (`tx_*`, played packets in `tx_packets`), the sync unit shared by both, the RX DC estimator and an optional deterministic RF loopback for it (`with_loopback`: synthetic LO leakage and IQ imbalances, assumptions in `sim/src/loopback.rs`), the QSPI flash controller with a fake flash (opt-in, `with_flash`), optional front ends on I2C bus 1 (`SimBoard::with_front_end`; none by default; the boards' models, with the plain register file and TMP114 the board itself uses, are `sdr-frontend-sim`'s, `../frontend/sim`, shared with `xsdr-sim`), and a clock-measurement word tests load (`set_clock_measurement`; not modelled) |
 | `oracle/` | `usdr-oracle` (unpublished, own workspace: compiles C) | Vendored libusdr (and four of its tools, `libusdr/tools/`: `usdr_flash.c`, `usdr_dm_create.c`, `usdr_dm_gpsdo.c`, `xmass_fwupd.c`) driving `sim` through `oracle/shim/sim_plugin.c`, one board per device of libusdr's multi-device aggregate (`bus=sim0:sim1:...`), and a fake XMASS device (`src/xmass.rs`) through `oracle/shim/xmass_fwupd.c`; libusdr's Verilator host bridge compiled whole by `oracle/shim/verilator.c` against a fake model |
 | `nostd-check/` | `usdr-nostd-check` (unpublished, own workspace) | Exact-source portable-core compilation witness; no separate production driver or embedded executable |
 | `pcie/` | `usdr-pcie` (unpublished, workspace member, Linux) | The `usdr_pcie_uram` driver's userspace interface: ioctls, the mapped BAR, DMA buffers, and its XMASS device (`/dev/xmassN`, `XmassDevice`). The stack's only `unsafe` |
@@ -138,22 +138,24 @@ Each layer calls only the ones below it.
   `oracle/tests/{image,flash_update}_parity.rs` check both against the compiled C.
 - `src/frontend/`: public `usdr::frontend`, the boards libusdr probes on the M.2
   connector (`device/device_fe.c`, `device/ext_*`). The probe itself, every board's
-  identification, the connector's GPIO core, the `PCIe` front end and breakout whole and
-  their chips (TCA6416, TCA9555, DACx0501) are `sdr-frontend`'s (`../frontend`),
-  shared with the XSDR and LSDr drivers; `frontend/mod.rs` re-exports its public types
-  (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and `Exm2peOptions` options,
-  `XmassCalibrationPath`) and implements its `BringUp` with the bring-ups that stay here,
-  one module per board (`xmass`, `supersync`, `simplesync`; their chips LMK05318,
-  LMK5C33216, TMP114 and AT24 in `src/chips/`). `xmass_firmware.rs` (public) ports libusdr's
+  identification and bring-up with its controls (pciefe, XMASS, `SuperSync`,
+  `SimpleSync`, exm2pe), the connector's GPIO core and the boards' chips (TCA6416,
+  TCA9555, DACx0501, LMK05318 bus code, LMK5C33216, TMP114, AT24) are `sdr-frontend`'s
+  (`../frontend`, 2026-10-18), shared with the XSDR and LSDr drivers; `frontend/mod.rs`
+  re-exports its public types (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and
+  `Exm2peOptions` options, `XmassCalibrationPath`, `ClockPlanError`) and runs
+  `Connector::probe`. `xmass_firmware.rs` (public) ports libusdr's
   `tools/xmass_fwupd.c`, the XMASS switch's firmware update, over `SwitchFlash`, the
   driver's four XMASS requests as a trait (implemented for `XmassDevice` in
   `transport/pcie.rs`); `oracle/tests/xmass_firmware_parity.rs` runs both against one fake
   device. `board/frontend.rs` runs the probe at the
-  end of power-up and owns the board that came up. Blocking code: the probes interleave
+  end of power-up, owns the `sdr_frontend::FrontEnd` that came up and routes the
+  controls to it. Blocking code: the probes interleave
   GPIO-core writes with I2C transfers wider than the `Sequence` seam's one-register
   actions; why the native power-up still skips the probe, and the seam extension it
-  would take, is PORTING.md's front-end row (*Native probe*). The LMK05318 (`chips/lmk05318/`, XMASS and
-  `SimpleSync`) keeps libusdr's per-chip state (APLL2, the register staging map), its
+  would take, is PORTING.md's front-end row (*Native probe*). The LMK05318
+  (`sdr-frontend`'s `chips::lmk05318`, XMASS and `SimpleSync`) keeps libusdr's per-chip
+  state (APLL2, the register staging map), its
   frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
   the oracle compiles them with the map and value types directly
   (`lmk05318_parity.rs` compares plans and staged
@@ -161,8 +163,9 @@ Each layer calls only the ones below it.
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
   place of the 8-bit shared ones. Since PE_SYNC needs it too, the bus-free modules (plan,
   staging, map, `reg` and the value types) are the shared `lmk05318`
-  (`devices/chips/lmk05318`), re-exported under `chips::lmk05318`; the bus code in
-  `lmk05318.rs` stays here (`pe-sync` has its own, `../../sync/pe_sync/PORTING.md`).
+  (`devices/chips/lmk05318`); the bus code moved with the bring-ups to `sdr-frontend`
+  (`pe-sync` has its own, `../../sync/pe_sync/PORTING.md`), and the oracle's
+  `lmk05318_parity.rs` compiles the shared crate's plans directly.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
   `hal` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus
   usdr's own conversions into `BusError` (`usb_error` for `usb::Error`: `From`

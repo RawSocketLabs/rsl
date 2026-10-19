@@ -12,15 +12,15 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | Path | Crate(s) | Notes |
 |------|----------|-------|
 | `hal/` | `hal` | the drivers' shared `ls_op` seam: bus addresses, typed registers, portable `Sequence`s; `no_std`, `Bus`/`BusError`/blocking executor behind `std` |
-| `chips/lmk05318/` | `lmk05318` | the LMK05318 register values and frequency plans the uSDR front ends and PE_SYNC share (`no_std`) |
+| `chips/lmk05318/` | `lmk05318` | the LMK05318 register values and frequency plans the front-end boards (`sdr-frontend`) and PE_SYNC share (`no_std`) |
 | `vendor/` | none | `libusdr/`, the vendored libusdr C subset every oracle compiles (one tree, one PIN), and `vendor.sh`, its refresh script |
 | `sdr/usdr/` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `usdr-nostd-check` | the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, the libusdr parity oracle (own workspace: compiles the vendored C) and its `no_std` portable-tree witness |
-| `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR open with its front-end probe, RFIC power-up, sample rate, LO tuning, gains, bandwidths and close; oracle and witness as above |
-| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe, ADC power, PGA gain and close |
+| `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR open with its front-end probe and bring-up, RFIC power-up, sample rate, LO tuning, gains, bandwidths and close; oracle and witness as above |
+| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and fe1005000's bring-up, ADC power, PGA gain and close |
 | `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up, sample rate, LO tuning, gains, bandwidths, stream preparation and close; no FT601 transport yet |
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
-| `sdr/frontend/` | `sdr-frontend` | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and the `pciefe` and `exm2pe` bring-ups, shared by the uSDR, XSDR and LSDr drivers (`no_std` core, blocking probe behind `std`) |
+| `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
 | `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
 
 ## Layout rules
@@ -32,10 +32,16 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
   lives in `devices/<kind>/` once a second driver needs it, not before. The first is
   `sdr/frontend` (`sdr-frontend`, 2026-10-13): libusdr's front-end probe
-  (`device/device_fe.c`), every board's identification and the bring-ups the probe needs
-  whole (`pciefe`, `exm2pe`), run by the uSDR, XSDR and LSDr drivers. A driver adds the
-  bring-ups it owns through its `BringUp` (the uSDR's XMASS, `SuperSync` and `SimpleSync`)
-  and re-exports the crate's types.
+  (`device/device_fe.c`), every board's identification and every board's bring-up and
+  controls the probe's drivers run (`pciefe`, `xmass`, `supersync`, `simplesync`,
+  `exm2pe`, `fe1005000`; 2026-10-18), run by the uSDR, XSDR and LSDr drivers whose
+  libusdr probes their connector. `Connector::probe` brings the board up whole and hands
+  the driver the `FrontEnd` libusdr keeps (`struct dev_fe`); the driver keeps it, offers
+  the controls its libusdr device offers, and re-exports the crate's types. A board whose
+  bring-up is not ported stops the probe (`Error::NotPorted`, fe4ch4007200 only). The
+  boards' register models live beside it (`sdr/frontend/sim`, `sdr-frontend-sim`), shared
+  by the sims whose connector admits them (`usdr-sim`, `xsdr-sim`); a board only one
+  driver admits keeps its model in that driver's sim (fe1005000 in `lsdr-sim`).
 - Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind
@@ -52,11 +58,15 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   ADS42LBx9 and LMK04832 sit in `lsdr` (2026-10-12; libusdr uses them on no other
   board), and PE_SYNC's LMX2820, LMX1204, LMX1214 and LMK1D1208I sit in `pe-sync`
   (2026-10-13; likewise). The chips only front-end boards carry (TCA6416, TCA9555,
-  `DACx0501`) sit in `sdr-frontend` until a driver needs one directly (the XTRX's
-  DAC80501 trim would move it to `sdr/chips/dac80501`).
+  `DACx0501`, LMK5C33216, AT24, and a small TMP114) sit in `sdr-frontend` until a driver
+  needs one directly (the XTRX's DAC80501 trim would move it to `sdr/chips/dac80501`, and
+  its sim model, now `sdr-frontend-sim`'s beside `xsdr-sim`'s own, to
+  `sdr/chips/dac80501/sim`).
 - A chip drivers of more than one kind use goes under `devices/chips/<chip>/`:
-  `chips/lmk05318` (`lmk05318`) serves the uSDR's front ends and PE_SYNC (and
-  `sdr-frontend`'s `SimpleSync` ID check).
+  `chips/lmk05318` (`lmk05318`) serves the front-end boards' bring-ups (`sdr-frontend`,
+  whose `chips::lmk05318` is the bus code over its plans) and PE_SYNC. Its sim model is
+  still two (`sdr-frontend-sim`'s and `pe-sync-sim`'s, on the same evidence but each on
+  its sim's register-file seam); joining them as `chips/lmk05318/sim` is open.
 - A chip crate may also hold the chip's own operations as sans-I/O sequences, when they
   are the vendor library's chip-driver code and know no board: `lms7002m` ports
   libusdr's `hw/lms7002m/lms7002m.c` (`Create`, and the `Lms7002m` cached state whose
