@@ -321,6 +321,13 @@ pub struct Control {
     /// The board's transmit bands (`cfg_auto_tx`).
     tx_bands: [TxAntenna; 2],
 
+    /// The channels and flags the receive direction last streamed up with
+    /// (`lml_rx_chs`, `lml_rx_flags`).
+    rx_stream: (Mac, StreamFlags),
+
+    /// As [`Self::rx_stream`], for transmit (`lml_tx_chs`, `lml_tx_flags`).
+    tx_stream: (Mac, StreamFlags),
+
     /// The receive stream's sample order (`map_rx`).
     rx_map: LmlMap,
 
@@ -402,6 +409,22 @@ impl Control {
             tx_lo: 0,
             rx_bands,
             tx_bands,
+            rx_stream: (
+                Mac::None,
+                StreamFlags {
+                    swap_ab: false,
+                    swap_iq: false,
+                    no_dc_correction: false,
+                },
+            ),
+            tx_stream: (
+                Mac::None,
+                StreamFlags {
+                    swap_ab: false,
+                    swap_iq: false,
+                    no_dc_correction: false,
+                },
+            ),
             rx_map: [LmlSample::AI; 4],
             tx_map: [LmlSample::AI; 4],
             rx_siso: false,

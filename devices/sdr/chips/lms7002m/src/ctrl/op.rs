@@ -743,20 +743,17 @@ impl Control {
             Ok(planned) => planned,
             Err(error) => return Operation::finished(&self, frontend, Err(error)),
         };
+        self.rx_stream = (rx_up.channels, rx_flags);
         self.rx_map = frontend.lml_map(true, rx_up.channels, rx_flags);
         if let (Some(up), Some((_, flags))) = (tx_up, tx) {
+            self.tx_stream = (up.channels, flags);
             self.tx_map = frontend.lml_map(false, up.channels, flags);
         }
         let tx_running = tx_up.map_or(self.tx_running, |up| up.running);
-        let (siso, maps) = if self.lml.rx_port1 {
-            ([self.rx_siso, self.tx_siso], [self.rx_map, self.tx_map])
-        } else {
-            ([self.tx_siso, self.rx_siso], [self.tx_map, self.rx_map])
-        };
         let ([rx_a, rx_b], [tx_a, tx_b]) = (rx_up.running, tx_running);
         let mut calls = Calls::new();
         calls
-            .push(ChipCall::LimelightMap(siso, maps))
+            .push(self.limelight_map())
             .push(ChipCall::AfeEnable(
                 [rx_a || rx_b, rx_b],
                 [tx_a || tx_b, tx_b],
@@ -778,6 +775,32 @@ impl Control {
             },
             &calls,
         )
+    }
+
+    /// Sets whether each direction streams SISO and rewrites both `LimeLight` maps from
+    /// the channels and flags each direction last streamed up with, none before the first
+    /// (`xsdr_rfic_streaming_xflags` toggling no flags, which board code runs when a
+    /// stream's channel count changes the SISO choice).
+    #[must_use]
+    pub fn set_siso<F: Frontend>(mut self, frontend: F, rx: bool, tx: bool) -> Operation {
+        self.rx_siso = rx;
+        self.tx_siso = tx;
+        self.rx_map = frontend.lml_map(true, self.rx_stream.0, self.rx_stream.1);
+        self.tx_map = frontend.lml_map(false, self.tx_stream.0, self.tx_stream.1);
+        let mut calls = Calls::new();
+        calls.push(self.limelight_map());
+        Operation::writes(&self, &calls)
+    }
+
+    /// The `LimeLight` map write for both directions' SISO choice and sample order, each
+    /// on the port it uses (`lms7002m_limelight_map` as libusdr's control code calls it).
+    fn limelight_map(&self) -> ChipCall {
+        let (siso, maps) = if self.lml.rx_port1 {
+            ([self.rx_siso, self.tx_siso], [self.rx_map, self.tx_map])
+        } else {
+            ([self.tx_siso, self.rx_siso], [self.tx_map, self.rx_map])
+        };
+        ChipCall::LimelightMap(siso, maps)
     }
 
     /// One direction of a streaming up (`lms7002m_streaming_up`'s checks and
@@ -1069,6 +1092,49 @@ mod tests {
             .find(|(addr, _)| *addr == Reg::LmlControl as u16)
             .expect("a bank selection");
         LmlControl::from_raw(value).mac()
+    }
+
+    /// A board whose sample order names the direction and channels it is asked for: RX's
+    /// or TX's, with channel A's I first only for `Mac::None`.
+    #[derive(Clone, Copy, Debug)]
+    struct Orders;
+
+    impl Frontend for Orders {
+        type Switch = Switch;
+
+        fn antenna_switch(&self, _direction: Direction, _position: u8) -> Switch {
+            Switch(None)
+        }
+
+        fn lml_map(&self, rx: bool, channels: Mac, _flags: StreamFlags) -> LmlMap {
+            let first = if channels == Mac::None {
+                LmlSample::AI
+            } else {
+                LmlSample::BQ
+            };
+            let second = if rx { LmlSample::AQ } else { LmlSample::BI };
+            [first, second, second, second]
+        }
+    }
+
+    #[test]
+    fn a_siso_change_rewrites_the_maps_of_the_channels_last_streamed_up() {
+        let flags = StreamFlags::default();
+        let (done, _) = run(control().set_siso(Orders, true, false));
+        let first = done;
+        let streamed = rated(false).streaming_up(Orders, (Mac::Both, flags), None);
+        let (_, streamed) = run(streamed);
+        let (done, op) = run(streamed.control().set_siso(Orders, true, false));
+        assert_ne!(
+            first, done,
+            "RX's map follows the channels streamed up, not those before"
+        );
+        assert_eq!(done.len(), 2, "one write per LimeLight port");
+        assert_eq!(
+            run(op.control().set_siso(Orders, true, false)).0,
+            done,
+            "the same SISO choice writes the same maps again"
+        );
     }
 
     /// A created chip with RX and TX at 1 MS/s, its TX streamed SISO when `tx_siso`.
